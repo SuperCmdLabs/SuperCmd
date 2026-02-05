@@ -33,13 +33,38 @@ const CACHE_TTL = 120_000; // 2 min
 // ─── Helpers ────────────────────────────────────────────────────────
 
 /**
- * Extract the actual app icon from a .app bundle.
- * 1. Reads CFBundleIconFile from Info.plist
- * 2. Converts the .icns file to PNG using macOS `sips` (reliable, no Chromium crashes)
+ * Convert an .icns file to a base64 PNG data URL using macOS `sips`.
+ */
+async function icnsToPngDataUrl(icnsPath: string): Promise<string | undefined> {
+  const tmpPng = path.join(
+    app.getPath('temp'),
+    `launcher-icon-${++iconCounter}.png`
+  );
+  try {
+    await execAsync(
+      `/usr/bin/sips -s format png -z 64 64 "${icnsPath}" --out "${tmpPng}" 2>/dev/null`
+    );
+    const pngBuf = fs.readFileSync(tmpPng);
+    fs.unlinkSync(tmpPng);
+    if (pngBuf.length > 100) {
+      return `data:image/png;base64,${pngBuf.toString('base64')}`;
+    }
+  } catch {
+    try { fs.unlinkSync(tmpPng); } catch {}
+  }
+  return undefined;
+}
+
+/**
+ * Extract the actual icon from a .app / .appex / .prefPane bundle.
+ * 1. Reads CFBundleIconFile from Info.plist → converts .icns with sips
+ * 2. Searches for common icon filenames in Contents/Resources/
  * 3. Falls back to app.getFileIcon({ size: 'large' })
  */
 async function getIconDataUrl(bundlePath: string): Promise<string | undefined> {
-  // Step 1: Find the .icns file via Info.plist and convert with sips
+  const resourcesDir = path.join(bundlePath, 'Contents', 'Resources');
+
+  // Step 1: Try CFBundleIconFile / CFBundleIconName from Info.plist
   try {
     const plistPath = path.join(bundlePath, 'Contents', 'Info.plist');
     if (fs.existsSync(plistPath)) {
@@ -51,37 +76,45 @@ async function getIconDataUrl(bundlePath: string): Promise<string | undefined> {
         info.CFBundleIconFile || info.CFBundleIconName;
 
       if (iconFileName) {
-        const resourcesDir = path.join(bundlePath, 'Contents', 'Resources');
         let icnsPath = path.join(resourcesDir, iconFileName);
         if (!fs.existsSync(icnsPath) && !iconFileName.endsWith('.icns')) {
           icnsPath = path.join(resourcesDir, `${iconFileName}.icns`);
         }
 
         if (fs.existsSync(icnsPath)) {
-          const tmpPng = path.join(
-            app.getPath('temp'),
-            `launcher-icon-${++iconCounter}.png`
-          );
-          try {
-            await execAsync(
-              `/usr/bin/sips -s format png -z 64 64 "${icnsPath}" --out "${tmpPng}" 2>/dev/null`
-            );
-            const pngBuf = fs.readFileSync(tmpPng);
-            fs.unlinkSync(tmpPng);
-            if (pngBuf.length > 100) {
-              return `data:image/png;base64,${pngBuf.toString('base64')}`;
-            }
-          } catch {
-            try { fs.unlinkSync(tmpPng); } catch {}
-          }
+          const result = await icnsToPngDataUrl(icnsPath);
+          if (result) return result;
         }
       }
     }
   } catch {
-    // plist read or sips conversion failed — fall through
+    // plist read failed — fall through
   }
 
-  // Step 2: Fallback — use Electron's getFileIcon (returns generic icon as last resort)
+  // Step 2: Search for common icon filenames in Resources/
+  if (fs.existsSync(resourcesDir)) {
+    try {
+      const files = fs.readdirSync(resourcesDir);
+      // Prefer known icon names first, then any .icns file
+      const priorityNames = ['icon.icns', 'AppIcon.icns', 'SharedAppIcon.icns'];
+      for (const name of priorityNames) {
+        if (files.includes(name)) {
+          const result = await icnsToPngDataUrl(path.join(resourcesDir, name));
+          if (result) return result;
+        }
+      }
+      // Try any .icns file we find
+      const anyIcns = files.find((f) => f.endsWith('.icns'));
+      if (anyIcns) {
+        const result = await icnsToPngDataUrl(path.join(resourcesDir, anyIcns));
+        if (result) return result;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Step 3: Fallback — use Electron's getFileIcon
   try {
     const icon = await app.getFileIcon(bundlePath, { size: 'large' });
     if (!icon.isEmpty()) {
@@ -246,7 +279,7 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
   const results: CommandInfo[] = [];
   const seen = new Set<string>();
 
-  // Get the System Settings app icon (used as fallback for all settings panes)
+  // Get the System Settings app icon (used as fallback when a pane has no icon)
   let settingsIconDataUrl: string | undefined;
   for (const p of [
     '/System/Applications/System Settings.app',
@@ -284,6 +317,17 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
         'Bluetooth.appex',
         'Appearance.appex',
         'PowerPreferences.appex',
+        'Network.appex',
+        'Screen Saver.appex',
+        'Wallpaper.appex',
+        'StartupDisk.appex',
+        'Computer Name.appex',
+        'CDs & DVDs Settings Extension.appex',
+        'FamilySettings.appex',
+        'ClassKitSettings.appex',
+        'ClassroomSettings.appex',
+        'CoverageSettings.appex',
+        'DesktopSettings.appex',
       ].includes(f)
     );
 
@@ -329,11 +373,15 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
           if (seen.has(key)) return null;
           seen.add(key);
 
+          // Extract the individual icon for this settings pane
+          const iconDataUrl =
+            (await getIconDataUrl(extPath)) || settingsIconDataUrl;
+
           return {
             id: `settings-${key.replace(/[^a-z0-9]+/g, '-')}`,
             title: displayName,
             keywords: ['system settings', 'preferences', key],
-            iconDataUrl: settingsIconDataUrl,
+            iconDataUrl,
             category: 'settings' as const,
             path: bundleId, // Store bundle ID for opening
           };
@@ -363,25 +411,44 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
       continue;
     }
 
+    const panePaths: string[] = [];
     for (const entry of entries) {
-      if (!entry.endsWith('.prefPane')) continue;
+      if (entry.endsWith('.prefPane')) {
+        panePaths.push(path.join(dir, entry));
+      }
+    }
 
-      const rawName = entry.replace('.prefPane', '');
-      const displayName = cleanPaneName(rawName);
-      const key = displayName.toLowerCase();
+    const BATCH = 15;
+    for (let i = 0; i < panePaths.length; i += BATCH) {
+      const batch = panePaths.slice(i, i + BATCH);
+      const items = await Promise.all(
+        batch.map(async (panePath) => {
+          const rawName = path.basename(panePath, '.prefPane');
+          const displayName = cleanPaneName(rawName);
+          const key = displayName.toLowerCase();
 
-      // Skip if we already have this from appex
-      if (seen.has(key)) continue;
-      seen.add(key);
+          // Skip if we already have this from appex
+          if (seen.has(key)) return null;
+          seen.add(key);
 
-      results.push({
-        id: `settings-${key.replace(/[^a-z0-9]+/g, '-')}`,
-        title: displayName,
-        keywords: ['system settings', 'preferences', key],
-        iconDataUrl: settingsIconDataUrl,
-        category: 'settings',
-        path: rawName, // Raw prefPane identifier
-      });
+          // Extract the individual icon for this pref pane
+          const iconDataUrl =
+            (await getIconDataUrl(panePath)) || settingsIconDataUrl;
+
+          return {
+            id: `settings-${key.replace(/[^a-z0-9]+/g, '-')}`,
+            title: displayName,
+            keywords: ['system settings', 'preferences', key],
+            iconDataUrl,
+            category: 'settings' as const,
+            path: rawName, // Raw prefPane identifier
+          };
+        })
+      );
+
+      for (const item of items) {
+        if (item) results.push(item);
+      }
     }
   }
 
