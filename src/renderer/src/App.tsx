@@ -226,22 +226,23 @@ const App: React.FC = () => {
                   onClick={() => handleCommandExecute(command)}
                   onMouseMove={() => setSelectedIndex(index)}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5">
                     {/* Icon */}
-                    <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
                       {command.iconDataUrl ? (
                         <img
                           src={command.iconDataUrl}
                           alt=""
-                          className="w-6 h-6 object-contain"
+                          className="w-5 h-5 object-contain"
+                          draggable={false}
                         />
                       ) : command.category === 'system' ? (
-                        <div className="w-6 h-6 rounded bg-red-500/20 flex items-center justify-center">
-                          <Power className="w-3.5 h-3.5 text-red-400" />
+                        <div className="w-5 h-5 rounded bg-red-500/20 flex items-center justify-center">
+                          <Power className="w-3 h-3 text-red-400" />
                         </div>
                       ) : (
-                        <div className="w-6 h-6 rounded bg-gray-500/20 flex items-center justify-center">
-                          <Settings className="w-3.5 h-3.5 text-gray-400" />
+                        <div className="w-5 h-5 rounded bg-gray-500/20 flex items-center justify-center">
+                          <Settings className="w-3 h-3 text-gray-400" />
                         </div>
                       )}
                     </div>

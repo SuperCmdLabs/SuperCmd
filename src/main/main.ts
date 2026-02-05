@@ -15,8 +15,8 @@ const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen } = electron;
 
 // Window configuration
-const WINDOW_WIDTH = 500;
-const WINDOW_HEIGHT = 400;
+const WINDOW_WIDTH = 680;
+const WINDOW_HEIGHT = 440;
 const GLOBAL_SHORTCUT = 'Command+Space';
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;

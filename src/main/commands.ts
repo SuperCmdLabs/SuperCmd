@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const execAsync = promisify(exec);
+let iconCounter = 0;
 
 export interface CommandInfo {
   id: string;
@@ -31,32 +32,66 @@ const CACHE_TTL = 120_000; // 2 min
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-async function getIconDataUrl(filePath: string): Promise<string | undefined> {
-  try {
-    const icon = await app.getFileIcon(filePath, { size: 'normal' });
-    return icon.toDataURL();
-  } catch {
-    return undefined;
-  }
-}
-
 /**
- * Read a field from a bundle's Info.plist using plutil (works with binary plists).
+ * Extract the actual app icon from a .app bundle.
+ * 1. Reads CFBundleIconFile from Info.plist
+ * 2. Converts the .icns file to PNG using macOS `sips` (reliable, no Chromium crashes)
+ * 3. Falls back to app.getFileIcon({ size: 'large' })
  */
-async function readPlistField(
-  bundlePath: string,
-  field: string
-): Promise<string | undefined> {
+async function getIconDataUrl(bundlePath: string): Promise<string | undefined> {
+  // Step 1: Find the .icns file via Info.plist and convert with sips
   try {
     const plistPath = path.join(bundlePath, 'Contents', 'Info.plist');
-    const { stdout } = await execAsync(
-      `/usr/bin/plutil -extract "${field}" raw -o - "${plistPath}" 2>/dev/null`
-    );
-    const val = stdout.trim();
-    return val || undefined;
+    if (fs.existsSync(plistPath)) {
+      const { stdout } = await execAsync(
+        `/usr/bin/plutil -convert json -o - "${plistPath}" 2>/dev/null`
+      );
+      const info = JSON.parse(stdout);
+      const iconFileName: string | undefined =
+        info.CFBundleIconFile || info.CFBundleIconName;
+
+      if (iconFileName) {
+        const resourcesDir = path.join(bundlePath, 'Contents', 'Resources');
+        let icnsPath = path.join(resourcesDir, iconFileName);
+        if (!fs.existsSync(icnsPath) && !iconFileName.endsWith('.icns')) {
+          icnsPath = path.join(resourcesDir, `${iconFileName}.icns`);
+        }
+
+        if (fs.existsSync(icnsPath)) {
+          const tmpPng = path.join(
+            app.getPath('temp'),
+            `launcher-icon-${++iconCounter}.png`
+          );
+          try {
+            await execAsync(
+              `/usr/bin/sips -s format png -z 64 64 "${icnsPath}" --out "${tmpPng}" 2>/dev/null`
+            );
+            const pngBuf = fs.readFileSync(tmpPng);
+            fs.unlinkSync(tmpPng);
+            if (pngBuf.length > 100) {
+              return `data:image/png;base64,${pngBuf.toString('base64')}`;
+            }
+          } catch {
+            try { fs.unlinkSync(tmpPng); } catch {}
+          }
+        }
+      }
+    }
   } catch {
-    return undefined;
+    // plist read or sips conversion failed — fall through
   }
+
+  // Step 2: Fallback — use Electron's getFileIcon (returns generic icon as last resort)
+  try {
+    const icon = await app.getFileIcon(bundlePath, { size: 'large' });
+    if (!icon.isEmpty()) {
+      return icon.toDataURL();
+    }
+  } catch {
+    // ignore
+  }
+
+  return undefined;
 }
 
 /**
