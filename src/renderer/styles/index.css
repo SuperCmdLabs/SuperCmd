@@ -55,23 +55,9 @@ body {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* Search input styling */
-.search-input {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: all 0.2s ease;
-  color: white;
-}
-
-.search-input::placeholder {
-  color: rgba(255, 255, 255, 0.35);
-}
-
-.search-input:focus {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(59, 130, 246, 0.4);
+/* Search input — inline, no background */
+.search-input-inline:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
 }
 
 /* Custom scrollbar */

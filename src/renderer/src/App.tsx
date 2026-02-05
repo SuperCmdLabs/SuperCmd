@@ -176,29 +176,27 @@ const App: React.FC = () => {
   return (
     <div className="w-full h-full">
       <div className="glass-effect rounded-2xl shadow-2xl overflow-hidden h-full flex flex-col">
-        {/* Search header */}
-        <div className="p-3 border-b border-white/10">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/60 w-5 h-5" />
-            <input
-              ref={inputRef}
-              type="text"
-              placeholder="Search apps and settings..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="search-input w-full pl-11 pr-10 py-2.5 rounded-lg text-white placeholder-white/50 text-sm"
-              autoFocus
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+        {/* Search header — Raycast-style, no box */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06]">
+          <Search className="text-white/30 w-5 h-5 flex-shrink-0" />
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Search apps and settings..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-base font-light tracking-wide"
+            autoFocus
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Command list */}
