@@ -53,7 +53,8 @@ function getIconCacheDir(): string {
 }
 
 function iconCacheKey(bundlePath: string): string {
-  return crypto.createHash('md5').update(bundlePath).digest('hex');
+  // v4: drop generic NSWorkspace document icons for settings
+  return 'v4-' + crypto.createHash('md5').update(bundlePath).digest('hex');
 }
 
 function getCachedIcon(bundlePath: string): string | undefined {
@@ -249,14 +250,16 @@ async function getIconDataUrl(bundlePath: string): Promise<string | undefined> {
   const cached = getCachedIcon(bundlePath);
   if (cached) return cached;
 
-  // Try fast .icns extraction
+  // Try .icns extraction for any bundle type (.app, .appex, .prefPane)
   const icnsResult = await getIconFromIcns(bundlePath);
   if (icnsResult) {
     setCachedIcon(bundlePath, icnsResult);
     return icnsResult;
   }
 
-  // No .icns found — will need batch NSWorkspace extraction
+  // No .icns found — return undefined.
+  // For apps, NSWorkspace batch extraction will run later.
+  // For settings, the renderer shows a cog icon.
   return undefined;
 }
 
@@ -620,17 +623,19 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
 
   const allCommands = [...apps, ...settings, ...systemCommands];
 
-  // ── Second pass: batch-extract icons for bundles that don't have .icns ──
-  const needsIcon = allCommands.filter(
-    (c) => !c.iconDataUrl && c._bundlePath
+  // ── Batch-extract icons via NSWorkspace for APPS only ──
+  // (NSWorkspace returns generic document icons for settings .appex bundles,
+  //  so we skip settings — the renderer shows a cog for those instead.)
+  const appsNeedingIcon = allCommands.filter(
+    (c) => !c.iconDataUrl && c._bundlePath && c.category === 'app'
   );
 
-  if (needsIcon.length > 0) {
-    console.log(`Extracting ${needsIcon.length} icons via NSWorkspace…`);
-    const bundlePaths = needsIcon.map((c) => c._bundlePath!);
+  if (appsNeedingIcon.length > 0) {
+    console.log(`Extracting ${appsNeedingIcon.length} app icons via NSWorkspace…`);
+    const bundlePaths = appsNeedingIcon.map((c) => c._bundlePath!);
     const iconMap = await batchGetIconsViaWorkspace(bundlePaths);
 
-    for (const cmd of needsIcon) {
+    for (const cmd of appsNeedingIcon) {
       const dataUrl = iconMap.get(cmd._bundlePath!);
       if (dataUrl) {
         cmd.iconDataUrl = dataUrl;
