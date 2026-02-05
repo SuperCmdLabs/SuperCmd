@@ -84,3 +84,15 @@ kbd {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', 'Menlo', monospace;
 }
 
+/* Drag region for macOS window title bar */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+/* Prevent drag on interactive elements inside drag regions */
+.drag-region button,
+.drag-region input,
+.drag-region a {
+  -webkit-app-region: no-drag;
+}
+

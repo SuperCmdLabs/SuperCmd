@@ -1,33 +1,55 @@
 /**
- * Main Process
- * 
+ * Main Process — SuperCommand
+ *
  * Handles:
- * - Global shortcut registration (Cmd + Space)
- * - Window lifecycle (create, show, hide, toggle)
+ * - Global shortcut registration (configurable)
+ * - Launcher window lifecycle (create, show, hide, toggle)
+ * - Settings window lifecycle
  * - IPC communication with renderer
  * - Command execution
+ * - Per-command hotkey registration
  */
 
 import * as path from 'path';
 import { getAvailableCommands, executeCommand } from './commands';
+import { loadSettings, saveSettings } from './settings-store';
+import type { AppSettings } from './settings-store';
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen } = electron;
 
-// Window configuration
+// ─── Window Configuration ───────────────────────────────────────────
+
 const WINDOW_WIDTH = 680;
 const WINDOW_HEIGHT = 440;
-const GLOBAL_SHORTCUT = 'Command+Space';
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
+let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let isVisible = false;
+let currentShortcut = '';
+const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 
-/**
- * Create the overlay window
- */
+// ─── URL Helpers ────────────────────────────────────────────────────
+
+function loadWindowUrl(
+  win: InstanceType<typeof BrowserWindow>,
+  hash = ''
+): void {
+  if (process.env.NODE_ENV === 'development') {
+    win.loadURL(`http://localhost:5173/#${hash}`);
+  } else {
+    win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), {
+      hash,
+    });
+  }
+}
+
+// ─── Launcher Window ────────────────────────────────────────────────
+
 function createWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  const { width: screenWidth, height: screenHeight } =
+    primaryDisplay.workAreaSize;
 
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
@@ -56,11 +78,7 @@ function createWindow(): void {
     app.dock.hide();
   }
 
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173');
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
-  }
+  loadWindowUrl(mainWindow, '/');
 
   mainWindow.on('blur', () => {
     if (isVisible) {
@@ -73,15 +91,17 @@ function createWindow(): void {
   });
 }
 
-/**
- * Show the overlay window
- */
 function showWindow(): void {
   if (!mainWindow) return;
 
   const cursorPoint = screen.getCursorScreenPoint();
   const currentDisplay = screen.getDisplayNearestPoint(cursorPoint);
-  const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = currentDisplay.workArea;
+  const {
+    x: displayX,
+    y: displayY,
+    width: displayWidth,
+    height: displayHeight,
+  } = currentDisplay.workArea;
 
   const windowX = displayX + Math.floor((displayWidth - WINDOW_WIDTH) / 2);
   const windowY = displayY + Math.floor(displayHeight * 0.2);
@@ -101,19 +121,12 @@ function showWindow(): void {
   mainWindow.webContents.send('window-shown');
 }
 
-/**
- * Hide the overlay window
- */
 function hideWindow(): void {
   if (!mainWindow) return;
-
   mainWindow.hide();
   isVisible = false;
 }
 
-/**
- * Toggle window visibility
- */
 function toggleWindow(): void {
   if (!mainWindow) {
     createWindow();
@@ -130,39 +143,231 @@ function toggleWindow(): void {
   }
 }
 
-/**
- * App initialization
- */
-app.whenReady().then(() => {
-  // Get available commands (async, checks which apps exist)
-  ipcMain.handle('get-commands', async () => {
-    return await getAvailableCommands();
+// ─── Settings Window ────────────────────────────────────────────────
+
+function openSettingsWindow(): void {
+  if (settingsWindow) {
+    settingsWindow.show();
+    settingsWindow.focus();
+    return;
+  }
+
+  if (process.platform === 'darwin') {
+    app.dock.show();
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 900,
+    height: 600,
+    minWidth: 700,
+    minHeight: 500,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
+    backgroundColor: '#1a1a1c',
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
   });
 
-  ipcMain.handle('execute-command', async (_event: any, commandId: string) => {
-    const success = await executeCommand(commandId);
-    if (success) {
-      setTimeout(() => hideWindow(), 50);
-    }
-    return success;
+  loadWindowUrl(settingsWindow, '/settings');
+
+  settingsWindow.once('ready-to-show', () => {
+    settingsWindow?.show();
   });
+
+  settingsWindow.on('closed', () => {
+    settingsWindow = null;
+    // Hide dock again when settings is closed
+    if (process.platform === 'darwin') {
+      app.dock.hide();
+    }
+  });
+}
+
+// ─── Shortcut Management ────────────────────────────────────────────
+
+function registerGlobalShortcut(shortcut: string): boolean {
+  // Unregister the previous global shortcut
+  if (currentShortcut) {
+    try {
+      globalShortcut.unregister(currentShortcut);
+    } catch {}
+  }
+
+  try {
+    const success = globalShortcut.register(shortcut, () => {
+      toggleWindow();
+    });
+    if (success) {
+      currentShortcut = shortcut;
+      console.log(`Global shortcut registered: ${shortcut}`);
+      return true;
+    } else {
+      console.error(`Failed to register shortcut: ${shortcut}`);
+      // Re-register old one
+      if (currentShortcut && currentShortcut !== shortcut) {
+        try {
+          globalShortcut.register(currentShortcut, () => toggleWindow());
+        } catch {}
+      }
+      return false;
+    }
+  } catch (e) {
+    console.error(`Error registering shortcut: ${e}`);
+    return false;
+  }
+}
+
+function registerCommandHotkeys(hotkeys: Record<string, string>): void {
+  // Unregister all existing command hotkeys
+  for (const [shortcut] of registeredHotkeys) {
+    try {
+      globalShortcut.unregister(shortcut);
+    } catch {}
+  }
+  registeredHotkeys.clear();
+
+  for (const [commandId, shortcut] of Object.entries(hotkeys)) {
+    if (!shortcut) continue;
+    try {
+      const success = globalShortcut.register(shortcut, async () => {
+        await executeCommand(commandId);
+      });
+      if (success) {
+        registeredHotkeys.set(shortcut, commandId);
+      }
+    } catch {}
+  }
+}
+
+// ─── App Initialization ─────────────────────────────────────────────
+
+app.whenReady().then(() => {
+  const settings = loadSettings();
+
+  // ─── IPC: Launcher ──────────────────────────────────────────────
+
+  ipcMain.handle('get-commands', async () => {
+    const s = loadSettings();
+    const commands = await getAvailableCommands();
+    return commands.filter((c) => !s.disabledCommands.includes(c.id));
+  });
+
+  ipcMain.handle(
+    'execute-command',
+    async (_event: any, commandId: string) => {
+      if (commandId === 'system-open-settings') {
+        openSettingsWindow();
+        hideWindow();
+        return true;
+      }
+      const success = await executeCommand(commandId);
+      if (success) {
+        setTimeout(() => hideWindow(), 50);
+      }
+      return success;
+    }
+  );
 
   ipcMain.handle('hide-window', () => {
     hideWindow();
   });
 
-  createWindow();
+  // ─── IPC: Settings ──────────────────────────────────────────────
 
-  const registered = globalShortcut.register(GLOBAL_SHORTCUT, () => {
-    toggleWindow();
+  ipcMain.handle('get-settings', () => {
+    return loadSettings();
   });
 
-  if (!registered) {
-    console.error(`Failed to register global shortcut: ${GLOBAL_SHORTCUT}`);
-    console.error('Note: Cmd+Space may conflict with Spotlight. Try changing the shortcut.');
-  } else {
-    console.log(`Global shortcut registered: ${GLOBAL_SHORTCUT}`);
-  }
+  ipcMain.handle(
+    'save-settings',
+    (_event: any, patch: Partial<AppSettings>) => {
+      return saveSettings(patch);
+    }
+  );
+
+  ipcMain.handle('get-all-commands', async () => {
+    // Return ALL commands (ignoring disabled filter) for the settings page
+    return await getAvailableCommands();
+  });
+
+  ipcMain.handle(
+    'update-global-shortcut',
+    (_event: any, newShortcut: string) => {
+      const success = registerGlobalShortcut(newShortcut);
+      if (success) {
+        saveSettings({ globalShortcut: newShortcut });
+      }
+      return success;
+    }
+  );
+
+  ipcMain.handle(
+    'update-command-hotkey',
+    async (_event: any, commandId: string, hotkey: string) => {
+      const s = loadSettings();
+      const hotkeys = { ...s.commandHotkeys };
+
+      // Unregister old hotkey for this command
+      const oldHotkey = hotkeys[commandId];
+      if (oldHotkey) {
+        try {
+          globalShortcut.unregister(oldHotkey);
+          registeredHotkeys.delete(oldHotkey);
+        } catch {}
+      }
+
+      if (hotkey) {
+        hotkeys[commandId] = hotkey;
+        // Register the new one
+        try {
+          const success = globalShortcut.register(hotkey, async () => {
+            await executeCommand(commandId);
+          });
+          if (success) {
+            registeredHotkeys.set(hotkey, commandId);
+          }
+        } catch {}
+      } else {
+        delete hotkeys[commandId];
+      }
+
+      saveSettings({ commandHotkeys: hotkeys });
+      return true;
+    }
+  );
+
+  ipcMain.handle(
+    'toggle-command-enabled',
+    (_event: any, commandId: string, enabled: boolean) => {
+      const s = loadSettings();
+      let disabled = [...s.disabledCommands];
+
+      if (enabled) {
+        disabled = disabled.filter((id) => id !== commandId);
+      } else {
+        if (!disabled.includes(commandId)) {
+          disabled.push(commandId);
+        }
+      }
+
+      saveSettings({ disabledCommands: disabled });
+      return true;
+    }
+  );
+
+  ipcMain.handle('open-settings', () => {
+    openSettingsWindow();
+  });
+
+  // ─── Window + Shortcuts ─────────────────────────────────────────
+
+  createWindow();
+  registerGlobalShortcut(settings.globalShortcut);
+  registerCommandHotkeys(settings.commandHotkeys);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

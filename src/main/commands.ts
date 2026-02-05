@@ -614,8 +614,14 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
 
   const systemCommands: CommandInfo[] = [
     {
+      id: 'system-open-settings',
+      title: 'SuperCommand Settings',
+      keywords: ['settings', 'preferences', 'config', 'configuration', 'supercommand'],
+      category: 'system',
+    },
+    {
       id: 'system-quit-launcher',
-      title: 'Quit Launcher',
+      title: 'Quit SuperCommand',
       keywords: ['exit', 'close', 'quit', 'stop'],
       category: 'system',
     },

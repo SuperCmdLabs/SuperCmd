@@ -1,7 +1,7 @@
 {
-  "name": "launcher",
+  "name": "supercommand",
   "version": "1.0.0",
-  "description": "Raycast-like launcher for macOS",
+  "description": "SuperCommand — A Raycast-like launcher for macOS",
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "npm run build:main && concurrently \"npm run watch:main\" \"npm run dev:renderer\" \"npm run start:electron\"",
@@ -39,8 +39,8 @@
     "react-dom": "^18.2.0"
   },
   "build": {
-    "appId": "com.launcher.app",
-    "productName": "Launcher",
+    "appId": "com.supercommand.app",
+    "productName": "SuperCommand",
     "files": [
       "dist/**/*",
       "package.json"
