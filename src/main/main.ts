@@ -73,20 +73,27 @@ function createWindow(): void {
     height: WINDOW_HEIGHT,
     x: Math.floor((screenWidth - WINDOW_WIDTH) / 2),
     y: Math.floor(screenHeight * 0.2),
-    frame: false,
-    transparent: true,
-    hasShadow: false,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: false,
+    hasShadow: true,
     resizable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
     backgroundColor: '#00000000',
+    vibrancy: 'fullscreen-ui',
+    visualEffectState: 'active',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+
+  // Hide traffic light buttons on macOS
+  if (process.platform === 'darwin') {
+    mainWindow.setWindowButtonVisibility(false);
+  }
 
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 

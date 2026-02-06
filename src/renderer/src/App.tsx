@@ -242,7 +242,7 @@ const App: React.FC = () => {
   if (extensionView) {
     return (
       <div className="w-full h-full">
-        <div className="glass-effect rounded-2xl shadow-2xl overflow-hidden h-full flex flex-col">
+        <div className="glass-effect overflow-hidden h-full flex flex-col">
           <ExtensionView
             code={extensionView.code}
             title={extensionView.title}
@@ -271,7 +271,7 @@ const App: React.FC = () => {
   if (showClipboardManager) {
     return (
       <div className="w-full h-full">
-        <div className="glass-effect rounded-2xl shadow-2xl overflow-hidden h-full flex flex-col">
+        <div className="glass-effect overflow-hidden h-full flex flex-col">
           <ClipboardManager
             onClose={() => {
               setShowClipboardManager(false);
@@ -288,7 +288,7 @@ const App: React.FC = () => {
   // ─── Launcher mode ──────────────────────────────────────────────
   return (
     <div className="w-full h-full">
-      <div className="glass-effect rounded-2xl shadow-2xl overflow-hidden h-full flex flex-col">
+      <div className="glass-effect overflow-hidden h-full flex flex-col">
         {/* Search header - transparent background */}
         <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06]">
           <input
