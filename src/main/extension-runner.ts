@@ -214,11 +214,20 @@ export async function buildAllCommands(extName: string): Promise<number> {
         platform: 'node',
         outfile: outFile,
         external: [
+          // React — provided by the renderer at runtime
           'react',
           'react-dom',
+          'react-dom/*',
           'react/jsx-runtime',
+          'react/jsx-dev-runtime',
+          // Raycast — provided by our shim
           '@raycast/api',
           '@raycast/utils',
+          // Native C++ addons — cannot be bundled, we stub them at runtime
+          're2',
+          'better-sqlite3',
+          'fsevents',
+          // Node.js built-ins — stubbed at runtime in the renderer
           ...nodeBuiltins,
         ],
         nodePaths: fs.existsSync(extNodeModules) ? [extNodeModules] : [],
