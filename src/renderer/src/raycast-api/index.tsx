@@ -1341,7 +1341,8 @@ function matchesShortcut(e: React.KeyboardEvent | KeyboardEvent, shortcut?: { mo
   if (e.key.toLowerCase() !== shortcut.key.toLowerCase()) return false;
   const mods = shortcut.modifiers || [];
   if (mods.includes('cmd') !== e.metaKey) return false;
-  if (mods.includes('opt') !== e.altKey) return false;
+  // Handle both 'opt' and 'option' (Raycast uses both forms)
+  if ((mods.includes('opt') || mods.includes('option') || mods.includes('alt')) !== e.altKey) return false;
   if (mods.includes('shift') !== e.shiftKey) return false;
   if (mods.includes('ctrl') !== e.ctrlKey) return false;
   return true;
@@ -1486,18 +1487,36 @@ function ListComponent({
   // at the window level in the capture phase, BEFORE the browser or
   // Electron can intercept them. React's onKeyDown on a div sometimes
   // misses modifier-key combos due to native handling.
+  //
+  // We use refs for the values so the handler closure doesn't go stale
+  // and we don't need to re-register the listener on every action change.
+  const selectedActionsRef = useRef(selectedActions);
+  selectedActionsRef.current = selectedActions;
+  const showActionsRef = useRef(showActions);
+  showActionsRef.current = showActions;
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const actions = selectedActionsRef.current;
+      const panelOpen = showActionsRef.current;
+
       // Only process when the action panel is NOT open
-      if (showActions) return;
-      // Skip pure navigation/control keys and ⌘K (handled by React handler)
+      if (panelOpen) return;
+      // Skip ⌘K (handled by React handler for action panel toggle)
       if (e.key === 'k' && e.metaKey) return;
       // Only check shortcuts when a modifier key is active (not plain typing)
       if (!e.metaKey && !e.altKey && !e.ctrlKey) return;
       if (e.repeat) return;
 
-      for (const action of selectedActions) {
+      // Debug: log modifier key events and available shortcuts
+      const shortcuts = actions.filter(a => a.shortcut).map(a =>
+        `${a.title}[${a.shortcut!.modifiers?.join('+')}+${a.shortcut!.key}]`
+      );
+      console.log(`[Shortcut] key=${e.key} meta=${e.metaKey} alt=${e.altKey} shift=${e.shiftKey} | ${actions.length} actions, shortcuts: ${shortcuts.join(', ') || 'none'}`);
+
+      for (const action of actions) {
         if (action.shortcut && matchesShortcut(e, action.shortcut)) {
+          console.log(`[Shortcut] MATCH → ${action.title}`);
           e.preventDefault();
           e.stopPropagation();
           action.execute();
@@ -1507,7 +1526,7 @@ function ListComponent({
     };
     window.addEventListener('keydown', handler, true); // capture phase
     return () => window.removeEventListener('keydown', handler, true);
-  }, [selectedActions, showActions]);
+  }, []); // stable — reads from refs
 
   // ── Selection stabilization ─────────────────────────────────────
   // When items change (e.g. mark complete moves an item between sections),
@@ -1903,26 +1922,28 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
         </div>
 
         {/* ── Footer ──────────────────────────────────────────── */}
-        <div className="flex items-center px-3 py-1.5 border-t border-white/[0.06]" style={{ background: 'rgba(20,20,24,0.8)' }}>
-          <div className="flex items-center gap-2 text-white/30 text-[11px] flex-1 min-w-0">
-            <span className="truncate">{navigationTitle || _extensionContext.extensionName || 'Extension'}</span>
-          </div>
-          {primaryAction && (
-            <div className="flex items-center gap-1.5 mr-3">
-              <span className="text-white/50 text-[11px]">{primaryAction.title}</span>
-              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">⌘</kbd>
-              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">↩</kbd>
+        {formActions.length > 0 && (
+          <div className="flex items-center px-3 py-1.5 border-t border-white/[0.06]" style={{ background: 'rgba(20,20,24,0.8)' }}>
+            <div className="flex items-center gap-2 text-white/30 text-[11px] flex-1 min-w-0">
+              <span className="truncate">{navigationTitle || _extensionContext.extensionName || 'Extension'}</span>
             </div>
-          )}
-          <button
-            onClick={() => setShowActions(true)}
-            className="flex items-center gap-1.5 text-white/40 hover:text-white/60 transition-colors"
-          >
-            <span className="text-[11px]">Actions</span>
-            <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">⌘</kbd>
-            <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">K</kbd>
-          </button>
-        </div>
+            {primaryAction && (
+              <div className="flex items-center gap-1.5 mr-3">
+                <span className="text-white/50 text-[11px]">{primaryAction.title}</span>
+                <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">⌘</kbd>
+                <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">↩</kbd>
+              </div>
+            )}
+            <button
+              onClick={() => setShowActions(true)}
+              className="flex items-center gap-1.5 text-white/40 hover:text-white/60 transition-colors"
+            >
+              <span className="text-[11px]">Actions</span>
+              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">⌘</kbd>
+              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">K</kbd>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Action Panel Overlay ──────────────────────────────── */}

@@ -23,7 +23,7 @@ import {
 import { getExtensionBundle, buildAllCommands } from './extension-runner';
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu } = electron;
 
 // ─── Window Configuration ───────────────────────────────────────────
 
@@ -278,8 +278,41 @@ async function rebuildExtensions() {
 }
 
 app.whenReady().then(async () => {
+  // Set a minimal application menu that only keeps essential Edit commands
+  // (copy/paste/undo). Without this, Electron's default menu can intercept
+  // keyboard shortcuts (⌘D, ⌘T, etc.) at the native level before the
+  // renderer's JavaScript keydown handlers see them.
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: app.name,
+        submenu: [
+          { role: 'about' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      },
+      {
+        label: 'Edit',
+        submenu: [
+          { role: 'undo' },
+          { role: 'redo' },
+          { type: 'separator' },
+          { role: 'cut' },
+          { role: 'copy' },
+          { role: 'paste' },
+          { role: 'selectAll' },
+        ],
+      },
+    ])
+  );
+
   const settings = loadSettings();
-  
+
   // Rebuild extensions in background
   rebuildExtensions().catch(console.error);
 
