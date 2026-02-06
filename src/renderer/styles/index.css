@@ -21,7 +21,7 @@ body {
 
 /* Glass effect background - enhanced glassy look */
 .glass-effect {
-  background: rgba(24, 24, 28, 0.85);
+  background: rgba(18, 18, 22, 0.85);
   backdrop-filter: saturate(200%) blur(100px);
   -webkit-backdrop-filter: saturate(200%) blur(100px);
   border: 1px solid rgba(255, 255, 255, 0.12);

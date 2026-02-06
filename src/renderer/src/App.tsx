@@ -381,7 +381,7 @@ const App: React.FC = () => {
         
         {/* Footer with count - same background as main screen */}
         {!isLoading && (
-          <div className="px-4 py-3.5 border-t border-white/[0.06] text-white/40 text-xs font-medium" style={{ background: 'rgba(18,18,22,0.85)' }}>
+          <div className="px-4 py-3.5 border-t border-white/[0.06] text-white/40 text-xs font-medium" style={{ background: 'rgba(28,28,32,0.90)' }}>
             {filteredCommands.length} results
           </div>
         )}
