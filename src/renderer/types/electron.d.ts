@@ -44,6 +44,22 @@ export interface CatalogEntry {
   commands: { name: string; title: string; description: string }[];
 }
 
+export interface ClipboardItem {
+  id: string;
+  type: 'text' | 'image' | 'url' | 'file';
+  content: string;
+  preview?: string;
+  timestamp: number;
+  source?: string;
+  metadata?: {
+    width?: number;
+    height?: number;
+    size?: number;
+    format?: string;
+    filename?: string;
+  };
+}
+
 export interface ElectronAPI {
   // Launcher
   getCommands: () => Promise<CommandInfo[]>;
@@ -93,6 +109,14 @@ export interface ElectronAPI {
   fileExists: (filePath: string) => Promise<boolean>;
   readDir: (dirPath: string) => Promise<string[]>;
   getAppearance: () => Promise<'dark' | 'light'>;
+
+  // Clipboard Manager
+  clipboardGetHistory: () => Promise<ClipboardItem[]>;
+  clipboardSearch: (query: string) => Promise<ClipboardItem[]>;
+  clipboardClearHistory: () => Promise<void>;
+  clipboardDeleteItem: (id: string) => Promise<boolean>;
+  clipboardCopyItem: (id: string) => Promise<boolean>;
+  clipboardSetEnabled: (enabled: boolean) => Promise<void>;
 }
 
 declare global {

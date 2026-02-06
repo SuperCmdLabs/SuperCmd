@@ -1243,7 +1243,7 @@ function ListItemRenderer({
   return (
     <div
       data-idx={dataIdx}
-      className={`mx-1 px-2.5 py-[5px] rounded-lg cursor-pointer transition-all ${
+      className={`mx-1 px-2.5 py-[6px] rounded-lg cursor-pointer transition-all ${
         isSelected ? 'bg-white/[0.08]' : 'hover:bg-white/[0.04]'
       }`}
       onClick={onActivate}
@@ -1256,7 +1256,7 @@ function ListItemRenderer({
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <span className="text-white/90 text-[13px] truncate block">{titleStr}</span>
+          <span className="text-white/90 text-sm truncate block">{titleStr}</span>
         </div>
         {subtitleStr && (
           <span className="text-white/30 text-xs flex-shrink-0 truncate max-w-[200px]">{subtitleStr}</span>
@@ -1271,10 +1271,10 @@ function ListItemRenderer({
           const dateStr = acc?.date ? new Date(acc.date).toLocaleDateString() : '';
 
           return (
-            <span key={i} className="text-[11px] flex-shrink-0 flex items-center gap-1" style={{ color: accTextColor || tagColor || 'rgba(255,255,255,0.25)' }}>
+            <span key={i} className="text-xs flex-shrink-0 flex items-center gap-1" style={{ color: accTextColor || tagColor || 'rgba(255,255,255,0.25)' }}>
               {acc?.icon && <span className="text-[10px]">{renderIcon(acc.icon, 'w-3 h-3')}</span>}
               {tagText ? (
-                <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: `${tagColor || 'rgba(255,255,255,0.1)'}22`, color: tagColor || 'rgba(255,255,255,0.5)' }}>{tagText}</span>
+                <span className="px-1.5 py-0.5 rounded text-[11px]" style={{ background: `${tagColor || 'rgba(255,255,255,0.1)'}22`, color: tagColor || 'rgba(255,255,255,0.5)' }}>{tagText}</span>
               ) : accText || dateStr || ''}
             </span>
           );
@@ -1638,7 +1638,7 @@ function ListComponent({
   // ── Render ─────────────────────────────────────────────────────
 
   const listContent = (
-    <div ref={listRef} className="flex-1 overflow-y-auto py-1" style={{ background: 'rgba(10,10,12,0.5)' }}>
+    <div ref={listRef} className="flex-1 overflow-y-auto py-1">
       {isLoading && filteredItems.length === 0 ? (
         <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
       ) : filteredItems.length === 0 ? (
@@ -1666,7 +1666,7 @@ function ListComponent({
   );
 
   const detailPanel = isShowingDetail && detailElement ? (
-    <div className="flex-1 border-l border-white/[0.06] overflow-y-auto" style={{ background: 'rgba(10,10,12,0.5)' }}>
+    <div className="flex-1 border-l border-white/[0.06] overflow-y-auto">
       <div className="p-4">{detailElement}</div>
     </div>
   ) : null;
@@ -1688,8 +1688,9 @@ function ListComponent({
       </div>
 
       <div className="flex flex-col h-full" onKeyDown={handleKeyDown}>
-        {/* ── Search bar ──────────────────────────────────────── */}
-        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06]">
+        {/* ── Search bar - transparent background ──────────────────────────────────────── */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
+          {/* Always show back button */}
           <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
           </button>
@@ -1717,24 +1718,24 @@ function ListComponent({
           listContent
         )}
 
-        {/* ── Footer ──────────────────────────────────────────── */}
-        <div className="flex items-center px-3 py-1.5 border-t border-white/[0.06]" style={{ background: 'rgba(20,20,24,0.8)' }}>
-          <div className="flex items-center gap-2 text-white/30 text-[11px] flex-1 min-w-0">
+        {/* ── Footer - same background as main screen ──────────────────────────────────────────── */}
+        <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(18,18,22,0.85)' }}>
+          <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
             <span className="truncate">{navigationTitle || _extensionContext.extensionName || 'Extension'}</span>
           </div>
           {primaryAction && (
-            <div className="flex items-center gap-1.5 mr-3">
-              <span className="text-white/50 text-[11px]">{primaryAction.title}</span>
-              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">↩</kbd>
+            <div className="flex items-center gap-2 mr-3">
+              <span className="text-white text-xs font-semibold">{primaryAction.title}</span>
+              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
             </div>
           )}
           <button
             onClick={() => setShowActions(true)}
-            className="flex items-center gap-1.5 text-white/40 hover:text-white/60 transition-colors"
+            className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
           >
-            <span className="text-[11px]">Actions</span>
-            <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">⌘</kbd>
-            <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">K</kbd>
+            <span className="text-xs font-medium">Actions</span>
+            <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
+            <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
           </button>
         </div>
       </div>
@@ -1775,7 +1776,7 @@ function DetailComponent({ markdown, isLoading, children, actions, metadata, nav
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-6" style={{ background: 'rgba(10,10,12,0.5)' }}>
+      <div className="flex-1 overflow-y-auto p-6">
         {isLoading ? (
           <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
         ) : (
@@ -1925,15 +1926,15 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
       )}
 
       <div className="flex flex-col h-full">
-        {/* ── Navigation bar ────────────────────────────────────── */}
-        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06]">
+        {/* ── Navigation bar - same padding as List/main search bar ── */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
           <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
           </button>
         </div>
 
         {/* ── Form content (horizontal layout) ──────────────────── */}
-        <div className="flex-1 overflow-y-auto py-6 px-4" style={{ background: 'rgba(10,10,12,0.5)' }}>
+        <div className="flex-1 overflow-y-auto py-6 px-4">
           {isLoading ? (
             <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
           ) : (
@@ -1943,26 +1944,26 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
           )}
         </div>
 
-        {/* ── Footer ──────────────────────────────────────────── */}
+        {/* ── Footer - same as List/main footer ────────────────── */}
         {formActions.length > 0 && (
-          <div className="flex items-center px-3 py-1.5 border-t border-white/[0.06]" style={{ background: 'rgba(20,20,24,0.8)' }}>
-            <div className="flex items-center gap-2 text-white/30 text-[11px] flex-1 min-w-0">
+          <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(18,18,22,0.85)' }}>
+            <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
               <span className="truncate">{navigationTitle || _extensionContext.extensionName || 'Extension'}</span>
             </div>
             {primaryAction && (
-              <div className="flex items-center gap-1.5 mr-3">
-                <span className="text-white/50 text-[11px]">{primaryAction.title}</span>
-                <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">⌘</kbd>
-                <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">↩</kbd>
+              <div className="flex items-center gap-2 mr-3">
+                <span className="text-white text-xs font-semibold">{primaryAction.title}</span>
+                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
+                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
               </div>
             )}
             <button
               onClick={() => setShowActions(true)}
-              className="flex items-center gap-1.5 text-white/40 hover:text-white/60 transition-colors"
+              className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
             >
-              <span className="text-[11px]">Actions</span>
-              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">⌘</kbd>
-              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/30 font-medium">K</kbd>
+              <span className="text-xs font-medium">Actions</span>
+              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
+              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
             </button>
           </div>
         )}
@@ -2167,7 +2168,7 @@ function GridComponent({ children, columns, inset, isLoading, searchBarPlacehold
           onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); pop(); } }}
           className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-base font-light" autoFocus />
       </div>
-      <div className="flex-1 overflow-y-auto p-2" style={{ background: 'rgba(10,10,12,0.5)' }}>
+      <div className="flex-1 overflow-y-auto p-2">
         {isLoading ? (
           <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
         ) : (

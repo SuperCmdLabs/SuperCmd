@@ -21,14 +21,24 @@ import {
   uninstallExtension,
 } from './extension-registry';
 import { getExtensionBundle, buildAllCommands } from './extension-runner';
+import {
+  startClipboardMonitor,
+  stopClipboardMonitor,
+  getClipboardHistory,
+  clearClipboardHistory,
+  deleteClipboardItem,
+  copyItemToClipboard,
+  searchClipboardHistory,
+  setClipboardMonitorEnabled,
+} from './clipboard-manager';
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu } = electron;
 
 // ─── Window Configuration ───────────────────────────────────────────
 
-const WINDOW_WIDTH = 680;
-const WINDOW_HEIGHT = 440;
+const WINDOW_WIDTH = 900;
+const WINDOW_HEIGHT = 650;
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
@@ -312,6 +322,9 @@ app.whenReady().then(async () => {
   );
 
   const settings = loadSettings();
+
+  // Start clipboard monitor
+  startClipboardMonitor();
 
   // Rebuild extensions in background
   rebuildExtensions().catch(console.error);
@@ -688,6 +701,32 @@ app.whenReady().then(async () => {
     }
   );
 
+  // ─── IPC: Clipboard Manager ─────────────────────────────────────
+
+  ipcMain.handle('clipboard-get-history', () => {
+    return getClipboardHistory();
+  });
+
+  ipcMain.handle('clipboard-search', (_event: any, query: string) => {
+    return searchClipboardHistory(query);
+  });
+
+  ipcMain.handle('clipboard-clear-history', () => {
+    clearClipboardHistory();
+  });
+
+  ipcMain.handle('clipboard-delete-item', (_event: any, id: string) => {
+    return deleteClipboardItem(id);
+  });
+
+  ipcMain.handle('clipboard-copy-item', (_event: any, id: string) => {
+    return copyItemToClipboard(id);
+  });
+
+  ipcMain.handle('clipboard-set-enabled', (_event: any, enabled: boolean) => {
+    setClipboardMonitorEnabled(enabled);
+  });
+
   // ─── Window + Shortcuts ─────────────────────────────────────────
 
   createWindow();
@@ -709,4 +748,5 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  stopClipboardMonitor();
 });

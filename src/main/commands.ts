@@ -615,6 +615,12 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
 
   const systemCommands: CommandInfo[] = [
     {
+      id: 'system-clipboard-manager',
+      title: 'Clipboard History',
+      keywords: ['clipboard', 'history', 'copy', 'paste', 'manager'],
+      category: 'system',
+    },
+    {
       id: 'system-open-settings',
       title: 'SuperCommand Settings',
       keywords: ['settings', 'preferences', 'config', 'configuration', 'supercommand'],

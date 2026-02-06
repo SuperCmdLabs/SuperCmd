@@ -97,4 +97,18 @@ contextBridge.exposeInMainWorld('electron', {
   // Get system appearance (dark/light)
   getAppearance: (): Promise<'dark' | 'light'> =>
     ipcRenderer.invoke('get-appearance'),
+
+  // ─── Clipboard Manager ────────────────────────────────────────────
+  clipboardGetHistory: (): Promise<any[]> =>
+    ipcRenderer.invoke('clipboard-get-history'),
+  clipboardSearch: (query: string): Promise<any[]> =>
+    ipcRenderer.invoke('clipboard-search', query),
+  clipboardClearHistory: (): Promise<void> =>
+    ipcRenderer.invoke('clipboard-clear-history'),
+  clipboardDeleteItem: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('clipboard-delete-item', id),
+  clipboardCopyItem: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('clipboard-copy-item', id),
+  clipboardSetEnabled: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke('clipboard-set-enabled', enabled),
 });

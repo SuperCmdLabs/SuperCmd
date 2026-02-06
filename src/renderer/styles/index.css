@@ -19,20 +19,20 @@ body {
   height: 100vh;
 }
 
-/* Glass effect background */
+/* Glass effect background - enhanced glassy look */
 .glass-effect {
-  background: rgba(15, 15, 17, 0.95);
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(24, 24, 28, 0.85);
+  backdrop-filter: saturate(200%) blur(100px);
+  -webkit-backdrop-filter: saturate(200%) blur(100px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    0 8px 40px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.10) inset;
 }
 
-/* List area background */
+/* List area background - transparent to show glass */
 .list-area {
-  background: rgba(10, 10, 12, 0.5);
+  background: transparent;
 }
 
 /* Command item styling */
