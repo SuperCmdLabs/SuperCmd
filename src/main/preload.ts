@@ -138,4 +138,13 @@ contextBridge.exposeInMainWorld('electron', {
   // ─── Native Helpers ─────────────────────────────────────────────
   nativePickColor: (): Promise<{ red: number; green: number; blue: number; alpha: number } | null> =>
     ipcRenderer.invoke('native-pick-color'),
+
+  // ─── Menu Bar (Tray) Extensions ────────────────────────────────
+  getMenuBarExtensions: (): Promise<any[]> =>
+    ipcRenderer.invoke('get-menubar-extensions'),
+  updateMenuBar: (data: any) =>
+    ipcRenderer.send('menubar-update', data),
+  onMenuBarItemClick: (callback: (data: { extId: string; itemId: string }) => void) => {
+    ipcRenderer.on('menubar-item-click', (_event: any, data: any) => callback(data));
+  },
 });

@@ -14,7 +14,7 @@ import * as ReactDOM from 'react-dom';
 import * as JsxRuntime from 'react/jsx-runtime';
 import { ArrowLeft, AlertTriangle } from 'lucide-react';
 import * as RaycastAPI from './raycast-api';
-import { NavigationContext, setExtensionContext, setGlobalNavigation, ExtensionContextType } from './raycast-api';
+import { NavigationContext, setExtensionContext, setGlobalNavigation, ExtensionContextType, ExtensionInfoReactContext } from './raycast-api';
 
 // Also import @raycast/utils stubs from our shim
 import * as RaycastUtils from './raycast-api';
@@ -1668,14 +1668,23 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   const currentView =
     navStack.length > 0 ? navStack[navStack.length - 1] : null;
 
+  // Per-extension React context (safe for concurrent menu-bar extensions)
+  const extInfoValue = useMemo(() => ({
+    extId: `${extensionName}/${commandName}`,
+    assetsPath,
+    commandMode: (mode || 'view') as 'view' | 'no-view' | 'menu-bar',
+  }), [extensionName, commandName, assetsPath, mode]);
+
   return (
-    <NavigationContext.Provider value={navValue}>
-      <ExtensionErrorBoundary onError={(e) => setError(e.message)}>
-        {currentView || (
-          <ViewRenderer Component={ExtExport as React.FC} />
-        )}
-      </ExtensionErrorBoundary>
-    </NavigationContext.Provider>
+    <ExtensionInfoReactContext.Provider value={extInfoValue}>
+      <NavigationContext.Provider value={navValue}>
+        <ExtensionErrorBoundary onError={(e) => setError(e.message)}>
+          {currentView || (
+            <ViewRenderer Component={ExtExport as React.FC} />
+          )}
+        </ExtensionErrorBoundary>
+      </NavigationContext.Provider>
+    </ExtensionInfoReactContext.Provider>
   );
 };
 

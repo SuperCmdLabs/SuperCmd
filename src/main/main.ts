@@ -20,7 +20,7 @@ import {
   installExtension,
   uninstallExtension,
 } from './extension-registry';
-import { getExtensionBundle, buildAllCommands } from './extension-runner';
+import { getExtensionBundle, buildAllCommands, discoverInstalledExtensionCommands } from './extension-runner';
 import {
   startClipboardMonitor,
   stopClipboardMonitor,
@@ -33,7 +33,7 @@ import {
 } from './clipboard-manager';
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, protocol, net } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net } = electron;
 
 // ─── Window Configuration ───────────────────────────────────────────
 
@@ -45,6 +45,10 @@ let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let isVisible = false;
 let currentShortcut = '';
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
+
+// ─── Menu Bar (Tray) Management ─────────────────────────────────────
+
+const menuBarTrays = new Map<string, InstanceType<typeof Tray>>();
 
 // ─── URL Helpers ────────────────────────────────────────────────────
 
@@ -874,6 +878,98 @@ app.whenReady().then(async () => {
     });
   });
 
+  // ─── IPC: Menu Bar (Tray) Extensions ────────────────────────────
+
+  // Get all menu-bar extension bundles so the renderer can run them
+  ipcMain.handle('get-menubar-extensions', async () => {
+    const allCmds = discoverInstalledExtensionCommands();
+    const menuBarCmds = allCmds.filter((c) => c.mode === 'menu-bar');
+
+    const bundles: any[] = [];
+    for (const cmd of menuBarCmds) {
+      const bundle = getExtensionBundle(cmd.extName, cmd.cmdName);
+      if (bundle) {
+        bundles.push({
+          code: bundle.code,
+          title: bundle.title,
+          mode: bundle.mode,
+          extName: cmd.extName,
+          cmdName: cmd.cmdName,
+          extensionName: bundle.extensionName,
+          commandName: bundle.commandName,
+          assetsPath: bundle.assetsPath,
+          supportPath: bundle.supportPath,
+          owner: bundle.owner,
+          preferences: bundle.preferences,
+        });
+      }
+    }
+    return bundles;
+  });
+
+  // Update / create a menu-bar Tray when the renderer sends menu structure
+  ipcMain.on('menubar-update', (_event: any, data: any) => {
+    const { extId, iconPath, title, tooltip, items } = data;
+
+    let tray = menuBarTrays.get(extId);
+    if (!tray) {
+      // Create tray icon
+      let icon;
+      if (iconPath && require('fs').existsSync(iconPath)) {
+        try {
+          icon = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 });
+          icon.setTemplateImage(true);
+        } catch {
+          icon = nativeImage.createEmpty();
+        }
+      } else {
+        // Create a small default dot icon
+        icon = nativeImage.createEmpty();
+      }
+      tray = new Tray(icon);
+      menuBarTrays.set(extId, tray);
+    }
+
+    if (title != null) tray.setTitle(title);
+    if (tooltip) tray.setToolTip(tooltip);
+
+    // Build native menu from serialized items
+    const menuTemplate = buildMenuBarTemplate(items, extId);
+    const menu = Menu.buildFromTemplate(menuTemplate);
+    tray.setContextMenu(menu);
+  });
+
+  // Route native menu clicks back to the renderer
+  function buildMenuBarTemplate(items: any[], extId: string): any[] {
+    const template: any[] = [];
+    for (const item of items) {
+      switch (item.type) {
+        case 'separator':
+          template.push({ type: 'separator' as const });
+          break;
+        case 'label':
+          template.push({ label: item.title || '', enabled: false });
+          break;
+        case 'submenu':
+          template.push({
+            label: item.title || '',
+            submenu: buildMenuBarTemplate(item.children || [], extId),
+          });
+          break;
+        case 'item':
+        default:
+          template.push({
+            label: item.title || '',
+            click: () => {
+              mainWindow?.webContents.send('menubar-item-click', { extId, itemId: item.id });
+            },
+          });
+          break;
+      }
+    }
+    return template;
+  }
+
   // ─── Window + Shortcuts ─────────────────────────────────────────
 
   createWindow();
@@ -896,4 +992,9 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   stopClipboardMonitor();
+  // Clean up trays
+  for (const [, tray] of menuBarTrays) {
+    tray.destroy();
+  }
+  menuBarTrays.clear();
 });

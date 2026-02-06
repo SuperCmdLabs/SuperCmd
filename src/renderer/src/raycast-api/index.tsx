@@ -70,6 +70,17 @@ export function getExtensionContext(): ExtensionContextType {
   return _extensionContext;
 }
 
+// ─── Per-Extension React Context (for concurrent extensions like menu-bar) ──
+// The global _extensionContext is a singleton and races when multiple
+// extensions render simultaneously. This React context lets each extension
+// subtree see its own info.
+
+export const ExtensionInfoReactContext = createContext<{
+  extId: string;
+  assetsPath: string;
+  commandMode: 'view' | 'no-view' | 'menu-bar';
+}>({ extId: '', assetsPath: '', commandMode: 'view' });
+
 // =====================================================================
 // ─── Navigation Context ─────────────────────────────────────────────
 // =====================================================================
@@ -2808,26 +2819,262 @@ export const Grid = Object.assign(GridComponent, {
 Grid.Dropdown = ListDropdown;
 
 // =====================================================================
-// ─── MenuBarExtra ───────────────────────────────────────────────────
+// ─── MenuBarExtra (Native macOS Tray Integration) ───────────────────
 // =====================================================================
+//
+// When commandMode === 'menu-bar', this component:
+//   1. Collects all child Item/Section/Separator registrations
+//   2. Sends the serialized menu structure to the main process via IPC
+//   3. Main process creates/updates a native macOS Tray with a native Menu
+//   4. Native menu clicks are routed back here to fire onAction callbacks
+//
+// When commandMode !== 'menu-bar' (fallback), it renders in-window.
 
-function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: any) {
-  return <div className="flex flex-col h-full p-2">{children}</div>;
+// ── Registration types ───────────────────────────────────────────────
+
+interface MBItemRegistration {
+  id: string;
+  type: 'item' | 'separator';
+  title?: string;
+  icon?: any;
+  tooltip?: string;
+  onAction?: () => void;
+  sectionId?: string;
+  order: number;
 }
 
-function MenuBarExtraItem({ title, icon, onAction, shortcut, tooltip }: any) {
+interface MBRegistryAPI {
+  register: (item: MBItemRegistration) => void;
+  unregister: (id: string) => void;
+}
+
+const MBRegistryContext = createContext<MBRegistryAPI | null>(null);
+const MBSectionIdContext = createContext<string | undefined>(undefined);
+
+// ── Global action map & click listener ──────────────────────────────
+
+const _mbActions = new Map<string, Map<string, () => void>>();
+let _mbClickListenerInit = false;
+
+function initMBClickListener() {
+  if (_mbClickListenerInit) return;
+  _mbClickListenerInit = true;
+  const electron = (window as any).electron;
+  electron?.onMenuBarItemClick?.((data: { extId: string; itemId: string }) => {
+    _mbActions.get(data.extId)?.get(data.itemId)?.();
+  });
+}
+
+let _mbOrderCounter = 0;
+let _mbSectionOrderCounter = 0;
+
+// ── MenuBarExtra (parent) ───────────────────────────────────────────
+
+function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: any) {
+  // Use React context for per-extension info (safe with concurrent extensions)
+  const extInfo = useContext(ExtensionInfoReactContext);
+  const extId = extInfo.extId || `${getExtensionContext().extensionName}/${getExtensionContext().commandName}`;
+  const assetsPath = extInfo.assetsPath || getExtensionContext().assetsPath;
+  const isMenuBar = (extInfo.commandMode || getExtensionContext().commandMode) === 'menu-bar';
+
+  // Registry for child items
+  const registryRef = useRef(new Map<string, MBItemRegistration>());
+  const [registryVersion, setRegistryVersion] = useState(0);
+  const pendingRef = useRef(false);
+
+  // Reset order counters on each render
+  _mbOrderCounter = 0;
+  _mbSectionOrderCounter = 0;
+
+  useEffect(() => {
+    if (isMenuBar) initMBClickListener();
+  }, [isMenuBar]);
+
+  const registryAPI = useMemo<MBRegistryAPI>(() => ({
+    register: (item: MBItemRegistration) => {
+      registryRef.current.set(item.id, item);
+      if (!pendingRef.current) {
+        pendingRef.current = true;
+        queueMicrotask(() => {
+          pendingRef.current = false;
+          setRegistryVersion((v) => v + 1);
+        });
+      }
+    },
+    unregister: (id: string) => {
+      registryRef.current.delete(id);
+      if (!pendingRef.current) {
+        pendingRef.current = true;
+        queueMicrotask(() => {
+          pendingRef.current = false;
+          setRegistryVersion((v) => v + 1);
+        });
+      }
+    },
+  }), []);
+
+  // Send menu structure to main process whenever registry changes
+  useEffect(() => {
+    if (!isMenuBar) return;
+
+    const allItems = Array.from(registryRef.current.values())
+      .sort((a, b) => a.order - b.order);
+
+    // Build serialized menu with section grouping
+    const actions = new Map<string, () => void>();
+    const serialized: any[] = [];
+    let prevSectionId: string | undefined | null = null;
+
+    for (const item of allItems) {
+      // Insert separator between sections
+      if (item.sectionId !== prevSectionId && prevSectionId != null) {
+        serialized.push({ type: 'separator' });
+      }
+      prevSectionId = item.sectionId;
+
+      if (item.type === 'separator') {
+        serialized.push({ type: 'separator' });
+      } else {
+        if (item.onAction) actions.set(item.id, item.onAction);
+        serialized.push({
+          type: 'item',
+          id: item.id,
+          title: item.title || '',
+          tooltip: item.tooltip,
+        });
+      }
+    }
+
+    _mbActions.set(extId, actions);
+
+    // Resolve icon path from extension assets
+    let iconPath: string | undefined;
+    if (icon && typeof icon === 'object') {
+      const src = icon.source
+        ? (typeof icon.source === 'object' ? (icon.source.dark || icon.source.light) : icon.source)
+        : (icon.dark || icon.light);
+      if (src && assetsPath) {
+        iconPath = `${assetsPath}/${src}`;
+      }
+    } else if (typeof icon === 'string' && assetsPath && /\.\w+$/.test(icon)) {
+      iconPath = `${assetsPath}/${icon}`;
+    }
+
+    (window as any).electron?.updateMenuBar?.({
+      extId,
+      iconPath,
+      title: title || '',
+      tooltip: tooltip || '',
+      items: serialized,
+    });
+  }, [registryVersion, icon, title, tooltip, extId, assetsPath, isMenuBar]);
+
+  // Cleanup on unmount
+  useEffect(() => () => { _mbActions.delete(extId); }, [extId]);
+
+  if (isMenuBar) {
+    // Render children in a hidden div so React hooks in items execute,
+    // but nothing is visible. Items register via context.
+    return (
+      <MBRegistryContext.Provider value={registryAPI}>
+        <div style={{ display: 'none' }}>{children}</div>
+      </MBRegistryContext.Provider>
+    );
+  }
+
+  // Fallback: render in the SuperCommand overlay window
   return (
-    <button onClick={onAction} className="w-full text-left px-3 py-1.5 text-sm text-white/80 hover:bg-white/[0.06] rounded transition-colors">
-      {title}
-    </button>
+    <MBRegistryContext.Provider value={registryAPI}>
+      <div className="flex flex-col h-full p-2">{children}</div>
+    </MBRegistryContext.Provider>
   );
 }
 
+// ── MenuBarExtra.Item ───────────────────────────────────────────────
+
+function MenuBarExtraItemComponent({ title, icon, onAction, shortcut, tooltip }: any) {
+  const registry = useContext(MBRegistryContext);
+  const sectionId = useContext(MBSectionIdContext);
+  const stableId = useRef(`__mbi_${++_mbOrderCounter}`).current;
+  const order = useRef(++_mbOrderCounter).current;
+
+  useEffect(() => {
+    if (registry) {
+      registry.register({
+        id: stableId,
+        type: 'item',
+        title,
+        icon,
+        tooltip,
+        onAction,
+        sectionId,
+        order,
+      });
+      return () => registry.unregister(stableId);
+    }
+  }, [title, icon, tooltip, onAction, registry, stableId, order, sectionId]);
+
+  // In non-menu-bar mode, render a clickable row
+  if (!registry) {
+    return (
+      <button onClick={onAction} className="w-full text-left px-3 py-1.5 text-sm text-white/80 hover:bg-white/[0.06] rounded transition-colors">
+        {title}
+      </button>
+    );
+  }
+
+  return null; // menu-bar mode: items are invisible, sent via IPC
+}
+
+// ── MenuBarExtra.Section ────────────────────────────────────────────
+
+function MenuBarExtraSectionComponent({ children, title }: any) {
+  const stableId = useRef(`__mbs_${++_mbSectionOrderCounter}`).current;
+
+  return (
+    <MBSectionIdContext.Provider value={stableId}>
+      {children}
+    </MBSectionIdContext.Provider>
+  );
+}
+
+// ── MenuBarExtra.Separator ──────────────────────────────────────────
+
+function MenuBarExtraSeparatorComponent() {
+  const registry = useContext(MBRegistryContext);
+  const sectionId = useContext(MBSectionIdContext);
+  const stableId = useRef(`__mbsep_${++_mbOrderCounter}`).current;
+  const order = useRef(++_mbOrderCounter).current;
+
+  useEffect(() => {
+    if (registry) {
+      registry.register({
+        id: stableId,
+        type: 'separator',
+        sectionId,
+        order,
+      });
+      return () => registry.unregister(stableId);
+    }
+  }, [registry, stableId, order, sectionId]);
+
+  if (!registry) return <hr className="border-white/[0.06] my-1" />;
+  return null;
+}
+
+// ── MenuBarExtra.Submenu (renders children as flat items for now) ──
+
+function MenuBarExtraSubmenuComponent({ children, title, icon }: any) {
+  // For native menus, submenus would need nested structure.
+  // For v1, just render children flat (they register as items).
+  return <>{children}</>;
+}
+
 export const MenuBarExtra = Object.assign(MenuBarExtraComponent, {
-  Item: MenuBarExtraItem,
-  Section: ({ children, title }: any) => <div className="mb-1">{title && <div className="px-3 py-1 text-[11px] text-white/25">{title}</div>}{children}</div>,
-  Separator: () => <hr className="border-white/[0.06] my-1" />,
-  Submenu: ({ children, title, icon }: any) => <>{children}</>,
+  Item: MenuBarExtraItemComponent,
+  Section: MenuBarExtraSectionComponent,
+  Separator: MenuBarExtraSeparatorComponent,
+  Submenu: MenuBarExtraSubmenuComponent,
 });
 
 // =====================================================================

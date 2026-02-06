@@ -83,6 +83,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [extensionView, setExtensionView] = useState<ExtensionBundle | null>(null);
   const [showClipboardManager, setShowClipboardManager] = useState(false);
+  const [menuBarExtensions, setMenuBarExtensions] = useState<ExtensionBundle[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -134,6 +135,18 @@ const App: React.FC = () => {
 
   useEffect(() => {
     inputRef.current?.focus();
+  }, []);
+
+  // Load and run menu-bar extensions in the background
+  useEffect(() => {
+    (window as any).electron?.getMenuBarExtensions?.().then((exts: any[]) => {
+      if (exts && exts.length > 0) {
+        console.log(`[MenuBar] Loading ${exts.length} menu-bar extension(s)`);
+        setMenuBarExtensions(exts);
+      }
+    }).catch((err: any) => {
+      console.error('[MenuBar] Failed to load menu-bar extensions:', err);
+    });
   }, []);
 
   const filteredCommands = filterCommands(commands, searchQuery);
@@ -238,55 +251,86 @@ const App: React.FC = () => {
     }
   };
 
+  // ─── Hidden menu-bar extension runners (always mounted) ────────────
+  // These run "invisibly" so that menu-bar extensions produce native Tray
+  // menus via IPC even when the main window is hidden.
+  const menuBarRunner = menuBarExtensions.length > 0 ? (
+    <div style={{ display: 'none', position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+      {menuBarExtensions.map((ext) => (
+        <ExtensionView
+          key={`menubar-${ext.extName}-${ext.cmdName}`}
+          code={ext.code}
+          title={ext.title}
+          mode="menu-bar"
+          extensionName={(ext as any).extensionName || ext.extName}
+          commandName={(ext as any).commandName || ext.cmdName}
+          assetsPath={(ext as any).assetsPath}
+          supportPath={(ext as any).supportPath}
+          owner={(ext as any).owner}
+          preferences={(ext as any).preferences}
+          onClose={() => {}}
+        />
+      ))}
+    </div>
+  ) : null;
+
   // ─── Extension view mode ──────────────────────────────────────────
   if (extensionView) {
     return (
-      <div className="w-full h-full">
-        <div className="glass-effect overflow-hidden h-full flex flex-col">
-          <ExtensionView
-            code={extensionView.code}
-            title={extensionView.title}
-            mode={extensionView.mode}
-            error={(extensionView as any).error}
-            extensionName={(extensionView as any).extensionName || extensionView.extName}
-            commandName={(extensionView as any).commandName || extensionView.cmdName}
-            assetsPath={(extensionView as any).assetsPath}
-            supportPath={(extensionView as any).supportPath}
-            owner={(extensionView as any).owner}
-            preferences={(extensionView as any).preferences}
-            onClose={() => {
-              setExtensionView(null);
-              localStorage.removeItem(LAST_EXT_KEY);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
+      <>
+        {menuBarRunner}
+        <div className="w-full h-full">
+          <div className="glass-effect overflow-hidden h-full flex flex-col">
+            <ExtensionView
+              code={extensionView.code}
+              title={extensionView.title}
+              mode={extensionView.mode}
+              error={(extensionView as any).error}
+              extensionName={(extensionView as any).extensionName || extensionView.extName}
+              commandName={(extensionView as any).commandName || extensionView.cmdName}
+              assetsPath={(extensionView as any).assetsPath}
+              supportPath={(extensionView as any).supportPath}
+              owner={(extensionView as any).owner}
+              preferences={(extensionView as any).preferences}
+              onClose={() => {
+                setExtensionView(null);
+                localStorage.removeItem(LAST_EXT_KEY);
+                setSearchQuery('');
+                setSelectedIndex(0);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+            />
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   // ─── Clipboard Manager mode ───────────────────────────────────────
   if (showClipboardManager) {
     return (
-      <div className="w-full h-full">
-        <div className="glass-effect overflow-hidden h-full flex flex-col">
-          <ClipboardManager
-            onClose={() => {
-              setShowClipboardManager(false);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
+      <>
+        {menuBarRunner}
+        <div className="w-full h-full">
+          <div className="glass-effect overflow-hidden h-full flex flex-col">
+            <ClipboardManager
+              onClose={() => {
+                setShowClipboardManager(false);
+                setSearchQuery('');
+                setSelectedIndex(0);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+            />
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   // ─── Launcher mode ──────────────────────────────────────────────
   return (
+    <>
+    {menuBarRunner}
     <div className="w-full h-full">
       <div className="glass-effect overflow-hidden h-full flex flex-col">
         {/* Search header - transparent background */}
@@ -387,6 +431,7 @@ const App: React.FC = () => {
         )}
       </div>
     </div>
+    </>
   );
 };
 
