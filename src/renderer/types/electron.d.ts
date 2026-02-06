@@ -110,6 +110,11 @@ export interface ElectronAPI {
   readDir: (dirPath: string) => Promise<string[]>;
   getAppearance: () => Promise<'dark' | 'light'>;
 
+  // Synchronous file operations (for extensions using readFileSync etc.)
+  readFileSync: (filePath: string) => { data: string | null; error: string | null };
+  fileExistsSync: (filePath: string) => boolean;
+  statSync: (filePath: string) => { exists: boolean; isDirectory: boolean; isFile: boolean; size: number };
+
   // Clipboard Manager
   clipboardGetHistory: () => Promise<ClipboardItem[]>;
   clipboardSearch: (query: string) => Promise<ClipboardItem[]>;

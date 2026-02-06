@@ -1763,6 +1763,192 @@ export const List = Object.assign(ListComponent, {
 // ─── Detail ─────────────────────────────────────────────────────────
 // =====================================================================
 
+// ─── Simple Markdown Renderer ──────────────────────────────────────
+// Handles images, headings, bold, italic, code blocks, links, lists.
+// Resolves relative image paths via the extension's assetsPath.
+
+function resolveMarkdownImageSrc(src: string): string {
+  // Strip Raycast-specific query params like ?&raycast-height=350
+  const cleanSrc = src.replace(/\?.*$/, '');
+  // If it's already an absolute URL or data URI, return as-is
+  if (/^(https?:\/\/|data:|file:\/\/|sc-asset:\/\/)/.test(cleanSrc)) return cleanSrc;
+  // Resolve relative to extension assets using custom sc-asset:// protocol
+  const ctx = getExtensionContext();
+  if (ctx.assetsPath) {
+    return `sc-asset://ext-asset${ctx.assetsPath}/${cleanSrc}`;
+  }
+  return cleanSrc;
+}
+
+function renderSimpleMarkdown(md: string): React.ReactNode[] {
+  const lines = md.split('\n');
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Code block
+    if (line.startsWith('```')) {
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing ```
+      elements.push(
+        <pre key={elements.length} className="bg-white/[0.06] rounded-lg p-3 my-2 overflow-x-auto">
+          <code className="text-xs text-white/70 font-mono">{codeLines.join('\n')}</code>
+        </pre>
+      );
+      continue;
+    }
+
+    // Heading
+    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const text = headingMatch[2];
+      const sizes = ['text-xl', 'text-lg', 'text-base', 'text-sm', 'text-sm', 'text-xs'];
+      elements.push(
+        <div key={elements.length} className={`${sizes[level - 1]} font-bold text-white/90 mt-3 mb-1`}>
+          {renderInlineMarkdown(text)}
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Image on its own line
+    const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)\s*$/);
+    if (imgMatch) {
+      const alt = imgMatch[1];
+      const src = resolveMarkdownImageSrc(imgMatch[2]);
+      elements.push(
+        <div key={elements.length} className="my-2 flex justify-center">
+          <img src={src} alt={alt} className="max-w-full rounded-lg" style={{ maxHeight: 350 }} />
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Unordered list item
+    if (/^[-*]\s+/.test(line)) {
+      const text = line.replace(/^[-*]\s+/, '');
+      elements.push(
+        <div key={elements.length} className="flex items-start gap-2 text-sm text-white/80 ml-2">
+          <span className="text-white/40 mt-0.5">•</span>
+          <span>{renderInlineMarkdown(text)}</span>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Ordered list item
+    const olMatch = line.match(/^(\d+)\.\s+(.*)$/);
+    if (olMatch) {
+      elements.push(
+        <div key={elements.length} className="flex items-start gap-2 text-sm text-white/80 ml-2">
+          <span className="text-white/40 mt-0.5">{olMatch[1]}.</span>
+          <span>{renderInlineMarkdown(olMatch[2])}</span>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      elements.push(<hr key={elements.length} className="border-white/[0.08] my-3" />);
+      i++;
+      continue;
+    }
+
+    // Empty line
+    if (line.trim() === '') {
+      elements.push(<div key={elements.length} className="h-2" />);
+      i++;
+      continue;
+    }
+
+    // Regular paragraph
+    elements.push(
+      <p key={elements.length} className="text-sm text-white/80 leading-relaxed">
+        {renderInlineMarkdown(line)}
+      </p>
+    );
+    i++;
+  }
+
+  return elements;
+}
+
+function renderInlineMarkdown(text: string): React.ReactNode {
+  // Process inline markdown: images, links, bold, italic, code, strikethrough
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    // Inline image: ![alt](src)
+    const imgMatch = remaining.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
+    if (imgMatch) {
+      const src = resolveMarkdownImageSrc(imgMatch[2]);
+      parts.push(<img key={key++} src={src} alt={imgMatch[1]} className="inline max-h-[350px] rounded" />);
+      remaining = remaining.slice(imgMatch[0].length);
+      continue;
+    }
+
+    // Link: [text](url)
+    const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
+    if (linkMatch) {
+      parts.push(<a key={key++} href={linkMatch[2]} className="text-blue-400 hover:underline" onClick={(e) => { e.preventDefault(); (window as any).electron?.openUrl?.(linkMatch[2]); }}>{linkMatch[1]}</a>);
+      remaining = remaining.slice(linkMatch[0].length);
+      continue;
+    }
+
+    // Inline code: `code`
+    const codeMatch = remaining.match(/^`([^`]+)`/);
+    if (codeMatch) {
+      parts.push(<code key={key++} className="bg-white/[0.08] px-1 py-0.5 rounded text-xs font-mono text-white/70">{codeMatch[1]}</code>);
+      remaining = remaining.slice(codeMatch[0].length);
+      continue;
+    }
+
+    // Bold: **text**
+    const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
+    if (boldMatch) {
+      parts.push(<strong key={key++} className="text-white/90 font-semibold">{boldMatch[1]}</strong>);
+      remaining = remaining.slice(boldMatch[0].length);
+      continue;
+    }
+
+    // Italic: *text*
+    const italicMatch = remaining.match(/^\*([^*]+)\*/);
+    if (italicMatch) {
+      parts.push(<em key={key++}>{italicMatch[1]}</em>);
+      remaining = remaining.slice(italicMatch[0].length);
+      continue;
+    }
+
+    // Plain character
+    // Gather all plain text until next special character
+    const plainMatch = remaining.match(/^[^![\]`*]+/);
+    if (plainMatch) {
+      parts.push(plainMatch[0]);
+      remaining = remaining.slice(plainMatch[0].length);
+    } else {
+      parts.push(remaining[0]);
+      remaining = remaining.slice(1);
+    }
+  }
+
+  return parts.length === 1 ? parts[0] : <>{parts}</>;
+}
+
 function DetailComponent({ markdown, isLoading, children, actions, metadata, navigationTitle }: {
   markdown?: string; children?: React.ReactNode; isLoading?: boolean;
   navigationTitle?: string; actions?: React.ReactElement; metadata?: React.ReactElement;
@@ -1781,7 +1967,7 @@ function DetailComponent({ markdown, isLoading, children, actions, metadata, nav
           <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
         ) : (
           <>
-            {markdown && <div className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap">{markdown}</div>}
+            {markdown && <div className="text-white/80 text-sm leading-relaxed">{renderSimpleMarkdown(markdown)}</div>}
             {metadata}
             {children}
           </>
@@ -2189,11 +2375,15 @@ const GridItem = ({ title, subtitle, content, actions, keywords, id, accessory }
   </div>
 );
 
+// Grid.Inset enum (used by extensions like cursor-recent-projects)
+const GridInset = { Small: 'small', Medium: 'medium', Large: 'large' } as const;
+
 export const Grid = Object.assign(GridComponent, {
   Item: GridItem,
   Section: ListSectionComponent,
   EmptyView: ListEmptyView,
   Dropdown: ListDropdown,
+  Inset: GridInset,
 });
 Grid.Dropdown = ListDropdown;
 

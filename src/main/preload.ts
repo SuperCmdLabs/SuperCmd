@@ -82,6 +82,14 @@ contextBridge.exposeInMainWorld('electron', {
   readFile: (filePath: string): Promise<string> =>
     ipcRenderer.invoke('read-file', filePath),
 
+  // Synchronous file operations (for extensions that use readFileSync etc.)
+  readFileSync: (filePath: string): { data: string | null; error: string | null } =>
+    ipcRenderer.sendSync('read-file-sync', filePath),
+  fileExistsSync: (filePath: string): boolean =>
+    ipcRenderer.sendSync('file-exists-sync', filePath),
+  statSync: (filePath: string): { exists: boolean; isDirectory: boolean; isFile: boolean; size: number } =>
+    ipcRenderer.sendSync('stat-sync', filePath),
+
   // Write file
   writeFile: (filePath: string, content: string): Promise<void> =>
     ipcRenderer.invoke('write-file', filePath, content),

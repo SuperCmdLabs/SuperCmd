@@ -33,7 +33,7 @@ import {
 } from './clipboard-manager';
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, protocol, net } = electron;
 
 // ─── Window Configuration ───────────────────────────────────────────
 
@@ -296,7 +296,22 @@ async function rebuildExtensions() {
   }
 }
 
+// Register custom protocol for serving extension assets (images etc.)
+// Must be called before app.whenReady()
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'sc-asset', privileges: { bypassCSP: true, supportFetchAPI: true, stream: true } }
+]);
+
 app.whenReady().then(async () => {
+  // Register the sc-asset:// protocol handler to serve extension asset files
+  protocol.handle('sc-asset', (request: any) => {
+    // URL format: sc-asset://ext-asset/path/to/file
+    const url = new URL(request.url);
+    const filePath = decodeURIComponent(url.pathname);
+    // Use net.fetch with file:// to serve the actual file
+    return net.fetch(`file://${filePath}`);
+  });
+
   // Set a minimal application menu that only keeps essential Edit commands
   // (copy/paste/undo). Without this, Electron's default menu can intercept
   // keyboard shortcuts (⌘D, ⌘T, etc.) at the native level before the
@@ -636,6 +651,34 @@ app.whenReady().then(async () => {
       return await fsPromises.readFile(filePath, 'utf-8');
     } catch (e) {
       return '';
+    }
+  });
+
+  // Synchronous file read for extensions that use readFileSync (e.g. emoji picker)
+  ipcMain.on('read-file-sync', (event: any, filePath: string) => {
+    try {
+      event.returnValue = { data: fs.readFileSync(filePath, 'utf-8'), error: null };
+    } catch (e: any) {
+      event.returnValue = { data: null, error: e.message };
+    }
+  });
+
+  // Synchronous file-exists check
+  ipcMain.on('file-exists-sync', (event: any, filePath: string) => {
+    try {
+      event.returnValue = fs.existsSync(filePath);
+    } catch {
+      event.returnValue = false;
+    }
+  });
+
+  // Synchronous stat check
+  ipcMain.on('stat-sync', (event: any, filePath: string) => {
+    try {
+      const stat = fs.statSync(filePath);
+      event.returnValue = { exists: true, isDirectory: stat.isDirectory(), isFile: stat.isFile(), size: stat.size };
+    } catch {
+      event.returnValue = { exists: false, isDirectory: false, isFile: false, size: 0 };
     }
   });
 
