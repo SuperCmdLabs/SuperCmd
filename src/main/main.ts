@@ -716,6 +716,24 @@ app.whenReady().then(async () => {
     return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
   });
 
+  // SQLite query execution (for extensions like cursor-recent-projects)
+  ipcMain.handle('run-sqlite-query', async (_event: any, dbPath: string, query: string) => {
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const execFileAsync = promisify(execFile);
+    try {
+      const { stdout } = await execFileAsync('sqlite3', ['-json', dbPath, query], { maxBuffer: 10 * 1024 * 1024 });
+      try {
+        return { data: JSON.parse(stdout), error: null };
+      } catch {
+        // If not JSON, return raw output
+        return { data: stdout, error: null };
+      }
+    } catch (e: any) {
+      return { data: null, error: e.message || 'SQLite query failed' };
+    }
+  });
+
   // ─── IPC: Store (Community Extensions) ──────────────────────────
 
   ipcMain.handle(
@@ -785,14 +803,31 @@ app.whenReady().then(async () => {
       isVisible = false;
     }
 
-    // Wait for the previous app to gain focus, then simulate Cmd+V
-    await new Promise(resolve => setTimeout(resolve, 150));
+    // Wait for the previous app to gain focus
+    await new Promise(resolve => setTimeout(resolve, 300));
 
     try {
-      const { exec } = require('child_process');
-      exec(`osascript -e 'tell application "System Events" to keystroke "v" using command down'`);
+      const { execFile } = require('child_process');
+      const { promisify } = require('util');
+      const execFileAsync = promisify(execFile);
+      await execFileAsync('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down']);
     } catch (e) {
       console.error('Failed to simulate paste keystroke:', e);
+      // Fallback: try using pbpaste + AppleScript with delay
+      try {
+        const { execFile } = require('child_process');
+        const { promisify } = require('util');
+        const execFileAsync = promisify(execFile);
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await execFileAsync('osascript', ['-e', `
+          delay 0.1
+          tell application "System Events"
+            keystroke "v" using command down
+          end tell
+        `]);
+      } catch (e2) {
+        console.error('Fallback paste also failed:', e2);
+      }
     }
 
     return true;

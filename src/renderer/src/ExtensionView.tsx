@@ -585,8 +585,12 @@ const pathStub = {
 pathStub.posix = pathStub;
 
 // ── os stub (with constants.signals and constants.errno) ────────
+// Use real home directory exposed via preload (lazy so it works even if module loads early)
+function _getHomedir(): string {
+  return (window as any).electron?.homeDir || '/tmp';
+}
 const osStub: Record<string, any> = {
-  homedir: () => '/tmp',
+  homedir: () => _getHomedir(),
   tmpdir: () => '/tmp',
   platform: () => 'darwin',
   arch: () => 'x64',
@@ -598,7 +602,7 @@ const osStub: Record<string, any> = {
   freemem: () => 4 * 1024 * 1024 * 1024,
   loadavg: () => [0, 0, 0],
   uptime: () => 3600,
-  userInfo: () => ({ username: 'user', uid: 501, gid: 20, shell: '/bin/zsh', homedir: '/tmp' }),
+  userInfo: () => { const h = _getHomedir(); return { username: h.split('/').pop() || 'user', uid: 501, gid: 20, shell: '/bin/zsh', homedir: h }; },
   networkInterfaces: () => ({}),
   endianness: () => 'LE',
   EOL: '\n',
@@ -817,15 +821,86 @@ fakeChildProcess.connected = false;
 
 const childProcessStub = {
   exec: (...args: any[]) => {
-    const cb = args[args.length - 1];
-    if (typeof cb === 'function') setTimeout(() => cb(null, '', ''), 0);
-    return { ...fakeChildProcess };
+    // Parse arguments: exec(command[, options][, callback])
+    const command = args[0];
+    let options: any = {};
+    let cb: any = null;
+    if (typeof args[1] === 'function') { cb = args[1]; }
+    else if (typeof args[1] === 'object') { options = args[1]; cb = typeof args[2] === 'function' ? args[2] : null; }
+    else if (typeof args[2] === 'function') { cb = args[2]; }
+
+    // Actually execute via IPC bridge
+    const cp: any = { ...fakeChildProcess };
+    if (typeof command === 'string' && (window as any).electron?.execCommand) {
+      (window as any).electron.execCommand(
+        '/bin/sh', ['-c', command],
+        { shell: false, env: options?.env, cwd: options?.cwd }
+      ).then((result: any) => {
+        if (cb) {
+          if (result.exitCode !== 0 && !result.stdout) {
+            const err: any = new Error(result.stderr || `Command failed with exit code ${result.exitCode}`);
+            err.code = result.exitCode;
+            err.stderr = result.stderr;
+            cb(err, result.stdout || '', result.stderr || '');
+          } else {
+            cb(null, result.stdout || '', result.stderr || '');
+          }
+        }
+      }).catch((e: any) => {
+        if (cb) cb(e, '', '');
+      });
+    } else {
+      if (cb) setTimeout(() => cb(null, '', ''), 0);
+    }
+    return cp;
   },
-  execSync: () => BufferPolyfill.from(''),
+  execSync: (command: string) => {
+    // Synchronous exec via sync IPC
+    try {
+      const result = (window as any).electron?.readFileSync?.('');
+      // execSync is hard to implement in renderer; return empty for now
+      return BufferPolyfill.from('');
+    } catch {
+      return BufferPolyfill.from('');
+    }
+  },
   execFile: (...args: any[]) => {
-    const cb = args[args.length - 1];
-    if (typeof cb === 'function') setTimeout(() => cb(null, '', ''), 0);
-    return { ...fakeChildProcess };
+    // Parse arguments: execFile(file[, args][, options][, callback])
+    const file = args[0];
+    let execArgs: string[] = [];
+    let options: any = {};
+    let cb: any = null;
+
+    // Find callback (last function argument)
+    for (let i = args.length - 1; i >= 1; i--) {
+      if (typeof args[i] === 'function') { cb = args[i]; break; }
+    }
+    // Find args array and options
+    if (Array.isArray(args[1])) {
+      execArgs = args[1];
+      if (typeof args[2] === 'object' && args[2] !== null && !Array.isArray(args[2])) options = args[2];
+    } else if (typeof args[1] === 'object' && args[1] !== null && !Array.isArray(args[1]) && typeof args[1] !== 'function') {
+      options = args[1];
+    }
+
+    const cp: any = { ...fakeChildProcess };
+    if ((window as any).electron?.execCommand) {
+      (window as any).electron.execCommand(file, execArgs, { shell: false, env: options?.env, cwd: options?.cwd })
+        .then((result: any) => {
+          if (cb) {
+            if (result.exitCode !== 0 && !result.stdout) {
+              const err: any = new Error(result.stderr || `Command failed with exit code ${result.exitCode}`);
+              err.code = result.exitCode;
+              cb(err, result.stdout || '', result.stderr || '');
+            } else {
+              cb(null, result.stdout || '', result.stderr || '');
+            }
+          }
+        }).catch((e: any) => { if (cb) cb(e, '', ''); });
+    } else {
+      if (cb) setTimeout(() => cb(null, '', ''), 0);
+    }
+    return cp;
   },
   execFileSync: () => BufferPolyfill.from(''),
   spawn: () => {

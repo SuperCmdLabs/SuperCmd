@@ -110,6 +110,9 @@ export interface ElectronAPI {
   readDir: (dirPath: string) => Promise<string[]>;
   getAppearance: () => Promise<'dark' | 'light'>;
 
+  // SQLite query execution
+  runSqliteQuery: (dbPath: string, query: string) => Promise<{ data: any; error: string | null }>;
+
   // Synchronous file operations (for extensions using readFileSync etc.)
   readFileSync: (filePath: string) => { data: string | null; error: string | null };
   fileExistsSync: (filePath: string) => boolean;

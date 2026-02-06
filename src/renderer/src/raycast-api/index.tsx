@@ -245,6 +245,18 @@ export async function confirmAlert(options: {
 }
 
 // =====================================================================
+// ─── Alert ──────────────────────────────────────────────────────────
+// =====================================================================
+
+export const Alert = {
+  ActionStyle: {
+    Default: 'default' as const,
+    Cancel: 'cancel' as const,
+    Destructive: 'destructive' as const,
+  },
+};
+
+// =====================================================================
 // ─── clearSearchBar ─────────────────────────────────────────────────
 // =====================================================================
 
@@ -437,13 +449,32 @@ function isEmojiOrSymbol(s: string): boolean {
 }
 
 // Helper component to render icons
+// Resolve a relative icon/asset path to an sc-asset:// URL
+function resolveIconSrc(src: string): string {
+  // Already absolute URL, data URI, or custom protocol — leave as-is
+  if (/^(https?:\/\/|data:|file:\/\/|sc-asset:\/\/)/.test(src)) return src;
+  // If it looks like a file path (has an image/svg extension), resolve via extension assets
+  if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(src)) {
+    const ctx = getExtensionContext();
+    if (ctx.assetsPath) {
+      return `sc-asset://ext-asset${ctx.assetsPath}/${src}`;
+    }
+  }
+  return src;
+}
+
 export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
   if (!icon) return null;
 
   // If it's a string URL or data URL, render as image
   if (typeof icon === 'string') {
-    if (icon.startsWith('data:') || icon.startsWith('http')) {
+    if (icon.startsWith('data:') || icon.startsWith('http') || icon.startsWith('sc-asset:')) {
       return <img src={icon} className={className + ' rounded'} alt="" />;
+    }
+    // Check if it looks like a file path (has image extension) — resolve via extension assets
+    if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(icon)) {
+      const resolved = resolveIconSrc(icon);
+      return <img src={resolved} className={className + ' rounded'} alt="" />;
     }
     // Check if it's a mapped icon
     const mappedIcon = iconMap[icon];
@@ -469,7 +500,8 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
         if (isEmojiOrSymbol(src)) {
           return <span className="text-center" style={{ fontSize: '0.875rem', color: tintColor }}>{src}</span>;
         }
-        return <img src={src} className={className + ' rounded'} alt="" />;
+        const resolved = resolveIconSrc(src);
+        return <img src={resolved} className={className + ' rounded'} alt="" style={tintColor ? { filter: 'brightness(0) saturate(100%)', color: tintColor } : undefined} />;
       }
     }
     // Handle { light, dark } theme icons
@@ -479,7 +511,8 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
         if (isEmojiOrSymbol(src)) {
           return <span className="text-center" style={{ fontSize: '0.875rem', color: tintColor }}>{src}</span>;
         }
-        return <img src={src} className={className + ' rounded'} alt="" />;
+        const resolved = resolveIconSrc(src);
+        return <img src={resolved} className={className + ' rounded'} alt="" />;
       }
     }
   }
@@ -541,6 +574,8 @@ export const Keyboard = {
       Find: { modifiers: ['cmd'], key: 'f' },
       Refresh: { modifiers: ['cmd'], key: 'r' },
       Delete: { modifiers: ['ctrl'], key: 'x' },
+      CopyPath: { modifiers: ['cmd', 'opt'], key: 'c' },
+      CopyName: { modifiers: ['cmd', 'opt'], key: 'n' },
       Edit: { modifiers: ['cmd'], key: 'e' },
       ToggleQuickLook: { modifiers: ['cmd'], key: 'y' },
       MoveUp: { modifiers: ['cmd', 'option'], key: 'arrowUp' },
@@ -3382,8 +3417,17 @@ export function useSQL<T = any>(
 ) {
   return usePromise(
     async () => {
-      console.warn('useSQL is not available in SuperCommand renderer');
-      return [] as T[];
+      const electron = (window as any).electron;
+      if (!electron?.runSqliteQuery) {
+        console.warn('useSQL: runSqliteQuery IPC not available');
+        return [] as T[];
+      }
+      const result = await electron.runSqliteQuery(databasePath, query);
+      if (result.error) {
+        console.error('useSQL error:', result.error);
+        return [] as T[];
+      }
+      return (Array.isArray(result.data) ? result.data : []) as T[];
     },
     [],
     { execute: options?.execute }

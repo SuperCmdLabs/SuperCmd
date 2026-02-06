@@ -7,7 +7,16 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 
+// In sandboxed preload, require('os') is NOT available.
+// Use process.env which IS available in preload.
+const _homeDir = process.env.HOME || process.env.USERPROFILE || '/tmp';
+const _platform = process.platform;
+
 contextBridge.exposeInMainWorld('electron', {
+  // ─── System Info ────────────────────────────────────────────────
+  homeDir: _homeDir,
+  platform: _platform,
+
   // ─── Launcher ───────────────────────────────────────────────────
   getCommands: (): Promise<any[]> => ipcRenderer.invoke('get-commands'),
   executeCommand: (commandId: string): Promise<boolean> =>
@@ -105,6 +114,10 @@ contextBridge.exposeInMainWorld('electron', {
   // Get system appearance (dark/light)
   getAppearance: (): Promise<'dark' | 'light'> =>
     ipcRenderer.invoke('get-appearance'),
+
+  // SQLite query execution (for extensions that use useSQL)
+  runSqliteQuery: (dbPath: string, query: string): Promise<{ data: any; error: string | null }> =>
+    ipcRenderer.invoke('run-sqlite-query', dbPath, query),
 
   // ─── Clipboard Manager ────────────────────────────────────────────
   clipboardGetHistory: (): Promise<any[]> =>
