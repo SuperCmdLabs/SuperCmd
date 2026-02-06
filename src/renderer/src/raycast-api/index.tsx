@@ -562,9 +562,16 @@ export const Clipboard = {
       showToast({ title: 'Copied to clipboard', style: 'success' });
     } catch {}
   },
-  async paste(content: string) {
+  async paste(content: string | { text?: string; file?: string }) {
     try {
-      await navigator.clipboard.writeText(content);
+      if (typeof content === 'string') {
+        await navigator.clipboard.writeText(content);
+      } else if (content.file) {
+        // For file pastes, copy the file path to clipboard
+        await navigator.clipboard.writeText(content.file);
+      } else if (content.text) {
+        await navigator.clipboard.writeText(content.text);
+      }
     } catch {}
   },
   async readText(): Promise<string> {
@@ -724,6 +731,12 @@ export async function getFrontmostApplication(): Promise<{
   return { name: 'SuperCommand', path: '', bundleId: 'com.supercommand' };
 }
 
+export async function showInFinder(path: string): Promise<void> {
+  try {
+    await (window as any).electron?.execCommand?.('open', ['-R', path]);
+  } catch {}
+}
+
 export async function trash(path: string | string[]): Promise<void> {
   try {
     const electron = (window as any).electron;
@@ -781,11 +794,19 @@ function makeActionExecutor(p: any): () => void {
     if (p.content !== undefined) {
       Clipboard.copy(String(p.content));
       showToast({ title: 'Copied to clipboard', style: ToastStyle.Success });
+      // Call onCopy/onPaste callbacks if provided
+      p.onCopy?.();
+      p.onPaste?.();
       return;
     }
-    if (p.url) { (window as any).electron?.openUrl?.(p.url); return; }
+    if (p.url) {
+      (window as any).electron?.openUrl?.(p.url);
+      p.onOpen?.();
+      return;
+    }
     if (p.target && React.isValidElement(p.target)) {
       getGlobalNavigation().push(p.target);
+      p.onPush?.();
       return;
     }
     if (p.paths) { trash(p.paths); p.onTrash?.(); return; }
@@ -2333,54 +2354,418 @@ export const Form = FormComponent;
 // ─── Grid ───────────────────────────────────────────────────────────
 // =====================================================================
 
-function GridComponent({ children, columns, inset, isLoading, searchBarPlaceholder, onSearchTextChange, filtering, navigationTitle, searchBarAccessory, aspectRatio, fit, searchText: controlledSearch, selectedItemId, onSelectionChange, throttle }: any) {
-  const [internalSearch, setInternalSearch] = useState('');
-  const searchText = controlledSearch ?? internalSearch;
-  const inputRef = useRef<HTMLInputElement>(null);
-  const { pop } = useNavigation();
+// ── Grid Item registration context ──────────────────────────────────
+// Grid.Item components register themselves with the parent Grid via context,
+// following the same pattern as List.Item.
 
-  const handleSearchChange = (text: string) => {
-    setInternalSearch(text);
-    onSearchTextChange?.(text);
+let _gridItemOrderCounter = 0;
+
+interface GridItemRegistration {
+  id: string;
+  props: {
+    title?: string;
+    subtitle?: string;
+    content?: { source?: string; tintColor?: string } | string;
+    actions?: React.ReactElement;
+    keywords?: string[];
+    id?: string;
+    accessory?: any;
   };
+  sectionTitle?: string;
+  order: number;
+}
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+interface GridRegistryAPI {
+  set: (id: string, data: Omit<GridItemRegistration, 'id'>) => void;
+  delete: (id: string) => void;
+}
+
+const GridRegistryContext = createContext<GridRegistryAPI>({
+  set: () => {},
+  delete: () => {},
+});
+
+const GridSectionTitleContext = createContext<string | undefined>(undefined);
+
+// ── Grid.Item — registers with parent Grid via context ────────────────
+
+function GridItemComponent(props: any) {
+  const registry = useContext(GridRegistryContext);
+  const sectionTitle = useContext(GridSectionTitleContext);
+  const stableId = useRef(props.id || `__gi_${++_gridItemOrderCounter}`).current;
+  const order = ++_gridItemOrderCounter;
+
+  registry.set(stableId, { props, sectionTitle, order });
+
+  useEffect(() => {
+    return () => registry.delete(stableId);
+  }, [stableId, registry]);
+
+  return null;
+}
+
+// ── Grid.Section — provides section title context ─────────────────────
+
+function GridSectionComponent({ children, title }: { children?: React.ReactNode; title?: string; subtitle?: string }) {
+  return (
+    <GridSectionTitleContext.Provider value={title}>
+      {children}
+    </GridSectionTitleContext.Provider>
+  );
+}
+
+// ── GridItemRenderer — visual grid cell ──────────────────────────────
+
+function GridItemRenderer({
+  title, subtitle, content, isSelected, dataIdx, onSelect, onActivate,
+}: any) {
+  const imgSrc = typeof content === 'string' ? content : (content?.source || '');
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06]">
-        <input ref={inputRef} type="text" placeholder={searchBarPlaceholder || 'Search…'} value={searchText}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); pop(); } }}
-          className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-base font-light" autoFocus />
-      </div>
-      <div className="flex-1 overflow-y-auto p-2">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
+    <div
+      data-idx={dataIdx}
+      className={`relative rounded-lg cursor-pointer transition-all overflow-hidden flex flex-col ${
+        isSelected ? 'ring-2 ring-blue-500 bg-white/[0.08]' : 'hover:bg-white/[0.04]'
+      }`}
+      style={{ height: '160px' }}
+      onClick={onActivate}
+      onMouseMove={onSelect}
+    >
+      {/* Image area — centered, fixed height */}
+      <div className="flex-1 flex items-center justify-center overflow-hidden p-1.5 min-h-0">
+        {imgSrc ? (
+          <img
+            src={typeof imgSrc === 'string' ? imgSrc : ''}
+            alt={title || ''}
+            className="max-w-full max-h-full object-contain rounded"
+            loading="lazy"
+          />
         ) : (
-          <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${columns || 4}, 1fr)` }}>
-            {children}
+          <div className="w-full h-full bg-white/[0.03] rounded flex items-center justify-center text-white/20 text-2xl">
+            {title ? title.charAt(0) : '?'}
           </div>
         )}
       </div>
+      {/* Title at bottom */}
+      {title && (
+        <div className="px-2 pb-2 pt-1 flex-shrink-0">
+          <p className="truncate text-[11px] text-white/70 text-center">{title}</p>
+          {subtitle && <p className="truncate text-[9px] text-white/30 text-center">{subtitle}</p>}
+        </div>
+      )}
     </div>
   );
 }
 
-const GridItem = ({ title, subtitle, content, actions, keywords, id, accessory }: any) => (
-  <div className="text-sm text-white/80 p-2 bg-white/[0.04] rounded-lg">
-    {content?.source && <img src={typeof content.source === 'string' ? content.source : ''} className="w-full rounded mb-1" alt="" />}
-    {title && <p className="truncate text-xs">{title}</p>}
-    {subtitle && <p className="truncate text-[10px] text-white/40">{subtitle}</p>}
-  </div>
-);
+// ── GridComponent — main Grid container with full action support ──────
+
+function GridComponent({
+  children, columns, inset, isLoading, searchBarPlaceholder, onSearchTextChange,
+  filtering, navigationTitle, searchBarAccessory, aspectRatio, fit,
+  searchText: controlledSearch, selectedItemId, onSelectionChange, throttle,
+  pagination, actions: gridActions,
+}: any) {
+  const [internalSearch, setInternalSearch] = useState('');
+  const searchText = controlledSearch ?? internalSearch;
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [showActions, setShowActions] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const { pop } = useNavigation();
+
+  const cols = columns || 5;
+
+  // ── Item registry ──────────────────────────────────────────────
+  const registryRef = useRef(new Map<string, GridItemRegistration>());
+  const [registryVersion, setRegistryVersion] = useState(0);
+  const pendingRef = useRef(false);
+  const lastSnapshotRef = useRef('');
+
+  const scheduleRegistryUpdate = useCallback(() => {
+    if (pendingRef.current) return;
+    pendingRef.current = true;
+    queueMicrotask(() => {
+      pendingRef.current = false;
+      const entries = Array.from(registryRef.current.values());
+      const snapshot = entries.map(e => {
+        const t = e.props.title || '';
+        const atype = e.props.actions?.type as any;
+        const at = atype?.name || atype?.displayName || typeof atype || '';
+        return `${e.id}:${t}:${e.sectionTitle || ''}:${at}`;
+      }).join('|');
+      if (snapshot !== lastSnapshotRef.current) {
+        lastSnapshotRef.current = snapshot;
+        setRegistryVersion(v => v + 1);
+      }
+    });
+  }, []);
+
+  const registryAPI = useMemo<GridRegistryAPI>(() => ({
+    set(id, data) {
+      registryRef.current.set(id, { id, ...data });
+      scheduleRegistryUpdate();
+    },
+    delete(id) {
+      if (registryRef.current.has(id)) {
+        registryRef.current.delete(id);
+        scheduleRegistryUpdate();
+      }
+    },
+  }), [scheduleRegistryUpdate]);
+
+  // ── Collect sorted items ────────────────────────────────────────
+  const allItems = useMemo(() => {
+    return Array.from(registryRef.current.values()).sort((a, b) => a.order - b.order);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registryVersion]);
+
+  // ── Filtering ──────────────────────────────────────────────────
+  const filteredItems = useMemo(() => {
+    // When extension handles filtering itself (onSearchTextChange provided)
+    // or filtering is explicitly disabled, skip internal filtering
+    if (onSearchTextChange || filtering === false || !searchText.trim()) return allItems;
+    const q = searchText.toLowerCase();
+    return allItems.filter(item => {
+      const t = (item.props.title || '').toLowerCase();
+      const s = (item.props.subtitle || '').toLowerCase();
+      return t.includes(q) || s.includes(q) || item.props.keywords?.some((k: string) => k.toLowerCase().includes(q));
+    });
+  }, [allItems, searchText, filtering, onSearchTextChange]);
+
+  // ── Search bar control ──────────────────────────────────────────
+  const handleSearchChange = useCallback((text: string) => {
+    setInternalSearch(text);
+    onSearchTextChange?.(text);
+    setSelectedIdx(0);
+  }, [onSearchTextChange]);
+
+  // ── Action collection ───────────────────────────────────────────
+  const selectedItem = filteredItems[selectedIdx];
+  const { collectedActions: selectedActions, registryAPI: actionRegistry } = useCollectedActions();
+  const activeActionsElement = selectedItem?.props?.actions || gridActions;
+  const primaryAction = selectedActions[0];
+
+  // ── Keyboard handler ─────────────────────────────────────────────
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'k' && e.metaKey) {
+      e.preventDefault();
+      setShowActions(prev => !prev);
+      return;
+    }
+
+    // Extension shortcuts
+    if ((e.metaKey || e.altKey || e.ctrlKey) && !e.repeat) {
+      for (const action of selectedActions) {
+        if (action.shortcut && matchesShortcut(e, action.shortcut)) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowActions(false);
+          action.execute();
+          setTimeout(() => inputRef.current?.focus(), 0);
+          return;
+        }
+      }
+    }
+
+    if (showActions) return;
+
+    switch (e.key) {
+      case 'ArrowRight':
+        e.preventDefault();
+        setSelectedIdx(p => Math.min(p + 1, filteredItems.length - 1));
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        setSelectedIdx(p => Math.max(p - 1, 0));
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelectedIdx(p => Math.min(p + cols, filteredItems.length - 1));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelectedIdx(p => Math.max(p - cols, 0));
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (e.repeat) break;
+        if (primaryAction) primaryAction.execute();
+        break;
+      case 'Escape':
+        e.preventDefault();
+        pop();
+        break;
+    }
+  }, [filteredItems.length, selectedIdx, pop, primaryAction, showActions, selectedActions, cols]);
+
+  // ── Window-level shortcut listener ─────────────────────────────
+  const selectedActionsRef = useRef(selectedActions);
+  selectedActionsRef.current = selectedActions;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const actions = selectedActionsRef.current;
+      if (e.key === 'k' && e.metaKey) return;
+      if (!e.metaKey && !e.altKey && !e.ctrlKey) return;
+      if (e.repeat) return;
+      for (const action of actions) {
+        if (action.shortcut && matchesShortcut(e, action.shortcut)) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowActions(false);
+          action.execute();
+          setTimeout(() => inputRef.current?.focus(), 0);
+          return;
+        }
+      }
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, []);
+
+  // ── Scroll selected into view ──────────────────────────────────
+  useEffect(() => {
+    gridRef.current?.querySelector(`[data-idx="${selectedIdx}"]`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selectedIdx]);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // ── Selection change notification ───────────────────────────────
+  useEffect(() => {
+    if (onSelectionChange && filteredItems[selectedIdx]) {
+      onSelectionChange(filteredItems[selectedIdx]?.props?.id || null);
+    }
+  }, [selectedIdx, onSelectionChange, filteredItems]);
+
+  // ── Group items by section ─────────────────────────────────────
+  const groupedItems = useMemo(() => {
+    const groups: { title?: string; items: { item: GridItemRegistration; globalIdx: number }[] }[] = [];
+    let globalIdx = 0;
+    let curSection: string | undefined | null = null;
+
+    for (const item of filteredItems) {
+      if (item.sectionTitle !== curSection || groups.length === 0) {
+        curSection = item.sectionTitle;
+        groups.push({ title: item.sectionTitle, items: [] });
+      }
+      groups[groups.length - 1].items.push({ item, globalIdx: globalIdx++ });
+    }
+    return groups;
+  }, [filteredItems]);
+
+  // ── Execute action and close panel ─────────────────────────────
+  const handleActionExecute = useCallback((action: ExtractedAction) => {
+    setShowActions(false);
+    action.execute();
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
+
+  return (
+    <GridRegistryContext.Provider value={registryAPI}>
+      {/* Hidden render area — children register items via context */}
+      <div style={{ display: 'none' }}>
+        {children}
+        {activeActionsElement && (
+          <ActionRegistryContext.Provider value={actionRegistry}>
+            <div key={selectedItem?.id || '__grid_actions'}>
+              {activeActionsElement}
+            </div>
+          </ActionRegistryContext.Provider>
+        )}
+      </div>
+
+      <div className="flex flex-col h-full" onKeyDown={handleKeyDown}>
+        {/* ── Search bar ──────────────────────────────────────── */}
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+          <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          </button>
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder={searchBarPlaceholder || 'Search…'}
+            value={searchText}
+            onChange={e => handleSearchChange(e.target.value)}
+            className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[15px] font-light"
+            autoFocus
+          />
+          {searchBarAccessory && (
+            <div className="flex-shrink-0">{searchBarAccessory}</div>
+          )}
+        </div>
+
+        {/* ── Grid content ──────────────────────────────────── */}
+        <div ref={gridRef} className="flex-1 overflow-y-auto p-2">
+          {isLoading && filteredItems.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
+          ) : filteredItems.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-white/40"><p className="text-sm">No results</p></div>
+          ) : (
+            groupedItems.map((group, gi) => (
+              <div key={gi} className="mb-2">
+                {group.title && (
+                  <div className="px-2 pt-2 pb-1.5 text-[11px] uppercase tracking-wider text-white/25 font-medium select-none">{group.title}</div>
+                )}
+                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+                  {group.items.map(({ item, globalIdx }) => (
+                    <GridItemRenderer
+                      key={item.id}
+                      title={item.props.title}
+                      subtitle={item.props.subtitle}
+                      content={item.props.content}
+                      isSelected={globalIdx === selectedIdx}
+                      dataIdx={globalIdx}
+                      onSelect={() => setSelectedIdx(globalIdx)}
+                      onActivate={() => primaryAction?.execute()}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* ── Footer ─────────────────────────────────────────── */}
+        <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
+          <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
+            <span className="truncate">{navigationTitle || _extensionContext.extensionName || 'Extension'}</span>
+          </div>
+          {primaryAction && (
+            <div className="flex items-center gap-2 mr-3">
+              <span className="text-white text-xs font-semibold">{primaryAction.title}</span>
+              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
+            </div>
+          )}
+          <button
+            onClick={() => setShowActions(true)}
+            className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
+          >
+            <span className="text-xs font-medium">Actions</span>
+            <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
+            <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Action Panel Overlay ──────────────────────────────── */}
+      {showActions && selectedActions.length > 0 && (
+        <ActionPanelOverlay
+          actions={selectedActions}
+          onClose={() => setShowActions(false)}
+          onExecute={handleActionExecute}
+        />
+      )}
+    </GridRegistryContext.Provider>
+  );
+}
 
 // Grid.Inset enum (used by extensions like cursor-recent-projects)
 const GridInset = { Small: 'small', Medium: 'medium', Large: 'large' } as const;
 
 export const Grid = Object.assign(GridComponent, {
-  Item: GridItem,
-  Section: ListSectionComponent,
+  Item: GridItemComponent,
+  Section: GridSectionComponent,
   EmptyView: ListEmptyView,
   Dropdown: ListDropdown,
   Inset: GridInset,
