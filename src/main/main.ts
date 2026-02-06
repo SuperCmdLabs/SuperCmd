@@ -847,7 +847,7 @@ app.whenReady().then(async () => {
     const { execFile } = require('child_process');
     const colorPickerPath = path.join(__dirname, '..', 'native', 'color-picker');
 
-    // Hide the main window so the user can see the screen
+    // Hide the main window so the user can see the screen for the eyedropper
     if (mainWindow && isVisible) {
       mainWindow.hide();
       isVisible = false;
@@ -909,7 +909,7 @@ app.whenReady().then(async () => {
 
   // Update / create a menu-bar Tray when the renderer sends menu structure
   ipcMain.on('menubar-update', (_event: any, data: any) => {
-    const { extId, iconPath, title, tooltip, items } = data;
+    const { extId, iconPath, iconEmoji, title, tooltip, items } = data;
 
     let tray = menuBarTrays.get(extId);
     if (!tray) {
@@ -923,14 +923,29 @@ app.whenReady().then(async () => {
           icon = nativeImage.createEmpty();
         }
       } else {
-        // Create a small default dot icon
-        icon = nativeImage.createEmpty();
+        // Create a small 16x16 placeholder icon (a simple filled circle)
+        // We'll use the title to show emoji if available
+        const size = 16;
+        icon = nativeImage.createFromBuffer(
+          Buffer.alloc(size * size * 4, 0), // transparent
+          { width: size, height: size }
+        );
       }
       tray = new Tray(icon);
       menuBarTrays.set(extId, tray);
+
+      // If the icon is an emoji, show it as the tray title instead
+      if (iconEmoji && !iconPath) {
+        tray.setTitle(iconEmoji);
+      }
     }
 
-    if (title != null) tray.setTitle(title);
+    // Update title: if there's a text title, show it; if only emoji icon, show that
+    if (title) {
+      tray.setTitle(title);
+    } else if (iconEmoji && !iconPath) {
+      tray.setTitle(iconEmoji);
+    }
     if (tooltip) tray.setToolTip(tooltip);
 
     // Build native menu from serialized items

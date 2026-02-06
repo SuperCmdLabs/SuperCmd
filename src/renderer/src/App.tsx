@@ -225,6 +225,14 @@ const App: React.FC = () => {
         const [extName, cmdName] = command.path.split('/');
         const result = await window.electron.runExtension(extName, cmdName);
         if (result && result.code) {
+          // Menu-bar commands run in the hidden tray runners, not in the overlay.
+          // Just hide the window — the tray will show the menu.
+          if (result.mode === 'menu-bar') {
+            window.electron.hideWindow();
+            setSearchQuery('');
+            setSelectedIndex(0);
+            return;
+          }
           setExtensionView(result);
           localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
           return;

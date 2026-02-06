@@ -474,6 +474,20 @@ function resolveIconSrc(src: string): string {
   return src;
 }
 
+// Resolve a tintColor value to a CSS color string.
+// Extensions can pass tintColor as:
+//   - a string: '#FF0000'
+//   - an object: { light: '#FF0000', dark: '#FF0000', adjustContrast?: boolean }
+function resolveTintColor(tintColor: any): string | undefined {
+  if (!tintColor) return undefined;
+  if (typeof tintColor === 'string') return tintColor;
+  if (typeof tintColor === 'object') {
+    // Prefer dark since we're always dark-themed
+    return tintColor.dark || tintColor.light || undefined;
+  }
+  return undefined;
+}
+
 export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
   if (!icon) return null;
 
@@ -502,17 +516,17 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
 
   // If it's an object with source property (e.g., { source: Icon.Checkmark, tintColor: Color.Green })
   if (typeof icon === 'object' && icon !== null) {
-    const tintColor = icon.tintColor || undefined;
+    const tint = resolveTintColor(icon.tintColor);
 
     if (icon.source) {
       const src = typeof icon.source === 'string' ? icon.source : icon.source?.light || icon.source?.dark || '';
       if (src) {
         // Check if source is an emoji/symbol (from our Icon proxy) vs a real URL/path
         if (isEmojiOrSymbol(src)) {
-          return <span className="text-center" style={{ fontSize: '0.875rem', color: tintColor }}>{src}</span>;
+          return <span className="text-center" style={{ fontSize: '0.875rem', color: tint }}>{src}</span>;
         }
         const resolved = resolveIconSrc(src);
-        return <img src={resolved} className={className + ' rounded'} alt="" style={tintColor ? { filter: 'brightness(0) saturate(100%)', color: tintColor } : undefined} />;
+        return <img src={resolved} className={className + ' rounded'} alt="" style={tint ? { filter: `brightness(0) saturate(100%)`, color: tint } : undefined} />;
       }
     }
     // Handle { light, dark } theme icons
@@ -520,7 +534,7 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
       const src = icon.dark || icon.light;
       if (typeof src === 'string') {
         if (isEmojiOrSymbol(src)) {
-          return <span className="text-center" style={{ fontSize: '0.875rem', color: tintColor }}>{src}</span>;
+          return <span className="text-center" style={{ fontSize: '0.875rem', color: tint }}>{src}</span>;
         }
         const resolved = resolveIconSrc(src);
         return <img src={resolved} className={className + ' rounded'} alt="" />;
@@ -2947,22 +2961,30 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: an
 
     _mbActions.set(extId, actions);
 
-    // Resolve icon path from extension assets
+    // Resolve icon for the Tray
     let iconPath: string | undefined;
+    let iconEmoji: string | undefined;
     if (icon && typeof icon === 'object') {
       const src = icon.source
         ? (typeof icon.source === 'object' ? (icon.source.dark || icon.source.light) : icon.source)
         : (icon.dark || icon.light);
-      if (src && assetsPath) {
+      if (src && /\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(src) && assetsPath) {
         iconPath = `${assetsPath}/${src}`;
+      } else if (src && isEmojiOrSymbol(src)) {
+        iconEmoji = src;
       }
-    } else if (typeof icon === 'string' && assetsPath && /\.\w+$/.test(icon)) {
-      iconPath = `${assetsPath}/${icon}`;
+    } else if (typeof icon === 'string') {
+      if (/\.\w+$/.test(icon) && assetsPath) {
+        iconPath = `${assetsPath}/${icon}`;
+      } else if (isEmojiOrSymbol(icon)) {
+        iconEmoji = icon;
+      }
     }
 
     (window as any).electron?.updateMenuBar?.({
       extId,
       iconPath,
+      iconEmoji,
       title: title || '',
       tooltip: tooltip || '',
       items: serialized,
