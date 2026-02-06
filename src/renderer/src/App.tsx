@@ -172,12 +172,22 @@ const App: React.FC = () => {
       if (command.category === 'extension' && command.path) {
         // Extension command — build and show extension view
         const [extName, cmdName] = command.path.split('/');
-        const bundle = await window.electron.runExtension(extName, cmdName);
-        if (bundle) {
-          setExtensionView(bundle);
+        const result = await window.electron.runExtension(extName, cmdName);
+        if (result && result.code) {
+          setExtensionView(result);
           return;
         }
-        console.error('Failed to load extension');
+        const errMsg = result?.error || 'Failed to build extension';
+        console.error('Extension load failed:', errMsg);
+        // Show the error in the extension view
+        setExtensionView({
+          code: '',
+          title: command.title,
+          mode: 'view',
+          extName,
+          cmdName,
+          error: errMsg,
+        } as any);
         return;
       }
 
@@ -198,6 +208,7 @@ const App: React.FC = () => {
             code={extensionView.code}
             title={extensionView.title}
             mode={extensionView.mode}
+            error={(extensionView as any).error}
             onClose={() => {
               setExtensionView(null);
               setSearchQuery('');

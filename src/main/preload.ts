@@ -38,6 +38,10 @@ contextBridge.exposeInMainWorld('electron', {
   runExtension: (extName: string, cmdName: string): Promise<any> =>
     ipcRenderer.invoke('run-extension', extName, cmdName),
 
+  // ─── Open URL (for extensions) ────────────────────────────────────
+  openUrl: (url: string): Promise<boolean> =>
+    ipcRenderer.invoke('open-url', url),
+
   // ─── Store ────────────────────────────────────────────────────
   getCatalog: (forceRefresh?: boolean): Promise<any[]> =>
     ipcRenderer.invoke('get-catalog', forceRefresh),

@@ -211,6 +211,74 @@ export async function getCatalog(
   return entries;
 }
 
+// ─── Dependency Installation ────────────────────────────────────────
+
+/**
+ * Install an extension's npm dependencies.
+ *
+ * Strategy:
+ *   1. Read the extension's package.json
+ *   2. Collect non-Raycast, non-dev dependencies
+ *   3. Install them explicitly (avoids issues with @raycast/api peer deps)
+ *   4. If that fails, fall back to `npm install --production --legacy-peer-deps`
+ */
+export async function installExtensionDeps(
+  extPath: string
+): Promise<void> {
+  const pkgPath = path.join(extPath, 'package.json');
+  if (!fs.existsSync(pkgPath)) return;
+
+  let pkg: any;
+  try {
+    pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+  } catch {
+    return;
+  }
+
+  const deps = pkg.dependencies || {};
+  // Filter out @raycast/* packages (we provide shims) and any already-external modules
+  const thirdPartyDeps = Object.entries(deps)
+    .filter(([name]) => !name.startsWith('@raycast/'))
+    .map(([name, version]) => `${name}@${version}`)
+    .filter(Boolean);
+
+  if (thirdPartyDeps.length === 0) {
+    console.log(`No third-party dependencies for ${path.basename(extPath)}`);
+    return;
+  }
+
+  console.log(
+    `Installing ${thirdPartyDeps.length} dependencies for ${path.basename(extPath)}: ${thirdPartyDeps.join(', ')}`
+  );
+
+  try {
+    // Install only third-party deps explicitly — avoids @raycast/api issues
+    await execAsync(
+      `npm install --no-save --legacy-peer-deps --ignore-scripts ${thirdPartyDeps.join(' ')}`,
+      { cwd: extPath, timeout: 120_000 }
+    );
+    console.log(`Dependencies installed for ${path.basename(extPath)}`);
+  } catch (e1: any) {
+    console.warn(
+      `Explicit install failed for ${path.basename(extPath)}: ${e1.message || e1}`
+    );
+    // Fall back to full npm install
+    try {
+      await execAsync(
+        `npm install --production --legacy-peer-deps --ignore-scripts`,
+        { cwd: extPath, timeout: 120_000 }
+      );
+      console.log(
+        `Fallback npm install succeeded for ${path.basename(extPath)}`
+      );
+    } catch (e2: any) {
+      console.error(
+        `npm install failed for ${path.basename(extPath)}: ${e2.message || e2}`
+      );
+    }
+  }
+}
+
 // ─── Install / Uninstall ────────────────────────────────────────────
 
 export function isExtensionInstalled(name: string): boolean {
@@ -275,16 +343,14 @@ export async function installExtension(name: string): Promise<boolean> {
     // Copy to local extensions directory
     fs.cpSync(srcDir, installPath, { recursive: true });
 
-    // Install npm dependencies (optional — some extensions need this)
-    try {
-      await execAsync(`cd "${installPath}" && npm install --production 2>/dev/null`, {
-        timeout: 120_000,
-      });
-    } catch {
-      // Many extensions might not have a lock file or deps; that's OK
-    }
+    // Step 1: Install npm dependencies
+    await installExtensionDeps(installPath);
 
-    console.log(`Extension "${name}" installed successfully at ${installPath}`);
+    // Step 2: Pre-build all commands with esbuild
+    console.log(`Pre-building commands for "${name}"…`);
+    const { buildAllCommands } = require('./extension-runner');
+    const builtCount = await buildAllCommands(name);
+    console.log(`Extension "${name}" installed and pre-built (${builtCount} commands) at ${installPath}`);
     return true;
   } catch (error) {
     console.error(`Failed to install extension "${name}":`, error);

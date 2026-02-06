@@ -61,6 +61,9 @@ export interface ElectronAPI {
   // Extension Runner
   runExtension: (extName: string, cmdName: string) => Promise<ExtensionBundle | null>;
 
+  // Open URL
+  openUrl: (url: string) => Promise<boolean>;
+
   // Store
   getCatalog: (forceRefresh?: boolean) => Promise<CatalogEntry[]>;
   getInstalledExtensionNames: () => Promise<string[]>;

@@ -143,8 +143,8 @@ export const environment = {
 };
 
 export function open(url: string) {
-  window.electron?.executeCommand?.('__open_url__');
-  window.open(url, '_blank');
+  // Use IPC to open URLs in the default browser (or ignore raycast:// deep links)
+  (window as any).electron?.openUrl?.(url);
 }
 
 export function closeMainWindow() {
@@ -227,7 +227,7 @@ function ActionOpenInBrowser({
 }) {
   return (
     <button
-      onClick={() => window.open(url, '_blank')}
+      onClick={() => (window as any).electron?.openUrl?.(url)}
       className="w-full text-left px-3 py-1.5 text-sm text-white/80 hover:bg-white/[0.06] rounded transition-colors"
     >
       {title || 'Open in Browser'}
@@ -880,7 +880,7 @@ function executePrimaryAction(item: React.ReactElement<ListItemProps>) {
     Clipboard.copy(String(props.content));
   } else if (props.url) {
     // OpenInBrowser
-    window.open(props.url, '_blank');
+    (window as any).electron?.openUrl?.(props.url);
   }
 }
 

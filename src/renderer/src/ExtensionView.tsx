@@ -20,6 +20,7 @@ interface ExtensionViewProps {
   code: string;
   title: string;
   mode: string;
+  error?: string; // build-time error from main process
   onClose: () => void;
 }
 
@@ -289,10 +290,17 @@ function loadExtensionExport(
       return exported;
     }
 
-    console.error('Extension did not export a function');
+    if (typeof exported === 'object' && exported !== null) {
+      // Some extensions export an object with a default key
+      console.warn('Extension exported an object, not a function. Trying to wrap it.');
+      return () => exported;
+    }
+
+    console.error('Extension did not export a function. Got:', typeof exported, exported);
     return null;
-  } catch (e) {
-    console.error('Failed to load extension:', e);
+  } catch (e: any) {
+    console.error('Failed to load extension:', e?.message || e);
+    console.error('Stack:', e?.stack);
     return null;
   }
 }
@@ -403,14 +411,18 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   code,
   title,
   mode,
+  error: buildError,
   onClose,
 }) => {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(buildError || null);
   const [navStack, setNavStack] = useState<React.ReactElement[]>([]);
   const [detectedNoView, setDetectedNoView] = useState(false);
 
-  // Load the extension's default export
-  const ExtExport = useMemo(() => loadExtensionExport(code), [code]);
+  // Load the extension's default export (skip if there was a build error)
+  const ExtExport = useMemo(() => {
+    if (buildError || !code) return null;
+    return loadExtensionExport(code);
+  }, [code, buildError]);
 
   // Is this a no-view command?
   const isNoView = mode === 'no-view' || mode === 'menu-bar' || detectedNoView;

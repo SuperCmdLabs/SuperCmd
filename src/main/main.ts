@@ -23,7 +23,7 @@ import {
 import { getExtensionBundle } from './extension-runner';
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell } = electron;
 
 // ─── Window Configuration ───────────────────────────────────────────
 
@@ -370,20 +370,46 @@ app.whenReady().then(() => {
     openSettingsWindow();
   });
 
+  // ─── IPC: Open URL (for extensions) ─────────────────────────────
+
+  ipcMain.handle('open-url', async (_event: any, url: string) => {
+    if (!url) return false;
+    // Ignore Raycast-internal deep links
+    if (url.startsWith('raycast://')) {
+      console.log(`Ignoring Raycast deep link: ${url}`);
+      return true;
+    }
+    try {
+      await shell.openExternal(url);
+      return true;
+    } catch (e) {
+      console.error(`Failed to open URL: ${url}`, e);
+      return false;
+    }
+  });
+
   // ─── IPC: Extension Runner ───────────────────────────────────────
 
   ipcMain.handle(
     'run-extension',
-    async (_event: any, extName: string, cmdName: string) => {
-      const result = await getExtensionBundle(extName, cmdName);
-      if (!result) return null;
-      return {
-        code: result.code,
-        title: result.title,
-        mode: result.mode,
-        extName,
-        cmdName,
-      };
+    (_event: any, extName: string, cmdName: string) => {
+      try {
+        // Just read the pre-built bundle (built at install time)
+        const result = getExtensionBundle(extName, cmdName);
+        if (!result) {
+          return { error: `No pre-built bundle for ${extName}/${cmdName}. Try reinstalling the extension.` };
+        }
+        return {
+          code: result.code,
+          title: result.title,
+          mode: result.mode,
+          extName,
+          cmdName,
+        };
+      } catch (e: any) {
+        console.error(`run-extension error for ${extName}/${cmdName}:`, e);
+        return { error: e?.message || 'Unknown error' };
+      }
     }
   );
 
