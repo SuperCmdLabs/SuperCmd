@@ -290,7 +290,7 @@ const App: React.FC = () => {
     <div className="w-full h-full">
       <div className="glass-effect rounded-2xl shadow-2xl overflow-hidden h-full flex flex-col">
         {/* Search header - transparent background */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06]">
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06]">
           <input
             ref={inputRef}
             type="text"

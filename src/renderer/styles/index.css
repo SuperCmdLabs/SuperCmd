@@ -19,15 +19,14 @@ body {
   height: 100vh;
 }
 
-/* Glass effect background - enhanced glassy look */
+/* Glass effect background - frosted glass via CSS */
 .glass-effect {
-  background: rgba(18, 18, 22, 0.85);
-  backdrop-filter: saturate(200%) blur(100px);
-  -webkit-backdrop-filter: saturate(200%) blur(100px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(22, 22, 26, 0.75);
+  backdrop-filter: blur(60px) saturate(180%);
+  -webkit-backdrop-filter: blur(60px) saturate(180%);
   box-shadow: 
-    0 8px 40px rgba(0, 0, 0, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.10) inset;
+    0 0 0 0.5px rgba(255, 255, 255, 0.08),
+    0 10px 50px rgba(0, 0, 0, 0.5);
 }
 
 /* List area background - transparent to show glass */

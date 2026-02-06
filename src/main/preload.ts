@@ -109,6 +109,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('clipboard-delete-item', id),
   clipboardCopyItem: (id: string): Promise<boolean> =>
     ipcRenderer.invoke('clipboard-copy-item', id),
+  clipboardPasteItem: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('clipboard-paste-item', id),
   clipboardSetEnabled: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke('clipboard-set-enabled', enabled),
 });

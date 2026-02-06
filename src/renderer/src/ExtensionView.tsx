@@ -1459,7 +1459,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   if (error) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
           <button
             onClick={onClose}
             className="text-white/40 hover:text-white/70 transition-colors"
@@ -1481,7 +1481,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   if (!ExtExport) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
           <button
             onClick={onClose}
             className="text-white/40 hover:text-white/70 transition-colors"

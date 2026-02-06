@@ -1689,7 +1689,7 @@ function ListComponent({
 
       <div className="flex flex-col h-full" onKeyDown={handleKeyDown}>
         {/* ── Search bar - transparent background ──────────────────────────────────────── */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
           {/* Always show back button */}
           <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -1927,7 +1927,7 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
 
       <div className="flex flex-col h-full">
         {/* ── Navigation bar - same padding as List/main search bar ── */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
           <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
           </button>
@@ -2162,7 +2162,7 @@ function GridComponent({ children, columns, inset, isLoading, searchBarPlacehold
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06]">
+      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06]">
         <input ref={inputRef} type="text" placeholder={searchBarPlaceholder || 'Search…'} value={searchText}
           onChange={(e) => handleSearchChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); pop(); } }}

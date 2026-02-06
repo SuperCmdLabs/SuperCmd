@@ -101,21 +101,8 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     if (!itemToPaste) return;
     
     try {
-      // Copy to clipboard
-      const success = await window.electron.clipboardCopyItem(itemToPaste.id);
-      if (!success) {
-        console.error('Failed to copy to clipboard');
-        return;
-      }
-      
-      // Small delay to ensure clipboard is ready
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Close window so user can paste
-      window.electron.hideWindow();
-      
-      // Log success
-      console.log('Item copied to clipboard, window closed. Press Cmd+V to paste.');
+      // This copies to clipboard, hides window, and simulates Cmd+V
+      await window.electron.clipboardPasteItem(itemToPaste.id);
     } catch (e) {
       console.error('Failed to paste item:', e);
     }
@@ -247,7 +234,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   return (
     <div className="w-full h-full flex flex-col" onKeyDown={handleKeyDown} tabIndex={-1}>
       {/* Header - transparent background same as main screen */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06]">
+      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06]">
         <input
           ref={inputRef}
           type="text"

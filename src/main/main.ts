@@ -38,7 +38,7 @@ const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu } = ele
 // ─── Window Configuration ───────────────────────────────────────────
 
 const WINDOW_WIDTH = 900;
-const WINDOW_HEIGHT = 650;
+const WINDOW_HEIGHT = 580;
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
@@ -75,13 +75,12 @@ function createWindow(): void {
     y: Math.floor(screenHeight * 0.2),
     frame: false,
     transparent: true,
+    hasShadow: false,
     resizable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
     backgroundColor: '#00000000',
-    vibrancy: 'hud',
-    visualEffectState: 'active',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -183,7 +182,10 @@ function openSettingsWindow(): void {
     minHeight: 500,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
-    backgroundColor: '#1a1a1c',
+    transparent: true,
+    backgroundColor: '#00000000',
+    vibrancy: 'hud',
+    visualEffectState: 'active',
     show: false,
     webPreferences: {
       nodeIntegration: false,
@@ -721,6 +723,29 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('clipboard-copy-item', (_event: any, id: string) => {
     return copyItemToClipboard(id);
+  });
+
+  ipcMain.handle('clipboard-paste-item', async (_event: any, id: string) => {
+    const success = copyItemToClipboard(id);
+    if (!success) return false;
+
+    // Hide the window first so the previous app regains focus
+    if (mainWindow && isVisible) {
+      mainWindow.hide();
+      isVisible = false;
+    }
+
+    // Wait for the previous app to gain focus, then simulate Cmd+V
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    try {
+      const { exec } = require('child_process');
+      exec(`osascript -e 'tell application "System Events" to keystroke "v" using command down'`);
+    } catch (e) {
+      console.error('Failed to simulate paste keystroke:', e);
+    }
+
+    return true;
   });
 
   ipcMain.handle('clipboard-set-enabled', (_event: any, enabled: boolean) => {

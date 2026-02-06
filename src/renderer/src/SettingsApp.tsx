@@ -34,9 +34,9 @@ const SettingsApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
 
   return (
-    <div className="h-screen flex bg-[#1a1a1c] text-white select-none">
+    <div className="h-screen flex glass-effect text-white select-none">
       {/* Sidebar */}
-      <div className="w-52 bg-[#141416] border-r border-white/[0.06] flex flex-col">
+      <div className="w-52 border-r border-white/[0.06] flex flex-col" style={{ background: 'rgba(10,10,14,0.5)' }}>
         {/* Drag region for macOS title bar */}
         <div className="h-12 drag-region" />
 

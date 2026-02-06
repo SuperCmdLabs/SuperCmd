@@ -116,6 +116,7 @@ export interface ElectronAPI {
   clipboardClearHistory: () => Promise<void>;
   clipboardDeleteItem: (id: string) => Promise<boolean>;
   clipboardCopyItem: (id: string) => Promise<boolean>;
+  clipboardPasteItem: (id: string) => Promise<boolean>;
   clipboardSetEnabled: (enabled: boolean) => Promise<void>;
 }
 
