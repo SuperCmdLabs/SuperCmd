@@ -1491,6 +1491,8 @@ function ListComponent({
           e.stopPropagation();
           setShowActions(false); // close panel if open
           action.execute();
+          // Refocus search input so edit mode works (e.g. ⌘E puts text in bar)
+          setTimeout(() => inputRef.current?.focus(), 0);
           return;
         }
       }
@@ -1534,7 +1536,10 @@ function ListComponent({
         if (action.shortcut && matchesShortcut(e, action.shortcut)) {
           e.preventDefault();
           e.stopPropagation();
+          setShowActions(false); // close panel if open
           action.execute();
+          // Refocus search input so edit mode works
+          setTimeout(() => inputRef.current?.focus(), 0);
           return;
         }
       }
@@ -1626,6 +1631,8 @@ function ListComponent({
   const handleActionExecute = useCallback((action: ExtractedAction) => {
     setShowActions(false);
     action.execute();
+    // Refocus search input after panel closes (for edit actions, etc.)
+    setTimeout(() => inputRef.current?.focus(), 0);
   }, []);
 
   // ── Render ─────────────────────────────────────────────────────
