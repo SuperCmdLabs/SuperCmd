@@ -816,7 +816,10 @@ function useActionRegistration(props: any) {
       order: orderRef.current,
     });
     return () => registry.unregister(idRef.current);
-  });
+    // Re-register only when display-relevant properties change.
+    // The executor uses propsRef so it always calls the latest props.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registry, props.title, props.icon, props.shortcut, props.style, sectionTitle]);
 
   return null;
 }
@@ -1065,7 +1068,7 @@ function ActionPanelOverlay({
     switch (e.key) {
       case 'ArrowDown': e.preventDefault(); setSelectedIdx(p => Math.min(p + 1, filteredActions.length - 1)); break;
       case 'ArrowUp': e.preventDefault(); setSelectedIdx(p => Math.max(p - 1, 0)); break;
-      case 'Enter': e.preventDefault(); if (filteredActions[selectedIdx]) onExecute(filteredActions[selectedIdx]); break;
+      case 'Enter': e.preventDefault(); if (!e.repeat && filteredActions[selectedIdx]) onExecute(filteredActions[selectedIdx]); break;
       case 'Escape': e.preventDefault(); onClose(); break;
     }
   };
@@ -1196,7 +1199,10 @@ function ListItemComponent(props: ListItemProps) {
   const registry = useContext(ListRegistryContext);
   const sectionTitle = useContext(ListSectionTitleContext);
   const stableId = useRef(props.id || `__li_${++_itemOrderCounter}`).current;
-  const order = useRef(++_itemOrderCounter).current;
+  // Order must update every render (NOT useRef) so that items in earlier
+  // sections always sort before items in later sections. React renders
+  // children in tree order, so this naturally reflects the JSX structure.
+  const order = ++_itemOrderCounter;
 
   // Register synchronously (ref update, no state change)
   registry.set(stableId, { props, sectionTitle, order });
@@ -1356,7 +1362,13 @@ function ListComponent({
       const entries = Array.from(registryRef.current.values());
       const snapshot = entries.map(e => {
         const t = typeof e.props.title === 'string' ? e.props.title : (e.props.title as any)?.value || '';
-        return `${e.id}:${t}:${e.sectionTitle || ''}`;
+        // Include the actions element's component type in the snapshot.
+        // When the actions switch (e.g. ActionPanel → ListActions), the
+        // type (function ref) changes, the snapshot changes, and we
+        // re-render so the correct actions are collected.
+        const atype = e.props.actions?.type as any;
+        const at = atype?.name || atype?.displayName || typeof atype || '';
+        return `${e.id}:${t}:${e.sectionTitle || ''}:${at}`;
       }).join('|');
       if (snapshot !== lastSnapshotRef.current) {
         lastSnapshotRef.current = snapshot;
@@ -1411,23 +1423,17 @@ function ListComponent({
   // ── Action collection via registry ─────────────────────────────
   // We render the active actions element in a hidden area with
   // ActionRegistryContext so hooks in wrapper components work.
+  // IMPORTANT: Use a SINGLE registry and render only ONE actions element
+  // at a time. Item-level actions take priority; list-level actions are
+  // the fallback (for empty state). Rendering both simultaneously causes
+  // duplicate component mounts sharing the same atom state, leading to
+  // double mutations (e.g. duplicate todo items).
   const selectedItem = filteredItems[selectedIdx];
 
-  // Item-level action registry
-  const { collectedActions: itemActions, registryAPI: itemActionRegistry } = useCollectedActions();
-  // List-level action registry
-  const { collectedActions: globalActions, registryAPI: globalActionRegistry } = useCollectedActions();
+  const { collectedActions: selectedActions, registryAPI: actionRegistry } = useCollectedActions();
 
-  const selectedActions = useMemo(() => {
-    if (itemActions.length > 0 && globalActions.length > 0) {
-      const merged: ExtractedAction[] = [...itemActions];
-      for (const ga of globalActions) {
-        merged.push({ ...ga, sectionTitle: ga.sectionTitle || 'General' });
-      }
-      return merged;
-    }
-    return itemActions.length > 0 ? itemActions : globalActions;
-  }, [itemActions, globalActions]);
+  // Determine which actions element to render — item actions take priority
+  const activeActionsElement = selectedItem?.props?.actions || listActions;
 
   const primaryAction = selectedActions[0];
 
@@ -1446,6 +1452,7 @@ function ListComponent({
       case 'ArrowUp': e.preventDefault(); setSelectedIdx(p => Math.max(p - 1, 0)); break;
       case 'Enter':
         e.preventDefault();
+        if (e.repeat) break; // Ignore key auto-repeat to prevent duplicate actions
         if (primaryAction) {
           primaryAction.execute();
         }
@@ -1539,18 +1546,13 @@ function ListComponent({
       {/* Hidden render area — children mount here and register items via context */}
       <div style={{ display: 'none' }}>
         {children}
-        {/* Render selected item's actions in registry context so hooks work */}
-        {selectedItem?.props?.actions && (
-          <ActionRegistryContext.Provider value={itemActionRegistry}>
-            <div key={selectedItem.id}>
-              {selectedItem.props.actions}
+        {/* Render ONE actions element in registry context so hooks work.
+            Item-level actions take priority; list-level is fallback. */}
+        {activeActionsElement && (
+          <ActionRegistryContext.Provider value={actionRegistry}>
+            <div key={selectedItem?.id || '__list_actions'}>
+              {activeActionsElement}
             </div>
-          </ActionRegistryContext.Provider>
-        )}
-        {/* Render list-level actions in registry context */}
-        {listActions && (
-          <ActionRegistryContext.Provider value={globalActionRegistry}>
-            {listActions}
           </ActionRegistryContext.Provider>
         )}
       </div>
@@ -1758,7 +1760,7 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
       // ⌘K toggles action panel
       if (e.key === 'k' && e.metaKey) { e.preventDefault(); setShowActions(prev => !prev); return; }
       // ⌘Enter triggers primary action
-      if (e.key === 'Enter' && e.metaKey && primaryAction) { e.preventDefault(); primaryAction.execute(); return; }
+      if (e.key === 'Enter' && e.metaKey && !e.repeat && primaryAction) { e.preventDefault(); primaryAction.execute(); return; }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
