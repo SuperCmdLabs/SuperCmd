@@ -433,6 +433,13 @@ app.whenReady().then(async () => {
           mode: result.mode,
           extName,
           cmdName,
+          // Additional metadata for @raycast/api
+          extensionName: result.extensionName,
+          commandName: result.commandName,
+          assetsPath: result.assetsPath,
+          supportPath: result.supportPath,
+          owner: result.owner,
+          preferences: result.preferences,
         };
       } catch (e: any) {
         console.error(`run-extension error for ${extName}/${cmdName}:`, e);
@@ -440,6 +447,176 @@ app.whenReady().then(async () => {
       }
     }
   );
+
+  // ─── IPC: Extension APIs (for @raycast/api compatibility) ────────
+
+  // Shell command execution
+  ipcMain.handle(
+    'exec-command',
+    async (
+      _event: any,
+      command: string,
+      args: string[],
+      options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
+    ) => {
+      const { spawn, execFile } = require('child_process');
+
+      return new Promise((resolve) => {
+        try {
+          const spawnOptions: any = {
+            shell: options?.shell ?? false,
+            env: { ...process.env, ...options?.env },
+            cwd: options?.cwd || process.cwd(),
+          };
+
+          let proc: any;
+          if (options?.shell) {
+            // When shell is true, join command and args
+            const fullCommand = [command, ...args].join(' ');
+            proc = spawn(fullCommand, [], { ...spawnOptions, shell: true });
+          } else {
+            proc = spawn(command, args, spawnOptions);
+          }
+
+          let stdout = '';
+          let stderr = '';
+
+          proc.stdout?.on('data', (data: Buffer) => {
+            stdout += data.toString();
+          });
+
+          proc.stderr?.on('data', (data: Buffer) => {
+            stderr += data.toString();
+          });
+
+          if (options?.input && proc.stdin) {
+            proc.stdin.write(options.input);
+            proc.stdin.end();
+          }
+
+          proc.on('close', (code: number | null) => {
+            resolve({ stdout, stderr, exitCode: code ?? 0 });
+          });
+
+          proc.on('error', (err: Error) => {
+            resolve({ stdout, stderr: err.message, exitCode: 1 });
+          });
+
+          // Timeout after 30 seconds
+          setTimeout(() => {
+            try {
+              proc.kill();
+            } catch {}
+            resolve({ stdout, stderr: stderr || 'Command timed out', exitCode: 124 });
+          }, 30000);
+        } catch (e: any) {
+          resolve({ stdout: '', stderr: e?.message || 'Failed to execute command', exitCode: 1 });
+        }
+      });
+    }
+  );
+
+  // Get installed applications
+  ipcMain.handle('get-applications', async () => {
+    const commands = await getAvailableCommands();
+    return commands
+      .filter((c) => c.category === 'app')
+      .map((c) => ({
+        name: c.title,
+        path: c.path || '',
+        bundleId: c.path?.match(/([^/]+)\.app/)?.[1] || undefined,
+      }));
+  });
+
+  // Get frontmost application
+  ipcMain.handle('get-frontmost-application', async () => {
+    try {
+      const { execSync } = require('child_process');
+      const script = `
+        tell application "System Events"
+          set frontApp to first application process whose frontmost is true
+          set appName to name of frontApp
+          set appPath to POSIX path of (file of frontApp as alias)
+          set appId to bundle identifier of frontApp
+          return appName & "|||" & appPath & "|||" & appId
+        end tell
+      `;
+      const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
+      const [name, appPath, bundleId] = result.split('|||');
+      return { name, path: appPath, bundleId };
+    } catch (e) {
+      return { name: 'SuperCommand', path: '', bundleId: 'com.supercommand' };
+    }
+  });
+
+  // Run AppleScript
+  ipcMain.handle('run-applescript', async (_event: any, script: string) => {
+    try {
+      const { execSync } = require('child_process');
+      const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' });
+      return result.trim();
+    } catch (e: any) {
+      console.error('AppleScript error:', e);
+      return '';
+    }
+  });
+
+  // Move to trash
+  ipcMain.handle('move-to-trash', async (_event: any, paths: string[]) => {
+    for (const p of paths) {
+      try {
+        await shell.trashItem(p);
+      } catch (e) {
+        console.error(`Failed to trash ${p}:`, e);
+      }
+    }
+  });
+
+  // File system operations for extensions
+  const fs = require('fs');
+  const fsPromises = require('fs/promises');
+
+  ipcMain.handle('read-file', async (_event: any, filePath: string) => {
+    try {
+      return await fsPromises.readFile(filePath, 'utf-8');
+    } catch (e) {
+      return '';
+    }
+  });
+
+  ipcMain.handle('write-file', async (_event: any, filePath: string, content: string) => {
+    try {
+      // Ensure directory exists
+      const dir = path.dirname(filePath);
+      await fsPromises.mkdir(dir, { recursive: true });
+      await fsPromises.writeFile(filePath, content, 'utf-8');
+    } catch (e) {
+      console.error('write-file error:', e);
+    }
+  });
+
+  ipcMain.handle('file-exists', async (_event: any, filePath: string) => {
+    try {
+      await fsPromises.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.handle('read-dir', async (_event: any, dirPath: string) => {
+    try {
+      return await fsPromises.readdir(dirPath);
+    } catch {
+      return [];
+    }
+  });
+
+  // Get system appearance
+  ipcMain.handle('get-appearance', () => {
+    const { nativeTheme } = require('electron');
+    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  });
 
   // ─── IPC: Store (Community Extensions) ──────────────────────────
 

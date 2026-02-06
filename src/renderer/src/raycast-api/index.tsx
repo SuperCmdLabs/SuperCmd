@@ -32,6 +32,45 @@ import React, {
 } from 'react';
 
 // =====================================================================
+// ─── Extension Context (set by ExtensionView) ───────────────────────
+// =====================================================================
+
+export interface ExtensionContextType {
+  extensionName: string;
+  commandName: string;
+  assetsPath: string;
+  supportPath: string;
+  owner: string;
+  preferences: Record<string, any>;
+  commandMode: 'view' | 'no-view' | 'menu-bar';
+}
+
+let _extensionContext: ExtensionContextType = {
+  extensionName: '',
+  commandName: '',
+  assetsPath: '',
+  supportPath: '/tmp/supercommand',
+  owner: '',
+  preferences: {},
+  commandMode: 'view',
+};
+
+export function setExtensionContext(ctx: ExtensionContextType) {
+  _extensionContext = ctx;
+  // Also update environment object
+  environment.extensionName = ctx.extensionName;
+  environment.commandName = ctx.commandName;
+  environment.commandMode = ctx.commandMode;
+  environment.assetsPath = ctx.assetsPath;
+  environment.supportPath = ctx.supportPath;
+  environment.ownerOrAuthorName = ctx.owner;
+}
+
+export function getExtensionContext(): ExtensionContextType {
+  return _extensionContext;
+}
+
+// =====================================================================
 // ─── Navigation Context ─────────────────────────────────────────────
 // =====================================================================
 
@@ -45,8 +84,22 @@ export const NavigationContext = createContext<NavigationCtx>({
   pop: () => {},
 });
 
+// Global ref for navigation (used by executePrimaryAction for Action.Push)
+let _globalNavigation: NavigationCtx = { push: () => {}, pop: () => {} };
+
+export function setGlobalNavigation(nav: NavigationCtx) {
+  _globalNavigation = nav;
+}
+
+export function getGlobalNavigation(): NavigationCtx {
+  return _globalNavigation;
+}
+
 export function useNavigation() {
-  return useContext(NavigationContext);
+  const ctx = useContext(NavigationContext);
+  // Also update global ref so it's available for executePrimaryAction
+  _globalNavigation = ctx;
+  return ctx;
 }
 
 // =====================================================================
@@ -77,6 +130,17 @@ export const environment: Record<string, any> = {
   theme: { name: 'dark' },
   canAccess: () => true,
 };
+
+// Initialize appearance from system
+(async () => {
+  try {
+    const appearance = await (window as any).electron?.getAppearance?.();
+    if (appearance) {
+      environment.appearance = appearance;
+      environment.theme = { name: appearance };
+    }
+  } catch {}
+})();
 
 // =====================================================================
 // ─── Toast ──────────────────────────────────────────────────────────
@@ -155,7 +219,7 @@ export function showToast(optionsOrStyle: any, titleOrUndefined?: string, messag
 // =====================================================================
 
 export async function showHUD(title: string, options?: any): Promise<void> {
-  _showToastElement(title, 'success');
+  await showToast({ title, style: ToastStyle.Success });
 }
 
 // =====================================================================
@@ -179,13 +243,175 @@ export async function confirmAlert(options: {
 // ─── Icon ───────────────────────────────────────────────────────────
 // =====================================================================
 
+// Map Raycast icon names to SVG paths or emoji
+const iconMap: Record<string, string> = {
+  // Common icons - using emoji as fallback
+  List: '☰',
+  MagnifyingGlass: '🔍',
+  Gear: '⚙️',
+  Trash: '🗑️',
+  Plus: '+',
+  Minus: '-',
+  Checkmark: '✓',
+  XMarkCircle: '✕',
+  ExclamationMark: '!',
+  QuestionMark: '?',
+  Info: 'ℹ',
+  Star: '⭐',
+  StarFilled: '★',
+  Heart: '♡',
+  HeartFilled: '♥',
+  Folder: '📁',
+  Document: '📄',
+  Terminal: '>_',
+  Code: '</>',
+  Globe: '🌐',
+  Link: '🔗',
+  Lock: '🔒',
+  Unlock: '🔓',
+  Key: '🔑',
+  Person: '👤',
+  PersonCircle: '👤',
+  Envelope: '✉️',
+  Message: '💬',
+  Phone: '📱',
+  Calendar: '📅',
+  Clock: '🕐',
+  Alarm: '⏰',
+  Bell: '🔔',
+  Camera: '📷',
+  Image: '🖼️',
+  Video: '🎬',
+  Music: '🎵',
+  Play: '▶',
+  Pause: '⏸',
+  Stop: '⏹',
+  Forward: '⏩',
+  Backward: '⏪',
+  Repeat: '🔁',
+  Shuffle: '🔀',
+  Download: '⬇️',
+  Upload: '⬆️',
+  Cloud: '☁️',
+  Sun: '☀️',
+  Moon: '🌙',
+  Bolt: '⚡',
+  Fire: '🔥',
+  Leaf: '🍃',
+  Tree: '🌳',
+  Bug: '🐛',
+  Hammer: '🔨',
+  Wrench: '🔧',
+  Pencil: '✏️',
+  Clipboard: '📋',
+  Copy: '📋',
+  Cut: '✂️',
+  Paste: '📋',
+  Undo: '↩️',
+  Redo: '↪️',
+  ArrowRight: '→',
+  ArrowLeft: '←',
+  ArrowUp: '↑',
+  ArrowDown: '↓',
+  ChevronRight: '›',
+  ChevronLeft: '‹',
+  ChevronUp: '⌃',
+  ChevronDown: '⌄',
+  CircleFilled: '●',
+  Circle: '○',
+  SquareFilled: '■',
+  Square: '□',
+  EyeDropper: '🎨',
+  Wand: '✨',
+  Sparkles: '✨',
+  Text: 'Aa',
+  TextCursor: '|',
+  Tag: '🏷️',
+  Bookmark: '🔖',
+  Filter: '⚙',
+  SortAscending: '↑',
+  SortDescending: '↓',
+  Window: '⬜',
+  Desktop: '🖥️',
+  Keyboard: '⌨️',
+  Mouse: '🖱️',
+  Printer: '🖨️',
+  Wifi: '📶',
+  Bluetooth: 'ᛒ',
+  Battery: '🔋',
+  Power: '⏻',
+  Home: '🏠',
+  Building: '🏢',
+  Map: '🗺️',
+  Pin: '📍',
+  Compass: '🧭',
+  Car: '🚗',
+  Airplane: '✈️',
+  Ship: '🚢',
+  Train: '🚂',
+  Wallet: '👛',
+  CreditCard: '💳',
+  Cart: '🛒',
+  Gift: '🎁',
+  Trophy: '🏆',
+  Flag: '🚩',
+  EmojiSad: '😢',
+  EmojiHappy: '😊',
+  Binoculars: '🔭',
+  Fingerprint: '🔐',
+  AppWindow: '⬜',
+  AppWindowGrid: '⊞',
+};
+
 // Return the property name as the icon value. This works with our
-// renderer which just shows a dot for string icons.
+// renderer which shows the mapped icon or a dot for unknown icons.
 export const Icon: Record<string, string> = new Proxy({} as Record<string, string>, {
   get(_target, prop: string) {
-    return prop;
+    return iconMap[prop] || '•';
   },
 });
+
+// Helper component to render icons
+export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
+  if (!icon) return null;
+
+  // If it's a string URL or data URL, render as image
+  if (typeof icon === 'string') {
+    if (icon.startsWith('data:') || icon.startsWith('http')) {
+      return <img src={icon} className={className + ' rounded'} alt="" />;
+    }
+    // Check if it's a mapped icon
+    const mappedIcon = iconMap[icon];
+    if (mappedIcon) {
+      return <span className="text-center" style={{ fontSize: '0.875rem' }}>{mappedIcon}</span>;
+    }
+    // Check if the icon itself is an emoji or symbol
+    if (icon.length <= 2 || /[\u{1F300}-\u{1F9FF}]/u.test(icon)) {
+      return <span className="text-center" style={{ fontSize: '0.875rem' }}>{icon}</span>;
+    }
+    // Otherwise show a dot
+    return <span className="opacity-50">•</span>;
+  }
+
+  // If it's an object with source property
+  if (typeof icon === 'object' && icon !== null) {
+    if (icon.source) {
+      const src = typeof icon.source === 'string' ? icon.source : icon.source?.light || icon.source?.dark || '';
+      if (src) {
+        return <img src={src} className={className + ' rounded'} alt="" />;
+      }
+    }
+    // Handle { light, dark } theme icons
+    if (icon.light || icon.dark) {
+      const src = icon.dark || icon.light;
+      if (typeof src === 'string') {
+        return <img src={src} className={className + ' rounded'} alt="" />;
+      }
+    }
+  }
+
+  return <span className="opacity-50">•</span>;
+}
 
 // =====================================================================
 // ─── Color ──────────────────────────────────────────────────────────
@@ -354,7 +580,7 @@ export const AI = {
 // =====================================================================
 
 export function getPreferenceValues<T = Record<string, any>>(): T {
-  return {} as T;
+  return _extensionContext.preferences as T;
 }
 
 export function open(target: string, application?: string | any) {
@@ -396,6 +622,14 @@ export async function getSelectedFinderItems(): Promise<Array<{ path: string }>>
 export async function getApplications(): Promise<
   Array<{ name: string; path: string; bundleId?: string }>
 > {
+  try {
+    const electron = (window as any).electron;
+    if (electron?.getApplications) {
+      return await electron.getApplications();
+    }
+  } catch (e) {
+    console.error('getApplications error:', e);
+  }
   return [];
 }
 
@@ -404,11 +638,28 @@ export async function getFrontmostApplication(): Promise<{
   path: string;
   bundleId?: string;
 }> {
+  try {
+    const electron = (window as any).electron;
+    if (electron?.getFrontmostApplication) {
+      const app = await electron.getFrontmostApplication();
+      if (app) return app;
+    }
+  } catch (e) {
+    console.error('getFrontmostApplication error:', e);
+  }
   return { name: 'SuperCommand', path: '', bundleId: 'com.supercommand' };
 }
 
 export async function trash(path: string | string[]): Promise<void> {
-  console.log('trash:', path);
+  try {
+    const electron = (window as any).electron;
+    const paths = Array.isArray(path) ? path : [path];
+    if (electron?.moveToTrash) {
+      await electron.moveToTrash(paths);
+    }
+  } catch (e) {
+    console.error('trash error:', e);
+  }
 }
 
 export function openExtensionPreferences(): void {
@@ -465,8 +716,19 @@ function ActionPush({ title, target, ...rest }: { title?: string; target: React.
 }
 
 function ActionSubmitForm({ title, onSubmit, ...rest }: { title?: string; onSubmit?: (values: any) => void; [key: string]: any }) {
+  const handleSubmit = () => {
+    const values = getFormValues();
+    const errors = getFormErrors();
+    // Don't submit if there are errors
+    if (Object.keys(errors).length > 0) {
+      showToast({ title: 'Please fix form errors', style: Toast.Style.Failure });
+      return;
+    }
+    onSubmit?.(values);
+  };
+
   return (
-    <button onClick={() => onSubmit?.({})} className="w-full text-left px-3 py-1.5 text-sm text-white/80 hover:bg-white/[0.06] rounded transition-colors">
+    <button onClick={handleSubmit} className="w-full text-left px-3 py-1.5 text-sm text-white/80 hover:bg-white/[0.06] rounded transition-colors">
       {title || 'Submit'}
     </button>
   );
@@ -530,8 +792,8 @@ export const ActionPanel = Object.assign(ActionPanelComponent, {
 
 interface ListItemProps {
   id?: string;
-  title: string;
-  subtitle?: string;
+  title: string | { value: string; tooltip?: string };
+  subtitle?: string | { value?: string; tooltip?: string };
   icon?: any;
   accessories?: Array<{ text?: string; icon?: any; tag?: any; date?: any; tooltip?: string }>;
   actions?: React.ReactElement;
@@ -558,23 +820,20 @@ function ListItemRenderer({
       <div className="flex items-center gap-2.5">
         {icon && (
           <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-white/50 text-xs">
-            {typeof icon === 'string' && (icon.startsWith('data:') || icon.startsWith('http')) ? (
-              <img src={icon} className="w-5 h-5 rounded" alt="" />
-            ) : typeof icon === 'object' && icon?.source ? (
-              <img src={typeof icon.source === 'string' ? icon.source : ''} className="w-5 h-5 rounded" alt="" />
-            ) : (
-              <span className="opacity-50">●</span>
-            )}
+            {renderIcon(icon, 'w-5 h-5')}
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <span className="text-white text-sm truncate block">{title}</span>
+          <span className="text-white text-sm truncate block">{typeof title === 'string' ? title : (title as any)?.value || ''}</span>
         </div>
         {subtitle && (
-          <span className="text-white/30 text-xs flex-shrink-0 truncate max-w-[200px]">{subtitle}</span>
+          <span className="text-white/30 text-xs flex-shrink-0 truncate max-w-[200px]">
+            {typeof subtitle === 'string' ? subtitle : (subtitle as any)?.value || ''}
+          </span>
         )}
         {accessories?.map((acc, i) => (
-          <span key={i} className="text-white/25 text-[11px] flex-shrink-0">
+          <span key={i} className="text-white/25 text-[11px] flex-shrink-0 flex items-center gap-1">
+            {acc?.icon && <span className="text-[10px]">{renderIcon(acc.icon, 'w-3 h-3')}</span>}
             {typeof acc === 'string' ? acc : acc?.text || acc?.tag?.value || (acc?.date ? new Date(acc.date).toLocaleDateString() : '') || ''}
           </span>
         ))}
@@ -631,8 +890,10 @@ function ListComponent({
     (onSearchTextChange || filtering === false || !searchText.trim())
       ? items
       : items.filter((item) => {
-          const t = item.props.title?.toLowerCase() || '';
-          const s = item.props.subtitle?.toLowerCase() || '';
+          const titleRaw = item.props.title;
+          const subtitleRaw = item.props.subtitle;
+          const t = (typeof titleRaw === 'string' ? titleRaw : (titleRaw as any)?.value || '').toLowerCase();
+          const s = (typeof subtitleRaw === 'string' ? subtitleRaw : (subtitleRaw as any)?.value || '').toLowerCase();
           const q = searchText.toLowerCase();
           return t.includes(q) || s.includes(q) ||
             item.props.keywords?.some((k: string) => k.toLowerCase().includes(q));
@@ -661,6 +922,43 @@ function ListComponent({
     }
   }, [selectedIdx]);
 
+  // Get the detail element of the selected item
+  const selectedItem = filteredItems[selectedIdx];
+  const detailElement = selectedItem?.props?.detail;
+
+  // Render the list content
+  const listContent = (
+    <div ref={listRef} className="flex-1 overflow-y-auto p-1.5" style={{ background: 'rgba(10,10,12,0.5)' }}>
+      {isLoading && filteredItems.length === 0 ? (
+        <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
+      ) : filteredItems.length === 0 ? (
+        <div className="flex items-center justify-center h-full text-white/40"><p className="text-sm">No results</p></div>
+      ) : (
+        <div className="space-y-0.5">
+          {filteredItems.map((item, idx) => (
+            <ListItemRenderer
+              key={item.props.id || `${item.props.title}-${idx}`}
+              {...item.props}
+              isSelected={idx === selectedIdx}
+              dataIdx={idx}
+              onSelect={() => setSelectedIdx(idx)}
+              onActivate={() => executePrimaryAction(item)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // Render detail panel when isShowingDetail is true
+  const detailPanel = isShowingDetail && detailElement ? (
+    <div className="flex-1 border-l border-white/[0.06] overflow-y-auto" style={{ background: 'rgba(10,10,12,0.5)' }}>
+      <div className="p-4">
+        {detailElement}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06]">
@@ -673,26 +971,16 @@ function ListComponent({
           className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-base font-light" autoFocus
         />
       </div>
-      <div ref={listRef} className="flex-1 overflow-y-auto p-1.5" style={{ background: 'rgba(10,10,12,0.5)' }}>
-        {isLoading && filteredItems.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
-        ) : filteredItems.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-white/40"><p className="text-sm">No results</p></div>
-        ) : (
-          <div className="space-y-0.5">
-            {filteredItems.map((item, idx) => (
-              <ListItemRenderer
-                key={item.props.id || `${item.props.title}-${idx}`}
-                {...item.props}
-                isSelected={idx === selectedIdx}
-                dataIdx={idx}
-                onSelect={() => setSelectedIdx(idx)}
-                onActivate={() => executePrimaryAction(item)}
-              />
-            ))}
+      {isShowingDetail ? (
+        <div className="flex flex-1 overflow-hidden">
+          <div className="w-1/3 flex flex-col overflow-hidden">
+            {listContent}
           </div>
-        )}
-      </div>
+          {detailPanel}
+        </div>
+      ) : (
+        listContent
+      )}
       <div className="px-3 py-1.5 border-t border-white/[0.05] text-white/20 text-[11px]">
         {filteredItems.length} items{isLoading ? ' • Loading…' : ''}
       </div>
@@ -765,12 +1053,69 @@ export const Detail = Object.assign(DetailComponent, { Metadata });
 // ─── Form ───────────────────────────────────────────────────────────
 // =====================================================================
 
-function FormComponent({ children, actions, navigationTitle, isLoading, onSubmit }: {
+// Form context to collect values from all fields
+interface FormContextType {
+  values: Record<string, any>;
+  setValue: (id: string, value: any) => void;
+  errors: Record<string, string>;
+  setError: (id: string, error: string) => void;
+}
+
+const FormContext = createContext<FormContextType>({
+  values: {},
+  setValue: () => {},
+  errors: {},
+  setError: () => {},
+});
+
+// Global ref to access current form values (for Action.SubmitForm)
+let _currentFormValues: Record<string, any> = {};
+let _currentFormErrors: Record<string, string> = {};
+
+export function getFormValues(): Record<string, any> {
+  return { ..._currentFormValues };
+}
+
+export function getFormErrors(): Record<string, string> {
+  return { ..._currentFormErrors };
+}
+
+function FormComponent({ children, actions, navigationTitle, isLoading, enableDrafts, draftValues }: {
   children?: React.ReactNode; actions?: React.ReactElement; navigationTitle?: string;
-  isLoading?: boolean; onSubmit?: (values: any) => void;
+  isLoading?: boolean; enableDrafts?: boolean; draftValues?: Record<string, any>;
 }) {
-  const formRef = useRef<Record<string, any>>({});
+  const [values, setValues] = useState<Record<string, any>>(draftValues || {});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const { pop } = useNavigation();
+
+  const setValue = useCallback((id: string, value: any) => {
+    setValues(prev => {
+      const next = { ...prev, [id]: value };
+      _currentFormValues = next;
+      return next;
+    });
+    // Clear error when value changes
+    setErrors(prev => {
+      const next = { ...prev };
+      delete next[id];
+      _currentFormErrors = next;
+      return next;
+    });
+  }, []);
+
+  const setError = useCallback((id: string, error: string) => {
+    setErrors(prev => {
+      const next = { ...prev, [id]: error };
+      _currentFormErrors = next;
+      return next;
+    });
+  }, []);
+
+  // Update global ref whenever values change
+  useEffect(() => {
+    _currentFormValues = values;
+    _currentFormErrors = errors;
+  }, [values, errors]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); pop(); } };
@@ -778,64 +1123,133 @@ function FormComponent({ children, actions, navigationTitle, isLoading, onSubmit
     return () => window.removeEventListener('keydown', handler);
   }, [pop]);
 
+  const contextValue = useMemo(() => ({ values, setValue, errors, setError }), [values, setValue, errors, setError]);
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-6" style={{ background: 'rgba(10,10,12,0.5)' }}>
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
-        ) : children}
+    <FormContext.Provider value={contextValue}>
+      <div className="flex flex-col h-full">
+        <div className="flex-1 overflow-y-auto p-6" style={{ background: 'rgba(10,10,12,0.5)' }}>
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
+          ) : children}
+        </div>
+        {actions && (
+          <div className="px-4 py-3 border-t border-white/[0.06] flex justify-end gap-2">
+            {actions}
+          </div>
+        )}
       </div>
-    </div>
+    </FormContext.Provider>
   );
 }
 
-FormComponent.TextField = ({ id, title, placeholder, value, onChange, defaultValue, error, info, storeValue, autoFocus }: any) => (
-  <div className="mb-3">
-    {title && <label className="text-xs text-white/50 mb-1 block">{title}</label>}
-    <input type="text" placeholder={placeholder} value={value ?? defaultValue ?? ''} onChange={(e: any) => onChange?.(e.target.value)}
-      className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-3 py-1.5 text-sm text-white outline-none focus:border-white/20" autoFocus={autoFocus} />
-    {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
-    {info && <p className="text-xs text-white/30 mt-1">{info}</p>}
-  </div>
-);
+FormComponent.TextField = ({ id, title, placeholder, value, onChange, defaultValue, error, info, storeValue, autoFocus }: any) => {
+  const form = useContext(FormContext);
+  const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
+  const fieldError = error ?? form.errors[id];
 
-FormComponent.TextArea = ({ id, title, placeholder, value, onChange, defaultValue, error, info, enableMarkdown }: any) => (
-  <div className="mb-3">
-    {title && <label className="text-xs text-white/50 mb-1 block">{title}</label>}
-    <textarea placeholder={placeholder} value={value ?? defaultValue ?? ''} onChange={(e: any) => onChange?.(e.target.value)} rows={4}
-      className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-3 py-1.5 text-sm text-white outline-none focus:border-white/20 resize-y" />
-    {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
-  </div>
-);
+  const handleChange = (e: any) => {
+    const newValue = e.target.value;
+    if (id) form.setValue(id, newValue);
+    onChange?.(newValue);
+  };
 
-FormComponent.PasswordField = ({ id, title, placeholder, value, onChange, error }: any) => (
-  <div className="mb-3">
-    {title && <label className="text-xs text-white/50 mb-1 block">{title}</label>}
-    <input type="password" placeholder={placeholder} value={value ?? ''} onChange={(e: any) => onChange?.(e.target.value)}
-      className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-3 py-1.5 text-sm text-white outline-none focus:border-white/20" />
-    {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
-  </div>
-);
-
-FormComponent.Checkbox = ({ id, title, label, value, onChange, defaultValue, error, storeValue }: any) => (
-  <label className="flex items-center gap-2 mb-3 text-sm text-white/80 cursor-pointer">
-    <input type="checkbox" checked={value ?? defaultValue ?? false} onChange={(e: any) => onChange?.(e.target.checked)} className="accent-blue-500" />
-    {title || label}
-    {error && <span className="text-xs text-red-400 ml-2">{error}</span>}
-  </label>
-);
-
-FormComponent.Dropdown = Object.assign(
-  ({ id, title, children, value, onChange, defaultValue, error, storeValue, isLoading, filtering, throttle }: any) => (
+  return (
     <div className="mb-3">
       {title && <label className="text-xs text-white/50 mb-1 block">{title}</label>}
-      <select value={value ?? defaultValue ?? ''} onChange={(e: any) => onChange?.(e.target.value)}
-        className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-3 py-1.5 text-sm text-white outline-none">
-        {children}
-      </select>
-      {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
+      <input type="text" placeholder={placeholder} value={fieldValue} onChange={handleChange}
+        className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-3 py-1.5 text-sm text-white outline-none focus:border-white/20" autoFocus={autoFocus} />
+      {fieldError && <p className="text-xs text-red-400 mt-1">{fieldError}</p>}
+      {info && <p className="text-xs text-white/30 mt-1">{info}</p>}
     </div>
-  ),
+  );
+};
+
+FormComponent.TextArea = ({ id, title, placeholder, value, onChange, defaultValue, error, info, enableMarkdown }: any) => {
+  const form = useContext(FormContext);
+  const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
+  const fieldError = error ?? form.errors[id];
+
+  const handleChange = (e: any) => {
+    const newValue = e.target.value;
+    if (id) form.setValue(id, newValue);
+    onChange?.(newValue);
+  };
+
+  return (
+    <div className="mb-3">
+      {title && <label className="text-xs text-white/50 mb-1 block">{title}</label>}
+      <textarea placeholder={placeholder} value={fieldValue} onChange={handleChange} rows={4}
+        className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-3 py-1.5 text-sm text-white outline-none focus:border-white/20 resize-y" />
+      {fieldError && <p className="text-xs text-red-400 mt-1">{fieldError}</p>}
+    </div>
+  );
+};
+
+FormComponent.PasswordField = ({ id, title, placeholder, value, onChange, defaultValue, error }: any) => {
+  const form = useContext(FormContext);
+  const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
+  const fieldError = error ?? form.errors[id];
+
+  const handleChange = (e: any) => {
+    const newValue = e.target.value;
+    if (id) form.setValue(id, newValue);
+    onChange?.(newValue);
+  };
+
+  return (
+    <div className="mb-3">
+      {title && <label className="text-xs text-white/50 mb-1 block">{title}</label>}
+      <input type="password" placeholder={placeholder} value={fieldValue} onChange={handleChange}
+        className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-3 py-1.5 text-sm text-white outline-none focus:border-white/20" />
+      {fieldError && <p className="text-xs text-red-400 mt-1">{fieldError}</p>}
+    </div>
+  );
+};
+
+FormComponent.Checkbox = ({ id, title, label, value, onChange, defaultValue, error, storeValue }: any) => {
+  const form = useContext(FormContext);
+  const fieldValue = value ?? form.values[id] ?? defaultValue ?? false;
+  const fieldError = error ?? form.errors[id];
+
+  const handleChange = (e: any) => {
+    const newValue = e.target.checked;
+    if (id) form.setValue(id, newValue);
+    onChange?.(newValue);
+  };
+
+  return (
+    <label className="flex items-center gap-2 mb-3 text-sm text-white/80 cursor-pointer">
+      <input type="checkbox" checked={fieldValue} onChange={handleChange} className="accent-blue-500" />
+      {title || label}
+      {fieldError && <span className="text-xs text-red-400 ml-2">{fieldError}</span>}
+    </label>
+  );
+};
+
+FormComponent.Dropdown = Object.assign(
+  ({ id, title, children, value, onChange, defaultValue, error, storeValue, isLoading, filtering, throttle }: any) => {
+    const form = useContext(FormContext);
+    const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
+    const fieldError = error ?? form.errors[id];
+
+    const handleChange = (e: any) => {
+      const newValue = e.target.value;
+      if (id) form.setValue(id, newValue);
+      onChange?.(newValue);
+    };
+
+    return (
+      <div className="mb-3">
+        {title && <label className="text-xs text-white/50 mb-1 block">{title}</label>}
+        <select value={fieldValue} onChange={handleChange}
+          className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-3 py-1.5 text-sm text-white outline-none">
+          {children}
+        </select>
+        {fieldError && <p className="text-xs text-red-400 mt-1">{fieldError}</p>}
+      </div>
+    );
+  },
   {
     Item: ({ value, title, icon }: any) => <option value={value}>{title}</option>,
     Section: ({ children, title }: any) => <optgroup label={title}>{children}</optgroup>,
@@ -1009,9 +1423,9 @@ function executePrimaryAction(item: React.ReactElement<ListItemProps>) {
   } else if (props.url) {
     (window as any).electron?.openUrl?.(props.url);
   } else if (props.target && React.isValidElement(props.target)) {
-    // Action.Push
-    // We can't call useNavigation here so we do nothing — the user
-    // will need to click the action button rendered by ActionPush.
+    // Action.Push — use global navigation ref
+    const nav = getGlobalNavigation();
+    nav.push(props.target);
   }
 }
 
@@ -1305,14 +1719,33 @@ export function useExec<T = string>(
     onWillExecute?: () => void;
     failureToastOptions?: any;
     env?: Record<string, string>;
+    cwd?: string;
   }
 ) {
   return usePromise(
     async () => {
-      // Cannot actually exec in browser context — return empty
-      console.warn(`useExec called for "${command}" — not available in SuperCommand renderer`);
-      const output = { stdout: '', stderr: '', exitCode: 0 };
-      return options?.parseOutput ? options.parseOutput(output) : ('' as any as T);
+      const electron = (window as any).electron;
+      if (!electron?.execCommand) {
+        console.warn(`useExec: execCommand not available for "${command}"`);
+        const output = { stdout: '', stderr: '', exitCode: 0 };
+        return options?.parseOutput ? options.parseOutput(output) : ('' as any as T);
+      }
+
+      const result = await electron.execCommand(command, args || [], {
+        shell: options?.shell,
+        input: options?.input,
+        env: options?.env,
+      });
+
+      if (result.exitCode !== 0 && result.stderr) {
+        throw new Error(result.stderr);
+      }
+
+      if (options?.parseOutput) {
+        return options.parseOutput(result);
+      }
+
+      return result.stdout as any as T;
     },
     [],
     {
@@ -1378,7 +1811,14 @@ export function getFavicon(url: string | { url: string }, options?: { fallback?:
 // ── runAppleScript ──────────────────────────────────────────────────
 
 export async function runAppleScript(script: string, options?: any): Promise<string> {
-  console.warn('runAppleScript is not available in SuperCommand renderer');
+  try {
+    const electron = (window as any).electron;
+    if (electron?.runAppleScript) {
+      return await electron.runAppleScript(script);
+    }
+  } catch (e) {
+    console.error('runAppleScript error:', e);
+  }
   return '';
 }
 
@@ -1393,12 +1833,7 @@ export async function showFailureToast(error: Error | string | unknown, options?
 // ─── Additional @raycast/api exports ────────────────────────────────
 // =====================================================================
 
-// Some extensions import these types/values
-export enum ToastStyle {
-  Animated = 'animated',
-  Success = 'success',
-  Failure = 'failure',
-}
+// ToastStyle is already exported above with the Toast class
 
 export const LaunchProps = {} as any;
 

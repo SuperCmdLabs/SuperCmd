@@ -17,6 +17,14 @@ export interface ExtensionBundle {
   mode: string; // 'view' | 'no-view' | 'menu-bar'
   extName: string;
   cmdName: string;
+  // Extended metadata for Raycast API compatibility
+  extensionName?: string;
+  commandName?: string;
+  assetsPath?: string;
+  supportPath?: string;
+  owner?: string;
+  preferences?: Record<string, any>;
+  error?: string;
 }
 
 export interface AppSettings {
@@ -69,6 +77,22 @@ export interface ElectronAPI {
   getInstalledExtensionNames: () => Promise<string[]>;
   installExtension: (name: string) => Promise<boolean>;
   uninstallExtension: (name: string) => Promise<boolean>;
+
+  // Extension APIs (for @raycast/api compatibility)
+  execCommand: (
+    command: string,
+    args: string[],
+    options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
+  ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+  getApplications: () => Promise<Array<{ name: string; path: string; bundleId?: string }>>;
+  getFrontmostApplication: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
+  runAppleScript: (script: string) => Promise<string>;
+  moveToTrash: (paths: string[]) => Promise<void>;
+  readFile: (filePath: string) => Promise<string>;
+  writeFile: (filePath: string, content: string) => Promise<void>;
+  fileExists: (filePath: string) => Promise<boolean>;
+  readDir: (dirPath: string) => Promise<string[]>;
+  getAppearance: () => Promise<'dark' | 'light'>;
 }
 
 declare global {

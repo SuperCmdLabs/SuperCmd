@@ -213,6 +213,12 @@ const App: React.FC = () => {
             title={extensionView.title}
             mode={extensionView.mode}
             error={(extensionView as any).error}
+            extensionName={(extensionView as any).extensionName || extensionView.extName}
+            commandName={(extensionView as any).commandName || extensionView.cmdName}
+            assetsPath={(extensionView as any).assetsPath}
+            supportPath={(extensionView as any).supportPath}
+            owner={(extensionView as any).owner}
+            preferences={(extensionView as any).preferences}
             onClose={() => {
               setExtensionView(null);
               setSearchQuery('');

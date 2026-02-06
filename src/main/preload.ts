@@ -51,4 +51,50 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('install-extension', name),
   uninstallExtension: (name: string): Promise<boolean> =>
     ipcRenderer.invoke('uninstall-extension', name),
+
+  // ─── Extension APIs (for @raycast/api compatibility) ─────────────
+
+  // Execute shell commands
+  execCommand: (
+    command: string,
+    args: string[],
+    options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> =>
+    ipcRenderer.invoke('exec-command', command, args, options),
+
+  // Get installed applications
+  getApplications: (): Promise<Array<{ name: string; path: string; bundleId?: string }>> =>
+    ipcRenderer.invoke('get-applications'),
+
+  // Get frontmost application
+  getFrontmostApplication: (): Promise<{ name: string; path: string; bundleId?: string } | null> =>
+    ipcRenderer.invoke('get-frontmost-application'),
+
+  // Run AppleScript
+  runAppleScript: (script: string): Promise<string> =>
+    ipcRenderer.invoke('run-applescript', script),
+
+  // Move to trash
+  moveToTrash: (paths: string[]): Promise<void> =>
+    ipcRenderer.invoke('move-to-trash', paths),
+
+  // Read file (for extensions that need filesystem access)
+  readFile: (filePath: string): Promise<string> =>
+    ipcRenderer.invoke('read-file', filePath),
+
+  // Write file
+  writeFile: (filePath: string, content: string): Promise<void> =>
+    ipcRenderer.invoke('write-file', filePath, content),
+
+  // Check if file exists
+  fileExists: (filePath: string): Promise<boolean> =>
+    ipcRenderer.invoke('file-exists', filePath),
+
+  // Read directory
+  readDir: (dirPath: string): Promise<string[]> =>
+    ipcRenderer.invoke('read-dir', dirPath),
+
+  // Get system appearance (dark/light)
+  getAppearance: (): Promise<'dark' | 'light'> =>
+    ipcRenderer.invoke('get-appearance'),
 });

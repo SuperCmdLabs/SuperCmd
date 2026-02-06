@@ -265,6 +265,69 @@ export async function buildAllCommands(extName: string): Promise<number> {
 
 // ─── Runtime: read pre-built bundles ────────────────────────────────
 
+export interface ExtensionBundleResult {
+  code: string;
+  title: string;
+  mode: string;
+  // Extension metadata
+  extensionName: string;
+  commandName: string;
+  assetsPath: string;
+  supportPath: string;
+  owner: string;
+  // Preferences
+  preferences: Record<string, any>;
+  // Command-specific preferences
+  commandPreferences: Record<string, any>;
+}
+
+/**
+ * Parse preferences from package.json and return default values.
+ * Extension preferences are defined in the manifest and can have default values.
+ */
+function parsePreferences(
+  pkg: any,
+  cmdName: string
+): { extensionPrefs: Record<string, any>; commandPrefs: Record<string, any> } {
+  const extensionPrefs: Record<string, any> = {};
+  const commandPrefs: Record<string, any> = {};
+
+  // Extension-level preferences
+  for (const pref of pkg.preferences || []) {
+    if (!pref.name) continue;
+    // Set default value based on type
+    if (pref.default !== undefined) {
+      extensionPrefs[pref.name] = pref.default;
+    } else if (pref.type === 'checkbox') {
+      extensionPrefs[pref.name] = false;
+    } else if (pref.type === 'textfield' || pref.type === 'password') {
+      extensionPrefs[pref.name] = '';
+    } else if (pref.type === 'dropdown') {
+      // Use first option as default
+      extensionPrefs[pref.name] = pref.data?.[0]?.value ?? '';
+    }
+  }
+
+  // Command-level preferences
+  const cmd = (pkg.commands || []).find((c: any) => c.name === cmdName);
+  if (cmd?.preferences) {
+    for (const pref of cmd.preferences) {
+      if (!pref.name) continue;
+      if (pref.default !== undefined) {
+        commandPrefs[pref.name] = pref.default;
+      } else if (pref.type === 'checkbox') {
+        commandPrefs[pref.name] = false;
+      } else if (pref.type === 'textfield' || pref.type === 'password') {
+        commandPrefs[pref.name] = '';
+      } else if (pref.type === 'dropdown') {
+        commandPrefs[pref.name] = pref.data?.[0]?.value ?? '';
+      }
+    }
+  }
+
+  return { extensionPrefs, commandPrefs };
+}
+
 /**
  * Get a pre-built extension command bundle.
  * Returns null if the bundle doesn't exist (extension not built).
@@ -272,7 +335,7 @@ export async function buildAllCommands(extName: string): Promise<number> {
 export function getExtensionBundle(
   extName: string,
   cmdName: string
-): { code: string; title: string; mode: string } | null {
+): ExtensionBundleResult | null {
   const extPath = path.join(getExtensionsDir(), extName);
   const outFile = path.join(extPath, '.sc-build', `${cmdName}.js`);
 
@@ -289,16 +352,47 @@ export function getExtensionBundle(
     return null;
   }
 
-  // Read command title + mode from package.json
+  // Read command info, preferences, and metadata from package.json
   let title = cmdName;
   let mode = 'view';
+  let owner = '';
+  let preferences: Record<string, any> = {};
+  let commandPreferences: Record<string, any> = {};
+
   try {
     const pkgPath = path.join(extPath, 'package.json');
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
     const cmd = (pkg.commands || []).find((c: any) => c.name === cmdName);
     if (cmd?.title) title = cmd.title;
     if (cmd?.mode) mode = cmd.mode;
+
+    const rawOwner = pkg.owner || pkg.author || '';
+    owner = typeof rawOwner === 'object' ? (rawOwner as any).name || '' : rawOwner;
+
+    const { extensionPrefs, commandPrefs } = parsePreferences(pkg, cmdName);
+    preferences = extensionPrefs;
+    commandPreferences = commandPrefs;
   } catch {}
 
-  return { code, title, mode };
+  // Compute paths
+  const assetsPath = path.join(extPath, 'assets');
+  const supportPath = path.join(app.getPath('userData'), 'extension-support', extName);
+
+  // Ensure support directory exists
+  if (!fs.existsSync(supportPath)) {
+    fs.mkdirSync(supportPath, { recursive: true });
+  }
+
+  return {
+    code,
+    title,
+    mode,
+    extensionName: extName,
+    commandName: cmdName,
+    assetsPath,
+    supportPath,
+    owner,
+    preferences: { ...preferences, ...commandPreferences },
+    commandPreferences,
+  };
 }
