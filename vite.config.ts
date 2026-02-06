@@ -9,6 +9,7 @@ export default defineConfig({
   build: {
     outDir: path.join(__dirname, 'dist/renderer'),
     emptyOutDir: true,
+    minify: false, // Keep unminified for debugging extension errors
   },
   server: {
     port: 5173,

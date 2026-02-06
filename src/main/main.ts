@@ -87,6 +87,9 @@ function createWindow(): void {
 
   loadWindowUrl(mainWindow, '/');
 
+  // Open DevTools for debugging (detached so it doesn't resize the overlay)
+  mainWindow.webContents.openDevTools({ mode: 'detach' });
+
   mainWindow.on('blur', () => {
     if (isVisible) {
       hideWindow();

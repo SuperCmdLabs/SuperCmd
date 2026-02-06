@@ -83,22 +83,26 @@ const App: React.FC = () => {
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  useEffect(() => {
-    const fetchCommands = async () => {
-      setIsLoading(true);
-      const fetchedCommands = await window.electron.getCommands();
-      setCommands(fetchedCommands);
-      setIsLoading(false);
-    };
+  const fetchCommands = useCallback(async () => {
+    setIsLoading(true);
+    const fetchedCommands = await window.electron.getCommands();
+    setCommands(fetchedCommands);
+    setIsLoading(false);
+  }, []);
 
+  useEffect(() => {
     fetchCommands();
 
     window.electron.onWindowShown(() => {
       setSearchQuery('');
       setSelectedIndex(0);
+      setExtensionView(null);
+      // Re-fetch commands every time the window is shown
+      // so newly installed extensions appear immediately
+      fetchCommands();
       inputRef.current?.focus();
     });
-  }, []);
+  }, [fetchCommands]);
 
   useEffect(() => {
     inputRef.current?.focus();
