@@ -1334,6 +1334,19 @@ ListDropdown.Section = ({ children }: { children?: React.ReactNode; title?: stri
 
 // ── ListComponent (main) ─────────────────────────────────────────────
 
+// ── Shortcut matching helper ─────────────────────────────────────────
+// Raycast shortcuts: { modifiers: ["cmd","opt","shift","ctrl"], key: "e" }
+function matchesShortcut(e: React.KeyboardEvent | KeyboardEvent, shortcut?: { modifiers?: string[]; key?: string }): boolean {
+  if (!shortcut?.key) return false;
+  if (e.key.toLowerCase() !== shortcut.key.toLowerCase()) return false;
+  const mods = shortcut.modifiers || [];
+  if (mods.includes('cmd') !== e.metaKey) return false;
+  if (mods.includes('opt') !== e.altKey) return false;
+  if (mods.includes('shift') !== e.shiftKey) return false;
+  if (mods.includes('ctrl') !== e.ctrlKey) return false;
+  return true;
+}
+
 function ListComponent({
   children, searchBarPlaceholder, onSearchTextChange, isLoading,
   searchText: controlledSearch, filtering, isShowingDetail,
@@ -1347,6 +1360,10 @@ function ListComponent({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const { pop } = useNavigation();
+
+  // Track the selected item's section so we can stabilize selection
+  // when items move between sections (e.g. mark complete/incomplete).
+  const prevSelectedSectionRef = useRef<string | undefined>(undefined);
 
   // ── Item registry (ref-based to avoid render loops) ────────────
   const registryRef = useRef(new Map<string, ItemRegistration>());
@@ -1461,8 +1478,64 @@ function ListComponent({
         e.preventDefault();
         pop();
         break;
+      default: {
+        // Check extension-defined keyboard shortcuts on all collected actions
+        if (e.repeat) break;
+        for (const action of selectedActions) {
+          if (action.shortcut && matchesShortcut(e, action.shortcut)) {
+            e.preventDefault();
+            action.execute();
+            break;
+          }
+        }
+        break;
+      }
     }
-  }, [filteredItems.length, selectedIdx, pop, primaryAction, showActions]);
+  }, [filteredItems.length, selectedIdx, pop, primaryAction, selectedActions, showActions]);
+
+  // ── Selection stabilization ─────────────────────────────────────
+  // When items change (e.g. mark complete moves an item between sections),
+  // the flat index stays the same but may now point into a different section.
+  // We stabilize by keeping the selection in the original section.
+  // When the user navigates (arrow keys), we just update the tracked section.
+  const prevFilteredItemsRef = useRef(filteredItems);
+
+  useEffect(() => {
+    const itemsChanged = prevFilteredItemsRef.current !== filteredItems;
+    prevFilteredItemsRef.current = filteredItems;
+    const currentItem = filteredItems[selectedIdx];
+
+    if (itemsChanged) {
+      // Clamp if out of bounds
+      if (selectedIdx >= filteredItems.length && filteredItems.length > 0) {
+        setSelectedIdx(filteredItems.length - 1);
+        return;
+      }
+      // If the item at selectedIdx moved to a different section, try to
+      // stay in the original section by looking backward (item above).
+      const prevSection = prevSelectedSectionRef.current;
+      if (prevSection !== undefined && currentItem && currentItem.sectionTitle !== prevSection) {
+        for (let i = selectedIdx - 1; i >= 0; i--) {
+          if (filteredItems[i].sectionTitle === prevSection) {
+            setSelectedIdx(i);
+            return; // ref will update on the re-render triggered by setSelectedIdx
+          }
+        }
+        // No item above in same section — try forward
+        for (let i = selectedIdx + 1; i < filteredItems.length; i++) {
+          if (filteredItems[i].sectionTitle === prevSection) {
+            setSelectedIdx(i);
+            return;
+          }
+        }
+      }
+    }
+
+    // Update tracked section for next comparison
+    if (currentItem) {
+      prevSelectedSectionRef.current = currentItem.sectionTitle;
+    }
+  }, [filteredItems, selectedIdx]);
 
   // ── Scroll selected into view ──────────────────────────────────
   useEffect(() => {
@@ -1761,10 +1834,20 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
       if (e.key === 'k' && e.metaKey) { e.preventDefault(); setShowActions(prev => !prev); return; }
       // ⌘Enter triggers primary action
       if (e.key === 'Enter' && e.metaKey && !e.repeat && primaryAction) { e.preventDefault(); primaryAction.execute(); return; }
+      // Extension-defined keyboard shortcuts
+      if (!e.repeat) {
+        for (const action of formActions) {
+          if (action.shortcut && matchesShortcut(e, action.shortcut)) {
+            e.preventDefault();
+            action.execute();
+            return;
+          }
+        }
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [pop, primaryAction]);
+  }, [pop, primaryAction, formActions]);
 
   const contextValue = useMemo(() => ({ values, setValue, errors, setError }), [values, setValue, errors, setError]);
 
