@@ -1199,6 +1199,26 @@ function loadExtensionExport(
         return nodeBuiltinStubs[name];
       }
 
+      // ── Swift native bridges (Raycast-specific) ────────────
+      // Provide JS implementations for swift: imports
+      if (name.startsWith('swift:')) {
+        if (name.includes('color-picker')) {
+          return {
+            pickColor: async () => {
+              try {
+                const result = await window.electron.nativePickColor();
+                return result;
+              } catch (e) {
+                console.error('Native color picker failed:', e);
+                return undefined;
+              }
+            },
+          };
+        }
+        // Unknown swift module — return empty
+        return {};
+      }
+
       // ── Handle deep imports (e.g. 'stream/web', 'util/types') ─
       const slashIdx = name.indexOf('/');
       if (slashIdx > 0) {

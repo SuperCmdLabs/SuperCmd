@@ -113,4 +113,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('clipboard-paste-item', id),
   clipboardSetEnabled: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke('clipboard-set-enabled', enabled),
+
+  // ─── Native Helpers ─────────────────────────────────────────────
+  nativePickColor: (): Promise<{ red: number; green: number; blue: number; alpha: number } | null> =>
+    ipcRenderer.invoke('native-pick-color'),
 });

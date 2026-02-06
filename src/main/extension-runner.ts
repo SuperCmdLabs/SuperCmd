@@ -213,6 +213,18 @@ export async function buildAllCommands(extName: string): Promise<number> {
         format: 'cjs',
         platform: 'node',
         outfile: outFile,
+        plugins: [
+          // Mark swift: imports as external so fakeRequire can handle them at runtime
+          {
+            name: 'swift-external',
+            setup(build: any) {
+              build.onResolve({ filter: /^swift:/ }, (args: any) => ({
+                path: args.path,
+                external: true,
+              }));
+            },
+          },
+        ],
         external: [
           // React — provided by the renderer at runtime
           'react',
@@ -227,6 +239,8 @@ export async function buildAllCommands(extName: string): Promise<number> {
           're2',
           'better-sqlite3',
           'fsevents',
+          // Cross-extension calls — not supported, stubbed
+          'raycast-cross-extension',
           // Node.js built-ins — stubbed at runtime in the renderer
           ...nodeBuiltins,
         ],

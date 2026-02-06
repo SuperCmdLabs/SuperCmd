@@ -759,6 +759,43 @@ app.whenReady().then(async () => {
     setClipboardMonitorEnabled(enabled);
   });
 
+  // ─── IPC: Native Color Picker ──────────────────────────────────
+
+  ipcMain.handle('native-pick-color', async () => {
+    const { execFile } = require('child_process');
+    const colorPickerPath = path.join(__dirname, '..', 'native', 'color-picker');
+
+    // Hide the main window so the user can see the screen
+    if (mainWindow && isVisible) {
+      mainWindow.hide();
+      isVisible = false;
+    }
+
+    return new Promise((resolve) => {
+      execFile(colorPickerPath, (error: any, stdout: string) => {
+        if (error) {
+          console.error('Color picker failed:', error);
+          resolve(null);
+          return;
+        }
+
+        const trimmed = stdout.trim();
+        if (trimmed === 'null' || !trimmed) {
+          resolve(null);
+          return;
+        }
+
+        try {
+          const color = JSON.parse(trimmed);
+          resolve(color);
+        } catch (e) {
+          console.error('Failed to parse color picker output:', e);
+          resolve(null);
+        }
+      });
+    });
+  });
+
   // ─── Window + Shortcuts ─────────────────────────────────────────
 
   createWindow();

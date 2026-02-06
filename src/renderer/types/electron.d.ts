@@ -118,6 +118,9 @@ export interface ElectronAPI {
   clipboardCopyItem: (id: string) => Promise<boolean>;
   clipboardPasteItem: (id: string) => Promise<boolean>;
   clipboardSetEnabled: (enabled: boolean) => Promise<void>;
+
+  // Native helpers
+  nativePickColor: () => Promise<{ red: number; green: number; blue: number; alpha: number } | null>;
 }
 
 declare global {
