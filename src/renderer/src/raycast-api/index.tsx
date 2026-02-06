@@ -1470,7 +1470,9 @@ export function usePromise<T>(
     setError(undefined);
     options?.onWillExecute?.(argsRef.current);
 
-    fnRef.current(...argsRef.current)
+    // Wrap in Promise.resolve to handle both sync and async functions
+    Promise.resolve()
+      .then(() => fnRef.current(...argsRef.current))
       .then((result) => {
         setData(result);
         setIsLoading(false);
@@ -1522,13 +1524,13 @@ export function usePromise<T>(
 
 // ── useFetch ────────────────────────────────────────────────────────
 
-export function useFetch<T = any>(
-  url: string | ((...args: any[]) => string),
+export function useFetch<T = any, U = undefined>(
+  url: string | ((options: { page: number; cursor?: string; lastItem?: any }) => string),
   options?: {
     method?: string;
     headers?: Record<string, string>;
     body?: any;
-    mapResult?: (result: any) => any;
+    mapResult?: (result: any) => { data: T; hasMore?: boolean; cursor?: string } | T;
     parseResponse?: (response: Response) => Promise<any>;
     initialData?: T;
     execute?: boolean;
@@ -1544,34 +1546,130 @@ export function useFetch<T = any>(
   error: Error | undefined;
   revalidate: () => void;
   mutate: (asyncUpdate?: Promise<T>, options?: any) => Promise<T | undefined>;
-  pagination?: any;
+  pagination: { page: number; pageSize: number; hasMore: boolean; onLoadMore: () => void };
 } {
-  const resolvedUrl = typeof url === 'function' ? url() : url;
+  const [page, setPage] = useState(0);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(true);
+  const [allData, setAllData] = useState<T | undefined>(options?.initialData);
+  const [isLoading, setIsLoading] = useState(options?.execute !== false);
+  const [error, setError] = useState<Error | undefined>(undefined);
 
-  return usePromise(
-    async () => {
+  // Use refs to avoid stale closures in fetchData
+  const urlRef = useRef(url);
+  const optionsRef = useRef(options);
+  urlRef.current = url;
+  optionsRef.current = options;
+
+  const fetchData = useCallback(async (pageNum: number, currentCursor?: string) => {
+    const opts = optionsRef.current;
+    if (opts?.execute === false) return;
+    setIsLoading(true);
+    setError(undefined);
+
+    try {
+      const resolvedUrl = typeof urlRef.current === 'function'
+        ? urlRef.current({ page: pageNum, cursor: currentCursor, lastItem: undefined })
+        : urlRef.current;
+
       const res = await fetch(resolvedUrl, {
-        method: options?.method,
-        headers: options?.headers,
-        body: options?.body ? JSON.stringify(options.body) : undefined,
+        method: opts?.method,
+        headers: opts?.headers,
+        body: opts?.body ? JSON.stringify(opts.body) : undefined,
       });
-      const parsed = options?.parseResponse ? await options.parseResponse(res) : await res.json();
-      return options?.mapResult ? options.mapResult(parsed) : parsed;
-    },
-    [],
-    {
-      initialData: options?.initialData,
-      execute: options?.execute,
-      onData: options?.onData,
-      onError: options?.onError,
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const parsed = opts?.parseResponse ? await opts.parseResponse(res) : await res.json();
+      const mapped = opts?.mapResult ? opts.mapResult(parsed) : parsed;
+
+      // Handle pagination format { data, hasMore, cursor }
+      if (mapped && typeof mapped === 'object' && 'data' in mapped) {
+        const paginatedResult = mapped as { data: T; hasMore?: boolean; cursor?: string };
+        setHasMore(paginatedResult.hasMore ?? false);
+        setCursor(paginatedResult.cursor);
+
+        // Use functional update to avoid stale closure issues
+        setAllData(prev => {
+          if (pageNum === 0) {
+            return paginatedResult.data;
+          }
+          // Accumulate data for subsequent pages
+          if (Array.isArray(paginatedResult.data) && Array.isArray(prev)) {
+            return [...prev, ...paginatedResult.data] as unknown as T;
+          }
+          // If previous data wasn't an array, just use new data
+          return paginatedResult.data;
+        });
+        opts?.onData?.(paginatedResult.data);
+      } else {
+        // Non-paginated response
+        setAllData(mapped as T);
+        setHasMore(false);
+        opts?.onData?.(mapped as T);
+      }
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      setError(e);
+      opts?.onError?.(e);
+    } finally {
+      setIsLoading(false);
     }
-  );
+  }, []); // No dependencies - we use refs
+
+  // Track URL for re-fetching when it changes (for non-function URLs)
+  const urlString = typeof url === 'string' ? url : 'function';
+
+  useEffect(() => {
+    setPage(0);
+    setCursor(undefined);
+    setAllData(options?.initialData);
+    fetchData(0, undefined);
+  }, [fetchData, urlString]);
+
+  const revalidate = useCallback(() => {
+    setPage(0);
+    setCursor(undefined);
+    setAllData(undefined);
+    fetchData(0, undefined);
+  }, [fetchData]);
+
+  const mutate = useCallback(async (asyncUpdate?: Promise<T>) => {
+    if (asyncUpdate) {
+      const result = await asyncUpdate;
+      setAllData(result);
+      return result;
+    }
+    revalidate();
+    return undefined; // Can't return current state synchronously
+  }, [revalidate]);
+
+  const onLoadMore = useCallback(() => {
+    if (hasMore && !isLoading) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      fetchData(nextPage, cursor);
+    }
+  }, [hasMore, isLoading, page, cursor, fetchData]);
+
+  const pagination = useMemo(() => ({
+    page,
+    pageSize: 20,
+    hasMore,
+    onLoadMore,
+  }), [page, hasMore, onLoadMore]);
+
+  return { data: allData, isLoading, error, revalidate, mutate, pagination };
 }
 
 // ── useCachedPromise ────────────────────────────────────────────────
+// This hook supports pagination when the async function returns { data, hasMore, cursor }.
+// It accumulates data across pages and provides pagination controls.
 
 export function useCachedPromise<T>(
-  fn: (...args: any[]) => Promise<T>,
+  fn: (...args: any[]) => Promise<T> | ((...args: any[]) => (...innerArgs: any[]) => Promise<any>),
   args?: any[],
   options?: {
     initialData?: T;
@@ -1581,8 +1679,153 @@ export function useCachedPromise<T>(
     onError?: (error: Error) => void;
     failureToastOptions?: any;
   }
-) {
-  return usePromise(fn, args, options);
+): {
+  data: T | undefined;
+  isLoading: boolean;
+  error: Error | undefined;
+  revalidate: () => void;
+  mutate: (asyncUpdate?: Promise<T>, options?: any) => Promise<T | undefined>;
+  pagination?: { page: number; pageSize: number; hasMore: boolean; onLoadMore: () => void };
+} {
+  const [page, setPage] = useState(0);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(true);
+  const [accumulatedData, setAccumulatedData] = useState<any[] | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(options?.execute !== false);
+  const [error, setError] = useState<Error | undefined>(undefined);
+  const [isPaginated, setIsPaginated] = useState(false);
+
+  const fnRef = useRef(fn);
+  const argsRef = useRef(args || []);
+  const optionsRef = useRef(options);
+  fnRef.current = fn;
+  argsRef.current = args || [];
+  optionsRef.current = options;
+
+  const fetchPage = useCallback(async (pageNum: number, currentCursor?: string) => {
+    const opts = optionsRef.current;
+    if (opts?.execute === false) return;
+    setIsLoading(true);
+    setError(undefined);
+
+    try {
+      // Call the function with the provided args
+      const outerResult = fnRef.current(...argsRef.current);
+
+      // Check if the result is a function (pagination pattern)
+      // In pagination mode: fn(args) returns (paginationOptions) => Promise<{ data, hasMore, cursor }>
+      if (typeof outerResult === 'function') {
+        setIsPaginated(true);
+        const paginationOptions = { page: pageNum, cursor: currentCursor, lastItem: undefined };
+        const innerResult = await outerResult(paginationOptions);
+
+        // Check if result is paginated format { data, hasMore, cursor }
+        if (innerResult && typeof innerResult === 'object' && 'data' in innerResult) {
+          const { data: pageData, hasMore: more, cursor: nextCursor } = innerResult;
+          setHasMore(more ?? false);
+          setCursor(nextCursor);
+
+          if (pageNum === 0) {
+            setAccumulatedData(Array.isArray(pageData) ? pageData : []);
+          } else {
+            setAccumulatedData(prev => {
+              const prevArr = Array.isArray(prev) ? prev : [];
+              const newArr = Array.isArray(pageData) ? pageData : [];
+              return [...prevArr, ...newArr];
+            });
+          }
+          opts?.onData?.(innerResult.data);
+        } else {
+          // Non-paginated result from inner function
+          setAccumulatedData(innerResult as any);
+          setHasMore(false);
+        }
+      } else {
+        // Not a pagination function - treat as a regular promise
+        const result = await outerResult;
+
+        // Check if regular result happens to be paginated format
+        if (result && typeof result === 'object' && 'data' in result && 'hasMore' in result) {
+          setIsPaginated(true);
+          const { data: pageData, hasMore: more, cursor: nextCursor } = result as any;
+          setHasMore(more ?? false);
+          setCursor(nextCursor);
+
+          if (pageNum === 0) {
+            setAccumulatedData(Array.isArray(pageData) ? pageData : []);
+          } else {
+            setAccumulatedData(prev => {
+              const prevArr = Array.isArray(prev) ? prev : [];
+              const newArr = Array.isArray(pageData) ? pageData : [];
+              return [...prevArr, ...newArr];
+            });
+          }
+          opts?.onData?.(pageData as T);
+        } else {
+          // Non-paginated result
+          setAccumulatedData(result as any);
+          setHasMore(false);
+          opts?.onData?.(result as T);
+        }
+      }
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      setError(e);
+      opts?.onError?.(e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []); // No dependencies - using refs
+
+  // Re-fetch when args change (use JSON stringification for deep comparison)
+  const argsKey = JSON.stringify(args || []);
+  useEffect(() => {
+    setPage(0);
+    setCursor(undefined);
+    setAccumulatedData(undefined);
+    fetchPage(0, undefined);
+  }, [argsKey, fetchPage]);
+
+  const revalidate = useCallback(() => {
+    setPage(0);
+    setCursor(undefined);
+    setAccumulatedData(undefined);
+    fetchPage(0, undefined);
+  }, [fetchPage]);
+
+  const mutate = useCallback(async (asyncUpdate?: Promise<T>) => {
+    if (asyncUpdate) {
+      const result = await asyncUpdate;
+      setAccumulatedData(result as any);
+      return result;
+    }
+    revalidate();
+    return accumulatedData as T | undefined;
+  }, [accumulatedData, revalidate]);
+
+  const onLoadMore = useCallback(() => {
+    if (hasMore && !isLoading) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      fetchPage(nextPage, cursor);
+    }
+  }, [hasMore, isLoading, page, cursor, fetchPage]);
+
+  const pagination = useMemo(() => ({
+    page,
+    pageSize: 10,
+    hasMore,
+    onLoadMore,
+  }), [page, hasMore, onLoadMore]);
+
+  return {
+    data: accumulatedData as T | undefined,
+    isLoading,
+    error,
+    revalidate,
+    mutate,
+    pagination: isPaginated ? pagination : undefined,
+  };
 }
 
 // ── useCachedState ──────────────────────────────────────────────────
@@ -1793,6 +2036,90 @@ export function useAI(prompt: string, options?: { model?: string; creativity?: n
     [],
     { execute: options?.execute }
   );
+}
+
+// ── useFrecencySorting ──────────────────────────────────────────────
+// Sorts items by frecency (frequency + recency). Returns the sorted data
+// and a function to track visits.
+
+export function useFrecencySorting<T>(
+  data: T[] | undefined,
+  options?: {
+    key?: (item: T) => string;
+    namespace?: string;
+    sortUnvisited?: (a: T, b: T) => number;
+  }
+): {
+  data: T[];
+  visitItem: (item: T) => Promise<void>;
+  resetRanking: (item: T) => Promise<void>;
+} {
+  // Simple implementation that just returns the data as-is
+  // In a full implementation, this would track visit frequency and recency
+  const sortedData = useMemo(() => {
+    // Handle undefined/null
+    if (!data) return [];
+    // Handle non-array inputs gracefully (defensive programming)
+    if (!Array.isArray(data)) {
+      console.warn('[useFrecencySorting] Expected array but received:', typeof data);
+      // If it's an object with a data property, try to extract it
+      if (typeof data === 'object' && data !== null && 'data' in (data as any)) {
+        const innerData = (data as any).data;
+        if (Array.isArray(innerData)) return [...innerData];
+      }
+      return [];
+    }
+    return [...data];
+  }, [data]);
+
+  const visitItem = useCallback(async (item: T) => {
+    // In a full implementation, this would record the visit
+  }, []);
+
+  const resetRanking = useCallback(async (item: T) => {
+    // In a full implementation, this would reset the item's ranking
+  }, []);
+
+  return { data: sortedData, visitItem, resetRanking };
+}
+
+// ── useLocalStorage ─────────────────────────────────────────────────
+// Syncs state with localStorage
+
+export function useLocalStorage<T>(
+  key: string,
+  initialValue?: T
+): {
+  value: T | undefined;
+  setValue: (value: T) => Promise<void>;
+  removeValue: () => Promise<void>;
+  isLoading: boolean;
+} {
+  const [value, setValueState] = useState<T | undefined>(() => {
+    try {
+      const stored = localStorage.getItem(`raycast-${key}`);
+      return stored ? JSON.parse(stored) : initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
+  const [isLoading, setIsLoading] = useState(false);
+
+  const setValue = useCallback(async (newValue: T) => {
+    setValueState(newValue);
+    try {
+      localStorage.setItem(`raycast-${key}`, JSON.stringify(newValue));
+    } catch {}
+  }, [key]);
+
+  const removeValue = useCallback(async () => {
+    setValueState(undefined);
+    try {
+      localStorage.removeItem(`raycast-${key}`);
+    } catch {}
+  }, [key]);
+
+  return { value, setValue, removeValue, isLoading };
 }
 
 // ── getFavicon ──────────────────────────────────────────────────────

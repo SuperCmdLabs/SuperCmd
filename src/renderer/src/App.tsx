@@ -241,7 +241,7 @@ const App: React.FC = () => {
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search apps and settings..."
+            placeholder="Search apps2 and settings..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}

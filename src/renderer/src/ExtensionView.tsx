@@ -324,6 +324,7 @@ const fsStub: Record<string, any> = {
   readdirSync: () => [],
   statSync: () => ({ ...fakeStatResult }),
   lstatSync: () => ({ ...fakeStatResult }),
+  realpathSync: (p: string) => p, // Return path as-is
   unlinkSync: noop,
   rmdirSync: noop,
   rmSync: noop,
@@ -347,6 +348,10 @@ const fsStub: Record<string, any> = {
   access: noopCb,
   stat: noopCb,
   lstat: noopCb,
+  realpath: (p: string, ...args: any[]) => {
+    const cb = args[args.length - 1];
+    if (typeof cb === 'function') cb(null, p);
+  },
   readdir: (...args: any[]) => {
     const cb = args[args.length - 1];
     if (typeof cb === 'function') cb(null, []);
@@ -364,6 +369,7 @@ const fsStub: Record<string, any> = {
     readdir: () => Promise.resolve([]),
     stat: () => Promise.resolve({ ...fakeStatResult }),
     lstat: () => Promise.resolve({ ...fakeStatResult }),
+    realpath: (p: string) => Promise.resolve(p),
     access: noopAsync,
     unlink: noopAsync,
     rm: noopAsync,
