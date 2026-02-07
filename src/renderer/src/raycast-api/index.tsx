@@ -5101,6 +5101,22 @@ export const BrowserExtension = {
   getActiveTab: async () => ({ url: '', title: '' }),
 };
 
+// =====================================================================
+// ─── Tool ───────────────────────────────────────────────────────────
+// =====================================================================
+
+export namespace Tool {
+  export type Confirmation<T = any> = (input: T) => Promise<
+    | undefined
+    | {
+        style?: 'regular' | 'destructive';
+        info?: Array<{ name: string; value?: string }>;
+        message?: string;
+        image?: string;
+      }
+  >;
+}
+
 // updateCommandMetadata
 export async function updateCommandMetadata(metadata: { subtitle?: string | null }): Promise<void> {
   const electron = (window as any).electron;

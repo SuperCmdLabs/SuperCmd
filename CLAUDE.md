@@ -120,6 +120,7 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 | `FileSystemItem` | ✅ Implemented | Type export |
 | `LaunchProps` | ✅ Implemented | Type export |
 | `LaunchOptions` | ✅ Implemented | Type export |
+| `Tool` | ✅ Implemented | Tool namespace with Confirmation<T> type |
 | `BrowserExtension` | ⚠️ Stub | Basic stub implementation |
 | `OAuth` | ⚠️ Stub | OAuth stub (needs implementation) |
 
