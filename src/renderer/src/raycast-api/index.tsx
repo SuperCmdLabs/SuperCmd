@@ -624,41 +624,125 @@ export const Keyboard = {
 // ─── Clipboard ──────────────────────────────────────────────────────
 // =====================================================================
 
+// Clipboard types
+export namespace Clipboard {
+  export type Content = string | number | { text?: string; file?: string; html?: string };
+  export interface CopyOptions {
+    concealed?: boolean;
+  }
+  export interface ReadContent {
+    text?: string;
+    file?: string;
+    html?: string;
+  }
+}
+
 export const Clipboard = {
-  async copy(content: string | { text?: string; html?: string }) {
+  async copy(
+    content: string | number | Clipboard.Content,
+    options?: Clipboard.CopyOptions
+  ): Promise<void> {
     try {
-      const text = typeof content === 'string' ? content : content.text || '';
-      await navigator.clipboard.writeText(text);
-      showToast({ title: 'Copied to clipboard', style: 'success' });
-    } catch {}
-  },
-  async paste(content: string | { text?: string; file?: string }) {
-    try {
-      if (typeof content === 'string') {
-        await navigator.clipboard.writeText(content);
-      } else if (content.file) {
-        // For file pastes, copy the file path to clipboard
-        await navigator.clipboard.writeText(content.file);
-      } else if (content.text) {
-        await navigator.clipboard.writeText(content.text);
+      let text = '';
+      let html = '';
+
+      // Parse content
+      if (typeof content === 'string' || typeof content === 'number') {
+        text = String(content);
+      } else if (typeof content === 'object') {
+        text = content.text || '';
+        html = content.html || '';
+        // file is not directly copyable via web clipboard
       }
-    } catch {}
-  },
-  async readText(): Promise<string> {
-    try {
-      return await navigator.clipboard.readText();
-    } catch {
-      return '';
+
+      // Copy to clipboard
+      if (html) {
+        // For HTML content, we need to use ClipboardItem
+        const blob = new Blob([html], { type: 'text/html' });
+        const textBlob = new Blob([text], { type: 'text/plain' });
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': blob,
+            'text/plain': textBlob,
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+
+      // TODO: Handle concealed option by not saving to clipboard history
+      // For now, we always show the toast unless concealed
+      if (!options?.concealed) {
+        showToast({ title: 'Copied to clipboard', style: 'success' });
+      }
+    } catch (e) {
+      console.error('Clipboard copy error:', e);
     }
   },
-  async read(): Promise<{ text: string }> {
+
+  async paste(content: string | Clipboard.Content): Promise<void> {
     try {
+      // First, copy to clipboard
+      await this.copy(content);
+
+      // Then trigger paste via AppleScript
+      const electron = (window as any).electron;
+      if (electron?.runAppleScript) {
+        await electron.runAppleScript(`
+          tell application "System Events"
+            keystroke "v" using command down
+          end tell
+        `);
+      }
+    } catch (e) {
+      console.error('Clipboard paste error:', e);
+    }
+  },
+
+  async readText(options?: { offset?: number }): Promise<string | undefined> {
+    try {
+      const electron = (window as any).electron;
+
+      // If offset is specified and we have clipboard history, use it
+      if (options?.offset && electron?.clipboardGetHistory) {
+        const history = await electron.clipboardGetHistory();
+        const item = history[options.offset];
+        return item?.text || undefined;
+      }
+
+      // Otherwise read current clipboard
+      const text = await navigator.clipboard.readText();
+      return text || undefined;
+    } catch {
+      return undefined;
+    }
+  },
+
+  async read(options?: { offset?: number }): Promise<Clipboard.ReadContent> {
+    try {
+      const electron = (window as any).electron;
+
+      // If offset is specified and we have clipboard history, use it
+      if (options?.offset && electron?.clipboardGetHistory) {
+        const history = await electron.clipboardGetHistory();
+        const item = history[options.offset];
+        if (item) {
+          return {
+            text: item.text,
+            file: item.file,
+            html: item.html,
+          };
+        }
+      }
+
+      // Otherwise read current clipboard
       const text = await navigator.clipboard.readText();
       return { text };
     } catch {
-      return { text: '' };
+      return {};
     }
   },
+
   async clear(): Promise<void> {
     try {
       await navigator.clipboard.writeText('');
@@ -706,14 +790,175 @@ export const LocalStorage = {
 // ─── Cache ──────────────────────────────────────────────────────────
 // =====================================================================
 
+export namespace Cache {
+  export interface Options {
+    capacity?: number; // in bytes, default 10MB
+    namespace?: string;
+  }
+  export type Subscriber = (key: string | undefined, data: string | undefined) => void;
+  export type Subscription = () => void;
+}
+
 export class Cache {
-  private data: Record<string, string> = {};
-  get(key: string): string | undefined { return this.data[key]; }
-  set(key: string, value: string): void { this.data[key] = value; }
-  remove(key: string): void { delete this.data[key]; }
-  has(key: string): boolean { return key in this.data; }
-  isEmpty = false;
-  clear(): void { this.data = {}; }
+  private storageKey: string;
+  private capacity: number;
+  private subscribers: Set<Cache.Subscriber> = new Set();
+  private lruOrder: string[] = []; // Track access order for LRU
+
+  constructor(options: Cache.Options = {}) {
+    this.capacity = options.capacity ?? 10 * 1024 * 1024; // 10MB default
+    const namespace = options.namespace ?? 'default';
+    this.storageKey = `sc-cache-${namespace}`;
+
+    // Load existing cache from localStorage
+    this.loadFromStorage();
+  }
+
+  private loadFromStorage(): void {
+    try {
+      const stored = localStorage.getItem(this.storageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        this.lruOrder = parsed.lruOrder || [];
+      }
+    } catch (e) {
+      console.error('Failed to load cache from storage:', e);
+    }
+  }
+
+  private saveToStorage(): void {
+    try {
+      const data = {
+        lruOrder: this.lruOrder,
+      };
+      localStorage.setItem(this.storageKey, JSON.stringify(data));
+    } catch (e) {
+      console.error('Failed to save cache to storage:', e);
+    }
+  }
+
+  private getItemKey(key: string): string {
+    return `${this.storageKey}-item-${key}`;
+  }
+
+  private getCurrentSize(): number {
+    let total = 0;
+    for (const key of this.lruOrder) {
+      const value = localStorage.getItem(this.getItemKey(key));
+      if (value) {
+        total += value.length;
+      }
+    }
+    return total;
+  }
+
+  private evictLRU(): void {
+    // Remove oldest (first) item
+    const oldestKey = this.lruOrder.shift();
+    if (oldestKey) {
+      localStorage.removeItem(this.getItemKey(oldestKey));
+    }
+  }
+
+  private updateLRU(key: string): void {
+    // Remove key if it exists
+    const index = this.lruOrder.indexOf(key);
+    if (index !== -1) {
+      this.lruOrder.splice(index, 1);
+    }
+    // Add to end (most recently used)
+    this.lruOrder.push(key);
+  }
+
+  private notifySubscribers(key: string | undefined, data: string | undefined): void {
+    for (const subscriber of this.subscribers) {
+      try {
+        subscriber(key, data);
+      } catch (e) {
+        console.error('Cache subscriber error:', e);
+      }
+    }
+  }
+
+  get(key: string): string | undefined {
+    const value = localStorage.getItem(this.getItemKey(key));
+    if (value !== null) {
+      this.updateLRU(key);
+      this.saveToStorage();
+      return value;
+    }
+    return undefined;
+  }
+
+  set(key: string, data: string): void {
+    const itemKey = this.getItemKey(key);
+    const dataSize = data.length;
+
+    // Check if adding this item would exceed capacity
+    let currentSize = this.getCurrentSize();
+    while (currentSize + dataSize > this.capacity && this.lruOrder.length > 0) {
+      this.evictLRU();
+      currentSize = this.getCurrentSize();
+    }
+
+    // Store the item
+    localStorage.setItem(itemKey, data);
+    this.updateLRU(key);
+    this.saveToStorage();
+
+    // Notify subscribers
+    this.notifySubscribers(key, data);
+  }
+
+  remove(key: string): boolean {
+    const itemKey = this.getItemKey(key);
+    const existed = localStorage.getItem(itemKey) !== null;
+
+    if (existed) {
+      localStorage.removeItem(itemKey);
+      const index = this.lruOrder.indexOf(key);
+      if (index !== -1) {
+        this.lruOrder.splice(index, 1);
+      }
+      this.saveToStorage();
+      this.notifySubscribers(key, undefined);
+    }
+
+    return existed;
+  }
+
+  has(key: string): boolean {
+    return localStorage.getItem(this.getItemKey(key)) !== null;
+  }
+
+  get isEmpty(): boolean {
+    return this.lruOrder.length === 0;
+  }
+
+  clear(options?: { notifySubscribers?: boolean }): void {
+    const shouldNotify = options?.notifySubscribers ?? true;
+
+    // Remove all items
+    for (const key of this.lruOrder) {
+      localStorage.removeItem(this.getItemKey(key));
+    }
+    this.lruOrder = [];
+    this.saveToStorage();
+
+    // Notify subscribers
+    if (shouldNotify) {
+      this.notifySubscribers(undefined, undefined);
+    }
+  }
+
+  subscribe(subscriber: Cache.Subscriber): Cache.Subscription {
+    this.subscribers.add(subscriber);
+
+    // Return unsubscribe function
+    return () => {
+      this.subscribers.delete(subscriber);
+    };
+  }
 }
 
 // =====================================================================
