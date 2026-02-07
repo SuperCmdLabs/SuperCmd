@@ -524,6 +524,84 @@ app.whenReady().then(async () => {
     }
   );
 
+  // Launch command (for @raycast/api launchCommand)
+  ipcMain.handle(
+    'launch-command',
+    async (_event: any, options: any) => {
+      try {
+        const { name, type, extensionName, ownerOrAuthorName, arguments: args, context, fallbackText } = options;
+
+        // Determine which extension to launch
+        // For intra-extension launches, we'd need to track the current extension context
+        // For now, we require extensionName to be specified
+        if (!extensionName) {
+          throw new Error('extensionName is required for launchCommand. Intra-extension launches are not yet fully supported.');
+        }
+
+        // Get the extension bundle
+        const result = getExtensionBundle(extensionName, name);
+        if (!result) {
+          throw new Error(`Command "${name}" not found in extension "${extensionName}"`);
+        }
+
+        // Return bundle with launch context
+        // The renderer will handle actually displaying the command
+        return {
+          success: true,
+          bundle: {
+            code: result.code,
+            title: result.title,
+            mode: result.mode,
+            extName: extensionName,
+            cmdName: name,
+            extensionName: result.extensionName,
+            commandName: result.commandName,
+            assetsPath: result.assetsPath,
+            supportPath: result.supportPath,
+            owner: result.owner,
+            preferences: result.preferences,
+            launchContext: context,
+            launchType: type,
+          }
+        };
+      } catch (e: any) {
+        console.error('launch-command error:', e);
+        throw new Error(e?.message || 'Failed to launch command');
+      }
+    }
+  );
+
+  // Update command metadata (for @raycast/api updateCommandMetadata)
+  ipcMain.handle(
+    'update-command-metadata',
+    async (_event: any, commandId: string, metadata: { subtitle?: string | null }) => {
+      try {
+        // Store command metadata in settings
+        const settings = loadSettings();
+        if (!settings.commandMetadata) {
+          settings.commandMetadata = {};
+        }
+
+        if (metadata.subtitle === null) {
+          // Remove custom subtitle
+          delete settings.commandMetadata[commandId];
+        } else {
+          // Update subtitle
+          settings.commandMetadata[commandId] = { subtitle: metadata.subtitle };
+        }
+
+        saveSettings({ commandMetadata: settings.commandMetadata });
+
+        // Notify all windows to refresh command list
+        invalidateCache();
+        return { success: true };
+      } catch (e: any) {
+        console.error('update-command-metadata error:', e);
+        throw new Error(e?.message || 'Failed to update command metadata');
+      }
+    }
+  );
+
   // ─── IPC: Extension APIs (for @raycast/api compatibility) ────────
 
   // Shell command execution

@@ -23,6 +23,7 @@ export interface AppSettings {
   disabledCommands: string[];
   commandHotkeys: Record<string, string>;
   ai: AISettings;
+  commandMetadata?: Record<string, { subtitle?: string }>;
 }
 
 const DEFAULT_AI_SETTINGS: AISettings = {
@@ -58,6 +59,7 @@ export function loadSettings(): AppSettings {
       disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
       commandHotkeys: parsed.commandHotkeys ?? DEFAULT_SETTINGS.commandHotkeys,
       ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
+      commandMetadata: parsed.commandMetadata ?? {},
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };
