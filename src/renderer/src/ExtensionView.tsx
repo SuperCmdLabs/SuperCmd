@@ -51,6 +51,7 @@ interface ExtensionViewProps {
   commandName?: string;
   assetsPath?: string;
   supportPath?: string;
+  extensionPath?: string;
   owner?: string;
   preferences?: Record<string, any>;
 }
@@ -1246,10 +1247,34 @@ function ensureGlobals() {
  * packages. All of these are intercepted by our `fakeRequire`.
  */
 function loadExtensionExport(
-  code: string
+  code: string,
+  extensionPath?: string
 ): Function | null {
   // Make sure Node globals (process, Buffer, global) are available
   ensureGlobals();
+
+  // Update PATH to include extension binaries
+  if (extensionPath && (globalThis as any).process) {
+    const systemPath = process.env.PATH || '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+    const nodeBinPath = `${extensionPath}/node_modules/.bin`;
+    const extBinPath = `${extensionPath}/bin`;
+    const homeDir = (window as any).electron?.homeDir || '~';
+
+    // Build PATH with:
+    // 1. Extension's node_modules/.bin (for npm-installed binaries)
+    // 2. Extension's bin directory (for custom binaries)
+    // 3. Extension root (some binaries are in the root)
+    // 4. System PATH
+    (globalThis as any).process.env.PATH = [
+      nodeBinPath,
+      extBinPath,
+      extensionPath,
+      systemPath
+    ].join(':');
+
+    // Also set HOME for binaries that need it
+    (globalThis as any).process.env.HOME = homeDir;
+  }
 
   try {
     const moduleExports: any = {};
@@ -1532,6 +1557,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   commandName = '',
   assetsPath = '',
   supportPath = '/tmp/supercommand',
+  extensionPath = '',
   owner = '',
   preferences = {},
 }) => {
@@ -1564,8 +1590,8 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
       preferences,
       commandMode: mode as 'view' | 'no-view' | 'menu-bar',
     });
-    return loadExtensionExport(code);
-  }, [code, buildError, extensionName, commandName, assetsPath, supportPath, owner, preferences, mode]);
+    return loadExtensionExport(code, extensionPath);
+  }, [code, buildError, extensionName, commandName, assetsPath, supportPath, extensionPath, owner, preferences, mode]);
 
   // Is this a no-view command? Trust the mode from package.json.
   // NOTE: 'menu-bar' commands ARE React components (they use hooks),

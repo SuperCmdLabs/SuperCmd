@@ -288,6 +288,7 @@ export interface ExtensionBundleResult {
   commandName: string;
   assetsPath: string;
   supportPath: string;
+  extensionPath: string;
   owner: string;
   // Preferences
   preferences: Record<string, any>;
@@ -405,6 +406,7 @@ export function getExtensionBundle(
     commandName: cmdName,
     assetsPath,
     supportPath,
+    extensionPath: extPath,
     owner,
     preferences: { ...preferences, ...commandPreferences },
     commandPreferences,

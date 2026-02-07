@@ -514,6 +514,7 @@ app.whenReady().then(async () => {
           commandName: result.commandName,
           assetsPath: result.assetsPath,
           supportPath: result.supportPath,
+          extensionPath: result.extensionPath,
           owner: result.owner,
           preferences: result.preferences,
         };
@@ -558,6 +559,7 @@ app.whenReady().then(async () => {
             commandName: result.commandName,
             assetsPath: result.assetsPath,
             supportPath: result.supportPath,
+            extensionPath: result.extensionPath,
             owner: result.owner,
             preferences: result.preferences,
             launchContext: context,
@@ -805,15 +807,30 @@ app.whenReady().then(async () => {
     const { execFile } = require('child_process');
     const { promisify } = require('util');
     const execFileAsync = promisify(execFile);
+    const fs = require('fs');
+
+    console.log('[SQLite] Query request:', { dbPath, query: query.substring(0, 100), dbExists: fs.existsSync(dbPath) });
+
     try {
-      const { stdout } = await execFileAsync('sqlite3', ['-json', dbPath, query], { maxBuffer: 10 * 1024 * 1024 });
+      const { stdout, stderr } = await execFileAsync('sqlite3', ['-json', dbPath, query], { maxBuffer: 10 * 1024 * 1024 });
+
+      if (stderr) {
+        console.warn('[SQLite] Query stderr:', stderr);
+      }
+
+      console.log('[SQLite] Query stdout length:', stdout.length, 'first 200 chars:', stdout.substring(0, 200));
+
       try {
-        return { data: JSON.parse(stdout), error: null };
-      } catch {
+        const parsed = JSON.parse(stdout);
+        console.log('[SQLite] Successfully parsed JSON, result type:', Array.isArray(parsed) ? `array[${parsed.length}]` : typeof parsed);
+        return { data: parsed, error: null };
+      } catch (parseError: any) {
         // If not JSON, return raw output
+        console.warn('[SQLite] Failed to parse JSON:', parseError.message, 'returning raw output');
         return { data: stdout, error: null };
       }
     } catch (e: any) {
+      console.error('[SQLite] Query failed:', e.message, 'stderr:', e.stderr);
       return { data: null, error: e.message || 'SQLite query failed' };
     }
   });

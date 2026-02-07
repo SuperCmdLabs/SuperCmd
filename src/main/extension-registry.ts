@@ -253,8 +253,9 @@ export async function installExtensionDeps(
 
   try {
     // Install only third-party deps explicitly — avoids @raycast/api issues
+    // REMOVED --ignore-scripts to allow postinstall scripts for binaries
     await execAsync(
-      `npm install --no-save --legacy-peer-deps --ignore-scripts ${thirdPartyDeps.join(' ')}`,
+      `npm install --no-save --legacy-peer-deps ${thirdPartyDeps.join(' ')}`,
       { cwd: extPath, timeout: 120_000 }
     );
     console.log(`Dependencies installed for ${path.basename(extPath)}`);
@@ -262,10 +263,10 @@ export async function installExtensionDeps(
     console.warn(
       `Explicit install failed for ${path.basename(extPath)}: ${e1.message || e1}`
     );
-    // Fall back to full npm install
+    // Fall back to full npm install (also allow scripts)
     try {
       await execAsync(
-        `npm install --production --legacy-peer-deps --ignore-scripts`,
+        `npm install --production --legacy-peer-deps`,
         { cwd: extPath, timeout: 120_000 }
       );
       console.log(

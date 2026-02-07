@@ -1221,7 +1221,9 @@ export async function launchCommand(options: LaunchOptions): Promise<void> {
   const electron = (window as any).electron;
   const ctx = getExtensionContext();
 
-  // If extensionName is not specified, use current extension (intra-extension launch)
+  // Determine target extension
+  // For intra-extension launches (same extension), extensionName can be omitted
+  // For cross-extension launches, extensionName MUST be provided
   const targetExtension = options.extensionName || ctx.extensionName;
   const targetOwner = options.ownerOrAuthorName || ctx.owner;
 
@@ -1242,10 +1244,20 @@ export async function launchCommand(options: LaunchOptions): Promise<void> {
         ownerOrAuthorName: targetOwner,
       });
 
-      // TODO: Handle the result by navigating to the launched command
-      // This requires integration with the ExtensionView component
-      // For now, we just validate that the command exists
-      if (!result.success) {
+      // Actually navigate to the launched command
+      if (result.success && result.bundle) {
+        // Trigger a navigation to the new command by calling runExtension via the main app
+        // This should switch the view to the new extension/command
+        console.log('Command launched successfully, switching to:', result.bundle);
+
+        // Use the global electron API to tell the main window to load the new extension
+        if (electron?.runExtension) {
+          const bundle = result.bundle;
+          // Send event to switch to the new extension
+          // This will be handled by the main app's LauncherOverlay
+          (window as any).electron?.executeCommand?.(`ext-${bundle.extName}-${bundle.cmdName}`);
+        }
+      } else if (!result.success) {
         throw new Error('Failed to launch command');
       }
 
@@ -4368,12 +4380,20 @@ export function useSQL<T = any>(
 ) {
   return usePromise(
     async () => {
+      console.log('[useSQL] Querying database:', { databasePath, query: query.substring(0, 100) });
       const electron = (window as any).electron;
       if (!electron?.runSqliteQuery) {
         console.warn('useSQL: runSqliteQuery IPC not available');
         return [] as T[];
       }
       const result = await electron.runSqliteQuery(databasePath, query);
+      console.log('[useSQL] Query result:', {
+        hasError: !!result.error,
+        error: result.error,
+        dataType: Array.isArray(result.data) ? 'array' : typeof result.data,
+        dataLength: Array.isArray(result.data) ? result.data.length : 'N/A',
+        firstItem: Array.isArray(result.data) && result.data.length > 0 ? result.data[0] : null
+      });
       if (result.error) {
         console.error('useSQL error:', result.error);
         return [] as T[];
