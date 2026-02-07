@@ -47,6 +47,14 @@ contextBridge.exposeInMainWorld('electron', {
   runExtension: (extName: string, cmdName: string): Promise<any> =>
     ipcRenderer.invoke('run-extension', extName, cmdName),
 
+  // Launch command (for launchCommand API)
+  launchCommand: (options: any): Promise<void> =>
+    ipcRenderer.invoke('launch-command', options),
+
+  // Update command metadata (for updateCommandMetadata API)
+  updateCommandMetadata: (commandId: string, metadata: { subtitle?: string | null }): Promise<void> =>
+    ipcRenderer.invoke('update-command-metadata', commandId, metadata),
+
   // ─── Open URL (for extensions) ────────────────────────────────────
   openUrl: (url: string): Promise<boolean> =>
     ipcRenderer.invoke('open-url', url),

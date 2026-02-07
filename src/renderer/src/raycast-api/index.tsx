@@ -932,16 +932,45 @@ export function popToRoot(options?: any) {
   // handled by ExtensionView navigation
 }
 
-export async function launchCommand(options: {
-  name: string;
-  type: string;
-  extensionName?: string;
-  ownerOrAuthorName?: string;
-  arguments?: Record<string, string>;
-  context?: Record<string, any>;
-  fallbackText?: string;
-}): Promise<void> {
-  console.log('launchCommand:', options);
+export async function launchCommand(options: LaunchOptions): Promise<void> {
+  const electron = (window as any).electron;
+  const ctx = getExtensionContext();
+
+  // If extensionName is not specified, use current extension (intra-extension launch)
+  const targetExtension = options.extensionName || ctx.extensionName;
+  const targetOwner = options.ownerOrAuthorName || ctx.owner;
+
+  // Check if this is an inter-extension launch
+  const isInterExtension = !!(options.extensionName && options.extensionName !== ctx.extensionName);
+
+  if (isInterExtension) {
+    // For cross-extension launches, we need permission handling
+    // TODO: Implement permission alert system
+    console.warn('Cross-extension launches require permission handling');
+  }
+
+  try {
+    if (electron?.launchCommand) {
+      const result = await electron.launchCommand({
+        ...options,
+        extensionName: targetExtension,
+        ownerOrAuthorName: targetOwner,
+      });
+
+      // TODO: Handle the result by navigating to the launched command
+      // This requires integration with the ExtensionView component
+      // For now, we just validate that the command exists
+      if (!result.success) {
+        throw new Error('Failed to launch command');
+      }
+
+      console.log('Command launched successfully:', result);
+    } else {
+      throw new Error('Command execution not available');
+    }
+  } catch (error) {
+    throw new Error(`Failed to launch command "${options.name}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 export async function getSelectedText(): Promise<string> {
@@ -4134,6 +4163,18 @@ export type LaunchContext = Record<string, any>;
 export type Application = { name: string; path: string; bundleId?: string };
 export type FileSystemItem = { path: string };
 
+// LaunchOptions for intra-extension launches
+export interface LaunchOptions {
+  name: string;
+  type: LaunchType;
+  arguments?: Record<string, any> | null;
+  context?: LaunchContext | null;
+  fallbackText?: string | null;
+  // For inter-extension launches:
+  extensionName?: string;
+  ownerOrAuthorName?: string;
+}
+
 // WindowManagement
 export const WindowManagement = {
   getActiveWindow: async () => ({ id: '1', title: 'SuperCommand', bounds: { x: 0, y: 0, width: 800, height: 600 } }),
@@ -4149,7 +4190,22 @@ export const BrowserExtension = {
 };
 
 // updateCommandMetadata
-export async function updateCommandMetadata(metadata: { subtitle?: string }): Promise<void> {
-  // noop in SuperCommand
+export async function updateCommandMetadata(metadata: { subtitle?: string | null }): Promise<void> {
+  const electron = (window as any).electron;
+  const ctx = getExtensionContext();
+
+  // Create a unique command ID from extension + command name
+  const commandId = `${ctx.extensionName}/${ctx.commandName}`;
+
+  try {
+    if (electron?.updateCommandMetadata) {
+      await electron.updateCommandMetadata(commandId, metadata);
+    } else {
+      console.warn('updateCommandMetadata not available');
+    }
+  } catch (error) {
+    console.error('Failed to update command metadata:', error);
+    throw error;
+  }
 }
 
