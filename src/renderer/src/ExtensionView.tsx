@@ -1613,12 +1613,16 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
     });
   }, [onClose]);
 
+  const popToRoot = useCallback(() => {
+    setNavStack([]);
+  }, []);
+
   const navValue = useMemo(() => {
-    const value = { push, pop };
+    const value = { push, pop, popToRoot };
     // Update global ref for executePrimaryAction
     setGlobalNavigation(value);
     return value;
-  }, [push, pop]);
+  }, [push, pop, popToRoot]);
 
   // Handle Escape when no navigation stack
   useEffect(() => {

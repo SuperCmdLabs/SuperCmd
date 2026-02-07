@@ -90,15 +90,17 @@ export const ExtensionInfoReactContext = createContext<{
 interface NavigationCtx {
   push: (element: React.ReactElement) => void;
   pop: () => void;
+  popToRoot?: () => void;
 }
 
 export const NavigationContext = createContext<NavigationCtx>({
   push: () => {},
   pop: () => {},
+  popToRoot: () => {},
 });
 
 // Global ref for navigation (used by executePrimaryAction for Action.Push)
-let _globalNavigation: NavigationCtx = { push: () => {}, pop: () => {} };
+let _globalNavigation: NavigationCtx = { push: () => {}, pop: () => {}, popToRoot: () => {} };
 
 export function setGlobalNavigation(nav: NavigationCtx) {
   _globalNavigation = nav;
@@ -280,8 +282,9 @@ export async function showToast(options: Toast.Options): Promise<Toast> {
 // =====================================================================
 
 export enum PopToRootType {
-  Immediate = 'immediate',
   Default = 'default',
+  Immediate = 'immediate',
+  Suspended = 'suspended',
 }
 
 // =====================================================================
@@ -294,13 +297,12 @@ export async function showHUD(
 ): Promise<void> {
   await showToast({ title, style: ToastStyle.Success });
 
-  // TODO: Handle clearRootSearch and popToRootType options
-  // These would require integration with the main window/overlay
   if (options?.clearRootSearch) {
-    // Clear search bar
+    _clearSearchBarCallback?.();
   }
-  if (options?.popToRootType) {
-    // Handle pop to root behavior
+  if (options?.popToRootType === PopToRootType.Immediate) {
+    const nav = getGlobalNavigation();
+    if (nav?.popToRoot) nav.popToRoot();
   }
 }
 
@@ -1211,12 +1213,23 @@ export function open(target: string, application?: string | any) {
   (window as any).electron?.openUrl?.(target);
 }
 
-export function closeMainWindow(options?: any) {
+export async function closeMainWindow(options?: { clearRootSearch?: boolean; popToRootType?: PopToRootType }): Promise<void> {
+  if (options?.clearRootSearch) {
+    _clearSearchBarCallback?.();
+  }
+  if (options?.popToRootType === PopToRootType.Immediate) {
+    const nav = getGlobalNavigation();
+    if (nav?.popToRoot) nav.popToRoot();
+  }
   (window as any).electron?.hideWindow?.();
 }
 
-export function popToRoot(options?: any) {
-  // handled by ExtensionView navigation
+export async function popToRoot(options?: { clearSearchBar?: boolean }): Promise<void> {
+  const nav = getGlobalNavigation();
+  if (nav?.popToRoot) nav.popToRoot();
+  if (options?.clearSearchBar !== false) {
+    _clearSearchBarCallback?.();
+  }
 }
 
 export async function launchCommand(options: LaunchOptions): Promise<void> {
