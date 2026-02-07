@@ -191,4 +191,14 @@ contextBridge.exposeInMainWorld('electron', {
   onOllamaPullError: (callback: (data: { requestId: string; error: string }) => void) => {
     ipcRenderer.on('ollama-pull-error', (_event: any, data: any) => callback(data));
   },
+
+  // ─── WindowManagement ────────────────────────────────────────────
+  getActiveWindow: (): Promise<any> =>
+    ipcRenderer.invoke('window-management-get-active-window'),
+  getWindowsOnActiveDesktop: (): Promise<any[]> =>
+    ipcRenderer.invoke('window-management-get-windows-on-active-desktop'),
+  getDesktops: (): Promise<any[]> =>
+    ipcRenderer.invoke('window-management-get-desktops'),
+  setWindowBounds: (options: any): Promise<void> =>
+    ipcRenderer.invoke('window-management-set-window-bounds', options),
 });

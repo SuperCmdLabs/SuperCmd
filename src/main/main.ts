@@ -1161,6 +1161,172 @@ app.whenReady().then(async () => {
     return true;
   });
 
+  // ─── IPC: WindowManagement ──────────────────────────────────────
+
+  ipcMain.handle('window-management-get-active-window', async () => {
+    try {
+      const { execSync } = require('child_process');
+      const script = `
+        tell application "System Events"
+          set frontApp to first application process whose frontmost is true
+          set frontAppName to name of frontApp
+          set frontWindow to window 1 of frontApp
+
+          set windowBounds to bounds of frontWindow
+          set windowId to id of frontWindow as text
+          set windowTitle to name of frontWindow
+          set windowPosition to {item 1 of windowBounds, item 2 of windowBounds}
+          set windowSize to {(item 3 of windowBounds) - (item 1 of windowBounds), (item 4 of windowBounds) - (item 2 of windowBounds)}
+
+          return windowId & "|" & windowTitle & "|" & (item 1 of windowPosition) & "|" & (item 2 of windowPosition) & "|" & (item 1 of windowSize) & "|" & (item 2 of windowSize) & "|" & frontAppName
+        end tell
+      `;
+
+      const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
+      const [id, title, x, y, width, height, appName] = result.split('|');
+
+      return {
+        id,
+        active: true,
+        bounds: {
+          position: { x: parseInt(x), y: parseInt(y) },
+          size: { width: parseInt(width), height: parseInt(height) }
+        },
+        desktopId: '1',
+        positionable: true,
+        resizable: true,
+        fullScreenSettable: true,
+        application: {
+          name: appName,
+          path: '',
+          bundleId: ''
+        }
+      };
+    } catch (error) {
+      console.error('Failed to get active window:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('window-management-get-windows-on-active-desktop', async () => {
+    try {
+      const { execSync } = require('child_process');
+      const script = `
+        tell application "System Events"
+          set windowList to {}
+          repeat with proc in (every application process where background only is false)
+            try
+              set procName to name of proc
+              repeat with win in (every window of proc)
+                set windowBounds to bounds of win
+                set windowId to id of win as text
+                set windowTitle to name of win
+                set windowPosition to {item 1 of windowBounds, item 2 of windowBounds}
+                set windowSize to {(item 3 of windowBounds) - (item 1 of windowBounds), (item 4 of windowBounds) - (item 2 of windowBounds)}
+
+                set end of windowList to windowId & "|" & windowTitle & "|" & (item 1 of windowPosition) & "|" & (item 2 of windowPosition) & "|" & (item 1 of windowSize) & "|" & (item 2 of windowSize) & "|" & procName
+              end repeat
+            end try
+          end repeat
+
+          set text item delimiters to "\\n"
+          return windowList as text
+        end tell
+      `;
+
+      const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
+      if (!result || result.trim() === '') {
+        return [];
+      }
+
+      const windows = result.split('\n').map((line: string) => {
+        const [id, title, x, y, width, height, appName] = line.split('|');
+        return {
+          id,
+          active: false,
+          bounds: {
+            position: { x: parseInt(x), y: parseInt(y) },
+            size: { width: parseInt(width), height: parseInt(height) }
+          },
+          desktopId: '1',
+          positionable: true,
+          resizable: true,
+          fullScreenSettable: true,
+          application: {
+            name: appName,
+            path: '',
+            bundleId: ''
+          }
+        };
+      });
+
+      return windows;
+    } catch (error) {
+      console.error('Failed to get windows:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('window-management-get-desktops', async () => {
+    try {
+      // macOS doesn't expose virtual desktops (Spaces) easily via AppleScript
+      // Return a minimal implementation
+      const { screen } = require('electron');
+      const displays = screen.getAllDisplays();
+
+      return displays.map((display: any, index: number) => ({
+        id: String(index + 1),
+        active: index === 0,
+        screenId: String(display.id),
+        size: {
+          width: display.bounds.width,
+          height: display.bounds.height
+        },
+        type: 'user'
+      }));
+    } catch (error) {
+      console.error('Failed to get desktops:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('window-management-set-window-bounds', async (_event: any, options: any) => {
+    try {
+      const { execSync } = require('child_process');
+      const { id, bounds } = options;
+
+      if (bounds === 'fullscreen') {
+        // Set window to fullscreen
+        const script = `
+          tell application "System Events"
+            set targetWindow to (first window of (first application process whose (id of window 1) as text is "${id}"))
+            set value of attribute "AXFullScreen" of targetWindow to true
+          end tell
+        `;
+        execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' });
+      } else {
+        // Set window position/size
+        const { position, size } = bounds;
+        let script = 'tell application "System Events"\n';
+        script += `  set targetWindow to (first window of (first application process whose (id of window 1) as text is "${id}"))\n`;
+
+        if (position && size) {
+          script += `  set bounds of targetWindow to {${position.x}, ${position.y}, ${position.x + size.width}, ${position.y + size.height}}\n`;
+        } else if (position) {
+          script += `  set position of targetWindow to {${position.x}, ${position.y}}\n`;
+        } else if (size) {
+          script += `  set size of targetWindow to {${size.width}, ${size.height}}\n`;
+        }
+
+        script += 'end tell';
+        execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' });
+      }
+    } catch (error) {
+      console.error('Failed to set window bounds:', error);
+      throw error;
+    }
+  });
+
   // ─── IPC: Native Color Picker ──────────────────────────────────
 
   ipcMain.handle('native-pick-color', async () => {

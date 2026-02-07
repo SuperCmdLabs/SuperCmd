@@ -200,23 +200,6 @@ export enum ToastStyle {
   Failure = 'failure',
 }
 
-// Toast namespace for types
-export namespace Toast {
-  export enum Style {
-    Animated = 'animated',
-    Success = 'success',
-    Failure = 'failure',
-  }
-
-  export interface Options {
-    title: string;
-    message?: string;
-    style?: ToastStyle | Toast.Style;
-    primaryAction?: Alert.ActionOptions;
-    secondaryAction?: Alert.ActionOptions;
-  }
-}
-
 export class Toast {
   static Style = ToastStyle;
 
@@ -264,6 +247,23 @@ export class Toast {
       this._el = null;
     }
     return Promise.resolve();
+  }
+}
+
+// Toast namespace for types (merged with class)
+export namespace Toast {
+  export enum Style {
+    Animated = 'animated',
+    Success = 'success',
+    Failure = 'failure',
+  }
+
+  export interface Options {
+    title: string;
+    message?: string;
+    style?: ToastStyle | Toast.Style;
+    primaryAction?: Alert.ActionOptions;
+    secondaryAction?: Alert.ActionOptions;
   }
 }
 
@@ -4632,12 +4632,123 @@ export interface LaunchOptions {
   ownerOrAuthorName?: string;
 }
 
-// WindowManagement
+// =====================================================================
+// ─── WindowManagement ───────────────────────────────────────────────
+// =====================================================================
+
 export const WindowManagement = {
-  getActiveWindow: async () => ({ id: '1', title: 'SuperCommand', bounds: { x: 0, y: 0, width: 800, height: 600 } }),
-  getWindows: async () => [],
-  getDesktops: async () => [{ id: '1', windows: [] }],
+  async getActiveWindow(): Promise<WindowManagementWindow> {
+    const electron = (window as any).electron;
+    if (electron?.getActiveWindow) {
+      const result = await electron.getActiveWindow();
+      if (!result) {
+        throw new Error('No active window found');
+      }
+      return result;
+    }
+    throw new Error('WindowManagement API not available');
+  },
+
+  async getWindowsOnActiveDesktop(): Promise<WindowManagementWindow[]> {
+    const electron = (window as any).electron;
+    if (electron?.getWindowsOnActiveDesktop) {
+      return await electron.getWindowsOnActiveDesktop();
+    }
+    throw new Error('WindowManagement API not available');
+  },
+
+  async getDesktops(): Promise<WindowManagementDesktop[]> {
+    const electron = (window as any).electron;
+    if (electron?.getDesktops) {
+      return await electron.getDesktops();
+    }
+    throw new Error('WindowManagement API not available');
+  },
+
+  async setWindowBounds(options: WindowManagementSetWindowBoundsOptions): Promise<void> {
+    const electron = (window as any).electron;
+    if (electron?.setWindowBounds) {
+      await electron.setWindowBounds(options);
+    } else {
+      throw new Error('WindowManagement API not available');
+    }
+  },
 };
+
+// WindowManagement namespace for types (use declare to merge with const)
+declare namespace WindowManagement {
+  enum DesktopType {
+    User = 'user',
+    FullScreen = 'fullscreen',
+  }
+
+  interface Window {
+    id: string;
+    active: boolean;
+    bounds:
+      | { position: { x: number; y: number }; size: { width: number; height: number } }
+      | 'fullscreen';
+    desktopId: string;
+    positionable: boolean;
+    resizable: boolean;
+    fullScreenSettable: boolean;
+    application: Application;
+  }
+
+  interface Desktop {
+    id: string;
+    active: boolean;
+    screenId: string;
+    size: { width: number; height: number };
+    type: DesktopType;
+  }
+
+  interface SetWindowBoundsOptions {
+    id: string;
+    bounds:
+      | { position?: { x?: number; y?: number }; size?: { width?: number; height?: number } }
+      | 'fullscreen';
+    desktopId?: string;
+  }
+}
+
+// Export the types so they're available
+export type WindowManagementWindow = {
+  id: string;
+  active: boolean;
+  bounds:
+    | { position: { x: number; y: number }; size: { width: number; height: number } }
+    | 'fullscreen';
+  desktopId: string;
+  positionable: boolean;
+  resizable: boolean;
+  fullScreenSettable: boolean;
+  application: Application;
+};
+
+export type WindowManagementDesktop = {
+  id: string;
+  active: boolean;
+  screenId: string;
+  size: { width: number; height: number };
+  type: 'user' | 'fullscreen';
+};
+
+export enum WindowManagementDesktopType {
+  User = 'user',
+  FullScreen = 'fullscreen',
+}
+
+export type WindowManagementSetWindowBoundsOptions = {
+  id: string;
+  bounds:
+    | { position?: { x?: number; y?: number }; size?: { width?: number; height?: number } }
+    | 'fullscreen';
+  desktopId?: string;
+};
+
+// Make DesktopType accessible via WindowManagement.DesktopType
+(WindowManagement as any).DesktopType = WindowManagementDesktopType;
 
 // BrowserExtension
 export const BrowserExtension = {
