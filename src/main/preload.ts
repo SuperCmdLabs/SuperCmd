@@ -164,4 +164,23 @@ contextBridge.exposeInMainWorld('electron', {
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => {
     ipcRenderer.on('ai-stream-error', (_event: any, data: any) => callback(data));
   },
+
+  // ─── Ollama Model Management ────────────────────────────────────
+  ollamaStatus: (): Promise<{ running: boolean; models: any[] }> =>
+    ipcRenderer.invoke('ollama-status'),
+  ollamaPull: (requestId: string, modelName: string): Promise<void> =>
+    ipcRenderer.invoke('ollama-pull', requestId, modelName),
+  ollamaDelete: (modelName: string): Promise<{ success: boolean; error: string | null }> =>
+    ipcRenderer.invoke('ollama-delete', modelName),
+  ollamaOpenDownload: (): Promise<boolean> =>
+    ipcRenderer.invoke('ollama-open-download'),
+  onOllamaPullProgress: (callback: (data: { requestId: string; status: string; digest: string; total: number; completed: number }) => void) => {
+    ipcRenderer.on('ollama-pull-progress', (_event: any, data: any) => callback(data));
+  },
+  onOllamaPullDone: (callback: (data: { requestId: string }) => void) => {
+    ipcRenderer.on('ollama-pull-done', (_event: any, data: any) => callback(data));
+  },
+  onOllamaPullError: (callback: (data: { requestId: string; error: string }) => void) => {
+    ipcRenderer.on('ollama-pull-error', (_event: any, data: any) => callback(data));
+  },
 });
