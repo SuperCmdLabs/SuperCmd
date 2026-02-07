@@ -83,6 +83,10 @@ contextBridge.exposeInMainWorld('electron', {
   getApplications: (): Promise<Array<{ name: string; path: string; bundleId?: string }>> =>
     ipcRenderer.invoke('get-applications'),
 
+  // Get default application for a file/URL
+  getDefaultApplication: (filePath: string): Promise<{ name: string; path: string; bundleId?: string }> =>
+    ipcRenderer.invoke('get-default-application', filePath),
+
   // Get frontmost application
   getFrontmostApplication: (): Promise<{ name: string; path: string; bundleId?: string } | null> =>
     ipcRenderer.invoke('get-frontmost-application'),

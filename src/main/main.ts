@@ -684,6 +684,33 @@ app.whenReady().then(async () => {
       }));
   });
 
+  // Get default application for a file/URL
+  ipcMain.handle('get-default-application', async (_event: any, filePath: string) => {
+    try {
+      const { execSync } = require('child_process');
+      // Use Launch Services via AppleScript to find default app
+      const script = `
+        use framework "AppKit"
+        set fileURL to current application's NSURL's fileURLWithPath:"${filePath.replace(/"/g, '\\"')}"
+        set appURL to current application's NSWorkspace's sharedWorkspace()'s URLForApplicationToOpenURL:fileURL
+        if appURL is missing value then
+          error "No default application found"
+        end if
+        set appPath to appURL's |path|() as text
+        set appBundle to current application's NSBundle's bundleWithPath:appPath
+        set appName to (appBundle's infoDictionary()'s objectForKey:"CFBundleName") as text
+        set bundleId to (appBundle's bundleIdentifier()) as text
+        return appName & "|||" & appPath & "|||" & bundleId
+      `;
+      const result = execSync(`osascript -l AppleScript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
+      const [name, appPath, bundleId] = result.split('|||');
+      return { name, path: appPath, bundleId };
+    } catch (e: any) {
+      console.error('get-default-application error:', e);
+      throw new Error(`No default application found for: ${filePath}`);
+    }
+  });
+
   // Get frontmost application
   ipcMain.handle('get-frontmost-application', async () => {
     try {

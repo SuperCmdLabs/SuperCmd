@@ -78,14 +78,16 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 | `showToast` | ✅ Implemented | Toast notifications |
 | `showHUD` | ✅ Implemented | HUD overlay |
 | `confirmAlert` | ✅ Implemented | Alert dialogs |
-| `open` | ✅ Implemented | Open URLs/applications |
+| `open` | ✅ Implemented | Open URLs/applications; supports `application` parameter |
 | `closeMainWindow` | ✅ Implemented | Window management |
 | `popToRoot` | ✅ Implemented | Navigation reset |
 | `launchCommand` | ✅ Implemented | Command launching |
 | `getSelectedText` | ⚠️ Partial | May need macOS permissions |
 | `getSelectedFinderItems` | ⚠️ Partial | May need macOS permissions |
-| `getApplications` | ✅ Implemented | Application listing |
+| `getApplications` | ✅ Implemented | Application listing; optional directory path filter |
+| `getDefaultApplication` | ✅ Implemented | Get default app for a file path |
 | `getFrontmostApplication` | ✅ Implemented | Active app detection |
+| `captureException` | ✅ Implemented | Logs exception to console (error reporting) |
 | `trash` | ✅ Implemented | File deletion |
 | `openExtensionPreferences` | ⚠️ Partial | Console.log stub only |
 | `openCommandPreferences` | ⚠️ Partial | Console.log stub only |

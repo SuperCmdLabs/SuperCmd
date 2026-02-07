@@ -1209,8 +1209,17 @@ export function getPreferenceValues<T = Record<string, any>>(): T {
   return _extensionContext.preferences as T;
 }
 
-export function open(target: string, application?: string | any) {
-  (window as any).electron?.openUrl?.(target);
+export async function open(target: string, application?: string | Application): Promise<void> {
+  const electron = (window as any).electron;
+  if (application) {
+    const appName = typeof application === 'string' ? application : application.name;
+    // Use 'open -a' to open with a specific application
+    if (electron?.execCommand) {
+      await electron.execCommand('open', ['-a', appName, target]);
+      return;
+    }
+  }
+  electron?.openUrl?.(target);
 }
 
 export async function closeMainWindow(options?: { clearRootSearch?: boolean; popToRootType?: PopToRootType }): Promise<void> {
@@ -1297,13 +1306,11 @@ export async function getSelectedFinderItems(): Promise<Array<{ path: string }>>
   return [];
 }
 
-export async function getApplications(): Promise<
-  Array<{ name: string; path: string; bundleId?: string }>
-> {
+export async function getApplications(path?: string): Promise<Application[]> {
   try {
     const electron = (window as any).electron;
     if (electron?.getApplications) {
-      return await electron.getApplications();
+      return await electron.getApplications(path);
     }
   } catch (e) {
     console.error('getApplications error:', e);
@@ -1311,11 +1318,7 @@ export async function getApplications(): Promise<
   return [];
 }
 
-export async function getFrontmostApplication(): Promise<{
-  name: string;
-  path: string;
-  bundleId?: string;
-}> {
+export async function getFrontmostApplication(): Promise<Application> {
   try {
     const electron = (window as any).electron;
     if (electron?.getFrontmostApplication) {
@@ -1326,6 +1329,23 @@ export async function getFrontmostApplication(): Promise<{
     console.error('getFrontmostApplication error:', e);
   }
   return { name: 'SuperCommand', path: '', bundleId: 'com.supercommand' };
+}
+
+export async function getDefaultApplication(path: string): Promise<Application> {
+  try {
+    const electron = (window as any).electron;
+    if (electron?.getDefaultApplication) {
+      return await electron.getDefaultApplication(path);
+    }
+  } catch (e) {
+    console.error('getDefaultApplication error:', e);
+  }
+  throw new Error(`No default application found for: ${path}`);
+}
+
+export function captureException(exception: unknown): void {
+  // Log the exception — in a full implementation this would report to a developer hub
+  console.error('[captureException]', exception);
 }
 
 export async function showInFinder(path: string): Promise<void> {
@@ -5027,7 +5047,7 @@ export const OAuth = {
 // Additional type-only exports that extensions might reference
 export type Preferences = Record<string, any>;
 export type LaunchContext = Record<string, any>;
-export type Application = { name: string; path: string; bundleId?: string };
+export type Application = { name: string; path: string; bundleId?: string; localizedName?: string };
 export type FileSystemItem = { path: string };
 
 // LaunchOptions for intra-extension launches
