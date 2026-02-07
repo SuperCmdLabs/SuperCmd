@@ -87,10 +87,12 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 | `getApplications` | ✅ Implemented | Application listing |
 | `getFrontmostApplication` | ✅ Implemented | Active app detection |
 | `trash` | ✅ Implemented | File deletion |
-| `openExtensionPreferences` | ✅ Implemented | Settings navigation |
-| `openCommandPreferences` | ✅ Implemented | Command settings |
+| `openExtensionPreferences` | ⚠️ Partial | Console.log stub only |
+| `openCommandPreferences` | ⚠️ Partial | Console.log stub only |
 | `updateCommandMetadata` | ✅ Implemented | Dynamic metadata updates |
 | `clearSearchBar` | ✅ Implemented | Search bar control |
+| `getPreferenceValues` | ✅ Implemented | Returns extension preferences from context |
+| `showInFinder` | ✅ Implemented | Opens Finder at file path |
 
 ### @raycast/api - Objects & Utilities
 
@@ -109,6 +111,14 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 | `LaunchType` | ✅ Implemented | Launch type enum |
 | `Alert` | ✅ Implemented | Alert namespace |
 | `WindowManagement` | ✅ Implemented | Window management API |
+| `PopToRootType` | ✅ Implemented | Enum for pop-to-root behavior |
+| `DeeplinkType` | ✅ Implemented | Enum for deeplink types (Extension, ScriptCommand) |
+| `Preferences` | ✅ Implemented | Type export |
+| `LaunchContext` | ✅ Implemented | Type export |
+| `Application` | ✅ Implemented | Type export |
+| `FileSystemItem` | ✅ Implemented | Type export |
+| `LaunchProps` | ✅ Implemented | Type export |
+| `LaunchOptions` | ✅ Implemented | Type export |
 | `BrowserExtension` | ⚠️ Stub | Basic stub implementation |
 | `OAuth` | ⚠️ Stub | OAuth stub (needs implementation) |
 
@@ -135,6 +145,9 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 | `getFavicon` | ✅ Implemented | Favicon fetching |
 | `runAppleScript` | ✅ Implemented | AppleScript execution |
 | `showFailureToast` | ✅ Implemented | Error toast helper |
+| `createDeeplink` | ✅ Implemented | Generate deeplink URIs for extensions/scripts |
+| `executeSQL` | ✅ Implemented | Standalone SQLite query execution |
+| `withCache` | ✅ Implemented | Cache wrapper for async functions with maxAge/validate |
 
 ### Missing or Incomplete APIs
 
@@ -143,8 +156,9 @@ The following APIs from `@raycast/api` may need additional work or verification:
 1. **OAuth** - Currently stubbed, needs full OAuth flow implementation
 2. **BrowserExtension** - Basic stub, may need browser extension integration
 3. **getSelectedText** / **getSelectedFinderItems** - May require additional macOS permissions handling
-4. **Advanced Window Management** - Some edge cases may need testing
-5. **Image Asset Loading** - Asset path resolution may need refinement
+4. **openExtensionPreferences** / **openCommandPreferences** - Currently console.log stubs, need real settings navigation
+5. **Advanced Window Management** - Some edge cases may need testing
+6. **Image Asset Loading** - Asset path resolution may need refinement
 
 ## Development Guidelines
 

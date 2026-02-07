@@ -18,7 +18,8 @@
  * EXPORTS (from @raycast/utils — same module, extensions import from both):
  *   Hooks: useFetch, useCachedPromise, useCachedState, usePromise, useForm,
  *          useExec, useSQL, useStreamJSON, useAI
- *   Functions: getFavicon, runAppleScript, showFailureToast
+ *   Functions: getFavicon, runAppleScript, showFailureToast, executeSQL,
+ *             createDeeplink, withCache
  */
 
 import React, {
@@ -4795,5 +4796,124 @@ export async function updateCommandMetadata(metadata: { subtitle?: string | null
     console.error('Failed to update command metadata:', error);
     throw error;
   }
+}
+
+// =====================================================================
+// ─── DeeplinkType Enum ──────────────────────────────────────────────
+// =====================================================================
+
+export enum DeeplinkType {
+  Extension = 'extension',
+  ScriptCommand = 'scriptCommand',
+}
+
+// =====================================================================
+// ─── createDeeplink ─────────────────────────────────────────────────
+// =====================================================================
+
+interface CreateDeeplinkExtensionOptions {
+  type?: DeeplinkType.Extension;
+  command: string;
+  launchType?: LaunchType;
+  arguments?: Record<string, string>;
+  fallbackText?: string;
+}
+
+interface CreateDeeplinkExternalExtensionOptions extends CreateDeeplinkExtensionOptions {
+  ownerOrAuthorName: string;
+  extensionName: string;
+}
+
+interface CreateDeeplinkScriptCommandOptions {
+  type: DeeplinkType.ScriptCommand;
+  command: string;
+  arguments?: string[];
+}
+
+export function createDeeplink(
+  options: CreateDeeplinkExtensionOptions | CreateDeeplinkExternalExtensionOptions | CreateDeeplinkScriptCommandOptions
+): string {
+  if (options.type === DeeplinkType.ScriptCommand) {
+    const params = new URLSearchParams();
+    if (options.arguments?.length) {
+      params.set('arguments', JSON.stringify(options.arguments));
+    }
+    const qs = params.toString();
+    return `raycast://script-commands/${encodeURIComponent(options.command)}${qs ? `?${qs}` : ''}`;
+  }
+
+  // Extension deeplink
+  const ctx = getExtensionContext();
+  const extOpts = options as CreateDeeplinkExternalExtensionOptions;
+  const owner = extOpts.ownerOrAuthorName || ctx.owner || '';
+  const extName = extOpts.extensionName || ctx.extensionName || '';
+
+  const params = new URLSearchParams();
+  if (options.launchType) {
+    params.set('launchType', options.launchType);
+  }
+  if (options.arguments && Object.keys(options.arguments).length > 0) {
+    params.set('arguments', JSON.stringify(options.arguments));
+  }
+  if ((options as CreateDeeplinkExtensionOptions).fallbackText) {
+    params.set('fallbackText', (options as CreateDeeplinkExtensionOptions).fallbackText!);
+  }
+
+  const qs = params.toString();
+  return `raycast://extensions/${encodeURIComponent(owner)}/${encodeURIComponent(extName)}/${encodeURIComponent(options.command)}${qs ? `?${qs}` : ''}`;
+}
+
+// =====================================================================
+// ─── executeSQL ─────────────────────────────────────────────────────
+// =====================================================================
+
+export async function executeSQL<T = unknown>(databasePath: string, query: string): Promise<T[]> {
+  const electron = (window as any).electron;
+  if (!electron?.runSqliteQuery) {
+    throw new Error('executeSQL: runSqliteQuery IPC not available');
+  }
+  const result = await electron.runSqliteQuery(databasePath, query);
+  if (result.error) {
+    throw new Error(result.error);
+  }
+  return (Array.isArray(result.data) ? result.data : []) as T[];
+}
+
+// =====================================================================
+// ─── withCache ──────────────────────────────────────────────────────
+// =====================================================================
+
+export function withCache<Fn extends (...args: any[]) => Promise<any>>(
+  fn: Fn,
+  options?: {
+    validate?: (data: Awaited<ReturnType<Fn>>) => boolean;
+    maxAge?: number;
+  }
+): Fn & { clearCache: () => void } {
+  const cacheStore = new Map<string, { data: any; timestamp: number }>();
+
+  const wrapped = (async (...args: any[]) => {
+    const key = JSON.stringify(args);
+    const cached = cacheStore.get(key);
+
+    if (cached) {
+      const isExpired = options?.maxAge != null && (Date.now() - cached.timestamp) > options.maxAge;
+      const isValid = options?.validate ? options.validate(cached.data) : true;
+
+      if (!isExpired && isValid) {
+        return cached.data;
+      }
+    }
+
+    const result = await fn(...args);
+    cacheStore.set(key, { data: result, timestamp: Date.now() });
+    return result;
+  }) as Fn & { clearCache: () => void };
+
+  wrapped.clearCache = () => {
+    cacheStore.clear();
+  };
+
+  return wrapped;
 }
 
