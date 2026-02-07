@@ -113,6 +113,7 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 | `WindowManagement` | ✅ Implemented | Window management API |
 | `PopToRootType` | ✅ Implemented | Enum for pop-to-root behavior |
 | `DeeplinkType` | ✅ Implemented | Enum for deeplink types (Extension, ScriptCommand) |
+| `FormValidation` | ✅ Implemented | Enum for form validation (Required) |
 | `Preferences` | ✅ Implemented | Type export |
 | `LaunchContext` | ✅ Implemented | Type export |
 | `Application` | ✅ Implemented | Type export |
@@ -126,16 +127,16 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 
 | Hook | Status | Notes |
 |------|--------|-------|
-| `useFetch` | ✅ Implemented | HTTP fetching with caching |
-| `useCachedPromise` | ✅ Implemented | Promise caching |
-| `useCachedState` | ✅ Implemented | State with persistence |
-| `usePromise` | ✅ Implemented | Promise handling |
-| `useForm` | ✅ Implemented | Form state management |
-| `useExec` | ✅ Implemented | Command execution |
-| `useSQL` | ✅ Implemented | SQLite queries |
-| `useStreamJSON` | ✅ Implemented | Streaming JSON |
-| `useAI` | ✅ Implemented | AI integration hook |
-| `useFrecencySorting` | ✅ Implemented | Frecency-based sorting |
+| `useFetch` | ✅ Implemented | HTTP fetching with pagination, optimistic mutate |
+| `useCachedPromise` | ✅ Implemented | Promise caching with abortable, onWillExecute |
+| `useCachedState` | ✅ Implemented | State with persistence, cacheNamespace support |
+| `usePromise` | ✅ Implemented | Promise handling with mutate/revalidate |
+| `useForm` | ✅ Implemented | Form state with FormValidation enum |
+| `useExec` | ✅ Implemented | Command execution with stripFinalNewline, timeout, two overloads |
+| `useSQL` | ✅ Implemented | SQLite queries with permissionView, full callbacks |
+| `useStreamJSON` | ✅ Implemented | Streaming JSON with filter/transform/dataPath/pageSize |
+| `useAI` | ✅ Implemented | AI streaming with onError/onData/onWillExecute callbacks |
+| `useFrecencySorting` | ✅ Implemented | Frecency sorting with localStorage persistence |
 | `useLocalStorage` | ✅ Implemented | LocalStorage hook |
 
 ### @raycast/utils - Functions
