@@ -164,6 +164,33 @@ export const environment: Record<string, any> = {
 })();
 
 // =====================================================================
+// ─── Alert Types (defined before Toast since Toast references Alert) ──
+// =====================================================================
+
+export namespace Alert {
+  export enum ActionStyle {
+    Default = 'default',
+    Cancel = 'cancel',
+    Destructive = 'destructive',
+  }
+
+  export interface ActionOptions {
+    title: string;
+    onAction?: () => void;
+    style?: ActionStyle;
+  }
+
+  export interface Options {
+    title: string;
+    message?: string;
+    icon?: any;
+    primaryAction?: ActionOptions;
+    dismissAction?: ActionOptions;
+    rememberUserChoice?: boolean;
+  }
+}
+
+// =====================================================================
 // ─── Toast ──────────────────────────────────────────────────────────
 // =====================================================================
 
@@ -173,20 +200,37 @@ export enum ToastStyle {
   Failure = 'failure',
 }
 
+// Toast namespace for types
+export namespace Toast {
+  export enum Style {
+    Animated = 'animated',
+    Success = 'success',
+    Failure = 'failure',
+  }
+
+  export interface Options {
+    title: string;
+    message?: string;
+    style?: ToastStyle | Toast.Style;
+    primaryAction?: Alert.ActionOptions;
+    secondaryAction?: Alert.ActionOptions;
+  }
+}
+
 export class Toast {
   static Style = ToastStyle;
 
   public title: string = '';
   public message?: string;
   public style: ToastStyle = ToastStyle.Success;
-  public primaryAction?: any;
-  public secondaryAction?: any;
+  public primaryAction?: Alert.ActionOptions;
+  public secondaryAction?: Alert.ActionOptions;
 
   private _el: HTMLDivElement | null = null;
   private _timer: any = null;
 
-  constructor(options: { style?: ToastStyle; title: string; message?: string; primaryAction?: any; secondaryAction?: any }) {
-    this.style = options.style || ToastStyle.Success;
+  constructor(options: Toast.Options) {
+    this.style = options.style as ToastStyle || ToastStyle.Success;
     this.title = options.title || '';
     this.message = options.message;
     this.primaryAction = options.primaryAction;
@@ -223,38 +267,46 @@ export class Toast {
   }
 }
 
-export function showToast(optionsOrStyle: any, titleOrUndefined?: string, messageOrUndefined?: string): Promise<Toast> {
-  let options: any = {};
-  if (typeof optionsOrStyle === 'string') {
-    options = { style: optionsOrStyle, title: titleOrUndefined, message: messageOrUndefined };
-  } else {
-    options = optionsOrStyle;
-  }
+export async function showToast(options: Toast.Options): Promise<Toast> {
   const t = new Toast(options);
-  t.show();
-  return Promise.resolve(t);
+  await t.show();
+  return t;
+}
+
+// =====================================================================
+// ─── PopToRootType ──────────────────────────────────────────────────
+// =====================================================================
+
+export enum PopToRootType {
+  Immediate = 'immediate',
+  Default = 'default',
 }
 
 // =====================================================================
 // ─── showHUD ────────────────────────────────────────────────────────
 // =====================================================================
 
-export async function showHUD(title: string, options?: any): Promise<void> {
+export async function showHUD(
+  title: string,
+  options?: { clearRootSearch?: boolean; popToRootType?: PopToRootType }
+): Promise<void> {
   await showToast({ title, style: ToastStyle.Success });
+
+  // TODO: Handle clearRootSearch and popToRootType options
+  // These would require integration with the main window/overlay
+  if (options?.clearRootSearch) {
+    // Clear search bar
+  }
+  if (options?.popToRootType) {
+    // Handle pop to root behavior
+  }
 }
 
 // =====================================================================
 // ─── confirmAlert ───────────────────────────────────────────────────
 // =====================================================================
 
-export async function confirmAlert(options: {
-  title: string;
-  message?: string;
-  primaryAction?: { title?: string; style?: string; onAction?: () => void };
-  dismissAction?: { title?: string; onAction?: () => void };
-  icon?: any;
-  rememberUserChoice?: boolean;
-}): Promise<boolean> {
+export async function confirmAlert(options: Alert.Options): Promise<boolean> {
   const confirmed = window.confirm(`${options.title}${options.message ? '\n\n' + options.message : ''}`);
   if (confirmed) {
     options.primaryAction?.onAction?.();
@@ -264,18 +316,6 @@ export async function confirmAlert(options: {
     return false;
   }
 }
-
-// =====================================================================
-// ─── Alert ──────────────────────────────────────────────────────────
-// =====================================================================
-
-export const Alert = {
-  ActionStyle: {
-    Default: 'default' as const,
-    Cancel: 'cancel' as const,
-    Destructive: 'destructive' as const,
-  },
-};
 
 // =====================================================================
 // ─── clearSearchBar ─────────────────────────────────────────────────
