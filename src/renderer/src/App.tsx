@@ -91,6 +91,7 @@ const App: React.FC = () => {
   const [aiQuery, setAiQuery] = useState('');
   const aiRequestIdRef = useRef<string | null>(null);
   const aiResponseRef = useRef<HTMLDivElement>(null);
+  const aiInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -200,6 +201,20 @@ const App: React.FC = () => {
     setAiMode(true);
     window.electron.aiAsk(requestId, searchQuery);
   }, [searchQuery, aiAvailable]);
+
+  const submitAiQuery = useCallback((query: string) => {
+    if (!query.trim()) return;
+    // Cancel any in-flight request
+    if (aiRequestIdRef.current && aiStreaming) {
+      window.electron.aiCancel(aiRequestIdRef.current);
+    }
+    const requestId = `ai-${Date.now()}`;
+    aiRequestIdRef.current = requestId;
+    setAiQuery(query);
+    setAiResponse('');
+    setAiStreaming(true);
+    window.electron.aiAsk(requestId, query);
+  }, [aiStreaming]);
 
   const exitAiMode = useCallback(() => {
     if (aiRequestIdRef.current && aiStreaming) {
@@ -433,12 +448,36 @@ const App: React.FC = () => {
         {menuBarRunner}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
-            {/* AI header */}
+            {/* AI header — editable input */}
             <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06]">
               <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
-              <div className="flex-1 min-w-0 text-white/90 text-[15px] font-light truncate">
-                {aiQuery}
-              </div>
+              <input
+                ref={aiInputRef}
+                type="text"
+                value={aiQuery}
+                onChange={(e) => setAiQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && aiQuery.trim()) {
+                    e.preventDefault();
+                    submitAiQuery(aiQuery);
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    exitAiMode();
+                  }
+                }}
+                placeholder="Ask AI anything..."
+                className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[15px] font-light tracking-wide min-w-0"
+                autoFocus
+              />
+              {aiQuery.trim() && (
+                <button
+                  onClick={() => submitAiQuery(aiQuery)}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-purple-500/15 hover:bg-purple-500/25 transition-colors flex-shrink-0 group"
+                >
+                  <span className="text-[11px] text-purple-400/70 group-hover:text-purple-400 transition-colors">Ask</span>
+                  <kbd className="text-[10px] text-purple-400/40 bg-purple-500/10 px-1 py-0.5 rounded font-mono leading-none">Enter</kbd>
+                </button>
+              )}
               <button
                 onClick={exitAiMode}
                 className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0"
@@ -471,7 +510,12 @@ const App: React.FC = () => {
             {/* Footer */}
             <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-between text-xs text-white/40 font-medium" style={{ background: 'rgba(28,28,32,0.90)' }}>
               <span>{aiStreaming ? 'Streaming...' : 'AI Response'}</span>
-              <kbd className="text-[10px] text-white/20 bg-white/[0.06] px-1.5 py-0.5 rounded font-mono">Esc</kbd>
+              <div className="flex items-center gap-2">
+                <kbd className="text-[10px] text-white/20 bg-white/[0.06] px-1.5 py-0.5 rounded font-mono">Enter</kbd>
+                <span className="text-[10px] text-white/20">Ask</span>
+                <kbd className="text-[10px] text-white/20 bg-white/[0.06] px-1.5 py-0.5 rounded font-mono">Esc</kbd>
+                <span className="text-[10px] text-white/20">Back</span>
+              </div>
             </div>
           </div>
         </div>
