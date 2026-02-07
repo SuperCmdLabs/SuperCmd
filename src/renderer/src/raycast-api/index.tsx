@@ -801,21 +801,36 @@ export const Clipboard = {
 const storagePrefix = 'sc-ext-';
 
 export const LocalStorage = {
-  async getItem(key: string): Promise<string | undefined> {
-    return localStorage.getItem(storagePrefix + key) ?? undefined;
+  async getItem(key: string): Promise<LocalStorage.Value | undefined> {
+    const raw = localStorage.getItem(storagePrefix + key);
+    if (raw === null) return undefined;
+    // Values are stored as JSON to preserve types (string | number | boolean)
+    try {
+      return JSON.parse(raw);
+    } catch {
+      // Backward compat: old values stored as plain strings
+      return raw;
+    }
   },
-  async setItem(key: string, value: string): Promise<void> {
-    localStorage.setItem(storagePrefix + key, String(value));
+  async setItem(key: string, value: LocalStorage.Value): Promise<void> {
+    localStorage.setItem(storagePrefix + key, JSON.stringify(value));
   },
   async removeItem(key: string): Promise<void> {
     localStorage.removeItem(storagePrefix + key);
   },
-  async allItems(): Promise<Record<string, string>> {
-    const result: Record<string, string> = {};
+  async allItems(): Promise<LocalStorage.Values> {
+    const result: LocalStorage.Values = {};
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (k?.startsWith(storagePrefix)) {
-        result[k.slice(storagePrefix.length)] = localStorage.getItem(k) || '';
+        const raw = localStorage.getItem(k);
+        if (raw !== null) {
+          try {
+            result[k.slice(storagePrefix.length)] = JSON.parse(raw);
+          } catch {
+            result[k.slice(storagePrefix.length)] = raw;
+          }
+        }
       }
     }
     return result;
@@ -829,6 +844,11 @@ export const LocalStorage = {
     toRemove.forEach((k) => localStorage.removeItem(k));
   },
 };
+
+export namespace LocalStorage {
+  export type Value = string | number | boolean;
+  export type Values = Record<string, Value>;
+}
 
 // =====================================================================
 // ─── Cache ──────────────────────────────────────────────────────────
