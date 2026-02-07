@@ -17,7 +17,8 @@
  *
  * EXPORTS (from @raycast/utils — same module, extensions import from both):
  *   Hooks: useFetch, useCachedPromise, useCachedState, usePromise, useForm,
- *          useExec, useSQL, useStreamJSON, useAI
+ *          useExec, useSQL, useStreamJSON, useAI, useFrecencySorting,
+ *          useLocalStorage
  *   Functions: getFavicon, getAvatarIcon, getProgressIcon, runAppleScript,
  *             showFailureToast, executeSQL, createDeeplink, withCache
  */
@@ -4008,15 +4009,32 @@ export function useFetch<T = any, U = undefined>(
     fetchData(0, undefined);
   }, [fetchData]);
 
-  const mutate = useCallback(async (asyncUpdate?: Promise<T>) => {
+  const mutate = useCallback(async (asyncUpdate?: Promise<T>, mutateOptions?: { optimisticUpdate?: (data: T | undefined) => T; rollbackOnError?: boolean | ((data: T | undefined) => T); shouldRevalidateAfter?: boolean }) => {
+    const prevData = allData;
+    if (mutateOptions?.optimisticUpdate) {
+      setAllData(mutateOptions.optimisticUpdate(allData));
+    }
     if (asyncUpdate) {
-      const result = await asyncUpdate;
-      setAllData(result);
-      return result;
+      try {
+        const result = await asyncUpdate;
+        if (mutateOptions?.shouldRevalidateAfter !== false) {
+          setAllData(result);
+        }
+        return result;
+      } catch (e) {
+        if (mutateOptions?.rollbackOnError !== false) {
+          if (typeof mutateOptions?.rollbackOnError === 'function') {
+            setAllData(mutateOptions.rollbackOnError(prevData));
+          } else {
+            setAllData(prevData);
+          }
+        }
+        throw e;
+      }
     }
     revalidate();
-    return undefined; // Can't return current state synchronously
-  }, [revalidate]);
+    return undefined;
+  }, [allData, revalidate]);
 
   const onLoadMore = useCallback(() => {
     if (hasMore && !isLoading) {
@@ -4047,8 +4065,10 @@ export function useCachedPromise<T>(
     initialData?: T;
     execute?: boolean;
     keepPreviousData?: boolean;
+    abortable?: React.MutableRefObject<AbortController | null | undefined>;
     onData?: (data: T) => void;
     onError?: (error: Error) => void;
+    onWillExecute?: (args: any[]) => void;
     failureToastOptions?: any;
   }
 ): {
@@ -4079,6 +4099,14 @@ export function useCachedPromise<T>(
     if (opts?.execute === false) return;
     setIsLoading(true);
     setError(undefined);
+
+    // Set up abort controller if abortable ref is provided
+    if (opts?.abortable) {
+      const controller = new AbortController();
+      opts.abortable.current = controller;
+    }
+
+    opts?.onWillExecute?.(argsRef.current);
 
     try {
       // Call the function with the provided args
@@ -4204,9 +4232,11 @@ export function useCachedPromise<T>(
 
 export function useCachedState<T>(
   key: string,
-  initialValue?: T
+  initialValue?: T,
+  config?: { cacheNamespace?: string }
 ): [T, (value: T | ((prev: T) => T)) => void] {
-  const storageKey = `sc-cache-${key}`;
+  const ns = config?.cacheNamespace ? `${config.cacheNamespace}-` : '';
+  const storageKey = `sc-cache-${ns}${key}`;
   const [value, setValue] = useState<T>(() => {
     try {
       const stored = localStorage.getItem(storageKey);
@@ -4227,13 +4257,19 @@ export function useCachedState<T>(
   return [value, setter];
 }
 
+// ── FormValidation Enum ──────────────────────────────────────────────
+
+export enum FormValidation {
+  Required = 'required',
+}
+
 // ── useForm ─────────────────────────────────────────────────────────
 // https://developers.raycast.com/utils-reference/react-hooks/useForm
 
 export function useForm<T extends Record<string, any> = Record<string, any>>(options: {
   onSubmit: (values: T) => void | boolean | Promise<void | boolean>;
   initialValues?: Partial<T>;
-  validation?: Partial<Record<keyof T, (value: any) => string | undefined>>;
+  validation?: Partial<Record<keyof T, ((value: any) => string | undefined | null) | FormValidation>>;
 }): {
   handleSubmit: (values: T) => void;
   itemProps: Record<string, { id: string; value: any; onChange: (value: any) => void; error?: string; onBlur?: () => void }>;
@@ -4261,9 +4297,17 @@ export function useForm<T extends Record<string, any> = Record<string, any>>(opt
     const newErrors: Partial<Record<keyof T, string>> = {};
     let valid = true;
     for (const key of Object.keys(options.validation) as (keyof T)[]) {
-      const validator = options.validation[key];
-      if (validator) {
-        const error = validator(values[key]);
+      const rule = options.validation[key];
+      if (rule) {
+        let error: string | undefined | null;
+        if (rule === FormValidation.Required) {
+          const v = values[key];
+          if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) {
+            error = 'This field is required';
+          }
+        } else if (typeof rule === 'function') {
+          error = rule(values[key]);
+        }
         if (error) {
           newErrors[key] = error;
           valid = false;
@@ -4304,8 +4348,17 @@ export function useForm<T extends Record<string, any> = Record<string, any>>(opt
         onChange: (v: any) => setValue(key as keyof T, v),
         error: errors[key as keyof T],
         onBlur: () => {
-          if (options.validation?.[key as keyof T]) {
-            const err = options.validation[key as keyof T]!(values[key as keyof T]);
+          const rule = options.validation?.[key as keyof T];
+          if (rule) {
+            let err: string | undefined | null;
+            if (rule === FormValidation.Required) {
+              const v = values[key as keyof T];
+              if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) {
+                err = 'This field is required';
+              }
+            } else if (typeof rule === 'function') {
+              err = rule(values[key as keyof T]);
+            }
             if (err) setErrors((prev) => ({ ...prev, [key]: err }));
           }
         },
@@ -4321,53 +4374,75 @@ export function useForm<T extends Record<string, any> = Record<string, any>>(opt
 
 export function useExec<T = string>(
   command: string,
-  args?: string[],
+  args?: string[] | Record<string, any>,
   options?: {
     shell?: boolean | string;
+    stripFinalNewline?: boolean;
     input?: string;
     encoding?: string;
-    parseOutput?: (output: { stdout: string; stderr: string; exitCode: number }) => T;
+    timeout?: number;
+    parseOutput?: (output: { stdout: string; stderr: string; exitCode: number | null; error?: Error; signal: string | null; timedOut: boolean; command: string }) => T;
     initialData?: T;
+    keepPreviousData?: boolean;
     execute?: boolean;
     onData?: (data: T) => void;
     onError?: (error: Error) => void;
-    onWillExecute?: () => void;
+    onWillExecute?: (args: string[]) => void;
     failureToastOptions?: any;
     env?: Record<string, string>;
     cwd?: string;
   }
 ) {
+  // Handle overload: useExec(command, options) — no args array
+  const actualArgs: string[] = Array.isArray(args) ? args : [];
+  const actualOptions = Array.isArray(args) ? options : (args as typeof options);
+
   return usePromise(
     async () => {
       const electron = (window as any).electron;
       if (!electron?.execCommand) {
         console.warn(`useExec: execCommand not available for "${command}"`);
-        const output = { stdout: '', stderr: '', exitCode: 0 };
-        return options?.parseOutput ? options.parseOutput(output) : ('' as any as T);
+        const output = { stdout: '', stderr: '', exitCode: 0 as number | null, signal: null as string | null, timedOut: false, command };
+        return actualOptions?.parseOutput ? actualOptions.parseOutput(output) : ('' as any as T);
       }
 
-      const result = await electron.execCommand(command, args || [], {
-        shell: options?.shell,
-        input: options?.input,
-        env: options?.env,
+      const result = await electron.execCommand(command, actualArgs, {
+        shell: actualOptions?.shell,
+        input: actualOptions?.input,
+        env: actualOptions?.env,
+        cwd: actualOptions?.cwd,
+        timeout: actualOptions?.timeout,
       });
 
       if (result.exitCode !== 0 && result.stderr) {
         throw new Error(result.stderr);
       }
 
-      if (options?.parseOutput) {
-        return options.parseOutput(result);
+      if (actualOptions?.parseOutput) {
+        return actualOptions.parseOutput({
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+          signal: null,
+          timedOut: false,
+          command,
+        });
       }
 
-      return result.stdout as any as T;
+      let stdout = result.stdout as string;
+      if (actualOptions?.stripFinalNewline !== false && stdout.endsWith('\n')) {
+        stdout = stdout.slice(0, -1);
+      }
+
+      return stdout as any as T;
     },
     [],
     {
-      initialData: options?.initialData,
-      execute: options?.execute,
-      onData: options?.onData,
-      onError: options?.onError,
+      initialData: actualOptions?.initialData,
+      execute: actualOptions?.execute,
+      onData: actualOptions?.onData,
+      onError: actualOptions?.onError,
+      onWillExecute: actualOptions?.onWillExecute ? () => actualOptions.onWillExecute!(actualArgs) : undefined,
     }
   );
 }
@@ -4377,42 +4452,153 @@ export function useExec<T = string>(
 export function useSQL<T = any>(
   databasePath: string,
   query: string,
-  options?: { permissionPriming?: string; execute?: boolean }
+  options?: {
+    permissionPriming?: string;
+    execute?: boolean;
+    onError?: (error: Error) => void;
+    onData?: (data: T[]) => void;
+    onWillExecute?: (args: string[]) => void;
+    failureToastOptions?: any;
+  }
 ) {
-  return usePromise(
+  const result = usePromise(
     async () => {
-      console.log('[useSQL] Querying database:', { databasePath, query: query.substring(0, 100) });
       const electron = (window as any).electron;
       if (!electron?.runSqliteQuery) {
-        console.warn('useSQL: runSqliteQuery IPC not available');
-        return [] as T[];
+        throw new Error('useSQL: runSqliteQuery IPC not available');
       }
-      const result = await electron.runSqliteQuery(databasePath, query);
-      console.log('[useSQL] Query result:', {
-        hasError: !!result.error,
-        error: result.error,
-        dataType: Array.isArray(result.data) ? 'array' : typeof result.data,
-        dataLength: Array.isArray(result.data) ? result.data.length : 'N/A',
-        firstItem: Array.isArray(result.data) && result.data.length > 0 ? result.data[0] : null
-      });
-      if (result.error) {
-        console.error('useSQL error:', result.error);
-        return [] as T[];
+      const res = await electron.runSqliteQuery(databasePath, query);
+      if (res.error) {
+        throw new Error(res.error);
       }
-      return (Array.isArray(result.data) ? result.data : []) as T[];
+      return (Array.isArray(res.data) ? res.data : []) as T[];
     },
     [],
-    { execute: options?.execute }
+    {
+      execute: options?.execute,
+      onData: options?.onData,
+      onError: options?.onError,
+      onWillExecute: options?.onWillExecute ? () => options.onWillExecute!([databasePath, query]) : undefined,
+    }
   );
+
+  return { ...result, permissionView: undefined as React.ReactNode | undefined };
 }
 
 // ── useStreamJSON ───────────────────────────────────────────────────
 
 export function useStreamJSON<T = any>(
-  url: string,
-  options?: any
+  url: string | Request,
+  options?: RequestInit & {
+    filter?: (item: T) => boolean;
+    transform?: (item: any) => T;
+    dataPath?: string | RegExp;
+    pageSize?: number;
+    initialData?: T[];
+    keepPreviousData?: boolean;
+    execute?: boolean;
+    onError?: (error: Error) => void;
+    onData?: (data: T) => void;
+    onWillExecute?: (args: [string, RequestInit]) => void;
+    failureToastOptions?: any;
+  }
 ) {
-  return useFetch(url, options);
+  const pageSize = options?.pageSize ?? 20;
+  const [allItems, setAllItems] = useState<T[]>(options?.initialData || []);
+  const [isLoading, setIsLoading] = useState(options?.execute !== false);
+  const [error, setError] = useState<Error | undefined>(undefined);
+  const [displayCount, setDisplayCount] = useState(pageSize);
+
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
+  const fetchAndParse = useCallback(async () => {
+    const opts = optionsRef.current;
+    if (opts?.execute === false) return;
+    setIsLoading(true);
+    setError(undefined);
+
+    try {
+      const resolvedUrl = typeof url === 'string' ? url : url.url;
+      const res = await fetch(resolvedUrl, opts);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const json = await res.json();
+
+      // Extract data using dataPath
+      let items: any[];
+      if (opts?.dataPath) {
+        if (typeof opts.dataPath === 'string') {
+          items = opts.dataPath.split('.').reduce((obj: any, key: string) => obj?.[key], json);
+        } else {
+          // RegExp dataPath — find first matching key
+          const match = Object.keys(json).find(k => (opts.dataPath as RegExp).test(k));
+          items = match ? json[match] : json;
+        }
+      } else {
+        items = Array.isArray(json) ? json : [json];
+      }
+
+      if (!Array.isArray(items)) items = [items];
+
+      // Apply transform
+      if (opts?.transform) {
+        items = items.map(opts.transform);
+      }
+
+      // Apply filter
+      if (opts?.filter) {
+        items = items.filter(opts.filter);
+      }
+
+      setAllItems(items as T[]);
+      items.forEach(item => opts?.onData?.(item as T));
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      setError(e);
+      opts?.onError?.(e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [url]);
+
+  useEffect(() => {
+    fetchAndParse();
+  }, [fetchAndParse]);
+
+  const revalidate = useCallback(() => {
+    setAllItems([]);
+    setDisplayCount(pageSize);
+    fetchAndParse();
+  }, [fetchAndParse, pageSize]);
+
+  const mutate = useCallback(async (asyncUpdate?: Promise<any>, mutateOptions?: any) => {
+    if (mutateOptions?.optimisticUpdate) {
+      setAllItems(mutateOptions.optimisticUpdate(allItems));
+    }
+    if (asyncUpdate) {
+      try { await asyncUpdate; } catch (e) {
+        if (mutateOptions?.rollbackOnError) revalidate();
+        throw e;
+      }
+    }
+  }, [allItems, revalidate]);
+
+  const hasMore = displayCount < allItems.length;
+  const pagination = useMemo(() => ({
+    pageSize,
+    hasMore,
+    onLoadMore: () => { if (hasMore) setDisplayCount(prev => prev + pageSize); },
+  }), [pageSize, hasMore]);
+
+  return {
+    data: allItems.slice(0, displayCount),
+    isLoading,
+    error,
+    revalidate,
+    mutate,
+    pagination,
+  };
 }
 
 // ── useAI ───────────────────────────────────────────────────────────
@@ -4424,20 +4610,27 @@ export function useAI(
     creativity?: AICreativity;
     execute?: boolean;
     stream?: boolean;
+    onError?: (error: Error) => void;
+    onData?: (data: string) => void;
+    onWillExecute?: (args: [string]) => void;
+    failureToastOptions?: any;
   }
 ) {
   const [data, setData] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Error | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
   const promptRef = useRef(prompt);
+  const optionsRef = useRef(options);
   promptRef.current = prompt;
+  optionsRef.current = options;
 
-  const execute = options?.execute !== false;
+  const shouldExecute = options?.execute !== false;
   const stream = options?.stream !== false;
 
   const run = useCallback(() => {
     if (!promptRef.current) return;
+    const opts = optionsRef.current;
 
     // Abort previous request
     abortRef.current?.abort();
@@ -4448,9 +4641,11 @@ export function useAI(
     setError(undefined);
     setData('');
 
+    opts?.onWillExecute?.([promptRef.current]);
+
     const sp = AI.ask(promptRef.current, {
-      model: options?.model,
-      creativity: options?.creativity,
+      model: opts?.model,
+      creativity: opts?.creativity,
       signal: controller.signal,
     });
 
@@ -4466,23 +4661,26 @@ export function useAI(
       if (!controller.signal.aborted) {
         if (!stream) setData(fullText);
         setIsLoading(false);
+        opts?.onData?.(fullText);
       }
     }).catch((err: any) => {
       if (!controller.signal.aborted) {
-        setError(err?.message || 'AI request failed');
+        const e = err instanceof Error ? err : new Error(err?.message || 'AI request failed');
+        setError(e);
         setIsLoading(false);
+        opts?.onError?.(e);
       }
     });
-  }, [options?.model, options?.creativity, stream]);
+  }, [stream]);
 
   useEffect(() => {
-    if (execute) {
+    if (shouldExecute) {
       run();
     }
     return () => {
       abortRef.current?.abort();
     };
-  }, [execute, run]);
+  }, [shouldExecute, run]);
 
   return { data, isLoading, error, revalidate: run };
 }
@@ -4490,6 +4688,18 @@ export function useAI(
 // ── useFrecencySorting ──────────────────────────────────────────────
 // Sorts items by frecency (frequency + recency). Returns the sorted data
 // and a function to track visits.
+
+interface FrecencyEntry {
+  count: number;
+  lastVisited: number;
+}
+
+function computeFrecencyScore(entry: FrecencyEntry): number {
+  const ageHours = (Date.now() - entry.lastVisited) / (1000 * 60 * 60);
+  // Decay factor: halve score every 72 hours
+  const decay = Math.pow(0.5, ageHours / 72);
+  return entry.count * decay;
+}
 
 export function useFrecencySorting<T>(
   data: T[] | undefined,
@@ -4503,31 +4713,77 @@ export function useFrecencySorting<T>(
   visitItem: (item: T) => Promise<void>;
   resetRanking: (item: T) => Promise<void>;
 } {
-  // Simple implementation that just returns the data as-is
-  // In a full implementation, this would track visit frequency and recency
+  const ns = options?.namespace || 'default';
+  const storageKey = `sc-frecency-${ns}`;
+  const getKey = options?.key || ((item: any) => item?.id ?? String(item));
+
+  const [frecencyMap, setFrecencyMap] = useState<Record<string, FrecencyEntry>>(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const persistMap = useCallback((map: Record<string, FrecencyEntry>) => {
+    try { localStorage.setItem(storageKey, JSON.stringify(map)); } catch {}
+  }, [storageKey]);
+
   const sortedData = useMemo(() => {
-    // Handle undefined/null
     if (!data) return [];
-    // Handle non-array inputs gracefully (defensive programming)
     if (!Array.isArray(data)) {
-      console.warn('[useFrecencySorting] Expected array but received:', typeof data);
-      // If it's an object with a data property, try to extract it
       if (typeof data === 'object' && data !== null && 'data' in (data as any)) {
         const innerData = (data as any).data;
         if (Array.isArray(innerData)) return [...innerData];
       }
       return [];
     }
-    return [...data];
-  }, [data]);
+
+    const items = [...data];
+    items.sort((a, b) => {
+      const keyA = getKey(a);
+      const keyB = getKey(b);
+      const entryA = frecencyMap[keyA];
+      const entryB = frecencyMap[keyB];
+
+      // Both visited: sort by frecency score descending
+      if (entryA && entryB) {
+        return computeFrecencyScore(entryB) - computeFrecencyScore(entryA);
+      }
+      // Only one visited: visited items come first
+      if (entryA && !entryB) return -1;
+      if (!entryA && entryB) return 1;
+      // Neither visited: use custom sort or preserve order
+      if (options?.sortUnvisited) return options.sortUnvisited(a, b);
+      return 0;
+    });
+
+    return items;
+  }, [data, frecencyMap, getKey, options?.sortUnvisited]);
 
   const visitItem = useCallback(async (item: T) => {
-    // In a full implementation, this would record the visit
-  }, []);
+    const k = getKey(item);
+    setFrecencyMap(prev => {
+      const entry = prev[k];
+      const updated = {
+        ...prev,
+        [k]: { count: (entry?.count || 0) + 1, lastVisited: Date.now() },
+      };
+      persistMap(updated);
+      return updated;
+    });
+  }, [getKey, persistMap]);
 
   const resetRanking = useCallback(async (item: T) => {
-    // In a full implementation, this would reset the item's ranking
-  }, []);
+    const k = getKey(item);
+    setFrecencyMap(prev => {
+      const updated = { ...prev };
+      delete updated[k];
+      persistMap(updated);
+      return updated;
+    });
+  }, [getKey, persistMap]);
 
   return { data: sortedData, visitItem, resetRanking };
 }
