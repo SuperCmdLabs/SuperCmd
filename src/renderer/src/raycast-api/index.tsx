@@ -3356,15 +3356,54 @@ Grid.Dropdown = ListDropdown;
 
 // ── Registration types ───────────────────────────────────────────────
 
+export namespace MenuBarExtra {
+  export interface ActionEvent {
+    type: 'left-click' | 'right-click';
+  }
+
+  export interface ItemProps {
+    title: string;
+    alternate?: React.ReactElement<ItemProps>;
+    icon?: any;
+    onAction?: (event: ActionEvent) => void;
+    shortcut?: any;
+    subtitle?: string;
+    tooltip?: string;
+  }
+
+  export interface SubmenuProps {
+    title: string;
+    children?: React.ReactNode;
+    icon?: any;
+  }
+
+  export interface SectionProps {
+    children?: React.ReactNode;
+    title?: string;
+  }
+
+  export interface Props {
+    children?: React.ReactNode;
+    icon?: any;
+    isLoading?: boolean;
+    title?: string;
+    tooltip?: string;
+  }
+}
+
 interface MBItemRegistration {
   id: string;
-  type: 'item' | 'separator';
+  type: 'item' | 'separator' | 'submenu';
   title?: string;
+  subtitle?: string;
   icon?: any;
   tooltip?: string;
-  onAction?: () => void;
+  onAction?: (event: MenuBarExtra.ActionEvent) => void;
+  alternate?: MBItemRegistration;
   sectionId?: string;
+  sectionTitle?: string;
   order: number;
+  children?: MBItemRegistration[];
 }
 
 interface MBRegistryAPI {
@@ -3374,6 +3413,7 @@ interface MBRegistryAPI {
 
 const MBRegistryContext = createContext<MBRegistryAPI | null>(null);
 const MBSectionIdContext = createContext<string | undefined>(undefined);
+const MBSectionTitleContext = createContext<string | undefined>(undefined);
 
 // ── Global action map & click listener ──────────────────────────────
 
@@ -3394,7 +3434,7 @@ let _mbSectionOrderCounter = 0;
 
 // ── MenuBarExtra (parent) ───────────────────────────────────────────
 
-function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: any) {
+function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: MenuBarExtra.Props) {
   // Use React context for per-extension info (safe with concurrent extensions)
   const extInfo = useContext(ExtensionInfoReactContext);
   const extId = extInfo.extId || `${getExtensionContext().extensionName}/${getExtensionContext().commandName}`;
@@ -3445,9 +3485,49 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: an
       .sort((a, b) => a.order - b.order);
 
     // Build serialized menu with section grouping
-    const actions = new Map<string, () => void>();
+    const actions = new Map<string, (event: MenuBarExtra.ActionEvent) => void>();
     const serialized: any[] = [];
     let prevSectionId: string | undefined | null = null;
+
+    const serializeItem = (item: MBItemRegistration): any => {
+      if (item.type === 'separator') {
+        return { type: 'separator' };
+      } else if (item.type === 'submenu') {
+        // Serialize submenu with children
+        const submenuChildren = (item.children || []).map(serializeItem);
+        return {
+          type: 'submenu',
+          title: item.title || '',
+          icon: item.icon,
+          children: submenuChildren,
+        };
+      } else {
+        // Regular item
+        if (item.onAction) actions.set(item.id, item.onAction);
+        const serializedItem: any = {
+          type: 'item',
+          id: item.id,
+          title: item.title || '',
+          subtitle: item.subtitle,
+          tooltip: item.tooltip,
+        };
+
+        // Add alternate item if present
+        if (item.alternate) {
+          if (item.alternate.onAction) {
+            actions.set(item.alternate.id, item.alternate.onAction);
+          }
+          serializedItem.alternate = {
+            id: item.alternate.id,
+            title: item.alternate.title,
+            subtitle: item.alternate.subtitle,
+            tooltip: item.alternate.tooltip,
+          };
+        }
+
+        return serializedItem;
+      }
+    };
 
     for (const item of allItems) {
       // Insert separator between sections
@@ -3456,17 +3536,16 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: an
       }
       prevSectionId = item.sectionId;
 
-      if (item.type === 'separator') {
-        serialized.push({ type: 'separator' });
-      } else {
-        if (item.onAction) actions.set(item.id, item.onAction);
+      // Add section title if present
+      if (item.sectionTitle && item.sectionId !== prevSectionId) {
         serialized.push({
           type: 'item',
-          id: item.id,
-          title: item.title || '',
-          tooltip: item.tooltip,
+          title: item.sectionTitle,
+          disabled: true,
         });
       }
+
+      serialized.push(serializeItem(item));
     }
 
     _mbActions.set(extId, actions);
@@ -3524,33 +3603,53 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: an
 
 // ── MenuBarExtra.Item ───────────────────────────────────────────────
 
-function MenuBarExtraItemComponent({ title, icon, onAction, shortcut, tooltip }: any) {
+function MenuBarExtraItemComponent({ title, subtitle, icon, onAction, shortcut, tooltip, alternate }: MenuBarExtra.ItemProps) {
   const registry = useContext(MBRegistryContext);
   const sectionId = useContext(MBSectionIdContext);
+  const sectionTitle = useContext(MBSectionTitleContext);
   const stableId = useRef(`__mbi_${++_mbOrderCounter}`).current;
   const order = useRef(++_mbOrderCounter).current;
 
   useEffect(() => {
     if (registry) {
+      // Process alternate item if provided
+      let alternateReg: MBItemRegistration | undefined;
+      if (alternate) {
+        alternateReg = {
+          id: `${stableId}_alt`,
+          type: 'item',
+          title: alternate.props.title,
+          subtitle: alternate.props.subtitle,
+          icon: alternate.props.icon,
+          tooltip: alternate.props.tooltip,
+          onAction: alternate.props.onAction,
+          order: order + 0.5,
+        };
+      }
+
       registry.register({
         id: stableId,
         type: 'item',
         title,
+        subtitle,
         icon,
         tooltip,
         onAction,
+        alternate: alternateReg,
         sectionId,
+        sectionTitle,
         order,
       });
       return () => registry.unregister(stableId);
     }
-  }, [title, icon, tooltip, onAction, registry, stableId, order, sectionId]);
+  }, [title, subtitle, icon, tooltip, onAction, alternate, registry, stableId, order, sectionId, sectionTitle]);
 
   // In non-menu-bar mode, render a clickable row
   if (!registry) {
     return (
-      <button onClick={onAction} className="w-full text-left px-3 py-1.5 text-sm text-white/80 hover:bg-white/[0.06] rounded transition-colors">
-        {title}
+      <button onClick={() => onAction?.({ type: 'left-click' })} className="w-full text-left px-3 py-1.5 text-sm text-white/80 hover:bg-white/[0.06] rounded transition-colors">
+        <div>{title}</div>
+        {subtitle && <div className="text-xs text-white/50">{subtitle}</div>}
       </button>
     );
   }
@@ -3560,12 +3659,14 @@ function MenuBarExtraItemComponent({ title, icon, onAction, shortcut, tooltip }:
 
 // ── MenuBarExtra.Section ────────────────────────────────────────────
 
-function MenuBarExtraSectionComponent({ children, title }: any) {
+function MenuBarExtraSectionComponent({ children, title }: MenuBarExtra.SectionProps) {
   const stableId = useRef(`__mbs_${++_mbSectionOrderCounter}`).current;
 
   return (
     <MBSectionIdContext.Provider value={stableId}>
-      {children}
+      <MBSectionTitleContext.Provider value={title}>
+        {children}
+      </MBSectionTitleContext.Provider>
     </MBSectionIdContext.Provider>
   );
 }
@@ -3594,12 +3695,83 @@ function MenuBarExtraSeparatorComponent() {
   return null;
 }
 
-// ── MenuBarExtra.Submenu (renders children as flat items for now) ──
+// ── MenuBarExtra.Submenu ────────────────────────────────────────────
 
-function MenuBarExtraSubmenuComponent({ children, title, icon }: any) {
-  // For native menus, submenus would need nested structure.
-  // For v1, just render children flat (they register as items).
-  return <>{children}</>;
+const MBSubmenuContext = createContext<string | null>(null);
+
+function MenuBarExtraSubmenuComponent({ children, title, icon }: MenuBarExtra.SubmenuProps) {
+  const registry = useContext(MBRegistryContext);
+  const sectionId = useContext(MBSectionIdContext);
+  const sectionTitle = useContext(MBSectionTitleContext);
+  const stableId = useRef(`__mbsm_${++_mbOrderCounter}`).current;
+  const order = useRef(++_mbOrderCounter).current;
+
+  // Create a local registry for submenu children
+  const submenuRegistryRef = useRef(new Map<string, MBItemRegistration>());
+  const [submenuVersion, setSubmenuVersion] = useState(0);
+
+  const submenuAPI = useMemo<MBRegistryAPI>(() => ({
+    register: (item: MBItemRegistration) => {
+      submenuRegistryRef.current.set(item.id, item);
+      setSubmenuVersion((v) => v + 1);
+    },
+    unregister: (id: string) => {
+      submenuRegistryRef.current.delete(id);
+      setSubmenuVersion((v) => v + 1);
+    },
+  }), []);
+
+  useEffect(() => {
+    if (registry) {
+      // Collect all child items
+      const childItems = Array.from(submenuRegistryRef.current.values())
+        .sort((a, b) => a.order - b.order);
+
+      registry.register({
+        id: stableId,
+        type: 'submenu',
+        title,
+        icon,
+        sectionId,
+        sectionTitle,
+        order,
+        children: childItems,
+      });
+      return () => registry.unregister(stableId);
+    }
+  }, [title, icon, registry, stableId, order, sectionId, sectionTitle, submenuVersion]);
+
+  // In non-menu-bar mode, render as collapsible section
+  if (!registry) {
+    const [expanded, setExpanded] = useState(false);
+    return (
+      <div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full text-left px-3 py-1.5 text-sm text-white/80 hover:bg-white/[0.06] rounded transition-colors flex items-center"
+        >
+          <span className="mr-2">{expanded ? '▼' : '▶'}</span>
+          {title}
+        </button>
+        {expanded && (
+          <div className="ml-4">
+            <MBRegistryContext.Provider value={submenuAPI}>
+              {children}
+            </MBRegistryContext.Provider>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // In menu-bar mode, provide submenu context
+  return (
+    <MBSubmenuContext.Provider value={stableId}>
+      <MBRegistryContext.Provider value={submenuAPI}>
+        <div style={{ display: 'none' }}>{children}</div>
+      </MBRegistryContext.Provider>
+    </MBSubmenuContext.Provider>
+  );
 }
 
 export const MenuBarExtra = Object.assign(MenuBarExtraComponent, {
