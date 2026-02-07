@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, Power, Settings, Puzzle } from 'lucide-react';
+import { Search, X, Power, Settings, Puzzle, Sparkles } from 'lucide-react';
 import type { CommandInfo, ExtensionBundle } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
@@ -84,6 +84,13 @@ const App: React.FC = () => {
   const [extensionView, setExtensionView] = useState<ExtensionBundle | null>(null);
   const [showClipboardManager, setShowClipboardManager] = useState(false);
   const [menuBarExtensions, setMenuBarExtensions] = useState<ExtensionBundle[]>([]);
+  const [aiMode, setAiMode] = useState(false);
+  const [aiResponse, setAiResponse] = useState('');
+  const [aiStreaming, setAiStreaming] = useState(false);
+  const [aiAvailable, setAiAvailable] = useState(false);
+  const [aiQuery, setAiQuery] = useState('');
+  const aiRequestIdRef = useRef<string | null>(null);
+  const aiResponseRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -126,9 +133,14 @@ const App: React.FC = () => {
       if (extensionViewRef.current) return;
       setSearchQuery('');
       setSelectedIndex(0);
+      setAiMode(false);
+      setAiResponse('');
+      setAiStreaming(false);
+      setAiQuery('');
       // Re-fetch commands every time the window is shown
       // so newly installed extensions appear immediately
       fetchCommands();
+      window.electron.aiIsAvailable().then(setAiAvailable);
       inputRef.current?.focus();
     });
   }, [fetchCommands]);
@@ -148,6 +160,78 @@ const App: React.FC = () => {
       console.error('[MenuBar] Failed to load menu-bar extensions:', err);
     });
   }, []);
+
+  // Check AI availability
+  useEffect(() => {
+    window.electron.aiIsAvailable().then(setAiAvailable);
+  }, []);
+
+  // AI streaming listeners
+  useEffect(() => {
+    const handleChunk = (data: { requestId: string; chunk: string }) => {
+      if (data.requestId === aiRequestIdRef.current) {
+        setAiResponse((prev) => prev + data.chunk);
+      }
+    };
+    const handleDone = (data: { requestId: string }) => {
+      if (data.requestId === aiRequestIdRef.current) {
+        setAiStreaming(false);
+      }
+    };
+    const handleError = (data: { requestId: string; error: string }) => {
+      if (data.requestId === aiRequestIdRef.current) {
+        setAiResponse((prev) => prev + `\n\nError: ${data.error}`);
+        setAiStreaming(false);
+      }
+    };
+
+    window.electron.onAIStreamChunk(handleChunk);
+    window.electron.onAIStreamDone(handleDone);
+    window.electron.onAIStreamError(handleError);
+  }, []);
+
+  const startAiChat = useCallback(() => {
+    if (!searchQuery.trim() || !aiAvailable) return;
+    const requestId = `ai-${Date.now()}`;
+    aiRequestIdRef.current = requestId;
+    setAiQuery(searchQuery);
+    setAiResponse('');
+    setAiStreaming(true);
+    setAiMode(true);
+    window.electron.aiAsk(requestId, searchQuery);
+  }, [searchQuery, aiAvailable]);
+
+  const exitAiMode = useCallback(() => {
+    if (aiRequestIdRef.current && aiStreaming) {
+      window.electron.aiCancel(aiRequestIdRef.current);
+    }
+    aiRequestIdRef.current = null;
+    setAiMode(false);
+    setAiResponse('');
+    setAiStreaming(false);
+    setAiQuery('');
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, [aiStreaming]);
+
+  // Auto-scroll AI response
+  useEffect(() => {
+    if (aiResponseRef.current) {
+      aiResponseRef.current.scrollTop = aiResponseRef.current.scrollHeight;
+    }
+  }, [aiResponse]);
+
+  // Escape to exit AI mode
+  useEffect(() => {
+    if (!aiMode) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        exitAiMode();
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [aiMode, exitAiMode]);
 
   const filteredCommands = filterCommands(commands, searchQuery);
 
@@ -182,6 +266,13 @@ const App: React.FC = () => {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       switch (e.key) {
+        case 'Tab':
+          if (searchQuery.trim() && aiAvailable) {
+            e.preventDefault();
+            startAiChat();
+          }
+          break;
+
         case 'ArrowDown':
           e.preventDefault();
           setSelectedIndex((prev) =>
@@ -209,7 +300,7 @@ const App: React.FC = () => {
           break;
       }
     },
-    [filteredCommands, selectedIndex]
+    [filteredCommands, selectedIndex, searchQuery, aiAvailable, startAiChat]
   );
 
   const handleCommandExecute = async (command: CommandInfo) => {
@@ -335,6 +426,59 @@ const App: React.FC = () => {
     );
   }
 
+  // ─── AI Chat mode ──────────────────────────────────────────────
+  if (aiMode) {
+    return (
+      <>
+        {menuBarRunner}
+        <div className="w-full h-full">
+          <div className="glass-effect overflow-hidden h-full flex flex-col">
+            {/* AI header */}
+            <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06]">
+              <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0 text-white/90 text-[15px] font-light truncate">
+                {aiQuery}
+              </div>
+              <button
+                onClick={exitAiMode}
+                className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* AI response */}
+            <div
+              ref={aiResponseRef}
+              className="flex-1 overflow-y-auto custom-scrollbar p-5"
+            >
+              {aiResponse ? (
+                <div className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap font-light">
+                  {aiResponse}
+                </div>
+              ) : aiStreaming ? (
+                <div className="flex items-center gap-2 text-white/40 text-sm">
+                  <div className="flex gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400/60 animate-pulse" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400/60 animate-pulse" style={{ animationDelay: '0.2s' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400/60 animate-pulse" style={{ animationDelay: '0.4s' }} />
+                  </div>
+                  Thinking...
+                </div>
+              ) : null}
+            </div>
+
+            {/* Footer */}
+            <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-between text-xs text-white/40 font-medium" style={{ background: 'rgba(28,28,32,0.90)' }}>
+              <span>{aiStreaming ? 'Streaming...' : 'AI Response'}</span>
+              <kbd className="text-[10px] text-white/20 bg-white/[0.06] px-1.5 py-0.5 rounded font-mono">Esc</kbd>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   // ─── Launcher mode ──────────────────────────────────────────────
   return (
     <>
@@ -353,6 +497,16 @@ const App: React.FC = () => {
             className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[15px] font-light tracking-wide"
             autoFocus
           />
+          {searchQuery && aiAvailable && (
+            <button
+              onClick={startAiChat}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.10] transition-colors flex-shrink-0 group"
+            >
+              <Sparkles className="w-3 h-3 text-white/30 group-hover:text-purple-400 transition-colors" />
+              <span className="text-[11px] text-white/30 group-hover:text-white/50 transition-colors">Ask AI</span>
+              <kbd className="text-[10px] text-white/20 bg-white/[0.06] px-1 py-0.5 rounded font-mono leading-none">Tab</kbd>
+            </button>
+          )}
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}

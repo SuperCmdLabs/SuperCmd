@@ -134,57 +134,62 @@ const AITab: React.FC = () => {
               </div>
             </div>
 
-            {/* API Key / URL */}
+            {/* API Keys */}
             <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
-              <h3 className="text-sm font-medium text-white/90 mb-3">
-                {ai.provider === 'ollama' ? 'Server URL' : 'API Key'}
-              </h3>
-
-              {ai.provider === 'openai' && (
-                <div className="relative">
-                  <input
-                    type={showOpenAIKey ? 'text' : 'password'}
-                    value={ai.openaiApiKey}
-                    onChange={(e) => updateAI({ openaiApiKey: e.target.value })}
-                    placeholder="sk-..."
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 pr-10 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
-                  />
-                  <button
-                    onClick={() => setShowOpenAIKey(!showOpenAIKey)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
-                  >
-                    {showOpenAIKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+              <h3 className="text-sm font-medium text-white/90 mb-4">API Keys</h3>
+              <div className="space-y-4">
+                {/* OpenAI */}
+                <div>
+                  <label className="text-xs text-white/50 mb-1.5 block">OpenAI API Key</label>
+                  <div className="relative">
+                    <input
+                      type={showOpenAIKey ? 'text' : 'password'}
+                      value={ai.openaiApiKey}
+                      onChange={(e) => updateAI({ openaiApiKey: e.target.value })}
+                      placeholder="sk-..."
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 pr-10 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
+                    />
+                    <button
+                      onClick={() => setShowOpenAIKey(!showOpenAIKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
+                    >
+                      {showOpenAIKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
-              )}
 
-              {ai.provider === 'anthropic' && (
-                <div className="relative">
-                  <input
-                    type={showAnthropicKey ? 'text' : 'password'}
-                    value={ai.anthropicApiKey}
-                    onChange={(e) => updateAI({ anthropicApiKey: e.target.value })}
-                    placeholder="sk-ant-..."
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 pr-10 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
-                  />
-                  <button
-                    onClick={() => setShowAnthropicKey(!showAnthropicKey)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
-                  >
-                    {showAnthropicKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                {/* Anthropic */}
+                <div>
+                  <label className="text-xs text-white/50 mb-1.5 block">Anthropic API Key</label>
+                  <div className="relative">
+                    <input
+                      type={showAnthropicKey ? 'text' : 'password'}
+                      value={ai.anthropicApiKey}
+                      onChange={(e) => updateAI({ anthropicApiKey: e.target.value })}
+                      placeholder="sk-ant-..."
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 pr-10 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
+                    />
+                    <button
+                      onClick={() => setShowAnthropicKey(!showAnthropicKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
+                    >
+                      {showAnthropicKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
-              )}
 
-              {ai.provider === 'ollama' && (
-                <input
-                  type="text"
-                  value={ai.ollamaBaseUrl}
-                  onChange={(e) => updateAI({ ollamaBaseUrl: e.target.value })}
-                  placeholder="http://localhost:11434"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
-                />
-              )}
+                {/* Ollama */}
+                <div>
+                  <label className="text-xs text-white/50 mb-1.5 block">Ollama Server URL</label>
+                  <input
+                    type="text"
+                    value={ai.ollamaBaseUrl}
+                    onChange={(e) => updateAI({ ollamaBaseUrl: e.target.value })}
+                    placeholder="http://localhost:11434"
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Default model */}
