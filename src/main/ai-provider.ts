@@ -46,13 +46,28 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
   if (model && MODEL_ROUTES[model]) {
     return MODEL_ROUTES[model];
   }
-  // If the model key is not in our routing table, try using it directly with the configured provider
+  // If the model key is not in our routing table, strip provider prefix and route directly
   if (model) {
+    const prefixes = ['openai-', 'anthropic-', 'ollama-'] as const;
+    for (const prefix of prefixes) {
+      if (model.startsWith(prefix)) {
+        return { provider: prefix.slice(0, -1) as 'openai' | 'anthropic' | 'ollama', modelId: model.slice(prefix.length) };
+      }
+    }
     return { provider: config.provider, modelId: model };
   }
   // Fallback to default model or provider default
-  if (config.defaultModel && MODEL_ROUTES[config.defaultModel]) {
-    return MODEL_ROUTES[config.defaultModel];
+  if (config.defaultModel) {
+    if (MODEL_ROUTES[config.defaultModel]) {
+      return MODEL_ROUTES[config.defaultModel];
+    }
+    // Handle dynamic model IDs (e.g. "ollama-llama3.2")
+    const prefixes = ['openai-', 'anthropic-', 'ollama-'] as const;
+    for (const prefix of prefixes) {
+      if (config.defaultModel.startsWith(prefix)) {
+        return { provider: prefix.slice(0, -1) as 'openai' | 'anthropic' | 'ollama', modelId: config.defaultModel.slice(prefix.length) };
+      }
+    }
   }
   // Provider defaults
   const defaults: Record<string, string> = {

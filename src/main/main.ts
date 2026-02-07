@@ -897,6 +897,192 @@ app.whenReady().then(async () => {
     return isAIAvailable(s.ai);
   });
 
+  // ─── IPC: Ollama Model Management ──────────────────────────────
+
+  ipcMain.handle('ollama-status', async () => {
+    const s = loadSettings();
+    const baseUrl = s.ai.ollamaBaseUrl || 'http://localhost:11434';
+
+    return new Promise((resolve) => {
+      const url = new URL('/api/tags', baseUrl);
+      const mod = url.protocol === 'https:' ? require('https') : require('http');
+
+      const req = mod.get(url.toString(), (res: any) => {
+        let body = '';
+        res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            try {
+              const data = JSON.parse(body);
+              resolve({
+                running: true,
+                models: (data.models || []).map((m: any) => ({
+                  name: m.name,
+                  size: m.size,
+                  parameterSize: m.details?.parameter_size || '',
+                  quantization: m.details?.quantization_level || '',
+                  modifiedAt: m.modified_at,
+                })),
+              });
+            } catch {
+              resolve({ running: true, models: [] });
+            }
+          } else {
+            resolve({ running: false, models: [] });
+          }
+        });
+      });
+
+      req.on('error', () => {
+        resolve({ running: false, models: [] });
+      });
+
+      req.setTimeout(3000, () => {
+        req.destroy();
+        resolve({ running: false, models: [] });
+      });
+    });
+  });
+
+  ipcMain.handle(
+    'ollama-pull',
+    async (event: any, requestId: string, modelName: string) => {
+      const s = loadSettings();
+      const baseUrl = s.ai.ollamaBaseUrl || 'http://localhost:11434';
+      const url = new URL('/api/pull', baseUrl);
+      const mod = url.protocol === 'https:' ? require('https') : require('http');
+
+      const controller = new AbortController();
+      activeAIRequests.set(requestId, controller);
+
+      const body = JSON.stringify({ name: modelName, stream: true });
+
+      const req = mod.request(
+        {
+          hostname: url.hostname,
+          port: url.port ? parseInt(url.port) : undefined,
+          path: url.pathname,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        },
+        (res: any) => {
+          if (res.statusCode && res.statusCode >= 400) {
+            let errBody = '';
+            res.on('data', (chunk: Buffer) => { errBody += chunk.toString(); });
+            res.on('end', () => {
+              event.sender.send('ollama-pull-error', {
+                requestId,
+                error: `HTTP ${res.statusCode}: ${errBody.slice(0, 200)}`,
+              });
+              activeAIRequests.delete(requestId);
+            });
+            return;
+          }
+
+          let buffer = '';
+          res.on('data', (chunk: Buffer) => {
+            if (controller.signal.aborted) return;
+            buffer += chunk.toString();
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              try {
+                const obj = JSON.parse(trimmed);
+                event.sender.send('ollama-pull-progress', {
+                  requestId,
+                  status: obj.status || '',
+                  digest: obj.digest || '',
+                  total: obj.total || 0,
+                  completed: obj.completed || 0,
+                });
+              } catch {}
+            }
+          });
+
+          res.on('end', () => {
+            if (buffer.trim()) {
+              try {
+                const obj = JSON.parse(buffer.trim());
+                event.sender.send('ollama-pull-progress', {
+                  requestId,
+                  status: obj.status || '',
+                  digest: obj.digest || '',
+                  total: obj.total || 0,
+                  completed: obj.completed || 0,
+                });
+              } catch {}
+            }
+            if (!controller.signal.aborted) {
+              event.sender.send('ollama-pull-done', { requestId });
+            }
+            activeAIRequests.delete(requestId);
+          });
+        }
+      );
+
+      req.on('error', (err: Error) => {
+        if (!controller.signal.aborted) {
+          event.sender.send('ollama-pull-error', {
+            requestId,
+            error: err.message || 'Failed to pull model',
+          });
+        }
+        activeAIRequests.delete(requestId);
+      });
+
+      if (controller.signal.aborted) {
+        req.destroy();
+        return;
+      }
+      controller.signal.addEventListener('abort', () => {
+        req.destroy();
+      }, { once: true });
+
+      req.write(body);
+      req.end();
+    }
+  );
+
+  ipcMain.handle('ollama-delete', async (_event: any, modelName: string) => {
+    const s = loadSettings();
+    const baseUrl = s.ai.ollamaBaseUrl || 'http://localhost:11434';
+    const url = new URL('/api/delete', baseUrl);
+    const mod = url.protocol === 'https:' ? require('https') : require('http');
+
+    return new Promise((resolve) => {
+      const body = JSON.stringify({ name: modelName });
+      const req = mod.request(
+        {
+          hostname: url.hostname,
+          port: url.port ? parseInt(url.port) : undefined,
+          path: url.pathname,
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+        },
+        (res: any) => {
+          let resBody = '';
+          res.on('data', (chunk: Buffer) => { resBody += chunk.toString(); });
+          res.on('end', () => {
+            resolve({ success: res.statusCode === 200, error: res.statusCode !== 200 ? resBody : null });
+          });
+        }
+      );
+      req.on('error', (err: Error) => {
+        resolve({ success: false, error: err.message });
+      });
+      req.write(body);
+      req.end();
+    });
+  });
+
+  ipcMain.handle('ollama-open-download', async () => {
+    await shell.openExternal('https://ollama.com/download');
+    return true;
+  });
+
   // ─── IPC: Native Color Picker ──────────────────────────────────
 
   ipcMain.handle('native-pick-color', async () => {

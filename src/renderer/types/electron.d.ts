@@ -70,6 +70,14 @@ export interface ClipboardItem {
   };
 }
 
+export interface OllamaLocalModel {
+  name: string;
+  size: number;
+  parameterSize: string;
+  quantization: string;
+  modifiedAt: string;
+}
+
 export interface ElectronAPI {
   // Launcher
   getCommands: () => Promise<CommandInfo[]>;
@@ -147,6 +155,15 @@ export interface ElectronAPI {
   onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => void;
   onAIStreamDone: (callback: (data: { requestId: string }) => void) => void;
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => void;
+
+  // Ollama Model Management
+  ollamaStatus: () => Promise<{ running: boolean; models: OllamaLocalModel[] }>;
+  ollamaPull: (requestId: string, modelName: string) => Promise<void>;
+  ollamaDelete: (modelName: string) => Promise<{ success: boolean; error: string | null }>;
+  ollamaOpenDownload: () => Promise<boolean>;
+  onOllamaPullProgress: (callback: (data: { requestId: string; status: string; digest: string; total: number; completed: number }) => void) => void;
+  onOllamaPullDone: (callback: (data: { requestId: string }) => void) => void;
+  onOllamaPullError: (callback: (data: { requestId: string; error: string }) => void) => void;
 }
 
 declare global {
