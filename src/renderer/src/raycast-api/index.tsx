@@ -1512,7 +1512,12 @@ function ActionPanelSection({ children, title }: { children?: React.ReactNode; t
   }
   return null;
 }
-function ActionPanelSubmenu({ children, title, icon }: { children?: React.ReactNode; title?: string; icon?: any }) {
+function ActionPanelSubmenu({ children, title, icon, filtering, isLoading, onOpen, onSearchTextChange, shortcut, throttle, autoFocus }: {
+  children?: React.ReactNode; title?: string; icon?: any;
+  filtering?: boolean | { keepSectionOrder: boolean }; isLoading?: boolean;
+  onOpen?: () => void; onSearchTextChange?: (text: string) => void;
+  shortcut?: any; throttle?: boolean; autoFocus?: boolean;
+}) {
   const registry = useContext(ActionRegistryContext);
   if (registry) {
     return (
@@ -1535,7 +1540,7 @@ function ActionComponent(_props: { title?: string; icon?: any; shortcut?: any; o
   useActionRegistration(_props);
   return null;
 }
-function ActionCopyToClipboard(_props: { content: any; title?: string; shortcut?: any; [key: string]: any }) {
+function ActionCopyToClipboard(_props: { content: any; title?: string; shortcut?: any; concealed?: boolean; onCopy?: (content: any) => void; [key: string]: any }) {
   useActionRegistration(_props);
   return null;
 }
@@ -1543,7 +1548,7 @@ function ActionOpenInBrowser(_props: { url: string; title?: string; shortcut?: a
   useActionRegistration(_props);
   return null;
 }
-function ActionPush(_props: { title?: string; target: React.ReactElement; icon?: any; shortcut?: any; [key: string]: any }) {
+function ActionPush(_props: { title?: string; target: React.ReactElement; icon?: any; shortcut?: any; onPush?: () => void; onPop?: () => void; [key: string]: any }) {
   useActionRegistration(_props);
   return null;
 }
@@ -1559,12 +1564,25 @@ function ActionPickDate(_props: { title?: string; onChange?: (date: Date | null)
   useActionRegistration(_props);
   return null;
 }
+function ActionOpen(_props: { target: string; title: string; application?: string | any; icon?: any; shortcut?: any; onOpen?: (target: string) => void; [key: string]: any }) {
+  useActionRegistration(_props);
+  return null;
+}
+function ActionToggleQuickLook(_props: { title?: string; icon?: any; shortcut?: any; [key: string]: any }) {
+  useActionRegistration(_props);
+  return null;
+}
 function ActionCreateSnippet(_props: any) { useActionRegistration(_props); return null; }
 function ActionCreateQuicklink(_props: any) { useActionRegistration(_props); return null; }
 function ActionToggleSidebar(_props: any) { useActionRegistration(_props); return null; }
 
+const ActionPickDateWithType = Object.assign(ActionPickDate, {
+  Type: { DateTime: 'datetime' as const, Date: 'date' as const },
+});
+
 export const Action = Object.assign(ActionComponent, {
   CopyToClipboard: ActionCopyToClipboard,
+  Open: ActionOpen,
   OpenInBrowser: ActionOpenInBrowser,
   Push: ActionPush,
   SubmitForm: ActionSubmitForm,
@@ -1572,7 +1590,8 @@ export const Action = Object.assign(ActionComponent, {
   ShowInFinder: ActionComponent,
   OpenWith: ActionComponent,
   Trash: ActionTrash,
-  PickDate: ActionPickDate,
+  PickDate: ActionPickDateWithType,
+  ToggleQuickLook: ActionToggleQuickLook,
   CreateSnippet: ActionCreateSnippet,
   CreateQuicklink: ActionCreateQuicklink,
   ToggleSidebar: ActionToggleSidebar,
@@ -1795,6 +1814,7 @@ interface ListItemProps {
   actions?: React.ReactElement;
   keywords?: string[];
   detail?: React.ReactElement;
+  quickLook?: { name?: string; path: string };
 }
 
 // ── Item registration context ────────────────────────────────────────
@@ -1926,7 +1946,7 @@ function ListEmptyView({ title, description, icon, actions }: { title?: string; 
 
 // ── List.Dropdown — renders as a real <select> ───────────────────────
 
-function ListDropdown({ children, tooltip, storeValue, onChange, value, defaultValue }: any) {
+function ListDropdown({ children, tooltip, storeValue, onChange, value, defaultValue, filtering, onSearchTextChange, throttle, id, isLoading, placeholder }: any) {
   const [internalValue, setInternalValue] = useState(value ?? defaultValue ?? '');
 
   // Extract items from children recursively
@@ -2370,8 +2390,32 @@ function ListComponent({
   );
 }
 
+// List.Item.Detail — inline detail view for list items (used with isShowingDetail)
+const ListItemDetailComponent = ({ markdown, isLoading, metadata, children }: {
+  markdown?: string; isLoading?: boolean; metadata?: React.ReactElement; children?: React.ReactNode;
+}) => {
+  return (
+    <div className="flex flex-col h-full overflow-y-auto p-4">
+      {isLoading ? (
+        <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
+      ) : (
+        <>
+          {markdown && <div className="text-white/80 text-sm leading-relaxed">{renderSimpleMarkdown(markdown)}</div>}
+          {metadata}
+          {children}
+        </>
+      )}
+    </div>
+  );
+};
+
+// Note: Metadata is assigned to ListItemDetail later (after Metadata is defined)
+const ListItemDetail: any = Object.assign(ListItemDetailComponent, {});
+
+const ListItem = Object.assign(ListItemComponent, { Detail: ListItemDetail });
+
 export const List = Object.assign(ListComponent, {
-  Item: ListItemComponent,
+  Item: ListItem,
   Section: ListSectionComponent,
   EmptyView: ListEmptyView,
   Dropdown: ListDropdown,
@@ -2616,6 +2660,9 @@ const Metadata = Object.assign(
 );
 
 export const Detail = Object.assign(DetailComponent, { Metadata });
+
+// Assign Metadata to List.Item.Detail (deferred because Metadata is defined after List)
+ListItemDetail.Metadata = Metadata;
 
 // =====================================================================
 // ─── Form ───────────────────────────────────────────────────────────
@@ -2935,7 +2982,7 @@ FormComponent.TagPicker = Object.assign(
   { Item: ({ value, title }: any) => <span className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-white/60">{title}</span> }
 );
 
-FormComponent.FilePicker = ({ id, title, value, onChange, allowMultipleSelection, canChooseDirectories, canChooseFiles, error }: any) => (
+FormComponent.FilePicker = ({ id, title, value, onChange, allowMultipleSelection, canChooseDirectories, canChooseFiles, showHiddenFiles, error }: any) => (
   <FormFieldRow title={title} error={error}>
     <div className="text-xs text-white/30 py-1.5">File picker not available</div>
   </FormFieldRow>
@@ -2967,6 +3014,7 @@ interface GridItemRegistration {
     keywords?: string[];
     id?: string;
     accessory?: any;
+    quickLook?: { name?: string; path: string };
   };
   sectionTitle?: string;
   order: number;
@@ -3003,7 +3051,10 @@ function GridItemComponent(props: any) {
 
 // ── Grid.Section — provides section title context ─────────────────────
 
-function GridSectionComponent({ children, title }: { children?: React.ReactNode; title?: string; subtitle?: string }) {
+function GridSectionComponent({ children, title, subtitle, aspectRatio, columns, fit, inset }: {
+  children?: React.ReactNode; title?: string; subtitle?: string;
+  aspectRatio?: string; columns?: number; fit?: string; inset?: string;
+}) {
   return (
     <GridSectionTitleContext.Provider value={title}>
       {children}
@@ -3359,6 +3410,7 @@ function GridComponent({
 
 // Grid.Inset enum (used by extensions like cursor-recent-projects)
 const GridInset = { Small: 'small', Medium: 'medium', Large: 'large' } as const;
+const GridFit = { Contain: 'contain', Fill: 'fill' } as const;
 
 export const Grid = Object.assign(GridComponent, {
   Item: GridItemComponent,
@@ -3366,6 +3418,7 @@ export const Grid = Object.assign(GridComponent, {
   EmptyView: ListEmptyView,
   Dropdown: ListDropdown,
   Inset: GridInset,
+  Fit: GridFit,
 });
 Grid.Dropdown = ListDropdown;
 

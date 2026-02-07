@@ -57,12 +57,12 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| `List` | ✅ Implemented | Full support with filtering, pagination, accessories |
-| `Detail` | ✅ Implemented | With Metadata support |
-| `Form` | ✅ Implemented | All form field types supported |
-| `Grid` | ✅ Implemented | Grid layout with actions |
-| `ActionPanel` | ✅ Implemented | Full action panel system |
-| `Action` | ✅ Implemented | All action types including Push, CopyToClipboard, etc. |
+| `List` | ✅ Implemented | Full support with filtering, pagination, accessories, List.Item.Detail with Metadata |
+| `Detail` | ✅ Implemented | With Metadata support (Label, Link, TagList, Separator) |
+| `Form` | ✅ Implemented | All field types; DatePicker.Type enum; FilePicker with showHiddenFiles; LinkAccessory; enableDrafts |
+| `Grid` | ✅ Implemented | Grid.Fit/Inset enums; Section with aspectRatio/columns/fit/inset; Item.accessory |
+| `ActionPanel` | ✅ Implemented | Full action panel; Submenu with filtering/isLoading/onOpen/shortcut |
+| `Action` | ✅ Implemented | Open, OpenInBrowser, Push (onPop), CopyToClipboard (concealed), ToggleQuickLook, PickDate.Type |
 | `MenuBarExtra` | ✅ Implemented | Menu bar integration |
 
 ### @raycast/api - Hooks
