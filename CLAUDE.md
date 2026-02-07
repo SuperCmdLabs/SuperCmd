@@ -125,7 +125,7 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 | `LaunchProps` | ✅ Implemented | Type export |
 | `LaunchOptions` | ✅ Implemented | Type export |
 | `Tool` | ✅ Implemented | Tool namespace with Confirmation<T> type |
-| `BrowserExtension` | ⚠️ Stub | Basic stub implementation |
+| `BrowserExtension` | ⚠️ Stub | Typed stub (Tab, ContentOptions); getContent/getTabs return empty defaults — needs browser extension integration |
 | `OAuth` | ⚠️ Stub | OAuth stub (needs implementation) |
 
 ### @raycast/utils - Hooks

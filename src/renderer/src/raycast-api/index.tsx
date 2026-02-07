@@ -5233,11 +5233,43 @@ export type WindowManagementSetWindowBoundsOptions = {
 // Make DesktopType accessible via WindowManagement.DesktopType
 (WindowManagement as any).DesktopType = WindowManagementDesktopType;
 
-// BrowserExtension
+// =====================================================================
+// ─── BrowserExtension ───────────────────────────────────────────────
+// =====================================================================
+
+export namespace BrowserExtension {
+  export interface Tab {
+    /** Whether the tab is active in its window. */
+    active: boolean;
+    /** Unique tab identifier within the browser session. */
+    id: number;
+    /** Current URL of the tab. */
+    url: string;
+    /** Favicon URL of the tab. May be undefined during page load. */
+    favicon?: string;
+    /** Title of the tab. May be undefined during page load. */
+    title?: string;
+  }
+
+  export interface ContentOptions {
+    /** CSS selector to filter content. Returns first match only. Cannot be used with markdown format. */
+    cssSelector?: string;
+    /** Target tab ID. Defaults to active tab in focused window. */
+    tabId?: number;
+    /** Output format: "html" returns outer HTML, "text" returns inner text, "markdown" provides reader-mode conversion. */
+    format?: 'html' | 'text' | 'markdown';
+  }
+}
+
 export const BrowserExtension = {
-  getContent: async (options?: any) => '',
-  getTabs: async () => [],
-  getActiveTab: async () => ({ url: '', title: '' }),
+  async getContent(options?: BrowserExtension.ContentOptions): Promise<string> {
+    console.warn('[BrowserExtension] getContent is not available — browser extension not installed');
+    return '';
+  },
+  async getTabs(): Promise<BrowserExtension.Tab[]> {
+    console.warn('[BrowserExtension] getTabs is not available — browser extension not installed');
+    return [];
+  },
 };
 
 // =====================================================================
