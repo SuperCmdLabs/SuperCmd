@@ -143,6 +143,8 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 | Function | Status | Notes |
 |----------|--------|-------|
 | `getFavicon` | ✅ Implemented | Favicon fetching |
+| `getAvatarIcon` | ✅ Implemented | SVG avatar from name initials with deterministic colors |
+| `getProgressIcon` | ✅ Implemented | SVG circular progress indicator |
 | `runAppleScript` | ✅ Implemented | AppleScript execution |
 | `showFailureToast` | ✅ Implemented | Error toast helper |
 | `createDeeplink` | ✅ Implemented | Generate deeplink URIs for extensions/scripts |
