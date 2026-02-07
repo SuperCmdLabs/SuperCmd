@@ -147,4 +147,21 @@ contextBridge.exposeInMainWorld('electron', {
   onMenuBarItemClick: (callback: (data: { extId: string; itemId: string }) => void) => {
     ipcRenderer.on('menubar-item-click', (_event: any, data: any) => callback(data));
   },
+
+  // ─── AI ────────────────────────────────────────────────────────
+  aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }): Promise<void> =>
+    ipcRenderer.invoke('ai-ask', requestId, prompt, options),
+  aiCancel: (requestId: string): Promise<void> =>
+    ipcRenderer.invoke('ai-cancel', requestId),
+  aiIsAvailable: (): Promise<boolean> =>
+    ipcRenderer.invoke('ai-is-available'),
+  onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => {
+    ipcRenderer.on('ai-stream-chunk', (_event: any, data: any) => callback(data));
+  },
+  onAIStreamDone: (callback: (data: { requestId: string }) => void) => {
+    ipcRenderer.on('ai-stream-done', (_event: any, data: any) => callback(data));
+  },
+  onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => {
+    ipcRenderer.on('ai-stream-error', (_event: any, data: any) => callback(data));
+  },
 });

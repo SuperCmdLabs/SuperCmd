@@ -27,10 +27,20 @@ export interface ExtensionBundle {
   error?: string;
 }
 
+export interface AISettings {
+  provider: 'openai' | 'anthropic' | 'ollama';
+  openaiApiKey: string;
+  anthropicApiKey: string;
+  ollamaBaseUrl: string;
+  defaultModel: string;
+  enabled: boolean;
+}
+
 export interface AppSettings {
   globalShortcut: string;
   disabledCommands: string[];
   commandHotkeys: Record<string, string>;
+  ai: AISettings;
 }
 
 export interface CatalogEntry {
@@ -129,6 +139,14 @@ export interface ElectronAPI {
 
   // Native helpers
   nativePickColor: () => Promise<{ red: number; green: number; blue: number; alpha: number } | null>;
+
+  // AI
+  aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }) => Promise<void>;
+  aiCancel: (requestId: string) => Promise<void>;
+  aiIsAvailable: () => Promise<boolean>;
+  onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => void;
+  onAIStreamDone: (callback: (data: { requestId: string }) => void) => void;
+  onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => void;
 }
 
 declare global {

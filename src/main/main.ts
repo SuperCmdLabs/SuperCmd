@@ -14,6 +14,7 @@ import * as path from 'path';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
 import { loadSettings, saveSettings } from './settings-store';
 import type { AppSettings } from './settings-store';
+import { streamAI, isAIAvailable } from './ai-provider';
 import {
   getCatalog,
   getInstalledExtensionNames,
@@ -45,6 +46,7 @@ let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let isVisible = false;
 let currentShortcut = '';
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
+const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
 
 // ─── Menu Bar (Tray) Management ─────────────────────────────────────
 
@@ -839,6 +841,60 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('clipboard-set-enabled', (_event: any, enabled: boolean) => {
     setClipboardMonitorEnabled(enabled);
+  });
+
+  // ─── IPC: AI ───────────────────────────────────────────────────
+
+  ipcMain.handle(
+    'ai-ask',
+    async (event: any, requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }) => {
+      const s = loadSettings();
+      if (!isAIAvailable(s.ai)) {
+        event.sender.send('ai-stream-error', { requestId, error: 'AI is not configured. Please set up an API key in Settings → AI.' });
+        return;
+      }
+
+      const controller = new AbortController();
+      activeAIRequests.set(requestId, controller);
+
+      try {
+        const gen = streamAI(s.ai, {
+          prompt,
+          model: options?.model,
+          creativity: options?.creativity,
+          systemPrompt: options?.systemPrompt,
+          signal: controller.signal,
+        });
+
+        for await (const chunk of gen) {
+          if (controller.signal.aborted) break;
+          event.sender.send('ai-stream-chunk', { requestId, chunk });
+        }
+
+        if (!controller.signal.aborted) {
+          event.sender.send('ai-stream-done', { requestId });
+        }
+      } catch (e: any) {
+        if (!controller.signal.aborted) {
+          event.sender.send('ai-stream-error', { requestId, error: e?.message || 'AI request failed' });
+        }
+      } finally {
+        activeAIRequests.delete(requestId);
+      }
+    }
+  );
+
+  ipcMain.handle('ai-cancel', (_event: any, requestId: string) => {
+    const controller = activeAIRequests.get(requestId);
+    if (controller) {
+      controller.abort();
+      activeAIRequests.delete(requestId);
+    }
+  });
+
+  ipcMain.handle('ai-is-available', () => {
+    const s = loadSettings();
+    return isAIAvailable(s.ai);
   });
 
   // ─── IPC: Native Color Picker ──────────────────────────────────

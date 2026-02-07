@@ -122,6 +122,9 @@ export enum LaunchType {
   Background = 'background',
 }
 
+// Forward-declared AI availability cache (set asynchronously in the AI section below)
+let _aiAvailableCache: boolean | null = null;
+
 // =====================================================================
 // ─── Environment ────────────────────────────────────────────────────
 // =====================================================================
@@ -139,7 +142,14 @@ export const environment: Record<string, any> = {
   textSize: 'medium',
   appearance: 'dark',
   theme: { name: 'dark' },
-  canAccess: () => true,
+  canAccess: (resource?: any) => {
+    // If checking AI access, use the cached availability
+    // Extensions call: environment.canAccess(AI) — the AI object has a Model property
+    if (resource && resource.Model && resource.ask) {
+      return _aiAvailableCache ?? false;
+    }
+    return true;
+  },
 };
 
 // Initialize appearance from system
@@ -707,12 +717,198 @@ export class Cache {
 }
 
 // =====================================================================
-// ─── AI (stub) ──────────────────────────────────────────────────────
+// ─── AI ─────────────────────────────────────────────────────────────
 // =====================================================================
 
+type AICreativity = 'none' | 'low' | 'medium' | 'high' | 'maximum' | number;
+
+function resolveCreativity(c?: AICreativity): number {
+  if (c === undefined || c === null) return 0.7;
+  if (typeof c === 'number') return Math.max(0, Math.min(2, c));
+  switch (c) {
+    case 'none': return 0;
+    case 'low': return 0.3;
+    case 'medium': return 0.7;
+    case 'high': return 1.2;
+    case 'maximum': return 2.0;
+    default: return 0.7;
+  }
+}
+
+// AI model enum — maps Raycast model names to internal routing keys
+const AIModel = {
+  'OpenAI_GPT4o': 'openai-gpt-4o',
+  'OpenAI_GPT4o-mini': 'openai-gpt-4o-mini',
+  'OpenAI_GPT4-turbo': 'openai-gpt-4-turbo',
+  'OpenAI_GPT3.5-turbo': 'openai-gpt-3.5-turbo',
+  'OpenAI_o1': 'openai-o1',
+  'OpenAI_o1-mini': 'openai-o1-mini',
+  'OpenAI_o3-mini': 'openai-o3-mini',
+  'Anthropic_Claude_Opus': 'anthropic-claude-opus',
+  'Anthropic_Claude_Sonnet': 'anthropic-claude-sonnet',
+  'Anthropic_Claude_Haiku': 'anthropic-claude-haiku',
+} as const;
+
+let _requestIdCounter = 0;
+function nextRequestId(): string {
+  return `ai-req-${++_requestIdCounter}-${Date.now()}`;
+}
+
+// StreamingPromise: a Promise that also supports .on("data") for streaming
+type StreamListener = (chunk: string) => void;
+
+class StreamingPromise implements PromiseLike<string> {
+  private _resolve!: (value: string) => void;
+  private _reject!: (reason: any) => void;
+  private _promise: Promise<string>;
+  private _listeners: StreamListener[] = [];
+
+  constructor() {
+    this._promise = new Promise<string>((resolve, reject) => {
+      this._resolve = resolve;
+      this._reject = reject;
+    });
+  }
+
+  on(event: string, callback: StreamListener): this {
+    if (event === 'data') {
+      this._listeners.push(callback);
+    }
+    return this;
+  }
+
+  _emit(chunk: string): void {
+    for (const fn of this._listeners) {
+      try { fn(chunk); } catch {}
+    }
+  }
+
+  _complete(fullText: string): void {
+    this._resolve(fullText);
+  }
+
+  _error(err: any): void {
+    this._reject(err);
+  }
+
+  then<TResult1 = string, TResult2 = never>(
+    onfulfilled?: ((value: string) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+  ): Promise<TResult1 | TResult2> {
+    return this._promise.then(onfulfilled, onrejected);
+  }
+
+  catch<TResult = never>(
+    onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | null
+  ): Promise<string | TResult> {
+    return this._promise.catch(onrejected);
+  }
+
+  finally(onfinally?: (() => void) | null): Promise<string> {
+    return this._promise.finally(onfinally);
+  }
+}
+
+// Global IPC listener registry — routes chunks to the right StreamingPromise
+const _activeStreams = new Map<string, { sp: StreamingPromise; fullText: string }>();
+let _aiListenersRegistered = false;
+
+function ensureAIListeners(): void {
+  if (_aiListenersRegistered) return;
+  _aiListenersRegistered = true;
+
+  const electron = (window as any).electron;
+  if (!electron) return;
+
+  electron.onAIStreamChunk?.((data: { requestId: string; chunk: string }) => {
+    const entry = _activeStreams.get(data.requestId);
+    if (entry) {
+      entry.fullText += data.chunk;
+      entry.sp._emit(data.chunk);
+    }
+  });
+
+  electron.onAIStreamDone?.((data: { requestId: string }) => {
+    const entry = _activeStreams.get(data.requestId);
+    if (entry) {
+      entry.sp._complete(entry.fullText);
+      _activeStreams.delete(data.requestId);
+    }
+  });
+
+  electron.onAIStreamError?.((data: { requestId: string; error: string }) => {
+    const entry = _activeStreams.get(data.requestId);
+    if (entry) {
+      entry.sp._error(new Error(data.error));
+      _activeStreams.delete(data.requestId);
+    }
+  });
+}
+
+// Initialize AI availability cache
+(async () => {
+  try {
+    _aiAvailableCache = await (window as any).electron?.aiIsAvailable?.() ?? false;
+  } catch {
+    _aiAvailableCache = false;
+  }
+})();
+
 export const AI = {
-  async ask(prompt: string, options?: any): Promise<string> {
-    return `AI is not available in SuperCommand. Prompt: "${prompt}"`;
+  Model: AIModel,
+
+  ask(
+    prompt: string,
+    options?: {
+      model?: string;
+      creativity?: AICreativity;
+      signal?: AbortSignal;
+    }
+  ): StreamingPromise {
+    ensureAIListeners();
+
+    const sp = new StreamingPromise();
+    const requestId = nextRequestId();
+    const electron = (window as any).electron;
+
+    if (!electron?.aiAsk) {
+      setTimeout(() => sp._error(new Error('AI is not available')), 0);
+      return sp;
+    }
+
+    _activeStreams.set(requestId, { sp, fullText: '' });
+
+    const creativity = resolveCreativity(options?.creativity);
+    electron.aiAsk(requestId, prompt, {
+      model: options?.model,
+      creativity,
+    }).catch((err: any) => {
+      const entry = _activeStreams.get(requestId);
+      if (entry) {
+        entry.sp._error(err);
+        _activeStreams.delete(requestId);
+      }
+    });
+
+    // Handle AbortSignal
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        electron.aiCancel?.(requestId);
+        setTimeout(() => sp._error(new Error('Request aborted')), 0);
+        _activeStreams.delete(requestId);
+      } else {
+        options.signal.addEventListener('abort', () => {
+          electron.aiCancel?.(requestId);
+          const entry = _activeStreams.get(requestId);
+          if (entry) {
+            entry.sp._error(new Error('Request aborted'));
+            _activeStreams.delete(requestId);
+          }
+        }, { once: true });
+      }
+    }
+
+    return sp;
   },
 };
 
@@ -3714,14 +3910,74 @@ export function useStreamJSON<T = any>(
 
 // ── useAI ───────────────────────────────────────────────────────────
 
-export function useAI(prompt: string, options?: { model?: string; creativity?: number; execute?: boolean }) {
-  return usePromise(
-    async () => {
-      return `AI is not available in SuperCommand. Prompt: "${prompt}"`;
-    },
-    [],
-    { execute: options?.execute }
-  );
+export function useAI(
+  prompt: string,
+  options?: {
+    model?: string;
+    creativity?: AICreativity;
+    execute?: boolean;
+    stream?: boolean;
+  }
+) {
+  const [data, setData] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const abortRef = useRef<AbortController | null>(null);
+  const promptRef = useRef(prompt);
+  promptRef.current = prompt;
+
+  const execute = options?.execute !== false;
+  const stream = options?.stream !== false;
+
+  const run = useCallback(() => {
+    if (!promptRef.current) return;
+
+    // Abort previous request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setIsLoading(true);
+    setError(undefined);
+    setData('');
+
+    const sp = AI.ask(promptRef.current, {
+      model: options?.model,
+      creativity: options?.creativity,
+      signal: controller.signal,
+    });
+
+    if (stream) {
+      sp.on('data', (chunk: string) => {
+        if (!controller.signal.aborted) {
+          setData((prev) => prev + chunk);
+        }
+      });
+    }
+
+    sp.then((fullText: string) => {
+      if (!controller.signal.aborted) {
+        if (!stream) setData(fullText);
+        setIsLoading(false);
+      }
+    }).catch((err: any) => {
+      if (!controller.signal.aborted) {
+        setError(err?.message || 'AI request failed');
+        setIsLoading(false);
+      }
+    });
+  }, [options?.model, options?.creativity, stream]);
+
+  useEffect(() => {
+    if (execute) {
+      run();
+    }
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, [execute, run]);
+
+  return { data, isLoading, error, revalidate: run };
 }
 
 // ── useFrecencySorting ──────────────────────────────────────────────

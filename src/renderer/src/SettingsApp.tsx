@@ -5,18 +5,24 @@
  */
 
 import React, { useState } from 'react';
-import { Settings, Puzzle, Zap, Store } from 'lucide-react';
+import { Settings, Puzzle, Zap, Store, Brain } from 'lucide-react';
 import GeneralTab from './settings/GeneralTab';
+import AITab from './settings/AITab';
 import ExtensionsTab from './settings/ExtensionsTab';
 import StoreTab from './settings/StoreTab';
 
-type Tab = 'general' | 'extensions' | 'store';
+type Tab = 'general' | 'ai' | 'extensions' | 'store';
 
 const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
   {
     id: 'general',
     label: 'General',
     icon: <Settings className="w-4 h-4" />,
+  },
+  {
+    id: 'ai',
+    label: 'AI',
+    icon: <Brain className="w-4 h-4" />,
   },
   {
     id: 'extensions',
@@ -72,6 +78,7 @@ const SettingsApp: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {activeTab === 'general' && <GeneralTab />}
+          {activeTab === 'ai' && <AITab />}
           {activeTab === 'extensions' && <ExtensionsTab />}
           {activeTab === 'store' && <StoreTab />}
         </div>
