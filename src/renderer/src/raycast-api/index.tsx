@@ -5036,7 +5036,7 @@ declare namespace WindowManagement {
     positionable: boolean;
     resizable: boolean;
     fullScreenSettable: boolean;
-    application: Application;
+    application?: Application;
   }
 
   interface Desktop {
@@ -5067,7 +5067,7 @@ export type WindowManagementWindow = {
   positionable: boolean;
   resizable: boolean;
   fullScreenSettable: boolean;
-  application: Application;
+  application?: Application;
 };
 
 export type WindowManagementDesktop = {
@@ -5075,7 +5075,7 @@ export type WindowManagementDesktop = {
   active: boolean;
   screenId: string;
   size: { width: number; height: number };
-  type: 'user' | 'fullscreen';
+  type: WindowManagementDesktopType;
 };
 
 export enum WindowManagementDesktopType {

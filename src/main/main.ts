@@ -1310,7 +1310,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('window-management-set-window-bounds', async (_event: any, options: any) => {
     try {
       const { execSync } = require('child_process');
-      const { id, bounds } = options;
+      const { id, bounds, desktopId } = options;
 
       if (bounds === 'fullscreen') {
         // Set window to fullscreen
@@ -1324,13 +1324,29 @@ app.whenReady().then(async () => {
       } else {
         // Set window position/size
         const { position, size } = bounds;
+
+        // If desktopId specifies a different display, offset position to that display
+        let offsetX = 0;
+        let offsetY = 0;
+        if (desktopId) {
+          const { screen: electronScreen } = require('electron');
+          const displays = electronScreen.getAllDisplays();
+          const targetIndex = parseInt(desktopId) - 1;
+          if (targetIndex >= 0 && targetIndex < displays.length) {
+            offsetX = displays[targetIndex].bounds.x;
+            offsetY = displays[targetIndex].bounds.y;
+          }
+        }
+
         let script = 'tell application "System Events"\n';
         script += `  set targetWindow to (first window of (first application process whose (id of window 1) as text is "${id}"))\n`;
 
         if (position && size) {
-          script += `  set bounds of targetWindow to {${position.x}, ${position.y}, ${position.x + size.width}, ${position.y + size.height}}\n`;
+          const x = (position.x ?? 0) + offsetX;
+          const y = (position.y ?? 0) + offsetY;
+          script += `  set bounds of targetWindow to {${x}, ${y}, ${x + (size.width ?? 0)}, ${y + (size.height ?? 0)}}\n`;
         } else if (position) {
-          script += `  set position of targetWindow to {${position.x}, ${position.y}}\n`;
+          script += `  set position of targetWindow to {${(position.x ?? 0) + offsetX}, ${(position.y ?? 0) + offsetY}}\n`;
         } else if (size) {
           script += `  set size of targetWindow to {${size.width}, ${size.height}}\n`;
         }
