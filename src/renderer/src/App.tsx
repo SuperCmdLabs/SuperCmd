@@ -5,11 +5,12 @@
  * Shows category labels like Raycast.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, Power, Settings, Puzzle, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight } from 'lucide-react';
 import type { CommandInfo, ExtensionBundle } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
+import { tryCalculate } from './smart-calculator';
 
 /**
  * Filter and sort commands based on search query
@@ -250,9 +251,17 @@ const App: React.FC = () => {
 
   const filteredCommands = filterCommands(commands, searchQuery);
 
+  const calcResult = useMemo(() => {
+    return searchQuery ? tryCalculate(searchQuery) : null;
+  }, [searchQuery]);
+  const calcOffset = calcResult ? 1 : 0;
+
+  // When calculator is showing but no commands match, show unfiltered list below
+  const displayCommands = calcResult && filteredCommands.length === 0 ? commands : filteredCommands;
+
   useEffect(() => {
-    itemRefs.current = itemRefs.current.slice(0, filteredCommands.length);
-  }, [filteredCommands.length]);
+    itemRefs.current = itemRefs.current.slice(0, displayCommands.length + calcOffset);
+  }, [displayCommands.length, calcOffset]);
 
   const scrollToSelected = useCallback(() => {
     const selectedElement = itemRefs.current[selectedIndex];
@@ -290,9 +299,10 @@ const App: React.FC = () => {
 
         case 'ArrowDown':
           e.preventDefault();
-          setSelectedIndex((prev) =>
-            prev < filteredCommands.length - 1 ? prev + 1 : prev
-          );
+          setSelectedIndex((prev) => {
+            const max = displayCommands.length + calcOffset - 1;
+            return prev < max ? prev + 1 : prev;
+          });
           break;
 
         case 'ArrowUp':
@@ -302,8 +312,11 @@ const App: React.FC = () => {
 
         case 'Enter':
           e.preventDefault();
-          if (filteredCommands[selectedIndex]) {
-            handleCommandExecute(filteredCommands[selectedIndex]);
+          if (calcResult && selectedIndex === 0) {
+            navigator.clipboard.writeText(calcResult.result);
+            window.electron.hideWindow();
+          } else if (displayCommands[selectedIndex - calcOffset]) {
+            handleCommandExecute(displayCommands[selectedIndex - calcOffset]);
           }
           break;
 
@@ -315,7 +328,7 @@ const App: React.FC = () => {
           break;
       }
     },
-    [filteredCommands, selectedIndex, searchQuery, aiAvailable, startAiChat]
+    [displayCommands, selectedIndex, searchQuery, aiAvailable, startAiChat, calcResult, calcOffset]
   );
 
   const handleCommandExecute = async (command: CommandInfo) => {
@@ -570,21 +583,50 @@ const App: React.FC = () => {
             <div className="flex items-center justify-center h-full text-white/50">
               <p className="text-sm">Discovering apps...</p>
             </div>
-          ) : filteredCommands.length === 0 ? (
+          ) : displayCommands.length === 0 && !calcResult ? (
             <div className="flex items-center justify-center h-full text-white/50">
               <p className="text-sm">No matching results</p>
             </div>
           ) : (
             <div className="space-y-0.5">
-              {filteredCommands.map((command, index) => (
+              {/* Calculator card */}
+              {calcResult && (
+                <div
+                  ref={(el) => (itemRefs.current[0] = el)}
+                  className={`mx-1 mt-0.5 mb-2 px-6 py-4 rounded-xl cursor-pointer transition-colors border ${
+                    selectedIndex === 0
+                      ? 'bg-white/[0.08] border-white/[0.12]'
+                      : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.05]'
+                  }`}
+                  onClick={() => {
+                    navigator.clipboard.writeText(calcResult.result);
+                    window.electron.hideWindow();
+                  }}
+                  onMouseMove={() => setSelectedIndex(0)}
+                >
+                  <div className="flex items-center justify-center gap-6">
+                    <div className="text-center">
+                      <div className="text-white/80 text-xl font-medium">{calcResult.input}</div>
+                      <div className="text-white/35 text-xs mt-1">{calcResult.inputLabel}</div>
+                    </div>
+                    <ArrowRight className="w-5 h-5 text-white/25 flex-shrink-0" />
+                    <div className="text-center">
+                      <div className="text-white text-xl font-semibold">{calcResult.result}</div>
+                      <div className="text-white/35 text-xs mt-1">{calcResult.resultLabel}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {displayCommands.map((command, index) => (
                 <div
                   key={command.id}
-                  ref={(el) => (itemRefs.current[index] = el)}
+                  ref={(el) => (itemRefs.current[index + calcOffset] = el)}
                   className={`command-item px-3 py-2 rounded-lg cursor-pointer ${
-                    index === selectedIndex ? 'selected' : ''
+                    index + calcOffset === selectedIndex ? 'selected' : ''
                   }`}
                   onClick={() => handleCommandExecute(command)}
-                  onMouseMove={() => setSelectedIndex(index)}
+                  onMouseMove={() => setSelectedIndex(index + calcOffset)}
                 >
                   <div className="flex items-center gap-2.5">
                     {/* Icon */}
@@ -610,14 +652,14 @@ const App: React.FC = () => {
                         </div>
                       )}
                     </div>
-                    
+
                     {/* Title */}
                     <div className="flex-1 min-w-0">
                       <div className="text-white text-sm truncate">
                         {command.title}
                       </div>
                     </div>
-                    
+
                     {/* Category label */}
                     <div className="text-white/40 text-xs font-medium flex-shrink-0">
                       {getCategoryLabel(command.category)}
@@ -632,7 +674,7 @@ const App: React.FC = () => {
         {/* Footer with count - same background as main screen */}
         {!isLoading && (
           <div className="px-4 py-3.5 border-t border-white/[0.06] text-white/40 text-xs font-medium" style={{ background: 'rgba(28,28,32,0.90)' }}>
-            {filteredCommands.length} results
+            {displayCommands.length} results
           </div>
         )}
       </div>
