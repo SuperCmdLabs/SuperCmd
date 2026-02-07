@@ -89,8 +89,8 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 | `getFrontmostApplication` | ✅ Implemented | Active app detection |
 | `captureException` | ✅ Implemented | Logs exception to console (error reporting) |
 | `trash` | ✅ Implemented | File deletion |
-| `openExtensionPreferences` | ⚠️ Partial | Console.log stub only |
-| `openCommandPreferences` | ⚠️ Partial | Console.log stub only |
+| `openExtensionPreferences` | ✅ Implemented | Opens settings window |
+| `openCommandPreferences` | ✅ Implemented | Opens settings window |
 | `updateCommandMetadata` | ✅ Implemented | Dynamic metadata updates |
 | `clearSearchBar` | ✅ Implemented | Search bar control |
 | `getPreferenceValues` | ✅ Implemented | Returns extension preferences from context |
@@ -118,6 +118,8 @@ The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compa
 | `FormValidation` | ✅ Implemented | Enum for form validation (Required) |
 | `Preferences` | ✅ Implemented | Type export |
 | `LaunchContext` | ✅ Implemented | Type export |
+| `Preference` | ✅ Implemented | Interface with all preference type properties |
+| `PreferenceValues` | ✅ Implemented | Record type for preference values |
 | `Application` | ✅ Implemented | Type export |
 | `FileSystemItem` | ✅ Implemented | Type export |
 | `LaunchProps` | ✅ Implemented | Type export |

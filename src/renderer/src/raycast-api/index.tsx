@@ -1225,8 +1225,8 @@ export const AI = {
 // ─── Utility Functions ──────────────────────────────────────────────
 // =====================================================================
 
-export function getPreferenceValues<T = Record<string, any>>(): T {
-  return _extensionContext.preferences as T;
+export function getPreferenceValues<Values extends PreferenceValues = PreferenceValues>(): Values {
+  return _extensionContext.preferences as Values;
 }
 
 export async function open(target: string, application?: string | Application): Promise<void> {
@@ -1386,12 +1386,18 @@ export async function trash(path: string | string[]): Promise<void> {
   }
 }
 
-export function openExtensionPreferences(): void {
-  console.log('openExtensionPreferences');
+export async function openExtensionPreferences(): Promise<void> {
+  const electron = (window as any).electron;
+  if (electron?.openSettings) {
+    await electron.openSettings();
+  }
 }
 
-export function openCommandPreferences(): void {
-  console.log('openCommandPreferences');
+export async function openCommandPreferences(): Promise<void> {
+  const electron = (window as any).electron;
+  if (electron?.openSettings) {
+    await electron.openSettings();
+  }
 }
 
 // =====================================================================
@@ -5064,8 +5070,35 @@ export const OAuth = {
 
 // getPreferenceValues already exported above
 
-// Additional type-only exports that extensions might reference
-export type Preferences = Record<string, any>;
+// ─── Preference Types ─────────────────────────────────────────────────
+
+export interface PreferenceValues {
+  [name: string]: any;
+}
+
+export interface Preference {
+  name: string;
+  type: 'appPicker' | 'checkbox' | 'dropdown' | 'password' | 'textfield' | 'file' | 'directory';
+  required: boolean;
+  title: string;
+  description: string;
+  value?: unknown;
+  default?: unknown;
+  placeholder?: string;
+  label?: string;
+  data?: unknown[];
+}
+
+/** @deprecated Use getPreferenceValues instead. */
+export type Preferences = { [name: string]: Preference };
+
+/** @deprecated Use getPreferenceValues instead. */
+export const preferences: Preferences = new Proxy({} as Preferences, {
+  get(_target, prop: string) {
+    const val = _extensionContext.preferences[prop];
+    return { name: prop, type: 'textfield', required: false, title: prop, description: '', value: val } as Preference;
+  },
+});
 export type LaunchContext = Record<string, any>;
 export type Application = { name: string; path: string; bundleId?: string; localizedName?: string };
 export type FileSystemItem = { path: string };
