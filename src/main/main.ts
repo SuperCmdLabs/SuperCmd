@@ -377,9 +377,27 @@ function openSettingsWindow(tab?: 'general' | 'ai' | 'extensions'): void {
     app.dock.show();
   }
 
+  const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = (() => {
+    if (mainWindow) {
+      const b = mainWindow.getBounds();
+      const center = {
+        x: b.x + Math.floor(b.width / 2),
+        y: b.y + Math.floor(b.height / 2),
+      };
+      return screen.getDisplayNearestPoint(center).workArea;
+    }
+    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  })();
+  const settingsWidth = 900;
+  const settingsHeight = 600;
+  const settingsX = displayX + Math.floor((displayWidth - settingsWidth) / 2);
+  const settingsY = displayY + Math.floor((displayHeight - settingsHeight) / 2);
+
   settingsWindow = new BrowserWindow({
-    width: 900,
-    height: 600,
+    width: settingsWidth,
+    height: settingsHeight,
+    x: settingsX,
+    y: settingsY,
     minWidth: 700,
     minHeight: 500,
     titleBarStyle: 'hiddenInset',
@@ -426,9 +444,27 @@ function openExtensionStoreWindow(): void {
     app.dock.show();
   }
 
+  const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = (() => {
+    if (mainWindow) {
+      const b = mainWindow.getBounds();
+      const center = {
+        x: b.x + Math.floor(b.width / 2),
+        y: b.y + Math.floor(b.height / 2),
+      };
+      return screen.getDisplayNearestPoint(center).workArea;
+    }
+    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  })();
+  const storeWidth = 980;
+  const storeHeight = 700;
+  const storeX = displayX + Math.floor((displayWidth - storeWidth) / 2);
+  const storeY = displayY + Math.floor((displayHeight - storeHeight) / 2);
+
   extensionStoreWindow = new BrowserWindow({
-    width: 980,
-    height: 700,
+    width: storeWidth,
+    height: storeHeight,
+    x: storeX,
+    y: storeY,
     minWidth: 860,
     minHeight: 560,
     titleBarStyle: 'hiddenInset',

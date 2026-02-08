@@ -1679,6 +1679,10 @@ function ActionPanelSection({ children, title }: { children?: React.ReactNode; t
   }
   return null;
 }
+function ActionPanelItem(_props: { title?: string; icon?: any; shortcut?: any; onAction?: () => void; style?: any; [key: string]: any }) {
+  useActionRegistration(_props, 'action');
+  return null;
+}
 function ActionPanelSubmenu({ children, title, icon, filtering, isLoading, onOpen, onSearchTextChange, shortcut, throttle, autoFocus }: {
   children?: React.ReactNode; title?: string; icon?: any;
   filtering?: boolean | { keepSectionOrder: boolean }; isLoading?: boolean;
@@ -1773,6 +1777,7 @@ export const Action = Object.assign(ActionComponent, {
 });
 
 export const ActionPanel = Object.assign(ActionPanelComponent, {
+  Item: ActionPanelItem,
   Section: ActionPanelSection,
   Submenu: ActionPanelSubmenu,
 });
@@ -2052,23 +2057,23 @@ function ListItemRenderer({
   return (
     <div
       data-idx={dataIdx}
-      className={`mx-1 px-2.5 py-[6px] rounded-lg cursor-pointer transition-all ${
+      className={`mx-2 px-3 py-1.5 rounded-xl min-h-[38px] flex items-center cursor-pointer transition-all ${
         isSelected ? 'bg-white/[0.08]' : 'hover:bg-white/[0.04]'
       }`}
       onClick={onActivate}
       onMouseMove={onSelect}
     >
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2.5 w-full">
         {icon && (
-          <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-white/50 text-xs">
+          <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-white/55 text-xs">
             {renderIcon(icon, 'w-5 h-5')}
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <span className="text-white/90 text-sm truncate block">{titleStr}</span>
+          <span className="text-white/90 text-[13px] leading-[18px] truncate block">{titleStr}</span>
         </div>
         {subtitleStr && (
-          <span className="text-white/30 text-xs flex-shrink-0 truncate max-w-[200px]">{subtitleStr}</span>
+          <span className="text-white/40 text-[11px] leading-[16px] flex-shrink-0 truncate max-w-[220px]">{subtitleStr}</span>
         )}
         {accessories?.map((acc, i) => {
           const accText = typeof acc?.text === 'string' ? acc.text
@@ -2085,10 +2090,10 @@ function ListItemRenderer({
             : 'rgba(255,255,255,0.1)';
 
           return (
-            <span key={i} className="text-xs flex-shrink-0 flex items-center gap-1" style={{ color: accTextColor || tagColor || 'rgba(255,255,255,0.25)' }}>
+            <span key={i} className="text-[12px] leading-5 flex-shrink-0 flex items-center gap-1.5" style={{ color: accTextColor || tagColor || 'rgba(255,255,255,0.35)' }}>
               {acc?.icon && <span className="text-[10px]">{renderIcon(acc.icon, 'w-3 h-3')}</span>}
               {tagText ? (
-                <span className="px-1.5 py-0.5 rounded text-[11px]" style={{ background: tagBg, color: tagColor || 'rgba(255,255,255,0.5)' }}>{tagText}</span>
+                <span className="px-2 py-0.5 rounded text-[11px]" style={{ background: tagBg, color: tagColor || 'rgba(255,255,255,0.55)' }}>{tagText}</span>
               ) : accText || dateStr || ''}
             </span>
           );
@@ -2476,16 +2481,16 @@ function ListComponent({
   // ── Render ─────────────────────────────────────────────────────
 
   const listContent = (
-    <div ref={listRef} className="flex-1 overflow-y-auto py-1">
+    <div ref={listRef} className="flex-1 overflow-y-auto py-0">
       {isLoading && filteredItems.length === 0 ? (
         <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
       ) : filteredItems.length === 0 ? (
         <div className="flex items-center justify-center h-full text-white/40"><p className="text-sm">No results</p></div>
       ) : (
         groupedItems.map((group, gi) => (
-          <div key={gi} className="mb-0.5">
+          <div key={gi} className="mb-0">
             {group.title && (
-              <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider text-white/25 font-medium select-none">{group.title}</div>
+              <div className="px-4 pt-0.5 pb-1 text-[11px] uppercase tracking-wider text-white/28 font-medium select-none">{group.title}</div>
             )}
             {group.items.map(({ item, globalIdx }) => (
               <ListItemRenderer
