@@ -24,6 +24,7 @@ export interface ExtensionBundle {
   supportPath?: string;
   owner?: string;
   preferences?: Record<string, any>;
+  launchArguments?: Record<string, any>;
   preferenceDefinitions?: Array<{
     scope: 'extension' | 'command';
     name: string;
@@ -34,6 +35,13 @@ export interface ExtensionBundle {
     type?: string;
     default?: any;
     data?: Array<{ title?: string; value?: string }>;
+  }>;
+  commandArgumentDefinitions?: Array<{
+    name: string;
+    required?: boolean;
+    type?: string;
+    placeholder?: string;
+    title?: string;
   }>;
   error?: string;
 }

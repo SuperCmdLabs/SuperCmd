@@ -56,6 +56,7 @@ interface ExtensionViewProps {
   extensionPath?: string;
   owner?: string;
   preferences?: Record<string, any>;
+  launchArguments?: Record<string, any>;
 }
 
 /**
@@ -1698,7 +1699,8 @@ const NoViewRunner: React.FC<{
   fn: Function;
   title: string;
   onClose: () => void;
-}> = ({ fn, title, onClose }) => {
+  launchArguments?: Record<string, any>;
+}> = ({ fn, title, onClose, launchArguments = {} }) => {
   const [status, setStatus] = useState<'running' | 'done' | 'error'>('running');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -1707,7 +1709,7 @@ const NoViewRunner: React.FC<{
 
     (async () => {
       try {
-        await fn({ arguments: {}, launchType: 'userInitiated' });
+        await fn({ arguments: launchArguments, launchType: 'userInitiated' });
         if (!cancelled) {
           setStatus('done');
           setTimeout(() => onClose(), 600);
@@ -1721,7 +1723,7 @@ const NoViewRunner: React.FC<{
     })();
 
     return () => { cancelled = true; };
-  }, [fn, onClose]);
+  }, [fn, onClose, launchArguments]);
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-3">
@@ -1753,12 +1755,12 @@ const NoViewRunner: React.FC<{
 /**
  * Render a view command as a React component.
  */
-const ViewRenderer: React.FC<{ Component: React.FC }> = ({ Component }) => {
+const ViewRenderer: React.FC<{ Component: React.FC; launchArguments?: Record<string, any> }> = ({ Component, launchArguments = {} }) => {
   // Simple test that hooks work here
   const [test] = useState('ok');
   console.log('[ViewRenderer] Hooks work here, rendering extension...');
   // Pass standard Raycast props: arguments (command arguments) and launchType
-  return React.createElement(Component, { arguments: {}, launchType: 'userInitiated' } as any);
+  return React.createElement(Component, { arguments: launchArguments, launchType: 'userInitiated' } as any);
 };
 
 const ExtensionView: React.FC<ExtensionViewProps> = ({
@@ -1776,6 +1778,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   extensionPath = '',
   owner = '',
   preferences = {},
+  launchArguments = {},
 }) => {
   const [error, setError] = useState<string | null>(buildError || null);
   const [navStack, setNavStack] = useState<React.ReactElement[]>([]);
@@ -1909,7 +1912,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   if (isNoView) {
     return (
       <div className="flex flex-col h-full">
-        <NoViewRunner fn={ExtExport} title={title} onClose={onClose} />
+        <NoViewRunner fn={ExtExport} title={title} onClose={onClose} launchArguments={launchArguments} />
       </div>
     );
   }
@@ -1932,7 +1935,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
       <NavigationContext.Provider value={navValue}>
         <ExtensionErrorBoundary onError={(e) => setError(e.message)}>
           {currentView || (
-            <ViewRenderer Component={ExtExport as React.FC} />
+            <ViewRenderer Component={ExtExport as React.FC} launchArguments={launchArguments} />
           )}
         </ExtensionErrorBoundary>
       </NavigationContext.Provider>

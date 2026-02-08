@@ -612,6 +612,7 @@ app.whenReady().then(async () => {
           owner: result.owner,
           preferences: result.preferences,
           preferenceDefinitions: result.preferenceDefinitions,
+          commandArgumentDefinitions: result.commandArgumentDefinitions,
         };
       } catch (e: any) {
         console.error(`run-extension error for ${extName}/${cmdName}:`, e);
@@ -660,6 +661,7 @@ app.whenReady().then(async () => {
             owner: result.owner,
             preferences: result.preferences,
             preferenceDefinitions: result.preferenceDefinitions,
+            commandArgumentDefinitions: result.commandArgumentDefinitions,
             launchContext: context,
             launchType: type,
           }
@@ -1609,6 +1611,7 @@ app.whenReady().then(async () => {
           owner: bundle.owner,
           preferences: bundle.preferences,
           preferenceDefinitions: bundle.preferenceDefinitions,
+          commandArgumentDefinitions: bundle.commandArgumentDefinitions,
         });
       }
     }

@@ -310,6 +310,13 @@ export interface ExtensionBundleResult {
     default?: any;
     data?: Array<{ title?: string; value?: string }>;
   }>;
+  commandArgumentDefinitions: Array<{
+    name: string;
+    required?: boolean;
+    type?: string;
+    placeholder?: string;
+    title?: string;
+  }>;
 }
 
 /**
@@ -449,6 +456,13 @@ export function getExtensionBundle(
     default?: any;
     data?: Array<{ title?: string; value?: string }>;
   }> = [];
+  let commandArgumentDefinitions: Array<{
+    name: string;
+    required?: boolean;
+    type?: string;
+    placeholder?: string;
+    title?: string;
+  }> = [];
 
   try {
     const pkgPath = path.join(extPath, 'package.json');
@@ -466,6 +480,17 @@ export function getExtensionBundle(
     preferences = extensionPrefs;
     commandPreferences = commandPrefs;
     preferenceDefinitions = definitions;
+    commandArgumentDefinitions = Array.isArray(cmd?.arguments)
+      ? cmd.arguments
+          .filter((arg: any) => arg && arg.name)
+          .map((arg: any) => ({
+            name: arg.name,
+            required: Boolean(arg.required),
+            type: arg.type,
+            placeholder: arg.placeholder,
+            title: arg.title,
+          }))
+      : [];
   } catch {}
 
   // Compute paths
@@ -492,5 +517,6 @@ export function getExtensionBundle(
     preferences: { ...preferences, ...commandPreferences },
     commandPreferences,
     preferenceDefinitions,
+    commandArgumentDefinitions,
   };
 }

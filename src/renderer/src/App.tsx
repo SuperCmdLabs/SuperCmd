@@ -79,8 +79,10 @@ function getCategoryLabel(category: string): string {
 const LAST_EXT_KEY = 'sc-last-extension';
 const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
 const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
+const CMD_ARGS_KEY_PREFIX = 'sc-ext-cmd-args:';
 
 type PreferenceDefinition = NonNullable<ExtensionBundle['preferenceDefinitions']>[number];
+type ArgumentDefinition = NonNullable<ExtensionBundle['commandArgumentDefinitions']>[number];
 
 function readJsonObject(key: string): Record<string, any> {
   try {
@@ -105,11 +107,16 @@ function getCmdPrefsKey(extName: string, cmdName: string): string {
   return `${CMD_PREFS_KEY_PREFIX}${extName}/${cmdName}`;
 }
 
+function getCmdArgsKey(extName: string, cmdName: string): string {
+  return `${CMD_ARGS_KEY_PREFIX}${extName}/${cmdName}`;
+}
+
 function hydrateExtensionBundlePreferences(bundle: ExtensionBundle): ExtensionBundle {
   const extName = bundle.extName || bundle.extensionName || '';
   const cmdName = bundle.cmdName || bundle.commandName || '';
   const extStored = extName ? readJsonObject(getExtPrefsKey(extName)) : {};
   const cmdStored = extName && cmdName ? readJsonObject(getCmdPrefsKey(extName, cmdName)) : {};
+  const argStored = extName && cmdName ? readJsonObject(getCmdArgsKey(extName, cmdName)) : {};
   return {
     ...bundle,
     preferences: {
@@ -117,6 +124,10 @@ function hydrateExtensionBundlePreferences(bundle: ExtensionBundle): ExtensionBu
       ...extStored,
       ...cmdStored,
     },
+    launchArguments: {
+      ...(bundle as any).launchArguments,
+      ...argStored,
+    } as any,
   };
 }
 
@@ -131,6 +142,32 @@ function getMissingRequiredPreferences(bundle: ExtensionBundle, values?: Record<
   const defs = bundle.preferenceDefinitions || [];
   const prefs = values || bundle.preferences || {};
   return defs.filter((def) => isMissingPreferenceValue(def, prefs[def.name]));
+}
+
+function isMissingArgumentValue(def: ArgumentDefinition, value: any): boolean {
+  if (!def.required) return false;
+  if (typeof value === 'string') return value.trim() === '';
+  return value === undefined || value === null;
+}
+
+function getMissingRequiredArguments(bundle: ExtensionBundle, values?: Record<string, any>): ArgumentDefinition[] {
+  const defs = bundle.commandArgumentDefinitions || [];
+  const args = values || (bundle as any).launchArguments || {};
+  return defs.filter((def) => isMissingArgumentValue(def, args[def.name]));
+}
+
+function getUnsetCriticalPreferences(bundle: ExtensionBundle, values?: Record<string, any>): PreferenceDefinition[] {
+  const defs = bundle.preferenceDefinitions || [];
+  const prefs = values || bundle.preferences || {};
+  const criticalName = /(api[-_ ]?key|token|secret|namespace|binary|protocol|preset)/i;
+  return defs.filter((def) => {
+    const type = (def.type || '').toLowerCase();
+    if (type !== 'textfield' && type !== 'password' && type !== 'dropdown') return false;
+    const v = prefs[def.name];
+    const empty = (typeof v === 'string' ? v.trim() === '' : v === undefined || v === null);
+    if (!empty) return false;
+    return Boolean(def.required) || criticalName.test(def.name || '') || criticalName.test(def.title || '');
+  });
 }
 
 function persistExtensionPreferences(
@@ -157,6 +194,10 @@ function persistExtensionPreferences(
   writeJsonObject(cmdKey, cmdPrefs);
 }
 
+function persistCommandArguments(extName: string, cmdName: string, values: Record<string, any>) {
+  writeJsonObject(getCmdArgsKey(extName, cmdName), values);
+}
+
 const App: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -166,6 +207,7 @@ const App: React.FC = () => {
   const [extensionPreferenceSetup, setExtensionPreferenceSetup] = useState<{
     bundle: ExtensionBundle;
     values: Record<string, any>;
+    argumentValues: Record<string, any>;
   } | null>(null);
   const [showClipboardManager, setShowClipboardManager] = useState(false);
   const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
@@ -200,11 +242,14 @@ const App: React.FC = () => {
         window.electron.runExtension(extName, cmdName).then(result => {
           if (result && result.code) {
             const hydrated = hydrateExtensionBundlePreferences(result);
-            const missing = getMissingRequiredPreferences(hydrated);
-            if (missing.length > 0) {
+            const missingPrefs = getMissingRequiredPreferences(hydrated);
+            const missingArgs = getMissingRequiredArguments(hydrated);
+            const unsetCriticalPrefs = getUnsetCriticalPreferences(hydrated);
+            if (missingPrefs.length > 0 || missingArgs.length > 0 || unsetCriticalPrefs.length > 0) {
               setExtensionPreferenceSetup({
                 bundle: hydrated,
                 values: { ...(hydrated.preferences || {}) },
+                argumentValues: { ...((hydrated as any).launchArguments || {}) },
               });
             } else {
               setExtensionView(hydrated);
@@ -253,7 +298,12 @@ const App: React.FC = () => {
         console.log(`[MenuBar] Loading ${exts.length} menu-bar extension(s)`);
         const runnable = exts
           .map((ext) => hydrateExtensionBundlePreferences(ext))
-          .filter((ext) => getMissingRequiredPreferences(ext).length === 0);
+          .filter((ext) => {
+            const missingPrefs = getMissingRequiredPreferences(ext);
+            const missingArgs = getMissingRequiredArguments(ext);
+            const unsetCriticalPrefs = getUnsetCriticalPreferences(ext);
+            return missingPrefs.length === 0 && missingArgs.length === 0 && unsetCriticalPrefs.length === 0;
+          });
         setMenuBarExtensions(runnable);
       }
     }).catch((err: any) => {
@@ -461,11 +511,14 @@ const App: React.FC = () => {
         const result = await window.electron.runExtension(extName, cmdName);
         if (result && result.code) {
           const hydrated = hydrateExtensionBundlePreferences(result);
-          const missing = getMissingRequiredPreferences(hydrated);
-          if (missing.length > 0) {
+          const missingPrefs = getMissingRequiredPreferences(hydrated);
+          const missingArgs = getMissingRequiredArguments(hydrated);
+          const unsetCriticalPrefs = getUnsetCriticalPreferences(hydrated);
+          if (missingPrefs.length > 0 || missingArgs.length > 0 || unsetCriticalPrefs.length > 0) {
             setExtensionPreferenceSetup({
               bundle: hydrated,
               values: { ...(hydrated.preferences || {}) },
+              argumentValues: { ...((hydrated as any).launchArguments || {}) },
             });
             return;
           }
@@ -523,6 +576,7 @@ const App: React.FC = () => {
           supportPath={(ext as any).supportPath}
           owner={(ext as any).owner}
           preferences={(ext as any).preferences}
+          launchArguments={(ext as any).launchArguments}
           onClose={() => {}}
         />
       ))}
@@ -533,7 +587,15 @@ const App: React.FC = () => {
   if (extensionPreferenceSetup) {
     const bundle = extensionPreferenceSetup.bundle;
     const defs = (bundle.preferenceDefinitions || []).filter((d) => d?.name);
-    const missing = getMissingRequiredPreferences(bundle, extensionPreferenceSetup.values);
+    const argDefs = (bundle.commandArgumentDefinitions || []).filter((d) => d?.name);
+    const missingPrefs = getMissingRequiredPreferences(bundle, extensionPreferenceSetup.values);
+    const missingArgs = getMissingRequiredArguments(bundle, extensionPreferenceSetup.argumentValues);
+    const criticalUnsetPrefs = getUnsetCriticalPreferences(bundle, extensionPreferenceSetup.values);
+    const blockOnCriticalUnset = bundle.mode === 'no-view' || bundle.mode === 'menu-bar';
+    const hasBlockingMissing =
+      missingPrefs.length > 0 ||
+      missingArgs.length > 0 ||
+      (blockOnCriticalUnset && criticalUnsetPrefs.length > 0);
     const displayName = (bundle as any).extensionDisplayName || bundle.extensionName || bundle.extName || 'Extension';
 
     return (
@@ -558,9 +620,42 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              <p className="text-sm text-white/55">
-                This command needs preferences before it can run.
-              </p>
+              <p className="text-sm text-white/55">Configure command inputs and preferences before running.</p>
+              {criticalUnsetPrefs.length > 0 ? (
+                <p className="text-xs text-amber-300/80">
+                  Some important preferences are empty: {criticalUnsetPrefs.map((p) => p.title || p.name).join(', ')}.
+                </p>
+              ) : null}
+              {argDefs.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="text-xs uppercase tracking-wide text-white/35">Arguments</div>
+                  {argDefs.map((arg) => {
+                    const value = extensionPreferenceSetup.argumentValues?.[arg.name];
+                    return (
+                      <div key={`arg:${arg.name}`} className="space-y-1">
+                        <label className="text-xs text-white/70 font-medium">
+                          {arg.title || arg.name}
+                          {arg.required ? <span className="text-red-400"> *</span> : null}
+                        </label>
+                        <input
+                          type="text"
+                          value={value ?? ''}
+                          placeholder={arg.placeholder || ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setExtensionPreferenceSetup((prev) => prev ? {
+                              ...prev,
+                              argumentValues: { ...prev.argumentValues, [arg.name]: v },
+                            } : prev);
+                          }}
+                          className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 placeholder-white/30 outline-none"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {defs.length > 0 ? <div className="text-xs uppercase tracking-wide text-white/35">Preferences</div> : null}
               {defs.map((def) => {
                 const value = extensionPreferenceSetup.values?.[def.name];
                 const type = def.type || 'textfield';
@@ -634,9 +729,11 @@ const App: React.FC = () => {
                   const cmdName = bundle.cmdName || bundle.commandName || '';
                   if (!extName || !cmdName) return;
                   persistExtensionPreferences(extName, cmdName, defs, extensionPreferenceSetup.values);
+                  persistCommandArguments(extName, cmdName, extensionPreferenceSetup.argumentValues || {});
                   const updatedBundle: ExtensionBundle = {
                     ...bundle,
                     preferences: { ...(bundle.preferences || {}), ...(extensionPreferenceSetup.values || {}) },
+                    launchArguments: { ...((bundle as any).launchArguments || {}), ...(extensionPreferenceSetup.argumentValues || {}) } as any,
                   };
                   setExtensionPreferenceSetup(null);
 
@@ -650,9 +747,9 @@ const App: React.FC = () => {
                   setExtensionView(updatedBundle);
                   localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
                 }}
-                disabled={missing.length > 0}
+                disabled={hasBlockingMissing}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  missing.length > 0
+                  hasBlockingMissing
                     ? 'bg-white/[0.08] text-white/35 cursor-not-allowed'
                     : 'bg-white/[0.16] hover:bg-white/[0.22] text-white'
                 }`}
@@ -686,6 +783,7 @@ const App: React.FC = () => {
               supportPath={(extensionView as any).supportPath}
               owner={(extensionView as any).owner}
               preferences={(extensionView as any).preferences}
+              launchArguments={(extensionView as any).launchArguments}
               onClose={() => {
                 setExtensionView(null);
                 localStorage.removeItem(LAST_EXT_KEY);
