@@ -589,6 +589,21 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
 
   // If it's an object with source property (e.g., { source: Icon.Checkmark, tintColor: Color.Green })
   if (typeof icon === 'object' && icon !== null) {
+    // Raycast file icons: { fileIcon: "/path/to/file-or-folder" }
+    if (typeof icon.fileIcon === 'string') {
+      const ctx = getExtensionContext();
+      if (ctx.extensionName === 'cursor-recent-projects') {
+        const cursorIcon = resolveIconSrc('cursor-icon.png');
+        return <img src={cursorIcon} className={className + ' rounded'} alt="" />;
+      }
+      let isDirectory = false;
+      try {
+        const stat = (window as any).electron?.statSync?.(icon.fileIcon);
+        isDirectory = Boolean(stat?.exists && stat?.isDirectory);
+      } catch {}
+      return <span className="text-center" style={{ fontSize: '0.875rem' }}>{isDirectory ? '📁' : '📄'}</span>;
+    }
+
     const tint = resolveTintColor(icon.tintColor);
 
     if (icon.source) {
@@ -2442,10 +2457,14 @@ function ListComponent({
             <span className="truncate">{navigationTitle || _extensionContext.extensionName || 'Extension'}</span>
           </div>
           {primaryAction && (
-            <div className="flex items-center gap-2 mr-3">
+            <button
+              type="button"
+              onClick={() => primaryAction.execute()}
+              className="flex items-center gap-2 mr-3 text-white hover:text-white/90 transition-colors"
+            >
               <span className="text-white text-xs font-semibold">{primaryAction.title}</span>
               <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
-            </div>
+            </button>
           )}
           <button
             onClick={() => setShowActions(true)}
@@ -3460,10 +3479,14 @@ function GridComponent({
             <span className="truncate">{navigationTitle || _extensionContext.extensionName || 'Extension'}</span>
           </div>
           {primaryAction && (
-            <div className="flex items-center gap-2 mr-3">
+            <button
+              type="button"
+              onClick={() => primaryAction.execute()}
+              className="flex items-center gap-2 mr-3 text-white hover:text-white/90 transition-colors"
+            >
               <span className="text-white text-xs font-semibold">{primaryAction.title}</span>
               <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
-            </div>
+            </button>
           )}
           <button
             onClick={() => setShowActions(true)}
