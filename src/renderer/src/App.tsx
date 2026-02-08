@@ -7,11 +7,20 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight } from 'lucide-react';
-import type { CommandInfo, ExtensionBundle } from '../types/electron';
+import type { CommandInfo, ExtensionBundle, AppSettings } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
 import { tryCalculate } from './smart-calculator';
+
+interface LauncherAction {
+  id: string;
+  title: string;
+  shortcut?: string;
+  style?: 'default' | 'destructive';
+  enabled?: boolean;
+  execute: () => void | Promise<void>;
+}
 
 /**
  * Filter and sort commands based on search query
@@ -76,10 +85,24 @@ function getCategoryLabel(category: string): string {
   }
 }
 
+function renderShortcutLabel(shortcut?: string): string {
+  if (!shortcut) return '';
+  return shortcut
+    .replace(/Command|Cmd/gi, '⌘')
+    .replace(/Control|Ctrl/gi, '⌃')
+    .replace(/Alt|Option/gi, '⌥')
+    .replace(/Shift/gi, '⇧')
+    .replace(/ArrowUp/g, '↑')
+    .replace(/ArrowDown/g, '↓')
+    .replace(/Backspace|Delete/g, '⌫')
+    .replace(/\+/g, ' ');
+}
+
 const LAST_EXT_KEY = 'sc-last-extension';
 const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
 const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
 const CMD_ARGS_KEY_PREFIX = 'sc-ext-cmd-args:';
+const MAX_RECENT_COMMANDS = 30;
 
 type PreferenceDefinition = NonNullable<ExtensionBundle['preferenceDefinitions']>[number];
 type ArgumentDefinition = NonNullable<ExtensionBundle['commandArgumentDefinitions']>[number];
@@ -214,6 +237,8 @@ function persistCommandArguments(extName: string, cmdName: string, values: Recor
 
 const App: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
+  const [pinnedCommands, setPinnedCommands] = useState<string[]>([]);
+  const [recentCommands, setRecentCommands] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -225,6 +250,14 @@ const App: React.FC = () => {
   } | null>(null);
   const [showClipboardManager, setShowClipboardManager] = useState(false);
   const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
+  const [showActions, setShowActions] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    commandId: string;
+  } | null>(null);
+  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
+  const [selectedContextActionIndex, setSelectedContextActionIndex] = useState(0);
   const [menuBarExtensions, setMenuBarExtensions] = useState<ExtensionBundle[]>([]);
   const [aiMode, setAiMode] = useState(false);
   const [aiResponse, setAiResponse] = useState('');
@@ -237,8 +270,30 @@ const App: React.FC = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const actionsOverlayRef = useRef<HTMLDivElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const pinnedCommandsRef = useRef<string[]>([]);
   const extensionViewRef = useRef<ExtensionBundle | null>(null);
   extensionViewRef.current = extensionView;
+  pinnedCommandsRef.current = pinnedCommands;
+
+  const restoreLauncherFocus = useCallback(() => {
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, []);
+
+  const loadLauncherPreferences = useCallback(async () => {
+    try {
+      const settings = (await window.electron.getSettings()) as AppSettings;
+      setPinnedCommands(settings.pinnedCommands || []);
+      setRecentCommands(settings.recentCommands || []);
+    } catch (e) {
+      console.error('Failed to load launcher preferences:', e);
+      setPinnedCommands([]);
+      setRecentCommands([]);
+    }
+  }, []);
 
   const fetchCommands = useCallback(async () => {
     setIsLoading(true);
@@ -282,6 +337,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchCommands();
+    loadLauncherPreferences();
 
     window.electron.onWindowShown(() => {
       // If an extension is open, keep it alive — don't reset
@@ -296,10 +352,11 @@ const App: React.FC = () => {
       // Re-fetch commands every time the window is shown
       // so newly installed extensions appear immediately
       fetchCommands();
+      loadLauncherPreferences();
       window.electron.aiIsAvailable().then(setAiAvailable);
       inputRef.current?.focus();
     });
-  }, [fetchCommands]);
+  }, [fetchCommands, loadLauncherPreferences]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -329,6 +386,106 @@ const App: React.FC = () => {
   useEffect(() => {
     window.electron.aiIsAvailable().then(setAiAvailable);
   }, []);
+
+  const saveLauncherPreferences = useCallback(
+    async (next: { pinnedCommands?: string[]; recentCommands?: string[] }) => {
+      const patch: Partial<AppSettings> = {};
+      if (next.pinnedCommands) patch.pinnedCommands = next.pinnedCommands;
+      if (next.recentCommands) patch.recentCommands = next.recentCommands;
+      if (Object.keys(patch).length > 0) {
+        await window.electron.saveSettings(patch);
+      }
+    },
+    []
+  );
+
+  const updateRecentCommands = useCallback(
+    async (commandId: string) => {
+      const updated = [
+        commandId,
+        ...recentCommands.filter((id) => id !== commandId),
+      ].slice(0, MAX_RECENT_COMMANDS);
+      setRecentCommands(updated);
+      await saveLauncherPreferences({ recentCommands: updated });
+    },
+    [recentCommands, saveLauncherPreferences]
+  );
+
+  const updatePinnedCommands = useCallback(
+    async (nextPinned: string[]) => {
+      setPinnedCommands(nextPinned);
+      await saveLauncherPreferences({ pinnedCommands: nextPinned });
+    },
+    [saveLauncherPreferences]
+  );
+
+  const pinToggleForCommand = useCallback(
+    async (command: CommandInfo) => {
+      const currentPinned = pinnedCommandsRef.current;
+      const exists = currentPinned.includes(command.id);
+      if (exists) {
+        await updatePinnedCommands(
+          currentPinned.filter((id) => id !== command.id)
+        );
+      } else {
+        await updatePinnedCommands([command.id, ...currentPinned]);
+      }
+    },
+    [updatePinnedCommands]
+  );
+
+  const disableCommand = useCallback(
+    async (command: CommandInfo) => {
+      await window.electron.toggleCommandEnabled(command.id, false);
+      await updatePinnedCommands(pinnedCommands.filter((id) => id !== command.id));
+      const nextRecent = recentCommands.filter((id) => id !== command.id);
+      setRecentCommands(nextRecent);
+      await saveLauncherPreferences({ recentCommands: nextRecent });
+      await fetchCommands();
+    },
+    [
+      pinnedCommands,
+      recentCommands,
+      updatePinnedCommands,
+      saveLauncherPreferences,
+      fetchCommands,
+    ]
+  );
+
+  const uninstallExtensionCommand = useCallback(
+    async (command: CommandInfo) => {
+      if (command.category !== 'extension' || !command.path) return;
+      const [extName] = command.path.split('/');
+      if (!extName) return;
+      await window.electron.uninstallExtension(extName);
+      await updatePinnedCommands(pinnedCommands.filter((id) => id !== command.id));
+      const nextRecent = recentCommands.filter((id) => id !== command.id);
+      setRecentCommands(nextRecent);
+      await saveLauncherPreferences({ recentCommands: nextRecent });
+      await fetchCommands();
+    },
+    [
+      pinnedCommands,
+      recentCommands,
+      updatePinnedCommands,
+      saveLauncherPreferences,
+      fetchCommands,
+    ]
+  );
+
+  const movePinnedCommand = useCallback(
+    async (command: CommandInfo, direction: 'up' | 'down') => {
+      const idx = pinnedCommands.indexOf(command.id);
+      if (idx === -1) return;
+      const target = direction === 'up' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= pinnedCommands.length) return;
+      const next = [...pinnedCommands];
+      const [item] = next.splice(idx, 1);
+      next.splice(target, 0, item);
+      await updatePinnedCommands(next);
+    },
+    [pinnedCommands, updatePinnedCommands]
+  );
 
   // AI streaming listeners
   useEffect(() => {
@@ -411,15 +568,67 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [aiMode, exitAiMode]);
 
-  const filteredCommands = filterCommands(commands, searchQuery);
+  useEffect(() => {
+    if (!contextMenu) return;
+    const onMouseDown = () => setContextMenu(null);
+    window.addEventListener('mousedown', onMouseDown);
+    return () => window.removeEventListener('mousedown', onMouseDown);
+  }, [contextMenu]);
+
+  useEffect(() => {
+    if (!showActions) return;
+    setSelectedActionIndex(0);
+    setTimeout(() => actionsOverlayRef.current?.focus(), 0);
+  }, [showActions]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    setSelectedContextActionIndex(0);
+    setTimeout(() => contextMenuRef.current?.focus(), 0);
+  }, [contextMenu]);
+
+  useEffect(() => {
+    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager) {
+      restoreLauncherFocus();
+    }
+  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, restoreLauncherFocus]);
 
   const calcResult = useMemo(() => {
     return searchQuery ? tryCalculate(searchQuery) : null;
   }, [searchQuery]);
   const calcOffset = calcResult ? 1 : 0;
+  const filteredCommands = useMemo(
+    () => filterCommands(commands, searchQuery),
+    [commands, searchQuery]
+  );
 
   // When calculator is showing but no commands match, show unfiltered list below
-  const displayCommands = calcResult && filteredCommands.length === 0 ? commands : filteredCommands;
+  const sourceCommands =
+    calcResult && filteredCommands.length === 0 ? commands : filteredCommands;
+
+  const groupedCommands = useMemo(() => {
+    const sourceMap = new Map(sourceCommands.map((cmd) => [cmd.id, cmd]));
+    const pinned = pinnedCommands
+      .map((id) => sourceMap.get(id))
+      .filter(Boolean) as CommandInfo[];
+    const pinnedSet = new Set(pinned.map((c) => c.id));
+
+    const recent = recentCommands
+      .map((id) => sourceMap.get(id))
+      .filter((c): c is CommandInfo => Boolean(c) && !pinnedSet.has((c as CommandInfo).id));
+    const recentSet = new Set(recent.map((c) => c.id));
+
+    const other = sourceCommands.filter(
+      (c) => !pinnedSet.has(c.id) && !recentSet.has(c.id)
+    );
+
+    return { pinned, recent, other };
+  }, [sourceCommands, pinnedCommands, recentCommands]);
+
+  const displayCommands = useMemo(
+    () => [...groupedCommands.pinned, ...groupedCommands.recent, ...groupedCommands.other],
+    [groupedCommands]
+  );
 
   useEffect(() => {
     itemRefs.current = itemRefs.current.slice(0, displayCommands.length + calcOffset);
@@ -449,8 +658,84 @@ const App: React.FC = () => {
     setSelectedIndex(0);
   }, [searchQuery]);
 
+  useEffect(() => {
+    const max = Math.max(0, displayCommands.length + calcOffset - 1);
+    setSelectedIndex((prev) => (prev > max ? max : prev));
+  }, [displayCommands.length, calcOffset]);
+
+  const selectedCommand =
+    selectedIndex >= calcOffset
+      ? displayCommands[selectedIndex - calcOffset]
+      : null;
+
+  const togglePinSelectedCommand = useCallback(async () => {
+    if (!selectedCommand) return;
+    await pinToggleForCommand(selectedCommand);
+  }, [selectedCommand, pinToggleForCommand]);
+
+  const disableSelectedCommand = useCallback(async () => {
+    if (!selectedCommand) return;
+    await disableCommand(selectedCommand);
+  }, [selectedCommand, disableCommand]);
+
+  const uninstallSelectedExtension = useCallback(async () => {
+    if (!selectedCommand) return;
+    await uninstallExtensionCommand(selectedCommand);
+  }, [selectedCommand, uninstallExtensionCommand]);
+
+  const moveSelectedPinnedCommand = useCallback(
+    async (direction: 'up' | 'down') => {
+      if (!selectedCommand) return;
+      await movePinnedCommand(selectedCommand, direction);
+    },
+    [selectedCommand, movePinnedCommand]
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (e.metaKey && (e.key === 'k' || e.key === 'K') && !e.repeat) {
+        e.preventDefault();
+        setShowActions((prev) => !prev);
+        setContextMenu(null);
+        return;
+      }
+      if (showActions || contextMenu) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          if (showActions) setShowActions(false);
+          if (contextMenu) setContextMenu(null);
+          restoreLauncherFocus();
+        }
+        return;
+      }
+      if (e.metaKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+        e.preventDefault();
+        togglePinSelectedCommand();
+        return;
+      }
+      if (e.metaKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+        e.preventDefault();
+        disableSelectedCommand();
+        return;
+      }
+      if (e.metaKey && (e.key === 'Backspace' || e.key === 'Delete')) {
+        if (selectedCommand?.category === 'extension') {
+          e.preventDefault();
+          uninstallSelectedExtension();
+          return;
+        }
+      }
+      if (e.metaKey && e.altKey && e.key === 'ArrowUp') {
+        e.preventDefault();
+        moveSelectedPinnedCommand('up');
+        return;
+      }
+      if (e.metaKey && e.altKey && e.key === 'ArrowDown') {
+        e.preventDefault();
+        moveSelectedPinnedCommand('down');
+        return;
+      }
+
       switch (e.key) {
         case 'Tab':
           if (searchQuery.trim() && aiAvailable) {
@@ -484,13 +769,36 @@ const App: React.FC = () => {
 
         case 'Escape':
           e.preventDefault();
+          if (contextMenu) {
+            setContextMenu(null);
+            return;
+          }
+          if (showActions) {
+            setShowActions(false);
+            return;
+          }
           setSearchQuery('');
           setSelectedIndex(0);
           window.electron.hideWindow();
           break;
       }
     },
-    [displayCommands, selectedIndex, searchQuery, aiAvailable, startAiChat, calcResult, calcOffset]
+    [
+      displayCommands,
+      selectedIndex,
+      searchQuery,
+      aiAvailable,
+      startAiChat,
+      calcResult,
+      calcOffset,
+      togglePinSelectedCommand,
+      disableSelectedCommand,
+      uninstallSelectedExtension,
+      moveSelectedPinnedCommand,
+      selectedCommand,
+      contextMenu,
+      showActions,
+    ]
   );
 
   const runLocalSystemCommand = useCallback(async (commandId: string): Promise<boolean> => {
@@ -536,6 +844,7 @@ const App: React.FC = () => {
   const handleCommandExecute = async (command: CommandInfo) => {
     try {
       if (await runLocalSystemCommand(command.id)) {
+        await updateRecentCommands(command.id);
         return;
       }
 
@@ -560,6 +869,7 @@ const App: React.FC = () => {
             window.electron.hideWindow();
             setSearchQuery('');
             setSelectedIndex(0);
+            await updateRecentCommands(command.id);
             return;
           }
           setExtensionView(hydrated);
@@ -568,6 +878,7 @@ const App: React.FC = () => {
           } else {
             localStorage.removeItem(LAST_EXT_KEY);
           }
+          await updateRecentCommands(command.id);
           return;
         }
         const errMsg = result?.error || 'Failed to build extension';
@@ -585,12 +896,153 @@ const App: React.FC = () => {
       }
 
       await window.electron.executeCommand(command.id);
+      await updateRecentCommands(command.id);
       setSearchQuery('');
       setSelectedIndex(0);
     } catch (error) {
       console.error('Failed to execute command:', error);
     }
   };
+
+  const getActionsForCommand = useCallback(
+    (command: CommandInfo | null): LauncherAction[] => {
+      if (!command) return [];
+      const isPinned = pinnedCommands.includes(command.id);
+      const pinnedIndex = pinnedCommands.indexOf(command.id);
+      return [
+        {
+          id: 'open',
+          title: 'Open Command',
+          shortcut: 'Enter',
+          execute: () => handleCommandExecute(command),
+        },
+        {
+          id: 'pin',
+          title: isPinned
+            ? 'Unpin Extension'
+            : command.category === 'extension'
+              ? 'Pin Extension'
+              : 'Pin Command',
+          shortcut: 'Cmd+Shift+P',
+          execute: () => pinToggleForCommand(command),
+        },
+        {
+          id: 'disable',
+          title: 'Disable Command',
+          shortcut: 'Cmd+Shift+D',
+          execute: () => disableCommand(command),
+        },
+        {
+          id: 'uninstall',
+          title: 'Uninstall',
+          shortcut: 'Cmd+Delete',
+          style: 'destructive',
+          enabled: command.category === 'extension',
+          execute: () => uninstallExtensionCommand(command),
+        },
+        {
+          id: 'move-up',
+          title: 'Move Up',
+          shortcut: 'Cmd+Alt+Up',
+          enabled: isPinned && pinnedIndex > 0,
+          execute: () => movePinnedCommand(command, 'up'),
+        },
+        {
+          id: 'move-down',
+          title: 'Move Down',
+          shortcut: 'Cmd+Alt+Down',
+          enabled: isPinned && pinnedIndex >= 0 && pinnedIndex < pinnedCommands.length - 1,
+          execute: () => movePinnedCommand(command, 'down'),
+        },
+      ].filter((action) => action.enabled !== false);
+    },
+    [
+      pinnedCommands,
+      handleCommandExecute,
+      pinToggleForCommand,
+      disableCommand,
+      uninstallExtensionCommand,
+      movePinnedCommand,
+    ]
+  );
+
+  const selectedActions = useMemo(
+    () => getActionsForCommand(selectedCommand),
+    [getActionsForCommand, selectedCommand]
+  );
+
+  const contextCommand = useMemo(
+    () =>
+      contextMenu
+        ? displayCommands.find((cmd) => cmd.id === contextMenu.commandId) || null
+        : null,
+    [contextMenu, displayCommands]
+  );
+
+  const contextActions = useMemo(
+    () => getActionsForCommand(contextCommand),
+    [getActionsForCommand, contextCommand]
+  );
+
+  const handleActionsOverlayKeyDown = useCallback(
+    async (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (selectedActions.length === 0) return;
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          setSelectedActionIndex((prev) =>
+            Math.min(prev + 1, selectedActions.length - 1)
+          );
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          setSelectedActionIndex((prev) => Math.max(prev - 1, 0));
+          break;
+        case 'Enter':
+          e.preventDefault();
+          await Promise.resolve(selectedActions[selectedActionIndex]?.execute());
+          setShowActions(false);
+          restoreLauncherFocus();
+          break;
+        case 'Escape':
+          e.preventDefault();
+          setShowActions(false);
+          restoreLauncherFocus();
+          break;
+      }
+    },
+    [selectedActions, selectedActionIndex, restoreLauncherFocus]
+  );
+
+  const handleContextMenuKeyDown = useCallback(
+    async (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (contextActions.length === 0) return;
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          setSelectedContextActionIndex((prev) =>
+            Math.min(prev + 1, contextActions.length - 1)
+          );
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          setSelectedContextActionIndex((prev) => Math.max(prev - 1, 0));
+          break;
+        case 'Enter':
+          e.preventDefault();
+          await Promise.resolve(contextActions[selectedContextActionIndex]?.execute());
+          setContextMenu(null);
+          restoreLauncherFocus();
+          break;
+        case 'Escape':
+          e.preventDefault();
+          setContextMenu(null);
+          restoreLauncherFocus();
+          break;
+      }
+    },
+    [contextActions, selectedContextActionIndex, restoreLauncherFocus]
+  );
 
   // ─── Hidden menu-bar extension runners (always mounted) ────────────
   // These run "invisibly" so that menu-bar extensions produce native Tray
@@ -1045,67 +1497,237 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              {displayCommands.map((command, index) => (
-                <div
-                  key={command.id}
-                  ref={(el) => (itemRefs.current[index + calcOffset] = el)}
-                  className={`command-item px-3 py-2 rounded-lg cursor-pointer ${
-                    index + calcOffset === selectedIndex ? 'selected' : ''
-                  }`}
-                  onClick={() => handleCommandExecute(command)}
-                  onMouseMove={() => setSelectedIndex(index + calcOffset)}
-                >
-                  <div className="flex items-center gap-2.5">
-                    {/* Icon */}
-                    <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      {command.iconDataUrl ? (
-                        <img
-                          src={command.iconDataUrl}
-                          alt=""
-                          className="w-5 h-5 object-contain"
-                          draggable={false}
-                        />
-                      ) : command.category === 'system' ? (
-                        <div className="w-5 h-5 rounded bg-red-500/20 flex items-center justify-center">
-                          <Power className="w-3 h-3 text-red-400" />
-                        </div>
-                      ) : command.category === 'extension' ? (
-                        <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
-                          <Puzzle className="w-3 h-3 text-purple-400" />
-                        </div>
-                      ) : (
-                        <div className="w-5 h-5 rounded bg-gray-500/20 flex items-center justify-center">
-                          <Settings className="w-3 h-3 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Title */}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-white text-sm truncate">
-                        {command.title}
+              {[
+                { title: 'Pinned', items: groupedCommands.pinned },
+                { title: 'Recent', items: groupedCommands.recent },
+                { title: 'Other', items: groupedCommands.other },
+              ]
+                .filter((section) => section.items.length > 0)
+                .map((section) => section)
+                .reduce(
+                  (acc, section) => {
+                    const startIndex = acc.index;
+                    acc.nodes.push(
+                      <div
+                        key={`section-${section.title}`}
+                        className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider text-white/35 font-medium"
+                      >
+                        {section.title}
                       </div>
-                    </div>
+                    );
+                    section.items.forEach((command, i) => {
+                      const flatIndex = startIndex + i;
+                      acc.nodes.push(
+                        <div
+                          key={command.id}
+                          ref={(el) => (itemRefs.current[flatIndex + calcOffset] = el)}
+                          className={`command-item px-3 py-2 rounded-lg cursor-pointer ${
+                            flatIndex + calcOffset === selectedIndex ? 'selected' : ''
+                          }`}
+                          onClick={() => handleCommandExecute(command)}
+                          onMouseMove={() => setSelectedIndex(flatIndex + calcOffset)}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            setSelectedIndex(flatIndex + calcOffset);
+                            setShowActions(false);
+                            setContextMenu({
+                              x: e.clientX,
+                              y: e.clientY,
+                              commandId: command.id,
+                            });
+                          }}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                              {command.iconDataUrl ? (
+                                <img
+                                  src={command.iconDataUrl}
+                                  alt=""
+                                  className="w-5 h-5 object-contain"
+                                  draggable={false}
+                                />
+                              ) : command.category === 'system' ? (
+                                <div className="w-5 h-5 rounded bg-red-500/20 flex items-center justify-center">
+                                  <Power className="w-3 h-3 text-red-400" />
+                                </div>
+                              ) : command.category === 'extension' ? (
+                                <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
+                                  <Puzzle className="w-3 h-3 text-purple-400" />
+                                </div>
+                              ) : (
+                                <div className="w-5 h-5 rounded bg-gray-500/20 flex items-center justify-center">
+                                  <Settings className="w-3 h-3 text-gray-400" />
+                                </div>
+                              )}
+                            </div>
 
-                    {/* Category label */}
-                    <div className="text-white/40 text-xs font-medium flex-shrink-0">
-                      {getCategoryLabel(command.category)}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                            <div className="flex-1 min-w-0">
+                              <div className="text-white text-sm truncate">
+                                {command.title}
+                              </div>
+                            </div>
+
+                            <div className="text-white/40 text-xs font-medium flex-shrink-0">
+                              {getCategoryLabel(command.category)}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                    acc.index += section.items.length;
+                    return acc;
+                  },
+                  { nodes: [] as React.ReactNode[], index: 0 }
+                ).nodes}
             </div>
           )}
         </div>
         
-        {/* Footer with count - same background as main screen */}
+        {/* Footer actions */}
         {!isLoading && (
-          <div className="px-4 py-3.5 border-t border-white/[0.06] text-white/40 text-xs font-medium" style={{ background: 'rgba(28,28,32,0.90)' }}>
-            {displayCommands.length} results
+          <div
+            className="flex items-center px-4 py-3.5 border-t border-white/[0.06]"
+            style={{ background: 'rgba(28,28,32,0.90)' }}
+          >
+            <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium truncate">
+              {selectedCommand ? selectedCommand.title : `${displayCommands.length} results`}
+            </div>
+            {selectedActions[0] && (
+              <div className="flex items-center gap-2 mr-3">
+                <button
+                  onClick={() => selectedActions[0].execute()}
+                  className="text-white text-xs font-semibold hover:text-white/85 transition-colors"
+                >
+                  {selectedActions[0].title}
+                </button>
+                {selectedActions[0].shortcut && (
+                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">
+                    {renderShortcutLabel(selectedActions[0].shortcut)}
+                  </kbd>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => {
+                setContextMenu(null);
+                setShowActions(true);
+              }}
+              className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
+            >
+              <span className="text-xs font-medium">Actions</span>
+              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
+              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
+            </button>
           </div>
         )}
       </div>
     </div>
+    {showActions && selectedActions.length > 0 && (
+      <div
+        className="fixed inset-0 z-50"
+        onClick={() => setShowActions(false)}
+        style={{ background: 'rgba(0,0,0,0.15)' }}
+      >
+        <div
+          ref={actionsOverlayRef}
+          className="absolute bottom-12 right-3 w-96 max-h-[65vh] rounded-xl overflow-hidden flex flex-col shadow-2xl outline-none focus:outline-none ring-0 focus:ring-0"
+          tabIndex={0}
+          onKeyDown={handleActionsOverlayKeyDown}
+          style={{
+            background: 'rgba(30,30,34,0.97)',
+            backdropFilter: 'blur(40px)',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex-1 overflow-y-auto py-1">
+            {selectedActions.map((action, idx) => (
+              <div
+                key={action.id}
+                className={`mx-1 px-2.5 py-1.5 rounded-lg flex items-center gap-2.5 cursor-pointer transition-colors ${
+                  idx === selectedActionIndex
+                    ? action.style === 'destructive'
+                      ? 'bg-white/[0.10] text-red-400'
+                      : 'bg-white/[0.10] text-white'
+                    : action.style === 'destructive'
+                      ? 'hover:bg-white/[0.06] text-red-400'
+                      : 'hover:bg-white/[0.06] text-white/80'
+                }`}
+                onClick={async () => {
+                  await Promise.resolve(action.execute());
+                  setShowActions(false);
+                  restoreLauncherFocus();
+                }}
+                onMouseMove={() => setSelectedActionIndex(idx)}
+              >
+                <span className="flex-1 text-sm truncate">{action.title}</span>
+                {action.shortcut && (
+                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] font-medium text-white/70">
+                    {renderShortcutLabel(action.shortcut)}
+                  </kbd>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
+    {contextMenu && contextActions.length > 0 && (
+      <div
+        className="fixed inset-0 z-50"
+        onClick={() => setContextMenu(null)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setContextMenu(null);
+        }}
+      >
+        <div
+          ref={contextMenuRef}
+          className="absolute w-80 max-h-[60vh] rounded-xl overflow-hidden flex flex-col shadow-2xl outline-none focus:outline-none ring-0 focus:ring-0"
+          tabIndex={0}
+          onKeyDown={handleContextMenuKeyDown}
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 340),
+            top: Math.min(contextMenu.y, window.innerHeight - 320),
+            background: 'rgba(30,30,34,0.97)',
+            backdropFilter: 'blur(40px)',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <div className="flex-1 overflow-y-auto py-1">
+            {contextActions.map((action, idx) => (
+              <div
+                key={`ctx-${action.id}`}
+                className={`mx-1 px-2.5 py-1.5 rounded-lg flex items-center gap-2.5 cursor-pointer transition-colors ${
+                  idx === selectedContextActionIndex
+                    ? action.style === 'destructive'
+                      ? 'bg-white/[0.10] text-red-400'
+                      : 'bg-white/[0.10] text-white'
+                    : action.style === 'destructive'
+                      ? 'hover:bg-white/[0.06] text-red-400'
+                      : 'hover:bg-white/[0.06] text-white/80'
+                }`}
+                onClick={async () => {
+                  await Promise.resolve(action.execute());
+                  setContextMenu(null);
+                  restoreLauncherFocus();
+                }}
+                onMouseMove={() => setSelectedContextActionIndex(idx)}
+              >
+                <span className="flex-1 text-sm truncate">{action.title}</span>
+                {action.shortcut && (
+                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] font-medium text-white/70">
+                    {renderShortcutLabel(action.shortcut)}
+                  </kbd>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 };

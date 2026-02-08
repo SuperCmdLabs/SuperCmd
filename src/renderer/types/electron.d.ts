@@ -59,6 +59,8 @@ export interface AppSettings {
   globalShortcut: string;
   disabledCommands: string[];
   commandHotkeys: Record<string, string>;
+  pinnedCommands: string[];
+  recentCommands: string[];
   ai: AISettings;
 }
 
