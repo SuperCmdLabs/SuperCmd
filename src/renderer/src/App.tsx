@@ -170,6 +170,20 @@ function getUnsetCriticalPreferences(bundle: ExtensionBundle, values?: Record<st
   });
 }
 
+function shouldOpenCommandSetup(bundle: ExtensionBundle): boolean {
+  const hasArgs = (bundle.commandArgumentDefinitions || []).length > 0;
+  if (hasArgs) return true;
+  const missingPrefs = getMissingRequiredPreferences(bundle);
+  const missingArgs = getMissingRequiredArguments(bundle);
+  const criticalUnsetPrefs = getUnsetCriticalPreferences(bundle);
+  const blockOnCriticalUnset = bundle.mode === 'no-view' || bundle.mode === 'menu-bar';
+  return (
+    missingPrefs.length > 0 ||
+    missingArgs.length > 0 ||
+    (blockOnCriticalUnset && criticalUnsetPrefs.length > 0)
+  );
+}
+
 function persistExtensionPreferences(
   extName: string,
   cmdName: string,
@@ -242,10 +256,10 @@ const App: React.FC = () => {
         window.electron.runExtension(extName, cmdName).then(result => {
           if (result && result.code) {
             const hydrated = hydrateExtensionBundlePreferences(result);
-            const missingPrefs = getMissingRequiredPreferences(hydrated);
-            const missingArgs = getMissingRequiredArguments(hydrated);
-            const unsetCriticalPrefs = getUnsetCriticalPreferences(hydrated);
-            if (missingPrefs.length > 0 || missingArgs.length > 0 || unsetCriticalPrefs.length > 0) {
+            if (hydrated.mode === 'no-view') {
+              localStorage.removeItem(LAST_EXT_KEY);
+            }
+            if (shouldOpenCommandSetup(hydrated)) {
               setExtensionPreferenceSetup({
                 bundle: hydrated,
                 values: { ...(hydrated.preferences || {}) },
@@ -511,10 +525,7 @@ const App: React.FC = () => {
         const result = await window.electron.runExtension(extName, cmdName);
         if (result && result.code) {
           const hydrated = hydrateExtensionBundlePreferences(result);
-          const missingPrefs = getMissingRequiredPreferences(hydrated);
-          const missingArgs = getMissingRequiredArguments(hydrated);
-          const unsetCriticalPrefs = getUnsetCriticalPreferences(hydrated);
-          if (missingPrefs.length > 0 || missingArgs.length > 0 || unsetCriticalPrefs.length > 0) {
+          if (shouldOpenCommandSetup(hydrated)) {
             setExtensionPreferenceSetup({
               bundle: hydrated,
               values: { ...(hydrated.preferences || {}) },
@@ -532,7 +543,11 @@ const App: React.FC = () => {
             return;
           }
           setExtensionView(hydrated);
-          localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
+          if (hydrated.mode === 'view') {
+            localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
+          } else {
+            localStorage.removeItem(LAST_EXT_KEY);
+          }
           return;
         }
         const errMsg = result?.error || 'Failed to build extension';
@@ -741,11 +756,16 @@ const App: React.FC = () => {
                     window.electron.hideWindow();
                     setSearchQuery('');
                     setSelectedIndex(0);
+                    localStorage.removeItem(LAST_EXT_KEY);
                     return;
                   }
 
                   setExtensionView(updatedBundle);
-                  localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
+                  if (updatedBundle.mode === 'view') {
+                    localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
+                  } else {
+                    localStorage.removeItem(LAST_EXT_KEY);
+                  }
                 }}
                 disabled={hasBlockingMissing}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
