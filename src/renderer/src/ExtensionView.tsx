@@ -975,10 +975,30 @@ const timersPromisesStub = {
 };
 
 // ── util stub ───────────────────────────────────────────────────
+const promisifyCustomSymbol = Symbol.for('nodejs.util.promisify.custom');
+
 const utilStub: Record<string, any> = {
-  promisify: (fn: any) => (...args: any[]) => new Promise((resolve, reject) => {
-    fn(...args, (err: any, result: any) => err ? reject(err) : resolve(result));
-  }),
+  promisify: (fn: any) => {
+    if (fn && fn[promisifyCustomSymbol]) return fn[promisifyCustomSymbol];
+    return (...args: any[]) => new Promise((resolve, reject) => {
+      fn(...args, (err: any, ...results: any[]) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        if (results.length <= 1) {
+          resolve(results[0]);
+          return;
+        }
+        // Match child_process exec/execFile promisified shape: { stdout, stderr }
+        if (results.length === 2) {
+          resolve({ stdout: results[0], stderr: results[1] });
+          return;
+        }
+        resolve(results);
+      });
+    });
+  },
   callbackify: (fn: any) => (...args: any[]) => {
     const cb = args.pop();
     fn(...args).then((r: any) => cb(null, r)).catch((e: any) => cb(e));
@@ -998,6 +1018,7 @@ const utilStub: Record<string, any> = {
   TextEncoder,
   isDeepStrictEqual: (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b),
 };
+utilStub.promisify.custom = promisifyCustomSymbol;
 
 // ── process stub ────────────────────────────────────────────────
 const processStub: Record<string, any> = {
