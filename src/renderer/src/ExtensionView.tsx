@@ -1876,23 +1876,18 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
     return value;
   }, [push, pop, popToRoot]);
 
-  // Handle Escape when no navigation stack
+  // Handle Escape globally for all extensions:
+  // pop when nested, otherwise close extension view.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Only handle if no input is focused (the List component handles its own Escape)
-      if (
-        e.key === 'Escape' &&
-        navStack.length === 0 &&
-        !(e.target instanceof HTMLInputElement) &&
-        !(e.target instanceof HTMLTextAreaElement)
-      ) {
-        e.preventDefault();
-        onClose();
-      }
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      if (navStack.length > 0) pop();
+      else onClose();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [onClose, navStack.length]);
+  }, [onClose, pop, navStack.length]);
 
   if (error) {
     return (
