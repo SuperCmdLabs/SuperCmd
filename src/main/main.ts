@@ -1505,13 +1505,9 @@ app.whenReady().then(async () => {
     const { execFile } = require('child_process');
     const colorPickerPath = path.join(__dirname, '..', 'native', 'color-picker');
 
-    // Hide the main window so the user can see the screen for the eyedropper
-    if (mainWindow && isVisible) {
-      mainWindow.hide();
-      isVisible = false;
-    }
-
-    return new Promise((resolve) => {
+    // Keep the launcher open while the native picker is focused.
+    suppressBlurHide = true;
+    const pickedColor = await new Promise((resolve) => {
       execFile(colorPickerPath, (error: any, stdout: string) => {
         if (error) {
           console.error('Color picker failed:', error);
@@ -1534,6 +1530,8 @@ app.whenReady().then(async () => {
         }
       });
     });
+    suppressBlurHide = false;
+    return pickedColor;
   });
 
   // ─── IPC: Menu Bar (Tray) Extensions ────────────────────────────

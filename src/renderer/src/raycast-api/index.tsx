@@ -533,13 +533,32 @@ function resolveIconSrc(src: string): string {
 //   - a string: '#FF0000'
 //   - an object: { light: '#FF0000', dark: '#FF0000', adjustContrast?: boolean }
 function resolveTintColor(tintColor: any): string | undefined {
+  const normalizeCssColor = (value: string): string => {
+    const v = value.trim();
+    if (/^[0-9a-f]{3}$/i.test(v) || /^[0-9a-f]{6}$/i.test(v) || /^[0-9a-f]{8}$/i.test(v)) {
+      return `#${v}`;
+    }
+    return v;
+  };
+
   if (!tintColor) return undefined;
-  if (typeof tintColor === 'string') return tintColor;
+  if (typeof tintColor === 'string') return normalizeCssColor(tintColor);
   if (typeof tintColor === 'object') {
     // Prefer dark since we're always dark-themed
-    return tintColor.dark || tintColor.light || undefined;
+    const raw = tintColor.dark || tintColor.light;
+    if (typeof raw === 'string') return normalizeCssColor(raw);
+    return undefined;
   }
   return undefined;
+}
+
+function addHexAlpha(color: string, alphaHex: string): string | undefined {
+  const m = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!m) return undefined;
+  const hex = m[1].length === 3
+    ? m[1].split('').map((c) => c + c).join('')
+    : m[1];
+  return `#${hex}${alphaHex}`;
 }
 
 export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
@@ -1948,17 +1967,22 @@ function ListItemRenderer({
         {accessories?.map((acc, i) => {
           const accText = typeof acc?.text === 'string' ? acc.text
             : typeof acc?.text === 'object' ? acc.text?.value || '' : '';
-          const accTextColor = typeof acc?.text === 'object' ? acc.text?.color : undefined;
+          const accTextColorRaw = typeof acc?.text === 'object' ? acc.text?.color : undefined;
           const tagText = typeof acc?.tag === 'string' ? acc.tag
             : typeof acc?.tag === 'object' ? acc.tag?.value || '' : '';
-          const tagColor = typeof acc?.tag === 'object' ? acc.tag?.color : undefined;
+          const tagColorRaw = typeof acc?.tag === 'object' ? acc.tag?.color : undefined;
+          const accTextColor = resolveTintColor(accTextColorRaw);
+          const tagColor = resolveTintColor(tagColorRaw);
           const dateStr = acc?.date ? new Date(acc.date).toLocaleDateString() : '';
+          const tagBg = tagColor
+            ? (addHexAlpha(tagColor, '22') || 'rgba(255,255,255,0.1)')
+            : 'rgba(255,255,255,0.1)';
 
           return (
             <span key={i} className="text-xs flex-shrink-0 flex items-center gap-1" style={{ color: accTextColor || tagColor || 'rgba(255,255,255,0.25)' }}>
               {acc?.icon && <span className="text-[10px]">{renderIcon(acc.icon, 'w-3 h-3')}</span>}
               {tagText ? (
-                <span className="px-1.5 py-0.5 rounded text-[11px]" style={{ background: `${tagColor || 'rgba(255,255,255,0.1)'}22`, color: tagColor || 'rgba(255,255,255,0.5)' }}>{tagText}</span>
+                <span className="px-1.5 py-0.5 rounded text-[11px]" style={{ background: tagBg, color: tagColor || 'rgba(255,255,255,0.5)' }}>{tagText}</span>
               ) : accText || dateStr || ''}
             </span>
           );
@@ -5426,4 +5450,3 @@ export function withCache<Fn extends (...args: any[]) => Promise<any>>(
 
   return wrapped;
 }
-
