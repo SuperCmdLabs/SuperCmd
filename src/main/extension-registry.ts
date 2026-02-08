@@ -27,6 +27,8 @@ const execAsync = promisify(exec);
 const REPO_URL = 'https://github.com/raycast/extensions.git';
 const GITHUB_RAW =
   'https://raw.githubusercontent.com/raycast/extensions/main';
+const GITHUB_API =
+  'https://api.github.com/repos/raycast/extensions/contents';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -38,6 +40,7 @@ export interface CatalogEntry {
   contributors: string[];
   icon: string; // icon filename
   iconUrl: string; // full GitHub raw URL to icon
+  screenshotUrls: string[];
   categories: string[];
   commands: { name: string; title: string; description: string }[];
 }
@@ -48,7 +51,7 @@ interface CatalogCache {
   version: number;
 }
 
-const CATALOG_VERSION = 2;
+const CATALOG_VERSION = 5;
 const CATALOG_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 let catalogCache: CatalogCache | null = null;
@@ -113,7 +116,7 @@ async function fetchCatalogFromGitHub(): Promise<CatalogEntry[]> {
       { timeout: 60_000 }
     );
 
-    // Checkout only package.json files under extensions/*/
+    // Checkout only package manifests (fast); screenshots are fetched lazily.
     await execAsync(
       `cd "${tmpDir}" && git sparse-checkout set --no-cone "extensions/*/package.json"`,
       { timeout: 120_000 }
@@ -132,9 +135,20 @@ async function fetchCatalogFromGitHub(): Promise<CatalogEntry[]> {
       try {
         const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
 
-        const iconFile = pkg.icon || 'icon.png';
-        // Icon is typically at the extension root level
-        const iconUrl = `${GITHUB_RAW}/extensions/${dir}/assets/${iconFile}`;
+        const toAssetUrl = (value: string): string => {
+          if (!value) return '';
+          if (/^https?:\/\//i.test(value)) return value;
+          const normalized = value.replace(/^\.?\//, '');
+          if (normalized.startsWith('extensions/')) {
+            return `${GITHUB_RAW}/${normalized}`;
+          }
+          return `${GITHUB_RAW}/extensions/${dir}/${normalized}`;
+        };
+
+        const iconFile = pkg.icon || 'assets/icon.png';
+        const iconUrl = toAssetUrl(
+          iconFile.includes('/') ? iconFile : `assets/${iconFile}`
+        );
 
         const commands = (pkg.commands || []).map((c: any) => ({
           name: c.name || '',
@@ -169,6 +183,21 @@ async function fetchCatalogFromGitHub(): Promise<CatalogEntry[]> {
         }
 
         const authorName = normalizePerson(pkg.author) || '';
+        const screenshotUrlsFromPackage: string[] = Array.isArray(pkg.screenshots)
+          ? pkg.screenshots
+              .map((entry: any) => {
+                if (typeof entry === 'string') return toAssetUrl(entry);
+                if (entry && typeof entry === 'object') {
+                  if (typeof entry.path === 'string') return toAssetUrl(entry.path);
+                  if (typeof entry.src === 'string') return toAssetUrl(entry.src);
+                  if (typeof entry.url === 'string') return toAssetUrl(entry.url);
+                }
+                return '';
+              })
+              .filter(Boolean)
+          : [];
+
+        const screenshotUrls = screenshotUrlsFromPackage;
 
         entries.push({
           name: dir,
@@ -178,6 +207,7 @@ async function fetchCatalogFromGitHub(): Promise<CatalogEntry[]> {
           contributors,
           icon: iconFile,
           iconUrl,
+          screenshotUrls,
           categories: pkg.categories || [],
           commands,
         });
@@ -239,6 +269,39 @@ export async function getCatalog(
 
   console.log(`Extension catalog: ${entries.length} extensions cached.`);
   return entries;
+}
+
+/**
+ * Lazily fetch screenshot URLs for one extension from its metadata folder.
+ * This avoids pulling all screenshot files into the catalog step.
+ */
+export async function getExtensionScreenshotUrls(name: string): Promise<string[]> {
+  if (!name) return [];
+  try {
+    const url = `${GITHUB_API}/extensions/${encodeURIComponent(name)}/metadata`;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'SuperCommand',
+        Accept: 'application/vnd.github+json',
+      },
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    if (!Array.isArray(data)) return [];
+    const imagePattern = /\.(png|jpe?g|webp|gif)$/i;
+    return data
+      .filter((entry: any) => entry?.type === 'file' && imagePattern.test(entry?.name || ''))
+      .sort((a: any, b: any) =>
+        String(a?.name || '').localeCompare(String(b?.name || ''), undefined, {
+          numeric: true,
+        })
+      )
+      .map((entry: any) => String(entry?.download_url || ''))
+      .filter(Boolean);
+  } catch (e) {
+    console.warn(`Failed to load screenshots for ${name}:`, e);
+    return [];
+  }
 }
 
 // ─── Dependency Installation ────────────────────────────────────────

@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld('electron', {
   // ─── Store ────────────────────────────────────────────────────
   getCatalog: (forceRefresh?: boolean): Promise<any[]> =>
     ipcRenderer.invoke('get-catalog', forceRefresh),
+  getExtensionScreenshots: (extensionName: string): Promise<string[]> =>
+    ipcRenderer.invoke('get-extension-screenshots', extensionName),
   getInstalledExtensionNames: (): Promise<string[]> =>
     ipcRenderer.invoke('get-installed-extension-names'),
   installExtension: (name: string): Promise<boolean> =>

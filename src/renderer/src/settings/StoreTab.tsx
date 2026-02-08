@@ -9,6 +9,7 @@ import {
   Users,
   List,
   Info,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface CatalogEntry {
@@ -18,11 +19,12 @@ interface CatalogEntry {
   author: string;
   contributors: string[];
   iconUrl: string;
+  screenshotUrls: string[];
   categories: string[];
   commands: { name: string; title: string; description: string }[];
 }
 
-type DetailTab = 'overview' | 'commands' | 'team';
+type DetailTab = 'overview' | 'commands' | 'screenshots' | 'team';
 
 const avatarUrlFor = (name: string) =>
   `https://github.com/${encodeURIComponent(name)}.png?size=64`;
@@ -38,6 +40,8 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [busyName, setBusyName] = useState<string | null>(null);
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
+  const [screenshotsByName, setScreenshotsByName] = useState<Record<string, string[]>>({});
+  const [loadingScreenshotsFor, setLoadingScreenshotsFor] = useState<string | null>(null);
 
   const loadCatalog = useCallback(async (force = false) => {
     setIsLoading(true);
@@ -100,6 +104,35 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
     () => sortedCatalog.find((entry) => entry.name === selectedName) || null,
     [sortedCatalog, selectedName]
   );
+
+  useEffect(() => {
+    if (!selectedExtension?.name) return;
+    if (screenshotsByName[selectedExtension.name]) return;
+    let cancelled = false;
+    setLoadingScreenshotsFor(selectedExtension.name);
+    window.electron
+      .getExtensionScreenshots(selectedExtension.name)
+      .then((urls) => {
+        if (cancelled) return;
+        setScreenshotsByName((prev) => ({
+          ...prev,
+          [selectedExtension.name]: urls,
+        }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setScreenshotsByName((prev) => ({
+          ...prev,
+          [selectedExtension.name]: selectedExtension.screenshotUrls || [],
+        }));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingScreenshotsFor((curr) => (curr === selectedExtension.name ? null : curr));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedExtension, screenshotsByName]);
 
   const handleInstall = async (name: string) => {
     setBusyName(name);
@@ -249,6 +282,10 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
             {selectedExtension ? (
               <CommunityDetails
                 ext={selectedExtension}
+                screenshots={
+                  screenshotsByName[selectedExtension.name] ?? selectedExtension.screenshotUrls ?? []
+                }
+                screenshotsLoading={loadingScreenshotsFor === selectedExtension.name}
                 detailTab={detailTab}
                 onTabChange={setDetailTab}
                 installed={installedNames.has(selectedExtension.name)}
@@ -313,6 +350,8 @@ const ContributorAvatar: React.FC<{ name: string }> = ({ name }) => {
 
 const CommunityDetails: React.FC<{
   ext: CatalogEntry;
+  screenshots: string[];
+  screenshotsLoading: boolean;
   detailTab: DetailTab;
   onTabChange: (tab: DetailTab) => void;
   installed: boolean;
@@ -321,7 +360,7 @@ const CommunityDetails: React.FC<{
   onUninstall: () => void;
   onOpenReadme: () => void;
   onOpenSource: () => void;
-}> = ({ ext, detailTab, onTabChange, installed, busy, onInstall, onUninstall, onOpenReadme, onOpenSource }) => {
+}> = ({ ext, screenshots, screenshotsLoading, detailTab, onTabChange, installed, busy, onInstall, onUninstall, onOpenReadme, onOpenSource }) => {
   const team = ext.contributors?.length ? ext.contributors : ext.author ? [ext.author] : [];
   const visibleCommands = ext.commands.slice(0, 7);
 
@@ -351,6 +390,12 @@ const CommunityDetails: React.FC<{
           label="Commands"
         />
         <DetailTabButton
+          active={detailTab === 'screenshots'}
+          onClick={() => onTabChange('screenshots')}
+          icon={<ImageIcon className="w-3 h-3" />}
+          label="Screenshots"
+        />
+        <DetailTabButton
           active={detailTab === 'team'}
           onClick={() => onTabChange('team')}
           icon={<Users className="w-3 h-3" />}
@@ -364,6 +409,26 @@ const CommunityDetails: React.FC<{
             <div>
               <div className="text-white/35 uppercase tracking-wider text-xs mb-1">Description</div>
               <div className="text-white/85 text-sm leading-relaxed">{ext.description || 'No description provided.'}</div>
+            </div>
+            <div>
+              <div className="text-white/35 uppercase tracking-wider text-xs mb-1">Screenshots</div>
+              {screenshotsLoading ? (
+                <div className="text-sm text-white/40">Loading screenshots...</div>
+              ) : screenshots && screenshots.length > 0 ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {screenshots.slice(0, 4).map((url, idx) => (
+                    <button
+                      key={`${url}-${idx}`}
+                      onClick={() => window.electron.openUrl(url)}
+                      className="rounded-md overflow-hidden border border-white/[0.08] bg-white/[0.03] hover:border-white/[0.20] transition-colors"
+                    >
+                      <img src={url} alt="" className="w-full h-24 object-cover" draggable={false} />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-white/40">No screenshots declared.</div>
+              )}
             </div>
             <div>
               <div className="text-white/35 uppercase tracking-wider text-xs mb-1">Top Commands</div>
@@ -440,6 +505,26 @@ const CommunityDetails: React.FC<{
               team.slice(0, 8).map((name) => <ContributorAvatar key={name} name={name} />)
             ) : (
               <div className="text-sm text-white/40">No contributors declared.</div>
+            )}
+          </div>
+        )}
+
+        {detailTab === 'screenshots' && (
+          <div className="space-y-3">
+            {screenshotsLoading ? (
+              <div className="text-sm text-white/40">Loading screenshots...</div>
+            ) : screenshots && screenshots.length > 0 ? (
+              screenshots.map((url, idx) => (
+                <button
+                  key={`${url}-${idx}`}
+                  onClick={() => window.electron.openUrl(url)}
+                  className="w-full rounded-lg overflow-hidden border border-white/[0.08] bg-white/[0.02] hover:border-white/[0.18] transition-colors"
+                >
+                  <img src={url} alt="" className="w-full max-h-56 object-cover" draggable={false} />
+                </button>
+              ))
+            ) : (
+              <div className="text-sm text-white/40">No screenshots available for this extension.</div>
             )}
           </div>
         )}

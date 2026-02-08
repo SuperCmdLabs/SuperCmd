@@ -70,6 +70,7 @@ export interface CatalogEntry {
   contributors: string[];
   icon: string;
   iconUrl: string;
+  screenshotUrls: string[];
   categories: string[];
   commands: { name: string; title: string; description: string }[];
 }
@@ -142,6 +143,7 @@ export interface ElectronAPI {
 
   // Store
   getCatalog: (forceRefresh?: boolean) => Promise<CatalogEntry[]>;
+  getExtensionScreenshots: (extensionName: string) => Promise<string[]>;
   getInstalledExtensionNames: () => Promise<string[]>;
   installExtension: (name: string) => Promise<boolean>;
   uninstallExtension: (name: string) => Promise<boolean>;

@@ -17,6 +17,7 @@ import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable } from './ai-provider';
 import {
   getCatalog,
+  getExtensionScreenshotUrls,
   getInstalledExtensionNames,
   installExtension,
   uninstallExtension,
@@ -1123,6 +1124,13 @@ app.whenReady().then(async () => {
     'get-catalog',
     async (_event: any, forceRefresh?: boolean) => {
       return await getCatalog(forceRefresh ?? false);
+    }
+  );
+
+  ipcMain.handle(
+    'get-extension-screenshots',
+    async (_event: any, extensionName: string) => {
+      return await getExtensionScreenshotUrls(extensionName);
     }
   );
 
