@@ -48,6 +48,8 @@ interface ExtensionViewProps {
   onClose: () => void;
   // Extension metadata
   extensionName?: string;
+  extensionDisplayName?: string;
+  extensionIconDataUrl?: string;
   commandName?: string;
   assetsPath?: string;
   supportPath?: string;
@@ -1645,6 +1647,8 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   error: buildError,
   onClose,
   extensionName = '',
+  extensionDisplayName = '',
+  extensionIconDataUrl = '',
   commandName = '',
   assetsPath = '',
   supportPath = '/tmp/supercommand',
@@ -1659,6 +1663,8 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   useEffect(() => {
     setExtensionContext({
       extensionName,
+      extensionDisplayName,
+      extensionIconDataUrl,
       commandName,
       assetsPath,
       supportPath,
@@ -1666,7 +1672,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
       preferences,
       commandMode: mode as 'view' | 'no-view' | 'menu-bar',
     });
-  }, [extensionName, commandName, assetsPath, supportPath, owner, preferences, mode]);
+  }, [extensionName, extensionDisplayName, extensionIconDataUrl, commandName, assetsPath, supportPath, owner, preferences, mode]);
 
   // Load the extension's default export (skip if there was a build error)
   const ExtExport = useMemo(() => {
@@ -1674,6 +1680,8 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
     // Set context before loading so it's available during module execution
     setExtensionContext({
       extensionName,
+      extensionDisplayName,
+      extensionIconDataUrl,
       commandName,
       assetsPath,
       supportPath,
@@ -1682,7 +1690,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
       commandMode: mode as 'view' | 'no-view' | 'menu-bar',
     });
     return loadExtensionExport(code, extensionPath);
-  }, [code, buildError, extensionName, commandName, assetsPath, supportPath, extensionPath, owner, preferences, mode]);
+  }, [code, buildError, extensionName, extensionDisplayName, extensionIconDataUrl, commandName, assetsPath, supportPath, extensionPath, owner, preferences, mode]);
 
   // Is this a no-view command? Trust the mode from package.json.
   // NOTE: 'menu-bar' commands ARE React components (they use hooks),
@@ -1794,7 +1802,9 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
     extId: `${extensionName}/${commandName}`,
     assetsPath,
     commandMode: (mode || 'view') as 'view' | 'no-view' | 'menu-bar',
-  }), [extensionName, commandName, assetsPath, mode]);
+    extensionDisplayName: extensionDisplayName || extensionName,
+    extensionIconDataUrl: extensionIconDataUrl || '',
+  }), [extensionName, extensionDisplayName, extensionIconDataUrl, commandName, assetsPath, mode]);
 
   return (
     <ExtensionInfoReactContext.Provider value={extInfoValue}>

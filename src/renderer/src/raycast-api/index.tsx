@@ -39,6 +39,8 @@ import React, {
 
 export interface ExtensionContextType {
   extensionName: string;
+  extensionDisplayName?: string;
+  extensionIconDataUrl?: string;
   commandName: string;
   assetsPath: string;
   supportPath: string;
@@ -49,6 +51,8 @@ export interface ExtensionContextType {
 
 let _extensionContext: ExtensionContextType = {
   extensionName: '',
+  extensionDisplayName: '',
+  extensionIconDataUrl: '',
   commandName: '',
   assetsPath: '',
   supportPath: '/tmp/supercommand',
@@ -81,7 +85,9 @@ export const ExtensionInfoReactContext = createContext<{
   extId: string;
   assetsPath: string;
   commandMode: 'view' | 'no-view' | 'menu-bar';
-}>({ extId: '', assetsPath: '', commandMode: 'view' });
+  extensionDisplayName?: string;
+  extensionIconDataUrl?: string;
+}>({ extId: '', assetsPath: '', commandMode: 'view', extensionDisplayName: '', extensionIconDataUrl: '' });
 
 // =====================================================================
 // ─── Navigation Context ─────────────────────────────────────────────
@@ -2114,6 +2120,7 @@ function ListComponent({
   navigationTitle, searchBarAccessory, throttle,
   selectedItemId, onSelectionChange, actions: listActions,
 }: any) {
+  const extInfo = useContext(ExtensionInfoReactContext);
   const [internalSearch, setInternalSearch] = useState('');
   const searchText = controlledSearch ?? internalSearch;
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -2369,6 +2376,12 @@ function ListComponent({
 
   // ── Detail panel ───────────────────────────────────────────────
   const detailElement = selectedItem?.props?.detail;
+  const footerTitle = navigationTitle
+    || extInfo.extensionDisplayName
+    || _extensionContext.extensionDisplayName
+    || _extensionContext.extensionName
+    || 'Extension';
+  const footerIcon = extInfo.extensionIconDataUrl || _extensionContext.extensionIconDataUrl;
 
   // ── Execute action and close panel ─────────────────────────────
   const handleActionExecute = useCallback((action: ExtractedAction) => {
@@ -2464,7 +2477,8 @@ function ListComponent({
         {/* ── Footer - lighter background ──────────────────────────────────────────── */}
         <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
           <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
-            <span className="truncate">{navigationTitle || _extensionContext.extensionName || 'Extension'}</span>
+            {footerIcon ? <img src={footerIcon} alt="" className="w-4 h-4 rounded-sm object-contain flex-shrink-0" /> : null}
+            <span className="truncate">{footerTitle}</span>
           </div>
           {primaryAction && (
             <button
@@ -2808,6 +2822,7 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
   children?: React.ReactNode; actions?: React.ReactElement; navigationTitle?: string;
   isLoading?: boolean; enableDrafts?: boolean; draftValues?: Record<string, any>;
 }) {
+  const extInfo = useContext(ExtensionInfoReactContext);
   const [values, setValues] = useState<Record<string, any>>(draftValues || {});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showActions, setShowActions] = useState(false);
@@ -2843,6 +2858,12 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
   // ── Action collection via registry ─────────────────────────────
   const { collectedActions: formActions, registryAPI: formActionRegistry } = useCollectedActions();
   const primaryAction = formActions[0];
+  const footerTitle = navigationTitle
+    || extInfo.extensionDisplayName
+    || _extensionContext.extensionDisplayName
+    || _extensionContext.extensionName
+    || 'Extension';
+  const footerIcon = extInfo.extensionIconDataUrl || _extensionContext.extensionIconDataUrl;
 
   // ── Keyboard handler ───────────────────────────────────────────
   useEffect(() => {
@@ -2908,7 +2929,8 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
         {formActions.length > 0 && (
           <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
             <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
-              <span className="truncate">{navigationTitle || _extensionContext.extensionName || 'Extension'}</span>
+              {footerIcon ? <img src={footerIcon} alt="" className="w-4 h-4 rounded-sm object-contain flex-shrink-0" /> : null}
+              <span className="truncate">{footerTitle}</span>
             </div>
             {primaryAction && (
               <div className="flex items-center gap-2 mr-3">
@@ -3222,6 +3244,7 @@ function GridComponent({
   searchText: controlledSearch, selectedItemId, onSelectionChange, throttle,
   pagination, actions: gridActions,
 }: any) {
+  const extInfo = useContext(ExtensionInfoReactContext);
   const [internalSearch, setInternalSearch] = useState('');
   const searchText = controlledSearch ?? internalSearch;
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -3298,6 +3321,12 @@ function GridComponent({
 
   // ── Action collection ───────────────────────────────────────────
   const selectedItem = filteredItems[selectedIdx];
+  const footerTitle = navigationTitle
+    || extInfo.extensionDisplayName
+    || _extensionContext.extensionDisplayName
+    || _extensionContext.extensionName
+    || 'Extension';
+  const footerIcon = extInfo.extensionIconDataUrl || _extensionContext.extensionIconDataUrl;
   const { collectedActions: selectedActions, registryAPI: actionRegistry } = useCollectedActions();
   const activeActionsElement = selectedItem?.props?.actions || gridActions;
   const primaryAction = selectedActions[0];
@@ -3486,7 +3515,8 @@ function GridComponent({
         {/* ── Footer ─────────────────────────────────────────── */}
         <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
           <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
-            <span className="truncate">{navigationTitle || _extensionContext.extensionName || 'Extension'}</span>
+            {footerIcon ? <img src={footerIcon} alt="" className="w-4 h-4 rounded-sm object-contain flex-shrink-0" /> : null}
+            <span className="truncate">{footerTitle}</span>
           </div>
           {primaryAction && (
             <button
