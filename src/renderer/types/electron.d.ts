@@ -61,7 +61,9 @@ export interface AppSettings {
   commandHotkeys: Record<string, string>;
   pinnedCommands: string[];
   recentCommands: string[];
+  hasSeenOnboarding: boolean;
   ai: AISettings;
+  commandMetadata?: Record<string, { subtitle?: string }>;
 }
 
 export interface CatalogEntry {

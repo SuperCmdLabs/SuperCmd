@@ -1,0 +1,205 @@
+import React, { useMemo, useState } from 'react';
+import { ArrowLeft, ArrowRight, Check, Keyboard, Shield, Sparkles } from 'lucide-react';
+import HotkeyRecorder from './settings/HotkeyRecorder';
+
+interface OnboardingExtensionProps {
+  initialShortcut: string;
+  onComplete: () => void;
+  onClose: () => void;
+}
+
+const permissionTargets = [
+  {
+    id: 'accessibility',
+    title: 'Accessibility',
+    description: 'Needed for reliable paste and keyboard automation in other apps.',
+    url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+  },
+  {
+    id: 'automation',
+    title: 'Automation',
+    description: 'Lets SuperCommand control System Events for command execution.',
+    url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Automation',
+  },
+  {
+    id: 'privacy',
+    title: 'Privacy & Security',
+    description: 'Open the full permissions pane to review and approve access.',
+    url: 'x-apple.systempreferences:com.apple.preference.security',
+  },
+];
+
+const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
+  initialShortcut,
+  onComplete,
+  onClose,
+}) => {
+  const [step, setStep] = useState(0);
+  const [shortcut, setShortcut] = useState(initialShortcut);
+  const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [openedPermissions, setOpenedPermissions] = useState<Record<string, boolean>>({});
+
+  const stepTitle = useMemo(() => {
+    if (step === 0) return 'Welcome to SuperCommand';
+    if (step === 1) return 'Set Your Hotkey';
+    return 'Grant Required Permissions';
+  }, [step]);
+
+  const handleShortcutChange = async (nextShortcut: string) => {
+    setShortcutStatus('idle');
+    setShortcut(nextShortcut);
+    if (!nextShortcut) return;
+    const ok = await window.electron.updateGlobalShortcut(nextShortcut);
+    if (ok) {
+      setShortcutStatus('success');
+      setTimeout(() => setShortcutStatus('idle'), 1800);
+      return;
+    }
+    setShortcutStatus('error');
+    setTimeout(() => setShortcutStatus('idle'), 2500);
+  };
+
+  const openPermissionTarget = async (id: string, url: string) => {
+    const ok = await window.electron.openUrl(url);
+    if (ok) {
+      setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
+    }
+  };
+
+  return (
+    <div className="w-full h-full">
+      <div className="glass-effect overflow-hidden h-full flex flex-col">
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06]">
+          <button
+            onClick={onClose}
+            className="text-white/30 hover:text-white/70 transition-colors p-0.5"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="text-white/90 text-[15px] font-medium truncate">{stepTitle}</div>
+            <div className="text-white/35 text-xs">Step {step + 1} of 3</div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {[0, 1, 2].map((idx) => (
+              <div
+                key={idx}
+                className={`h-1.5 rounded-full transition-all ${idx <= step ? 'w-6 bg-white/70' : 'w-3 bg-white/20'}`}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          {step === 0 && (
+            <div className="space-y-5">
+              <div
+                className="rounded-2xl border border-white/[0.10] p-6"
+                style={{
+                  background:
+                    'radial-gradient(circle at 20% 10%, rgba(69,200,255,0.18), transparent 45%), radial-gradient(circle at 80% 0%, rgba(132,255,167,0.12), transparent 40%), rgba(255,255,255,0.03)',
+                }}
+              >
+                <div className="w-11 h-11 rounded-xl bg-white/[0.08] border border-white/[0.14] flex items-center justify-center mb-4">
+                  <Sparkles className="w-5 h-5 text-cyan-300/90" />
+                </div>
+                <p className="text-white/90 text-lg font-semibold mb-2">Fast command launcher for your Mac</p>
+                <p className="text-white/55 text-sm leading-relaxed">
+                  Search apps, run system actions, launch extensions, manage clipboard history, and trigger snippets
+                  without leaving your keyboard.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                  <p className="text-white/85 text-sm font-medium mb-1">Universal Search</p>
+                  <p className="text-white/45 text-xs">Apps, settings, commands, and community extensions in one place.</p>
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                  <p className="text-white/85 text-sm font-medium mb-1">Extension Runtime</p>
+                  <p className="text-white/45 text-xs">Run Raycast extensions with native actions, arguments, and commands.</p>
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                  <p className="text-white/85 text-sm font-medium mb-1">Power Workflows</p>
+                  <p className="text-white/45 text-xs">Clipboard history, snippets, and AI all available instantly.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="max-w-xl space-y-5">
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-5">
+                <div className="flex items-center gap-2 mb-2">
+                  <Keyboard className="w-4 h-4 text-white/55" />
+                  <p className="text-white/85 text-sm font-medium">Launcher Hotkey</p>
+                </div>
+                <p className="text-white/45 text-xs mb-4">
+                  Choose a global shortcut to open SuperCommand from anywhere.
+                </p>
+                <div className="flex items-center gap-3">
+                  <HotkeyRecorder value={shortcut} onChange={handleShortcutChange} />
+                  {shortcutStatus === 'success' ? <span className="text-xs text-green-400">Updated</span> : null}
+                  {shortcutStatus === 'error' ? <span className="text-xs text-red-400">Shortcut unavailable</span> : null}
+                </div>
+              </div>
+              <p className="text-xs text-white/35">
+                You can change this anytime from SuperCommand Settings.
+              </p>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-5">
+                <div className="flex items-center gap-2 mb-1">
+                  <Shield className="w-4 h-4 text-white/55" />
+                  <p className="text-white/85 text-sm font-medium">Permissions</p>
+                </div>
+                <p className="text-white/45 text-xs">
+                  Grant macOS permissions so paste actions and app automation work consistently.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {permissionTargets.map((target) => (
+                  <div key={target.id} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <p className="text-white/85 text-sm font-medium">{target.title}</p>
+                      {openedPermissions[target.id] ? <Check className="w-4 h-4 text-green-400" /> : null}
+                    </div>
+                    <p className="text-white/45 text-xs leading-relaxed mb-4">{target.description}</p>
+                    <button
+                      onClick={() => openPermissionTarget(target.id, target.url)}
+                      className="px-3 py-1.5 rounded-md bg-white/[0.09] hover:bg-white/[0.14] text-white/85 text-xs transition-colors"
+                    >
+                      Open
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-between" style={{ background: 'rgba(28,28,32,0.90)' }}>
+          <button
+            onClick={step === 0 ? onComplete : () => setStep((prev) => Math.max(prev - 1, 0))}
+            className="px-3 py-1.5 rounded-md text-xs text-white/55 hover:text-white/80 hover:bg-white/[0.08] transition-colors"
+          >
+            {step === 0 ? 'Skip' : 'Back'}
+          </button>
+          <button
+            onClick={step === 2 ? onComplete : () => setStep((prev) => Math.min(prev + 1, 2))}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white/[0.14] hover:bg-white/[0.20] text-white text-xs font-medium transition-colors"
+          >
+            {step === 2 ? 'Finish' : 'Continue'}
+            {step === 2 ? <Check className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default OnboardingExtension;

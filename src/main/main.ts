@@ -303,7 +303,8 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
   if (
     commandId === 'system-clipboard-manager' ||
     commandId === 'system-search-snippets' ||
-    commandId === 'system-create-snippet'
+    commandId === 'system-create-snippet' ||
+    commandId === 'system-open-onboarding'
   ) {
     return await openLauncherAndRunSystemCommand(commandId);
   }

@@ -24,6 +24,7 @@ export interface AppSettings {
   commandHotkeys: Record<string, string>;
   pinnedCommands: string[];
   recentCommands: string[];
+  hasSeenOnboarding: boolean;
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
 }
@@ -43,6 +44,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   commandHotkeys: {},
   pinnedCommands: [],
   recentCommands: [],
+  hasSeenOnboarding: false,
   ai: { ...DEFAULT_AI_SETTINGS },
 };
 
@@ -64,6 +66,9 @@ export function loadSettings(): AppSettings {
       commandHotkeys: parsed.commandHotkeys ?? DEFAULT_SETTINGS.commandHotkeys,
       pinnedCommands: parsed.pinnedCommands ?? DEFAULT_SETTINGS.pinnedCommands,
       recentCommands: parsed.recentCommands ?? DEFAULT_SETTINGS.recentCommands,
+      // Existing users with older settings should not be forced into onboarding.
+      hasSeenOnboarding:
+        parsed.hasSeenOnboarding ?? true,
       ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
       commandMetadata: parsed.commandMetadata ?? {},
     };

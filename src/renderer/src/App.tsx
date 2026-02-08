@@ -11,6 +11,7 @@ import type { CommandInfo, ExtensionBundle, AppSettings } from '../types/electro
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
+import OnboardingExtension from './OnboardingExtension';
 import { tryCalculate } from './smart-calculator';
 
 interface LauncherAction {
@@ -250,6 +251,8 @@ const App: React.FC = () => {
   } | null>(null);
   const [showClipboardManager, setShowClipboardManager] = useState(false);
   const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [launcherShortcut, setLauncherShortcut] = useState('Command+Space');
   const [showActions, setShowActions] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -288,10 +291,14 @@ const App: React.FC = () => {
       const settings = (await window.electron.getSettings()) as AppSettings;
       setPinnedCommands(settings.pinnedCommands || []);
       setRecentCommands(settings.recentCommands || []);
+      setLauncherShortcut(settings.globalShortcut || 'Command+Space');
+      setShowOnboarding(!settings.hasSeenOnboarding);
     } catch (e) {
       console.error('Failed to load launcher preferences:', e);
       setPinnedCommands([]);
       setRecentCommands([]);
+      setLauncherShortcut('Command+Space');
+      setShowOnboarding(false);
     }
   }, []);
 
@@ -588,10 +595,10 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager) {
+    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showOnboarding) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, restoreLauncherFocus]);
+  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showOnboarding, restoreLauncherFocus]);
 
   const calcResult = useMemo(() => {
     return searchQuery ? tryCalculate(searchQuery) : null;
@@ -802,21 +809,33 @@ const App: React.FC = () => {
   );
 
   const runLocalSystemCommand = useCallback(async (commandId: string): Promise<boolean> => {
+    if (commandId === 'system-open-onboarding') {
+      setExtensionView(null);
+      setExtensionPreferenceSetup(null);
+      setShowClipboardManager(false);
+      setShowSnippetManager(null);
+      setAiMode(false);
+      setShowOnboarding(true);
+      return true;
+    }
     if (commandId === 'system-clipboard-manager') {
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
+      setShowOnboarding(false);
       setShowClipboardManager(true);
       return true;
     }
     if (commandId === 'system-search-snippets') {
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
+      setShowOnboarding(false);
       setShowSnippetManager('search');
       return true;
     }
     if (commandId === 'system-create-snippet') {
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
+      setShowOnboarding(false);
       setShowSnippetManager('create');
       return true;
     }
@@ -1411,6 +1430,31 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
+      </>
+    );
+  }
+
+  // ─── Onboarding mode ───────────────────────────────────────────
+  if (showOnboarding) {
+    return (
+      <>
+        {menuBarRunner}
+        <OnboardingExtension
+          initialShortcut={launcherShortcut}
+          onClose={() => {
+            setShowOnboarding(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+          onComplete={async () => {
+            await window.electron.saveSettings({ hasSeenOnboarding: true });
+            setShowOnboarding(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
       </>
     );
   }

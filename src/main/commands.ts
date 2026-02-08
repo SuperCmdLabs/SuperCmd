@@ -656,6 +656,12 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-open-onboarding',
+      title: 'SuperCommand Onboarding',
+      keywords: ['welcome', 'onboarding', 'intro', 'setup', 'supercommand'],
+      category: 'system',
+    },
+    {
       id: 'system-quit-launcher',
       title: 'Quit SuperCommand',
       keywords: ['exit', 'close', 'quit', 'stop'],
