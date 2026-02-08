@@ -833,10 +833,20 @@ class EventEmitterStub {
   prependOnceListener(event: string, fn: Function) { return this.prependListener(event, fn); }
 }
 
-const eventsStub = {
-  EventEmitter: EventEmitterStub,
-  default: EventEmitterStub,
-  once: async (emitter: any, event: string) => new Promise(resolve => emitter.once(event, resolve)),
+// Node's `require("events")` returns the EventEmitter constructor itself
+// (with helpers attached as properties). Some libs (e.g. ws) do:
+//   const EventEmitter = require("events");
+//   class X extends EventEmitter {}
+// so the module value must be a constructable function/class.
+const eventsStub: any = EventEmitterStub;
+eventsStub.EventEmitter = EventEmitterStub;
+eventsStub.default = EventEmitterStub;
+eventsStub.once = async (emitter: any, event: string) => new Promise(resolve => emitter.once(event, resolve));
+eventsStub.on = async function* (emitter: any, event: string) {
+  while (true) {
+    const value = await eventsStub.once(emitter, event);
+    yield value;
+  }
 };
 
 // ── stream stubs ────────────────────────────────────────────────
@@ -898,6 +908,27 @@ class TransformStub extends ReadableStub {
 class PassThroughStub extends TransformStub {}
 
 class DuplexStub extends TransformStub {}
+
+class NetSocketStub extends DuplexStub {
+  connecting = false;
+  destroyed = false;
+  remoteAddress?: string;
+  remotePort?: number;
+  localAddress?: string;
+  localPort?: number;
+  encrypted?: boolean;
+  connect(..._args: any[]) { this.connecting = false; setTimeout(() => this.emit('connect'), 0); return this; }
+  write(_chunk?: any, _enc?: any, cb?: Function) { if (typeof cb === 'function') cb(); return true; }
+  end(_chunk?: any, _enc?: any, cb?: Function) { if (typeof cb === 'function') cb(); this.emit('end'); this.emit('close'); return this; }
+  destroy(_err?: any) { this.destroyed = true; this.emit('close'); return this; }
+  setEncoding() { return this; }
+  setTimeout(_ms?: number, cb?: Function) { if (typeof cb === 'function') setTimeout(() => cb(), 0); return this; }
+  setNoDelay() { return this; }
+  setKeepAlive() { return this; }
+  address() { return { address: this.localAddress || '127.0.0.1', family: 'IPv4', port: this.localPort || 0 }; }
+  ref() { return this; }
+  unref() { return this; }
+}
 
 // Node's `require("stream")` is callable (Stream constructor) and also has
 // Readable/Writable/... properties. Some libraries (e.g. node-fetch) rely on
@@ -1327,26 +1358,24 @@ const nodeBuiltinStubs: Record<string, any> = {
     }
   ),
   net: {
-    Socket: class extends EventEmitterStub {
-      connect() { return this; }
-      write() { return true; }
-      end() { return this; }
-      destroy() { return this; }
-      setEncoding() { return this; }
-      setTimeout() { return this; }
-      setNoDelay() { return this; }
-      setKeepAlive() { return this; }
-      ref() { return this; }
-      unref() { return this; }
-      address() { return {}; }
-    },
+    Socket: NetSocketStub,
     createServer: () => ({ listen: noop, close: noop, on: noop, address: () => ({}) }),
-    createConnection: () => new EventEmitterStub(),
+    createConnection: () => new NetSocketStub(),
+    connect: () => new NetSocketStub(),
     isIP: (s: string) => /^\d+\.\d+\.\d+\.\d+$/.test(s) ? 4 : 0,
     isIPv4: (s: string) => /^\d+\.\d+\.\d+\.\d+$/.test(s),
     isIPv6: () => false,
   },
-  tls: { connect: () => new EventEmitterStub(), createServer: () => ({ listen: noop, close: noop, on: noop }) },
+  tls: {
+    TLSSocket: NetSocketStub,
+    connect: () => {
+      const s = new NetSocketStub();
+      s.encrypted = true;
+      setTimeout(() => s.emit('secureConnect'), 0);
+      return s;
+    },
+    createServer: () => ({ listen: noop, close: noop, on: noop }),
+  },
   dns: { lookup: noopCb, resolve: noopCb, resolve4: noopCb, resolve6: noopCb, promises: { lookup: noopAsync, resolve: noopAsync } },
   dgram: { createSocket: () => new EventEmitterStub() },
   cluster: { isMaster: true, isPrimary: true, isWorker: false, on: noop, fork: noop },

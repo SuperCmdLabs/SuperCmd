@@ -1485,8 +1485,12 @@ function makeActionExecutor(p: any): () => void {
     if (p.onAction) { p.onAction(); return; }
     if (p.onSubmit) { p.onSubmit(getFormValues()); return; }
     if (p.content !== undefined) {
-      Clipboard.copy(String(p.content));
-      showToast({ title: 'Copied to clipboard', style: ToastStyle.Success });
+      if (p.__actionKind === 'paste') {
+        Clipboard.paste(String(p.content));
+      } else {
+        Clipboard.copy(String(p.content));
+        showToast({ title: 'Copied to clipboard', style: ToastStyle.Success });
+      }
       // Call onCopy/onPaste callbacks if provided
       p.onCopy?.();
       p.onPaste?.();
@@ -1506,8 +1510,27 @@ function makeActionExecutor(p: any): () => void {
   };
 }
 
+function inferActionTitle(p: any, kind?: string): string {
+  if (p?.title) return p.title;
+  switch (kind || p?.__actionKind) {
+    case 'copyToClipboard': return 'Copy to Clipboard';
+    case 'paste': return 'Paste';
+    case 'openInBrowser': return 'Open in Browser';
+    case 'push': return 'Open';
+    case 'submitForm': return 'Submit';
+    case 'trash': return 'Move to Trash';
+    case 'pickDate': return 'Pick Date';
+    case 'open': return 'Open';
+    case 'toggleQuickLook': return 'Toggle Quick Look';
+    case 'createSnippet': return 'Create Snippet';
+    case 'createQuicklink': return 'Create Quicklink';
+    case 'toggleSidebar': return 'Toggle Sidebar';
+    default: return 'Action';
+  }
+}
+
 // Hook used by each Action component to register itself
-function useActionRegistration(props: any) {
+function useActionRegistration(props: any, kind?: string) {
   const registry = useContext(ActionRegistryContext);
   const sectionTitle = useContext(ActionSectionContext);
   const idRef = useRef(`__action_${++_actionOrderCounter}`);
@@ -1521,7 +1544,7 @@ function useActionRegistration(props: any) {
     if (!registry) return;
     const executor = () => makeActionExecutor(propsRef.current)();
     registry.register(idRef.current, {
-      title: props.title || 'Action',
+      title: inferActionTitle(props, kind),
       icon: props.icon,
       shortcut: props.shortcut,
       style: props.style,
@@ -1633,44 +1656,48 @@ function ActionPanelSubmenu({ children, title, icon, filtering, isLoading, onOpe
 // render null visually — the collected data drives the UI.
 
 function ActionComponent(_props: { title?: string; icon?: any; shortcut?: any; onAction?: () => void; style?: any; [key: string]: any }) {
-  useActionRegistration(_props);
+  useActionRegistration(_props, 'action');
   return null;
 }
 function ActionCopyToClipboard(_props: { content: any; title?: string; shortcut?: any; concealed?: boolean; onCopy?: (content: any) => void; [key: string]: any }) {
-  useActionRegistration(_props);
+  useActionRegistration({ ..._props, __actionKind: 'copyToClipboard' }, 'copyToClipboard');
+  return null;
+}
+function ActionPaste(_props: { content: any; title?: string; shortcut?: any; concealed?: boolean; onPaste?: (content: any) => void; [key: string]: any }) {
+  useActionRegistration({ ..._props, __actionKind: 'paste' }, 'paste');
   return null;
 }
 function ActionOpenInBrowser(_props: { url: string; title?: string; shortcut?: any; [key: string]: any }) {
-  useActionRegistration(_props);
+  useActionRegistration({ ..._props, __actionKind: 'openInBrowser' }, 'openInBrowser');
   return null;
 }
 function ActionPush(_props: { title?: string; target: React.ReactElement; icon?: any; shortcut?: any; onPush?: () => void; onPop?: () => void; [key: string]: any }) {
-  useActionRegistration(_props);
+  useActionRegistration({ ..._props, __actionKind: 'push' }, 'push');
   return null;
 }
 function ActionSubmitForm(_props: { title?: string; onSubmit?: (values: any) => void; icon?: any; shortcut?: any; [key: string]: any }) {
-  useActionRegistration(_props);
+  useActionRegistration({ ..._props, __actionKind: 'submitForm' }, 'submitForm');
   return null;
 }
 function ActionTrash(_props: { title?: string; paths?: string[]; onTrash?: () => void; shortcut?: any; [key: string]: any }) {
-  useActionRegistration(_props);
+  useActionRegistration({ ..._props, __actionKind: 'trash' }, 'trash');
   return null;
 }
 function ActionPickDate(_props: { title?: string; onChange?: (date: Date | null) => void; shortcut?: any; [key: string]: any }) {
-  useActionRegistration(_props);
+  useActionRegistration({ ..._props, __actionKind: 'pickDate' }, 'pickDate');
   return null;
 }
 function ActionOpen(_props: { target: string; title: string; application?: string | any; icon?: any; shortcut?: any; onOpen?: (target: string) => void; [key: string]: any }) {
-  useActionRegistration(_props);
+  useActionRegistration({ ..._props, __actionKind: 'open' }, 'open');
   return null;
 }
 function ActionToggleQuickLook(_props: { title?: string; icon?: any; shortcut?: any; [key: string]: any }) {
-  useActionRegistration(_props);
+  useActionRegistration({ ..._props, __actionKind: 'toggleQuickLook' }, 'toggleQuickLook');
   return null;
 }
-function ActionCreateSnippet(_props: any) { useActionRegistration(_props); return null; }
-function ActionCreateQuicklink(_props: any) { useActionRegistration(_props); return null; }
-function ActionToggleSidebar(_props: any) { useActionRegistration(_props); return null; }
+function ActionCreateSnippet(_props: any) { useActionRegistration({ ..._props, __actionKind: 'createSnippet' }, 'createSnippet'); return null; }
+function ActionCreateQuicklink(_props: any) { useActionRegistration({ ..._props, __actionKind: 'createQuicklink' }, 'createQuicklink'); return null; }
+function ActionToggleSidebar(_props: any) { useActionRegistration({ ..._props, __actionKind: 'toggleSidebar' }, 'toggleSidebar'); return null; }
 
 const ActionPickDateWithType = Object.assign(ActionPickDate, {
   Type: { DateTime: 'datetime' as const, Date: 'date' as const },
@@ -1682,7 +1709,7 @@ export const Action = Object.assign(ActionComponent, {
   OpenInBrowser: ActionOpenInBrowser,
   Push: ActionPush,
   SubmitForm: ActionSubmitForm,
-  Paste: ActionCopyToClipboard,
+  Paste: ActionPaste,
   ShowInFinder: ActionComponent,
   OpenWith: ActionComponent,
   Trash: ActionTrash,
@@ -1727,7 +1754,7 @@ function extractActionsFromElement(el: React.ReactElement | undefined | null): E
 
       if (isActionLike || (p.title && !hasChildren)) {
         result.push({
-          title: p.title || 'Action',
+          title: inferActionTitle(p),
           icon: p.icon,
           shortcut: p.shortcut,
           style: p.style,
@@ -2745,18 +2772,63 @@ function DetailComponent({ markdown, isLoading, children, actions, metadata, nav
   markdown?: string; children?: React.ReactNode; isLoading?: boolean;
   navigationTitle?: string; actions?: React.ReactElement; metadata?: React.ReactElement;
 }) {
+  const extInfo = useContext(ExtensionInfoReactContext);
+  const [showActions, setShowActions] = useState(false);
   const { pop } = useNavigation();
+  const { collectedActions: detailActions, registryAPI: detailActionRegistry } = useCollectedActions();
+  const primaryAction = detailActions[0];
+  const footerTitle = navigationTitle
+    || extInfo.extensionDisplayName
+    || _extensionContext.extensionDisplayName
+    || _extensionContext.extensionName
+    || 'Extension';
+  const footerIcon = extInfo.extensionIconDataUrl || _extensionContext.extensionIconDataUrl;
+
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); pop(); } };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); pop(); return; }
+      if (e.key === 'k' && e.metaKey) { e.preventDefault(); setShowActions(prev => !prev); return; }
+      if (e.key === 'Enter' && e.metaKey && !e.repeat && primaryAction) { e.preventDefault(); primaryAction.execute(); return; }
+      if (!e.repeat) {
+        for (const action of detailActions) {
+          if (action.shortcut && matchesShortcut(e, action.shortcut)) {
+            e.preventDefault();
+            action.execute();
+            return;
+          }
+        }
+      }
+    };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [pop]);
+  }, [pop, primaryAction, detailActions]);
+
+  const handleActionExecute = useCallback((action: ExtractedAction) => {
+    setShowActions(false);
+    action.execute();
+  }, []);
 
   return (
     <div className="flex flex-col h-full">
+      {/* Hidden render area for actions so hooks inside actions work */}
+      {actions && (
+        <div style={{ display: 'none' }}>
+          <ActionRegistryContext.Provider value={detailActionRegistry}>
+            {actions}
+          </ActionRegistryContext.Provider>
+        </div>
+      )}
+
+      {/* ── Navigation bar ─────────────────────────────────────── */}
+      <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+        <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </button>
+      </div>
+
       <div className="flex-1 overflow-y-auto p-6">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
+          <div className="h-full" />
         ) : (
           <>
             {markdown && <div className="text-white/80 text-sm leading-relaxed">{renderSimpleMarkdown(markdown)}</div>}
@@ -2765,6 +2837,54 @@ function DetailComponent({ markdown, isLoading, children, actions, metadata, nav
           </>
         )}
       </div>
+
+      {/* ── Footer ─────────────────────────────────────────────── */}
+      {isLoading ? (
+        <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
+          <div className="flex items-center gap-2 text-white/80 text-sm">
+            <div className="w-4 h-4 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" />
+            <span>{navigationTitle || 'Loading…'}</span>
+          </div>
+        </div>
+      ) : detailActions.length > 0 && (
+        <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
+          <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
+            {footerIcon ? <img src={footerIcon} alt="" className="w-4 h-4 rounded-sm object-contain flex-shrink-0" /> : null}
+            <span className="truncate">{footerTitle}</span>
+          </div>
+          {primaryAction && (
+            <button
+              type="button"
+              onClick={() => primaryAction.execute()}
+              className="flex items-center gap-2 mr-3 text-white hover:text-white/90 transition-colors"
+            >
+              <span className="text-white text-xs font-semibold">{primaryAction.title}</span>
+              {primaryAction.shortcut ? (
+                <span className="flex items-center gap-0.5">{renderShortcut(primaryAction.shortcut)}</span>
+              ) : (
+                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
+              )}
+            </button>
+          )}
+          <button
+            onClick={() => setShowActions(true)}
+            className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
+          >
+            <span className="text-xs font-medium">Actions</span>
+            <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
+            <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
+          </button>
+        </div>
+      )}
+
+      {/* ── Action Panel Overlay ──────────────────────────────── */}
+      {showActions && detailActions.length > 0 && (
+        <ActionPanelOverlay
+          actions={detailActions}
+          onClose={() => setShowActions(false)}
+          onExecute={handleActionExecute}
+        />
+      )}
     </div>
   );
 }
@@ -2940,11 +3060,21 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
               <span className="truncate">{footerTitle}</span>
             </div>
             {primaryAction && (
-              <div className="flex items-center gap-2 mr-3">
+              <button
+                type="button"
+                onClick={() => primaryAction.execute()}
+                className="flex items-center gap-2 mr-3 text-white hover:text-white/90 transition-colors"
+              >
                 <span className="text-white text-xs font-semibold">{primaryAction.title}</span>
-                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
-                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
-              </div>
+                {primaryAction.shortcut ? (
+                  <span className="flex items-center gap-0.5">{renderShortcut(primaryAction.shortcut)}</span>
+                ) : (
+                  <>
+                    <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
+                    <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
+                  </>
+                )}
+              </button>
             )}
             <button
               onClick={() => setShowActions(true)}
