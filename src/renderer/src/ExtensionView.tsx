@@ -821,20 +821,23 @@ class PassThroughStub extends TransformStub {}
 
 class DuplexStub extends TransformStub {}
 
-const streamStub = {
-  Readable: ReadableStub,
-  Writable: WritableStub,
-  Transform: TransformStub,
-  PassThrough: PassThroughStub,
-  Duplex: DuplexStub,
-  Stream: ReadableStub,
-  pipeline: (...args: any[]) => {
-    const cb = args[args.length - 1];
-    if (typeof cb === 'function') setTimeout(() => cb(null), 0);
-    return args[args.length - 2] || new PassThroughStub();
-  },
-  finished: (stream: any, cb: Function) => { if (typeof cb === 'function') setTimeout(() => cb(null), 0); },
+// Node's `require("stream")` is callable (Stream constructor) and also has
+// Readable/Writable/... properties. Some libraries (e.g. node-fetch) rely on
+// `value instanceof require("stream")`, so the module itself must be a function/class.
+class StreamModuleStub extends EventEmitterStub {}
+const streamStub: any = StreamModuleStub;
+streamStub.Readable = ReadableStub;
+streamStub.Writable = WritableStub;
+streamStub.Transform = TransformStub;
+streamStub.PassThrough = PassThroughStub;
+streamStub.Duplex = DuplexStub;
+streamStub.Stream = StreamModuleStub;
+streamStub.pipeline = (...args: any[]) => {
+  const cb = args[args.length - 1];
+  if (typeof cb === 'function') setTimeout(() => cb(null), 0);
+  return args[args.length - 2] || new PassThroughStub();
 };
+streamStub.finished = (stream: any, cb: Function) => { if (typeof cb === 'function') setTimeout(() => cb(null), 0); };
 
 // ── child_process stub ──────────────────────────────────────────
 const fakeChildProcess: any = new EventEmitterStub();
@@ -1057,7 +1060,19 @@ const utilStub: Record<string, any> = {
     isRegExp: (v: any) => v instanceof RegExp,
     isPromise: (v: any) => v instanceof Promise,
     isArrayBuffer: (v: any) => v instanceof ArrayBuffer,
+    isAnyArrayBuffer: (v: any) => v instanceof ArrayBuffer || (typeof SharedArrayBuffer !== 'undefined' && v instanceof SharedArrayBuffer),
     isTypedArray: (v: any) => ArrayBuffer.isView(v) && !(v instanceof DataView),
+    isBoxedPrimitive: (v: any) =>
+      v instanceof Number
+      || v instanceof String
+      || v instanceof Boolean
+      || (typeof BigInt !== 'undefined' && typeof (v as any) === 'object' && Object.prototype.toString.call(v) === '[object BigInt]')
+      || (typeof Symbol !== 'undefined' && typeof (v as any) === 'object' && Object.prototype.toString.call(v) === '[object Symbol]'),
+    isNumberObject: (v: any) => v instanceof Number,
+    isStringObject: (v: any) => v instanceof String,
+    isBooleanObject: (v: any) => v instanceof Boolean,
+    isBigIntObject: (v: any) => typeof (v as any) === 'object' && Object.prototype.toString.call(v) === '[object BigInt]',
+    isSymbolObject: (v: any) => typeof (v as any) === 'object' && Object.prototype.toString.call(v) === '[object Symbol]',
   },
   TextDecoder,
   TextEncoder,
@@ -1444,6 +1459,35 @@ function loadExtensionExport(
           };
 
         // ── Commonly used npm packages that might not be bundled ─
+        case 'node-fetch': {
+          class AbortError extends Error {
+            type = 'aborted';
+            constructor(message = 'The operation was aborted.') {
+              super(message);
+              this.name = 'AbortError';
+            }
+          }
+
+          const nodeFetch: any = async (input: any, init?: any) => {
+            try {
+              return await fetch(input as any, init as any);
+            } catch (e: any) {
+              if (e?.name === 'AbortError') {
+                throw new AbortError(e?.message);
+              }
+              throw e;
+            }
+          };
+
+          nodeFetch.default = nodeFetch;
+          nodeFetch.AbortError = AbortError;
+          nodeFetch.Headers = globalThis.Headers;
+          nodeFetch.Request = globalThis.Request;
+          nodeFetch.Response = globalThis.Response;
+          nodeFetch.FetchError = Error;
+          nodeFetch.isRedirect = (code: number) => [301, 302, 303, 307, 308].includes(code);
+          return nodeFetch;
+        }
         default:
           break;
       }

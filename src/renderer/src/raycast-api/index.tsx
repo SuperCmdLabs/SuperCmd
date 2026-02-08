@@ -2147,13 +2147,20 @@ function ListComponent({
       const entries = Array.from(registryRef.current.values());
       const snapshot = entries.map(e => {
         const t = typeof e.props.title === 'string' ? e.props.title : (e.props.title as any)?.value || '';
+        const s = typeof e.props.subtitle === 'string' ? e.props.subtitle : (e.props.subtitle as any)?.value || '';
+        const detail = e.props.detail;
+        const detailSig = React.isValidElement(detail)
+          ? `${String((detail.type as any)?.name || (detail.type as any)?.displayName || detail.type)}:${
+            typeof (detail.props as any)?.markdown === 'string' ? (detail.props as any).markdown : ''
+          }:${Boolean((detail.props as any)?.isLoading)}`
+          : '';
         // Include the actions element's component type in the snapshot.
         // When the actions switch (e.g. ActionPanel → ListActions), the
         // type (function ref) changes, the snapshot changes, and we
         // re-render so the correct actions are collected.
         const atype = e.props.actions?.type as any;
         const at = atype?.name || atype?.displayName || typeof atype || '';
-        return `${e.id}:${t}:${e.sectionTitle || ''}:${at}`;
+        return `${e.id}:${t}:${s}:${e.sectionTitle || ''}:${at}:${detailSig}`;
       }).join('|');
       if (snapshot !== lastSnapshotRef.current) {
         lastSnapshotRef.current = snapshot;
@@ -2412,7 +2419,7 @@ function ListComponent({
                 isSelected={globalIdx === selectedIdx}
                 dataIdx={globalIdx}
                 onSelect={() => setSelectedIdx(globalIdx)}
-                onActivate={() => primaryAction?.execute()}
+                onActivate={() => setSelectedIdx(globalIdx)}
               />
             ))}
           </div>
@@ -3503,7 +3510,7 @@ function GridComponent({
                       isSelected={globalIdx === selectedIdx}
                       dataIdx={globalIdx}
                       onSelect={() => setSelectedIdx(globalIdx)}
-                      onActivate={() => primaryAction?.execute()}
+                      onActivate={() => setSelectedIdx(globalIdx)}
                     />
                   ))}
                 </div>

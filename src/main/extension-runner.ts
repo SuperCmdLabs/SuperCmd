@@ -241,6 +241,8 @@ export async function buildAllCommands(extName: string): Promise<number> {
           'fsevents',
           // Cross-extension calls — not supported, stubbed
           'raycast-cross-extension',
+          // Fetch libs — use runtime shims in renderer instead of bundling Node internals
+          'node-fetch',
           // Node.js built-ins — stubbed at runtime in the renderer
           ...nodeBuiltins,
         ],
