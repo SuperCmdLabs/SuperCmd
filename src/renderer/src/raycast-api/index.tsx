@@ -848,37 +848,84 @@ export const Clipboard = {
 // ─── LocalStorage ───────────────────────────────────────────────────
 // =====================================================================
 
-const storagePrefix = 'sc-ext-';
+const legacyStoragePrefix = 'sc-ext-';
+
+function getStoragePrefix(): string {
+  const ext = (_extensionContext.extensionName || 'global').trim() || 'global';
+  return `sc-ext:${ext}:`;
+}
+
+function encodeStorageValue(value: any): string {
+  const t = typeof value;
+  if (t === 'string') return JSON.stringify({ __scv: 1, t: 's', v: value });
+  if (t === 'number') return JSON.stringify({ __scv: 1, t: 'n', v: value });
+  if (t === 'boolean') return JSON.stringify({ __scv: 1, t: 'b', v: value });
+  // Keep backward-compatible behavior for out-of-contract values:
+  // store as string instead of serializing into objects that break callers.
+  return JSON.stringify({ __scv: 1, t: 's', v: String(value) });
+}
+
+function decodeStorageValue(raw: string): LocalStorage.Value {
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.__scv === 1) {
+      return parsed.v as LocalStorage.Value;
+    }
+    // Legacy format used JSON.stringify(value) directly.
+    // Preserve primitive values exactly.
+    if (typeof parsed === 'string' || typeof parsed === 'number' || typeof parsed === 'boolean') {
+      return parsed as LocalStorage.Value;
+    }
+  } catch {
+    // Legacy plain string format
+  }
+  return raw as LocalStorage.Value;
+}
 
 export const LocalStorage = {
   async getItem(key: string): Promise<LocalStorage.Value | undefined> {
-    const raw = localStorage.getItem(storagePrefix + key);
-    if (raw === null) return undefined;
-    // Values are stored as JSON to preserve types (string | number | boolean)
-    try {
-      return JSON.parse(raw);
-    } catch {
-      // Backward compat: old values stored as plain strings
-      return raw;
+    const scopedKey = getStoragePrefix() + key;
+    let raw = localStorage.getItem(scopedKey);
+    if (raw === null) {
+      // Backward compatibility: read legacy non-scoped key.
+      raw = localStorage.getItem(legacyStoragePrefix + key);
     }
+    if (raw === null) return undefined;
+    return decodeStorageValue(raw);
   },
   async setItem(key: string, value: LocalStorage.Value): Promise<void> {
-    localStorage.setItem(storagePrefix + key, JSON.stringify(value));
+    const scopedKey = getStoragePrefix() + key;
+    localStorage.setItem(scopedKey, encodeStorageValue(value));
   },
   async removeItem(key: string): Promise<void> {
-    localStorage.removeItem(storagePrefix + key);
+    localStorage.removeItem(getStoragePrefix() + key);
+    // Remove legacy key too, so callers don't read stale values.
+    localStorage.removeItem(legacyStoragePrefix + key);
   },
   async allItems(): Promise<LocalStorage.Values> {
     const result: LocalStorage.Values = {};
+    const scopedPrefix = getStoragePrefix();
+
+    // Read scoped keys first.
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k?.startsWith(storagePrefix)) {
+      if (k?.startsWith(scopedPrefix)) {
         const raw = localStorage.getItem(k);
         if (raw !== null) {
-          try {
-            result[k.slice(storagePrefix.length)] = JSON.parse(raw);
-          } catch {
-            result[k.slice(storagePrefix.length)] = raw;
+          result[k.slice(scopedPrefix.length)] = decodeStorageValue(raw);
+        }
+      }
+    }
+
+    // Backfill from legacy keys only if missing in scoped storage.
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(legacyStoragePrefix)) {
+        const raw = localStorage.getItem(k);
+        if (raw !== null) {
+          const unscopedKey = k.slice(legacyStoragePrefix.length);
+          if (result[unscopedKey] === undefined) {
+            result[unscopedKey] = decodeStorageValue(raw);
           }
         }
       }
@@ -886,10 +933,11 @@ export const LocalStorage = {
     return result;
   },
   async clear(): Promise<void> {
+    const scopedPrefix = getStoragePrefix();
     const toRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k?.startsWith(storagePrefix)) toRemove.push(k);
+      if (k?.startsWith(scopedPrefix) || k?.startsWith(legacyStoragePrefix)) toRemove.push(k);
     }
     toRemove.forEach((k) => localStorage.removeItem(k));
   },
