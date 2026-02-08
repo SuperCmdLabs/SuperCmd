@@ -1,36 +1,21 @@
 /**
  * Extensions Tab
  *
- * Lists all command categories (apps, system settings, SuperCommand core,
- * installed extensions) in expandable groups. Each item supports
- * enable/disable and hotkey customization.
- *
- * The extension store is embedded at the bottom of this tab.
+ * Horizontal tabs for command management and store browsing.
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import {
-  Search,
-  ChevronRight,
-  ChevronDown,
-  Settings,
-  Power,
-  Puzzle,
-  Package,
-  Cpu,
-  AppWindow,
-} from 'lucide-react';
+import { Search, Settings, Power, Puzzle, Cpu, Download } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
-import StoreTab from './StoreTab';
 import type { CommandInfo, AppSettings } from '../../types/electron';
+
+type SectionTab = 'system' | 'supercommand' | 'community';
 
 const ExtensionsTab: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    new Set(['apps', 'system', 'extensions'])
-  );
+  const [activeTab, setActiveTab] = useState<SectionTab>('system');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -43,18 +28,6 @@ const ExtensionsTab: React.FC = () => {
       setIsLoading(false);
     });
   }, []);
-
-  const toggleGroup = (group: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(group)) {
-        next.delete(group);
-      } else {
-        next.add(group);
-      }
-      return next;
-    });
-  };
 
   const appCommands = useMemo(
     () => commands.filter((c) => c.category === 'app'),
@@ -87,6 +60,9 @@ const ExtensionsTab: React.FC = () => {
 
   const filteredApps = filterItems(appCommands);
   const filteredSettings = filterItems(settingsCommands);
+  const filteredSystemAll = [...filteredApps, ...filteredSettings].sort((a, b) =>
+    a.title.localeCompare(b.title)
+  );
   const filteredSystem = filterItems(systemCommands);
   const filteredExtensions = filterItems(extensionCommands);
 
@@ -131,205 +107,215 @@ const ExtensionsTab: React.FC = () => {
     <div className="p-8">
       <h2 className="text-xl font-semibold text-white mb-6">Extensions</h2>
 
-      <div className="relative mb-6">
+      <div className="flex flex-wrap gap-2 mb-6">
+        <TabButton
+          active={activeTab === 'system'}
+          icon={<Settings className="w-3.5 h-3.5" />}
+          label="System"
+          onClick={() => setActiveTab('system')}
+        />
+        <TabButton
+          active={activeTab === 'supercommand'}
+          icon={<Cpu className="w-3.5 h-3.5" />}
+          label="SuperCommand"
+          onClick={() => setActiveTab('supercommand')}
+        />
+        <TabButton
+          active={activeTab === 'community'}
+          icon={<Puzzle className="w-3.5 h-3.5" />}
+          label="Community"
+          onClick={() => setActiveTab('community')}
+        />
+      </div>
+
+      <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
         <input
           type="text"
-          placeholder="Search commands and extensions..."
+          placeholder={
+            activeTab === 'community'
+              ? 'Search installed extension commands...'
+              : 'Search commands...'
+          }
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-white/20 transition-colors"
         />
       </div>
 
-      <div className="mb-8">
-        <h3 className="text-[11px] font-medium uppercase tracking-wider text-white/35 mb-3 flex items-center gap-2">
-          <Package className="w-3.5 h-3.5" />
-          Commands
-        </h3>
+      {activeTab === 'system' && (
+        <CommandTable
+          items={filteredSystemAll}
+          isDisabled={isDisabled}
+          getHotkey={getHotkey}
+          onToggleEnabled={handleToggleEnabled}
+          onHotkeyChange={handleHotkeyChange}
+          emptyText="No matching system commands"
+        />
+      )}
 
-        <div className="space-y-2">
-          <ExtensionGroup
-            title="Applications"
-            subtitle={`${appCommands.length} commands`}
-            icon={<AppWindow className="w-4 h-4 text-white/70" />}
-            isExpanded={expandedGroups.has('apps')}
-            onToggle={() => toggleGroup('apps')}
-            items={filteredApps}
-            isDisabled={isDisabled}
-            getHotkey={getHotkey}
-            onToggleEnabled={handleToggleEnabled}
-            onHotkeyChange={handleHotkeyChange}
-          />
+      {activeTab === 'supercommand' && (
+        <div className="space-y-4">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-white/30 mb-2">
+              Core Commands
+            </div>
+            <CommandTable
+              items={filteredSystem}
+              isDisabled={isDisabled}
+              getHotkey={getHotkey}
+              onToggleEnabled={handleToggleEnabled}
+              onHotkeyChange={handleHotkeyChange}
+              emptyText="No matching SuperCommand commands"
+            />
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-white/30 mb-2">
+              Installed Extension Commands
+            </div>
+            <CommandTable
+              items={filteredExtensions}
+              isDisabled={isDisabled}
+              getHotkey={getHotkey}
+              onToggleEnabled={handleToggleEnabled}
+              onHotkeyChange={handleHotkeyChange}
+              emptyText="No matching extension commands"
+            />
+          </div>
+        </div>
+      )}
 
-          <ExtensionGroup
-            title="System Settings"
-            subtitle={`${settingsCommands.length} commands`}
-            icon={<Settings className="w-4 h-4 text-white/70" />}
-            isExpanded={expandedGroups.has('settings')}
-            onToggle={() => toggleGroup('settings')}
-            items={filteredSettings}
-            isDisabled={isDisabled}
-            getHotkey={getHotkey}
-            onToggleEnabled={handleToggleEnabled}
-            onHotkeyChange={handleHotkeyChange}
-          />
-
-          <ExtensionGroup
-            title="SuperCommand"
-            subtitle={`${systemCommands.length} commands`}
-            icon={<Cpu className="w-4 h-4 text-white/70" />}
-            isExpanded={expandedGroups.has('system')}
-            onToggle={() => toggleGroup('system')}
-            items={filteredSystem}
-            isDisabled={isDisabled}
-            getHotkey={getHotkey}
-            onToggleEnabled={handleToggleEnabled}
-            onHotkeyChange={handleHotkeyChange}
-          />
-
-          <ExtensionGroup
-            title="Installed Extensions"
-            subtitle={`${extensionCommands.length} commands`}
-            icon={<Puzzle className="w-4 h-4 text-white/70" />}
-            isExpanded={expandedGroups.has('extensions')}
-            onToggle={() => toggleGroup('extensions')}
+      {activeTab === 'community' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] uppercase tracking-wider text-white/30">
+              Installed Extension Commands
+            </div>
+            <button
+              onClick={() => window.electron.openExtensionStoreWindow()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Install from Store
+            </button>
+          </div>
+          <CommandTable
             items={filteredExtensions}
             isDisabled={isDisabled}
             getHotkey={getHotkey}
             onToggleEnabled={handleToggleEnabled}
             onHotkeyChange={handleHotkeyChange}
+            emptyText="No installed extension commands"
           />
         </div>
-      </div>
-
-      <div>
-        <h3 className="text-[11px] font-medium uppercase tracking-wider text-white/35 mb-3 flex items-center gap-2">
-          <Puzzle className="w-3.5 h-3.5" />
-          Store
-        </h3>
-        <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
-          <StoreTab embedded />
-        </div>
-      </div>
+      )}
     </div>
   );
 };
 
-interface ExtensionGroupProps {
-  title: string;
-  subtitle: string;
+const TabButton: React.FC<{
+  active: boolean;
   icon: React.ReactNode;
-  isExpanded: boolean;
-  onToggle: () => void;
+  label: string;
+  onClick: () => void;
+}> = ({ active, icon, label, onClick }) => (
+  <button
+    onClick={onClick}
+    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+      active
+        ? 'bg-white/[0.12] text-white border border-white/[0.16]'
+        : 'bg-white/[0.04] text-white/70 border border-white/[0.08] hover:bg-white/[0.08] hover:text-white/90'
+    }`}
+  >
+    {icon}
+    <span>{label}</span>
+  </button>
+);
+
+interface CommandTableProps {
   items: CommandInfo[];
   isDisabled: (id: string) => boolean;
   getHotkey: (id: string) => string;
   onToggleEnabled: (id: string) => void;
   onHotkeyChange: (id: string, hotkey: string) => void;
+  emptyText: string;
 }
 
-const ExtensionGroup: React.FC<ExtensionGroupProps> = ({
-  title,
-  subtitle,
-  icon,
-  isExpanded,
-  onToggle,
+const CommandTable: React.FC<CommandTableProps> = ({
   items,
   isDisabled,
   getHotkey,
   onToggleEnabled,
   onHotkeyChange,
+  emptyText,
 }) => {
   return (
     <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] overflow-hidden">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors"
-      >
-        <div className="w-4 h-4 flex items-center justify-center">{icon}</div>
-        <div className="flex-1 text-left">
-          <div className="text-sm font-medium text-white/90">{title}</div>
-          <div className="text-xs text-white/40">{subtitle}</div>
-        </div>
-        {isExpanded ? (
-          <ChevronDown className="w-4 h-4 text-white/30" />
+      <div className="flex items-center px-4 py-2 text-[11px] uppercase tracking-wider text-white/25 border-b border-white/[0.04] bg-white/[0.01]">
+        <div className="w-8 text-center">On</div>
+        <div className="w-8"></div>
+        <div className="flex-1">Name</div>
+        <div className="w-36 text-right">Hotkey</div>
+      </div>
+
+      <div className="max-h-[460px] overflow-y-auto custom-scrollbar">
+        {items.length === 0 ? (
+          <div className="px-4 py-8 text-center text-xs text-white/25">
+            {emptyText}
+          </div>
         ) : (
-          <ChevronRight className="w-4 h-4 text-white/30" />
-        )}
-      </button>
-
-      {isExpanded && (
-        <div className="border-t border-white/[0.06]">
-          <div className="flex items-center px-4 py-2 text-[11px] uppercase tracking-wider text-white/25 border-b border-white/[0.04] bg-white/[0.01]">
-            <div className="w-8 text-center">On</div>
-            <div className="w-8"></div>
-            <div className="flex-1">Name</div>
-            <div className="w-36 text-right">Hotkey</div>
-          </div>
-
-          <div className="max-h-[360px] overflow-y-auto custom-scrollbar">
-            {items.length === 0 ? (
-              <div className="px-4 py-8 text-center text-xs text-white/25">
-                No matching commands
+          items.map((cmd) => (
+            <div
+              key={cmd.id}
+              className="flex items-center px-4 py-1.5 hover:bg-white/[0.02] border-b border-white/[0.02] last:border-b-0 transition-colors"
+            >
+              <div className="w-8 flex justify-center">
+                <input
+                  type="checkbox"
+                  checked={!isDisabled(cmd.id)}
+                  onChange={() => onToggleEnabled(cmd.id)}
+                  className="w-3.5 h-3.5 rounded border-white/20 bg-transparent accent-blue-500 cursor-pointer"
+                />
               </div>
-            ) : (
-              items.map((cmd) => (
-                <div
-                  key={cmd.id}
-                  className="flex items-center px-4 py-1.5 hover:bg-white/[0.02] border-b border-white/[0.02] last:border-b-0 transition-colors"
-                >
-                  <div className="w-8 flex justify-center">
-                    <input
-                      type="checkbox"
-                      checked={!isDisabled(cmd.id)}
-                      onChange={() => onToggleEnabled(cmd.id)}
-                      className="w-3.5 h-3.5 rounded border-white/20 bg-transparent accent-blue-500 cursor-pointer"
+
+              <div className="w-8 flex justify-center">
+                <div className="w-5 h-5 flex items-center justify-center overflow-hidden rounded">
+                  {cmd.iconDataUrl ? (
+                    <img
+                      src={cmd.iconDataUrl}
+                      alt=""
+                      className="w-5 h-5 object-contain"
+                      draggable={false}
                     />
-                  </div>
-
-                  <div className="w-8 flex justify-center">
-                    <div className="w-5 h-5 flex items-center justify-center overflow-hidden rounded">
-                      {cmd.iconDataUrl ? (
-                        <img
-                          src={cmd.iconDataUrl}
-                          alt=""
-                          className="w-5 h-5 object-contain"
-                          draggable={false}
-                        />
-                      ) : cmd.category === 'extension' ? (
-                        <Puzzle className="w-3.5 h-3.5 text-violet-300/80" />
-                      ) : cmd.category === 'system' ? (
-                        <Power className="w-3.5 h-3.5 text-red-300/80" />
-                      ) : (
-                        <Settings className="w-3.5 h-3.5 text-gray-300/70" />
-                      )}
-                    </div>
-                  </div>
-
-                  <div
-                    className={`flex-1 text-sm truncate ${
-                      isDisabled(cmd.id)
-                        ? 'text-white/30 line-through'
-                        : 'text-white/80'
-                    }`}
-                  >
-                    {cmd.title}
-                  </div>
-
-                  <div className="w-36 flex justify-end">
-                    <HotkeyRecorder
-                      value={getHotkey(cmd.id)}
-                      onChange={(hotkey) => onHotkeyChange(cmd.id, hotkey)}
-                      compact
-                    />
-                  </div>
+                  ) : cmd.category === 'extension' ? (
+                    <Puzzle className="w-3.5 h-3.5 text-violet-300/80" />
+                  ) : cmd.category === 'system' ? (
+                    <Power className="w-3.5 h-3.5 text-red-300/80" />
+                  ) : (
+                    <Settings className="w-3.5 h-3.5 text-gray-300/70" />
+                  )}
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+              </div>
+
+              <div
+                className={`flex-1 text-sm truncate ${
+                  isDisabled(cmd.id) ? 'text-white/30 line-through' : 'text-white/80'
+                }`}
+              >
+                {cmd.title}
+              </div>
+
+              <div className="w-36 flex justify-end">
+                <HotkeyRecorder
+                  value={getHotkey(cmd.id)}
+                  onChange={(hotkey) => onHotkeyChange(cmd.id, hotkey)}
+                  compact
+                />
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 };

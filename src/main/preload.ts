@@ -51,6 +51,8 @@ contextBridge.exposeInMainWorld('electron', {
   openSettings: (): Promise<void> => ipcRenderer.invoke('open-settings'),
   openSettingsTab: (tab: 'general' | 'ai' | 'extensions'): Promise<void> =>
     ipcRenderer.invoke('open-settings-tab', tab),
+  openExtensionStoreWindow: (): Promise<void> =>
+    ipcRenderer.invoke('open-extension-store-window'),
   onSettingsTabChanged: (callback: (tab: 'general' | 'ai' | 'extensions') => void) => {
     ipcRenderer.on('settings-tab-changed', (_event, tab) => callback(tab));
   },

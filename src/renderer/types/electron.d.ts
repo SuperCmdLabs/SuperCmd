@@ -67,6 +67,7 @@ export interface CatalogEntry {
   title: string;
   description: string;
   author: string;
+  contributors: string[];
   icon: string;
   iconUrl: string;
   categories: string[];
@@ -130,6 +131,7 @@ export interface ElectronAPI {
   ) => Promise<boolean>;
   openSettings: () => Promise<void>;
   openSettingsTab: (tab: 'general' | 'ai' | 'extensions') => Promise<void>;
+  openExtensionStoreWindow: () => Promise<void>;
   onSettingsTabChanged: (callback: (tab: 'general' | 'ai' | 'extensions') => void) => void;
 
   // Extension Runner

@@ -35,6 +35,7 @@ export interface CatalogEntry {
   title: string;
   description: string;
   author: string;
+  contributors: string[];
   icon: string; // icon filename
   iconUrl: string; // full GitHub raw URL to icon
   categories: string[];
@@ -47,7 +48,7 @@ interface CatalogCache {
   version: number;
 }
 
-const CATALOG_VERSION = 1;
+const CATALOG_VERSION = 2;
 const CATALOG_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 let catalogCache: CatalogCache | null = null;
@@ -141,11 +142,40 @@ async function fetchCatalogFromGitHub(): Promise<CatalogEntry[]> {
           description: c.description || '',
         }));
 
+        const normalizePerson = (p: any): string | null => {
+          if (!p) return null;
+          if (typeof p === 'string') {
+            const cleaned = p.split('<')[0].split('(')[0].trim();
+            return cleaned || null;
+          }
+          if (typeof p === 'object') {
+            const name = typeof p.name === 'string' ? p.name.trim() : '';
+            return name || null;
+          }
+          return null;
+        };
+
+        const contributors: string[] = [];
+        const addContributor = (name: string | null) => {
+          if (!name) return;
+          if (!contributors.includes(name)) contributors.push(name);
+        };
+
+        addContributor(normalizePerson(pkg.author));
+        if (Array.isArray(pkg.contributors)) {
+          for (const person of pkg.contributors) {
+            addContributor(normalizePerson(person));
+          }
+        }
+
+        const authorName = normalizePerson(pkg.author) || '';
+
         entries.push({
           name: dir,
           title: pkg.title || dir,
           description: pkg.description || '',
-          author: pkg.author || '',
+          author: authorName,
+          contributors,
           icon: iconFile,
           iconUrl,
           categories: pkg.categories || [],
@@ -387,4 +417,3 @@ export async function uninstallExtension(name: string): Promise<boolean> {
     return false;
   }
 }
-

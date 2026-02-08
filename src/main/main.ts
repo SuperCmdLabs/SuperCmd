@@ -55,6 +55,7 @@ const WINDOW_HEIGHT = 580;
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
+let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
 let isVisible = false;
 let suppressBlurHide = false; // When true, blur won't hide the window (used during file dialogs)
 let currentShortcut = '';
@@ -368,8 +369,52 @@ function openSettingsWindow(tab?: 'general' | 'ai' | 'extensions'): void {
 
   settingsWindow.on('closed', () => {
     settingsWindow = null;
-    // Hide dock again when settings is closed
-    if (process.platform === 'darwin') {
+    // Hide dock again when no settings/store windows are open
+    if (process.platform === 'darwin' && !extensionStoreWindow) {
+      app.dock.hide();
+    }
+  });
+}
+
+function openExtensionStoreWindow(): void {
+  if (extensionStoreWindow) {
+    extensionStoreWindow.show();
+    extensionStoreWindow.focus();
+    return;
+  }
+
+  if (process.platform === 'darwin') {
+    app.dock.show();
+  }
+
+  extensionStoreWindow = new BrowserWindow({
+    width: 980,
+    height: 700,
+    minWidth: 860,
+    minHeight: 560,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
+    transparent: true,
+    backgroundColor: '#00000000',
+    vibrancy: 'hud',
+    visualEffectState: 'active',
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+
+  loadWindowUrl(extensionStoreWindow, '/extension-store');
+
+  extensionStoreWindow.once('ready-to-show', () => {
+    extensionStoreWindow?.show();
+  });
+
+  extensionStoreWindow.on('closed', () => {
+    extensionStoreWindow = null;
+    if (process.platform === 'darwin' && !settingsWindow) {
       app.dock.hide();
     }
   });
@@ -627,6 +672,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('open-settings-tab', (_event: any, tab: 'general' | 'ai' | 'extensions') => {
     openSettingsWindow(tab);
+  });
+
+  ipcMain.handle('open-extension-store-window', () => {
+    openExtensionStoreWindow();
   });
 
   // ─── IPC: Open URL (for extensions) ─────────────────────────────
