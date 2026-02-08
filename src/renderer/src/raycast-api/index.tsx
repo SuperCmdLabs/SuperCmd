@@ -2018,6 +2018,7 @@ function ListEmptyView({ title, description, icon, actions }: { title?: string; 
 
 function ListDropdown({ children, tooltip, storeValue, onChange, value, defaultValue, filtering, onSearchTextChange, throttle, id, isLoading, placeholder }: any) {
   const [internalValue, setInternalValue] = useState(value ?? defaultValue ?? '');
+  const didEmitInitialChange = useRef(false);
 
   // Extract items from children recursively
   const items: { title: string; value: string }[] = [];
@@ -2032,6 +2033,15 @@ function ListDropdown({ children, tooltip, storeValue, onChange, value, defaultV
     });
   }
   walkDropdownChildren(children);
+
+  useEffect(() => {
+    if (didEmitInitialChange.current) return;
+    if (!onChange) return;
+    const initial = value ?? defaultValue ?? items[0]?.value;
+    if (initial === undefined) return;
+    didEmitInitialChange.current = true;
+    onChange(initial);
+  }, [onChange, value, defaultValue, items]);
 
   return (
     <select
@@ -4598,18 +4608,18 @@ export function useSQL<T = any>(
   }
 ) {
   const result = usePromise(
-    async () => {
+    async (dbPath: string, sqlQuery: string) => {
       const electron = (window as any).electron;
       if (!electron?.runSqliteQuery) {
         throw new Error('useSQL: runSqliteQuery IPC not available');
       }
-      const res = await electron.runSqliteQuery(databasePath, query);
+      const res = await electron.runSqliteQuery(dbPath, sqlQuery);
       if (res.error) {
         throw new Error(res.error);
       }
       return (Array.isArray(res.data) ? res.data : []) as T[];
     },
-    [],
+    [databasePath, query],
     {
       execute: options?.execute,
       onData: options?.onData,

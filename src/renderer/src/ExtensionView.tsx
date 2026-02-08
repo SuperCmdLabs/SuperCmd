@@ -301,6 +301,28 @@ class BufferPolyfill extends Uint8Array {
 
 const FS_PREFIX = 'sc-fs:';
 
+function normalizeFsPath(input: any): string {
+  if (!input) return '';
+  if (typeof input === 'string') {
+    if (input.startsWith('file://')) {
+      try {
+        return decodeURIComponent(new URL(input).pathname);
+      } catch {
+        return input.replace(/^file:\/\//, '');
+      }
+    }
+    return input;
+  }
+  if (typeof input === 'object' && typeof input.href === 'string' && input.protocol === 'file:') {
+    try {
+      return decodeURIComponent(input.pathname || new URL(input.href).pathname);
+    } catch {
+      return String(input.href).replace(/^file:\/\//, '');
+    }
+  }
+  return String(input);
+}
+
 function fsStatResult(exists: boolean, isDir = false) {
   return {
     isFile: () => exists && !isDir,
@@ -325,36 +347,38 @@ function fsStatResult(exists: boolean, isDir = false) {
 }
 
 const fsStub: Record<string, any> = {
-  existsSync: (p: string) => {
+  existsSync: (p: any) => {
+    const path = normalizeFsPath(p);
     // Check localStorage first
-    if (localStorage.getItem(FS_PREFIX + p) !== null) return true;
+    if (localStorage.getItem(FS_PREFIX + path) !== null) return true;
     // Fall back to real file system via sync IPC
     try {
-      return (window as any).electron?.fileExistsSync?.(p) ?? false;
+      return (window as any).electron?.fileExistsSync?.(path) ?? false;
     } catch {
       return false;
     }
   },
-  readFileSync: (p: string, opts?: any) => {
+  readFileSync: (p: any, opts?: any) => {
+    const path = normalizeFsPath(p);
     // Check localStorage first
-    const content = localStorage.getItem(FS_PREFIX + p);
+    const content = localStorage.getItem(FS_PREFIX + path);
     if (content !== null) {
       if (opts?.encoding || typeof opts === 'string') return content;
       return BufferPolyfill.from(content);
     }
     // Fall back to real file system via sync IPC (for reading extension assets etc.)
     try {
-      const result = (window as any).electron?.readFileSync?.(p);
+      const result = (window as any).electron?.readFileSync?.(path);
       if (result && result.data !== null) {
         if (opts?.encoding || typeof opts === 'string') return result.data;
         return BufferPolyfill.from(result.data);
       }
     } catch { /* fall through to ENOENT */ }
-    const err: any = new Error(`ENOENT: no such file or directory, open '${p}'`);
+    const err: any = new Error(`ENOENT: no such file or directory, open '${path}'`);
     err.code = 'ENOENT';
     err.errno = -2;
     err.syscall = 'open';
-    err.path = p;
+    err.path = path;
     throw err;
   },
   writeFileSync: (p: string, data: any) => {
@@ -376,18 +400,20 @@ const fsStub: Record<string, any> = {
     }
     return results;
   },
-  statSync: (p: string) => {
-    if (localStorage.getItem(FS_PREFIX + p) !== null) return fsStatResult(true);
+  statSync: (p: any) => {
+    const path = normalizeFsPath(p);
+    if (localStorage.getItem(FS_PREFIX + path) !== null) return fsStatResult(true);
     try {
-      const result = (window as any).electron?.statSync?.(p);
+      const result = (window as any).electron?.statSync?.(path);
       if (result?.exists) return fsStatResult(true, result.isDirectory);
     } catch {}
     return fsStatResult(false);
   },
-  lstatSync: (p: string) => {
-    if (localStorage.getItem(FS_PREFIX + p) !== null) return fsStatResult(true);
+  lstatSync: (p: any) => {
+    const path = normalizeFsPath(p);
+    if (localStorage.getItem(FS_PREFIX + path) !== null) return fsStatResult(true);
     try {
-      const result = (window as any).electron?.statSync?.(p);
+      const result = (window as any).electron?.statSync?.(path);
       if (result?.exists) return fsStatResult(true, result.isDirectory);
     } catch {}
     return fsStatResult(false);
@@ -408,12 +434,13 @@ const fsStub: Record<string, any> = {
     if (content !== null) localStorage.setItem(FS_PREFIX + dest, content);
   },
   chmodSync: noop,
-  accessSync: (p: string) => {
-    if (localStorage.getItem(FS_PREFIX + p) !== null) return;
+  accessSync: (p: any) => {
+    const path = normalizeFsPath(p);
+    if (localStorage.getItem(FS_PREFIX + path) !== null) return;
     try {
-      if ((window as any).electron?.fileExistsSync?.(p)) return;
+      if ((window as any).electron?.fileExistsSync?.(path)) return;
     } catch {}
-    const err: any = new Error(`ENOENT: no such file or directory, access '${p}'`);
+    const err: any = new Error(`ENOENT: no such file or directory, access '${path}'`);
     err.code = 'ENOENT';
     throw err;
   },
