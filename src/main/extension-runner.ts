@@ -298,6 +298,18 @@ export interface ExtensionBundleResult {
   preferences: Record<string, any>;
   // Command-specific preferences
   commandPreferences: Record<string, any>;
+  // Preference schema (extension + command-level)
+  preferenceDefinitions: Array<{
+    scope: 'extension' | 'command';
+    name: string;
+    title?: string;
+    description?: string;
+    placeholder?: string;
+    required?: boolean;
+    type?: string;
+    default?: any;
+    data?: Array<{ title?: string; value?: string }>;
+  }>;
 }
 
 /**
@@ -307,13 +319,49 @@ export interface ExtensionBundleResult {
 function parsePreferences(
   pkg: any,
   cmdName: string
-): { extensionPrefs: Record<string, any>; commandPrefs: Record<string, any> } {
+): {
+  extensionPrefs: Record<string, any>;
+  commandPrefs: Record<string, any>;
+  definitions: Array<{
+    scope: 'extension' | 'command';
+    name: string;
+    title?: string;
+    description?: string;
+    placeholder?: string;
+    required?: boolean;
+    type?: string;
+    default?: any;
+    data?: Array<{ title?: string; value?: string }>;
+  }>;
+} {
   const extensionPrefs: Record<string, any> = {};
   const commandPrefs: Record<string, any> = {};
+  const definitions: Array<{
+    scope: 'extension' | 'command';
+    name: string;
+    title?: string;
+    description?: string;
+    placeholder?: string;
+    required?: boolean;
+    type?: string;
+    default?: any;
+    data?: Array<{ title?: string; value?: string }>;
+  }> = [];
 
   // Extension-level preferences
   for (const pref of pkg.preferences || []) {
     if (!pref.name) continue;
+    definitions.push({
+      scope: 'extension',
+      name: pref.name,
+      title: pref.title,
+      description: pref.description,
+      placeholder: pref.placeholder,
+      required: Boolean(pref.required),
+      type: pref.type,
+      default: pref.default,
+      data: Array.isArray(pref.data) ? pref.data : undefined,
+    });
     // Set default value based on type
     if (pref.default !== undefined) {
       extensionPrefs[pref.name] = pref.default;
@@ -332,6 +380,17 @@ function parsePreferences(
   if (cmd?.preferences) {
     for (const pref of cmd.preferences) {
       if (!pref.name) continue;
+      definitions.push({
+        scope: 'command',
+        name: pref.name,
+        title: pref.title,
+        description: pref.description,
+        placeholder: pref.placeholder,
+        required: Boolean(pref.required),
+        type: pref.type,
+        default: pref.default,
+        data: Array.isArray(pref.data) ? pref.data : undefined,
+      });
       if (pref.default !== undefined) {
         commandPrefs[pref.name] = pref.default;
       } else if (pref.type === 'checkbox') {
@@ -344,7 +403,7 @@ function parsePreferences(
     }
   }
 
-  return { extensionPrefs, commandPrefs };
+  return { extensionPrefs, commandPrefs, definitions };
 }
 
 /**
@@ -379,6 +438,17 @@ export function getExtensionBundle(
   let extensionIconDataUrl: string | undefined;
   let preferences: Record<string, any> = {};
   let commandPreferences: Record<string, any> = {};
+  let preferenceDefinitions: Array<{
+    scope: 'extension' | 'command';
+    name: string;
+    title?: string;
+    description?: string;
+    placeholder?: string;
+    required?: boolean;
+    type?: string;
+    default?: any;
+    data?: Array<{ title?: string; value?: string }>;
+  }> = [];
 
   try {
     const pkgPath = path.join(extPath, 'package.json');
@@ -392,9 +462,10 @@ export function getExtensionBundle(
     const rawOwner = pkg.owner || pkg.author || '';
     owner = typeof rawOwner === 'object' ? (rawOwner as any).name || '' : rawOwner;
 
-    const { extensionPrefs, commandPrefs } = parsePreferences(pkg, cmdName);
+    const { extensionPrefs, commandPrefs, definitions } = parsePreferences(pkg, cmdName);
     preferences = extensionPrefs;
     commandPreferences = commandPrefs;
+    preferenceDefinitions = definitions;
   } catch {}
 
   // Compute paths
@@ -420,5 +491,6 @@ export function getExtensionBundle(
     owner,
     preferences: { ...preferences, ...commandPreferences },
     commandPreferences,
+    preferenceDefinitions,
   };
 }
