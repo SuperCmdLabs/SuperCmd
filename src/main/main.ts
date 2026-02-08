@@ -260,10 +260,74 @@ function toggleWindow(): void {
   }
 }
 
+async function openLauncherAndRunSystemCommand(commandId: string): Promise<boolean> {
+  if (!mainWindow) {
+    createWindow();
+  }
+  if (!mainWindow) return false;
+
+  const sendCommand = () => {
+    showWindow();
+    mainWindow?.webContents.send('run-system-command', commandId);
+  };
+
+  if (mainWindow.webContents.isLoadingMainFrame()) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      sendCommand();
+    });
+  } else {
+    sendCommand();
+  }
+
+  return true;
+}
+
+async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' = 'launcher'): Promise<boolean> {
+  if (commandId === 'system-open-settings') {
+    openSettingsWindow();
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
+  if (commandId === 'system-open-ai-settings') {
+    openSettingsWindow('ai');
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
+  if (commandId === 'system-open-extensions-settings') {
+    openSettingsWindow('extensions');
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
+  if (
+    commandId === 'system-clipboard-manager' ||
+    commandId === 'system-search-snippets' ||
+    commandId === 'system-create-snippet'
+  ) {
+    return await openLauncherAndRunSystemCommand(commandId);
+  }
+  if (commandId === 'system-import-snippets') {
+    await importSnippetsFromFile(mainWindow || undefined);
+    return true;
+  }
+  if (commandId === 'system-export-snippets') {
+    await exportSnippetsToFile(mainWindow || undefined);
+    return true;
+  }
+
+  const success = await executeCommand(commandId);
+  if (success && source === 'launcher') {
+    setTimeout(() => hideWindow(), 50);
+  }
+  return success;
+}
+
 // ─── Settings Window ────────────────────────────────────────────────
 
-function openSettingsWindow(): void {
+function openSettingsWindow(tab?: 'general' | 'ai' | 'extensions'): void {
   if (settingsWindow) {
+    if (tab) {
+      settingsWindow.webContents.send('settings-tab-changed', tab);
+    }
     settingsWindow.show();
     settingsWindow.focus();
     return;
@@ -292,9 +356,13 @@ function openSettingsWindow(): void {
     },
   });
 
-  loadWindowUrl(settingsWindow, '/settings');
+  const hash = tab ? `/settings?tab=${encodeURIComponent(tab)}` : '/settings';
+  loadWindowUrl(settingsWindow, hash);
 
   settingsWindow.once('ready-to-show', () => {
+    if (tab) {
+      settingsWindow?.webContents.send('settings-tab-changed', tab);
+    }
     settingsWindow?.show();
   });
 
@@ -354,7 +422,7 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
     if (!shortcut) continue;
     try {
       const success = globalShortcut.register(shortcut, async () => {
-        await executeCommand(commandId);
+        await runCommandById(commandId, 'hotkey');
       });
       if (success) {
         registeredHotkeys.set(shortcut, commandId);
@@ -458,16 +526,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     'execute-command',
     async (_event: any, commandId: string) => {
-      if (commandId === 'system-open-settings') {
-        openSettingsWindow();
-        hideWindow();
-        return true;
-      }
-      const success = await executeCommand(commandId);
-      if (success) {
-        setTimeout(() => hideWindow(), 50);
-      }
-      return success;
+      return await runCommandById(commandId, 'launcher');
     }
   );
 
@@ -528,7 +587,7 @@ app.whenReady().then(async () => {
         // Register the new one
         try {
           const success = globalShortcut.register(hotkey, async () => {
-            await executeCommand(commandId);
+            await runCommandById(commandId, 'hotkey');
           });
           if (success) {
             registeredHotkeys.set(hotkey, commandId);
@@ -564,6 +623,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('open-settings', () => {
     openSettingsWindow();
+  });
+
+  ipcMain.handle('open-settings-tab', (_event: any, tab: 'general' | 'ai' | 'extensions') => {
+    openSettingsWindow(tab);
   });
 
   // ─── IPC: Open URL (for extensions) ─────────────────────────────

@@ -493,29 +493,49 @@ const App: React.FC = () => {
     [displayCommands, selectedIndex, searchQuery, aiAvailable, startAiChat, calcResult, calcOffset]
   );
 
+  const runLocalSystemCommand = useCallback(async (commandId: string): Promise<boolean> => {
+    if (commandId === 'system-clipboard-manager') {
+      setExtensionView(null);
+      setExtensionPreferenceSetup(null);
+      setShowClipboardManager(true);
+      return true;
+    }
+    if (commandId === 'system-search-snippets') {
+      setExtensionView(null);
+      setExtensionPreferenceSetup(null);
+      setShowSnippetManager('search');
+      return true;
+    }
+    if (commandId === 'system-create-snippet') {
+      setExtensionView(null);
+      setExtensionPreferenceSetup(null);
+      setShowSnippetManager('create');
+      return true;
+    }
+    if (commandId === 'system-import-snippets') {
+      await window.electron.snippetImport();
+      return true;
+    }
+    if (commandId === 'system-export-snippets') {
+      await window.electron.snippetExport();
+      return true;
+    }
+    return false;
+  }, []);
+
+  useEffect(() => {
+    window.electron.onRunSystemCommand(async (commandId: string) => {
+      try {
+        await runLocalSystemCommand(commandId);
+      } catch (error) {
+        console.error('Failed to run system command from main process:', error);
+      }
+    });
+  }, [runLocalSystemCommand]);
+
   const handleCommandExecute = async (command: CommandInfo) => {
     try {
-      // Special handling for clipboard manager
-      if (command.id === 'system-clipboard-manager') {
-        setShowClipboardManager(true);
-        return;
-      }
-
-      // Special handling for snippet commands
-      if (command.id === 'system-search-snippets') {
-        setShowSnippetManager('search');
-        return;
-      }
-      if (command.id === 'system-create-snippet') {
-        setShowSnippetManager('create');
-        return;
-      }
-      if (command.id === 'system-import-snippets') {
-        await window.electron.snippetImport();
-        return;
-      }
-      if (command.id === 'system-export-snippets') {
-        await window.electron.snippetExport();
+      if (await runLocalSystemCommand(command.id)) {
         return;
       }
 

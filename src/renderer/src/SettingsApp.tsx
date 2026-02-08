@@ -4,14 +4,13 @@
  * Raycast-style settings window with sidebar navigation and tabbed content.
  */
 
-import React, { useState } from 'react';
-import { Settings, Puzzle, Zap, Store, Brain } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Settings, Puzzle, Zap, Brain } from 'lucide-react';
 import GeneralTab from './settings/GeneralTab';
 import AITab from './settings/AITab';
 import ExtensionsTab from './settings/ExtensionsTab';
-import StoreTab from './settings/StoreTab';
 
-type Tab = 'general' | 'ai' | 'extensions' | 'store';
+type Tab = 'general' | 'ai' | 'extensions';
 
 const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
   {
@@ -29,15 +28,30 @@ const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     label: 'Extensions',
     icon: <Puzzle className="w-4 h-4" />,
   },
-  {
-    id: 'store',
-    label: 'Store',
-    icon: <Store className="w-4 h-4" />,
-  },
 ];
 
+function getInitialTab(): Tab {
+  try {
+    const hash = window.location.hash || '';
+    const idx = hash.indexOf('?');
+    if (idx === -1) return 'general';
+    const params = new URLSearchParams(hash.slice(idx + 1));
+    const tab = params.get('tab');
+    if (tab === 'ai' || tab === 'extensions' || tab === 'general') return tab;
+  } catch {}
+  return 'general';
+}
+
 const SettingsApp: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('general');
+  const [activeTab, setActiveTab] = useState<Tab>(getInitialTab());
+
+  useEffect(() => {
+    (window as any).electron?.onSettingsTabChanged?.((tab: Tab) => {
+      if (tab === 'general' || tab === 'ai' || tab === 'extensions') {
+        setActiveTab(tab);
+      }
+    });
+  }, []);
 
   return (
     <div className="h-screen flex glass-effect text-white select-none">
@@ -80,7 +94,6 @@ const SettingsApp: React.FC = () => {
           {activeTab === 'general' && <GeneralTab />}
           {activeTab === 'ai' && <AITab />}
           {activeTab === 'extensions' && <ExtensionsTab />}
-          {activeTab === 'store' && <StoreTab />}
         </div>
       </div>
     </div>
@@ -88,4 +101,3 @@ const SettingsApp: React.FC = () => {
 };
 
 export default SettingsApp;
-

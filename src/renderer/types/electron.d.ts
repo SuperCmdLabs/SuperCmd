@@ -113,6 +113,7 @@ export interface ElectronAPI {
   hideWindow: () => Promise<void>;
   getLastFrontmostApp: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   onWindowShown: (callback: () => void) => void;
+  onRunSystemCommand: (callback: (commandId: string) => void) => void;
 
   // Settings
   getSettings: () => Promise<AppSettings>;
@@ -128,6 +129,8 @@ export interface ElectronAPI {
     enabled: boolean
   ) => Promise<boolean>;
   openSettings: () => Promise<void>;
+  openSettingsTab: (tab: 'general' | 'ai' | 'extensions') => Promise<void>;
+  onSettingsTabChanged: (callback: (tab: 'general' | 'ai' | 'extensions') => void) => void;
 
   // Extension Runner
   runExtension: (extName: string, cmdName: string) => Promise<ExtensionBundle | null>;

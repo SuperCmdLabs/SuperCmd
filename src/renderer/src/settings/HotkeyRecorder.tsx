@@ -83,7 +83,7 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
 
     // Backspace without modifiers = clear
     if (
-      e.key === 'Backspace' &&
+      (e.key === 'Backspace' || e.key === 'Delete') &&
       !e.metaKey &&
       !e.ctrlKey &&
       !e.altKey &&
@@ -103,29 +103,51 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
 
   if (compact) {
     return (
-      <div
-        ref={ref}
-        tabIndex={0}
-        onClick={() => setIsRecording(true)}
-        onKeyDown={isRecording ? handleKeyDown : undefined}
-        onBlur={() => setIsRecording(false)}
-        className={`
-          inline-flex items-center justify-center px-2 py-0.5 rounded text-xs cursor-pointer
-          transition-all select-none outline-none
-          ${
-            isRecording
-              ? 'bg-blue-500/20 border border-blue-500/40 text-blue-400 min-w-[80px]'
-              : value
-                ? 'bg-white/[0.06] border border-white/[0.08] text-white/60 hover:border-white/20'
-                : 'text-white/20 hover:text-white/40'
-          }
-        `}
-      >
-        {isRecording
-          ? 'Type shortcut…'
-          : value
-            ? formatShortcut(value)
-            : '—'}
+      <div className="inline-flex items-center gap-1">
+        <div
+          ref={ref}
+          tabIndex={0}
+          onClick={() => setIsRecording(true)}
+          onKeyDown={isRecording ? handleKeyDown : undefined}
+          onBlur={() => setIsRecording(false)}
+          className={`
+            inline-flex items-center justify-center px-2 py-0.5 rounded text-xs cursor-pointer
+            transition-all select-none outline-none
+            ${
+              isRecording
+                ? 'bg-blue-500/20 border border-blue-500/40 text-blue-400 min-w-[80px]'
+                : value
+                  ? 'bg-white/[0.06] border border-white/[0.08] text-white/60 hover:border-white/20'
+                  : 'text-white/20 hover:text-white/40'
+            }
+          `}
+        >
+          {isRecording
+            ? 'Type shortcut…'
+            : value
+              ? formatShortcut(value)
+              : '—'}
+        </div>
+        {value && !isRecording && (
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onChange('');
+              setIsRecording(false);
+            }}
+            className="w-5 h-5 rounded text-[10px] text-white/45 hover:text-white/85 hover:bg-white/[0.08] transition-colors"
+            title="Remove hotkey"
+            aria-label="Remove hotkey"
+          >
+            x
+          </button>
+        )}
       </div>
     );
   }
@@ -159,6 +181,5 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
 };
 
 export default HotkeyRecorder;
-
 
 

@@ -27,7 +27,7 @@ interface CatalogEntry {
 
 const PAGE_SIZE = 50;
 
-const StoreTab: React.FC = () => {
+const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [installedNames, setInstalledNames] = useState<Set<string>>(
     new Set()
@@ -76,7 +76,14 @@ const StoreTab: React.FC = () => {
       })
     : catalog;
 
-  const paginatedCatalog = filteredCatalog.slice(0, page * PAGE_SIZE);
+  const sortedCatalog = [...filteredCatalog].sort((a, b) => {
+    const aInstalled = installedNames.has(a.name) ? 1 : 0;
+    const bInstalled = installedNames.has(b.name) ? 1 : 0;
+    if (aInstalled !== bInstalled) return bInstalled - aInstalled; // installed first
+    return a.title.localeCompare(b.title);
+  });
+
+  const paginatedCatalog = sortedCatalog.slice(0, page * PAGE_SIZE);
   const hasMore = paginatedCatalog.length < filteredCatalog.length;
 
   useEffect(() => {
@@ -116,10 +123,12 @@ const StoreTab: React.FC = () => {
   // ─── Render ─────────────────────────────────────────────────────
 
   return (
-    <div className="p-8">
+    <div className={embedded ? '' : 'p-8'}>
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xl font-semibold text-white">Store</h2>
+        <h2 className={`${embedded ? 'text-base' : 'text-xl'} font-semibold text-white`}>
+          {embedded ? 'Extension Store' : 'Store'}
+        </h2>
         <button
           onClick={() => loadCatalog(true)}
           disabled={isLoading}
@@ -293,6 +302,5 @@ const StoreTab: React.FC = () => {
 };
 
 export default StoreTab;
-
 
 

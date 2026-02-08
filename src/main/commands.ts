@@ -644,6 +644,18 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-open-ai-settings',
+      title: 'SuperCommand AI',
+      keywords: ['ai', 'model', 'provider', 'openai', 'anthropic', 'ollama', 'supercommand'],
+      category: 'system',
+    },
+    {
+      id: 'system-open-extensions-settings',
+      title: 'SuperCommand Extensions',
+      keywords: ['extensions', 'store', 'community', 'hotkey', 'supercommand'],
+      category: 'system',
+    },
+    {
       id: 'system-quit-launcher',
       title: 'Quit SuperCommand',
       keywords: ['exit', 'close', 'quit', 'stop'],

@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld('electron', {
   onWindowShown: (callback: () => void) => {
     ipcRenderer.on('window-shown', () => callback());
   },
+  onRunSystemCommand: (callback: (commandId: string) => void) => {
+    ipcRenderer.on('run-system-command', (_event, commandId) =>
+      callback(commandId)
+    );
+  },
 
   // ─── Settings ───────────────────────────────────────────────────
   getSettings: (): Promise<any> => ipcRenderer.invoke('get-settings'),
@@ -44,6 +49,11 @@ contextBridge.exposeInMainWorld('electron', {
   ): Promise<boolean> =>
     ipcRenderer.invoke('toggle-command-enabled', commandId, enabled),
   openSettings: (): Promise<void> => ipcRenderer.invoke('open-settings'),
+  openSettingsTab: (tab: 'general' | 'ai' | 'extensions'): Promise<void> =>
+    ipcRenderer.invoke('open-settings-tab', tab),
+  onSettingsTabChanged: (callback: (tab: 'general' | 'ai' | 'extensions') => void) => {
+    ipcRenderer.on('settings-tab-changed', (_event, tab) => callback(tab));
+  },
 
   // ─── Extension Runner ────────────────────────────────────────────
   runExtension: (extName: string, cmdName: string): Promise<any> =>
