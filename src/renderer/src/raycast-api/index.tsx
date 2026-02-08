@@ -4100,6 +4100,15 @@ export function useFetch<T = any, U = undefined>(
   mutate: (asyncUpdate?: Promise<T>, options?: any) => Promise<T | undefined>;
   pagination: { page: number; pageSize: number; hasMore: boolean; onLoadMore: () => void };
 } {
+  const normalizeRequestBody = (body: any): BodyInit | undefined => {
+    if (body == null) return undefined;
+    if (typeof body === 'string') return body;
+    if (body instanceof FormData) return body;
+    if (body instanceof URLSearchParams) return body;
+    if (body instanceof Blob) return body;
+    return JSON.stringify(body);
+  };
+
   const [page, setPage] = useState(0);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(true);
@@ -4127,7 +4136,7 @@ export function useFetch<T = any, U = undefined>(
       const res = await fetch(resolvedUrl, {
         method: opts?.method,
         headers: opts?.headers,
-        body: opts?.body ? JSON.stringify(opts.body) : undefined,
+        body: normalizeRequestBody(opts?.body),
       });
 
       if (!res.ok) {
@@ -4173,13 +4182,31 @@ export function useFetch<T = any, U = undefined>(
 
   // Track URL for re-fetching when it changes (for non-function URLs)
   const urlString = typeof url === 'string' ? url : 'function';
+  const optionsKey = useMemo(() => {
+    try {
+      return JSON.stringify({
+        execute: options?.execute ?? true,
+        method: options?.method || 'GET',
+        headers: options?.headers || null,
+        body: options?.body || null,
+      });
+    } catch {
+      return String(options?.execute ?? true);
+    }
+  }, [options?.execute, options?.method, options?.headers, options?.body]);
 
   useEffect(() => {
+    if (options?.execute === false) {
+      setIsLoading(false);
+      setError(undefined);
+      setAllData(options?.initialData);
+      return;
+    }
     setPage(0);
     setCursor(undefined);
     setAllData(options?.initialData);
     fetchData(0, undefined);
-  }, [fetchData, urlString]);
+  }, [fetchData, urlString, optionsKey]);
 
   const revalidate = useCallback(() => {
     setPage(0);
