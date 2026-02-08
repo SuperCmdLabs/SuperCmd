@@ -54,8 +54,8 @@ function getIconCacheDir(): string {
 }
 
 function iconCacheKey(bundlePath: string): string {
-  // v4: drop generic NSWorkspace document icons for settings
-  return 'v4-' + crypto.createHash('md5').update(bundlePath).digest('hex');
+  // v6: invalidate cached generic settings icons and old naming/icon behavior
+  return 'v6-' + crypto.createHash('md5').update(bundlePath).digest('hex');
 }
 
 function getCachedIcon(bundlePath: string): string | undefined {
@@ -259,8 +259,7 @@ async function getIconDataUrl(bundlePath: string): Promise<string | undefined> {
   }
 
   // No .icns found — return undefined.
-  // For apps, NSWorkspace batch extraction will run later.
-  // For settings, the renderer shows a cog icon.
+  // NSWorkspace batch extraction will run later for app/settings bundles.
   return undefined;
 }
 
@@ -317,6 +316,13 @@ function cleanPaneName(raw: string): string {
     'Desktop Screen Effects': 'Desktop & Screen Saver',
     'Touch ID': 'Touch ID & Password',
     'Digi Hub': 'CDs & DVDs',
+    'Power Preferences': 'Battery',
+    'PowerPreferences': 'Battery',
+    'Security': 'Privacy & Security',
+    'Print & Scan': 'Printers & Scanners',
+    'Print & Fax': 'Printers & Scanners',
+    'Keyboard Shortcuts': 'Keyboard',
+    'Trackpad Settings': 'Trackpad',
   };
 
   s = s.replace(/\bAnd\b/g, '&');
@@ -329,6 +335,31 @@ function cleanPaneName(raw: string): string {
   }
 
   return s.trim();
+}
+
+function canonicalSettingsTitle(title: string, bundleId?: string): string {
+  const cleaned = cleanPaneName(title);
+  const byBundle: Record<string, string> = {
+    'com.apple.settings.PrivacySecurity.extension': 'Privacy & Security',
+    'com.apple.preference.security': 'Privacy & Security',
+    'com.apple.preference.battery': 'Battery',
+    'com.apple.preference.energysaver': 'Battery',
+    'com.apple.preference.printfax': 'Printers & Scanners',
+    'com.apple.preference.print': 'Printers & Scanners',
+    'com.apple.preference.trackpad': 'Trackpad',
+  };
+  if (bundleId && byBundle[bundleId]) return byBundle[bundleId];
+
+  const byTitle: Record<string, string> = {
+    security: 'Privacy & Security',
+    'privacy security': 'Privacy & Security',
+    powerpreferences: 'Battery',
+    'power preferences': 'Battery',
+    'print & fax': 'Printers & Scanners',
+    'print & scan': 'Printers & Scanners',
+  };
+  const key = cleaned.toLowerCase().replace(/\s+/g, ' ').trim();
+  return byTitle[key] || cleaned;
 }
 
 // ─── Application Discovery ──────────────────────────────────────────
@@ -410,34 +441,7 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
       files = [];
     }
 
-    const appexFiles = files.filter(
-      (f) =>
-        f.endsWith('.appex') &&
-        (f.toLowerCase().includes('settings') ||
-          f.toLowerCase().includes('preference') ||
-          f.toLowerCase().includes('pref'))
-    );
-
-    const knownSettingsExt = files.filter((f) =>
-      [
-        'Bluetooth.appex',
-        'Appearance.appex',
-        'PowerPreferences.appex',
-        'Network.appex',
-        'Screen Saver.appex',
-        'Wallpaper.appex',
-        'StartupDisk.appex',
-        'Computer Name.appex',
-        'CDs & DVDs Settings Extension.appex',
-        'FamilySettings.appex',
-        'ClassKitSettings.appex',
-        'ClassroomSettings.appex',
-        'CoverageSettings.appex',
-        'DesktopSettings.appex',
-      ].includes(f)
-    );
-
-    const allAppex = [...new Set([...appexFiles, ...knownSettingsExt])];
+    const allAppex = files.filter((f) => f.endsWith('.appex'));
 
     const BATCH = 15;
     for (let i = 0; i < allAppex.length; i += BATCH) {
@@ -448,9 +452,21 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
           const info = await readPlistJson(extPath);
           if (!info) return null;
 
+          const exAttrs = info.EXAppExtensionAttributes || {};
+          const extPoint = exAttrs.EXExtensionPointIdentifier;
+          if (extPoint !== 'com.apple.Settings.extension.ui') {
+            return null;
+          }
+
+          const settingsAttrs = exAttrs.SettingsExtensionAttributes || {};
           let displayName =
             info.CFBundleDisplayName || info.CFBundleName || '';
           const bundleId: string = info.CFBundleIdentifier || '';
+          const legacyBundleId: string | undefined =
+            typeof settingsAttrs.legacyBundleIdentifier === 'string'
+              ? settingsAttrs.legacyBundleIdentifier
+              : undefined;
+          const openIdentifier = legacyBundleId || bundleId;
 
           if (
             !displayName ||
@@ -458,17 +474,13 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
             displayName.includes('Widget') ||
             displayName.endsWith('DeviceExpert') ||
             bundleId.includes('intents') ||
-            bundleId.includes('widget')
+            bundleId.includes('widget') ||
+            !openIdentifier
           ) {
             return null;
           }
 
-          if (
-            displayName.includes('Extension') ||
-            displayName.includes('Settings')
-          ) {
-            displayName = cleanPaneName(displayName);
-          }
+          displayName = canonicalSettingsTitle(displayName, bundleId);
 
           if (!displayName || displayName.length < 2) return null;
 
@@ -482,10 +494,10 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
           return {
             id: `settings-${key.replace(/[^a-z0-9]+/g, '-')}`,
             title: displayName,
-            keywords: ['system settings', 'preferences', key],
+            keywords: ['system settings', 'preferences', key, bundleId, legacyBundleId || ''],
             iconDataUrl,
             category: 'settings' as const,
-            path: bundleId,
+            path: openIdentifier,
             _bundlePath: extPath,
           };
         })
@@ -527,7 +539,12 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
       const items = await Promise.all(
         batch.map(async (panePath) => {
           const rawName = path.basename(panePath, '.prefPane');
-          const displayName = cleanPaneName(rawName);
+          const paneInfo = await readPlistJson(panePath);
+          const paneBundleId: string | undefined =
+            typeof paneInfo?.CFBundleIdentifier === 'string'
+              ? paneInfo.CFBundleIdentifier
+              : undefined;
+          const displayName = canonicalSettingsTitle(rawName, paneBundleId);
           const key = displayName.toLowerCase();
           if (seen.has(key)) return null;
           seen.add(key);
@@ -540,7 +557,7 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
             keywords: ['system settings', 'preferences', key],
             iconDataUrl,
             category: 'settings' as const,
-            path: rawName,
+            path: paneBundleId || rawName,
             _bundlePath: panePath,
           };
         })
@@ -675,23 +692,38 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
 
   const allCommands = [...apps, ...settings, ...extensionCommands, ...systemCommands];
 
-  // ── Batch-extract icons via NSWorkspace for APPS only ──
-  // (NSWorkspace returns generic document icons for settings .appex bundles,
-  //  so we skip settings — the renderer shows a cog for those instead.)
-  const appsNeedingIcon = allCommands.filter(
-    (c) => !c.iconDataUrl && c._bundlePath && c.category === 'app'
+  // ── Batch-extract icons via NSWorkspace for app/settings bundles ──
+  const bundlesNeedingIcon = allCommands.filter(
+    (c) =>
+      !c.iconDataUrl &&
+      c._bundlePath &&
+      (c.category === 'app' || c.category === 'settings')
   );
 
-  if (appsNeedingIcon.length > 0) {
-    console.log(`Extracting ${appsNeedingIcon.length} app icons via NSWorkspace…`);
-    const bundlePaths = appsNeedingIcon.map((c) => c._bundlePath!);
+  if (bundlesNeedingIcon.length > 0) {
+    console.log(`Extracting ${bundlesNeedingIcon.length} app/settings icons via NSWorkspace…`);
+    const bundlePaths = bundlesNeedingIcon.map((c) => c._bundlePath!);
     const iconMap = await batchGetIconsViaWorkspace(bundlePaths);
 
-    for (const cmd of appsNeedingIcon) {
+    for (const cmd of bundlesNeedingIcon) {
       const dataUrl = iconMap.get(cmd._bundlePath!);
       if (dataUrl) {
         cmd.iconDataUrl = dataUrl;
       }
+    }
+  }
+
+  // Some settings bundles yield the same generic document icon.
+  // If a settings icon is repeated many times, drop it so UI fallback icon is used.
+  const settingsIconCounts = new Map<string, number>();
+  for (const cmd of allCommands) {
+    if (cmd.category !== 'settings' || !cmd.iconDataUrl) continue;
+    settingsIconCounts.set(cmd.iconDataUrl, (settingsIconCounts.get(cmd.iconDataUrl) || 0) + 1);
+  }
+  for (const cmd of allCommands) {
+    if (cmd.category !== 'settings' || !cmd.iconDataUrl) continue;
+    if ((settingsIconCounts.get(cmd.iconDataUrl) || 0) >= 5) {
+      cmd.iconDataUrl = undefined;
     }
   }
 
