@@ -24,6 +24,17 @@ export interface ExtensionBundle {
   supportPath?: string;
   owner?: string;
   preferences?: Record<string, any>;
+  preferenceDefinitions?: Array<{
+    scope: 'extension' | 'command';
+    name: string;
+    title?: string;
+    description?: string;
+    placeholder?: string;
+    required?: boolean;
+    type?: string;
+    default?: any;
+    data?: Array<{ title?: string; value?: string }>;
+  }>;
   error?: string;
 }
 

@@ -77,6 +77,85 @@ function getCategoryLabel(category: string): string {
 }
 
 const LAST_EXT_KEY = 'sc-last-extension';
+const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
+const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
+
+type PreferenceDefinition = NonNullable<ExtensionBundle['preferenceDefinitions']>[number];
+
+function readJsonObject(key: string): Record<string, any> {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeJsonObject(key: string, value: Record<string, any>) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function getExtPrefsKey(extName: string): string {
+  return `${EXT_PREFS_KEY_PREFIX}${extName}`;
+}
+
+function getCmdPrefsKey(extName: string, cmdName: string): string {
+  return `${CMD_PREFS_KEY_PREFIX}${extName}/${cmdName}`;
+}
+
+function hydrateExtensionBundlePreferences(bundle: ExtensionBundle): ExtensionBundle {
+  const extName = bundle.extName || bundle.extensionName || '';
+  const cmdName = bundle.cmdName || bundle.commandName || '';
+  const extStored = extName ? readJsonObject(getExtPrefsKey(extName)) : {};
+  const cmdStored = extName && cmdName ? readJsonObject(getCmdPrefsKey(extName, cmdName)) : {};
+  return {
+    ...bundle,
+    preferences: {
+      ...(bundle.preferences || {}),
+      ...extStored,
+      ...cmdStored,
+    },
+  };
+}
+
+function isMissingPreferenceValue(def: PreferenceDefinition, value: any): boolean {
+  if (!def.required) return false;
+  if (def.type === 'checkbox') return value === undefined || value === null;
+  if (typeof value === 'string') return value.trim() === '';
+  return value === undefined || value === null;
+}
+
+function getMissingRequiredPreferences(bundle: ExtensionBundle, values?: Record<string, any>): PreferenceDefinition[] {
+  const defs = bundle.preferenceDefinitions || [];
+  const prefs = values || bundle.preferences || {};
+  return defs.filter((def) => isMissingPreferenceValue(def, prefs[def.name]));
+}
+
+function persistExtensionPreferences(
+  extName: string,
+  cmdName: string,
+  defs: PreferenceDefinition[],
+  values: Record<string, any>
+) {
+  const extKey = getExtPrefsKey(extName);
+  const cmdKey = getCmdPrefsKey(extName, cmdName);
+  const extPrefs = readJsonObject(extKey);
+  const cmdPrefs = readJsonObject(cmdKey);
+
+  for (const def of defs) {
+    if (!def?.name) continue;
+    if (def.scope === 'command') {
+      cmdPrefs[def.name] = values[def.name];
+    } else {
+      extPrefs[def.name] = values[def.name];
+    }
+  }
+
+  writeJsonObject(extKey, extPrefs);
+  writeJsonObject(cmdKey, cmdPrefs);
+}
 
 const App: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
@@ -84,6 +163,10 @@ const App: React.FC = () => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [extensionView, setExtensionView] = useState<ExtensionBundle | null>(null);
+  const [extensionPreferenceSetup, setExtensionPreferenceSetup] = useState<{
+    bundle: ExtensionBundle;
+    values: Record<string, any>;
+  } | null>(null);
   const [showClipboardManager, setShowClipboardManager] = useState(false);
   const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
   const [menuBarExtensions, setMenuBarExtensions] = useState<ExtensionBundle[]>([]);
@@ -116,7 +199,16 @@ const App: React.FC = () => {
         const { extName, cmdName } = JSON.parse(saved);
         window.electron.runExtension(extName, cmdName).then(result => {
           if (result && result.code) {
-            setExtensionView(result);
+            const hydrated = hydrateExtensionBundlePreferences(result);
+            const missing = getMissingRequiredPreferences(hydrated);
+            if (missing.length > 0) {
+              setExtensionPreferenceSetup({
+                bundle: hydrated,
+                values: { ...(hydrated.preferences || {}) },
+              });
+            } else {
+              setExtensionView(hydrated);
+            }
           } else {
             localStorage.removeItem(LAST_EXT_KEY);
           }
@@ -159,7 +251,10 @@ const App: React.FC = () => {
     (window as any).electron?.getMenuBarExtensions?.().then((exts: any[]) => {
       if (exts && exts.length > 0) {
         console.log(`[MenuBar] Loading ${exts.length} menu-bar extension(s)`);
-        setMenuBarExtensions(exts);
+        const runnable = exts
+          .map((ext) => hydrateExtensionBundlePreferences(ext))
+          .filter((ext) => getMissingRequiredPreferences(ext).length === 0);
+        setMenuBarExtensions(runnable);
       }
     }).catch((err: any) => {
       console.error('[MenuBar] Failed to load menu-bar extensions:', err);
@@ -365,15 +460,25 @@ const App: React.FC = () => {
         const [extName, cmdName] = command.path.split('/');
         const result = await window.electron.runExtension(extName, cmdName);
         if (result && result.code) {
+          const hydrated = hydrateExtensionBundlePreferences(result);
+          const missing = getMissingRequiredPreferences(hydrated);
+          if (missing.length > 0) {
+            setExtensionPreferenceSetup({
+              bundle: hydrated,
+              values: { ...(hydrated.preferences || {}) },
+            });
+            return;
+          }
+
           // Menu-bar commands run in the hidden tray runners, not in the overlay.
           // Just hide the window — the tray will show the menu.
-          if (result.mode === 'menu-bar') {
+          if (hydrated.mode === 'menu-bar') {
             window.electron.hideWindow();
             setSearchQuery('');
             setSelectedIndex(0);
             return;
           }
-          setExtensionView(result);
+          setExtensionView(hydrated);
           localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
           return;
         }
@@ -423,6 +528,143 @@ const App: React.FC = () => {
       ))}
     </div>
   ) : null;
+
+  // ─── Extension Preferences Setup ────────────────────────────────
+  if (extensionPreferenceSetup) {
+    const bundle = extensionPreferenceSetup.bundle;
+    const defs = (bundle.preferenceDefinitions || []).filter((d) => d?.name);
+    const missing = getMissingRequiredPreferences(bundle, extensionPreferenceSetup.values);
+    const displayName = (bundle as any).extensionDisplayName || bundle.extensionName || bundle.extName || 'Extension';
+
+    return (
+      <>
+        {menuBarRunner}
+        <div className="w-full h-full">
+          <div className="glass-effect overflow-hidden h-full flex flex-col">
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+              <button
+                onClick={() => {
+                  setExtensionPreferenceSetup(null);
+                  setSearchQuery('');
+                  setSelectedIndex(0);
+                }}
+                className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              </button>
+              <div className="text-white/85 text-[15px] font-medium truncate">
+                Configure {displayName}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <p className="text-sm text-white/55">
+                This command needs preferences before it can run.
+              </p>
+              {defs.map((def) => {
+                const value = extensionPreferenceSetup.values?.[def.name];
+                const type = def.type || 'textfield';
+                return (
+                  <div key={`${def.scope}:${def.name}`} className="space-y-1">
+                    <label className="text-xs text-white/70 font-medium">
+                      {def.title || def.name}
+                      {def.required ? <span className="text-red-400"> *</span> : null}
+                    </label>
+                    {type === 'checkbox' ? (
+                      <label className="inline-flex items-center gap-2 text-sm text-white/80">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(value)}
+                          onChange={(e) => {
+                            setExtensionPreferenceSetup((prev) => prev ? {
+                              ...prev,
+                              values: { ...prev.values, [def.name]: e.target.checked },
+                            } : prev);
+                          }}
+                        />
+                        <span>Enabled</span>
+                      </label>
+                    ) : type === 'dropdown' ? (
+                      <select
+                        value={typeof value === 'string' ? value : ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setExtensionPreferenceSetup((prev) => prev ? {
+                            ...prev,
+                            values: { ...prev.values, [def.name]: v },
+                          } : prev);
+                        }}
+                        className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 outline-none"
+                      >
+                        <option value="">Select an option</option>
+                        {(def.data || []).map((opt) => (
+                          <option key={opt?.value || opt?.title} value={opt?.value || ''}>
+                            {opt?.title || opt?.value || ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type={type === 'password' ? 'password' : 'text'}
+                        value={value ?? ''}
+                        placeholder={def.placeholder || ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setExtensionPreferenceSetup((prev) => prev ? {
+                            ...prev,
+                            values: { ...prev.values, [def.name]: v },
+                          } : prev);
+                        }}
+                        className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 placeholder-white/30 outline-none"
+                      />
+                    )}
+                    {def.description ? (
+                      <p className="text-xs text-white/40">{def.description}</p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-end gap-2" style={{ background: 'rgba(28,28,32,0.90)' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const extName = bundle.extName || bundle.extensionName || '';
+                  const cmdName = bundle.cmdName || bundle.commandName || '';
+                  if (!extName || !cmdName) return;
+                  persistExtensionPreferences(extName, cmdName, defs, extensionPreferenceSetup.values);
+                  const updatedBundle: ExtensionBundle = {
+                    ...bundle,
+                    preferences: { ...(bundle.preferences || {}), ...(extensionPreferenceSetup.values || {}) },
+                  };
+                  setExtensionPreferenceSetup(null);
+
+                  if (updatedBundle.mode === 'menu-bar') {
+                    window.electron.hideWindow();
+                    setSearchQuery('');
+                    setSelectedIndex(0);
+                    return;
+                  }
+
+                  setExtensionView(updatedBundle);
+                  localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
+                }}
+                disabled={missing.length > 0}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  missing.length > 0
+                    ? 'bg-white/[0.08] text-white/35 cursor-not-allowed'
+                    : 'bg-white/[0.16] hover:bg-white/[0.22] text-white'
+                }`}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   // ─── Extension view mode ──────────────────────────────────────────
   if (extensionView) {

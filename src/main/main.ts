@@ -611,6 +611,7 @@ app.whenReady().then(async () => {
           extensionPath: result.extensionPath,
           owner: result.owner,
           preferences: result.preferences,
+          preferenceDefinitions: result.preferenceDefinitions,
         };
       } catch (e: any) {
         console.error(`run-extension error for ${extName}/${cmdName}:`, e);
@@ -658,6 +659,7 @@ app.whenReady().then(async () => {
             extensionPath: result.extensionPath,
             owner: result.owner,
             preferences: result.preferences,
+            preferenceDefinitions: result.preferenceDefinitions,
             launchContext: context,
             launchType: type,
           }
@@ -1606,6 +1608,7 @@ app.whenReady().then(async () => {
           supportPath: bundle.supportPath,
           owner: bundle.owner,
           preferences: bundle.preferences,
+          preferenceDefinitions: bundle.preferenceDefinitions,
         });
       }
     }

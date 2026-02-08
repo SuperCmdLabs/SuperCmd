@@ -348,9 +348,50 @@ function fsStatResult(exists: boolean, isDir = false) {
   };
 }
 
+const commandPathCache = new Map<string, string | null>();
+
+function isBareCommandPath(p: string): boolean {
+  if (!p) return false;
+  if (p.includes('/') || p.includes('\\')) return false;
+  if (p.startsWith('.')) return false;
+  return /^[A-Za-z0-9._+-]+$/.test(p);
+}
+
+function resolveCommandOnPath(command: string): string | null {
+  if (!isBareCommandPath(command)) return null;
+  if (commandPathCache.has(command)) return commandPathCache.get(command) || null;
+  try {
+    const result = (window as any).electron?.execCommandSync?.(
+      '/bin/zsh',
+      ['-lc', `command -v -- ${JSON.stringify(command)} 2>/dev/null || true`],
+      {}
+    );
+    const resolved = (result?.stdout || '').trim();
+    if (resolved && resolved.includes('/')) {
+      commandPathCache.set(command, resolved);
+      return resolved;
+    }
+    const commonDirs = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'];
+    for (const dir of commonDirs) {
+      const candidate = `${dir}/${command}`;
+      if ((window as any).electron?.fileExistsSync?.(candidate)) {
+        commandPathCache.set(command, candidate);
+        return candidate;
+      }
+    }
+  } catch {}
+  commandPathCache.set(command, null);
+  return null;
+}
+
+function resolveFsLookupPath(input: any): string {
+  const path = normalizeFsPath(input);
+  return resolveCommandOnPath(path) || path;
+}
+
 const fsStub: Record<string, any> = {
   existsSync: (p: any) => {
-    const path = normalizeFsPath(p);
+    const path = resolveFsLookupPath(p);
     // Check localStorage first
     if (localStorage.getItem(FS_PREFIX + path) !== null) return true;
     // Fall back to real file system via sync IPC
@@ -361,7 +402,7 @@ const fsStub: Record<string, any> = {
     }
   },
   readFileSync: (p: any, opts?: any) => {
-    const path = normalizeFsPath(p);
+    const path = resolveFsLookupPath(p);
     // Check localStorage first
     const content = localStorage.getItem(FS_PREFIX + path);
     if (content !== null) {
@@ -403,7 +444,7 @@ const fsStub: Record<string, any> = {
     return results;
   },
   statSync: (p: any) => {
-    const path = normalizeFsPath(p);
+    const path = resolveFsLookupPath(p);
     if (localStorage.getItem(FS_PREFIX + path) !== null) return fsStatResult(true);
     try {
       const result = (window as any).electron?.statSync?.(path);
@@ -412,7 +453,7 @@ const fsStub: Record<string, any> = {
     return fsStatResult(false);
   },
   lstatSync: (p: any) => {
-    const path = normalizeFsPath(p);
+    const path = resolveFsLookupPath(p);
     if (localStorage.getItem(FS_PREFIX + path) !== null) return fsStatResult(true);
     try {
       const result = (window as any).electron?.statSync?.(path);
@@ -437,7 +478,7 @@ const fsStub: Record<string, any> = {
   },
   chmodSync: noop,
   accessSync: (p: any) => {
-    const path = normalizeFsPath(p);
+    const path = resolveFsLookupPath(p);
     if (localStorage.getItem(FS_PREFIX + path) !== null) return;
     try {
       if ((window as any).electron?.fileExistsSync?.(path)) return;
@@ -493,11 +534,41 @@ const fsStub: Record<string, any> = {
   },
   stat: (p: string, ...args: any[]) => {
     const cb = args[args.length - 1];
-    if (typeof cb === 'function') cb(null, fsStatResult(localStorage.getItem(FS_PREFIX + p) !== null));
+    if (typeof cb !== 'function') return;
+    const path = resolveFsLookupPath(p);
+    if (localStorage.getItem(FS_PREFIX + path) !== null) {
+      cb(null, fsStatResult(true));
+      return;
+    }
+    try {
+      const result = (window as any).electron?.statSync?.(path);
+      if (result?.exists) {
+        cb(null, fsStatResult(true, result.isDirectory));
+        return;
+      }
+    } catch {}
+    const err: any = new Error(`ENOENT: no such file or directory, stat '${path}'`);
+    err.code = 'ENOENT';
+    cb(err);
   },
   lstat: (p: string, ...args: any[]) => {
     const cb = args[args.length - 1];
-    if (typeof cb === 'function') cb(null, fsStatResult(localStorage.getItem(FS_PREFIX + p) !== null));
+    if (typeof cb !== 'function') return;
+    const path = resolveFsLookupPath(p);
+    if (localStorage.getItem(FS_PREFIX + path) !== null) {
+      cb(null, fsStatResult(true));
+      return;
+    }
+    try {
+      const result = (window as any).electron?.statSync?.(path);
+      if (result?.exists) {
+        cb(null, fsStatResult(true, result.isDirectory));
+        return;
+      }
+    } catch {}
+    const err: any = new Error(`ENOENT: no such file or directory, lstat '${path}'`);
+    err.code = 'ENOENT';
+    cb(err);
   },
   realpath: (p: string, ...args: any[]) => {
     const cb = args[args.length - 1];
@@ -547,20 +618,26 @@ const fsStub: Record<string, any> = {
     mkdir: noopAsync,
     readdir: async (p: string) => fsStub.readdirSync(p),
     stat: async (p: string) => {
-      if (localStorage.getItem(FS_PREFIX + p) !== null) return fsStatResult(true);
+      const path = resolveFsLookupPath(p);
+      if (localStorage.getItem(FS_PREFIX + path) !== null) return fsStatResult(true);
       try {
-        const result = (window as any).electron?.statSync?.(p);
+        const result = (window as any).electron?.statSync?.(path);
         if (result?.exists) return fsStatResult(true, result.isDirectory);
       } catch {}
-      return fsStatResult(false);
+      const err: any = new Error(`ENOENT: no such file or directory, stat '${path}'`);
+      err.code = 'ENOENT';
+      throw err;
     },
     lstat: async (p: string) => {
-      if (localStorage.getItem(FS_PREFIX + p) !== null) return fsStatResult(true);
+      const path = resolveFsLookupPath(p);
+      if (localStorage.getItem(FS_PREFIX + path) !== null) return fsStatResult(true);
       try {
-        const result = (window as any).electron?.statSync?.(p);
+        const result = (window as any).electron?.statSync?.(path);
         if (result?.exists) return fsStatResult(true, result.isDirectory);
       } catch {}
-      return fsStatResult(false);
+      const err: any = new Error(`ENOENT: no such file or directory, lstat '${path}'`);
+      err.code = 'ENOENT';
+      throw err;
     },
     realpath: async (p: string) => p,
     access: async (p: string) => {
@@ -866,7 +943,7 @@ const childProcessStub = {
     const cp: any = { ...fakeChildProcess };
     if (typeof command === 'string' && (window as any).electron?.execCommand) {
       (window as any).electron.execCommand(
-        '/bin/sh', ['-c', command],
+        '/bin/zsh', ['-lc', command],
         { shell: false, env: options?.env, cwd: options?.cwd }
       ).then((result: any) => {
         if (cb) {
@@ -889,8 +966,8 @@ const childProcessStub = {
   },
   execSync: (command: string) => {
     const result = (window as any).electron?.execCommandSync?.(
-      '/bin/sh',
-      ['-c', command],
+      '/bin/zsh',
+      ['-lc', command],
       { shell: false }
     );
     if (result?.exitCode && result.exitCode !== 0) {
