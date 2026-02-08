@@ -70,6 +70,15 @@ export interface ClipboardItem {
   };
 }
 
+export interface Snippet {
+  id: string;
+  name: string;
+  content: string;
+  keyword?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface OllamaLocalModel {
   name: string;
   size: number;
@@ -83,6 +92,7 @@ export interface ElectronAPI {
   getCommands: () => Promise<CommandInfo[]>;
   executeCommand: (commandId: string) => Promise<boolean>;
   hideWindow: () => Promise<void>;
+  getLastFrontmostApp: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   onWindowShown: (callback: () => void) => void;
 
   // Settings
@@ -144,6 +154,17 @@ export interface ElectronAPI {
   clipboardCopyItem: (id: string) => Promise<boolean>;
   clipboardPasteItem: (id: string) => Promise<boolean>;
   clipboardSetEnabled: (enabled: boolean) => Promise<void>;
+
+  // Snippet Manager
+  snippetGetAll: () => Promise<Snippet[]>;
+  snippetSearch: (query: string) => Promise<Snippet[]>;
+  snippetCreate: (data: { name: string; content: string; keyword?: string }) => Promise<Snippet>;
+  snippetUpdate: (id: string, data: { name?: string; content?: string; keyword?: string }) => Promise<Snippet | null>;
+  snippetDelete: (id: string) => Promise<boolean>;
+  snippetCopyToClipboard: (id: string) => Promise<boolean>;
+  snippetPaste: (id: string) => Promise<boolean>;
+  snippetImport: () => Promise<{ imported: number; skipped: number }>;
+  snippetExport: () => Promise<boolean>;
 
   // Native helpers
   nativePickColor: () => Promise<{ red: number; green: number; blue: number; alpha: number } | null>;

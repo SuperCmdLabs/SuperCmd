@@ -31,6 +31,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   const [filterType, setFilterType] = useState<'all' | 'text' | 'image' | 'url' | 'file'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [showActions, setShowActions] = useState(false);
+  const [frontmostAppName, setFrontmostAppName] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -49,6 +50,9 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   useEffect(() => {
     loadHistory();
     inputRef.current?.focus();
+    window.electron.getLastFrontmostApp().then((app) => {
+      if (app) setFrontmostAppName(app.name);
+    });
   }, [loadHistory]);
 
   useEffect(() => {
@@ -142,9 +146,11 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
 
   const selectedItem = filteredItems[selectedIndex];
 
+  const pasteLabel = frontmostAppName ? `Paste in ${frontmostAppName}` : 'Paste';
+
   const actions: Action[] = [
     {
-      title: 'Paste',
+      title: pasteLabel,
       execute: () => handlePasteItem(),
     },
     {

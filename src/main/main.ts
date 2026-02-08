@@ -32,6 +32,18 @@ import {
   searchClipboardHistory,
   setClipboardMonitorEnabled,
 } from './clipboard-manager';
+import {
+  initSnippetStore,
+  getAllSnippets,
+  searchSnippets,
+  getSnippetById,
+  createSnippet,
+  updateSnippet,
+  deleteSnippet,
+  copySnippetToClipboard,
+  importSnippetsFromFile,
+  exportSnippetsToFile,
+} from './snippet-store';
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net } = electron;
@@ -44,7 +56,9 @@ const WINDOW_HEIGHT = 580;
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let isVisible = false;
+let suppressBlurHide = false; // When true, blur won't hide the window (used during file dialogs)
 let currentShortcut = '';
+let lastFrontmostApp: { name: string; path: string; bundleId?: string } | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
 
@@ -113,7 +127,7 @@ function createWindow(): void {
   mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.on('blur', () => {
-    if (isVisible) {
+    if (isVisible && !suppressBlurHide) {
       hideWindow();
     }
   });
@@ -125,6 +139,28 @@ function createWindow(): void {
 
 function showWindow(): void {
   if (!mainWindow) return;
+
+  // Capture the frontmost app BEFORE showing our window
+  try {
+    const { execSync } = require('child_process');
+    const script = `
+      tell application "System Events"
+        set frontApp to first application process whose frontmost is true
+        set appName to name of frontApp
+        set appPath to POSIX path of (file of frontApp as alias)
+        set appId to bundle identifier of frontApp
+        return appName & "|||" & appPath & "|||" & appId
+      end tell
+    `;
+    const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
+    const [name, appPath, bundleId] = result.split('|||');
+    // Don't store ourselves
+    if (bundleId !== 'com.supercommand' && name !== 'SuperCommand' && name !== 'Electron') {
+      lastFrontmostApp = { name, path: appPath, bundleId };
+    }
+  } catch (e) {
+    // Keep whatever was stored previously
+  }
 
   const cursorPoint = screen.getCursorScreenPoint();
   const currentDisplay = screen.getDisplayNearestPoint(cursorPoint);
@@ -157,6 +193,55 @@ function hideWindow(): void {
   if (!mainWindow) return;
   mainWindow.hide();
   isVisible = false;
+}
+
+/**
+ * Hide the launcher, re-activate the previous frontmost app, and simulate Cmd+V.
+ * Used by both clipboard-paste-item and snippet-paste.
+ */
+async function hideAndPaste(): Promise<void> {
+  // Hide the window first
+  if (mainWindow && isVisible) {
+    mainWindow.hide();
+    isVisible = false;
+  }
+
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const execFileAsync = promisify(execFile);
+
+  // Re-activate the previous frontmost app explicitly
+  if (lastFrontmostApp?.name) {
+    try {
+      await execFileAsync('osascript', [
+        '-e',
+        `tell application "${lastFrontmostApp.name}" to activate`,
+      ]);
+    } catch (e) {
+      // Fallback: just wait for OS to refocus
+    }
+  }
+
+  // Small delay to let the target app gain focus
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  try {
+    await execFileAsync('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down']);
+  } catch (e) {
+    console.error('Failed to simulate paste keystroke:', e);
+    // Fallback with extra delay
+    try {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      await execFileAsync('osascript', ['-e', `
+        delay 0.1
+        tell application "System Events"
+          keystroke "v" using command down
+        end tell
+      `]);
+    } catch (e2) {
+      console.error('Fallback paste also failed:', e2);
+    }
+  }
 }
 
 function toggleWindow(): void {
@@ -356,6 +441,9 @@ app.whenReady().then(async () => {
   // Start clipboard monitor
   startClipboardMonitor();
 
+  // Initialize snippet store
+  initSnippetStore();
+
   // Rebuild extensions in background
   rebuildExtensions().catch(console.error);
 
@@ -385,6 +473,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('hide-window', () => {
     hideWindow();
+  });
+
+  ipcMain.handle('get-last-frontmost-app', () => {
+    return lastFrontmostApp;
   });
 
   // ─── IPC: Settings ──────────────────────────────────────────────
@@ -925,44 +1017,64 @@ app.whenReady().then(async () => {
     const success = copyItemToClipboard(id);
     if (!success) return false;
 
-    // Hide the window first so the previous app regains focus
-    if (mainWindow && isVisible) {
-      mainWindow.hide();
-      isVisible = false;
-    }
-
-    // Wait for the previous app to gain focus
-    await new Promise(resolve => setTimeout(resolve, 300));
-
-    try {
-      const { execFile } = require('child_process');
-      const { promisify } = require('util');
-      const execFileAsync = promisify(execFile);
-      await execFileAsync('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down']);
-    } catch (e) {
-      console.error('Failed to simulate paste keystroke:', e);
-      // Fallback: try using pbpaste + AppleScript with delay
-      try {
-        const { execFile } = require('child_process');
-        const { promisify } = require('util');
-        const execFileAsync = promisify(execFile);
-        await new Promise(resolve => setTimeout(resolve, 200));
-        await execFileAsync('osascript', ['-e', `
-          delay 0.1
-          tell application "System Events"
-            keystroke "v" using command down
-          end tell
-        `]);
-      } catch (e2) {
-        console.error('Fallback paste also failed:', e2);
-      }
-    }
-
+    await hideAndPaste();
     return true;
   });
 
   ipcMain.handle('clipboard-set-enabled', (_event: any, enabled: boolean) => {
     setClipboardMonitorEnabled(enabled);
+  });
+
+  // ─── IPC: Snippet Manager ─────────────────────────────────────
+
+  ipcMain.handle('snippet-get-all', () => {
+    return getAllSnippets();
+  });
+
+  ipcMain.handle('snippet-search', (_event: any, query: string) => {
+    return searchSnippets(query);
+  });
+
+  ipcMain.handle('snippet-create', (_event: any, data: { name: string; content: string; keyword?: string }) => {
+    return createSnippet(data);
+  });
+
+  ipcMain.handle('snippet-update', (_event: any, id: string, data: { name?: string; content?: string; keyword?: string }) => {
+    return updateSnippet(id, data);
+  });
+
+  ipcMain.handle('snippet-delete', (_event: any, id: string) => {
+    return deleteSnippet(id);
+  });
+
+  ipcMain.handle('snippet-copy-to-clipboard', (_event: any, id: string) => {
+    return copySnippetToClipboard(id);
+  });
+
+  ipcMain.handle('snippet-paste', async (_event: any, id: string) => {
+    const success = copySnippetToClipboard(id);
+    if (!success) return false;
+
+    await hideAndPaste();
+    return true;
+  });
+
+  ipcMain.handle('snippet-import', async () => {
+    suppressBlurHide = true;
+    try {
+      return await importSnippetsFromFile(mainWindow || undefined);
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('snippet-export', async () => {
+    suppressBlurHide = true;
+    try {
+      return await exportSnippetsToFile(mainWindow || undefined);
+    } finally {
+      suppressBlurHide = false;
+    }
   });
 
   // ─── IPC: AI ───────────────────────────────────────────────────

@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('electron', {
   executeCommand: (commandId: string): Promise<boolean> =>
     ipcRenderer.invoke('execute-command', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
+  getLastFrontmostApp: (): Promise<{ name: string; path: string; bundleId?: string } | null> =>
+    ipcRenderer.invoke('get-last-frontmost-app'),
   onWindowShown: (callback: () => void) => {
     ipcRenderer.on('window-shown', () => callback());
   },
@@ -146,6 +148,26 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('clipboard-paste-item', id),
   clipboardSetEnabled: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke('clipboard-set-enabled', enabled),
+
+  // ─── Snippet Manager ────────────────────────────────────────────
+  snippetGetAll: (): Promise<any[]> =>
+    ipcRenderer.invoke('snippet-get-all'),
+  snippetSearch: (query: string): Promise<any[]> =>
+    ipcRenderer.invoke('snippet-search', query),
+  snippetCreate: (data: any): Promise<any> =>
+    ipcRenderer.invoke('snippet-create', data),
+  snippetUpdate: (id: string, data: any): Promise<any> =>
+    ipcRenderer.invoke('snippet-update', id, data),
+  snippetDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('snippet-delete', id),
+  snippetCopyToClipboard: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('snippet-copy-to-clipboard', id),
+  snippetPaste: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('snippet-paste', id),
+  snippetImport: (): Promise<{ imported: number; skipped: number }> =>
+    ipcRenderer.invoke('snippet-import'),
+  snippetExport: (): Promise<boolean> =>
+    ipcRenderer.invoke('snippet-export'),
 
   // ─── Native Helpers ─────────────────────────────────────────────
   nativePickColor: (): Promise<{ red: number; green: number; blue: number; alpha: number } | null> =>

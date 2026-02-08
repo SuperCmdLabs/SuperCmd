@@ -10,6 +10,7 @@ import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight } from 'lucide
 import type { CommandInfo, ExtensionBundle } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
+import SnippetManager from './SnippetManager';
 import { tryCalculate } from './smart-calculator';
 
 /**
@@ -84,6 +85,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [extensionView, setExtensionView] = useState<ExtensionBundle | null>(null);
   const [showClipboardManager, setShowClipboardManager] = useState(false);
+  const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
   const [menuBarExtensions, setMenuBarExtensions] = useState<ExtensionBundle[]>([]);
   const [aiMode, setAiMode] = useState(false);
   const [aiResponse, setAiResponse] = useState('');
@@ -139,6 +141,7 @@ const App: React.FC = () => {
       setAiResponse('');
       setAiStreaming(false);
       setAiQuery('');
+      setShowSnippetManager(null);
       // Re-fetch commands every time the window is shown
       // so newly installed extensions appear immediately
       fetchCommands();
@@ -339,6 +342,24 @@ const App: React.FC = () => {
         return;
       }
 
+      // Special handling for snippet commands
+      if (command.id === 'system-search-snippets') {
+        setShowSnippetManager('search');
+        return;
+      }
+      if (command.id === 'system-create-snippet') {
+        setShowSnippetManager('create');
+        return;
+      }
+      if (command.id === 'system-import-snippets') {
+        await window.electron.snippetImport();
+        return;
+      }
+      if (command.id === 'system-export-snippets') {
+        await window.electron.snippetExport();
+        return;
+      }
+
       if (command.category === 'extension' && command.path) {
         // Extension command — build and show extension view
         const [extName, cmdName] = command.path.split('/');
@@ -443,6 +464,28 @@ const App: React.FC = () => {
             <ClipboardManager
               onClose={() => {
                 setShowClipboardManager(false);
+                setSearchQuery('');
+                setSelectedIndex(0);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ─── Snippet Manager mode ─────────────────────────────────────────
+  if (showSnippetManager) {
+    return (
+      <>
+        {menuBarRunner}
+        <div className="w-full h-full">
+          <div className="glass-effect overflow-hidden h-full flex flex-col">
+            <SnippetManager
+              initialView={showSnippetManager}
+              onClose={() => {
+                setShowSnippetManager(null);
                 setSearchQuery('');
                 setSelectedIndex(0);
                 setTimeout(() => inputRef.current?.focus(), 50);

@@ -632,6 +632,30 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       keywords: ['exit', 'close', 'quit', 'stop'],
       category: 'system',
     },
+    {
+      id: 'system-create-snippet',
+      title: 'Create Snippet',
+      keywords: ['snippet', 'create', 'new', 'text expansion'],
+      category: 'system',
+    },
+    {
+      id: 'system-search-snippets',
+      title: 'Search Snippets',
+      keywords: ['snippet', 'search', 'find', 'text expansion'],
+      category: 'system',
+    },
+    {
+      id: 'system-import-snippets',
+      title: 'Import Snippets',
+      keywords: ['snippet', 'import', 'load', 'file'],
+      category: 'system',
+    },
+    {
+      id: 'system-export-snippets',
+      title: 'Export Snippets',
+      keywords: ['snippet', 'export', 'save', 'backup', 'file'],
+      category: 'system',
+    },
   ];
 
   // Installed community extensions
