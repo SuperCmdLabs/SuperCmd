@@ -80,6 +80,12 @@ contextBridge.exposeInMainWorld('electron', {
     options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> =>
     ipcRenderer.invoke('exec-command', command, args, options),
+  execCommandSync: (
+    command: string,
+    args: string[],
+    options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
+  ): { stdout: string; stderr: string; exitCode: number } =>
+    ipcRenderer.sendSync('exec-command-sync', command, args, options),
 
   // Get installed applications
   getApplications: (): Promise<Array<{ name: string; path: string; bundleId?: string }>> =>

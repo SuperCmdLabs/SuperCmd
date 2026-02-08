@@ -764,6 +764,49 @@ app.whenReady().then(async () => {
     }
   );
 
+  // Synchronous shell command execution (for extensions using execFileSync/execSync)
+  ipcMain.on(
+    'exec-command-sync',
+    (
+      event: any,
+      command: string,
+      args: string[],
+      options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
+    ) => {
+      try {
+        const { spawnSync } = require('child_process');
+        const spawnOptions: any = {
+          shell: options?.shell ?? false,
+          env: { ...process.env, ...options?.env },
+          cwd: options?.cwd || process.cwd(),
+          input: options?.input,
+          encoding: 'utf-8',
+          timeout: 30000,
+        };
+
+        let result: any;
+        if (options?.shell) {
+          const fullCommand = [command, ...(args || [])].join(' ');
+          result = spawnSync(fullCommand, [], { ...spawnOptions, shell: true });
+        } else {
+          result = spawnSync(command, args || [], spawnOptions);
+        }
+
+        event.returnValue = {
+          stdout: result?.stdout || '',
+          stderr: result?.stderr || '',
+          exitCode: typeof result?.status === 'number' ? result.status : 0,
+        };
+      } catch (e: any) {
+        event.returnValue = {
+          stdout: '',
+          stderr: e?.message || 'Failed to execute command',
+          exitCode: 1,
+        };
+      }
+    }
+  );
+
   // Get installed applications
   ipcMain.handle('get-applications', async () => {
     const commands = await getAvailableCommands();

@@ -518,6 +518,10 @@ function isEmojiOrSymbol(s: string): boolean {
 function resolveIconSrc(src: string): string {
   // Already absolute URL, data URI, or custom protocol — leave as-is
   if (/^(https?:\/\/|data:|file:\/\/|sc-asset:\/\/)/.test(src)) return src;
+  // Absolute filesystem path
+  if (src.startsWith('/')) {
+    return `sc-asset://ext-asset${src}`;
+  }
   // If it looks like a file path (has an image/svg extension), resolve via extension assets
   if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(src)) {
     const ctx = getExtensionContext();
@@ -606,8 +610,14 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
 
     const tint = resolveTintColor(icon.tintColor);
 
-    if (icon.source) {
-      const src = typeof icon.source === 'string' ? icon.source : icon.source?.light || icon.source?.dark || '';
+    const sourceCandidate = icon.source
+      ? (typeof icon.source === 'string' ? icon.source : icon.source?.light || icon.source?.dark || '')
+      : '';
+    const fallbackCandidate = typeof icon.fallback === 'string' ? icon.fallback : '';
+    const source = sourceCandidate || fallbackCandidate;
+
+    if (source) {
+      const src = source;
       if (src) {
         // Check if source is an emoji/symbol (from our Icon proxy) vs a real URL/path
         if (isEmojiOrSymbol(src)) {

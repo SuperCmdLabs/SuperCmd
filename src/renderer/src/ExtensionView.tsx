@@ -883,14 +883,19 @@ const childProcessStub = {
     return cp;
   },
   execSync: (command: string) => {
-    // Synchronous exec via sync IPC
-    try {
-      const result = (window as any).electron?.readFileSync?.('');
-      // execSync is hard to implement in renderer; return empty for now
-      return BufferPolyfill.from('');
-    } catch {
-      return BufferPolyfill.from('');
+    const result = (window as any).electron?.execCommandSync?.(
+      '/bin/sh',
+      ['-c', command],
+      { shell: false }
+    );
+    if (result?.exitCode && result.exitCode !== 0) {
+      const err: any = new Error(result.stderr || `Command failed with exit code ${result.exitCode}`);
+      err.status = result.exitCode;
+      err.stderr = result.stderr;
+      err.stdout = result.stdout;
+      throw err;
     }
+    return BufferPolyfill.from(result?.stdout || '');
   },
   execFile: (...args: any[]) => {
     // Parse arguments: execFile(file[, args][, options][, callback])
@@ -930,7 +935,35 @@ const childProcessStub = {
     }
     return cp;
   },
-  execFileSync: () => BufferPolyfill.from(''),
+  execFileSync: (...args: any[]) => {
+    const file = args[0];
+    let execArgs: string[] = [];
+    let options: any = {};
+
+    if (Array.isArray(args[1])) {
+      execArgs = args[1];
+      if (typeof args[2] === 'object' && args[2] !== null && !Array.isArray(args[2])) options = args[2];
+    } else if (typeof args[1] === 'object' && args[1] !== null && !Array.isArray(args[1])) {
+      options = args[1];
+    }
+
+    const result = (window as any).electron?.execCommandSync?.(
+      file,
+      execArgs,
+      { shell: false, env: options?.env, cwd: options?.cwd, input: options?.input }
+    ) || { stdout: '', stderr: '', exitCode: 0 };
+
+    if (result.exitCode !== 0) {
+      const err: any = new Error(result.stderr || `Command failed with exit code ${result.exitCode}`);
+      err.status = result.exitCode;
+      err.stderr = result.stderr;
+      err.stdout = result.stdout;
+      throw err;
+    }
+
+    if (options?.encoding) return result.stdout || '';
+    return BufferPolyfill.from(result.stdout || '');
+  },
   spawn: () => {
     const cp: any = new EventEmitterStub();
     cp.stdin = new WritableStub();
@@ -945,15 +978,25 @@ const childProcessStub = {
     setTimeout(() => { cp.emit('close', 0, null); }, 0);
     return cp;
   },
-  spawnSync: () => ({
-    pid: 0,
-    output: [null, BufferPolyfill.from(''), BufferPolyfill.from('')],
-    stdout: BufferPolyfill.from(''),
-    stderr: BufferPolyfill.from(''),
-    status: 0,
-    signal: null,
-    error: undefined,
-  }),
+  spawnSync: (command: string, spawnArgs?: string[], options?: any) => {
+    const result = (window as any).electron?.execCommandSync?.(
+      command,
+      Array.isArray(spawnArgs) ? spawnArgs : [],
+      { shell: options?.shell ?? false, env: options?.env, cwd: options?.cwd, input: options?.input }
+    ) || { stdout: '', stderr: '', exitCode: 0 };
+
+    const stdoutBuf = BufferPolyfill.from(result.stdout || '');
+    const stderrBuf = BufferPolyfill.from(result.stderr || '');
+    return {
+      pid: 0,
+      output: [null, stdoutBuf, stderrBuf],
+      stdout: stdoutBuf,
+      stderr: stderrBuf,
+      status: result.exitCode ?? 0,
+      signal: null,
+      error: undefined,
+    };
+  },
   fork: () => ({ ...fakeChildProcess }),
 };
 
