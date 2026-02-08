@@ -285,6 +285,8 @@ export interface ExtensionBundleResult {
   mode: string;
   // Extension metadata
   extensionName: string;
+  extensionDisplayName: string;
+  extensionIconDataUrl?: string;
   commandName: string;
   assetsPath: string;
   supportPath: string;
@@ -371,6 +373,8 @@ export function getExtensionBundle(
   let title = cmdName;
   let mode = 'view';
   let owner = '';
+  let extensionDisplayName = extName;
+  let extensionIconDataUrl: string | undefined;
   let preferences: Record<string, any> = {};
   let commandPreferences: Record<string, any> = {};
 
@@ -380,6 +384,8 @@ export function getExtensionBundle(
     const cmd = (pkg.commands || []).find((c: any) => c.name === cmdName);
     if (cmd?.title) title = cmd.title;
     if (cmd?.mode) mode = cmd.mode;
+    if (pkg?.title) extensionDisplayName = pkg.title;
+    extensionIconDataUrl = getExtensionIconDataUrl(extPath, pkg.icon || 'icon.png');
 
     const rawOwner = pkg.owner || pkg.author || '';
     owner = typeof rawOwner === 'object' ? (rawOwner as any).name || '' : rawOwner;
@@ -403,6 +409,8 @@ export function getExtensionBundle(
     title,
     mode,
     extensionName: extName,
+    extensionDisplayName,
+    extensionIconDataUrl,
     commandName: cmdName,
     assetsPath,
     supportPath,

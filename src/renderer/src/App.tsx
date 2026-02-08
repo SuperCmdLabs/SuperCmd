@@ -411,6 +411,8 @@ const App: React.FC = () => {
           title={ext.title}
           mode="menu-bar"
           extensionName={(ext as any).extensionName || ext.extName}
+          extensionDisplayName={(ext as any).extensionDisplayName}
+          extensionIconDataUrl={(ext as any).extensionIconDataUrl}
           commandName={(ext as any).commandName || ext.cmdName}
           assetsPath={(ext as any).assetsPath}
           supportPath={(ext as any).supportPath}
@@ -435,6 +437,8 @@ const App: React.FC = () => {
               mode={extensionView.mode}
               error={(extensionView as any).error}
               extensionName={(extensionView as any).extensionName || extensionView.extName}
+              extensionDisplayName={(extensionView as any).extensionDisplayName}
+              extensionIconDataUrl={(extensionView as any).extensionIconDataUrl}
               commandName={(extensionView as any).commandName || extensionView.cmdName}
               assetsPath={(extensionView as any).assetsPath}
               supportPath={(extensionView as any).supportPath}
