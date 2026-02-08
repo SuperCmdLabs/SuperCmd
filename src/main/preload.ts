@@ -32,6 +32,9 @@ contextBridge.exposeInMainWorld('electron', {
       callback(commandId)
     );
   },
+  onOAuthCallback: (callback: (url: string) => void) => {
+    ipcRenderer.on('oauth-callback', (_event, url) => callback(url));
+  },
 
   // ─── Settings ───────────────────────────────────────────────────
   getSettings: (): Promise<any> => ipcRenderer.invoke('get-settings'),

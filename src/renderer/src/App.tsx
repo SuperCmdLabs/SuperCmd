@@ -1474,7 +1474,7 @@ const App: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[15px] font-light tracking-wide"
+            className="flex-1 bg-transparent border-none outline-none text-white/95 placeholder-white/45 text-[15px] font-medium tracking-[0.005em]"
             autoFocus
           />
           {searchQuery && aiAvailable && (
@@ -1554,7 +1554,7 @@ const App: React.FC = () => {
                     acc.nodes.push(
                       <div
                         key={`section-${section.title}`}
-                        className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider text-white/35 font-medium"
+                        className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider text-white/50 font-semibold"
                       >
                         {section.title}
                       </div>
@@ -1606,12 +1606,12 @@ const App: React.FC = () => {
                             </div>
 
                             <div className="flex-1 min-w-0">
-                              <div className="text-white text-sm truncate">
+                              <div className="text-white/95 text-sm font-medium truncate tracking-[0.004em]">
                                 {command.title}
                               </div>
                             </div>
 
-                            <div className="text-white/40 text-xs font-medium flex-shrink-0">
+                            <div className="text-white/55 text-xs font-semibold flex-shrink-0">
                               {getCategoryLabel(command.category)}
                             </div>
                           </div>
@@ -1633,7 +1633,7 @@ const App: React.FC = () => {
             className="flex items-center px-4 py-3.5 border-t border-white/[0.06]"
             style={{ background: 'rgba(28,28,32,0.90)' }}
           >
-            <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium truncate">
+            <div className="flex items-center gap-2 text-white/50 text-xs flex-1 min-w-0 font-medium truncate">
               {selectedCommand ? selectedCommand.title : `${displayCommands.length} results`}
             </div>
             {selectedActions[0] && (

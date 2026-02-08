@@ -63,6 +63,34 @@ let currentShortcut = '';
 let lastFrontmostApp: { name: string; path: string; bundleId?: string } | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
+const pendingOAuthCallbackUrls: string[] = [];
+
+function handleOAuthCallbackUrl(rawUrl: string): void {
+  if (!rawUrl) return;
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'supercommand:') return;
+    const isOAuthCallback =
+      (parsed.hostname === 'oauth' && parsed.pathname === '/callback') ||
+      parsed.pathname === '/oauth/callback';
+    if (!isOAuthCallback) return;
+
+    if (!mainWindow) {
+      pendingOAuthCallbackUrls.push(rawUrl);
+      return;
+    }
+
+    showWindow();
+    mainWindow.webContents.send('oauth-callback', rawUrl);
+  } catch {
+    // ignore invalid URLs
+  }
+}
+
+app.on('open-url', (event: any, url: string) => {
+  event.preventDefault();
+  handleOAuthCallbackUrl(url);
+});
 
 // ─── Menu Bar (Tray) Management ─────────────────────────────────────
 
@@ -124,6 +152,15 @@ function createWindow(): void {
   }
 
   loadWindowUrl(mainWindow, '/');
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (pendingOAuthCallbackUrls.length > 0) {
+      const urls = pendingOAuthCallbackUrls.splice(0, pendingOAuthCallbackUrls.length);
+      for (const url of urls) {
+        mainWindow?.webContents.send('oauth-callback', url);
+      }
+    }
+  });
 
   // Open DevTools for debugging (detached so it doesn't resize the overlay)
   mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -509,6 +546,8 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.whenReady().then(async () => {
+  app.setAsDefaultProtocolClient('supercommand');
+
   // Register the sc-asset:// protocol handler to serve extension asset files
   protocol.handle('sc-asset', (request: any) => {
     // URL format: sc-asset://ext-asset/path/to/file

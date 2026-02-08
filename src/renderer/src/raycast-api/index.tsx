@@ -5358,24 +5358,642 @@ export async function showFailureToast(error: Error | string | unknown, options?
 export const LaunchProps = {} as any;
 
 // Raycast OAuth
+const OAUTH_TOKEN_KEY_PREFIX = 'sc-oauth-token:';
+const OAUTH_CLIENT_ID_OVERRIDE_PREFIX = 'sc-oauth-client-id:';
+const OAUTH_CALLBACK_TIMEOUT_MS = 3 * 60 * 1000;
+const oauthCallbackWaiters = new Set<(url: string) => void>();
+const oauthCallbackQueue: string[] = [];
+let oauthCallbackBridgeInitialized = false;
+
+function oauthTokenKey(providerId: string): string {
+  return `${OAUTH_TOKEN_KEY_PREFIX}${providerId || 'default'}`;
+}
+
+function oauthClientIdOverrideKey(providerId: string): string {
+  return `${OAUTH_CLIENT_ID_OVERRIDE_PREFIX}${providerId || 'default'}`;
+}
+
+function ensureOAuthCallbackBridge() {
+  if (oauthCallbackBridgeInitialized) return;
+  oauthCallbackBridgeInitialized = true;
+  try {
+    (window as any).electron?.onOAuthCallback?.((url: string) => {
+      if (!url) return;
+      oauthCallbackQueue.push(url);
+      for (const waiter of Array.from(oauthCallbackWaiters)) {
+        waiter(url);
+      }
+    });
+  } catch {}
+}
+
+function toBase64Url(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function buildOAuthRedirectUri(redirectMethod: string, extensionName?: string): string {
+  const pkg = extensionName || getExtensionContext().extensionName || 'supercommand-extension';
+  switch (redirectMethod) {
+    case 'web':
+    case 'app':
+    case 'appURI':
+    default:
+      // SuperCommand-owned OAuth callback deep link.
+      // Must be registered in each provider app config.
+      return `supercommand://oauth/callback?packageName=${encodeURIComponent(pkg)}`;
+  }
+}
+
+class PKCEClientCompat {
+  redirectMethod: string;
+  providerName: string;
+  providerIcon?: any;
+  providerId: string;
+  description?: string;
+  extensionName: string;
+
+  constructor(options: any) {
+    this.redirectMethod = options?.redirectMethod || 'web';
+    this.providerName = options?.providerName || 'OAuth Provider';
+    this.providerIcon = options?.providerIcon;
+    this.providerId = options?.providerId || this.providerName.toLowerCase().replace(/\s+/g, '-');
+    this.description = options?.description;
+    // Capture extension identity at construction time to avoid cross-extension context bleed.
+    this.extensionName = getExtensionContext().extensionName || 'supercommand-extension';
+  }
+
+  async authorizationRequest(options: any) {
+    const state = Math.random().toString(36).slice(2);
+    const codeVerifier = `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+    const verifierBytes = new TextEncoder().encode(codeVerifier);
+    const digest = await crypto.subtle.digest('SHA-256', verifierBytes);
+    const codeChallenge = toBase64Url(new Uint8Array(digest));
+    const endpoint = options?.endpoint || '';
+    const url = new URL(endpoint);
+    if (options?.clientId) url.searchParams.set('client_id', options.clientId);
+    if (options?.scope) url.searchParams.set('scope', options.scope);
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('redirect_uri', buildOAuthRedirectUri(this.redirectMethod, this.extensionName));
+    url.searchParams.set('code_challenge', codeChallenge);
+    url.searchParams.set('code_challenge_method', 'S256');
+    url.searchParams.set('state', state);
+    if (options?.extraParameters && typeof options.extraParameters === 'object') {
+      for (const [k, v] of Object.entries(options.extraParameters)) {
+        if (typeof v === 'string') url.searchParams.set(k, v);
+      }
+    }
+    return {
+      codeChallenge,
+      codeVerifier,
+      state,
+      redirectUri: buildOAuthRedirectUri(this.redirectMethod, this.extensionName),
+      toURL: () => url.toString(),
+    };
+  }
+
+  async authorize(requestOrOptions: any) {
+    const maybeToURL = requestOrOptions?.toURL;
+    const url = typeof maybeToURL === 'function' ? maybeToURL() : requestOrOptions?.url;
+    if (url) {
+      await open(url);
+    }
+    return { authorizationCode: '' };
+  }
+
+  async setTokens(tokens: any) {
+    if (!tokens) return;
+    try {
+      localStorage.setItem(oauthTokenKey(this.providerId), JSON.stringify(tokens));
+    } catch {}
+  }
+
+  async getTokens() {
+    try {
+      const raw = localStorage.getItem(oauthTokenKey(this.providerId));
+      if (!raw) return undefined;
+      return JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+  }
+
+  async removeTokens() {
+    try {
+      localStorage.removeItem(oauthTokenKey(this.providerId));
+    } catch {}
+  }
+}
+
+class TokenSetCompat {
+  accessToken = '';
+  refreshToken = '';
+  idToken = '';
+  scope = '';
+  expiresIn?: number;
+  obtainedAt?: Date;
+
+  constructor(init?: any) {
+    if (init && typeof init === 'object') {
+      Object.assign(this, init);
+    }
+    if (!this.obtainedAt) this.obtainedAt = new Date();
+  }
+
+  isExpired() {
+    if (!this.expiresIn) return false;
+    const obtained = this.obtainedAt instanceof Date ? this.obtainedAt.getTime() : Date.now();
+    return Date.now() >= obtained + this.expiresIn * 1000;
+  }
+}
+
 export const OAuth = {
-  PKCEClient: class {
-    constructor(_options: any) {}
-    authorizationRequest(_options: any) { return { toURL: () => '', codeChallenge: '', codeVerifier: '', state: '' }; }
-    async authorize(_request: any) { return { authorizationCode: '' }; }
-    async setTokens(_tokens: any) {}
-    async getTokens() { return null; }
-    async removeTokens() {}
+  RedirectMethod: {
+    Web: 'web',
+    App: 'app',
+    AppURI: 'appURI',
   },
-  TokenSet: class {
+  PKCEClient: PKCEClientCompat,
+  TokenSet: TokenSetCompat,
+  TokenResponse: class {
     accessToken = '';
     refreshToken = '';
     idToken = '';
-    isExpired() { return true; }
+    tokenType = 'Bearer';
     scope = '';
+    expiresIn?: number;
   },
-  TokenResponse: class {},
 };
+
+type OAuthServiceOptions = {
+  client?: InstanceType<typeof PKCEClientCompat>;
+  clientId?: string;
+  scope?: string;
+  authorizeUrl?: string;
+  tokenUrl?: string;
+  refreshTokenUrl?: string;
+  bodyEncoding?: string;
+  onAuthorize?: (params: { token: string; type: 'oauth' | 'personal'; idToken?: string }) => void | Promise<void>;
+  authorize?: () => Promise<string>;
+  personalAccessToken?: string;
+};
+
+function parseOAuthCallbackUrl(rawUrl: string): {
+  code?: string;
+  state?: string;
+  error?: string;
+  errorDescription?: string;
+} | null {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'supercommand:') return null;
+    const isOAuthCallback =
+      (parsed.hostname === 'oauth' && parsed.pathname === '/callback') ||
+      parsed.pathname === '/oauth/callback';
+    if (!isOAuthCallback) return null;
+    return {
+      code: parsed.searchParams.get('code') || undefined,
+      state: parsed.searchParams.get('state') || undefined,
+      error: parsed.searchParams.get('error') || undefined,
+      errorDescription: parsed.searchParams.get('error_description') || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function waitForOAuthCallback(state: string, timeoutMs = OAUTH_CALLBACK_TIMEOUT_MS): Promise<{ code?: string; error?: string; errorDescription?: string }> {
+  ensureOAuthCallbackBridge();
+
+  for (let i = 0; i < oauthCallbackQueue.length; i++) {
+    const parsed = parseOAuthCallbackUrl(oauthCallbackQueue[i]);
+    if (parsed?.state === state) {
+      oauthCallbackQueue.splice(i, 1);
+      return parsed;
+    }
+  }
+
+  return await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      oauthCallbackWaiters.delete(handler);
+      reject(new Error('OAuth authorization timed out'));
+    }, timeoutMs);
+
+    const handler = (rawUrl: string) => {
+      const parsed = parseOAuthCallbackUrl(rawUrl);
+      if (!parsed || parsed.state !== state) return;
+      clearTimeout(timer);
+      oauthCallbackWaiters.delete(handler);
+      resolve(parsed);
+    };
+
+    oauthCallbackWaiters.add(handler);
+  });
+}
+
+export class OAuthService {
+  private options: OAuthServiceOptions;
+  onAuthorize?: (params: { token: string; type: 'oauth' | 'personal'; idToken?: string }) => void | Promise<void>;
+
+  constructor(options: OAuthServiceOptions) {
+    this.options = options || {};
+    this.onAuthorize = options?.onAuthorize;
+  }
+
+  getProviderKey(): string {
+    return this.options.client?.providerId || this.options.client?.providerName || 'oauth-provider';
+  }
+
+  getConfiguredClientId(): string | undefined {
+    const key = oauthClientIdOverrideKey(this.getProviderKey());
+    const override = localStorage.getItem(key);
+    return (override && override.trim()) || this.options.clientId;
+  }
+
+  setClientIdOverride(value: string): void {
+    const key = oauthClientIdOverrideKey(this.getProviderKey());
+    const trimmed = (value || '').trim();
+    if (!trimmed) {
+      localStorage.removeItem(key);
+      return;
+    }
+    localStorage.setItem(key, trimmed);
+  }
+
+  private async exchangeAuthorizationCode(params: {
+    code: string;
+    codeVerifier: string;
+    redirectUri: string;
+  }): Promise<any> {
+    if (!this.options.tokenUrl) {
+      throw new Error('OAuth token URL is not configured for this extension.');
+    }
+    const clientId = this.getConfiguredClientId();
+    if (!clientId) {
+      throw new Error('Missing OAuth client ID. Configure a valid client ID and try again.');
+    }
+
+    const body = new URLSearchParams();
+    body.set('grant_type', 'authorization_code');
+    body.set('code', params.code);
+    body.set('client_id', clientId);
+    body.set('redirect_uri', params.redirectUri);
+    body.set('code_verifier', params.codeVerifier);
+
+    const response = await fetch(this.options.tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: body.toString(),
+    });
+
+    const text = await response.text();
+    let parsed: any = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {}
+
+    if (!response.ok) {
+      const providerError =
+        parsed?.error_description ||
+        parsed?.error?.message ||
+        parsed?.error ||
+        text ||
+        `OAuth token exchange failed (${response.status})`;
+      throw new Error(providerError);
+    }
+
+    return parsed || {};
+  }
+
+  getProviderInfo(): { name: string; description: string; icon?: string } {
+    return {
+      name: this.options.client?.providerName || 'OAuth Provider',
+      description:
+        this.options.client?.description ||
+        `Connect your ${this.options.client?.providerName || 'account'}`,
+      icon: this.options.client?.providerIcon,
+    };
+  }
+
+  async getAuthorizationUrl(): Promise<string | null> {
+    if (!this.options.authorizeUrl || !this.options.scope) return null;
+    const clientId = this.getConfiguredClientId();
+    if (!clientId) return null;
+    try {
+      if (this.options.client?.authorizationRequest) {
+        const request = await this.options.client.authorizationRequest({
+          endpoint: this.options.authorizeUrl,
+          clientId,
+          scope: this.options.scope,
+        });
+        if (request?.toURL) return request.toURL();
+      }
+      const url = new URL(this.options.authorizeUrl);
+      url.searchParams.set('client_id', clientId);
+      url.searchParams.set('scope', this.options.scope);
+      url.searchParams.set('response_type', 'code');
+      url.searchParams.set(
+        'redirect_uri',
+        buildOAuthRedirectUri(
+          (this.options.client as any)?.redirectMethod || 'web',
+          (this.options.client as any)?.extensionName
+        )
+      );
+      return url.toString();
+    } catch {
+      return null;
+    }
+  }
+
+  async beginAuthorization(): Promise<boolean> {
+    const clientId = this.getConfiguredClientId();
+    if (!clientId || !this.options.authorizeUrl || !this.options.scope) return false;
+    const request = await this.options.client?.authorizationRequest?.({
+      endpoint: this.options.authorizeUrl,
+      clientId,
+      scope: this.options.scope,
+    });
+    const authUrl = request?.toURL ? request.toURL() : await this.getAuthorizationUrl();
+    if (!authUrl) return false;
+
+    await open(authUrl);
+    const callback = await waitForOAuthCallback(request?.state || '');
+
+    if (callback.error) {
+      throw new Error(callback.errorDescription || callback.error);
+    }
+    if (!callback.code) {
+      throw new Error('Authorization did not return a valid code.');
+    }
+
+    const tokenResponse = await this.exchangeAuthorizationCode({
+      code: callback.code,
+      codeVerifier: request?.codeVerifier || '',
+      redirectUri: request?.redirectUri || buildOAuthRedirectUri((this.options.client as any)?.redirectMethod || 'web'),
+    });
+
+    const accessToken = tokenResponse?.access_token || tokenResponse?.accessToken;
+    if (!accessToken) {
+      throw new Error('OAuth token response did not include an access token.');
+    }
+
+    const tokenSet = {
+      accessToken,
+      refreshToken: tokenResponse?.refresh_token || tokenResponse?.refreshToken,
+      idToken: tokenResponse?.id_token || tokenResponse?.idToken,
+      scope: tokenResponse?.scope || this.options.scope || '',
+      tokenType: tokenResponse?.token_type || tokenResponse?.tokenType || 'Bearer',
+      expiresIn: tokenResponse?.expires_in || tokenResponse?.expiresIn,
+      obtainedAt: new Date().toISOString(),
+    };
+    await this.options.client?.setTokens?.(tokenSet);
+    await Promise.resolve(
+      this.onAuthorize?.({
+        token: tokenSet.accessToken,
+        type: 'oauth',
+        idToken: tokenSet.idToken,
+      })
+    );
+    return true;
+  }
+
+  async getStoredToken(): Promise<{ token: string; idToken?: string } | null> {
+    const stored = await this.options.client?.getTokens?.();
+    const accessToken = stored?.accessToken || stored?.access_token;
+    if (!accessToken) return null;
+    const idToken = stored?.idToken || stored?.id_token;
+    return { token: accessToken, idToken };
+  }
+
+  async authorize(): Promise<string> {
+    if (this.options.personalAccessToken) {
+      const token = this.options.personalAccessToken;
+      await Promise.resolve(this.onAuthorize?.({ token, type: 'personal' }));
+      return token;
+    }
+
+    if (typeof this.options.authorize === 'function') {
+      const token = await this.options.authorize();
+      await Promise.resolve(this.onAuthorize?.({ token, type: 'oauth' }));
+      return token;
+    }
+
+    const stored = await this.getStoredToken();
+    if (stored?.token) {
+      await Promise.resolve(this.onAuthorize?.({ token: stored.token, type: 'oauth', idToken: stored.idToken }));
+      return stored.token;
+    }
+    const ok = await this.beginAuthorization();
+    if (!ok) throw new Error('OAuth authorization is required');
+    const postAuth = await this.getStoredToken();
+    if (!postAuth?.token) throw new Error('OAuth authorization failed');
+    return postAuth.token;
+  }
+}
+
+let _accessTokenValue: string | null = null;
+let _accessTokenType: 'oauth' | 'personal' | null = null;
+
+export function withAccessToken(options: any) {
+  const shouldInvokeOnAuthorize = !(options instanceof OAuthService);
+
+  if (_extensionContext.commandMode === 'no-view') {
+    return (fn: any) => {
+      return async (props: any) => {
+        const token = options?.personalAccessToken ?? (await options?.authorize?.());
+        if (token) {
+          _accessTokenValue = token;
+          _accessTokenType = options?.personalAccessToken ? 'personal' : 'oauth';
+          const idToken = (await options?.client?.getTokens?.())?.idToken;
+          if (shouldInvokeOnAuthorize) {
+            await Promise.resolve(options?.onAuthorize?.({ token, type: _accessTokenType, idToken }));
+          }
+        }
+        return await fn(props);
+      };
+    };
+  }
+
+  return (Component: any) => {
+    const WrappedComponent: React.FC<any> = (props) => {
+      const [ready, setReady] = useState(false);
+      const [error, setError] = useState<string | null>(null);
+      const [oauthNeedsAuth, setOauthNeedsAuth] = useState(false);
+      const [oauthBusy, setOauthBusy] = useState(false);
+      const [oauthLink, setOauthLink] = useState<string>('');
+      const [oauthInfo, setOauthInfo] = useState<{ name: string; description: string; icon?: string } | null>(null);
+      const [oauthHint, setOauthHint] = useState<string>('');
+      const [oauthClientIdInput, setOauthClientIdInput] = useState('');
+
+      useEffect(() => {
+        let cancelled = false;
+        (async () => {
+          try {
+            if (options instanceof OAuthService) {
+              const info = options.getProviderInfo();
+              if (!cancelled) setOauthInfo(info);
+              if (!cancelled) setOauthClientIdInput(options.getConfiguredClientId() || '');
+              const authUrl = await options.getAuthorizationUrl();
+              if (!cancelled) setOauthLink(authUrl || '');
+              const stored = await options.getStoredToken();
+              if (!stored?.token) {
+                if (!cancelled) setOauthNeedsAuth(true);
+                return;
+              }
+              _accessTokenValue = stored.token;
+              _accessTokenType = 'oauth';
+              await Promise.resolve(options.onAuthorize?.({ token: stored.token, type: 'oauth', idToken: stored.idToken }));
+              if (!cancelled) setReady(true);
+              return;
+            }
+
+            const token = options?.personalAccessToken ?? (await options?.authorize?.());
+            if (!token) throw new Error('No access token returned');
+            _accessTokenValue = token;
+            _accessTokenType = options?.personalAccessToken ? 'personal' : 'oauth';
+            const idToken = (await options?.client?.getTokens?.())?.idToken;
+            if (shouldInvokeOnAuthorize) {
+              await Promise.resolve(options?.onAuthorize?.({ token, type: _accessTokenType, idToken }));
+            }
+            if (!cancelled) setReady(true);
+          } catch (e: any) {
+            if (!cancelled) setError(e?.message || 'Failed to authorize');
+          }
+        })();
+        return () => {
+          cancelled = true;
+        };
+      }, []);
+
+      const handleOAuthSignIn = useCallback(async () => {
+        if (!(options instanceof OAuthService)) return;
+        setOauthBusy(true);
+        setOauthHint('');
+        try {
+          options.setClientIdOverride(oauthClientIdInput);
+          const opened = await options.beginAuthorization();
+          if (!opened) {
+            setOauthHint('Unable to open authorization URL.');
+            return;
+          }
+          const stored = await options.getStoredToken();
+          if (!stored?.token) {
+            setOauthHint('Authorization finished but no token was stored.');
+            return;
+          }
+          _accessTokenValue = stored.token;
+          _accessTokenType = 'oauth';
+          await Promise.resolve(options.onAuthorize?.({ token: stored.token, type: 'oauth', idToken: stored.idToken }));
+          setOauthNeedsAuth(false);
+          setReady(true);
+        } catch (e: any) {
+          setOauthHint(e?.message || 'Failed to start OAuth authorization.');
+        } finally {
+          setOauthBusy(false);
+        }
+      }, [options, oauthClientIdInput]);
+
+      const handleOAuthCopyLink = useCallback(async () => {
+        if (!oauthLink) return;
+        try {
+          await navigator.clipboard.writeText(oauthLink);
+          setOauthHint('Authorization link copied.');
+        } catch {
+          setOauthHint('Failed to copy authorization link.');
+        }
+      }, [oauthLink]);
+
+      if (error) {
+        return (
+          <div style={{ padding: 16, color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>
+            {error}
+          </div>
+        );
+      }
+      if (oauthNeedsAuth) {
+        const iconSrc = oauthInfo?.icon ? resolveIconSrc(oauthInfo.icon) : getExtensionContext().extensionIconDataUrl;
+        return (
+          <div className="h-full flex flex-col">
+            <div className="flex-1 flex items-center justify-center px-6">
+              <div className="w-full max-w-[520px] text-center">
+                <div className="mx-auto mb-5 w-14 h-14 rounded-2xl border border-white/[0.12] bg-white/[0.04] flex items-center justify-center overflow-hidden">
+                  {iconSrc ? (
+                    <img src={iconSrc} alt="" className="w-9 h-9 object-contain" />
+                  ) : (
+                    <Sparkles className="w-5 h-5 text-white/70" />
+                  )}
+                </div>
+                <div className="text-white/95 text-[34px] leading-tight font-semibold mb-1">
+                  {oauthInfo?.name || 'Sign In Required'}
+                </div>
+                <div className="text-white/60 text-[15px] mb-6">
+                  {oauthInfo?.description || 'Connect your account to continue.'}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOAuthSignIn}
+                  disabled={oauthBusy}
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                    oauthBusy
+                      ? 'bg-white/[0.08] text-white/45 cursor-not-allowed'
+                      : 'bg-white/[0.14] hover:bg-white/[0.20] text-white'
+                  }`}
+                >
+                  {oauthBusy ? 'Opening...' : `Sign in with ${oauthInfo?.name || 'Provider'}`}
+                </button>
+                <div className="mt-4">
+                  <input
+                    type="text"
+                    value={oauthClientIdInput}
+                    onChange={(e) => setOauthClientIdInput(e.target.value)}
+                    placeholder="OAuth Client ID"
+                    className="w-full max-w-[380px] mx-auto bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/85 placeholder-white/35 outline-none"
+                  />
+                  <div className="mt-1 text-xs text-white/40">
+                    Use your own OAuth app client ID for SuperCommand redirect support.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-white/[0.06] text-center text-sm text-white/55">
+              Need to open in another browser?{' '}
+              <button
+                type="button"
+                onClick={handleOAuthCopyLink}
+                className="text-cyan-300 hover:text-cyan-200 transition-colors"
+              >
+                Copy authorization link
+              </button>
+              {oauthHint ? <div className="mt-1 text-xs text-white/40">{oauthHint}</div> : null}
+            </div>
+          </div>
+        );
+      }
+      if (!ready) {
+        return (
+          <div style={{ padding: 16, color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>
+            Authorizing...
+          </div>
+        );
+      }
+      return <Component {...props} />;
+    };
+
+    WrappedComponent.displayName = `withAccessToken(${Component?.displayName || Component?.name || 'Component'})`;
+    return WrappedComponent;
+  };
+}
+
+export function getAccessToken(): { token: string; type: 'oauth' | 'personal' } {
+  if (!_accessTokenValue || !_accessTokenType) {
+    throw new Error('getAccessToken must be used when authenticated');
+  }
+  return { token: _accessTokenValue, type: _accessTokenType };
+}
 
 // getPreferenceValues already exported above
 

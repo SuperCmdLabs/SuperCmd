@@ -120,6 +120,7 @@ export interface ElectronAPI {
   getLastFrontmostApp: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   onWindowShown: (callback: () => void) => void;
   onRunSystemCommand: (callback: (commandId: string) => void) => void;
+  onOAuthCallback: (callback: (url: string) => void) => void;
 
   // Settings
   getSettings: () => Promise<AppSettings>;
