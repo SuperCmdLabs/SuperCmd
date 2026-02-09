@@ -37,11 +37,17 @@ import {
   initSnippetStore,
   getAllSnippets,
   searchSnippets,
-  getSnippetById,
   createSnippet,
   updateSnippet,
   deleteSnippet,
+  deleteAllSnippets,
+  duplicateSnippet,
+  togglePinSnippet,
+  getSnippetByKeyword,
   copySnippetToClipboard,
+  copySnippetToClipboardResolved,
+  getSnippetDynamicFieldsById,
+  renderSnippetById,
   importSnippetsFromFile,
   exportSnippetsToFile,
 } from './snippet-store';
@@ -64,6 +70,8 @@ let lastFrontmostApp: { name: string; path: string; bundleId?: string } | null =
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
 const pendingOAuthCallbackUrls: string[] = [];
+let snippetExpanderProcess: any = null;
+let snippetExpanderStdoutBuffer = '';
 
 function handleOAuthCallbackUrl(rawUrl: string): void {
   if (!rawUrl) return;
@@ -281,6 +289,113 @@ async function hideAndPaste(): Promise<void> {
       console.error('Fallback paste also failed:', e2);
     }
   }
+}
+
+async function expandSnippetKeywordInPlace(keyword: string, delimiter: string): Promise<void> {
+  try {
+    console.log(`[SnippetExpander] trigger keyword="${keyword}" delimiter="${delimiter}"`);
+    const snippet = getSnippetByKeyword(keyword);
+    if (!snippet) return;
+
+    const resolved = renderSnippetById(snippet.id, {});
+    if (!resolved) return;
+
+    const fullText = `${resolved}${delimiter || ''}`;
+    const backspaceCount = keyword.length + (delimiter ? 1 : 0);
+    if (backspaceCount <= 0) return;
+
+    const originalClipboard = electron.clipboard.readText();
+    electron.clipboard.writeText(fullText);
+
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const execFileAsync = promisify(execFile);
+
+    const script = `
+      tell application "System Events"
+        repeat ${backspaceCount} times
+          key code 51
+        end repeat
+        keystroke "v" using command down
+      end tell
+    `;
+
+    await execFileAsync('osascript', ['-e', script]);
+
+    // Restore user's clipboard after insertion.
+    setTimeout(() => {
+      electron.clipboard.writeText(originalClipboard);
+    }, 80);
+  } catch (error) {
+    console.error('[SnippetExpander] Failed to expand keyword:', error);
+  }
+}
+
+function stopSnippetExpander(): void {
+  if (!snippetExpanderProcess) return;
+  try {
+    snippetExpanderProcess.kill();
+  } catch {}
+  snippetExpanderProcess = null;
+  snippetExpanderStdoutBuffer = '';
+}
+
+function refreshSnippetExpander(): void {
+  if (process.platform !== 'darwin') return;
+  stopSnippetExpander();
+
+  const keywords = getAllSnippets()
+    .map((s) => (s.keyword || '').trim().toLowerCase())
+    .filter((s) => Boolean(s));
+
+  if (keywords.length === 0) return;
+
+  const expanderPath = path.join(__dirname, '..', 'native', 'snippet-expander');
+  const fs = require('fs');
+  if (!fs.existsSync(expanderPath)) {
+    try {
+      const { execFileSync } = require('child_process');
+      const sourcePath = path.join(app.getAppPath(), 'src', 'native', 'snippet-expander.swift');
+      execFileSync('swiftc', ['-O', '-o', expanderPath, sourcePath, '-framework', 'AppKit']);
+    } catch (error) {
+      console.warn('[SnippetExpander] Native helper not found and compile failed:', error);
+      return;
+    }
+  }
+
+  const { spawn } = require('child_process');
+  snippetExpanderProcess = spawn(expanderPath, [JSON.stringify(keywords)], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  console.log(`[SnippetExpander] Started with ${keywords.length} keyword(s)`);
+
+  snippetExpanderProcess.stdout.on('data', (chunk: Buffer | string) => {
+    snippetExpanderStdoutBuffer += chunk.toString();
+    const lines = snippetExpanderStdoutBuffer.split('\n');
+    snippetExpanderStdoutBuffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const payload = JSON.parse(trimmed) as { keyword?: string; delimiter?: string };
+        if (payload.keyword) {
+          void expandSnippetKeywordInPlace(payload.keyword, payload.delimiter || '');
+        }
+      } catch {
+        // ignore malformed helper lines
+      }
+    }
+  });
+
+  snippetExpanderProcess.stderr.on('data', (chunk: Buffer | string) => {
+    const text = chunk.toString().trim();
+    if (text) console.warn('[SnippetExpander]', text);
+  });
+
+  snippetExpanderProcess.on('exit', () => {
+    snippetExpanderProcess = null;
+    snippetExpanderStdoutBuffer = '';
+  });
 }
 
 function toggleWindow(): void {
@@ -633,6 +748,7 @@ app.whenReady().then(async () => {
 
   // Initialize snippet store
   initSnippetStore();
+  refreshSnippetExpander();
 
   // Rebuild extensions in background
   rebuildExtensions().catch(console.error);
@@ -1283,19 +1399,55 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('snippet-create', (_event: any, data: { name: string; content: string; keyword?: string }) => {
-    return createSnippet(data);
+    const created = createSnippet(data);
+    refreshSnippetExpander();
+    return created;
   });
 
   ipcMain.handle('snippet-update', (_event: any, id: string, data: { name?: string; content?: string; keyword?: string }) => {
-    return updateSnippet(id, data);
+    const updated = updateSnippet(id, data);
+    refreshSnippetExpander();
+    return updated;
   });
 
   ipcMain.handle('snippet-delete', (_event: any, id: string) => {
-    return deleteSnippet(id);
+    const removed = deleteSnippet(id);
+    refreshSnippetExpander();
+    return removed;
+  });
+
+  ipcMain.handle('snippet-delete-all', () => {
+    const removed = deleteAllSnippets();
+    refreshSnippetExpander();
+    return removed;
+  });
+
+  ipcMain.handle('snippet-duplicate', (_event: any, id: string) => {
+    return duplicateSnippet(id);
+  });
+
+  ipcMain.handle('snippet-toggle-pin', (_event: any, id: string) => {
+    return togglePinSnippet(id);
+  });
+
+  ipcMain.handle('snippet-get-by-keyword', (_event: any, keyword: string) => {
+    return getSnippetByKeyword(keyword);
+  });
+
+  ipcMain.handle('snippet-get-dynamic-fields', (_event: any, id: string) => {
+    return getSnippetDynamicFieldsById(id);
+  });
+
+  ipcMain.handle('snippet-render', (_event: any, id: string, dynamicValues?: Record<string, string>) => {
+    return renderSnippetById(id, dynamicValues);
   });
 
   ipcMain.handle('snippet-copy-to-clipboard', (_event: any, id: string) => {
     return copySnippetToClipboard(id);
+  });
+
+  ipcMain.handle('snippet-copy-to-clipboard-resolved', (_event: any, id: string, dynamicValues?: Record<string, string>) => {
+    return copySnippetToClipboardResolved(id, dynamicValues);
   });
 
   ipcMain.handle('snippet-paste', async (_event: any, id: string) => {
@@ -1306,10 +1458,20 @@ app.whenReady().then(async () => {
     return true;
   });
 
+  ipcMain.handle('snippet-paste-resolved', async (_event: any, id: string, dynamicValues?: Record<string, string>) => {
+    const success = copySnippetToClipboardResolved(id, dynamicValues);
+    if (!success) return false;
+
+    await hideAndPaste();
+    return true;
+  });
+
   ipcMain.handle('snippet-import', async () => {
     suppressBlurHide = true;
     try {
-      return await importSnippetsFromFile(mainWindow || undefined);
+      const result = await importSnippetsFromFile(mainWindow || undefined);
+      refreshSnippetExpander();
+      return result;
     } finally {
       suppressBlurHide = false;
     }
@@ -1914,6 +2076,7 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   stopClipboardMonitor();
+  stopSnippetExpander();
   // Clean up trays
   for (const [, tray] of menuBarTrays) {
     tray.destroy();

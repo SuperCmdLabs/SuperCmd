@@ -11,7 +11,7 @@
     "build": "npm run build:main && npm run build:renderer && npm run build:native",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
-    "build:native": "mkdir -p dist/native && swiftc -O -o dist/native/color-picker src/native/color-picker.swift -framework AppKit",
+    "build:native": "mkdir -p dist/native && swiftc -O -o dist/native/color-picker src/native/color-picker.swift -framework AppKit && swiftc -O -o dist/native/snippet-expander src/native/snippet-expander.swift -framework AppKit",
     "postinstall": "electron-builder install-app-deps",
     "start": "electron .",
     "package": "npm run build && electron-builder"

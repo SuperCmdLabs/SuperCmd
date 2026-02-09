@@ -9,8 +9,9 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, ArrowLeft, Plus, Trash2, Copy, Clipboard, Edit3, FileText } from 'lucide-react';
-import type { Snippet } from '../types/electron';
+import { createPortal } from 'react-dom';
+import { Search, X, ArrowLeft, Plus, FileText, Pin, PinOff, Pencil, Copy, Clipboard, Trash2, Files } from 'lucide-react';
+import type { Snippet, SnippetDynamicField } from '../types/electron';
 
 interface SnippetManagerProps {
   onClose: () => void;
@@ -20,19 +21,59 @@ interface SnippetManagerProps {
 interface Action {
   title: string;
   icon?: React.ReactNode;
-  shortcut?: string;
+  shortcut?: string[];
   execute: () => void | Promise<void>;
   style?: 'default' | 'destructive';
 }
 
+function parseArgumentPlaceholderToken(rawToken: string): { key: string; name: string; defaultValue?: string } | null {
+  const token = rawToken.trim();
+  if (!token.startsWith('argument')) return null;
+  const nameMatch = token.match(/name\s*=\s*"([^"]+)"/i);
+  const defaultMatch = token.match(/default\s*=\s*"([^"]*)"/i);
+  const fallbackNameMatch = token.match(/^argument(?::|\s+)(.+)$/i);
+  const name = (nameMatch?.[1] || fallbackNameMatch?.[1] || '').trim();
+  if (!name) return null;
+  return { key: name.toLowerCase(), name, defaultValue: defaultMatch?.[1] };
+}
+
+function renderSnippetPreviewWithHighlights(content: string, values: Record<string, string>): React.ReactNode {
+  const parts = content.split(/(\{[^}]+\})/g);
+  return parts.map((part, idx) => {
+    const tokenMatch = part.match(/^\{([^}]+)\}$/);
+    if (!tokenMatch) return <span key={idx}>{part}</span>;
+    const arg = parseArgumentPlaceholderToken(tokenMatch[1]);
+    if (!arg) return <span key={idx}>{part}</span>;
+    const value = values[arg.key] || values[arg.name] || arg.defaultValue || '';
+    return (
+      <span key={idx} className="text-emerald-300 font-medium">
+        {value}
+      </span>
+    );
+  });
+}
+
 // ─── Placeholder helpers ────────────────────────────────────────────
 
-const PLACEHOLDERS = [
-  { label: '{clipboard}', value: '{clipboard}' },
-  { label: '{date}', value: '{date}' },
-  { label: '{time}', value: '{time}' },
-  { label: '{date:YYYY-MM-DD}', value: '{date:YYYY-MM-DD}' },
-  { label: '{random:UUID}', value: '{random:UUID}' },
+const PLACEHOLDER_GROUPS = [
+  {
+    title: 'Snippets',
+    items: [
+      { label: 'Cursor Position', value: '{cursor-position}' },
+      { label: 'Clipboard Text', value: '{clipboard}' },
+      { label: 'Argument', value: '{argument name="Argument"}' },
+      { label: 'UUID', value: '{random:UUID}' },
+    ],
+  },
+  {
+    title: 'Date & Time',
+    items: [
+      { label: 'Time', value: '{time}' },
+      { label: 'Date', value: '{date}' },
+      { label: 'Date & Time', value: '{date:YYYY-MM-DD} {time:HH:mm}' },
+      { label: 'Custom Date', value: '{date:YYYY-MM-DD}' },
+    ],
+  },
 ];
 
 // ─── Create / Edit Form ─────────────────────────────────────────────
@@ -48,12 +89,67 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
   const [content, setContent] = useState(snippet?.content || '');
   const [keyword, setKeyword] = useState(snippet?.keyword || '');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showPlaceholderMenu, setShowPlaceholderMenu] = useState(false);
+  const [placeholderQuery, setPlaceholderQuery] = useState('');
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const placeholderButtonRef = useRef<HTMLButtonElement>(null);
+  const [placeholderMenuPos, setPlaceholderMenuPos] = useState<{ top: number; left: number; width: number }>({
+    top: 0,
+    left: 0,
+    width: 300,
+  });
 
   useEffect(() => {
     nameRef.current?.focus();
   }, []);
+
+  const refreshPlaceholderMenuPos = useCallback(() => {
+    const rect = placeholderButtonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPlaceholderMenuPos({
+      top: rect.bottom + 8,
+      left: rect.left,
+      width: Math.max(300, rect.width + 120),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!showPlaceholderMenu) return;
+    refreshPlaceholderMenuPos();
+    const onResize = () => refreshPlaceholderMenuPos();
+    const onScroll = () => refreshPlaceholderMenuPos();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [showPlaceholderMenu, refreshPlaceholderMenuPos]);
+
+  useEffect(() => {
+    if (!showPlaceholderMenu) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      const menuEl = document.getElementById('snippet-placeholder-menu');
+      if (menuEl?.contains(target)) return;
+      if (placeholderButtonRef.current?.contains(target)) return;
+      setShowPlaceholderMenu(false);
+    };
+    document.addEventListener('mousedown', onPointerDown, true);
+    return () => document.removeEventListener('mousedown', onPointerDown, true);
+  }, [showPlaceholderMenu]);
+
+  const filteredPlaceholderGroups = PLACEHOLDER_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) =>
+      !placeholderQuery.trim()
+        ? true
+        : item.label.toLowerCase().includes(placeholderQuery.trim().toLowerCase()) ||
+          item.value.toLowerCase().includes(placeholderQuery.trim().toLowerCase())
+    ),
+  })).filter((group) => group.items.length > 0);
 
   const insertPlaceholder = (placeholder: string) => {
     const textarea = contentRef.current;
@@ -150,19 +246,19 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
             />
             {errors.content && <p className="text-red-400 text-xs mt-1">{errors.content}</p>}
 
-            {/* Placeholder buttons */}
-            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-              <span className="text-white/30 text-xs mr-1">Insert:</span>
-              {PLACEHOLDERS.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => insertPlaceholder(p.value)}
-                  className="px-2 py-1 text-[11px] rounded bg-white/[0.06] text-white/50 hover:bg-white/[0.10] hover:text-white/70 transition-colors font-mono"
-                >
-                  {p.label}
-                </button>
-              ))}
+            {/* Placeholder dropdown */}
+            <div className="relative mt-2">
+              <button
+                ref={placeholderButtonRef}
+                type="button"
+                onClick={() => {
+                  refreshPlaceholderMenuPos();
+                  setShowPlaceholderMenu((p) => !p);
+                }}
+                className="px-2.5 py-1.5 text-xs rounded-md bg-white/[0.06] text-white/65 hover:bg-white/[0.1] hover:text-white/80 transition-colors"
+              >
+                Insert Dynamic Value
+              </button>
             </div>
             <p className="text-white/25 text-xs mt-2">
               Include <strong className="text-white/40">{'{Dynamic Placeholders}'}</strong> for context like the copied text or the current date
@@ -183,6 +279,9 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
               placeholder="Optional keyword"
               className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-3 py-2 text-white/90 text-sm placeholder-white/30 outline-none focus:border-white/20 transition-colors"
             />
+            <p className="text-white/25 text-xs mt-2">
+              Typing this keyword in the snippet search instantly targets this snippet for replacement.
+            </p>
           </div>
         </div>
       </div>
@@ -201,6 +300,56 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
           <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
         </button>
       </div>
+
+      {showPlaceholderMenu && createPortal(
+        <div
+          id="snippet-placeholder-menu"
+          className="fixed z-[80] rounded-lg overflow-hidden border border-white/[0.08]"
+          style={{
+            top: placeholderMenuPos.top,
+            left: placeholderMenuPos.left,
+            width: placeholderMenuPos.width,
+            background: 'rgba(26,26,30,0.96)',
+            backdropFilter: 'blur(18px)',
+          }}
+        >
+          <div className="px-2 py-2 border-b border-white/[0.08]">
+            <input
+              type="text"
+              value={placeholderQuery}
+              onChange={(e) => setPlaceholderQuery(e.target.value)}
+              placeholder="Search..."
+              className="w-full bg-transparent text-sm text-white/75 placeholder-white/30 outline-none"
+              autoFocus
+            />
+          </div>
+          <div className="max-h-[260px] overflow-y-auto py-1">
+            {filteredPlaceholderGroups.map((group) => (
+              <div key={group.title} className="mb-1">
+                <div className="px-2.5 py-1 text-[11px] uppercase tracking-wider text-white/30">{group.title}</div>
+                {group.items.map((item) => (
+                  <button
+                    key={`${group.title}-${item.value}`}
+                    type="button"
+                    onClick={() => {
+                      insertPlaceholder(item.value);
+                      setShowPlaceholderMenu(false);
+                      setPlaceholderQuery('');
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 text-sm text-white/80 hover:bg-white/[0.07] transition-colors"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            ))}
+            {filteredPlaceholderGroups.length === 0 ? (
+              <div className="px-2.5 py-2 text-xs text-white/35">No dynamic values</div>
+            ) : null}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
@@ -215,9 +364,17 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [showActions, setShowActions] = useState(false);
+  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [editingSnippet, setEditingSnippet] = useState<Snippet | undefined>(undefined);
   const [frontmostAppName, setFrontmostAppName] = useState<string | null>(null);
+  const [dynamicPrompt, setDynamicPrompt] = useState<{
+    snippet: Snippet;
+    mode: 'paste' | 'copy';
+    fields: SnippetDynamicField[];
+    values: Record<string, string>;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const firstDynamicInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -260,6 +417,18 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
     itemRefs.current = itemRefs.current.slice(0, filteredSnippets.length);
   }, [filteredSnippets.length]);
 
+  useEffect(() => {
+    if (!showActions) {
+      setSelectedActionIndex(0);
+    }
+  }, [showActions]);
+
+  useEffect(() => {
+    if (!dynamicPrompt) return;
+    const t = setTimeout(() => firstDynamicInputRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+  }, [dynamicPrompt?.snippet.id, dynamicPrompt?.mode]);
+
   const scrollToSelected = useCallback(() => {
     const selectedElement = itemRefs.current[selectedIndex];
     const scrollContainer = listRef.current;
@@ -281,13 +450,26 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
   }, [selectedIndex, scrollToSelected]);
 
   const selectedSnippet = filteredSnippets[selectedIndex];
+  const exactKeywordSnippet = searchQuery.trim()
+    ? snippets.find((s) => (s.keyword || '').trim().toLowerCase() === searchQuery.trim().toLowerCase())
+    : undefined;
+  const activeSnippet = exactKeywordSnippet || selectedSnippet;
 
   // ─── Actions ────────────────────────────────────────────────────
 
   const handlePaste = async (snippet?: Snippet) => {
-    const s = snippet || selectedSnippet;
+    const s = snippet || activeSnippet;
     if (!s) return;
     try {
+      const fields = await window.electron.snippetGetDynamicFields(s.id);
+      if (fields.length > 0) {
+        const initialValues: Record<string, string> = {};
+        for (const field of fields) {
+          initialValues[field.key] = field.defaultValue || '';
+        }
+        setDynamicPrompt({ snippet: s, mode: 'paste', fields, values: initialValues });
+        return;
+      }
       await window.electron.snippetPaste(s.id);
     } catch (e) {
       console.error('Failed to paste snippet:', e);
@@ -295,28 +477,81 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
   };
 
   const handleCopy = async () => {
-    if (!selectedSnippet) return;
+    if (!activeSnippet) return;
     try {
-      await window.electron.snippetCopyToClipboard(selectedSnippet.id);
+      const fields = await window.electron.snippetGetDynamicFields(activeSnippet.id);
+      if (fields.length > 0) {
+        const initialValues: Record<string, string> = {};
+        for (const field of fields) {
+          initialValues[field.key] = field.defaultValue || '';
+        }
+        setDynamicPrompt({ snippet: activeSnippet, mode: 'copy', fields, values: initialValues });
+        return;
+      }
+      await window.electron.snippetCopyToClipboard(activeSnippet.id);
     } catch (e) {
       console.error('Failed to copy snippet:', e);
     }
   };
 
   const handleEdit = () => {
-    if (!selectedSnippet) return;
-    setEditingSnippet(selectedSnippet);
+    if (!activeSnippet) return;
+    setEditingSnippet(activeSnippet);
     setView('edit');
   };
 
   const handleDelete = async (snippet?: Snippet) => {
-    const s = snippet || selectedSnippet;
+    const s = snippet || activeSnippet;
     if (!s) return;
     try {
       await window.electron.snippetDelete(s.id);
       await loadSnippets();
     } catch (e) {
       console.error('Failed to delete snippet:', e);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    try {
+      await window.electron.snippetDeleteAll();
+      await loadSnippets();
+      setSearchQuery('');
+    } catch (e) {
+      console.error('Failed to delete all snippets:', e);
+    }
+  };
+
+  const handleDuplicate = async () => {
+    if (!activeSnippet) return;
+    try {
+      await window.electron.snippetDuplicate(activeSnippet.id);
+      await loadSnippets();
+    } catch (e) {
+      console.error('Failed to duplicate snippet:', e);
+    }
+  };
+
+  const handleTogglePin = async () => {
+    if (!activeSnippet) return;
+    try {
+      await window.electron.snippetTogglePin(activeSnippet.id);
+      await loadSnippets();
+    } catch (e) {
+      console.error('Failed to toggle pin snippet:', e);
+    }
+  };
+
+  const handleConfirmDynamicPrompt = async () => {
+    if (!dynamicPrompt) return;
+    try {
+      if (dynamicPrompt.mode === 'paste') {
+        await window.electron.snippetPasteResolved(dynamicPrompt.snippet.id, dynamicPrompt.values);
+      } else {
+        await window.electron.snippetCopyToClipboardResolved(dynamicPrompt.snippet.id, dynamicPrompt.values);
+      }
+      setDynamicPrompt(null);
+    } catch (e) {
+      console.error('Failed to resolve snippet dynamic values:', e);
     }
   };
 
@@ -341,19 +576,61 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
   const actions: Action[] = [
     {
       title: pasteLabel,
+      icon: <Clipboard className="w-4 h-4" />,
+      shortcut: ['↩'],
       execute: () => handlePaste(),
     },
     {
       title: 'Copy to Clipboard',
+      icon: <Copy className="w-4 h-4" />,
+      shortcut: ['⌘', '↩'],
       execute: handleCopy,
     },
     {
-      title: 'Edit',
+      title: activeSnippet?.pinned ? 'Unpin Snippet' : 'Pin Snippet',
+      icon: activeSnippet?.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />,
+      shortcut: ['⇧', '⌘', 'P'],
+      execute: handleTogglePin,
+    },
+    {
+      title: 'Edit Snippet',
+      icon: <Pencil className="w-4 h-4" />,
+      shortcut: ['⌘', 'E'],
       execute: handleEdit,
     },
     {
-      title: 'Delete',
+      title: 'Duplicate Snippet',
+      icon: <Files className="w-4 h-4" />,
+      shortcut: ['⌘', 'D'],
+      execute: handleDuplicate,
+    },
+    {
+      title: 'Export Snippets',
+      shortcut: ['⇧', '⌘', 'S'],
+      execute: async () => {
+        await window.electron.snippetExport();
+      },
+    },
+    {
+      title: 'Import Snippets',
+      shortcut: ['⇧', '⌘', 'I'],
+      execute: async () => {
+        await window.electron.snippetImport();
+        await loadSnippets();
+      },
+    },
+    {
+      title: 'Delete Snippet',
+      icon: <Trash2 className="w-4 h-4" />,
+      shortcut: ['⌃', 'X'],
       execute: () => handleDelete(),
+      style: 'destructive',
+    },
+    {
+      title: 'Delete All Snippets',
+      icon: <Trash2 className="w-4 h-4" />,
+      shortcut: ['⌃', '⇧', 'X'],
+      execute: handleDeleteAll,
       style: 'destructive',
     },
   ];
@@ -368,7 +645,82 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         return;
       }
 
-      if (showActions) return;
+      if (dynamicPrompt) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setDynamicPrompt(null);
+        } else if (e.key === 'Enter' && e.metaKey) {
+          e.preventDefault();
+          handleConfirmDynamicPrompt();
+        }
+        return;
+      }
+
+      if (showActions) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setSelectedActionIndex((prev) => (prev < actions.length - 1 ? prev + 1 : prev));
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setSelectedActionIndex((prev) => (prev > 0 ? prev - 1 : 0));
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const action = actions[selectedActionIndex];
+          if (action) action.execute();
+          setShowActions(false);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setShowActions(false);
+          return;
+        }
+      }
+
+      if (e.key.toLowerCase() === 'e' && e.metaKey) {
+        e.preventDefault();
+        handleEdit();
+        return;
+      }
+      if (e.key.toLowerCase() === 'd' && e.metaKey) {
+        e.preventDefault();
+        handleDuplicate();
+        return;
+      }
+      if (e.key.toLowerCase() === 'p' && e.metaKey && e.shiftKey) {
+        e.preventDefault();
+        handleTogglePin();
+        return;
+      }
+      if (e.key.toLowerCase() === 's' && e.metaKey && e.shiftKey) {
+        e.preventDefault();
+        window.electron.snippetExport();
+        return;
+      }
+      if (e.key.toLowerCase() === 'i' && e.metaKey && e.shiftKey) {
+        e.preventDefault();
+        window.electron.snippetImport().then(() => loadSnippets());
+        return;
+      }
+      if (e.key.toLowerCase() === 'x' && e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
+        handleDeleteAll();
+        return;
+      }
+      if (e.key.toLowerCase() === 'x' && e.ctrlKey) {
+        e.preventDefault();
+        handleDelete();
+        return;
+      }
+      if (e.key === 'Enter' && e.metaKey) {
+        e.preventDefault();
+        handleCopy();
+        return;
+      }
 
       switch (e.key) {
         case 'ArrowDown':
@@ -385,7 +737,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
 
         case 'Enter':
           e.preventDefault();
-          if (!e.repeat && filteredSnippets[selectedIndex]) {
+          if (!e.repeat && activeSnippet) {
             handlePaste();
           }
           break;
@@ -406,7 +758,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
           break;
       }
     },
-    [filteredSnippets, selectedIndex, onClose, showActions]
+    [showActions, selectedActionIndex, actions, filteredSnippets, selectedIndex, onClose, dynamicPrompt, activeSnippet, loadSnippets]
   );
 
   // ─── Render: Create / Edit ──────────────────────────────────────
@@ -519,6 +871,9 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
                         <span className="text-white/80 text-sm truncate font-medium">
                           {snippet.name}
                         </span>
+                        {snippet.pinned ? (
+                          <Pin className="w-3 h-3 text-amber-300/80 flex-shrink-0" />
+                        ) : null}
                         {snippet.keyword && (
                           <code className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.08] text-white/40 flex-shrink-0">
                             {snippet.keyword}
@@ -583,7 +938,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
           <span className="truncate">{filteredSnippets.length} snippets</span>
         </div>
-        {selectedSnippet && (
+        {activeSnippet && (
           <div className="flex items-center gap-2 mr-3">
             <span className="text-white text-xs font-semibold truncate max-w-[200px]">{pasteLabel}</span>
             <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
@@ -598,6 +953,66 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
           <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
         </button>
       </div>
+
+      {dynamicPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.25)' }}>
+          <div
+            className="w-[520px] max-w-[92vw] rounded-xl border border-white/[0.1] overflow-hidden"
+            style={{ background: 'rgba(24,24,28,0.96)', backdropFilter: 'blur(28px)' }}
+          >
+            <div className="px-4 py-3 border-b border-white/[0.08] text-white/85 text-sm font-medium">
+              Fill Dynamic Values
+            </div>
+            <div className="p-4 space-y-3">
+              {dynamicPrompt.fields.map((field, idx) => (
+                <div key={field.key}>
+                  <label className="block text-xs text-white/45 mb-1.5">{field.name}</label>
+                  <input
+                    ref={idx === 0 ? firstDynamicInputRef : undefined}
+                    type="text"
+                    value={dynamicPrompt.values[field.key] || ''}
+                    onChange={(e) =>
+                      setDynamicPrompt((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              values: { ...prev.values, [field.key]: e.target.value },
+                            }
+                          : prev
+                      )
+                    }
+                    placeholder={field.defaultValue || ''}
+                    className="w-full bg-white/[0.06] border border-white/[0.1] rounded-lg px-3 py-2 text-sm text-white/85 placeholder-white/30 outline-none focus:border-white/25"
+                  />
+                </div>
+              ))}
+              <div className="pt-2">
+                <div className="text-[11px] uppercase tracking-wider text-white/35 mb-1.5">Preview</div>
+                <div className="rounded-lg border border-white/[0.1] bg-white/[0.04] px-3 py-2 text-sm text-white/85 whitespace-pre-wrap break-words font-mono">
+                  {renderSnippetPreviewWithHighlights(
+                    dynamicPrompt.snippet.content,
+                    dynamicPrompt.values
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-white/[0.08] flex items-center justify-end gap-2">
+              <button
+                onClick={() => setDynamicPrompt(null)}
+                className="px-3 py-1.5 rounded-md text-xs text-white/60 hover:text-white/80 hover:bg-white/[0.06] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDynamicPrompt}
+                className="px-3 py-1.5 rounded-md text-xs text-white bg-white/[0.12] hover:bg-white/[0.18] transition-colors"
+              >
+                {dynamicPrompt.mode === 'paste' ? 'Paste' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Actions Overlay */}
       {showActions && (
@@ -620,23 +1035,38 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
                 <div
                   key={idx}
                   className={`mx-1 px-2.5 py-1.5 rounded-lg flex items-center gap-2.5 cursor-pointer transition-colors ${
+                    idx === selectedActionIndex ? 'bg-white/[0.08]' : ''
+                  } ${
                     action.style === 'destructive'
                       ? 'hover:bg-white/[0.06] text-red-400'
                       : 'hover:bg-white/[0.06] text-white/80'
                   }`}
+                  onMouseMove={() => setSelectedActionIndex(idx)}
                   onClick={() => {
                     action.execute();
                     setShowActions(false);
                   }}
                 >
+                  {action.icon ? (
+                    <span className={action.style === 'destructive' ? 'text-red-400' : 'text-white/60'}>
+                      {action.icon}
+                    </span>
+                  ) : null}
                   <span className="flex-1 text-sm truncate">
                     {action.title}
                   </span>
-                  {idx === 0 && (
-                    <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] font-medium text-white/70">
-                      ↩
-                    </kbd>
-                  )}
+                  {action.shortcut ? (
+                    <span className="flex items-center gap-0.5">
+                      {action.shortcut.map((k, keyIdx) => (
+                        <kbd
+                          key={`${idx}-${keyIdx}`}
+                          className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] font-medium text-white/70"
+                        >
+                          {k}
+                        </kbd>
+                      ))}
+                    </span>
+                  ) : null}
                 </div>
               ))}
             </div>

@@ -183,10 +183,26 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('snippet-update', id, data),
   snippetDelete: (id: string): Promise<boolean> =>
     ipcRenderer.invoke('snippet-delete', id),
+  snippetDeleteAll: (): Promise<number> =>
+    ipcRenderer.invoke('snippet-delete-all'),
+  snippetDuplicate: (id: string): Promise<any> =>
+    ipcRenderer.invoke('snippet-duplicate', id),
+  snippetTogglePin: (id: string): Promise<any> =>
+    ipcRenderer.invoke('snippet-toggle-pin', id),
+  snippetGetByKeyword: (keyword: string): Promise<any | null> =>
+    ipcRenderer.invoke('snippet-get-by-keyword', keyword),
+  snippetGetDynamicFields: (id: string): Promise<Array<{ key: string; name: string; defaultValue?: string }>> =>
+    ipcRenderer.invoke('snippet-get-dynamic-fields', id),
+  snippetRender: (id: string, dynamicValues?: Record<string, string>): Promise<string | null> =>
+    ipcRenderer.invoke('snippet-render', id, dynamicValues),
   snippetCopyToClipboard: (id: string): Promise<boolean> =>
     ipcRenderer.invoke('snippet-copy-to-clipboard', id),
+  snippetCopyToClipboardResolved: (id: string, dynamicValues?: Record<string, string>): Promise<boolean> =>
+    ipcRenderer.invoke('snippet-copy-to-clipboard-resolved', id, dynamicValues),
   snippetPaste: (id: string): Promise<boolean> =>
     ipcRenderer.invoke('snippet-paste', id),
+  snippetPasteResolved: (id: string, dynamicValues?: Record<string, string>): Promise<boolean> =>
+    ipcRenderer.invoke('snippet-paste-resolved', id, dynamicValues),
   snippetImport: (): Promise<{ imported: number; skipped: number }> =>
     ipcRenderer.invoke('snippet-import'),
   snippetExport: (): Promise<boolean> =>

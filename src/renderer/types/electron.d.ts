@@ -100,8 +100,15 @@ export interface Snippet {
   name: string;
   content: string;
   keyword?: string;
+  pinned?: boolean;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface SnippetDynamicField {
+  key: string;
+  name: string;
+  defaultValue?: string;
 }
 
 export interface OllamaLocalModel {
@@ -195,10 +202,18 @@ export interface ElectronAPI {
   snippetGetAll: () => Promise<Snippet[]>;
   snippetSearch: (query: string) => Promise<Snippet[]>;
   snippetCreate: (data: { name: string; content: string; keyword?: string }) => Promise<Snippet>;
-  snippetUpdate: (id: string, data: { name?: string; content?: string; keyword?: string }) => Promise<Snippet | null>;
+  snippetUpdate: (id: string, data: { name?: string; content?: string; keyword?: string; pinned?: boolean }) => Promise<Snippet | null>;
   snippetDelete: (id: string) => Promise<boolean>;
+  snippetDeleteAll: () => Promise<number>;
+  snippetDuplicate: (id: string) => Promise<Snippet | null>;
+  snippetTogglePin: (id: string) => Promise<Snippet | null>;
+  snippetGetByKeyword: (keyword: string) => Promise<Snippet | null>;
+  snippetGetDynamicFields: (id: string) => Promise<SnippetDynamicField[]>;
+  snippetRender: (id: string, dynamicValues?: Record<string, string>) => Promise<string | null>;
   snippetCopyToClipboard: (id: string) => Promise<boolean>;
+  snippetCopyToClipboardResolved: (id: string, dynamicValues?: Record<string, string>) => Promise<boolean>;
   snippetPaste: (id: string) => Promise<boolean>;
+  snippetPasteResolved: (id: string, dynamicValues?: Record<string, string>) => Promise<boolean>;
   snippetImport: () => Promise<{ imported: number; skipped: number }>;
   snippetExport: () => Promise<boolean>;
 
