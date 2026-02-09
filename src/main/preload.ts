@@ -119,8 +119,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.sendSync('exec-command-sync', command, args, options),
 
   // Get installed applications
-  getApplications: (): Promise<Array<{ name: string; path: string; bundleId?: string }>> =>
-    ipcRenderer.invoke('get-applications'),
+  getApplications: (path?: string): Promise<Array<{ name: string; path: string; bundleId?: string }>> =>
+    ipcRenderer.invoke('get-applications', path),
 
   // Get default application for a file/URL
   getDefaultApplication: (filePath: string): Promise<{ name: string; path: string; bundleId?: string }> =>

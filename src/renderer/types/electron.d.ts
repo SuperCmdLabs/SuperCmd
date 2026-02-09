@@ -188,7 +188,7 @@ export interface ElectronAPI {
     args: string[],
     options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
   ) => { stdout: string; stderr: string; exitCode: number };
-  getApplications: () => Promise<Array<{ name: string; path: string; bundleId?: string }>>;
+  getApplications: (path?: string) => Promise<Array<{ name: string; path: string; bundleId?: string }>>;
   getFrontmostApplication: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   runAppleScript: (script: string) => Promise<string>;
   moveToTrash: (paths: string[]) => Promise<void>;

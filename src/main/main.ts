@@ -1455,15 +1455,73 @@ app.whenReady().then(async () => {
   );
 
   // Get installed applications
-  ipcMain.handle('get-applications', async () => {
+  ipcMain.handle('get-applications', async (_event: any, targetPath?: string) => {
+    const { execFileSync } = require('child_process');
+    const fsNative = require('fs');
+
+    const resolveBundleId = (appPath: string): string | undefined => {
+      try {
+        const plistPath = path.join(appPath, 'Contents', 'Info.plist');
+        if (!fsNative.existsSync(plistPath)) return undefined;
+        const out = execFileSync(
+          '/usr/bin/plutil',
+          ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', plistPath],
+          { encoding: 'utf-8' }
+        ).trim();
+        return out || undefined;
+      } catch {
+        try {
+          const out = execFileSync(
+            '/usr/bin/mdls',
+            ['-name', 'kMDItemCFBundleIdentifier', '-raw', appPath],
+            { encoding: 'utf-8' }
+          ).trim();
+          if (!out || out === '(null)') return undefined;
+          return out;
+        } catch {
+          return undefined;
+        }
+      }
+    };
+
     const commands = await getAvailableCommands();
-    return commands
+    let apps = commands
       .filter((c) => c.category === 'app')
       .map((c) => ({
         name: c.title,
         path: c.path || '',
-        bundleId: c.path?.match(/([^/]+)\.app/)?.[1] || undefined,
+        bundleId: c.path ? resolveBundleId(c.path) : undefined,
       }));
+
+    // Raycast API compatibility: if path is provided, return only apps that can open it.
+    if (targetPath && typeof targetPath === 'string') {
+      try {
+        const appPath = execFileSync(
+          '/usr/bin/osascript',
+          [
+            '-l',
+            'AppleScript',
+            '-e',
+            `use framework "AppKit"
+set fileURL to current application's NSURL's fileURLWithPath:"${targetPath.replace(/"/g, '\\"')}"
+set appURL to current application's NSWorkspace's sharedWorkspace()'s URLForApplicationToOpenURL:fileURL
+if appURL is missing value then return ""
+return appURL's |path|() as text`,
+          ],
+          { encoding: 'utf-8' }
+        ).trim();
+
+        if (appPath) {
+          apps = apps.filter((a) => a.path === appPath);
+        } else {
+          apps = [];
+        }
+      } catch {
+        apps = [];
+      }
+    }
+
+    return apps;
   });
 
   // Get default application for a file/URL
@@ -1517,12 +1575,22 @@ app.whenReady().then(async () => {
   // Run AppleScript
   ipcMain.handle('run-applescript', async (_event: any, script: string) => {
     try {
-      const { execSync } = require('child_process');
-      const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' });
+      const { spawnSync } = require('child_process');
+      const proc = spawnSync('/usr/bin/osascript', ['-l', 'AppleScript'], {
+        input: script,
+        encoding: 'utf-8',
+      });
+
+      if (proc.status !== 0) {
+        const stderr = (proc.stderr || '').trim() || 'AppleScript execution failed';
+        throw new Error(stderr);
+      }
+
+      const result = proc.stdout || '';
       return result.trim();
     } catch (e: any) {
       console.error('AppleScript error:', e);
-      return '';
+      throw new Error(e?.message || 'AppleScript execution failed');
     }
   });
 

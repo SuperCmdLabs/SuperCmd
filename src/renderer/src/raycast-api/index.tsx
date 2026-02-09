@@ -5608,15 +5608,11 @@ export function getProgressIcon(
 // ── runAppleScript ──────────────────────────────────────────────────
 
 export async function runAppleScript(script: string, options?: any): Promise<string> {
-  try {
-    const electron = (window as any).electron;
-    if (electron?.runAppleScript) {
-      return await electron.runAppleScript(script);
-    }
-  } catch (e) {
-    console.error('runAppleScript error:', e);
+  const electron = (window as any).electron;
+  if (!electron?.runAppleScript) {
+    throw new Error('runAppleScript is not available');
   }
-  return '';
+  return await electron.runAppleScript(script);
 }
 
 // ── showFailureToast ────────────────────────────────────────────────
