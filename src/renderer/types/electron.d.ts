@@ -161,6 +161,18 @@ export interface ElectronAPI {
   uninstallExtension: (name: string) => Promise<boolean>;
 
   // Extension APIs (for @raycast/api compatibility)
+  httpRequest: (options: {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  }) => Promise<{
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+    bodyText: string;
+    url: string;
+  }>;
   execCommand: (
     command: string,
     args: string[],

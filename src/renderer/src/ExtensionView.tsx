@@ -301,6 +301,70 @@ class BufferPolyfill extends Uint8Array {
   }
 }
 
+const BlobCompat: any =
+  (globalThis as any).Blob ||
+  class BlobCompatPolyfill {
+    private _data: Uint8Array;
+    type: string;
+    constructor(parts: any[] = [], options: { type?: string } = {}) {
+      const chunks: Uint8Array[] = [];
+      for (const part of parts || []) {
+        if (part == null) continue;
+        if (part instanceof Uint8Array) {
+          chunks.push(part);
+        } else if (part instanceof ArrayBuffer) {
+          chunks.push(new Uint8Array(part));
+        } else if (ArrayBuffer.isView(part)) {
+          chunks.push(new Uint8Array(part.buffer, part.byteOffset, part.byteLength));
+        } else {
+          chunks.push(new TextEncoder().encode(String(part)));
+        }
+      }
+      const total = chunks.reduce((n, c) => n + c.length, 0);
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        merged.set(c, offset);
+        offset += c.length;
+      }
+      this._data = merged;
+      this.type = options?.type ? String(options.type).toLowerCase() : '';
+    }
+    get size() { return this._data.byteLength; }
+    async arrayBuffer() { return this._data.buffer.slice(this._data.byteOffset, this._data.byteOffset + this._data.byteLength); }
+    async text() { return new TextDecoder().decode(this._data); }
+    stream() {
+      if (typeof ReadableStream === 'undefined') return undefined;
+      const bytes = this._data;
+      return new ReadableStream({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      });
+    }
+    slice(start?: number, end?: number, type?: string) {
+      const s = start ?? 0;
+      const e = end ?? this._data.length;
+      const sub = this._data.slice(s, e);
+      return new BlobCompat([sub], { type: type ?? this.type });
+    }
+    get [Symbol.toStringTag]() { return 'Blob'; }
+  };
+
+const FileCompat: any =
+  (globalThis as any).File ||
+  class FileCompatPolyfill extends BlobCompat {
+    name: string;
+    lastModified: number;
+    constructor(parts: any[] = [], fileName = '', options: { type?: string; lastModified?: number } = {}) {
+      super(parts, options);
+      this.name = String(fileName);
+      this.lastModified = typeof options?.lastModified === 'number' ? options.lastModified : Date.now();
+    }
+    get [Symbol.toStringTag]() { return 'File'; }
+  };
+
 // ── fs stub (localStorage-backed for persistence) ────────────────
 // Extensions like todo-list use fs.readFileSync/writeFileSync for data.
 // We back basic file operations with localStorage so data persists.
@@ -1297,7 +1361,15 @@ const nodeBuiltinStubs: Record<string, any> = {
   child_process: childProcessStub,
   timers: timersStub,
   'timers/promises': timersPromisesStub,
-  buffer: { Buffer: BufferPolyfill, SlowBuffer: BufferPolyfill, kMaxLength: 2 ** 31 - 1, INSPECT_MAX_BYTES: 50, constants: { MAX_LENGTH: 2 ** 31 - 1, MAX_STRING_LENGTH: 2 ** 28 - 16 } },
+  buffer: {
+    Buffer: BufferPolyfill,
+    SlowBuffer: BufferPolyfill,
+    Blob: BlobCompat,
+    File: FileCompat,
+    kMaxLength: 2 ** 31 - 1,
+    INSPECT_MAX_BYTES: 50,
+    constants: { MAX_LENGTH: 2 ** 31 - 1, MAX_STRING_LENGTH: 2 ** 28 - 16 },
+  },
   util: utilStub,
   stream: streamStub,
   'stream/promises': {
@@ -1416,7 +1488,30 @@ const nodeBuiltinStubs: Record<string, any> = {
   process: processStub,
   constants: osStub.constants, // alias
   punycode: { toASCII: (s: string) => s, toUnicode: (s: string) => s, encode: (s: string) => s, decode: (s: string) => s },
-  async_hooks: { createHook: () => ({ enable: noop, disable: noop }), executionAsyncId: () => 0, triggerAsyncId: () => 0, AsyncLocalStorage: class { run(store: any, fn: Function, ...args: any[]) { return fn(...args); } getStore() { return undefined; } } },
+  async_hooks: {
+    createHook: () => ({ enable: noop, disable: noop }),
+    executionAsyncId: () => 0,
+    triggerAsyncId: () => 0,
+    executionAsyncResource: () => ({}),
+    AsyncResource: class {
+      type: string;
+      constructor(type = 'ASYNCRESOURCE') {
+        this.type = type;
+      }
+      runInAsyncScope(fn: Function, thisArg?: any, ...args: any[]) {
+        return fn.apply(thisArg, args);
+      }
+      emitDestroy() {}
+      asyncId() { return 0; }
+      triggerAsyncId() { return 0; }
+    },
+    AsyncLocalStorage: class {
+      run(_store: any, fn: Function, ...args: any[]) { return fn(...args); }
+      getStore() { return undefined; }
+      enterWith(_store: any) {}
+      disable() {}
+    },
+  },
   diagnostics_channel: { channel: () => ({ subscribe: noop, unsubscribe: noop, publish: noop }), hasSubscribers: () => false },
   'node:test': { describe: noop, it: noop, test: noop },
 };
@@ -1597,6 +1692,41 @@ function loadExtensionExport(
           nodeFetch.FetchError = Error;
           nodeFetch.isRedirect = (code: number) => [301, 302, 303, 307, 308].includes(code);
           return nodeFetch;
+        }
+        case 'undici': {
+          const undiciFetch: any = async (input: any, init?: any) => fetch(input as any, init as any);
+          const request = async (input: any, init?: any) => {
+            const response = await undiciFetch(input, init);
+            const headers = Object.fromEntries((response.headers as any)?.entries?.() || []);
+            return {
+              statusCode: response.status,
+              headers,
+              body: {
+                text: () => response.text(),
+                json: () => response.json(),
+                arrayBuffer: () => response.arrayBuffer(),
+                blob: () => response.blob(),
+              },
+            };
+          };
+          const undici: any = {
+            fetch: undiciFetch,
+            request,
+            Headers: globalThis.Headers,
+            Request: globalThis.Request,
+            Response: globalThis.Response,
+            FormData: globalThis.FormData,
+            Blob: BlobCompat,
+            File: FileCompat,
+            Dispatcher: class {},
+            Agent: class {},
+            ProxyAgent: class {},
+            MockAgent: class {},
+            setGlobalDispatcher: noop,
+            getGlobalDispatcher: () => undefined,
+          };
+          undici.default = undici;
+          return undici;
         }
         default:
           break;

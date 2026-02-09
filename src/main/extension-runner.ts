@@ -139,6 +139,7 @@ const nodeBuiltins = [
   'stream', 'stream/promises', 'string_decoder', 'timers',
   'timers/promises', 'tls', 'tty', 'url', 'util', 'v8',
   'vm', 'worker_threads', 'zlib',
+  'async_hooks',
   'node:assert', 'node:buffer', 'node:child_process',
   'node:crypto', 'node:events', 'node:fs', 'node:fs/promises',
   'node:http', 'node:https', 'node:module', 'node:net',
@@ -146,6 +147,7 @@ const nodeBuiltins = [
   'node:stream', 'node:timers', 'node:timers/promises',
   'node:url', 'node:util', 'node:vm', 'node:worker_threads',
   'node:zlib',
+  'node:async_hooks',
 ];
 
 /**
@@ -243,6 +245,8 @@ export async function buildAllCommands(extName: string): Promise<number> {
           'raycast-cross-extension',
           // Fetch libs — use runtime shims in renderer instead of bundling Node internals
           'node-fetch',
+          'undici',
+          'undici/*',
           // Node.js built-ins — stubbed at runtime in the renderer
           ...nodeBuiltins,
         ],
