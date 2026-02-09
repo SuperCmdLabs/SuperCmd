@@ -1606,12 +1606,12 @@ const App: React.FC = () => {
                             </div>
 
                             <div className="flex-1 min-w-0">
-                              <div className="text-white/95 text-sm font-medium truncate tracking-[0.004em]">
+                              <div className="text-white/95 text-[13px] font-medium truncate tracking-[0.004em]">
                                 {command.title}
                               </div>
                             </div>
 
-                            <div className="text-white/55 text-xs font-semibold flex-shrink-0">
+                            <div className="text-white/55 text-[11px] font-semibold flex-shrink-0">
                               {getCategoryLabel(command.category)}
                             </div>
                           </div>

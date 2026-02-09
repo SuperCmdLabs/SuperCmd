@@ -51,8 +51,8 @@ const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, 
 
 // ─── Window Configuration ───────────────────────────────────────────
 
-const WINDOW_WIDTH = 900;
-const WINDOW_HEIGHT = 580;
+const WINDOW_WIDTH = 860;
+const WINDOW_HEIGHT = 540;
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
