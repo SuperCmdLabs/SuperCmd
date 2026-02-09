@@ -43,56 +43,40 @@ const GeneralTab: React.FC = () => {
   }
 
   return (
-    <div className="p-8 max-w-2xl">
-      <h2 className="text-xl font-semibold text-white mb-8">General</h2>
+    <div className="p-4 w-full max-w-5xl space-y-4">
+      <h2 className="text-xl font-semibold text-white">General</h2>
 
-      <div className="space-y-6">
-        {/* Shortcut Section */}
-        <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
-          <div className="flex items-center gap-2 mb-1">
-            <Keyboard className="w-4 h-4 text-white/50" />
-            <h3 className="text-sm font-medium text-white/90">
-              SuperCommand Shortcut
-            </h3>
-          </div>
-          <p className="text-xs text-white/40 mb-4 ml-6">
-            The keyboard shortcut to open and close the launcher.
-          </p>
-
-          <div className="flex items-center gap-4 ml-6">
-            <HotkeyRecorder
-              value={settings.globalShortcut}
-              onChange={handleShortcutChange}
-            />
-            {shortcutStatus === 'success' && (
-              <span className="text-xs text-green-400">
-                ✓ Shortcut updated
-              </span>
-            )}
-            {shortcutStatus === 'error' && (
-              <span className="text-xs text-red-400">
-                ✗ Failed — shortcut may be in use by another app
-              </span>
-            )}
-          </div>
+      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-6">
+        <div className="flex items-center gap-2 mb-2">
+          <Keyboard className="w-5 h-5 text-white/60" />
+          <h3 className="text-base font-semibold text-white/95">Launcher Shortcut</h3>
         </div>
+        <p className="text-sm text-white/45 mb-5">
+          Set the global shortcut to open and close SuperCommand.
+        </p>
 
-        {/* About Section */}
-        <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
-          <div className="flex items-center gap-2 mb-1">
-            <Info className="w-4 h-4 text-white/50" />
-            <h3 className="text-sm font-medium text-white/90">About</h3>
-          </div>
-          <p className="text-xs text-white/40 ml-6">
-            SuperCommand v1.0.0 — A fast, Raycast-inspired launcher for macOS.
-          </p>
+        <div className="flex items-center gap-4">
+          <HotkeyRecorder value={settings.globalShortcut} onChange={handleShortcutChange} large />
+          {shortcutStatus === 'success' && <span className="text-sm text-green-400">Shortcut updated</span>}
+          {shortcutStatus === 'error' && (
+            <span className="text-sm text-red-400">Failed — shortcut may be used by another app</span>
+          )}
         </div>
+      </div>
+
+      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Info className="w-4 h-4 text-white/50" />
+          <h3 className="text-sm font-medium text-white/90">About</h3>
+        </div>
+        <p className="text-sm text-white/45">
+          SuperCommand v1.0.0 — A fast, Raycast-inspired launcher for macOS.
+        </p>
       </div>
     </div>
   );
 };
 
 export default GeneralTab;
-
 
 

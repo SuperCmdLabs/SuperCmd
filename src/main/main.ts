@@ -634,8 +634,8 @@ function openSettingsWindow(tab?: 'general' | 'ai' | 'extensions'): void {
     }
     return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   })();
-  const settingsWidth = 1360;
-  const settingsHeight = 860;
+  const settingsWidth = Math.max(1180, Math.min(1460, displayWidth - 64));
+  const settingsHeight = Math.max(760, Math.min(920, displayHeight - 64));
   const settingsX = displayX + Math.floor((displayWidth - settingsWidth) / 2);
   const settingsY = displayY + Math.floor((displayHeight - settingsHeight) / 2);
 
@@ -644,8 +644,8 @@ function openSettingsWindow(tab?: 'general' | 'ai' | 'extensions'): void {
     height: settingsHeight,
     x: settingsX,
     y: settingsY,
-    minWidth: 1080,
-    minHeight: 680,
+    minWidth: 1180,
+    minHeight: 760,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     transparent: true,

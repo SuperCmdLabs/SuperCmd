@@ -363,9 +363,9 @@ const ExtensionsTab: React.FC = () => {
   }
 
   return (
-    <div className="h-full">
-      <div className="grid grid-cols-[minmax(600px,66%)_1fr] h-full bg-white/[0.01]">
-        <div className="min-w-0 h-full border-r border-white/[0.08] flex flex-col">
+    <div className="h-full min-h-0 flex flex-col">
+      <div className="flex flex-1 min-h-0 bg-white/[0.01]">
+        <div className="flex-[0_0_66%] min-w-[600px] h-full border-r border-white/[0.08] flex flex-col">
           <div className="px-3 py-2 border-b border-white/[0.06]">
             <div className="flex items-center gap-2">
               <div className="relative w-[360px] max-w-full shrink-0">
@@ -413,7 +413,7 @@ const ExtensionsTab: React.FC = () => {
             <div className="pl-2">Enabled</div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-scroll custom-scrollbar" style={{ scrollbarGutter: 'stable' }}>
             {filteredSchemas.length === 0 ? (
               <div className="px-4 py-8 text-center text-xs text-white/30">No matching extensions</div>
             ) : (
@@ -521,11 +521,11 @@ const ExtensionsTab: React.FC = () => {
           </div>
         </div>
 
-        <div className="min-w-0 h-full overflow-hidden">
+        <div className="flex-1 min-w-0 h-full min-h-0 overflow-hidden">
           {!selectedSchema ? (
             <div className="h-full flex items-center justify-center text-sm text-white/35">Select an extension</div>
           ) : (
-            <div className="h-full flex flex-col">
+            <div className="h-full min-h-0 flex flex-col">
               <div className="px-4 py-3 border-b border-white/[0.06]">
                 <div className="flex items-center gap-2">
                   {selectedSchema.iconDataUrl ? (
@@ -542,7 +542,7 @@ const ExtensionsTab: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 space-y-5">
+              <div className="flex-1 min-h-0 overflow-y-scroll custom-scrollbar p-4 space-y-5" style={{ scrollbarGutter: 'stable' }}>
                 {selectedCommandSchema && selectedCommandInfo ? (
                   <div className="grid grid-cols-2 gap-3">
                     <label className="inline-flex items-center gap-2 text-xs text-white/70">
