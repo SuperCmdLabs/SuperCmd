@@ -13,6 +13,7 @@ interface HotkeyRecorderProps {
   value: string;
   onChange: (hotkey: string) => void;
   compact?: boolean;
+  large?: boolean;
 }
 
 function keyEventToAccelerator(e: React.KeyboardEvent): string | null {
@@ -63,6 +64,7 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
   value,
   onChange,
   compact,
+  large,
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -161,8 +163,9 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
       onKeyDown={isRecording ? handleKeyDown : undefined}
       onBlur={() => setIsRecording(false)}
       className={`
-        inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm cursor-pointer
+        inline-flex items-center gap-2 rounded-lg cursor-pointer
         transition-all select-none outline-none
+        ${large ? 'px-6 py-3 text-base' : 'px-4 py-2 text-sm'}
         ${
           isRecording
             ? 'bg-blue-500/20 border border-blue-500/40 text-blue-400'
@@ -182,4 +185,3 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
 };
 
 export default HotkeyRecorder;
-
