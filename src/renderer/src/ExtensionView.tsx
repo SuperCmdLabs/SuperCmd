@@ -1728,7 +1728,9 @@ function loadExtensionExport(
               body = typeof init.body === 'string' ? init.body : String(init.body);
             }
 
+            console.log(`[ipcFetch] ${method} ${url.substring(0, 120)}`);
             const res = await window.electron.httpRequest({ url, method, headers, body });
+            console.log(`[ipcFetch] → ${res.status} ${res.statusText} (${res.bodyText.length} bytes)`, res.bodyText.substring(0, 200));
 
             // Build a Response-like object
             const resHeaders = new Headers(res.headers || {});
