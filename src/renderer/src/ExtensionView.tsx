@@ -57,6 +57,9 @@ interface ExtensionViewProps {
   owner?: string;
   preferences?: Record<string, any>;
   launchArguments?: Record<string, any>;
+  launchContext?: Record<string, any>;
+  fallbackText?: string | null;
+  launchType?: 'userInitiated' | 'background';
 }
 
 /**
@@ -1729,7 +1732,18 @@ const NoViewRunner: React.FC<{
   title: string;
   onClose: () => void;
   launchArguments?: Record<string, any>;
-}> = ({ fn, title, onClose, launchArguments = {} }) => {
+  launchContext?: Record<string, any>;
+  fallbackText?: string | null;
+  launchType?: 'userInitiated' | 'background';
+}> = ({
+  fn,
+  title,
+  onClose,
+  launchArguments = {},
+  launchContext,
+  fallbackText,
+  launchType = 'userInitiated',
+}) => {
   const [status, setStatus] = useState<'running' | 'done' | 'error'>('running');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -1738,7 +1752,12 @@ const NoViewRunner: React.FC<{
 
     (async () => {
       try {
-        await fn({ arguments: launchArguments, launchType: 'userInitiated' });
+        await fn({
+          arguments: launchArguments,
+          launchType,
+          launchContext,
+          fallbackText,
+        });
         if (!cancelled) {
           setStatus('done');
           setTimeout(() => onClose(), 600);
@@ -1752,7 +1771,7 @@ const NoViewRunner: React.FC<{
     })();
 
     return () => { cancelled = true; };
-  }, [fn, onClose, launchArguments]);
+  }, [fn, onClose, launchArguments, launchContext, fallbackText, launchType]);
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-3">
@@ -1784,12 +1803,39 @@ const NoViewRunner: React.FC<{
 /**
  * Render a view command as a React component.
  */
-const ViewRenderer: React.FC<{ Component: React.FC; launchArguments?: Record<string, any> }> = ({ Component, launchArguments = {} }) => {
+const ViewRenderer: React.FC<{
+  Component: React.FC;
+  launchArguments?: Record<string, any>;
+  launchContext?: Record<string, any>;
+  fallbackText?: string | null;
+  launchType?: 'userInitiated' | 'background';
+}> = ({
+  Component,
+  launchArguments = {},
+  launchContext,
+  fallbackText,
+  launchType = 'userInitiated',
+}) => {
   // Simple test that hooks work here
   const [test] = useState('ok');
   console.log('[ViewRenderer] Hooks work here, rendering extension...');
   // Pass standard Raycast props: arguments (command arguments) and launchType
-  return React.createElement(Component, { arguments: launchArguments, launchType: 'userInitiated' } as any);
+  return React.createElement(Component, {
+    arguments: launchArguments,
+    launchType,
+    launchContext,
+    fallbackText,
+  } as any);
+};
+
+const ScopedExtensionContext: React.FC<{
+  ctx: ExtensionContextType;
+  children: React.ReactNode;
+}> = ({ ctx, children }) => {
+  // Ensure each extension subtree re-establishes its own context at render time.
+  // This avoids global context races between visible and hidden extension runners.
+  setExtensionContext(ctx);
+  return <>{children}</>;
 };
 
 const ExtensionView: React.FC<ExtensionViewProps> = ({
@@ -1808,6 +1854,9 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   owner = '',
   preferences = {},
   launchArguments = {},
+  launchContext,
+  fallbackText,
+  launchType = 'userInitiated',
 }) => {
   const [error, setError] = useState<string | null>(buildError || null);
   const [navStack, setNavStack] = useState<React.ReactElement[]>([]);
@@ -1934,9 +1983,30 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
 
   // ─── No-view command: execute the function directly ───────────
   if (isNoView) {
+    const scopedCtx: ExtensionContextType = {
+      extensionName,
+      extensionDisplayName,
+      extensionIconDataUrl,
+      commandName,
+      assetsPath,
+      supportPath,
+      owner,
+      preferences,
+      commandMode: mode as 'view' | 'no-view' | 'menu-bar',
+    };
     return (
       <div className="flex flex-col h-full">
-        <NoViewRunner fn={ExtExport} title={title} onClose={onClose} launchArguments={launchArguments} />
+        <ScopedExtensionContext ctx={scopedCtx}>
+          <NoViewRunner
+            fn={ExtExport}
+            title={title}
+            onClose={onClose}
+            launchArguments={launchArguments}
+            launchContext={launchContext}
+            fallbackText={fallbackText}
+            launchType={launchType}
+          />
+        </ScopedExtensionContext>
       </div>
     );
   }
@@ -1954,14 +2024,44 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
     extensionIconDataUrl: extensionIconDataUrl || '',
   }), [extensionName, extensionDisplayName, extensionIconDataUrl, commandName, assetsPath, mode]);
 
+  const scopedCtx = useMemo<ExtensionContextType>(() => ({
+    extensionName,
+    extensionDisplayName,
+    extensionIconDataUrl,
+    commandName,
+    assetsPath,
+    supportPath,
+    owner,
+    preferences,
+    commandMode: mode as 'view' | 'no-view' | 'menu-bar',
+  }), [
+    extensionName,
+    extensionDisplayName,
+    extensionIconDataUrl,
+    commandName,
+    assetsPath,
+    supportPath,
+    owner,
+    preferences,
+    mode,
+  ]);
+
   return (
     <ExtensionInfoReactContext.Provider value={extInfoValue}>
       <NavigationContext.Provider value={navValue}>
-        <ExtensionErrorBoundary onError={(e) => setError(e.message)}>
-          {currentView || (
-            <ViewRenderer Component={ExtExport as React.FC} launchArguments={launchArguments} />
-          )}
-        </ExtensionErrorBoundary>
+        <ScopedExtensionContext ctx={scopedCtx}>
+          <ExtensionErrorBoundary onError={(e) => setError(e.message)}>
+            {currentView || (
+              <ViewRenderer
+                Component={ExtExport as React.FC}
+                launchArguments={launchArguments}
+                launchContext={launchContext}
+                fallbackText={fallbackText}
+                launchType={launchType}
+              />
+            )}
+          </ExtensionErrorBoundary>
+        </ScopedExtensionContext>
       </NavigationContext.Provider>
     </ExtensionInfoReactContext.Provider>
   );

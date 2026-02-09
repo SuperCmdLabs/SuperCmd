@@ -53,7 +53,7 @@ import {
 } from './snippet-store';
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog } = electron;
 
 // ─── Window Configuration ───────────────────────────────────────────
 
@@ -931,7 +931,17 @@ app.whenReady().then(async () => {
     'launch-command',
     async (_event: any, options: any) => {
       try {
-        const { name, type, extensionName, ownerOrAuthorName, arguments: args, context, fallbackText } = options;
+        const {
+          name,
+          type,
+          extensionName,
+          ownerOrAuthorName,
+          arguments: args,
+          context,
+          fallbackText,
+          sourceExtensionName,
+          sourcePreferences,
+        } = options;
 
         // Determine which extension to launch
         // For intra-extension launches, we'd need to track the current extension context
@@ -944,6 +954,26 @@ app.whenReady().then(async () => {
         const result = getExtensionBundle(extensionName, name);
         if (!result) {
           throw new Error(`Command "${name}" not found in extension "${extensionName}"`);
+        }
+
+        const mergedPreferences: Record<string, any> = {
+          ...(result.preferences || {}),
+        };
+
+        // Intra-extension launches should carry current extension-level preferences
+        // (e.g., API keys) so commands don't regress to manifest defaults.
+        if (
+          sourceExtensionName &&
+          sourceExtensionName === extensionName &&
+          sourcePreferences &&
+          typeof sourcePreferences === 'object'
+        ) {
+          for (const def of result.preferenceDefinitions || []) {
+            if (!def?.name || def.scope !== 'extension') continue;
+            if (sourcePreferences[def.name] !== undefined) {
+              mergedPreferences[def.name] = sourcePreferences[def.name];
+            }
+          }
         }
 
         // Return bundle with launch context
@@ -964,9 +994,11 @@ app.whenReady().then(async () => {
             supportPath: result.supportPath,
             extensionPath: result.extensionPath,
             owner: result.owner,
-            preferences: result.preferences,
+            preferences: mergedPreferences,
             preferenceDefinitions: result.preferenceDefinitions,
             commandArgumentDefinitions: result.commandArgumentDefinitions,
+            launchArguments: args || {},
+            fallbackText: fallbackText ?? null,
             launchContext: context,
             launchType: type,
           }
@@ -1285,8 +1317,7 @@ app.whenReady().then(async () => {
 
   // Get system appearance
   ipcMain.handle('get-appearance', () => {
-    const { nativeTheme } = require('electron');
-    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+    return 'dark';
   });
 
   // SQLite query execution (for extensions like cursor-recent-projects)
@@ -1954,6 +1985,48 @@ app.whenReady().then(async () => {
     suppressBlurHide = false;
     return pickedColor;
   });
+
+  // ─── IPC: Native File Picker (for Form.FilePicker) ───────────────
+  ipcMain.handle(
+    'pick-files',
+    async (
+      _event: any,
+      options?: {
+        allowMultipleSelection?: boolean;
+        canChooseDirectories?: boolean;
+        canChooseFiles?: boolean;
+        showHiddenFiles?: boolean;
+      }
+    ) => {
+      const canChooseFiles = options?.canChooseFiles !== false;
+      const canChooseDirectories = options?.canChooseDirectories === true;
+      const properties: string[] = [];
+
+      if (canChooseFiles) properties.push('openFile');
+      if (canChooseDirectories) properties.push('openDirectory');
+      if (options?.allowMultipleSelection) properties.push('multiSelections');
+      if (options?.showHiddenFiles) properties.push('showHiddenFiles');
+
+      // Ensure at least one target type is selectable.
+      if (!properties.includes('openFile') && !properties.includes('openDirectory')) {
+        properties.push('openFile');
+      }
+
+      suppressBlurHide = true;
+      try {
+        const result = await dialog.showOpenDialog(mainWindow || undefined, {
+          properties: properties as any,
+        });
+        if (result.canceled) return [];
+        return result.filePaths || [];
+      } catch (error: any) {
+        console.error('pick-files failed:', error);
+        return [];
+      } finally {
+        suppressBlurHide = false;
+      }
+    }
+  );
 
   // ─── IPC: Menu Bar (Tray) Extensions ────────────────────────────
 

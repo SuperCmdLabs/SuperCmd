@@ -140,7 +140,10 @@ function hydrateExtensionBundlePreferences(bundle: ExtensionBundle): ExtensionBu
   const cmdName = bundle.cmdName || bundle.commandName || '';
   const extStored = extName ? readJsonObject(getExtPrefsKey(extName)) : {};
   const cmdStored = extName && cmdName ? readJsonObject(getCmdPrefsKey(extName, cmdName)) : {};
-  const argStored = extName && cmdName ? readJsonObject(getCmdArgsKey(extName, cmdName)) : {};
+  const argStored =
+    bundle.mode === 'no-view' && extName && cmdName
+      ? readJsonObject(getCmdArgsKey(extName, cmdName))
+      : {};
   return {
     ...bundle,
     preferences: {
@@ -195,11 +198,21 @@ function getUnsetCriticalPreferences(bundle: ExtensionBundle, values?: Record<st
 }
 
 function shouldOpenCommandSetup(bundle: ExtensionBundle): boolean {
-  const hasArgs = (bundle.commandArgumentDefinitions || []).length > 0;
-  if (hasArgs) return true;
   const missingPrefs = getMissingRequiredPreferences(bundle);
+  if (missingPrefs.length > 0) return true;
+
+  const args = bundle.commandArgumentDefinitions || [];
+  const hasArgs = args.length > 0;
   const missingArgs = getMissingRequiredArguments(bundle);
-  return missingPrefs.length > 0 || missingArgs.length > 0;
+
+  if (bundle.mode === 'no-view') {
+    // no-view commands have no UI to collect launch arguments at runtime.
+    if (hasArgs) return true;
+    return missingArgs.length > 0;
+  }
+
+  // View/menu-bar commands can collect optional inputs in their own UI.
+  return missingArgs.length > 0;
 }
 
 function persistExtensionPreferences(
@@ -1135,6 +1148,9 @@ const App: React.FC = () => {
           owner={(ext as any).owner}
           preferences={(ext as any).preferences}
           launchArguments={(ext as any).launchArguments}
+          launchContext={(ext as any).launchContext}
+          fallbackText={(ext as any).fallbackText}
+          launchType={(ext as any).launchType}
           onClose={() => {}}
         />
       ))}
@@ -1285,7 +1301,9 @@ const App: React.FC = () => {
                   const cmdName = bundle.cmdName || bundle.commandName || '';
                   if (!extName || !cmdName) return;
                   persistExtensionPreferences(extName, cmdName, defs, extensionPreferenceSetup.values);
-                  persistCommandArguments(extName, cmdName, extensionPreferenceSetup.argumentValues || {});
+                  if (bundle.mode === 'no-view') {
+                    persistCommandArguments(extName, cmdName, extensionPreferenceSetup.argumentValues || {});
+                  }
                   const updatedBundle: ExtensionBundle = {
                     ...bundle,
                     preferences: { ...(bundle.preferences || {}), ...(extensionPreferenceSetup.values || {}) },
@@ -1346,6 +1364,9 @@ const App: React.FC = () => {
               owner={(extensionView as any).owner}
               preferences={(extensionView as any).preferences}
               launchArguments={(extensionView as any).launchArguments}
+              launchContext={(extensionView as any).launchContext}
+              fallbackText={(extensionView as any).fallbackText}
+              launchType={(extensionView as any).launchType}
               onClose={() => {
                 setExtensionView(null);
                 localStorage.removeItem(LAST_EXT_KEY);

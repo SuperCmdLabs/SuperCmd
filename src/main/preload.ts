@@ -214,6 +214,13 @@ contextBridge.exposeInMainWorld('electron', {
   // ─── Native Helpers ─────────────────────────────────────────────
   nativePickColor: (): Promise<{ red: number; green: number; blue: number; alpha: number } | null> =>
     ipcRenderer.invoke('native-pick-color'),
+  pickFiles: (options?: {
+    allowMultipleSelection?: boolean;
+    canChooseDirectories?: boolean;
+    canChooseFiles?: boolean;
+    showHiddenFiles?: boolean;
+  }): Promise<string[]> =>
+    ipcRenderer.invoke('pick-files', options),
 
   // ─── Menu Bar (Tray) Extensions ────────────────────────────────
   getMenuBarExtensions: (): Promise<any[]> =>

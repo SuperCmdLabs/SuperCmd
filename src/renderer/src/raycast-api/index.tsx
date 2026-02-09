@@ -162,16 +162,11 @@ export const environment: Record<string, any> = {
   },
 };
 
-// Initialize appearance from system
-(async () => {
-  try {
-    const appearance = await (window as any).electron?.getAppearance?.();
-    if (appearance) {
-      environment.appearance = appearance;
-      environment.theme = { name: appearance };
-    }
-  } catch {}
-})();
+// Force dark mode as the default extension theme.
+if (typeof document !== 'undefined') {
+  document.documentElement.classList.add('dark');
+  document.documentElement.style.colorScheme = 'dark';
+}
 
 // =====================================================================
 // ─── Alert Types (defined before Toast since Toast references Alert) ──
@@ -1429,6 +1424,8 @@ export async function launchCommand(options: LaunchOptions): Promise<void> {
         ...options,
         extensionName: targetExtension,
         ownerOrAuthorName: targetOwner,
+        sourceExtensionName: ctx.extensionName,
+        sourcePreferences: ctx.preferences,
       });
 
       if (result.success && result.bundle) {
@@ -2163,6 +2160,16 @@ function ListSectionComponent({ children, title }: { children?: React.ReactNode;
 // ── List.EmptyView ───────────────────────────────────────────────────
 
 function ListEmptyView({ title, description, icon, actions }: { title?: string; description?: string; icon?: any; actions?: React.ReactElement }) {
+  const registerEmptyView = useContext(EmptyViewRegistryContext);
+  useEffect(() => {
+    if (!registerEmptyView) return;
+    registerEmptyView({ title, description, icon, actions });
+    return () => registerEmptyView(null);
+  }, [registerEmptyView, title, description, icon, actions]);
+
+  // When mounted in the hidden registry tree, only register metadata/actions.
+  if (registerEmptyView) return null;
+
   return (
     <div className="flex flex-col items-center justify-center h-full text-white/40 py-12">
       {icon && <div className="text-2xl mb-2 opacity-40">{typeof icon === 'string' ? icon : '○'}</div>}
@@ -2171,6 +2178,13 @@ function ListEmptyView({ title, description, icon, actions }: { title?: string; 
     </div>
   );
 }
+
+const EmptyViewRegistryContext = createContext<((props: {
+  title?: string;
+  description?: string;
+  icon?: any;
+  actions?: React.ReactElement;
+} | null) => void) | null>(null);
 
 // ── List.Dropdown — renders as a real <select> ───────────────────────
 
@@ -2348,11 +2362,20 @@ function ListComponent({
   // duplicate component mounts sharing the same atom state, leading to
   // double mutations (e.g. duplicate todo items).
   const selectedItem = filteredItems[selectedIdx];
+  const [emptyViewProps, setEmptyViewProps] = useState<{
+    title?: string;
+    description?: string;
+    icon?: any;
+    actions?: React.ReactElement;
+  } | null>(null);
 
   const { collectedActions: selectedActions, registryAPI: actionRegistry } = useCollectedActions();
 
   // Determine which actions element to render — item actions take priority
-  const activeActionsElement = selectedItem?.props?.actions || listActions;
+  const activeActionsElement =
+    selectedItem?.props?.actions ||
+    (filteredItems.length === 0 ? emptyViewProps?.actions : null) ||
+    listActions;
 
   const primaryAction = selectedActions[0];
 
@@ -2532,7 +2555,16 @@ function ListComponent({
       {isLoading && filteredItems.length === 0 ? (
         <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
       ) : filteredItems.length === 0 ? (
-        <div className="flex items-center justify-center h-full text-white/40"><p className="text-sm">No results</p></div>
+        emptyViewProps ? (
+          <ListEmptyView
+            title={emptyViewProps.title}
+            description={emptyViewProps.description}
+            icon={emptyViewProps.icon}
+            actions={emptyViewProps.actions}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full text-white/40"><p className="text-sm">No results</p></div>
+        )
       ) : (
         groupedItems.map((group, gi) => (
           <div key={gi} className="mb-0">
@@ -2565,12 +2597,14 @@ function ListComponent({
     <ListRegistryContext.Provider value={registryAPI}>
       {/* Hidden render area — children mount here and register items via context */}
       <div style={{ display: 'none' }}>
-        {children}
+        <EmptyViewRegistryContext.Provider value={setEmptyViewProps}>
+          {children}
+        </EmptyViewRegistryContext.Provider>
         {/* Render ONE actions element in registry context so hooks work.
             Item-level actions take priority; list-level is fallback. */}
         {activeActionsElement && (
           <ActionRegistryContext.Provider value={actionRegistry}>
-            <div key={selectedItem?.id || '__list_actions'}>
+            <div key={selectedItem?.id || (filteredItems.length === 0 ? '__list_empty_actions' : '__list_actions')}>
               {activeActionsElement}
             </div>
           </ActionRegistryContext.Provider>
@@ -3203,14 +3237,14 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
 // ── Form field helper: horizontal row layout ─────────────────────────
 function FormFieldRow({ title, children, error, info }: { title?: string; children: React.ReactNode; error?: string; info?: string }) {
   return (
-    <div className="flex items-start gap-3">
-      <div className="w-20 flex-shrink-0 pt-1.5 text-right">
-        {title && <label className="text-[12px] text-white/40">{title}</label>}
+    <div className="flex items-start gap-4">
+      <div className="w-24 flex-shrink-0 pt-2 text-right">
+        {title && <label className="text-[13px] font-medium text-white/55">{title}</label>}
       </div>
       <div className="flex-1 min-w-0">
         {children}
         {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
-        {info && <p className="text-xs text-white/30 mt-1">{info}</p>}
+        {info && <p className="text-[12px] text-white/35 mt-1.5">{info}</p>}
       </div>
     </div>
   );
@@ -3230,7 +3264,7 @@ FormComponent.TextField = ({ id, title, placeholder, value, onChange, defaultVal
   return (
     <FormFieldRow title={title} error={fieldError} info={info}>
       <input type="text" placeholder={placeholder} value={fieldValue} onChange={handleChange}
-        className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-2.5 py-[5px] text-[13px] text-white outline-none focus:border-white/20" autoFocus={autoFocus} />
+        className="w-full bg-white/[0.06] border border-white/[0.12] rounded-lg px-3 py-2 text-[15px] text-white/95 placeholder:text-white/45 outline-none focus:border-white/30" autoFocus={autoFocus} />
     </FormFieldRow>
   );
 };
@@ -3248,8 +3282,8 @@ FormComponent.TextArea = ({ id, title, placeholder, value, onChange, defaultValu
 
   return (
     <FormFieldRow title={title} error={fieldError}>
-      <textarea placeholder={placeholder} value={fieldValue} onChange={handleChange} rows={4}
-        className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-2.5 py-[5px] text-[13px] text-white outline-none focus:border-white/20 resize-y" />
+      <textarea placeholder={placeholder} value={fieldValue} onChange={handleChange} rows={5}
+        className="w-full min-h-[140px] bg-white/[0.06] border border-white/[0.12] rounded-xl px-4 py-3 text-[15px] text-white/95 placeholder:text-white/45 outline-none focus:border-white/30 resize-y" />
     </FormFieldRow>
   );
 };
@@ -3268,7 +3302,7 @@ FormComponent.PasswordField = ({ id, title, placeholder, value, onChange, defaul
   return (
     <FormFieldRow title={title} error={fieldError}>
       <input type="password" placeholder={placeholder} value={fieldValue} onChange={handleChange}
-        className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-2.5 py-[5px] text-[13px] text-white outline-none focus:border-white/20" />
+        className="w-full bg-white/[0.06] border border-white/[0.12] rounded-lg px-3 py-2 text-[15px] text-white/95 placeholder:text-white/45 outline-none focus:border-white/30" />
     </FormFieldRow>
   );
 };
@@ -3309,7 +3343,7 @@ FormComponent.Dropdown = Object.assign(
     return (
       <FormFieldRow title={title} error={fieldError}>
         <select value={fieldValue} onChange={handleChange}
-          className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-2.5 py-[5px] text-[13px] text-white outline-none">
+          className="w-full bg-white/[0.06] border border-white/[0.12] rounded-lg px-3 py-2 text-[15px] text-white/95 outline-none focus:border-white/30">
           {children}
         </select>
       </FormFieldRow>
@@ -3333,9 +3367,9 @@ FormComponent.DatePicker = Object.assign(
 );
 
 FormComponent.Description = ({ text, title }: any) => (
-  <div className="flex items-start gap-3">
-    <div className="w-20 flex-shrink-0" />
-    <p className="text-[11px] text-white/40 flex-1">{title ? <strong>{title}: </strong> : null}{text}</p>
+  <div className="flex items-start gap-4">
+    <div className="w-24 flex-shrink-0" />
+    <p className="text-[13px] text-white/55 leading-relaxed flex-1">{title ? <strong className="text-white/65">{title}: </strong> : null}{text}</p>
   </div>
 );
 
@@ -3350,11 +3384,56 @@ FormComponent.TagPicker = Object.assign(
   { Item: ({ value, title }: any) => <span className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-white/60">{title}</span> }
 );
 
-FormComponent.FilePicker = ({ id, title, value, onChange, allowMultipleSelection, canChooseDirectories, canChooseFiles, showHiddenFiles, error }: any) => (
-  <FormFieldRow title={title} error={error}>
-    <div className="text-xs text-white/30 py-1.5">File picker not available</div>
-  </FormFieldRow>
-);
+FormComponent.FilePicker = ({
+  id,
+  title,
+  value,
+  onChange,
+  defaultValue,
+  allowMultipleSelection,
+  canChooseDirectories,
+  canChooseFiles,
+  showHiddenFiles,
+  error,
+}: any) => {
+  const form = useContext(FormContext);
+  const fieldValue = value ?? form.values[id] ?? defaultValue ?? [];
+  const fieldError = error ?? form.errors[id];
+  const files = Array.isArray(fieldValue) ? fieldValue : (fieldValue ? [fieldValue] : []);
+
+  const pickFiles = async () => {
+    const picked = await (window as any).electron?.pickFiles?.({
+      allowMultipleSelection: Boolean(allowMultipleSelection),
+      canChooseDirectories: Boolean(canChooseDirectories),
+      canChooseFiles: canChooseFiles !== false,
+      showHiddenFiles: Boolean(showHiddenFiles),
+    });
+    if (!picked || !Array.isArray(picked)) return;
+    if (id) form.setValue(id, picked);
+    onChange?.(picked);
+  };
+
+  const cta = allowMultipleSelection ? 'Select Files' : 'Select File';
+
+  return (
+    <FormFieldRow title={title} error={fieldError}>
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={pickFiles}
+          className="w-full h-10 rounded-lg border border-white/[0.14] bg-white/[0.06] hover:bg-white/[0.10] text-[14px] font-semibold text-white/90 transition-colors"
+        >
+          {cta}
+        </button>
+        {files.length > 0 ? (
+          <div className="text-[12px] text-white/55 break-all">
+            {allowMultipleSelection ? `${files.length} selected` : files[0]}
+          </div>
+        ) : null}
+      </div>
+    </FormFieldRow>
+  );
+};
 
 FormComponent.LinkAccessory = ({ text, target }: any) => (
   <a href={target} className="text-xs text-blue-400 hover:underline">{text}</a>
@@ -3558,6 +3637,12 @@ function GridComponent({
 
   // ── Action collection ───────────────────────────────────────────
   const selectedItem = filteredItems[selectedIdx];
+  const [emptyViewProps, setEmptyViewProps] = useState<{
+    title?: string;
+    description?: string;
+    icon?: any;
+    actions?: React.ReactElement;
+  } | null>(null);
   const footerTitle = navigationTitle
     || extInfo.extensionDisplayName
     || _extensionContext.extensionDisplayName
@@ -3565,7 +3650,10 @@ function GridComponent({
     || 'Extension';
   const footerIcon = extInfo.extensionIconDataUrl || _extensionContext.extensionIconDataUrl;
   const { collectedActions: selectedActions, registryAPI: actionRegistry } = useCollectedActions();
-  const activeActionsElement = selectedItem?.props?.actions || gridActions;
+  const activeActionsElement =
+    selectedItem?.props?.actions ||
+    (filteredItems.length === 0 ? emptyViewProps?.actions : null) ||
+    gridActions;
   const primaryAction = selectedActions[0];
 
   // ── Keyboard handler ─────────────────────────────────────────────
@@ -3688,10 +3776,12 @@ function GridComponent({
     <GridRegistryContext.Provider value={registryAPI}>
       {/* Hidden render area — children register items via context */}
       <div style={{ display: 'none' }}>
-        {children}
+        <EmptyViewRegistryContext.Provider value={setEmptyViewProps}>
+          {children}
+        </EmptyViewRegistryContext.Provider>
         {activeActionsElement && (
           <ActionRegistryContext.Provider value={actionRegistry}>
-            <div key={selectedItem?.id || '__grid_actions'}>
+            <div key={selectedItem?.id || (filteredItems.length === 0 ? '__grid_empty_actions' : '__grid_actions')}>
               {activeActionsElement}
             </div>
           </ActionRegistryContext.Provider>
@@ -3723,7 +3813,16 @@ function GridComponent({
           {isLoading && filteredItems.length === 0 ? (
             <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
           ) : filteredItems.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-white/40"><p className="text-sm">No results</p></div>
+            emptyViewProps ? (
+              <ListEmptyView
+                title={emptyViewProps.title}
+                description={emptyViewProps.description}
+                icon={emptyViewProps.icon}
+                actions={emptyViewProps.actions}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-white/40"><p className="text-sm">No results</p></div>
+            )
           ) : (
             groupedItems.map((group, gi) => (
               <div key={gi} className="mb-2">

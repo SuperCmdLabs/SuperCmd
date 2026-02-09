@@ -220,6 +220,12 @@ export interface ElectronAPI {
 
   // Native helpers
   nativePickColor: () => Promise<{ red: number; green: number; blue: number; alpha: number } | null>;
+  pickFiles: (options?: {
+    allowMultipleSelection?: boolean;
+    canChooseDirectories?: boolean;
+    canChooseFiles?: boolean;
+    showHiddenFiles?: boolean;
+  }) => Promise<string[]>;
 
   // AI
   aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }) => Promise<void>;
