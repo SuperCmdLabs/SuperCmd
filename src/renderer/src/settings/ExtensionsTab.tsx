@@ -56,7 +56,7 @@ const ExtensionsTab: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [schemas, setSchemas] = useState<InstalledExtensionSettingsSchema[]>([]);
   const [search, setSearch] = useState('');
-  const [activeScope, setActiveScope] = useState<'all' | 'commands'>('commands');
+  const [activeScope, setActiveScope] = useState<'all' | 'commands'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [selected, setSelected] = useState<SelectedTarget | null>(null);
   const [expandedExtensions, setExpandedExtensions] = useState<Record<string, boolean>>({});
@@ -80,10 +80,17 @@ const ExtensionsTab: React.FC = () => {
     });
   }, []);
 
-  const commandByPath = useMemo(() => {
+  const commandBySchemaKey = useMemo(() => {
     const map = new Map<string, CommandInfo>();
     for (const cmd of commands) {
-      if (cmd.category === 'extension' && cmd.path) map.set(cmd.path, cmd);
+      if (cmd.category === 'extension' && cmd.path) {
+        const [extName, cmdName] = cmd.path.split('/');
+        if (extName && cmdName) map.set(`${extName}/${cmdName}`, cmd);
+        continue;
+      }
+      if (cmd.category === 'system') {
+        map.set(`__system/${cmd.id}`, cmd);
+      }
     }
     return map;
   }, [commands]);
@@ -99,9 +106,84 @@ const ExtensionsTab: React.FC = () => {
     return map;
   }, [commands]);
 
+  const displaySchemas = useMemo(() => {
+    const byExt = new Map<string, InstalledExtensionSettingsSchema>();
+
+    for (const schema of schemas) {
+      byExt.set(schema.extName, { ...schema, commands: [...schema.commands] });
+    }
+
+    for (const cmd of commands) {
+      if (cmd.category === 'extension' && cmd.path) {
+        const [extName, cmdName] = cmd.path.split('/');
+        if (!extName || !cmdName) continue;
+
+        let schema = byExt.get(extName);
+        if (!schema) {
+          const title = extName
+            .split('-')
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+          schema = {
+            extName,
+            title,
+            description: '',
+            owner: '',
+            iconDataUrl: cmd.iconDataUrl,
+            preferences: [],
+            commands: [],
+          };
+          byExt.set(extName, schema);
+        }
+
+        if (!schema.commands.some((c) => c.name === cmdName)) {
+          schema.commands.push({
+            name: cmdName,
+            title: cmd.title || cmdName,
+            description: '',
+            mode: cmd.mode || 'view',
+            interval: cmd.interval,
+            disabledByDefault: Boolean(cmd.disabledByDefault),
+            preferences: [],
+          });
+        }
+      }
+    }
+
+    const systemCommands = commands.filter((cmd) => cmd.category === 'system');
+    if (systemCommands.length > 0) {
+      byExt.set('__system', {
+        extName: '__system',
+        title: 'System',
+        description: 'Built-in SuperCommand commands',
+        owner: 'supercommand',
+        iconDataUrl: undefined,
+        preferences: [],
+        commands: systemCommands.map((cmd) => ({
+          name: cmd.id,
+          title: cmd.title,
+          description: '',
+          mode: cmd.mode || 'no-view',
+          interval: cmd.interval,
+          disabledByDefault: Boolean(cmd.disabledByDefault),
+          preferences: [],
+        })),
+      });
+    }
+
+    return Array.from(byExt.values()).sort((a, b) => {
+      if (a.extName === '__system') return -1;
+      if (b.extName === '__system') return 1;
+      return a.title.localeCompare(b.title);
+    });
+  }, [schemas, commands]);
+
+  const resolveCommandInfo = (extName: string, cmdName: string): CommandInfo | undefined =>
+    commandBySchemaKey.get(`${extName}/${cmdName}`);
+
   const selectedSchema = useMemo(
-    () => schemas.find((schema) => schema.extName === selected?.extName) || null,
-    [schemas, selected]
+    () => displaySchemas.find((schema) => schema.extName === selected?.extName) || null,
+    [displaySchemas, selected]
   );
 
   const selectedCommandSchema = useMemo(() => {
@@ -111,8 +193,8 @@ const ExtensionsTab: React.FC = () => {
 
   const filteredSchemas = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return schemas;
-    return schemas
+    if (!q) return displaySchemas;
+    return displaySchemas
       .map((schema) => {
         const matchesExtension =
           schema.title.toLowerCase().includes(q) ||
@@ -129,7 +211,27 @@ const ExtensionsTab: React.FC = () => {
         return null;
       })
       .filter(Boolean) as InstalledExtensionSettingsSchema[];
-  }, [schemas, search]);
+  }, [displaySchemas, search]);
+
+  useEffect(() => {
+    if (displaySchemas.length === 0) {
+      setSelected(null);
+      return;
+    }
+    setSelected((prev) => {
+      if (!prev) return { extName: displaySchemas[0].extName };
+      const exists = displaySchemas.some((schema) => schema.extName === prev.extName);
+      if (!exists) return { extName: displaySchemas[0].extName };
+      return prev;
+    });
+    setExpandedExtensions((prev) => {
+      const next = { ...prev };
+      for (const schema of displaySchemas) {
+        if (next[schema.extName] === undefined) next[schema.extName] = true;
+      }
+      return next;
+    });
+  }, [displaySchemas]);
 
   const isCommandEnabled = (command: CommandInfo | undefined): boolean => {
     if (!command || !settings) return true;
@@ -202,7 +304,7 @@ const ExtensionsTab: React.FC = () => {
   };
 
   const selectedCommandInfo = selectedCommandSchema
-    ? commandByPath.get(`${selectedSchema?.extName}/${selectedCommandSchema.name}`)
+    ? resolveCommandInfo(selectedSchema?.extName || '', selectedCommandSchema.name)
     : undefined;
 
   const getModeTypeLabel = (mode: string): string => {
@@ -217,7 +319,7 @@ const ExtensionsTab: React.FC = () => {
 
   const setExtensionEnabled = async (schema: InstalledExtensionSettingsSchema, enabled: boolean) => {
     for (const cmd of schema.commands) {
-      const commandInfo = commandByPath.get(`${schema.extName}/${cmd.name}`);
+      const commandInfo = resolveCommandInfo(schema.extName, cmd.name);
       if (!commandInfo) continue;
       await setCommandEnabled(commandInfo, enabled);
     }
@@ -229,11 +331,11 @@ const ExtensionsTab: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-[minmax(600px,68%)_1fr] gap-4 min-h-[620px]">
+      <div className="grid grid-cols-[minmax(600px,66%)_1fr] gap-4 min-h-[620px]">
         <div className="border border-white/[0.08] rounded-xl overflow-hidden bg-white/[0.02]">
           <div className="px-3 py-2 border-b border-white/[0.06]">
             <div className="flex items-center gap-2">
-              <div className="relative flex-1">
+              <div className="relative w-[360px] max-w-full shrink-0">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
                 <input
                   value={search}
@@ -262,9 +364,10 @@ const ExtensionsTab: React.FC = () => {
               </div>
               <button
                 onClick={() => window.electron.openExtensionStoreWindow()}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 transition-colors"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 transition-colors whitespace-nowrap"
               >
                 <Download className="w-3.5 h-3.5" />
+                <span>Install from Store</span>
               </button>
             </div>
           </div>
@@ -313,7 +416,7 @@ const ExtensionsTab: React.FC = () => {
                     <span className="flex items-center justify-start">
                       <input
                         type="checkbox"
-                        checked={schema.commands.every((cmd) => isCommandEnabled(commandByPath.get(`${schema.extName}/${cmd.name}`)))}
+                        checked={schema.commands.every((cmd) => isCommandEnabled(resolveCommandInfo(schema.extName, cmd.name)))}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => setExtensionEnabled(schema, e.target.checked)}
                         className="w-4 h-4"
@@ -321,8 +424,8 @@ const ExtensionsTab: React.FC = () => {
                     </span>
                   </button>
 
-                  {(expandedExtensions[schema.extName] || activeScope === 'commands') && schema.commands.map((cmd) => {
-                    const commandInfo = commandByPath.get(`${schema.extName}/${cmd.name}`);
+                  {expandedExtensions[schema.extName] && schema.commands.map((cmd) => {
+                    const commandInfo = resolveCommandInfo(schema.extName, cmd.name);
                     const enabled = isCommandEnabled(commandInfo);
                     return (
                       <div
@@ -482,53 +585,64 @@ const PreferenceSection: React.FC<{
 
         return (
           <div key={`${cmdName || 'extension'}:${pref.name}`} className="space-y-1">
-            <label className="text-xs text-white/75 font-medium">
-              {titleText}
-              {pref.required ? <span className="text-red-400"> *</span> : null}
-              {missing ? <span className="text-red-300/80 ml-2">(Required)</span> : null}
-            </label>
-
             {type === 'checkbox' ? (
-              <label className="inline-flex items-center gap-2 text-xs text-white/75">
-                <input
-                  type="checkbox"
-                  checked={Boolean(value)}
-                  onChange={(e) => setPreferenceValue(extName, pref, e.target.checked, cmdName)}
-                />
-                <span>{pref.label || 'Enabled'}</span>
-              </label>
-            ) : type === 'dropdown' ? (
-              <select
-                value={textValue}
-                onChange={(e) => setPreferenceValue(extName, pref, e.target.value, cmdName)}
-                className="w-full bg-white/[0.05] border border-white/[0.10] rounded-md px-2.5 py-1.5 text-xs text-white/90 outline-none"
-              >
-                <option value="">Select an option</option>
-                {(pref.data || []).map((opt) => (
-                  <option key={opt?.value || opt?.title} value={opt?.value || ''}>
-                    {opt?.title || opt?.value || ''}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div className="flex items-center gap-2">
-                <input
-                  type={type === 'password' ? 'password' : 'text'}
-                  value={textValue}
-                  placeholder={pref.placeholder || ''}
-                  onChange={(e) => setPreferenceValue(extName, pref, e.target.value, cmdName)}
-                  className="flex-1 bg-white/[0.05] border border-white/[0.10] rounded-md px-2.5 py-1.5 text-xs text-white/90 placeholder-white/30 outline-none"
-                />
-                {(type === 'file' || type === 'directory' || type === 'appPicker') && (
-                  <button
-                    type="button"
-                    onClick={() => pickPathForPreference(extName, pref, cmdName)}
-                    className="px-2 py-1.5 text-[11px] rounded-md border border-white/[0.12] text-white/70 hover:bg-white/[0.06]"
-                  >
-                    Browse
-                  </button>
-                )}
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs text-white/75 font-medium">
+                  {titleText}
+                  {pref.required ? <span className="text-red-400"> *</span> : null}
+                  {missing ? <span className="text-red-300/80 ml-2">(Required)</span> : null}
+                </div>
+                <label className="inline-flex items-center gap-2 text-xs text-white/75 min-w-[140px] justify-end">
+                  <span>{pref.label || 'Enabled'}</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(value)}
+                    onChange={(e) => setPreferenceValue(extName, pref, e.target.checked, cmdName)}
+                    className="w-4 h-4"
+                  />
+                </label>
               </div>
+            ) : (
+              <>
+                <label className="text-xs text-white/75 font-medium">
+                  {titleText}
+                  {pref.required ? <span className="text-red-400"> *</span> : null}
+                  {missing ? <span className="text-red-300/80 ml-2">(Required)</span> : null}
+                </label>
+                {type === 'dropdown' ? (
+                  <select
+                    value={textValue}
+                    onChange={(e) => setPreferenceValue(extName, pref, e.target.value, cmdName)}
+                    className="w-full bg-white/[0.05] border border-white/[0.10] rounded-md px-2.5 py-1.5 text-xs text-white/90 outline-none"
+                  >
+                    <option value="">Select an option</option>
+                    {(pref.data || []).map((opt) => (
+                      <option key={opt?.value || opt?.title} value={opt?.value || ''}>
+                        {opt?.title || opt?.value || ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type={type === 'password' ? 'password' : 'text'}
+                      value={textValue}
+                      placeholder={pref.placeholder || ''}
+                      onChange={(e) => setPreferenceValue(extName, pref, e.target.value, cmdName)}
+                      className="flex-1 bg-white/[0.05] border border-white/[0.10] rounded-md px-2.5 py-1.5 text-xs text-white/90 placeholder-white/30 outline-none"
+                    />
+                    {(type === 'file' || type === 'directory' || type === 'appPicker') && (
+                      <button
+                        type="button"
+                        onClick={() => pickPathForPreference(extName, pref, cmdName)}
+                        className="px-2 py-1.5 text-[11px] rounded-md border border-white/[0.12] text-white/70 hover:bg-white/[0.06]"
+                      >
+                        Browse
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
             )}
 
             {pref.description ? <p className="text-[11px] text-white/40">{pref.description}</p> : null}

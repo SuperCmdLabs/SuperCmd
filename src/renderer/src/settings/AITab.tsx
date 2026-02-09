@@ -143,12 +143,12 @@ const AITab: React.FC = () => {
     : MODELS_BY_PROVIDER[ai.provider] || [];
 
   return (
-    <div className="p-8 max-w-2xl">
-      <h2 className="text-xl font-semibold text-white mb-8">AI</h2>
+    <div className="p-3 max-w-4xl">
+      <h2 className="text-lg font-semibold text-white mb-4">AI</h2>
 
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Enable toggle */}
-        <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
+        <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Brain className="w-4 h-4 text-white/50" />
@@ -177,9 +177,9 @@ const AITab: React.FC = () => {
         {ai.enabled && (
           <>
             {/* Provider selector */}
-            <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
-              <h3 className="text-sm font-medium text-white/90 mb-3">Provider</h3>
-              <div className="space-y-2">
+            <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-4">
+              <h3 className="text-sm font-medium text-white/90 mb-2.5">Provider</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {PROVIDER_OPTIONS.map((p) => (
                   <label
                     key={p.id}
@@ -217,9 +217,9 @@ const AITab: React.FC = () => {
             </div>
 
             {/* API Keys */}
-            <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
-              <h3 className="text-sm font-medium text-white/90 mb-4">API Keys</h3>
-              <div className="space-y-4">
+            <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-4">
+              <h3 className="text-sm font-medium text-white/90 mb-3">API Keys</h3>
+              <div className="space-y-3">
                 {/* OpenAI */}
                 <div>
                   <label className="text-xs text-white/50 mb-1.5 block">OpenAI API Key</label>
@@ -276,7 +276,7 @@ const AITab: React.FC = () => {
 
             {/* Ollama Model Management */}
             {ai.provider === 'ollama' && (
-              <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
+              <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-medium text-white/90">Ollama Models</h3>
                   {ollamaRunning && (
@@ -333,7 +333,7 @@ const AITab: React.FC = () => {
                       </div>
                     )}
 
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                       {CURATED_OLLAMA_MODELS.map((model) => {
                         const installed = localModels.has(model.name);
                         const isPulling = pullingModel === model.name;
@@ -411,7 +411,7 @@ const AITab: React.FC = () => {
             )}
 
             {/* Default model */}
-            <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
+            <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-4">
               <h3 className="text-sm font-medium text-white/90 mb-1">Default Model</h3>
               <p className="text-xs text-white/40 mb-3">
                 Used when extensions don't specify a model.
