@@ -2781,6 +2781,31 @@ function resolveMarkdownImageSrc(src: string): string {
   return cleanSrc;
 }
 
+function parseHtmlImgTag(html: string): { src: string; alt?: string; height?: number; width?: number } | null {
+  const tag = html.trim();
+  if (!/^<img\b/i.test(tag)) return null;
+
+  const attrs: Record<string, string> = {};
+  const attrRegex = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g;
+  let match: RegExpExecArray | null;
+  while ((match = attrRegex.exec(tag))) {
+    const name = (match[1] || '').toLowerCase();
+    const value = match[3] ?? match[4] ?? match[5] ?? '';
+    attrs[name] = value;
+  }
+
+  if (!attrs.src) return null;
+  const parsedHeight = attrs.height ? Number(attrs.height) : undefined;
+  const parsedWidth = attrs.width ? Number(attrs.width) : undefined;
+
+  return {
+    src: resolveMarkdownImageSrc(attrs.src),
+    alt: attrs.alt,
+    height: Number.isFinite(parsedHeight) && parsedHeight! > 0 ? parsedHeight : undefined,
+    width: Number.isFinite(parsedWidth) && parsedWidth! > 0 ? parsedWidth : undefined,
+  };
+}
+
 function renderSimpleMarkdown(md: string): React.ReactNode[] {
   const lines = md.split('\n');
   const elements: React.ReactNode[] = [];
@@ -2829,6 +2854,26 @@ function renderSimpleMarkdown(md: string): React.ReactNode[] {
       elements.push(
         <div key={elements.length} className="my-2 flex justify-center">
           <img src={src} alt={alt} className="max-w-full rounded-lg" style={{ maxHeight: 350 }} />
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Raw HTML image on its own line: <img src="..." ... />
+    const htmlImg = parseHtmlImgTag(line);
+    if (htmlImg) {
+      elements.push(
+        <div key={elements.length} className="my-2 flex justify-center">
+          <img
+            src={htmlImg.src}
+            alt={htmlImg.alt || ''}
+            className="max-w-full rounded-lg"
+            style={{
+              maxHeight: htmlImg.height || 350,
+              ...(htmlImg.width ? { width: htmlImg.width } : {}),
+            }}
+          />
         </div>
       );
       i++;
@@ -2894,6 +2939,28 @@ function renderInlineMarkdown(text: string): React.ReactNode {
   let key = 0;
 
   while (remaining.length > 0) {
+    // Inline raw HTML image: <img src="..." ... />
+    const htmlImgMatch = remaining.match(/^<img\b[^>]*\/?>/i);
+    if (htmlImgMatch) {
+      const parsed = parseHtmlImgTag(htmlImgMatch[0]);
+      if (parsed) {
+        parts.push(
+          <img
+            key={key++}
+            src={parsed.src}
+            alt={parsed.alt || ''}
+            className="inline rounded"
+            style={{
+              maxHeight: parsed.height || 350,
+              ...(parsed.width ? { width: parsed.width } : {}),
+            }}
+          />
+        );
+        remaining = remaining.slice(htmlImgMatch[0].length);
+        continue;
+      }
+    }
+
     // Inline image: ![alt](src)
     const imgMatch = remaining.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
     if (imgMatch) {
