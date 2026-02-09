@@ -2532,7 +2532,7 @@ function ListComponent({
 
       <div className="flex flex-col h-full" onKeyDown={handleKeyDown}>
         {/* ── Search bar - transparent background ──────────────────────────────────────── */}
-        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
           {/* Always show back button */}
           <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -2543,7 +2543,7 @@ function ListComponent({
             placeholder={searchBarPlaceholder || 'Search…'}
             value={searchText}
             onChange={e => handleSearchChange(e.target.value)}
-            className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[15px] font-light"
+            className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[14px] font-light"
             autoFocus
           />
           {searchBarAccessory && (
@@ -2562,7 +2562,7 @@ function ListComponent({
         )}
 
         {/* ── Footer - lighter background ──────────────────────────────────────────── */}
-        <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
+        <div className="flex items-center px-4 py-3 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
           <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
             {footerIcon ? <img src={footerIcon} alt="" className="w-4 h-4 rounded-sm object-contain flex-shrink-0" /> : null}
             <span className="truncate">{footerTitle}</span>
@@ -2873,7 +2873,7 @@ function DetailComponent({ markdown, isLoading, children, actions, metadata, nav
       )}
 
       {/* ── Navigation bar ─────────────────────────────────────── */}
-      <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
         <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
         </button>
@@ -3088,18 +3088,18 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
 
       <div className="flex flex-col h-full">
         {/* ── Navigation bar - same padding as List/main search bar ── */}
-        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
           <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
           </button>
         </div>
 
         {/* ── Form content (horizontal layout) ──────────────────── */}
-        <div className="flex-1 overflow-y-auto py-6 px-4">
+        <div className="flex-1 overflow-y-auto py-4 px-4">
           {isLoading ? (
             <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
           ) : (
-            <div className="max-w-2xl mx-auto space-y-4">
+            <div className="max-w-2xl mx-auto space-y-3">
               {children}
             </div>
           )}
@@ -3107,7 +3107,7 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
 
         {/* ── Footer - same as List/main footer ────────────────── */}
         {formActions.length > 0 && (
-          <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
+          <div className="flex items-center px-4 py-3 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
             <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
               {footerIcon ? <img src={footerIcon} alt="" className="w-4 h-4 rounded-sm object-contain flex-shrink-0" /> : null}
               <span className="truncate">{footerTitle}</span>
@@ -3156,9 +3156,9 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
 // ── Form field helper: horizontal row layout ─────────────────────────
 function FormFieldRow({ title, children, error, info }: { title?: string; children: React.ReactNode; error?: string; info?: string }) {
   return (
-    <div className="flex items-start gap-4">
-      <div className="w-24 flex-shrink-0 pt-2 text-right">
-        {title && <label className="text-[13px] text-white/40">{title}</label>}
+    <div className="flex items-start gap-3">
+      <div className="w-20 flex-shrink-0 pt-1.5 text-right">
+        {title && <label className="text-[12px] text-white/40">{title}</label>}
       </div>
       <div className="flex-1 min-w-0">
         {children}
@@ -3183,7 +3183,7 @@ FormComponent.TextField = ({ id, title, placeholder, value, onChange, defaultVal
   return (
     <FormFieldRow title={title} error={fieldError} info={info}>
       <input type="text" placeholder={placeholder} value={fieldValue} onChange={handleChange}
-        className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-3 py-1.5 text-sm text-white outline-none focus:border-white/20" autoFocus={autoFocus} />
+        className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-2.5 py-[5px] text-[13px] text-white outline-none focus:border-white/20" autoFocus={autoFocus} />
     </FormFieldRow>
   );
 };
@@ -3202,7 +3202,7 @@ FormComponent.TextArea = ({ id, title, placeholder, value, onChange, defaultValu
   return (
     <FormFieldRow title={title} error={fieldError}>
       <textarea placeholder={placeholder} value={fieldValue} onChange={handleChange} rows={4}
-        className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-3 py-1.5 text-sm text-white outline-none focus:border-white/20 resize-y" />
+        className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-2.5 py-[5px] text-[13px] text-white outline-none focus:border-white/20 resize-y" />
     </FormFieldRow>
   );
 };
@@ -3221,7 +3221,7 @@ FormComponent.PasswordField = ({ id, title, placeholder, value, onChange, defaul
   return (
     <FormFieldRow title={title} error={fieldError}>
       <input type="password" placeholder={placeholder} value={fieldValue} onChange={handleChange}
-        className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-3 py-1.5 text-sm text-white outline-none focus:border-white/20" />
+        className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-2.5 py-[5px] text-[13px] text-white outline-none focus:border-white/20" />
     </FormFieldRow>
   );
 };
@@ -3239,7 +3239,7 @@ FormComponent.Checkbox = ({ id, title, label, value, onChange, defaultValue, err
 
   return (
     <FormFieldRow title={title || label} error={fieldError}>
-      <label className="flex items-center gap-2 py-1.5 text-sm text-white/80 cursor-pointer">
+      <label className="flex items-center gap-2 py-1 text-[13px] text-white/80 cursor-pointer">
         <input type="checkbox" checked={fieldValue} onChange={handleChange} className="accent-blue-500" />
         {label && title ? label : null}
       </label>
@@ -3262,7 +3262,7 @@ FormComponent.Dropdown = Object.assign(
     return (
       <FormFieldRow title={title} error={fieldError}>
         <select value={fieldValue} onChange={handleChange}
-          className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-3 py-1.5 text-sm text-white outline-none">
+          className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-2.5 py-[5px] text-[13px] text-white outline-none">
           {children}
         </select>
       </FormFieldRow>
@@ -3279,16 +3279,16 @@ FormComponent.DatePicker = Object.assign(
     <FormFieldRow title={title} error={error}>
       <input type={type === 'date' ? 'date' : 'datetime-local'} value={value ? (value instanceof Date ? value.toISOString().slice(0, 16) : value) : ''}
         onChange={(e: any) => onChange?.(e.target.value ? new Date(e.target.value) : null)}
-        className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-3 py-1.5 text-sm text-white outline-none focus:border-white/20" />
+        className="w-full bg-white/[0.06] border border-white/[0.08] rounded-md px-2.5 py-[5px] text-[13px] text-white outline-none focus:border-white/20" />
     </FormFieldRow>
   ),
   { Type: { Date: 'date', DateTime: 'datetime' }, isFullDay: false }
 );
 
 FormComponent.Description = ({ text, title }: any) => (
-  <div className="flex items-start gap-4">
-    <div className="w-24 flex-shrink-0" />
-    <p className="text-xs text-white/40 flex-1">{title ? <strong>{title}: </strong> : null}{text}</p>
+  <div className="flex items-start gap-3">
+    <div className="w-20 flex-shrink-0" />
+    <p className="text-[11px] text-white/40 flex-1">{title ? <strong>{title}: </strong> : null}{text}</p>
   </div>
 );
 
@@ -3653,7 +3653,7 @@ function GridComponent({
 
       <div className="flex flex-col h-full" onKeyDown={handleKeyDown}>
         {/* ── Search bar ──────────────────────────────────────── */}
-        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
           <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
           </button>
@@ -3663,7 +3663,7 @@ function GridComponent({
             placeholder={searchBarPlaceholder || 'Search…'}
             value={searchText}
             onChange={e => handleSearchChange(e.target.value)}
-            className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[15px] font-light"
+            className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[14px] font-light"
             autoFocus
           />
           {searchBarAccessory && (
@@ -3703,7 +3703,7 @@ function GridComponent({
         </div>
 
         {/* ── Footer ─────────────────────────────────────────── */}
-        <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
+          <div className="flex items-center px-4 py-3 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
           <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
             {footerIcon ? <img src={footerIcon} alt="" className="w-4 h-4 rounded-sm object-contain flex-shrink-0" /> : null}
             <span className="truncate">{footerTitle}</span>

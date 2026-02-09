@@ -10,7 +10,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, X, ArrowLeft, Plus, FileText, Pin, PinOff, Pencil, Copy, Clipboard, Trash2, Files } from 'lucide-react';
+import { Search, X, ArrowLeft, Plus, FileText, Pin, PinOff, Pencil, Copy, Clipboard, Trash2, Files, TextCursorInput, Variable, Hash, Clock, Calendar, CalendarClock } from 'lucide-react';
 import type { Snippet, SnippetDynamicField } from '../types/electron';
 
 interface SnippetManagerProps {
@@ -59,19 +59,19 @@ const PLACEHOLDER_GROUPS = [
   {
     title: 'Snippets',
     items: [
-      { label: 'Cursor Position', value: '{cursor-position}' },
-      { label: 'Clipboard Text', value: '{clipboard}' },
-      { label: 'Argument', value: '{argument name="Argument"}' },
-      { label: 'UUID', value: '{random:UUID}' },
+      { label: 'Cursor Position', value: '{cursor-position}', icon: TextCursorInput },
+      { label: 'Clipboard Text', value: '{clipboard}', icon: Clipboard },
+      { label: 'Argument', value: '{argument name="Argument"}', icon: Variable },
+      { label: 'UUID', value: '{random:UUID}', icon: Hash },
     ],
   },
   {
     title: 'Date & Time',
     items: [
-      { label: 'Time', value: '{time}' },
-      { label: 'Date', value: '{date}' },
-      { label: 'Date & Time', value: '{date:YYYY-MM-DD} {time:HH:mm}' },
-      { label: 'Custom Date', value: '{date:YYYY-MM-DD}' },
+      { label: 'Time', value: '{time}', icon: Clock },
+      { label: 'Date', value: '{date}', icon: Calendar },
+      { label: 'Date & Time', value: '{date:YYYY-MM-DD} {time:HH:mm}', icon: CalendarClock },
+      { label: 'Custom Date', value: '{date:YYYY-MM-DD}', icon: Calendar },
     ],
   },
 ];
@@ -94,10 +94,11 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const placeholderButtonRef = useRef<HTMLButtonElement>(null);
-  const [placeholderMenuPos, setPlaceholderMenuPos] = useState<{ top: number; left: number; width: number }>({
+  const [placeholderMenuPos, setPlaceholderMenuPos] = useState<{ top: number; left: number; width: number; maxHeight: number }>({
     top: 0,
     left: 0,
-    width: 300,
+    width: 260,
+    maxHeight: 220,
   });
 
   useEffect(() => {
@@ -107,10 +108,23 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
   const refreshPlaceholderMenuPos = useCallback(() => {
     const rect = placeholderButtonRef.current?.getBoundingClientRect();
     if (!rect) return;
+    const viewportPadding = 10;
+    const desiredWidth = 260;
+    const estimatedMenuHeight = 220;
+    const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const spaceAbove = rect.top - viewportPadding;
+    const openAbove = spaceBelow < 260 && spaceAbove > 120;
+    const top = openAbove ? Math.max(viewportPadding, rect.top - estimatedMenuHeight - 8) : rect.bottom + 8;
+    const maxHeight = Math.max(120, Math.floor((openAbove ? spaceAbove : spaceBelow) - 12));
+    const left = Math.min(
+      Math.max(viewportPadding, rect.left),
+      Math.max(viewportPadding, window.innerWidth - desiredWidth - viewportPadding)
+    );
     setPlaceholderMenuPos({
-      top: rect.bottom + 8,
-      left: rect.left,
-      width: Math.max(300, rect.width + 120),
+      top,
+      left,
+      width: desiredWidth,
+      maxHeight,
     });
   }, []);
 
@@ -224,7 +238,7 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
               value={name}
               onChange={(e) => { setName(e.target.value); setErrors((p) => ({ ...p, name: '' })); }}
               placeholder="Snippet name"
-              className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-3 py-2 text-white/90 text-sm placeholder-white/30 outline-none focus:border-white/20 transition-colors"
+              className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-white/90 text-[13px] placeholder-white/30 outline-none focus:border-white/20 transition-colors"
             />
             {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
           </div>
@@ -241,8 +255,8 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
               value={content}
               onChange={(e) => { setContent(e.target.value); setErrors((p) => ({ ...p, content: '' })); }}
               placeholder="Type your snippet content here...&#10;Use {clipboard}, {date}, {time} for dynamic values"
-              rows={8}
-              className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-3 py-2 text-white/90 text-sm placeholder-white/30 outline-none focus:border-white/20 transition-colors font-mono resize-y leading-relaxed"
+              rows={6}
+              className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-white/90 text-[13px] placeholder-white/30 outline-none focus:border-white/20 transition-colors font-mono resize-y leading-relaxed"
             />
             {errors.content && <p className="text-red-400 text-xs mt-1">{errors.content}</p>}
 
@@ -255,7 +269,7 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
                   refreshPlaceholderMenuPos();
                   setShowPlaceholderMenu((p) => !p);
                 }}
-                className="px-2.5 py-1.5 text-xs rounded-md bg-white/[0.06] text-white/65 hover:bg-white/[0.1] hover:text-white/80 transition-colors"
+                className="px-2 py-1.5 text-[11px] rounded-md bg-white/[0.06] text-white/65 hover:bg-white/[0.1] hover:text-white/80 transition-colors"
               >
                 Insert Dynamic Value
               </button>
@@ -277,7 +291,7 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               placeholder="Optional keyword"
-              className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-3 py-2 text-white/90 text-sm placeholder-white/30 outline-none focus:border-white/20 transition-colors"
+              className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-white/90 text-[13px] placeholder-white/30 outline-none focus:border-white/20 transition-colors"
             />
             <p className="text-white/25 text-xs mt-2">
               Typing this keyword in the snippet search instantly targets this snippet for replacement.
@@ -304,26 +318,27 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
       {showPlaceholderMenu && createPortal(
         <div
           id="snippet-placeholder-menu"
-          className="fixed z-[80] rounded-lg overflow-hidden border border-white/[0.08]"
+          className="fixed z-[120] rounded-lg overflow-hidden border border-white/[0.08]"
           style={{
             top: placeholderMenuPos.top,
             left: placeholderMenuPos.left,
             width: placeholderMenuPos.width,
             background: 'rgba(26,26,30,0.96)',
             backdropFilter: 'blur(18px)',
+            boxShadow: '0 12px 28px rgba(0,0,0,0.45)',
           }}
         >
-          <div className="px-2 py-2 border-b border-white/[0.08]">
+          <div className="px-2 py-1.5 border-b border-white/[0.08]">
             <input
               type="text"
               value={placeholderQuery}
               onChange={(e) => setPlaceholderQuery(e.target.value)}
               placeholder="Search..."
-              className="w-full bg-transparent text-sm text-white/75 placeholder-white/30 outline-none"
+              className="w-full bg-transparent text-[13px] text-white/75 placeholder-white/30 outline-none"
               autoFocus
             />
           </div>
-          <div className="max-h-[260px] overflow-y-auto py-1">
+          <div className="overflow-y-auto py-1" style={{ maxHeight: placeholderMenuPos.maxHeight }}>
             {filteredPlaceholderGroups.map((group) => (
               <div key={group.title} className="mb-1">
                 <div className="px-2.5 py-1 text-[11px] uppercase tracking-wider text-white/30">{group.title}</div>
@@ -336,9 +351,12 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
                       setShowPlaceholderMenu(false);
                       setPlaceholderQuery('');
                     }}
-                    className="w-full text-left px-2.5 py-1.5 text-sm text-white/80 hover:bg-white/[0.07] transition-colors"
+                    className="w-full text-left px-2.5 py-0.5 text-[13px] text-white/80 hover:bg-white/[0.07] transition-colors"
                   >
-                    {item.label}
+                    <span className="flex items-center gap-2">
+                      {item.icon ? <item.icon className="w-3.5 h-3.5 text-white/45" /> : null}
+                      <span>{item.label}</span>
+                    </span>
                   </button>
                 ))}
               </div>
@@ -982,7 +1000,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
                       )
                     }
                     placeholder={field.defaultValue || ''}
-                    className="w-full bg-white/[0.06] border border-white/[0.1] rounded-lg px-3 py-2 text-sm text-white/85 placeholder-white/30 outline-none focus:border-white/25"
+                    className="w-full bg-white/[0.06] border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-[13px] text-white/85 placeholder-white/30 outline-none focus:border-white/25"
                   />
                 </div>
               ))}
