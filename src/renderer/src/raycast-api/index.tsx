@@ -1680,7 +1680,18 @@ function useCollectedActions() {
 
   const registryAPI = useMemo<ActionRegistryAPI>(() => ({
     register(id, data) {
-      registryRef.current.set(id, { id, ...data });
+      const existing = registryRef.current.get(id);
+      if (existing) {
+        existing.title = data.title;
+        existing.icon = data.icon;
+        existing.shortcut = data.shortcut;
+        existing.style = data.style;
+        existing.sectionTitle = data.sectionTitle;
+        existing.execute = data.execute;
+        existing.order = data.order;
+      } else {
+        registryRef.current.set(id, { id, ...data });
+      }
       scheduleUpdate();
     },
     unregister(id) {
@@ -2312,7 +2323,14 @@ function ListComponent({
 
   const registryAPI = useMemo<ListRegistryAPI>(() => ({
     set(id, data) {
-      registryRef.current.set(id, { id, ...data });
+      const existing = registryRef.current.get(id);
+      if (existing) {
+        existing.props = data.props;
+        existing.sectionTitle = data.sectionTitle;
+        existing.order = data.order;
+      } else {
+        registryRef.current.set(id, { id, ...data });
+      }
       scheduleRegistryUpdate();
     },
     delete(id) {
@@ -3598,7 +3616,14 @@ function GridComponent({
 
   const registryAPI = useMemo<GridRegistryAPI>(() => ({
     set(id, data) {
-      registryRef.current.set(id, { id, ...data });
+      const existing = registryRef.current.get(id);
+      if (existing) {
+        existing.props = data.props;
+        existing.sectionTitle = data.sectionTitle;
+        existing.order = data.order;
+      } else {
+        registryRef.current.set(id, { id, ...data });
+      }
       scheduleRegistryUpdate();
     },
     delete(id) {
