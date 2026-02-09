@@ -370,6 +370,27 @@ const FileCompat: any =
 // We back basic file operations with localStorage so data persists.
 
 const FS_PREFIX = 'sc-fs:';
+const fsMemoryStore = new Map<string, string>();
+
+function getStoredText(path: string): string | null {
+  if (fsMemoryStore.has(path)) return fsMemoryStore.get(path) ?? null;
+  return localStorage.getItem(FS_PREFIX + path);
+}
+
+function setStoredText(path: string, value: string): void {
+  try {
+    localStorage.setItem(FS_PREFIX + path, value);
+    fsMemoryStore.delete(path);
+  } catch {
+    // Fallback for large payloads (e.g. cached JSON files) that exceed localStorage quota.
+    fsMemoryStore.set(path, value);
+  }
+}
+
+function removeStoredText(path: string): void {
+  fsMemoryStore.delete(path);
+  localStorage.removeItem(FS_PREFIX + path);
+}
 
 function normalizeFsPath(input: any): string {
   if (!input) return '';
@@ -393,7 +414,7 @@ function normalizeFsPath(input: any): string {
   return String(input);
 }
 
-function fsStatResult(exists: boolean, isDir = false) {
+function fsStatResult(exists: boolean, isDir = false, size = 0) {
   return {
     isFile: () => exists && !isDir,
     isDirectory: () => isDir,
@@ -402,7 +423,7 @@ function fsStatResult(exists: boolean, isDir = false) {
     isCharacterDevice: () => false,
     isFIFO: () => false,
     isSocket: () => false,
-    size: exists ? (localStorage.getItem(FS_PREFIX + '') || '').length : 0,
+    size: exists ? size : 0,
     mtime: new Date(),
     atime: new Date(),
     ctime: new Date(),
@@ -490,11 +511,19 @@ function resolveFsLookupPath(input: any): string {
   return resolveCommandOnPath(path) || path;
 }
 
+function toUint8Array(chunk: any): Uint8Array {
+  if (chunk instanceof Uint8Array) return chunk;
+  if (chunk instanceof ArrayBuffer) return new Uint8Array(chunk);
+  if (ArrayBuffer.isView(chunk)) return new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+  if (typeof chunk === 'string') return new TextEncoder().encode(chunk);
+  return new TextEncoder().encode(String(chunk ?? ''));
+}
+
 const fsStub: Record<string, any> = {
   existsSync: (p: any) => {
     const path = resolveFsLookupPath(p);
     // Check localStorage first
-    if (localStorage.getItem(FS_PREFIX + path) !== null) return true;
+    if (getStoredText(path) !== null) return true;
     // Fall back to real file system via sync IPC
     try {
       return (window as any).electron?.fileExistsSync?.(path) ?? false;
@@ -505,7 +534,7 @@ const fsStub: Record<string, any> = {
   readFileSync: (p: any, opts?: any) => {
     const path = resolveFsLookupPath(p);
     // Check localStorage first
-    const content = localStorage.getItem(FS_PREFIX + path);
+    const content = getStoredText(path);
     if (content !== null) {
       if (opts?.encoding || typeof opts === 'string') return content;
       return BufferPolyfill.from(content);
@@ -527,7 +556,7 @@ const fsStub: Record<string, any> = {
   },
   writeFileSync: (p: string, data: any) => {
     const str = typeof data === 'string' ? data : (data?.toString?.() ?? String(data));
-    localStorage.setItem(FS_PREFIX + p, str);
+    setStoredText(p, str);
   },
   mkdirSync: noop, // Directories are implicit with localStorage
   readdirSync: (p: string) => {
@@ -546,7 +575,8 @@ const fsStub: Record<string, any> = {
   },
   statSync: (p: any) => {
     const path = resolveFsLookupPath(p);
-    if (localStorage.getItem(FS_PREFIX + path) !== null) return fsStatResult(true);
+    const content = getStoredText(path);
+    if (content !== null) return fsStatResult(true, false, content.length);
     try {
       const result = (window as any).electron?.statSync?.(path);
       if (result?.exists) return fsStatResult(true, result.isDirectory);
@@ -555,7 +585,8 @@ const fsStub: Record<string, any> = {
   },
   lstatSync: (p: any) => {
     const path = resolveFsLookupPath(p);
-    if (localStorage.getItem(FS_PREFIX + path) !== null) return fsStatResult(true);
+    const content = getStoredText(path);
+    if (content !== null) return fsStatResult(true, false, content.length);
     try {
       const result = (window as any).electron?.statSync?.(path);
       if (result?.exists) return fsStatResult(true, result.isDirectory);
@@ -563,24 +594,24 @@ const fsStub: Record<string, any> = {
     return fsStatResult(false);
   },
   realpathSync: (p: string) => p,
-  unlinkSync: (p: string) => { localStorage.removeItem(FS_PREFIX + p); },
+  unlinkSync: (p: string) => { removeStoredText(p); },
   rmdirSync: noop,
-  rmSync: (p: string) => { localStorage.removeItem(FS_PREFIX + p); },
+  rmSync: (p: string) => { removeStoredText(p); },
   renameSync: (oldPath: string, newPath: string) => {
-    const content = localStorage.getItem(FS_PREFIX + oldPath);
+    const content = getStoredText(oldPath);
     if (content !== null) {
-      localStorage.setItem(FS_PREFIX + newPath, content);
-      localStorage.removeItem(FS_PREFIX + oldPath);
+      setStoredText(newPath, content);
+      removeStoredText(oldPath);
     }
   },
   copyFileSync: (src: string, dest: string) => {
-    const content = localStorage.getItem(FS_PREFIX + src);
-    if (content !== null) localStorage.setItem(FS_PREFIX + dest, content);
+    const content = getStoredText(src);
+    if (content !== null) setStoredText(dest, content);
   },
   chmodSync: noop,
   accessSync: (p: any) => {
     const path = resolveFsLookupPath(p);
-    if (localStorage.getItem(FS_PREFIX + path) !== null) return;
+    if (getStoredText(path) !== null) return;
     try {
       if ((window as any).electron?.fileExistsSync?.(path)) return;
     } catch {}
@@ -592,15 +623,59 @@ const fsStub: Record<string, any> = {
   closeSync: noop,
   readSync: () => 0,
   writeSync: () => 0,
-  createReadStream: () => {
-    const s = new (nodeBuiltinStubs?.stream?.Readable || class {})();
-    setTimeout(() => s.emit?.('end'), 0);
+  createReadStream: (p: any) => {
+    const path = resolveFsLookupPath(p);
+    const s: any = new (nodeBuiltinStubs?.stream?.Readable || class {})();
+    const content = getStoredText(path);
+    setTimeout(() => {
+      if (content != null) {
+        const bytes = toUint8Array(content);
+        s.emit?.('data', bytes);
+      }
+      s.emit?.('end');
+      s.emit?.('close');
+    }, 0);
     return s;
   },
-  createWriteStream: () => new (nodeBuiltinStubs?.stream?.Writable || class {})(),
+  createWriteStream: (p: any) => {
+    const path = resolveFsLookupPath(p);
+    const s: any = new (nodeBuiltinStubs?.stream?.Writable || class {})();
+    const chunks: Uint8Array[] = [];
+    const capture = (chunk: any) => {
+      chunks.push(toUint8Array(chunk));
+    };
+    const originalWrite = typeof s.write === 'function' ? s.write.bind(s) : null;
+    const originalEnd = typeof s.end === 'function' ? s.end.bind(s) : null;
+    s.write = (chunk: any, ...args: any[]) => {
+      capture(chunk);
+      if (originalWrite) return originalWrite(chunk, ...args);
+      const cb = args.find((a) => typeof a === 'function');
+      if (cb) cb(null);
+      return true;
+    };
+    s.end = (chunk?: any, ...args: any[]) => {
+      if (chunk != null && typeof chunk !== 'function') capture(chunk);
+      const total = chunks.reduce((sum, c) => sum + c.length, 0);
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        merged.set(c, offset);
+        offset += c.length;
+      }
+      const text = new TextDecoder().decode(merged);
+      setStoredText(path, text);
+      if (originalEnd) return originalEnd(chunk, ...args);
+      const cb = args.find((a) => typeof a === 'function');
+      if (cb) cb(null);
+      s.emit?.('finish');
+      s.emit?.('close');
+      return s;
+    };
+    return s;
+  },
   readFile: (p: string, ...args: any[]) => {
     const cb = args[args.length - 1];
-    const content = localStorage.getItem(FS_PREFIX + p);
+    const content = getStoredText(p);
     if (typeof cb === 'function') {
       if (content !== null) {
         cb(null, content);
@@ -619,7 +694,7 @@ const fsStub: Record<string, any> = {
   writeFile: (p: string, data: any, ...args: any[]) => {
     const cb = args[args.length - 1];
     const str = typeof data === 'string' ? data : (data?.toString?.() ?? String(data));
-    localStorage.setItem(FS_PREFIX + p, str);
+    setStoredText(p, str);
     if (typeof cb === 'function') cb(null);
   },
   mkdir: (_p: string, ...args: any[]) => {
@@ -629,7 +704,7 @@ const fsStub: Record<string, any> = {
   access: (p: string, ...args: any[]) => {
     const cb = args[args.length - 1];
     if (typeof cb === 'function') {
-      if (localStorage.getItem(FS_PREFIX + p) !== null) cb(null);
+      if (getStoredText(p) !== null) cb(null);
       else { const err: any = new Error('ENOENT'); err.code = 'ENOENT'; cb(err); }
     }
   },
@@ -637,8 +712,9 @@ const fsStub: Record<string, any> = {
     const cb = args[args.length - 1];
     if (typeof cb !== 'function') return;
     const path = resolveFsLookupPath(p);
-    if (localStorage.getItem(FS_PREFIX + path) !== null) {
-      cb(null, fsStatResult(true));
+    const content = getStoredText(path);
+    if (content !== null) {
+      cb(null, fsStatResult(true, false, content.length));
       return;
     }
     try {
@@ -656,8 +732,9 @@ const fsStub: Record<string, any> = {
     const cb = args[args.length - 1];
     if (typeof cb !== 'function') return;
     const path = resolveFsLookupPath(p);
-    if (localStorage.getItem(FS_PREFIX + path) !== null) {
-      cb(null, fsStatResult(true));
+    const content = getStoredText(path);
+    if (content !== null) {
+      cb(null, fsStatResult(true, false, content.length));
       return;
     }
     try {
@@ -681,7 +758,7 @@ const fsStub: Record<string, any> = {
   },
   unlink: (p: string, ...args: any[]) => {
     const cb = args[args.length - 1];
-    localStorage.removeItem(FS_PREFIX + p);
+    removeStoredText(p);
     if (typeof cb === 'function') cb(null);
   },
   rename: (oldPath: string, newPath: string, ...args: any[]) => {
@@ -695,7 +772,7 @@ const fsStub: Record<string, any> = {
   constants: { F_OK: 0, R_OK: 4, W_OK: 2, X_OK: 1 },
   promises: {
     readFile: async (p: string, opts?: any) => {
-      const content = localStorage.getItem(FS_PREFIX + p);
+      const content = getStoredText(p);
       if (content !== null) {
         if (opts?.encoding || typeof opts === 'string') return content;
         return BufferPolyfill.from(content);
@@ -714,13 +791,14 @@ const fsStub: Record<string, any> = {
     },
     writeFile: async (p: string, data: any) => {
       const str = typeof data === 'string' ? data : (data?.toString?.() ?? String(data));
-      localStorage.setItem(FS_PREFIX + p, str);
+      setStoredText(p, str);
     },
     mkdir: noopAsync,
     readdir: async (p: string) => fsStub.readdirSync(p),
     stat: async (p: string) => {
       const path = resolveFsLookupPath(p);
-      if (localStorage.getItem(FS_PREFIX + path) !== null) return fsStatResult(true);
+      const content = getStoredText(path);
+      if (content !== null) return fsStatResult(true, false, content.length);
       try {
         const result = (window as any).electron?.statSync?.(path);
         if (result?.exists) return fsStatResult(true, result.isDirectory);
@@ -731,7 +809,8 @@ const fsStub: Record<string, any> = {
     },
     lstat: async (p: string) => {
       const path = resolveFsLookupPath(p);
-      if (localStorage.getItem(FS_PREFIX + path) !== null) return fsStatResult(true);
+      const content = getStoredText(path);
+      if (content !== null) return fsStatResult(true, false, content.length);
       try {
         const result = (window as any).electron?.statSync?.(path);
         if (result?.exists) return fsStatResult(true, result.isDirectory);
@@ -742,14 +821,14 @@ const fsStub: Record<string, any> = {
     },
     realpath: async (p: string) => p,
     access: async (p: string) => {
-      if (localStorage.getItem(FS_PREFIX + p) !== null) return;
+      if (getStoredText(p) !== null) return;
       try {
         if ((window as any).electron?.fileExistsSync?.(p)) return;
       } catch {}
       const err: any = new Error('ENOENT'); err.code = 'ENOENT'; throw err;
     },
-    unlink: async (p: string) => { localStorage.removeItem(FS_PREFIX + p); },
-    rm: async (p: string) => { localStorage.removeItem(FS_PREFIX + p); },
+    unlink: async (p: string) => { removeStoredText(p); },
+    rm: async (p: string) => { removeStoredText(p); },
     rename: async (oldPath: string, newPath: string) => { fsStub.renameSync(oldPath, newPath); },
     copyFile: async (src: string, dest: string) => { fsStub.copyFileSync(src, dest); },
     chmod: noopAsync,
@@ -954,21 +1033,102 @@ class ReadableStub extends EventEmitterStub {
   readable = true;
   readableEnded = false;
   destroyed = false;
+  _readableState: any;
+  _writableState: any;
+  constructor() {
+    super();
+    this._readableState = { readable: true };
+    this._writableState = undefined;
+  }
   read() { return null; }
-  pipe(dest: any) { return dest; }
+  pipe(dest: any) {
+    this.on('data', (chunk: any) => {
+      try { dest?.write?.(chunk); } catch {}
+    });
+    this.on('end', () => {
+      try { dest?.end?.(); } catch {}
+    });
+    return dest;
+  }
   unpipe() { return this; }
   pause() { return this; }
   resume() { return this; }
   destroy() { this.destroyed = true; this.emit('close'); return this; }
-  push(_chunk: any) { return true; }
-  unshift(_chunk: any) {}
+  push(chunk: any) {
+    if (chunk === null) {
+      this.readableEnded = true;
+      this.emit('end');
+      return false;
+    }
+    this.emit('data', chunk);
+    return true;
+  }
+  unshift(chunk: any) {
+    if (chunk === null || chunk === undefined) return;
+    this.emit('data', chunk);
+  }
   setEncoding() { return this; }
   [Symbol.asyncIterator]() {
     return { next: async () => ({ done: true, value: undefined }) };
   }
   static from(iterable: any) {
     const s = new ReadableStub();
-    setTimeout(() => { s.emit('end'); }, 0);
+    setTimeout(async () => {
+      try {
+        if (iterable && typeof iterable[Symbol.asyncIterator] === 'function') {
+          for await (const chunk of iterable) s.emit('data', chunk);
+        } else if (iterable && typeof iterable[Symbol.iterator] === 'function') {
+          for (const chunk of iterable) s.emit('data', chunk);
+        }
+      } finally {
+        s.emit('end');
+        s.emit('close');
+      }
+    }, 0);
+    return s;
+  }
+  static fromWeb(webStream: any) {
+    const s = new ReadableStub();
+    const iteratorFactory = () => {
+      if (webStream && typeof webStream[Symbol.asyncIterator] === 'function') {
+        return webStream[Symbol.asyncIterator]();
+      }
+      if (webStream && typeof webStream.getReader === 'function') {
+        const reader = webStream.getReader();
+        return {
+          next: async () => {
+            const { done, value } = await reader.read();
+            if (done) {
+              try { reader.releaseLock?.(); } catch {}
+            }
+            return { done, value };
+          },
+          return: async () => {
+            try { reader.releaseLock?.(); } catch {}
+            return { done: true, value: undefined };
+          },
+        };
+      }
+      return {
+        next: async () => ({ done: true, value: undefined }),
+      };
+    };
+    (s as any)[Symbol.asyncIterator] = iteratorFactory;
+    setTimeout(async () => {
+      try {
+        const iterator = iteratorFactory();
+        while (true) {
+          const { done, value } = await iterator.next();
+          if (done) break;
+          s.emit('data', value);
+        }
+        s.emit('end');
+      } catch (e) {
+        s.emit('error', e);
+      } finally {
+        s.emit('close');
+      }
+    }, 0);
     return s;
   }
 }
@@ -977,6 +1137,13 @@ class WritableStub extends EventEmitterStub {
   writable = true;
   writableEnded = false;
   destroyed = false;
+  _readableState: any;
+  _writableState: any;
+  constructor() {
+    super();
+    this._readableState = undefined;
+    this._writableState = { writable: true };
+  }
   write(_chunk: any, _enc?: any, cb?: Function) { if (typeof cb === 'function') cb(); else if (typeof _enc === 'function') _enc(); return true; }
   end(_chunk?: any, _enc?: any, cb?: Function) {
     this.writableEnded = true;
@@ -993,12 +1160,65 @@ class WritableStub extends EventEmitterStub {
 
 class TransformStub extends ReadableStub {
   writable = true;
-  write(_chunk: any, _enc?: any, cb?: Function) { if (typeof cb === 'function') cb(); return true; }
+  private _transformImpl?: (chunk: any, encoding: any, callback: Function) => void;
+  private _flushImpl?: (callback: Function) => void;
+  constructor(options?: any) {
+    super();
+    this._writableState = { writable: true };
+    if (options && typeof options === 'object') {
+      if (typeof options.transform === 'function') this._transformImpl = options.transform;
+      if (typeof options.flush === 'function') this._flushImpl = options.flush;
+    }
+  }
+  write(chunk: any, enc?: any, cb?: Function) {
+    const encoding = typeof enc === 'string' ? enc : undefined;
+    const callback = typeof cb === 'function' ? cb : typeof enc === 'function' ? enc : noop;
+    const done = (err?: any, out?: any) => {
+      if (err) {
+        this.emit('error', err);
+      } else if (out !== undefined && out !== null) {
+        this.emit('data', out);
+      }
+      callback(err ?? null);
+    };
+    try {
+      if (this._transformImpl) {
+        this._transformImpl.call(this, chunk, encoding, done);
+      } else {
+        this._transform(chunk, encoding, done);
+      }
+    } catch (e) {
+      done(e);
+    }
+    return true;
+  }
   end(_chunk?: any, _enc?: any, cb?: Function) {
     const callback = typeof cb === 'function' ? cb : typeof _enc === 'function' ? _enc : typeof _chunk === 'function' ? _chunk : null;
-    if (callback) (callback as Function)();
-    this.emit('finish');
-    this.emit('end');
+    const finalize = () => {
+      this.emit('finish');
+      this.emit('end');
+      if (callback) (callback as Function)();
+    };
+    try {
+      if (typeof _chunk !== 'function' && _chunk != null) {
+        this.write(_chunk, typeof _enc === 'string' ? _enc : undefined, noop);
+      }
+      if (this._flushImpl) {
+        this._flushImpl.call(this, (err: any, out?: any) => {
+          if (err) this.emit('error', err);
+          if (out !== undefined && out !== null) this.emit('data', out);
+          finalize();
+        });
+      } else {
+        this._flush((err: any) => {
+          if (err) this.emit('error', err);
+          finalize();
+        });
+      }
+    } catch (e) {
+      this.emit('error', e);
+      finalize();
+    }
     return this;
   }
   _transform(chunk: any, enc: any, cb: Function) { cb(null, chunk); }
@@ -1042,11 +1262,70 @@ streamStub.PassThrough = PassThroughStub;
 streamStub.Duplex = DuplexStub;
 streamStub.Stream = StreamModuleStub;
 streamStub.pipeline = (...args: any[]) => {
-  const cb = args[args.length - 1];
-  if (typeof cb === 'function') setTimeout(() => cb(null), 0);
-  return args[args.length - 2] || new PassThroughStub();
+  const hasCb = typeof args[args.length - 1] === 'function';
+  if (hasCb) {
+    streamPipelineCompat(...args).catch(() => {});
+    return args[args.length - 2] || new PassThroughStub();
+  }
+  return streamPipelineCompat(...args);
 };
 streamStub.finished = (stream: any, cb: Function) => { if (typeof cb === 'function') setTimeout(() => cb(null), 0); };
+
+async function streamPipelineCompat(...args: any[]) {
+  const hasCb = typeof args[args.length - 1] === 'function';
+  const cb = hasCb ? args.pop() : null;
+  const streams = args;
+  const src = streams[0];
+  const dest = streams[streams.length - 1];
+
+  const asAsyncIterable = (source: any) => {
+    if (source && typeof source[Symbol.asyncIterator] === 'function') return source;
+    if (source && typeof source.getReader === 'function') {
+      return {
+        async *[Symbol.asyncIterator]() {
+          const reader = source.getReader();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              yield value;
+            }
+          } finally {
+            try { reader.releaseLock?.(); } catch {}
+          }
+        },
+      };
+    }
+    return {
+      async *[Symbol.asyncIterator]() {},
+    };
+  };
+
+  try {
+    for await (const chunk of asAsyncIterable(src) as any) {
+      if (dest && typeof dest.write === 'function') {
+        await new Promise<void>((resolve, reject) => {
+          try {
+            const ret = dest.write(chunk, (err: any) => (err ? reject(err) : resolve()));
+            if (ret !== false && dest.write.length < 2) resolve();
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }
+    }
+    if (dest && typeof dest.end === 'function') {
+      await new Promise<void>((resolve, reject) => {
+        try { dest.end((err: any) => (err ? reject(err) : resolve())); } catch (e) { reject(e); }
+      });
+    }
+    if (cb) cb(null);
+    return dest;
+  } catch (e) {
+    if (cb) cb(e);
+    throw e;
+  }
+}
 
 // ── child_process stub ──────────────────────────────────────────
 const fakeChildProcess: any = new EventEmitterStub();
@@ -1430,8 +1709,8 @@ const nodeBuiltinStubs: Record<string, any> = {
   util: utilStub,
   stream: streamStub,
   'stream/promises': {
-    pipeline: async (...args: any[]) => {},
-    finished: async (stream: any) => {},
+    pipeline: streamPipelineCompat,
+    finished: async (_stream: any) => {},
   },
   'stream/web': {
     ReadableStream: globalThis.ReadableStream,
@@ -1648,6 +1927,106 @@ function ensureGlobals() {
   if (!g.__dirname) g.__dirname = '/';
   // queueMicrotask
   if (!g.queueMicrotask) g.queueMicrotask = (fn: Function) => Promise.resolve().then(() => fn());
+
+  // fetch bridge — route extension HTTP(S) through main process to avoid CORS.
+  // Keep native fetch for non-HTTP URLs and unsupported body types.
+  if (!g.__SUPERCOMMAND_NATIVE_FETCH && typeof g.fetch === 'function') {
+    g.__SUPERCOMMAND_NATIVE_FETCH = g.fetch.bind(g);
+  }
+  if (!g.__SUPERCOMMAND_FETCH_PATCHED) {
+    const nativeFetch = g.__SUPERCOMMAND_NATIVE_FETCH;
+    const isHttpUrl = (value: string) => /^https?:\/\//i.test(value);
+    const toHeadersObject = (headersLike: any): Record<string, string> => {
+      const out: Record<string, string> = {};
+      if (!headersLike) return out;
+      try {
+        const normalized = new Headers(headersLike as HeadersInit);
+        normalized.forEach((v, k) => {
+          out[k] = v;
+        });
+      } catch {
+        if (typeof headersLike === 'object') {
+          for (const [k, v] of Object.entries(headersLike)) {
+            out[k] = String(v);
+          }
+        }
+      }
+      return out;
+    };
+    const normalizeBody = async (body: any): Promise<string | undefined> => {
+      if (body == null) return undefined;
+      if (typeof body === 'string') return body;
+      if (body instanceof URLSearchParams) return body.toString();
+      if (body instanceof Blob) return await body.text();
+      if (typeof body === 'object') return JSON.stringify(body);
+      return String(body);
+    };
+
+    g.fetch = async (input: any, init?: any) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input?.url || String(input ?? '');
+
+      // Only proxy HTTP(S) requests.
+      if (!isHttpUrl(url) || !(window as any).electron?.httpRequest) {
+        return typeof nativeFetch === 'function' ? nativeFetch(input, init) : fetch(input, init);
+      }
+
+      // FormData/streams are not representable via current IPC payload. Fall back.
+      const requestBody = init?.body;
+      if (
+        requestBody instanceof FormData ||
+        requestBody instanceof ReadableStream ||
+        (typeof requestBody === 'object' && requestBody?.getReader)
+      ) {
+        return typeof nativeFetch === 'function' ? nativeFetch(input, init) : fetch(input, init);
+      }
+
+      const method = (init?.method || input?.method || 'GET').toUpperCase();
+      const headers = {
+        ...toHeadersObject(input?.headers),
+        ...toHeadersObject(init?.headers),
+      };
+      const body = await normalizeBody(requestBody);
+
+      const ipcRes = await (window as any).electron.httpRequest({
+        url,
+        method,
+        headers,
+        body,
+      });
+
+      if (!ipcRes || ipcRes.status === 0) {
+        if (typeof nativeFetch === 'function') {
+          try {
+            return await nativeFetch(input, init);
+          } catch (nativeErr: any) {
+            const proxyMsg = ipcRes?.statusText || `Failed to fetch ${url}`;
+            const nativeMsg = nativeErr?.message || String(nativeErr);
+            throw new TypeError(`${proxyMsg}; native fetch fallback failed: ${nativeMsg}`);
+          }
+        }
+        throw new TypeError(ipcRes?.statusText || `Failed to fetch ${url}`);
+      }
+
+      const response = new Response(ipcRes.bodyText ?? '', {
+        status: ipcRes.status,
+        statusText: ipcRes.statusText || '',
+        headers: ipcRes.headers || {},
+      });
+
+      try {
+        Object.defineProperty(response, 'url', { value: ipcRes.url || url });
+      } catch {}
+
+      return response;
+    };
+
+    g.__SUPERCOMMAND_FETCH_PATCHED = true;
+  }
 }
 
 /**
@@ -1765,54 +2144,8 @@ function loadExtensionExport(
         // ── Commonly used npm packages that might not be bundled ─
         case 'node-fetch':
         case 'undici': {
-          // Helper: proxy HTTP through main process (Node.js) to avoid CORS / 403
           const ipcFetch = async (input: any, init?: any): Promise<any> => {
-            const url = typeof input === 'string' ? input : input?.url || String(input);
-            const method = init?.method || 'GET';
-            const rawHeaders = init?.headers || {};
-            const headers: Record<string, string> = {};
-            if (rawHeaders && typeof rawHeaders === 'object') {
-              if (typeof rawHeaders.forEach === 'function') {
-                (rawHeaders as any).forEach((v: string, k: string) => { headers[k] = v; });
-              } else {
-                for (const [k, v] of Object.entries(rawHeaders)) {
-                  headers[k] = String(v);
-                }
-              }
-            }
-            let body: string | undefined;
-            if (init?.body != null) {
-              body = typeof init.body === 'string' ? init.body : String(init.body);
-            }
-
-            console.log(`[ipcFetch] ${method} ${url.substring(0, 120)}`);
-            const res = await window.electron.httpRequest({ url, method, headers, body });
-            console.log(`[ipcFetch] → ${res.status} ${res.statusText} (${res.bodyText.length} bytes)`, res.bodyText.substring(0, 200));
-
-            // Build a Response-like object
-            const resHeaders = new Headers(res.headers || {});
-            const responseObj: any = {
-              ok: res.status >= 200 && res.status < 300,
-              status: res.status,
-              statusCode: res.status,
-              statusText: res.statusText,
-              headers: resHeaders,
-              url: res.url,
-              redirected: false,
-              type: 'basic',
-              text: async () => res.bodyText,
-              json: async () => JSON.parse(res.bodyText),
-              arrayBuffer: async () => new TextEncoder().encode(res.bodyText).buffer,
-              blob: async () => new Blob([res.bodyText]),
-              clone: () => ({ ...responseObj, text: responseObj.text, json: responseObj.json }),
-              body: {
-                text: async () => res.bodyText,
-                json: async () => JSON.parse(res.bodyText),
-                arrayBuffer: async () => new TextEncoder().encode(res.bodyText).buffer,
-                blob: async () => new Blob([res.bodyText]),
-              },
-            };
-            return responseObj;
+            return await (globalThis as any).fetch(input, init);
           };
 
           if (name === 'node-fetch') {
@@ -1844,10 +2177,15 @@ function loadExtensionExport(
           // undici
           const request = async (input: any, init?: any) => {
             const response = await ipcFetch(input, init);
+            const bodyText = await response.text();
             return {
               statusCode: response.status,
-              headers: Object.fromEntries((response.headers as any)?.entries?.() || []),
-              body: response.body,
+              headers: Object.fromEntries(response.headers?.entries?.() || []),
+              body: {
+                text: async () => bodyText,
+                json: async () => JSON.parse(bodyText),
+                arrayBuffer: async () => new TextEncoder().encode(bodyText).buffer,
+              },
             };
           };
           const undici: any = {

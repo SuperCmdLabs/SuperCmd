@@ -1103,6 +1103,21 @@ app.whenReady().then(async () => {
               res.on('data', (chunk: Buffer) => chunks.push(chunk));
               res.on('end', () => {
                 const bodyBuffer = Buffer.concat(chunks);
+                const contentEncoding = String(res.headers['content-encoding'] || '').toLowerCase();
+                let decodedBuffer = bodyBuffer;
+                try {
+                  const zlib = require('zlib');
+                  if (contentEncoding.includes('br')) {
+                    decodedBuffer = zlib.brotliDecompressSync(bodyBuffer);
+                  } else if (contentEncoding.includes('gzip')) {
+                    decodedBuffer = zlib.gunzipSync(bodyBuffer);
+                  } else if (contentEncoding.includes('deflate')) {
+                    decodedBuffer = zlib.inflateSync(bodyBuffer);
+                  }
+                } catch {
+                  // If decompression fails, keep raw buffer to avoid hard-failing requests.
+                  decodedBuffer = bodyBuffer;
+                }
                 const responseHeaders: Record<string, string> = {};
                 for (const [key, val] of Object.entries(res.headers)) {
                   responseHeaders[key] = Array.isArray(val) ? val.join(', ') : String(val);
@@ -1111,7 +1126,7 @@ app.whenReady().then(async () => {
                   status: res.statusCode,
                   statusText: res.statusMessage || '',
                   headers: responseHeaders,
-                  bodyText: bodyBuffer.toString('utf-8'),
+                  bodyText: decodedBuffer.toString('utf-8'),
                   url: url,
                 });
               });
