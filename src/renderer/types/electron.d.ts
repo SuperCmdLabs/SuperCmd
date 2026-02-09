@@ -198,6 +198,8 @@ export interface ElectronAPI {
   clipboardCopyItem: (id: string) => Promise<boolean>;
   clipboardPasteItem: (id: string) => Promise<boolean>;
   clipboardSetEnabled: (enabled: boolean) => Promise<void>;
+  clipboardWrite: (payload: { text?: string; html?: string }) => Promise<boolean>;
+  clipboardReadText: () => Promise<string>;
 
   // Snippet Manager
   snippetGetAll: () => Promise<Snippet[]>;

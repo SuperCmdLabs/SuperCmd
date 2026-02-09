@@ -776,19 +776,20 @@ export const Clipboard = {
     content: string | number | Clipboard.Content,
     options?: Clipboard.CopyOptions
   ): Promise<void> {
+    let text = '';
+    let html = '';
+
+    // Parse content
+    if (typeof content === 'string' || typeof content === 'number') {
+      text = String(content);
+    } else if (typeof content === 'object') {
+      text = content.text || content.file || '';
+      html = content.html || '';
+    }
+
+    let copied = false;
+
     try {
-      let text = '';
-      let html = '';
-
-      // Parse content
-      if (typeof content === 'string' || typeof content === 'number') {
-        text = String(content);
-      } else if (typeof content === 'object') {
-        text = content.text || '';
-        html = content.html || '';
-        // file is not directly copyable via web clipboard
-      }
-
       // Copy to clipboard
       if (html) {
         // For HTML content, we need to use ClipboardItem
@@ -803,14 +804,23 @@ export const Clipboard = {
       } else {
         await navigator.clipboard.writeText(text);
       }
-
-      // TODO: Handle concealed option by not saving to clipboard history
-      // For now, we always show the toast unless concealed
-      if (!options?.concealed) {
-        showToast({ title: 'Copied to clipboard', style: 'success' });
-      }
+      copied = true;
     } catch (e) {
-      console.error('Clipboard copy error:', e);
+      // Fallback for unfocused renderer documents.
+      try {
+        const electron = (window as any).electron;
+        copied = await electron?.clipboardWrite?.({ text, html }) || false;
+      } catch {}
+      if (!copied) {
+        console.error('Clipboard copy error:', e);
+        throw e;
+      }
+    }
+
+    // TODO: Handle concealed option by not saving to clipboard history
+    // For now, we always show the toast unless concealed
+    if (!options?.concealed) {
+      showToast({ title: 'Copied to clipboard', style: 'success' });
     }
   },
 
@@ -848,7 +858,13 @@ export const Clipboard = {
       const text = await navigator.clipboard.readText();
       return text || undefined;
     } catch {
-      return undefined;
+      try {
+        const electron = (window as any).electron;
+        const text = await electron?.clipboardReadText?.();
+        return text || undefined;
+      } catch {
+        return undefined;
+      }
     }
   },
 
@@ -1578,10 +1594,9 @@ function makeActionExecutor(p: any): () => void {
     if (p.onSubmit) { p.onSubmit(getFormValues()); return; }
     if (p.content !== undefined) {
       if (p.__actionKind === 'paste') {
-        Clipboard.paste(String(p.content));
+        Clipboard.paste(p.content);
       } else {
-        Clipboard.copy(String(p.content));
-        showToast({ title: 'Copied to clipboard', style: ToastStyle.Success });
+        Clipboard.copy(p.content);
       }
       // Call onCopy/onPaste callbacks if provided
       p.onCopy?.();
@@ -3532,7 +3547,34 @@ function GridSectionComponent({ children, title, subtitle, aspectRatio, columns,
 function GridItemRenderer({
   title, subtitle, content, isSelected, dataIdx, onSelect, onActivate,
 }: any) {
-  const imgSrc = typeof content === 'string' ? content : (content?.source || '');
+  const getGridImageSource = (value: any): string => {
+    if (!value) return '';
+
+    if (typeof value === 'string') {
+      return resolveIconSrc(value);
+    }
+
+    if (typeof value === 'object') {
+      const directSource = value.source;
+      const nestedSource = value.value?.source;
+      const candidate = directSource ?? nestedSource;
+
+      if (typeof candidate === 'string') {
+        return resolveIconSrc(candidate);
+      }
+
+      if (candidate && typeof candidate === 'object') {
+        const themed = candidate.dark || candidate.light || '';
+        if (typeof themed === 'string') {
+          return resolveIconSrc(themed);
+        }
+      }
+    }
+
+    return '';
+  };
+
+  const imgSrc = getGridImageSource(content);
 
   return (
     <div

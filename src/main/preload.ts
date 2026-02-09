@@ -174,6 +174,10 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('clipboard-paste-item', id),
   clipboardSetEnabled: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke('clipboard-set-enabled', enabled),
+  clipboardWrite: (payload: { text?: string; html?: string }): Promise<boolean> =>
+    ipcRenderer.invoke('clipboard-write', payload),
+  clipboardReadText: (): Promise<string> =>
+    ipcRenderer.invoke('clipboard-read-text'),
 
   // ─── Snippet Manager ────────────────────────────────────────────
   snippetGetAll: (): Promise<any[]> =>

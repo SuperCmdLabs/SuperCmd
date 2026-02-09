@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight } from 'lucide-react';
+import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText } from 'lucide-react';
 import type { CommandInfo, ExtensionBundle, AppSettings } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
@@ -84,6 +84,35 @@ function getCategoryLabel(category: string): string {
     default:
       return 'Application';
   }
+}
+
+function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
+  if (commandId === 'system-clipboard-manager') {
+    return (
+      <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
+        <Clipboard className="w-3 h-3 text-cyan-300" />
+      </div>
+    );
+  }
+
+  if (
+    commandId === 'system-create-snippet' ||
+    commandId === 'system-search-snippets' ||
+    commandId === 'system-import-snippets' ||
+    commandId === 'system-export-snippets'
+  ) {
+    return (
+      <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
+        <FileText className="w-3 h-3 text-amber-300" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-5 h-5 rounded bg-red-500/20 flex items-center justify-center">
+      <Power className="w-3 h-3 text-red-400" />
+    </div>
+  );
 }
 
 function renderShortcutLabel(shortcut?: string): string {
@@ -1663,9 +1692,7 @@ const App: React.FC = () => {
                                   draggable={false}
                                 />
                               ) : command.category === 'system' ? (
-                                <div className="w-5 h-5 rounded bg-red-500/20 flex items-center justify-center">
-                                  <Power className="w-3 h-3 text-red-400" />
-                                </div>
+                                getSystemCommandFallbackIcon(command.id)
                               ) : command.category === 'extension' ? (
                                 <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
                                   <Puzzle className="w-3 h-3 text-purple-400" />

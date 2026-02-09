@@ -53,7 +53,7 @@ import {
 } from './snippet-store';
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, clipboard: systemClipboard } = electron;
 
 // ─── Window Configuration ───────────────────────────────────────────
 
@@ -1429,6 +1429,32 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('clipboard-set-enabled', (_event: any, enabled: boolean) => {
     setClipboardMonitorEnabled(enabled);
+  });
+
+  // Focus-safe clipboard APIs for extension/runtime shims.
+  ipcMain.handle('clipboard-write', (_event: any, payload: { text?: string; html?: string }) => {
+    try {
+      const text = payload?.text || '';
+      const html = payload?.html || '';
+      if (html) {
+        systemClipboard.write({ text, html });
+      } else {
+        systemClipboard.writeText(text);
+      }
+      return true;
+    } catch (error) {
+      console.error('clipboard-write failed:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('clipboard-read-text', () => {
+    try {
+      return systemClipboard.readText() || '';
+    } catch (error) {
+      console.error('clipboard-read-text failed:', error);
+      return '';
+    }
   });
 
   // ─── IPC: Snippet Manager ─────────────────────────────────────
