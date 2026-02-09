@@ -456,6 +456,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     commandId === 'system-clipboard-manager' ||
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
+    commandId === 'system-search-files' ||
     commandId === 'system-open-onboarding'
   ) {
     return await openLauncherAndRunSystemCommand(commandId);

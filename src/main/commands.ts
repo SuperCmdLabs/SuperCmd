@@ -680,6 +680,12 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-search-files',
+      title: 'Search Files',
+      keywords: ['files', 'finder', 'search', 'find', 'open'],
+      category: 'system',
+    },
+    {
       id: 'system-import-snippets',
       title: 'Import Snippets',
       keywords: ['snippet', 'import', 'load', 'file'],

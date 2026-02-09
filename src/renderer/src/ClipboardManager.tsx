@@ -10,6 +10,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, X, Trash2, Copy, Clipboard, Image as ImageIcon, Link, FileText } from 'lucide-react';
 import type { ClipboardItem } from '../types/electron';
+import ExtensionActionFooter from './components/ExtensionActionFooter';
 
 interface ClipboardManagerProps {
   onClose: () => void;
@@ -386,26 +387,23 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         </div>
       </div>
 
-      {/* Footer - same background as main screen */}
-      <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
-        <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
-          <span className="truncate">{filteredItems.length} items</span>
-        </div>
-        {selectedItem && (
-          <div className="flex items-center gap-2 mr-3">
-            <span className="text-white text-xs font-semibold">{actions[0].title}</span>
-            <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
-          </div>
-        )}
-        <button
-          onClick={() => setShowActions(true)}
-          className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
-        >
-          <span className="text-xs font-medium">Actions</span>
-          <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
-          <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
-        </button>
-      </div>
+      <ExtensionActionFooter
+        leftContent={<span className="truncate">{filteredItems.length} items</span>}
+        primaryAction={
+          selectedItem
+            ? {
+                label: actions[0].title,
+                onClick: () => handlePasteItem(),
+                shortcut: ['↩'],
+              }
+            : undefined
+        }
+        actionsButton={{
+          label: 'Actions',
+          onClick: () => setShowActions(true),
+          shortcut: ['⌘', 'K'],
+        }}
+      />
 
       {/* Actions Overlay - styled exactly like ActionPanelOverlay */}
       {showActions && (

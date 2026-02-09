@@ -12,6 +12,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X, ArrowLeft, Plus, FileText, Pin, PinOff, Pencil, Copy, Clipboard, Trash2, Files, TextCursorInput, Variable, Hash, Clock, Calendar, CalendarClock } from 'lucide-react';
 import type { Snippet, SnippetDynamicField } from '../types/electron';
+import ExtensionActionFooter from './components/ExtensionActionFooter';
 
 interface SnippetManagerProps {
   onClose: () => void;
@@ -951,26 +952,23 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
-        <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
-          <span className="truncate">{filteredSnippets.length} snippets</span>
-        </div>
-        {activeSnippet && (
-          <div className="flex items-center gap-2 mr-3">
-            <span className="text-white text-xs font-semibold truncate max-w-[200px]">{pasteLabel}</span>
-            <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
-          </div>
-        )}
-        <button
-          onClick={() => setShowActions(true)}
-          className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
-        >
-          <span className="text-xs font-medium">Actions</span>
-          <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
-          <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
-        </button>
-      </div>
+      <ExtensionActionFooter
+        leftContent={<span className="truncate">{filteredSnippets.length} snippets</span>}
+        primaryAction={
+          activeSnippet
+            ? {
+                label: pasteLabel,
+                onClick: () => handlePaste(),
+                shortcut: ['↩'],
+              }
+            : undefined
+        }
+        actionsButton={{
+          label: 'Actions',
+          onClick: () => setShowActions(true),
+          shortcut: ['⌘', 'K'],
+        }}
+      />
 
       {dynamicPrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.25)' }}>

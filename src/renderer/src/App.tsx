@@ -12,6 +12,7 @@ import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
 import OnboardingExtension from './OnboardingExtension';
+import FileSearchExtension from './FileSearchExtension';
 import { tryCalculate } from './smart-calculator';
 
 interface LauncherAction {
@@ -104,6 +105,14 @@ function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
     return (
       <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
         <FileText className="w-3 h-3 text-amber-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-search-files') {
+    return (
+      <div className="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
+        <Search className="w-3 h-3 text-emerald-300" />
       </div>
     );
   }
@@ -287,6 +296,7 @@ const App: React.FC = () => {
   } | null>(null);
   const [showClipboardManager, setShowClipboardManager] = useState(false);
   const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
+  const [showFileSearch, setShowFileSearch] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [launcherShortcut, setLauncherShortcut] = useState('Command+Space');
   const [showActions, setShowActions] = useState(false);
@@ -372,12 +382,14 @@ const App: React.FC = () => {
               localStorage.removeItem(LAST_EXT_KEY);
             }
             if (shouldOpenCommandSetup(hydrated)) {
+              setShowFileSearch(false);
               setExtensionPreferenceSetup({
                 bundle: hydrated,
                 values: { ...(hydrated.preferences || {}) },
                 argumentValues: { ...((hydrated as any).launchArguments || {}) },
               });
             } else {
+              setShowFileSearch(false);
               setExtensionView(hydrated);
             }
           } else {
@@ -406,6 +418,7 @@ const App: React.FC = () => {
       setAiStreaming(false);
       setAiQuery('');
       setShowSnippetManager(null);
+      setShowFileSearch(false);
       // Re-fetch commands every time the window is shown
       // so newly installed extensions appear immediately
       fetchCommands();
@@ -445,12 +458,14 @@ const App: React.FC = () => {
       }
 
       if (shouldOpenCommandSetup(hydrated)) {
+        setShowFileSearch(false);
         setExtensionPreferenceSetup({
           bundle: hydrated,
           values: { ...(hydrated.preferences || {}) },
           argumentValues: { ...((hydrated as any).launchArguments || {}) },
         });
       } else {
+        setShowFileSearch(false);
         setExtensionView(hydrated);
       }
     };
@@ -688,10 +703,10 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showOnboarding) {
+    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showFileSearch && !showOnboarding) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showOnboarding, restoreLauncherFocus]);
+  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showOnboarding, restoreLauncherFocus]);
 
   const calcResult = useMemo(() => {
     return searchQuery ? tryCalculate(searchQuery) : null;
@@ -907,6 +922,7 @@ const App: React.FC = () => {
       setExtensionPreferenceSetup(null);
       setShowClipboardManager(false);
       setShowSnippetManager(null);
+      setShowFileSearch(false);
       setAiMode(false);
       setShowOnboarding(true);
       return true;
@@ -916,12 +932,18 @@ const App: React.FC = () => {
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
       setShowClipboardManager(true);
+      setShowSnippetManager(null);
+      setShowFileSearch(false);
+      setAiMode(false);
       return true;
     }
     if (commandId === 'system-search-snippets') {
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
+      setShowClipboardManager(false);
+      setShowFileSearch(false);
+      setAiMode(false);
       setShowSnippetManager('search');
       return true;
     }
@@ -929,7 +951,20 @@ const App: React.FC = () => {
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
+      setShowClipboardManager(false);
+      setShowFileSearch(false);
+      setAiMode(false);
       setShowSnippetManager('create');
+      return true;
+    }
+    if (commandId === 'system-search-files') {
+      setExtensionView(null);
+      setExtensionPreferenceSetup(null);
+      setShowOnboarding(false);
+      setShowClipboardManager(false);
+      setShowSnippetManager(null);
+      setAiMode(false);
+      setShowFileSearch(true);
       return true;
     }
     if (commandId === 'system-import-snippets') {
@@ -967,6 +1002,7 @@ const App: React.FC = () => {
         if (result && result.code) {
           const hydrated = hydrateExtensionBundlePreferences(result);
           if (shouldOpenCommandSetup(hydrated)) {
+            setShowFileSearch(false);
             setExtensionPreferenceSetup({
               bundle: hydrated,
               values: { ...(hydrated.preferences || {}) },
@@ -985,6 +1021,7 @@ const App: React.FC = () => {
             await updateRecentCommands(command.id);
             return;
           }
+          setShowFileSearch(false);
           setExtensionView(hydrated);
           if (hydrated.mode === 'view') {
             localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
@@ -997,6 +1034,7 @@ const App: React.FC = () => {
         const errMsg = result?.error || 'Failed to build extension';
         console.error('Extension load failed:', errMsg);
         // Show the error in the extension view
+        setShowFileSearch(false);
         setExtensionView({
           code: '',
           title: command.title,
@@ -1442,6 +1480,27 @@ const App: React.FC = () => {
               initialView={showSnippetManager}
               onClose={() => {
                 setShowSnippetManager(null);
+                setSearchQuery('');
+                setSelectedIndex(0);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ─── File Search mode ─────────────────────────────────────────────
+  if (showFileSearch) {
+    return (
+      <>
+        {menuBarRunner}
+        <div className="w-full h-full">
+          <div className="glass-effect overflow-hidden h-full flex flex-col">
+            <FileSearchExtension
+              onClose={() => {
+                setShowFileSearch(false);
                 setSearchQuery('');
                 setSelectedIndex(0);
                 setTimeout(() => inputRef.current?.focus(), 50);
