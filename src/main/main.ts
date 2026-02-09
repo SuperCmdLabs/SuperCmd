@@ -1168,9 +1168,26 @@ app.whenReady().then(async () => {
       options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
     ) => {
       const { spawn, execFile } = require('child_process');
+      const fs = require('fs');
 
       return new Promise((resolve) => {
         try {
+          const resolveExecutablePath = (input: string): string => {
+            if (!input || typeof input !== 'string') return input;
+            if (!input.includes('/') && !input.includes('\\')) return input;
+            if (!input.startsWith('/')) return input;
+            if (fs.existsSync(input)) return input;
+            try {
+              const base = input.split('/').filter(Boolean).pop() || '';
+              if (!base) return input;
+              const lookup = execFileSync('/bin/zsh', ['-lc', `command -v -- ${JSON.stringify(base)} 2>/dev/null || true`], { encoding: 'utf-8' }).trim();
+              if (lookup && fs.existsSync(lookup)) return lookup;
+            } catch {}
+            return input;
+          };
+
+          const execFileSync = require('child_process').execFileSync;
+          const normalizedCommand = resolveExecutablePath(command);
           const spawnOptions: any = {
             shell: options?.shell ?? false,
             env: { ...process.env, ...options?.env },
@@ -1180,10 +1197,10 @@ app.whenReady().then(async () => {
           let proc: any;
           if (options?.shell) {
             // When shell is true, join command and args
-            const fullCommand = [command, ...args].join(' ');
+            const fullCommand = [normalizedCommand, ...args].join(' ');
             proc = spawn(fullCommand, [], { ...spawnOptions, shell: true });
           } else {
-            proc = spawn(command, args, spawnOptions);
+            proc = spawn(normalizedCommand, args, spawnOptions);
           }
 
           let stdout = '';
@@ -1234,7 +1251,22 @@ app.whenReady().then(async () => {
       options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
     ) => {
       try {
-        const { spawnSync } = require('child_process');
+        const { spawnSync, execFileSync } = require('child_process');
+        const fs = require('fs');
+        const resolveExecutablePath = (input: string): string => {
+          if (!input || typeof input !== 'string') return input;
+          if (!input.includes('/') && !input.includes('\\')) return input;
+          if (!input.startsWith('/')) return input;
+          if (fs.existsSync(input)) return input;
+          try {
+            const base = input.split('/').filter(Boolean).pop() || '';
+            if (!base) return input;
+            const lookup = execFileSync('/bin/zsh', ['-lc', `command -v -- ${JSON.stringify(base)} 2>/dev/null || true`], { encoding: 'utf-8' }).trim();
+            if (lookup && fs.existsSync(lookup)) return lookup;
+          } catch {}
+          return input;
+        };
+        const normalizedCommand = resolveExecutablePath(command);
         const spawnOptions: any = {
           shell: options?.shell ?? false,
           env: { ...process.env, ...options?.env },
@@ -1246,10 +1278,10 @@ app.whenReady().then(async () => {
 
         let result: any;
         if (options?.shell) {
-          const fullCommand = [command, ...(args || [])].join(' ');
+          const fullCommand = [normalizedCommand, ...(args || [])].join(' ');
           result = spawnSync(fullCommand, [], { ...spawnOptions, shell: true });
         } else {
-          result = spawnSync(command, args || [], spawnOptions);
+          result = spawnSync(normalizedCommand, args || [], spawnOptions);
         }
 
         event.returnValue = {

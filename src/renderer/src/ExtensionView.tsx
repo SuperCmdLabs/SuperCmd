@@ -452,6 +452,39 @@ function resolveCommandOnPath(command: string): string | null {
   return null;
 }
 
+function resolveExecutablePath(input: any): string {
+  const raw = typeof input === 'string' ? input : String(input ?? '');
+  if (!raw) return raw;
+
+  const bareResolved = resolveCommandOnPath(raw);
+  if (bareResolved) return bareResolved;
+
+  if (raw.startsWith('/')) {
+    try {
+      const exists = (window as any).electron?.fileExistsSync?.(raw);
+      if (exists) return raw;
+      const base = raw.split('/').filter(Boolean).pop() || '';
+      if (base) {
+        const alt = resolveCommandOnPath(base);
+        if (alt) return alt;
+      }
+    } catch {}
+  }
+
+  return raw;
+}
+
+function rewriteShellCommandForMissingBinary(command: string): string {
+  if (!command || typeof command !== 'string') return command;
+  const match = command.match(/^\s*(?:"([^"]+)"|'([^']+)'|(\S+))(.*)$/s);
+  if (!match) return command;
+  const first = match[1] || match[2] || match[3] || '';
+  const rest = match[4] || '';
+  const resolved = resolveExecutablePath(first);
+  if (!resolved || resolved === first) return command;
+  return `${JSON.stringify(resolved)}${rest}`;
+}
+
 function resolveFsLookupPath(input: any): string {
   const path = normalizeFsPath(input);
   return resolveCommandOnPath(path) || path;
@@ -1041,8 +1074,9 @@ const childProcessStub = {
     // Actually execute via IPC bridge
     const cp: any = { ...fakeChildProcess };
     if (typeof command === 'string' && (window as any).electron?.execCommand) {
+      const normalizedCommand = rewriteShellCommandForMissingBinary(command);
       (window as any).electron.execCommand(
-        '/bin/zsh', ['-lc', command],
+        '/bin/zsh', ['-lc', normalizedCommand],
         { shell: false, env: options?.env, cwd: options?.cwd }
       ).then((result: any) => {
         if (cb) {
@@ -1064,9 +1098,10 @@ const childProcessStub = {
     return cp;
   },
   execSync: (command: string) => {
+    const normalizedCommand = rewriteShellCommandForMissingBinary(command);
     const result = (window as any).electron?.execCommandSync?.(
       '/bin/zsh',
-      ['-lc', command],
+      ['-lc', normalizedCommand],
       { shell: false }
     );
     if (result?.exitCode && result.exitCode !== 0) {
@@ -1080,7 +1115,7 @@ const childProcessStub = {
   },
   execFile: (...args: any[]) => {
     // Parse arguments: execFile(file[, args][, options][, callback])
-    const file = args[0];
+    const file = resolveExecutablePath(args[0]);
     let execArgs: string[] = [];
     let options: any = {};
     let cb: any = null;
@@ -1117,7 +1152,7 @@ const childProcessStub = {
     return cp;
   },
   execFileSync: (...args: any[]) => {
-    const file = args[0];
+    const file = resolveExecutablePath(args[0]);
     let execArgs: string[] = [];
     let options: any = {};
 
@@ -1145,7 +1180,10 @@ const childProcessStub = {
     if (options?.encoding) return result.stdout || '';
     return BufferPolyfill.from(result.stdout || '');
   },
-  spawn: () => {
+  spawn: (...args: any[]) => {
+    const file = resolveExecutablePath(args[0]);
+    const spawnArgs = Array.isArray(args[1]) ? args[1] : [];
+    const options = (typeof args[2] === 'object' && args[2]) ? args[2] : {};
     const cp: any = new EventEmitterStub();
     cp.stdin = new WritableStub();
     cp.stdout = new ReadableStub();
@@ -1156,12 +1194,31 @@ const childProcessStub = {
     cp.ref = noop;
     cp.unref = noop;
     cp.disconnect = noop;
-    setTimeout(() => { cp.emit('close', 0, null); }, 0);
+    if ((window as any).electron?.execCommand) {
+      (window as any).electron.execCommand(
+        file,
+        spawnArgs,
+        { shell: options?.shell ?? false, env: options?.env, cwd: options?.cwd, input: options?.input }
+      ).then((result: any) => {
+        if (result?.stdout) cp.stdout.emit('data', BufferPolyfill.from(result.stdout));
+        if (result?.stderr) cp.stderr.emit('data', BufferPolyfill.from(result.stderr));
+        const code = result?.exitCode ?? 0;
+        cp.emit('close', code, null);
+        cp.emit('exit', code, null);
+      }).catch((err: any) => {
+        cp.stderr.emit('data', BufferPolyfill.from(String(err?.message || err || 'spawn failed')));
+        cp.emit('close', 1, null);
+        cp.emit('exit', 1, null);
+      });
+    } else {
+      setTimeout(() => { cp.emit('close', 0, null); }, 0);
+    }
     return cp;
   },
   spawnSync: (command: string, spawnArgs?: string[], options?: any) => {
+    const resolvedCommand = resolveExecutablePath(command);
     const result = (window as any).electron?.execCommandSync?.(
-      command,
+      resolvedCommand,
       Array.isArray(spawnArgs) ? spawnArgs : [],
       { shell: options?.shell ?? false, env: options?.env, cwd: options?.cwd, input: options?.input }
     ) || { stdout: '', stderr: '', exitCode: 0 };

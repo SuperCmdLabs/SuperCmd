@@ -409,6 +409,7 @@ const App: React.FC = () => {
     loadLauncherPreferences();
 
     window.electron.onWindowShown(() => {
+      console.log('[WINDOW-SHOWN] fired');
       // If an extension is open, keep it alive — don't reset
       if (extensionViewRef.current) return;
       setSearchQuery('');
@@ -536,8 +537,10 @@ const App: React.FC = () => {
 
   const pinToggleForCommand = useCallback(
     async (command: CommandInfo) => {
+      console.log('[PIN-TOGGLE] called for command:', command?.id, command?.name);
       const currentPinned = pinnedCommandsRef.current;
       const exists = currentPinned.includes(command.id);
+      console.log('[PIN-TOGGLE] currentPinned:', currentPinned, 'exists:', exists);
       if (exists) {
         await updatePinnedCommands(
           currentPinned.filter((id) => id !== command.id)
@@ -545,6 +548,7 @@ const App: React.FC = () => {
       } else {
         await updatePinnedCommands([command.id, ...currentPinned]);
       }
+      console.log('[PIN-TOGGLE] done, new pinned:', pinnedCommandsRef.current);
     },
     [updatePinnedCommands]
   );
@@ -1912,7 +1916,13 @@ const App: React.FC = () => {
                       : 'hover:bg-white/[0.06] text-white/80'
                 }`}
                 onClick={async () => {
-                  await Promise.resolve(action.execute());
+                  console.log('[CTX-MENU] clicked action:', action.id, action.title);
+                  try {
+                    await Promise.resolve(action.execute());
+                    console.log('[CTX-MENU] action executed successfully');
+                  } catch (err) {
+                    console.error('[CTX-MENU] action.execute() threw:', err);
+                  }
                   setContextMenu(null);
                   restoreLauncherFocus();
                 }}
