@@ -119,6 +119,136 @@ function loadWindowUrl(
   }
 }
 
+function parseJsonObjectParam(raw: string | null): Record<string, any> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+type ParsedRaycastDeepLink =
+  | {
+      type: 'extension';
+      ownerOrAuthorName?: string;
+      extensionName: string;
+      commandName: string;
+      launchType?: string;
+      arguments: Record<string, any>;
+      fallbackText?: string | null;
+    }
+  | {
+      type: 'scriptCommand';
+      commandName: string;
+      arguments: Record<string, any>;
+    };
+
+function parseRaycastDeepLink(url: string): ParsedRaycastDeepLink | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'raycast:') return null;
+
+    const parts = parsed.pathname.split('/').filter(Boolean).map((v) => decodeURIComponent(v));
+
+    if (parsed.hostname === 'extensions') {
+      const [ownerOrAuthorName = '', extensionName = '', commandName = ''] = parts;
+      if (!extensionName || !commandName) return null;
+      return {
+        type: 'extension',
+        ownerOrAuthorName,
+        extensionName,
+        commandName,
+        launchType: parsed.searchParams.get('launchType') || undefined,
+        arguments: parseJsonObjectParam(parsed.searchParams.get('arguments')),
+        fallbackText: parsed.searchParams.get('fallbackText'),
+      };
+    }
+
+    if (parsed.hostname === 'script-commands') {
+      const [commandName = ''] = parts;
+      if (!commandName) return null;
+      return {
+        type: 'scriptCommand',
+        commandName,
+        arguments: parseJsonObjectParam(parsed.searchParams.get('arguments')),
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function buildLaunchBundle(options: {
+  extensionName: string;
+  commandName: string;
+  args?: Record<string, any>;
+  type?: string;
+  fallbackText?: string | null;
+  context?: any;
+  sourceExtensionName?: string;
+  sourcePreferences?: Record<string, any>;
+}) {
+  const {
+    extensionName,
+    commandName,
+    args,
+    type,
+    fallbackText,
+    context,
+    sourceExtensionName,
+    sourcePreferences,
+  } = options;
+  const result = getExtensionBundle(extensionName, commandName);
+  if (!result) {
+    throw new Error(`Command "${commandName}" not found in extension "${extensionName}"`);
+  }
+
+  const mergedPreferences: Record<string, any> = {
+    ...(result.preferences || {}),
+  };
+
+  if (
+    sourceExtensionName &&
+    sourceExtensionName === extensionName &&
+    sourcePreferences &&
+    typeof sourcePreferences === 'object'
+  ) {
+    for (const def of result.preferenceDefinitions || []) {
+      if (!def?.name || def.scope !== 'extension') continue;
+      if (sourcePreferences[def.name] !== undefined) {
+        mergedPreferences[def.name] = sourcePreferences[def.name];
+      }
+    }
+  }
+
+  return {
+    code: result.code,
+    title: result.title,
+    mode: result.mode,
+    extName: extensionName,
+    cmdName: commandName,
+    extensionName: result.extensionName,
+    extensionDisplayName: result.extensionDisplayName,
+    extensionIconDataUrl: result.extensionIconDataUrl,
+    commandName: result.commandName,
+    assetsPath: result.assetsPath,
+    supportPath: result.supportPath,
+    extensionPath: result.extensionPath,
+    owner: result.owner,
+    preferences: mergedPreferences,
+    preferenceDefinitions: result.preferenceDefinitions,
+    commandArgumentDefinitions: result.commandArgumentDefinitions,
+    launchArguments: args || {},
+    fallbackText: fallbackText ?? null,
+    launchContext: context,
+    launchType: type,
+  };
+}
+
 // ─── Launcher Window ────────────────────────────────────────────────
 
 function createWindow(): void {
@@ -759,7 +889,13 @@ app.whenReady().then(async () => {
   ipcMain.handle('get-commands', async () => {
     const s = loadSettings();
     const commands = await getAvailableCommands();
-    return commands.filter((c) => !s.disabledCommands.includes(c.id));
+    const disabled = new Set(s.disabledCommands || []);
+    const enabled = new Set((s as any).enabledCommands || []);
+    return commands.filter((c: any) => {
+      if (disabled.has(c.id)) return false;
+      if (c?.disabledByDefault && !enabled.has(c.id)) return false;
+      return true;
+    });
   });
 
   ipcMain.handle(
@@ -846,16 +982,21 @@ app.whenReady().then(async () => {
     (_event: any, commandId: string, enabled: boolean) => {
       const s = loadSettings();
       let disabled = [...s.disabledCommands];
+      let explicitlyEnabled = [...(s.enabledCommands || [])];
 
       if (enabled) {
         disabled = disabled.filter((id) => id !== commandId);
+        if (!explicitlyEnabled.includes(commandId)) {
+          explicitlyEnabled.push(commandId);
+        }
       } else {
         if (!disabled.includes(commandId)) {
           disabled.push(commandId);
         }
+        explicitlyEnabled = explicitlyEnabled.filter((id) => id !== commandId);
       }
 
-      saveSettings({ disabledCommands: disabled });
+      saveSettings({ disabledCommands: disabled, enabledCommands: explicitlyEnabled });
       return true;
     }
   );
@@ -876,11 +1017,49 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('open-url', async (_event: any, url: string) => {
     if (!url) return false;
-    // Ignore Raycast-internal deep links
+
     if (url.startsWith('raycast://')) {
-      console.log(`Ignoring Raycast deep link: ${url}`);
-      return true;
+      const deepLink = parseRaycastDeepLink(url);
+      if (!deepLink) {
+        console.warn(`Unsupported Raycast deep link: ${url}`);
+        return false;
+      }
+
+      // Script command deeplinks are surfaced as no-op for now.
+      if (deepLink.type === 'scriptCommand') {
+        console.warn(`Script command deeplink not yet supported: ${deepLink.commandName}`);
+        return false;
+      }
+
+      try {
+        const bundle = buildLaunchBundle({
+          extensionName: deepLink.extensionName,
+          commandName: deepLink.commandName,
+          args: deepLink.arguments,
+          type: deepLink.launchType || 'userInitiated',
+          fallbackText: deepLink.fallbackText || null,
+        });
+        showWindow();
+        const payload = JSON.stringify({
+          bundle,
+          launchOptions: { type: bundle.launchType || 'userInitiated' },
+          source: {
+            commandMode: 'deeplink',
+            extensionName: bundle.extensionName,
+            commandName: bundle.commandName,
+          },
+        });
+        await mainWindow?.webContents.executeJavaScript(
+          `window.dispatchEvent(new CustomEvent('sc-launch-extension-bundle', { detail: ${payload} }));`,
+          true
+        );
+        return true;
+      } catch (e) {
+        console.error(`Failed to launch Raycast deep link: ${url}`, e);
+        return false;
+      }
     }
+
     try {
       await shell.openExternal(url);
       return true;
@@ -936,7 +1115,6 @@ app.whenReady().then(async () => {
           name,
           type,
           extensionName,
-          ownerOrAuthorName,
           arguments: args,
           context,
           fallbackText,
@@ -951,58 +1129,20 @@ app.whenReady().then(async () => {
           throw new Error('extensionName is required for launchCommand. Intra-extension launches are not yet fully supported.');
         }
 
-        // Get the extension bundle
-        const result = getExtensionBundle(extensionName, name);
-        if (!result) {
-          throw new Error(`Command "${name}" not found in extension "${extensionName}"`);
-        }
+        const bundle = buildLaunchBundle({
+          extensionName,
+          commandName: name,
+          args: args || {},
+          context,
+          fallbackText: fallbackText ?? null,
+          sourceExtensionName,
+          sourcePreferences,
+          type,
+        });
 
-        const mergedPreferences: Record<string, any> = {
-          ...(result.preferences || {}),
-        };
-
-        // Intra-extension launches should carry current extension-level preferences
-        // (e.g., API keys) so commands don't regress to manifest defaults.
-        if (
-          sourceExtensionName &&
-          sourceExtensionName === extensionName &&
-          sourcePreferences &&
-          typeof sourcePreferences === 'object'
-        ) {
-          for (const def of result.preferenceDefinitions || []) {
-            if (!def?.name || def.scope !== 'extension') continue;
-            if (sourcePreferences[def.name] !== undefined) {
-              mergedPreferences[def.name] = sourcePreferences[def.name];
-            }
-          }
-        }
-
-        // Return bundle with launch context
-        // The renderer will handle actually displaying the command
         return {
           success: true,
-          bundle: {
-            code: result.code,
-            title: result.title,
-            mode: result.mode,
-            extName: extensionName,
-            cmdName: name,
-            extensionName: result.extensionName,
-            extensionDisplayName: result.extensionDisplayName,
-            extensionIconDataUrl: result.extensionIconDataUrl,
-            commandName: result.commandName,
-            assetsPath: result.assetsPath,
-            supportPath: result.supportPath,
-            extensionPath: result.extensionPath,
-            owner: result.owner,
-            preferences: mergedPreferences,
-            preferenceDefinitions: result.preferenceDefinitions,
-            commandArgumentDefinitions: result.commandArgumentDefinitions,
-            launchArguments: args || {},
-            fallbackText: fallbackText ?? null,
-            launchContext: context,
-            launchType: type,
-          }
+          bundle
         };
       } catch (e: any) {
         console.error('launch-command error:', e);

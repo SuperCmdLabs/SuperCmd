@@ -29,6 +29,12 @@ export interface CommandInfo {
   category: 'app' | 'settings' | 'system' | 'extension';
   /** .app path for apps, bundle identifier for settings */
   path?: string;
+  /** Extension command mode, e.g. view/no-view/menu-bar */
+  mode?: string;
+  /** Background refresh interval from manifest, e.g. 1m, 12h */
+  interval?: string;
+  /** Whether command should start disabled until user enables it */
+  disabledByDefault?: boolean;
   /** Bundle path on disk (used for icon extraction) */
   _bundlePath?: string;
 }
@@ -709,6 +715,9 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       iconDataUrl: ext.iconDataUrl,
       category: 'extension' as const,
       path: `${ext.extName}/${ext.cmdName}`,
+      mode: ext.mode,
+      interval: ext.interval,
+      disabledByDefault: ext.disabledByDefault,
     }));
   } catch (e) {
     console.error('Failed to discover installed extensions:', e);

@@ -137,6 +137,26 @@ function renderShortcutLabel(shortcut?: string): string {
     .replace(/\+/g, ' ');
 }
 
+function parseIntervalToMs(interval?: string): number | null {
+  if (!interval) return null;
+  const trimmed = interval.trim();
+  const match = trimmed.match(/^(\d+)\s*([smhd])$/i);
+  if (!match) return null;
+
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return null;
+
+  const unit = match[2].toLowerCase();
+  const unitMs =
+    unit === 's' ? 1_000 :
+    unit === 'm' ? 60_000 :
+    unit === 'h' ? 60 * 60_000 :
+    24 * 60 * 60_000;
+
+  // Raycast minimum is 1 minute.
+  return Math.max(value * unitMs, 60_000);
+}
+
 const LAST_EXT_KEY = 'sc-last-extension';
 const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
 const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
@@ -308,6 +328,9 @@ const App: React.FC = () => {
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [selectedContextActionIndex, setSelectedContextActionIndex] = useState(0);
   const [menuBarExtensions, setMenuBarExtensions] = useState<ExtensionBundle[]>([]);
+  const [backgroundNoViewRuns, setBackgroundNoViewRuns] = useState<
+    Array<{ runId: string; bundle: ExtensionBundle }>
+  >([]);
   const [aiMode, setAiMode] = useState(false);
   const [aiResponse, setAiResponse] = useState('');
   const [aiStreaming, setAiStreaming] = useState(false);
@@ -323,6 +346,7 @@ const App: React.FC = () => {
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const pinnedCommandsRef = useRef<string[]>([]);
   const extensionViewRef = useRef<ExtensionBundle | null>(null);
+  const intervalTimerIdsRef = useRef<number[]>([]);
   extensionViewRef.current = extensionView;
   pinnedCommandsRef.current = pinnedCommands;
 
@@ -449,6 +473,10 @@ const App: React.FC = () => {
       }
 
       if (launchType === 'background') {
+        if (hydrated.mode === 'no-view') {
+          const runId = `${hydrated.extensionName || hydrated.extName}/${hydrated.commandName || hydrated.cmdName}/${Date.now()}`;
+          setBackgroundNoViewRuns((prev) => [...prev, { runId, bundle: hydrated }]);
+        }
         return;
       }
 
@@ -474,6 +502,66 @@ const App: React.FC = () => {
     window.addEventListener('sc-launch-extension-bundle', onLaunchBundle as EventListener);
     return () => window.removeEventListener('sc-launch-extension-bundle', onLaunchBundle as EventListener);
   }, [upsertMenuBarExtension]);
+
+  // Launch background-refresh extension commands from manifest `interval`.
+  useEffect(() => {
+    for (const timerId of intervalTimerIdsRef.current) {
+      window.clearInterval(timerId);
+    }
+    intervalTimerIdsRef.current = [];
+
+    const extensionCommands = commands.filter(
+      (cmd) => cmd.category === 'extension' && typeof cmd.interval === 'string' && cmd.path
+    );
+    if (extensionCommands.length === 0) return;
+
+    for (const cmd of extensionCommands) {
+      const ms = parseIntervalToMs(cmd.interval);
+      if (!ms) continue;
+
+      const [extName, cmdName] = (cmd.path || '').split('/');
+      if (!extName || !cmdName) continue;
+
+      const timerId = window.setInterval(async () => {
+        try {
+          const result = await window.electron.runExtension(extName, cmdName);
+          if (!result || !result.code) return;
+
+          const hydrated = hydrateExtensionBundlePreferences(result);
+          if (hydrated.mode !== 'no-view' && hydrated.mode !== 'menu-bar') return;
+
+          const missingPrefs = getMissingRequiredPreferences(hydrated);
+          const missingArgs = getMissingRequiredArguments(hydrated);
+          if (missingPrefs.length > 0 || missingArgs.length > 0) return;
+
+          window.dispatchEvent(
+            new CustomEvent('sc-launch-extension-bundle', {
+              detail: {
+                bundle: hydrated,
+                launchOptions: { type: 'background' },
+                source: {
+                  commandMode: 'background',
+                  extensionName: hydrated.extensionName || hydrated.extName,
+                  commandName: hydrated.commandName || hydrated.cmdName,
+                },
+              },
+            })
+          );
+        } catch (error) {
+          console.error('[BackgroundRefresh] Failed to run command:', cmd.id, error);
+        }
+      }, ms);
+
+      intervalTimerIdsRef.current.push(timerId);
+    }
+
+    return () => {
+      for (const timerId of intervalTimerIdsRef.current) {
+        window.clearInterval(timerId);
+      }
+      intervalTimerIdsRef.current = [];
+    };
+  }, [commands]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -1228,6 +1316,41 @@ const App: React.FC = () => {
     </div>
   ) : null;
 
+  const backgroundNoViewRunner = backgroundNoViewRuns.length > 0 ? (
+    <div style={{ display: 'none', position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+      {backgroundNoViewRuns.map((run) => (
+        <ExtensionView
+          key={`bg-no-view-${run.runId}`}
+          code={run.bundle.code}
+          title={run.bundle.title}
+          mode="no-view"
+          extensionName={(run.bundle as any).extensionName || run.bundle.extName}
+          extensionDisplayName={(run.bundle as any).extensionDisplayName}
+          extensionIconDataUrl={(run.bundle as any).extensionIconDataUrl}
+          commandName={(run.bundle as any).commandName || run.bundle.cmdName}
+          assetsPath={(run.bundle as any).assetsPath}
+          supportPath={(run.bundle as any).supportPath}
+          owner={(run.bundle as any).owner}
+          preferences={(run.bundle as any).preferences}
+          launchArguments={(run.bundle as any).launchArguments}
+          launchContext={(run.bundle as any).launchContext}
+          fallbackText={(run.bundle as any).fallbackText}
+          launchType="background"
+          onClose={() => {
+            setBackgroundNoViewRuns((prev) => prev.filter((item) => item.runId !== run.runId));
+          }}
+        />
+      ))}
+    </div>
+  ) : null;
+
+  const hiddenExtensionRunners = (
+    <>
+      {menuBarRunner}
+      {backgroundNoViewRunner}
+    </>
+  );
+
   // ─── Extension Preferences Setup ────────────────────────────────
   if (extensionPreferenceSetup) {
     const bundle = extensionPreferenceSetup.bundle;
@@ -1243,7 +1366,7 @@ const App: React.FC = () => {
 
     return (
       <>
-        {menuBarRunner}
+        {hiddenExtensionRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
@@ -1274,25 +1397,47 @@ const App: React.FC = () => {
                   <div className="text-xs uppercase tracking-wide text-white/35">Arguments</div>
                   {argDefs.map((arg) => {
                     const value = extensionPreferenceSetup.argumentValues?.[arg.name];
+                    const argType = arg.type || 'text';
                     return (
                       <div key={`arg:${arg.name}`} className="space-y-1">
                         <label className="text-xs text-white/70 font-medium">
                           {arg.title || arg.name}
                           {arg.required ? <span className="text-red-400"> *</span> : null}
                         </label>
-                        <input
-                          type="text"
-                          value={value ?? ''}
-                          placeholder={arg.placeholder || ''}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setExtensionPreferenceSetup((prev) => prev ? {
-                              ...prev,
-                              argumentValues: { ...prev.argumentValues, [arg.name]: v },
-                            } : prev);
-                          }}
-                          className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 placeholder-white/30 outline-none"
-                        />
+                        {argType === 'dropdown' ? (
+                          <select
+                            value={typeof value === 'string' ? value : ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setExtensionPreferenceSetup((prev) => prev ? {
+                                ...prev,
+                                argumentValues: { ...prev.argumentValues, [arg.name]: v },
+                              } : prev);
+                            }}
+                            className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 outline-none"
+                          >
+                            <option value="">Select an option</option>
+                            {(arg.data || []).map((opt) => (
+                              <option key={opt?.value || opt?.title} value={opt?.value || ''}>
+                                {opt?.title || opt?.value || ''}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type={argType === 'password' ? 'password' : 'text'}
+                            value={value ?? ''}
+                            placeholder={arg.placeholder || ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setExtensionPreferenceSetup((prev) => prev ? {
+                                ...prev,
+                                argumentValues: { ...prev.argumentValues, [arg.name]: v },
+                              } : prev);
+                            }}
+                            className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 placeholder-white/30 outline-none"
+                          />
+                        )}
                       </div>
                     );
                   })}
@@ -1418,7 +1563,7 @@ const App: React.FC = () => {
   if (extensionView) {
     return (
       <>
-        {menuBarRunner}
+        {hiddenExtensionRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             <ExtensionView
@@ -1456,7 +1601,7 @@ const App: React.FC = () => {
   if (showClipboardManager) {
     return (
       <>
-        {menuBarRunner}
+        {hiddenExtensionRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             <ClipboardManager
@@ -1477,7 +1622,7 @@ const App: React.FC = () => {
   if (showSnippetManager) {
     return (
       <>
-        {menuBarRunner}
+        {hiddenExtensionRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             <SnippetManager
@@ -1499,7 +1644,7 @@ const App: React.FC = () => {
   if (showFileSearch) {
     return (
       <>
-        {menuBarRunner}
+        {hiddenExtensionRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             <FileSearchExtension
@@ -1520,7 +1665,7 @@ const App: React.FC = () => {
   if (aiMode) {
     return (
       <>
-        {menuBarRunner}
+        {hiddenExtensionRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             {/* AI header — editable input */}
@@ -1602,7 +1747,7 @@ const App: React.FC = () => {
   if (showOnboarding) {
     return (
       <>
-        {menuBarRunner}
+        {hiddenExtensionRunners}
         <OnboardingExtension
           initialShortcut={launcherShortcut}
           onClose={() => {
@@ -1626,7 +1771,7 @@ const App: React.FC = () => {
   // ─── Launcher mode ──────────────────────────────────────────────
   return (
     <>
-    {menuBarRunner}
+    {hiddenExtensionRunners}
     <div className="w-full h-full">
       <div className="glass-effect overflow-hidden h-full flex flex-col">
         {/* Search header - transparent background */}

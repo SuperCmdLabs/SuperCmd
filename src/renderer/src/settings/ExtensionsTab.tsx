@@ -45,6 +45,10 @@ const ExtensionsTab: React.FC = () => {
     () => commands.filter((c) => c.category === 'extension'),
     [commands]
   );
+  const commandById = useMemo(
+    () => new Map(commands.map((c) => [c.id, c])),
+    [commands]
+  );
 
   const filterItems = (items: CommandInfo[]) => {
     if (!searchQuery.trim()) return items;
@@ -66,8 +70,15 @@ const ExtensionsTab: React.FC = () => {
   const filteredSystem = filterItems(systemCommands);
   const filteredExtensions = filterItems(extensionCommands);
 
-  const isDisabled = (id: string) =>
-    settings?.disabledCommands.includes(id) ?? false;
+  const isDisabled = (id: string) => {
+    const command = commandById.get(id);
+    const disabledByUser = settings?.disabledCommands.includes(id) ?? false;
+    if (disabledByUser) return true;
+    if (command?.disabledByDefault) {
+      return !(settings?.enabledCommands.includes(id) ?? false);
+    }
+    return false;
+  };
   const getHotkey = (id: string) => settings?.commandHotkeys[id] || '';
 
   const handleToggleEnabled = async (commandId: string) => {
@@ -76,12 +87,19 @@ const ExtensionsTab: React.FC = () => {
     setSettings((prev) => {
       if (!prev) return prev;
       let disabled = [...prev.disabledCommands];
+      let enabled = [...(prev.enabledCommands || [])];
       if (currentlyDisabled) {
         disabled = disabled.filter((id) => id !== commandId);
+        if (!enabled.includes(commandId)) {
+          enabled.push(commandId);
+        }
       } else {
-        disabled.push(commandId);
+        if (!disabled.includes(commandId)) {
+          disabled.push(commandId);
+        }
+        enabled = enabled.filter((id) => id !== commandId);
       }
-      return { ...prev, disabledCommands: disabled };
+      return { ...prev, disabledCommands: disabled, enabledCommands: enabled };
     });
   };
 

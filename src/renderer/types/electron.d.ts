@@ -9,6 +9,9 @@ export interface CommandInfo {
   iconDataUrl?: string;
   category: 'app' | 'settings' | 'system' | 'extension';
   path?: string;
+  mode?: string;
+  interval?: string;
+  disabledByDefault?: boolean;
 }
 
 export interface ExtensionBundle {
@@ -42,6 +45,7 @@ export interface ExtensionBundle {
     type?: string;
     placeholder?: string;
     title?: string;
+    data?: Array<{ title?: string; value?: string }>;
   }>;
   error?: string;
 }
@@ -58,6 +62,7 @@ export interface AISettings {
 export interface AppSettings {
   globalShortcut: string;
   disabledCommands: string[];
+  enabledCommands: string[];
   commandHotkeys: Record<string, string>;
   pinnedCommands: string[];
   recentCommands: string[];
