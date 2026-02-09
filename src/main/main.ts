@@ -1986,56 +1986,77 @@ return appURL's |path|() as text`,
 
   // ─── IPC: Ollama Model Management ──────────────────────────────
 
+  function resolveOllamaBaseUrl(raw?: string): string {
+    const fallback = 'http://localhost:11434';
+    const input = (raw || fallback).trim();
+    try {
+      const normalized = new URL(input);
+      return normalized.toString();
+    } catch {
+      return fallback;
+    }
+  }
+
   ipcMain.handle('ollama-status', async () => {
     const s = loadSettings();
-    const baseUrl = s.ai.ollamaBaseUrl || 'http://localhost:11434';
+    const configured = resolveOllamaBaseUrl(s.ai.ollamaBaseUrl);
+    const candidates = Array.from(
+      new Set([configured, 'http://127.0.0.1:11434', 'http://localhost:11434'])
+    );
 
-    return new Promise((resolve) => {
-      const url = new URL('/api/tags', baseUrl);
-      const mod = url.protocol === 'https:' ? require('https') : require('http');
-
-      const req = mod.get(url.toString(), (res: any) => {
-        let body = '';
-        res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-        res.on('end', () => {
-          if (res.statusCode === 200) {
-            try {
-              const data = JSON.parse(body);
-              resolve({
-                running: true,
-                models: (data.models || []).map((m: any) => ({
-                  name: m.name,
-                  size: m.size,
-                  parameterSize: m.details?.parameter_size || '',
-                  quantization: m.details?.quantization_level || '',
-                  modifiedAt: m.modified_at,
-                })),
-              });
-            } catch {
-              resolve({ running: true, models: [] });
-            }
-          } else {
-            resolve({ running: false, models: [] });
-          }
+    const requestJson = (url: URL): Promise<{ statusCode: number; body: string } | null> =>
+      new Promise((resolve) => {
+        const mod = url.protocol === 'https:' ? require('https') : require('http');
+        const req = mod.get(url.toString(), (res: any) => {
+          let body = '';
+          res.on('data', (chunk: Buffer) => {
+            body += chunk.toString();
+          });
+          res.on('end', () => resolve({ statusCode: res.statusCode || 0, body }));
+        });
+        req.on('error', () => resolve(null));
+        req.setTimeout(2500, () => {
+          req.destroy();
+          resolve(null);
         });
       });
 
-      req.on('error', () => {
-        resolve({ running: false, models: [] });
-      });
+    for (const baseUrl of candidates) {
+      const tagsUrl = new URL('/api/tags', baseUrl);
+      const tagsResult = await requestJson(tagsUrl);
+      if (tagsResult && tagsResult.statusCode === 200) {
+        try {
+          const data = JSON.parse(tagsResult.body || '{}');
+          return {
+            running: true,
+            models: (data.models || []).map((m: any) => ({
+              name: m.name,
+              size: m.size,
+              parameterSize: m.details?.parameter_size || '',
+              quantization: m.details?.quantization_level || '',
+              modifiedAt: m.modified_at,
+            })),
+          };
+        } catch {
+          return { running: true, models: [] };
+        }
+      }
 
-      req.setTimeout(3000, () => {
-        req.destroy();
-        resolve({ running: false, models: [] });
-      });
-    });
+      const versionUrl = new URL('/api/version', baseUrl);
+      const versionResult = await requestJson(versionUrl);
+      if (versionResult && versionResult.statusCode === 200) {
+        return { running: true, models: [] };
+      }
+    }
+
+    return { running: false, models: [] };
   });
 
   ipcMain.handle(
     'ollama-pull',
     async (event: any, requestId: string, modelName: string) => {
       const s = loadSettings();
-      const baseUrl = s.ai.ollamaBaseUrl || 'http://localhost:11434';
+      const baseUrl = resolveOllamaBaseUrl(s.ai.ollamaBaseUrl);
       const url = new URL('/api/pull', baseUrl);
       const mod = url.protocol === 'https:' ? require('https') : require('http');
 
@@ -2135,7 +2156,7 @@ return appURL's |path|() as text`,
 
   ipcMain.handle('ollama-delete', async (_event: any, modelName: string) => {
     const s = loadSettings();
-    const baseUrl = s.ai.ollamaBaseUrl || 'http://localhost:11434';
+    const baseUrl = resolveOllamaBaseUrl(s.ai.ollamaBaseUrl);
     const url = new URL('/api/delete', baseUrl);
     const mod = url.protocol === 'https:' ? require('https') : require('http');
 

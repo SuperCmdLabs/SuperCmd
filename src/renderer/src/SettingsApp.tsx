@@ -81,12 +81,15 @@ const SettingsApp: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="p-6">
-          {activeTab === 'general' && <GeneralTab />}
-          {activeTab === 'ai' && <AITab />}
-          {activeTab === 'extensions' && <ExtensionsTab />}
-        </div>
+      <div className={`flex-1 ${activeTab === 'extensions' ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}>
+        {activeTab === 'extensions' ? (
+          <ExtensionsTab />
+        ) : (
+          <div className="p-6">
+            {activeTab === 'general' && <GeneralTab />}
+            {activeTab === 'ai' && <AITab />}
+          </div>
+        )}
       </div>
     </div>
   );
