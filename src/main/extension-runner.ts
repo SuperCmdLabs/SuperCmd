@@ -17,6 +17,39 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 
+export interface ExtensionPreferenceSchema {
+  scope: 'extension' | 'command';
+  name: string;
+  title?: string;
+  label?: string;
+  description?: string;
+  placeholder?: string;
+  required?: boolean;
+  type?: string;
+  default?: any;
+  data?: Array<{ title?: string; value?: string }>;
+}
+
+export interface ExtensionCommandSettingsSchema {
+  name: string;
+  title: string;
+  description: string;
+  mode: string;
+  interval?: string;
+  disabledByDefault?: boolean;
+  preferences: ExtensionPreferenceSchema[];
+}
+
+export interface InstalledExtensionSettingsSchema {
+  extName: string;
+  title: string;
+  description: string;
+  owner: string;
+  iconDataUrl?: string;
+  preferences: ExtensionPreferenceSchema[];
+  commands: ExtensionCommandSettingsSchema[];
+}
+
 export interface ExtensionCommandInfo {
   id: string;
   title: string;
@@ -71,6 +104,39 @@ function getExtensionIconDataUrl(
     } catch {}
   }
   return undefined;
+}
+
+function resolvePlatformDefault(value: any): any {
+  const platformKey = process.platform === 'win32' ? 'Windows' : 'macOS';
+  if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (Object.prototype.hasOwnProperty.call(value, 'macOS') ||
+      Object.prototype.hasOwnProperty.call(value, 'Windows'))
+  ) {
+    if (Object.prototype.hasOwnProperty.call(value, platformKey)) {
+      return value[platformKey];
+    }
+    return value.macOS ?? value.Windows;
+  }
+  return value;
+}
+
+function normalizePreferenceSchema(pref: any, scope: 'extension' | 'command'): ExtensionPreferenceSchema | null {
+  if (!pref || typeof pref !== 'object' || !pref.name) return null;
+  return {
+    scope,
+    name: String(pref.name),
+    title: pref.title,
+    label: pref.label,
+    description: pref.description,
+    placeholder: pref.placeholder,
+    required: Boolean(pref.required),
+    type: pref.type,
+    default: resolvePlatformDefault(pref.default),
+    data: Array.isArray(pref.data) ? pref.data : undefined,
+  };
 }
 
 // ─── Discovery ──────────────────────────────────────────────────────
@@ -130,6 +196,72 @@ export function discoverInstalledExtensionCommands(): ExtensionCommandInfo[] {
   }
 
   return results;
+}
+
+/**
+ * Parse all installed extension manifests and return settings schema
+ * (extension + command preferences) for Settings UI and API parity.
+ */
+export function getInstalledExtensionsSettingsSchema(): InstalledExtensionSettingsSchema[] {
+  const extDir = getExtensionsDir();
+  if (!fs.existsSync(extDir)) return [];
+
+  const results: InstalledExtensionSettingsSchema[] = [];
+
+  for (const dir of fs.readdirSync(extDir)) {
+    const extPath = path.join(extDir, dir);
+    const pkgPath = path.join(extPath, 'package.json');
+
+    try {
+      if (!fs.statSync(extPath).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    if (!fs.existsSync(pkgPath)) continue;
+
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      const iconDataUrl = getExtensionIconDataUrl(extPath, pkg.icon || 'icon.png');
+      const ownerRaw = pkg.owner || pkg.author || '';
+      const owner = typeof ownerRaw === 'object' ? ownerRaw.name || '' : String(ownerRaw || '');
+
+      const extensionPreferences: ExtensionPreferenceSchema[] = Array.isArray(pkg.preferences)
+        ? pkg.preferences
+            .map((pref: any) => normalizePreferenceSchema(pref, 'extension'))
+            .filter(Boolean) as ExtensionPreferenceSchema[]
+        : [];
+
+      const commands: ExtensionCommandSettingsSchema[] = Array.isArray(pkg.commands)
+        ? pkg.commands
+            .filter((cmd: any) => cmd && cmd.name)
+            .map((cmd: any) => ({
+              name: cmd.name,
+              title: cmd.title || cmd.name,
+              description: cmd.description || '',
+              mode: cmd.mode || 'view',
+              interval: typeof cmd.interval === 'string' ? cmd.interval : undefined,
+              disabledByDefault: Boolean(cmd.disabledByDefault),
+              preferences: Array.isArray(cmd.preferences)
+                ? cmd.preferences
+                    .map((pref: any) => normalizePreferenceSchema(pref, 'command'))
+                    .filter(Boolean) as ExtensionPreferenceSchema[]
+                : [],
+            }))
+        : [];
+
+      results.push({
+        extName: dir,
+        title: pkg.title || dir,
+        description: pkg.description || '',
+        owner,
+        iconDataUrl,
+        preferences: extensionPreferences,
+        commands,
+      });
+    } catch {}
+  }
+
+  return results.sort((a, b) => a.title.localeCompare(b.title));
 }
 
 // ─── Build (called at install time) ─────────────────────────────────
@@ -354,23 +486,6 @@ function parsePreferences(
     data?: Array<{ title?: string; value?: string }>;
   }>;
 } {
-  const platformKey = process.platform === 'win32' ? 'Windows' : 'macOS';
-  const resolveDefault = (value: any) => {
-    if (
-      value &&
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
-      (Object.prototype.hasOwnProperty.call(value, 'macOS') ||
-        Object.prototype.hasOwnProperty.call(value, 'Windows'))
-    ) {
-      if (Object.prototype.hasOwnProperty.call(value, platformKey)) {
-        return value[platformKey];
-      }
-      return value.macOS ?? value.Windows;
-    }
-    return value;
-  };
-
   const extensionPrefs: Record<string, any> = {};
   const commandPrefs: Record<string, any> = {};
   const definitions: Array<{
@@ -388,7 +503,7 @@ function parsePreferences(
   // Extension-level preferences
   for (const pref of pkg.preferences || []) {
     if (!pref.name) continue;
-    const resolvedDefault = resolveDefault(pref.default);
+    const resolvedDefault = resolvePlatformDefault(pref.default);
     definitions.push({
       scope: 'extension',
       name: pref.name,
@@ -418,7 +533,7 @@ function parsePreferences(
   if (cmd?.preferences) {
     for (const pref of cmd.preferences) {
       if (!pref.name) continue;
-      const resolvedDefault = resolveDefault(pref.default);
+      const resolvedDefault = resolvePlatformDefault(pref.default);
       definitions.push({
         scope: 'command',
         name: pref.name,

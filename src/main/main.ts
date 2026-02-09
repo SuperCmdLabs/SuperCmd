@@ -22,7 +22,7 @@ import {
   installExtension,
   uninstallExtension,
 } from './extension-registry';
-import { getExtensionBundle, buildAllCommands, discoverInstalledExtensionCommands } from './extension-runner';
+import { getExtensionBundle, buildAllCommands, discoverInstalledExtensionCommands, getInstalledExtensionsSettingsSchema } from './extension-runner';
 import {
   startClipboardMonitor,
   stopClipboardMonitor,
@@ -634,8 +634,8 @@ function openSettingsWindow(tab?: 'general' | 'ai' | 'extensions'): void {
     }
     return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   })();
-  const settingsWidth = 900;
-  const settingsHeight = 600;
+  const settingsWidth = 1360;
+  const settingsHeight = 860;
   const settingsX = displayX + Math.floor((displayWidth - settingsWidth) / 2);
   const settingsY = displayY + Math.floor((displayHeight - settingsHeight) / 2);
 
@@ -644,8 +644,8 @@ function openSettingsWindow(tab?: 'general' | 'ai' | 'extensions'): void {
     height: settingsHeight,
     x: settingsX,
     y: settingsY,
-    minWidth: 700,
-    minHeight: 500,
+    minWidth: 1080,
+    minHeight: 680,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     transparent: true,
@@ -1105,6 +1105,11 @@ app.whenReady().then(async () => {
       }
     }
   );
+
+  // Get parsed extension manifest settings schema (preferences + commands)
+  ipcMain.handle('get-installed-extensions-settings-schema', () => {
+    return getInstalledExtensionsSettingsSchema();
+  });
 
   // Launch command (for @raycast/api launchCommand)
   ipcMain.handle(

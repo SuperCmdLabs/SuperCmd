@@ -1,339 +1,540 @@
-/**
- * Extensions Tab
- *
- * Horizontal tabs for command management and store browsing.
- */
-
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Settings, Power, Puzzle, Cpu, Download } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight, Download, Puzzle, Search, TerminalSquare } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
-import type { CommandInfo, AppSettings } from '../../types/electron';
+import type {
+  AppSettings,
+  CommandInfo,
+  ExtensionCommandSettingsSchema,
+  ExtensionPreferenceSchema,
+  InstalledExtensionSettingsSchema,
+} from '../../types/electron';
 
-type SectionTab = 'system' | 'supercommand' | 'community';
+type SelectedTarget = { extName: string; cmdName?: string };
+
+const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
+const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
+
+function getExtPrefsKey(extName: string): string {
+  return `${EXT_PREFS_KEY_PREFIX}${extName}`;
+}
+
+function getCmdPrefsKey(extName: string, cmdName: string): string {
+  return `${CMD_PREFS_KEY_PREFIX}${extName}/${cmdName}`;
+}
+
+function readJsonObject(key: string): Record<string, any> {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeJsonObject(key: string, value: Record<string, any>) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function getDefaultValue(pref: ExtensionPreferenceSchema): any {
+  if (pref.default !== undefined) return pref.default;
+  if (pref.type === 'checkbox') return false;
+  if (pref.type === 'dropdown') return pref.data?.[0]?.value ?? '';
+  return '';
+}
+
+function isPreferenceMissing(pref: ExtensionPreferenceSchema, value: any): boolean {
+  if (!pref.required) return false;
+  if (pref.type === 'checkbox') return value === undefined || value === null;
+  if (typeof value === 'string') return value.trim() === '';
+  return value === undefined || value === null;
+}
 
 const ExtensionsTab: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<SectionTab>('system');
+  const [schemas, setSchemas] = useState<InstalledExtensionSettingsSchema[]>([]);
+  const [search, setSearch] = useState('');
+  const [activeScope, setActiveScope] = useState<'all' | 'commands'>('commands');
   const [isLoading, setIsLoading] = useState(true);
+  const [selected, setSelected] = useState<SelectedTarget | null>(null);
+  const [expandedExtensions, setExpandedExtensions] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     Promise.all([
       window.electron.getAllCommands(),
       window.electron.getSettings(),
-    ]).then(([cmds, sett]) => {
+      window.electron.getInstalledExtensionsSettingsSchema(),
+    ]).then(([cmds, sett, extSchemas]) => {
       setCommands(cmds);
       setSettings(sett);
+      setSchemas(extSchemas);
+      if (extSchemas.length > 0) {
+        setSelected((prev) => prev || { extName: extSchemas[0].extName });
+      }
+      const expanded: Record<string, boolean> = {};
+      for (const schema of extSchemas) expanded[schema.extName] = true;
+      setExpandedExtensions(expanded);
       setIsLoading(false);
     });
   }, []);
 
-  const appCommands = useMemo(
-    () => commands.filter((c) => c.category === 'app'),
-    [commands]
-  );
-  const settingsCommands = useMemo(
-    () => commands.filter((c) => c.category === 'settings'),
-    [commands]
-  );
-  const systemCommands = useMemo(
-    () => commands.filter((c) => c.category === 'system'),
-    [commands]
-  );
-  const extensionCommands = useMemo(
-    () => commands.filter((c) => c.category === 'extension'),
-    [commands]
-  );
-  const commandById = useMemo(
-    () => new Map(commands.map((c) => [c.id, c])),
-    [commands]
-  );
-
-  const filterItems = (items: CommandInfo[]) => {
-    if (!searchQuery.trim()) return items;
-    const q = searchQuery.toLowerCase();
-    return items.filter(
-      (c) =>
-        c.title.toLowerCase().includes(q) ||
-        c.id.toLowerCase().includes(q) ||
-        c.keywords?.some((k) => k.toLowerCase().includes(q)) ||
-        c.path?.toLowerCase().includes(q)
-    );
-  };
-
-  const filteredApps = filterItems(appCommands);
-  const filteredSettings = filterItems(settingsCommands);
-  const filteredSystemAll = [...filteredApps, ...filteredSettings].sort((a, b) =>
-    a.title.localeCompare(b.title)
-  );
-  const filteredSystem = filterItems(systemCommands);
-  const filteredExtensions = filterItems(extensionCommands);
-
-  const isDisabled = (id: string) => {
-    const command = commandById.get(id);
-    const disabledByUser = settings?.disabledCommands.includes(id) ?? false;
-    if (disabledByUser) return true;
-    if (command?.disabledByDefault) {
-      return !(settings?.enabledCommands.includes(id) ?? false);
+  const commandByPath = useMemo(() => {
+    const map = new Map<string, CommandInfo>();
+    for (const cmd of commands) {
+      if (cmd.category === 'extension' && cmd.path) map.set(cmd.path, cmd);
     }
-    return false;
-  };
-  const getHotkey = (id: string) => settings?.commandHotkeys[id] || '';
+    return map;
+  }, [commands]);
 
-  const handleToggleEnabled = async (commandId: string) => {
-    const currentlyDisabled = isDisabled(commandId);
-    await window.electron.toggleCommandEnabled(commandId, currentlyDisabled);
+  const extensionIconFallbackByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const cmd of commands) {
+      if (cmd.category !== 'extension' || !cmd.path || !cmd.iconDataUrl) continue;
+      const [extName] = cmd.path.split('/');
+      if (!extName || map.has(extName)) continue;
+      map.set(extName, cmd.iconDataUrl);
+    }
+    return map;
+  }, [commands]);
+
+  const selectedSchema = useMemo(
+    () => schemas.find((schema) => schema.extName === selected?.extName) || null,
+    [schemas, selected]
+  );
+
+  const selectedCommandSchema = useMemo(() => {
+    if (!selectedSchema || !selected?.cmdName) return null;
+    return selectedSchema.commands.find((cmd) => cmd.name === selected.cmdName) || null;
+  }, [selectedSchema, selected]);
+
+  const filteredSchemas = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return schemas;
+    return schemas
+      .map((schema) => {
+        const matchesExtension =
+          schema.title.toLowerCase().includes(q) ||
+          schema.extName.toLowerCase().includes(q) ||
+          schema.description.toLowerCase().includes(q);
+        const commandsMatched = schema.commands.filter(
+          (cmd) =>
+            cmd.title.toLowerCase().includes(q) ||
+            cmd.name.toLowerCase().includes(q) ||
+            cmd.description.toLowerCase().includes(q)
+        );
+        if (matchesExtension) return schema;
+        if (commandsMatched.length > 0) return { ...schema, commands: commandsMatched };
+        return null;
+      })
+      .filter(Boolean) as InstalledExtensionSettingsSchema[];
+  }, [schemas, search]);
+
+  const isCommandEnabled = (command: CommandInfo | undefined): boolean => {
+    if (!command || !settings) return true;
+    if (settings.disabledCommands.includes(command.id)) return false;
+    if (command.disabledByDefault) {
+      return settings.enabledCommands.includes(command.id);
+    }
+    return true;
+  };
+
+  const setCommandEnabled = async (command: CommandInfo | undefined, enabled: boolean) => {
+    if (!command || !settings) return;
+    await window.electron.toggleCommandEnabled(command.id, enabled);
     setSettings((prev) => {
       if (!prev) return prev;
       let disabled = [...prev.disabledCommands];
-      let enabled = [...(prev.enabledCommands || [])];
-      if (currentlyDisabled) {
-        disabled = disabled.filter((id) => id !== commandId);
-        if (!enabled.includes(commandId)) {
-          enabled.push(commandId);
-        }
+      let explicitlyEnabled = [...(prev.enabledCommands || [])];
+      if (enabled) {
+        disabled = disabled.filter((id) => id !== command.id);
+        if (!explicitlyEnabled.includes(command.id)) explicitlyEnabled.push(command.id);
       } else {
-        if (!disabled.includes(commandId)) {
-          disabled.push(commandId);
-        }
-        enabled = enabled.filter((id) => id !== commandId);
+        if (!disabled.includes(command.id)) disabled.push(command.id);
+        explicitlyEnabled = explicitlyEnabled.filter((id) => id !== command.id);
       }
-      return { ...prev, disabledCommands: disabled, enabledCommands: enabled };
+      return { ...prev, disabledCommands: disabled, enabledCommands: explicitlyEnabled };
     });
   };
 
-  const handleHotkeyChange = async (commandId: string, hotkey: string) => {
-    await window.electron.updateCommandHotkey(commandId, hotkey);
+  const setCommandHotkey = async (command: CommandInfo | undefined, hotkey: string) => {
+    if (!command || !settings) return;
+    await window.electron.updateCommandHotkey(command.id, hotkey);
     setSettings((prev) => {
       if (!prev) return prev;
-      const hotkeys = { ...prev.commandHotkeys };
-      if (hotkey) {
-        hotkeys[commandId] = hotkey;
-      } else {
-        delete hotkeys[commandId];
-      }
-      return { ...prev, commandHotkeys: hotkeys };
+      const next = { ...prev.commandHotkeys };
+      if (hotkey) next[command.id] = hotkey;
+      else delete next[command.id];
+      return { ...prev, commandHotkeys: next };
     });
+  };
+
+  const getPreferenceValues = (extName: string, cmdName?: string): Record<string, any> => {
+    if (!cmdName) return readJsonObject(getExtPrefsKey(extName));
+    return readJsonObject(getCmdPrefsKey(extName, cmdName));
+  };
+
+  const setPreferenceValue = (extName: string, pref: ExtensionPreferenceSchema, value: any, cmdName?: string) => {
+    const storageKey = cmdName ? getCmdPrefsKey(extName, cmdName) : getExtPrefsKey(extName);
+    const current = readJsonObject(storageKey);
+    current[pref.name] = value;
+    writeJsonObject(storageKey, current);
+    window.dispatchEvent(new CustomEvent('sc-extension-storage-changed', { detail: { extensionName: extName } }));
+    // force rerender to reflect required/filled indicators
+    setSelected((prev) => (prev ? { ...prev } : prev));
+  };
+
+  const pickPathForPreference = async (
+    extName: string,
+    pref: ExtensionPreferenceSchema,
+    cmdName?: string
+  ) => {
+    const isDirectory = pref.type === 'directory' || pref.type === 'appPicker';
+    const paths = await window.electron.pickFiles({
+      allowMultipleSelection: false,
+      canChooseDirectories: isDirectory,
+      canChooseFiles: !isDirectory,
+    });
+    if (paths[0]) {
+      setPreferenceValue(extName, pref, paths[0], cmdName);
+    }
+  };
+
+  const selectedCommandInfo = selectedCommandSchema
+    ? commandByPath.get(`${selectedSchema?.extName}/${selectedCommandSchema.name}`)
+    : undefined;
+
+  const getModeTypeLabel = (mode: string): string => {
+    if (mode === 'menu-bar') return 'Menu Bar C...';
+    if (mode === 'no-view') return 'Command';
+    return 'Command';
+  };
+
+  const toggleExtensionExpanded = (extName: string) => {
+    setExpandedExtensions((prev) => ({ ...prev, [extName]: !prev[extName] }));
+  };
+
+  const setExtensionEnabled = async (schema: InstalledExtensionSettingsSchema, enabled: boolean) => {
+    for (const cmd of schema.commands) {
+      const commandInfo = commandByPath.get(`${schema.extName}/${cmd.name}`);
+      if (!commandInfo) continue;
+      await setCommandEnabled(commandInfo, enabled);
+    }
   };
 
   if (isLoading) {
-    return <div className="p-8 text-white/50 text-sm">Loading extensions...</div>;
+    return <div className="text-white/50 text-sm">Loading extension settings…</div>;
   }
 
   return (
-    <div className="p-8">
-      <h2 className="text-xl font-semibold text-white mb-6">Extensions</h2>
-
-      <div className="flex flex-wrap gap-2 mb-6">
-        <TabButton
-          active={activeTab === 'system'}
-          icon={<Settings className="w-3.5 h-3.5" />}
-          label="System"
-          onClick={() => setActiveTab('system')}
-        />
-        <TabButton
-          active={activeTab === 'supercommand'}
-          icon={<Cpu className="w-3.5 h-3.5" />}
-          label="SuperCommand"
-          onClick={() => setActiveTab('supercommand')}
-        />
-        <TabButton
-          active={activeTab === 'community'}
-          icon={<Puzzle className="w-3.5 h-3.5" />}
-          label="Community"
-          onClick={() => setActiveTab('community')}
-        />
-      </div>
-
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-        <input
-          type="text"
-          placeholder={
-            activeTab === 'community'
-              ? 'Search installed extension commands...'
-              : 'Search commands...'
-          }
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-white/20 transition-colors"
-        />
-      </div>
-
-      {activeTab === 'system' && (
-        <CommandTable
-          items={filteredSystemAll}
-          isDisabled={isDisabled}
-          getHotkey={getHotkey}
-          onToggleEnabled={handleToggleEnabled}
-          onHotkeyChange={handleHotkeyChange}
-          emptyText="No matching system commands"
-        />
-      )}
-
-      {activeTab === 'supercommand' && (
-        <div className="space-y-4">
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-white/30 mb-2">
-              Core Commands
+    <div className="space-y-4">
+      <div className="grid grid-cols-[minmax(600px,68%)_1fr] gap-4 min-h-[620px]">
+        <div className="border border-white/[0.08] rounded-xl overflow-hidden bg-white/[0.02]">
+          <div className="px-3 py-2 border-b border-white/[0.06]">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search..."
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-9 pr-4 py-1.5 text-sm text-white placeholder-white/30 outline-none focus:border-white/20 transition-colors"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setActiveScope('all')}
+                  className={`px-2.5 py-1 rounded-md text-xs ${
+                    activeScope === 'all' ? 'bg-white/[0.14] text-white' : 'text-white/50 hover:text-white/80'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setActiveScope('commands')}
+                  className={`px-2.5 py-1 rounded-md text-xs ${
+                    activeScope === 'commands' ? 'bg-white/[0.14] text-white' : 'text-white/50 hover:text-white/80'
+                  }`}
+                >
+                  Commands
+                </button>
+              </div>
+              <button
+                onClick={() => window.electron.openExtensionStoreWindow()}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <CommandTable
-              items={filteredSystem}
-              isDisabled={isDisabled}
-              getHotkey={getHotkey}
-              onToggleEnabled={handleToggleEnabled}
-              onHotkeyChange={handleHotkeyChange}
-              emptyText="No matching SuperCommand commands"
-            />
           </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-white/30 mb-2">
-              Installed Extension Commands
-            </div>
-            <CommandTable
-              items={filteredExtensions}
-              isDisabled={isDisabled}
-              getHotkey={getHotkey}
-              onToggleEnabled={handleToggleEnabled}
-              onHotkeyChange={handleHotkeyChange}
-              emptyText="No matching extension commands"
-            />
+
+          <div className="grid grid-cols-[1fr_120px_100px_130px_82px] px-4 py-2 text-[11px] uppercase tracking-wider text-white/35 border-b border-white/[0.06]">
+            <div className="pr-2 border-r border-white/[0.06]">Name</div>
+            <div className="px-2 border-r border-white/[0.06]">Type</div>
+            <div className="px-2 border-r border-white/[0.06]">Alias</div>
+            <div className="px-2 border-r border-white/[0.06]">Hotkey</div>
+            <div className="pl-2">Enabled</div>
+          </div>
+
+          <div className="max-h-[620px] overflow-y-auto custom-scrollbar">
+            {filteredSchemas.length === 0 ? (
+              <div className="px-4 py-8 text-center text-xs text-white/30">No matching extensions</div>
+            ) : (
+              filteredSchemas.map((schema) => (
+                <div key={schema.extName} className="border-b border-white/[0.04] last:border-b-0">
+                  <button
+                    onClick={() => {
+                      setSelected({ extName: schema.extName });
+                      toggleExtensionExpanded(schema.extName);
+                    }}
+                    className={`w-full grid grid-cols-[1fr_120px_100px_130px_82px] items-center gap-2 px-4 py-1.5 text-left transition-colors ${
+                      selected?.extName === schema.extName && !selected?.cmdName
+                        ? 'bg-white/[0.10]'
+                        : 'hover:bg-white/[0.05]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      {expandedExtensions[schema.extName] ? (
+                        <ChevronDown className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />
+                      )}
+                      {(schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)) ? (
+                        <img src={schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)} alt="" className="w-4 h-4 rounded-sm object-contain" draggable={false} />
+                      ) : (
+                        <Puzzle className="w-4 h-4 text-violet-300/80" />
+                      )}
+                      <span className="text-sm text-white/90 truncate">{schema.title}</span>
+                    </span>
+                    <span className="text-sm text-white/55">Extension</span>
+                    <span className="text-sm text-white/45">--</span>
+                    <span className="text-sm text-white/45">--</span>
+                    <span className="flex items-center justify-start">
+                      <input
+                        type="checkbox"
+                        checked={schema.commands.every((cmd) => isCommandEnabled(commandByPath.get(`${schema.extName}/${cmd.name}`)))}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => setExtensionEnabled(schema, e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                    </span>
+                  </button>
+
+                  {(expandedExtensions[schema.extName] || activeScope === 'commands') && schema.commands.map((cmd) => {
+                    const commandInfo = commandByPath.get(`${schema.extName}/${cmd.name}`);
+                    const enabled = isCommandEnabled(commandInfo);
+                    return (
+                      <div
+                        key={`${schema.extName}/${cmd.name}`}
+                        className={`ml-7 mr-2 mb-0.5 rounded-md px-2 py-1 ${
+                          selected?.extName === schema.extName && selected?.cmdName === cmd.name
+                            ? 'bg-white/[0.10]'
+                            : 'hover:bg-white/[0.04]'
+                        }`}
+                      >
+                        <div className="grid grid-cols-[1fr_120px_100px_130px_82px] items-center gap-2">
+                          <button
+                            onClick={() => setSelected({ extName: schema.extName, cmdName: cmd.name })}
+                            className="flex items-center gap-2 text-left min-w-0"
+                          >
+                            {commandInfo?.iconDataUrl ? (
+                              <img src={commandInfo.iconDataUrl} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0" draggable={false} />
+                            ) : (
+                              <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />
+                            )}
+                            <span className="text-xs text-white/85 truncate">{cmd.title}</span>
+                          </button>
+                          <span className="text-xs text-white/55">{getModeTypeLabel(cmd.mode)}</span>
+                          <span className="text-xs text-white/45">Add Alias</span>
+                          {commandInfo ? (
+                            <>
+                              <div className="flex items-center">
+                                <HotkeyRecorder
+                                  value={(settings?.commandHotkeys || {})[commandInfo.id] || ''}
+                                  onChange={(hotkey) => setCommandHotkey(commandInfo, hotkey)}
+                                  compact
+                                />
+                              </div>
+                              <span className="flex items-center justify-start">
+                                <input
+                                  type="checkbox"
+                                  checked={enabled}
+                                  onChange={(e) => setCommandEnabled(commandInfo, e.target.checked)}
+                                  className="w-4 h-4"
+                                />
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-xs text-white/25">Record Hotkey</span>
+                              <span className="text-xs text-white/25">-</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))
+            )}
           </div>
         </div>
-      )}
 
-      {activeTab === 'community' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="text-[11px] uppercase tracking-wider text-white/30">
-              Installed Extension Commands
+        <div className="border border-white/[0.08] rounded-xl bg-white/[0.02] overflow-hidden">
+          {!selectedSchema ? (
+            <div className="h-full flex items-center justify-center text-sm text-white/35">Select an extension</div>
+          ) : (
+            <div className="h-full flex flex-col">
+              <div className="px-4 py-3 border-b border-white/[0.06]">
+                <div className="flex items-center gap-2">
+                  {selectedSchema.iconDataUrl ? (
+                    <img src={selectedSchema.iconDataUrl} alt="" className="w-5 h-5 rounded object-contain" draggable={false} />
+                  ) : (
+                    <Puzzle className="w-5 h-5 text-violet-300/80" />
+                  )}
+                  <div className="text-sm font-semibold text-white/90">
+                    {selectedCommandSchema ? selectedCommandSchema.title : selectedSchema.title}
+                  </div>
+                </div>
+                <div className="mt-1 text-xs text-white/45">
+                  {selectedCommandSchema ? selectedCommandSchema.description : selectedSchema.description}
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-5">
+                {selectedCommandSchema && selectedCommandInfo ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="inline-flex items-center gap-2 text-xs text-white/70">
+                      <input
+                        type="checkbox"
+                        checked={isCommandEnabled(selectedCommandInfo)}
+                        onChange={(e) => setCommandEnabled(selectedCommandInfo, e.target.checked)}
+                      />
+                      Enabled
+                    </label>
+                    <div className="justify-self-end">
+                      <HotkeyRecorder
+                        value={(settings?.commandHotkeys || {})[selectedCommandInfo.id] || ''}
+                        onChange={(hotkey) => setCommandHotkey(selectedCommandInfo, hotkey)}
+                        compact
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                <PreferenceSection
+                  title="Extension Preferences"
+                  extName={selectedSchema.extName}
+                  preferences={selectedSchema.preferences}
+                  values={getPreferenceValues(selectedSchema.extName)}
+                  setPreferenceValue={setPreferenceValue}
+                  pickPathForPreference={pickPathForPreference}
+                />
+
+                {selectedCommandSchema ? (
+                  <PreferenceSection
+                    title="Command Preferences"
+                    extName={selectedSchema.extName}
+                    cmdName={selectedCommandSchema.name}
+                    preferences={selectedCommandSchema.preferences}
+                    values={getPreferenceValues(selectedSchema.extName, selectedCommandSchema.name)}
+                    setPreferenceValue={setPreferenceValue}
+                    pickPathForPreference={pickPathForPreference}
+                  />
+                ) : null}
+              </div>
             </div>
-            <button
-              onClick={() => window.electron.openExtensionStoreWindow()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 transition-colors"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Install from Store
-            </button>
-          </div>
-          <CommandTable
-            items={filteredExtensions}
-            isDisabled={isDisabled}
-            getHotkey={getHotkey}
-            onToggleEnabled={handleToggleEnabled}
-            onHotkeyChange={handleHotkeyChange}
-            emptyText="No installed extension commands"
-          />
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 };
 
-const TabButton: React.FC<{
-  active: boolean;
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-}> = ({ active, icon, label, onClick }) => (
-  <button
-    onClick={onClick}
-    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-      active
-        ? 'bg-white/[0.12] text-white border border-white/[0.16]'
-        : 'bg-white/[0.04] text-white/70 border border-white/[0.08] hover:bg-white/[0.08] hover:text-white/90'
-    }`}
-  >
-    {icon}
-    <span>{label}</span>
-  </button>
-);
-
-interface CommandTableProps {
-  items: CommandInfo[];
-  isDisabled: (id: string) => boolean;
-  getHotkey: (id: string) => string;
-  onToggleEnabled: (id: string) => void;
-  onHotkeyChange: (id: string, hotkey: string) => void;
-  emptyText: string;
-}
-
-const CommandTable: React.FC<CommandTableProps> = ({
-  items,
-  isDisabled,
-  getHotkey,
-  onToggleEnabled,
-  onHotkeyChange,
-  emptyText,
-}) => {
-  return (
-    <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] overflow-hidden">
-      <div className="flex items-center px-4 py-2 text-[11px] uppercase tracking-wider text-white/25 border-b border-white/[0.04] bg-white/[0.01]">
-        <div className="w-8 text-center">On</div>
-        <div className="w-8"></div>
-        <div className="flex-1">Name</div>
-        <div className="w-36 text-right">Hotkey</div>
+const PreferenceSection: React.FC<{
+  title: string;
+  extName: string;
+  cmdName?: string;
+  preferences: ExtensionPreferenceSchema[];
+  values: Record<string, any>;
+  setPreferenceValue: (extName: string, pref: ExtensionPreferenceSchema, value: any, cmdName?: string) => void;
+  pickPathForPreference: (extName: string, pref: ExtensionPreferenceSchema, cmdName?: string) => Promise<void>;
+}> = ({ title, extName, cmdName, preferences, values, setPreferenceValue, pickPathForPreference }) => {
+  if (!preferences || preferences.length === 0) {
+    return (
+      <div className="space-y-2">
+        <div className="text-[11px] uppercase tracking-wider text-white/35">{title}</div>
+        <div className="text-xs text-white/40">No preferences</div>
       </div>
+    );
+  }
 
-      <div className="max-h-[460px] overflow-y-auto custom-scrollbar">
-        {items.length === 0 ? (
-          <div className="px-4 py-8 text-center text-xs text-white/25">
-            {emptyText}
-          </div>
-        ) : (
-          items.map((cmd) => (
-            <div
-              key={cmd.id}
-              className="flex items-center px-4 py-1.5 hover:bg-white/[0.02] border-b border-white/[0.02] last:border-b-0 transition-colors"
-            >
-              <div className="w-8 flex justify-center">
+  return (
+    <div className="space-y-3">
+      <div className="text-[11px] uppercase tracking-wider text-white/35">{title}</div>
+      {preferences.map((pref) => {
+        const value = values[pref.name] ?? getDefaultValue(pref);
+        const missing = isPreferenceMissing(pref, value);
+        const type = pref.type || 'textfield';
+        const titleText = pref.title || pref.label || pref.name;
+        const textValue = typeof value === 'string' ? value : String(value ?? '');
+
+        return (
+          <div key={`${cmdName || 'extension'}:${pref.name}`} className="space-y-1">
+            <label className="text-xs text-white/75 font-medium">
+              {titleText}
+              {pref.required ? <span className="text-red-400"> *</span> : null}
+              {missing ? <span className="text-red-300/80 ml-2">(Required)</span> : null}
+            </label>
+
+            {type === 'checkbox' ? (
+              <label className="inline-flex items-center gap-2 text-xs text-white/75">
                 <input
                   type="checkbox"
-                  checked={!isDisabled(cmd.id)}
-                  onChange={() => onToggleEnabled(cmd.id)}
-                  className="w-3.5 h-3.5 rounded border-white/20 bg-transparent accent-blue-500 cursor-pointer"
+                  checked={Boolean(value)}
+                  onChange={(e) => setPreferenceValue(extName, pref, e.target.checked, cmdName)}
                 />
-              </div>
-
-              <div className="w-8 flex justify-center">
-                <div className="w-5 h-5 flex items-center justify-center overflow-hidden rounded">
-                  {cmd.iconDataUrl ? (
-                    <img
-                      src={cmd.iconDataUrl}
-                      alt=""
-                      className="w-5 h-5 object-contain"
-                      draggable={false}
-                    />
-                  ) : cmd.category === 'extension' ? (
-                    <Puzzle className="w-3.5 h-3.5 text-violet-300/80" />
-                  ) : cmd.category === 'system' ? (
-                    <Power className="w-3.5 h-3.5 text-red-300/80" />
-                  ) : (
-                    <Settings className="w-3.5 h-3.5 text-gray-300/70" />
-                  )}
-                </div>
-              </div>
-
-              <div
-                className={`flex-1 text-sm truncate ${
-                  isDisabled(cmd.id) ? 'text-white/30 line-through' : 'text-white/80'
-                }`}
+                <span>{pref.label || 'Enabled'}</span>
+              </label>
+            ) : type === 'dropdown' ? (
+              <select
+                value={textValue}
+                onChange={(e) => setPreferenceValue(extName, pref, e.target.value, cmdName)}
+                className="w-full bg-white/[0.05] border border-white/[0.10] rounded-md px-2.5 py-1.5 text-xs text-white/90 outline-none"
               >
-                {cmd.title}
-              </div>
-
-              <div className="w-36 flex justify-end">
-                <HotkeyRecorder
-                  value={getHotkey(cmd.id)}
-                  onChange={(hotkey) => onHotkeyChange(cmd.id, hotkey)}
-                  compact
+                <option value="">Select an option</option>
+                {(pref.data || []).map((opt) => (
+                  <option key={opt?.value || opt?.title} value={opt?.value || ''}>
+                    {opt?.title || opt?.value || ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type={type === 'password' ? 'password' : 'text'}
+                  value={textValue}
+                  placeholder={pref.placeholder || ''}
+                  onChange={(e) => setPreferenceValue(extName, pref, e.target.value, cmdName)}
+                  className="flex-1 bg-white/[0.05] border border-white/[0.10] rounded-md px-2.5 py-1.5 text-xs text-white/90 placeholder-white/30 outline-none"
                 />
+                {(type === 'file' || type === 'directory' || type === 'appPicker') && (
+                  <button
+                    type="button"
+                    onClick={() => pickPathForPreference(extName, pref, cmdName)}
+                    className="px-2 py-1.5 text-[11px] rounded-md border border-white/[0.12] text-white/70 hover:bg-white/[0.06]"
+                  >
+                    Browse
+                  </button>
+                )}
               </div>
-            </div>
-          ))
-        )}
-      </div>
+            )}
+
+            {pref.description ? <p className="text-[11px] text-white/40">{pref.description}</p> : null}
+          </div>
+        );
+      })}
     </div>
   );
 };

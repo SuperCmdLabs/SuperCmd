@@ -1,7 +1,7 @@
 /**
  * Settings App
  *
- * Raycast-style settings window with sidebar navigation and tabbed content.
+ * Compact Raycast-style settings window with horizontal tabs.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -54,43 +54,35 @@ const SettingsApp: React.FC = () => {
   }, []);
 
   return (
-    <div className="h-screen flex glass-effect text-white select-none">
-      {/* Sidebar */}
-      <div className="w-52 border-r border-white/[0.06] flex flex-col" style={{ background: 'rgba(10,10,14,0.5)' }}>
-        {/* Drag region for macOS title bar */}
-        <div className="h-12 drag-region" />
-
-        <div className="px-4 mb-6">
-          <h1 className="text-sm font-semibold text-white/90 flex items-center gap-2">
+    <div className="h-screen glass-effect text-white select-none flex flex-col">
+      <div className="h-10 drag-region" />
+      <div className="px-6 pb-3 border-b border-white/[0.06]">
+        <div className="relative flex items-center justify-center">
+          <div className="absolute left-0 text-[13px] font-semibold text-white/90 flex items-center gap-2">
             <Zap className="w-4 h-4 text-yellow-400" />
-            SuperCommand
-          </h1>
+            SuperCommand Settings
+          </div>
+          <div className="flex items-center gap-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-white/[0.12] text-white border border-white/[0.14]'
+                    : 'text-white/60 border border-white/[0.08] hover:text-white/85 hover:bg-white/[0.05]'
+                }`}
+              >
+                {tab.icon}
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
-
-        <nav className="px-2 space-y-0.5">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-white/10 text-white'
-                  : 'text-white/50 hover:text-white/70 hover:bg-white/[0.04]'
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
-        </nav>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Drag region for macOS title bar */}
-        <div className="h-12 drag-region flex-shrink-0" />
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="p-6">
           {activeTab === 'general' && <GeneralTab />}
           {activeTab === 'ai' && <AITab />}
           {activeTab === 'extensions' && <ExtensionsTab />}

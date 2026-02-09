@@ -911,6 +911,18 @@ function getStoragePrefix(): string {
   return `sc-ext:${ext}:`;
 }
 
+function emitExtensionStorageChanged(): void {
+  try {
+    const extensionName = (_extensionContext.extensionName || '').trim();
+    if (!extensionName) return;
+    window.dispatchEvent(
+      new CustomEvent('sc-extension-storage-changed', {
+        detail: { extensionName },
+      })
+    );
+  } catch {}
+}
+
 function encodeStorageValue(value: any): string {
   const t = typeof value;
   if (t === 'string') return JSON.stringify({ __scv: 1, t: 's', v: value });
@@ -952,11 +964,13 @@ export const LocalStorage = {
   async setItem(key: string, value: LocalStorage.Value): Promise<void> {
     const scopedKey = getStoragePrefix() + key;
     localStorage.setItem(scopedKey, encodeStorageValue(value));
+    emitExtensionStorageChanged();
   },
   async removeItem(key: string): Promise<void> {
     localStorage.removeItem(getStoragePrefix() + key);
     // Remove legacy key too, so callers don't read stale values.
     localStorage.removeItem(legacyStoragePrefix + key);
+    emitExtensionStorageChanged();
   },
   async allItems(): Promise<LocalStorage.Values> {
     const result: LocalStorage.Values = {};
@@ -996,6 +1010,7 @@ export const LocalStorage = {
       if (k?.startsWith(scopedPrefix) || k?.startsWith(legacyStoragePrefix)) toRemove.push(k);
     }
     toRemove.forEach((k) => localStorage.removeItem(k));
+    emitExtensionStorageChanged();
   },
 };
 
@@ -5580,6 +5595,7 @@ export function useLocalStorage<T>(
     try {
       localStorage.setItem(`raycast-${key}`, JSON.stringify(newValue));
     } catch {}
+    emitExtensionStorageChanged();
   }, [key]);
 
   const removeValue = useCallback(async () => {
@@ -5587,6 +5603,7 @@ export function useLocalStorage<T>(
     try {
       localStorage.removeItem(`raycast-${key}`);
     } catch {}
+    emitExtensionStorageChanged();
   }, [key]);
 
   return { value, setValue, removeValue, isLoading };

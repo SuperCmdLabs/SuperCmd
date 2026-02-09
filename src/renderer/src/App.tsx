@@ -152,9 +152,7 @@ function parseIntervalToMs(interval?: string): number | null {
     unit === 'm' ? 60_000 :
     unit === 'h' ? 60 * 60_000 :
     24 * 60 * 60_000;
-
-  // Raycast minimum is 1 minute.
-  return Math.max(value * unitMs, 60_000);
+  return value * unitMs;
 }
 
 const LAST_EXT_KEY = 'sc-last-extension';
@@ -327,7 +325,9 @@ const App: React.FC = () => {
   } | null>(null);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [selectedContextActionIndex, setSelectedContextActionIndex] = useState(0);
-  const [menuBarExtensions, setMenuBarExtensions] = useState<ExtensionBundle[]>([]);
+  const [menuBarExtensions, setMenuBarExtensions] = useState<
+    Array<{ key: string; bundle: ExtensionBundle }>
+  >([]);
   const [backgroundNoViewRuns, setBackgroundNoViewRuns] = useState<
     Array<{ runId: string; bundle: ExtensionBundle }>
   >([]);
@@ -347,6 +347,7 @@ const App: React.FC = () => {
   const pinnedCommandsRef = useRef<string[]>([]);
   const extensionViewRef = useRef<ExtensionBundle | null>(null);
   const intervalTimerIdsRef = useRef<number[]>([]);
+  const menuBarRemountTimestampsRef = useRef<Record<string, number>>({});
   extensionViewRef.current = extensionView;
   pinnedCommandsRef.current = pinnedCommands;
 
@@ -356,17 +357,48 @@ const App: React.FC = () => {
     });
   }, []);
 
-  const upsertMenuBarExtension = useCallback((bundle: ExtensionBundle) => {
+  const upsertMenuBarExtension = useCallback((bundle: ExtensionBundle, options?: { remount?: boolean }) => {
+    const remount = Boolean(options?.remount);
     setMenuBarExtensions((prev) => {
+      const extName = bundle.extName || bundle.extensionName || '';
+      const cmdName = bundle.cmdName || bundle.commandName || '';
       const idx = prev.findIndex(
-        (ext) =>
-          (ext.extName || ext.extensionName) === (bundle.extName || bundle.extensionName) &&
-          (ext.cmdName || ext.commandName) === (bundle.cmdName || bundle.commandName)
+        (entry) =>
+          (entry.bundle.extName || entry.bundle.extensionName) === extName &&
+          (entry.bundle.cmdName || entry.bundle.commandName) === cmdName
       );
-      if (idx === -1) return [...prev, bundle];
+      if (idx === -1) {
+        return [...prev, { key: `${extName}:${cmdName}:${Date.now()}`, bundle }];
+      }
       const next = [...prev];
-      next[idx] = bundle;
+      next[idx] = {
+        key: remount ? `${extName}:${cmdName}:${Date.now()}` : next[idx].key,
+        bundle,
+      };
       return next;
+    });
+  }, []);
+
+  const remountMenuBarExtensionsForExtension = useCallback((extensionName: string) => {
+    const normalized = (extensionName || '').trim();
+    if (!normalized) return;
+    const now = Date.now();
+    const lastTs = menuBarRemountTimestampsRef.current[normalized] || 0;
+    if (now - lastTs < 200) return;
+    menuBarRemountTimestampsRef.current[normalized] = now;
+    setMenuBarExtensions((prev) => {
+      let changed = false;
+      const next = prev.map((entry) => {
+        const entryExt = (entry.bundle.extName || entry.bundle.extensionName || '').trim();
+        if (!entryExt || entryExt !== normalized) return entry;
+        changed = true;
+        const cmdName = entry.bundle.cmdName || entry.bundle.commandName || '';
+        return {
+          key: `${normalized}:${cmdName}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+          bundle: entry.bundle,
+        };
+      });
+      return changed ? next : prev;
     });
   }, []);
 
@@ -468,7 +500,7 @@ const App: React.FC = () => {
       const sourceMode = custom.detail?.source?.commandMode || '';
 
       if (hydrated.mode === 'menu-bar') {
-        upsertMenuBarExtension(hydrated);
+        upsertMenuBarExtension(hydrated, { remount: launchType === 'background' });
         return;
       }
 
@@ -502,6 +534,21 @@ const App: React.FC = () => {
     window.addEventListener('sc-launch-extension-bundle', onLaunchBundle as EventListener);
     return () => window.removeEventListener('sc-launch-extension-bundle', onLaunchBundle as EventListener);
   }, [upsertMenuBarExtension]);
+
+  // LocalStorage changes should refresh menu-bar commands for the same extension.
+  // This matches Raycast behavior where menu-bar commands observe state changes quickly.
+  useEffect(() => {
+    const onStorageChanged = (event: Event) => {
+      const custom = event as CustomEvent<{ extensionName?: string }>;
+      const extensionName = (custom.detail?.extensionName || '').trim();
+      if (!extensionName) return;
+      remountMenuBarExtensionsForExtension(extensionName);
+    };
+    window.addEventListener('sc-extension-storage-changed', onStorageChanged as EventListener);
+    return () => {
+      window.removeEventListener('sc-extension-storage-changed', onStorageChanged as EventListener);
+    };
+  }, [remountMenuBarExtensionsForExtension]);
 
   // Launch background-refresh extension commands from manifest `interval`.
   useEffect(() => {
@@ -578,7 +625,11 @@ const App: React.FC = () => {
             const missingPrefs = getMissingRequiredPreferences(ext);
             const missingArgs = getMissingRequiredArguments(ext);
             return missingPrefs.length === 0 && missingArgs.length === 0;
-          });
+          })
+          .map((bundle) => ({
+            key: `${bundle.extName || bundle.extensionName}:${bundle.cmdName || bundle.commandName}:initial`,
+            bundle,
+          }));
         setMenuBarExtensions(runnable);
       }
     }).catch((err: any) => {
@@ -1292,24 +1343,24 @@ const App: React.FC = () => {
   // menus via IPC even when the main window is hidden.
   const menuBarRunner = menuBarExtensions.length > 0 ? (
     <div style={{ display: 'none', position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-      {menuBarExtensions.map((ext) => (
+      {menuBarExtensions.map((entry) => (
         <ExtensionView
-          key={`menubar-${ext.extName}-${ext.cmdName}`}
-          code={ext.code}
-          title={ext.title}
+          key={`menubar-${entry.key}`}
+          code={entry.bundle.code}
+          title={entry.bundle.title}
           mode="menu-bar"
-          extensionName={(ext as any).extensionName || ext.extName}
-          extensionDisplayName={(ext as any).extensionDisplayName}
-          extensionIconDataUrl={(ext as any).extensionIconDataUrl}
-          commandName={(ext as any).commandName || ext.cmdName}
-          assetsPath={(ext as any).assetsPath}
-          supportPath={(ext as any).supportPath}
-          owner={(ext as any).owner}
-          preferences={(ext as any).preferences}
-          launchArguments={(ext as any).launchArguments}
-          launchContext={(ext as any).launchContext}
-          fallbackText={(ext as any).fallbackText}
-          launchType={(ext as any).launchType}
+          extensionName={(entry.bundle as any).extensionName || entry.bundle.extName}
+          extensionDisplayName={(entry.bundle as any).extensionDisplayName}
+          extensionIconDataUrl={(entry.bundle as any).extensionIconDataUrl}
+          commandName={(entry.bundle as any).commandName || entry.bundle.cmdName}
+          assetsPath={(entry.bundle as any).assetsPath}
+          supportPath={(entry.bundle as any).supportPath}
+          owner={(entry.bundle as any).owner}
+          preferences={(entry.bundle as any).preferences}
+          launchArguments={(entry.bundle as any).launchArguments}
+          launchContext={(entry.bundle as any).launchContext}
+          fallbackText={(entry.bundle as any).fallbackText}
+          launchType={(entry.bundle as any).launchType}
           onClose={() => {}}
         />
       ))}

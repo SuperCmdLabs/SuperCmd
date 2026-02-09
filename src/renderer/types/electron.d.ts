@@ -14,6 +14,39 @@ export interface CommandInfo {
   disabledByDefault?: boolean;
 }
 
+export interface ExtensionPreferenceSchema {
+  scope: 'extension' | 'command';
+  name: string;
+  title?: string;
+  label?: string;
+  description?: string;
+  placeholder?: string;
+  required?: boolean;
+  type?: string;
+  default?: any;
+  data?: Array<{ title?: string; value?: string }>;
+}
+
+export interface ExtensionCommandSettingsSchema {
+  name: string;
+  title: string;
+  description: string;
+  mode: string;
+  interval?: string;
+  disabledByDefault?: boolean;
+  preferences: ExtensionPreferenceSchema[];
+}
+
+export interface InstalledExtensionSettingsSchema {
+  extName: string;
+  title: string;
+  description: string;
+  owner: string;
+  iconDataUrl?: string;
+  preferences: ExtensionPreferenceSchema[];
+  commands: ExtensionCommandSettingsSchema[];
+}
+
 export interface ExtensionBundle {
   code: string;
   title: string;
@@ -154,6 +187,7 @@ export interface ElectronAPI {
 
   // Extension Runner
   runExtension: (extName: string, cmdName: string) => Promise<ExtensionBundle | null>;
+  getInstalledExtensionsSettingsSchema: () => Promise<InstalledExtensionSettingsSchema[]>;
 
   // Open URL
   openUrl: (url: string) => Promise<boolean>;
