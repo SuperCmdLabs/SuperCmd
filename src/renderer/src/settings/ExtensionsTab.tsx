@@ -1,5 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Download, Puzzle, Search, TerminalSquare } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Puzzle,
+  Search,
+  TerminalSquare,
+  Zap,
+  ClipboardList,
+  Settings,
+  Brain,
+  Wand2,
+  FileSearch,
+  FilePlus2,
+  FileInput,
+  FileOutput,
+  LogOut,
+  Sparkles,
+} from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type {
   AppSettings,
@@ -89,7 +107,7 @@ const ExtensionsTab: React.FC = () => {
         continue;
       }
       if (cmd.category === 'system') {
-        map.set(`__system/${cmd.id}`, cmd);
+        map.set(`__supercommand/${cmd.id}`, cmd);
       }
     }
     return map;
@@ -152,9 +170,9 @@ const ExtensionsTab: React.FC = () => {
 
     const systemCommands = commands.filter((cmd) => cmd.category === 'system');
     if (systemCommands.length > 0) {
-      byExt.set('__system', {
-        extName: '__system',
-        title: 'System',
+      byExt.set('__supercommand', {
+        extName: '__supercommand',
+        title: 'SuperCommand',
         description: 'Built-in SuperCommand commands',
         owner: 'supercommand',
         iconDataUrl: undefined,
@@ -172,8 +190,8 @@ const ExtensionsTab: React.FC = () => {
     }
 
     return Array.from(byExt.values()).sort((a, b) => {
-      if (a.extName === '__system') return -1;
-      if (b.extName === '__system') return 1;
+      if (a.extName === '__supercommand') return -1;
+      if (b.extName === '__supercommand') return 1;
       return a.title.localeCompare(b.title);
     });
   }, [schemas, commands]);
@@ -317,6 +335,21 @@ const ExtensionsTab: React.FC = () => {
     setExpandedExtensions((prev) => ({ ...prev, [extName]: !prev[extName] }));
   };
 
+  const getCoreCommandIcon = (commandId?: string) => {
+    if (!commandId) return <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />;
+    if (commandId.includes('clipboard')) return <ClipboardList className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+    if (commandId.includes('open-settings')) return <Settings className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+    if (commandId.includes('open-ai-settings')) return <Brain className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+    if (commandId.includes('open-extensions-settings')) return <Wand2 className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+    if (commandId.includes('search-files')) return <FileSearch className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+    if (commandId.includes('create-snippet')) return <FilePlus2 className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+    if (commandId.includes('import-snippets')) return <FileInput className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+    if (commandId.includes('export-snippets')) return <FileOutput className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+    if (commandId.includes('quit')) return <LogOut className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+    if (commandId.includes('onboarding')) return <Sparkles className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+    return <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />;
+  };
+
   const setExtensionEnabled = async (schema: InstalledExtensionSettingsSchema, enabled: boolean) => {
     for (const cmd of schema.commands) {
       const commandInfo = resolveCommandInfo(schema.extName, cmd.name);
@@ -330,9 +363,9 @@ const ExtensionsTab: React.FC = () => {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-[minmax(600px,66%)_1fr] gap-4 min-h-[620px]">
-        <div className="border border-white/[0.08] rounded-xl overflow-hidden bg-white/[0.02]">
+    <div className="h-full">
+      <div className="grid grid-cols-[minmax(600px,66%)_1fr] h-full bg-white/[0.01]">
+        <div className="min-w-0 h-full border-r border-white/[0.08] flex flex-col">
           <div className="px-3 py-2 border-b border-white/[0.06]">
             <div className="flex items-center gap-2">
               <div className="relative w-[360px] max-w-full shrink-0">
@@ -380,7 +413,7 @@ const ExtensionsTab: React.FC = () => {
             <div className="pl-2">Enabled</div>
           </div>
 
-          <div className="max-h-[620px] overflow-y-auto custom-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
             {filteredSchemas.length === 0 ? (
               <div className="px-4 py-8 text-center text-xs text-white/30">No matching extensions</div>
             ) : (
@@ -405,6 +438,8 @@ const ExtensionsTab: React.FC = () => {
                       )}
                       {(schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)) ? (
                         <img src={schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)} alt="" className="w-4 h-4 rounded-sm object-contain" draggable={false} />
+                      ) : schema.extName === '__supercommand' ? (
+                        <Zap className="w-4 h-4 text-yellow-300/90" />
                       ) : (
                         <Puzzle className="w-4 h-4 text-violet-300/80" />
                       )}
@@ -443,6 +478,8 @@ const ExtensionsTab: React.FC = () => {
                           >
                             {commandInfo?.iconDataUrl ? (
                               <img src={commandInfo.iconDataUrl} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0" draggable={false} />
+                            ) : schema.extName === '__supercommand' ? (
+                              getCoreCommandIcon(commandInfo?.id)
                             ) : (
                               <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />
                             )}
@@ -484,7 +521,7 @@ const ExtensionsTab: React.FC = () => {
           </div>
         </div>
 
-        <div className="border border-white/[0.08] rounded-xl bg-white/[0.02] overflow-hidden">
+        <div className="min-w-0 h-full overflow-hidden">
           {!selectedSchema ? (
             <div className="h-full flex items-center justify-center text-sm text-white/35">Select an extension</div>
           ) : (
@@ -505,7 +542,7 @@ const ExtensionsTab: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-5">
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 space-y-5">
                 {selectedCommandSchema && selectedCommandInfo ? (
                   <div className="grid grid-cols-2 gap-3">
                     <label className="inline-flex items-center gap-2 text-xs text-white/70">
