@@ -2119,8 +2119,14 @@ type ListItemAccessory = { text?: string | { value?: string; color?: string }; i
 // ── ListItemRenderer — the actual visual row ────────────────────────
 
 function ListItemRenderer({
-  title, subtitle, icon, accessories, isSelected, dataIdx, onSelect, onActivate,
-}: ListItemProps & { isSelected: boolean; dataIdx: number; onSelect: () => void; onActivate: () => void }) {
+  title, subtitle, icon, accessories, isSelected, dataIdx, onSelect, onActivate, onContextAction,
+}: ListItemProps & {
+  isSelected: boolean;
+  dataIdx: number;
+  onSelect: () => void;
+  onActivate: () => void;
+  onContextAction: (e: React.MouseEvent<HTMLDivElement>) => void;
+}) {
   const titleStr = typeof title === 'string' ? title : (title as any)?.value || '';
   const subtitleStr = typeof subtitle === 'string' ? subtitle : (subtitle as any)?.value || '';
 
@@ -2132,6 +2138,7 @@ function ListItemRenderer({
       }`}
       onClick={onActivate}
       onMouseMove={onSelect}
+      onContextMenu={onContextAction}
     >
       <div className="flex items-center gap-2.5 w-full">
         {icon && (
@@ -2581,6 +2588,13 @@ function ListComponent({
     setTimeout(() => inputRef.current?.focus(), 0);
   }, []);
 
+  const handleItemContextMenu = useCallback((idx: number, e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedIdx(idx);
+    setShowActions(true);
+  }, []);
+
   // ── Render ─────────────────────────────────────────────────────
 
   const listContent = (
@@ -2612,6 +2626,7 @@ function ListComponent({
                 dataIdx={globalIdx}
                 onSelect={() => setSelectedIdx(globalIdx)}
                 onActivate={() => setSelectedIdx(globalIdx)}
+                onContextAction={(e) => handleItemContextMenu(globalIdx, e)}
               />
             ))}
           </div>
@@ -2975,8 +2990,15 @@ function DetailComponent({ markdown, isLoading, children, actions, metadata, nav
     action.execute();
   }, []);
 
+  const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (detailActions.length === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setShowActions(true);
+  }, [detailActions.length]);
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" onContextMenu={handleContextMenu}>
       {/* Hidden render area for actions so hooks inside actions work */}
       {actions && (
         <div style={{ display: 'none' }}>
@@ -3189,6 +3211,13 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
     action.execute();
   }, []);
 
+  const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (formActions.length === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setShowActions(true);
+  }, [formActions.length]);
+
   return (
     <FormContext.Provider value={contextValue}>
       {/* Hidden render area for actions */}
@@ -3200,7 +3229,7 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
         </div>
       )}
 
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full" onContextMenu={handleContextMenu}>
         {/* ── Navigation bar - same padding as List/main search bar ── */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
           <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
@@ -3545,7 +3574,7 @@ function GridSectionComponent({ children, title, subtitle, aspectRatio, columns,
 // ── GridItemRenderer — visual grid cell ──────────────────────────────
 
 function GridItemRenderer({
-  title, subtitle, content, isSelected, dataIdx, onSelect, onActivate,
+  title, subtitle, content, isSelected, dataIdx, onSelect, onActivate, onContextAction,
 }: any) {
   const getGridImageSource = (value: any): string => {
     if (!value) return '';
@@ -3585,6 +3614,7 @@ function GridItemRenderer({
       style={{ height: '160px' }}
       onClick={onActivate}
       onMouseMove={onSelect}
+      onContextMenu={onContextAction}
     >
       {/* Image area — centered, fixed height */}
       <div className="flex-1 flex items-center justify-center overflow-hidden p-1.5 min-h-0">
@@ -3839,6 +3869,13 @@ function GridComponent({
     setTimeout(() => inputRef.current?.focus(), 0);
   }, []);
 
+  const handleItemContextMenu = useCallback((idx: number, e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedIdx(idx);
+    setShowActions(true);
+  }, []);
+
   return (
     <GridRegistryContext.Provider value={registryAPI}>
       {/* Hidden render area — children register items via context */}
@@ -3907,6 +3944,7 @@ function GridComponent({
                       dataIdx={globalIdx}
                       onSelect={() => setSelectedIdx(globalIdx)}
                       onActivate={() => setSelectedIdx(globalIdx)}
+                      onContextAction={(e: React.MouseEvent<HTMLDivElement>) => handleItemContextMenu(globalIdx, e)}
                     />
                   ))}
                 </div>
