@@ -21,6 +21,7 @@ export interface AISettings {
 export interface AppSettings {
   globalShortcut: string;
   disabledCommands: string[];
+  enabledCommands: string[];
   commandHotkeys: Record<string, string>;
   pinnedCommands: string[];
   recentCommands: string[];
@@ -41,6 +42,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
 const DEFAULT_SETTINGS: AppSettings = {
   globalShortcut: 'Command+Space',
   disabledCommands: [],
+  enabledCommands: [],
   commandHotkeys: {},
   pinnedCommands: [],
   recentCommands: [],
@@ -63,6 +65,7 @@ export function loadSettings(): AppSettings {
     settingsCache = {
       globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
       disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
+      enabledCommands: parsed.enabledCommands ?? DEFAULT_SETTINGS.enabledCommands,
       commandHotkeys: parsed.commandHotkeys ?? DEFAULT_SETTINGS.commandHotkeys,
       pinnedCommands: parsed.pinnedCommands ?? DEFAULT_SETTINGS.pinnedCommands,
       recentCommands: parsed.recentCommands ?? DEFAULT_SETTINGS.recentCommands,

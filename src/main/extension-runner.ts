@@ -24,6 +24,8 @@ export interface ExtensionCommandInfo {
   cmdName: string;
   description: string;
   mode: string;
+  interval?: string;
+  disabledByDefault?: boolean;
   keywords: string[];
   iconDataUrl?: string;
 }
@@ -110,6 +112,8 @@ export function discoverInstalledExtensionCommands(): ExtensionCommandInfo[] {
           cmdName: cmd.name,
           description: cmd.description || '',
           mode: cmd.mode || 'view',
+          interval: typeof cmd.interval === 'string' ? cmd.interval : undefined,
+          disabledByDefault: Boolean(cmd.disabledByDefault),
           keywords: [
             dir,
             pkg.title || '',
@@ -159,8 +163,6 @@ function resolveEntryFile(extPath: string, cmdName: string): string | null {
     path.join(extPath, 'src', `${cmdName}.ts`),
     path.join(extPath, 'src', `${cmdName}.jsx`),
     path.join(extPath, 'src', `${cmdName}.js`),
-    path.join(extPath, 'src', 'index.tsx'),
-    path.join(extPath, 'src', 'index.ts'),
   ];
   return candidates.find((p) => fs.existsSync(p)) || null;
 }
@@ -181,9 +183,13 @@ export async function buildAllCommands(extName: string): Promise<number> {
   }
 
   let commands: { name: string }[];
+  let manifestExternal: string[] = [];
   try {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
     commands = pkg.commands || [];
+    manifestExternal = Array.isArray(pkg.external)
+      ? pkg.external.filter((v: any) => typeof v === 'string' && v.trim().length > 0)
+      : [];
   } catch {
     return 0;
   }
@@ -247,6 +253,8 @@ export async function buildAllCommands(extName: string): Promise<number> {
           'node-fetch',
           'undici',
           'undici/*',
+          // Respect extension-defined externals from manifest
+          ...manifestExternal,
           // Node.js built-ins — stubbed at runtime in the renderer
           ...nodeBuiltins,
         ],
@@ -320,6 +328,7 @@ export interface ExtensionBundleResult {
     type?: string;
     placeholder?: string;
     title?: string;
+    data?: Array<{ title?: string; value?: string }>;
   }>;
 }
 
@@ -345,6 +354,23 @@ function parsePreferences(
     data?: Array<{ title?: string; value?: string }>;
   }>;
 } {
+  const platformKey = process.platform === 'win32' ? 'Windows' : 'macOS';
+  const resolveDefault = (value: any) => {
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      (Object.prototype.hasOwnProperty.call(value, 'macOS') ||
+        Object.prototype.hasOwnProperty.call(value, 'Windows'))
+    ) {
+      if (Object.prototype.hasOwnProperty.call(value, platformKey)) {
+        return value[platformKey];
+      }
+      return value.macOS ?? value.Windows;
+    }
+    return value;
+  };
+
   const extensionPrefs: Record<string, any> = {};
   const commandPrefs: Record<string, any> = {};
   const definitions: Array<{
@@ -362,6 +388,7 @@ function parsePreferences(
   // Extension-level preferences
   for (const pref of pkg.preferences || []) {
     if (!pref.name) continue;
+    const resolvedDefault = resolveDefault(pref.default);
     definitions.push({
       scope: 'extension',
       name: pref.name,
@@ -370,12 +397,12 @@ function parsePreferences(
       placeholder: pref.placeholder,
       required: Boolean(pref.required),
       type: pref.type,
-      default: pref.default,
+      default: resolvedDefault,
       data: Array.isArray(pref.data) ? pref.data : undefined,
     });
     // Set default value based on type
-    if (pref.default !== undefined) {
-      extensionPrefs[pref.name] = pref.default;
+    if (resolvedDefault !== undefined) {
+      extensionPrefs[pref.name] = resolvedDefault;
     } else if (pref.type === 'checkbox') {
       extensionPrefs[pref.name] = false;
     } else if (pref.type === 'textfield' || pref.type === 'password') {
@@ -391,6 +418,7 @@ function parsePreferences(
   if (cmd?.preferences) {
     for (const pref of cmd.preferences) {
       if (!pref.name) continue;
+      const resolvedDefault = resolveDefault(pref.default);
       definitions.push({
         scope: 'command',
         name: pref.name,
@@ -399,11 +427,11 @@ function parsePreferences(
         placeholder: pref.placeholder,
         required: Boolean(pref.required),
         type: pref.type,
-        default: pref.default,
+        default: resolvedDefault,
         data: Array.isArray(pref.data) ? pref.data : undefined,
       });
-      if (pref.default !== undefined) {
-        commandPrefs[pref.name] = pref.default;
+      if (resolvedDefault !== undefined) {
+        commandPrefs[pref.name] = resolvedDefault;
       } else if (pref.type === 'checkbox') {
         commandPrefs[pref.name] = false;
       } else if (pref.type === 'textfield' || pref.type === 'password') {
@@ -466,6 +494,7 @@ export function getExtensionBundle(
     type?: string;
     placeholder?: string;
     title?: string;
+    data?: Array<{ title?: string; value?: string }>;
   }> = [];
 
   try {
@@ -493,6 +522,7 @@ export function getExtensionBundle(
             type: arg.type,
             placeholder: arg.placeholder,
             title: arg.title,
+            data: Array.isArray(arg.data) ? arg.data : undefined,
           }))
       : [];
   } catch {}

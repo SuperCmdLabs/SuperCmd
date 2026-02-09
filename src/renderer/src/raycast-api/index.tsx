@@ -6550,7 +6550,9 @@ export function createDeeplink(
   if (options.type === DeeplinkType.ScriptCommand) {
     const params = new URLSearchParams();
     if (options.arguments?.length) {
-      params.set('arguments', JSON.stringify(options.arguments));
+      for (const arg of options.arguments) {
+        params.append('arguments', arg);
+      }
     }
     const qs = params.toString();
     return `raycast://script-commands/${encodeURIComponent(options.command)}${qs ? `?${qs}` : ''}`;
