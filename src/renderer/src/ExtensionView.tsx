@@ -1391,10 +1391,52 @@ const nodeBuiltinStubs: Record<string, any> = {
     pathToFileURL: (p: string) => new URL(`file://${p}`),
   },
   querystring: {
-    parse: (s: string) => Object.fromEntries(new URLSearchParams(s)),
-    stringify: (o: any) => new URLSearchParams(o).toString(),
-    encode: (o: any) => new URLSearchParams(o).toString(),
-    decode: (s: string) => Object.fromEntries(new URLSearchParams(s)),
+    parse: (s: string) => {
+      const result: Record<string, string | string[]> = {};
+      for (const [key, val] of new URLSearchParams(s)) {
+        if (key in result) {
+          const existing = result[key];
+          result[key] = Array.isArray(existing) ? [...existing, val] : [existing, val];
+        } else {
+          result[key] = val;
+        }
+      }
+      return result;
+    },
+    stringify: (o: any) => {
+      const parts: string[] = [];
+      for (const [key, val] of Object.entries(o)) {
+        if (Array.isArray(val)) {
+          for (const v of val) parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(v))}`);
+        } else if (val != null) {
+          parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(val))}`);
+        }
+      }
+      return parts.join('&');
+    },
+    encode: (o: any) => {
+      const parts: string[] = [];
+      for (const [key, val] of Object.entries(o)) {
+        if (Array.isArray(val)) {
+          for (const v of val) parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(v))}`);
+        } else if (val != null) {
+          parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(val))}`);
+        }
+      }
+      return parts.join('&');
+    },
+    decode: (s: string) => {
+      const result: Record<string, string | string[]> = {};
+      for (const [key, val] of new URLSearchParams(s)) {
+        if (key in result) {
+          const existing = result[key];
+          result[key] = Array.isArray(existing) ? [...existing, val] : [existing, val];
+        } else {
+          result[key] = val;
+        }
+      }
+      return result;
+    },
     escape: encodeURIComponent,
     unescape: decodeURIComponent,
   },
@@ -1664,53 +1706,93 @@ function loadExtensionExport(
           };
 
         // ── Commonly used npm packages that might not be bundled ─
-        case 'node-fetch': {
-          class AbortError extends Error {
-            type = 'aborted';
-            constructor(message = 'The operation was aborted.') {
-              super(message);
-              this.name = 'AbortError';
-            }
-          }
-
-          const nodeFetch: any = async (input: any, init?: any) => {
-            try {
-              return await fetch(input as any, init as any);
-            } catch (e: any) {
-              if (e?.name === 'AbortError') {
-                throw new AbortError(e?.message);
+        case 'node-fetch':
+        case 'undici': {
+          // Helper: proxy HTTP through main process (Node.js) to avoid CORS / 403
+          const ipcFetch = async (input: any, init?: any): Promise<any> => {
+            const url = typeof input === 'string' ? input : input?.url || String(input);
+            const method = init?.method || 'GET';
+            const rawHeaders = init?.headers || {};
+            const headers: Record<string, string> = {};
+            if (rawHeaders && typeof rawHeaders === 'object') {
+              if (typeof rawHeaders.forEach === 'function') {
+                (rawHeaders as any).forEach((v: string, k: string) => { headers[k] = v; });
+              } else {
+                for (const [k, v] of Object.entries(rawHeaders)) {
+                  headers[k] = String(v);
+                }
               }
-              throw e;
             }
+            let body: string | undefined;
+            if (init?.body != null) {
+              body = typeof init.body === 'string' ? init.body : String(init.body);
+            }
+
+            const res = await window.electron.httpRequest({ url, method, headers, body });
+
+            // Build a Response-like object
+            const resHeaders = new Headers(res.headers || {});
+            const responseObj: any = {
+              ok: res.status >= 200 && res.status < 300,
+              status: res.status,
+              statusCode: res.status,
+              statusText: res.statusText,
+              headers: resHeaders,
+              url: res.url,
+              redirected: false,
+              type: 'basic',
+              text: async () => res.bodyText,
+              json: async () => JSON.parse(res.bodyText),
+              arrayBuffer: async () => new TextEncoder().encode(res.bodyText).buffer,
+              blob: async () => new Blob([res.bodyText]),
+              clone: () => ({ ...responseObj, text: responseObj.text, json: responseObj.json }),
+              body: {
+                text: async () => res.bodyText,
+                json: async () => JSON.parse(res.bodyText),
+                arrayBuffer: async () => new TextEncoder().encode(res.bodyText).buffer,
+                blob: async () => new Blob([res.bodyText]),
+              },
+            };
+            return responseObj;
           };
 
-          nodeFetch.default = nodeFetch;
-          nodeFetch.AbortError = AbortError;
-          nodeFetch.Headers = globalThis.Headers;
-          nodeFetch.Request = globalThis.Request;
-          nodeFetch.Response = globalThis.Response;
-          nodeFetch.FetchError = Error;
-          nodeFetch.isRedirect = (code: number) => [301, 302, 303, 307, 308].includes(code);
-          return nodeFetch;
-        }
-        case 'undici': {
-          const undiciFetch: any = async (input: any, init?: any) => fetch(input as any, init as any);
+          if (name === 'node-fetch') {
+            class AbortError extends Error {
+              type = 'aborted';
+              constructor(message = 'The operation was aborted.') {
+                super(message);
+                this.name = 'AbortError';
+              }
+            }
+            const nodeFetch: any = async (input: any, init?: any) => {
+              try {
+                return await ipcFetch(input, init);
+              } catch (e: any) {
+                if (e?.name === 'AbortError') throw new AbortError(e?.message);
+                throw e;
+              }
+            };
+            nodeFetch.default = nodeFetch;
+            nodeFetch.AbortError = AbortError;
+            nodeFetch.Headers = globalThis.Headers;
+            nodeFetch.Request = globalThis.Request;
+            nodeFetch.Response = globalThis.Response;
+            nodeFetch.FetchError = Error;
+            nodeFetch.isRedirect = (code: number) => [301, 302, 303, 307, 308].includes(code);
+            return nodeFetch;
+          }
+
+          // undici
           const request = async (input: any, init?: any) => {
-            const response = await undiciFetch(input, init);
-            const headers = Object.fromEntries((response.headers as any)?.entries?.() || []);
+            const response = await ipcFetch(input, init);
             return {
               statusCode: response.status,
-              headers,
-              body: {
-                text: () => response.text(),
-                json: () => response.json(),
-                arrayBuffer: () => response.arrayBuffer(),
-                blob: () => response.blob(),
-              },
+              headers: Object.fromEntries((response.headers as any)?.entries?.() || []),
+              body: response.body,
             };
           };
           const undici: any = {
-            fetch: undiciFetch,
+            fetch: ipcFetch,
             request,
             Headers: globalThis.Headers,
             Request: globalThis.Request,

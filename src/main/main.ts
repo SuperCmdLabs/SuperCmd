@@ -1044,6 +1044,120 @@ app.whenReady().then(async () => {
 
   // ─── IPC: Extension APIs (for @raycast/api compatibility) ────────
 
+  // HTTP request proxy (so extensions can make Node.js HTTP requests without CORS)
+  ipcMain.handle(
+    'http-request',
+    async (
+      _event: any,
+      options: {
+        url: string;
+        method?: string;
+        headers?: Record<string, string>;
+        body?: string;
+      }
+    ) => {
+      const http = require('http');
+      const https = require('https');
+      const { URL } = require('url');
+
+      // Rewrite Google Translate API to googleapis.com (no TKK token needed)
+      let requestUrl = options.url;
+      try {
+        const u = new URL(requestUrl);
+        if (u.hostname === 'translate.google.com' && u.pathname.startsWith('/translate_a/')) {
+          u.hostname = 'translate.googleapis.com';
+          u.searchParams.delete('tk');
+          requestUrl = u.toString();
+        }
+      } catch {}
+
+      const doRequest = (url: string, method: string, headers: Record<string, string>, body: string | undefined, redirectsLeft: number): Promise<any> => {
+        return new Promise((resolve) => {
+          try {
+            const parsedUrl = new URL(url);
+            const transport = parsedUrl.protocol === 'https:' ? https : http;
+
+            const reqOptions: any = {
+              hostname: parsedUrl.hostname,
+              port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+              path: parsedUrl.pathname + parsedUrl.search,
+              method: method,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                ...headers,
+              },
+            };
+
+            const req = transport.request(reqOptions, (res: any) => {
+              // Follow redirects (301, 302, 303, 307, 308)
+              if (redirectsLeft > 0 && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                res.resume(); // drain the response
+                const redirectUrl = new URL(res.headers.location, url).toString();
+                const redirectMethod = (res.statusCode === 303) ? 'GET' : method;
+                const redirectBody = (res.statusCode === 303) ? undefined : body;
+                resolve(doRequest(redirectUrl, redirectMethod, headers, redirectBody, redirectsLeft - 1));
+                return;
+              }
+
+              const chunks: Buffer[] = [];
+              res.on('data', (chunk: Buffer) => chunks.push(chunk));
+              res.on('end', () => {
+                const bodyBuffer = Buffer.concat(chunks);
+                const responseHeaders: Record<string, string> = {};
+                for (const [key, val] of Object.entries(res.headers)) {
+                  responseHeaders[key] = Array.isArray(val) ? val.join(', ') : String(val);
+                }
+                resolve({
+                  status: res.statusCode,
+                  statusText: res.statusMessage || '',
+                  headers: responseHeaders,
+                  bodyText: bodyBuffer.toString('utf-8'),
+                  url: url,
+                });
+              });
+            });
+
+            req.on('error', (err: Error) => {
+              resolve({
+                status: 0,
+                statusText: err.message,
+                headers: {},
+                bodyText: '',
+                url: url,
+              });
+            });
+
+            req.setTimeout(30000, () => {
+              req.destroy();
+              resolve({
+                status: 0,
+                statusText: 'Request timed out',
+                headers: {},
+                bodyText: '',
+                url: url,
+              });
+            });
+
+            if (body) {
+              req.write(body);
+            }
+            req.end();
+          } catch (e: any) {
+            resolve({
+              status: 0,
+              statusText: e?.message || 'Request failed',
+              headers: {},
+              bodyText: '',
+              url: url,
+            });
+          }
+        });
+      };
+
+      return doRequest(requestUrl, (options.method || 'GET').toUpperCase(), options.headers || {}, options.body, 5);
+    }
+  );
+
   // Shell command execution
   ipcMain.handle(
     'exec-command',

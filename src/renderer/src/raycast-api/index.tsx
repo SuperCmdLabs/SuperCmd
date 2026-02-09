@@ -4576,11 +4576,22 @@ export function useFetch<T = any, U = undefined>(
         ? urlRef.current({ page: pageNum, cursor: currentCursor, lastItem: undefined })
         : urlRef.current;
 
-      const res = await fetch(resolvedUrl, {
+      // Proxy through main process to avoid CORS issues
+      const ipcRes = await window.electron.httpRequest({
+        url: resolvedUrl,
         method: opts?.method,
         headers: opts?.headers,
-        body: normalizeRequestBody(opts?.body),
+        body: normalizeRequestBody(opts?.body) as string | undefined,
       });
+      const res = {
+        ok: ipcRes.status >= 200 && ipcRes.status < 300,
+        status: ipcRes.status,
+        statusText: ipcRes.statusText,
+        headers: new Headers(ipcRes.headers || {}),
+        url: ipcRes.url,
+        text: async () => ipcRes.bodyText,
+        json: async () => JSON.parse(ipcRes.bodyText),
+      } as any;
 
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
