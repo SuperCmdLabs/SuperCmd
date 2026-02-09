@@ -199,13 +199,7 @@ function shouldOpenCommandSetup(bundle: ExtensionBundle): boolean {
   if (hasArgs) return true;
   const missingPrefs = getMissingRequiredPreferences(bundle);
   const missingArgs = getMissingRequiredArguments(bundle);
-  const criticalUnsetPrefs = getUnsetCriticalPreferences(bundle);
-  const blockOnCriticalUnset = bundle.mode === 'no-view' || bundle.mode === 'menu-bar';
-  return (
-    missingPrefs.length > 0 ||
-    missingArgs.length > 0 ||
-    (blockOnCriticalUnset && criticalUnsetPrefs.length > 0)
-  );
+  return missingPrefs.length > 0 || missingArgs.length > 0;
 }
 
 function persistExtensionPreferences(
@@ -283,6 +277,20 @@ const App: React.FC = () => {
   const restoreLauncherFocus = useCallback(() => {
     requestAnimationFrame(() => {
       inputRef.current?.focus();
+    });
+  }, []);
+
+  const upsertMenuBarExtension = useCallback((bundle: ExtensionBundle) => {
+    setMenuBarExtensions((prev) => {
+      const idx = prev.findIndex(
+        (ext) =>
+          (ext.extName || ext.extensionName) === (bundle.extName || bundle.extensionName) &&
+          (ext.cmdName || ext.commandName) === (bundle.cmdName || bundle.commandName)
+      );
+      if (idx === -1) return [...prev, bundle];
+      const next = [...prev];
+      next[idx] = bundle;
+      return next;
     });
   }, []);
 
@@ -366,6 +374,50 @@ const App: React.FC = () => {
   }, [fetchCommands, loadLauncherPreferences]);
 
   useEffect(() => {
+    const onLaunchBundle = (event: Event) => {
+      const custom = event as CustomEvent<{
+        bundle?: ExtensionBundle;
+        launchOptions?: { type?: string };
+        source?: { commandMode?: string; extensionName?: string; commandName?: string };
+      }>;
+      const incoming = custom.detail?.bundle;
+      if (!incoming) return;
+
+      const hydrated = hydrateExtensionBundlePreferences(incoming);
+      const launchType = custom.detail?.launchOptions?.type || 'userInitiated';
+      const sourceMode = custom.detail?.source?.commandMode || '';
+
+      if (hydrated.mode === 'menu-bar') {
+        upsertMenuBarExtension(hydrated);
+        return;
+      }
+
+      if (launchType === 'background') {
+        return;
+      }
+
+      // Hidden menu-bar runners should not hijack the launcher by forcing
+      // view commands into the foreground (e.g. pomodoro auto transitions).
+      if (sourceMode === 'menu-bar' && hydrated.mode === 'view') {
+        return;
+      }
+
+      if (shouldOpenCommandSetup(hydrated)) {
+        setExtensionPreferenceSetup({
+          bundle: hydrated,
+          values: { ...(hydrated.preferences || {}) },
+          argumentValues: { ...((hydrated as any).launchArguments || {}) },
+        });
+      } else {
+        setExtensionView(hydrated);
+      }
+    };
+
+    window.addEventListener('sc-launch-extension-bundle', onLaunchBundle as EventListener);
+    return () => window.removeEventListener('sc-launch-extension-bundle', onLaunchBundle as EventListener);
+  }, [upsertMenuBarExtension]);
+
+  useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
@@ -379,8 +431,7 @@ const App: React.FC = () => {
           .filter((ext) => {
             const missingPrefs = getMissingRequiredPreferences(ext);
             const missingArgs = getMissingRequiredArguments(ext);
-            const unsetCriticalPrefs = getUnsetCriticalPreferences(ext);
-            return missingPrefs.length === 0 && missingArgs.length === 0 && unsetCriticalPrefs.length === 0;
+            return missingPrefs.length === 0 && missingArgs.length === 0;
           });
         setMenuBarExtensions(runnable);
       }
@@ -885,6 +936,7 @@ const App: React.FC = () => {
           // Menu-bar commands run in the hidden tray runners, not in the overlay.
           // Just hide the window — the tray will show the menu.
           if (hydrated.mode === 'menu-bar') {
+            upsertMenuBarExtension(hydrated);
             window.electron.hideWindow();
             setSearchQuery('');
             setSelectedIndex(0);
@@ -1097,11 +1149,9 @@ const App: React.FC = () => {
     const missingPrefs = getMissingRequiredPreferences(bundle, extensionPreferenceSetup.values);
     const missingArgs = getMissingRequiredArguments(bundle, extensionPreferenceSetup.argumentValues);
     const criticalUnsetPrefs = getUnsetCriticalPreferences(bundle, extensionPreferenceSetup.values);
-    const blockOnCriticalUnset = bundle.mode === 'no-view' || bundle.mode === 'menu-bar';
     const hasBlockingMissing =
       missingPrefs.length > 0 ||
-      missingArgs.length > 0 ||
-      (blockOnCriticalUnset && criticalUnsetPrefs.length > 0);
+      missingArgs.length > 0;
     const displayName = (bundle as any).extensionDisplayName || bundle.extensionName || bundle.extName || 'Extension';
 
     return (
@@ -1244,6 +1294,7 @@ const App: React.FC = () => {
                   setExtensionPreferenceSetup(null);
 
                   if (updatedBundle.mode === 'menu-bar') {
+                    upsertMenuBarExtension(updatedBundle);
                     window.electron.hideWindow();
                     setSearchQuery('');
                     setSelectedIndex(0);

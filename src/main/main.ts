@@ -1993,39 +1993,39 @@ app.whenReady().then(async () => {
     const { extId, iconPath, iconEmoji, title, tooltip, items } = data;
 
     let tray = menuBarTrays.get(extId);
-    if (!tray) {
-      // Create tray icon
-      let icon;
-      if (iconPath && require('fs').existsSync(iconPath)) {
-        try {
-          icon = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 });
-          icon.setTemplateImage(true);
-        } catch {
-          icon = nativeImage.createEmpty();
+
+    const resolveTrayIcon = () => {
+      try {
+        if (iconPath && require('fs').existsSync(iconPath)) {
+          const img = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 });
+          if (!img.isEmpty()) {
+            img.setTemplateImage(true);
+            return img;
+          }
         }
-      } else {
-        // Create a small 16x16 placeholder icon (a simple filled circle)
-        // We'll use the title to show emoji if available
-        const size = 16;
-        icon = nativeImage.createFromBuffer(
-          Buffer.alloc(size * size * 4, 0), // transparent
-          { width: size, height: size }
-        );
-      }
+      } catch {}
+      return nativeImage.createEmpty();
+    };
+
+    if (!tray) {
+      const icon = resolveTrayIcon();
       tray = new Tray(icon);
       menuBarTrays.set(extId, tray);
-
-      // If the icon is an emoji, show it as the tray title instead
-      if (iconEmoji && !iconPath) {
-        tray.setTitle(iconEmoji);
-      }
     }
+
+    // Always refresh icon on update (first payload can be incomplete).
+    tray.setImage(resolveTrayIcon());
 
     // Update title: if there's a text title, show it; if only emoji icon, show that
     if (title) {
       tray.setTitle(title);
-    } else if (iconEmoji && !iconPath) {
+    } else if (iconEmoji) {
       tray.setTitle(iconEmoji);
+    } else if (!iconPath) {
+      // Keep tray visible even when extension provides neither icon nor title.
+      tray.setTitle('⏱');
+    } else {
+      tray.setTitle('');
     }
     if (tooltip) tray.setToolTip(tooltip);
 

@@ -1431,24 +1431,26 @@ export async function launchCommand(options: LaunchOptions): Promise<void> {
         ownerOrAuthorName: targetOwner,
       });
 
-      // Actually navigate to the launched command
       if (result.success && result.bundle) {
-        // Trigger a navigation to the new command by calling runExtension via the main app
-        // This should switch the view to the new extension/command
-        console.log('Command launched successfully, switching to:', result.bundle);
-
-        // Use the global electron API to tell the main window to load the new extension
-        if (electron?.runExtension) {
-          const bundle = result.bundle;
-          // Send event to switch to the new extension
-          // This will be handled by the main app's LauncherOverlay
-          (window as any).electron?.executeCommand?.(`ext-${bundle.extName}-${bundle.cmdName}`);
-        }
+        window.dispatchEvent(
+          new CustomEvent('sc-launch-extension-bundle', {
+            detail: {
+              bundle: result.bundle,
+              launchOptions: {
+                type: options.type ?? LaunchType.UserInitiated,
+                context: options.context,
+              },
+              source: {
+                extensionName: ctx.extensionName,
+                commandName: ctx.commandName,
+                commandMode: ctx.commandMode,
+              },
+            },
+          })
+        );
       } else if (!result.success) {
         throw new Error('Failed to launch command');
       }
-
-      console.log('Command launched successfully:', result);
     } else {
       throw new Error('Command execution not available');
     }
@@ -3898,6 +3900,9 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: Me
   const extId = extInfo.extId || `${getExtensionContext().extensionName}/${getExtensionContext().commandName}`;
   const assetsPath = extInfo.assetsPath || getExtensionContext().assetsPath;
   const isMenuBar = (extInfo.commandMode || getExtensionContext().commandMode) === 'menu-bar';
+  const runtimeCtxRef = useRef<ExtensionContextType>({
+    ...getExtensionContext(),
+  });
 
   // Registry for child items
   const registryRef = useRef(new Map<string, MBItemRegistration>());
@@ -3947,6 +3952,13 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: Me
     const serialized: any[] = [];
     let prevSectionId: string | undefined | null = null;
 
+    const withRuntimeContext = (fn: (event: MenuBarExtra.ActionEvent) => void): (() => void) => {
+      return () => {
+        setExtensionContext({ ...runtimeCtxRef.current });
+        fn({ type: 'left-click' });
+      };
+    };
+
     const serializeItem = (item: MBItemRegistration): any => {
       if (item.type === 'separator') {
         return { type: 'separator' };
@@ -3961,7 +3973,7 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: Me
         };
       } else {
         // Regular item
-        if (item.onAction) actions.set(item.id, item.onAction);
+        if (item.onAction) actions.set(item.id, withRuntimeContext(item.onAction));
         const serializedItem: any = {
           type: 'item',
           id: item.id,
@@ -3973,7 +3985,7 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: Me
         // Add alternate item if present
         if (item.alternate) {
           if (item.alternate.onAction) {
-            actions.set(item.alternate.id, item.alternate.onAction);
+            actions.set(item.alternate.id, withRuntimeContext(item.alternate.onAction));
           }
           serializedItem.alternate = {
             id: item.alternate.id,
