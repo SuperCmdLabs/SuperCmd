@@ -543,6 +543,17 @@ function resolveIconSrc(src: string): string {
 //   - a string: '#FF0000'
 //   - an object: { light: '#FF0000', dark: '#FF0000', adjustContrast?: boolean }
 function resolveTintColor(tintColor: any): string | undefined {
+  const isValidCssColor = (value: string): boolean => {
+    try {
+      const el = document.createElement('span');
+      el.style.color = '';
+      el.style.color = value;
+      return Boolean(el.style.color);
+    } catch {
+      return false;
+    }
+  };
+
   const normalizeCssColor = (value: string): string => {
     const v = value.trim();
     if (/^[0-9a-f]{3}$/i.test(v) || /^[0-9a-f]{6}$/i.test(v) || /^[0-9a-f]{8}$/i.test(v)) {
@@ -552,11 +563,17 @@ function resolveTintColor(tintColor: any): string | undefined {
   };
 
   if (!tintColor) return undefined;
-  if (typeof tintColor === 'string') return normalizeCssColor(tintColor);
+  if (typeof tintColor === 'string') {
+    const normalized = normalizeCssColor(tintColor);
+    return isValidCssColor(normalized) ? normalized : undefined;
+  }
   if (typeof tintColor === 'object') {
     // Prefer dark since we're always dark-themed
     const raw = tintColor.dark || tintColor.light;
-    if (typeof raw === 'string') return normalizeCssColor(raw);
+    if (typeof raw === 'string') {
+      const normalized = normalizeCssColor(raw);
+      return isValidCssColor(normalized) ? normalized : undefined;
+    }
     return undefined;
   }
   return undefined;
@@ -569,6 +586,44 @@ function addHexAlpha(color: string, alphaHex: string): string | undefined {
     ? m[1].split('').map((c) => c + c).join('')
     : m[1];
   return `#${hex}${alphaHex}`;
+}
+
+const fileIconCache = new Map<string, string | null>();
+
+function FileIcon({ filePath, className }: { filePath: string; className: string }) {
+  const [src, setSrc] = useState<string | null>(() => fileIconCache.get(filePath) ?? null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cached = fileIconCache.get(filePath);
+    if (cached !== undefined) {
+      setSrc(cached);
+      return;
+    }
+    (window as any).electron?.getFileIconDataUrl?.(filePath, 20)
+      .then((iconSrc: string | null) => {
+        if (cancelled) return;
+        fileIconCache.set(filePath, iconSrc || null);
+        setSrc(iconSrc || null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        fileIconCache.set(filePath, null);
+        setSrc(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [filePath]);
+
+  if (src) return <img src={src} className={className + ' rounded'} alt="" />;
+
+  let isDirectory = false;
+  try {
+    const stat = (window as any).electron?.statSync?.(filePath);
+    isDirectory = Boolean(stat?.exists && stat?.isDirectory);
+  } catch {}
+  return <span className="text-center" style={{ fontSize: '0.875rem' }}>{isDirectory ? '📁' : '📄'}</span>;
 }
 
 export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
@@ -601,17 +656,7 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
   if (typeof icon === 'object' && icon !== null) {
     // Raycast file icons: { fileIcon: "/path/to/file-or-folder" }
     if (typeof icon.fileIcon === 'string') {
-      const ctx = getExtensionContext();
-      if (ctx.extensionName === 'cursor-recent-projects') {
-        const cursorIcon = resolveIconSrc('cursor-icon.png');
-        return <img src={cursorIcon} className={className + ' rounded'} alt="" />;
-      }
-      let isDirectory = false;
-      try {
-        const stat = (window as any).electron?.statSync?.(icon.fileIcon);
-        isDirectory = Boolean(stat?.exists && stat?.isDirectory);
-      } catch {}
-      return <span className="text-center" style={{ fontSize: '0.875rem' }}>{isDirectory ? '📁' : '📄'}</span>;
+      return <FileIcon filePath={icon.fileIcon} className={className} />;
     }
 
     const tint = resolveTintColor(icon.tintColor);
@@ -2070,10 +2115,10 @@ function ListItemRenderer({
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <span className="text-white/90 text-[13px] leading-[18px] truncate block">{titleStr}</span>
+          <span className="text-[13px] leading-[18px] truncate block" style={{ color: 'rgba(255,255,255,0.9)' }}>{titleStr}</span>
         </div>
         {subtitleStr && (
-          <span className="text-white/40 text-[11px] leading-[16px] flex-shrink-0 truncate max-w-[220px]">{subtitleStr}</span>
+          <span className="text-[11px] leading-[16px] flex-shrink-0 truncate max-w-[220px]" style={{ color: 'rgba(255,255,255,0.42)' }}>{subtitleStr}</span>
         )}
         {accessories?.map((acc, i) => {
           const accText = typeof acc?.text === 'string' ? acc.text
@@ -2490,7 +2535,7 @@ function ListComponent({
         groupedItems.map((group, gi) => (
           <div key={gi} className="mb-0">
             {group.title && (
-              <div className="px-4 pt-0.5 pb-1 text-[11px] uppercase tracking-wider text-white/28 font-medium select-none">{group.title}</div>
+              <div className="px-4 pt-0.5 pb-1 text-[11px] uppercase tracking-wider text-white/30 font-medium select-none">{group.title}</div>
             )}
             {group.items.map(({ item, globalIdx }) => (
               <ListItemRenderer

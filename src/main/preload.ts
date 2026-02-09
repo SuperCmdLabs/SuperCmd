@@ -148,6 +148,9 @@ contextBridge.exposeInMainWorld('electron', {
   readDir: (dirPath: string): Promise<string[]> =>
     ipcRenderer.invoke('read-dir', dirPath),
 
+  getFileIconDataUrl: (filePath: string, size = 20): Promise<string | null> =>
+    ipcRenderer.invoke('get-file-icon-data-url', filePath, size),
+
   // Get system appearance (dark/light)
   getAppearance: (): Promise<'dark' | 'light'> =>
     ipcRenderer.invoke('get-appearance'),

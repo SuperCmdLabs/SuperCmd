@@ -1271,6 +1271,18 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle('get-file-icon-data-url', async (_event: any, filePath: string, size = 20) => {
+    try {
+      const icon = await app.getFileIcon(filePath, { size: size <= 16 ? 'small' : size >= 64 ? 'large' : 'normal' });
+      if (icon && !icon.isEmpty()) {
+        return icon.resize({ width: size, height: size }).toDataURL();
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
   // Get system appearance
   ipcMain.handle('get-appearance', () => {
     const { nativeTheme } = require('electron');

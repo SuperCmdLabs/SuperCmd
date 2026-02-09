@@ -179,6 +179,7 @@ export interface ElectronAPI {
   writeFile: (filePath: string, content: string) => Promise<void>;
   fileExists: (filePath: string) => Promise<boolean>;
   readDir: (dirPath: string) => Promise<string[]>;
+  getFileIconDataUrl: (filePath: string, size?: number) => Promise<string | null>;
   getAppearance: () => Promise<'dark' | 'light'>;
 
   // SQLite query execution
