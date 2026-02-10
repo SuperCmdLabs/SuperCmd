@@ -178,10 +178,10 @@ export interface ElectronAPI {
   getCommands: () => Promise<CommandInfo[]>;
   executeCommand: (commandId: string) => Promise<boolean>;
   hideWindow: () => Promise<void>;
-  setLauncherMode: (mode: 'default' | 'whisper' | 'speak') => Promise<void>;
+  setLauncherMode: (mode: 'default' | 'whisper' | 'speak' | 'prompt') => Promise<void>;
   getLastFrontmostApp: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   restoreLastFrontmostApp: () => Promise<boolean>;
-  onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' | 'speak' }) => void) => void;
+  onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' | 'speak' | 'prompt' }) => void) => void;
   onWindowHidden: (callback: () => void) => void;
   onRunSystemCommand: (callback: (commandId: string) => void) => void;
   setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean) => void;
@@ -295,6 +295,7 @@ export interface ElectronAPI {
   clipboardSetEnabled: (enabled: boolean) => Promise<void>;
   clipboardWrite: (payload: { text?: string; html?: string }) => Promise<boolean>;
   clipboardReadText: () => Promise<string>;
+  getSelectedText: () => Promise<string>;
 
   // Snippet Manager
   snippetGetAll: () => Promise<Snippet[]>;

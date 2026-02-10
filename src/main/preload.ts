@@ -22,13 +22,13 @@ contextBridge.exposeInMainWorld('electron', {
   executeCommand: (commandId: string): Promise<boolean> =>
     ipcRenderer.invoke('execute-command', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
-  setLauncherMode: (mode: 'default' | 'whisper' | 'speak'): Promise<void> =>
+  setLauncherMode: (mode: 'default' | 'whisper' | 'speak' | 'prompt'): Promise<void> =>
     ipcRenderer.invoke('set-launcher-mode', mode),
   getLastFrontmostApp: (): Promise<{ name: string; path: string; bundleId?: string } | null> =>
     ipcRenderer.invoke('get-last-frontmost-app'),
   restoreLastFrontmostApp: (): Promise<boolean> =>
     ipcRenderer.invoke('restore-last-frontmost-app'),
-  onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' | 'speak' }) => void) => {
+  onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' | 'speak' | 'prompt' }) => void) => {
     ipcRenderer.on('window-shown', (_event: any, payload: any) => callback(payload));
   },
   onWindowHidden: (callback: () => void) => {
@@ -243,6 +243,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('clipboard-write', payload),
   clipboardReadText: (): Promise<string> =>
     ipcRenderer.invoke('clipboard-read-text'),
+  getSelectedText: (): Promise<string> =>
+    ipcRenderer.invoke('get-selected-text'),
 
   // ─── Snippet Manager ────────────────────────────────────────────
   snippetGetAll: (): Promise<any[]> =>

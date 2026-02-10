@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic, Volume2 } from 'lucide-react';
+import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic, Volume2, Loader2, CornerDownLeft } from 'lucide-react';
 import type { CommandInfo, ExtensionBundle, AppSettings } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
@@ -91,6 +91,14 @@ function getCategoryLabel(category: string): string {
 }
 
 function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
+  if (commandId === 'system-cursor-prompt') {
+    return (
+      <div className="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
+        <Sparkles className="w-3 h-3 text-violet-300" />
+      </div>
+    );
+  }
+
   if (commandId === 'system-clipboard-manager') {
     return (
       <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
@@ -334,6 +342,12 @@ const App: React.FC = () => {
   const [showClipboardManager, setShowClipboardManager] = useState(false);
   const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
   const [showFileSearch, setShowFileSearch] = useState(false);
+  const [showCursorPrompt, setShowCursorPrompt] = useState(false);
+  const [cursorPromptText, setCursorPromptText] = useState('');
+  const [cursorPromptStatus, setCursorPromptStatus] = useState<'idle' | 'processing' | 'ready' | 'error'>('idle');
+  const [cursorPromptResult, setCursorPromptResult] = useState('');
+  const [cursorPromptError, setCursorPromptError] = useState('');
+  const [cursorPromptSourceText, setCursorPromptSourceText] = useState('');
   const [showWhisper, setShowWhisper] = useState(false);
   const [showSpeak, setShowSpeak] = useState(false);
   const [speakStatus, setSpeakStatus] = useState<{
@@ -370,8 +384,10 @@ const App: React.FC = () => {
   const [aiAvailable, setAiAvailable] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
   const aiRequestIdRef = useRef<string | null>(null);
+  const cursorPromptRequestIdRef = useRef<string | null>(null);
   const aiResponseRef = useRef<HTMLDivElement>(null);
   const aiInputRef = useRef<HTMLInputElement>(null);
+  const cursorPromptInputRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -526,8 +542,10 @@ const App: React.FC = () => {
       console.log('[WINDOW-SHOWN] fired', payload);
       const isWhisperMode = payload?.mode === 'whisper';
       const isSpeakMode = payload?.mode === 'speak';
+      const isPromptMode = payload?.mode === 'prompt';
       if (isWhisperMode) {
         whisperSessionRef.current = true;
+        setShowCursorPrompt(false);
         setShowWhisper(true);
         setShowSpeak(false);
         setShowSnippetManager(null);
@@ -541,6 +559,7 @@ const App: React.FC = () => {
       }
       if (isSpeakMode) {
         whisperSessionRef.current = false;
+        setShowCursorPrompt(false);
         setShowWhisper(false);
         setShowSpeak(true);
         setShowSnippetManager(null);
@@ -552,8 +571,29 @@ const App: React.FC = () => {
         setAiMode(false);
         return;
       }
+      if (isPromptMode) {
+        whisperSessionRef.current = false;
+        setShowWhisper(false);
+        setShowSpeak(false);
+        setShowSnippetManager(null);
+        setShowFileSearch(false);
+        setShowClipboardManager(false);
+        setShowOnboarding(false);
+        setExtensionPreferenceSetup(null);
+        setExtensionView(null);
+        setAiMode(false);
+        setCursorPromptText('');
+        setCursorPromptStatus('idle');
+        setCursorPromptResult('');
+        setCursorPromptError('');
+        setCursorPromptSourceText('');
+        cursorPromptRequestIdRef.current = null;
+        setShowCursorPrompt(true);
+        return;
+      }
 
       whisperSessionRef.current = false;
+      setShowCursorPrompt(false);
 
       // If an extension is open, keep it alive — don't reset
       if (extensionViewRef.current) return;
@@ -744,6 +784,11 @@ const App: React.FC = () => {
     inputRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    if (!showCursorPrompt) return;
+    setTimeout(() => cursorPromptInputRef.current?.focus(), 0);
+  }, [showCursorPrompt]);
+
   // Load and run menu-bar extensions in the background
   useEffect(() => {
     (window as any).electron?.getMenuBarExtensions?.().then((exts: any[]) => {
@@ -875,22 +920,97 @@ const App: React.FC = () => {
     [pinnedCommands, updatePinnedCommands]
   );
 
+  const submitCursorPrompt = useCallback(async () => {
+    const instruction = cursorPromptText.trim();
+    if (!instruction || cursorPromptStatus === 'processing') return;
+
+    if (cursorPromptRequestIdRef.current) {
+      try {
+        await window.electron.aiCancel(cursorPromptRequestIdRef.current);
+      } catch {}
+      cursorPromptRequestIdRef.current = null;
+    }
+
+    setCursorPromptStatus('processing');
+    setCursorPromptResult('');
+    setCursorPromptError('');
+
+    const selectedText = String(await window.electron.getSelectedText()).trim();
+    if (!selectedText) {
+      setCursorPromptStatus('error');
+      setCursorPromptError('No selected text found. Select text first, then submit.');
+      return;
+    }
+    setCursorPromptSourceText(selectedText);
+
+    const requestId = `cursor-prompt-${Date.now()}`;
+    cursorPromptRequestIdRef.current = requestId;
+    const compositePrompt = [
+      'Rewrite the selected text based on the instruction.',
+      'Return only the rewritten text. Do not include explanations.',
+      '',
+      `Instruction: ${instruction}`,
+      '',
+      'Selected text:',
+      selectedText,
+    ].join('\n');
+    await window.electron.aiAsk(requestId, compositePrompt);
+  }, [cursorPromptStatus, cursorPromptText]);
+
+  const acceptCursorPrompt = useCallback(async () => {
+    const previousText = cursorPromptSourceText;
+    const nextText = cursorPromptResult.trim();
+    if (!previousText || !nextText) return;
+    const applied = await window.electron.replaceLiveText(previousText, nextText);
+    if (applied) {
+      window.electron.hideWindow();
+      return;
+    }
+    setCursorPromptStatus('error');
+    setCursorPromptError('Could not apply update. Re-select the text and try again.');
+  }, [cursorPromptResult, cursorPromptSourceText]);
+
+  const closeCursorPrompt = useCallback(async () => {
+    if (cursorPromptRequestIdRef.current) {
+      try {
+        await window.electron.aiCancel(cursorPromptRequestIdRef.current);
+      } catch {}
+      cursorPromptRequestIdRef.current = null;
+    }
+    window.electron.hideWindow();
+  }, []);
+
   // AI streaming listeners
   useEffect(() => {
     const handleChunk = (data: { requestId: string; chunk: string }) => {
       if (data.requestId === aiRequestIdRef.current) {
         setAiResponse((prev) => prev + data.chunk);
+        return;
+      }
+      if (data.requestId === cursorPromptRequestIdRef.current) {
+        setCursorPromptResult((prev) => prev + data.chunk);
       }
     };
     const handleDone = (data: { requestId: string }) => {
       if (data.requestId === aiRequestIdRef.current) {
         setAiStreaming(false);
+        return;
+      }
+      if (data.requestId === cursorPromptRequestIdRef.current) {
+        cursorPromptRequestIdRef.current = null;
+        setCursorPromptStatus('ready');
       }
     };
     const handleError = (data: { requestId: string; error: string }) => {
       if (data.requestId === aiRequestIdRef.current) {
         setAiResponse((prev) => prev + `\n\nError: ${data.error}`);
         setAiStreaming(false);
+        return;
+      }
+      if (data.requestId === cursorPromptRequestIdRef.current) {
+        cursorPromptRequestIdRef.current = null;
+        setCursorPromptStatus('error');
+        setCursorPromptError(data.error || 'Failed to process this prompt.');
       }
     };
 
@@ -976,10 +1096,10 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showFileSearch && !showWhisper && !showSpeak && !showOnboarding) {
+    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showOnboarding) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showWhisper, showSpeak, showOnboarding, restoreLauncherFocus]);
+  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showOnboarding, restoreLauncherFocus]);
 
   const calcResult = useMemo(() => {
     return searchQuery ? tryCalculate(searchQuery) : null;
@@ -1192,6 +1312,7 @@ const App: React.FC = () => {
   const runLocalSystemCommand = useCallback(async (commandId: string): Promise<boolean> => {
     if (commandId === 'system-open-onboarding') {
       whisperSessionRef.current = false;
+      setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowClipboardManager(false);
@@ -1205,6 +1326,7 @@ const App: React.FC = () => {
     }
     if (commandId === 'system-clipboard-manager') {
       whisperSessionRef.current = false;
+      setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
@@ -1218,6 +1340,7 @@ const App: React.FC = () => {
     }
     if (commandId === 'system-search-snippets') {
       whisperSessionRef.current = false;
+      setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
@@ -1231,6 +1354,7 @@ const App: React.FC = () => {
     }
     if (commandId === 'system-create-snippet') {
       whisperSessionRef.current = false;
+      setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
@@ -1244,6 +1368,7 @@ const App: React.FC = () => {
     }
     if (commandId === 'system-search-files') {
       whisperSessionRef.current = false;
+      setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
@@ -1255,8 +1380,24 @@ const App: React.FC = () => {
       setShowSpeak(false);
       return true;
     }
+    if (commandId === 'system-cursor-prompt') {
+      whisperSessionRef.current = false;
+      setExtensionView(null);
+      setExtensionPreferenceSetup(null);
+      setShowOnboarding(false);
+      setShowClipboardManager(false);
+      setShowSnippetManager(null);
+      setShowFileSearch(false);
+      setAiMode(false);
+      setShowWhisper(false);
+      setShowSpeak(false);
+      setCursorPromptText('');
+      setShowCursorPrompt(true);
+      return true;
+    }
     if (commandId === 'system-supercommand-whisper') {
       whisperSessionRef.current = true;
+      setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
@@ -1270,6 +1411,7 @@ const App: React.FC = () => {
     }
     if (commandId === 'system-supercommand-speak') {
       whisperSessionRef.current = false;
+      setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
@@ -1873,6 +2015,87 @@ const App: React.FC = () => {
                 setTimeout(() => inputRef.current?.focus(), 50);
               }}
             />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ─── Cursor Prompt mode ───────────────────────────────────────────
+  if (showCursorPrompt) {
+    return (
+      <>
+        {alwaysMountedRunners}
+        <div className="w-full h-full p-1">
+          <div className="cursor-prompt-surface h-full flex flex-col gap-1.5 px-3.5 py-2.5">
+            <div className="cursor-prompt-topbar">
+              <button
+                onClick={() => void closeCursorPrompt()}
+                className="cursor-prompt-close"
+                aria-label="Close prompt"
+                title="Close"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="flex-1 min-w-0">
+              <textarea
+                ref={cursorPromptInputRef}
+                value={cursorPromptText}
+                onChange={(e) => setCursorPromptText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void submitCursorPrompt();
+                  }
+                }}
+                placeholder="Tell AI what to do with selected text..."
+                className="cursor-prompt-textarea w-full bg-transparent border-none outline-none text-white/95 placeholder-white/42 text-[13px] font-medium tracking-[0.003em]"
+                autoFocus
+              />
+              {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
+                <div className="cursor-prompt-preview-wrap">
+                  <div className="cursor-prompt-preview-title">Preview</div>
+                  <div className="cursor-prompt-preview">{cursorPromptResult}</div>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="cursor-prompt-feedback">
+                {cursorPromptStatus === 'processing' && (
+                  <div className="cursor-prompt-inline-status">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Processing...</span>
+                  </div>
+                )}
+                {cursorPromptStatus === 'error' && cursorPromptError && (
+                  <div className="cursor-prompt-error">{cursorPromptError}</div>
+                )}
+                {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
+                  <div className="cursor-prompt-success">Ready to apply</div>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+              {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
+                <button
+                  onClick={() => void acceptCursorPrompt()}
+                  className="cursor-prompt-submit"
+                  title="Apply update"
+                >
+                  Accept
+                </button>
+              )}
+              <button
+                onClick={() => void submitCursorPrompt()}
+                className="cursor-prompt-submit"
+                disabled={!cursorPromptText.trim() || cursorPromptStatus === 'processing'}
+                title="Submit prompt"
+              >
+                <CornerDownLeft className="w-3 h-3" />
+                <span>Enter</span>
+              </button>
+              </div>
+            </div>
           </div>
         </div>
       </>

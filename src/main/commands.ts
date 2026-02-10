@@ -638,6 +638,12 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
 
   const systemCommands: CommandInfo[] = [
     {
+      id: 'system-cursor-prompt',
+      title: 'Inline AI Prompt',
+      keywords: ['ai', 'prompt', 'cursor', 'inline', 'rewrite', 'edit', 'command+k'],
+      category: 'system',
+    },
+    {
       id: 'system-clipboard-manager',
       title: 'Clipboard History',
       keywords: ['clipboard', 'history', 'copy', 'paste', 'manager'],

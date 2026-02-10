@@ -63,6 +63,114 @@ select {
   box-shadow: none;
 }
 
+.cursor-prompt-surface {
+  border-radius: 10px;
+  background: rgba(12, 12, 16, 0.74);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  backdrop-filter: blur(40px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: none;
+}
+
+.cursor-prompt-topbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -2px;
+}
+
+.cursor-prompt-close {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.72);
+  transition: all 0.12s ease;
+}
+
+.cursor-prompt-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.cursor-prompt-textarea {
+  min-height: 28px;
+  max-height: 48px;
+  line-height: 1.35;
+  resize: none;
+  overflow: auto;
+}
+
+.cursor-prompt-submit {
+  height: 22px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.88);
+  padding: 0 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cursor-prompt-submit:disabled {
+  opacity: 0.42;
+}
+
+.cursor-prompt-inline-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 11px;
+}
+
+.cursor-prompt-error {
+  color: rgba(255, 140, 140, 0.95);
+  font-size: 11px;
+}
+
+.cursor-prompt-success {
+  color: rgba(161, 229, 172, 0.95);
+  font-size: 11px;
+}
+
+.cursor-prompt-feedback {
+  min-height: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.cursor-prompt-preview-wrap {
+  margin-top: 5px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 5px 7px;
+}
+
+.cursor-prompt-preview-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.46);
+  margin-bottom: 4px;
+}
+
+.cursor-prompt-preview {
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: pre-wrap;
+  max-height: 52px;
+  overflow: auto;
+}
+
 /* List area background - transparent to show glass */
 .list-area {
   background: transparent;

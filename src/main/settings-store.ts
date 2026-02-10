@@ -58,6 +58,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   disabledCommands: [],
   enabledCommands: [],
   commandHotkeys: {
+    'system-cursor-prompt': 'Command+K',
     'system-supercommand-whisper': 'Command+Shift+W',
     'system-supercommand-whisper-speak-toggle': 'Command+.',
     'system-supercommand-speak': 'Command+Shift+S',

@@ -59,6 +59,9 @@ const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, 
 
 const DEFAULT_WINDOW_WIDTH = 860;
 const DEFAULT_WINDOW_HEIGHT = 540;
+const CURSOR_PROMPT_WINDOW_WIDTH = 500;
+const CURSOR_PROMPT_WINDOW_HEIGHT = 132;
+const CURSOR_PROMPT_LEFT_OFFSET = 20;
 const WHISPER_WINDOW_WIDTH = 266;
 const WHISPER_WINDOW_HEIGHT = 84;
 const DETACHED_WHISPER_WINDOW_NAME = 'supercommand-whisper-window';
@@ -192,9 +195,11 @@ let activeSpeakSession: {
   ttsProcesses: Set<any>;
   restartFrom: (index: number) => void;
 } | null = null;
-let launcherMode: 'default' | 'whisper' | 'speak' = 'default';
+let launcherMode: 'default' | 'whisper' | 'speak' | 'prompt' = 'default';
 let lastWhisperToggleAt = 0;
 let lastWhisperShownAt = 0;
+let lastTypingCaretPoint: { x: number; y: number } | null = null;
+let lastCursorPromptSelection = '';
 let whisperEscapeRegistered = false;
 let whisperOverlayVisible = false;
 let speakOverlayVisible = false;
@@ -1097,7 +1102,10 @@ function createWindow(): void {
   });
 }
 
-function getLauncherSize(mode: 'default' | 'whisper' | 'speak') {
+function getLauncherSize(mode: 'default' | 'whisper' | 'speak' | 'prompt') {
+  if (mode === 'prompt') {
+    return { width: CURSOR_PROMPT_WINDOW_WIDTH, height: CURSOR_PROMPT_WINDOW_HEIGHT, topFactor: 0.2 };
+  }
   if (mode === 'whisper') {
     return { width: WHISPER_WINDOW_WIDTH, height: WHISPER_WINDOW_HEIGHT, topFactor: 0.28 };
   }
@@ -1107,10 +1115,128 @@ function getLauncherSize(mode: 'default' | 'whisper' | 'speak') {
   return { width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT, topFactor: 0.2 };
 }
 
-function applyLauncherBounds(mode: 'default' | 'whisper' | 'speak'): void {
+function getTypingCaretRect():
+  | { x: number; y: number; width: number; height: number }
+  | null {
+  try {
+    const { execSync } = require('child_process');
+    const script = `
+      tell application "System Events"
+        try
+          set frontApp to first application process whose frontmost is true
+          tell frontApp
+            set focusedElement to value of attribute "AXFocusedUIElement"
+            if focusedElement is missing value then return ""
+            set selectedRange to value of attribute "AXSelectedTextRange" of focusedElement
+            if selectedRange is missing value then return ""
+            set rangeLocation to item 1 of selectedRange
+            set rangeLength to item 2 of selectedRange
+            set caretRange to {rangeLocation + rangeLength, 0}
+            set caretBounds to value of attribute "AXBoundsForRange" of focusedElement for caretRange
+            set {bx, by} to position of caretBounds
+            set {bw, bh} to size of caretBounds
+            return (bx as string) & "," & (by as string) & "," & (bw as string) & "," & (bh as string)
+          end tell
+        on error
+          return ""
+        end try
+      end tell
+    `;
+    const out = String(
+      execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, {
+        encoding: 'utf-8',
+        timeout: 220,
+      }) || ''
+    ).trim();
+    if (!out) return null;
+    const [rawX, rawY, rawW, rawH] = out.split(',').map((part) => Number(String(part || '').trim()));
+    if (![rawX, rawY, rawW, rawH].every((n) => Number.isFinite(n))) return null;
+    return {
+      x: Math.round(rawX),
+      y: Math.round(rawY),
+      width: Math.max(1, Math.round(rawW)),
+      height: Math.max(1, Math.round(rawH)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getFocusedInputRect():
+  | { x: number; y: number; width: number; height: number }
+  | null {
+  try {
+    const { execSync } = require('child_process');
+    const script = `
+      tell application "System Events"
+        try
+          set frontApp to first application process whose frontmost is true
+          tell frontApp
+            set focusedElement to value of attribute "AXFocusedUIElement"
+            if focusedElement is missing value then return ""
+            set {ex, ey} to position of focusedElement
+            set {ew, eh} to size of focusedElement
+            return (ex as string) & "," & (ey as string) & "," & (ew as string) & "," & (eh as string)
+          end tell
+        on error
+          return ""
+        end try
+      end tell
+    `;
+    const out = String(
+      execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, {
+        encoding: 'utf-8',
+        timeout: 220,
+      }) || ''
+    ).trim();
+    if (!out) return null;
+    const [rawX, rawY, rawW, rawH] = out.split(',').map((part) => Number(String(part || '').trim()));
+    if (![rawX, rawY, rawW, rawH].every((n) => Number.isFinite(n))) return null;
+    return {
+      x: Math.round(rawX),
+      y: Math.round(rawY),
+      width: Math.max(1, Math.round(rawW)),
+      height: Math.max(1, Math.round(rawH)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function applyLauncherBounds(mode: 'default' | 'whisper' | 'speak' | 'prompt'): void {
   if (!mainWindow) return;
   const cursorPoint = screen.getCursorScreenPoint();
-  const currentDisplay = screen.getDisplayNearestPoint(cursorPoint);
+  const caretRect = mode === 'prompt' ? getTypingCaretRect() : null;
+  const focusedInputRect = mode === 'prompt' ? getFocusedInputRect() : null;
+  if (caretRect) {
+    lastTypingCaretPoint = {
+      x: caretRect.x,
+      y: caretRect.y + Math.max(1, Math.floor(caretRect.height * 0.5)),
+    };
+  } else if (focusedInputRect) {
+    lastTypingCaretPoint = {
+      x: focusedInputRect.x + 12,
+      y: focusedInputRect.y + 18,
+    };
+  }
+  const promptAnchorPoint = caretRect
+    ? {
+        x: caretRect.x,
+        y: caretRect.y + Math.max(1, Math.floor(caretRect.height * 0.5)),
+      }
+    : focusedInputRect
+      ? {
+          x: focusedInputRect.x + 12,
+          y: focusedInputRect.y + 18,
+        }
+      : (mode === 'prompt' && lastTypingCaretPoint)
+        ? lastTypingCaretPoint
+        : null;
+  const currentDisplay = mode === 'prompt'
+    ? (promptAnchorPoint
+      ? screen.getDisplayNearestPoint(promptAnchorPoint)
+      : screen.getDisplayNearestPoint(cursorPoint))
+    : screen.getDisplayNearestPoint(cursorPoint);
   const {
     x: displayX,
     y: displayY,
@@ -1118,14 +1244,34 @@ function applyLauncherBounds(mode: 'default' | 'whisper' | 'speak'): void {
     height: displayHeight,
   } = currentDisplay.workArea;
   const size = getLauncherSize(mode);
+  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+  const promptFallbackX = displayX + Math.floor((displayWidth - size.width) / 2);
+  const promptFallbackY = displayY + Math.floor(displayHeight * 0.32);
   const windowX = mode === 'speak'
     ? displayX + displayWidth - size.width - 20
-    : displayX + Math.floor((displayWidth - size.width) / 2);
+    : mode === 'prompt'
+      ? clamp(
+          (promptAnchorPoint?.x ?? promptFallbackX) - CURSOR_PROMPT_LEFT_OFFSET,
+          displayX + 8,
+          displayX + displayWidth - size.width - 8
+        )
+      : displayX + Math.floor((displayWidth - size.width) / 2);
   const windowY = mode === 'whisper'
     ? displayY + displayHeight - size.height - 18
     : mode === 'speak'
       ? displayY + 16
-      : displayY + Math.floor(displayHeight * size.topFactor);
+      : mode === 'prompt'
+        ? (() => {
+            const baseY = caretRect
+              ? caretRect.y
+              : focusedInputRect
+                ? focusedInputRect.y
+                : (promptAnchorPoint?.y ?? promptFallbackY);
+            const preferred = baseY - size.height - 10;
+            if (preferred >= displayY + 8) return preferred;
+            return clamp(baseY + 16, displayY + 8, displayY + displayHeight - size.height - 8);
+          })()
+        : displayY + Math.floor(displayHeight * size.topFactor);
   mainWindow.setBounds({
     x: windowX,
     y: windowY,
@@ -1134,7 +1280,7 @@ function applyLauncherBounds(mode: 'default' | 'whisper' | 'speak'): void {
   });
 }
 
-function setLauncherMode(mode: 'default' | 'whisper' | 'speak'): void {
+function setLauncherMode(mode: 'default' | 'whisper' | 'speak' | 'prompt'): void {
   const prevMode = launcherMode;
   launcherMode = mode;
   if (mainWindow) {
@@ -1552,7 +1698,7 @@ function toggleWindow(): void {
 
 async function openLauncherAndRunSystemCommand(
   commandId: string,
-  options?: { showWindow?: boolean; mode?: 'default' | 'whisper' | 'speak' }
+  options?: { showWindow?: boolean; mode?: 'default' | 'whisper' | 'speak' | 'prompt' }
 ): Promise<boolean> {
   if (!mainWindow) {
     createWindow();
@@ -1587,6 +1733,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
   const isWhisperSpeakToggleCommand = commandId === 'system-supercommand-whisper-speak-toggle';
   const isWhisperCommand = isWhisperOpenCommand || isWhisperSpeakToggleCommand;
   const isSpeakCommand = commandId === 'system-supercommand-speak';
+  const isCursorPromptCommand = commandId === 'system-cursor-prompt';
 
   if (isWhisperCommand && source === 'hotkey') {
     const now = Date.now();
@@ -1637,6 +1784,22 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     }
     mainWindow?.webContents.send('whisper-stop-and-close');
     return true;
+  }
+  if (isCursorPromptCommand) {
+    try {
+      const selectedBeforeOpen = String(await getSelectedTextForSpeak() || '').trim();
+      if (selectedBeforeOpen) {
+        lastCursorPromptSelection = selectedBeforeOpen;
+      }
+    } catch {}
+    if (source === 'hotkey' && isVisible && launcherMode === 'prompt') {
+      hideWindow();
+      return true;
+    }
+    return await openLauncherAndRunSystemCommand(commandId, {
+      showWindow: true,
+      mode: 'prompt',
+    });
   }
 
   if (commandId === 'system-open-settings') {
@@ -2514,8 +2677,8 @@ app.whenReady().then(async () => {
     hideWindow();
   });
 
-  ipcMain.handle('set-launcher-mode', (_event: any, mode: 'default' | 'whisper' | 'speak') => {
-    if (mode !== 'default' && mode !== 'whisper' && mode !== 'speak') return;
+  ipcMain.handle('set-launcher-mode', (_event: any, mode: 'default' | 'whisper' | 'speak' | 'prompt') => {
+    if (mode !== 'default' && mode !== 'whisper' && mode !== 'speak' && mode !== 'prompt') return;
     setLauncherMode(mode);
   });
 
@@ -3608,6 +3771,15 @@ return appURL's |path|() as text`,
       console.error('clipboard-read-text failed:', error);
       return '';
     }
+  });
+
+  ipcMain.handle('get-selected-text', async () => {
+    const fresh = String(await getSelectedTextForSpeak() || '').trim();
+    if (fresh) {
+      lastCursorPromptSelection = fresh;
+      return fresh;
+    }
+    return String(lastCursorPromptSelection || '');
   });
 
   // ─── IPC: Snippet Manager ─────────────────────────────────────
