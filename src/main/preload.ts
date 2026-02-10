@@ -43,6 +43,20 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeListener('whisper-stop-and-close', listener);
     };
   },
+  onWhisperStartListening: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('whisper-start-listening', listener);
+    return () => {
+      ipcRenderer.removeListener('whisper-start-listening', listener);
+    };
+  },
+  onWhisperToggleListening: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('whisper-toggle-listening', listener);
+    return () => {
+      ipcRenderer.removeListener('whisper-toggle-listening', listener);
+    };
+  },
   onOAuthCallback: (callback: (url: string) => void) => {
     ipcRenderer.on('oauth-callback', (_event, url) => callback(url));
   },

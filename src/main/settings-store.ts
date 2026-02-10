@@ -53,6 +53,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   enabledCommands: [],
   commandHotkeys: {
     'system-supercommand-whisper': 'Command+Shift+W',
+    'system-supercommand-whisper-speak-toggle': 'Command+.',
   },
   pinnedCommands: [],
   recentCommands: [],
@@ -73,10 +74,24 @@ export function loadSettings(): AppSettings {
     const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
     const parsed = JSON.parse(raw);
     const parsedHotkeys = { ...(parsed.commandHotkeys || {}) };
-    if (parsedHotkeys['system-supercommand-whisper-toggle'] && !parsedHotkeys['system-supercommand-whisper']) {
-      parsedHotkeys['system-supercommand-whisper'] = parsedHotkeys['system-supercommand-whisper-toggle'];
+    if (!parsedHotkeys['system-supercommand-whisper-speak-toggle']) {
+      if (parsedHotkeys['system-supercommand-whisper-start']) {
+        parsedHotkeys['system-supercommand-whisper-speak-toggle'] = parsedHotkeys['system-supercommand-whisper-start'];
+      } else if (parsedHotkeys['system-supercommand-whisper-stop']) {
+        parsedHotkeys['system-supercommand-whisper-speak-toggle'] = parsedHotkeys['system-supercommand-whisper-stop'];
+      }
+    }
+    if (parsedHotkeys['system-supercommand-whisper-toggle']) {
+      if (!parsedHotkeys['system-supercommand-whisper-start']) {
+        parsedHotkeys['system-supercommand-whisper-start'] = parsedHotkeys['system-supercommand-whisper-toggle'];
+      }
+      if (!parsedHotkeys['system-supercommand-whisper']) {
+        parsedHotkeys['system-supercommand-whisper'] = parsedHotkeys['system-supercommand-whisper-toggle'];
+      }
     }
     delete parsedHotkeys['system-supercommand-whisper-toggle'];
+    delete parsedHotkeys['system-supercommand-whisper-start'];
+    delete parsedHotkeys['system-supercommand-whisper-stop'];
     settingsCache = {
       globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
       disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,

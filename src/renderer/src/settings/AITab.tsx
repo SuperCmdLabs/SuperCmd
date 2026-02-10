@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
+import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AISettings } from '../../types/electron';
 
 const PROVIDER_OPTIONS = [
@@ -48,6 +49,8 @@ const CURATED_OLLAMA_MODELS = [
   { name: 'qwen2.5', label: 'Qwen 2.5', size: '4.7 GB', description: 'Alibaba multilingual model (7B)' },
   { name: 'deepseek-r1', label: 'DeepSeek R1', size: '4.7 GB', description: 'Reasoning-focused model (7B)' },
 ];
+
+const WHISPER_SPEAK_TOGGLE_COMMAND_ID = 'system-supercommand-whisper-speak-toggle';
 
 const AITab: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -134,6 +137,23 @@ const AITab: React.FC = () => {
       setTimeout(() => setOllamaError(null), 5000);
     }
     setDeletingModel(null);
+  };
+
+  const handleWhisperHotkeyChange = async (commandId: string, hotkey: string) => {
+    const success = await window.electron.updateCommandHotkey(commandId, hotkey);
+    if (!success) return;
+    setSettings((prev) => {
+      if (!prev) return prev;
+      const nextHotkeys = { ...(prev.commandHotkeys || {}) };
+      if (hotkey) {
+        nextHotkeys[commandId] = hotkey;
+      } else {
+        delete nextHotkeys[commandId];
+      }
+      return { ...prev, commandHotkeys: nextHotkeys };
+    });
+    setSaveStatus('saved');
+    setTimeout(() => setSaveStatus('idle'), 2000);
   };
 
   if (!settings) {
@@ -431,11 +451,11 @@ const AITab: React.FC = () => {
         )}
 
         <div className="bg-white/[0.03] rounded-lg border border-white/[0.06] p-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-medium text-white/90">Voice Post-processing</h3>
+              <h3 className="text-sm font-medium text-white/90">Whisper</h3>
               <p className="text-xs text-white/40 mt-0.5">
-                After speech-to-text, send transcript to your selected LLM to remove fillers and apply self-corrections.
+                Configure voice post-processing and speaking controls.
               </p>
             </div>
             <button
@@ -443,6 +463,8 @@ const AITab: React.FC = () => {
               className={`relative w-10 h-6 rounded-full transition-colors ${
                 ai.speechCorrectionEnabled ? 'bg-blue-500' : 'bg-white/10'
               }`}
+              aria-label="Toggle voice post-processing"
+              title="Voice Post-processing"
             >
               <span
                 className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
@@ -450,6 +472,25 @@ const AITab: React.FC = () => {
                 }`}
               />
             </button>
+          </div>
+
+          <p className="text-xs text-white/35 mt-3 mb-3">
+            Voice post-processing uses your selected LLM to clean dictated text and remove filler words.
+          </p>
+
+          <p className="text-xs text-white/35 mb-3">
+            Open Whisper hotkey is configured in Extensions. These hotkeys only control speaking.
+          </p>
+
+          <div className="grid grid-cols-1 gap-3">
+            <div className="bg-white/[0.02] rounded-md border border-white/[0.06] p-2.5">
+              <p className="text-xs text-white/45 mb-1.5">Start/Stop Speaking Hotkey</p>
+              <HotkeyRecorder
+                value={(settings.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] || 'Command+.'}
+                onChange={(hotkey) => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey); }}
+                compact
+              />
+            </div>
           </div>
         </div>
 

@@ -18,7 +18,16 @@ const BAR_HEIGHT_PROFILE = [
 const BAR_COUNT = BAR_HEIGHT_PROFILE.length;
 const BASE_WAVE = BAR_HEIGHT_PROFILE.map((profile) => 0.08 + profile * 0.05);
 const LIVE_REFINE_DEBOUNCE_MS = 1000;
-const WHISPER_TOGGLE_SHORTCUT_LABEL = '\u2318 .';
+
+function formatShortcutLabel(shortcut: string): string {
+  return String(shortcut || '')
+    .replace(/Command/g, '\u2318')
+    .replace(/Control/g, '\u2303')
+    .replace(/Alt/g, '\u2325')
+    .replace(/Shift/g, '\u21E7')
+    .replace(/Period/g, '.')
+    .replace(/\+/g, ' ');
+}
 
 function normalizeTranscript(value: string): string {
   return String(value || '')
@@ -117,10 +126,11 @@ function formatDeltaForAppend(previous: string, rawDelta: string): string {
 
 const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) => {
   const [state, setState] = useState<WhisperState>('idle');
-  const [statusText, setStatusText] = useState('Starting microphone...');
+  const [statusText, setStatusText] = useState('Press start to begin speaking.');
   const [errorText, setErrorText] = useState('');
   const [waveBars, setWaveBars] = useState<number[]>(BASE_WAVE);
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
+  const [speakToggleShortcutLabel, setSpeakToggleShortcutLabel] = useState('\u2318 .');
 
   // Which backend to use — determined on settings load
   const backendRef = useRef<WhisperBackend>('native');
@@ -129,7 +139,6 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
   const liveTypedTextRef = useRef('');
   const liveTypeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const finalizingRef = useRef(false);
-  const autoStartDoneRef = useRef(false);
   const editorFocusRestoreTimerRef = useRef<number | null>(null);
   const editorFocusRestoredRef = useRef(false);
   const liveRefineTimerRef = useRef<number | null>(null);
@@ -435,7 +444,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
 
   // ─── Finalize ──────────────────────────────────────────────────────
 
-  const finalizeAndClose = useCallback(async () => {
+  const finalizeAndClose = useCallback(async (closeAfter = true) => {
     if (finalizingRef.current) return;
     finalizingRef.current = true;
     if (editorFocusRestoreTimerRef.current !== null) {
@@ -498,7 +507,16 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
 
     const baseTranscript = normalizeTranscript(combinedTranscriptRef.current);
     if (!baseTranscript) {
-      onClose();
+      if (closeAfter) {
+        onClose();
+      } else {
+        combinedTranscriptRef.current = '';
+        liveTypedTextRef.current = '';
+        setStatusText('Press start to begin speaking.');
+        setErrorText('');
+        setState('idle');
+        finalizingRef.current = false;
+      }
       return;
     }
 
@@ -507,12 +525,34 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
 
     const liveTyped = normalizeTranscript(liveTypedTextRef.current);
     if (!liveTyped) {
-      await autoPasteAndClose(finalTranscript);
+      if (closeAfter) {
+        await autoPasteAndClose(finalTranscript);
+      } else {
+        const pasted = await window.electron.pasteText(finalTranscript);
+        if (!pasted) {
+          await window.electron.clipboardWrite({ text: finalTranscript });
+        }
+        combinedTranscriptRef.current = '';
+        liveTypedTextRef.current = '';
+        setStatusText('Press start to begin speaking.');
+        setErrorText('');
+        setState('idle');
+        finalizingRef.current = false;
+      }
       return;
     }
     applyLiveTranscriptText(finalTranscript);
     await liveTypeQueueRef.current;
-    onClose();
+    if (closeAfter) {
+      onClose();
+      return;
+    }
+    combinedTranscriptRef.current = '';
+    liveTypedTextRef.current = '';
+    setStatusText('Press start to begin speaking.');
+    setErrorText('');
+    setState('idle');
+    finalizingRef.current = false;
   }, [autoPasteAndClose, onClose, stopVisualizer, sendTranscription, refineAndApplyLiveTranscript, applyLiveTranscriptText]);
 
   // ─── Start Listening ───────────────────────────────────────────────
@@ -691,6 +731,8 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
       .then((settings: AppSettings) => {
         if (cancelled) return;
         setSpeechLanguage(settings.ai.speechLanguage || 'en-US');
+        const speakToggleHotkey = settings.commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.';
+        setSpeakToggleShortcutLabel(formatShortcutLabel(speakToggleHotkey));
         // Use Whisper API if OpenAI key is configured, otherwise native macOS speech
         backendRef.current = settings.ai.openaiApiKey ? 'whisper' : 'native';
       })
@@ -700,15 +742,6 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (autoStartDoneRef.current) return;
-    autoStartDoneRef.current = true;
-    const timer = window.setTimeout(() => {
-      void startListening();
-    }, 80);
-    return () => window.clearTimeout(timer);
-  }, [startListening]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -722,12 +755,24 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
     const disposeWhisperStop = window.electron.onWhisperStopAndClose(() => {
       void finalizeAndClose();
     });
+    const disposeWhisperStart = window.electron.onWhisperStartListening(() => {
+      void startListening();
+    });
+    const disposeWhisperToggle = window.electron.onWhisperToggleListening(() => {
+      if (state === 'listening' || state === 'processing') {
+        void finalizeAndClose(false);
+      } else {
+        void startListening();
+      }
+    });
 
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       disposeWhisperStop();
+      disposeWhisperStart();
+      disposeWhisperToggle();
     };
-  }, [finalizeAndClose]);
+  }, [finalizeAndClose, startListening, state]);
 
   useEffect(() => {
     return () => {
@@ -768,12 +813,23 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
       <div className="whisper-widget-shell">
         <button
           type="button"
-          className="whisper-side-button whisper-stop-button"
-          onClick={() => { void finalizeAndClose(); }}
-          aria-label={`Stop listening (${WHISPER_TOGGLE_SHORTCUT_LABEL})`}
-          title={`Stop (${WHISPER_TOGGLE_SHORTCUT_LABEL})`}
+          className={`whisper-side-button whisper-stop-button ${listening || processing ? 'is-active' : 'is-idle'}`}
+          onClick={() => {
+            if (listening || processing) {
+              void finalizeAndClose(false);
+            } else {
+              void startListening();
+            }
+          }}
+          aria-label={listening || processing ? `Stop listening (${speakToggleShortcutLabel})` : `Start listening (${speakToggleShortcutLabel})`}
+          title={listening || processing ? `Stop (${speakToggleShortcutLabel})` : `Start (${speakToggleShortcutLabel})`}
         >
-          <span className="whisper-stop-square" />
+          <span className="whisper-shortcut-hint">{speakToggleShortcutLabel}</span>
+          {listening || processing ? (
+            <span className="whisper-stop-square" />
+          ) : (
+            <span className="whisper-record-dot" />
+          )}
         </button>
 
         <div

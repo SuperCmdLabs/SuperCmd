@@ -838,9 +838,11 @@ async function openLauncherAndRunSystemCommand(commandId: string): Promise<boole
 }
 
 async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' = 'launcher'): Promise<boolean> {
-  const isWhisperCommand =
+  const isWhisperOpenCommand =
     commandId === 'system-supercommand-whisper' ||
     commandId === 'system-supercommand-whisper-toggle';
+  const isWhisperSpeakToggleCommand = commandId === 'system-supercommand-whisper-speak-toggle';
+  const isWhisperCommand = isWhisperOpenCommand || isWhisperSpeakToggleCommand;
 
   if (isWhisperCommand && source === 'hotkey') {
     const now = Date.now();
@@ -850,8 +852,20 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     lastWhisperToggleAt = now;
   }
 
+  if (isWhisperSpeakToggleCommand && source === 'hotkey') {
+    if (isVisible && launcherMode === 'whisper') {
+      mainWindow?.webContents.send('whisper-toggle-listening');
+      return true;
+    }
+    await openLauncherAndRunSystemCommand('system-supercommand-whisper');
+    setTimeout(() => {
+      mainWindow?.webContents.send('whisper-toggle-listening');
+    }, 180);
+    return true;
+  }
+
   if (
-    isWhisperCommand &&
+    isWhisperOpenCommand &&
     source === 'hotkey' &&
     isVisible &&
     launcherMode === 'whisper'
@@ -1375,6 +1389,7 @@ app.whenReady().then(async () => {
     async (_event: any, commandId: string, hotkey: string) => {
       const s = loadSettings();
       const hotkeys = { ...s.commandHotkeys };
+      const normalizedHotkey = hotkey ? normalizeAccelerator(hotkey) : '';
 
       // Unregister old hotkey for this command
       const oldHotkey = hotkeys[commandId];
@@ -1386,17 +1401,39 @@ app.whenReady().then(async () => {
       }
 
       if (hotkey) {
-        hotkeys[commandId] = hotkey;
-        const normalizedHotkey = normalizeAccelerator(hotkey);
+        // Prevent two commands from sharing the same accelerator.
+        for (const [otherCommandId, otherHotkey] of Object.entries(hotkeys)) {
+          if (otherCommandId === commandId) continue;
+          if (normalizeAccelerator(otherHotkey) === normalizedHotkey) {
+            return false;
+          }
+        }
+
         // Register the new one
         try {
           const success = globalShortcut.register(normalizedHotkey, async () => {
             await runCommandById(commandId, 'hotkey');
           });
-          if (success) {
-            registeredHotkeys.set(normalizedHotkey, commandId);
+          if (!success) {
+            // Attempt to restore old mapping if the new one failed.
+            if (oldHotkey) {
+              const normalizedOldHotkey = normalizeAccelerator(oldHotkey);
+              try {
+                const restored = globalShortcut.register(normalizedOldHotkey, async () => {
+                  await runCommandById(commandId, 'hotkey');
+                });
+                if (restored) {
+                  registeredHotkeys.set(normalizedOldHotkey, commandId);
+                }
+              } catch {}
+            }
+            return false;
           }
-        } catch {}
+          hotkeys[commandId] = hotkey;
+          registeredHotkeys.set(normalizedHotkey, commandId);
+        } catch {
+          return false;
+        }
       } else {
         delete hotkeys[commandId];
       }

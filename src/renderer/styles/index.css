@@ -246,17 +246,58 @@ kbd {
 }
 
 .whisper-stop-button {
+  position: relative;
   width: 30px;
   height: 30px;
   padding: 0;
+  border: 1px solid rgba(196, 201, 206, 0.3);
+  background: rgba(34, 37, 42, 0.8);
+  box-shadow: 0 0 0 1px rgba(124, 130, 136, 0.16);
+}
+
+.whisper-shortcut-hint {
+  position: absolute;
+  left: 50%;
+  top: -22px;
+  transform: translateX(-50%);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgba(201, 206, 212, 0.9);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.whisper-widget-shell:hover .whisper-shortcut-hint {
+  opacity: 1;
+}
+
+.whisper-stop-button:hover {
+  background: rgba(42, 46, 52, 0.88);
+  border-color: rgba(208, 213, 218, 0.42);
+}
+
+.whisper-stop-button.is-active {
   border: none;
   background: #f44444;
   box-shadow: 0 0 0 1px rgba(255, 84, 84, 0.28), 0 5px 14px rgba(244, 68, 68, 0.35);
 }
 
-.whisper-stop-button:hover {
+.whisper-stop-button.is-active:hover {
   background: #ff5656;
   border-color: transparent;
+}
+
+.whisper-record-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #ff6161;
+  box-shadow: 0 0 0 1px rgba(255, 97, 97, 0.28), 0 0 8px rgba(255, 97, 97, 0.22);
 }
 
 .whisper-stop-square {

@@ -172,6 +172,8 @@ export interface ElectronAPI {
   onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' }) => void) => void;
   onRunSystemCommand: (callback: (commandId: string) => void) => void;
   onWhisperStopAndClose: (callback: () => void) => (() => void);
+  onWhisperStartListening: (callback: () => void) => (() => void);
+  onWhisperToggleListening: (callback: () => void) => (() => void);
   onOAuthCallback: (callback: (url: string) => void) => void;
 
   // Settings
