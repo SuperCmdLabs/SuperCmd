@@ -1248,6 +1248,9 @@ function createPromptWindow(): void {
   }
   promptWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   loadWindowUrl(promptWindow, '/prompt');
+  promptWindow.on('blur', () => {
+    hidePromptWindow();
+  });
   promptWindow.on('closed', () => {
     promptWindow = null;
   });
@@ -1267,7 +1270,16 @@ function showPromptWindow(): void {
 
 function hidePromptWindow(): void {
   if (!promptWindow || promptWindow.isDestroyed()) return;
-  promptWindow.hide();
+  const win = promptWindow;
+  promptWindow = null;
+  lastCursorPromptSelection = '';
+  try {
+    win.close();
+  } catch {
+    try {
+      win.destroy();
+    } catch {}
+  }
 }
 
 function getLauncherSize(mode: 'default' | 'whisper' | 'speak' | 'prompt') {
@@ -1480,10 +1492,7 @@ function setLauncherMode(mode: 'default' | 'whisper' | 'speak' | 'prompt'): void
   }
 }
 
-function showWindow(): void {
-  if (!mainWindow) return;
-
-  // Capture the frontmost app BEFORE showing our window
+function captureFrontmostAppContext(): void {
   try {
     const { execSync } = require('child_process');
     const script = `
@@ -1497,13 +1506,19 @@ function showWindow(): void {
     `;
     const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
     const [name, appPath, bundleId] = result.split('|||');
-    // Don't store ourselves
     if (bundleId !== 'com.supercommand' && name !== 'SuperCommand' && name !== 'Electron') {
       lastFrontmostApp = { name, path: appPath, bundleId };
     }
-  } catch (e) {
-    // Keep whatever was stored previously
+  } catch {
+    // keep previously captured value
   }
+}
+
+function showWindow(): void {
+  if (!mainWindow) return;
+
+  // Capture the frontmost app BEFORE showing our window
+  captureFrontmostAppContext();
 
   applyLauncherBounds(launcherMode);
 
@@ -1954,6 +1969,8 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     return true;
   }
   if (isCursorPromptCommand) {
+    lastCursorPromptSelection = '';
+    captureFrontmostAppContext();
     try {
       const selectedBeforeOpen = String(await getSelectedTextForSpeak() || '').trim();
       if (selectedBeforeOpen) {
@@ -4100,6 +4117,31 @@ return appURL's |path|() as text`,
       replaced = await replaceTextViaBackspaceAndPaste(previousText, nextText);
     }
     return replaced;
+  });
+
+  ipcMain.handle('prompt-apply-generated-text', async (_event: any, payload: { previousText?: string; nextText: string }) => {
+    const previousText = String(payload?.previousText || '');
+    const nextText = String(payload?.nextText || '');
+    if (!nextText.trim()) return false;
+
+    // Ensure prompt window is closed before typing/replacing so text is not inserted back into prompt UI.
+    hidePromptWindow();
+    await activateLastFrontmostApp();
+    await new Promise((resolve) => setTimeout(resolve, 70));
+
+    if (previousText.trim()) {
+      let replaced = await replaceTextDirectly(previousText, nextText);
+      if (!replaced) {
+        replaced = await replaceTextViaBackspaceAndPaste(previousText, nextText);
+      }
+      return replaced;
+    }
+
+    let typed = await typeTextDirectly(nextText);
+    if (!typed) {
+      typed = await pasteTextToActiveApp(nextText);
+    }
+    return typed;
   });
 
   ipcMain.on('whisper-debug-log', (_event: any, payload: { tag?: string; message?: string; data?: any }) => {

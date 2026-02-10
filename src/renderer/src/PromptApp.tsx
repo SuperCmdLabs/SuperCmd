@@ -20,16 +20,17 @@ const PromptApp: React.FC = () => {
   }, []);
 
   const applyResult = useCallback(async () => {
-    const nextText = String(resultTextRef.current || '').trim();
-    if (!nextText) {
+    const nextText = String(resultTextRef.current || '');
+    if (!nextText.trim()) {
       setStatus('error');
       setErrorText('Model returned an empty response.');
       return;
     }
-    const selected = String(sourceTextRef.current || '').trim();
-    const ok = selected
-      ? await window.electron.replaceLiveText(selected, nextText)
-      : await window.electron.typeTextLive(nextText);
+    const selected = String(sourceTextRef.current || '');
+    const ok = await window.electron.promptApplyGeneratedText({
+      previousText: selected.trim().length > 0 ? selected : undefined,
+      nextText,
+    });
     if (!ok) {
       setStatus('error');
       setErrorText('Could not apply update in the editor.');
@@ -54,15 +55,16 @@ const PromptApp: React.FC = () => {
     sourceTextRef.current = '';
     resultTextRef.current = '';
 
-    const selectedText = String(await window.electron.getSelectedText()).trim();
-    if (selectedText) sourceTextRef.current = selectedText;
+    const selectedText = String(await window.electron.getSelectedText() || '');
+    if (selectedText.trim().length > 0) sourceTextRef.current = selectedText;
 
     const requestId = `prompt-window-${Date.now()}`;
     requestIdRef.current = requestId;
     const compositePrompt = selectedText
       ? [
           'Rewrite the selected text based on the instruction.',
-          'Return only the rewritten text. Do not include explanations.',
+          'Return only the exact rewritten text that should be inserted.',
+          'Output rules: no commentary, no preface, no markdown, no quotes, no labels.',
           '',
           `Instruction: ${instruction}`,
           '',
@@ -70,8 +72,9 @@ const PromptApp: React.FC = () => {
           selectedText,
         ].join('\n')
       : [
-          'Generate text to insert at the current cursor position, based on the instruction.',
-          'Return only the generated text. Do not include explanations.',
+          'Generate text to insert at the current cursor position based on the instruction.',
+          'Return only the exact text to insert.',
+          'Output rules: no commentary, no preface, no markdown, no quotes, no labels.',
           '',
           `Instruction: ${instruction}`,
         ].join('\n');
@@ -158,4 +161,3 @@ const PromptApp: React.FC = () => {
 };
 
 export default PromptApp;
-

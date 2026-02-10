@@ -319,6 +319,7 @@ export interface ElectronAPI {
   pasteText: (text: string) => Promise<boolean>;
   typeTextLive: (text: string) => Promise<boolean>;
   replaceLiveText: (previousText: string, nextText: string) => Promise<boolean>;
+  promptApplyGeneratedText: (payload: { previousText?: string; nextText: string }) => Promise<boolean>;
 
   // Native helpers
   nativePickColor: () => Promise<{ red: number; green: number; blue: number; alpha: number } | null>;

@@ -288,6 +288,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('type-text-live', text),
   replaceLiveText: (previousText: string, nextText: string): Promise<boolean> =>
     ipcRenderer.invoke('replace-live-text', previousText, nextText),
+  promptApplyGeneratedText: (payload: { previousText?: string; nextText: string }): Promise<boolean> =>
+    ipcRenderer.invoke('prompt-apply-generated-text', payload),
 
   // ─── Native Helpers ─────────────────────────────────────────────
   nativePickColor: (): Promise<{ red: number; green: number; blue: number; alpha: number } | null> =>
