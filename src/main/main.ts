@@ -76,7 +76,24 @@ let snippetExpanderProcess: any = null;
 let snippetExpanderStdoutBuffer = '';
 let nativeSpeechProcess: any = null;
 let nativeSpeechStdoutBuffer = '';
-let launcherMode: 'default' | 'whisper' = 'default';
+let edgeTtsRuntime: { command: string; baseArgs: string[] } | null = null;
+let speakStatusSnapshot: {
+  state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+  text: string;
+  index: number;
+  total: number;
+  message?: string;
+} = { state: 'idle', text: '', index: 0, total: 0 };
+let speakSessionCounter = 0;
+let activeSpeakSession: {
+  id: number;
+  stopRequested: boolean;
+  tmpDir: string;
+  chunkPromises: Map<number, Promise<{ index: number; text: string; audioPath: string }>>;
+  afplayProc: any | null;
+  ttsProcesses: Set<any>;
+} | null = null;
+let launcherMode: 'default' | 'whisper' | 'speak' = 'default';
 let lastWhisperToggleAt = 0;
 let lastWhisperShownAt = 0;
 let whisperEscapeRegistered = false;
@@ -101,6 +118,219 @@ function unregisterWhisperEscapeShortcut(): void {
     globalShortcut.unregister('Escape');
   } catch {}
   whisperEscapeRegistered = false;
+}
+
+function setSpeakStatus(status: {
+  state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+  text: string;
+  index: number;
+  total: number;
+  message?: string;
+}): void {
+  speakStatusSnapshot = status;
+  try {
+    mainWindow?.webContents.send('speak-status', status);
+  } catch {}
+}
+
+function splitTextIntoSpeakChunks(input: string): string[] {
+  const normalized = String(input || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (!normalized) return [];
+
+  const maxChunkChars = 260;
+  const minChunkChars = 120;
+  const baseSentences = normalized
+    .split(/(?<=[.!?])\s+|\n+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const sentenceLike: string[] = [];
+  for (const part of baseSentences) {
+    if (part.length <= maxChunkChars) {
+      sentenceLike.push(part);
+      continue;
+    }
+
+    const subParts = part.split(/(?<=[,;:])\s+/g).map((s) => s.trim()).filter(Boolean);
+    if (subParts.length <= 1) {
+      const words = part.split(/\s+/g).filter(Boolean);
+      let buff = '';
+      for (const word of words) {
+        const candidate = buff ? `${buff} ${word}` : word;
+        if (candidate.length <= maxChunkChars) {
+          buff = candidate;
+        } else {
+          if (buff) sentenceLike.push(buff);
+          buff = word;
+        }
+      }
+      if (buff) sentenceLike.push(buff);
+      continue;
+    }
+
+    for (const sub of subParts) {
+      if (sub.length <= maxChunkChars) {
+        sentenceLike.push(sub);
+      } else {
+        const words = sub.split(/\s+/g).filter(Boolean);
+        let buff = '';
+        for (const word of words) {
+          const candidate = buff ? `${buff} ${word}` : word;
+          if (candidate.length <= maxChunkChars) {
+            buff = candidate;
+          } else {
+            if (buff) sentenceLike.push(buff);
+            buff = word;
+          }
+        }
+        if (buff) sentenceLike.push(buff);
+      }
+    }
+  }
+
+  const chunks: string[] = [];
+  let current = '';
+  for (const sentence of sentenceLike) {
+    const candidate = current ? `${current} ${sentence}` : sentence;
+    if (candidate.length <= maxChunkChars) {
+      current = candidate;
+      continue;
+    }
+    if (current) chunks.push(current);
+    current = sentence;
+  }
+  if (current) chunks.push(current);
+
+  // Merge tiny trailing chunk back into previous chunk for better cadence.
+  if (chunks.length > 1) {
+    const last = chunks[chunks.length - 1];
+    if (last.length < minChunkChars) {
+      chunks[chunks.length - 2] = `${chunks[chunks.length - 2]} ${last}`.trim();
+      chunks.pop();
+    }
+  }
+
+  return chunks;
+}
+
+function resolveEdgeTtsRuntime(): { command: string; baseArgs: string[] } | null {
+  if (edgeTtsRuntime) return edgeTtsRuntime;
+  const fs = require('fs');
+  const pathMod = require('path');
+  const candidates = [
+    pathMod.join(app.getAppPath(), 'node_modules', '.bin', 'node-edge-tts'),
+    pathMod.join(process.cwd(), 'node_modules', '.bin', 'node-edge-tts'),
+    pathMod.join(__dirname, '..', '..', 'node_modules', '.bin', 'node-edge-tts'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      edgeTtsRuntime = { command: candidate, baseArgs: [] };
+      return edgeTtsRuntime;
+    }
+  }
+  edgeTtsRuntime = { command: 'npx', baseArgs: ['--no-install', 'node-edge-tts'] };
+  return edgeTtsRuntime;
+}
+
+function resolveEdgeVoice(language?: string): string {
+  const lang = String(language || 'en-US').toLowerCase();
+  if (lang.startsWith('en-in')) return 'en-IN-NeerjaNeural';
+  if (lang.startsWith('en-gb')) return 'en-GB-SoniaNeural';
+  if (lang.startsWith('en-au')) return 'en-AU-NatashaNeural';
+  if (lang.startsWith('es')) return 'es-ES-ElviraNeural';
+  if (lang.startsWith('fr')) return 'fr-FR-DeniseNeural';
+  if (lang.startsWith('de')) return 'de-DE-KatjaNeural';
+  if (lang.startsWith('it')) return 'it-IT-ElsaNeural';
+  if (lang.startsWith('pt')) return 'pt-BR-FranciscaNeural';
+  return 'en-US-JennyNeural';
+}
+
+async function getSelectedTextForSpeak(): Promise<string> {
+  const fromAccessibility = await (async () => {
+    try {
+      const { execFile } = require('child_process');
+      const { promisify } = require('util');
+      const execFileAsync = promisify(execFile);
+      const script = `
+        tell application "System Events"
+          try
+            set frontApp to first application process whose frontmost is true
+            tell frontApp
+              set focusedElement to focused UI element
+              set selectedText to value of attribute "AXSelectedText" of focusedElement
+              return selectedText
+            end tell
+          on error
+            return ""
+          end try
+        end tell
+      `;
+      const { stdout } = await execFileAsync('/usr/bin/osascript', ['-e', script]);
+      return String(stdout || '').trim();
+    } catch {
+      return '';
+    }
+  })();
+  if (fromAccessibility) return fromAccessibility;
+
+  const previousClipboard = systemClipboard.readText();
+  try {
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const execFileAsync = promisify(execFile);
+    await execFileAsync('/usr/bin/osascript', [
+      '-e',
+      'tell application "System Events" to keystroke "c" using command down',
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const captured = systemClipboard.readText().trim();
+    return captured;
+  } catch {
+    return '';
+  } finally {
+    try {
+      systemClipboard.writeText(previousClipboard);
+    } catch {}
+  }
+}
+
+function stopSpeakSession(options?: { resetStatus?: boolean; cleanupWindow?: boolean }): void {
+  const session = activeSpeakSession;
+  if (!session) {
+    if (options?.resetStatus) {
+      setSpeakStatus({ state: 'idle', text: '', index: 0, total: 0 });
+    }
+    return;
+  }
+
+  session.stopRequested = true;
+  if (session.afplayProc) {
+    try { session.afplayProc.kill('SIGTERM'); } catch {}
+    session.afplayProc = null;
+  }
+  for (const proc of session.ttsProcesses) {
+    try { proc.kill('SIGTERM'); } catch {}
+  }
+  session.ttsProcesses.clear();
+
+  try {
+    const fs = require('fs');
+    fs.rmSync(session.tmpDir, { recursive: true, force: true });
+  } catch {}
+
+  if (activeSpeakSession?.id === session.id) {
+    activeSpeakSession = null;
+  }
+  if (options?.resetStatus !== false) {
+    setSpeakStatus({ state: 'idle', text: '', index: 0, total: 0 });
+  }
+  if (options?.cleanupWindow) {
+    hideWindow();
+  }
 }
 
 function normalizeAccelerator(shortcut: string): string {
@@ -357,7 +587,7 @@ function createWindow(): void {
   mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.on('blur', () => {
-    if (isVisible && !suppressBlurHide && launcherMode !== 'whisper') {
+    if (isVisible && !suppressBlurHide && launcherMode !== 'whisper' && launcherMode !== 'speak') {
       hideWindow();
     }
   });
@@ -367,14 +597,17 @@ function createWindow(): void {
   });
 }
 
-function getLauncherSize(mode: 'default' | 'whisper') {
+function getLauncherSize(mode: 'default' | 'whisper' | 'speak') {
   if (mode === 'whisper') {
     return { width: WHISPER_WINDOW_WIDTH, height: WHISPER_WINDOW_HEIGHT, topFactor: 0.28 };
+  }
+  if (mode === 'speak') {
+    return { width: 460, height: 98, topFactor: 0.03 };
   }
   return { width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT, topFactor: 0.2 };
 }
 
-function applyLauncherBounds(mode: 'default' | 'whisper'): void {
+function applyLauncherBounds(mode: 'default' | 'whisper' | 'speak'): void {
   if (!mainWindow) return;
   const cursorPoint = screen.getCursorScreenPoint();
   const currentDisplay = screen.getDisplayNearestPoint(cursorPoint);
@@ -385,10 +618,14 @@ function applyLauncherBounds(mode: 'default' | 'whisper'): void {
     height: displayHeight,
   } = currentDisplay.workArea;
   const size = getLauncherSize(mode);
-  const windowX = displayX + Math.floor((displayWidth - size.width) / 2);
+  const windowX = mode === 'speak'
+    ? displayX + displayWidth - size.width - 20
+    : displayX + Math.floor((displayWidth - size.width) / 2);
   const windowY = mode === 'whisper'
     ? displayY + displayHeight - size.height - 18
-    : displayY + Math.floor(displayHeight * size.topFactor);
+    : mode === 'speak'
+      ? displayY + 16
+      : displayY + Math.floor(displayHeight * size.topFactor);
   mainWindow.setBounds({
     x: windowX,
     y: windowY,
@@ -397,13 +634,13 @@ function applyLauncherBounds(mode: 'default' | 'whisper'): void {
   });
 }
 
-function setLauncherMode(mode: 'default' | 'whisper'): void {
+function setLauncherMode(mode: 'default' | 'whisper' | 'speak'): void {
   const prevMode = launcherMode;
   launcherMode = mode;
   if (mainWindow) {
     try {
       if (process.platform === 'darwin') {
-        if (mode === 'whisper') {
+        if (mode === 'whisper' || mode === 'speak') {
           mainWindow.setVibrancy(null as any);
           mainWindow.setHasShadow(false);
           mainWindow.setFocusable(true);
@@ -475,6 +712,9 @@ function showWindow(): void {
 
 function hideWindow(): void {
   if (!mainWindow) return;
+  if (launcherMode === 'speak') {
+    stopSpeakSession({ resetStatus: true });
+  }
   mainWindow.hide();
   isVisible = false;
   unregisterWhisperEscapeShortcut();
@@ -849,6 +1089,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     commandId === 'system-supercommand-whisper-toggle';
   const isWhisperSpeakToggleCommand = commandId === 'system-supercommand-whisper-speak-toggle';
   const isWhisperCommand = isWhisperOpenCommand || isWhisperSpeakToggleCommand;
+  const isSpeakCommand = commandId === 'system-supercommand-speak';
 
   if (isWhisperCommand && source === 'hotkey') {
     const now = Date.now();
@@ -868,6 +1109,18 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
       mainWindow?.webContents.send('whisper-toggle-listening');
     }, 180);
     return true;
+  }
+
+  if (isSpeakCommand) {
+    if (launcherMode === 'speak' && isVisible) {
+      stopSpeakSession({ resetStatus: true, cleanupWindow: true });
+      return true;
+    }
+    const started = await startSpeakFromSelection();
+    if (!started && source === 'launcher') {
+      setTimeout(() => hideWindow(), 1200);
+    }
+    return started;
   }
 
   if (
@@ -924,6 +1177,209 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     setTimeout(() => hideWindow(), 50);
   }
   return success;
+}
+
+async function startSpeakFromSelection(): Promise<boolean> {
+  stopSpeakSession({ resetStatus: true });
+  setSpeakStatus({ state: 'loading', text: '', index: 0, total: 0, message: 'Getting selected text...' });
+
+  const selectedText = await getSelectedTextForSpeak();
+  const chunks = splitTextIntoSpeakChunks(selectedText);
+  if (chunks.length === 0) {
+    setLauncherMode('speak');
+    showWindow();
+    setSpeakStatus({
+      state: 'error',
+      text: '',
+      index: 0,
+      total: 0,
+      message: 'No selected text found.',
+    });
+    setTimeout(() => {
+      if (launcherMode === 'speak') {
+        hideWindow();
+      }
+    }, 1300);
+    return false;
+  }
+
+  const runtime = resolveEdgeTtsRuntime();
+  if (!runtime) {
+    setLauncherMode('speak');
+    showWindow();
+    setSpeakStatus({
+      state: 'error',
+      text: '',
+      index: 0,
+      total: chunks.length,
+      message: 'Node edge-tts is not installed. Run: npm i node-edge-tts',
+    });
+    return false;
+  }
+
+  const fs = require('fs');
+  const os = require('os');
+  const pathMod = require('path');
+  const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'supercommand-speak-'));
+  const sessionId = ++speakSessionCounter;
+  const session = {
+    id: sessionId,
+    stopRequested: false,
+    tmpDir,
+    chunkPromises: new Map<number, Promise<{ index: number; text: string; audioPath: string }>>(),
+    afplayProc: null as any,
+    ttsProcesses: new Set<any>(),
+  };
+  activeSpeakSession = session;
+
+  const settings = loadSettings();
+  const speechLanguage = String(settings.ai?.speechLanguage || 'en-US');
+  const lang = speechLanguage.includes('-') ? speechLanguage : `${speechLanguage}-US`;
+  const voice = resolveEdgeVoice(settings.ai?.speechLanguage || 'en-US');
+
+  const ensureChunkPrepared = (index: number): Promise<{ index: number; text: string; audioPath: string }> => {
+    if (index < 0 || index >= chunks.length) {
+      return Promise.reject(new Error('Chunk index out of range'));
+    }
+    const existing = session.chunkPromises.get(index);
+    if (existing) return existing;
+
+    const promise = new Promise<{ index: number; text: string; audioPath: string }>((resolve, reject) => {
+      if (session.stopRequested) {
+        reject(new Error('Speak session stopped'));
+        return;
+      }
+      const audioPath = pathMod.join(tmpDir, `chunk-${index}.mp3`);
+      const { spawn } = require('child_process');
+      const args = [
+        ...runtime.baseArgs,
+        '-t', chunks[index],
+        '-f', audioPath,
+        '-v', voice,
+        '-l', lang,
+        '-r', '+8%',
+      ];
+      const proc = spawn(runtime.command, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      session.ttsProcesses.add(proc);
+
+      let stderr = '';
+      proc.stderr.on('data', (chunk: Buffer | string) => {
+        stderr += String(chunk || '');
+      });
+      proc.on('error', (err: Error) => {
+        session.ttsProcesses.delete(proc);
+        reject(err);
+      });
+      proc.on('close', (code: number | null) => {
+        session.ttsProcesses.delete(proc);
+        if (session.stopRequested) {
+          reject(new Error('Speak session stopped'));
+          return;
+        }
+        if (code !== 0) {
+          reject(new Error(stderr.trim() || `node-edge-tts exited with ${code}`));
+          return;
+        }
+        resolve({ index, text: chunks[index], audioPath });
+      });
+    });
+
+    session.chunkPromises.set(index, promise);
+    return promise;
+  };
+
+  const playAudioFile = (audioPath: string): Promise<void> =>
+    new Promise((resolve, reject) => {
+      if (session.stopRequested) {
+        resolve();
+        return;
+      }
+      const { spawn } = require('child_process');
+      const proc = spawn('/usr/bin/afplay', [audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+      session.afplayProc = proc;
+      let stderr = '';
+      proc.stderr.on('data', (chunk: Buffer | string) => {
+        stderr += String(chunk || '');
+      });
+      proc.on('error', (err: Error) => {
+        if (session.afplayProc === proc) session.afplayProc = null;
+        reject(err);
+      });
+      proc.on('close', (code: number | null) => {
+        if (session.afplayProc === proc) session.afplayProc = null;
+        if (session.stopRequested) {
+          resolve();
+          return;
+        }
+        if (code && code !== 0) {
+          reject(new Error(stderr.trim() || `afplay exited with ${code}`));
+          return;
+        }
+        resolve();
+      });
+    });
+
+  setLauncherMode('speak');
+  showWindow();
+  setSpeakStatus({ state: 'loading', text: '', index: 0, total: chunks.length, message: 'Preparing speech...' });
+
+  // Start first chunk immediately and warm up second chunk in parallel.
+  void ensureChunkPrepared(0);
+  if (chunks.length > 1) {
+    void ensureChunkPrepared(1).catch(() => {});
+  }
+
+  (async () => {
+    try {
+      for (let index = 0; index < chunks.length; index += 1) {
+        if (session.stopRequested || activeSpeakSession?.id !== sessionId) return;
+        const prepared = await ensureChunkPrepared(index);
+        if (session.stopRequested || activeSpeakSession?.id !== sessionId) return;
+
+        const nextIndex = index + 1;
+        if (nextIndex < chunks.length) {
+          // Prefetch the next chunk while current chunk is being played.
+          void ensureChunkPrepared(nextIndex).catch(() => {});
+        }
+
+        setSpeakStatus({
+          state: 'speaking',
+          text: prepared.text,
+          index: index + 1,
+          total: chunks.length,
+          message: '',
+        });
+        await playAudioFile(prepared.audioPath);
+      }
+
+      if (activeSpeakSession?.id !== sessionId) return;
+      setSpeakStatus({
+        state: 'done',
+        text: '',
+        index: chunks.length,
+        total: chunks.length,
+        message: 'Done',
+      });
+      setTimeout(() => {
+        if (activeSpeakSession?.id === sessionId) {
+          stopSpeakSession({ resetStatus: true, cleanupWindow: true });
+        }
+      }, 520);
+    } catch (error: any) {
+      if (session.stopRequested || activeSpeakSession?.id !== sessionId) return;
+      setSpeakStatus({
+        state: 'error',
+        text: '',
+        index: 0,
+        total: chunks.length,
+        message: error?.message || 'Speech playback failed.',
+      });
+    }
+  })();
+
+  return true;
 }
 
 function normalizeTranscriptText(input: string): string {
@@ -1352,8 +1808,8 @@ app.whenReady().then(async () => {
     hideWindow();
   });
 
-  ipcMain.handle('set-launcher-mode', (_event: any, mode: 'default' | 'whisper') => {
-    if (mode !== 'default' && mode !== 'whisper') return;
+  ipcMain.handle('set-launcher-mode', (_event: any, mode: 'default' | 'whisper' | 'speak') => {
+    if (mode !== 'default' && mode !== 'whisper' && mode !== 'speak') return;
     setLauncherMode(mode);
   });
 
@@ -1363,6 +1819,15 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('restore-last-frontmost-app', async () => {
     return await activateLastFrontmostApp();
+  });
+
+  ipcMain.handle('speak-stop', () => {
+    stopSpeakSession({ resetStatus: true, cleanupWindow: true });
+    return true;
+  });
+
+  ipcMain.handle('speak-get-status', () => {
+    return speakStatusSnapshot;
   });
 
   // ─── IPC: Settings ──────────────────────────────────────────────
@@ -3234,6 +3699,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  stopSpeakSession({ resetStatus: false });
   stopClipboardMonitor();
   stopSnippetExpander();
   // Clean up trays

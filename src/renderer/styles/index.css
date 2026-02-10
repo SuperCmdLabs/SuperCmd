@@ -354,6 +354,62 @@ kbd {
   display: none !important;
 }
 
+.speak-widget-host {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.speak-widget-shell {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  max-width: 420px;
+  min-width: 320px;
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.speak-close-button {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.speak-close-button:hover {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.speak-text-wrap {
+  flex: 1;
+  text-align: right;
+}
+
+.speak-caption {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.48);
+  margin-bottom: 3px;
+}
+
+.speak-main-text {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 16px;
+  line-height: 1.28;
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.7);
+}
+
+.speak-main-text.is-error {
+  color: rgba(255, 126, 126, 0.95);
+}
+
 @media (max-width: 720px) {
   .whisper-pill-mini {
     padding: 7px 8px;

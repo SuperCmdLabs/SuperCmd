@@ -166,15 +166,30 @@ export interface ElectronAPI {
   getCommands: () => Promise<CommandInfo[]>;
   executeCommand: (commandId: string) => Promise<boolean>;
   hideWindow: () => Promise<void>;
-  setLauncherMode: (mode: 'default' | 'whisper') => Promise<void>;
+  setLauncherMode: (mode: 'default' | 'whisper' | 'speak') => Promise<void>;
   getLastFrontmostApp: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   restoreLastFrontmostApp: () => Promise<boolean>;
-  onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' }) => void) => void;
+  onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' | 'speak' }) => void) => void;
   onRunSystemCommand: (callback: (commandId: string) => void) => void;
   onWhisperStopAndClose: (callback: () => void) => (() => void);
   onWhisperStartListening: (callback: () => void) => (() => void);
   onWhisperToggleListening: (callback: () => void) => (() => void);
   onOAuthCallback: (callback: (url: string) => void) => void;
+  onSpeakStatus: (callback: (payload: {
+    state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+    text: string;
+    index: number;
+    total: number;
+    message?: string;
+  }) => void) => (() => void);
+  speakStop: () => Promise<boolean>;
+  speakGetStatus: () => Promise<{
+    state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+    text: string;
+    index: number;
+    total: number;
+    message?: string;
+  }>;
 
   // Settings
   getSettings: () => Promise<AppSettings>;

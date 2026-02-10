@@ -38,6 +38,7 @@
     "@raycast/api": "^1.104.5",
     "esbuild": "^0.19.12",
     "lucide-react": "^0.312.0",
+    "node-edge-tts": "^1.2.10",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

@@ -662,6 +662,12 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-supercommand-speak',
+      title: 'SuperCommand Speak',
+      keywords: ['speak', 'tts', 'read', 'selected text', 'edge-tts', 'speechify', 'jarvis', 'supercommand'],
+      category: 'system',
+    },
+    {
       id: 'system-open-extensions-settings',
       title: 'SuperCommand Extensions',
       keywords: ['extensions', 'store', 'community', 'hotkey', 'supercommand'],

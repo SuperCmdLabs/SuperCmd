@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic } from 'lucide-react';
+import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic, Volume2 } from 'lucide-react';
 import type { CommandInfo, ExtensionBundle, AppSettings } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
@@ -14,6 +14,7 @@ import SnippetManager from './SnippetManager';
 import OnboardingExtension from './OnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
 import SuperCommandWhisper from './SuperCommandWhisper';
+import SuperCommandSpeak from './SuperCommandSpeak';
 import { tryCalculate } from './smart-calculator';
 
 interface LauncherAction {
@@ -122,6 +123,14 @@ function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
     return (
       <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
         <Mic className="w-3 h-3 text-sky-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-supercommand-speak') {
+    return (
+      <div className="w-5 h-5 rounded bg-indigo-500/20 flex items-center justify-center">
+        <Volume2 className="w-3 h-3 text-indigo-200" />
       </div>
     );
   }
@@ -325,6 +334,14 @@ const App: React.FC = () => {
   const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
   const [showFileSearch, setShowFileSearch] = useState(false);
   const [showWhisper, setShowWhisper] = useState(false);
+  const [showSpeak, setShowSpeak] = useState(false);
+  const [speakStatus, setSpeakStatus] = useState<{
+    state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+    text: string;
+    index: number;
+    total: number;
+    message?: string;
+  }>({ state: 'idle', text: '', index: 0, total: 0 });
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [launcherShortcut, setLauncherShortcut] = useState('Command+Space');
   const [showActions, setShowActions] = useState(false);
@@ -478,9 +495,24 @@ const App: React.FC = () => {
     window.electron.onWindowShown((payload) => {
       console.log('[WINDOW-SHOWN] fired', payload);
       const isWhisperMode = payload?.mode === 'whisper';
+      const isSpeakMode = payload?.mode === 'speak';
       if (isWhisperMode) {
         whisperSessionRef.current = true;
         setShowWhisper(true);
+        setShowSpeak(false);
+        setShowSnippetManager(null);
+        setShowFileSearch(false);
+        setShowClipboardManager(false);
+        setShowOnboarding(false);
+        setExtensionPreferenceSetup(null);
+        setExtensionView(null);
+        setAiMode(false);
+        return;
+      }
+      if (isSpeakMode) {
+        whisperSessionRef.current = false;
+        setShowWhisper(false);
+        setShowSpeak(true);
         setShowSnippetManager(null);
         setShowFileSearch(false);
         setShowClipboardManager(false);
@@ -504,6 +536,7 @@ const App: React.FC = () => {
       setShowSnippetManager(null);
       setShowFileSearch(false);
       setShowWhisper(false);
+      setShowSpeak(false);
       // Re-fetch commands every time the window is shown
       // so newly installed extensions appear immediately
       fetchCommands();
@@ -512,6 +545,20 @@ const App: React.FC = () => {
       inputRef.current?.focus();
     });
   }, [fetchCommands, loadLauncherPreferences]);
+
+  useEffect(() => {
+    let disposed = false;
+    window.electron.speakGetStatus().then((status) => {
+      if (!disposed && status) setSpeakStatus(status);
+    }).catch(() => {});
+    const disposeSpeak = window.electron.onSpeakStatus((payload) => {
+      setSpeakStatus(payload);
+    });
+    return () => {
+      disposed = true;
+      disposeSpeak();
+    };
+  }, []);
 
   useEffect(() => {
     const onLaunchBundle = (event: Event) => {
@@ -874,10 +921,10 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showFileSearch && !showWhisper && !showOnboarding) {
+    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showFileSearch && !showWhisper && !showSpeak && !showOnboarding) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showWhisper, showOnboarding, restoreLauncherFocus]);
+  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showWhisper, showSpeak, showOnboarding, restoreLauncherFocus]);
 
   const calcResult = useMemo(() => {
     return searchQuery ? tryCalculate(searchQuery) : null;
@@ -1096,6 +1143,7 @@ const App: React.FC = () => {
       setShowSnippetManager(null);
       setShowFileSearch(false);
       setShowWhisper(false);
+      setShowSpeak(false);
       setAiMode(false);
       setShowOnboarding(true);
       return true;
@@ -1109,6 +1157,7 @@ const App: React.FC = () => {
       setShowSnippetManager(null);
       setShowFileSearch(false);
       setShowWhisper(false);
+      setShowSpeak(false);
       setAiMode(false);
       return true;
     }
@@ -1120,6 +1169,7 @@ const App: React.FC = () => {
       setShowClipboardManager(false);
       setShowFileSearch(false);
       setShowWhisper(false);
+      setShowSpeak(false);
       setAiMode(false);
       setShowSnippetManager('search');
       return true;
@@ -1132,6 +1182,7 @@ const App: React.FC = () => {
       setShowClipboardManager(false);
       setShowFileSearch(false);
       setShowWhisper(false);
+      setShowSpeak(false);
       setAiMode(false);
       setShowSnippetManager('create');
       return true;
@@ -1146,6 +1197,7 @@ const App: React.FC = () => {
       setAiMode(false);
       setShowFileSearch(true);
       setShowWhisper(false);
+      setShowSpeak(false);
       return true;
     }
     if (commandId === 'system-supercommand-whisper') {
@@ -1158,6 +1210,7 @@ const App: React.FC = () => {
       setShowFileSearch(false);
       setAiMode(false);
       setShowWhisper(true);
+      setShowSpeak(false);
       return true;
     }
     if (commandId === 'system-import-snippets') {
@@ -1774,6 +1827,24 @@ const App: React.FC = () => {
             setSearchQuery('');
             setSelectedIndex(0);
             void window.electron.hideWindow();
+          }}
+        />
+      </>
+    );
+  }
+
+  // ─── SuperCommand Speak mode ──────────────────────────────────
+  if (showSpeak) {
+    return (
+      <>
+        {hiddenExtensionRunners}
+        <SuperCommandSpeak
+          status={speakStatus}
+          onClose={() => {
+            setShowSpeak(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            void window.electron.speakStop();
           }}
         />
       </>

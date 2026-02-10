@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   commandHotkeys: {
     'system-supercommand-whisper': 'Command+Shift+W',
     'system-supercommand-whisper-speak-toggle': 'Command+.',
+    'system-supercommand-speak': 'Command+Shift+S',
   },
   pinnedCommands: [],
   recentCommands: [],

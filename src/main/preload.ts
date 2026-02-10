@@ -22,13 +22,13 @@ contextBridge.exposeInMainWorld('electron', {
   executeCommand: (commandId: string): Promise<boolean> =>
     ipcRenderer.invoke('execute-command', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
-  setLauncherMode: (mode: 'default' | 'whisper'): Promise<void> =>
+  setLauncherMode: (mode: 'default' | 'whisper' | 'speak'): Promise<void> =>
     ipcRenderer.invoke('set-launcher-mode', mode),
   getLastFrontmostApp: (): Promise<{ name: string; path: string; bundleId?: string } | null> =>
     ipcRenderer.invoke('get-last-frontmost-app'),
   restoreLastFrontmostApp: (): Promise<boolean> =>
     ipcRenderer.invoke('restore-last-frontmost-app'),
-  onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' }) => void) => {
+  onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' | 'speak' }) => void) => {
     ipcRenderer.on('window-shown', (_event: any, payload: any) => callback(payload));
   },
   onRunSystemCommand: (callback: (commandId: string) => void) => {
@@ -60,6 +60,16 @@ contextBridge.exposeInMainWorld('electron', {
   onOAuthCallback: (callback: (url: string) => void) => {
     ipcRenderer.on('oauth-callback', (_event, url) => callback(url));
   },
+  onSpeakStatus: (callback: (payload: { state: 'idle' | 'loading' | 'speaking' | 'done' | 'error'; text: string; index: number; total: number; message?: string }) => void) => {
+    const listener = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('speak-status', listener);
+    return () => {
+      ipcRenderer.removeListener('speak-status', listener);
+    };
+  },
+  speakStop: (): Promise<boolean> => ipcRenderer.invoke('speak-stop'),
+  speakGetStatus: (): Promise<{ state: 'idle' | 'loading' | 'speaking' | 'done' | 'error'; text: string; index: number; total: number; message?: string }> =>
+    ipcRenderer.invoke('speak-get-status'),
 
   // ─── Settings ───────────────────────────────────────────────────
   getSettings: (): Promise<any> => ipcRenderer.invoke('get-settings'),
