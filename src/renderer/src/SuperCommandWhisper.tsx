@@ -12,8 +12,11 @@ type WhisperState = 'idle' | 'listening' | 'processing' | 'error';
 // 'native'  = macOS SFSpeechRecognizer (no API key needed, like Chrome)
 type WhisperBackend = 'whisper' | 'native';
 
-const BAR_COUNT = 21;
-const BASE_WAVE = Array.from({ length: BAR_COUNT }, () => 0.12);
+const BAR_HEIGHT_PROFILE = [
+  0.45, 0.62, 0.52, 0.58, 0.74, 0.7, 1.0, 0.7, 0.58, 0.52, 0.74, 0.62, 0.45,
+];
+const BAR_COUNT = BAR_HEIGHT_PROFILE.length;
+const BASE_WAVE = BAR_HEIGHT_PROFILE.map((profile) => 0.08 + profile * 0.05);
 
 function normalizeTranscript(value: string): string {
   return String(value || '')
@@ -39,6 +42,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
   const autoStartDoneRef = useRef(false);
   const editorFocusRestoreTimerRef = useRef<number | null>(null);
   const editorFocusRestoredRef = useRef(false);
+  const barNoiseRef = useRef<number[]>(Array.from({ length: BAR_COUNT }, () => 0));
 
   // Audio visualizer refs
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -95,6 +99,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
       mediaStreamRef.current = null;
     }
 
+    barNoiseRef.current = Array.from({ length: BAR_COUNT }, () => 0);
     setWaveBars(BASE_WAVE);
   }, []);
 
@@ -129,18 +134,20 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
         const normalized = (frame[i] - 128) / 128;
         sumSquares += normalized * normalized;
       }
-
       const rms = Math.sqrt(sumSquares / frame.length);
       const energy = Math.min(1, rms * 8.5);
 
       setWaveBars((previous) =>
         previous.map((prev, index) => {
-          const center = (BAR_COUNT - 1) / 2;
-          const distance = Math.abs(index - center) / center;
-          const shape = 1 - distance * 0.9;
-          const jitter = (Math.random() * 0.22) - 0.11;
-          const target = Math.max(0.08, Math.min(1, 0.12 + energy * shape + jitter));
-          return prev * 0.55 + target * 0.45;
+          const profile = BAR_HEIGHT_PROFILE[index];
+          const previousNoise = barNoiseRef.current[index] || 0;
+          const nextNoise = Math.max(-1, Math.min(1, previousNoise * 0.76 + ((Math.random() * 2) - 1) * 0.38));
+          barNoiseRef.current[index] = nextNoise;
+
+          const jitter = nextNoise * 0.18;
+          const shapedEnergy = energy * (0.32 + profile * 0.7);
+          const target = Math.max(0.04, Math.min(1, 0.08 + profile * 0.1 + shapedEnergy + jitter));
+          return prev * 0.62 + target * 0.38;
         })
       );
 
@@ -616,13 +623,18 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
         className={`whisper-wave whisper-wave-standalone ${listening ? 'is-listening' : ''} ${processing ? 'is-processing' : ''}`}
         aria-hidden="true"
       >
-        {waveBars.map((value, index) => (
-          <span
-            key={`bar-${index}`}
-            className="whisper-wave-bar"
-            style={{ height: `${6 + Math.round(value * 36)}px` }}
-          />
-        ))}
+        {waveBars.map((value, index) => {
+          const profile = BAR_HEIGHT_PROFILE[index];
+          const minHeight = 5 + Math.round(profile * 7);
+          const amplitude = 8 + Math.round(profile * 18);
+          return (
+            <span
+              key={`bar-${index}`}
+              className="whisper-wave-bar"
+              style={{ height: `${minHeight + Math.round(value * amplitude)}px` }}
+            />
+          );
+        })}
       </div>
       <span className="sr-only">{`${speechLanguage} ${statusText} ${errorText}`.trim()}</span>
     </div>,
