@@ -336,6 +336,198 @@ function resolveEdgeVoice(language?: string): string {
   return 'en-US-JennyNeural';
 }
 
+function resolveElevenLabsSttModel(model: string): string {
+  const raw = String(model || '').trim().toLowerCase();
+  if (raw.includes('scribe')) return 'scribe_v1';
+  const noPrefix = raw.replace(/^elevenlabs-/, '');
+  if (!noPrefix) return 'scribe_v1';
+  return noPrefix.replace(/-/g, '_');
+}
+
+function normalizeApiKey(raw: any): string {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  // Handle accidental surrounding quotes from copy/paste.
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1).trim();
+  }
+  return value;
+}
+
+function getElevenLabsApiKey(settings: AppSettings): string {
+  const fromSettings = normalizeApiKey(settings.ai?.elevenlabsApiKey);
+  if (fromSettings) return fromSettings;
+  return normalizeApiKey(process.env.ELEVENLABS_API_KEY);
+}
+
+function resolveElevenLabsTtsConfig(selectedModel: string): { modelId: string; voiceId: string } {
+  const raw = String(selectedModel || '').trim();
+  const explicitVoice = /@([A-Za-z0-9]{8,})$/.exec(raw)?.[1];
+  const modelSource = explicitVoice ? raw.replace(/@[A-Za-z0-9]{8,}$/, '') : raw;
+  const normalized = modelSource.toLowerCase();
+  const modelRaw = normalized.replace(/^elevenlabs-/, '');
+  let modelId = modelRaw.replace(/-/g, '_');
+  if (modelId === 'multilingual_v2' || modelId === 'multilingual-v2') {
+    modelId = 'eleven_multilingual_v2';
+  }
+  if (!modelId) {
+    modelId = 'eleven_multilingual_v2';
+  }
+  // Allow an optional explicit voice id suffix: "elevenlabs-model@voiceId"
+  const voiceId = explicitVoice || 'EXAVITQu4vr4xnSDxMa';
+  return { modelId, voiceId };
+}
+
+function transcribeAudioWithElevenLabs(opts: {
+  audioBuffer: Buffer;
+  apiKey: string;
+  model: string;
+  language?: string;
+}): Promise<string> {
+  const boundary = `----SuperCommandBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+  const parts: Buffer[] = [];
+
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.webm"\r\nContent-Type: audio/webm\r\n\r\n`
+  ));
+  parts.push(opts.audioBuffer);
+  parts.push(Buffer.from('\r\n'));
+
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="model_id"\r\n\r\n${opts.model}\r\n`
+  ));
+
+  if (opts.language) {
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="language_code"\r\n\r\n${opts.language}\r\n`
+    ));
+  }
+
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+  const body = Buffer.concat(parts);
+
+  return new Promise<string>((resolve, reject) => {
+    try {
+      const https = require('https');
+      const req = https.request(
+        {
+          hostname: 'api.elevenlabs.io',
+          path: '/v1/speech-to-text',
+          method: 'POST',
+          headers: {
+            'xi-api-key': opts.apiKey,
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            'Content-Length': body.length,
+          },
+        },
+        (res: any) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            const responseBody = Buffer.concat(chunks).toString('utf-8');
+            if (res.statusCode && res.statusCode >= 400) {
+              if (res.statusCode === 401 && responseBody.includes('detected_unusual_activity')) {
+                reject(new Error('ElevenLabs rejected this key due to account restrictions (detected_unusual_activity). Verify plan/account status in ElevenLabs dashboard.'));
+                return;
+              }
+              reject(new Error(`ElevenLabs STT HTTP ${res.statusCode}: ${responseBody.slice(0, 500)}`));
+              return;
+            }
+            try {
+              const parsed = JSON.parse(responseBody || '{}');
+              const text = String(parsed?.text || parsed?.transcript || '').trim();
+              if (!text) {
+                reject(new Error('ElevenLabs STT returned an empty transcript.'));
+                return;
+              }
+              resolve(text);
+            } catch {
+              const text = responseBody.trim();
+              if (!text) {
+                reject(new Error('ElevenLabs STT returned an empty response.'));
+                return;
+              }
+              resolve(text);
+            }
+          });
+        }
+      );
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function synthesizeElevenLabsToFile(opts: {
+  text: string;
+  apiKey: string;
+  modelId: string;
+  voiceId: string;
+  audioPath: string;
+  timeoutMs?: number;
+}): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    try {
+      const https = require('https');
+      const fs = require('fs');
+      const req = https.request(
+        {
+          hostname: 'api.elevenlabs.io',
+          path: `/v1/text-to-speech/${encodeURIComponent(opts.voiceId)}?output_format=mp3_44100_128`,
+          method: 'POST',
+          headers: {
+            'xi-api-key': opts.apiKey,
+            'Content-Type': 'application/json',
+            'Accept': 'audio/mpeg',
+          },
+        },
+        (res: any) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            if (res.statusCode && res.statusCode >= 400) {
+              const responseText = Buffer.concat(chunks).toString('utf-8');
+              if (res.statusCode === 401 && responseText.includes('detected_unusual_activity')) {
+                reject(new Error('ElevenLabs rejected this key due to account restrictions (detected_unusual_activity). Verify plan/account status in ElevenLabs dashboard.'));
+                return;
+              }
+              reject(new Error(`ElevenLabs TTS HTTP ${res.statusCode}: ${responseText.slice(0, 500)}`));
+              return;
+            }
+            const audio = Buffer.concat(chunks);
+            if (!audio.length) {
+              reject(new Error('ElevenLabs TTS returned empty audio.'));
+              return;
+            }
+            fs.writeFile(opts.audioPath, audio, (err: Error | null) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+        }
+      );
+
+      req.on('error', reject);
+      req.setTimeout(Math.max(5000, opts.timeoutMs || 45000), () => {
+        req.destroy(new Error('ElevenLabs TTS timed out.'));
+      });
+      req.write(JSON.stringify({
+        text: opts.text,
+        model_id: opts.modelId,
+      }));
+      req.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 function formatEdgeLocaleLabel(locale: string, rawLabel?: string): string {
   const map: Record<string, string> = {
     'en-US': 'English (US)',
@@ -1469,7 +1661,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     commandId === 'system-search-files' ||
     commandId === 'system-open-onboarding'
   ) {
-    return await openLauncherAndRunSystemCommand('system-supercommand-whisper', {
+    return await openLauncherAndRunSystemCommand(commandId, {
       showWindow: true,
       mode: 'default',
     });
@@ -1516,31 +1708,36 @@ async function startSpeakFromSelection(): Promise<boolean> {
 
   const settings = loadSettings();
   const selectedTtsModel = String(settings.ai?.textToSpeechModel || 'edge-tts');
-  if (selectedTtsModel.startsWith('elevenlabs-')) {
+  const usingElevenLabsTts = selectedTtsModel.startsWith('elevenlabs-');
+  const elevenLabsApiKey = getElevenLabsApiKey(settings);
+  if (usingElevenLabsTts && !elevenLabsApiKey) {
     setSpeakStatus({
       state: 'error',
       text: '',
       index: 0,
       total: chunks.length,
-      message: 'ElevenLabs TTS is not supported yet in this build. Select Edge TTS in Settings -> AI -> SuperCommand Speak.',
+      message: 'ElevenLabs API key not configured. Set it in Settings -> AI (or ELEVENLABS_API_KEY env var).',
     });
     return false;
   }
+  const elevenLabsTts = usingElevenLabsTts ? resolveElevenLabsTtsConfig(selectedTtsModel) : null;
   const configuredEdgeVoice = String(settings.ai?.edgeTtsVoice || '').trim();
-  if (configuredEdgeVoice) {
+  if (!usingElevenLabsTts && configuredEdgeVoice) {
     speakRuntimeOptions.voice = configuredEdgeVoice;
   }
 
-  const runtime = resolveEdgeTtsRuntime();
-  if (!runtime) {
-    setSpeakStatus({
-      state: 'error',
-      text: '',
-      index: 0,
-      total: chunks.length,
-      message: 'Node edge-tts is not installed. Run: npm i node-edge-tts',
-    });
-    return false;
+  const runtime = usingElevenLabsTts ? null : resolveEdgeTtsRuntime();
+  if (!usingElevenLabsTts) {
+    if (!runtime) {
+      setSpeakStatus({
+        state: 'error',
+        text: '',
+        index: 0,
+        total: chunks.length,
+        message: 'Node edge-tts is not installed. Run: npm i node-edge-tts',
+      });
+      return false;
+    }
   }
 
   const fs = require('fs');
@@ -1566,7 +1763,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
   const voiceLangMatch = /^([a-z]{2}-[A-Z]{2})-/.exec(configuredVoice);
   const fallbackLanguage = String(settings.ai?.speechLanguage || 'en-US');
   const lang = voiceLangMatch?.[1] || (fallbackLanguage.includes('-') ? fallbackLanguage : `${fallbackLanguage}-US`);
-  if (!speakRuntimeOptions.voice) {
+  if (!usingElevenLabsTts && !speakRuntimeOptions.voice) {
     speakRuntimeOptions.voice = resolveEdgeVoice(settings.ai?.speechLanguage || 'en-US');
   }
 
@@ -1593,18 +1790,40 @@ async function startSpeakFromSelection(): Promise<boolean> {
             throw new Error('Speak session stopped');
           }
 
-          const args = [
-            ...runtime.baseArgs,
-            '-t', session.chunks[index],
-            '-f', audioPath,
-            '-v', speakRuntimeOptions.voice,
-            '-l', lang,
-            '-r', speakRuntimeOptions.rate,
-            '--saveSubtitles',
-            '--timeout', '45000',
-          ];
-
           const attemptError = await new Promise<Error | null>((attemptResolve) => {
+            if (usingElevenLabsTts) {
+              if (!elevenLabsTts || !elevenLabsApiKey) {
+                attemptResolve(new Error('ElevenLabs TTS configuration is missing.'));
+                return;
+              }
+              synthesizeElevenLabsToFile({
+                text: session.chunks[index],
+                audioPath,
+                apiKey: elevenLabsApiKey,
+                modelId: elevenLabsTts.modelId,
+                voiceId: elevenLabsTts.voiceId,
+                timeoutMs: 45000,
+              }).then(() => attemptResolve(null)).catch((err: any) => {
+                const message = String(err?.message || err || 'ElevenLabs TTS failed');
+                attemptResolve(new Error(message));
+              });
+              return;
+            }
+
+            if (!runtime) {
+              attemptResolve(new Error('Edge TTS runtime is unavailable.'));
+              return;
+            }
+            const args = [
+              ...runtime.baseArgs,
+              '-t', session.chunks[index],
+              '-f', audioPath,
+              '-v', speakRuntimeOptions.voice,
+              '-l', lang,
+              '-r', speakRuntimeOptions.rate,
+              '--saveSubtitles',
+              '--timeout', '45000',
+            ];
             const proc = spawn(runtime.command, args, {
               stdio: ['ignore', 'pipe', 'pipe'],
             });
@@ -3611,22 +3830,30 @@ return appURL's |path|() as text`,
       const s = loadSettings();
 
       // Parse speechToTextModel to a concrete provider model.
+      let provider: 'openai' | 'elevenlabs' = 'openai';
       let model = 'gpt-4o-transcribe';
       const sttModel = s.ai.speechToTextModel || '';
       if (!sttModel || sttModel === 'default') {
+        provider = 'openai';
         model = 'gpt-4o-transcribe';
       } else if (sttModel === 'native') {
-        throw new Error('Whisper model is set to Native. Select an OpenAI model in Settings -> AI -> SuperCommand Whisper to use cloud transcription.');
+        throw new Error('Whisper model is set to Native. Select an OpenAI or ElevenLabs model in Settings -> AI -> SuperCommand Whisper to use cloud transcription.');
       } else if (sttModel.startsWith('openai-')) {
+        provider = 'openai';
         model = sttModel.slice('openai-'.length);
       } else if (sttModel.startsWith('elevenlabs-')) {
-        throw new Error('ElevenLabs transcription is not supported yet in this build. Select Native or an OpenAI model in Settings -> AI -> SuperCommand Whisper.');
+        provider = 'elevenlabs';
+        model = resolveElevenLabsSttModel(sttModel);
       } else if (sttModel) {
         model = sttModel;
       }
 
-      if (!s.ai.openaiApiKey) {
+      if (provider === 'openai' && !s.ai.openaiApiKey) {
         throw new Error('OpenAI API key not configured. Go to Settings -> AI to set it up.');
+      }
+      const elevenLabsApiKey = getElevenLabsApiKey(s);
+      if (provider === 'elevenlabs' && !elevenLabsApiKey) {
+        throw new Error('ElevenLabs API key not configured. Set it in Settings -> AI (or ELEVENLABS_API_KEY env var).');
       }
 
       // Convert BCP-47 (e.g. 'en-US') to ISO-639-1 (e.g. 'en')
@@ -3635,14 +3862,21 @@ return appURL's |path|() as text`,
 
       const audioBuffer = Buffer.from(audioArrayBuffer);
 
-      console.log(`[Whisper] Transcribing ${audioBuffer.length} bytes, model=${model}, lang=${language}`);
+      console.log(`[Whisper] Transcribing ${audioBuffer.length} bytes, provider=${provider}, model=${model}, lang=${language}`);
 
-      const text = await transcribeAudio({
-        audioBuffer,
-        apiKey: s.ai.openaiApiKey,
-        model,
-        language,
-      });
+      const text = provider === 'elevenlabs'
+        ? await transcribeAudioWithElevenLabs({
+            audioBuffer,
+            apiKey: elevenLabsApiKey,
+            model,
+            language,
+          })
+        : await transcribeAudio({
+            audioBuffer,
+            apiKey: s.ai.openaiApiKey,
+            model,
+            language,
+          });
 
       console.log(`[Whisper] Transcription result: "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`);
       return text;

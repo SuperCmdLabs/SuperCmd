@@ -653,7 +653,11 @@ const AITab: React.FC = () => {
 
               {whisperModelValue.startsWith('elevenlabs-') && (
                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-md px-2.5 py-2">
-                  <p className="text-[11px] text-amber-300">ElevenLabs Whisper option is shown for planning, but Native/OpenAI are currently the supported runtime paths.</p>
+                  <p className="text-[11px] text-amber-300">
+                    {ai.elevenlabsApiKey
+                      ? 'ElevenLabs STT selected. Cloud transcription will use your ElevenLabs key.'
+                      : 'ElevenLabs STT selected. Add ElevenLabs API key in API Keys & Models.'}
+                  </p>
                 </div>
               )}
             </div>
@@ -826,6 +830,9 @@ const AITab: React.FC = () => {
                     placeholder="elevenlabs-multilingual-v2"
                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
                   />
+                  {!ai.elevenlabsApiKey && (
+                    <p className="text-[11px] text-amber-300 mt-1.5">Add ElevenLabs API key in API Keys & Models.</p>
+                  )}
                 </div>
               )}
             </div>

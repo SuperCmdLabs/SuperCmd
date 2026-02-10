@@ -761,7 +761,11 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         // Backend is controlled by Whisper model selection.
         const sttModel = String(settings.ai.speechToTextModel || 'native');
         const wantsOpenAI = sttModel.startsWith('openai-');
-        backendRef.current = wantsOpenAI && !!settings.ai.openaiApiKey ? 'whisper' : 'native';
+        const wantsElevenLabs = sttModel.startsWith('elevenlabs-');
+        const canUseCloud =
+          (wantsOpenAI && !!settings.ai.openaiApiKey) ||
+          (wantsElevenLabs && !!settings.ai.elevenlabsApiKey);
+        backendRef.current = canUseCloud ? 'whisper' : 'native';
       })
       .catch(() => {});
 
