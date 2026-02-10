@@ -1263,39 +1263,73 @@ async function startSpeakFromSelection(): Promise<boolean> {
         return;
       }
       const audioPath = pathMod.join(tmpDir, `chunk-${index}.mp3`);
-      const { spawn } = require('child_process');
-      const args = [
-        ...runtime.baseArgs,
-        '-t', session.chunks[index],
-        '-f', audioPath,
-        '-v', speakRuntimeOptions.voice,
-        '-l', lang,
-        '-r', speakRuntimeOptions.rate,
-        '--saveSubtitles',
-      ];
-      const proc = spawn(runtime.command, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      session.ttsProcesses.add(proc);
+      const synthesizeChunkWithRetry = async (): Promise<void> => {
+        const { spawn } = require('child_process');
+        const maxAttempts = 3;
+        let lastErr: Error | null = null;
 
-      let stderr = '';
-      proc.stderr.on('data', (chunk: Buffer | string) => {
-        stderr += String(chunk || '');
-      });
-      proc.on('error', (err: Error) => {
-        session.ttsProcesses.delete(proc);
-        reject(err);
-      });
-      proc.on('close', (code: number | null) => {
-        session.ttsProcesses.delete(proc);
-        if (session.stopRequested) {
-          reject(new Error('Speak session stopped'));
-          return;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          if (session.stopRequested) {
+            throw new Error('Speak session stopped');
+          }
+
+          const args = [
+            ...runtime.baseArgs,
+            '-t', session.chunks[index],
+            '-f', audioPath,
+            '-v', speakRuntimeOptions.voice,
+            '-l', lang,
+            '-r', speakRuntimeOptions.rate,
+            '--saveSubtitles',
+            '--timeout', '45000',
+          ];
+
+          const attemptError = await new Promise<Error | null>((attemptResolve) => {
+            const proc = spawn(runtime.command, args, {
+              stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            session.ttsProcesses.add(proc);
+
+            let stderr = '';
+            proc.stderr.on('data', (chunk: Buffer | string) => {
+              stderr += String(chunk || '');
+            });
+            proc.on('error', (err: Error) => {
+              session.ttsProcesses.delete(proc);
+              attemptResolve(err);
+            });
+            proc.on('close', (code: number | null) => {
+              session.ttsProcesses.delete(proc);
+              if (session.stopRequested) {
+                attemptResolve(new Error('Speak session stopped'));
+                return;
+              }
+              if (code !== 0) {
+                const text = stderr.trim() || `node-edge-tts exited with ${code}`;
+                attemptResolve(new Error(text));
+                return;
+              }
+              attemptResolve(null);
+            });
+          });
+
+          if (!attemptError) return;
+          lastErr = attemptError;
+
+          const isTimeout = /timed out|timeout/i.test(String(attemptError.message || ''));
+          const canRetry = attempt < maxAttempts;
+          if (!canRetry || !isTimeout) {
+            break;
+          }
+
+          const waitMs = 450 * attempt;
+          await new Promise((r) => setTimeout(r, waitMs));
         }
-        if (code !== 0) {
-          reject(new Error(stderr.trim() || `node-edge-tts exited with ${code}`));
-          return;
-        }
+
+        throw lastErr || new Error('node-edge-tts failed');
+      };
+
+      synthesizeChunkWithRetry().then(() => {
         let wordCues: Array<{ start: number; end: number; wordIndex: number }> = [];
         try {
           const subtitleCandidates = [
@@ -1331,6 +1365,13 @@ async function startSpeakFromSelection(): Promise<boolean> {
           }
         } catch {}
         resolve({ index, text: session.chunks[index], audioPath, wordCues });
+      }).catch((err: any) => {
+        const message = String(err?.message || err || 'node-edge-tts failed');
+        if (/timed out|timeout/i.test(message)) {
+          reject(new Error('Speech request timed out. Please try again.'));
+          return;
+        }
+        reject(err instanceof Error ? err : new Error(message));
       });
     });
 
