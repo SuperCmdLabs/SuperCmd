@@ -16,6 +16,7 @@ import FileSearchExtension from './FileSearchExtension';
 import SuperCommandWhisper from './SuperCommandWhisper';
 import SuperCommandSpeak from './SuperCommandSpeak';
 import { tryCalculate } from './smart-calculator';
+import { useDetachedPortalWindow } from './useDetachedPortalWindow';
 
 interface LauncherAction {
   id: string;
@@ -384,6 +385,30 @@ const App: React.FC = () => {
   extensionViewRef.current = extensionView;
   pinnedCommandsRef.current = pinnedCommands;
 
+  const whisperPortalTarget = useDetachedPortalWindow(showWhisper, {
+    name: 'supercommand-whisper-window',
+    title: 'SuperCommand Whisper',
+    width: 272,
+    height: 52,
+    anchor: 'center-bottom',
+    onClosed: () => {
+      whisperSessionRef.current = false;
+      setShowWhisper(false);
+    },
+  });
+
+  const speakPortalTarget = useDetachedPortalWindow(showSpeak, {
+    name: 'supercommand-speak-window',
+    title: 'SuperCommand Speak',
+    width: 520,
+    height: 112,
+    anchor: 'center-bottom',
+    onClosed: () => {
+      setShowSpeak(false);
+      void window.electron.speakStop();
+    },
+  });
+
   const restoreLauncherFocus = useCallback(() => {
     requestAnimationFrame(() => {
       inputRef.current?.focus();
@@ -540,8 +565,6 @@ const App: React.FC = () => {
       setAiQuery('');
       setShowSnippetManager(null);
       setShowFileSearch(false);
-      setShowWhisper(false);
-      setShowSpeak(false);
       // Re-fetch commands every time the window is shown
       // so newly installed extensions appear immediately
       fetchCommands();
@@ -550,6 +573,14 @@ const App: React.FC = () => {
       inputRef.current?.focus();
     });
   }, [fetchCommands, loadLauncherPreferences]);
+
+  useEffect(() => {
+    window.electron.setDetachedOverlayState('whisper', showWhisper);
+  }, [showWhisper]);
+
+  useEffect(() => {
+    window.electron.setDetachedOverlayState('speak', showSpeak);
+  }, [showSpeak]);
 
   useEffect(() => {
     let disposed = false;
@@ -1237,6 +1268,23 @@ const App: React.FC = () => {
       setShowSpeak(false);
       return true;
     }
+    if (commandId === 'system-supercommand-speak') {
+      whisperSessionRef.current = false;
+      setExtensionView(null);
+      setExtensionPreferenceSetup(null);
+      setShowOnboarding(false);
+      setShowClipboardManager(false);
+      setShowSnippetManager(null);
+      setShowFileSearch(false);
+      setAiMode(false);
+      setShowWhisper(false);
+      setShowSpeak(true);
+      return true;
+    }
+    if (commandId === 'system-supercommand-speak-close') {
+      setShowSpeak(false);
+      return true;
+    }
     if (commandId === 'system-import-snippets') {
       await window.electron.snippetImport();
       return true;
@@ -1529,6 +1577,41 @@ const App: React.FC = () => {
     </>
   );
 
+  const detachedOverlayRunners = (
+    <>
+      {showWhisper && whisperPortalTarget ? (
+        <SuperCommandWhisper
+          portalTarget={whisperPortalTarget}
+          onClose={() => {
+            whisperSessionRef.current = false;
+            setShowWhisper(false);
+          }}
+        />
+      ) : null}
+      {showSpeak && speakPortalTarget ? (
+        <SuperCommandSpeak
+          status={speakStatus}
+          voice={speakOptions.voice}
+          rate={speakOptions.rate}
+          portalTarget={speakPortalTarget}
+          onVoiceChange={handleSpeakVoiceChange}
+          onRateChange={handleSpeakRateChange}
+          onClose={() => {
+            setShowSpeak(false);
+            void window.electron.speakStop();
+          }}
+        />
+      ) : null}
+    </>
+  );
+
+  const alwaysMountedRunners = (
+    <>
+      {hiddenExtensionRunners}
+      {detachedOverlayRunners}
+    </>
+  );
+
   // ─── Extension Preferences Setup ────────────────────────────────
   if (extensionPreferenceSetup) {
     const bundle = extensionPreferenceSetup.bundle;
@@ -1544,7 +1627,7 @@ const App: React.FC = () => {
 
     return (
       <>
-        {hiddenExtensionRunners}
+        {alwaysMountedRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
@@ -1741,7 +1824,7 @@ const App: React.FC = () => {
   if (extensionView) {
     return (
       <>
-        {hiddenExtensionRunners}
+        {alwaysMountedRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             <ExtensionView
@@ -1779,7 +1862,7 @@ const App: React.FC = () => {
   if (showClipboardManager) {
     return (
       <>
-        {hiddenExtensionRunners}
+        {alwaysMountedRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             <ClipboardManager
@@ -1800,7 +1883,7 @@ const App: React.FC = () => {
   if (showSnippetManager) {
     return (
       <>
-        {hiddenExtensionRunners}
+        {alwaysMountedRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             <SnippetManager
@@ -1822,7 +1905,7 @@ const App: React.FC = () => {
   if (showFileSearch) {
     return (
       <>
-        {hiddenExtensionRunners}
+        {alwaysMountedRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             <FileSearchExtension
@@ -1839,51 +1922,11 @@ const App: React.FC = () => {
     );
   }
 
-  // ─── SuperCommand Whisper mode ──────────────────────────────────
-  if (showWhisper) {
-    return (
-      <>
-        {hiddenExtensionRunners}
-        <SuperCommandWhisper
-          onClose={() => {
-            whisperSessionRef.current = false;
-            setShowWhisper(false);
-            setSearchQuery('');
-            setSelectedIndex(0);
-            void window.electron.hideWindow();
-          }}
-        />
-      </>
-    );
-  }
-
-  // ─── SuperCommand Speak mode ──────────────────────────────────
-  if (showSpeak) {
-    return (
-      <>
-        {hiddenExtensionRunners}
-        <SuperCommandSpeak
-          status={speakStatus}
-          voice={speakOptions.voice}
-          rate={speakOptions.rate}
-          onVoiceChange={handleSpeakVoiceChange}
-          onRateChange={handleSpeakRateChange}
-          onClose={() => {
-            setShowSpeak(false);
-            setSearchQuery('');
-            setSelectedIndex(0);
-            void window.electron.speakStop();
-          }}
-        />
-      </>
-    );
-  }
-
   // ─── AI Chat mode ──────────────────────────────────────────────
   if (aiMode) {
     return (
       <>
-        {hiddenExtensionRunners}
+        {alwaysMountedRunners}
         <div className="w-full h-full">
           <div className="glass-effect overflow-hidden h-full flex flex-col">
             {/* AI header — editable input */}
@@ -1965,7 +2008,7 @@ const App: React.FC = () => {
   if (showOnboarding) {
     return (
       <>
-        {hiddenExtensionRunners}
+        {alwaysMountedRunners}
         <OnboardingExtension
           initialShortcut={launcherShortcut}
           onClose={() => {
@@ -1989,7 +2032,7 @@ const App: React.FC = () => {
   // ─── Launcher mode ──────────────────────────────────────────────
   return (
     <>
-    {hiddenExtensionRunners}
+    {alwaysMountedRunners}
     <div className="w-full h-full">
       <div className="glass-effect overflow-hidden h-full flex flex-col">
         {/* Search header - transparent background */}

@@ -17,6 +17,7 @@ interface SuperCommandSpeakProps {
   onVoiceChange: (voice: string) => void;
   onRateChange: (rate: string) => void;
   onClose: () => void;
+  portalTarget?: HTMLElement | null;
 }
 
 const VOICE_PRESETS = [
@@ -41,8 +42,11 @@ const SuperCommandSpeak: React.FC<SuperCommandSpeakProps> = ({
   onVoiceChange,
   onRateChange,
   onClose,
+  portalTarget,
 }) => {
   if (typeof document === 'undefined') return null;
+  const target = portalTarget || document.body;
+  if (!target) return null;
   const textScrollRef = useRef<HTMLDivElement | null>(null);
 
   const caption =
@@ -148,7 +152,7 @@ const SuperCommandSpeak: React.FC<SuperCommandSpeakProps> = ({
         </div>
       </div>
     </div>,
-    document.body
+    target
   );
 };
 

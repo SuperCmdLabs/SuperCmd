@@ -61,6 +61,65 @@ const DEFAULT_WINDOW_WIDTH = 860;
 const DEFAULT_WINDOW_HEIGHT = 540;
 const WHISPER_WINDOW_WIDTH = 266;
 const WHISPER_WINDOW_HEIGHT = 84;
+const DETACHED_WHISPER_WINDOW_NAME = 'supercommand-whisper-window';
+const DETACHED_SPEAK_WINDOW_NAME = 'supercommand-speak-window';
+const DETACHED_WINDOW_QUERY_KEY = 'sc_detached';
+
+function parsePopupFeatures(rawFeatures: string): {
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+} {
+  const out: { width?: number; height?: number; x?: number; y?: number } = {};
+  const features = String(rawFeatures || '').split(',').map((s) => s.trim()).filter(Boolean);
+  for (const entry of features) {
+    const [rawKey, rawValue] = entry.split('=').map((s) => String(s || '').trim());
+    if (!rawKey || rawValue === '') continue;
+    const value = Number(rawValue);
+    if (!Number.isFinite(value)) continue;
+    const key = rawKey.toLowerCase();
+    if (key === 'width') out.width = Math.max(80, Math.round(value));
+    if (key === 'height') out.height = Math.max(36, Math.round(value));
+    if (key === 'left') out.x = Math.round(value);
+    if (key === 'top') out.y = Math.round(value);
+  }
+  return out;
+}
+
+function resolveDetachedPopupName(details: any): string | null {
+  const byFrameName = String(details?.frameName || '').trim();
+  if (
+    byFrameName === DETACHED_WHISPER_WINDOW_NAME ||
+    byFrameName === DETACHED_SPEAK_WINDOW_NAME ||
+    byFrameName.startsWith(`${DETACHED_WHISPER_WINDOW_NAME}-`) ||
+    byFrameName.startsWith(`${DETACHED_SPEAK_WINDOW_NAME}-`)
+  ) {
+    if (byFrameName.startsWith(DETACHED_WHISPER_WINDOW_NAME)) return DETACHED_WHISPER_WINDOW_NAME;
+    if (byFrameName.startsWith(DETACHED_SPEAK_WINDOW_NAME)) return DETACHED_SPEAK_WINDOW_NAME;
+    return byFrameName;
+  }
+  const rawUrl = String(details?.url || '').trim();
+  if (!rawUrl) return null;
+  try {
+    const parsed = new URL(rawUrl);
+    const byQuery = String(parsed.searchParams.get(DETACHED_WINDOW_QUERY_KEY) || '').trim();
+    if (byQuery === DETACHED_WHISPER_WINDOW_NAME || byQuery === DETACHED_SPEAK_WINDOW_NAME) {
+      return byQuery;
+    }
+  } catch {}
+  return null;
+}
+
+function computeDetachedPopupPosition(width: number, height: number): { x: number; y: number } {
+  const cursorPoint = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursorPoint);
+  const workArea = display?.workArea || screen.getPrimaryDisplay().workArea;
+  return {
+    x: workArea.x + Math.floor((workArea.width - width) / 2),
+    y: workArea.y + workArea.height - height - 14,
+  };
+}
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
@@ -125,6 +184,8 @@ let launcherMode: 'default' | 'whisper' | 'speak' = 'default';
 let lastWhisperToggleAt = 0;
 let lastWhisperShownAt = 0;
 let whisperEscapeRegistered = false;
+let whisperOverlayVisible = false;
+let speakOverlayVisible = false;
 
 function registerWhisperEscapeShortcut(): void {
   if (whisperEscapeRegistered) return;
@@ -146,6 +207,12 @@ function unregisterWhisperEscapeShortcut(): void {
     globalShortcut.unregister('Escape');
   } catch {}
   whisperEscapeRegistered = false;
+}
+
+function emitWindowHidden(): void {
+  try {
+    mainWindow?.webContents.send('window-hidden');
+  } catch {}
 }
 
 function setSpeakStatus(status: {
@@ -408,16 +475,28 @@ async function getSelectedTextForSpeak(): Promise<string> {
   if (fromAccessibility) return fromAccessibility;
 
   const previousClipboard = systemClipboard.readText();
+  const sentinel = `__supercommand_speak_copy_probe__${Date.now()}_${Math.random().toString(36).slice(2)}`;
   try {
     const { execFile } = require('child_process');
     const { promisify } = require('util');
     const execFileAsync = promisify(execFile);
+    // Put a probe value on clipboard so we can reliably detect whether Cmd+C
+    // produced fresh selected text instead of reusing stale clipboard content.
+    systemClipboard.writeText(sentinel);
     await execFileAsync('/usr/bin/osascript', [
       '-e',
       'tell application "System Events" to keystroke "c" using command down',
     ]);
-    await new Promise((resolve) => setTimeout(resolve, 120));
-    const captured = systemClipboard.readText().trim();
+    // Wait briefly for apps that populate clipboard asynchronously.
+    const waitUntil = Date.now() + 380;
+    let latest = '';
+    while (Date.now() < waitUntil) {
+      latest = String(systemClipboard.readText() || '');
+      if (latest && latest !== sentinel) break;
+      await new Promise((resolve) => setTimeout(resolve, 35));
+    }
+    const captured = String(latest || systemClipboard.readText() || '').trim();
+    if (!captured || captured === sentinel) return '';
     return captured;
   } catch {
     return '';
@@ -433,6 +512,11 @@ function stopSpeakSession(options?: { resetStatus?: boolean; cleanupWindow?: boo
   if (!session) {
     if (options?.resetStatus) {
       setSpeakStatus({ state: 'idle', text: '', index: 0, total: 0 });
+    }
+    if (options?.cleanupWindow) {
+      try {
+        mainWindow?.webContents.send('run-system-command', 'system-supercommand-speak-close');
+      } catch {}
     }
     return;
   }
@@ -459,7 +543,9 @@ function stopSpeakSession(options?: { resetStatus?: boolean; cleanupWindow?: boo
     setSpeakStatus({ state: 'idle', text: '', index: 0, total: 0 });
   }
   if (options?.cleanupWindow) {
-    hideWindow();
+    try {
+      mainWindow?.webContents.send('run-system-command', 'system-supercommand-speak-close');
+    } catch {}
   }
 }
 
@@ -705,6 +791,72 @@ function createWindow(): void {
     },
   });
 
+  mainWindow.webContents.setWindowOpenHandler((details: any) => {
+    const detachedPopupName = resolveDetachedPopupName(details);
+    if (!detachedPopupName) {
+      return { action: 'allow' };
+    }
+
+    const popupBounds = parsePopupFeatures(details?.features || '');
+    const defaultWidth = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ? 272 : 520;
+    const defaultHeight = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ? 52 : 112;
+    const finalWidth = typeof popupBounds.width === 'number' ? popupBounds.width : defaultWidth;
+    const finalHeight = typeof popupBounds.height === 'number' ? popupBounds.height : defaultHeight;
+    const bottomCenterPos = computeDetachedPopupPosition(finalWidth, finalHeight);
+
+    return {
+      action: 'allow',
+      outlivesOpener: true,
+      overrideBrowserWindowOptions: {
+        width: finalWidth,
+        height: finalHeight,
+        x: bottomCenterPos.x,
+        y: bottomCenterPos.y,
+        title: detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ? 'SuperCommand Whisper' : 'SuperCommand Speak',
+        frame: false,
+        titleBarStyle: 'hidden',
+        titleBarOverlay: false,
+        transparent: true,
+        backgroundColor: '#00000000',
+        hasShadow: false,
+        resizable: false,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        focusable: true,
+        skipTaskbar: true,
+        alwaysOnTop: true,
+        show: true,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          preload: path.join(__dirname, 'preload.js'),
+        },
+      },
+    };
+  });
+
+  mainWindow.webContents.on('did-create-window', (childWindow: any, details: any) => {
+    const detachedPopupName = resolveDetachedPopupName(details);
+    if (!detachedPopupName) return;
+
+    const hideWindowButtons = () => {
+      if (process.platform !== 'darwin') return;
+      try {
+        childWindow.setWindowButtonVisibility(false);
+      } catch {}
+    };
+
+    hideWindowButtons();
+    childWindow.once('ready-to-show', hideWindowButtons);
+    childWindow.on('focus', hideWindowButtons);
+
+    try { childWindow.setMenuBarVisibility(false); } catch {}
+    try { childWindow.setSkipTaskbar(true); } catch {}
+    try { childWindow.setAlwaysOnTop(true); } catch {}
+    try { childWindow.setHasShadow(false); } catch {}
+  });
+
   // Hide traffic light buttons on macOS
   if (process.platform === 'darwin') {
     mainWindow.setWindowButtonVisibility(false);
@@ -856,9 +1008,10 @@ function showWindow(): void {
 
 function hideWindow(): void {
   if (!mainWindow) return;
-  if (launcherMode === 'speak') {
+  if (activeSpeakSession) {
     stopSpeakSession({ resetStatus: true });
   }
+  emitWindowHidden();
   mainWindow.hide();
   isVisible = false;
   unregisterWhisperEscapeShortcut();
@@ -1029,6 +1182,7 @@ async function replaceTextViaBackspaceAndPaste(previousText: string, nextText: s
 async function hideAndPaste(): Promise<boolean> {
   // Hide the window first
   if (mainWindow && isVisible) {
+    emitWindowHidden();
     mainWindow.hide();
     isVisible = false;
     setLauncherMode('default');
@@ -1195,24 +1349,22 @@ function toggleWindow(): void {
   }
 }
 
-async function openLauncherAndRunSystemCommand(commandId: string): Promise<boolean> {
+async function openLauncherAndRunSystemCommand(
+  commandId: string,
+  options?: { showWindow?: boolean; mode?: 'default' | 'whisper' | 'speak' }
+): Promise<boolean> {
   if (!mainWindow) {
     createWindow();
   }
   if (!mainWindow) return false;
-  if (commandId === 'system-supercommand-whisper') {
-    setLauncherMode('whisper');
-  } else {
-    setLauncherMode('default');
-  }
+
+  const showLauncher = options?.showWindow !== false;
+  setLauncherMode(options?.mode || 'default');
 
   const sendCommand = () => {
-    if (commandId === 'system-supercommand-whisper') {
-      // Whisper uses window-shown(mode=whisper) as single source of truth.
+    if (showLauncher) {
       showWindow();
-      return;
     }
-    showWindow();
     mainWindow?.webContents.send('run-system-command', commandId);
   };
 
@@ -1243,12 +1395,16 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     lastWhisperToggleAt = now;
   }
 
-  if (isWhisperSpeakToggleCommand && source === 'hotkey') {
-    if (isVisible && launcherMode === 'whisper') {
+  if (isWhisperSpeakToggleCommand) {
+    if (whisperOverlayVisible) {
       mainWindow?.webContents.send('whisper-toggle-listening');
       return true;
     }
-    await openLauncherAndRunSystemCommand('system-supercommand-whisper');
+    await openLauncherAndRunSystemCommand('system-supercommand-whisper', {
+      showWindow: false,
+      mode: 'default',
+    });
+    lastWhisperShownAt = Date.now();
     setTimeout(() => {
       mainWindow?.webContents.send('whisper-toggle-listening');
     }, 180);
@@ -1256,22 +1412,23 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
   }
 
   if (isSpeakCommand) {
-    if (launcherMode === 'speak' && isVisible) {
+    if (activeSpeakSession || speakOverlayVisible) {
       stopSpeakSession({ resetStatus: true, cleanupWindow: true });
       return true;
     }
     const started = await startSpeakFromSelection();
-    if (!started && source === 'launcher') {
-      setTimeout(() => hideWindow(), 1200);
-    }
+    if (!started) return false;
+    await openLauncherAndRunSystemCommand('system-supercommand-speak', {
+      showWindow: false,
+      mode: 'default',
+    });
     return started;
   }
 
   if (
     isWhisperOpenCommand &&
     source === 'hotkey' &&
-    isVisible &&
-    launcherMode === 'whisper'
+    whisperOverlayVisible
   ) {
     const now = Date.now();
     if (now - lastWhisperShownAt < 650) {
@@ -1301,11 +1458,19 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
     commandId === 'system-search-files' ||
-    commandId === 'system-open-onboarding' ||
-    commandId === 'system-supercommand-whisper' ||
-    commandId === 'system-supercommand-whisper-toggle'
+    commandId === 'system-open-onboarding'
   ) {
-    return await openLauncherAndRunSystemCommand('system-supercommand-whisper');
+    return await openLauncherAndRunSystemCommand('system-supercommand-whisper', {
+      showWindow: true,
+      mode: 'default',
+    });
+  }
+  if (isWhisperOpenCommand) {
+    lastWhisperShownAt = Date.now();
+    return await openLauncherAndRunSystemCommand('system-supercommand-whisper', {
+      showWindow: source === 'launcher',
+      mode: 'default',
+    });
   }
   if (commandId === 'system-import-snippets') {
     await importSnippetsFromFile(mainWindow || undefined);
@@ -1330,8 +1495,6 @@ async function startSpeakFromSelection(): Promise<boolean> {
   const selectedText = await getSelectedTextForSpeak();
   const chunks = splitTextIntoSpeakChunks(selectedText);
   if (chunks.length === 0) {
-    setLauncherMode('speak');
-    showWindow();
     setSpeakStatus({
       state: 'error',
       text: '',
@@ -1339,19 +1502,12 @@ async function startSpeakFromSelection(): Promise<boolean> {
       total: 0,
       message: 'No selected text found.',
     });
-    setTimeout(() => {
-      if (launcherMode === 'speak') {
-        hideWindow();
-      }
-    }, 1300);
     return false;
   }
 
   const settings = loadSettings();
   const selectedTtsModel = String(settings.ai?.textToSpeechModel || 'edge-tts');
   if (selectedTtsModel.startsWith('elevenlabs-')) {
-    setLauncherMode('speak');
-    showWindow();
     setSpeakStatus({
       state: 'error',
       text: '',
@@ -1368,8 +1524,6 @@ async function startSpeakFromSelection(): Promise<boolean> {
 
   const runtime = resolveEdgeTtsRuntime();
   if (!runtime) {
-    setLauncherMode('speak');
-    showWindow();
     setSpeakStatus({
       state: 'error',
       text: '',
@@ -1602,8 +1756,6 @@ async function startSpeakFromSelection(): Promise<boolean> {
       });
     });
 
-  setLauncherMode('speak');
-  showWindow();
   setSpeakStatus({ state: 'loading', text: '', index: 0, total: session.chunks.length, message: 'Preparing speech...' });
 
   const runPlayback = (startIndex: number) => {
@@ -2137,6 +2289,21 @@ app.whenReady().then(async () => {
   ipcMain.handle('set-launcher-mode', (_event: any, mode: 'default' | 'whisper' | 'speak') => {
     if (mode !== 'default' && mode !== 'whisper' && mode !== 'speak') return;
     setLauncherMode(mode);
+  });
+
+  ipcMain.on('set-detached-overlay-state', (_event: any, payload?: { overlay?: 'whisper' | 'speak'; visible?: boolean }) => {
+    const overlay = payload?.overlay;
+    const visible = Boolean(payload?.visible);
+    if (overlay === 'whisper') {
+      whisperOverlayVisible = visible;
+      if (visible) {
+        lastWhisperShownAt = Date.now();
+      }
+      return;
+    }
+    if (overlay === 'speak') {
+      speakOverlayVisible = visible;
+    }
   });
 
   ipcMain.handle('get-last-frontmost-app', () => {

@@ -4,6 +4,7 @@ import type { AppSettings } from '../types/electron';
 
 interface SuperCommandWhisperProps {
   onClose: () => void;
+  portalTarget?: HTMLElement | null;
 }
 
 type WhisperState = 'idle' | 'listening' | 'processing' | 'error';
@@ -132,7 +133,7 @@ function formatDeltaForAppend(previous: string, rawDelta: string): string {
   return next;
 }
 
-const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) => {
+const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, portalTarget }) => {
   const [state, setState] = useState<WhisperState>('idle');
   const [statusText, setStatusText] = useState('Press start to begin speaking.');
   const [errorText, setErrorText] = useState('');
@@ -770,6 +771,9 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
   }, []);
 
   useEffect(() => {
+    const keyWindow = portalTarget?.ownerDocument?.defaultView || window;
+    if (!keyWindow) return;
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -777,7 +781,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
       }
     };
 
-    window.addEventListener('keydown', onKeyDown);
+    keyWindow.addEventListener('keydown', onKeyDown);
     const disposeWhisperStop = window.electron.onWhisperStopAndClose(() => {
       void finalizeAndClose();
     });
@@ -793,12 +797,12 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
     });
 
     return () => {
-      window.removeEventListener('keydown', onKeyDown);
+      keyWindow.removeEventListener('keydown', onKeyDown);
       disposeWhisperStop();
       disposeWhisperStart();
       disposeWhisperToggle();
     };
-  }, [finalizeAndClose, startListening, state]);
+  }, [finalizeAndClose, portalTarget, startListening, state]);
 
   useEffect(() => {
     return () => {
@@ -833,6 +837,8 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
   const processing = state === 'processing';
 
   if (typeof document === 'undefined') return null;
+  const target = portalTarget || document.body;
+  if (!target) return null;
 
   return createPortal(
     <div className="whisper-widget-host">
@@ -887,7 +893,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
       </div>
       <span className="sr-only">{`${speechLanguage} ${statusText} ${errorText}`.trim()}</span>
     </div>,
-    document.body
+    target
   );
 };
 

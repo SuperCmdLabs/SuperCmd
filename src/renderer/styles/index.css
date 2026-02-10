@@ -226,6 +226,31 @@ kbd {
   pointer-events: auto;
 }
 
+body.sc-detached-window .whisper-widget-host {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+body.sc-detached-window .whisper-widget-shell {
+  width: 100%;
+  justify-content: center;
+}
+
+body.sc-detached-window .whisper-shortcut-hint {
+  display: none;
+}
+
+body.sc-detached-window .whisper-close-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .whisper-side-button {
   height: 30px;
   border-radius: 999px;
@@ -384,6 +409,23 @@ kbd {
     0 0 0 1px rgba(255, 255, 255, 0.08) inset,
     0 18px 40px rgba(0, 0, 0, 0.46),
     0 0 40px rgba(20, 118, 255, 0.24);
+}
+
+body.sc-detached-window .speak-widget-host {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  pointer-events: auto;
+}
+
+body.sc-detached-window .speak-widget-shell {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 100%;
+  height: 100%;
 }
 
 .speak-header-row {

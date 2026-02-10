@@ -31,10 +31,16 @@ contextBridge.exposeInMainWorld('electron', {
   onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' | 'speak' }) => void) => {
     ipcRenderer.on('window-shown', (_event: any, payload: any) => callback(payload));
   },
+  onWindowHidden: (callback: () => void) => {
+    ipcRenderer.on('window-hidden', () => callback());
+  },
   onRunSystemCommand: (callback: (commandId: string) => void) => {
     ipcRenderer.on('run-system-command', (_event, commandId) =>
       callback(commandId)
     );
+  },
+  setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean): void => {
+    ipcRenderer.send('set-detached-overlay-state', { overlay, visible });
   },
   onWhisperStopAndClose: (callback: () => void) => {
     const listener = () => callback();

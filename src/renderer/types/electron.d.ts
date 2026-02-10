@@ -182,7 +182,9 @@ export interface ElectronAPI {
   getLastFrontmostApp: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   restoreLastFrontmostApp: () => Promise<boolean>;
   onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' | 'speak' }) => void) => void;
+  onWindowHidden: (callback: () => void) => void;
   onRunSystemCommand: (callback: (commandId: string) => void) => void;
+  setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean) => void;
   onWhisperStopAndClose: (callback: () => void) => (() => void);
   onWhisperStartListening: (callback: () => void) => (() => void);
   onWhisperToggleListening: (callback: () => void) => (() => void);
