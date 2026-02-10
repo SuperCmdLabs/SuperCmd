@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic, Volume2, Loader2, CornerDownLeft } from 'lucide-react';
 import type { CommandInfo, ExtensionBundle, AppSettings } from '../types/electron';
 import ExtensionView from './ExtensionView';
@@ -385,6 +386,8 @@ const App: React.FC = () => {
   const [aiQuery, setAiQuery] = useState('');
   const aiRequestIdRef = useRef<string | null>(null);
   const cursorPromptRequestIdRef = useRef<string | null>(null);
+  const cursorPromptResultRef = useRef('');
+  const cursorPromptSourceTextRef = useRef('');
   const aiResponseRef = useRef<HTMLDivElement>(null);
   const aiInputRef = useRef<HTMLInputElement>(null);
   const cursorPromptInputRef = useRef<HTMLTextAreaElement>(null);
@@ -422,6 +425,17 @@ const App: React.FC = () => {
     onClosed: () => {
       setShowSpeak(false);
       void window.electron.speakStop();
+    },
+  });
+
+  const cursorPromptPortalTarget = useDetachedPortalWindow(showCursorPrompt, {
+    name: 'supercommand-prompt-window',
+    title: 'SuperCommand Prompt',
+    width: 500,
+    height: 132,
+    anchor: 'caret',
+    onClosed: () => {
+      setShowCursorPrompt(false);
     },
   });
 
@@ -934,41 +948,57 @@ const App: React.FC = () => {
     setCursorPromptStatus('processing');
     setCursorPromptResult('');
     setCursorPromptError('');
+    setCursorPromptSourceText('');
+    cursorPromptResultRef.current = '';
+    cursorPromptSourceTextRef.current = '';
 
     const selectedText = String(await window.electron.getSelectedText()).trim();
-    if (!selectedText) {
-      setCursorPromptStatus('error');
-      setCursorPromptError('No selected text found. Select text first, then submit.');
-      return;
+    const hasSelection = selectedText.length > 0;
+    if (hasSelection) {
+      setCursorPromptSourceText(selectedText);
+      cursorPromptSourceTextRef.current = selectedText;
     }
-    setCursorPromptSourceText(selectedText);
 
     const requestId = `cursor-prompt-${Date.now()}`;
     cursorPromptRequestIdRef.current = requestId;
-    const compositePrompt = [
-      'Rewrite the selected text based on the instruction.',
-      'Return only the rewritten text. Do not include explanations.',
-      '',
-      `Instruction: ${instruction}`,
-      '',
-      'Selected text:',
-      selectedText,
-    ].join('\n');
+    const compositePrompt = hasSelection
+      ? [
+          'Rewrite the selected text based on the instruction.',
+          'Return only the rewritten text. Do not include explanations.',
+          '',
+          `Instruction: ${instruction}`,
+          '',
+          'Selected text:',
+          selectedText,
+        ].join('\n')
+      : [
+          'Generate text to insert at the current cursor position, based on the instruction.',
+          'Return only the generated text. Do not include explanations.',
+          '',
+          `Instruction: ${instruction}`,
+        ].join('\n');
     await window.electron.aiAsk(requestId, compositePrompt);
   }, [cursorPromptStatus, cursorPromptText]);
 
-  const acceptCursorPrompt = useCallback(async () => {
-    const previousText = cursorPromptSourceText;
-    const nextText = cursorPromptResult.trim();
-    if (!previousText || !nextText) return;
-    const applied = await window.electron.replaceLiveText(previousText, nextText);
+  const applyCursorPromptResultToEditor = useCallback(async () => {
+    const previousText = cursorPromptSourceTextRef.current;
+    const nextText = String(cursorPromptResultRef.current || '').trim();
+    if (!nextText) {
+      setCursorPromptStatus('error');
+      setCursorPromptError('Model returned an empty response.');
+      return;
+    }
+    const applied = previousText
+      ? await window.electron.replaceLiveText(previousText, nextText)
+      : await window.electron.typeTextLive(nextText);
     if (applied) {
-      window.electron.hideWindow();
+      setCursorPromptStatus('ready');
+      setCursorPromptError('');
       return;
     }
     setCursorPromptStatus('error');
-    setCursorPromptError('Could not apply update. Re-select the text and try again.');
-  }, [cursorPromptResult, cursorPromptSourceText]);
+    setCursorPromptError('Could not apply update. Re-select text or place cursor and try again.');
+  }, []);
 
   const closeCursorPrompt = useCallback(async () => {
     if (cursorPromptRequestIdRef.current) {
@@ -977,6 +1007,7 @@ const App: React.FC = () => {
       } catch {}
       cursorPromptRequestIdRef.current = null;
     }
+    setShowCursorPrompt(false);
     window.electron.hideWindow();
   }, []);
 
@@ -988,6 +1019,7 @@ const App: React.FC = () => {
         return;
       }
       if (data.requestId === cursorPromptRequestIdRef.current) {
+        cursorPromptResultRef.current += data.chunk;
         setCursorPromptResult((prev) => prev + data.chunk);
       }
     };
@@ -998,7 +1030,7 @@ const App: React.FC = () => {
       }
       if (data.requestId === cursorPromptRequestIdRef.current) {
         cursorPromptRequestIdRef.current = null;
-        setCursorPromptStatus('ready');
+        void applyCursorPromptResultToEditor();
       }
     };
     const handleError = (data: { requestId: string; error: string }) => {
@@ -1017,7 +1049,7 @@ const App: React.FC = () => {
     window.electron.onAIStreamChunk(handleChunk);
     window.electron.onAIStreamDone(handleDone);
     window.electron.onAIStreamError(handleError);
-  }, []);
+  }, [applyCursorPromptResultToEditor]);
 
   const startAiChat = useCallback(() => {
     if (!searchQuery.trim() || !aiAvailable) return;
@@ -1744,6 +1776,83 @@ const App: React.FC = () => {
           }}
         />
       ) : null}
+      {showCursorPrompt && cursorPromptPortalTarget
+        ? createPortal(
+            <div className="w-full h-full p-1">
+              <div className="cursor-prompt-surface h-full flex flex-col gap-1.5 px-3.5 py-2.5">
+                <div className="cursor-prompt-topbar">
+                  <button
+                    onClick={() => void closeCursorPrompt()}
+                    className="cursor-prompt-close"
+                    aria-label="Close prompt"
+                    title="Close"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <textarea
+                    ref={cursorPromptInputRef}
+                    value={cursorPromptText}
+                    onChange={(e) => setCursorPromptText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        void submitCursorPrompt();
+                      }
+                    }}
+                    placeholder="Tell AI what to do with selected text..."
+                    className="cursor-prompt-textarea w-full bg-transparent border-none outline-none text-white/95 placeholder-white/42 text-[13px] font-medium tracking-[0.003em]"
+                    autoFocus
+                  />
+                  {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
+                    <div className="cursor-prompt-preview-wrap">
+                      <div className="cursor-prompt-preview-title">Preview</div>
+                      <div className="cursor-prompt-preview">{cursorPromptResult}</div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="cursor-prompt-feedback">
+                    {cursorPromptStatus === 'processing' && (
+                      <div className="cursor-prompt-inline-status">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Processing...</span>
+                      </div>
+                    )}
+                    {cursorPromptStatus === 'error' && cursorPromptError && (
+                      <div className="cursor-prompt-error">{cursorPromptError}</div>
+                    )}
+                    {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
+                      <div className="cursor-prompt-success">Ready to apply</div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
+                      <button
+                        onClick={() => void acceptCursorPrompt()}
+                        className="cursor-prompt-submit"
+                        title="Apply update"
+                      >
+                        Accept
+                      </button>
+                    )}
+                    <button
+                      onClick={() => void submitCursorPrompt()}
+                      className="cursor-prompt-submit"
+                      disabled={!cursorPromptText.trim() || cursorPromptStatus === 'processing'}
+                      title="Submit prompt"
+                    >
+                      <CornerDownLeft className="w-3 h-3" />
+                      <span>Enter</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            cursorPromptPortalTarget
+          )
+        : null}
     </>
   );
 
@@ -2022,7 +2131,7 @@ const App: React.FC = () => {
   }
 
   // ─── Cursor Prompt mode ───────────────────────────────────────────
-  if (showCursorPrompt) {
+  if (showCursorPrompt && !cursorPromptPortalTarget) {
     return (
       <>
         {alwaysMountedRunners}
@@ -2054,10 +2163,7 @@ const App: React.FC = () => {
                 autoFocus
               />
               {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
-                <div className="cursor-prompt-preview-wrap">
-                  <div className="cursor-prompt-preview-title">Preview</div>
-                  <div className="cursor-prompt-preview">{cursorPromptResult}</div>
-                </div>
+                <div className="sr-only">{cursorPromptResult}</div>
               )}
             </div>
             <div className="flex items-center justify-between gap-2">
@@ -2072,19 +2178,10 @@ const App: React.FC = () => {
                   <div className="cursor-prompt-error">{cursorPromptError}</div>
                 )}
                 {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
-                  <div className="cursor-prompt-success">Ready to apply</div>
+                  <div className="cursor-prompt-success">Applied in editor</div>
                 )}
               </div>
               <div className="flex items-center gap-1.5">
-              {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
-                <button
-                  onClick={() => void acceptCursorPrompt()}
-                  className="cursor-prompt-submit"
-                  title="Apply update"
-                >
-                  Accept
-                </button>
-              )}
               <button
                 onClick={() => void submitCursorPrompt()}
                 className="cursor-prompt-submit"

@@ -68,7 +68,7 @@ select {
   background: rgba(12, 12, 16, 0.74);
   -webkit-backdrop-filter: blur(40px) saturate(150%);
   backdrop-filter: blur(40px) saturate(150%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: none;
   box-shadow: none;
 }
 

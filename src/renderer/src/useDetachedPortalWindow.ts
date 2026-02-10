@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-type DetachedWindowAnchor = 'center-bottom' | 'top-right';
+type DetachedWindowAnchor = 'center-bottom' | 'top-right' | 'caret';
 
 interface DetachedPortalWindowOptions {
   name: string;
@@ -23,6 +23,13 @@ function computeWindowPosition(anchor: DetachedWindowAnchor, width: number, heig
     return {
       left: Math.round(screenX + availWidth - width - 20),
       top: Math.round(screenY + 16),
+    };
+  }
+
+  if (anchor === 'caret') {
+    return {
+      left: Math.round(screenX + (availWidth - width) / 2),
+      top: Math.round(screenY + availHeight - height - 14),
     };
   }
 

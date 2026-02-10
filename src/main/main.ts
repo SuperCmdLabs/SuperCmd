@@ -66,6 +66,7 @@ const WHISPER_WINDOW_WIDTH = 266;
 const WHISPER_WINDOW_HEIGHT = 84;
 const DETACHED_WHISPER_WINDOW_NAME = 'supercommand-whisper-window';
 const DETACHED_SPEAK_WINDOW_NAME = 'supercommand-speak-window';
+const DETACHED_PROMPT_WINDOW_NAME = 'supercommand-prompt-window';
 const DETACHED_WINDOW_QUERY_KEY = 'sc_detached';
 
 function parsePopupFeatures(rawFeatures: string): {
@@ -95,11 +96,14 @@ function resolveDetachedPopupName(details: any): string | null {
   if (
     byFrameName === DETACHED_WHISPER_WINDOW_NAME ||
     byFrameName === DETACHED_SPEAK_WINDOW_NAME ||
+    byFrameName === DETACHED_PROMPT_WINDOW_NAME ||
     byFrameName.startsWith(`${DETACHED_WHISPER_WINDOW_NAME}-`) ||
-    byFrameName.startsWith(`${DETACHED_SPEAK_WINDOW_NAME}-`)
+    byFrameName.startsWith(`${DETACHED_SPEAK_WINDOW_NAME}-`) ||
+    byFrameName.startsWith(`${DETACHED_PROMPT_WINDOW_NAME}-`)
   ) {
     if (byFrameName.startsWith(DETACHED_WHISPER_WINDOW_NAME)) return DETACHED_WHISPER_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_SPEAK_WINDOW_NAME)) return DETACHED_SPEAK_WINDOW_NAME;
+    if (byFrameName.startsWith(DETACHED_PROMPT_WINDOW_NAME)) return DETACHED_PROMPT_WINDOW_NAME;
     return byFrameName;
   }
   const rawUrl = String(details?.url || '').trim();
@@ -107,7 +111,11 @@ function resolveDetachedPopupName(details: any): string | null {
   try {
     const parsed = new URL(rawUrl);
     const byQuery = String(parsed.searchParams.get(DETACHED_WINDOW_QUERY_KEY) || '').trim();
-    if (byQuery === DETACHED_WHISPER_WINDOW_NAME || byQuery === DETACHED_SPEAK_WINDOW_NAME) {
+    if (
+      byQuery === DETACHED_WHISPER_WINDOW_NAME ||
+      byQuery === DETACHED_SPEAK_WINDOW_NAME ||
+      byQuery === DETACHED_PROMPT_WINDOW_NAME
+    ) {
       return byQuery;
     }
   } catch {}
@@ -128,6 +136,53 @@ function computeDetachedPopupPosition(
       x: workArea.x + workArea.width - width - 20,
       y: workArea.y + 16,
     };
+  }
+
+  if (popupName === DETACHED_PROMPT_WINDOW_NAME) {
+    const caretRect = getTypingCaretRect();
+    const focusedInputRect = getFocusedInputRect();
+    const promptAnchorPoint = caretRect
+      ? {
+          x: caretRect.x,
+          y: caretRect.y + Math.max(1, Math.floor(caretRect.height * 0.5)),
+        }
+      : focusedInputRect
+        ? {
+            x: focusedInputRect.x + 12,
+            y: focusedInputRect.y + 18,
+          }
+        : lastTypingCaretPoint;
+    if (caretRect) {
+      lastTypingCaretPoint = {
+        x: caretRect.x,
+        y: caretRect.y + Math.max(1, Math.floor(caretRect.height * 0.5)),
+      };
+    } else if (focusedInputRect) {
+      lastTypingCaretPoint = {
+        x: focusedInputRect.x + 12,
+        y: focusedInputRect.y + 18,
+      };
+    }
+    if (!promptAnchorPoint) {
+      return {
+        x: workArea.x + Math.floor((workArea.width - width) / 2),
+        y: workArea.y + workArea.height - height - 14,
+      };
+    }
+    const display = screen.getDisplayNearestPoint(promptAnchorPoint);
+    const area = display?.workArea || workArea;
+    const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+    const x = clamp(
+      promptAnchorPoint.x - CURSOR_PROMPT_LEFT_OFFSET,
+      area.x + 8,
+      area.x + area.width - width - 8
+    );
+    const baseY = caretRect ? caretRect.y : focusedInputRect ? focusedInputRect.y : promptAnchorPoint.y;
+    const preferred = baseY - height - 10;
+    const y = preferred >= area.y + 8
+      ? preferred
+      : clamp(baseY + 16, area.y + 8, area.y + area.height - height - 8);
+    return { x, y };
   }
 
   return {
@@ -1007,8 +1062,16 @@ function createWindow(): void {
     }
 
     const popupBounds = parsePopupFeatures(details?.features || '');
-    const defaultWidth = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ? 272 : 520;
-    const defaultHeight = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ? 52 : 112;
+    const defaultWidth = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME
+      ? 272
+      : detachedPopupName === DETACHED_PROMPT_WINDOW_NAME
+        ? CURSOR_PROMPT_WINDOW_WIDTH
+        : 520;
+    const defaultHeight = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME
+      ? 52
+      : detachedPopupName === DETACHED_PROMPT_WINDOW_NAME
+        ? CURSOR_PROMPT_WINDOW_HEIGHT
+        : 112;
     const finalWidth = typeof popupBounds.width === 'number' ? popupBounds.width : defaultWidth;
     const finalHeight = typeof popupBounds.height === 'number' ? popupBounds.height : defaultHeight;
     const popupPos = computeDetachedPopupPosition(detachedPopupName, finalWidth, finalHeight);
@@ -1021,7 +1084,12 @@ function createWindow(): void {
         height: finalHeight,
         x: popupPos.x,
         y: popupPos.y,
-        title: detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ? 'SuperCommand Whisper' : 'SuperCommand Speak',
+        title:
+          detachedPopupName === DETACHED_WHISPER_WINDOW_NAME
+            ? 'SuperCommand Whisper'
+            : detachedPopupName === DETACHED_PROMPT_WINDOW_NAME
+              ? 'SuperCommand Prompt'
+              : 'SuperCommand Speak',
         frame: false,
         titleBarStyle: 'hidden',
         titleBarOverlay: false,
@@ -1796,10 +1864,27 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
       hideWindow();
       return true;
     }
-    return await openLauncherAndRunSystemCommand(commandId, {
-      showWindow: true,
-      mode: 'prompt',
-    });
+    if (!mainWindow) {
+      createWindow();
+    }
+    if (!mainWindow) return false;
+    setLauncherMode('default');
+    if (isVisible) {
+      try { mainWindow.hide(); } catch {}
+      isVisible = false;
+      emitWindowHidden();
+    }
+    const sendPromptCommand = () => {
+      try {
+        mainWindow?.webContents.send('run-system-command', commandId);
+      } catch {}
+    };
+    if (mainWindow.webContents.isLoadingMainFrame()) {
+      mainWindow.webContents.once('did-finish-load', sendPromptCommand);
+    } else {
+      sendPromptCommand();
+    }
+    return true;
   }
 
   if (commandId === 'system-open-settings') {
