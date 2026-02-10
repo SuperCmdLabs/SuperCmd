@@ -362,3 +362,90 @@ async function* parseNDJSON(
     } catch {}
   }
 }
+
+// ─── Whisper Audio Transcription ─────────────────────────────────────
+
+export interface TranscribeOptions {
+  audioBuffer: Buffer;
+  apiKey: string;
+  model: string;
+  language?: string;
+  signal?: AbortSignal;
+}
+
+export function transcribeAudio(opts: TranscribeOptions): Promise<string> {
+  const boundary = `----SuperCommandBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+
+  const parts: Buffer[] = [];
+
+  // file field
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.webm"\r\nContent-Type: audio/webm\r\n\r\n`
+  ));
+  parts.push(opts.audioBuffer);
+  parts.push(Buffer.from('\r\n'));
+
+  // model field
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n${opts.model}\r\n`
+  ));
+
+  // response_format field
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\ntext\r\n`
+  ));
+
+  // language field (optional)
+  if (opts.language) {
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${opts.language}\r\n`
+    ));
+  }
+
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+
+  const body = Buffer.concat(parts);
+
+  return new Promise<string>((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'api.openai.com',
+        path: '/v1/audio/transcriptions',
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${opts.apiKey}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': body.length,
+        },
+      },
+      (res) => {
+        let responseBody = '';
+        res.on('data', (chunk) => { responseBody += chunk; });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`Whisper API HTTP ${res.statusCode}: ${responseBody.slice(0, 500)}`));
+            return;
+          }
+          resolve(responseBody.trim());
+        });
+      }
+    );
+
+    req.on('error', reject);
+
+    if (opts.signal) {
+      if (opts.signal.aborted) {
+        req.destroy();
+        reject(new Error('Transcription aborted'));
+        return;
+      }
+      opts.signal.addEventListener('abort', () => {
+        req.destroy();
+        reject(new Error('Transcription aborted'));
+      }, { once: true });
+    }
+
+    req.write(body);
+    req.end();
+  });
+}

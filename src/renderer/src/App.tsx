@@ -6,13 +6,14 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText } from 'lucide-react';
+import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic } from 'lucide-react';
 import type { CommandInfo, ExtensionBundle, AppSettings } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
 import OnboardingExtension from './OnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
+import SuperCommandWhisper from './SuperCommandWhisper';
 import { tryCalculate } from './smart-calculator';
 
 interface LauncherAction {
@@ -113,6 +114,14 @@ function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
     return (
       <div className="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
         <Search className="w-3 h-3 text-emerald-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-supercommand-whisper') {
+    return (
+      <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
+        <Mic className="w-3 h-3 text-sky-300" />
       </div>
     );
   }
@@ -315,6 +324,7 @@ const App: React.FC = () => {
   const [showClipboardManager, setShowClipboardManager] = useState(false);
   const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
   const [showFileSearch, setShowFileSearch] = useState(false);
+  const [showWhisper, setShowWhisper] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [launcherShortcut, setLauncherShortcut] = useState('Command+Space');
   const [showActions, setShowActions] = useState(false);
@@ -348,6 +358,7 @@ const App: React.FC = () => {
   const extensionViewRef = useRef<ExtensionBundle | null>(null);
   const intervalTimerIdsRef = useRef<number[]>([]);
   const menuBarRemountTimestampsRef = useRef<Record<string, number>>({});
+  const whisperSessionRef = useRef(false);
   extensionViewRef.current = extensionView;
   pinnedCommandsRef.current = pinnedCommands;
 
@@ -464,8 +475,26 @@ const App: React.FC = () => {
     fetchCommands();
     loadLauncherPreferences();
 
-    window.electron.onWindowShown(() => {
-      console.log('[WINDOW-SHOWN] fired');
+    window.electron.onWindowShown((payload) => {
+      console.log('[WINDOW-SHOWN] fired', payload);
+      const isWhisperMode = payload?.mode === 'whisper';
+      if (isWhisperMode) {
+        whisperSessionRef.current = true;
+        setShowWhisper(true);
+        setShowSnippetManager(null);
+        setShowFileSearch(false);
+        setShowClipboardManager(false);
+        setShowOnboarding(false);
+        setExtensionPreferenceSetup(null);
+        setExtensionView(null);
+        setAiMode(false);
+        return;
+      }
+
+      if (whisperSessionRef.current) {
+        return;
+      }
+
       // If an extension is open, keep it alive — don't reset
       if (extensionViewRef.current) return;
       setSearchQuery('');
@@ -476,6 +505,7 @@ const App: React.FC = () => {
       setAiQuery('');
       setShowSnippetManager(null);
       setShowFileSearch(false);
+      setShowWhisper(false);
       // Re-fetch commands every time the window is shown
       // so newly installed extensions appear immediately
       fetchCommands();
@@ -846,10 +876,10 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showFileSearch && !showOnboarding) {
+    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showFileSearch && !showWhisper && !showOnboarding) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showOnboarding, restoreLauncherFocus]);
+  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showWhisper, showOnboarding, restoreLauncherFocus]);
 
   const calcResult = useMemo(() => {
     return searchQuery ? tryCalculate(searchQuery) : null;
@@ -1061,46 +1091,55 @@ const App: React.FC = () => {
 
   const runLocalSystemCommand = useCallback(async (commandId: string): Promise<boolean> => {
     if (commandId === 'system-open-onboarding') {
+      whisperSessionRef.current = false;
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowClipboardManager(false);
       setShowSnippetManager(null);
       setShowFileSearch(false);
+      setShowWhisper(false);
       setAiMode(false);
       setShowOnboarding(true);
       return true;
     }
     if (commandId === 'system-clipboard-manager') {
+      whisperSessionRef.current = false;
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
       setShowClipboardManager(true);
       setShowSnippetManager(null);
       setShowFileSearch(false);
+      setShowWhisper(false);
       setAiMode(false);
       return true;
     }
     if (commandId === 'system-search-snippets') {
+      whisperSessionRef.current = false;
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
       setShowClipboardManager(false);
       setShowFileSearch(false);
+      setShowWhisper(false);
       setAiMode(false);
       setShowSnippetManager('search');
       return true;
     }
     if (commandId === 'system-create-snippet') {
+      whisperSessionRef.current = false;
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
       setShowClipboardManager(false);
       setShowFileSearch(false);
+      setShowWhisper(false);
       setAiMode(false);
       setShowSnippetManager('create');
       return true;
     }
     if (commandId === 'system-search-files') {
+      whisperSessionRef.current = false;
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
       setShowOnboarding(false);
@@ -1108,6 +1147,19 @@ const App: React.FC = () => {
       setShowSnippetManager(null);
       setAiMode(false);
       setShowFileSearch(true);
+      setShowWhisper(false);
+      return true;
+    }
+    if (commandId === 'system-supercommand-whisper') {
+      whisperSessionRef.current = true;
+      setExtensionView(null);
+      setExtensionPreferenceSetup(null);
+      setShowOnboarding(false);
+      setShowClipboardManager(false);
+      setShowSnippetManager(null);
+      setShowFileSearch(false);
+      setAiMode(false);
+      setShowWhisper(true);
       return true;
     }
     if (commandId === 'system-import-snippets') {
@@ -1708,6 +1760,24 @@ const App: React.FC = () => {
             />
           </div>
         </div>
+      </>
+    );
+  }
+
+  // ─── SuperCommand Whisper mode ──────────────────────────────────
+  if (showWhisper) {
+    return (
+      <>
+        {hiddenExtensionRunners}
+        <SuperCommandWhisper
+          onClose={() => {
+            whisperSessionRef.current = false;
+            setShowWhisper(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            void window.electron.hideWindow();
+          }}
+        />
       </>
     );
   }

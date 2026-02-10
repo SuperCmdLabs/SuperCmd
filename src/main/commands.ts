@@ -656,6 +656,12 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-supercommand-whisper',
+      title: 'SuperCommand Whisper',
+      keywords: ['whisper', 'speech', 'voice', 'dictation', 'transcribe', 'overlay', 'supercommand'],
+      category: 'system',
+    },
+    {
       id: 'system-open-extensions-settings',
       title: 'SuperCommand Extensions',
       keywords: ['extensions', 'store', 'community', 'hotkey', 'supercommand'],

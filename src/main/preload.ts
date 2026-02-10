@@ -22,15 +22,26 @@ contextBridge.exposeInMainWorld('electron', {
   executeCommand: (commandId: string): Promise<boolean> =>
     ipcRenderer.invoke('execute-command', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
+  setLauncherMode: (mode: 'default' | 'whisper'): Promise<void> =>
+    ipcRenderer.invoke('set-launcher-mode', mode),
   getLastFrontmostApp: (): Promise<{ name: string; path: string; bundleId?: string } | null> =>
     ipcRenderer.invoke('get-last-frontmost-app'),
-  onWindowShown: (callback: () => void) => {
-    ipcRenderer.on('window-shown', () => callback());
+  restoreLastFrontmostApp: (): Promise<boolean> =>
+    ipcRenderer.invoke('restore-last-frontmost-app'),
+  onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' }) => void) => {
+    ipcRenderer.on('window-shown', (_event: any, payload: any) => callback(payload));
   },
   onRunSystemCommand: (callback: (commandId: string) => void) => {
     ipcRenderer.on('run-system-command', (_event, commandId) =>
       callback(commandId)
     );
+  },
+  onWhisperStopAndClose: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('whisper-stop-and-close', listener);
+    return () => {
+      ipcRenderer.removeListener('whisper-stop-and-close', listener);
+    };
   },
   onOAuthCallback: (callback: (url: string) => void) => {
     ipcRenderer.on('oauth-callback', (_event, url) => callback(url));
@@ -230,6 +241,12 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('snippet-import'),
   snippetExport: (): Promise<boolean> =>
     ipcRenderer.invoke('snippet-export'),
+  pasteText: (text: string): Promise<boolean> =>
+    ipcRenderer.invoke('paste-text', text),
+  typeTextLive: (text: string): Promise<boolean> =>
+    ipcRenderer.invoke('type-text-live', text),
+  replaceLiveText: (previousText: string, nextText: string): Promise<boolean> =>
+    ipcRenderer.invoke('replace-live-text', previousText, nextText),
 
   // ─── Native Helpers ─────────────────────────────────────────────
   nativePickColor: (): Promise<{ red: number; green: number; blue: number; alpha: number } | null> =>
@@ -258,6 +275,21 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('ai-cancel', requestId),
   aiIsAvailable: (): Promise<boolean> =>
     ipcRenderer.invoke('ai-is-available'),
+  whisperRefineTranscript: (transcript: string): Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }> =>
+    ipcRenderer.invoke('whisper-refine-transcript', transcript),
+  whisperDebugLog: (tag: string, message: string, data?: any): void =>
+    ipcRenderer.send('whisper-debug-log', { tag, message, data }),
+  whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string }): Promise<string> =>
+    ipcRenderer.invoke('whisper-transcribe', audioBuffer, options),
+  whisperStartNative: (language?: string): Promise<void> =>
+    ipcRenderer.invoke('whisper-start-native', language),
+  whisperStopNative: (): Promise<void> =>
+    ipcRenderer.invoke('whisper-stop-native'),
+  onWhisperNativeChunk: (callback: (data: { transcript?: string; isFinal?: boolean; error?: string; ready?: boolean; ended?: boolean }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('whisper-native-chunk', listener);
+    return () => { ipcRenderer.removeListener('whisper-native-chunk', listener); };
+  },
   onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => {
     ipcRenderer.on('ai-stream-chunk', (_event: any, data: any) => callback(data));
   },

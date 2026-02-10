@@ -89,6 +89,10 @@ export interface AISettings {
   anthropicApiKey: string;
   ollamaBaseUrl: string;
   defaultModel: string;
+  speechToTextModel: string;
+  speechLanguage: string;
+  textToSpeechModel: string;
+  speechCorrectionEnabled: boolean;
   enabled: boolean;
 }
 
@@ -162,9 +166,12 @@ export interface ElectronAPI {
   getCommands: () => Promise<CommandInfo[]>;
   executeCommand: (commandId: string) => Promise<boolean>;
   hideWindow: () => Promise<void>;
+  setLauncherMode: (mode: 'default' | 'whisper') => Promise<void>;
   getLastFrontmostApp: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
-  onWindowShown: (callback: () => void) => void;
+  restoreLastFrontmostApp: () => Promise<boolean>;
+  onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' }) => void) => void;
   onRunSystemCommand: (callback: (commandId: string) => void) => void;
+  onWhisperStopAndClose: (callback: () => void) => (() => void);
   onOAuthCallback: (callback: (url: string) => void) => void;
 
   // Settings
@@ -270,6 +277,9 @@ export interface ElectronAPI {
   snippetPasteResolved: (id: string, dynamicValues?: Record<string, string>) => Promise<boolean>;
   snippetImport: () => Promise<{ imported: number; skipped: number }>;
   snippetExport: () => Promise<boolean>;
+  pasteText: (text: string) => Promise<boolean>;
+  typeTextLive: (text: string) => Promise<boolean>;
+  replaceLiveText: (previousText: string, nextText: string) => Promise<boolean>;
 
   // Native helpers
   nativePickColor: () => Promise<{ red: number; green: number; blue: number; alpha: number } | null>;
@@ -287,6 +297,20 @@ export interface ElectronAPI {
   onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => void;
   onAIStreamDone: (callback: (data: { requestId: string }) => void) => void;
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => void;
+  whisperRefineTranscript: (
+    transcript: string
+  ) => Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }>;
+  whisperDebugLog: (tag: string, message: string, data?: any) => void;
+  whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string }) => Promise<string>;
+  whisperStartNative: (language?: string) => Promise<void>;
+  whisperStopNative: () => Promise<void>;
+  onWhisperNativeChunk: (callback: (data: {
+    transcript?: string;
+    isFinal?: boolean;
+    error?: string;
+    ready?: boolean;
+    ended?: boolean;
+  }) => void) => (() => void);
 
   // Ollama Model Management
   ollamaStatus: () => Promise<{ running: boolean; models: OllamaLocalModel[] }>;

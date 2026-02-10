@@ -14,7 +14,7 @@ import * as path from 'path';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
 import { loadSettings, saveSettings } from './settings-store';
 import type { AppSettings } from './settings-store';
-import { streamAI, isAIAvailable } from './ai-provider';
+import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
 import {
   getCatalog,
   getExtensionScreenshotUrls,
@@ -57,8 +57,10 @@ const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, 
 
 // ─── Window Configuration ───────────────────────────────────────────
 
-const WINDOW_WIDTH = 860;
-const WINDOW_HEIGHT = 540;
+const DEFAULT_WINDOW_WIDTH = 860;
+const DEFAULT_WINDOW_HEIGHT = 540;
+const WHISPER_WINDOW_WIDTH = 266;
+const WHISPER_WINDOW_HEIGHT = 84;
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
@@ -72,6 +74,34 @@ const activeAIRequests = new Map<string, AbortController>(); // requestId → co
 const pendingOAuthCallbackUrls: string[] = [];
 let snippetExpanderProcess: any = null;
 let snippetExpanderStdoutBuffer = '';
+let nativeSpeechProcess: any = null;
+let nativeSpeechStdoutBuffer = '';
+let launcherMode: 'default' | 'whisper' = 'default';
+let lastWhisperToggleAt = 0;
+let lastWhisperShownAt = 0;
+let whisperEscapeRegistered = false;
+
+function registerWhisperEscapeShortcut(): void {
+  if (whisperEscapeRegistered) return;
+  try {
+    const success = globalShortcut.register('Escape', () => {
+      if (isVisible && launcherMode === 'whisper') {
+        mainWindow?.webContents.send('whisper-stop-and-close');
+      }
+    });
+    whisperEscapeRegistered = success;
+  } catch {
+    whisperEscapeRegistered = false;
+  }
+}
+
+function unregisterWhisperEscapeShortcut(): void {
+  if (!whisperEscapeRegistered) return;
+  try {
+    globalShortcut.unregister('Escape');
+  } catch {}
+  whisperEscapeRegistered = false;
+}
 
 function handleOAuthCallbackUrl(rawUrl: string): void {
   if (!rawUrl) return;
@@ -257,9 +287,9 @@ function createWindow(): void {
     primaryDisplay.workAreaSize;
 
   mainWindow = new BrowserWindow({
-    width: WINDOW_WIDTH,
-    height: WINDOW_HEIGHT,
-    x: Math.floor((screenWidth - WINDOW_WIDTH) / 2),
+    width: DEFAULT_WINDOW_WIDTH,
+    height: DEFAULT_WINDOW_HEIGHT,
+    x: Math.floor((screenWidth - DEFAULT_WINDOW_WIDTH) / 2),
     y: Math.floor(screenHeight * 0.2),
     titleBarStyle: 'hidden',
     titleBarOverlay: false,
@@ -268,6 +298,7 @@ function createWindow(): void {
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
+    transparent: true,
     backgroundColor: '#00000000',
     vibrancy: 'fullscreen-ui',
     visualEffectState: 'active',
@@ -304,7 +335,7 @@ function createWindow(): void {
   mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.on('blur', () => {
-    if (isVisible && !suppressBlurHide) {
+    if (isVisible && !suppressBlurHide && launcherMode !== 'whisper') {
       hideWindow();
     }
   });
@@ -312,6 +343,66 @@ function createWindow(): void {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+function getLauncherSize(mode: 'default' | 'whisper') {
+  if (mode === 'whisper') {
+    return { width: WHISPER_WINDOW_WIDTH, height: WHISPER_WINDOW_HEIGHT, topFactor: 0.28 };
+  }
+  return { width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT, topFactor: 0.2 };
+}
+
+function applyLauncherBounds(mode: 'default' | 'whisper'): void {
+  if (!mainWindow) return;
+  const cursorPoint = screen.getCursorScreenPoint();
+  const currentDisplay = screen.getDisplayNearestPoint(cursorPoint);
+  const {
+    x: displayX,
+    y: displayY,
+    width: displayWidth,
+    height: displayHeight,
+  } = currentDisplay.workArea;
+  const size = getLauncherSize(mode);
+  const windowX = displayX + Math.floor((displayWidth - size.width) / 2);
+  const windowY = displayY + Math.floor(displayHeight * size.topFactor);
+  mainWindow.setBounds({
+    x: windowX,
+    y: windowY,
+    width: size.width,
+    height: size.height,
+  });
+}
+
+function setLauncherMode(mode: 'default' | 'whisper'): void {
+  const prevMode = launcherMode;
+  launcherMode = mode;
+  if (mainWindow) {
+    try {
+      if (process.platform === 'darwin') {
+        if (mode === 'whisper') {
+          mainWindow.setVibrancy(null as any);
+          mainWindow.setHasShadow(false);
+          mainWindow.setFocusable(true);
+          mainWindow.setBackgroundColor('#00000000');
+        } else {
+          mainWindow.setVibrancy('fullscreen-ui');
+          mainWindow.setHasShadow(true);
+          mainWindow.setFocusable(true);
+          mainWindow.setBackgroundColor('#10101400');
+        }
+      }
+    } catch {}
+  }
+  if (mainWindow && isVisible && prevMode !== mode) {
+    applyLauncherBounds(mode);
+  }
+  if (isVisible) {
+    if (mode === 'whisper') {
+      registerWhisperEscapeShortcut();
+    } else {
+      unregisterWhisperEscapeShortcut();
+    }
+  }
 }
 
 function showWindow(): void {
@@ -339,48 +430,200 @@ function showWindow(): void {
     // Keep whatever was stored previously
   }
 
-  const cursorPoint = screen.getCursorScreenPoint();
-  const currentDisplay = screen.getDisplayNearestPoint(cursorPoint);
-  const {
-    x: displayX,
-    y: displayY,
-    width: displayWidth,
-    height: displayHeight,
-  } = currentDisplay.workArea;
-
-  const windowX = displayX + Math.floor((displayWidth - WINDOW_WIDTH) / 2);
-  const windowY = displayY + Math.floor(displayHeight * 0.2);
-
-  mainWindow.setBounds({
-    x: windowX,
-    y: windowY,
-    width: WINDOW_WIDTH,
-    height: WINDOW_HEIGHT,
-  });
+  applyLauncherBounds(launcherMode);
 
   mainWindow.show();
   mainWindow.focus();
   mainWindow.moveTop();
   isVisible = true;
 
-  mainWindow.webContents.send('window-shown');
+  if (launcherMode === 'whisper') {
+    registerWhisperEscapeShortcut();
+  } else {
+    unregisterWhisperEscapeShortcut();
+  }
+
+  mainWindow.webContents.send('window-shown', { mode: launcherMode });
+  if (launcherMode === 'whisper') {
+    lastWhisperShownAt = Date.now();
+  }
 }
 
 function hideWindow(): void {
   if (!mainWindow) return;
   mainWindow.hide();
   isVisible = false;
+  unregisterWhisperEscapeShortcut();
+  try {
+    mainWindow.setFocusable(true);
+  } catch {}
+  setLauncherMode('default');
+}
+
+async function activateLastFrontmostApp(): Promise<boolean> {
+  if (!lastFrontmostApp) return false;
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const execFileAsync = promisify(execFile);
+
+  try {
+    if (lastFrontmostApp.bundleId) {
+      await execFileAsync('osascript', [
+        '-e',
+        `tell application id "${lastFrontmostApp.bundleId}" to activate`,
+      ]);
+      return true;
+    }
+  } catch {}
+
+  try {
+    if (lastFrontmostApp.name) {
+      await execFileAsync('osascript', [
+        '-e',
+        `tell application "${lastFrontmostApp.name}" to activate`,
+      ]);
+      return true;
+    }
+  } catch {}
+
+  try {
+    if (lastFrontmostApp.path) {
+      await execFileAsync('open', ['-a', lastFrontmostApp.path]);
+      return true;
+    }
+  } catch {}
+
+  try {
+    if (lastFrontmostApp.bundleId) {
+      await execFileAsync('open', ['-b', lastFrontmostApp.bundleId]);
+      return true;
+    }
+  } catch {}
+
+  return false;
+}
+
+async function typeTextDirectly(text: string): Promise<boolean> {
+  const value = String(text || '');
+  if (!value) return false;
+
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const execFileAsync = promisify(execFile);
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n/g, '\\n');
+
+  try {
+    await execFileAsync('osascript', [
+      '-e',
+      `tell application "System Events" to keystroke "${escaped}"`,
+    ]);
+    return true;
+  } catch (error) {
+    console.error('Direct keystroke fallback failed:', error);
+    return false;
+  }
+}
+
+async function pasteTextToActiveApp(text: string): Promise<boolean> {
+  const value = String(text || '');
+  if (!value) return false;
+
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const execFileAsync = promisify(execFile);
+  const previousClipboardText = systemClipboard.readText();
+
+  try {
+    systemClipboard.writeText(value);
+    await execFileAsync('osascript', [
+      '-e',
+      'tell application "System Events" to keystroke "v" using command down',
+    ]);
+    setTimeout(() => {
+      try {
+        systemClipboard.writeText(previousClipboardText);
+      } catch {}
+    }, 250);
+    return true;
+  } catch (error) {
+    console.error('pasteTextToActiveApp failed:', error);
+    return false;
+  }
+}
+
+async function replaceTextDirectly(previousText: string, nextText: string): Promise<boolean> {
+  const prev = String(previousText || '');
+  const next = String(nextText || '');
+
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const execFileAsync = promisify(execFile);
+
+  try {
+    if (prev.length > 0) {
+      const script = `
+        tell application "System Events"
+          repeat ${prev.length} times
+            key code 51
+          end repeat
+        end tell
+      `;
+      await execFileAsync('osascript', ['-e', script]);
+    }
+    if (next.length > 0) {
+      return await typeTextDirectly(next);
+    }
+    return true;
+  } catch (error) {
+    console.error('replaceTextDirectly failed:', error);
+    return false;
+  }
+}
+
+async function replaceTextViaBackspaceAndPaste(previousText: string, nextText: string): Promise<boolean> {
+  const prev = String(previousText || '');
+  const next = String(nextText || '');
+
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const execFileAsync = promisify(execFile);
+
+  try {
+    if (prev.length > 0) {
+      const script = `
+        tell application "System Events"
+          repeat ${prev.length} times
+            key code 51
+          end repeat
+        end tell
+      `;
+      await execFileAsync('osascript', ['-e', script]);
+      await new Promise((resolve) => setTimeout(resolve, 18));
+    }
+    if (next.length > 0) {
+      return await pasteTextToActiveApp(next);
+    }
+    return true;
+  } catch (error) {
+    console.error('replaceTextViaBackspaceAndPaste failed:', error);
+    return false;
+  }
 }
 
 /**
  * Hide the launcher, re-activate the previous frontmost app, and simulate Cmd+V.
  * Used by both clipboard-paste-item and snippet-paste.
  */
-async function hideAndPaste(): Promise<void> {
+async function hideAndPaste(): Promise<boolean> {
   // Hide the window first
   if (mainWindow && isVisible) {
     mainWindow.hide();
     isVisible = false;
+    setLauncherMode('default');
   }
 
   const { execFile } = require('child_process');
@@ -388,22 +631,14 @@ async function hideAndPaste(): Promise<void> {
   const execFileAsync = promisify(execFile);
 
   // Re-activate the previous frontmost app explicitly
-  if (lastFrontmostApp?.name) {
-    try {
-      await execFileAsync('osascript', [
-        '-e',
-        `tell application "${lastFrontmostApp.name}" to activate`,
-      ]);
-    } catch (e) {
-      // Fallback: just wait for OS to refocus
-    }
-  }
+  await activateLastFrontmostApp();
 
   // Small delay to let the target app gain focus
   await new Promise(resolve => setTimeout(resolve, 200));
 
   try {
     await execFileAsync('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down']);
+    return true;
   } catch (e) {
     console.error('Failed to simulate paste keystroke:', e);
     // Fallback with extra delay
@@ -415,8 +650,10 @@ async function hideAndPaste(): Promise<void> {
           keystroke "v" using command down
         end tell
       `]);
+      return true;
     } catch (e2) {
       console.error('Fallback paste also failed:', e2);
+      return false;
     }
   }
 }
@@ -549,8 +786,18 @@ async function openLauncherAndRunSystemCommand(commandId: string): Promise<boole
     createWindow();
   }
   if (!mainWindow) return false;
+  if (commandId === 'system-supercommand-whisper') {
+    setLauncherMode('whisper');
+  } else {
+    setLauncherMode('default');
+  }
 
   const sendCommand = () => {
+    if (commandId === 'system-supercommand-whisper') {
+      // Whisper uses window-shown(mode=whisper) as single source of truth.
+      showWindow();
+      return;
+    }
     showWindow();
     mainWindow?.webContents.send('run-system-command', commandId);
   };
@@ -567,6 +814,28 @@ async function openLauncherAndRunSystemCommand(commandId: string): Promise<boole
 }
 
 async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' = 'launcher'): Promise<boolean> {
+  if (commandId === 'system-supercommand-whisper' && source === 'hotkey') {
+    const now = Date.now();
+    if (now - lastWhisperToggleAt < 600) {
+      return true;
+    }
+    lastWhisperToggleAt = now;
+  }
+
+  if (
+    commandId === 'system-supercommand-whisper' &&
+    source === 'hotkey' &&
+    isVisible &&
+    launcherMode === 'whisper'
+  ) {
+    const now = Date.now();
+    if (now - lastWhisperShownAt < 650) {
+      return true;
+    }
+    mainWindow?.webContents.send('whisper-stop-and-close');
+    return true;
+  }
+
   if (commandId === 'system-open-settings') {
     openSettingsWindow();
     if (source === 'launcher') hideWindow();
@@ -587,7 +856,8 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
     commandId === 'system-search-files' ||
-    commandId === 'system-open-onboarding'
+    commandId === 'system-open-onboarding' ||
+    commandId === 'system-supercommand-whisper'
   ) {
     return await openLauncherAndRunSystemCommand(commandId);
   }
@@ -605,6 +875,88 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     setTimeout(() => hideWindow(), 50);
   }
   return success;
+}
+
+function normalizeTranscriptText(input: string): string {
+  return String(input || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[`"'“”]+|[`"'“”]+$/g, '')
+    .trim();
+}
+
+function applyWhisperHeuristicCorrection(input: string): string {
+  const normalized = normalizeTranscriptText(input);
+  if (!normalized) return '';
+
+  const correctionPattern = /\b(?:no|i mean|actually|sorry|correction|rather|make that)\b\s+(.+)$/i;
+  const match = correctionPattern.exec(normalized);
+  if (!match || typeof match.index !== 'number') return normalized;
+
+  const correction = normalizeTranscriptText(match[1]);
+  if (!correction) return normalized;
+
+  const before = normalizeTranscriptText(
+    normalized
+      .slice(0, match.index)
+      .replace(/[,:;\-]+$/g, '')
+  );
+  if (!before) return correction;
+
+  const prepMatch = /\b(for|at|on|in|to|from|with)\s+([^\s]+(?:\s+[^\s]+)?)$/i.exec(before);
+  if (prepMatch && typeof prepMatch.index === 'number') {
+    const preposition = prepMatch[1];
+    const stem = normalizeTranscriptText(before.slice(0, prepMatch.index));
+    const correctionHasPrep = new RegExp(`^${preposition}\\b`, 'i').test(correction);
+    return normalizeTranscriptText(`${stem} ${correctionHasPrep ? correction : `${preposition} ${correction}`}`);
+  }
+
+  const beforeWords = before.split(/\s+/);
+  const correctionWords = correction.split(/\s+/);
+  const dropCount = Math.min(4, Math.max(1, correctionWords.length));
+  const prefix = beforeWords.slice(0, Math.max(0, beforeWords.length - dropCount)).join(' ');
+  return normalizeTranscriptText(`${prefix} ${correction}`) || normalized;
+}
+
+async function refineWhisperTranscript(input: string): Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }> {
+  const normalized = normalizeTranscriptText(input);
+  if (!normalized) {
+    return { correctedText: '', source: 'raw' };
+  }
+
+  const settings = loadSettings();
+  if (settings.ai.speechCorrectionEnabled && isAIAvailable(settings.ai)) {
+    try {
+      let corrected = '';
+      const systemPrompt = [
+        'You clean speech-to-text transcripts.',
+        'Apply self-corrections when the user changes intent (e.g. "4am no 2am" => "2am").',
+        'Do not add commentary, explanations, or metadata.',
+        'Return only the final corrected sentence.',
+      ].join(' ');
+      const prompt = `Transcript:\n${normalized}\n\nReturn corrected transcript only.`;
+      const gen = streamAI(settings.ai, {
+        prompt,
+        creativity: 0,
+        systemPrompt,
+      });
+      for await (const chunk of gen) {
+        corrected += chunk;
+      }
+      const cleaned = normalizeTranscriptText(corrected);
+      if (cleaned) {
+        return { correctedText: cleaned, source: 'ai' };
+      }
+    } catch (error) {
+      console.warn('[Whisper] AI transcript correction failed:', error);
+    }
+  }
+
+  const heuristicallyCorrected = applyWhisperHeuristicCorrection(normalized);
+  if (heuristicallyCorrected) {
+    return { correctedText: heuristicallyCorrected, source: 'heuristic' };
+  }
+
+  return { correctedText: normalized, source: 'raw' };
 }
 
 // ─── Settings Window ────────────────────────────────────────────────
@@ -909,8 +1261,17 @@ app.whenReady().then(async () => {
     hideWindow();
   });
 
+  ipcMain.handle('set-launcher-mode', (_event: any, mode: 'default' | 'whisper') => {
+    if (mode !== 'default' && mode !== 'whisper') return;
+    setLauncherMode(mode);
+  });
+
   ipcMain.handle('get-last-frontmost-app', () => {
     return lastFrontmostApp;
+  });
+
+  ipcMain.handle('restore-last-frontmost-app', async () => {
+    return await activateLastFrontmostApp();
   });
 
   // ─── IPC: Settings ──────────────────────────────────────────────
@@ -1798,8 +2159,7 @@ return appURL's |path|() as text`,
     const success = copyItemToClipboard(id);
     if (!success) return false;
 
-    await hideAndPaste();
-    return true;
+    return await hideAndPaste();
   });
 
   ipcMain.handle('clipboard-set-enabled', (_event: any, enabled: boolean) => {
@@ -1898,16 +2258,14 @@ return appURL's |path|() as text`,
     const success = copySnippetToClipboard(id);
     if (!success) return false;
 
-    await hideAndPaste();
-    return true;
+    return await hideAndPaste();
   });
 
   ipcMain.handle('snippet-paste-resolved', async (_event: any, id: string, dynamicValues?: Record<string, string>) => {
     const success = copySnippetToClipboardResolved(id, dynamicValues);
     if (!success) return false;
 
-    await hideAndPaste();
-    return true;
+    return await hideAndPaste();
   });
 
   ipcMain.handle('snippet-import', async () => {
@@ -1928,6 +2286,66 @@ return appURL's |path|() as text`,
     } finally {
       suppressBlurHide = false;
     }
+  });
+
+  ipcMain.handle('paste-text', async (_event: any, text: string) => {
+    const nextText = String(text || '');
+    if (!nextText) return false;
+
+    const previousClipboardText = systemClipboard.readText();
+    try {
+      systemClipboard.writeText(nextText);
+      let pasted = await hideAndPaste();
+      if (!pasted) {
+        await activateLastFrontmostApp();
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        pasted = await typeTextDirectly(nextText);
+      }
+      setTimeout(() => {
+        try {
+          systemClipboard.writeText(previousClipboardText);
+        } catch {}
+      }, 500);
+      return pasted;
+    } catch (error) {
+      console.error('paste-text failed:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('type-text-live', async (_event: any, text: string) => {
+    const nextText = String(text || '');
+    if (!nextText) return false;
+    console.log('[Whisper][type-live]', JSON.stringify(nextText));
+    await activateLastFrontmostApp();
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    let typed = await typeTextDirectly(nextText);
+    if (!typed) {
+      typed = await pasteTextToActiveApp(nextText);
+    }
+    return typed;
+  });
+
+  ipcMain.handle('replace-live-text', async (_event: any, previousText: string, nextText: string) => {
+    console.log('[Whisper][replace-live]', JSON.stringify(previousText), '=>', JSON.stringify(nextText));
+    await activateLastFrontmostApp();
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    let replaced = await replaceTextDirectly(previousText, nextText);
+    if (!replaced) {
+      replaced = await replaceTextViaBackspaceAndPaste(previousText, nextText);
+    }
+    return replaced;
+  });
+
+  ipcMain.on('whisper-debug-log', (_event: any, payload: { tag?: string; message?: string; data?: any }) => {
+    const tag = String(payload?.tag || 'event');
+    const message = String(payload?.message || '');
+    const data = payload?.data;
+    if (typeof data === 'undefined') {
+      console.log(`[Whisper][${tag}] ${message}`);
+      return;
+    }
+    console.log(`[Whisper][${tag}] ${message}`, data);
   });
 
   // ─── IPC: AI ───────────────────────────────────────────────────
@@ -1982,6 +2400,125 @@ return appURL's |path|() as text`,
   ipcMain.handle('ai-is-available', () => {
     const s = loadSettings();
     return isAIAvailable(s.ai);
+  });
+
+  ipcMain.handle('whisper-refine-transcript', async (_event: any, transcript: string) => {
+    return await refineWhisperTranscript(transcript);
+  });
+
+  ipcMain.handle(
+    'whisper-transcribe',
+    async (_event: any, audioArrayBuffer: ArrayBuffer, options?: { language?: string }) => {
+      const s = loadSettings();
+
+      if (!s.ai.openaiApiKey) {
+        throw new Error('OpenAI API key not configured. Go to Settings → AI to set it up.');
+      }
+
+      // Parse speechToTextModel: 'openai-gpt-4o-transcribe' → 'gpt-4o-transcribe'
+      let model = 'gpt-4o-transcribe';
+      const sttModel = s.ai.speechToTextModel || '';
+      if (sttModel.startsWith('openai-')) {
+        model = sttModel.slice('openai-'.length);
+      } else if (sttModel) {
+        model = sttModel;
+      }
+
+      // Convert BCP-47 (e.g. 'en-US') to ISO-639-1 (e.g. 'en')
+      const rawLang = options?.language || s.ai.speechLanguage || 'en-US';
+      const language = rawLang.split('-')[0].toLowerCase() || 'en';
+
+      const audioBuffer = Buffer.from(audioArrayBuffer);
+
+      console.log(`[Whisper] Transcribing ${audioBuffer.length} bytes, model=${model}, lang=${language}`);
+
+      const text = await transcribeAudio({
+        audioBuffer,
+        apiKey: s.ai.openaiApiKey,
+        model,
+        language,
+      });
+
+      console.log(`[Whisper] Transcription result: "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`);
+      return text;
+    }
+  );
+
+  // ─── IPC: Native Speech Recognition (macOS SFSpeechRecognizer) ──
+
+  ipcMain.handle('whisper-start-native', async (event: any, language?: string) => {
+    // Kill any existing process
+    if (nativeSpeechProcess) {
+      try { nativeSpeechProcess.kill('SIGTERM'); } catch {}
+      nativeSpeechProcess = null;
+      nativeSpeechStdoutBuffer = '';
+    }
+
+    const lang = language || loadSettings().ai.speechLanguage || 'en-US';
+    const binaryPath = path.join(__dirname, '..', 'native', 'speech-recognizer');
+    const fs = require('fs');
+
+    // Compile on demand (same pattern as color-picker / snippet-expander)
+    if (!fs.existsSync(binaryPath)) {
+      try {
+        const { execFileSync } = require('child_process');
+        const sourcePath = path.join(app.getAppPath(), 'src', 'native', 'speech-recognizer.swift');
+        execFileSync('swiftc', [
+          '-O', '-o', binaryPath, sourcePath,
+          '-framework', 'Speech',
+          '-framework', 'AVFoundation',
+        ]);
+        console.log('[Whisper][native] Compiled speech-recognizer binary');
+      } catch (error) {
+        console.error('[Whisper][native] Compile failed:', error);
+        throw new Error('Failed to compile native speech recognizer. Ensure Xcode Command Line Tools are installed.');
+      }
+    }
+
+    const { spawn } = require('child_process');
+    nativeSpeechProcess = spawn(binaryPath, [lang], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    nativeSpeechStdoutBuffer = '';
+    console.log(`[Whisper][native] Started speech-recognizer (lang=${lang})`);
+
+    nativeSpeechProcess.stdout.on('data', (chunk: Buffer | string) => {
+      nativeSpeechStdoutBuffer += chunk.toString();
+      const lines = nativeSpeechStdoutBuffer.split('\n');
+      nativeSpeechStdoutBuffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const payload = JSON.parse(trimmed);
+          // Forward to renderer
+          event.sender.send('whisper-native-chunk', payload);
+        } catch {
+          // ignore malformed lines
+        }
+      }
+    });
+
+    nativeSpeechProcess.stderr.on('data', (chunk: Buffer | string) => {
+      const text = chunk.toString().trim();
+      if (text) console.warn('[Whisper][native]', text);
+    });
+
+    nativeSpeechProcess.on('exit', (code: number | null) => {
+      console.log(`[Whisper][native] Process exited (code=${code})`);
+      nativeSpeechProcess = null;
+      nativeSpeechStdoutBuffer = '';
+      // Notify renderer that native recognition ended
+      try { event.sender.send('whisper-native-chunk', { ended: true }); } catch {}
+    });
+  });
+
+  ipcMain.handle('whisper-stop-native', async () => {
+    if (nativeSpeechProcess) {
+      try { nativeSpeechProcess.kill('SIGTERM'); } catch {}
+      nativeSpeechProcess = null;
+      nativeSpeechStdoutBuffer = '';
+    }
   });
 
   // ─── IPC: Ollama Model Management ──────────────────────────────

@@ -15,6 +15,10 @@ export interface AISettings {
   anthropicApiKey: string;
   ollamaBaseUrl: string;
   defaultModel: string;
+  speechToTextModel: string;
+  speechLanguage: string;
+  textToSpeechModel: string;
+  speechCorrectionEnabled: boolean;
   enabled: boolean;
 }
 
@@ -36,6 +40,10 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   anthropicApiKey: '',
   ollamaBaseUrl: 'http://localhost:11434',
   defaultModel: '',
+  speechToTextModel: 'openai-gpt-4o-transcribe',
+  speechLanguage: 'en-US',
+  textToSpeechModel: 'openai-gpt-4o-mini-tts',
+  speechCorrectionEnabled: true,
   enabled: false,
 };
 
@@ -43,7 +51,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   globalShortcut: 'Command+Space',
   disabledCommands: [],
   enabledCommands: [],
-  commandHotkeys: {},
+  commandHotkeys: {
+    'system-supercommand-whisper': 'Command+Shift+W',
+  },
   pinnedCommands: [],
   recentCommands: [],
   hasSeenOnboarding: false,
@@ -66,7 +76,10 @@ export function loadSettings(): AppSettings {
       globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
       disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
       enabledCommands: parsed.enabledCommands ?? DEFAULT_SETTINGS.enabledCommands,
-      commandHotkeys: parsed.commandHotkeys ?? DEFAULT_SETTINGS.commandHotkeys,
+      commandHotkeys: {
+        ...DEFAULT_SETTINGS.commandHotkeys,
+        ...(parsed.commandHotkeys || {}),
+      },
       pinnedCommands: parsed.pinnedCommands ?? DEFAULT_SETTINGS.pinnedCommands,
       recentCommands: parsed.recentCommands ?? DEFAULT_SETTINGS.recentCommands,
       // Existing users with older settings should not be forced into onboarding.
