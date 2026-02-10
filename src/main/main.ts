@@ -111,10 +111,22 @@ function resolveDetachedPopupName(details: any): string | null {
   return null;
 }
 
-function computeDetachedPopupPosition(width: number, height: number): { x: number; y: number } {
+function computeDetachedPopupPosition(
+  popupName: string,
+  width: number,
+  height: number
+): { x: number; y: number } {
   const cursorPoint = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursorPoint);
   const workArea = display?.workArea || screen.getPrimaryDisplay().workArea;
+
+  if (popupName === DETACHED_SPEAK_WINDOW_NAME) {
+    return {
+      x: workArea.x + workArea.width - width - 20,
+      y: workArea.y + 16,
+    };
+  }
+
   return {
     x: workArea.x + Math.floor((workArea.width - width) / 2),
     y: workArea.y + workArea.height - height - 14,
@@ -802,7 +814,7 @@ function createWindow(): void {
     const defaultHeight = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ? 52 : 112;
     const finalWidth = typeof popupBounds.width === 'number' ? popupBounds.width : defaultWidth;
     const finalHeight = typeof popupBounds.height === 'number' ? popupBounds.height : defaultHeight;
-    const bottomCenterPos = computeDetachedPopupPosition(finalWidth, finalHeight);
+    const popupPos = computeDetachedPopupPosition(detachedPopupName, finalWidth, finalHeight);
 
     return {
       action: 'allow',
@@ -810,8 +822,8 @@ function createWindow(): void {
       overrideBrowserWindowOptions: {
         width: finalWidth,
         height: finalHeight,
-        x: bottomCenterPos.x,
-        y: bottomCenterPos.y,
+        x: popupPos.x,
+        y: popupPos.y,
         title: detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ? 'SuperCommand Whisper' : 'SuperCommand Speak',
         frame: false,
         titleBarStyle: 'hidden',
@@ -1008,9 +1020,6 @@ function showWindow(): void {
 
 function hideWindow(): void {
   if (!mainWindow) return;
-  if (activeSpeakSession) {
-    stopSpeakSession({ resetStatus: true });
-  }
   emitWindowHidden();
   mainWindow.hide();
   isVisible = false;

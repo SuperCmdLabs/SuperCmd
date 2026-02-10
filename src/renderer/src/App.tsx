@@ -402,7 +402,7 @@ const App: React.FC = () => {
     title: 'SuperCommand Speak',
     width: 520,
     height: 112,
-    anchor: 'center-bottom',
+    anchor: 'top-right',
     onClosed: () => {
       setShowSpeak(false);
       void window.electron.speakStop();
