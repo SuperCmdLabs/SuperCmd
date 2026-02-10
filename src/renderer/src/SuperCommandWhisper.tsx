@@ -75,15 +75,23 @@ function computeAppendOnlyDelta(previous: string, next: string): string {
   if (curr.startsWith(prev)) {
     return curr.slice(prev.length);
   }
+  const lowerPrev = prev.toLowerCase();
+  const lowerCurr = curr.toLowerCase();
+  const exactIdx = lowerCurr.lastIndexOf(lowerPrev);
+  if (exactIdx >= 0) {
+    return curr.slice(exactIdx + prev.length);
+  }
 
   const prevWords = prev.split(/\s+/);
   const currWords = curr.split(/\s+/);
   const maxOverlap = Math.min(16, prevWords.length, currWords.length);
   for (let size = maxOverlap; size >= 1; size -= 1) {
     const prevTail = prevWords.slice(prevWords.length - size).join(' ').toLowerCase();
-    const currHead = currWords.slice(0, size).join(' ').toLowerCase();
-    if (prevTail === currHead) {
-      return normalizeTranscript(currWords.slice(size).join(' '));
+    for (let start = 0; start <= currWords.length - size; start += 1) {
+      const currSegment = currWords.slice(start, start + size).join(' ').toLowerCase();
+      if (prevTail === currSegment) {
+        return normalizeTranscript(currWords.slice(start + size).join(' '));
+      }
     }
   }
 
@@ -298,12 +306,10 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
       const previous = normalizeTranscript(liveTypedTextRef.current);
       const delta = computeAppendOnlyDelta(previous, normalizedNext);
       if (!delta) {
-        liveTypedTextRef.current = normalizedNext;
         return;
       }
       const appendText = formatDeltaForAppend(previous, delta);
       if (!appendText) {
-        liveTypedTextRef.current = normalizedNext;
         return;
       }
 
@@ -365,11 +371,15 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
   // ─── Whisper API backend ───────────────────────────────────────────
 
   const sendTranscription = useCallback(async (isFinal: boolean) => {
-    const chunks = audioChunksRef.current;
-    if (chunks.length === 0) return;
+    if (audioChunksRef.current.length === 0) return;
+    const chunks = audioChunksRef.current.splice(0, audioChunksRef.current.length);
 
     const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-    if (audioBlob.size < 1000 && !isFinal) return;
+    if (audioBlob.size < 1000 && !isFinal) {
+      // Too small to send yet; prepend back in front of any newly queued chunks.
+      audioChunksRef.current = [...chunks, ...audioChunksRef.current];
+      return;
+    }
 
     try {
       const arrayBuffer = await audioBlob.arrayBuffer();
@@ -394,12 +404,11 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
       if (changed) {
         scheduleDebouncedLiveRefine();
       }
-      // Consume chunks after successful non-final processing so old audio
-      // is not resent in the next periodic transcription request.
-      if (!isFinal) {
-        audioChunksRef.current = [];
-      }
     } catch (err: any) {
+      if (!isFinal) {
+        // Preserve unsent audio by putting failed batch back at the front.
+        audioChunksRef.current = [...chunks, ...audioChunksRef.current];
+      }
       const message = err?.message || 'Transcription failed';
       console.error('[Whisper] Transcription error:', message);
       window.electron.whisperDebugLog('error', 'transcription error', { error: message });
