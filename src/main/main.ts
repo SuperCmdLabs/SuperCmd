@@ -1027,6 +1027,10 @@ async function refineWhisperTranscript(input: string): Promise<{ correctedText: 
       }
     } catch (error) {
       console.warn('[Whisper] AI transcript correction failed:', error);
+      const message = String((error as any)?.message || '').toLowerCase();
+      if (message.includes('econnrefused') || message.includes('connection refused')) {
+        return { correctedText: normalized, source: 'raw' };
+      }
     }
   }
 
