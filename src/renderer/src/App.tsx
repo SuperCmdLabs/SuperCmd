@@ -1413,18 +1413,7 @@ const App: React.FC = () => {
       return true;
     }
     if (commandId === 'system-cursor-prompt') {
-      whisperSessionRef.current = false;
-      setExtensionView(null);
-      setExtensionPreferenceSetup(null);
-      setShowOnboarding(false);
-      setShowClipboardManager(false);
-      setShowSnippetManager(null);
-      setShowFileSearch(false);
-      setAiMode(false);
-      setShowWhisper(false);
-      setShowSpeak(false);
-      setCursorPromptText('');
-      setShowCursorPrompt(true);
+      await window.electron.executeCommand(commandId);
       return true;
     }
     if (commandId === 'system-supercommand-whisper') {
@@ -1805,12 +1794,9 @@ const App: React.FC = () => {
                     className="cursor-prompt-textarea w-full bg-transparent border-none outline-none text-white/95 placeholder-white/42 text-[13px] font-medium tracking-[0.003em]"
                     autoFocus
                   />
-                  {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
-                    <div className="cursor-prompt-preview-wrap">
-                      <div className="cursor-prompt-preview-title">Preview</div>
-                      <div className="cursor-prompt-preview">{cursorPromptResult}</div>
-                    </div>
-                  )}
+                  {cursorPromptStatus === 'ready' && cursorPromptResult.trim() ? (
+                    <div className="sr-only">{cursorPromptResult}</div>
+                  ) : null}
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <div className="cursor-prompt-feedback">

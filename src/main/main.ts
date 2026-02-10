@@ -192,6 +192,7 @@ function computeDetachedPopupPosition(
 }
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
+let promptWindow: InstanceType<typeof BrowserWindow> | null = null;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
 let isVisible = false;
@@ -1170,6 +1171,105 @@ function createWindow(): void {
   });
 }
 
+function computePromptWindowBounds(): { x: number; y: number; width: number; height: number } {
+  const cursorPoint = screen.getCursorScreenPoint();
+  const caretRect = getTypingCaretRect();
+  const focusedInputRect = getFocusedInputRect();
+  const promptAnchorPoint = caretRect
+    ? {
+        x: caretRect.x,
+        y: caretRect.y + Math.max(1, Math.floor(caretRect.height * 0.5)),
+      }
+    : focusedInputRect
+      ? {
+          x: focusedInputRect.x + 12,
+          y: focusedInputRect.y + 18,
+        }
+      : lastTypingCaretPoint || cursorPoint;
+
+  if (caretRect) {
+    lastTypingCaretPoint = {
+      x: caretRect.x,
+      y: caretRect.y + Math.max(1, Math.floor(caretRect.height * 0.5)),
+    };
+  } else if (focusedInputRect) {
+    lastTypingCaretPoint = {
+      x: focusedInputRect.x + 12,
+      y: focusedInputRect.y + 18,
+    };
+  }
+
+  const display = screen.getDisplayNearestPoint(promptAnchorPoint);
+  const area = display?.workArea || screen.getPrimaryDisplay().workArea;
+  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+  const width = CURSOR_PROMPT_WINDOW_WIDTH;
+  const height = CURSOR_PROMPT_WINDOW_HEIGHT;
+  const x = clamp(
+    promptAnchorPoint.x - CURSOR_PROMPT_LEFT_OFFSET,
+    area.x + 8,
+    area.x + area.width - width - 8
+  );
+  const baseY = caretRect ? caretRect.y : focusedInputRect ? focusedInputRect.y : promptAnchorPoint.y;
+  const preferred = baseY - height - 10;
+  const y = preferred >= area.y + 8
+    ? preferred
+    : clamp(baseY + 16, area.y + 8, area.y + area.height - height - 8);
+  return { x, y, width, height };
+}
+
+function createPromptWindow(): void {
+  if (promptWindow && !promptWindow.isDestroyed()) return;
+  const bounds = computePromptWindowBounds();
+  promptWindow = new BrowserWindow({
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    frame: false,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: false,
+    hasShadow: true,
+    resizable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    transparent: true,
+    backgroundColor: '#10101400',
+    vibrancy: 'fullscreen-ui',
+    visualEffectState: 'active',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  if (process.platform === 'darwin') {
+    try { promptWindow.setWindowButtonVisibility(false); } catch {}
+  }
+  promptWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  loadWindowUrl(promptWindow, '/prompt');
+  promptWindow.on('closed', () => {
+    promptWindow = null;
+  });
+}
+
+function showPromptWindow(): void {
+  if (!promptWindow || promptWindow.isDestroyed()) {
+    createPromptWindow();
+  }
+  if (!promptWindow) return;
+  const bounds = computePromptWindowBounds();
+  promptWindow.setBounds(bounds);
+  promptWindow.show();
+  promptWindow.focus();
+  promptWindow.moveTop();
+}
+
+function hidePromptWindow(): void {
+  if (!promptWindow || promptWindow.isDestroyed()) return;
+  promptWindow.hide();
+}
+
 function getLauncherSize(mode: 'default' | 'whisper' | 'speak' | 'prompt') {
   if (mode === 'prompt') {
     return { width: CURSOR_PROMPT_WINDOW_WIDTH, height: CURSOR_PROMPT_WINDOW_HEIGHT, topFactor: 0.2 };
@@ -1864,26 +1964,12 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
       hideWindow();
       return true;
     }
-    if (!mainWindow) {
-      createWindow();
+    if (isVisible) hideWindow();
+    if (promptWindow && promptWindow.isVisible()) {
+      hidePromptWindow();
+      return true;
     }
-    if (!mainWindow) return false;
-    setLauncherMode('default');
-    if (isVisible) {
-      try { mainWindow.hide(); } catch {}
-      isVisible = false;
-      emitWindowHidden();
-    }
-    const sendPromptCommand = () => {
-      try {
-        mainWindow?.webContents.send('run-system-command', commandId);
-      } catch {}
-    };
-    if (mainWindow.webContents.isLoadingMainFrame()) {
-      mainWindow.webContents.once('did-finish-load', sendPromptCommand);
-    } else {
-      sendPromptCommand();
-    }
+    showPromptWindow();
     return true;
   }
 
@@ -2760,6 +2846,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('hide-window', () => {
     hideWindow();
+  });
+
+  ipcMain.handle('close-prompt-window', () => {
+    hidePromptWindow();
   });
 
   ipcMain.handle('set-launcher-mode', (_event: any, mode: 'default' | 'whisper' | 'speak' | 'prompt') => {

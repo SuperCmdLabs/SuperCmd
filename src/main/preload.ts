@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('electron', {
   executeCommand: (commandId: string): Promise<boolean> =>
     ipcRenderer.invoke('execute-command', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
+  closePromptWindow: (): Promise<void> => ipcRenderer.invoke('close-prompt-window'),
   setLauncherMode: (mode: 'default' | 'whisper' | 'speak' | 'prompt'): Promise<void> =>
     ipcRenderer.invoke('set-launcher-mode', mode),
   getLastFrontmostApp: (): Promise<{ name: string; path: string; bundleId?: string } | null> =>
