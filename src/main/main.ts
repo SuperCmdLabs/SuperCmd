@@ -155,32 +155,38 @@ function setSpeakStatus(status: {
 
 function splitTextIntoSpeakChunks(input: string): string[] {
   const normalized = String(input || '')
-    .replace(/\r\n/g, '\n')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\s+/g, ' ')
     .trim();
   if (!normalized) return [];
 
   // Keep chunks sentence-aligned. We do NOT split a sentence mid-way.
-  const maxChunkChars = 360;
+  const maxChunkWords = 50;
   const sentenceRegex = /[^.!?]+[.!?]+(?:["')\]]+)?|[^.!?]+$/g;
   const baseSentences = (normalized.match(sentenceRegex) || [])
     .map((s) => s.trim())
     .filter(Boolean)
     .map((s) => (/[.!?]["')\]]*$/.test(s) ? s : `${s}.`));
 
+  const countWords = (text: string): number => {
+    const t = text.trim();
+    if (!t) return 0;
+    return t.split(/\s+/).filter(Boolean).length;
+  };
+
   const chunks: string[] = [];
-  let current = '';
-  for (const sentence of baseSentences) {
-    const candidate = current ? `${current} ${sentence}` : sentence;
-    if (candidate.length <= maxChunkChars) {
-      current = candidate;
-      continue;
+  for (let i = 0; i < baseSentences.length; i += 1) {
+    const first = baseSentences[i];
+    const second = baseSentences[i + 1];
+    if (second) {
+      const pair = `${first} ${second}`;
+      if (countWords(pair) <= maxChunkWords) {
+        chunks.push(pair);
+        i += 1;
+        continue;
+      }
     }
-    if (current) chunks.push(current);
-    current = sentence;
+    chunks.push(first);
   }
-  if (current) chunks.push(current);
 
   return chunks;
 }
