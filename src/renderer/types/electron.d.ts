@@ -87,13 +87,25 @@ export interface AISettings {
   provider: 'openai' | 'anthropic' | 'ollama';
   openaiApiKey: string;
   anthropicApiKey: string;
+  elevenlabsApiKey: string;
   ollamaBaseUrl: string;
   defaultModel: string;
+  speechCorrectionModel: string;
   speechToTextModel: string;
   speechLanguage: string;
   textToSpeechModel: string;
+  edgeTtsVoice: string;
   speechCorrectionEnabled: boolean;
   enabled: boolean;
+}
+
+export interface EdgeTtsVoice {
+  id: string;
+  label: string;
+  languageCode: string;
+  languageLabel: string;
+  gender: 'female' | 'male';
+  style?: string;
 }
 
 export interface AppSettings {
@@ -194,6 +206,8 @@ export interface ElectronAPI {
   }>;
   speakGetOptions: () => Promise<{ voice: string; rate: string }>;
   speakUpdateOptions: (patch: { voice?: string; rate?: string; restartCurrent?: boolean }) => Promise<{ voice: string; rate: string }>;
+  speakPreviewVoice: (payload: { voice: string; text?: string; rate?: string }) => Promise<boolean>;
+  edgeTtsListVoices: () => Promise<EdgeTtsVoice[]>;
 
   // Settings
   getSettings: () => Promise<AppSettings>;

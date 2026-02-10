@@ -87,7 +87,7 @@ const SettingsApp: React.FC = () => {
             <ExtensionsTab />
           </div>
         ) : (
-          <div className="p-6">
+          <div className={activeTab === 'ai' ? 'px-6 pt-2 pb-3' : 'p-6'}>
             {activeTab === 'general' && <GeneralTab />}
             {activeTab === 'ai' && <AITab />}
           </div>

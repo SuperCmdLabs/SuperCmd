@@ -13,11 +13,14 @@ export interface AISettings {
   provider: 'openai' | 'anthropic' | 'ollama';
   openaiApiKey: string;
   anthropicApiKey: string;
+  elevenlabsApiKey: string;
   ollamaBaseUrl: string;
   defaultModel: string;
+  speechCorrectionModel: string;
   speechToTextModel: string;
   speechLanguage: string;
   textToSpeechModel: string;
+  edgeTtsVoice: string;
   speechCorrectionEnabled: boolean;
   enabled: boolean;
 }
@@ -38,11 +41,14 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   provider: 'openai',
   openaiApiKey: '',
   anthropicApiKey: '',
+  elevenlabsApiKey: '',
   ollamaBaseUrl: 'http://localhost:11434',
   defaultModel: '',
-  speechToTextModel: 'openai-gpt-4o-transcribe',
+  speechCorrectionModel: '',
+  speechToTextModel: 'native',
   speechLanguage: 'en-US',
-  textToSpeechModel: 'openai-gpt-4o-mini-tts',
+  textToSpeechModel: 'edge-tts',
+  edgeTtsVoice: 'en-US-JennyNeural',
   speechCorrectionEnabled: true,
   enabled: false,
 };

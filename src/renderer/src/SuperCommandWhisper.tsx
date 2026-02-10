@@ -757,8 +757,10 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
         setSpeechLanguage(settings.ai.speechLanguage || 'en-US');
         const speakToggleHotkey = settings.commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.';
         setSpeakToggleShortcutLabel(formatShortcutLabel(speakToggleHotkey));
-        // Use Whisper API if OpenAI key is configured, otherwise native macOS speech
-        backendRef.current = settings.ai.openaiApiKey ? 'whisper' : 'native';
+        // Backend is controlled by Whisper model selection.
+        const sttModel = String(settings.ai.speechToTextModel || 'native');
+        const wantsOpenAI = sttModel.startsWith('openai-');
+        backendRef.current = wantsOpenAI && !!settings.ai.openaiApiKey ? 'whisper' : 'native';
       })
       .catch(() => {});
 

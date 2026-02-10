@@ -87,6 +87,14 @@ type SpeakRuntimeOptions = {
   voice: string;
   rate: string;
 };
+type EdgeTtsVoiceCatalogEntry = {
+  id: string;
+  label: string;
+  languageCode: string;
+  languageLabel: string;
+  gender: 'female' | 'male';
+  style?: string;
+};
 let speakStatusSnapshot: {
   state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
   text: string;
@@ -99,6 +107,7 @@ let speakRuntimeOptions: SpeakRuntimeOptions = {
   voice: 'en-US-JennyNeural',
   rate: '+0%',
 };
+let edgeVoiceCatalogCache: { expiresAt: number; voices: EdgeTtsVoiceCatalogEntry[] } | null = null;
 let speakSessionCounter = 0;
 let activeSpeakSession: {
   id: number;
@@ -246,6 +255,128 @@ function resolveEdgeVoice(language?: string): string {
   if (lang.startsWith('it')) return 'it-IT-ElsaNeural';
   if (lang.startsWith('pt')) return 'pt-BR-FranciscaNeural';
   return 'en-US-JennyNeural';
+}
+
+function formatEdgeLocaleLabel(locale: string, rawLabel?: string): string {
+  const map: Record<string, string> = {
+    'en-US': 'English (US)',
+    'en-GB': 'English (UK)',
+    'pt-BR': 'Portuguese (Brazil)',
+    'es-ES': 'Spanish (Spain)',
+    'es-MX': 'Spanish (Mexico)',
+    'fr-FR': 'French (France)',
+    'fr-CA': 'French (Canada)',
+    'zh-CN': 'Chinese (Mandarin)',
+  };
+  if (map[locale]) return map[locale];
+  if (rawLabel && typeof rawLabel === 'string') {
+    return rawLabel
+      .replace(/\bUnited States\b/i, 'US')
+      .replace(/\bUnited Kingdom\b/i, 'UK');
+  }
+  return locale;
+}
+
+function formatEdgeVoiceLabel(shortName: string): string {
+  const cleaned = String(shortName || '').replace(/Neural$/i, '');
+  const parts = cleaned.split('-');
+  if (parts.length >= 3) {
+    return parts.slice(2).join('-');
+  }
+  return cleaned;
+}
+
+function fetchEdgeTtsVoiceCatalog(timeoutMs = 12000): Promise<EdgeTtsVoiceCatalogEntry[]> {
+  return new Promise((resolve, reject) => {
+    try {
+      const https = require('https');
+      const drm = require('node-edge-tts/dist/drm.js');
+      const token = String(drm?.TRUSTED_CLIENT_TOKEN || '').trim();
+      const version = String(drm?.CHROMIUM_FULL_VERSION || '').trim();
+      const secMsGec = typeof drm?.generateSecMsGecToken === 'function'
+        ? String(drm.generateSecMsGecToken() || '')
+        : '';
+
+      if (!token || !version || !secMsGec) {
+        reject(new Error('Failed to initialize Edge TTS DRM values.'));
+        return;
+      }
+
+      const major = version.split('.')[0] || '120';
+      const url = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=${token}`;
+
+      const req = https.request(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36 Edg/${major}.0.0.0`,
+          'Accept': 'application/json',
+          'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+          'Referer': 'https://edge.microsoft.com/',
+          'Sec-MS-GEC': secMsGec,
+          'Sec-MS-GEC-Version': `1-${version}`,
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache',
+        },
+      }, (res: any) => {
+        let body = '';
+        res.on('data', (chunk: Buffer | string) => { body += String(chunk || ''); });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`Voice catalog HTTP ${res.statusCode}`));
+            return;
+          }
+          try {
+            const parsed = JSON.parse(body);
+            if (!Array.isArray(parsed)) {
+              reject(new Error('Voice catalog response was not an array.'));
+              return;
+            }
+            const mapped = parsed
+              .map((entry: any): EdgeTtsVoiceCatalogEntry | null => {
+                const shortName = String(entry?.ShortName || entry?.Name || '').trim();
+                if (!shortName) return null;
+                const locale = String(entry?.Locale || shortName.split('-').slice(0, 2).join('-') || '').trim();
+                if (!locale) return null;
+                const rawGender = String(entry?.Gender || '').toLowerCase();
+                const gender: 'female' | 'male' = rawGender === 'male' ? 'male' : 'female';
+                const personalities = Array.isArray(entry?.VoiceTag?.VoicePersonalities)
+                  ? entry.VoiceTag.VoicePersonalities
+                  : [];
+                const style = personalities.length > 0 ? String(personalities[0]) : '';
+                return {
+                  id: shortName,
+                  label: formatEdgeVoiceLabel(shortName),
+                  languageCode: locale,
+                  languageLabel: formatEdgeLocaleLabel(locale, String(entry?.LocaleName || '')),
+                  gender,
+                  style: style || undefined,
+                };
+              })
+              .filter(Boolean) as EdgeTtsVoiceCatalogEntry[];
+
+            mapped.sort((a, b) => {
+              const langCmp = a.languageLabel.localeCompare(b.languageLabel);
+              if (langCmp !== 0) return langCmp;
+              const genderCmp = a.gender.localeCompare(b.gender);
+              if (genderCmp !== 0) return genderCmp;
+              return a.label.localeCompare(b.label);
+            });
+            resolve(mapped);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
+
+      req.on('error', (error: Error) => reject(error));
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error('Voice catalog request timed out.'));
+      });
+      req.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 async function getSelectedTextForSpeak(): Promise<string> {
@@ -1216,6 +1347,25 @@ async function startSpeakFromSelection(): Promise<boolean> {
     return false;
   }
 
+  const settings = loadSettings();
+  const selectedTtsModel = String(settings.ai?.textToSpeechModel || 'edge-tts');
+  if (selectedTtsModel.startsWith('elevenlabs-')) {
+    setLauncherMode('speak');
+    showWindow();
+    setSpeakStatus({
+      state: 'error',
+      text: '',
+      index: 0,
+      total: chunks.length,
+      message: 'ElevenLabs TTS is not supported yet in this build. Select Edge TTS in Settings -> AI -> SuperCommand Speak.',
+    });
+    return false;
+  }
+  const configuredEdgeVoice = String(settings.ai?.edgeTtsVoice || '').trim();
+  if (configuredEdgeVoice) {
+    speakRuntimeOptions.voice = configuredEdgeVoice;
+  }
+
   const runtime = resolveEdgeTtsRuntime();
   if (!runtime) {
     setLauncherMode('speak');
@@ -1249,9 +1399,10 @@ async function startSpeakFromSelection(): Promise<boolean> {
   };
   activeSpeakSession = session;
 
-  const settings = loadSettings();
-  const speechLanguage = String(settings.ai?.speechLanguage || 'en-US');
-  const lang = speechLanguage.includes('-') ? speechLanguage : `${speechLanguage}-US`;
+  const configuredVoice = String(speakRuntimeOptions.voice || '');
+  const voiceLangMatch = /^([a-z]{2}-[A-Z]{2})-/.exec(configuredVoice);
+  const fallbackLanguage = String(settings.ai?.speechLanguage || 'en-US');
+  const lang = voiceLangMatch?.[1] || (fallbackLanguage.includes('-') ? fallbackLanguage : `${fallbackLanguage}-US`);
   if (!speakRuntimeOptions.voice) {
     speakRuntimeOptions.voice = resolveEdgeVoice(settings.ai?.speechLanguage || 'en-US');
   }
@@ -1651,6 +1802,7 @@ async function refineWhisperTranscript(input: string): Promise<{ correctedText: 
       ].join('\n');
       const gen = streamAI(settings.ai, {
         prompt,
+        model: settings.ai.speechCorrectionModel || undefined,
         creativity: 0,
         systemPrompt,
       });
@@ -2026,6 +2178,100 @@ app.whenReady().then(async () => {
       return { ...speakRuntimeOptions };
     }
   );
+
+  ipcMain.handle(
+    'speak-preview-voice',
+    async (_event: any, payload?: { voice: string; text?: string; rate?: string }) => {
+      const runtime = resolveEdgeTtsRuntime();
+      if (!runtime) return false;
+
+      const voice = String(payload?.voice || speakRuntimeOptions.voice || 'en-US-JennyNeural').trim();
+      const rate = parseSpeakRateInput(payload?.rate ?? speakRuntimeOptions.rate);
+      const sampleTextRaw = String(payload?.text || 'Hi, this is my voice in SuperCommand.');
+      const sampleText = sampleTextRaw.trim().slice(0, 240) || 'Hi, this is my voice in SuperCommand.';
+
+      const langMatch = /^([a-z]{2}-[A-Z]{2})-/.exec(voice);
+      const lang = langMatch?.[1] || String(loadSettings().ai?.speechLanguage || 'en-US');
+
+      const fs = require('fs');
+      const os = require('os');
+      const pathMod = require('path');
+      const { spawn } = require('child_process');
+
+      const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'supercommand-voice-preview-'));
+      const audioPath = pathMod.join(tmpDir, 'preview.mp3');
+
+      try {
+        const synthesizeErr = await new Promise<Error | null>((resolve) => {
+          const args = [
+            ...runtime.baseArgs,
+            '-t', sampleText,
+            '-f', audioPath,
+            '-v', voice,
+            '-l', lang,
+            '-r', rate,
+            '--timeout', '45000',
+          ];
+          const proc = spawn(runtime.command, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+          let stderr = '';
+          proc.stderr.on('data', (chunk: Buffer | string) => { stderr += String(chunk || ''); });
+          proc.on('error', (err: Error) => resolve(err));
+          proc.on('close', (code: number | null) => {
+            if (code !== 0) {
+              resolve(new Error(stderr.trim() || `node-edge-tts exited with ${code}`));
+              return;
+            }
+            resolve(null);
+          });
+        });
+
+        if (synthesizeErr) throw synthesizeErr;
+
+        const playErr = await new Promise<Error | null>((resolve) => {
+          const proc = spawn('/usr/bin/afplay', [audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+          let stderr = '';
+          proc.stderr.on('data', (chunk: Buffer | string) => { stderr += String(chunk || ''); });
+          proc.on('error', (err: Error) => resolve(err));
+          proc.on('close', (code: number | null) => {
+            if (code && code !== 0) {
+              resolve(new Error(stderr.trim() || `afplay exited with ${code}`));
+              return;
+            }
+            resolve(null);
+          });
+        });
+
+        if (playErr) throw playErr;
+        return true;
+      } finally {
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+      }
+    }
+  );
+
+  ipcMain.handle('edge-tts-list-voices', async () => {
+    const now = Date.now();
+    if (edgeVoiceCatalogCache && edgeVoiceCatalogCache.expiresAt > now) {
+      return edgeVoiceCatalogCache.voices;
+    }
+
+    try {
+      const voices = await fetchEdgeTtsVoiceCatalog(12000);
+      if (voices.length > 0) {
+        edgeVoiceCatalogCache = {
+          voices,
+          expiresAt: now + (1000 * 60 * 60 * 12),
+        };
+      }
+      return voices;
+    } catch (error) {
+      if (edgeVoiceCatalogCache?.voices?.length) {
+        return edgeVoiceCatalogCache.voices;
+      }
+      console.warn('[Speak] Failed to fetch Edge voice catalog:', error);
+      return [];
+    }
+  });
 
   // ─── IPC: Settings ──────────────────────────────────────────────
 
@@ -3188,17 +3434,23 @@ return appURL's |path|() as text`,
     async (_event: any, audioArrayBuffer: ArrayBuffer, options?: { language?: string }) => {
       const s = loadSettings();
 
-      if (!s.ai.openaiApiKey) {
-        throw new Error('OpenAI API key not configured. Go to Settings → AI to set it up.');
-      }
-
-      // Parse speechToTextModel: 'openai-gpt-4o-transcribe' → 'gpt-4o-transcribe'
+      // Parse speechToTextModel to a concrete provider model.
       let model = 'gpt-4o-transcribe';
       const sttModel = s.ai.speechToTextModel || '';
-      if (sttModel.startsWith('openai-')) {
+      if (!sttModel || sttModel === 'default') {
+        model = 'gpt-4o-transcribe';
+      } else if (sttModel === 'native') {
+        throw new Error('Whisper model is set to Native. Select an OpenAI model in Settings -> AI -> SuperCommand Whisper to use cloud transcription.');
+      } else if (sttModel.startsWith('openai-')) {
         model = sttModel.slice('openai-'.length);
+      } else if (sttModel.startsWith('elevenlabs-')) {
+        throw new Error('ElevenLabs transcription is not supported yet in this build. Select Native or an OpenAI model in Settings -> AI -> SuperCommand Whisper.');
       } else if (sttModel) {
         model = sttModel;
+      }
+
+      if (!s.ai.openaiApiKey) {
+        throw new Error('OpenAI API key not configured. Go to Settings -> AI to set it up.');
       }
 
       // Convert BCP-47 (e.g. 'en-US') to ISO-639-1 (e.g. 'en')

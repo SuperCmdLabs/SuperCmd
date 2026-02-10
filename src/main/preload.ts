@@ -74,6 +74,10 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('speak-get-options'),
   speakUpdateOptions: (patch: { voice?: string; rate?: string; restartCurrent?: boolean }): Promise<{ voice: string; rate: string }> =>
     ipcRenderer.invoke('speak-update-options', patch),
+  speakPreviewVoice: (payload: { voice: string; text?: string; rate?: string }): Promise<boolean> =>
+    ipcRenderer.invoke('speak-preview-voice', payload),
+  edgeTtsListVoices: (): Promise<Array<{ id: string; label: string; languageCode: string; languageLabel: string; gender: 'female' | 'male'; style?: string }>> =>
+    ipcRenderer.invoke('edge-tts-list-voices'),
 
   // ─── Settings ───────────────────────────────────────────────────
   getSettings: (): Promise<any> => ipcRenderer.invoke('get-settings'),
