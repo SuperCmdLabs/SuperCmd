@@ -158,6 +158,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
   const audioChunksRef = useRef<Blob[]>([]);
   const periodicTimerRef = useRef<number | null>(null);
   const transcribeInFlightRef = useRef(false);
+  const startRequestSeqRef = useRef(0);
 
   // Native backend refs
   const nativeChunkDisposerRef = useRef<(() => void) | null>(null);
@@ -447,6 +448,8 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
   const finalizeAndClose = useCallback(async (closeAfter = true) => {
     if (finalizingRef.current) return;
     finalizingRef.current = true;
+    // Invalidate any in-flight startListening async work.
+    startRequestSeqRef.current += 1;
     if (editorFocusRestoreTimerRef.current !== null) {
       window.clearTimeout(editorFocusRestoreTimerRef.current);
       editorFocusRestoreTimerRef.current = null;
@@ -559,6 +562,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
 
   const startListening = useCallback(async () => {
     if (state === 'listening' || state === 'processing') return;
+    const requestSeq = ++startRequestSeqRef.current;
 
     // Reset shared state
     combinedTranscriptRef.current = '';
@@ -585,7 +589,8 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
     }
     setErrorText('');
     setStatusText('Starting microphone...');
-    setState('idle');
+    // Optimistically flip to active state so the button toggles immediately.
+    setState('listening');
 
     const backend = backendRef.current;
 
@@ -598,6 +603,10 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
           autoGainControl: true,
         },
       });
+      if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
 
       startVisualizer(stream);
 
@@ -618,6 +627,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
         };
 
         recorder.onstart = () => {
+          if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) return;
           setState('listening');
           setStatusText('Listening... press shortcut again or Esc to finish.');
           console.log('[Whisper] MediaRecorder started');
@@ -649,6 +659,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
 
         // Listen for chunks from the native process
         const dispose = window.electron.onWhisperNativeChunk((data) => {
+          if (requestSeq !== startRequestSeqRef.current) return;
           if (finalizingRef.current) return;
 
           if (data.ready) {
@@ -704,6 +715,10 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
         // Start the native recognizer process
         try {
           await window.electron.whisperStartNative(speechLanguage);
+          if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) {
+            void window.electron.whisperStopNative().catch(() => {});
+            return;
+          }
         } catch (err: any) {
           setState('error');
           setStatusText('Speech recognition failed to start.');

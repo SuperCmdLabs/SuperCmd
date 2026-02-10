@@ -491,9 +491,7 @@ const App: React.FC = () => {
         return;
       }
 
-      if (whisperSessionRef.current) {
-        return;
-      }
+      whisperSessionRef.current = false;
 
       // If an extension is open, keep it alive — don't reset
       if (extensionViewRef.current) return;

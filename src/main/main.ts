@@ -798,6 +798,12 @@ function toggleWindow(): void {
     return;
   }
 
+  if (isVisible && launcherMode === 'whisper') {
+    setLauncherMode('default');
+    showWindow();
+    return;
+  }
+
   if (isVisible) {
     hideWindow();
   } else {
