@@ -3966,8 +3966,8 @@ return appURL's |path|() as text`,
   });
 
   ipcMain.handle('get-selected-text', async () => {
-    const fresh = String(await getSelectedTextForSpeak() || '').trim();
-    if (fresh) {
+    const fresh = String(await getSelectedTextForSpeak() || '');
+    if (fresh.trim().length > 0) {
       lastCursorPromptSelection = fresh;
       return fresh;
     }
@@ -4130,16 +4130,18 @@ return appURL's |path|() as text`,
     await new Promise((resolve) => setTimeout(resolve, 70));
 
     if (previousText.trim()) {
-      let replaced = await replaceTextDirectly(previousText, nextText);
+      // Use paste-based replacement first to preserve all newlines exactly.
+      let replaced = await replaceTextViaBackspaceAndPaste(previousText, nextText);
       if (!replaced) {
-        replaced = await replaceTextViaBackspaceAndPaste(previousText, nextText);
+        replaced = await replaceTextDirectly(previousText, nextText);
       }
       return replaced;
     }
 
-    let typed = await typeTextDirectly(nextText);
+    // Paste first so multiline responses keep exact line breaks.
+    let typed = await pasteTextToActiveApp(nextText);
     if (!typed) {
-      typed = await pasteTextToActiveApp(nextText);
+      typed = await typeTextDirectly(nextText);
     }
     return typed;
   });
