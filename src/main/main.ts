@@ -364,7 +364,9 @@ function applyLauncherBounds(mode: 'default' | 'whisper'): void {
   } = currentDisplay.workArea;
   const size = getLauncherSize(mode);
   const windowX = displayX + Math.floor((displayWidth - size.width) / 2);
-  const windowY = displayY + Math.floor(displayHeight * size.topFactor);
+  const windowY = mode === 'whisper'
+    ? displayY + displayHeight - size.height - 18
+    : displayY + Math.floor(displayHeight * size.topFactor);
   mainWindow.setBounds({
     x: windowX,
     y: windowY,
