@@ -72,13 +72,18 @@ export function loadSettings(): AppSettings {
   try {
     const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
     const parsed = JSON.parse(raw);
+    const parsedHotkeys = { ...(parsed.commandHotkeys || {}) };
+    if (parsedHotkeys['system-supercommand-whisper-toggle'] && !parsedHotkeys['system-supercommand-whisper']) {
+      parsedHotkeys['system-supercommand-whisper'] = parsedHotkeys['system-supercommand-whisper-toggle'];
+    }
+    delete parsedHotkeys['system-supercommand-whisper-toggle'];
     settingsCache = {
       globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
       disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
       enabledCommands: parsed.enabledCommands ?? DEFAULT_SETTINGS.enabledCommands,
       commandHotkeys: {
         ...DEFAULT_SETTINGS.commandHotkeys,
-        ...(parsed.commandHotkeys || {}),
+        ...parsedHotkeys,
       },
       pinnedCommands: parsed.pinnedCommands ?? DEFAULT_SETTINGS.pinnedCommands,
       recentCommands: parsed.recentCommands ?? DEFAULT_SETTINGS.recentCommands,

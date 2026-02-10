@@ -17,7 +17,8 @@ const BAR_HEIGHT_PROFILE = [
 ];
 const BAR_COUNT = BAR_HEIGHT_PROFILE.length;
 const BASE_WAVE = BAR_HEIGHT_PROFILE.map((profile) => 0.08 + profile * 0.05);
-const LIVE_REFINE_DEBOUNCE_MS = 700;
+const LIVE_REFINE_DEBOUNCE_MS = 1000;
+const WHISPER_TOGGLE_SHORTCUT_LABEL = '\u2318 .';
 
 function normalizeTranscript(value: string): string {
   return String(value || '')
@@ -764,22 +765,43 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
 
   return createPortal(
     <div className="whisper-widget-host">
-      <div
-        className={`whisper-wave whisper-wave-standalone ${listening ? 'is-listening' : ''} ${processing ? 'is-processing' : ''}`}
-        aria-hidden="true"
-      >
-        {waveBars.map((value, index) => {
-          const profile = BAR_HEIGHT_PROFILE[index];
-          const minHeight = 5 + Math.round(profile * 7);
-          const amplitude = 8 + Math.round(profile * 18);
-          return (
-            <span
-              key={`bar-${index}`}
-              className="whisper-wave-bar"
-              style={{ height: `${minHeight + Math.round(value * amplitude)}px` }}
-            />
-          );
-        })}
+      <div className="whisper-widget-shell">
+        <button
+          type="button"
+          className="whisper-side-button whisper-stop-button"
+          onClick={() => { void finalizeAndClose(); }}
+          aria-label={`Stop listening (${WHISPER_TOGGLE_SHORTCUT_LABEL})`}
+          title={`Stop (${WHISPER_TOGGLE_SHORTCUT_LABEL})`}
+        >
+          <span className="whisper-stop-square" />
+        </button>
+
+        <div
+          className={`whisper-wave whisper-wave-standalone ${listening ? 'is-listening' : ''} ${processing ? 'is-processing' : ''}`}
+          aria-hidden="true"
+        >
+          {waveBars.map((value, index) => {
+            const profile = BAR_HEIGHT_PROFILE[index];
+            const minHeight = 5 + Math.round(profile * 7);
+            const amplitude = 8 + Math.round(profile * 18);
+            return (
+              <span
+                key={`bar-${index}`}
+                className="whisper-wave-bar"
+                style={{ height: `${minHeight + Math.round(value * amplitude)}px` }}
+              />
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          className="whisper-side-button whisper-close-button"
+          onClick={onClose}
+          aria-label="Close whisper"
+        >
+          <span className="whisper-close-glyph">×</span>
+        </button>
       </div>
       <span className="sr-only">{`${speechLanguage} ${statusText} ${errorText}`.trim()}</span>
     </div>,

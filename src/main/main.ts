@@ -103,6 +103,28 @@ function unregisterWhisperEscapeShortcut(): void {
   whisperEscapeRegistered = false;
 }
 
+function normalizeAccelerator(shortcut: string): string {
+  const raw = String(shortcut || '').trim();
+  if (!raw) return raw;
+  const parts = raw.split('+').map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) return raw;
+  const key = parts[parts.length - 1];
+  if (key === '.') {
+    parts[parts.length - 1] = 'Period';
+  }
+  return parts.join('+');
+}
+
+function unregisterShortcutVariants(shortcut: string): void {
+  const raw = String(shortcut || '').trim();
+  if (!raw) return;
+  const normalized = normalizeAccelerator(raw);
+  try { globalShortcut.unregister(raw); } catch {}
+  if (normalized !== raw) {
+    try { globalShortcut.unregister(normalized); } catch {}
+  }
+}
+
 function handleOAuthCallbackUrl(rawUrl: string): void {
   if (!rawUrl) return;
   try {
@@ -816,7 +838,11 @@ async function openLauncherAndRunSystemCommand(commandId: string): Promise<boole
 }
 
 async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' = 'launcher'): Promise<boolean> {
-  if (commandId === 'system-supercommand-whisper' && source === 'hotkey') {
+  const isWhisperCommand =
+    commandId === 'system-supercommand-whisper' ||
+    commandId === 'system-supercommand-whisper-toggle';
+
+  if (isWhisperCommand && source === 'hotkey') {
     const now = Date.now();
     if (now - lastWhisperToggleAt < 600) {
       return true;
@@ -825,7 +851,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
   }
 
   if (
-    commandId === 'system-supercommand-whisper' &&
+    isWhisperCommand &&
     source === 'hotkey' &&
     isVisible &&
     launcherMode === 'whisper'
@@ -859,9 +885,10 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     commandId === 'system-create-snippet' ||
     commandId === 'system-search-files' ||
     commandId === 'system-open-onboarding' ||
-    commandId === 'system-supercommand-whisper'
+    commandId === 'system-supercommand-whisper' ||
+    commandId === 'system-supercommand-whisper-toggle'
   ) {
-    return await openLauncherAndRunSystemCommand(commandId);
+    return await openLauncherAndRunSystemCommand('system-supercommand-whisper');
   }
   if (commandId === 'system-import-snippets') {
     await importSnippetsFromFile(mainWindow || undefined);
@@ -1134,25 +1161,26 @@ function openExtensionStoreWindow(): void {
 // ─── Shortcut Management ────────────────────────────────────────────
 
 function registerGlobalShortcut(shortcut: string): boolean {
+  const normalizedShortcut = normalizeAccelerator(shortcut);
   // Unregister the previous global shortcut
   if (currentShortcut) {
     try {
-      globalShortcut.unregister(currentShortcut);
+      unregisterShortcutVariants(currentShortcut);
     } catch {}
   }
 
   try {
-    const success = globalShortcut.register(shortcut, () => {
+    const success = globalShortcut.register(normalizedShortcut, () => {
       toggleWindow();
     });
     if (success) {
-      currentShortcut = shortcut;
-      console.log(`Global shortcut registered: ${shortcut}`);
+      currentShortcut = normalizedShortcut;
+      console.log(`Global shortcut registered: ${normalizedShortcut}`);
       return true;
     } else {
-      console.error(`Failed to register shortcut: ${shortcut}`);
+      console.error(`Failed to register shortcut: ${normalizedShortcut}`);
       // Re-register old one
-      if (currentShortcut && currentShortcut !== shortcut) {
+      if (currentShortcut && currentShortcut !== normalizedShortcut) {
         try {
           globalShortcut.register(currentShortcut, () => toggleWindow());
         } catch {}
@@ -1169,19 +1197,20 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
   // Unregister all existing command hotkeys
   for (const [shortcut] of registeredHotkeys) {
     try {
-      globalShortcut.unregister(shortcut);
+      unregisterShortcutVariants(shortcut);
     } catch {}
   }
   registeredHotkeys.clear();
 
   for (const [commandId, shortcut] of Object.entries(hotkeys)) {
     if (!shortcut) continue;
+    const normalizedShortcut = normalizeAccelerator(shortcut);
     try {
-      const success = globalShortcut.register(shortcut, async () => {
+      const success = globalShortcut.register(normalizedShortcut, async () => {
         await runCommandById(commandId, 'hotkey');
       });
       if (success) {
-        registeredHotkeys.set(shortcut, commandId);
+        registeredHotkeys.set(normalizedShortcut, commandId);
       }
     } catch {}
   }
@@ -1351,20 +1380,21 @@ app.whenReady().then(async () => {
       const oldHotkey = hotkeys[commandId];
       if (oldHotkey) {
         try {
-          globalShortcut.unregister(oldHotkey);
-          registeredHotkeys.delete(oldHotkey);
+          unregisterShortcutVariants(oldHotkey);
+          registeredHotkeys.delete(normalizeAccelerator(oldHotkey));
         } catch {}
       }
 
       if (hotkey) {
         hotkeys[commandId] = hotkey;
+        const normalizedHotkey = normalizeAccelerator(hotkey);
         // Register the new one
         try {
-          const success = globalShortcut.register(hotkey, async () => {
+          const success = globalShortcut.register(normalizedHotkey, async () => {
             await runCommandById(commandId, 'hotkey');
           });
           if (success) {
-            registeredHotkeys.set(hotkey, commandId);
+            registeredHotkeys.set(normalizedHotkey, commandId);
           }
         } catch {}
       } else {
