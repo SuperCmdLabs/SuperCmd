@@ -886,6 +886,30 @@ function normalizeTranscriptText(input: string): string {
     .trim();
 }
 
+function extractRefinedTranscriptOnly(raw: string): string {
+  let cleaned = String(raw || '').trim();
+  if (!cleaned) return '';
+
+  // Remove markdown fences if the model wraps the answer.
+  cleaned = cleaned.replace(/^```[a-zA-Z]*\s*/g, '').replace(/```$/g, '').trim();
+
+  // Strip common prefixes the model may add despite instructions.
+  cleaned = cleaned.replace(/^(?:final(?:\s+answer)?|output|corrected(?:\s+sentence)?|rewritten)\s*:\s*/i, '').trim();
+  cleaned = cleaned.replace(/^[-*]\s+/g, '').trim();
+
+  // Keep only the first non-empty line if the model returns extras.
+  const firstLine = cleaned
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean);
+  cleaned = firstLine || cleaned;
+
+  // If wrapped in quotes, unwrap once.
+  cleaned = cleaned.replace(/^["'`]+|["'`]+$/g, '').trim();
+
+  return normalizeTranscriptText(cleaned);
+}
+
 function applyWhisperHeuristicCorrection(input: string): string {
   const normalized = normalizeTranscriptText(input);
   if (!normalized) return '';
@@ -930,12 +954,24 @@ async function refineWhisperTranscript(input: string): Promise<{ correctedText: 
     try {
       let corrected = '';
       const systemPrompt = [
-        'You clean speech-to-text transcripts.',
-        'Apply self-corrections when the user changes intent (e.g. "4am no 2am" => "2am").',
-        'Do not add commentary, explanations, or metadata.',
-        'Return only the final corrected sentence.',
+        'You are a transcript post-processor for dictated user text.',
+        'Your job is to rewrite noisy speech-to-text into one clean final sentence while preserving the user intent.',
+        'Rules:',
+        '1) Preserve original meaning and tense; do not add new facts.',
+        '2) Apply explicit self-corrections in the utterance. Example: "3am no 5am" => "5am".',
+        '3) Remove filler/disfluencies: uh, um, uhh, er, like (when filler), you know, i mean (if filler), repeated stutters.',
+        '4) Resolve immediate restarts/repetitions and keep the latest valid phrase.',
+        '5) Keep wording natural and concise; fix basic grammar/punctuation only when needed for readability.',
+        '6) Keep first-person voice if present.',
+        '7) Output exactly one cleaned sentence only.',
+        '8) Output plain text only. No quotes, no markdown, no labels, no explanations.',
       ].join(' ');
-      const prompt = `Transcript:\n${normalized}\n\nReturn corrected transcript only.`;
+      const prompt = [
+        'Raw transcript:',
+        normalized,
+        '',
+        'Return exactly one cleaned sentence.',
+      ].join('\n');
       const gen = streamAI(settings.ai, {
         prompt,
         creativity: 0,
@@ -944,7 +980,7 @@ async function refineWhisperTranscript(input: string): Promise<{ correctedText: 
       for await (const chunk of gen) {
         corrected += chunk;
       }
-      const cleaned = normalizeTranscriptText(corrected);
+      const cleaned = extractRefinedTranscriptOnly(corrected);
       if (cleaned) {
         return { correctedText: cleaned, source: 'ai' };
       }

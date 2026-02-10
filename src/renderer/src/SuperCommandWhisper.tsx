@@ -17,12 +17,101 @@ const BAR_HEIGHT_PROFILE = [
 ];
 const BAR_COUNT = BAR_HEIGHT_PROFILE.length;
 const BASE_WAVE = BAR_HEIGHT_PROFILE.map((profile) => 0.08 + profile * 0.05);
+const LIVE_REFINE_DEBOUNCE_MS = 700;
 
 function normalizeTranscript(value: string): string {
   return String(value || '')
     .replace(/\s+/g, ' ')
     .replace(/^[`"'"\u201C\u201D]+|[`"'"\u201C\u201D]+$/g, '')
     .trim();
+}
+
+function mergeTranscriptChunks(existing: string, incoming: string): string {
+  const prev = normalizeTranscript(existing);
+  const next = normalizeTranscript(incoming);
+  if (!prev) return next;
+  if (!next) return prev;
+  if (prev === next) return prev;
+  if (next.startsWith(prev) || next.includes(prev)) return next;
+  if (prev.startsWith(next)) return prev;
+
+  const prevWords = prev.split(/\s+/);
+  const nextWords = next.split(/\s+/);
+  const maxOverlap = Math.min(14, prevWords.length, nextWords.length);
+
+  let overlap = 0;
+  for (let size = maxOverlap; size >= 1; size -= 1) {
+    const prevTail = prevWords.slice(prevWords.length - size).join(' ').toLowerCase();
+    const nextHead = nextWords.slice(0, size).join(' ').toLowerCase();
+    if (prevTail === nextHead) {
+      overlap = size;
+      break;
+    }
+  }
+
+  if (overlap > 0) {
+    return normalizeTranscript(`${prevWords.join(' ')} ${nextWords.slice(overlap).join(' ')}`);
+  }
+
+  return normalizeTranscript(`${prev} ${next}`);
+}
+
+function computeAppendOnlyDelta(previous: string, next: string): string {
+  const prev = normalizeTranscript(previous);
+  const curr = normalizeTranscript(next);
+  if (!curr) return '';
+  if (!prev) return curr;
+  if (curr === prev) return '';
+  if (curr.startsWith(prev)) {
+    return curr.slice(prev.length);
+  }
+
+  const prevWords = prev.split(/\s+/);
+  const currWords = curr.split(/\s+/);
+  const maxOverlap = Math.min(16, prevWords.length, currWords.length);
+  for (let size = maxOverlap; size >= 1; size -= 1) {
+    const prevTail = prevWords.slice(prevWords.length - size).join(' ').toLowerCase();
+    const currHead = currWords.slice(0, size).join(' ').toLowerCase();
+    if (prevTail === currHead) {
+      return normalizeTranscript(currWords.slice(size).join(' '));
+    }
+  }
+
+  // If model rewrote earlier words, do not replay full text.
+  return '';
+}
+
+function formatDeltaForAppend(previous: string, rawDelta: string): string {
+  const prev = String(previous || '');
+  const delta = String(rawDelta || '');
+  if (!delta.trim()) return '';
+
+  let next = delta;
+  const prevTrimEnd = prev.replace(/\s+$/g, '');
+  const deltaTrimStart = delta.replace(/^\s+/g, '');
+  const lastPrevChar = prevTrimEnd.slice(-1);
+  const firstDeltaChar = deltaTrimStart.charAt(0);
+
+  const prevEndsWord = /[A-Za-z0-9)]/.test(lastPrevChar);
+  const deltaStartsWord = /[A-Za-z0-9(]/.test(firstDeltaChar);
+  const deltaStartsUpper = /[A-Z]/.test(firstDeltaChar);
+  const prevHasSentenceEnd = /[.!?]$/.test(prevTrimEnd);
+  const deltaHasLeadingSpace = /^\s/.test(delta);
+
+  // If AI starts a new sentence but didn't add terminal punctuation before it,
+  // synthesize ". " at the boundary.
+  if (prevTrimEnd && prevEndsWord && deltaStartsUpper && !prevHasSentenceEnd) {
+    next = `. ${deltaTrimStart}`;
+    return next;
+  }
+
+  // Otherwise ensure at least one word boundary space when appending words.
+  if (prevTrimEnd && prevEndsWord && deltaStartsWord && !deltaHasLeadingSpace) {
+    next = ` ${deltaTrimStart}`;
+    return next;
+  }
+
+  return next;
 }
 
 const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) => {
@@ -42,6 +131,9 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
   const autoStartDoneRef = useRef(false);
   const editorFocusRestoreTimerRef = useRef<number | null>(null);
   const editorFocusRestoredRef = useRef(false);
+  const liveRefineTimerRef = useRef<number | null>(null);
+  const liveRefineSeqRef = useRef(0);
+  const lastDebouncedRefineInputRef = useRef('');
   const barNoiseRef = useRef<number[]>(Array.from({ length: BAR_COUNT }, () => 0));
 
   // Audio visualizer refs
@@ -61,13 +153,8 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
   const nativeChunkDisposerRef = useRef<(() => void) | null>(null);
   // Accumulated text from finalized recognition sessions (native backend).
   // When SFSpeechRecognizer finalizes an utterance and restarts, this holds
-  // what was actually typed so far so the next session's partials can be
-  // prepended with it for correct append-only delta computation.
+  // what was captured so far so the next session's partials can be prepended.
   const committedTextRef = useRef('');
-  // Character count of what we've successfully typed into the editor.
-  // Used for delta computation instead of string comparison (avoids
-  // casing/punctuation mismatches from SFSpeechRecognizer).
-  const typedCountRef = useRef(0);
 
   // ─── Audio Visualizer ──────────────────────────────────────────────
 
@@ -190,32 +277,79 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
     onClose();
   }, [onClose]);
 
-  // ─── Live typing helper (used by native backend) ───────────────────
-  // Append-only via character count: type only the NEW tail characters
-  // when the full transcript grows past what we've already typed.
-  // Uses character count instead of string comparison to avoid issues
-  // with casing/punctuation changes from SFSpeechRecognizer.
+  // ─── Live typing helper (debounced + refined) ──────────────────────
+
+  const applyLiveTranscriptText = useCallback((nextText: string) => {
+    const normalizedNext = normalizeTranscript(nextText);
+    if (!normalizedNext) return;
+
+    liveTypeQueueRef.current = liveTypeQueueRef.current.then(async () => {
+      const previous = normalizeTranscript(liveTypedTextRef.current);
+      const delta = computeAppendOnlyDelta(previous, normalizedNext);
+      if (!delta) {
+        liveTypedTextRef.current = normalizedNext;
+        return;
+      }
+      const appendText = formatDeltaForAppend(previous, delta);
+      if (!appendText) {
+        liveTypedTextRef.current = normalizedNext;
+        return;
+      }
+
+      restoreEditorFocusOnce();
+      const typed = await window.electron.typeTextLive(appendText);
+      if (typed) {
+        liveTypedTextRef.current = normalizedNext;
+      }
+    });
+  }, [restoreEditorFocusOnce]);
+
+  const refineAndApplyLiveTranscript = useCallback(async (rawTranscript: string, force = false): Promise<string> => {
+    const base = normalizeTranscript(rawTranscript);
+    if (!base) return '';
+
+    const requestSeq = ++liveRefineSeqRef.current;
+    let refinedText = base;
+    try {
+      const refined = await window.electron.whisperRefineTranscript(base);
+      const cleaned = normalizeTranscript(refined?.correctedText || '');
+      if (cleaned) {
+        refinedText = cleaned;
+      }
+    } catch (err) {
+      console.warn('[Whisper] Live transcript post-processing failed:', err);
+    }
+
+    if (!force) {
+      if (requestSeq !== liveRefineSeqRef.current) return refinedText;
+      if (base !== normalizeTranscript(combinedTranscriptRef.current)) return refinedText;
+    }
+
+    applyLiveTranscriptText(refinedText);
+    return refinedText;
+  }, [applyLiveTranscriptText]);
+
+  const scheduleDebouncedLiveRefine = useCallback(() => {
+    if (finalizingRef.current) return;
+    if (liveRefineTimerRef.current !== null) {
+      window.clearTimeout(liveRefineTimerRef.current);
+    }
+    liveRefineTimerRef.current = window.setTimeout(() => {
+      liveRefineTimerRef.current = null;
+      const current = normalizeTranscript(combinedTranscriptRef.current);
+      if (!current) return;
+      if (current === lastDebouncedRefineInputRef.current) return;
+      lastDebouncedRefineInputRef.current = current;
+      void refineAndApplyLiveTranscript(current, false);
+    }, LIVE_REFINE_DEBOUNCE_MS);
+  }, [refineAndApplyLiveTranscript]);
 
   const handleTranscriptUpdate = useCallback((fullTranscript: string) => {
     if (!fullTranscript) return;
 
-    restoreEditorFocusOnce();
     combinedTranscriptRef.current = fullTranscript;
-
-    liveTypeQueueRef.current = liveTypeQueueRef.current.then(async () => {
-      const alreadyTyped = typedCountRef.current;
-      if (fullTranscript.length <= alreadyTyped) return;
-
-      const delta = fullTranscript.slice(alreadyTyped);
-      if (delta.length > 0) {
-        const typed = await window.electron.typeTextLive(delta);
-        if (typed) {
-          typedCountRef.current = fullTranscript.length;
-          liveTypedTextRef.current = fullTranscript;
-        }
-      }
-    });
-  }, [restoreEditorFocusOnce]);
+    scheduleDebouncedLiveRefine();
+  }, [scheduleDebouncedLiveRefine]);
 
   // ─── Whisper API backend ───────────────────────────────────────────
 
@@ -243,21 +377,17 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
       console.log(`[Whisper] Transcription: "${normalized}"`);
       window.electron.whisperDebugLog('result', 'transcription result', { text: normalized, isFinal });
 
-      // For Whisper, each transcription is the full buffer — replace everything
-      restoreEditorFocusOnce();
-      combinedTranscriptRef.current = normalized;
-      const previous = liveTypedTextRef.current;
-      if (previous === normalized) return;
-
-      liveTypeQueueRef.current = liveTypeQueueRef.current.then(async () => {
-        if (!previous) {
-          const typed = await window.electron.typeTextLive(normalized);
-          if (typed) { liveTypedTextRef.current = normalized; }
-        } else {
-          const replaced = await window.electron.replaceLiveText(previous, normalized);
-          if (replaced) { liveTypedTextRef.current = normalized; }
-        }
-      });
+      const merged = mergeTranscriptChunks(combinedTranscriptRef.current, normalized);
+      const changed = merged !== combinedTranscriptRef.current;
+      combinedTranscriptRef.current = merged;
+      if (changed) {
+        scheduleDebouncedLiveRefine();
+      }
+      // Consume chunks after successful non-final processing so old audio
+      // is not resent in the next periodic transcription request.
+      if (!isFinal) {
+        audioChunksRef.current = [];
+      }
     } catch (err: any) {
       const message = err?.message || 'Transcription failed';
       console.error('[Whisper] Transcription error:', message);
@@ -271,7 +401,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
         stopVisualizer();
       }
     }
-  }, [speechLanguage, restoreEditorFocusOnce, stopVisualizer]);
+  }, [speechLanguage, stopVisualizer, scheduleDebouncedLiveRefine]);
 
   const stopRecording = useCallback(() => {
     if (periodicTimerRef.current !== null) {
@@ -310,6 +440,10 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
     if (editorFocusRestoreTimerRef.current !== null) {
       window.clearTimeout(editorFocusRestoreTimerRef.current);
       editorFocusRestoreTimerRef.current = null;
+    }
+    if (liveRefineTimerRef.current !== null) {
+      window.clearTimeout(liveRefineTimerRef.current);
+      liveRefineTimerRef.current = null;
     }
     setState('processing');
     setStatusText('Finishing whisper...');
@@ -367,16 +501,18 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
       return;
     }
 
+    const finalTranscript = await refineAndApplyLiveTranscript(baseTranscript, true) || baseTranscript;
+    await liveTypeQueueRef.current;
+
     const liveTyped = normalizeTranscript(liveTypedTextRef.current);
     if (!liveTyped) {
-      await autoPasteAndClose(baseTranscript);
+      await autoPasteAndClose(finalTranscript);
       return;
     }
-    if (liveTyped !== baseTranscript) {
-      await window.electron.replaceLiveText(liveTyped, baseTranscript);
-    }
+    applyLiveTranscriptText(finalTranscript);
+    await liveTypeQueueRef.current;
     onClose();
-  }, [autoPasteAndClose, onClose, stopVisualizer, sendTranscription]);
+  }, [autoPasteAndClose, onClose, stopVisualizer, sendTranscription, refineAndApplyLiveTranscript, applyLiveTranscriptText]);
 
   // ─── Start Listening ───────────────────────────────────────────────
 
@@ -389,13 +525,18 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
     liveTypeQueueRef.current = Promise.resolve();
     finalizingRef.current = false;
     editorFocusRestoredRef.current = false;
+    lastDebouncedRefineInputRef.current = '';
+    liveRefineSeqRef.current = 0;
     audioChunksRef.current = [];
     transcribeInFlightRef.current = false;
     committedTextRef.current = '';
-    typedCountRef.current = 0;
     if (editorFocusRestoreTimerRef.current !== null) {
       window.clearTimeout(editorFocusRestoreTimerRef.current);
       editorFocusRestoreTimerRef.current = null;
+    }
+    if (liveRefineTimerRef.current !== null) {
+      window.clearTimeout(liveRefineTimerRef.current);
+      liveRefineTimerRef.current = null;
     }
     if (nativeChunkDisposerRef.current) {
       nativeChunkDisposerRef.current();
@@ -589,6 +730,10 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose }) =>
 
   useEffect(() => {
     return () => {
+      if (liveRefineTimerRef.current !== null) {
+        window.clearTimeout(liveRefineTimerRef.current);
+        liveRefineTimerRef.current = null;
+      }
       if (editorFocusRestoreTimerRef.current !== null) {
         window.clearTimeout(editorFocusRestoreTimerRef.current);
         editorFocusRestoreTimerRef.current = null;

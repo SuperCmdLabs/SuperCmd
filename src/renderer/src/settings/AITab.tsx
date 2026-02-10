@@ -430,6 +430,29 @@ const AITab: React.FC = () => {
           </div>
         )}
 
+        <div className="bg-white/[0.03] rounded-lg border border-white/[0.06] p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-medium text-white/90">Voice Post-processing</h3>
+              <p className="text-xs text-white/40 mt-0.5">
+                After speech-to-text, send transcript to your selected LLM to remove fillers and apply self-corrections.
+              </p>
+            </div>
+            <button
+              onClick={() => updateAI({ speechCorrectionEnabled: !ai.speechCorrectionEnabled })}
+              className={`relative w-10 h-6 rounded-full transition-colors ${
+                ai.speechCorrectionEnabled ? 'bg-blue-500' : 'bg-white/10'
+              }`}
+            >
+              <span
+                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                  ai.speechCorrectionEnabled ? 'left-5' : 'left-1'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
         {saveStatus === 'saved' && (
           <p className="text-xs text-green-400 text-center">Settings saved</p>
         )}
