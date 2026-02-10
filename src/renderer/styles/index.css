@@ -358,12 +358,16 @@ kbd {
   position: fixed;
   inset: 0;
   pointer-events: none;
+  overflow: visible;
+  z-index: 2147483000;
+  padding: 18px;
+  box-sizing: border-box;
 }
 
 .speak-widget-shell {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 0;
+  right: 0;
   width: 500px;
   pointer-events: auto;
   display: block;
@@ -574,8 +578,8 @@ kbd {
   }
 
   .speak-widget-shell {
-    top: 8px;
-    right: 8px;
+    top: 0;
+    right: 0;
     width: min(500px, calc(100vw - 16px));
     padding: 8px 10px;
     border-radius: 14px;
