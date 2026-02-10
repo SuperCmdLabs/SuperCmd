@@ -181,6 +181,7 @@ export interface ElectronAPI {
     index: number;
     total: number;
     message?: string;
+    wordIndex?: number;
   }) => void) => (() => void);
   speakStop: () => Promise<boolean>;
   speakGetStatus: () => Promise<{
@@ -189,6 +190,7 @@ export interface ElectronAPI {
     index: number;
     total: number;
     message?: string;
+    wordIndex?: number;
   }>;
 
   // Settings

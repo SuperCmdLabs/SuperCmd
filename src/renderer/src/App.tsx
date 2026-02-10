@@ -341,6 +341,7 @@ const App: React.FC = () => {
     index: number;
     total: number;
     message?: string;
+    wordIndex?: number;
   }>({ state: 'idle', text: '', index: 0, total: 0 });
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [launcherShortcut, setLauncherShortcut] = useState('Command+Space');

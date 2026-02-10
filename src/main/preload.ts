@@ -60,7 +60,7 @@ contextBridge.exposeInMainWorld('electron', {
   onOAuthCallback: (callback: (url: string) => void) => {
     ipcRenderer.on('oauth-callback', (_event, url) => callback(url));
   },
-  onSpeakStatus: (callback: (payload: { state: 'idle' | 'loading' | 'speaking' | 'done' | 'error'; text: string; index: number; total: number; message?: string }) => void) => {
+  onSpeakStatus: (callback: (payload: { state: 'idle' | 'loading' | 'speaking' | 'done' | 'error'; text: string; index: number; total: number; message?: string; wordIndex?: number }) => void) => {
     const listener = (_event: any, payload: any) => callback(payload);
     ipcRenderer.on('speak-status', listener);
     return () => {
@@ -68,7 +68,7 @@ contextBridge.exposeInMainWorld('electron', {
     };
   },
   speakStop: (): Promise<boolean> => ipcRenderer.invoke('speak-stop'),
-  speakGetStatus: (): Promise<{ state: 'idle' | 'loading' | 'speaking' | 'done' | 'error'; text: string; index: number; total: number; message?: string }> =>
+  speakGetStatus: (): Promise<{ state: 'idle' | 'loading' | 'speaking' | 'done' | 'error'; text: string; index: number; total: number; message?: string; wordIndex?: number }> =>
     ipcRenderer.invoke('speak-get-status'),
 
   // ─── Settings ───────────────────────────────────────────────────

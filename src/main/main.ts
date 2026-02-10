@@ -77,19 +77,26 @@ let snippetExpanderStdoutBuffer = '';
 let nativeSpeechProcess: any = null;
 let nativeSpeechStdoutBuffer = '';
 let edgeTtsRuntime: { command: string; baseArgs: string[] } | null = null;
+type SpeakChunkPrepared = {
+  index: number;
+  text: string;
+  audioPath: string;
+  wordCues: Array<{ start: number; end: number; wordIndex: number }>;
+};
 let speakStatusSnapshot: {
   state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
   text: string;
   index: number;
   total: number;
   message?: string;
+  wordIndex?: number;
 } = { state: 'idle', text: '', index: 0, total: 0 };
 let speakSessionCounter = 0;
 let activeSpeakSession: {
   id: number;
   stopRequested: boolean;
   tmpDir: string;
-  chunkPromises: Map<number, Promise<{ index: number; text: string; audioPath: string }>>;
+  chunkPromises: Map<number, Promise<SpeakChunkPrepared>>;
   afplayProc: any | null;
   ttsProcesses: Set<any>;
 } | null = null;
@@ -126,6 +133,7 @@ function setSpeakStatus(status: {
   index: number;
   total: number;
   message?: string;
+  wordIndex?: number;
 }): void {
   speakStatusSnapshot = status;
   try {
@@ -141,8 +149,8 @@ function splitTextIntoSpeakChunks(input: string): string[] {
     .trim();
   if (!normalized) return [];
 
-  const maxChunkChars = 260;
-  const minChunkChars = 120;
+  const maxChunkChars = 120;
+  const minChunkChars = 60;
   const baseSentences = normalized
     .split(/(?<=[.!?])\s+|\n+/g)
     .map((s) => s.trim())
@@ -215,6 +223,31 @@ function splitTextIntoSpeakChunks(input: string): string[] {
   }
 
   return chunks;
+}
+
+function parseCueTimeMs(value: any): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.round(value));
+  }
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    return Math.max(0, Math.round(Number(raw)));
+  }
+  // Accept formats like "00:00:01.230" or "00:01.230"
+  const parts = raw.split(':').map((p) => p.trim());
+  if (parts.length >= 2) {
+    const secPart = parts.pop() || '0';
+    const minPart = parts.pop() || '0';
+    const hrPart = parts.pop() || '0';
+    const sec = Number(secPart);
+    const min = Number(minPart);
+    const hr = Number(hrPart);
+    if (Number.isFinite(sec) && Number.isFinite(min) && Number.isFinite(hr)) {
+      return Math.max(0, Math.round(((hr * 3600) + (min * 60) + sec) * 1000));
+    }
+  }
+  return 0;
 }
 
 function resolveEdgeTtsRuntime(): { command: string; baseArgs: string[] } | null {
@@ -602,7 +635,7 @@ function getLauncherSize(mode: 'default' | 'whisper' | 'speak') {
     return { width: WHISPER_WINDOW_WIDTH, height: WHISPER_WINDOW_HEIGHT, topFactor: 0.28 };
   }
   if (mode === 'speak') {
-    return { width: 460, height: 98, topFactor: 0.03 };
+    return { width: 760, height: 156, topFactor: 0.03 };
   }
   return { width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT, topFactor: 0.2 };
 }
@@ -1226,7 +1259,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
     id: sessionId,
     stopRequested: false,
     tmpDir,
-    chunkPromises: new Map<number, Promise<{ index: number; text: string; audioPath: string }>>(),
+    chunkPromises: new Map<number, Promise<SpeakChunkPrepared>>(),
     afplayProc: null as any,
     ttsProcesses: new Set<any>(),
   };
@@ -1237,14 +1270,14 @@ async function startSpeakFromSelection(): Promise<boolean> {
   const lang = speechLanguage.includes('-') ? speechLanguage : `${speechLanguage}-US`;
   const voice = resolveEdgeVoice(settings.ai?.speechLanguage || 'en-US');
 
-  const ensureChunkPrepared = (index: number): Promise<{ index: number; text: string; audioPath: string }> => {
+  const ensureChunkPrepared = (index: number): Promise<SpeakChunkPrepared> => {
     if (index < 0 || index >= chunks.length) {
       return Promise.reject(new Error('Chunk index out of range'));
     }
     const existing = session.chunkPromises.get(index);
     if (existing) return existing;
 
-    const promise = new Promise<{ index: number; text: string; audioPath: string }>((resolve, reject) => {
+    const promise = new Promise<SpeakChunkPrepared>((resolve, reject) => {
       if (session.stopRequested) {
         reject(new Error('Speak session stopped'));
         return;
@@ -1258,6 +1291,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
         '-v', voice,
         '-l', lang,
         '-r', '+8%',
+        '--saveSubtitles',
       ];
       const proc = spawn(runtime.command, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -1282,7 +1316,41 @@ async function startSpeakFromSelection(): Promise<boolean> {
           reject(new Error(stderr.trim() || `node-edge-tts exited with ${code}`));
           return;
         }
-        resolve({ index, text: chunks[index], audioPath });
+        let wordCues: Array<{ start: number; end: number; wordIndex: number }> = [];
+        try {
+          const subtitleCandidates = [
+            audioPath.replace(/\.mp3$/i, '.json'),
+            `${audioPath}.json`,
+            audioPath.replace(/\.[a-z0-9]+$/i, '.json'),
+          ];
+          for (const subtitlePath of subtitleCandidates) {
+            if (!fs.existsSync(subtitlePath)) continue;
+            const raw = fs.readFileSync(subtitlePath, 'utf-8');
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) continue;
+            let wordIndex = 0;
+            for (const entry of parsed) {
+              const part = String(entry?.part || '').trim();
+              const start = parseCueTimeMs(entry?.start);
+              const endRaw = parseCueTimeMs(entry?.end);
+              const end = Math.max(start + 1, endRaw);
+              const words = part.split(/\s+/g).filter(Boolean);
+              if (words.length === 0) continue;
+              const span = Math.max(1, end - start);
+              const step = span / words.length;
+              for (let i = 0; i < words.length; i += 1) {
+                wordCues.push({
+                  start: Math.max(0, Math.round(start + i * step)),
+                  end: Math.max(1, Math.round(start + (i + 1) * step)),
+                  wordIndex,
+                });
+                wordIndex += 1;
+              }
+            }
+            if (wordCues.length > 0) break;
+          }
+        } catch {}
+        resolve({ index, text: chunks[index], audioPath, wordCues });
       });
     });
 
@@ -1290,24 +1358,59 @@ async function startSpeakFromSelection(): Promise<boolean> {
     return promise;
   };
 
-  const playAudioFile = (audioPath: string): Promise<void> =>
+  const playAudioFile = (prepared: SpeakChunkPrepared): Promise<void> =>
     new Promise((resolve, reject) => {
       if (session.stopRequested) {
         resolve();
         return;
       }
       const { spawn } = require('child_process');
-      const proc = spawn('/usr/bin/afplay', [audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+      const proc = spawn('/usr/bin/afplay', [prepared.audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
       session.afplayProc = proc;
       let stderr = '';
+      const startedAt = Date.now();
+      let lastWordIndex = -1;
+      const wordsInText = prepared.text.split(/\s+/g).filter(Boolean).length;
+      const fallbackMsPerWord = 165;
+      const cueTimer = setInterval(() => {
+        if (session.stopRequested || activeSpeakSession?.id !== sessionId) return;
+        const elapsed = Date.now() - startedAt;
+        let nextWordIndex = -1;
+        if (prepared.wordCues.length > 0) {
+          for (const cue of prepared.wordCues) {
+            if (elapsed >= cue.start && elapsed <= cue.end) {
+              nextWordIndex = cue.wordIndex;
+              break;
+            }
+            if (elapsed > cue.end) {
+              nextWordIndex = cue.wordIndex;
+            }
+          }
+        } else if (wordsInText > 0) {
+          nextWordIndex = Math.min(wordsInText - 1, Math.floor(elapsed / fallbackMsPerWord));
+        }
+        if (nextWordIndex !== lastWordIndex && nextWordIndex >= 0) {
+          lastWordIndex = nextWordIndex;
+          setSpeakStatus({
+            state: 'speaking',
+            text: prepared.text,
+            index: prepared.index + 1,
+            total: chunks.length,
+            message: '',
+            wordIndex: nextWordIndex,
+          });
+        }
+      }, 70);
       proc.stderr.on('data', (chunk: Buffer | string) => {
         stderr += String(chunk || '');
       });
       proc.on('error', (err: Error) => {
+        clearInterval(cueTimer);
         if (session.afplayProc === proc) session.afplayProc = null;
         reject(err);
       });
       proc.on('close', (code: number | null) => {
+        clearInterval(cueTimer);
         if (session.afplayProc === proc) session.afplayProc = null;
         if (session.stopRequested) {
           resolve();
@@ -1350,8 +1453,9 @@ async function startSpeakFromSelection(): Promise<boolean> {
           index: index + 1,
           total: chunks.length,
           message: '',
+          wordIndex: 0,
         });
-        await playAudioFile(prepared.audioPath);
+        await playAudioFile(prepared);
       }
 
       if (activeSpeakSession?.id !== sessionId) return;
