@@ -70,6 +70,10 @@ contextBridge.exposeInMainWorld('electron', {
   speakStop: (): Promise<boolean> => ipcRenderer.invoke('speak-stop'),
   speakGetStatus: (): Promise<{ state: 'idle' | 'loading' | 'speaking' | 'done' | 'error'; text: string; index: number; total: number; message?: string; wordIndex?: number }> =>
     ipcRenderer.invoke('speak-get-status'),
+  speakGetOptions: (): Promise<{ voice: string; rate: string }> =>
+    ipcRenderer.invoke('speak-get-options'),
+  speakUpdateOptions: (patch: { voice?: string; rate?: string; restartCurrent?: boolean }): Promise<{ voice: string; rate: string }> =>
+    ipcRenderer.invoke('speak-update-options', patch),
 
   // ─── Settings ───────────────────────────────────────────────────
   getSettings: (): Promise<any> => ipcRenderer.invoke('get-settings'),

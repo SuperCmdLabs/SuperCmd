@@ -192,6 +192,8 @@ export interface ElectronAPI {
     message?: string;
     wordIndex?: number;
   }>;
+  speakGetOptions: () => Promise<{ voice: string; rate: string }>;
+  speakUpdateOptions: (patch: { voice?: string; rate?: string; restartCurrent?: boolean }) => Promise<{ voice: string; rate: string }>;
 
   // Settings
   getSettings: () => Promise<AppSettings>;

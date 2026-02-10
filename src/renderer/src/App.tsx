@@ -343,6 +343,10 @@ const App: React.FC = () => {
     message?: string;
     wordIndex?: number;
   }>({ state: 'idle', text: '', index: 0, total: 0 });
+  const [speakOptions, setSpeakOptions] = useState<{ voice: string; rate: string }>({
+    voice: 'en-US-JennyNeural',
+    rate: '+0%',
+  });
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [launcherShortcut, setLauncherShortcut] = useState('Command+Space');
   const [showActions, setShowActions] = useState(false);
@@ -549,6 +553,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     let disposed = false;
+    window.electron.speakGetOptions().then((options) => {
+      if (!disposed && options) setSpeakOptions(options);
+    }).catch(() => {});
     window.electron.speakGetStatus().then((status) => {
       if (!disposed && status) setSpeakStatus(status);
     }).catch(() => {});
@@ -559,6 +566,22 @@ const App: React.FC = () => {
       disposed = true;
       disposeSpeak();
     };
+  }, []);
+
+  const handleSpeakVoiceChange = useCallback(async (voice: string) => {
+    const next = await window.electron.speakUpdateOptions({
+      voice,
+      restartCurrent: true,
+    });
+    setSpeakOptions(next);
+  }, []);
+
+  const handleSpeakRateChange = useCallback(async (rate: string) => {
+    const next = await window.electron.speakUpdateOptions({
+      rate,
+      restartCurrent: true,
+    });
+    setSpeakOptions(next);
   }, []);
 
   useEffect(() => {
@@ -1841,6 +1864,10 @@ const App: React.FC = () => {
         {hiddenExtensionRunners}
         <SuperCommandSpeak
           status={speakStatus}
+          voice={speakOptions.voice}
+          rate={speakOptions.rate}
+          onVoiceChange={handleSpeakVoiceChange}
+          onRateChange={handleSpeakRateChange}
           onClose={() => {
             setShowSpeak(false);
             setSearchQuery('');

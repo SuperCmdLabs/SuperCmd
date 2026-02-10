@@ -12,10 +12,36 @@ interface SpeakStatus {
 
 interface SuperCommandSpeakProps {
   status: SpeakStatus;
+  voice: string;
+  rate: string;
+  onVoiceChange: (voice: string) => void;
+  onRateChange: (rate: string) => void;
   onClose: () => void;
 }
 
-const SuperCommandSpeak: React.FC<SuperCommandSpeakProps> = ({ status, onClose }) => {
+const VOICE_PRESETS = [
+  { value: 'en-US-JennyNeural', label: 'Jenny (US)' },
+  { value: 'en-US-AriaNeural', label: 'Aria (US)' },
+  { value: 'en-US-GuyNeural', label: 'Guy (US)' },
+  { value: 'en-GB-SoniaNeural', label: 'Sonia (UK)' },
+  { value: 'en-GB-RyanNeural', label: 'Ryan (UK)' },
+];
+
+const SPEED_PRESETS = [
+  { value: '-15%', label: '0.85x' },
+  { value: '+0%', label: '1.0x' },
+  { value: '+15%', label: '1.15x' },
+  { value: '+30%', label: '1.3x' },
+];
+
+const SuperCommandSpeak: React.FC<SuperCommandSpeakProps> = ({
+  status,
+  voice,
+  rate,
+  onVoiceChange,
+  onRateChange,
+  onClose,
+}) => {
   if (typeof document === 'undefined') return null;
   const textScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -82,6 +108,28 @@ const SuperCommandSpeak: React.FC<SuperCommandSpeakProps> = ({ status, onClose }
           <div className="speak-top-row">
             <div className="speak-beacon" aria-hidden="true" />
             <div className="speak-caption">{caption ? `Speak ${caption}` : 'Speak'}</div>
+          </div>
+          <div className="speak-controls">
+            <select
+              className="speak-select"
+              value={voice}
+              onChange={(e) => onVoiceChange(e.target.value)}
+              aria-label="Voice"
+            >
+              {VOICE_PRESETS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <select
+              className="speak-select speak-speed-select"
+              value={rate}
+              onChange={(e) => onRateChange(e.target.value)}
+              aria-label="Speed"
+            >
+              {SPEED_PRESETS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
           </div>
           <button
             type="button"

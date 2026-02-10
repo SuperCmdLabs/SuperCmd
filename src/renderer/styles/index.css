@@ -364,8 +364,7 @@ kbd {
   position: absolute;
   top: 10px;
   right: 10px;
-  max-width: min(720px, calc(100vw - 20px));
-  min-width: min(500px, calc(100vw - 20px));
+  width: 500px;
   pointer-events: auto;
   display: block;
   padding: 10px 12px 10px 10px;
@@ -389,6 +388,32 @@ kbd {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 4px;
+}
+
+.speak-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.speak-select {
+  height: 24px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(10, 14, 20, 0.62);
+  color: rgba(236, 243, 255, 0.94);
+  font-size: 11px;
+  padding: 0 8px;
+  outline: none;
+}
+
+.speak-select:focus {
+  border-color: rgba(148, 203, 255, 0.6);
+}
+
+.speak-speed-select {
+  width: 62px;
 }
 
 .speak-top-row {
@@ -468,9 +493,8 @@ kbd {
   width: 100%;
   text-align: left;
   min-width: 0;
-  max-height: 96px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  max-height: none;
+  overflow: visible;
   padding-right: 2px;
 }
 
@@ -552,10 +576,18 @@ kbd {
   .speak-widget-shell {
     top: 8px;
     right: 8px;
-    min-width: min(360px, calc(100vw - 16px));
-    max-width: min(620px, calc(100vw - 16px));
+    width: min(500px, calc(100vw - 16px));
     padding: 8px 10px;
     border-radius: 14px;
+  }
+
+  .speak-controls {
+    gap: 4px;
+  }
+
+  .speak-select {
+    font-size: 10px;
+    padding: 0 6px;
   }
 
   .speak-main-text {
