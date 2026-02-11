@@ -1361,9 +1361,12 @@ function createWindow(): void {
   });
 }
 
-function computePromptWindowBounds(): { x: number; y: number; width: number; height: number } {
-  const caretRect = getTypingCaretRect();
-  const focusedInputRect = getFocusedInputRect();
+function computePromptWindowBounds(
+  preCapturedCaretRect?: { x: number; y: number; width: number; height: number } | null,
+  preCapturedInputRect?: { x: number; y: number; width: number; height: number } | null,
+): { x: number; y: number; width: number; height: number } {
+  const caretRect = preCapturedCaretRect !== undefined ? preCapturedCaretRect : getTypingCaretRect();
+  const focusedInputRect = preCapturedInputRect !== undefined ? preCapturedInputRect : getFocusedInputRect();
   const width = CURSOR_PROMPT_WINDOW_WIDTH;
   const height = CURSOR_PROMPT_WINDOW_HEIGHT;
   const promptAnchorPoint = caretRect
@@ -1455,12 +1458,15 @@ function createPromptWindow(): void {
   });
 }
 
-function showPromptWindow(): void {
+function showPromptWindow(
+  preCapturedCaretRect?: { x: number; y: number; width: number; height: number } | null,
+  preCapturedInputRect?: { x: number; y: number; width: number; height: number } | null,
+): void {
   if (!promptWindow || promptWindow.isDestroyed()) {
     createPromptWindow();
   }
   if (!promptWindow) return;
-  const bounds = computePromptWindowBounds();
+  const bounds = computePromptWindowBounds(preCapturedCaretRect, preCapturedInputRect);
   promptWindow.setBounds(bounds);
   promptWindow.show();
   promptWindow.focus();
@@ -2257,6 +2263,9 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
   if (isCursorPromptCommand) {
     lastCursorPromptSelection = '';
     captureFrontmostAppContext();
+    // Capture caret position NOW, before async work shifts focus
+    const earlyCaretRect = getTypingCaretRect();
+    const earlyInputRect = earlyCaretRect ? null : getFocusedInputRect();
     try {
       const selectedBeforeOpen = String(await getSelectedTextForSpeak() || '').trim();
       if (selectedBeforeOpen) {
@@ -2272,7 +2281,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
       hidePromptWindow();
       return true;
     }
-    showPromptWindow();
+    showPromptWindow(earlyCaretRect, earlyInputRect);
     return true;
   }
 
