@@ -60,7 +60,7 @@ const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, 
 const DEFAULT_WINDOW_WIDTH = 860;
 const DEFAULT_WINDOW_HEIGHT = 540;
 const CURSOR_PROMPT_WINDOW_WIDTH = 500;
-const CURSOR_PROMPT_WINDOW_HEIGHT = 132;
+const CURSOR_PROMPT_WINDOW_HEIGHT = 90;
 const CURSOR_PROMPT_LEFT_OFFSET = 20;
 const WHISPER_WINDOW_WIDTH = 266;
 const WHISPER_WINDOW_HEIGHT = 84;
@@ -1430,7 +1430,7 @@ function createPromptWindow(): void {
     frame: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: false,
-    hasShadow: true,
+    hasShadow: false,
     resizable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
@@ -1471,6 +1471,7 @@ function showPromptWindow(
   promptWindow.show();
   promptWindow.focus();
   promptWindow.moveTop();
+  promptWindow.webContents.focus();
 }
 
 function hidePromptWindow(): void {

@@ -68,31 +68,37 @@ select {
   background: rgba(12, 12, 16, 0.74);
   -webkit-backdrop-filter: blur(40px) saturate(150%);
   backdrop-filter: blur(40px) saturate(150%);
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: none;
-}
-
-.cursor-prompt-topbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: -2px;
+  overflow: hidden;
 }
 
 .cursor-prompt-close {
-  width: 20px;
-  height: 20px;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.72);
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
   transition: all 0.12s ease;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cursor-prompt-surface:hover .cursor-prompt-close {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .cursor-prompt-close:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.18);
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -105,17 +111,21 @@ select {
 }
 
 .cursor-prompt-submit {
-  height: 22px;
-  border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.88);
-  padding: 0 8px;
-  font-size: 10.5px;
-  font-weight: 600;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 0;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  transition: background 0.12s ease;
+}
+
+.cursor-prompt-submit:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .cursor-prompt-submit:disabled {
