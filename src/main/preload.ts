@@ -253,6 +253,10 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('clipboard-read-text'),
   getSelectedText: (): Promise<string> =>
     ipcRenderer.invoke('get-selected-text'),
+  getSelectedTextStrict: (): Promise<string> =>
+    ipcRenderer.invoke('get-selected-text-strict'),
+  memoryAdd: (payload: { text: string; userId?: string; source?: string; metadata?: Record<string, any> }): Promise<{ success: boolean; memoryId?: string; error?: string }> =>
+    ipcRenderer.invoke('memory-add', payload),
 
   // ─── Snippet Manager ────────────────────────────────────────────
   snippetGetAll: (): Promise<any[]> =>

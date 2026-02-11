@@ -14,6 +14,10 @@ export interface AISettings {
   openaiApiKey: string;
   anthropicApiKey: string;
   elevenlabsApiKey: string;
+  mem0ApiKey: string;
+  mem0UserId: string;
+  mem0BaseUrl: string;
+  mem0LocalMode: boolean;
   ollamaBaseUrl: string;
   defaultModel: string;
   speechCorrectionModel: string;
@@ -43,6 +47,10 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   openaiApiKey: '',
   anthropicApiKey: '',
   elevenlabsApiKey: '',
+  mem0ApiKey: '',
+  mem0UserId: '',
+  mem0BaseUrl: 'https://api.mem0.ai',
+  mem0LocalMode: false,
   ollamaBaseUrl: 'http://localhost:11434',
   defaultModel: '',
   speechCorrectionModel: '',

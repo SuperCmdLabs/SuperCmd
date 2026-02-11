@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic, Volume2, Loader2, CornerDownLeft } from 'lucide-react';
+import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic, Volume2, Loader2, CornerDownLeft, Brain } from 'lucide-react';
 import type { CommandInfo, ExtensionBundle, AppSettings } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
@@ -107,6 +107,14 @@ function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
     return (
       <div className="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
         <Sparkles className="w-3 h-3 text-violet-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-add-to-memory') {
+    return (
+      <div className="w-5 h-5 rounded bg-fuchsia-500/20 flex items-center justify-center">
+        <Brain className="w-3 h-3 text-fuchsia-200" />
       </div>
     );
   }
@@ -407,6 +415,7 @@ const App: React.FC = () => {
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiAvailable, setAiAvailable] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
+  const [selectedTextSnapshot, setSelectedTextSnapshot] = useState('');
   const aiRequestIdRef = useRef<string | null>(null);
   const cursorPromptRequestIdRef = useRef<string | null>(null);
   const cursorPromptResultRef = useRef('');
@@ -477,6 +486,15 @@ const App: React.FC = () => {
     requestAnimationFrame(() => {
       inputRef.current?.focus();
     });
+  }, []);
+
+  const refreshSelectedTextSnapshot = useCallback(async () => {
+    try {
+      const selected = String(await window.electron.getSelectedTextStrict() || '').trim();
+      setSelectedTextSnapshot(selected);
+    } catch {
+      setSelectedTextSnapshot('');
+    }
   }, []);
 
   const appendWhisperOnboardingPracticeText = useCallback((chunk: string) => {
@@ -606,6 +624,7 @@ const App: React.FC = () => {
       const isPromptMode = payload?.mode === 'prompt';
       if (isWhisperMode) {
         whisperSessionRef.current = true;
+        setSelectedTextSnapshot('');
         setShowCursorPrompt(false);
         setShowWhisper(true);
         setShowSpeak(false);
@@ -622,6 +641,7 @@ const App: React.FC = () => {
       }
       if (isSpeakMode) {
         whisperSessionRef.current = false;
+        setSelectedTextSnapshot('');
         setShowCursorPrompt(false);
         setShowWhisper(false);
         setShowSpeak(true);
@@ -638,6 +658,7 @@ const App: React.FC = () => {
       }
       if (isPromptMode) {
         whisperSessionRef.current = false;
+        setSelectedTextSnapshot('');
         setShowWhisper(false);
         setShowSpeak(false);
         setShowWhisperOnboarding(false);
@@ -662,6 +683,7 @@ const App: React.FC = () => {
       whisperSessionRef.current = false;
       setShowCursorPrompt(false);
       setShowWhisperHint(false);
+      void refreshSelectedTextSnapshot();
 
       // If an extension is open, keep it alive — don't reset
       if (extensionViewRef.current) return;
@@ -680,7 +702,7 @@ const App: React.FC = () => {
       window.electron.aiIsAvailable().then(setAiAvailable);
       inputRef.current?.focus();
     });
-  }, [fetchCommands, loadLauncherPreferences]);
+  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot]);
 
   useEffect(() => {
     window.electron.setDetachedOverlayState('whisper', showWhisper);
@@ -884,6 +906,10 @@ const App: React.FC = () => {
   useEffect(() => {
     window.electron.aiIsAvailable().then(setAiAvailable);
   }, []);
+
+  useEffect(() => {
+    void refreshSelectedTextSnapshot();
+  }, [refreshSelectedTextSnapshot]);
 
   const saveLauncherPreferences = useCallback(
     async (next: { pinnedCommands?: string[]; recentCommands?: string[] }) => {
@@ -1191,14 +1217,21 @@ const App: React.FC = () => {
     return searchQuery ? tryCalculate(searchQuery) : null;
   }, [searchQuery]);
   const calcOffset = calcResult ? 1 : 0;
+  const contextualCommands = useMemo(() => {
+    const hasSelection = selectedTextSnapshot.trim().length > 0;
+    return commands.filter((command) => {
+      if (command.id === 'system-add-to-memory') return hasSelection;
+      return true;
+    });
+  }, [commands, selectedTextSnapshot]);
   const filteredCommands = useMemo(
-    () => filterCommands(commands, searchQuery),
-    [commands, searchQuery]
+    () => filterCommands(contextualCommands, searchQuery),
+    [contextualCommands, searchQuery]
   );
 
   // When calculator is showing but no commands match, show unfiltered list below
   const sourceCommands =
-    calcResult && filteredCommands.length === 0 ? commands : filteredCommands;
+    calcResult && filteredCommands.length === 0 ? contextualCommands : filteredCommands;
 
   const groupedCommands = useMemo(() => {
     const sourceMap = new Map(sourceCommands.map((cmd) => [cmd.id, cmd]));
@@ -1491,6 +1524,26 @@ const App: React.FC = () => {
       setShowSpeak(false);
       setShowWhisperOnboarding(false);
       setShowWhisperHint(false);
+      return true;
+    }
+    if (commandId === 'system-add-to-memory') {
+      const selectedText = String(await window.electron.getSelectedTextStrict() || '').trim();
+      if (!selectedText) {
+        setSelectedTextSnapshot('');
+        return true;
+      }
+      const result = await window.electron.memoryAdd({
+        text: selectedText,
+        source: 'launcher-selection',
+      });
+      if (!result.success) {
+        console.error('[Mem0] Failed to add memory:', result.error || 'Unknown error');
+        return true;
+      }
+      setSelectedTextSnapshot('');
+      setSearchQuery('');
+      setSelectedIndex(0);
+      window.electron.hideWindow();
       return true;
     }
     if (commandId === 'system-cursor-prompt') {

@@ -15,6 +15,7 @@ import { getAvailableCommands, executeCommand, invalidateCache } from './command
 import { loadSettings, saveSettings } from './settings-store';
 import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
+import { addMemory, buildMemoryContextSystemPrompt } from './memory';
 import {
   getCatalog,
   getExtensionScreenshotUrls,
@@ -273,10 +274,13 @@ let lastWhisperToggleAt = 0;
 let lastWhisperShownAt = 0;
 let lastTypingCaretPoint: { x: number; y: number } | null = null;
 let lastCursorPromptSelection = '';
+let lastLauncherSelectionSnapshot = '';
+let lastLauncherSelectionSnapshotAt = 0;
 let whisperEscapeRegistered = false;
 let whisperOverlayVisible = false;
 let speakOverlayVisible = false;
 let whisperChildWindow: InstanceType<typeof BrowserWindow> | null = null;
+const LAUNCHER_SELECTION_SNAPSHOT_TTL_MS = 15_000;
 
 function registerWhisperEscapeShortcut(): void {
   if (whisperEscapeRegistered) return;
@@ -803,6 +807,42 @@ async function getSelectedTextForSpeak(): Promise<string> {
   }
 }
 
+function rememberSelectionSnapshot(text: string): void {
+  const raw = String(text || '');
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    lastLauncherSelectionSnapshot = '';
+    lastLauncherSelectionSnapshotAt = 0;
+    return;
+  }
+  lastLauncherSelectionSnapshot = raw;
+  lastLauncherSelectionSnapshotAt = Date.now();
+  lastCursorPromptSelection = raw;
+}
+
+function getRecentSelectionSnapshot(): string {
+  if (!lastLauncherSelectionSnapshot) return '';
+  if (Date.now() - lastLauncherSelectionSnapshotAt > LAUNCHER_SELECTION_SNAPSHOT_TTL_MS) {
+    lastLauncherSelectionSnapshot = '';
+    lastLauncherSelectionSnapshotAt = 0;
+    return '';
+  }
+  return lastLauncherSelectionSnapshot;
+}
+
+async function captureSelectionSnapshotBeforeShow(): Promise<void> {
+  if (launcherMode !== 'default') {
+    rememberSelectionSnapshot('');
+    return;
+  }
+  try {
+    const selected = String(await getSelectedTextForSpeak() || '');
+    rememberSelectionSnapshot(selected);
+  } catch {
+    rememberSelectionSnapshot('');
+  }
+}
+
 function stopSpeakSession(options?: { resetStatus?: boolean; cleanupWindow?: boolean }): void {
   const session = activeSpeakSession;
   if (!session) {
@@ -1039,7 +1079,7 @@ function handleOAuthCallbackUrl(rawUrl: string): void {
       return;
     }
 
-    showWindow();
+    void showWindow();
     mainWindow.webContents.send('oauth-callback', rawUrl);
   } catch {
     // ignore invalid URLs
@@ -1283,7 +1323,7 @@ function createWindow(): void {
         minimizable: false,
         maximizable: false,
         fullscreenable: false,
-        focusable: true,
+        focusable: detachedPopupName !== DETACHED_WHISPER_WINDOW_NAME,
         skipTaskbar: true,
         alwaysOnTop: true,
         show: true,
@@ -1776,11 +1816,12 @@ function captureFrontmostAppContext(): void {
   }
 }
 
-function showWindow(): void {
+async function showWindow(): Promise<void> {
   if (!mainWindow) return;
 
   // Capture the frontmost app BEFORE showing our window
   captureFrontmostAppContext();
+  await captureSelectionSnapshotBeforeShow();
 
   applyLauncherBounds(launcherMode);
 
@@ -2123,21 +2164,21 @@ function toggleWindow(): void {
   if (!mainWindow) {
     createWindow();
     mainWindow?.once('ready-to-show', () => {
-      showWindow();
+      void showWindow();
     });
     return;
   }
 
   if (isVisible && launcherMode === 'whisper') {
     setLauncherMode('default');
-    showWindow();
+    void showWindow();
     return;
   }
 
   if (isVisible) {
     hideWindow();
   } else {
-    showWindow();
+    void showWindow();
   }
 }
 
@@ -2155,7 +2196,7 @@ async function openLauncherAndRunSystemCommand(
 
   const sendCommand = () => {
     if (showLauncher) {
-      showWindow();
+      void showWindow();
     }
     mainWindow?.webContents.send('run-system-command', commandId);
   };
@@ -2283,6 +2324,24 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
       return true;
     }
     showPromptWindow(earlyCaretRect, earlyInputRect);
+    return true;
+  }
+  if (commandId === 'system-add-to-memory') {
+    const selectedTextRaw = String(await getSelectedTextForSpeak() || getRecentSelectionSnapshot() || '');
+    const selectedText = selectedTextRaw.trim();
+    if (!selectedText) return false;
+    rememberSelectionSnapshot(selectedTextRaw);
+    const result = await addMemory(loadSettings(), {
+      text: selectedText,
+      source: source === 'hotkey' ? 'hotkey' : 'launcher',
+    });
+    if (!result.success) {
+      console.warn('[Mem0] add memory failed:', result.error || 'Unknown error');
+      return false;
+    }
+    if (source === 'launcher') {
+      setTimeout(() => hideWindow(), 50);
+    }
     return true;
   }
 
@@ -3475,7 +3534,7 @@ app.whenReady().then(async () => {
           type: deepLink.launchType || 'userInitiated',
           fallbackText: deepLink.fallbackText || null,
         });
-        showWindow();
+        await showWindow();
         const payload = JSON.stringify({
           bundle,
           launchOptions: { type: bundle.launchType || 'userInitiated' },
@@ -4270,11 +4329,41 @@ return appURL's |path|() as text`,
   ipcMain.handle('get-selected-text', async () => {
     const fresh = String(await getSelectedTextForSpeak() || '');
     if (fresh.trim().length > 0) {
-      lastCursorPromptSelection = fresh;
+      rememberSelectionSnapshot(fresh);
       return fresh;
     }
+    const recent = getRecentSelectionSnapshot();
+    if (recent.trim().length > 0) return recent;
     return String(lastCursorPromptSelection || '');
   });
+
+  ipcMain.handle('get-selected-text-strict', async () => {
+    const fresh = String(await getSelectedTextForSpeak() || '');
+    if (fresh.trim().length > 0) {
+      rememberSelectionSnapshot(fresh);
+      return fresh;
+    }
+    return String(getRecentSelectionSnapshot() || '');
+  });
+
+  ipcMain.handle(
+    'memory-add',
+    async (
+      _event: any,
+      payload: { text: string; userId?: string; source?: string; metadata?: Record<string, any> }
+    ) => {
+      const text = String(payload?.text || '').trim();
+      if (!text) {
+        return { success: false, error: 'No selected text found.' };
+      }
+      return await addMemory(loadSettings(), {
+        text,
+        userId: payload?.userId,
+        source: payload?.source || 'launcher-selection',
+        metadata: payload?.metadata,
+      });
+    }
+  );
 
   // ─── IPC: Snippet Manager ─────────────────────────────────────
 
@@ -4490,11 +4579,20 @@ return appURL's |path|() as text`,
       activeAIRequests.set(requestId, controller);
 
       try {
+        const memoryContextSystemPrompt = await buildMemoryContextSystemPrompt(
+          s,
+          String(prompt || ''),
+          { limit: 6 }
+        );
+        const mergedSystemPrompt = [options?.systemPrompt, memoryContextSystemPrompt]
+          .filter((part) => typeof part === 'string' && part.trim().length > 0)
+          .join('\n\n');
+
         const gen = streamAI(s.ai, {
           prompt,
           model: options?.model,
           creativity: options?.creativity,
-          systemPrompt: options?.systemPrompt,
+          systemPrompt: mergedSystemPrompt || undefined,
           signal: controller.signal,
         });
 

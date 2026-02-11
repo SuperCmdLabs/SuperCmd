@@ -123,6 +123,7 @@ const AITab: React.FC = () => {
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showElevenLabsKey, setShowElevenLabsKey] = useState(false);
+  const [showMem0Key, setShowMem0Key] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
 
   const [ollamaRunning, setOllamaRunning] = useState<boolean | null>(null);
@@ -436,6 +437,57 @@ const AITab: React.FC = () => {
                     </button>
                   </div>
                 </div>
+
+                <div>
+                  <label className="text-[11px] text-white/45 mb-1 block">Mem0 API Key</label>
+                  <div className="relative">
+                    <input
+                      type={showMem0Key ? 'text' : 'password'}
+                      value={ai.mem0ApiKey || ''}
+                      onChange={(e) => updateAI({ mem0ApiKey: e.target.value.trim() })}
+                      placeholder="m0-..."
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 pr-9 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
+                    />
+                    <button
+                      onClick={() => setShowMem0Key(!showMem0Key)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
+                    >
+                      {showMem0Key ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-white/45 mb-1 block">Mem0 User ID</label>
+                  <input
+                    type="text"
+                    value={ai.mem0UserId || ''}
+                    onChange={(e) => updateAI({ mem0UserId: e.target.value.trim() })}
+                    placeholder="user-123"
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
+                  />
+                  <p className="text-[10px] text-white/35 mt-1">Used to scope personal memory retrieval for prompt answers.</p>
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-white/45 mb-1 block">Mem0 Base URL</label>
+                  <input
+                    type="text"
+                    value={ai.mem0BaseUrl || 'https://api.mem0.ai'}
+                    onChange={(e) => updateAI({ mem0BaseUrl: e.target.value.trim() })}
+                    placeholder="https://api.mem0.ai"
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
+                  />
+                </div>
+
+                <label className="inline-flex items-center gap-2 text-[11px] text-white/65">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(ai.mem0LocalMode)}
+                    onChange={(e) => updateAI({ mem0LocalMode: e.target.checked })}
+                  />
+                  <span>Use local Mem0 mode (allow requests without API key)</span>
+                </label>
               </div>
             </div>
 

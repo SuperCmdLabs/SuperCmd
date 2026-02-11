@@ -644,6 +644,12 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-add-to-memory',
+      title: 'Add Selected Text to Memory',
+      keywords: ['memory', 'mem0', 'memo0', 'selected text', 'remember', 'save context'],
+      category: 'system',
+    },
+    {
       id: 'system-clipboard-manager',
       title: 'Clipboard History',
       keywords: ['clipboard', 'history', 'copy', 'paste', 'manager'],

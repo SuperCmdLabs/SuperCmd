@@ -88,6 +88,10 @@ export interface AISettings {
   openaiApiKey: string;
   anthropicApiKey: string;
   elevenlabsApiKey: string;
+  mem0ApiKey: string;
+  mem0UserId: string;
+  mem0BaseUrl: string;
+  mem0LocalMode: boolean;
   ollamaBaseUrl: string;
   defaultModel: string;
   speechCorrectionModel: string;
@@ -299,6 +303,8 @@ export interface ElectronAPI {
   clipboardWrite: (payload: { text?: string; html?: string }) => Promise<boolean>;
   clipboardReadText: () => Promise<string>;
   getSelectedText: () => Promise<string>;
+  getSelectedTextStrict: () => Promise<string>;
+  memoryAdd: (payload: { text: string; userId?: string; source?: string; metadata?: Record<string, any> }) => Promise<{ success: boolean; memoryId?: string; error?: string }>;
 
   // Snippet Manager
   snippetGetAll: () => Promise<Snippet[]>;
