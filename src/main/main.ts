@@ -56,6 +56,22 @@ import {
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, clipboard: systemClipboard } = electron;
 
+// ─── Native Binary Helpers ──────────────────────────────────────────
+
+/**
+ * Resolve the path to a pre-compiled native binary in dist/native/.
+ * In packaged apps the dist/native/ directory lives in app.asar.unpacked
+ * (see asarUnpack in package.json), so we swap the asar path for the
+ * unpacked one — child_process.spawn is not asar-aware.
+ */
+function getNativeBinaryPath(name: string): string {
+  const base = path.join(__dirname, '..', 'native', name);
+  if (app.isPackaged) {
+    return base.replace('app.asar', 'app.asar.unpacked');
+  }
+  return base;
+}
+
 // ─── Window Configuration ───────────────────────────────────────────
 
 const DEFAULT_WINDOW_WIDTH = 860;
@@ -966,7 +982,7 @@ function stopWhisperHoldWatcher(): void {
 
 function ensureWhisperHoldWatcherBinary(): string | null {
   const fs = require('fs');
-  const binaryPath = path.join(__dirname, '..', 'native', 'hotkey-hold-monitor');
+  const binaryPath = getNativeBinaryPath('hotkey-hold-monitor');
   if (fs.existsSync(binaryPath)) return binaryPath;
   try {
     const { execFileSync } = require('child_process');
@@ -1372,9 +1388,11 @@ function createWindow(): void {
 
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-  if (process.platform === 'darwin') {
-    app.dock.hide();
-  }
+  // NOTE: Do NOT call app.dock.hide() here. Hiding the dock before the window
+  // is loaded and shown prevents macOS from granting the app foreground status,
+  // causing the window to never appear on first launch from Launchpad/Finder.
+  // The dock is hidden later in openLauncherFromUserEntry() after the window
+  // is confirmed loaded, or deferred until onboarding completes for fresh installs.
 
   loadWindowUrl(mainWindow, '/');
 
@@ -2112,7 +2130,7 @@ function refreshSnippetExpander(): void {
 
   if (keywords.length === 0) return;
 
-  const expanderPath = path.join(__dirname, '..', 'native', 'snippet-expander');
+  const expanderPath = getNativeBinaryPath('snippet-expander');
   const fs = require('fs');
   if (!fs.existsSync(expanderPath)) {
     try {
@@ -2126,9 +2144,14 @@ function refreshSnippetExpander(): void {
   }
 
   const { spawn } = require('child_process');
-  snippetExpanderProcess = spawn(expanderPath, [JSON.stringify(keywords)], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  try {
+    snippetExpanderProcess = spawn(expanderPath, [JSON.stringify(keywords)], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    console.warn('[SnippetExpander] Failed to spawn native helper:', error);
+    return;
+  }
   console.log(`[SnippetExpander] Started with ${keywords.length} keyword(s)`);
 
   snippetExpanderProcess.stdout.on('data', (chunk: Buffer | string) => {
@@ -2164,22 +2187,41 @@ function toggleWindow(): void {
   if (!mainWindow) {
     createWindow();
     mainWindow?.once('ready-to-show', () => {
-      void showWindow();
+      void openLauncherFromUserEntry();
     });
     return;
   }
 
   if (isVisible && launcherMode === 'whisper') {
-    setLauncherMode('default');
-    void showWindow();
+    void openLauncherFromUserEntry();
     return;
   }
 
   if (isVisible) {
     hideWindow();
   } else {
-    void showWindow();
+    void openLauncherFromUserEntry();
   }
+}
+
+async function openLauncherFromUserEntry(): Promise<void> {
+  const settings = loadSettings();
+  if (!settings.hasSeenOnboarding) {
+    // Fresh install — show onboarding. Keep dock visible so the user can see
+    // the app is running and can click the dock icon to get back if needed.
+    await openLauncherAndRunSystemCommand('system-open-onboarding', {
+      showWindow: true,
+      mode: 'default',
+    });
+    return;
+  }
+
+  // Returning user — hide dock for overlay-only behaviour, then show window.
+  if (process.platform === 'darwin') {
+    app.dock.hide();
+  }
+  setLauncherMode('default');
+  await showWindow();
 }
 
 async function openLauncherAndRunSystemCommand(
@@ -3193,7 +3235,9 @@ app.whenReady().then(async () => {
 
   // Initialize snippet store
   initSnippetStore();
-  refreshSnippetExpander();
+  try { refreshSnippetExpander(); } catch (e) {
+    console.warn('[SnippetExpander] Failed to start:', e);
+  }
 
   // Rebuild extensions in background
   rebuildExtensions().catch(console.error);
@@ -3393,7 +3437,12 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     'save-settings',
     (_event: any, patch: Partial<AppSettings>) => {
-      return saveSettings(patch);
+      const result = saveSettings(patch);
+      // When onboarding completes, hide the dock so the app becomes an overlay.
+      if (patch.hasSeenOnboarding === true && process.platform === 'darwin') {
+        app.dock.hide();
+      }
+      return result;
     }
   );
 
@@ -4706,7 +4755,7 @@ return appURL's |path|() as text`,
     }
 
     const lang = language || loadSettings().ai.speechLanguage || 'en-US';
-    const binaryPath = path.join(__dirname, '..', 'native', 'speech-recognizer');
+    const binaryPath = getNativeBinaryPath('speech-recognizer');
     const fs = require('fs');
 
     // Compile on demand (same pattern as color-picker / snippet-expander)
@@ -5165,7 +5214,7 @@ return appURL's |path|() as text`,
 
   ipcMain.handle('native-pick-color', async () => {
     const { execFile } = require('child_process');
-    const colorPickerPath = path.join(__dirname, '..', 'native', 'color-picker');
+    const colorPickerPath = getNativeBinaryPath('color-picker');
 
     // Keep the launcher open while the native picker is focused.
     suppressBlurHide = true;
@@ -5355,10 +5404,28 @@ return appURL's |path|() as text`,
   registerGlobalShortcut(settings.globalShortcut);
   registerCommandHotkeys(settings.commandHotkeys);
 
+  // Wait for the renderer to finish loading before showing the window.
+  // Showing before load completes results in a blank/transparent frame.
+  if (mainWindow && mainWindow.webContents.isLoadingMainFrame()) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      void openLauncherFromUserEntry();
+    });
+  } else {
+    void openLauncherFromUserEntry();
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
+      // New window — wait for content to load before showing.
+      if (mainWindow && mainWindow.webContents.isLoadingMainFrame()) {
+        mainWindow.webContents.once('did-finish-load', () => {
+          void openLauncherFromUserEntry();
+        });
+        return;
+      }
     }
+    void openLauncherFromUserEntry();
   });
 });
 
