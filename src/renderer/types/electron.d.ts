@@ -116,6 +116,7 @@ export interface AppSettings {
   pinnedCommands: string[];
   recentCommands: string[];
   hasSeenOnboarding: boolean;
+  hasSeenWhisperOnboarding: boolean;
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
 }

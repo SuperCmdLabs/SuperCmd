@@ -2088,6 +2088,18 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     lastWhisperToggleAt = now;
   }
 
+  if (isWhisperCommand) {
+    const settings = loadSettings();
+    if (!settings.hasSeenWhisperOnboarding) {
+      whisperHoldRequestSeq += 1;
+      stopWhisperHoldWatcher();
+      return await openLauncherAndRunSystemCommand('system-whisper-onboarding', {
+        showWindow: true,
+        mode: 'default',
+      });
+    }
+  }
+
   if (isWhisperSpeakToggleCommand) {
     const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.');
     const holdSeq = ++whisperHoldRequestSeq;
@@ -2185,7 +2197,8 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
     commandId === 'system-search-files' ||
-    commandId === 'system-open-onboarding'
+    commandId === 'system-open-onboarding' ||
+    commandId === 'system-whisper-onboarding'
   ) {
     return await openLauncherAndRunSystemCommand(commandId, {
       showWindow: true,

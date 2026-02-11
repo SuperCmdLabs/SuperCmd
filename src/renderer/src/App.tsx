@@ -13,6 +13,7 @@ import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
 import OnboardingExtension from './OnboardingExtension';
+import WhisperOnboardingExtension from './WhisperOnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
 import SuperCommandWhisper from './SuperCommandWhisper';
 import SuperCommandSpeak from './SuperCommandSpeak';
@@ -91,6 +92,16 @@ function getCategoryLabel(category: string): string {
   }
 }
 
+function formatShortcutLabel(shortcut: string): string {
+  return String(shortcut || '')
+    .replace(/Command/g, '\u2318')
+    .replace(/Control/g, '\u2303')
+    .replace(/Alt/g, '\u2325')
+    .replace(/Shift/g, '\u21E7')
+    .replace(/Period/g, '.')
+    .replace(/\+/g, ' ');
+}
+
 function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
   if (commandId === 'system-cursor-prompt') {
     return (
@@ -133,6 +144,14 @@ function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
     return (
       <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
         <Mic className="w-3 h-3 text-sky-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-whisper-onboarding') {
+    return (
+      <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
+        <Sparkles className="w-3 h-3 text-sky-200" />
       </div>
     );
   }
@@ -351,6 +370,8 @@ const App: React.FC = () => {
   const [cursorPromptSourceText, setCursorPromptSourceText] = useState('');
   const [showWhisper, setShowWhisper] = useState(false);
   const [showSpeak, setShowSpeak] = useState(false);
+  const [showWhisperOnboarding, setShowWhisperOnboarding] = useState(false);
+  const [whisperSpeakToggleLabel, setWhisperSpeakToggleLabel] = useState('\u2318 .');
   const [speakStatus, setSpeakStatus] = useState<{
     state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
     text: string;
@@ -496,6 +517,8 @@ const App: React.FC = () => {
       setPinnedCommands(settings.pinnedCommands || []);
       setRecentCommands(settings.recentCommands || []);
       setLauncherShortcut(settings.globalShortcut || 'Command+Space');
+      const speakToggleHotkey = settings.commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.';
+      setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setShowOnboarding(!settings.hasSeenOnboarding);
     } catch (e) {
       console.error('Failed to load launcher preferences:', e);
@@ -562,6 +585,7 @@ const App: React.FC = () => {
         setShowCursorPrompt(false);
         setShowWhisper(true);
         setShowSpeak(false);
+        setShowWhisperOnboarding(false);
         setShowSnippetManager(null);
         setShowFileSearch(false);
         setShowClipboardManager(false);
@@ -576,6 +600,7 @@ const App: React.FC = () => {
         setShowCursorPrompt(false);
         setShowWhisper(false);
         setShowSpeak(true);
+        setShowWhisperOnboarding(false);
         setShowSnippetManager(null);
         setShowFileSearch(false);
         setShowClipboardManager(false);
@@ -589,6 +614,7 @@ const App: React.FC = () => {
         whisperSessionRef.current = false;
         setShowWhisper(false);
         setShowSpeak(false);
+        setShowWhisperOnboarding(false);
         setShowSnippetManager(null);
         setShowFileSearch(false);
         setShowClipboardManager(false);
@@ -608,6 +634,7 @@ const App: React.FC = () => {
 
       whisperSessionRef.current = false;
       setShowCursorPrompt(false);
+      setShowWhisperOnboarding(false);
 
       // If an extension is open, keep it alive — don't reset
       if (extensionViewRef.current) return;
@@ -1131,7 +1158,7 @@ const App: React.FC = () => {
     if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showOnboarding) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showOnboarding, restoreLauncherFocus]);
+  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
 
   const calcResult = useMemo(() => {
     return searchQuery ? tryCalculate(searchQuery) : null;
@@ -1352,8 +1379,24 @@ const App: React.FC = () => {
       setShowFileSearch(false);
       setShowWhisper(false);
       setShowSpeak(false);
+      setShowWhisperOnboarding(false);
       setAiMode(false);
       setShowOnboarding(true);
+      return true;
+    }
+    if (commandId === 'system-whisper-onboarding') {
+      whisperSessionRef.current = false;
+      setShowCursorPrompt(false);
+      setExtensionView(null);
+      setExtensionPreferenceSetup(null);
+      setShowClipboardManager(false);
+      setShowSnippetManager(null);
+      setShowFileSearch(false);
+      setShowWhisper(false);
+      setShowSpeak(false);
+      setShowOnboarding(false);
+      setAiMode(false);
+      setShowWhisperOnboarding(true);
       return true;
     }
     if (commandId === 'system-clipboard-manager') {
@@ -1367,6 +1410,7 @@ const App: React.FC = () => {
       setShowFileSearch(false);
       setShowWhisper(false);
       setShowSpeak(false);
+      setShowWhisperOnboarding(false);
       setAiMode(false);
       return true;
     }
@@ -1380,6 +1424,7 @@ const App: React.FC = () => {
       setShowFileSearch(false);
       setShowWhisper(false);
       setShowSpeak(false);
+      setShowWhisperOnboarding(false);
       setAiMode(false);
       setShowSnippetManager('search');
       return true;
@@ -1394,6 +1439,7 @@ const App: React.FC = () => {
       setShowFileSearch(false);
       setShowWhisper(false);
       setShowSpeak(false);
+      setShowWhisperOnboarding(false);
       setAiMode(false);
       setShowSnippetManager('create');
       return true;
@@ -1410,6 +1456,7 @@ const App: React.FC = () => {
       setShowFileSearch(true);
       setShowWhisper(false);
       setShowSpeak(false);
+      setShowWhisperOnboarding(false);
       return true;
     }
     if (commandId === 'system-cursor-prompt') {
@@ -1426,8 +1473,15 @@ const App: React.FC = () => {
       setShowSnippetManager(null);
       setShowFileSearch(false);
       setAiMode(false);
-      setShowWhisper(true);
+      setShowWhisperOnboarding(false);
       setShowSpeak(false);
+      const settings = (await window.electron.getSettings()) as AppSettings;
+      if (!settings.hasSeenWhisperOnboarding) {
+        setShowWhisperOnboarding(true);
+        setShowWhisper(false);
+      } else {
+        setShowWhisper(true);
+      }
       return true;
     }
     if (commandId === 'system-supercommand-speak') {
@@ -1442,6 +1496,7 @@ const App: React.FC = () => {
       setAiMode(false);
       setShowWhisper(false);
       setShowSpeak(true);
+      setShowWhisperOnboarding(false);
       return true;
     }
     if (commandId === 'system-supercommand-speak-close') {
@@ -2326,6 +2381,31 @@ const App: React.FC = () => {
           onComplete={async () => {
             await window.electron.saveSettings({ hasSeenOnboarding: true });
             setShowOnboarding(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </>
+    );
+  }
+
+  if (showWhisperOnboarding) {
+    return (
+      <>
+        {alwaysMountedRunners}
+        <WhisperOnboardingExtension
+          speakToggleShortcutLabel={whisperSpeakToggleLabel}
+          onClose={() => {
+            setShowWhisperOnboarding(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+          onComplete={async () => {
+            await window.electron.saveSettings({ hasSeenWhisperOnboarding: true });
+            setShowWhisperOnboarding(false);
+            setShowWhisper(true);
             setSearchQuery('');
             setSelectedIndex(0);
             setTimeout(() => inputRef.current?.focus(), 50);

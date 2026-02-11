@@ -278,7 +278,7 @@ kbd {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
 }
 
@@ -330,7 +330,7 @@ kbd {
 .whisper-widget-shell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
   pointer-events: auto;
 }
 
@@ -355,13 +355,13 @@ body.sc-detached-window .whisper-shortcut-hint {
 }
 
 .whisper-side-button {
-  height: 26px;
+  height: 14px;
   border-radius: 999px;
-  border: 1px solid rgba(198, 203, 208, 0.26);
-  background: rgba(25, 27, 31, 0.7);
-  color: rgba(226, 230, 235, 0.9);
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid rgba(203, 208, 214, 0.26);
+  background: rgba(20, 22, 28, 0.86);
+  color: rgba(220, 225, 231, 0.9);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -373,26 +373,16 @@ body.sc-detached-window .whisper-shortcut-hint {
   border-color: rgba(208, 213, 218, 0.42);
 }
 
-.whisper-stop-button {
-  position: relative;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid rgba(196, 201, 206, 0.3);
-  background: rgba(34, 37, 42, 0.8);
-  box-shadow: 0 0 0 1px rgba(124, 130, 136, 0.16);
-}
-
 .whisper-shortcut-hint {
   position: absolute;
   left: 50%;
-  top: -22px;
+  top: -16px;
   transform: translateX(-50%);
   padding: 0;
   border: none;
   background: transparent;
-  color: rgba(201, 206, 212, 0.9);
-  font-size: 10px;
+  color: rgba(197, 203, 210, 0.9);
+  font-size: 8px;
   line-height: 1;
   white-space: nowrap;
   opacity: 0;
@@ -404,39 +394,8 @@ body.sc-detached-window .whisper-shortcut-hint {
   opacity: 1;
 }
 
-.whisper-stop-button:hover {
-  background: rgba(42, 46, 52, 0.88);
-  border-color: rgba(208, 213, 218, 0.42);
-}
-
-.whisper-stop-button.is-active {
-  border: none;
-  background: #f44444;
-  box-shadow: 0 0 0 1px rgba(255, 84, 84, 0.28), 0 5px 14px rgba(244, 68, 68, 0.35);
-}
-
-.whisper-stop-button.is-active:hover {
-  background: #ff5656;
-  border-color: transparent;
-}
-
-.whisper-record-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: #ff6161;
-  box-shadow: 0 0 0 1px rgba(255, 97, 97, 0.28), 0 0 8px rgba(255, 97, 97, 0.22);
-}
-
-.whisper-stop-square {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  background: #ffffff;
-}
-
 .whisper-close-button {
-  width: 26px;
+  width: 14px;
   padding: 0;
   opacity: 0;
   pointer-events: none;
@@ -448,9 +407,9 @@ body.sc-detached-window .whisper-shortcut-hint {
 }
 
 .whisper-close-glyph {
-  font-size: 16px;
+  font-size: 10px;
   line-height: 1;
-  transform: translateY(-1px);
+  transform: translateY(-0.5px);
 }
 
 .whisper-wave.is-listening {
@@ -463,26 +422,62 @@ body.sc-detached-window .whisper-shortcut-hint {
 }
 
 .whisper-wave-standalone {
-  width: 150px;
-  min-width: 150px;
-  height: 34px;
-  backdrop-filter: blur(20px) saturate(120%);
-  -webkit-backdrop-filter: blur(20px) saturate(120%);
+  position: relative;
+  width: 44px;
+  min-width: 44px;
+  height: 10px;
+  padding: 1px 3px;
+  gap: 2px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background:
+    radial-gradient(130% 130% at 100% 0%, rgba(35, 76, 126, 0.16), transparent 54%),
+    radial-gradient(120% 120% at 0% 100%, rgba(52, 107, 77, 0.12), transparent 58%),
+    linear-gradient(180deg, rgba(6, 8, 12, 0.96), rgba(4, 6, 9, 0.95));
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.14) inset,
+    0 8px 18px rgba(0, 0, 0, 0.52);
+  transition:
+    width 160ms ease,
+    min-width 160ms ease,
+    height 160ms ease,
+    padding 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.whisper-widget-shell:hover .whisper-wave-standalone,
+.whisper-wave-standalone.is-listening,
+.whisper-wave-standalone.is-processing {
+  width: 88px;
+  min-width: 88px;
+  height: 22px;
+  padding: 4px 7px;
 }
 
 .whisper-wave-bar {
-  width: 2px;
+  width: 3px;
   border-radius: 999px;
   background: rgba(216, 220, 224, 0.92);
-  transition: height 100ms linear, opacity 100ms linear;
-  opacity: 0.94;
+  transition: height 100ms linear, opacity 120ms ease, transform 120ms ease;
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.whisper-widget-shell:hover .whisper-wave-bar,
+.whisper-wave-standalone.is-listening .whisper-wave-bar,
+.whisper-wave-standalone.is-processing .whisper-wave-bar {
+  opacity: 0.92;
+  transform: scale(1);
 }
 
 .whisper-processing-loader {
-  width: 14px;
-  height: 14px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
-  border: 2px solid rgba(240, 244, 248, 0.24);
+  border: 1.5px solid rgba(240, 244, 248, 0.24);
   border-top-color: rgba(240, 244, 248, 0.96);
   animation: whisper-spin 0.85s linear infinite;
 }
@@ -722,18 +717,21 @@ body.sc-detached-window .speak-widget-shell {
   }
 
   .whisper-widget-shell {
-    gap: 6px;
-  }
-
-  .whisper-stop-button {
-    width: 28px;
-    height: 28px;
+    gap: 2px;
   }
 
   .whisper-wave-standalone {
-    width: 160px;
-    min-width: 160px;
-    height: 42px;
+    width: 40px;
+    min-width: 40px;
+    height: 10px;
+  }
+
+  .whisper-widget-shell:hover .whisper-wave-standalone,
+  .whisper-wave-standalone.is-listening,
+  .whisper-wave-standalone.is-processing {
+    width: 80px;
+    min-width: 80px;
+    height: 20px;
   }
 
   .speak-widget-shell {

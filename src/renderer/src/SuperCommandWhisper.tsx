@@ -188,6 +188,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
   const liveRefineSeqRef = useRef(0);
   const lastDebouncedRefineInputRef = useRef('');
   const barNoiseRef = useRef<number[]>(Array.from({ length: BAR_COUNT }, () => 0));
+  const cueAudioCtxRef = useRef<AudioContext | null>(null);
 
   // Audio visualizer refs
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -323,6 +324,31 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
       return;
     }
     run();
+  }, []);
+
+  const playRecordingCue = useCallback((kind: 'start' | 'end') => {
+    try {
+      const AudioContextCtor = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextCtor) return;
+      const ctx = cueAudioCtxRef.current || new AudioContextCtor();
+      cueAudioCtxRef.current = ctx as AudioContext;
+      if (ctx.state === 'suspended') {
+        void ctx.resume().catch(() => {});
+      }
+
+      const now = ctx.currentTime + 0.005;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = kind === 'start' ? 780 : 560;
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.018, now + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.13);
+    } catch {}
   }, []);
 
   const resolveSessionConfig = useCallback(async (): Promise<{ backend: WhisperBackend; language: string }> => {
@@ -728,6 +754,9 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
 
   const finalizeAndClose = useCallback(async (closeAfter = true) => {
     if (finalizingRef.current) return;
+    if (whisperStateRef.current === 'listening') {
+      playRecordingCue('end');
+    }
     finalizingRef.current = true;
     // Invalidate any in-flight startListening async work.
     startRequestSeqRef.current += 1;
@@ -884,7 +913,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
     } finally {
       forceStopCapture();
     }
-  }, [autoPasteAndClose, onClose, stopVisualizer, sendTranscription, refineAndApplyLiveTranscript, applyLiveTranscriptText, stopNativeSilenceWatchdog, stopNativeProcessTimer, flushNativeCurrentPartial, forceStopCapture]);
+  }, [autoPasteAndClose, onClose, stopVisualizer, sendTranscription, refineAndApplyLiveTranscript, applyLiveTranscriptText, stopNativeSilenceWatchdog, stopNativeProcessTimer, flushNativeCurrentPartial, forceStopCapture, playRecordingCue]);
 
   // ─── Start Listening ───────────────────────────────────────────────
 
@@ -970,6 +999,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         recorder.onstart = () => {
           if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) return;
           setState('listening');
+          playRecordingCue('start');
           setStatusText(
             PUSH_TO_TALK_MODE
               ? 'Listening... release shortcut to process.'
@@ -1014,6 +1044,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
 
           if (data.ready) {
             setState('listening');
+            playRecordingCue('start');
             setStatusText(
               PUSH_TO_TALK_MODE
                 ? 'Listening... release shortcut to process.'
@@ -1102,7 +1133,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
       setErrorText('Allow microphone permission to use SuperCommand Whisper.');
       stopVisualizer();
     }
-  }, [state, startVisualizer, stopVisualizer, restoreEditorFocusOnce, startPeriodicTranscription, finalizeAndClose, resolveSessionConfig, startNativeSilenceWatchdog, stopNativeSilenceWatchdog, stopNativeProcessTimer, scheduleNativeProcessTimer, flushNativeCurrentPartial, stopRecording]);
+  }, [state, startVisualizer, stopVisualizer, restoreEditorFocusOnce, startPeriodicTranscription, finalizeAndClose, resolveSessionConfig, startNativeSilenceWatchdog, stopNativeSilenceWatchdog, stopNativeProcessTimer, scheduleNativeProcessTimer, flushNativeCurrentPartial, stopRecording, playRecordingCue]);
 
   // ─── Effects ───────────────────────────────────────────────────────
 
@@ -1191,6 +1222,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
 
   const listening = state === 'listening';
   const processing = state === 'processing';
+  const dotMode = !listening && !processing;
 
   if (typeof document === 'undefined') return null;
   const target = portalTarget || document.body;
@@ -1199,38 +1231,18 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
   return createPortal(
     <div className="whisper-widget-host">
       <div className="whisper-widget-shell">
-        <button
-          type="button"
-          className={`whisper-side-button whisper-stop-button ${listening || processing ? 'is-active' : 'is-idle'}`}
-          onClick={() => {
-            if (listening || processing) {
-              void finalizeAndClose(false);
-            } else {
-              void startListening();
-            }
-          }}
-          aria-label={listening || processing ? `Stop listening (${speakToggleShortcutLabel})` : `Start listening (${speakToggleShortcutLabel})`}
-          title={listening || processing ? `Stop (${speakToggleShortcutLabel})` : `Start (${speakToggleShortcutLabel})`}
-        >
-          <span className="whisper-shortcut-hint">{speakToggleShortcutLabel}</span>
-          {listening || processing ? (
-            <span className="whisper-stop-square" />
-          ) : (
-            <span className="whisper-record-dot" />
-          )}
-        </button>
-
         <div
           className={`whisper-wave whisper-wave-standalone ${listening ? 'is-listening' : ''} ${processing ? 'is-processing' : ''}`}
           aria-hidden="true"
         >
+          <span className="whisper-shortcut-hint">{speakToggleShortcutLabel}</span>
           {processing ? (
             <span className="whisper-processing-loader" />
           ) : (
             waveBars.map((value, index) => {
               const profile = BAR_HEIGHT_PROFILE[index];
-              const minHeight = 4 + Math.round(profile * 5);
-              const amplitude = 6 + Math.round(profile * 12);
+              const minHeight = dotMode ? 3 : 3 + Math.round(profile * 2);
+              const amplitude = dotMode ? 0 : 2 + Math.round(profile * 5);
               return (
                 <span
                   key={`bar-${index}`}

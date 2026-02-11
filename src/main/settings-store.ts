@@ -33,6 +33,7 @@ export interface AppSettings {
   pinnedCommands: string[];
   recentCommands: string[];
   hasSeenOnboarding: boolean;
+  hasSeenWhisperOnboarding: boolean;
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
 }
@@ -66,6 +67,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   pinnedCommands: [],
   recentCommands: [],
   hasSeenOnboarding: false,
+  hasSeenWhisperOnboarding: false,
   ai: { ...DEFAULT_AI_SETTINGS },
 };
 
@@ -113,6 +115,8 @@ export function loadSettings(): AppSettings {
       // Existing users with older settings should not be forced into onboarding.
       hasSeenOnboarding:
         parsed.hasSeenOnboarding ?? true,
+      hasSeenWhisperOnboarding:
+        parsed.hasSeenWhisperOnboarding ?? false,
       ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
       commandMetadata: parsed.commandMetadata ?? {},
     };

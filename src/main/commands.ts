@@ -668,6 +668,12 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-whisper-onboarding',
+      title: 'SuperCommand Whisper Onboarding',
+      keywords: ['whisper', 'onboarding', 'dictation', 'voice', 'tutorial', 'hotkey', 'practice'],
+      category: 'system',
+    },
+    {
       id: 'system-supercommand-speak',
       title: 'SuperCommand Speak',
       keywords: ['speak', 'tts', 'read', 'selected text', 'edge-tts', 'speechify', 'jarvis', 'supercommand'],
