@@ -188,6 +188,7 @@ export interface ElectronAPI {
   setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean) => void;
   onWhisperStopAndClose: (callback: () => void) => (() => void);
   onWhisperStartListening: (callback: () => void) => (() => void);
+  onWhisperStopListening: (callback: () => void) => (() => void);
   onWhisperToggleListening: (callback: () => void) => (() => void);
   onOAuthCallback: (callback: (url: string) => void) => void;
   onSpeakStatus: (callback: (payload: {
@@ -341,7 +342,7 @@ export interface ElectronAPI {
     transcript: string
   ) => Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }>;
   whisperDebugLog: (tag: string, message: string, data?: any) => void;
-  whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string }) => Promise<string>;
+  whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }) => Promise<string>;
   whisperStartNative: (language?: string) => Promise<void>;
   whisperStopNative: () => Promise<void>;
   onWhisperNativeChunk: (callback: (data: {

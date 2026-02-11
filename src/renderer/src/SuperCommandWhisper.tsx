@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { AppSettings } from '../types/electron';
 
 interface SuperCommandWhisperProps {
   onClose: () => void;
@@ -12,6 +11,8 @@ type WhisperState = 'idle' | 'listening' | 'processing' | 'error';
 // 'whisper' = OpenAI Whisper API (needs API key)
 // 'native'  = macOS SFSpeechRecognizer (no API key needed, like Chrome)
 type WhisperBackend = 'whisper' | 'native';
+type NativeFlushReason = 'timer' | 'silence' | 'final' | 'stop' | 'ended';
+type NativeQueuedSuffix = { text: string; attempts: number; reason: NativeFlushReason };
 
 const BAR_HEIGHT_PROFILE = [
   0.45, 0.62, 0.52, 0.58, 0.74, 0.7, 1.0, 0.7, 0.58, 0.52, 0.74, 0.62, 0.45,
@@ -19,6 +20,12 @@ const BAR_HEIGHT_PROFILE = [
 const BAR_COUNT = BAR_HEIGHT_PROFILE.length;
 const BASE_WAVE = BAR_HEIGHT_PROFILE.map((profile) => 0.08 + profile * 0.05);
 const LIVE_REFINE_DEBOUNCE_MS = 1000;
+const NATIVE_PROCESS_DEBOUNCE_MS = 1000;
+const NATIVE_SILENCE_FLUSH_MS = 60_000;
+const NATIVE_SILENCE_POLL_MS = 1000;
+const NATIVE_MAX_TYPE_RETRIES = 2;
+const NATIVE_FINAL_DRAIN_TIMEOUT_MS = 3000;
+const PUSH_TO_TALK_MODE = true;
 
 function formatShortcutLabel(shortcut: string): string {
   return String(shortcut || '')
@@ -100,6 +107,32 @@ function computeAppendOnlyDelta(previous: string, next: string): string {
   return '';
 }
 
+function extractStrictSuffix(previousRaw: string, nextRaw: string): string {
+  const prev = normalizeTranscript(previousRaw);
+  const next = normalizeTranscript(nextRaw);
+  if (!next) return '';
+  if (!prev) return next;
+  if (next === prev) return '';
+
+  if (next.startsWith(prev)) {
+    return normalizeTranscript(next.slice(prev.length));
+  }
+
+  const prevWords = prev.split(/\s+/);
+  const nextWords = next.split(/\s+/);
+  const maxOverlap = Math.min(24, prevWords.length, nextWords.length);
+  for (let size = maxOverlap; size >= 2; size -= 1) {
+    const prevTail = prevWords.slice(prevWords.length - size).join(' ').toLowerCase();
+    const nextHead = nextWords.slice(0, size).join(' ').toLowerCase();
+    if (prevTail === nextHead) {
+      return normalizeTranscript(nextWords.slice(size).join(' '));
+    }
+  }
+
+  // Ambiguous rewrite: do not replay.
+  return '';
+}
+
 function formatDeltaForAppend(previous: string, rawDelta: string): string {
   const prev = String(previous || '');
   const delta = String(rawDelta || '');
@@ -140,6 +173,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
   const [waveBars, setWaveBars] = useState<number[]>(BASE_WAVE);
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
   const [speakToggleShortcutLabel, setSpeakToggleShortcutLabel] = useState('\u2318 .');
+  const speakToggleShortcutRef = useRef('Command+.');
 
   // Which backend to use — determined on settings load
   const backendRef = useRef<WhisperBackend>('native');
@@ -165,16 +199,24 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
   // MediaRecorder refs (Whisper API backend)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const recorderMimeTypeRef = useRef('audio/webm');
+  const lastTranscribedChunkCountRef = useRef(0);
   const periodicTimerRef = useRef<number | null>(null);
   const transcribeInFlightRef = useRef(false);
   const startRequestSeqRef = useRef(0);
+  const whisperStateRef = useRef<WhisperState>('idle');
 
   // Native backend refs
   const nativeChunkDisposerRef = useRef<(() => void) | null>(null);
-  // Accumulated text from finalized recognition sessions (native backend).
-  // When SFSpeechRecognizer finalizes an utterance and restarts, this holds
-  // what was captured so far so the next session's partials can be prepended.
-  const committedTextRef = useRef('');
+  const nativeProcessTimerRef = useRef<number | null>(null);
+  const nativeSilenceTimerRef = useRef<number | null>(null);
+  const nativeLastTranscriptAtRef = useRef(0);
+  const nativeRawAnchorRef = useRef('');
+  const nativeLastQueuedSuffixRef = useRef('');
+  const nativeCurrentPartialRef = useRef('');
+  const nativeFlushQueueRef = useRef<NativeQueuedSuffix[]>([]);
+  const nativeFlushInFlightRef = useRef(false);
+  const pushToTalkArmedRef = useRef(false);
 
   // ─── Audio Visualizer ──────────────────────────────────────────────
 
@@ -283,6 +325,29 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
     run();
   }, []);
 
+  const resolveSessionConfig = useCallback(async (): Promise<{ backend: WhisperBackend; language: string }> => {
+    try {
+      const settings = await window.electron.getSettings();
+      const language = settings.ai.speechLanguage || 'en-US';
+      setSpeechLanguage(language);
+      const speakToggleHotkey = settings.commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.';
+      speakToggleShortcutRef.current = speakToggleHotkey;
+      setSpeakToggleShortcutLabel(formatShortcutLabel(speakToggleHotkey));
+
+      const sttModel = String(settings.ai.speechToTextModel || 'native');
+      const wantsOpenAI = sttModel.startsWith('openai-');
+      const wantsElevenLabs = sttModel.startsWith('elevenlabs-');
+      const canUseCloud =
+        (wantsOpenAI && !!settings.ai.openaiApiKey) ||
+        (wantsElevenLabs && !!settings.ai.elevenlabsApiKey);
+      const backend: WhisperBackend = canUseCloud ? 'whisper' : 'native';
+      backendRef.current = backend;
+      return { backend, language };
+    } catch {
+      return { backend: backendRef.current, language: speechLanguage || 'en-US' };
+    }
+  }, [speechLanguage]);
+
   const autoPasteAndClose = useCallback(async (text: string) => {
     const normalized = normalizeTranscript(text);
     if (!normalized) {
@@ -300,6 +365,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
   // ─── Live typing helper (debounced + refined) ──────────────────────
 
   const applyLiveTranscriptText = useCallback((nextText: string) => {
+    if (PUSH_TO_TALK_MODE) return;
     const normalizedNext = normalizeTranscript(nextText);
     if (!normalizedNext) return;
 
@@ -314,7 +380,8 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         return;
       }
 
-      restoreEditorFocusOnce();
+      // Re-focus target app before each typing step (stop button/hotkey can steal focus).
+      await window.electron.restoreLastFrontmostApp().catch(() => false);
       const typed = await window.electron.typeTextLive(appendText);
       if (typed) {
         liveTypedTextRef.current = normalizedNext;
@@ -348,6 +415,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
   }, [applyLiveTranscriptText]);
 
   const scheduleDebouncedLiveRefine = useCallback(() => {
+    if (PUSH_TO_TALK_MODE) return;
     if (finalizingRef.current) return;
     if (liveRefineTimerRef.current !== null) {
       window.clearTimeout(liveRefineTimerRef.current);
@@ -362,23 +430,202 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
     }, LIVE_REFINE_DEBOUNCE_MS);
   }, [refineAndApplyLiveTranscript]);
 
-  const handleTranscriptUpdate = useCallback((fullTranscript: string) => {
-    if (!fullTranscript) return;
+  const processNativeFlushQueue = useCallback(async () => {
+    if (nativeFlushInFlightRef.current) return;
+    nativeFlushInFlightRef.current = true;
+    try {
+      while (nativeFlushQueueRef.current.length > 0) {
+        const current = nativeFlushQueueRef.current[0];
+        const suffix = normalizeTranscript(current?.text || '');
+        if (!suffix) {
+          nativeFlushQueueRef.current.shift();
+          continue;
+        }
 
-    combinedTranscriptRef.current = fullTranscript;
-    scheduleDebouncedLiveRefine();
-  }, [scheduleDebouncedLiveRefine]);
+        const previouslyTyped = normalizeTranscript(liveTypedTextRef.current);
+        const appendText = formatDeltaForAppend(previouslyTyped, suffix);
+        if (!appendText) {
+          nativeFlushQueueRef.current.shift();
+          window.electron.whisperDebugLog('result', 'native suffix dropped', {
+            reason: current.reason,
+            raw_len: normalizeTranscript(nativeRawAnchorRef.current).length,
+            delta_len: suffix.length,
+            queue_len: nativeFlushQueueRef.current.length,
+            typed_ok: false,
+          });
+          continue;
+        }
+
+        let typedOk = false;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          await window.electron.restoreLastFrontmostApp().catch(() => false);
+          if (attempt > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 70));
+          }
+          typedOk = await window.electron.typeTextLive(appendText);
+          if (typedOk) break;
+        }
+
+        if (typedOk) {
+          nativeFlushQueueRef.current.shift();
+          const nextTyped = normalizeTranscript(`${previouslyTyped}${appendText}`);
+          liveTypedTextRef.current = nextTyped;
+          combinedTranscriptRef.current = nextTyped;
+          setErrorText('');
+          window.electron.whisperDebugLog('result', 'native suffix typed', {
+            reason: current.reason,
+            raw_len: normalizeTranscript(nativeRawAnchorRef.current).length,
+            delta_len: suffix.length,
+            queue_len: nativeFlushQueueRef.current.length,
+            typed_ok: true,
+          });
+          continue;
+        }
+
+        current.attempts += 1;
+        window.electron.whisperDebugLog('error', 'native suffix typing failed', {
+          reason: current.reason,
+          raw_len: normalizeTranscript(nativeRawAnchorRef.current).length,
+          delta_len: suffix.length,
+          queue_len: nativeFlushQueueRef.current.length,
+          typed_ok: false,
+          attempts: current.attempts,
+        });
+        setErrorText('Live typing failed for one chunk. Retrying...');
+        if (current.attempts >= NATIVE_MAX_TYPE_RETRIES) {
+          nativeFlushQueueRef.current.shift();
+          window.electron.whisperDebugLog('error', 'native suffix dropped after retries', {
+            reason: current.reason,
+            raw_len: normalizeTranscript(nativeRawAnchorRef.current).length,
+            delta_len: suffix.length,
+            queue_len: nativeFlushQueueRef.current.length,
+            typed_ok: false,
+          });
+          continue;
+        }
+
+        // Requeue the failed chunk to the back and pause this cycle.
+        nativeFlushQueueRef.current.push(nativeFlushQueueRef.current.shift()!);
+        window.setTimeout(() => { void processNativeFlushQueue(); }, 220);
+        break;
+      }
+    } finally {
+      nativeFlushInFlightRef.current = false;
+    }
+  }, []);
+
+  const enqueueNativeSuffix = useCallback((reason: NativeFlushReason, rawSnapshot: string) => {
+    const nextRaw = normalizeTranscript(rawSnapshot);
+    if (!nextRaw) return;
+    const prevRaw = normalizeTranscript(nativeRawAnchorRef.current);
+    if (nextRaw === prevRaw) return;
+
+    const suffix = extractStrictSuffix(prevRaw, nextRaw);
+    nativeRawAnchorRef.current = nextRaw;
+
+    const normalizedSuffix = normalizeTranscript(suffix);
+    window.electron.whisperDebugLog('result', 'native suffix extracted', {
+      reason,
+      raw_len: nextRaw.length,
+      delta_len: normalizedSuffix.length,
+      queue_len: nativeFlushQueueRef.current.length,
+      typed_ok: false,
+    });
+    if (!normalizedSuffix) return;
+
+    if (normalizedSuffix === normalizeTranscript(nativeLastQueuedSuffixRef.current)) {
+      window.electron.whisperDebugLog('result', 'native suffix deduped', {
+        reason,
+        raw_len: nextRaw.length,
+        delta_len: normalizedSuffix.length,
+        queue_len: nativeFlushQueueRef.current.length,
+        typed_ok: false,
+      });
+      return;
+    }
+
+    nativeLastQueuedSuffixRef.current = normalizedSuffix;
+    nativeFlushQueueRef.current.push({ text: normalizedSuffix, attempts: 0, reason });
+    window.electron.whisperDebugLog('result', 'native suffix queued', {
+      reason,
+      raw_len: nextRaw.length,
+      delta_len: normalizedSuffix.length,
+      queue_len: nativeFlushQueueRef.current.length,
+      typed_ok: false,
+    });
+    void processNativeFlushQueue();
+  }, [processNativeFlushQueue]);
+
+  const stopNativeSilenceWatchdog = useCallback(() => {
+    if (nativeSilenceTimerRef.current !== null) {
+      window.clearInterval(nativeSilenceTimerRef.current);
+      nativeSilenceTimerRef.current = null;
+    }
+  }, []);
+
+  const stopNativeProcessTimer = useCallback(() => {
+    if (nativeProcessTimerRef.current !== null) {
+      window.clearTimeout(nativeProcessTimerRef.current);
+      nativeProcessTimerRef.current = null;
+    }
+  }, []);
+
+  const flushNativeCurrentPartial = useCallback((reason: NativeFlushReason) => {
+    const pending = normalizeTranscript(nativeCurrentPartialRef.current);
+    if (!pending) return;
+    enqueueNativeSuffix(reason, pending);
+    nativeCurrentPartialRef.current = '';
+    nativeLastTranscriptAtRef.current = Date.now();
+    console.log(`[Whisper][native] finalized (${reason}): "${pending}"`);
+    window.electron.whisperDebugLog('result', 'native transcript', {
+      transcript: pending,
+      isFinal: true,
+      synthesized: true,
+      reason,
+      raw_len: pending.length,
+      delta_len: 0,
+      queue_len: nativeFlushQueueRef.current.length,
+      typed_ok: false,
+    });
+  }, [enqueueNativeSuffix]);
+
+  const scheduleNativeProcessTimer = useCallback(() => {
+    if (PUSH_TO_TALK_MODE) return;
+    if (nativeProcessTimerRef.current !== null) return;
+    nativeProcessTimerRef.current = window.setTimeout(() => {
+      nativeProcessTimerRef.current = null;
+      if (finalizingRef.current) return;
+      if (whisperStateRef.current !== 'listening') return;
+      flushNativeCurrentPartial('timer');
+    }, NATIVE_PROCESS_DEBOUNCE_MS);
+  }, [flushNativeCurrentPartial]);
+
+  const startNativeSilenceWatchdog = useCallback(() => {
+    if (PUSH_TO_TALK_MODE) return;
+    stopNativeSilenceWatchdog();
+    nativeSilenceTimerRef.current = window.setInterval(() => {
+      if (finalizingRef.current) return;
+      if (whisperStateRef.current !== 'listening') return;
+      const partial = normalizeTranscript(nativeCurrentPartialRef.current);
+      if (!partial) return;
+      const lastAt = nativeLastTranscriptAtRef.current;
+      if (!lastAt) return;
+      if (Date.now() - lastAt < NATIVE_SILENCE_FLUSH_MS) return;
+      flushNativeCurrentPartial('silence');
+    }, NATIVE_SILENCE_POLL_MS);
+  }, [flushNativeCurrentPartial, stopNativeSilenceWatchdog]);
 
   // ─── Whisper API backend ───────────────────────────────────────────
 
   const sendTranscription = useCallback(async (isFinal: boolean) => {
-    if (audioChunksRef.current.length === 0) return;
-    const chunks = audioChunksRef.current.splice(0, audioChunksRef.current.length);
+    if (backendRef.current !== 'whisper') return;
+    const chunkCount = audioChunksRef.current.length;
+    if (chunkCount === 0) return;
+    if (!isFinal && chunkCount <= lastTranscribedChunkCountRef.current) return;
 
-    const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+    // Use a full session snapshot so each upload includes container headers.
+    const audioBlob = new Blob(audioChunksRef.current, { type: recorderMimeTypeRef.current || 'audio/webm' });
     if (audioBlob.size < 1000 && !isFinal) {
-      // Too small to send yet; prepend back in front of any newly queued chunks.
-      audioChunksRef.current = [...chunks, ...audioChunksRef.current];
       return;
     }
 
@@ -389,9 +636,13 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
       console.log(`[Whisper] Sending ${arrayBuffer.byteLength} bytes for transcription (final=${isFinal})`);
       window.electron.whisperDebugLog('transcribe', `Sending ${arrayBuffer.byteLength} bytes`, { isFinal });
 
-      const text = await window.electron.whisperTranscribe(arrayBuffer, { language });
+      const text = await window.electron.whisperTranscribe(arrayBuffer, {
+        language,
+        mimeType: recorderMimeTypeRef.current || 'audio/webm',
+      });
 
       if (!text || (finalizingRef.current && !isFinal)) return;
+      lastTranscribedChunkCountRef.current = chunkCount;
 
       const normalized = normalizeTranscript(text);
       if (!normalized) return;
@@ -406,10 +657,6 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         scheduleDebouncedLiveRefine();
       }
     } catch (err: any) {
-      if (!isFinal) {
-        // Preserve unsent audio by putting failed batch back at the front.
-        audioChunksRef.current = [...chunks, ...audioChunksRef.current];
-      }
       const message = err?.message || 'Transcription failed';
       console.error('[Whisper] Transcription error:', message);
       window.electron.whisperDebugLog('error', 'transcription error', { error: message });
@@ -420,6 +667,11 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         setErrorText(message);
         stopRecording();
         stopVisualizer();
+      } else if (message.includes('Whisper model is set to Native')) {
+        backendRef.current = 'native';
+        setState('idle');
+        setStatusText('Whisper model is Native. Press start to use native dictation.');
+        setErrorText('');
       }
     }
   }, [speechLanguage, stopVisualizer, scheduleDebouncedLiveRefine]);
@@ -434,6 +686,25 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
     }
     mediaRecorderRef.current = null;
   }, []);
+
+  const forceStopCapture = useCallback(() => {
+    if (periodicTimerRef.current !== null) {
+      window.clearInterval(periodicTimerRef.current);
+      periodicTimerRef.current = null;
+    }
+    stopNativeSilenceWatchdog();
+    stopNativeProcessTimer();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try { mediaRecorderRef.current.stop(); } catch {}
+    }
+    mediaRecorderRef.current = null;
+    if (nativeChunkDisposerRef.current) {
+      nativeChunkDisposerRef.current();
+      nativeChunkDisposerRef.current = null;
+    }
+    void window.electron.whisperStopNative().catch(() => {});
+    stopVisualizer();
+  }, [stopNativeSilenceWatchdog, stopNativeProcessTimer, stopVisualizer]);
 
   const startPeriodicTranscription = useCallback(() => {
     if (periodicTimerRef.current !== null) {
@@ -470,109 +741,157 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
     }
     setState('processing');
     setStatusText('Finishing whisper...');
+    try {
+      const backend = backendRef.current;
+      const isNativeBackend = backend === 'native';
 
-    const backend = backendRef.current;
-
-    if (backend === 'whisper') {
-      // Stop periodic timer
-      if (periodicTimerRef.current !== null) {
-        window.clearInterval(periodicTimerRef.current);
-        periodicTimerRef.current = null;
-      }
-
-      // Flush remaining audio from MediaRecorder
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        try { mediaRecorderRef.current.requestData(); } catch {}
-        await new Promise<void>((resolve) => setTimeout(resolve, 200));
-        try { mediaRecorderRef.current.stop(); } catch {}
-      }
-      mediaRecorderRef.current = null;
-
-      stopVisualizer();
-
-      // Wait for any in-flight transcription
-      while (transcribeInFlightRef.current) {
-        await new Promise((r) => setTimeout(r, 50));
-      }
-
-      // Final transcription of complete audio
-      if (audioChunksRef.current.length > 0) {
-        transcribeInFlightRef.current = true;
-        try {
-          await sendTranscription(true);
-        } catch (err) {
-          console.error('[Whisper] Final transcription failed:', err);
-        } finally {
-          transcribeInFlightRef.current = false;
+      if (backend === 'whisper') {
+        // Stop periodic timer
+        if (periodicTimerRef.current !== null) {
+          window.clearInterval(periodicTimerRef.current);
+          periodicTimerRef.current = null;
         }
-      }
-    } else {
-      // native backend — stop the native process
-      if (nativeChunkDisposerRef.current) {
-        nativeChunkDisposerRef.current();
-        nativeChunkDisposerRef.current = null;
-      }
-      void window.electron.whisperStopNative().catch(() => {});
-      stopVisualizer();
-    }
 
-    await liveTypeQueueRef.current;
+        // Flush remaining audio from MediaRecorder
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          try { mediaRecorderRef.current.requestData(); } catch {}
+          await new Promise<void>((resolve) => setTimeout(resolve, 200));
+          try { mediaRecorderRef.current.stop(); } catch {}
+        }
+        mediaRecorderRef.current = null;
 
-    const baseTranscript = normalizeTranscript(combinedTranscriptRef.current);
-    if (!baseTranscript) {
+        stopVisualizer();
+
+        // Wait for any in-flight transcription
+        while (transcribeInFlightRef.current) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+
+        // Final transcription of complete audio
+        if (audioChunksRef.current.length > 0) {
+          transcribeInFlightRef.current = true;
+          try {
+            await sendTranscription(true);
+          } catch (err) {
+            console.error('[Whisper] Final transcription failed:', err);
+          } finally {
+            transcribeInFlightRef.current = false;
+          }
+        }
+      } else {
+        // native backend — stop the native process
+        stopNativeSilenceWatchdog();
+        stopNativeProcessTimer();
+        flushNativeCurrentPartial('stop');
+        const drainStartedAt = Date.now();
+        while (nativeFlushInFlightRef.current || nativeFlushQueueRef.current.length > 0) {
+          if (Date.now() - drainStartedAt > NATIVE_FINAL_DRAIN_TIMEOUT_MS) {
+            window.electron.whisperDebugLog('error', 'native final drain timeout', {
+              reason: 'stop',
+              raw_len: normalizeTranscript(nativeRawAnchorRef.current).length,
+              delta_len: 0,
+              queue_len: nativeFlushQueueRef.current.length,
+              typed_ok: false,
+            });
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 40));
+        }
+        if (nativeChunkDisposerRef.current) {
+          nativeChunkDisposerRef.current();
+          nativeChunkDisposerRef.current = null;
+        }
+        void window.electron.whisperStopNative().catch(() => {});
+        stopVisualizer();
+      }
+
+      await liveTypeQueueRef.current;
+
+      if (isNativeBackend) {
+        const combined = normalizeTranscript(combinedTranscriptRef.current);
+        const liveTyped = normalizeTranscript(liveTypedTextRef.current);
+        if (closeAfter) {
+          if (!liveTyped && combined) {
+            await autoPasteAndClose(combined);
+          } else {
+            onClose();
+          }
+        } else {
+          if (!liveTyped && combined) {
+            const pasted = await window.electron.pasteText(combined);
+            if (!pasted) {
+              await window.electron.clipboardWrite({ text: combined });
+            }
+          }
+          combinedTranscriptRef.current = '';
+          liveTypedTextRef.current = '';
+          setStatusText('Press start to begin speaking.');
+          setErrorText('');
+          setState('idle');
+          finalizingRef.current = false;
+        }
+        return;
+      }
+
+      const baseTranscript = normalizeTranscript(combinedTranscriptRef.current);
+      if (!baseTranscript) {
+        if (closeAfter) {
+          onClose();
+        } else {
+          combinedTranscriptRef.current = '';
+          liveTypedTextRef.current = '';
+          setStatusText('Press start to begin speaking.');
+          setErrorText('');
+          setState('idle');
+          finalizingRef.current = false;
+        }
+        return;
+      }
+
+      const finalTranscript = await refineAndApplyLiveTranscript(baseTranscript, true) || baseTranscript;
+      await liveTypeQueueRef.current;
+
+      const liveTyped = normalizeTranscript(liveTypedTextRef.current);
+      if (!liveTyped) {
+        if (closeAfter) {
+          await autoPasteAndClose(finalTranscript);
+        } else {
+          const pasted = await window.electron.pasteText(finalTranscript);
+          if (!pasted) {
+            await window.electron.clipboardWrite({ text: finalTranscript });
+          }
+          combinedTranscriptRef.current = '';
+          liveTypedTextRef.current = '';
+          setStatusText('Press start to begin speaking.');
+          setErrorText('');
+          setState('idle');
+          finalizingRef.current = false;
+        }
+        return;
+      }
+      applyLiveTranscriptText(finalTranscript);
+      await liveTypeQueueRef.current;
       if (closeAfter) {
         onClose();
-      } else {
-        combinedTranscriptRef.current = '';
-        liveTypedTextRef.current = '';
-        setStatusText('Press start to begin speaking.');
-        setErrorText('');
-        setState('idle');
-        finalizingRef.current = false;
+        return;
       }
-      return;
+      combinedTranscriptRef.current = '';
+      liveTypedTextRef.current = '';
+      setStatusText('Press start to begin speaking.');
+      setErrorText('');
+      setState('idle');
+      finalizingRef.current = false;
+    } finally {
+      forceStopCapture();
     }
-
-    const finalTranscript = await refineAndApplyLiveTranscript(baseTranscript, true) || baseTranscript;
-    await liveTypeQueueRef.current;
-
-    const liveTyped = normalizeTranscript(liveTypedTextRef.current);
-    if (!liveTyped) {
-      if (closeAfter) {
-        await autoPasteAndClose(finalTranscript);
-      } else {
-        const pasted = await window.electron.pasteText(finalTranscript);
-        if (!pasted) {
-          await window.electron.clipboardWrite({ text: finalTranscript });
-        }
-        combinedTranscriptRef.current = '';
-        liveTypedTextRef.current = '';
-        setStatusText('Press start to begin speaking.');
-        setErrorText('');
-        setState('idle');
-        finalizingRef.current = false;
-      }
-      return;
-    }
-    applyLiveTranscriptText(finalTranscript);
-    await liveTypeQueueRef.current;
-    if (closeAfter) {
-      onClose();
-      return;
-    }
-    combinedTranscriptRef.current = '';
-    liveTypedTextRef.current = '';
-    setStatusText('Press start to begin speaking.');
-    setErrorText('');
-    setState('idle');
-    finalizingRef.current = false;
-  }, [autoPasteAndClose, onClose, stopVisualizer, sendTranscription, refineAndApplyLiveTranscript, applyLiveTranscriptText]);
+  }, [autoPasteAndClose, onClose, stopVisualizer, sendTranscription, refineAndApplyLiveTranscript, applyLiveTranscriptText, stopNativeSilenceWatchdog, stopNativeProcessTimer, flushNativeCurrentPartial, forceStopCapture]);
 
   // ─── Start Listening ───────────────────────────────────────────────
 
   const startListening = useCallback(async () => {
     if (state === 'listening' || state === 'processing') return;
     const requestSeq = ++startRequestSeqRef.current;
+    const sessionConfig = await resolveSessionConfig();
 
     // Reset shared state
     combinedTranscriptRef.current = '';
@@ -583,8 +902,17 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
     lastDebouncedRefineInputRef.current = '';
     liveRefineSeqRef.current = 0;
     audioChunksRef.current = [];
+    recorderMimeTypeRef.current = 'audio/webm';
+    lastTranscribedChunkCountRef.current = 0;
     transcribeInFlightRef.current = false;
-    committedTextRef.current = '';
+    nativeLastTranscriptAtRef.current = 0;
+    nativeRawAnchorRef.current = '';
+    nativeLastQueuedSuffixRef.current = '';
+    nativeCurrentPartialRef.current = '';
+    nativeFlushQueueRef.current = [];
+    nativeFlushInFlightRef.current = false;
+    stopNativeSilenceWatchdog();
+    stopNativeProcessTimer();
     if (editorFocusRestoreTimerRef.current !== null) {
       window.clearTimeout(editorFocusRestoreTimerRef.current);
       editorFocusRestoreTimerRef.current = null;
@@ -602,7 +930,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
     // Optimistically flip to active state so the button toggles immediately.
     setState('listening');
 
-    const backend = backendRef.current;
+    const backend = sessionConfig.backend;
 
     try {
       // Get microphone stream for the audio visualizer
@@ -621,6 +949,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
       startVisualizer(stream);
 
       if (backend === 'whisper') {
+        stopNativeSilenceWatchdog();
         // ── Whisper API path ─────────────────────────────────────
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
           ? 'audio/webm;codecs=opus'
@@ -629,6 +958,8 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         const recorder = new MediaRecorder(stream, { mimeType });
         mediaRecorderRef.current = recorder;
         audioChunksRef.current = [];
+        recorderMimeTypeRef.current = recorder.mimeType || mimeType;
+        lastTranscribedChunkCountRef.current = 0;
 
         recorder.ondataavailable = (event: BlobEvent) => {
           if (event.data && event.data.size > 0) {
@@ -639,10 +970,16 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         recorder.onstart = () => {
           if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) return;
           setState('listening');
-          setStatusText('Listening... press shortcut again or Esc to finish.');
+          setStatusText(
+            PUSH_TO_TALK_MODE
+              ? 'Listening... release shortcut to process.'
+              : 'Listening... press shortcut again or Esc to finish.'
+          );
           console.log('[Whisper] MediaRecorder started');
           window.electron.whisperDebugLog('start', 'MediaRecorder started');
-          startPeriodicTranscription();
+          if (!PUSH_TO_TALK_MODE) {
+            startPeriodicTranscription();
+          }
         };
 
         recorder.onstop = () => {
@@ -662,9 +999,12 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         };
 
         recorder.start(500);
-        restoreEditorFocusOnce(150);
+        if (!PUSH_TO_TALK_MODE) {
+          restoreEditorFocusOnce(150);
+        }
 
       } else {
+        stopRecording();
         // ── Native macOS SFSpeechRecognizer path ─────────────────
 
         // Listen for chunks from the native process
@@ -674,9 +1014,15 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
 
           if (data.ready) {
             setState('listening');
-            setStatusText('Listening... press shortcut again or Esc to finish.');
+            setStatusText(
+              PUSH_TO_TALK_MODE
+                ? 'Listening... release shortcut to process.'
+                : 'Listening... press shortcut again or Esc to finish.'
+            );
             console.log('[Whisper][native] Ready');
             window.electron.whisperDebugLog('start', 'native speech recognizer ready');
+            nativeLastTranscriptAtRef.current = Date.now();
+            startNativeSilenceWatchdog();
             return;
           }
 
@@ -686,13 +1032,17 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
             setState('error');
             setStatusText('Speech recognition error.');
             setErrorText(data.error);
+            stopNativeSilenceWatchdog();
+            stopNativeProcessTimer();
             stopVisualizer();
             return;
           }
 
           if (data.ended) {
+            stopNativeProcessTimer();
+            flushNativeCurrentPartial('ended');
             // Process exited (e.g. silence timeout) — finalize what we have
-            if (!finalizingRef.current && combinedTranscriptRef.current) {
+            if (!finalizingRef.current && (combinedTranscriptRef.current || nativeFlushQueueRef.current.length > 0)) {
               void finalizeAndClose();
             }
             return;
@@ -700,22 +1050,27 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
 
           if (data.transcript !== undefined) {
             const normalized = normalizeTranscript(data.transcript);
+            nativeLastTranscriptAtRef.current = Date.now();
+            nativeCurrentPartialRef.current = normalized;
+            scheduleNativeProcessTimer();
             console.log(`[Whisper][native] transcript: "${normalized}" (final=${data.isFinal})`);
             window.electron.whisperDebugLog('result', 'native transcript', {
               transcript: normalized,
               isFinal: data.isFinal,
+              reason: 'raw',
+              raw_len: normalized.length,
+              delta_len: 0,
+              queue_len: nativeFlushQueueRef.current.length,
+              typed_ok: false,
             });
             if (normalized) {
-              // Compute full text: committed sessions + current session
-              const committed = committedTextRef.current;
-              const fullText = committed ? committed + ' ' + normalized : normalized;
-              handleTranscriptUpdate(fullText);
-
-              if (data.isFinal) {
-                // Set committed text SYNCHRONOUSLY so the next session's
-                // first partial (which may arrive before the queue drains)
-                // computes fullText correctly.
-                committedTextRef.current = fullText;
+              if (PUSH_TO_TALK_MODE) {
+                combinedTranscriptRef.current = normalized;
+              }
+              if (data.isFinal && !PUSH_TO_TALK_MODE) {
+                stopNativeProcessTimer();
+                flushNativeCurrentPartial('final');
+                nativeCurrentPartialRef.current = '';
               }
             }
           }
@@ -724,7 +1079,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
 
         // Start the native recognizer process
         try {
-          await window.electron.whisperStartNative(speechLanguage);
+          await window.electron.whisperStartNative(sessionConfig.language);
           if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) {
             void window.electron.whisperStopNative().catch(() => {});
             return;
@@ -737,7 +1092,9 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
           return;
         }
 
-        restoreEditorFocusOnce(150);
+        if (!PUSH_TO_TALK_MODE) {
+          restoreEditorFocusOnce(150);
+        }
       }
     } catch {
       setState('error');
@@ -745,34 +1102,24 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
       setErrorText('Allow microphone permission to use SuperCommand Whisper.');
       stopVisualizer();
     }
-  }, [state, speechLanguage, startVisualizer, stopVisualizer, restoreEditorFocusOnce, startPeriodicTranscription, handleTranscriptUpdate, finalizeAndClose]);
+  }, [state, startVisualizer, stopVisualizer, restoreEditorFocusOnce, startPeriodicTranscription, finalizeAndClose, resolveSessionConfig, startNativeSilenceWatchdog, stopNativeSilenceWatchdog, stopNativeProcessTimer, scheduleNativeProcessTimer, flushNativeCurrentPartial, stopRecording]);
 
   // ─── Effects ───────────────────────────────────────────────────────
 
   useEffect(() => {
     let cancelled = false;
-    window.electron
-      .getSettings()
-      .then((settings: AppSettings) => {
-        if (cancelled) return;
-        setSpeechLanguage(settings.ai.speechLanguage || 'en-US');
-        const speakToggleHotkey = settings.commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.';
-        setSpeakToggleShortcutLabel(formatShortcutLabel(speakToggleHotkey));
-        // Backend is controlled by Whisper model selection.
-        const sttModel = String(settings.ai.speechToTextModel || 'native');
-        const wantsOpenAI = sttModel.startsWith('openai-');
-        const wantsElevenLabs = sttModel.startsWith('elevenlabs-');
-        const canUseCloud =
-          (wantsOpenAI && !!settings.ai.openaiApiKey) ||
-          (wantsElevenLabs && !!settings.ai.elevenlabsApiKey);
-        backendRef.current = canUseCloud ? 'whisper' : 'native';
-      })
-      .catch(() => {});
+    void resolveSessionConfig().then(() => {
+      if (cancelled) return;
+    });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [resolveSessionConfig]);
+
+  useEffect(() => {
+    whisperStateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     const keyWindow = portalTarget?.ownerDocument?.defaultView || window;
@@ -781,21 +1128,38 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        pushToTalkArmedRef.current = false;
         void finalizeAndClose();
       }
     };
-
     keyWindow.addEventListener('keydown', onKeyDown);
     const disposeWhisperStop = window.electron.onWhisperStopAndClose(() => {
+      pushToTalkArmedRef.current = false;
       void finalizeAndClose();
     });
+    const disposeWhisperStopListening = window.electron.onWhisperStopListening(() => {
+      if (!PUSH_TO_TALK_MODE) return;
+      pushToTalkArmedRef.current = false;
+      if (whisperStateRef.current === 'listening') {
+        void finalizeAndClose(false);
+      }
+    });
     const disposeWhisperStart = window.electron.onWhisperStartListening(() => {
+      pushToTalkArmedRef.current = PUSH_TO_TALK_MODE;
+      const currentState = whisperStateRef.current;
+      if (currentState === 'listening' || currentState === 'processing') {
+        // Hold-to-talk: repeated keydown callbacks while key is held should not stop capture.
+        return;
+      }
       void startListening();
     });
     const disposeWhisperToggle = window.electron.onWhisperToggleListening(() => {
-      if (state === 'listening' || state === 'processing') {
+      const currentState = whisperStateRef.current;
+      if (currentState === 'listening' || currentState === 'processing') {
+        pushToTalkArmedRef.current = false;
         void finalizeAndClose(false);
       } else {
+        pushToTalkArmedRef.current = false;
         void startListening();
       }
     });
@@ -803,10 +1167,11 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
     return () => {
       keyWindow.removeEventListener('keydown', onKeyDown);
       disposeWhisperStop();
+      disposeWhisperStopListening();
       disposeWhisperStart();
       disposeWhisperToggle();
     };
-  }, [finalizeAndClose, portalTarget, startListening, state]);
+  }, [finalizeAndClose, portalTarget, startListening]);
 
   useEffect(() => {
     return () => {
@@ -818,22 +1183,9 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         window.clearTimeout(editorFocusRestoreTimerRef.current);
         editorFocusRestoreTimerRef.current = null;
       }
-      if (periodicTimerRef.current !== null) {
-        window.clearInterval(periodicTimerRef.current);
-        periodicTimerRef.current = null;
-      }
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        try { mediaRecorderRef.current.stop(); } catch {}
-      }
-      mediaRecorderRef.current = null;
-      if (nativeChunkDisposerRef.current) {
-        nativeChunkDisposerRef.current();
-        nativeChunkDisposerRef.current = null;
-      }
-      void window.electron.whisperStopNative().catch(() => {});
-      stopVisualizer();
+      forceStopCapture();
     };
-  }, [stopVisualizer]);
+  }, [forceStopCapture]);
 
   // ─── Render ────────────────────────────────────────────────────────
 
@@ -872,18 +1224,22 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
           className={`whisper-wave whisper-wave-standalone ${listening ? 'is-listening' : ''} ${processing ? 'is-processing' : ''}`}
           aria-hidden="true"
         >
-          {waveBars.map((value, index) => {
-            const profile = BAR_HEIGHT_PROFILE[index];
-            const minHeight = 5 + Math.round(profile * 7);
-            const amplitude = 8 + Math.round(profile * 18);
-            return (
-              <span
-                key={`bar-${index}`}
-                className="whisper-wave-bar"
-                style={{ height: `${minHeight + Math.round(value * amplitude)}px` }}
-              />
-            );
-          })}
+          {processing ? (
+            <span className="whisper-processing-loader" />
+          ) : (
+            waveBars.map((value, index) => {
+              const profile = BAR_HEIGHT_PROFILE[index];
+              const minHeight = 4 + Math.round(profile * 5);
+              const amplitude = 6 + Math.round(profile * 12);
+              return (
+                <span
+                  key={`bar-${index}`}
+                  className="whisper-wave-bar"
+                  style={{ height: `${minHeight + Math.round(value * amplitude)}px` }}
+                />
+              );
+            })
+          )}
         </div>
 
         <button

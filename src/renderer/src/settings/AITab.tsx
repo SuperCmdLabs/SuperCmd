@@ -112,6 +112,7 @@ const EDGE_TTS_FALLBACK_VOICES: EdgeVoiceDef[] = [
 ];
 
 const WHISPER_SPEAK_TOGGLE_COMMAND_ID = 'system-supercommand-whisper-speak-toggle';
+const WHISPER_OPEN_COMMAND_ID = 'system-supercommand-whisper';
 
 type TabId = 'api-models' | 'whisper' | 'speak';
 
@@ -660,6 +661,26 @@ const AITab: React.FC = () => {
                   </p>
                 </div>
               )}
+
+              <div className="bg-white/[0.02] rounded-md border border-white/[0.06] p-2.5 space-y-2">
+                <p className="text-[11px] text-white/45">Whisper Hotkeys</p>
+                <div>
+                  <p className="text-[11px] text-white/45 mb-1.5">Open Whisper</p>
+                  <HotkeyRecorder
+                    value={(settings.commandHotkeys || {})[WHISPER_OPEN_COMMAND_ID] || 'Command+Shift+W'}
+                    onChange={(hotkey) => { void handleWhisperHotkeyChange(WHISPER_OPEN_COMMAND_ID, hotkey); }}
+                    compact
+                  />
+                </div>
+                <div>
+                  <p className="text-[11px] text-white/45 mb-1.5">Start/Stop Speaking</p>
+                  <HotkeyRecorder
+                    value={(settings.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] || 'Command+.'}
+                    onChange={(hotkey) => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey); }}
+                    compact
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="bg-white/[0.03] rounded-lg border border-white/[0.06] p-3 space-y-3">
@@ -699,15 +720,6 @@ const AITab: React.FC = () => {
                   <p className="text-[11px] text-white/35 mt-1">Uses your current provider models.</p>
                 </div>
               )}
-
-              <div className="bg-white/[0.02] rounded-md border border-white/[0.06] p-2.5">
-                <p className="text-[11px] text-white/45 mb-1.5">Start/Stop Speaking Hotkey</p>
-                <HotkeyRecorder
-                  value={(settings.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] || 'Command+.'}
-                  onChange={(hotkey) => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey); }}
-                  compact
-                />
-              </div>
             </div>
           </div>
         )}

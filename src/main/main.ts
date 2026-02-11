@@ -206,6 +206,11 @@ let snippetExpanderProcess: any = null;
 let snippetExpanderStdoutBuffer = '';
 let nativeSpeechProcess: any = null;
 let nativeSpeechStdoutBuffer = '';
+let whisperHoldWatcherProcess: any = null;
+let whisperHoldWatcherStdoutBuffer = '';
+let whisperHoldRequestSeq = 0;
+let whisperHoldReleasedSeq = 0;
+let whisperHoldWatcherSeq = 0;
 let edgeTtsRuntime: { command: string; baseArgs: string[] } | null = null;
 type SpeakChunkPrepared = {
   index: number;
@@ -447,12 +452,26 @@ function transcribeAudioWithElevenLabs(opts: {
   apiKey: string;
   model: string;
   language?: string;
+  mimeType?: string;
 }): Promise<string> {
   const boundary = `----SuperCommandBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
   const parts: Buffer[] = [];
+  const normalized = String(opts.mimeType || '').toLowerCase();
+  const filename = normalized.includes('wav')
+    ? 'audio.wav'
+    : normalized.includes('mpeg') || normalized.includes('mp3')
+      ? 'audio.mp3'
+      : normalized.includes('mp4') || normalized.includes('m4a')
+        ? 'audio.m4a'
+        : normalized.includes('ogg') || normalized.includes('oga')
+          ? 'audio.ogg'
+          : normalized.includes('flac')
+            ? 'audio.flac'
+            : 'audio.webm';
+  const contentType = normalized || 'audio/webm';
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.webm"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`
   ));
   parts.push(opts.audioBuffer);
   parts.push(Buffer.from('\r\n'));
@@ -834,8 +853,9 @@ function normalizeAccelerator(shortcut: string): string {
   const parts = raw.split('+').map((p) => p.trim()).filter(Boolean);
   if (parts.length === 0) return raw;
   const key = parts[parts.length - 1];
-  if (key === '.') {
-    parts[parts.length - 1] = 'Period';
+  // Keep punctuation keys as punctuation for Electron accelerator parsing.
+  if (/^period$/i.test(key)) {
+    parts[parts.length - 1] = '.';
   }
   return parts.join('+');
 }
@@ -848,6 +868,148 @@ function unregisterShortcutVariants(shortcut: string): void {
   if (normalized !== raw) {
     try { globalShortcut.unregister(normalized); } catch {}
   }
+}
+
+function parseHoldShortcutConfig(shortcut: string): {
+  keyCode: number;
+  cmd: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+} | null {
+  const raw = normalizeAccelerator(shortcut);
+  if (!raw) return null;
+  const parts = raw.split('+').map((p) => p.trim().toLowerCase()).filter(Boolean);
+  if (parts.length === 0) return null;
+  const keyToken = parts[parts.length - 1];
+  const mods = new Set(parts.slice(0, -1));
+  const map: Record<string, number> = {
+    a: 0, s: 1, d: 2, f: 3, h: 4, g: 5, z: 6, x: 7, c: 8, v: 9,
+    b: 11, q: 12, w: 13, e: 14, r: 15, y: 16, t: 17, '1': 18, '2': 19,
+    '3': 20, '4': 21, '6': 22, '5': 23, '=': 24, '9': 25, '7': 26, '-': 27,
+    '8': 28, '0': 29, ']': 30, o: 31, u: 32, '[': 33, i: 34, p: 35,
+    l: 37, j: 38, "'": 39, k: 40, ';': 41, '\\': 42, ',': 43, '/': 44,
+    n: 45, m: 46, '.': 47, '`': 50,
+    period: 47, comma: 43, slash: 44, semicolon: 41, quote: 39,
+    tab: 48, space: 49, return: 36, enter: 36, escape: 53,
+  };
+  const keyCode = map[keyToken];
+  if (!Number.isFinite(keyCode)) return null;
+  return {
+    keyCode,
+    cmd: mods.has('command') || mods.has('cmd') || mods.has('meta'),
+    ctrl: mods.has('control') || mods.has('ctrl'),
+    alt: mods.has('alt') || mods.has('option'),
+    shift: mods.has('shift'),
+  };
+}
+
+function stopWhisperHoldWatcher(): void {
+  if (!whisperHoldWatcherProcess) return;
+  try { whisperHoldWatcherProcess.kill('SIGTERM'); } catch {}
+  whisperHoldWatcherProcess = null;
+  whisperHoldWatcherStdoutBuffer = '';
+  whisperHoldWatcherSeq = 0;
+}
+
+function ensureWhisperHoldWatcherBinary(): string | null {
+  const fs = require('fs');
+  const binaryPath = path.join(__dirname, '..', 'native', 'hotkey-hold-monitor');
+  if (fs.existsSync(binaryPath)) return binaryPath;
+  try {
+    const { execFileSync } = require('child_process');
+    const sourceCandidates = [
+      path.join(app.getAppPath(), 'src', 'native', 'hotkey-hold-monitor.swift'),
+      path.join(process.cwd(), 'src', 'native', 'hotkey-hold-monitor.swift'),
+      path.join(__dirname, '..', '..', 'src', 'native', 'hotkey-hold-monitor.swift'),
+    ];
+    const sourcePath = sourceCandidates.find((candidate) => fs.existsSync(candidate));
+    if (!sourcePath) {
+      console.warn('[Whisper][hold] Source file not found for hotkey-hold-monitor.swift');
+      return null;
+    }
+    fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
+    execFileSync('swiftc', [
+      '-O',
+      '-o', binaryPath,
+      sourcePath,
+      '-framework', 'CoreGraphics',
+      '-framework', 'AppKit',
+      '-framework', 'Carbon',
+    ]);
+    return binaryPath;
+  } catch (error) {
+    console.warn('[Whisper][hold] Failed to compile hotkey hold monitor:', error);
+    return null;
+  }
+}
+
+function startWhisperHoldWatcher(shortcut: string, holdSeq: number): void {
+  if (whisperHoldWatcherProcess) return;
+  const config = parseHoldShortcutConfig(shortcut);
+  if (!config) {
+    console.warn('[Whisper][hold] Unsupported shortcut for hold-to-talk:', shortcut);
+    return;
+  }
+  const binaryPath = ensureWhisperHoldWatcherBinary();
+  if (!binaryPath) {
+    console.warn('[Whisper][hold] Hold monitor binary unavailable');
+    return;
+  }
+
+  const { spawn } = require('child_process');
+  whisperHoldWatcherProcess = spawn(
+    binaryPath,
+    [
+      String(config.keyCode),
+      config.cmd ? '1' : '0',
+      config.ctrl ? '1' : '0',
+      config.alt ? '1' : '0',
+      config.shift ? '1' : '0',
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  whisperHoldWatcherSeq = holdSeq;
+  whisperHoldWatcherStdoutBuffer = '';
+
+  whisperHoldWatcherProcess.stdout.on('data', (chunk: Buffer | string) => {
+    whisperHoldWatcherStdoutBuffer += chunk.toString();
+    const lines = whisperHoldWatcherStdoutBuffer.split('\n');
+    whisperHoldWatcherStdoutBuffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const payload = JSON.parse(trimmed);
+        if (payload?.released) {
+          whisperHoldReleasedSeq = Math.max(whisperHoldReleasedSeq, holdSeq);
+          mainWindow?.webContents.send('whisper-stop-listening');
+          stopWhisperHoldWatcher();
+          return;
+        }
+      } catch {}
+    }
+  });
+
+  whisperHoldWatcherProcess.stderr.on('data', (chunk: Buffer | string) => {
+    const text = chunk.toString().trim();
+    if (text) console.warn('[Whisper][hold]', text);
+  });
+
+  whisperHoldWatcherProcess.on('error', (error: any) => {
+    console.warn('[Whisper][hold] Monitor process error:', error);
+    whisperHoldWatcherProcess = null;
+    whisperHoldWatcherStdoutBuffer = '';
+    whisperHoldWatcherSeq = 0;
+  });
+
+  whisperHoldWatcherProcess.on('exit', () => {
+    whisperHoldWatcherProcess = null;
+    whisperHoldWatcherStdoutBuffer = '';
+    if (whisperHoldWatcherSeq === holdSeq) {
+      whisperHoldWatcherSeq = 0;
+    }
+  });
 }
 
 function handleOAuthCallbackUrl(rawUrl: string): void {
@@ -1918,27 +2080,38 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
   const isSpeakCommand = commandId === 'system-supercommand-speak';
   const isCursorPromptCommand = commandId === 'system-cursor-prompt';
 
-  if (isWhisperCommand && source === 'hotkey') {
+  if (isWhisperOpenCommand && source === 'hotkey') {
     const now = Date.now();
-    if (now - lastWhisperToggleAt < 600) {
+    if (now - lastWhisperToggleAt < 450) {
       return true;
     }
     lastWhisperToggleAt = now;
   }
 
   if (isWhisperSpeakToggleCommand) {
+    const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.');
+    const holdSeq = ++whisperHoldRequestSeq;
     if (whisperOverlayVisible) {
-      mainWindow?.webContents.send('whisper-toggle-listening');
+      startWhisperHoldWatcher(speakToggleHotkey, holdSeq);
+      mainWindow?.webContents.send('whisper-start-listening');
       return true;
     }
+    startWhisperHoldWatcher(speakToggleHotkey, holdSeq);
     await openLauncherAndRunSystemCommand('system-supercommand-whisper', {
       showWindow: false,
       mode: 'default',
     });
     lastWhisperShownAt = Date.now();
-    setTimeout(() => {
-      mainWindow?.webContents.send('whisper-toggle-listening');
-    }, 180);
+    // Opening detached whisper can race with renderer listener binding;
+    // send explicit "start listening" with short retries.
+    const startDelays = [180, 340, 520];
+    startDelays.forEach((delay) => {
+      setTimeout(() => {
+        if (holdSeq !== whisperHoldRequestSeq) return;
+        if (whisperHoldReleasedSeq >= holdSeq) return;
+        mainWindow?.webContents.send('whisper-start-listening');
+      }, delay);
+    });
     return true;
   }
 
@@ -1966,6 +2139,8 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
       return true;
     }
     mainWindow?.webContents.send('whisper-stop-and-close');
+    whisperHoldRequestSeq += 1;
+    stopWhisperHoldWatcher();
     return true;
   }
   if (isCursorPromptCommand) {
@@ -2019,6 +2194,8 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
   }
   if (isWhisperOpenCommand) {
     lastWhisperShownAt = Date.now();
+    whisperHoldRequestSeq += 1;
+    stopWhisperHoldWatcher();
     return await openLauncherAndRunSystemCommand('system-supercommand-whisper', {
       showWindow: source === 'launcher',
       mode: 'default',
@@ -2881,6 +3058,9 @@ app.whenReady().then(async () => {
       whisperOverlayVisible = visible;
       if (visible) {
         lastWhisperShownAt = Date.now();
+      } else {
+        whisperHoldRequestSeq += 1;
+        stopWhisperHoldWatcher();
       }
       return;
     }
@@ -4217,7 +4397,7 @@ return appURL's |path|() as text`,
 
   ipcMain.handle(
     'whisper-transcribe',
-    async (_event: any, audioArrayBuffer: ArrayBuffer, options?: { language?: string }) => {
+    async (_event: any, audioArrayBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }) => {
       const s = loadSettings();
 
       // Parse speechToTextModel to a concrete provider model.
@@ -4228,7 +4408,9 @@ return appURL's |path|() as text`,
         provider = 'openai';
         model = 'gpt-4o-transcribe';
       } else if (sttModel === 'native') {
-        throw new Error('Whisper model is set to Native. Select an OpenAI or ElevenLabs model in Settings -> AI -> SuperCommand Whisper to use cloud transcription.');
+        // Renderer should not call cloud transcription in native mode.
+        // Return empty transcript instead of surfacing an IPC error.
+        return '';
       } else if (sttModel.startsWith('openai-')) {
         provider = 'openai';
         model = sttModel.slice('openai-'.length);
@@ -4250,10 +4432,11 @@ return appURL's |path|() as text`,
       // Convert BCP-47 (e.g. 'en-US') to ISO-639-1 (e.g. 'en')
       const rawLang = options?.language || s.ai.speechLanguage || 'en-US';
       const language = rawLang.split('-')[0].toLowerCase() || 'en';
+      const mimeType = options?.mimeType;
 
       const audioBuffer = Buffer.from(audioArrayBuffer);
 
-      console.log(`[Whisper] Transcribing ${audioBuffer.length} bytes, provider=${provider}, model=${model}, lang=${language}`);
+      console.log(`[Whisper] Transcribing ${audioBuffer.length} bytes, provider=${provider}, model=${model}, lang=${language}, mime=${mimeType || 'unknown'}`);
 
       const text = provider === 'elevenlabs'
         ? await transcribeAudioWithElevenLabs({
@@ -4261,12 +4444,14 @@ return appURL's |path|() as text`,
             apiKey: elevenLabsApiKey,
             model,
             language,
+            mimeType,
           })
         : await transcribeAudio({
             audioBuffer,
             apiKey: s.ai.openaiApiKey,
             model,
             language,
+            mimeType,
           });
 
       console.log(`[Whisper] Transcription result: "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`);
@@ -4949,6 +5134,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  stopWhisperHoldWatcher();
   stopSpeakSession({ resetStatus: false });
   stopClipboardMonitor();
   stopSnippetExpander();

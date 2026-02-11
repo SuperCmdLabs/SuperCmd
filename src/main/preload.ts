@@ -57,6 +57,13 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeListener('whisper-start-listening', listener);
     };
   },
+  onWhisperStopListening: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('whisper-stop-listening', listener);
+    return () => {
+      ipcRenderer.removeListener('whisper-stop-listening', listener);
+    };
+  },
   onWhisperToggleListening: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on('whisper-toggle-listening', listener);
@@ -322,7 +329,7 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('whisper-refine-transcript', transcript),
   whisperDebugLog: (tag: string, message: string, data?: any): void =>
     ipcRenderer.send('whisper-debug-log', { tag, message, data }),
-  whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string }): Promise<string> =>
+  whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }): Promise<string> =>
     ipcRenderer.invoke('whisper-transcribe', audioBuffer, options),
   whisperStartNative: (language?: string): Promise<void> =>
     ipcRenderer.invoke('whisper-start-native', language),

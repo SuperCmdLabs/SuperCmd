@@ -370,17 +370,29 @@ export interface TranscribeOptions {
   apiKey: string;
   model: string;
   language?: string;
+  mimeType?: string;
   signal?: AbortSignal;
+}
+
+function resolveUploadMeta(mimeType?: string): { filename: string; contentType: string } {
+  const normalized = String(mimeType || '').toLowerCase();
+  if (normalized.includes('wav')) return { filename: 'audio.wav', contentType: 'audio/wav' };
+  if (normalized.includes('mpeg') || normalized.includes('mp3')) return { filename: 'audio.mp3', contentType: 'audio/mpeg' };
+  if (normalized.includes('mp4') || normalized.includes('m4a')) return { filename: 'audio.m4a', contentType: 'audio/mp4' };
+  if (normalized.includes('ogg') || normalized.includes('oga')) return { filename: 'audio.ogg', contentType: 'audio/ogg' };
+  if (normalized.includes('flac')) return { filename: 'audio.flac', contentType: 'audio/flac' };
+  return { filename: 'audio.webm', contentType: 'audio/webm' };
 }
 
 export function transcribeAudio(opts: TranscribeOptions): Promise<string> {
   const boundary = `----SuperCommandBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+  const uploadMeta = resolveUploadMeta(opts.mimeType);
 
   const parts: Buffer[] = [];
 
   // file field
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.webm"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${uploadMeta.filename}"\r\nContent-Type: ${uploadMeta.contentType}\r\n\r\n`
   ));
   parts.push(opts.audioBuffer);
   parts.push(Buffer.from('\r\n'));

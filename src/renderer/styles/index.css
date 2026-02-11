@@ -330,7 +330,7 @@ kbd {
 .whisper-widget-shell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   pointer-events: auto;
 }
 
@@ -354,13 +354,8 @@ body.sc-detached-window .whisper-shortcut-hint {
   display: none;
 }
 
-body.sc-detached-window .whisper-close-button {
-  opacity: 1;
-  pointer-events: auto;
-}
-
 .whisper-side-button {
-  height: 30px;
+  height: 26px;
   border-radius: 999px;
   border: 1px solid rgba(198, 203, 208, 0.26);
   background: rgba(25, 27, 31, 0.7);
@@ -380,8 +375,8 @@ body.sc-detached-window .whisper-close-button {
 
 .whisper-stop-button {
   position: relative;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: 1px solid rgba(196, 201, 206, 0.3);
   background: rgba(34, 37, 42, 0.8);
@@ -441,7 +436,7 @@ body.sc-detached-window .whisper-close-button {
 }
 
 .whisper-close-button {
-  width: 30px;
+  width: 26px;
   padding: 0;
   opacity: 0;
   pointer-events: none;
@@ -468,19 +463,33 @@ body.sc-detached-window .whisper-close-button {
 }
 
 .whisper-wave-standalone {
-  width: 178px;
-  min-width: 178px;
-  height: 44px;
+  width: 150px;
+  min-width: 150px;
+  height: 34px;
   backdrop-filter: blur(20px) saturate(120%);
   -webkit-backdrop-filter: blur(20px) saturate(120%);
 }
 
 .whisper-wave-bar {
-  width: 3px;
+  width: 2px;
   border-radius: 999px;
   background: rgba(216, 220, 224, 0.92);
   transition: height 100ms linear, opacity 100ms linear;
   opacity: 0.94;
+}
+
+.whisper-processing-loader {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(240, 244, 248, 0.24);
+  border-top-color: rgba(240, 244, 248, 0.96);
+  animation: whisper-spin 0.85s linear infinite;
+}
+
+@keyframes whisper-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .whisper-mic-button {
