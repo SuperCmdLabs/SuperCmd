@@ -4,6 +4,9 @@ import { createPortal } from 'react-dom';
 interface SuperCommandWhisperProps {
   onClose: () => void;
   portalTarget?: HTMLElement | null;
+  onboardingCaptureMode?: boolean;
+  onOnboardingTranscriptAppend?: (text: string) => void;
+  coachmarkText?: string;
 }
 
 type WhisperState = 'idle' | 'listening' | 'processing' | 'error';
@@ -166,7 +169,13 @@ function formatDeltaForAppend(previous: string, rawDelta: string): string {
   return next;
 }
 
-const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, portalTarget }) => {
+const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
+  onClose,
+  portalTarget,
+  onboardingCaptureMode = false,
+  onOnboardingTranscriptAppend,
+  coachmarkText,
+}) => {
   const [state, setState] = useState<WhisperState>('idle');
   const [statusText, setStatusText] = useState('Press start to begin speaking.');
   const [errorText, setErrorText] = useState('');
@@ -381,12 +390,18 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
       return;
     }
 
+    if (onboardingCaptureMode) {
+      onOnboardingTranscriptAppend?.(normalized);
+      onClose();
+      return;
+    }
+
     const pasted = await window.electron.pasteText(normalized);
     if (!pasted) {
       await window.electron.clipboardWrite({ text: normalized });
     }
     onClose();
-  }, [onClose]);
+  }, [onClose, onboardingCaptureMode, onOnboardingTranscriptAppend]);
 
   // ─── Live typing helper (debounced + refined) ──────────────────────
 
@@ -406,14 +421,20 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         return;
       }
 
-      // Re-focus target app before each typing step (stop button/hotkey can steal focus).
-      await window.electron.restoreLastFrontmostApp().catch(() => false);
-      const typed = await window.electron.typeTextLive(appendText);
+      let typed = false;
+      if (onboardingCaptureMode) {
+        onOnboardingTranscriptAppend?.(appendText);
+        typed = true;
+      } else {
+        // Re-focus target app before each typing step (stop button/hotkey can steal focus).
+        await window.electron.restoreLastFrontmostApp().catch(() => false);
+        typed = await window.electron.typeTextLive(appendText);
+      }
       if (typed) {
         liveTypedTextRef.current = normalizedNext;
       }
     });
-  }, [restoreEditorFocusOnce]);
+  }, [onboardingCaptureMode, onOnboardingTranscriptAppend]);
 
   const refineAndApplyLiveTranscript = useCallback(async (rawTranscript: string, force = false): Promise<string> => {
     const base = normalizeTranscript(rawTranscript);
@@ -483,13 +504,18 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         }
 
         let typedOk = false;
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          await window.electron.restoreLastFrontmostApp().catch(() => false);
-          if (attempt > 0) {
-            await new Promise((resolve) => setTimeout(resolve, 70));
+        if (onboardingCaptureMode) {
+          onOnboardingTranscriptAppend?.(appendText);
+          typedOk = true;
+        } else {
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            await window.electron.restoreLastFrontmostApp().catch(() => false);
+            if (attempt > 0) {
+              await new Promise((resolve) => setTimeout(resolve, 70));
+            }
+            typedOk = await window.electron.typeTextLive(appendText);
+            if (typedOk) break;
           }
-          typedOk = await window.electron.typeTextLive(appendText);
-          if (typedOk) break;
         }
 
         if (typedOk) {
@@ -538,7 +564,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
     } finally {
       nativeFlushInFlightRef.current = false;
     }
-  }, []);
+  }, [onboardingCaptureMode, onOnboardingTranscriptAppend]);
 
   const enqueueNativeSuffix = useCallback((reason: NativeFlushReason, rawSnapshot: string) => {
     const nextRaw = normalizeTranscript(rawSnapshot);
@@ -847,9 +873,13 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
           }
         } else {
           if (!liveTyped && combined) {
-            const pasted = await window.electron.pasteText(combined);
-            if (!pasted) {
-              await window.electron.clipboardWrite({ text: combined });
+            if (onboardingCaptureMode) {
+              onOnboardingTranscriptAppend?.(combined);
+            } else {
+              const pasted = await window.electron.pasteText(combined);
+              if (!pasted) {
+                await window.electron.clipboardWrite({ text: combined });
+              }
             }
           }
           combinedTranscriptRef.current = '';
@@ -885,9 +915,13 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
         if (closeAfter) {
           await autoPasteAndClose(finalTranscript);
         } else {
-          const pasted = await window.electron.pasteText(finalTranscript);
-          if (!pasted) {
-            await window.electron.clipboardWrite({ text: finalTranscript });
+          if (onboardingCaptureMode) {
+            onOnboardingTranscriptAppend?.(finalTranscript);
+          } else {
+            const pasted = await window.electron.pasteText(finalTranscript);
+            if (!pasted) {
+              await window.electron.clipboardWrite({ text: finalTranscript });
+            }
           }
           combinedTranscriptRef.current = '';
           liveTypedTextRef.current = '';
@@ -913,7 +947,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
     } finally {
       forceStopCapture();
     }
-  }, [autoPasteAndClose, onClose, stopVisualizer, sendTranscription, refineAndApplyLiveTranscript, applyLiveTranscriptText, stopNativeSilenceWatchdog, stopNativeProcessTimer, flushNativeCurrentPartial, forceStopCapture, playRecordingCue]);
+  }, [autoPasteAndClose, onClose, stopVisualizer, sendTranscription, refineAndApplyLiveTranscript, applyLiveTranscriptText, stopNativeSilenceWatchdog, stopNativeProcessTimer, flushNativeCurrentPartial, forceStopCapture, playRecordingCue, onboardingCaptureMode, onOnboardingTranscriptAppend]);
 
   // ─── Start Listening ───────────────────────────────────────────────
 
@@ -1231,6 +1265,9 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
   return createPortal(
     <div className="whisper-widget-host">
       <div className="whisper-widget-shell">
+        {coachmarkText ? (
+          <div className="whisper-coachmark-inline">{coachmarkText}</div>
+        ) : null}
         <div
           className={`whisper-wave whisper-wave-standalone ${listening ? 'is-listening' : ''} ${processing ? 'is-processing' : ''}`}
           aria-hidden="true"
@@ -1241,8 +1278,8 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({ onClose, port
           ) : (
             waveBars.map((value, index) => {
               const profile = BAR_HEIGHT_PROFILE[index];
-              const minHeight = dotMode ? 3 : 3 + Math.round(profile * 2);
-              const amplitude = dotMode ? 0 : 2 + Math.round(profile * 5);
+              const minHeight = dotMode ? 3 : 4 + Math.round(profile * 4);
+              const amplitude = dotMode ? 0 : 4 + Math.round(profile * 10);
               return (
                 <span
                   key={`bar-${index}`}

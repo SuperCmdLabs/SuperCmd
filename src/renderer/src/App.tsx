@@ -371,6 +371,8 @@ const App: React.FC = () => {
   const [showWhisper, setShowWhisper] = useState(false);
   const [showSpeak, setShowSpeak] = useState(false);
   const [showWhisperOnboarding, setShowWhisperOnboarding] = useState(false);
+  const [showWhisperHint, setShowWhisperHint] = useState(false);
+  const [whisperOnboardingPracticeText, setWhisperOnboardingPracticeText] = useState('');
   const [whisperSpeakToggleLabel, setWhisperSpeakToggleLabel] = useState('\u2318 .');
   const [speakStatus, setSpeakStatus] = useState<{
     state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
@@ -428,12 +430,23 @@ const App: React.FC = () => {
   const whisperPortalTarget = useDetachedPortalWindow(showWhisper, {
     name: 'supercommand-whisper-window',
     title: 'SuperCommand Whisper',
-    width: 272,
-    height: 52,
+    width: showWhisperHint ? 620 : 272,
+    height: showWhisperHint ? 88 : 52,
     anchor: 'center-bottom',
     onClosed: () => {
       whisperSessionRef.current = false;
       setShowWhisper(false);
+    },
+  });
+
+  const whisperOnboardingPortalTarget = useDetachedPortalWindow(showWhisperOnboarding, {
+    name: 'supercommand-whisper-onboarding-window',
+    title: 'SuperCommand Whisper Onboarding',
+    width: 920,
+    height: 640,
+    anchor: 'center',
+    onClosed: () => {
+      setShowWhisperOnboarding(false);
     },
   });
 
@@ -463,6 +476,17 @@ const App: React.FC = () => {
   const restoreLauncherFocus = useCallback(() => {
     requestAnimationFrame(() => {
       inputRef.current?.focus();
+    });
+  }, []);
+
+  const appendWhisperOnboardingPracticeText = useCallback((chunk: string) => {
+    const nextChunk = String(chunk || '');
+    if (!nextChunk.trim()) return;
+    setWhisperOnboardingPracticeText((prev) => {
+      if (!prev) return nextChunk.trimStart();
+      const prevTrim = prev.replace(/\s+$/g, '');
+      const needsSpace = /[A-Za-z0-9)]$/.test(prevTrim) && /^[A-Za-z0-9(]/.test(nextChunk.trimStart());
+      return needsSpace ? `${prevTrim} ${nextChunk.trimStart()}` : `${prev}${nextChunk}`;
     });
   }, []);
 
@@ -586,6 +610,7 @@ const App: React.FC = () => {
         setShowWhisper(true);
         setShowSpeak(false);
         setShowWhisperOnboarding(false);
+        setShowWhisperHint(false);
         setShowSnippetManager(null);
         setShowFileSearch(false);
         setShowClipboardManager(false);
@@ -601,6 +626,7 @@ const App: React.FC = () => {
         setShowWhisper(false);
         setShowSpeak(true);
         setShowWhisperOnboarding(false);
+        setShowWhisperHint(false);
         setShowSnippetManager(null);
         setShowFileSearch(false);
         setShowClipboardManager(false);
@@ -615,6 +641,7 @@ const App: React.FC = () => {
         setShowWhisper(false);
         setShowSpeak(false);
         setShowWhisperOnboarding(false);
+        setShowWhisperHint(false);
         setShowSnippetManager(null);
         setShowFileSearch(false);
         setShowClipboardManager(false);
@@ -634,7 +661,7 @@ const App: React.FC = () => {
 
       whisperSessionRef.current = false;
       setShowCursorPrompt(false);
-      setShowWhisperOnboarding(false);
+      setShowWhisperHint(false);
 
       // If an extension is open, keep it alive — don't reset
       if (extensionViewRef.current) return;
@@ -1380,6 +1407,7 @@ const App: React.FC = () => {
       setShowWhisper(false);
       setShowSpeak(false);
       setShowWhisperOnboarding(false);
+      setShowWhisperHint(false);
       setAiMode(false);
       setShowOnboarding(true);
       return true;
@@ -1392,10 +1420,12 @@ const App: React.FC = () => {
       setShowClipboardManager(false);
       setShowSnippetManager(null);
       setShowFileSearch(false);
-      setShowWhisper(false);
+      setShowWhisper(true);
       setShowSpeak(false);
       setShowOnboarding(false);
+      setShowWhisperHint(false);
       setAiMode(false);
+      setWhisperOnboardingPracticeText('');
       setShowWhisperOnboarding(true);
       return true;
     }
@@ -1411,6 +1441,7 @@ const App: React.FC = () => {
       setShowWhisper(false);
       setShowSpeak(false);
       setShowWhisperOnboarding(false);
+      setShowWhisperHint(false);
       setAiMode(false);
       return true;
     }
@@ -1425,6 +1456,7 @@ const App: React.FC = () => {
       setShowWhisper(false);
       setShowSpeak(false);
       setShowWhisperOnboarding(false);
+      setShowWhisperHint(false);
       setAiMode(false);
       setShowSnippetManager('search');
       return true;
@@ -1440,6 +1472,7 @@ const App: React.FC = () => {
       setShowWhisper(false);
       setShowSpeak(false);
       setShowWhisperOnboarding(false);
+      setShowWhisperHint(false);
       setAiMode(false);
       setShowSnippetManager('create');
       return true;
@@ -1457,6 +1490,7 @@ const App: React.FC = () => {
       setShowWhisper(false);
       setShowSpeak(false);
       setShowWhisperOnboarding(false);
+      setShowWhisperHint(false);
       return true;
     }
     if (commandId === 'system-cursor-prompt') {
@@ -1473,12 +1507,13 @@ const App: React.FC = () => {
       setShowSnippetManager(null);
       setShowFileSearch(false);
       setAiMode(false);
-      setShowWhisperOnboarding(false);
       setShowSpeak(false);
+      setShowWhisperHint(false);
       const settings = (await window.electron.getSettings()) as AppSettings;
       if (!settings.hasSeenWhisperOnboarding) {
+        setWhisperOnboardingPracticeText('');
         setShowWhisperOnboarding(true);
-        setShowWhisper(false);
+        setShowWhisper(true);
       } else {
         setShowWhisper(true);
       }
@@ -1497,6 +1532,7 @@ const App: React.FC = () => {
       setShowWhisper(false);
       setShowSpeak(true);
       setShowWhisperOnboarding(false);
+      setShowWhisperHint(false);
       return true;
     }
     if (commandId === 'system-supercommand-speak-close') {
@@ -1523,6 +1559,12 @@ const App: React.FC = () => {
       }
     });
   }, [runLocalSystemCommand]);
+
+  useEffect(() => {
+    if (!showWhisperHint || !showWhisper) return;
+    const timer = window.setTimeout(() => setShowWhisperHint(false), 7000);
+    return () => window.clearTimeout(timer);
+  }, [showWhisperHint, showWhisper]);
 
   const handleCommandExecute = async (command: CommandInfo) => {
     try {
@@ -1800,12 +1842,40 @@ const App: React.FC = () => {
       {showWhisper && whisperPortalTarget ? (
         <SuperCommandWhisper
           portalTarget={whisperPortalTarget}
+          onboardingCaptureMode={showWhisperOnboarding}
+          onOnboardingTranscriptAppend={appendWhisperOnboardingPracticeText}
+          coachmarkText={
+            showWhisperHint
+              ? `Whisper sits here. Hold ${whisperSpeakToggleLabel} to talk, release to type.`
+              : undefined
+          }
           onClose={() => {
             whisperSessionRef.current = false;
             setShowWhisper(false);
+            setShowWhisperHint(false);
           }}
         />
       ) : null}
+      {showWhisperOnboarding && whisperOnboardingPortalTarget
+        ? createPortal(
+            <WhisperOnboardingExtension
+              speakToggleShortcutLabel={whisperSpeakToggleLabel}
+              practiceText={whisperOnboardingPracticeText}
+              onPracticeTextChange={setWhisperOnboardingPracticeText}
+              onClose={() => {
+                setShowWhisperOnboarding(false);
+                setShowWhisperHint(false);
+              }}
+              onComplete={async () => {
+                await window.electron.saveSettings({ hasSeenWhisperOnboarding: true });
+                setShowWhisperOnboarding(false);
+                setShowWhisper(true);
+                setShowWhisperHint(true);
+              }}
+            />,
+            whisperOnboardingPortalTarget
+          )
+        : null}
       {showSpeak && speakPortalTarget ? (
         <SuperCommandSpeak
           status={speakStatus}
@@ -2381,31 +2451,6 @@ const App: React.FC = () => {
           onComplete={async () => {
             await window.electron.saveSettings({ hasSeenOnboarding: true });
             setShowOnboarding(false);
-            setSearchQuery('');
-            setSelectedIndex(0);
-            setTimeout(() => inputRef.current?.focus(), 50);
-          }}
-        />
-      </>
-    );
-  }
-
-  if (showWhisperOnboarding) {
-    return (
-      <>
-        {alwaysMountedRunners}
-        <WhisperOnboardingExtension
-          speakToggleShortcutLabel={whisperSpeakToggleLabel}
-          onClose={() => {
-            setShowWhisperOnboarding(false);
-            setSearchQuery('');
-            setSelectedIndex(0);
-            setTimeout(() => inputRef.current?.focus(), 50);
-          }}
-          onComplete={async () => {
-            await window.electron.saveSettings({ hasSeenWhisperOnboarding: true });
-            setShowWhisperOnboarding(false);
-            setShowWhisper(true);
             setSearchQuery('');
             setSelectedIndex(0);
             setTimeout(() => inputRef.current?.focus(), 50);

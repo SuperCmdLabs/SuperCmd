@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-type DetachedWindowAnchor = 'center-bottom' | 'top-right' | 'caret';
+type DetachedWindowAnchor = 'center' | 'center-bottom' | 'top-right' | 'caret';
 
 interface DetachedPortalWindowOptions {
   name: string;
@@ -14,28 +14,35 @@ interface DetachedPortalWindowOptions {
 const PORTAL_ROOT_ID = '__sc_detached_portal_root__';
 
 function computeWindowPosition(anchor: DetachedWindowAnchor, width: number, height: number): { left: number; top: number } {
-  const screenX = window.screenX ?? window.screenLeft ?? 0;
-  const screenY = window.screenY ?? window.screenTop ?? 0;
+  const screenLeft = window.screen?.availLeft ?? 0;
+  const screenTop = window.screen?.availTop ?? 0;
   const availWidth = window.screen?.availWidth || window.outerWidth || window.innerWidth || width;
   const availHeight = window.screen?.availHeight || window.outerHeight || window.innerHeight || height;
 
   if (anchor === 'top-right') {
     return {
-      left: Math.round(screenX + availWidth - width - 20),
-      top: Math.round(screenY + 16),
+      left: Math.round(screenLeft + availWidth - width - 20),
+      top: Math.round(screenTop + 16),
     };
   }
 
   if (anchor === 'caret') {
     return {
-      left: Math.round(screenX + (availWidth - width) / 2),
-      top: Math.round(screenY + availHeight - height - 14),
+      left: Math.round(screenLeft + (availWidth - width) / 2),
+      top: Math.round(screenTop + availHeight - height - 14),
+    };
+  }
+
+  if (anchor === 'center') {
+    return {
+      left: Math.round(screenLeft + (availWidth - width) / 2),
+      top: Math.round(screenTop + (availHeight - height) / 2),
     };
   }
 
   return {
-    left: Math.round(screenX + (availWidth - width) / 2),
-    top: Math.round(screenY + availHeight - height - 14),
+    left: Math.round(screenLeft + (availWidth - width) / 2),
+    top: Math.round(screenTop + availHeight - height - 14),
   };
 }
 
@@ -171,9 +178,12 @@ export function useDetachedPortalWindow(
     }
     const portalRoot = ensurePortalRoot(childDoc);
     setPortalTarget(portalRoot);
-    try {
-      child.focus();
-    } catch {}
+    const shouldFocusChild = options.name !== 'supercommand-whisper-window';
+    if (shouldFocusChild) {
+      try {
+        child.focus();
+      } catch {}
+    }
 
     const handleBeforeUnload = () => {
       childWindowRef.current = null;

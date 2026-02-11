@@ -328,10 +328,30 @@ kbd {
 }
 
 .whisper-widget-shell {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 3px;
   pointer-events: auto;
+}
+
+.whisper-coachmark-inline {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(7, 9, 13, 0.92);
+  color: rgba(238, 242, 247, 0.96);
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
+  z-index: 2;
 }
 
 body.sc-detached-window .whisper-widget-host {
@@ -339,8 +359,8 @@ body.sc-detached-window .whisper-widget-host {
   inset: auto;
   width: 100%;
   height: 100%;
-  padding: 0;
-  align-items: center;
+  padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  align-items: flex-end;
   justify-content: center;
   pointer-events: auto;
 }
@@ -395,7 +415,7 @@ body.sc-detached-window .whisper-shortcut-hint {
 }
 
 .whisper-close-button {
-  width: 14px;
+  width: 16px;
   padding: 0;
   opacity: 0;
   pointer-events: none;
@@ -407,9 +427,9 @@ body.sc-detached-window .whisper-shortcut-hint {
 }
 
 .whisper-close-glyph {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1;
-  transform: translateY(-0.5px);
+  transform: translateY(-1px);
 }
 
 .whisper-wave.is-listening {
@@ -453,12 +473,12 @@ body.sc-detached-window .whisper-shortcut-hint {
 .whisper-wave-standalone.is-processing {
   width: 88px;
   min-width: 88px;
-  height: 22px;
-  padding: 4px 7px;
+  height: 38px;
+  padding: 7px 7px;
 }
 
 .whisper-wave-bar {
-  width: 3px;
+  width: 1.5px;
   border-radius: 999px;
   background: rgba(216, 220, 224, 0.92);
   transition: height 100ms linear, opacity 120ms ease, transform 120ms ease;
@@ -473,6 +493,19 @@ body.sc-detached-window .whisper-shortcut-hint {
   transform: scale(1);
 }
 
+.whisper-wave-standalone.is-listening .whisper-wave-bar {
+  transform-origin: center;
+  animation: whisper-wave-breathe 900ms ease-in-out infinite;
+}
+
+.whisper-wave-standalone.is-listening .whisper-wave-bar:nth-child(2n) {
+  animation-delay: 120ms;
+}
+
+.whisper-wave-standalone.is-listening .whisper-wave-bar:nth-child(3n) {
+  animation-delay: 220ms;
+}
+
 .whisper-processing-loader {
   width: 6px;
   height: 6px;
@@ -485,6 +518,30 @@ body.sc-detached-window .whisper-shortcut-hint {
 @keyframes whisper-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+@keyframes whisper-wave-breathe {
+  0% { filter: brightness(0.9); }
+  50% { filter: brightness(1.15); }
+  100% { filter: brightness(0.9); }
+}
+
+.whisper-coachmark {
+  position: fixed;
+  left: 50%;
+  bottom: calc(44px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(7, 9, 13, 0.92);
+  color: rgba(238, 242, 247, 0.96);
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
+  z-index: 2147483001;
 }
 
 .whisper-mic-button {

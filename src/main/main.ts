@@ -65,6 +65,7 @@ const CURSOR_PROMPT_LEFT_OFFSET = 20;
 const WHISPER_WINDOW_WIDTH = 266;
 const WHISPER_WINDOW_HEIGHT = 84;
 const DETACHED_WHISPER_WINDOW_NAME = 'supercommand-whisper-window';
+const DETACHED_WHISPER_ONBOARDING_WINDOW_NAME = 'supercommand-whisper-onboarding-window';
 const DETACHED_SPEAK_WINDOW_NAME = 'supercommand-speak-window';
 const DETACHED_PROMPT_WINDOW_NAME = 'supercommand-prompt-window';
 const DETACHED_WINDOW_QUERY_KEY = 'sc_detached';
@@ -95,13 +96,16 @@ function resolveDetachedPopupName(details: any): string | null {
   const byFrameName = String(details?.frameName || '').trim();
   if (
     byFrameName === DETACHED_WHISPER_WINDOW_NAME ||
+    byFrameName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME ||
     byFrameName === DETACHED_SPEAK_WINDOW_NAME ||
     byFrameName === DETACHED_PROMPT_WINDOW_NAME ||
     byFrameName.startsWith(`${DETACHED_WHISPER_WINDOW_NAME}-`) ||
+    byFrameName.startsWith(`${DETACHED_WHISPER_ONBOARDING_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_SPEAK_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_PROMPT_WINDOW_NAME}-`)
   ) {
     if (byFrameName.startsWith(DETACHED_WHISPER_WINDOW_NAME)) return DETACHED_WHISPER_WINDOW_NAME;
+    if (byFrameName.startsWith(DETACHED_WHISPER_ONBOARDING_WINDOW_NAME)) return DETACHED_WHISPER_ONBOARDING_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_SPEAK_WINDOW_NAME)) return DETACHED_SPEAK_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_PROMPT_WINDOW_NAME)) return DETACHED_PROMPT_WINDOW_NAME;
     return byFrameName;
@@ -113,6 +117,7 @@ function resolveDetachedPopupName(details: any): string | null {
     const byQuery = String(parsed.searchParams.get(DETACHED_WINDOW_QUERY_KEY) || '').trim();
     if (
       byQuery === DETACHED_WHISPER_WINDOW_NAME ||
+      byQuery === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME ||
       byQuery === DETACHED_SPEAK_WINDOW_NAME ||
       byQuery === DETACHED_PROMPT_WINDOW_NAME
     ) {
@@ -127,6 +132,14 @@ function computeDetachedPopupPosition(
   width: number,
   height: number
 ): { x: number; y: number } {
+  if (popupName === DETACHED_WHISPER_WINDOW_NAME) {
+    const primaryWorkArea = screen.getPrimaryDisplay().workArea;
+    return {
+      x: primaryWorkArea.x + Math.floor((primaryWorkArea.width - width) / 2),
+      y: primaryWorkArea.y + primaryWorkArea.height - height - 14,
+    };
+  }
+
   const cursorPoint = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursorPoint);
   const workArea = display?.workArea || screen.getPrimaryDisplay().workArea;
@@ -183,6 +196,13 @@ function computeDetachedPopupPosition(
       ? preferred
       : clamp(baseY + 16, area.y + 8, area.y + area.height - height - 8);
     return { x, y };
+  }
+
+  if (popupName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME) {
+    return {
+      x: workArea.x + Math.floor((workArea.width - width) / 2),
+      y: workArea.y + Math.floor((workArea.height - height) / 2),
+    };
   }
 
   return {
@@ -1227,11 +1247,15 @@ function createWindow(): void {
     const popupBounds = parsePopupFeatures(details?.features || '');
     const defaultWidth = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME
       ? 272
+      : detachedPopupName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME
+        ? 920
       : detachedPopupName === DETACHED_PROMPT_WINDOW_NAME
         ? CURSOR_PROMPT_WINDOW_WIDTH
         : 520;
     const defaultHeight = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME
       ? 52
+      : detachedPopupName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME
+        ? 640
       : detachedPopupName === DETACHED_PROMPT_WINDOW_NAME
         ? CURSOR_PROMPT_WINDOW_HEIGHT
         : 112;
@@ -1250,6 +1274,8 @@ function createWindow(): void {
         title:
           detachedPopupName === DETACHED_WHISPER_WINDOW_NAME
             ? 'SuperCommand Whisper'
+            : detachedPopupName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME
+              ? 'SuperCommand Whisper Onboarding'
             : detachedPopupName === DETACHED_PROMPT_WINDOW_NAME
               ? 'SuperCommand Prompt'
               : 'SuperCommand Speak',
@@ -1258,6 +1284,8 @@ function createWindow(): void {
         titleBarOverlay: false,
         transparent: true,
         backgroundColor: '#00000000',
+        vibrancy: detachedPopupName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME ? 'fullscreen-ui' : undefined,
+        visualEffectState: detachedPopupName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME ? 'active' : undefined,
         hasShadow: false,
         resizable: false,
         minimizable: false,
@@ -1323,7 +1351,7 @@ function createWindow(): void {
   mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.on('blur', () => {
-    if (isVisible && !suppressBlurHide && launcherMode !== 'whisper' && launcherMode !== 'speak') {
+    if (isVisible && !suppressBlurHide && launcherMode !== 'whisper' && launcherMode !== 'speak' && !whisperOverlayVisible) {
       hideWindow();
     }
   });
