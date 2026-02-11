@@ -383,6 +383,19 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
     }
   }, [speechLanguage]);
 
+  const typeIntoWhisperTarget = useCallback(async (text: string): Promise<{ consumed: boolean; typed: boolean }> => {
+    const nextText = String(text || '');
+    if (!nextText) {
+      return { consumed: false, typed: false };
+    }
+    const result = await window.electron.whisperTypeTextLive(nextText);
+    if (result?.typed) {
+      setErrorText('');
+      return { consumed: true, typed: true };
+    }
+    return { consumed: false, typed: false };
+  }, []);
+
   const autoPasteAndClose = useCallback(async (text: string) => {
     const normalized = normalizeTranscript(text);
     if (!normalized) {
@@ -396,12 +409,12 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
       return;
     }
 
-    const pasted = await window.electron.pasteText(normalized);
-    if (!pasted) {
-      await window.electron.clipboardWrite({ text: normalized });
+    const applied = await typeIntoWhisperTarget(normalized);
+    if (!applied.consumed) {
+      setErrorText('Could not type into the active app.');
     }
     onClose();
-  }, [onClose, onboardingCaptureMode, onOnboardingTranscriptAppend]);
+  }, [onClose, onboardingCaptureMode, onOnboardingTranscriptAppend, typeIntoWhisperTarget]);
 
   // ─── Live typing helper (debounced + refined) ──────────────────────
 
@@ -426,15 +439,14 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
         onOnboardingTranscriptAppend?.(appendText);
         typed = true;
       } else {
-        // Re-focus target app before each typing step (stop button/hotkey can steal focus).
-        await window.electron.restoreLastFrontmostApp().catch(() => false);
-        typed = await window.electron.typeTextLive(appendText);
+        const applied = await typeIntoWhisperTarget(appendText);
+        typed = applied.consumed;
       }
       if (typed) {
         liveTypedTextRef.current = normalizedNext;
       }
     });
-  }, [onboardingCaptureMode, onOnboardingTranscriptAppend]);
+  }, [onboardingCaptureMode, onOnboardingTranscriptAppend, typeIntoWhisperTarget]);
 
   const refineAndApplyLiveTranscript = useCallback(async (rawTranscript: string, force = false): Promise<string> => {
     const base = normalizeTranscript(rawTranscript);
@@ -508,13 +520,12 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
           onOnboardingTranscriptAppend?.(appendText);
           typedOk = true;
         } else {
-          for (let attempt = 0; attempt < 2; attempt += 1) {
-            await window.electron.restoreLastFrontmostApp().catch(() => false);
+          for (let attempt = 0; attempt < 2 && !typedOk; attempt += 1) {
             if (attempt > 0) {
               await new Promise((resolve) => setTimeout(resolve, 70));
             }
-            typedOk = await window.electron.typeTextLive(appendText);
-            if (typedOk) break;
+            const applied = await typeIntoWhisperTarget(appendText);
+            typedOk = applied.consumed;
           }
         }
 
@@ -564,7 +575,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
     } finally {
       nativeFlushInFlightRef.current = false;
     }
-  }, [onboardingCaptureMode, onOnboardingTranscriptAppend]);
+  }, [onboardingCaptureMode, onOnboardingTranscriptAppend, typeIntoWhisperTarget]);
 
   const enqueueNativeSuffix = useCallback((reason: NativeFlushReason, rawSnapshot: string) => {
     const nextRaw = normalizeTranscript(rawSnapshot);
@@ -876,9 +887,9 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
             if (onboardingCaptureMode) {
               onOnboardingTranscriptAppend?.(combined);
             } else {
-              const pasted = await window.electron.pasteText(combined);
-              if (!pasted) {
-                await window.electron.clipboardWrite({ text: combined });
+              const applied = await typeIntoWhisperTarget(combined);
+              if (!applied.consumed) {
+                setErrorText('Could not type into the active app.');
               }
             }
           }
@@ -918,9 +929,9 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
           if (onboardingCaptureMode) {
             onOnboardingTranscriptAppend?.(finalTranscript);
           } else {
-            const pasted = await window.electron.pasteText(finalTranscript);
-            if (!pasted) {
-              await window.electron.clipboardWrite({ text: finalTranscript });
+            const applied = await typeIntoWhisperTarget(finalTranscript);
+            if (!applied.consumed) {
+              setErrorText('Could not type into the active app.');
             }
           }
           combinedTranscriptRef.current = '';
@@ -947,7 +958,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
     } finally {
       forceStopCapture();
     }
-  }, [autoPasteAndClose, onClose, stopVisualizer, sendTranscription, refineAndApplyLiveTranscript, applyLiveTranscriptText, stopNativeSilenceWatchdog, stopNativeProcessTimer, flushNativeCurrentPartial, forceStopCapture, playRecordingCue, onboardingCaptureMode, onOnboardingTranscriptAppend]);
+  }, [autoPasteAndClose, onClose, stopVisualizer, sendTranscription, refineAndApplyLiveTranscript, applyLiveTranscriptText, stopNativeSilenceWatchdog, stopNativeProcessTimer, flushNativeCurrentPartial, forceStopCapture, playRecordingCue, onboardingCaptureMode, onOnboardingTranscriptAppend, typeIntoWhisperTarget]);
 
   // ─── Start Listening ───────────────────────────────────────────────
 
@@ -1257,6 +1268,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
   const listening = state === 'listening';
   const processing = state === 'processing';
   const dotMode = !listening && !processing;
+  const bannerText = coachmarkText;
 
   if (typeof document === 'undefined') return null;
   const target = portalTarget || document.body;
@@ -1265,8 +1277,8 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
   return createPortal(
     <div className="whisper-widget-host">
       <div className="whisper-widget-shell">
-        {coachmarkText ? (
-          <div className="whisper-coachmark-inline">{coachmarkText}</div>
+        {bannerText ? (
+          <div className="whisper-coachmark-inline">{bannerText}</div>
         ) : null}
         <div
           className={`whisper-wave whisper-wave-standalone ${listening ? 'is-listening' : ''} ${processing ? 'is-processing' : ''}`}

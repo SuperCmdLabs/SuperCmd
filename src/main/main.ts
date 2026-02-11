@@ -132,14 +132,6 @@ function computeDetachedPopupPosition(
   width: number,
   height: number
 ): { x: number; y: number } {
-  if (popupName === DETACHED_WHISPER_WINDOW_NAME) {
-    const primaryWorkArea = screen.getPrimaryDisplay().workArea;
-    return {
-      x: primaryWorkArea.x + Math.floor((primaryWorkArea.width - width) / 2),
-      y: primaryWorkArea.y + primaryWorkArea.height - height - 14,
-    };
-  }
-
   const cursorPoint = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursorPoint);
   const workArea = display?.workArea || screen.getPrimaryDisplay().workArea;
@@ -760,11 +752,10 @@ async function getSelectedTextForSpeak(): Promise<string> {
         tell application "System Events"
           try
             set frontApp to first application process whose frontmost is true
-            tell frontApp
-              set focusedElement to focused UI element
-              set selectedText to value of attribute "AXSelectedText" of focusedElement
-              return selectedText
-            end tell
+            set focusedElement to value of attribute "AXFocusedUIElement" of frontApp
+            if focusedElement is missing value then return ""
+            set selectedText to value of attribute "AXSelectedText" of focusedElement
+            return selectedText
           on error
             return ""
           end try
@@ -1362,9 +1353,10 @@ function createWindow(): void {
 }
 
 function computePromptWindowBounds(): { x: number; y: number; width: number; height: number } {
-  const cursorPoint = screen.getCursorScreenPoint();
   const caretRect = getTypingCaretRect();
   const focusedInputRect = getFocusedInputRect();
+  const width = CURSOR_PROMPT_WINDOW_WIDTH;
+  const height = CURSOR_PROMPT_WINDOW_HEIGHT;
   const promptAnchorPoint = caretRect
     ? {
         x: caretRect.x,
@@ -1375,7 +1367,7 @@ function computePromptWindowBounds(): { x: number; y: number; width: number; hei
           x: focusedInputRect.x + 12,
           y: focusedInputRect.y + 18,
         }
-      : lastTypingCaretPoint || cursorPoint;
+      : lastTypingCaretPoint;
 
   if (caretRect) {
     lastTypingCaretPoint = {
@@ -1389,11 +1381,19 @@ function computePromptWindowBounds(): { x: number; y: number; width: number; hei
     };
   }
 
+  if (!promptAnchorPoint) {
+    const area = screen.getPrimaryDisplay().workArea;
+    return {
+      x: area.x + Math.floor((area.width - width) / 2),
+      y: area.y + Math.floor(area.height * 0.28),
+      width,
+      height,
+    };
+  }
+
   const display = screen.getDisplayNearestPoint(promptAnchorPoint);
   const area = display?.workArea || screen.getPrimaryDisplay().workArea;
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-  const width = CURSOR_PROMPT_WINDOW_WIDTH;
-  const height = CURSOR_PROMPT_WINDOW_HEIGHT;
   const x = clamp(
     promptAnchorPoint.x - CURSOR_PROMPT_LEFT_OFFSET,
     area.x + 8,
@@ -1489,33 +1489,86 @@ function getTypingCaretRect():
   | { x: number; y: number; width: number; height: number }
   | null {
   try {
-    const { execSync } = require('child_process');
+    const { execFileSync } = require('child_process');
     const script = `
-      tell application "System Events"
-        try
-          set frontApp to first application process whose frontmost is true
-          tell frontApp
-            set focusedElement to value of attribute "AXFocusedUIElement"
-            if focusedElement is missing value then return ""
-            set selectedRange to value of attribute "AXSelectedTextRange" of focusedElement
-            if selectedRange is missing value then return ""
-            set rangeLocation to item 1 of selectedRange
-            set rangeLength to item 2 of selectedRange
-            set caretRange to {rangeLocation + rangeLength, 0}
-            set caretBounds to value of attribute "AXBoundsForRange" of focusedElement for caretRange
-            set {bx, by} to position of caretBounds
-            set {bw, bh} to size of caretBounds
-            return (bx as string) & "," & (by as string) & "," & (bw as string) & "," & (bh as string)
-          end tell
-        on error
-          return ""
-        end try
-      end tell
+      ObjC.import('ApplicationServices');
+
+      function copyAttributeValue(element, attribute) {
+        const valueRef = Ref();
+        const error = $.AXUIElementCopyAttributeValue(element, attribute, valueRef);
+        if (error !== 0) return null;
+        return valueRef[0];
+      }
+
+      function copyParameterizedAttributeValue(element, attribute, parameter) {
+        const valueRef = Ref();
+        const error = $.AXUIElementCopyParameterizedAttributeValue(element, attribute, parameter, valueRef);
+        if (error !== 0) return null;
+        return valueRef[0];
+      }
+
+      function decodeCFRange(axValue) {
+        const rangeRef = Ref();
+        rangeRef[0] = $.CFRangeMake(0, 0);
+        const ok = $.AXValueGetValue(axValue, $.kAXValueCFRangeType, rangeRef);
+        if (!ok) return null;
+        return rangeRef[0];
+      }
+
+      function decodeCGRect(axValue) {
+        const rectRef = Ref();
+        rectRef[0] = $.CGRectMake(0, 0, 0, 0);
+        const ok = $.AXValueGetValue(axValue, $.kAXValueCGRectType, rectRef);
+        if (!ok) return null;
+        return rectRef[0];
+      }
+
+      function main() {
+        const systemWide = $.AXUIElementCreateSystemWide();
+        if (!systemWide) return '';
+
+        const focusedElement = copyAttributeValue(systemWide, $.kAXFocusedUIElementAttribute);
+        if (!focusedElement) return '';
+
+        const selectedRangeValue = copyAttributeValue(focusedElement, $.kAXSelectedTextRangeAttribute);
+        if (!selectedRangeValue) return '';
+
+        const selectedRange = decodeCFRange(selectedRangeValue);
+        if (!selectedRange) return '';
+
+        const caretRange = $.CFRangeMake(selectedRange.location + selectedRange.length, 0);
+        const caretRangeValue = $.AXValueCreate($.kAXValueCFRangeType, caretRange);
+        if (!caretRangeValue) return '';
+
+        const caretBoundsValue = copyParameterizedAttributeValue(
+          focusedElement,
+          $.kAXBoundsForRangeParameterizedAttribute,
+          caretRangeValue
+        );
+        if (!caretBoundsValue) return '';
+
+        const caretRect = decodeCGRect(caretBoundsValue);
+        if (!caretRect) return '';
+
+        return [
+          String(caretRect.origin.x),
+          String(caretRect.origin.y),
+          String(caretRect.size.width),
+          String(caretRect.size.height),
+        ].join(',');
+      }
+
+      try {
+        const result = main();
+        if (result) console.log(result);
+      } catch (_) {
+        console.log('');
+      }
     `;
     const out = String(
-      execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, {
+      execFileSync('/usr/bin/osascript', ['-l', 'JavaScript', '-e', script], {
         encoding: 'utf-8',
-        timeout: 220,
+        timeout: 320,
       }) || ''
     ).trim();
     if (!out) return null;
@@ -1536,25 +1589,28 @@ function getFocusedInputRect():
   | { x: number; y: number; width: number; height: number }
   | null {
   try {
-    const { execSync } = require('child_process');
+    const { execFileSync } = require('child_process');
     const script = `
       tell application "System Events"
         try
           set frontApp to first application process whose frontmost is true
-          tell frontApp
-            set focusedElement to value of attribute "AXFocusedUIElement"
-            if focusedElement is missing value then return ""
-            set {ex, ey} to position of focusedElement
-            set {ew, eh} to size of focusedElement
-            return (ex as string) & "," & (ey as string) & "," & (ew as string) & "," & (eh as string)
-          end tell
+          set focusedElement to value of attribute "AXFocusedUIElement" of frontApp
+          if focusedElement is missing value then return ""
+          set pos to value of attribute "AXPosition" of focusedElement
+          set siz to value of attribute "AXSize" of focusedElement
+          if pos is missing value or siz is missing value then return ""
+          set ex to item 1 of pos
+          set ey to item 2 of pos
+          set ew to item 1 of siz
+          set eh to item 2 of siz
+          return (ex as string) & "," & (ey as string) & "," & (ew as string) & "," & (eh as string)
         on error
           return ""
         end try
       end tell
     `;
     const out = String(
-      execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, {
+      execFileSync('/usr/bin/osascript', ['-e', script], {
         encoding: 'utf-8',
         timeout: 220,
       }) || ''
@@ -1605,7 +1661,7 @@ function applyLauncherBounds(mode: 'default' | 'whisper' | 'speak' | 'prompt'): 
   const currentDisplay = mode === 'prompt'
     ? (promptAnchorPoint
       ? screen.getDisplayNearestPoint(promptAnchorPoint)
-      : screen.getDisplayNearestPoint(cursorPoint))
+      : screen.getPrimaryDisplay())
     : screen.getDisplayNearestPoint(cursorPoint);
   const {
     x: displayX,
@@ -4327,6 +4383,22 @@ return appURL's |path|() as text`,
       typed = await pasteTextToActiveApp(nextText);
     }
     return typed;
+  });
+
+  ipcMain.handle('whisper-type-text-live', async (_event: any, text: string) => {
+    const nextText = String(text || '');
+    if (!nextText) {
+      return { typed: false, fallbackClipboard: false };
+    }
+
+    let typed = await pasteTextToActiveApp(nextText);
+    if (!typed) {
+      typed = await typeTextDirectly(nextText);
+    }
+    if (typed) {
+      return { typed: true, fallbackClipboard: false };
+    }
+    return { typed: false, fallbackClipboard: false };
   });
 
   ipcMain.handle('replace-live-text', async (_event: any, previousText: string, nextText: string) => {

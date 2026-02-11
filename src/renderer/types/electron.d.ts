@@ -320,6 +320,9 @@ export interface ElectronAPI {
   snippetExport: () => Promise<boolean>;
   pasteText: (text: string) => Promise<boolean>;
   typeTextLive: (text: string) => Promise<boolean>;
+  whisperTypeTextLive: (
+    text: string
+  ) => Promise<{ typed: boolean; fallbackClipboard: boolean; message?: string }>;
   replaceLiveText: (previousText: string, nextText: string) => Promise<boolean>;
   promptApplyGeneratedText: (payload: { previousText?: string; nextText: string }) => Promise<boolean>;
 

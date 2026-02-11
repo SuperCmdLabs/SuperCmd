@@ -293,6 +293,10 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('paste-text', text),
   typeTextLive: (text: string): Promise<boolean> =>
     ipcRenderer.invoke('type-text-live', text),
+  whisperTypeTextLive: (
+    text: string
+  ): Promise<{ typed: boolean; fallbackClipboard: boolean; message?: string }> =>
+    ipcRenderer.invoke('whisper-type-text-live', text),
   replaceLiveText: (previousText: string, nextText: string): Promise<boolean> =>
     ipcRenderer.invoke('replace-live-text', previousText, nextText),
   promptApplyGeneratedText: (payload: { previousText?: string; nextText: string }): Promise<boolean> =>

@@ -434,7 +434,7 @@ body.sc-detached-window .whisper-shortcut-hint {
 
 .whisper-wave.is-listening {
   border-color: rgba(203, 208, 214, 0.6);
-  box-shadow: inset 0 0 0 1px rgba(203, 208, 214, 0.18), 0 0 16px rgba(170, 176, 183, 0.2);
+  box-shadow: none;
 }
 
 .whisper-wave.is-processing {
@@ -456,9 +456,7 @@ body.sc-detached-window .whisper-shortcut-hint {
     linear-gradient(180deg, rgba(6, 8, 12, 0.96), rgba(4, 6, 9, 0.95));
   backdrop-filter: blur(18px) saturate(120%);
   -webkit-backdrop-filter: blur(18px) saturate(120%);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.14) inset,
-    0 8px 18px rgba(0, 0, 0, 0.52);
+  box-shadow: none;
   transition:
     width 160ms ease,
     min-width 160ms ease,
