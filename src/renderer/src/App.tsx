@@ -29,6 +29,11 @@ interface LauncherAction {
   execute: () => void | Promise<void>;
 }
 
+type MemoryFeedback = {
+  type: 'success' | 'error';
+  text: string;
+} | null;
+
 /**
  * Filter and sort commands based on search query
  */
@@ -416,10 +421,13 @@ const App: React.FC = () => {
   const [aiAvailable, setAiAvailable] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
   const [selectedTextSnapshot, setSelectedTextSnapshot] = useState('');
+  const [memoryFeedback, setMemoryFeedback] = useState<MemoryFeedback>(null);
+  const [memoryActionLoading, setMemoryActionLoading] = useState(false);
   const aiRequestIdRef = useRef<string | null>(null);
   const cursorPromptRequestIdRef = useRef<string | null>(null);
   const cursorPromptResultRef = useRef('');
   const cursorPromptSourceTextRef = useRef('');
+  const memoryFeedbackTimerRef = useRef<number | null>(null);
   const aiResponseRef = useRef<HTMLDivElement>(null);
   const aiInputRef = useRef<HTMLInputElement>(null);
   const cursorPromptInputRef = useRef<HTMLTextAreaElement>(null);
@@ -486,6 +494,18 @@ const App: React.FC = () => {
     requestAnimationFrame(() => {
       inputRef.current?.focus();
     });
+  }, []);
+
+  const showMemoryFeedback = useCallback((type: 'success' | 'error', text: string) => {
+    if (memoryFeedbackTimerRef.current !== null) {
+      window.clearTimeout(memoryFeedbackTimerRef.current);
+      memoryFeedbackTimerRef.current = null;
+    }
+    setMemoryFeedback({ type, text });
+    memoryFeedbackTimerRef.current = window.setTimeout(() => {
+      setMemoryFeedback(null);
+      memoryFeedbackTimerRef.current = null;
+    }, 2800);
   }, []);
 
   const refreshSelectedTextSnapshot = useCallback(async () => {
@@ -625,6 +645,8 @@ const App: React.FC = () => {
       if (isWhisperMode) {
         whisperSessionRef.current = true;
         setSelectedTextSnapshot('');
+        setMemoryFeedback(null);
+        setMemoryActionLoading(false);
         setShowCursorPrompt(false);
         setShowWhisper(true);
         setShowSpeak(false);
@@ -642,6 +664,8 @@ const App: React.FC = () => {
       if (isSpeakMode) {
         whisperSessionRef.current = false;
         setSelectedTextSnapshot('');
+        setMemoryFeedback(null);
+        setMemoryActionLoading(false);
         setShowCursorPrompt(false);
         setShowWhisper(false);
         setShowSpeak(true);
@@ -659,6 +683,8 @@ const App: React.FC = () => {
       if (isPromptMode) {
         whisperSessionRef.current = false;
         setSelectedTextSnapshot('');
+        setMemoryFeedback(null);
+        setMemoryActionLoading(false);
         setShowWhisper(false);
         setShowSpeak(false);
         setShowWhisperOnboarding(false);
@@ -683,6 +709,8 @@ const App: React.FC = () => {
       whisperSessionRef.current = false;
       setShowCursorPrompt(false);
       setShowWhisperHint(false);
+      setMemoryFeedback(null);
+      setMemoryActionLoading(false);
       void refreshSelectedTextSnapshot();
 
       // If an extension is open, keep it alive — don't reset
@@ -1213,6 +1241,15 @@ const App: React.FC = () => {
     }
   }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
 
+  useEffect(() => {
+    return () => {
+      if (memoryFeedbackTimerRef.current !== null) {
+        window.clearTimeout(memoryFeedbackTimerRef.current);
+        memoryFeedbackTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const calcResult = useMemo(() => {
     return searchQuery ? tryCalculate(searchQuery) : null;
   }, [searchQuery]);
@@ -1527,23 +1564,33 @@ const App: React.FC = () => {
       return true;
     }
     if (commandId === 'system-add-to-memory') {
+      if (memoryActionLoading) return true;
+      setMemoryActionLoading(true);
+      setMemoryFeedback(null);
       const selectedText = String(await window.electron.getSelectedTextStrict() || '').trim();
       if (!selectedText) {
         setSelectedTextSnapshot('');
+        setMemoryActionLoading(false);
+        showMemoryFeedback('error', 'No selected text found.');
         return true;
       }
-      const result = await window.electron.memoryAdd({
-        text: selectedText,
-        source: 'launcher-selection',
-      });
-      if (!result.success) {
-        console.error('[Mem0] Failed to add memory:', result.error || 'Unknown error');
-        return true;
+      try {
+        const result = await window.electron.memoryAdd({
+          text: selectedText,
+          source: 'launcher-selection',
+        });
+        if (!result.success) {
+          console.error('[Mem0] Failed to add memory:', result.error || 'Unknown error');
+          showMemoryFeedback('error', result.error || 'Failed to add to memory.');
+          return true;
+        }
+        setSelectedTextSnapshot('');
+        setSearchQuery('');
+        setSelectedIndex(0);
+        showMemoryFeedback('success', 'Added selected text to memory.');
+      } finally {
+        setMemoryActionLoading(false);
       }
-      setSelectedTextSnapshot('');
-      setSearchQuery('');
-      setSelectedIndex(0);
-      window.electron.hideWindow();
       return true;
     }
     if (commandId === 'system-cursor-prompt') {
@@ -1601,7 +1648,7 @@ const App: React.FC = () => {
       return true;
     }
     return false;
-  }, []);
+  }, [memoryActionLoading, showMemoryFeedback]);
 
   useEffect(() => {
     window.electron.onRunSystemCommand(async (commandId: string) => {
@@ -2685,8 +2732,27 @@ const App: React.FC = () => {
             className="flex items-center px-4 py-3.5 border-t border-white/[0.06]"
             style={{ background: 'rgba(28,28,32,0.90)' }}
           >
-            <div className="flex items-center gap-2 text-white/50 text-xs flex-1 min-w-0 font-medium truncate">
-              {selectedCommand ? selectedCommand.title : `${displayCommands.length} results`}
+            <div
+              className={`flex items-center gap-2 text-xs flex-1 min-w-0 font-medium truncate ${
+                memoryActionLoading
+                  ? 'text-white/60'
+                  : memoryFeedback
+                  ? memoryFeedback.type === 'success'
+                    ? 'text-emerald-300'
+                    : 'text-red-300'
+                  : 'text-white/50'
+              }`}
+            >
+              {memoryActionLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+                  <span>Adding to memory...</span>
+                </>
+              ) : memoryFeedback
+                ? memoryFeedback.text
+                : selectedCommand
+                  ? selectedCommand.title
+                  : `${displayCommands.length} results`}
             </div>
             {selectedActions[0] && (
               <div className="flex items-center gap-2 mr-3">
