@@ -276,6 +276,7 @@ let lastCursorPromptSelection = '';
 let whisperEscapeRegistered = false;
 let whisperOverlayVisible = false;
 let speakOverlayVisible = false;
+let whisperChildWindow: InstanceType<typeof BrowserWindow> | null = null;
 
 function registerWhisperEscapeShortcut(): void {
   if (whisperEscapeRegistered) return;
@@ -1314,6 +1315,14 @@ function createWindow(): void {
     try { childWindow.setSkipTaskbar(true); } catch {}
     try { childWindow.setAlwaysOnTop(true); } catch {}
     try { childWindow.setHasShadow(false); } catch {}
+
+    if (detachedPopupName === DETACHED_WHISPER_WINDOW_NAME) {
+      whisperChildWindow = childWindow;
+      try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
+      childWindow.on('closed', () => {
+        if (whisperChildWindow === childWindow) whisperChildWindow = null;
+      });
+    }
   });
 
   // Hide traffic light buttons on macOS
@@ -2188,6 +2197,12 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.');
     const holdSeq = ++whisperHoldRequestSeq;
     if (whisperOverlayVisible) {
+      // Reposition whisper window to the current cursor's screen
+      if (whisperChildWindow && !whisperChildWindow.isDestroyed()) {
+        const bounds = whisperChildWindow.getBounds();
+        const pos = computeDetachedPopupPosition(DETACHED_WHISPER_WINDOW_NAME, bounds.width, bounds.height);
+        whisperChildWindow.setPosition(pos.x, pos.y);
+      }
       startWhisperHoldWatcher(speakToggleHotkey, holdSeq);
       mainWindow?.webContents.send('whisper-start-listening');
       return true;
