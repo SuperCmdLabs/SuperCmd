@@ -1272,25 +1272,41 @@ const App: React.FC = () => {
 
   const groupedCommands = useMemo(() => {
     const sourceMap = new Map(sourceCommands.map((cmd) => [cmd.id, cmd]));
+    const hasSelection = selectedTextSnapshot.trim().length > 0;
+    const contextual = hasSelection
+      ? (sourceMap.get('system-add-to-memory') ? [sourceMap.get('system-add-to-memory') as CommandInfo] : [])
+      : [];
+    const contextualIds = new Set(contextual.map((c) => c.id));
+
     const pinned = pinnedCommands
       .map((id) => sourceMap.get(id))
-      .filter(Boolean) as CommandInfo[];
+      .filter((cmd): cmd is CommandInfo => Boolean(cmd) && !contextualIds.has((cmd as CommandInfo).id));
     const pinnedSet = new Set(pinned.map((c) => c.id));
 
     const recent = recentCommands
       .map((id) => sourceMap.get(id))
-      .filter((c): c is CommandInfo => Boolean(c) && !pinnedSet.has((c as CommandInfo).id));
+      .filter(
+        (c): c is CommandInfo =>
+          Boolean(c) &&
+          !pinnedSet.has((c as CommandInfo).id) &&
+          !contextualIds.has((c as CommandInfo).id)
+      );
     const recentSet = new Set(recent.map((c) => c.id));
 
     const other = sourceCommands.filter(
-      (c) => !pinnedSet.has(c.id) && !recentSet.has(c.id)
+      (c) => !pinnedSet.has(c.id) && !recentSet.has(c.id) && !contextualIds.has(c.id)
     );
 
-    return { pinned, recent, other };
-  }, [sourceCommands, pinnedCommands, recentCommands]);
+    return { contextual, pinned, recent, other };
+  }, [sourceCommands, pinnedCommands, recentCommands, selectedTextSnapshot]);
 
   const displayCommands = useMemo(
-    () => [...groupedCommands.pinned, ...groupedCommands.recent, ...groupedCommands.other],
+    () => [
+      ...groupedCommands.contextual,
+      ...groupedCommands.pinned,
+      ...groupedCommands.recent,
+      ...groupedCommands.other,
+    ],
     [groupedCommands]
   );
 
@@ -2643,6 +2659,7 @@ const App: React.FC = () => {
               )}
 
               {[
+                { title: 'Selected Text', items: groupedCommands.contextual },
                 { title: 'Pinned', items: groupedCommands.pinned },
                 { title: 'Recent', items: groupedCommands.recent },
                 { title: 'Other', items: groupedCommands.other },
