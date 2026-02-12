@@ -272,8 +272,25 @@ export namespace Toast {
   }
 }
 
+function shouldSuppressBenignGitMissingPathToast(options: Toast.Options): boolean {
+  const style = options?.style as any;
+  const isFailure = style === ToastStyle.Failure || style === Toast.Style.Failure || style === 'failure';
+  if (!isFailure) return false;
+
+  const title = String(options?.title || '');
+  const message = String(options?.message || '');
+  const combined = `${title} ${message}`.toLowerCase();
+
+  if (!combined.includes('git')) return false;
+  if (!combined.includes('enoent') || !combined.includes('no such file or directory')) return false;
+  return /\b(stat|lstat|access|scandir)\b/.test(combined);
+}
+
 export async function showToast(options: Toast.Options): Promise<Toast> {
   const t = new Toast(options);
+  if (shouldSuppressBenignGitMissingPathToast(options)) {
+    return t;
+  }
   await t.show();
   return t;
 }

@@ -395,14 +395,22 @@ function removeStoredText(path: string): void {
 function normalizeFsPath(input: any): string {
   if (!input) return '';
   if (typeof input === 'string') {
+    const maybeDecodePath = (value: string): string => {
+      if (!value.includes('%')) return value;
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return value;
+      }
+    };
     if (input.startsWith('file://')) {
       try {
-        return decodeURIComponent(new URL(input).pathname);
+        return maybeDecodePath(decodeURIComponent(new URL(input).pathname));
       } catch {
-        return input.replace(/^file:\/\//, '');
+        return maybeDecodePath(input.replace(/^file:\/\//, ''));
       }
     }
-    return input;
+    return maybeDecodePath(input);
   }
   if (typeof input === 'object' && typeof input.href === 'string' && input.protocol === 'file:') {
     try {
@@ -555,12 +563,14 @@ const fsStub: Record<string, any> = {
     throw err;
   },
   writeFileSync: (p: string, data: any) => {
+    const path = resolveFsLookupPath(p);
     const str = typeof data === 'string' ? data : (data?.toString?.() ?? String(data));
-    setStoredText(p, str);
+    setStoredText(path, str);
   },
   mkdirSync: noop, // Directories are implicit with localStorage
   readdirSync: (p: string) => {
-    const prefix = FS_PREFIX + (p.endsWith('/') ? p : p + '/');
+    const path = resolveFsLookupPath(p);
+    const prefix = FS_PREFIX + (path.endsWith('/') ? path : path + '/');
     const results: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -593,20 +603,24 @@ const fsStub: Record<string, any> = {
     } catch {}
     return fsStatResult(false);
   },
-  realpathSync: (p: string) => p,
-  unlinkSync: (p: string) => { removeStoredText(p); },
+  realpathSync: (p: string) => resolveFsLookupPath(p),
+  unlinkSync: (p: string) => { removeStoredText(resolveFsLookupPath(p)); },
   rmdirSync: noop,
-  rmSync: (p: string) => { removeStoredText(p); },
+  rmSync: (p: string) => { removeStoredText(resolveFsLookupPath(p)); },
   renameSync: (oldPath: string, newPath: string) => {
-    const content = getStoredText(oldPath);
+    const src = resolveFsLookupPath(oldPath);
+    const dest = resolveFsLookupPath(newPath);
+    const content = getStoredText(src);
     if (content !== null) {
-      setStoredText(newPath, content);
-      removeStoredText(oldPath);
+      setStoredText(dest, content);
+      removeStoredText(src);
     }
   },
   copyFileSync: (src: string, dest: string) => {
-    const content = getStoredText(src);
-    if (content !== null) setStoredText(dest, content);
+    const source = resolveFsLookupPath(src);
+    const destination = resolveFsLookupPath(dest);
+    const content = getStoredText(source);
+    if (content !== null) setStoredText(destination, content);
   },
   chmodSync: noop,
   accessSync: (p: any) => {
@@ -674,27 +688,29 @@ const fsStub: Record<string, any> = {
     return s;
   },
   readFile: (p: string, ...args: any[]) => {
+    const path = resolveFsLookupPath(p);
     const cb = args[args.length - 1];
-    const content = getStoredText(p);
+    const content = getStoredText(path);
     if (typeof cb === 'function') {
       if (content !== null) {
         cb(null, content);
       } else {
         // Fall back to real file system
-        ((window as any).electron?.readFile?.(p) as Promise<string>)
+        ((window as any).electron?.readFile?.(path) as Promise<string>)
           ?.then((data: string) => {
             if (data !== '') cb(null, data);
-            else { const err: any = new Error(`ENOENT: no such file or directory, open '${p}'`); err.code = 'ENOENT'; cb(err, null); }
+            else { const err: any = new Error(`ENOENT: no such file or directory, open '${path}'`); err.code = 'ENOENT'; cb(err, null); }
           })
-          ?.catch(() => { const err: any = new Error(`ENOENT: no such file or directory, open '${p}'`); err.code = 'ENOENT'; cb(err, null); })
-          ?? (() => { const err: any = new Error(`ENOENT: no such file or directory, open '${p}'`); err.code = 'ENOENT'; cb(err, null); })();
+          ?.catch(() => { const err: any = new Error(`ENOENT: no such file or directory, open '${path}'`); err.code = 'ENOENT'; cb(err, null); })
+          ?? (() => { const err: any = new Error(`ENOENT: no such file or directory, open '${path}'`); err.code = 'ENOENT'; cb(err, null); })();
       }
     }
   },
   writeFile: (p: string, data: any, ...args: any[]) => {
+    const path = resolveFsLookupPath(p);
     const cb = args[args.length - 1];
     const str = typeof data === 'string' ? data : (data?.toString?.() ?? String(data));
-    setStoredText(p, str);
+    setStoredText(path, str);
     if (typeof cb === 'function') cb(null);
   },
   mkdir: (_p: string, ...args: any[]) => {
@@ -702,10 +718,18 @@ const fsStub: Record<string, any> = {
     if (typeof cb === 'function') cb(null);
   },
   access: (p: string, ...args: any[]) => {
+    const path = resolveFsLookupPath(p);
     const cb = args[args.length - 1];
     if (typeof cb === 'function') {
-      if (getStoredText(p) !== null) cb(null);
-      else { const err: any = new Error('ENOENT'); err.code = 'ENOENT'; cb(err); }
+      if (getStoredText(path) !== null) cb(null);
+      else {
+        try {
+          if ((window as any).electron?.fileExistsSync?.(path)) { cb(null); return; }
+        } catch {}
+        const err: any = new Error(`ENOENT: no such file or directory, access '${path}'`);
+        err.code = 'ENOENT';
+        cb(err);
+      }
     }
   },
   stat: (p: string, ...args: any[]) => {
@@ -749,16 +773,18 @@ const fsStub: Record<string, any> = {
     cb(err);
   },
   realpath: (p: string, ...args: any[]) => {
+    const path = resolveFsLookupPath(p);
     const cb = args[args.length - 1];
-    if (typeof cb === 'function') cb(null, p);
+    if (typeof cb === 'function') cb(null, path);
   },
   readdir: (p: string, ...args: any[]) => {
     const cb = args[args.length - 1];
     if (typeof cb === 'function') cb(null, fsStub.readdirSync(p));
   },
   unlink: (p: string, ...args: any[]) => {
+    const path = resolveFsLookupPath(p);
     const cb = args[args.length - 1];
-    removeStoredText(p);
+    removeStoredText(path);
     if (typeof cb === 'function') cb(null);
   },
   rename: (oldPath: string, newPath: string, ...args: any[]) => {
@@ -772,26 +798,28 @@ const fsStub: Record<string, any> = {
   constants: { F_OK: 0, R_OK: 4, W_OK: 2, X_OK: 1 },
   promises: {
     readFile: async (p: string, opts?: any) => {
-      const content = getStoredText(p);
+      const path = resolveFsLookupPath(p);
+      const content = getStoredText(path);
       if (content !== null) {
         if (opts?.encoding || typeof opts === 'string') return content;
         return BufferPolyfill.from(content);
       }
       // Fall back to real file system
       try {
-        const data = await (window as any).electron?.readFile?.(p);
+        const data = await (window as any).electron?.readFile?.(path);
         if (data !== undefined && data !== '') {
           if (opts?.encoding || typeof opts === 'string') return data;
           return BufferPolyfill.from(data);
         }
       } catch { /* fall through */ }
-      const err: any = new Error(`ENOENT: no such file or directory, open '${p}'`);
+      const err: any = new Error(`ENOENT: no such file or directory, open '${path}'`);
       err.code = 'ENOENT';
       throw err;
     },
     writeFile: async (p: string, data: any) => {
+      const path = resolveFsLookupPath(p);
       const str = typeof data === 'string' ? data : (data?.toString?.() ?? String(data));
-      setStoredText(p, str);
+      setStoredText(path, str);
     },
     mkdir: noopAsync,
     readdir: async (p: string) => fsStub.readdirSync(p),
@@ -819,16 +847,19 @@ const fsStub: Record<string, any> = {
       err.code = 'ENOENT';
       throw err;
     },
-    realpath: async (p: string) => p,
+    realpath: async (p: string) => resolveFsLookupPath(p),
     access: async (p: string) => {
-      if (getStoredText(p) !== null) return;
+      const path = resolveFsLookupPath(p);
+      if (getStoredText(path) !== null) return;
       try {
-        if ((window as any).electron?.fileExistsSync?.(p)) return;
+        if ((window as any).electron?.fileExistsSync?.(path)) return;
       } catch {}
-      const err: any = new Error('ENOENT'); err.code = 'ENOENT'; throw err;
+      const err: any = new Error(`ENOENT: no such file or directory, access '${path}'`);
+      err.code = 'ENOENT';
+      throw err;
     },
-    unlink: async (p: string) => { removeStoredText(p); },
-    rm: async (p: string) => { removeStoredText(p); },
+    unlink: async (p: string) => { removeStoredText(resolveFsLookupPath(p)); },
+    rm: async (p: string) => { removeStoredText(resolveFsLookupPath(p)); },
     rename: async (oldPath: string, newPath: string) => { fsStub.renameSync(oldPath, newPath); },
     copyFile: async (src: string, dest: string) => { fsStub.copyFileSync(src, dest); },
     chmod: noopAsync,
@@ -1341,6 +1372,23 @@ fakeChildProcess.disconnect = noop;
 fakeChildProcess.connected = false;
 
 const childProcessStub = {
+  // Some git flows probe paths that can legitimately disappear (deleted/moved files).
+  // Raycast ignores these transient ENOENT stat-style failures; we do the same.
+  // Keep this very narrow so real command failures still surface.
+  _isGitInvocation: (commandOrFile: string, execArgs?: string[]) => {
+    const file = String(commandOrFile || '').toLowerCase();
+    const argsJoined = Array.isArray(execArgs) ? execArgs.join(' ').toLowerCase() : '';
+    return /\bgit(\s|$)/.test(file) || file.endsWith('/git') || /\bgit(\s|$)/.test(argsJoined);
+  },
+  _isBenignMissingPathError: (message: string) => {
+    const lower = String(message || '').toLowerCase();
+    if (!lower.includes('enoent') || !lower.includes('no such file or directory')) return false;
+    return /\b(stat|lstat|access|scandir)\b/.test(lower);
+  },
+  _shouldSuppressMissingPathError: (commandOrFile: string, message: string, execArgs?: string[]) => {
+    return childProcessStub._isGitInvocation(commandOrFile, execArgs)
+      && childProcessStub._isBenignMissingPathError(message);
+  },
   exec: (...args: any[]) => {
     // Parse arguments: exec(command[, options][, callback])
     const command = args[0];
@@ -1359,6 +1407,11 @@ const childProcessStub = {
         { shell: false, env: options?.env, cwd: options?.cwd }
       ).then((result: any) => {
         if (cb) {
+          const stderrOrMsg = String(result?.stderr || '');
+          if (childProcessStub._shouldSuppressMissingPathError(normalizedCommand, stderrOrMsg)) {
+            cb(null, '', '');
+            return;
+          }
           if (result.exitCode !== 0 && !result.stdout) {
             const err: any = new Error(result.stderr || `Command failed with exit code ${result.exitCode}`);
             err.code = result.exitCode;
@@ -1369,6 +1422,10 @@ const childProcessStub = {
           }
         }
       }).catch((e: any) => {
+        if (cb && childProcessStub._shouldSuppressMissingPathError(normalizedCommand, String(e?.message || e || ''))) {
+          cb(null, '', '');
+          return;
+        }
         if (cb) cb(e, '', '');
       });
     } else {
@@ -1384,6 +1441,10 @@ const childProcessStub = {
       { shell: false }
     );
     if (result?.exitCode && result.exitCode !== 0) {
+      const stderrOrMsg = String(result?.stderr || '');
+      if (childProcessStub._shouldSuppressMissingPathError(normalizedCommand, stderrOrMsg)) {
+        return BufferPolyfill.from('');
+      }
       const err: any = new Error(result.stderr || `Command failed with exit code ${result.exitCode}`);
       err.status = result.exitCode;
       err.stderr = result.stderr;
@@ -1416,6 +1477,11 @@ const childProcessStub = {
       (window as any).electron.execCommand(file, execArgs, { shell: false, env: options?.env, cwd: options?.cwd })
         .then((result: any) => {
           if (cb) {
+            const stderrOrMsg = String(result?.stderr || '');
+            if (childProcessStub._shouldSuppressMissingPathError(file, stderrOrMsg, execArgs)) {
+              cb(null, '', '');
+              return;
+            }
             if (result.exitCode !== 0 && !result.stdout) {
               const err: any = new Error(result.stderr || `Command failed with exit code ${result.exitCode}`);
               err.code = result.exitCode;
@@ -1424,7 +1490,13 @@ const childProcessStub = {
               cb(null, result.stdout || '', result.stderr || '');
             }
           }
-        }).catch((e: any) => { if (cb) cb(e, '', ''); });
+        }).catch((e: any) => {
+          if (cb && childProcessStub._shouldSuppressMissingPathError(file, String(e?.message || e || ''), execArgs)) {
+            cb(null, '', '');
+            return;
+          }
+          if (cb) cb(e, '', '');
+        });
     } else {
       if (cb) setTimeout(() => cb(null, '', ''), 0);
     }
@@ -1449,6 +1521,10 @@ const childProcessStub = {
     ) || { stdout: '', stderr: '', exitCode: 0 };
 
     if (result.exitCode !== 0) {
+      const stderrOrMsg = String(result?.stderr || '');
+      if (childProcessStub._shouldSuppressMissingPathError(file, stderrOrMsg, execArgs)) {
+        return options?.encoding ? '' : BufferPolyfill.from('');
+      }
       const err: any = new Error(result.stderr || `Command failed with exit code ${result.exitCode}`);
       err.status = result.exitCode;
       err.stderr = result.stderr;
@@ -1479,12 +1555,23 @@ const childProcessStub = {
         spawnArgs,
         { shell: options?.shell ?? false, env: options?.env, cwd: options?.cwd, input: options?.input }
       ).then((result: any) => {
+        const stderrOrMsg = String(result?.stderr || '');
+        if (childProcessStub._shouldSuppressMissingPathError(file, stderrOrMsg, spawnArgs)) {
+          cp.emit('close', 0, null);
+          cp.emit('exit', 0, null);
+          return;
+        }
         if (result?.stdout) cp.stdout.emit('data', BufferPolyfill.from(result.stdout));
         if (result?.stderr) cp.stderr.emit('data', BufferPolyfill.from(result.stderr));
         const code = result?.exitCode ?? 0;
         cp.emit('close', code, null);
         cp.emit('exit', code, null);
       }).catch((err: any) => {
+        if (childProcessStub._shouldSuppressMissingPathError(file, String(err?.message || err || ''), spawnArgs)) {
+          cp.emit('close', 0, null);
+          cp.emit('exit', 0, null);
+          return;
+        }
         cp.stderr.emit('data', BufferPolyfill.from(String(err?.message || err || 'spawn failed')));
         cp.emit('close', 1, null);
         cp.emit('exit', 1, null);
@@ -1504,6 +1591,18 @@ const childProcessStub = {
 
     const stdoutBuf = BufferPolyfill.from(result.stdout || '');
     const stderrBuf = BufferPolyfill.from(result.stderr || '');
+    if ((result.exitCode ?? 0) !== 0
+      && childProcessStub._shouldSuppressMissingPathError(resolvedCommand, String(result?.stderr || ''), Array.isArray(spawnArgs) ? spawnArgs : [])) {
+      return {
+        pid: 0,
+        output: [null, BufferPolyfill.from(''), BufferPolyfill.from('')],
+        stdout: BufferPolyfill.from(''),
+        stderr: BufferPolyfill.from(''),
+        status: 0,
+        signal: null,
+        error: undefined,
+      };
+    }
     return {
       pid: 0,
       output: [null, stdoutBuf, stderrBuf],
