@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Accessibility,
   ArrowLeft,
-  ArrowRight,
   Bot,
   BookOpen,
   Calculator,
@@ -435,7 +434,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     return (
                       <div
                         key={target.id}
-                        className="rounded-2xl border border-white/[0.18] p-4"
+                        className="rounded-2xl border border-white/[0.18] p-4 flex flex-col"
                         style={{
                           background:
                             'linear-gradient(160deg, rgba(255,255,255,0.13), rgba(255,255,255,0.04))',
@@ -458,10 +457,10 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                           )}
                         </div>
                         <p className="text-white/96 text-sm font-semibold mb-1">{target.title}</p>
-                        <p className="text-white/66 text-xs leading-relaxed mb-4">{target.description}</p>
+                        <p className="text-white/66 text-xs leading-relaxed flex-1">{target.description}</p>
                         <button
                           onClick={() => openPermissionTarget(target.id, target.url)}
-                          className="inline-flex w-full justify-center items-center gap-1.5 px-3 py-2 rounded-md border border-rose-200/25 bg-gradient-to-r from-rose-500/58 to-red-500/58 hover:from-rose-500/75 hover:to-red-500/75 text-white text-xs font-medium transition-colors"
+                          className="mt-4 inline-flex w-full justify-center items-center gap-1.5 px-3 py-2 rounded-md border border-rose-200/25 bg-gradient-to-r from-rose-500/58 to-red-500/58 hover:from-rose-500/75 hover:to-red-500/75 text-white text-xs font-medium transition-colors"
                         >
                           Open Settings
                           <ExternalLink className="w-3 h-3" />
@@ -543,8 +542,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
             disabled={step === STEPS.length - 1 ? !canFinish : !canContinue}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-white/25 bg-gradient-to-r from-rose-500/70 to-red-500/70 hover:from-rose-500/85 hover:to-red-500/85 text-white text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {step === STEPS.length - 1 ? 'Finish' : 'Continue'}
-            {step === STEPS.length - 1 ? <Check className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
+            {step === STEPS.length - 1 ? 'Finish' : `Continue → ${STEPS[step + 1]}`}
+            {step === STEPS.length - 1 ? <Check className="w-3.5 h-3.5" /> : null}
           </button>
         </div>
       </div>
