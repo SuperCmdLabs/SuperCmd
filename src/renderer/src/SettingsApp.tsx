@@ -5,7 +5,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Settings, Puzzle, Zap, Brain } from 'lucide-react';
+import { Settings, Puzzle, Brain } from 'lucide-react';
+import supercmdLogo from '../../../supercmd.svg';
 import GeneralTab from './settings/GeneralTab';
 import AITab from './settings/AITab';
 import ExtensionsTab from './settings/ExtensionsTab';
@@ -59,8 +60,8 @@ const SettingsApp: React.FC = () => {
       <div className="px-6 pb-3 border-b border-white/[0.06]">
         <div className="relative flex items-center justify-center">
           <div className="absolute left-0 text-[13px] font-semibold text-white/90 flex items-center gap-2">
-            <Zap className="w-4 h-4 text-yellow-400" />
-            SuperCommand Settings
+            <img src={supercmdLogo} alt="" className="w-4 h-4 object-contain" draggable={false} />
+            SuperCmd Settings
           </div>
           <div className="flex items-center gap-2">
             {tabs.map((tab) => (

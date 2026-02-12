@@ -368,6 +368,12 @@ function canonicalSettingsTitle(title: string, bundleId?: string): string {
   return byTitle[key] || cleaned;
 }
 
+function canonicalAppTitle(name: string): string {
+  const key = name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  if (key === 'supercommand' || key === 'supercmd') return 'SuperCmd';
+  return name;
+}
+
 // ─── Application Discovery ──────────────────────────────────────────
 
 async function discoverApplications(): Promise<CommandInfo[]> {
@@ -403,7 +409,8 @@ async function discoverApplications(): Promise<CommandInfo[]> {
       const batch = appPaths.slice(i, i + BATCH);
       const items = await Promise.all(
         batch.map(async (appPath) => {
-          const name = path.basename(appPath, '.app');
+          const rawName = path.basename(appPath, '.app');
+          const name = canonicalAppTitle(rawName);
           const key = name.toLowerCase();
           if (seen.has(key)) return null;
           seen.add(key);
@@ -657,49 +664,49 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
     },
     {
       id: 'system-open-settings',
-      title: 'SuperCommand Settings',
+      title: 'SuperCmd Settings',
       keywords: ['settings', 'preferences', 'config', 'configuration', 'supercommand'],
       category: 'system',
     },
     {
       id: 'system-open-ai-settings',
-      title: 'SuperCommand AI',
+      title: 'SuperCmd AI',
       keywords: ['ai', 'model', 'provider', 'openai', 'anthropic', 'ollama', 'supercommand'],
       category: 'system',
     },
     {
       id: 'system-supercommand-whisper',
-      title: 'SuperCommand Whisper',
+      title: 'SuperCmd Whisper',
       keywords: ['whisper', 'speech', 'voice', 'dictation', 'transcribe', 'overlay', 'supercommand'],
       category: 'system',
     },
     {
       id: 'system-whisper-onboarding',
-      title: 'SuperCommand Whisper Onboarding',
+      title: 'SuperCmd Whisper Onboarding',
       keywords: ['whisper', 'onboarding', 'dictation', 'voice', 'tutorial', 'hotkey', 'practice'],
       category: 'system',
     },
     {
       id: 'system-supercommand-speak',
-      title: 'SuperCommand Speak',
+      title: 'SuperCmd Read',
       keywords: ['speak', 'tts', 'read', 'selected text', 'edge-tts', 'speechify', 'jarvis', 'supercommand'],
       category: 'system',
     },
     {
       id: 'system-open-extensions-settings',
-      title: 'SuperCommand Extensions',
+      title: 'SuperCmd Extensions',
       keywords: ['extensions', 'store', 'community', 'hotkey', 'supercommand'],
       category: 'system',
     },
     {
       id: 'system-open-onboarding',
-      title: 'SuperCommand Onboarding',
+      title: 'SuperCmd Onboarding',
       keywords: ['welcome', 'onboarding', 'intro', 'setup', 'supercommand'],
       category: 'system',
     },
     {
       id: 'system-quit-launcher',
-      title: 'Quit SuperCommand',
+      title: 'Quit SuperCmd',
       keywords: ['exit', 'close', 'quit', 'stop'],
       category: 'system',
     },

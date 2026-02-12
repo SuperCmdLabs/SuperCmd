@@ -3,8 +3,8 @@
  *
  * Compact grouped layout with horizontal tabs for:
  * - API Keys & Generic Models
- * - SuperCommand Whisper
- * - SuperCommand Speak
+ * - SuperCmd Whisper
+ * - SuperCmd Read
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -367,8 +367,8 @@ const AITab: React.FC = () => {
 
       <div className="flex items-center gap-2 mb-2 overflow-x-auto pb-0.5">
         <TabButton id="api-models" label="API Keys & Models" />
-        <TabButton id="whisper" label="SuperCommand Whisper" />
-        <TabButton id="speak" label="SuperCommand Speak" />
+        <TabButton id="whisper" label="SuperCmd Whisper" />
+        <TabButton id="speak" label="SuperCmd Read" />
       </div>
 
       <div className={!ai.enabled ? 'opacity-65 pointer-events-none select-none space-y-2' : 'space-y-2'}>
@@ -680,7 +680,7 @@ const AITab: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Mic className="w-4 h-4 text-white/55" />
                 <div>
-                  <h3 className="text-sm font-medium text-white/90">SuperCommand Whisper</h3>
+                  <h3 className="text-sm font-medium text-white/90">SuperCmd Whisper</h3>
                   <p className="text-[11px] text-white/40">Speech-to-text and transcript cleanup.</p>
                 </div>
               </div>
@@ -782,7 +782,7 @@ const AITab: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Volume2 className="w-4 h-4 text-white/55" />
                 <div>
-                  <h3 className="text-sm font-medium text-white/90">SuperCommand Speak</h3>
+                  <h3 className="text-sm font-medium text-white/90">SuperCmd Read</h3>
                   <p className="text-[11px] text-white/40">Read selected text aloud.</p>
                 </div>
               </div>
@@ -865,7 +865,7 @@ const AITab: React.FC = () => {
                     onClick={async () => {
                       try {
                         setPreviewingVoice(true);
-                        const intro = `Hi, this is ${selectedEdgeVoice.label}. This is my voice in SuperCommand.`;
+                        const intro = `Hi, this is ${selectedEdgeVoice.label}. This is my voice in SuperCmd.`;
                         await window.electron.speakPreviewVoice({
                           voice: selectedEdgeVoice.id,
                           text: intro,

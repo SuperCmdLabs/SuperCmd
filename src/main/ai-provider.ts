@@ -385,7 +385,7 @@ function resolveUploadMeta(mimeType?: string): { filename: string; contentType: 
 }
 
 export function transcribeAudio(opts: TranscribeOptions): Promise<string> {
-  const boundary = `----SuperCommandBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+  const boundary = `----SuperCmdBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
   const uploadMeta = resolveUploadMeta(opts.mimeType);
 
   const parts: Buffer[] = [];

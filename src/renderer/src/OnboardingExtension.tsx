@@ -34,7 +34,7 @@ const permissionTargets = [
   {
     id: 'automation',
     title: 'Automation',
-    description: 'Lets SuperCommand control System Events for command execution.',
+    description: 'Lets SuperCmd control System Events for command execution.',
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Automation',
     icon: Bot,
     iconTone: 'text-violet-300/85',
@@ -62,7 +62,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [openedPermissions, setOpenedPermissions] = useState<Record<string, boolean>>({});
 
   const stepTitle = useMemo(() => {
-    if (step === 0) return 'Welcome to SuperCommand';
+    if (step === 0) return 'Welcome to SuperCmd';
     if (step === 1) return 'Set Your Hotkey';
     return 'Grant Required Permissions';
   }, [step]);
@@ -181,7 +181,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                       <p className="text-white/85 text-sm font-medium">Launcher Hotkey</p>
                     </div>
                     <p className="text-white/45 text-xs mb-4">
-                      Choose a global shortcut to open SuperCommand from anywhere.
+                      Choose a global shortcut to open SuperCmd from anywhere.
                     </p>
                     <div className="flex items-center gap-3">
                       <HotkeyRecorder value={shortcut} onChange={handleShortcutChange} />
@@ -195,7 +195,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   <p className="text-white/75 text-sm">Set this once, then launch instantly from any app.</p>
                 </div>
                 <p className="text-xs text-white/35">
-                  You can change this anytime from SuperCommand Settings.
+                  You can change this anytime from SuperCmd Settings.
                 </p>
               </div>
             </div>

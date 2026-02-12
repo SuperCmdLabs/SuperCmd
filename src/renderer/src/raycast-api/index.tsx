@@ -2,7 +2,7 @@
  * @raycast/api + @raycast/utils — Complete Compatibility Shim
  *
  * This module provides a comprehensive compatibility layer for Raycast
- * extensions running inside SuperCommand. It implements ALL the APIs
+ * extensions running inside SuperCmd. It implements ALL the APIs
  * documented at https://developers.raycast.com/api-reference/
  *
  * EXPORTS (from @raycast/api):
@@ -1521,7 +1521,7 @@ export async function getFrontmostApplication(): Promise<Application> {
   } catch (e) {
     console.error('getFrontmostApplication error:', e);
   }
-  return { name: 'SuperCommand', path: '', bundleId: 'com.supercommand' };
+  return { name: 'SuperCmd', path: '', bundleId: 'com.supercommand' };
 }
 
 export async function getDefaultApplication(path: string): Promise<Application> {
@@ -4349,7 +4349,7 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: Me
     );
   }
 
-  // Fallback: render in the SuperCommand overlay window
+  // Fallback: render in the SuperCmd overlay window
   return (
     <MBRegistryContext.Provider value={registryAPI}>
       <div className="flex flex-col h-full p-2">{children}</div>
@@ -5757,7 +5757,7 @@ function buildOAuthRedirectUri(redirectMethod: string, extensionName?: string): 
     case 'app':
     case 'appURI':
     default:
-      // SuperCommand-owned OAuth callback deep link.
+      // SuperCmd-owned OAuth callback deep link.
       // Must be registered in each provider app config.
       return `supercommand://oauth/callback?packageName=${encodeURIComponent(pkg)}`;
   }
@@ -6311,7 +6311,7 @@ export function withAccessToken(options: any) {
                     className="w-full max-w-[380px] mx-auto bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/85 placeholder-white/35 outline-none"
                   />
                   <div className="mt-1 text-xs text-white/40">
-                    Use your own OAuth app client ID for SuperCommand redirect support.
+                    Use your own OAuth app client ID for SuperCmd redirect support.
                   </div>
                 </div>
               </div>

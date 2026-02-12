@@ -2,7 +2,7 @@
  * Extension View
  *
  * Dynamically loads and renders a community extension's UI
- * inside the SuperCommand overlay.
+ * inside the SuperCmd overlay.
  *
  * The extension code (built to CJS by esbuild) is executed with a
  * custom `require()` that provides React and our @raycast/api shim.
@@ -105,7 +105,7 @@ class ExtensionErrorBoundary extends React.Component<
 
 // ─── Node.js built-in stubs ─────────────────────────────────────────
 // Raycast extensions run in a full Node.js environment inside Raycast.
-// In SuperCommand, extensions run in the renderer (browser context).
+// In SuperCmd, extensions run in the renderer (browser context).
 // We provide comprehensive stubs so that bundled code that calls
 // require('os'), require('buffer'), etc. doesn't crash on import.
 //
@@ -1607,7 +1607,7 @@ const processStub: Record<string, any> = {
   execPath: '/usr/local/bin/node',
   pid: 1,
   ppid: 0,
-  title: 'supercommand',
+  title: 'SuperCmd',
   exit: noop,
   abort: noop,
   kill: noop,
@@ -2073,7 +2073,7 @@ function loadExtensionExport(
 
     // Custom require that provides our shim modules.
     // This is the critical bridge between extension code and the
-    // SuperCommand renderer environment. Every module an extension
+    // SuperCmd renderer environment. Every module an extension
     // might `require()` must be handled here.
     //
     // IMPORTANT: We track React requires to verify the same instance is always returned.

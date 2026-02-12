@@ -12,7 +12,7 @@
  *
  * Install Strategy:
  *   1. git sparse-checkout of the specific extension directory
- *   2. Copy to ~/Library/Application Support/SuperCommand/extensions/
+ *   2. Copy to ~/Library/Application Support/SuperCmd/extensions/
  *   3. Run npm install --production
  */
 
@@ -281,7 +281,7 @@ export async function getExtensionScreenshotUrls(name: string): Promise<string[]
     const url = `${GITHUB_API}/extensions/${encodeURIComponent(name)}/metadata`;
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'SuperCommand',
+        'User-Agent': 'SuperCmd',
         Accept: 'application/vnd.github+json',
       },
     });

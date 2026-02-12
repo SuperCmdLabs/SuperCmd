@@ -2,7 +2,7 @@
  * Settings Store
  *
  * Simple JSON-file persistence for app settings.
- * Stored at ~/Library/Application Support/SuperCommand/settings.json
+ * Stored at ~/Library/Application Support/SuperCmd/settings.json
  */
 
 import { app } from 'electron';

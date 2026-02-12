@@ -6,7 +6,6 @@ import {
   Puzzle,
   Search,
   TerminalSquare,
-  Zap,
   ClipboardList,
   Settings,
   Brain,
@@ -18,6 +17,7 @@ import {
   LogOut,
   Sparkles,
 } from 'lucide-react';
+import supercmdLogo from '../../../../supercmd.svg';
 import HotkeyRecorder from './HotkeyRecorder';
 import type {
   AppSettings,
@@ -172,8 +172,8 @@ const ExtensionsTab: React.FC = () => {
     if (systemCommands.length > 0) {
       byExt.set('__supercommand', {
         extName: '__supercommand',
-        title: 'SuperCommand',
-        description: 'Built-in SuperCommand commands',
+        title: 'SuperCmd',
+        description: 'Built-in SuperCmd commands',
         owner: 'supercommand',
         iconDataUrl: undefined,
         preferences: [],
@@ -439,7 +439,7 @@ const ExtensionsTab: React.FC = () => {
                       {(schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)) ? (
                         <img src={schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)} alt="" className="w-4 h-4 rounded-sm object-contain" draggable={false} />
                       ) : schema.extName === '__supercommand' ? (
-                        <Zap className="w-4 h-4 text-yellow-300/90" />
+                        <img src={supercmdLogo} alt="" className="w-4 h-4 object-contain" draggable={false} />
                       ) : (
                         <Puzzle className="w-4 h-4 text-violet-300/80" />
                       )}

@@ -1,7 +1,7 @@
 {
   "name": "supercommand",
   "version": "1.0.0",
-  "description": "SuperCommand — A Raycast-like launcher for macOS",
+  "description": "SuperCmd — A Raycast-like launcher for macOS",
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "npm run build:main && concurrently \"npm run watch:main\" \"npm run dev:renderer\" \"npm run start:electron\"",
@@ -44,7 +44,8 @@
   },
   "build": {
     "appId": "com.supercommand.app",
-    "productName": "SuperCommand",
+    "productName": "SuperCmd",
+    "icon": "supercmd.icns",
     "files": [
       "dist/**/*",
       "package.json"
@@ -57,8 +58,12 @@
     },
     "mac": {
       "category": "public.app-category.utilities",
+      "icon": "supercmd.icns",
       "target": "dmg",
       "publish": null
+    },
+    "linux": {
+      "icon": "supercmd.svg"
     }
   }
 }

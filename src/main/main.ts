@@ -1,5 +1,5 @@
 /**
- * Main Process — SuperCommand
+ * Main Process — SuperCmd
  *
  * Handles:
  * - Global shortcut registration (configurable)
@@ -487,7 +487,7 @@ function transcribeAudioWithElevenLabs(opts: {
   language?: string;
   mimeType?: string;
 }): Promise<string> {
-  const boundary = `----SuperCommandBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+  const boundary = `----SuperCmdBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
   const parts: Buffer[] = [];
   const normalized = String(opts.mimeType || '').toLowerCase();
   const filename = normalized.includes('wav')
@@ -1321,12 +1321,12 @@ function createWindow(): void {
         y: popupPos.y,
         title:
           detachedPopupName === DETACHED_WHISPER_WINDOW_NAME
-            ? 'SuperCommand Whisper'
+            ? 'SuperCmd Whisper'
             : detachedPopupName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME
-              ? 'SuperCommand Whisper Onboarding'
+              ? 'SuperCmd Whisper Onboarding'
             : detachedPopupName === DETACHED_PROMPT_WINDOW_NAME
-              ? 'SuperCommand Prompt'
-              : 'SuperCommand Speak',
+              ? 'SuperCmd Prompt'
+              : 'SuperCmd Read',
         frame: false,
         titleBarStyle: 'hidden',
         titleBarOverlay: false,
@@ -1826,7 +1826,7 @@ function captureFrontmostAppContext(): void {
     `;
     const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
     const [name, appPath, bundleId] = result.split('|||');
-    if (bundleId !== 'com.supercommand' && name !== 'SuperCommand' && name !== 'Electron') {
+    if (bundleId !== 'com.supercommand' && name !== 'SuperCmd' && name !== 'Electron') {
       lastFrontmostApp = { name, path: appPath, bundleId };
     }
   } catch {
@@ -3342,8 +3342,8 @@ app.whenReady().then(async () => {
 
       const voice = String(payload?.voice || speakRuntimeOptions.voice || 'en-US-JennyNeural').trim();
       const rate = parseSpeakRateInput(payload?.rate ?? speakRuntimeOptions.rate);
-      const sampleTextRaw = String(payload?.text || 'Hi, this is my voice in SuperCommand.');
-      const sampleText = sampleTextRaw.trim().slice(0, 240) || 'Hi, this is my voice in SuperCommand.';
+      const sampleTextRaw = String(payload?.text || 'Hi, this is my voice in SuperCmd.');
+      const sampleText = sampleTextRaw.trim().slice(0, 240) || 'Hi, this is my voice in SuperCmd.';
 
       const langMatch = /^([a-z]{2}-[A-Z]{2})-/.exec(voice);
       const lang = langMatch?.[1] || String(loadSettings().ai?.speechLanguage || 'en-US');
@@ -4117,7 +4117,7 @@ return appURL's |path|() as text`,
       const [name, appPath, bundleId] = result.split('|||');
       return { name, path: appPath, bundleId };
     } catch (e) {
-      return { name: 'SuperCommand', path: '', bundleId: 'com.supercommand' };
+      return { name: 'SuperCmd', path: '', bundleId: 'com.supercommand' };
     }
   });
 

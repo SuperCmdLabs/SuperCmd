@@ -10,7 +10,7 @@ interface SpeakStatus {
   wordIndex?: number;
 }
 
-interface SuperCommandSpeakProps {
+interface SuperCmdReadProps {
   status: SpeakStatus;
   voice: string;
   rate: string;
@@ -35,7 +35,7 @@ const SPEED_PRESETS = [
   { value: '+30%', label: '1.3x' },
 ];
 
-const SuperCommandSpeak: React.FC<SuperCommandSpeakProps> = ({
+const SuperCmdRead: React.FC<SuperCmdReadProps> = ({
   status,
   voice,
   rate,
@@ -156,4 +156,4 @@ const SuperCommandSpeak: React.FC<SuperCommandSpeakProps> = ({
   );
 };
 
-export default SuperCommandSpeak;
+export default SuperCmdRead;

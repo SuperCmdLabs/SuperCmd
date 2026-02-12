@@ -15,10 +15,11 @@ import SnippetManager from './SnippetManager';
 import OnboardingExtension from './OnboardingExtension';
 import WhisperOnboardingExtension from './WhisperOnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
-import SuperCommandWhisper from './SuperCommandWhisper';
-import SuperCommandSpeak from './SuperCommandSpeak';
+import SuperCmdWhisper from './SuperCmdWhisper';
+import SuperCmdRead from './SuperCmdRead';
 import { tryCalculate } from './smart-calculator';
 import { useDetachedPortalWindow } from './useDetachedPortalWindow';
+import supercmdLogo from '../../../supercmd.svg';
 
 interface LauncherAction {
   id: string;
@@ -107,7 +108,73 @@ function formatShortcutLabel(shortcut: string): string {
     .replace(/\+/g, ' ');
 }
 
+function isSuperCmdAppTitle(title: string): boolean {
+  const key = String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return key === 'supercommand' || key === 'supercmd';
+}
+
+function isSuperCmdSystemCommand(commandId: string): boolean {
+  return (
+    commandId === 'system-open-settings' ||
+    commandId === 'system-open-ai-settings' ||
+    commandId === 'system-open-extensions-settings' ||
+    commandId === 'system-open-onboarding' ||
+    commandId === 'system-quit-launcher'
+  );
+}
+
+function renderSuperCmdLogoIcon(): React.ReactNode {
+  return (
+    <img
+      src={supercmdLogo}
+      alt=""
+      className="w-5 h-5 object-contain"
+      draggable={false}
+    />
+  );
+}
+
+function getCommandDisplayTitle(command: CommandInfo): string {
+  if (command.category === 'app' && isSuperCmdAppTitle(command.title)) return 'SuperCmd';
+  return command.title;
+}
+
+function renderCommandIcon(command: CommandInfo): React.ReactNode {
+  if (command.category === 'app' && isSuperCmdAppTitle(command.title)) {
+    return renderSuperCmdLogoIcon();
+  }
+  if (command.iconDataUrl) {
+    return (
+      <img
+        src={command.iconDataUrl}
+        alt=""
+        className="w-5 h-5 object-contain"
+        draggable={false}
+      />
+    );
+  }
+  if (command.category === 'system') {
+    return getSystemCommandFallbackIcon(command.id);
+  }
+  if (command.category === 'extension') {
+    return (
+      <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
+        <Puzzle className="w-3 h-3 text-purple-400" />
+      </div>
+    );
+  }
+  return (
+    <div className="w-5 h-5 rounded bg-gray-500/20 flex items-center justify-center">
+      <Settings className="w-3 h-3 text-gray-400" />
+    </div>
+  );
+}
+
 function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
+  if (isSuperCmdSystemCommand(commandId)) {
+    return renderSuperCmdLogoIcon();
+  }
+
   if (commandId === 'system-cursor-prompt') {
     return (
       <div className="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
@@ -446,7 +513,7 @@ const App: React.FC = () => {
 
   const whisperPortalTarget = useDetachedPortalWindow(showWhisper, {
     name: 'supercommand-whisper-window',
-    title: 'SuperCommand Whisper',
+    title: 'SuperCmd Whisper',
     width: showWhisperHint ? 620 : 272,
     height: showWhisperHint ? 88 : 52,
     anchor: 'center-bottom',
@@ -458,7 +525,7 @@ const App: React.FC = () => {
 
   const whisperOnboardingPortalTarget = useDetachedPortalWindow(showWhisperOnboarding, {
     name: 'supercommand-whisper-onboarding-window',
-    title: 'SuperCommand Whisper Onboarding',
+    title: 'SuperCmd Whisper Onboarding',
     width: 920,
     height: 640,
     anchor: 'center',
@@ -469,7 +536,7 @@ const App: React.FC = () => {
 
   const speakPortalTarget = useDetachedPortalWindow(showSpeak, {
     name: 'supercommand-speak-window',
-    title: 'SuperCommand Speak',
+    title: 'SuperCmd Read',
     width: 520,
     height: 112,
     anchor: 'top-right',
@@ -481,7 +548,7 @@ const App: React.FC = () => {
 
   const cursorPromptPortalTarget = useDetachedPortalWindow(showCursorPrompt, {
     name: 'supercommand-prompt-window',
-    title: 'SuperCommand Prompt',
+    title: 'SuperCmd Prompt',
     width: 500,
     height: 132,
     anchor: 'caret',
@@ -1956,7 +2023,7 @@ const App: React.FC = () => {
   const detachedOverlayRunners = (
     <>
       {showWhisper && whisperPortalTarget ? (
-        <SuperCommandWhisper
+        <SuperCmdWhisper
           portalTarget={whisperPortalTarget}
           onboardingCaptureMode={showWhisperOnboarding}
           onOnboardingTranscriptAppend={appendWhisperOnboardingPracticeText}
@@ -1993,7 +2060,7 @@ const App: React.FC = () => {
           )
         : null}
       {showSpeak && speakPortalTarget ? (
-        <SuperCommandSpeak
+        <SuperCmdRead
           status={speakStatus}
           voice={speakOptions.voice}
           rate={speakOptions.rate}
@@ -2701,29 +2768,12 @@ const App: React.FC = () => {
                         >
                           <div className="flex items-center gap-2.5">
                             <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                              {command.iconDataUrl ? (
-                                <img
-                                  src={command.iconDataUrl}
-                                  alt=""
-                                  className="w-5 h-5 object-contain"
-                                  draggable={false}
-                                />
-                              ) : command.category === 'system' ? (
-                                getSystemCommandFallbackIcon(command.id)
-                              ) : command.category === 'extension' ? (
-                                <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
-                                  <Puzzle className="w-3 h-3 text-purple-400" />
-                                </div>
-                              ) : (
-                                <div className="w-5 h-5 rounded bg-gray-500/20 flex items-center justify-center">
-                                  <Settings className="w-3 h-3 text-gray-400" />
-                                </div>
-                              )}
+                              {renderCommandIcon(command)}
                             </div>
 
                             <div className="flex-1 min-w-0">
                               <div className="text-white/95 text-[13px] font-medium truncate tracking-[0.004em]">
-                                {command.title}
+                                {getCommandDisplayTitle(command)}
                               </div>
                             </div>
 
@@ -2768,7 +2818,14 @@ const App: React.FC = () => {
               ) : memoryFeedback
                 ? memoryFeedback.text
                 : selectedCommand
-                  ? selectedCommand.title
+                  ? (
+                    <>
+                      <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                        {renderCommandIcon(selectedCommand)}
+                      </span>
+                      <span className="truncate">{getCommandDisplayTitle(selectedCommand)}</span>
+                    </>
+                  )
                   : `${displayCommands.length} results`}
             </div>
             {selectedActions[0] && (

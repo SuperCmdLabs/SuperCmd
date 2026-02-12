@@ -52,7 +52,7 @@ const GeneralTab: React.FC = () => {
           <h3 className="text-base font-semibold text-white/95">Launcher Shortcut</h3>
         </div>
         <p className="text-sm text-white/45 mb-5">
-          Set the global shortcut to open and close SuperCommand.
+          Set the global shortcut to open and close SuperCmd.
         </p>
 
         <div className="flex items-center gap-4">
@@ -70,7 +70,7 @@ const GeneralTab: React.FC = () => {
           <h3 className="text-sm font-medium text-white/90">About</h3>
         </div>
         <p className="text-sm text-white/45">
-          SuperCommand v1.0.0 — A fast, Raycast-inspired launcher for macOS.
+          SuperCmd v1.0.0 — A fast, Raycast-inspired launcher for macOS.
         </p>
       </div>
     </div>

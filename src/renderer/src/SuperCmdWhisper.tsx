@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-interface SuperCommandWhisperProps {
+interface SuperCmdWhisperProps {
   onClose: () => void;
   portalTarget?: HTMLElement | null;
   onboardingCaptureMode?: boolean;
@@ -169,7 +169,7 @@ function formatDeltaForAppend(previous: string, rawDelta: string): string {
   return next;
 }
 
-const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
+const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   onClose,
   portalTarget,
   onboardingCaptureMode = false,
@@ -1175,7 +1175,7 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
     } catch {
       setState('error');
       setStatusText('Microphone access denied.');
-      setErrorText('Allow microphone permission to use SuperCommand Whisper.');
+      setErrorText('Allow microphone permission to use SuperCmd Whisper.');
       stopVisualizer();
     }
   }, [state, startVisualizer, stopVisualizer, restoreEditorFocusOnce, startPeriodicTranscription, finalizeAndClose, resolveSessionConfig, startNativeSilenceWatchdog, stopNativeSilenceWatchdog, stopNativeProcessTimer, scheduleNativeProcessTimer, flushNativeCurrentPartial, stopRecording, playRecordingCue]);
@@ -1318,4 +1318,4 @@ const SuperCommandWhisper: React.FC<SuperCommandWhisperProps> = ({
   );
 };
 
-export default SuperCommandWhisper;
+export default SuperCmdWhisper;
