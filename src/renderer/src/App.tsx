@@ -613,7 +613,7 @@ const App: React.FC = () => {
   const [configuredTtsModel, setConfiguredTtsModel] = useState('edge-tts');
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
-  const [launcherShortcut, setLauncherShortcut] = useState('Command+Space');
+  const [launcherShortcut, setLauncherShortcut] = useState('Alt+Space');
   const [showActions, setShowActions] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -832,7 +832,7 @@ const App: React.FC = () => {
       const shortcutStatus = await window.electron.getGlobalShortcutStatus();
       setPinnedCommands(settings.pinnedCommands || []);
       setRecentCommands(settings.recentCommands || []);
-      setLauncherShortcut(settings.globalShortcut || 'Command+Space');
+      setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-JennyNeural'));
@@ -844,7 +844,7 @@ const App: React.FC = () => {
       console.error('Failed to load launcher preferences:', e);
       setPinnedCommands([]);
       setRecentCommands([]);
-      setLauncherShortcut('Command+Space');
+      setLauncherShortcut('Alt+Space');
       setConfiguredEdgeTtsVoice('en-US-JennyNeural');
       setConfiguredTtsModel('edge-tts');
       setShowOnboarding(false);
@@ -1907,6 +1907,7 @@ const App: React.FC = () => {
 
   const runLocalSystemCommand = useCallback(async (commandId: string): Promise<boolean> => {
     if (commandId === 'system-open-onboarding') {
+      await window.electron.setLauncherMode('onboarding');
       whisperSessionRef.current = false;
       setShowCursorPrompt(false);
       setExtensionView(null);
@@ -3220,13 +3221,12 @@ const App: React.FC = () => {
         <OnboardingExtension
           initialShortcut={launcherShortcut}
           requireWorkingShortcut={onboardingRequiresShortcutFix}
-          onClose={() => {
-            setShowOnboarding(false);
-            setSearchQuery('');
-            setSelectedIndex(0);
-            setTimeout(() => inputRef.current?.focus(), 50);
+          onClose={async () => {
+            await window.electron.setLauncherMode('onboarding');
+            setShowOnboarding(true);
           }}
           onComplete={async () => {
+            await window.electron.setLauncherMode('default');
             await window.electron.saveSettings({ hasSeenOnboarding: true });
             setShowOnboarding(false);
             setOnboardingRequiresShortcutFix(false);

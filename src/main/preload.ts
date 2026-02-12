@@ -23,13 +23,13 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('execute-command', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
   closePromptWindow: (): Promise<void> => ipcRenderer.invoke('close-prompt-window'),
-  setLauncherMode: (mode: 'default' | 'whisper' | 'speak' | 'prompt'): Promise<void> =>
+  setLauncherMode: (mode: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt'): Promise<void> =>
     ipcRenderer.invoke('set-launcher-mode', mode),
   getLastFrontmostApp: (): Promise<{ name: string; path: string; bundleId?: string } | null> =>
     ipcRenderer.invoke('get-last-frontmost-app'),
   restoreLastFrontmostApp: (): Promise<boolean> =>
     ipcRenderer.invoke('restore-last-frontmost-app'),
-  onWindowShown: (callback: (payload?: { mode?: 'default' | 'whisper' | 'speak' | 'prompt' }) => void) => {
+  onWindowShown: (callback: (payload?: { mode?: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt' }) => void) => {
     ipcRenderer.on('window-shown', (_event: any, payload: any) => callback(payload));
   },
   onWindowHidden: (callback: () => void) => {
@@ -106,6 +106,10 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('get-all-commands'),
   updateGlobalShortcut: (shortcut: string): Promise<boolean> =>
     ipcRenderer.invoke('update-global-shortcut', shortcut),
+  setOpenAtLogin: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('set-open-at-login', enabled),
+  replaceSpotlightWithSuperCmdShortcut: (): Promise<boolean> =>
+    ipcRenderer.invoke('replace-spotlight-with-supercmd'),
   updateCommandHotkey: (
     commandId: string,
     hotkey: string

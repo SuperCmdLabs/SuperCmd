@@ -31,6 +31,7 @@ export interface AISettings {
 
 export interface AppSettings {
   globalShortcut: string;
+  openAtLogin: boolean;
   disabledCommands: string[];
   enabledCommands: string[];
   commandHotkeys: Record<string, string>;
@@ -63,7 +64,8 @@ const DEFAULT_AI_SETTINGS: AISettings = {
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
-  globalShortcut: 'Command+Space',
+  globalShortcut: 'Alt+Space',
+  openAtLogin: false,
   disabledCommands: [],
   enabledCommands: [],
   commandHotkeys: {
@@ -112,6 +114,7 @@ export function loadSettings(): AppSettings {
     delete parsedHotkeys['system-supercommand-whisper-stop'];
     settingsCache = {
       globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
+      openAtLogin: parsed.openAtLogin ?? DEFAULT_SETTINGS.openAtLogin,
       disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
       enabledCommands: parsed.enabledCommands ?? DEFAULT_SETTINGS.enabledCommands,
       commandHotkeys: {

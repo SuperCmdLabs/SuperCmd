@@ -83,6 +83,8 @@ function getNativeBinaryPath(name: string): string {
 
 const DEFAULT_WINDOW_WIDTH = 860;
 const DEFAULT_WINDOW_HEIGHT = 540;
+const ONBOARDING_WINDOW_WIDTH = 1120;
+const ONBOARDING_WINDOW_HEIGHT = 740;
 const CURSOR_PROMPT_WINDOW_WIDTH = 500;
 const CURSOR_PROMPT_WINDOW_HEIGHT = 90;
 const CURSOR_PROMPT_LEFT_OFFSET = 20;
@@ -93,6 +95,7 @@ const DETACHED_WHISPER_ONBOARDING_WINDOW_NAME = 'supercommand-whisper-onboarding
 const DETACHED_SPEAK_WINDOW_NAME = 'supercommand-speak-window';
 const DETACHED_PROMPT_WINDOW_NAME = 'supercommand-prompt-window';
 const DETACHED_WINDOW_QUERY_KEY = 'sc_detached';
+type LauncherMode = 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt';
 
 function parsePopupFeatures(rawFeatures: string): {
   width?: number;
@@ -301,7 +304,7 @@ let activeSpeakSession: {
   ttsProcesses: Set<any>;
   restartFrom: (index: number) => void;
 } | null = null;
-let launcherMode: 'default' | 'whisper' | 'speak' | 'prompt' = 'default';
+let launcherMode: LauncherMode = 'default';
 let lastWhisperToggleAt = 0;
 let lastWhisperShownAt = 0;
 let lastTypingCaretPoint: { x: number; y: number } | null = null;
@@ -1439,7 +1442,13 @@ function createWindow(): void {
   mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.on('blur', () => {
-    if (isVisible && !suppressBlurHide && launcherMode !== 'whisper' && launcherMode !== 'speak') {
+    if (
+      isVisible &&
+      !suppressBlurHide &&
+      launcherMode !== 'whisper' &&
+      launcherMode !== 'speak' &&
+      launcherMode !== 'onboarding'
+    ) {
       hideWindow();
     }
   });
@@ -1576,7 +1585,7 @@ function hidePromptWindow(): void {
   }
 }
 
-function getLauncherSize(mode: 'default' | 'whisper' | 'speak' | 'prompt') {
+function getLauncherSize(mode: LauncherMode) {
   if (mode === 'prompt') {
     return { width: CURSOR_PROMPT_WINDOW_WIDTH, height: CURSOR_PROMPT_WINDOW_HEIGHT, topFactor: 0.2 };
   }
@@ -1585,6 +1594,9 @@ function getLauncherSize(mode: 'default' | 'whisper' | 'speak' | 'prompt') {
   }
   if (mode === 'speak') {
     return { width: 530, height: 300, topFactor: 0.03 };
+  }
+  if (mode === 'onboarding') {
+    return { width: ONBOARDING_WINDOW_WIDTH, height: ONBOARDING_WINDOW_HEIGHT, topFactor: 0.12 };
   }
   return { width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT, topFactor: 0.2 };
 }
@@ -1733,7 +1745,7 @@ function getFocusedInputRect():
   }
 }
 
-function applyLauncherBounds(mode: 'default' | 'whisper' | 'speak' | 'prompt'): void {
+function applyLauncherBounds(mode: LauncherMode): void {
   if (!mainWindow) return;
   const cursorPoint = screen.getCursorScreenPoint();
   const caretRect = mode === 'prompt' ? getTypingCaretRect() : null;
@@ -1810,7 +1822,7 @@ function applyLauncherBounds(mode: 'default' | 'whisper' | 'speak' | 'prompt'): 
   });
 }
 
-function setLauncherMode(mode: 'default' | 'whisper' | 'speak' | 'prompt'): void {
+function setLauncherMode(mode: LauncherMode): void {
   const prevMode = launcherMode;
   launcherMode = mode;
   if (mainWindow) {
@@ -1827,6 +1839,13 @@ function setLauncherMode(mode: 'default' | 'whisper' | 'speak' | 'prompt'): void
           mainWindow.setFocusable(true);
           mainWindow.setBackgroundColor('#10101400');
         }
+      }
+      if (mode === 'onboarding') {
+        mainWindow.setAlwaysOnTop(false);
+        mainWindow.setVisibleOnAllWorkspaces(false);
+      } else {
+        mainWindow.setAlwaysOnTop(true);
+        mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
       }
     } catch {}
   }
@@ -2241,7 +2260,7 @@ async function openLauncherFromUserEntry(): Promise<void> {
     // the app is running and can click the dock icon to get back if needed.
     await openLauncherAndRunSystemCommand('system-open-onboarding', {
       showWindow: true,
-      mode: 'default',
+      mode: 'onboarding',
     });
     return;
   }
@@ -2258,7 +2277,7 @@ async function openLauncherAndRunSystemCommand(
   commandId: string,
   options?: {
     showWindow?: boolean;
-    mode?: 'default' | 'whisper' | 'speak' | 'prompt';
+    mode?: LauncherMode;
     preserveFocusWhenHidden?: boolean;
   }
 ): Promise<boolean> {
@@ -2455,12 +2474,17 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
     commandId === 'system-search-files' ||
-    commandId === 'system-open-onboarding' ||
     commandId === 'system-whisper-onboarding'
   ) {
     return await openLauncherAndRunSystemCommand(commandId, {
       showWindow: true,
       mode: 'default',
+    });
+  }
+  if (commandId === 'system-open-onboarding') {
+    return await openLauncherAndRunSystemCommand(commandId, {
+      showWindow: true,
+      mode: 'onboarding',
     });
   }
   if (isWhisperOpenCommand) {
@@ -3241,6 +3265,60 @@ function openExtensionStoreWindow(): void {
 
 // ─── Shortcut Management ────────────────────────────────────────────
 
+function applyOpenAtLogin(enabled: boolean): boolean {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: Boolean(enabled),
+      openAsHidden: true,
+    });
+    return true;
+  } catch (error) {
+    console.warn('[LoginItems] Failed to update open-at-login:', error);
+    return false;
+  }
+}
+
+function disableMacSpotlightShortcuts(): boolean {
+  if (process.platform !== 'darwin') return false;
+  try {
+    const { execFileSync } = require('child_process');
+    execFileSync('/usr/bin/defaults', [
+      'write',
+      'com.apple.symbolichotkeys',
+      'AppleSymbolicHotKeys',
+      '-dict-add',
+      '64',
+      '{enabled = 0;}',
+    ]);
+    execFileSync('/usr/bin/defaults', [
+      'write',
+      'com.apple.symbolichotkeys',
+      'AppleSymbolicHotKeys',
+      '-dict-add',
+      '65',
+      '{enabled = 0;}',
+    ]);
+    try { execFileSync('/usr/bin/killall', ['cfprefsd']); } catch {}
+    try { execFileSync('/usr/bin/killall', ['SystemUIServer']); } catch {}
+    return true;
+  } catch (error) {
+    console.warn('[Spotlight] Failed to disable Spotlight shortcuts:', error);
+    return false;
+  }
+}
+
+function replaceSpotlightWithSuperCmdShortcut(): boolean {
+  const disabled = disableMacSpotlightShortcuts();
+  const targetShortcut = 'Command+Space';
+  const registered = registerGlobalShortcut(targetShortcut);
+  if (!registered) return false;
+  saveSettings({ globalShortcut: targetShortcut });
+  if (!disabled && process.platform === 'darwin') {
+    console.warn('[Spotlight] Spotlight shortcut might still be enabled.');
+  }
+  return true;
+}
+
 function registerGlobalShortcut(shortcut: string): boolean {
   const normalizedShortcut = normalizeAccelerator(shortcut);
   globalShortcutRegistrationState.requestedShortcut = normalizedShortcut;
@@ -3378,6 +3456,7 @@ app.whenReady().then(async () => {
   );
 
   const settings = loadSettings();
+  applyOpenAtLogin(Boolean((settings as any).openAtLogin));
 
   // Start clipboard monitor
   startClipboardMonitor();
@@ -3420,8 +3499,8 @@ app.whenReady().then(async () => {
     hidePromptWindow();
   });
 
-  ipcMain.handle('set-launcher-mode', (_event: any, mode: 'default' | 'whisper' | 'speak' | 'prompt') => {
-    if (mode !== 'default' && mode !== 'whisper' && mode !== 'speak' && mode !== 'prompt') return;
+  ipcMain.handle('set-launcher-mode', (_event: any, mode: LauncherMode) => {
+    if (mode !== 'default' && mode !== 'onboarding' && mode !== 'whisper' && mode !== 'speak' && mode !== 'prompt') return;
     setLauncherMode(mode);
   });
 
@@ -3591,6 +3670,9 @@ app.whenReady().then(async () => {
     'save-settings',
     (_event: any, patch: Partial<AppSettings>) => {
       const result = saveSettings(patch);
+      if (patch.openAtLogin !== undefined) {
+        applyOpenAtLogin(Boolean(patch.openAtLogin));
+      }
       // When onboarding completes, hide the dock so the app becomes an overlay.
       if (patch.hasSeenOnboarding === true && process.platform === 'darwin') {
         app.dock.hide();
@@ -3614,6 +3696,18 @@ app.whenReady().then(async () => {
       return success;
     }
   );
+
+  ipcMain.handle('set-open-at-login', (_event: any, enabled: boolean) => {
+    const applied = applyOpenAtLogin(Boolean(enabled));
+    if (applied) {
+      saveSettings({ openAtLogin: Boolean(enabled) } as Partial<AppSettings>);
+    }
+    return applied;
+  });
+
+  ipcMain.handle('replace-spotlight-with-supercmd', () => {
+    return replaceSpotlightWithSuperCmdShortcut();
+  });
 
   ipcMain.handle(
     'update-command-hotkey',
