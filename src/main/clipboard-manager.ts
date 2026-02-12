@@ -35,6 +35,7 @@ const MAX_ITEMS = 1000;
 const POLL_INTERVAL = 1000; // 1 second
 const MAX_TEXT_LENGTH = 100_000; // Don't store huge text items
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB max per image
+const INTERNAL_CLIPBOARD_PROBE_REGEX = /^__supercommand_[a-z0-9_]+_probe__\d+_[a-z0-9]+$/i;
 
 let clipboardHistory: ClipboardItem[] = [];
 let lastClipboardText = '';
@@ -73,11 +74,25 @@ function loadHistory(): void {
       const data = fs.readFileSync(historyPath, 'utf-8');
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) {
-        // Verify image files still exist
-        clipboardHistory = parsed.filter((item) => {
+        // Verify image files still exist and drop internal probe artifacts.
+        const filtered = parsed.filter((item) => {
           if (item.type === 'image') {
             return fs.existsSync(item.content);
           }
+          if (item.type === 'text' || item.type === 'url' || item.type === 'file') {
+            const normalized = normalizeTextForComparison(item.content);
+            if (!normalized) return false;
+            if (INTERNAL_CLIPBOARD_PROBE_REGEX.test(normalized)) return false;
+          }
+          return true;
+        });
+        // Dedupe text-like entries on load while preserving newest-first ordering.
+        const dedupeKeys = new Set<string>();
+        clipboardHistory = filtered.filter((item) => {
+          if (item.type !== 'text' && item.type !== 'url' && item.type !== 'file') return true;
+          const key = `${item.type}:${normalizeTextForComparison(item.content).toLowerCase()}`;
+          if (dedupeKeys.has(key)) return false;
+          dedupeKeys.add(key);
           return true;
         });
         console.log(`Loaded ${clipboardHistory.length} clipboard items from disk`);
@@ -127,30 +142,64 @@ function detectType(text: string): 'url' | 'file' | 'text' {
   return 'text';
 }
 
+function normalizeTextForComparison(text: string): string {
+  return String(text || '').replace(/\r\n/g, '\n').trim();
+}
+
+function findComparableTextItemIndex(type: ClipboardItem['type'], normalizedContent: string): number {
+  if (!normalizedContent) return -1;
+  // Text-like dedupe: text/url/file entries with same normalized content.
+  return clipboardHistory.findIndex((item) => {
+    if (item.type !== 'text' && item.type !== 'url' && item.type !== 'file') return false;
+    if (item.type !== type) return false;
+    return normalizeTextForComparison(item.content) === normalizedContent;
+  });
+}
+
 function addTextItem(text: string): void {
-  if (!text || text.length === 0 || text.length > MAX_TEXT_LENGTH) return;
-  
-  const type = detectType(text);
-  const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
-  
+  const normalized = normalizeTextForComparison(text);
+  if (!normalized || normalized.length > MAX_TEXT_LENGTH) return;
+  if (INTERNAL_CLIPBOARD_PROBE_REGEX.test(normalized)) return;
+
+  const type = detectType(normalized);
+  const preview = normalized.length > 200 ? normalized.substring(0, 200) + '...' : normalized;
+
+  const existingIndex = findComparableTextItemIndex(type, normalized);
+  if (existingIndex >= 0) {
+    const existing = clipboardHistory[existingIndex];
+    existing.timestamp = Date.now();
+    existing.preview = preview;
+    existing.content = normalized;
+    if (type === 'file') {
+      const filename = path.basename(normalized);
+      existing.metadata = { ...(existing.metadata || {}), filename };
+    }
+    if (existingIndex > 0) {
+      clipboardHistory.splice(existingIndex, 1);
+      clipboardHistory.unshift(existing);
+    }
+    saveHistory();
+    return;
+  }
+
   const item: ClipboardItem = {
     id: crypto.randomUUID(),
     type,
-    content: text,
+    content: normalized,
     preview,
     timestamp: Date.now(),
   };
-  
+
   if (type === 'file') {
-    const filename = path.basename(text);
+    const filename = path.basename(normalized);
     item.metadata = { filename };
   }
-  
+
   clipboardHistory.unshift(item);
   if (clipboardHistory.length > MAX_ITEMS) {
     clipboardHistory.pop();
   }
-  
+
   saveHistory();
 }
 
@@ -243,6 +292,8 @@ export function startClipboardMonitor(): void {
   if (pollInterval) {
     clearInterval(pollInterval);
   }
+  // Run one poll immediately so changes right after startup are captured.
+  pollClipboard();
   pollInterval = setInterval(pollClipboard, POLL_INTERVAL);
   
   console.log('Clipboard monitor started');

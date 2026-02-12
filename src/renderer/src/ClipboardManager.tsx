@@ -37,23 +37,40 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const loadHistory = useCallback(async () => {
-    setIsLoading(true);
+  const loadHistory = useCallback(async (withLoading = false) => {
+    if (withLoading) setIsLoading(true);
     try {
       const history = await window.electron.clipboardGetHistory();
-      setItems(history);
+      setItems((prev) => {
+        if (
+          prev.length === history.length &&
+          prev.every((item, idx) => item.id === history[idx]?.id && item.timestamp === history[idx]?.timestamp)
+        ) {
+          return prev;
+        }
+        return history;
+      });
     } catch (e) {
       console.error('Failed to load clipboard history:', e);
     }
-    setIsLoading(false);
+    if (withLoading) setIsLoading(false);
   }, []);
 
   useEffect(() => {
-    loadHistory();
+    loadHistory(true);
     inputRef.current?.focus();
     window.electron.getLastFrontmostApp().then((app) => {
       if (app) setFrontmostAppName(app.name);
     });
+  }, [loadHistory]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void loadHistory(false);
+    }, 750);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, [loadHistory]);
 
   useEffect(() => {
@@ -74,12 +91,25 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     }
 
     setFilteredItems(filtered);
-    setSelectedIndex(0);
   }, [items, filterType, searchQuery]);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [filterType, searchQuery]);
 
   useEffect(() => {
     itemRefs.current = itemRefs.current.slice(0, filteredItems.length);
   }, [filteredItems.length]);
+
+  useEffect(() => {
+    if (filteredItems.length === 0 && selectedIndex !== 0) {
+      setSelectedIndex(0);
+      return;
+    }
+    if (selectedIndex >= filteredItems.length && filteredItems.length > 0) {
+      setSelectedIndex(filteredItems.length - 1);
+    }
+  }, [filteredItems.length, selectedIndex]);
 
   const scrollToSelected = useCallback(() => {
     const selectedElement = itemRefs.current[selectedIndex];
@@ -262,12 +292,12 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex items-center gap-1.5 px-5 py-3 border-b border-white/[0.06]">
+      <div className="flex items-center gap-1 px-5 py-2.5 border-b border-white/[0.06]">
         {['all', 'text', 'image', 'url', 'file'].map((type) => (
           <button
             key={type}
             onClick={() => setFilterType(type as any)}
-            className={`px-3 py-1.5 text-sm rounded transition-colors ${
+            className={`px-2.5 py-1 text-xs rounded transition-colors ${
               filterType === type
                 ? 'bg-white/10 text-white/90'
                 : 'text-white/40 hover:text-white/70 hover:bg-white/5'
@@ -373,7 +403,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                 </div>
               ) : (
                 <div className="bg-white/5 rounded-lg p-4 border border-white/10">
-                  <pre className="text-white/80 text-sm whitespace-pre-wrap break-words font-mono leading-relaxed">
+                  <pre className="text-white/80 text-xs whitespace-pre-wrap break-words font-mono leading-normal">
                     {selectedItem.content}
                   </pre>
                 </div>
