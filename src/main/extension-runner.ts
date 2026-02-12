@@ -289,14 +289,74 @@ const nodeBuiltins = [
 /**
  * Resolve the source entry file for a given command.
  */
-function resolveEntryFile(extPath: string, cmdName: string): string | null {
+function resolveEntryFile(extPath: string, cmd: any): string | null {
+  const cmdName = String(cmd?.name || '').trim();
+  if (!cmdName) return null;
+
+  const srcDir = path.join(extPath, 'src');
+  const validExt = /\.(tsx?|jsx?)$/i;
+  const explicitEntry =
+    typeof cmd?.path === 'string'
+      ? cmd.path
+      : typeof cmd?.entrypoint === 'string'
+        ? cmd.entrypoint
+        : typeof cmd?.entry === 'string'
+          ? cmd.entry
+          : typeof cmd?.file === 'string'
+            ? cmd.file
+            : typeof cmd?.source === 'string'
+              ? cmd.source
+              : '';
+
   const candidates = [
-    path.join(extPath, 'src', `${cmdName}.tsx`),
-    path.join(extPath, 'src', `${cmdName}.ts`),
-    path.join(extPath, 'src', `${cmdName}.jsx`),
-    path.join(extPath, 'src', `${cmdName}.js`),
-  ];
-  return candidates.find((p) => fs.existsSync(p)) || null;
+    explicitEntry ? path.join(extPath, explicitEntry) : '',
+    path.join(srcDir, `${cmdName}.tsx`),
+    path.join(srcDir, `${cmdName}.ts`),
+    path.join(srcDir, `${cmdName}.jsx`),
+    path.join(srcDir, `${cmdName}.js`),
+    path.join(srcDir, cmdName, 'index.tsx'),
+    path.join(srcDir, cmdName, 'index.ts'),
+    path.join(srcDir, cmdName, 'index.jsx'),
+    path.join(srcDir, cmdName, 'index.js'),
+    path.join(srcDir, 'commands', `${cmdName}.tsx`),
+    path.join(srcDir, 'commands', `${cmdName}.ts`),
+    path.join(srcDir, 'commands', `${cmdName}.jsx`),
+    path.join(srcDir, 'commands', `${cmdName}.js`),
+  ].filter(Boolean);
+
+  const found = candidates.find((p) => fs.existsSync(p));
+  if (found) return found;
+  if (!fs.existsSync(srcDir)) return null;
+
+  // Fallback: recursive search for files matching command name.
+  const stack = [srcDir];
+  const normalized = cmdName.toLowerCase();
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    let entries: string[] = [];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry);
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (stat.isDirectory()) {
+        stack.push(full);
+        continue;
+      }
+      if (!validExt.test(entry)) continue;
+      const base = path.basename(entry, path.extname(entry)).toLowerCase();
+      if (base === normalized) return full;
+    }
+  }
+  return null;
 }
 
 /**
@@ -314,7 +374,7 @@ export async function buildAllCommands(extName: string): Promise<number> {
     return 0;
   }
 
-  let commands: { name: string }[];
+  let commands: any[];
   let manifestExternal: string[] = [];
   try {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
@@ -331,12 +391,17 @@ export async function buildAllCommands(extName: string): Promise<number> {
   const esbuild = require('esbuild');
   const extNodeModules = path.join(extPath, 'node_modules');
   const buildDir = getBuildDir(extName);
+  // Avoid stale command bundles when extension source layout changes.
+  try {
+    fs.rmSync(buildDir, { recursive: true, force: true });
+  } catch {}
+  fs.mkdirSync(buildDir, { recursive: true });
   let built = 0;
 
   for (const cmd of commands) {
     if (!cmd.name) continue;
 
-    const entryFile = resolveEntryFile(extPath, cmd.name);
+    const entryFile = resolveEntryFile(extPath, cmd);
     if (!entryFile) {
       console.warn(`No entry file for ${extName}/${cmd.name}, skipping`);
       continue;

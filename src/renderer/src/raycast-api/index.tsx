@@ -826,17 +826,37 @@ export const Clipboard = {
 
   async paste(content: string | Clipboard.Content): Promise<void> {
     try {
-      // First, copy to clipboard
-      await this.copy(content);
-
-      // Then trigger paste via AppleScript
       const electron = (window as any).electron;
+      let text = '';
+      let html = '';
+
+      if (typeof content === 'string' || typeof content === 'number') {
+        text = String(content);
+      } else if (content && typeof content === 'object') {
+        text = content.text || content.file || '';
+        html = content.html || '';
+      }
+
+      // Prefer main-process paste flow: hides SuperCmd first and pastes into
+      // the previously focused app/editor. This prevents pasting into the
+      // launcher's own search field.
+      if (!html && electron?.pasteText) {
+        const pasted = await electron.pasteText(text);
+        if (pasted) return;
+      }
+
+      // Fallback path (no paste-text bridge or HTML payload).
+      await this.copy(content, { concealed: true });
+      if (electron?.hideWindow) {
+        await electron.hideWindow();
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      }
       if (electron?.runAppleScript) {
-        await electron.runAppleScript(`
-          tell application "System Events"
-            keystroke "v" using command down
-          end tell
-        `);
+        await electron.runAppleScript(
+          `tell application "System Events"
+  keystroke "v" using command down
+end tell`
+        );
       }
     } catch (e) {
       console.error('Clipboard paste error:', e);
@@ -2195,6 +2215,35 @@ function ListItemRenderer({
   );
 }
 
+function ListEmojiGridItemRenderer({
+  icon, title, isSelected, dataIdx, onSelect, onActivate, onContextAction,
+}: {
+  icon?: any;
+  title?: string;
+  isSelected: boolean;
+  dataIdx: number;
+  onSelect: () => void;
+  onActivate: () => void;
+  onContextAction: (e: React.MouseEvent<HTMLDivElement>) => void;
+}) {
+  const emoji = typeof icon === 'string' ? icon : '';
+  return (
+    <div
+      data-idx={dataIdx}
+      className={`relative rounded-2xl cursor-pointer transition-all overflow-hidden flex items-center justify-center ${
+        isSelected ? 'ring-2 ring-white/70 bg-white/[0.10]' : 'bg-white/[0.05] hover:bg-white/[0.08]'
+      }`}
+      style={{ minHeight: '96px' }}
+      onClick={onActivate}
+      onMouseMove={onSelect}
+      onContextMenu={onContextAction}
+      title={title || ''}
+    >
+      <span className="text-[46px] leading-none select-none">{emoji || '🙂'}</span>
+    </div>
+  );
+}
+
 // ── List.Section — provides section title context ────────────────────
 
 function ListSectionComponent({ children, title }: { children?: React.ReactNode; title?: string; subtitle?: string }) {
@@ -2395,6 +2444,29 @@ function ListComponent({
     });
   }, [allItems, searchText, filtering, onSearchTextChange]);
 
+  const shouldUseEmojiGrid = useMemo(() => {
+    if (isShowingDetail) return false;
+    if (filteredItems.length < 10) return false;
+    let nonEmojiIcons = 0;
+    let emojiCount = 0;
+    for (const item of filteredItems) {
+      const icon = (item as any)?.props?.icon;
+      if ((item as any)?.props?.detail) return false;
+      const subtitle = (item as any)?.props?.subtitle;
+      const subtitleText = typeof subtitle === 'string' ? subtitle : (subtitle as any)?.value || '';
+      if (String(subtitleText || '').trim()) return false;
+      if (typeof icon === 'string' && isEmojiOrSymbol(icon)) {
+        emojiCount += 1;
+      } else if (icon) {
+        nonEmojiIcons += 1;
+      }
+    }
+    if (nonEmojiIcons > 0) return false;
+    return emojiCount / filteredItems.length >= 0.9;
+  }, [filteredItems, isShowingDetail]);
+
+  const emojiGridCols = 8;
+
   // ── Search bar control ─────────────────────────────────────────
   const handleSearchChange = useCallback((text: string) => {
     setInternalSearch(text);
@@ -2463,8 +2535,36 @@ function ListComponent({
     if (showActions) return; // Let the overlay handle arrow/enter/escape
 
     switch (e.key) {
-      case 'ArrowDown': e.preventDefault(); setSelectedIdx(p => Math.min(p + 1, filteredItems.length - 1)); break;
-      case 'ArrowUp': e.preventDefault(); setSelectedIdx(p => Math.max(p - 1, 0)); break;
+      case 'ArrowRight':
+        if (shouldUseEmojiGrid) {
+          e.preventDefault();
+          setSelectedIdx(p => Math.min(p + 1, filteredItems.length - 1));
+          break;
+        }
+        break;
+      case 'ArrowLeft':
+        if (shouldUseEmojiGrid) {
+          e.preventDefault();
+          setSelectedIdx(p => Math.max(p - 1, 0));
+          break;
+        }
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        if (shouldUseEmojiGrid) {
+          setSelectedIdx(p => Math.min(p + emojiGridCols, filteredItems.length - 1));
+        } else {
+          setSelectedIdx(p => Math.min(p + 1, filteredItems.length - 1));
+        }
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        if (shouldUseEmojiGrid) {
+          setSelectedIdx(p => Math.max(p - emojiGridCols, 0));
+        } else {
+          setSelectedIdx(p => Math.max(p - 1, 0));
+        }
+        break;
       case 'Enter':
         e.preventDefault();
         if (e.repeat) break; // Ignore key auto-repeat to prevent duplicate actions
@@ -2477,7 +2577,7 @@ function ListComponent({
         pop();
         break;
     }
-  }, [filteredItems.length, selectedIdx, pop, primaryAction, showActions, selectedActions]);
+  }, [filteredItems.length, selectedIdx, pop, primaryAction, showActions, selectedActions, shouldUseEmojiGrid]);
 
   // ── Window-level shortcut listener (backup) ────────────────────
   // Capture phase fires before React's delegated handler, providing
@@ -2627,6 +2727,34 @@ function ListComponent({
         ) : (
           <div className="flex items-center justify-center h-full text-white/40"><p className="text-sm">No results</p></div>
         )
+      ) : shouldUseEmojiGrid ? (
+        groupedItems.map((group, gi) => (
+          <div key={gi} className="mb-2">
+            {group.title && (
+              <div className="px-4 pt-2 pb-1 text-[11px] uppercase tracking-wider text-white/30 font-medium select-none">
+                {group.title}
+                <span className="ml-2 text-white/40 normal-case">{group.items.length}</span>
+              </div>
+            )}
+            <div className="px-2 pb-1 grid gap-2" style={{ gridTemplateColumns: `repeat(${emojiGridCols}, 1fr)` }}>
+              {group.items.map(({ item, globalIdx }) => {
+                const title = typeof item.props.title === 'string' ? item.props.title : (item.props.title as any)?.value || '';
+                return (
+                  <ListEmojiGridItemRenderer
+                    key={item.id}
+                    icon={item.props.icon}
+                    title={title}
+                    isSelected={globalIdx === selectedIdx}
+                    dataIdx={globalIdx}
+                    onSelect={() => setSelectedIdx(globalIdx)}
+                    onActivate={() => setSelectedIdx(globalIdx)}
+                    onContextAction={(e) => handleItemContextMenu(globalIdx, e)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        ))
       ) : (
         groupedItems.map((group, gi) => (
           <div key={gi} className="mb-0">

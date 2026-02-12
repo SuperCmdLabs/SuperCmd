@@ -551,16 +551,25 @@ const CommunityDetails: React.FC<{
         {busy ? (
           <div className="text-xs text-white/50 inline-flex items-center gap-1.5">
             <RefreshCw className="w-3 h-3 animate-spin" />
-            {installed ? 'Removing...' : 'Installing...'}
+            Working...
           </div>
         ) : installed ? (
-          <button
-            onClick={onUninstall}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-red-500/15 hover:bg-red-500/25 text-red-300 transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Uninstall
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onInstall}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Update
+            </button>
+            <button
+              onClick={onUninstall}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-red-500/15 hover:bg-red-500/25 text-red-300 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Uninstall
+            </button>
+          </div>
         ) : (
           <button
             onClick={onInstall}

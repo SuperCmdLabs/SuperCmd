@@ -402,11 +402,10 @@ export function getInstalledExtensionNames(): string[] {
  */
 export async function installExtension(name: string): Promise<boolean> {
   const installPath = getInstalledPath(name);
-
-  if (fs.existsSync(installPath)) {
-    console.log(`Extension ${name} is already installed.`);
-    return true;
-  }
+  const hadExistingInstall = fs.existsSync(installPath);
+  const backupPath = hadExistingInstall
+    ? path.join(getExtensionsDir(), `${name}.backup-${Date.now()}`)
+    : '';
 
   const tmpDir = path.join(
     app.getPath('temp'),
@@ -434,6 +433,11 @@ export async function installExtension(name: string): Promise<boolean> {
       return false;
     }
 
+    if (hadExistingInstall) {
+      // Move existing install out of the way so this install acts as an update.
+      fs.renameSync(installPath, backupPath);
+    }
+
     // Copy to local extensions directory
     fs.cpSync(srcDir, installPath, { recursive: true });
 
@@ -445,19 +449,32 @@ export async function installExtension(name: string): Promise<boolean> {
     const { buildAllCommands } = require('./extension-runner');
     const builtCount = await buildAllCommands(name);
     console.log(`Extension "${name}" installed and pre-built (${builtCount} commands) at ${installPath}`);
+    if (backupPath && fs.existsSync(backupPath)) {
+      fs.rmSync(backupPath, { recursive: true, force: true });
+    }
     return true;
   } catch (error) {
     console.error(`Failed to install extension "${name}":`, error);
-    // Cleanup partial install
+    // Cleanup partial install and roll back previous version when updating.
     try {
       fs.rmSync(installPath, { recursive: true, force: true });
     } catch {}
+    if (backupPath && fs.existsSync(backupPath)) {
+      try {
+        fs.renameSync(backupPath, installPath);
+      } catch {}
+    }
     return false;
   } finally {
     // Cleanup temp clone
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch {}
+    if (backupPath && fs.existsSync(backupPath)) {
+      try {
+        fs.rmSync(backupPath, { recursive: true, force: true });
+      } catch {}
+    }
   }
 }
 
