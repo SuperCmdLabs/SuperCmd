@@ -351,6 +351,7 @@ const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
 const CMD_ARGS_KEY_PREFIX = 'sc-ext-cmd-args:';
 const HIDDEN_MENUBAR_CMDS_KEY = 'sc-hidden-menubar-cmds';
 const MAX_RECENT_COMMANDS = 30;
+const NO_AI_MODEL_ERROR = 'No AI model available. Configure one in Settings -> AI.';
 
 type PreferenceDefinition = NonNullable<ExtensionBundle['preferenceDefinitions']>[number];
 type ArgumentDefinition = NonNullable<ExtensionBundle['commandArgumentDefinitions']>[number];
@@ -1132,6 +1133,29 @@ const App: React.FC = () => {
     setTimeout(() => cursorPromptInputRef.current?.focus(), 0);
   }, [showCursorPrompt]);
 
+  useEffect(() => {
+    if (!showCursorPrompt) return;
+    let cancelled = false;
+    window.electron.aiIsAvailable()
+      .then((available) => {
+        if (cancelled) return;
+        setAiAvailable(available);
+        if (!available) {
+          setCursorPromptStatus('error');
+          setCursorPromptError(NO_AI_MODEL_ERROR);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAiAvailable(false);
+        setCursorPromptStatus('error');
+        setCursorPromptError(NO_AI_MODEL_ERROR);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showCursorPrompt]);
+
   // Load and run menu-bar extensions in the background
   useEffect(() => {
     (window as any).electron?.getMenuBarExtensions?.().then((exts: any[]) => {
@@ -1277,6 +1301,13 @@ const App: React.FC = () => {
   const submitCursorPrompt = useCallback(async () => {
     const instruction = cursorPromptText.trim();
     if (!instruction || cursorPromptStatus === 'processing') return;
+    const aiReady = await window.electron.aiIsAvailable().catch(() => false);
+    setAiAvailable(aiReady);
+    if (!aiReady) {
+      setCursorPromptStatus('error');
+      setCursorPromptError(NO_AI_MODEL_ERROR);
+      return;
+    }
 
     if (cursorPromptRequestIdRef.current) {
       try {
@@ -2304,7 +2335,7 @@ const App: React.FC = () => {
                     <button
                       onClick={() => void submitCursorPrompt()}
                       className="cursor-prompt-submit"
-                      disabled={!cursorPromptText.trim() || cursorPromptStatus === 'processing'}
+                      disabled={!cursorPromptText.trim() || cursorPromptStatus === 'processing' || !aiAvailable}
                       title="Submit prompt"
                     >
                       <CornerDownLeft className="w-3 h-3" />
@@ -2653,7 +2684,7 @@ const App: React.FC = () => {
               <button
                 onClick={() => void submitCursorPrompt()}
                 className="cursor-prompt-submit"
-                disabled={!cursorPromptText.trim() || cursorPromptStatus === 'processing'}
+                disabled={!cursorPromptText.trim() || cursorPromptStatus === 'processing' || !aiAvailable}
                 title="Submit prompt"
               >
                 <CornerDownLeft className="w-3 h-3" />
