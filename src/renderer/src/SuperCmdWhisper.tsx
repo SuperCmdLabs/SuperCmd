@@ -1074,9 +1074,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         };
 
         recorder.start(500);
-        if (!PUSH_TO_TALK_MODE) {
-          restoreEditorFocusOnce(150);
-        }
+        restoreEditorFocusOnce(150);
 
       } else {
         stopRecording();
@@ -1168,9 +1166,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           return;
         }
 
-        if (!PUSH_TO_TALK_MODE) {
-          restoreEditorFocusOnce(150);
-        }
+        restoreEditorFocusOnce(150);
       }
     } catch {
       setState('error');

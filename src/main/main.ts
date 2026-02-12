@@ -2226,7 +2226,11 @@ async function openLauncherFromUserEntry(): Promise<void> {
 
 async function openLauncherAndRunSystemCommand(
   commandId: string,
-  options?: { showWindow?: boolean; mode?: 'default' | 'whisper' | 'speak' | 'prompt' }
+  options?: {
+    showWindow?: boolean;
+    mode?: 'default' | 'whisper' | 'speak' | 'prompt';
+    preserveFocusWhenHidden?: boolean;
+  }
 ): Promise<boolean> {
   if (!mainWindow) {
     createWindow();
@@ -2234,6 +2238,11 @@ async function openLauncherAndRunSystemCommand(
   if (!mainWindow) return false;
 
   const showLauncher = options?.showWindow !== false;
+  const preserveFocusWhenHidden = options?.preserveFocusWhenHidden ?? !showLauncher;
+
+  if (preserveFocusWhenHidden) {
+    captureFrontmostAppContext();
+  }
   setLauncherMode(options?.mode || 'default');
 
   const sendCommand = async () => {
@@ -2241,6 +2250,15 @@ async function openLauncherAndRunSystemCommand(
       await showWindow();
     }
     mainWindow?.webContents.send('run-system-command', commandId);
+    if (preserveFocusWhenHidden && !showLauncher) {
+      // Detached overlays can temporarily activate SuperCmd; restore the editor app.
+      [50, 180, 360].forEach((delayMs) => {
+        setTimeout(() => {
+          if (isVisible) return;
+          void activateLastFrontmostApp();
+        }, delayMs);
+      });
+    }
   };
 
   if (mainWindow.webContents.isLoadingMainFrame()) {
