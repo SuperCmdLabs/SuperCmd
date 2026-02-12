@@ -2522,23 +2522,32 @@ function ListComponent({
 
   const shouldUseEmojiGrid = useMemo(() => {
     if (isShowingDetail) return false;
-    if (filteredItems.length < 10) return false;
-    let nonEmojiIcons = 0;
-    let emojiCount = 0;
-    for (const item of filteredItems) {
-      const icon = (item as any)?.props?.icon;
-      if ((item as any)?.props?.detail) return false;
-      const subtitle = (item as any)?.props?.subtitle;
-      const subtitleText = typeof subtitle === 'string' ? subtitle : (subtitle as any)?.value || '';
-      if (String(subtitleText || '').trim()) return false;
-      if (typeof icon === 'string' && isEmojiOrSymbol(icon)) {
-        emojiCount += 1;
-      } else if (icon) {
-        nonEmojiIcons += 1;
+    if (filteredItems.length < 24) return false;
+
+    const iconToEmoji = (icon: any): string => {
+      if (typeof icon === 'string') return icon;
+      if (!icon || typeof icon !== 'object') return '';
+      const source = icon.source ?? icon.light ?? icon.dark;
+      if (typeof source === 'string') return source;
+      if (source && typeof source === 'object') {
+        if (typeof source.light === 'string') return source.light;
+        if (typeof source.dark === 'string') return source.dark;
       }
+      return '';
+    };
+
+    let emojiIcons = 0;
+    let iconsWithValue = 0;
+    for (const item of filteredItems) {
+      if ((item as any)?.props?.detail) return false;
+      const emojiCandidate = iconToEmoji((item as any)?.props?.icon).trim();
+      if (!emojiCandidate) continue;
+      iconsWithValue += 1;
+      if (isEmojiOrSymbol(emojiCandidate)) emojiIcons += 1;
     }
-    if (nonEmojiIcons > 0) return false;
-    return emojiCount / filteredItems.length >= 0.9;
+
+    if (iconsWithValue < Math.ceil(filteredItems.length * 0.95)) return false;
+    return emojiIcons / Math.max(1, iconsWithValue) >= 0.95;
   }, [filteredItems, isShowingDetail]);
 
   const emojiGridCols = 8;
