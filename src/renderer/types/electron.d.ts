@@ -232,9 +232,22 @@ export interface ElectronAPI {
     enabled: boolean
   ) => Promise<boolean>;
   openSettings: () => Promise<void>;
-  openSettingsTab: (tab: 'general' | 'ai' | 'extensions') => Promise<void>;
+  openSettingsTab: (
+    tab: 'general' | 'ai' | 'extensions',
+    target?: { extensionName?: string; commandName?: string }
+  ) => Promise<void>;
   openExtensionStoreWindow: () => Promise<void>;
-  onSettingsTabChanged: (callback: (tab: 'general' | 'ai' | 'extensions') => void) => void;
+  onSettingsTabChanged: (
+    callback: (payload:
+      | 'general'
+      | 'ai'
+      | 'extensions'
+      | {
+          tab: 'general' | 'ai' | 'extensions';
+          target?: { extensionName?: string; commandName?: string };
+        }
+    ) => void
+  ) => void;
 
   // Extension Runner
   runExtension: (extName: string, cmdName: string) => Promise<ExtensionBundle | null>;

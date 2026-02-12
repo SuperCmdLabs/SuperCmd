@@ -12,6 +12,8 @@ import AITab from './settings/AITab';
 import ExtensionsTab from './settings/ExtensionsTab';
 
 type Tab = 'general' | 'ai' | 'extensions';
+type SettingsTarget = { extensionName?: string; commandName?: string };
+type SettingsNavigationPayload = { tab: Tab; target?: SettingsTarget };
 
 const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
   {
@@ -31,25 +33,67 @@ const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
   },
 ];
 
-function getInitialTab(): Tab {
+function normalizeTab(input: any): Tab | undefined {
+  if (input === 'general' || input === 'ai' || input === 'extensions') return input;
+  return undefined;
+}
+
+function normalizeSettingsTarget(input: any): SettingsTarget | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const extensionName = typeof input.extensionName === 'string' ? input.extensionName.trim() : '';
+  const commandName = typeof input.commandName === 'string' ? input.commandName.trim() : '';
+  if (!extensionName && !commandName) return undefined;
+  return {
+    ...(extensionName ? { extensionName } : {}),
+    ...(commandName ? { commandName } : {}),
+  };
+}
+
+function normalizeSettingsPayload(input: any): SettingsNavigationPayload | undefined {
+  if (typeof input === 'string') {
+    const tab = normalizeTab(input);
+    return tab ? { tab } : undefined;
+  }
+  if (input && typeof input === 'object') {
+    const tab = normalizeTab(input.tab);
+    if (!tab) return undefined;
+    return {
+      tab,
+      target: normalizeSettingsTarget(input.target),
+    };
+  }
+  return undefined;
+}
+
+function getInitialRoute(): SettingsNavigationPayload {
   try {
     const hash = window.location.hash || '';
     const idx = hash.indexOf('?');
-    if (idx === -1) return 'general';
+    if (idx === -1) return { tab: 'general' };
     const params = new URLSearchParams(hash.slice(idx + 1));
-    const tab = params.get('tab');
-    if (tab === 'ai' || tab === 'extensions' || tab === 'general') return tab;
+    const tab = normalizeTab(params.get('tab'));
+    const extensionName = (params.get('extension') || '').trim();
+    const commandName = (params.get('command') || '').trim();
+    const target = normalizeSettingsTarget({ extensionName, commandName });
+    if (tab) return { tab, target };
   } catch {}
-  return 'general';
+  return { tab: 'general' };
 }
 
 const SettingsApp: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>(getInitialTab());
+  const initialRoute = getInitialRoute();
+  const [activeTab, setActiveTab] = useState<Tab>(initialRoute.tab);
+  const [extensionFocusTarget, setExtensionFocusTarget] = useState<SettingsTarget | null>(
+    initialRoute.target || null
+  );
 
   useEffect(() => {
-    (window as any).electron?.onSettingsTabChanged?.((tab: Tab) => {
-      if (tab === 'general' || tab === 'ai' || tab === 'extensions') {
-        setActiveTab(tab);
+    (window as any).electron?.onSettingsTabChanged?.((rawPayload: any) => {
+      const payload = normalizeSettingsPayload(rawPayload);
+      if (!payload) return;
+      setActiveTab(payload.tab);
+      if (payload.tab === 'extensions') {
+        setExtensionFocusTarget(payload.target || null);
       }
     });
   }, []);
@@ -85,7 +129,10 @@ const SettingsApp: React.FC = () => {
       <div className={`flex-1 min-h-0 ${activeTab === 'extensions' ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}>
         {activeTab === 'extensions' ? (
           <div className="h-full min-h-0 flex flex-col">
-            <ExtensionsTab />
+            <ExtensionsTab
+              focusTarget={extensionFocusTarget}
+              onFocusTargetHandled={() => setExtensionFocusTarget(null)}
+            />
           </div>
         ) : (
           <div className={activeTab === 'ai' ? 'px-6 pt-2 pb-3' : 'p-6'}>

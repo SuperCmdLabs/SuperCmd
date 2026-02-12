@@ -1598,6 +1598,13 @@ export async function trash(path: string | string[]): Promise<void> {
 
 export async function openExtensionPreferences(): Promise<void> {
   const electron = (window as any).electron;
+  const ctx = getExtensionContext();
+  if (electron?.openSettingsTab) {
+    await electron.openSettingsTab('extensions', {
+      extensionName: ctx.extensionName,
+    });
+    return;
+  }
   if (electron?.openSettings) {
     await electron.openSettings();
   }
@@ -1605,6 +1612,14 @@ export async function openExtensionPreferences(): Promise<void> {
 
 export async function openCommandPreferences(): Promise<void> {
   const electron = (window as any).electron;
+  const ctx = getExtensionContext();
+  if (electron?.openSettingsTab) {
+    await electron.openSettingsTab('extensions', {
+      extensionName: ctx.extensionName,
+      commandName: ctx.commandName,
+    });
+    return;
+  }
   if (electron?.openSettings) {
     await electron.openSettings();
   }
