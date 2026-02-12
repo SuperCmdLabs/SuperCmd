@@ -2236,19 +2236,19 @@ async function openLauncherAndRunSystemCommand(
   const showLauncher = options?.showWindow !== false;
   setLauncherMode(options?.mode || 'default');
 
-  const sendCommand = () => {
+  const sendCommand = async () => {
     if (showLauncher) {
-      void showWindow();
+      await showWindow();
     }
     mainWindow?.webContents.send('run-system-command', commandId);
   };
 
   if (mainWindow.webContents.isLoadingMainFrame()) {
     mainWindow.webContents.once('did-finish-load', () => {
-      sendCommand();
+      void sendCommand();
     });
   } else {
-    sendCommand();
+    await sendCommand();
   }
 
   return true;
