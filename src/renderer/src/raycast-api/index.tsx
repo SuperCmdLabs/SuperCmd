@@ -76,6 +76,25 @@ export function getExtensionContext(): ExtensionContextType {
   return _extensionContext;
 }
 
+function snapshotExtensionContext(): ExtensionContextType {
+  const ctx = getExtensionContext();
+  return {
+    ...ctx,
+    preferences: { ...(ctx.preferences || {}) },
+  };
+}
+
+function withExtensionContext<T>(ctx: ExtensionContextType | undefined, fn: () => T): T {
+  if (!ctx || !ctx.extensionName) return fn();
+  const previous = snapshotExtensionContext();
+  setExtensionContext(ctx);
+  try {
+    return fn();
+  } finally {
+    setExtensionContext(previous);
+  }
+}
+
 // ─── Per-Extension React Context (for concurrent extensions like menu-bar) ──
 // The global _extensionContext is a singleton and races when multiple
 // extensions render simultaneously. This React context lets each extension
@@ -380,6 +399,8 @@ const iconMap: Record<string, string> = {
   Terminal: '>_',
   Code: '</>',
   Globe: '🌐',
+  GeoPin: '📍',
+  Geopin: '📍',
   Link: '🔗',
   Lock: '🔒',
   Unlock: '🔓',
@@ -477,6 +498,8 @@ const iconMap: Record<string, string> = {
   AppWindowGrid: '⊞',
   Dot: '•',
   BandAid: '🩹',
+  CricketBall: '🏏',
+  Ellipsis: '⋯',
   Raindrop: '💧',
   TwoPeople: '👥',
   AddPerson: '👤+',
@@ -512,11 +535,27 @@ const iconMap: Record<string, string> = {
   Bubble: '💬',
 };
 
+function normalizeIconName(name: string): string {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+const normalizedIconMap = new Map<string, string>(
+  Object.entries(iconMap).map(([key, value]) => [normalizeIconName(key), value])
+);
+
+function lookupMappedIcon(name: string): string | undefined {
+  if (!name) return undefined;
+  return iconMap[name] || normalizedIconMap.get(normalizeIconName(name));
+}
+
 // Return the property name as the icon value. This works with our
 // renderer which shows the mapped icon or a dot for unknown icons.
 export const Icon: Record<string, string> = new Proxy({} as Record<string, string>, {
   get(_target, prop: string) {
-    return iconMap[prop] || '•';
+    return lookupMappedIcon(prop) || '';
   },
 });
 
@@ -652,7 +691,7 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
       return <img src={resolved} className={className + ' rounded'} alt="" />;
     }
     // Check if it's a mapped icon
-    const mappedIcon = iconMap[icon];
+    const mappedIcon = lookupMappedIcon(icon);
     if (mappedIcon) {
       return <span className="text-center" style={{ fontSize: '0.875rem' }}>{mappedIcon}</span>;
     }
@@ -1655,32 +1694,34 @@ const ActionRegistryContext = createContext<ActionRegistryAPI | null>(null);
 const ActionSectionContext = createContext<string | undefined>(undefined);
 
 // Standalone executor factory (used by both static extraction and registry)
-function makeActionExecutor(p: any): () => void {
+function makeActionExecutor(p: any, runtimeCtx?: ExtensionContextType): () => void {
   return () => {
-    if (p.onAction) { p.onAction(); return; }
-    if (p.onSubmit) { p.onSubmit(getFormValues()); return; }
-    if (p.content !== undefined) {
-      if (p.__actionKind === 'paste') {
-        Clipboard.paste(p.content);
-      } else {
-        Clipboard.copy(p.content);
+    withExtensionContext(runtimeCtx, () => {
+      if (p.onAction) { p.onAction(); return; }
+      if (p.onSubmit) { p.onSubmit(getFormValues()); return; }
+      if (p.content !== undefined) {
+        if (p.__actionKind === 'paste') {
+          Clipboard.paste(p.content);
+        } else {
+          Clipboard.copy(p.content);
+        }
+        // Call onCopy/onPaste callbacks if provided
+        p.onCopy?.();
+        p.onPaste?.();
+        return;
       }
-      // Call onCopy/onPaste callbacks if provided
-      p.onCopy?.();
-      p.onPaste?.();
-      return;
-    }
-    if (p.url) {
-      (window as any).electron?.openUrl?.(p.url);
-      p.onOpen?.();
-      return;
-    }
-    if (p.target && React.isValidElement(p.target)) {
-      getGlobalNavigation().push(p.target);
-      p.onPush?.();
-      return;
-    }
-    if (p.paths) { trash(p.paths); p.onTrash?.(); return; }
+      if (p.url) {
+        (window as any).electron?.openUrl?.(p.url);
+        p.onOpen?.();
+        return;
+      }
+      if (p.target && React.isValidElement(p.target)) {
+        getGlobalNavigation().push(p.target);
+        p.onPush?.();
+        return;
+      }
+      if (p.paths) { trash(p.paths); p.onTrash?.(); return; }
+    });
   };
 }
 
@@ -1709,14 +1750,16 @@ function useActionRegistration(props: any, kind?: string) {
   const sectionTitle = useContext(ActionSectionContext);
   const idRef = useRef(`__action_${++_actionOrderCounter}`);
   const orderRef = useRef(++_actionOrderCounter);
+  const runtimeCtxRef = useRef<ExtensionContextType>(snapshotExtensionContext());
 
   // Build a stable executor ref so we always call the latest props
   const propsRef = useRef(props);
   propsRef.current = props;
+  runtimeCtxRef.current = snapshotExtensionContext();
 
   useEffect(() => {
     if (!registry) return;
-    const executor = () => makeActionExecutor(propsRef.current)();
+    const executor = () => makeActionExecutor(propsRef.current, runtimeCtxRef.current)();
     registry.register(idRef.current, {
       title: inferActionTitle(props, kind),
       icon: props.icon,
@@ -1934,6 +1977,7 @@ interface ExtractedAction {
 function extractActionsFromElement(el: React.ReactElement | undefined | null): ExtractedAction[] {
   if (!el) return [];
   const result: ExtractedAction[] = [];
+  const runtimeCtx = snapshotExtensionContext();
 
   function walk(nodes: React.ReactNode, sectionTitle?: string) {
     React.Children.forEach(nodes, (child) => {
@@ -1949,7 +1993,7 @@ function extractActionsFromElement(el: React.ReactElement | undefined | null): E
           shortcut: p.shortcut,
           style: p.style,
           sectionTitle,
-          execute: makeActionExecutor(p),
+          execute: makeActionExecutor(p, runtimeCtx),
         });
       } else if (hasChildren) {
         walk(p.children, p.title || sectionTitle);
@@ -4770,28 +4814,36 @@ export function usePromise<T>(
   const [error, setError] = useState<Error | undefined>(undefined);
   const fnRef = useRef(fn);
   const argsRef = useRef(args || []);
+  const runtimeCtxRef = useRef<ExtensionContextType>(snapshotExtensionContext());
   fnRef.current = fn;
   argsRef.current = args || [];
+  runtimeCtxRef.current = snapshotExtensionContext();
 
   const execute = useCallback(() => {
     if (options?.execute === false) return;
     setIsLoading(true);
     setError(undefined);
-    options?.onWillExecute?.(argsRef.current);
+    withExtensionContext(runtimeCtxRef.current, () => {
+      options?.onWillExecute?.(argsRef.current);
+    });
 
     // Wrap in Promise.resolve to handle both sync and async functions
     Promise.resolve()
-      .then(() => fnRef.current(...argsRef.current))
+      .then(() => withExtensionContext(runtimeCtxRef.current, () => fnRef.current(...argsRef.current)))
       .then((result) => {
         setData(result);
         setIsLoading(false);
-        options?.onData?.(result);
+        withExtensionContext(runtimeCtxRef.current, () => {
+          options?.onData?.(result);
+        });
       })
       .catch((err) => {
         const e = err instanceof Error ? err : new Error(String(err));
         setError(e);
         setIsLoading(false);
-        options?.onError?.(e);
+        withExtensionContext(runtimeCtxRef.current, () => {
+          options?.onError?.(e);
+        });
         if (options?.failureToastOptions !== false) {
           // silent — don't show toast for every error
         }
@@ -5064,9 +5116,11 @@ export function useCachedPromise<T>(
   const fnRef = useRef(fn);
   const argsRef = useRef(args || []);
   const optionsRef = useRef(options);
+  const runtimeCtxRef = useRef<ExtensionContextType>(snapshotExtensionContext());
   fnRef.current = fn;
   argsRef.current = args || [];
   optionsRef.current = options;
+  runtimeCtxRef.current = snapshotExtensionContext();
 
   const fetchPage = useCallback(async (pageNum: number, currentCursor?: string) => {
     const opts = optionsRef.current;
@@ -5080,18 +5134,20 @@ export function useCachedPromise<T>(
       opts.abortable.current = controller;
     }
 
-    opts?.onWillExecute?.(argsRef.current);
+    withExtensionContext(runtimeCtxRef.current, () => {
+      opts?.onWillExecute?.(argsRef.current);
+    });
 
     try {
       // Call the function with the provided args
-      const outerResult = fnRef.current(...argsRef.current);
+      const outerResult = withExtensionContext(runtimeCtxRef.current, () => fnRef.current(...argsRef.current));
 
       // Check if the result is a function (pagination pattern)
       // In pagination mode: fn(args) returns (paginationOptions) => Promise<{ data, hasMore, cursor }>
       if (typeof outerResult === 'function') {
         setIsPaginated(true);
         const paginationOptions = { page: pageNum, cursor: currentCursor, lastItem: undefined };
-        const innerResult = await outerResult(paginationOptions);
+        const innerResult = await withExtensionContext(runtimeCtxRef.current, () => outerResult(paginationOptions));
 
         // Check if result is paginated format { data, hasMore, cursor }
         if (innerResult && typeof innerResult === 'object' && 'data' in innerResult) {
@@ -5108,7 +5164,9 @@ export function useCachedPromise<T>(
               return [...prevArr, ...newArr];
             });
           }
-          opts?.onData?.((innerResult as any).data);
+          withExtensionContext(runtimeCtxRef.current, () => {
+            opts?.onData?.((innerResult as any).data);
+          });
         } else {
           // Non-paginated result from inner function
           setAccumulatedData(innerResult as any);
@@ -5134,18 +5192,24 @@ export function useCachedPromise<T>(
               return [...prevArr, ...newArr];
             });
           }
-          opts?.onData?.(pageData as T);
+          withExtensionContext(runtimeCtxRef.current, () => {
+            opts?.onData?.(pageData as T);
+          });
         } else {
           // Non-paginated result
           setAccumulatedData(result as any);
           setHasMore(false);
-          opts?.onData?.(result as T);
+          withExtensionContext(runtimeCtxRef.current, () => {
+            opts?.onData?.(result as T);
+          });
         }
       }
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       setError(e);
-      opts?.onError?.(e);
+      withExtensionContext(runtimeCtxRef.current, () => {
+        opts?.onError?.(e);
+      });
     } finally {
       setIsLoading(false);
     }

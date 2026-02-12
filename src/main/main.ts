@@ -5394,16 +5394,37 @@ return appURL's |path|() as text`,
 
     let tray = menuBarTrays.get(extId);
 
-    const resolveTrayIcon = () => {
+    const createNativeImageFromMenuIconPath = (pathValue: string, size: number) => {
       try {
-        if (iconPath && require('fs').existsSync(iconPath)) {
-          const img = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 });
-          if (!img.isEmpty()) {
-            img.setTemplateImage(true);
-            return img;
-          }
+        const fs = require('fs');
+        if (!pathValue || !fs.existsSync(pathValue)) return null;
+        const isSvg = /\.svg$/i.test(pathValue);
+        let image: any;
+        if (isSvg) {
+          const svg = fs.readFileSync(pathValue, 'utf8');
+          const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+          image = nativeImage.createFromDataURL(svgDataUrl);
+        } else {
+          image = nativeImage.createFromPath(pathValue);
         }
-      } catch {}
+        if (!image || image.isEmpty()) return null;
+        return image.resize({ width: size, height: size });
+      } catch {
+        return null;
+      }
+    };
+
+    const resolveTrayIcon = () => {
+      const img = iconPath ? createNativeImageFromMenuIconPath(iconPath, 18) : null;
+      if (img) {
+        // Keep template rendering for bitmap assets (classic menubar style).
+        // For SVGs, preserve source appearance (e.g., explicit light/dark icon variants).
+        const isSvg = /\.svg$/i.test(iconPath || '');
+        try {
+          img.setTemplateImage(!isSvg);
+        } catch {}
+        return img;
+      }
       return nativeImage.createEmpty();
     };
 
@@ -5441,20 +5462,31 @@ return appURL's |path|() as text`,
       const iconPath = typeof item?.iconPath === 'string' ? item.iconPath : '';
       if (!iconPath) return undefined;
       try {
-        if (require('fs').existsSync(iconPath)) {
-          const img = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
-          if (!img.isEmpty()) return img;
+        const fs = require('fs');
+        if (!fs.existsSync(iconPath)) return undefined;
+        const isSvg = /\.svg$/i.test(iconPath);
+        let img: any;
+        if (isSvg) {
+          const svg = fs.readFileSync(iconPath, 'utf8');
+          const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+          img = nativeImage.createFromDataURL(svgDataUrl);
+        } else {
+          img = nativeImage.createFromPath(iconPath);
         }
+        if (!img || img.isEmpty()) return undefined;
+        return img.resize({ width: 16, height: 16 });
       } catch {}
       return undefined;
     };
 
     const labelWithEmoji = (item: any) => {
       const title = String(item?.title || '');
+      const subtitle = String(item?.subtitle || '').trim();
+      const text = [title, subtitle].filter(Boolean).join(' ').trim();
       const emoji = typeof item?.iconEmoji === 'string' ? item.iconEmoji.trim() : '';
-      if (!emoji) return title;
-      if (!title) return emoji;
-      return `${emoji} ${title}`;
+      if (!emoji || emoji === '•') return text || title;
+      if (!text) return emoji;
+      return `${emoji} ${text}`;
     };
 
     const template: any[] = [];
