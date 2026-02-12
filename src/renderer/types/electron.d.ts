@@ -231,7 +231,7 @@ export interface ElectronAPI {
   updateCommandHotkey: (
     commandId: string,
     hotkey: string
-  ) => Promise<boolean>;
+  ) => Promise<{ success: boolean; error?: 'duplicate' | 'unavailable' }>;
   toggleCommandEnabled: (
     commandId: string,
     enabled: boolean

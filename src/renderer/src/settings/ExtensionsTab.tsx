@@ -88,6 +88,10 @@ const ExtensionsTab: React.FC<{
   const [isLoading, setIsLoading] = useState(true);
   const [selected, setSelected] = useState<SelectedTarget | null>(null);
   const [expandedExtensions, setExpandedExtensions] = useState<Record<string, boolean>>({});
+  const [hotkeyStatus, setHotkeyStatus] = useState<{
+    type: 'idle' | 'success' | 'error';
+    text: string;
+  }>({ type: 'idle', text: '' });
 
   useEffect(() => {
     Promise.all([
@@ -332,7 +336,15 @@ const ExtensionsTab: React.FC<{
 
   const setCommandHotkey = async (command: CommandInfo | undefined, hotkey: string) => {
     if (!command || !settings) return;
-    await window.electron.updateCommandHotkey(command.id, hotkey);
+    const result = await window.electron.updateCommandHotkey(command.id, hotkey);
+    if (!result.success) {
+      const message = result.error === 'duplicate'
+        ? 'Hotkey already used by another SuperCmd command.'
+        : 'Hotkey unavailable. It may be used by macOS or another app.';
+      setHotkeyStatus({ type: 'error', text: message });
+      setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 3200);
+      return;
+    }
     setSettings((prev) => {
       if (!prev) return prev;
       const next = { ...prev.commandHotkeys };
@@ -340,6 +352,8 @@ const ExtensionsTab: React.FC<{
       else delete next[command.id];
       return { ...prev, commandHotkeys: next };
     });
+    setHotkeyStatus({ type: 'success', text: hotkey ? 'Hotkey updated.' : 'Hotkey removed.' });
+    setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 1800);
   };
 
   const getPreferenceValues = (extName: string, cmdName?: string): Record<string, any> => {
@@ -455,6 +469,15 @@ const ExtensionsTab: React.FC<{
                 <span>Install from Store</span>
               </button>
             </div>
+            {hotkeyStatus.type !== 'idle' ? (
+              <p
+                className={`mt-2 text-xs ${
+                  hotkeyStatus.type === 'error' ? 'text-red-300/90' : 'text-emerald-300/90'
+                }`}
+              >
+                {hotkeyStatus.text}
+              </p>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-[1fr_120px_100px_130px_82px] px-4 py-2 text-[11px] uppercase tracking-wider text-white/35 border-b border-white/[0.06]">

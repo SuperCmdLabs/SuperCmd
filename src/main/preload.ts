@@ -106,7 +106,10 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('get-all-commands'),
   updateGlobalShortcut: (shortcut: string): Promise<boolean> =>
     ipcRenderer.invoke('update-global-shortcut', shortcut),
-  updateCommandHotkey: (commandId: string, hotkey: string): Promise<boolean> =>
+  updateCommandHotkey: (
+    commandId: string,
+    hotkey: string
+  ): Promise<{ success: boolean; error?: 'duplicate' | 'unavailable' }> =>
     ipcRenderer.invoke('update-command-hotkey', commandId, hotkey),
   toggleCommandEnabled: (
     commandId: string,

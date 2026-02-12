@@ -125,6 +125,10 @@ const AITab: React.FC = () => {
   const [showElevenLabsKey, setShowElevenLabsKey] = useState(false);
   const [showMem0Key, setShowMem0Key] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
+  const [hotkeyStatus, setHotkeyStatus] = useState<{
+    type: 'idle' | 'success' | 'error';
+    text: string;
+  }>({ type: 'idle', text: '' });
 
   const [ollamaRunning, setOllamaRunning] = useState<boolean | null>(null);
   const [localModels, setLocalModels] = useState<Set<string>>(new Set());
@@ -243,8 +247,15 @@ const AITab: React.FC = () => {
   };
 
   const handleWhisperHotkeyChange = async (commandId: string, hotkey: string) => {
-    const success = await window.electron.updateCommandHotkey(commandId, hotkey);
-    if (!success) return;
+    const result = await window.electron.updateCommandHotkey(commandId, hotkey);
+    if (!result.success) {
+      const message = result.error === 'duplicate'
+        ? 'Hotkey already used by another SuperCmd command.'
+        : 'Hotkey unavailable. It may be used by macOS or another app.';
+      setHotkeyStatus({ type: 'error', text: message });
+      setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 3200);
+      return;
+    }
     setSettings((prev) => {
       if (!prev) return prev;
       const nextHotkeys = { ...(prev.commandHotkeys || {}) };
@@ -255,6 +266,8 @@ const AITab: React.FC = () => {
       }
       return { ...prev, commandHotkeys: nextHotkeys };
     });
+    setHotkeyStatus({ type: 'success', text: hotkey ? 'Hotkey updated.' : 'Hotkey removed.' });
+    setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 1800);
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 1600);
   };
@@ -732,6 +745,15 @@ const AITab: React.FC = () => {
                     compact
                   />
                 </div>
+                {hotkeyStatus.type !== 'idle' ? (
+                  <p
+                    className={`text-[11px] ${
+                      hotkeyStatus.type === 'error' ? 'text-red-300/90' : 'text-emerald-300/90'
+                    }`}
+                  >
+                    {hotkeyStatus.text}
+                  </p>
+                ) : null}
               </div>
             </div>
 

@@ -3582,7 +3582,7 @@ app.whenReady().then(async () => {
         for (const [otherCommandId, otherHotkey] of Object.entries(hotkeys)) {
           if (otherCommandId === commandId) continue;
           if (normalizeAccelerator(otherHotkey) === normalizedHotkey) {
-            return false;
+            return { success: false, error: 'duplicate' as const };
           }
         }
 
@@ -3604,19 +3604,19 @@ app.whenReady().then(async () => {
                 }
               } catch {}
             }
-            return false;
+            return { success: false, error: 'unavailable' as const };
           }
           hotkeys[commandId] = hotkey;
           registeredHotkeys.set(normalizedHotkey, commandId);
         } catch {
-          return false;
+          return { success: false, error: 'unavailable' as const };
         }
       } else {
         delete hotkeys[commandId];
       }
 
       saveSettings({ commandHotkeys: hotkeys });
-      return true;
+      return { success: true as const };
     }
   );
 
