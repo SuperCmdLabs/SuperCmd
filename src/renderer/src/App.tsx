@@ -286,6 +286,7 @@ const LAST_EXT_KEY = 'sc-last-extension';
 const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
 const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
 const CMD_ARGS_KEY_PREFIX = 'sc-ext-cmd-args:';
+const HIDDEN_MENUBAR_CMDS_KEY = 'sc-hidden-menubar-cmds';
 const MAX_RECENT_COMMANDS = 30;
 
 type PreferenceDefinition = NonNullable<ExtensionBundle['preferenceDefinitions']>[number];
@@ -304,6 +305,10 @@ function readJsonObject(key: string): Record<string, any> {
 
 function writeJsonObject(key: string, value: Record<string, any>) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function getMenuBarCommandKey(extName: string, cmdName: string): string {
+  return `${(extName || '').trim().toLowerCase()}/${(cmdName || '').trim().toLowerCase()}`;
 }
 
 function getExtPrefsKey(extName: string): string {
@@ -596,11 +601,50 @@ const App: React.FC = () => {
     });
   }, []);
 
+  const getMenuBarIdentity = useCallback((bundle: Partial<ExtensionBundle>) => {
+    const extName = bundle.extName || bundle.extensionName || '';
+    const cmdName = bundle.cmdName || bundle.commandName || '';
+    const extId = `${bundle.extensionName || bundle.extName || ''}/${bundle.commandName || bundle.cmdName || ''}`;
+    const storageKey = getMenuBarCommandKey(extName, cmdName);
+    return { extName, cmdName, extId, storageKey };
+  }, []);
+
+  const isMenuBarExtensionMounted = useCallback((bundle: Partial<ExtensionBundle>) => {
+    const { extName, cmdName } = getMenuBarIdentity(bundle);
+    if (!extName || !cmdName) return false;
+    return menuBarExtensions.some(
+      (entry) =>
+        (entry.bundle.extName || entry.bundle.extensionName) === extName &&
+        (entry.bundle.cmdName || entry.bundle.commandName) === cmdName
+    );
+  }, [menuBarExtensions, getMenuBarIdentity]);
+
+  const hideMenuBarExtension = useCallback((bundle: Partial<ExtensionBundle>) => {
+    const { extName, cmdName, extId, storageKey } = getMenuBarIdentity(bundle);
+    if (!extName || !cmdName) return;
+    setMenuBarExtensions((prev) =>
+      prev.filter(
+        (entry) =>
+          (entry.bundle.extName || entry.bundle.extensionName) !== extName ||
+          (entry.bundle.cmdName || entry.bundle.commandName) !== cmdName
+      )
+    );
+    const hidden = readJsonObject(HIDDEN_MENUBAR_CMDS_KEY);
+    hidden[storageKey] = true;
+    writeJsonObject(HIDDEN_MENUBAR_CMDS_KEY, hidden);
+    window.electron.removeMenuBar?.(extId);
+  }, [getMenuBarIdentity]);
+
   const upsertMenuBarExtension = useCallback((bundle: ExtensionBundle, options?: { remount?: boolean }) => {
     const remount = Boolean(options?.remount);
+    const { extName, cmdName, storageKey } = getMenuBarIdentity(bundle);
+    if (!extName || !cmdName) return;
+    const hidden = readJsonObject(HIDDEN_MENUBAR_CMDS_KEY);
+    if (hidden[storageKey]) {
+      delete hidden[storageKey];
+      writeJsonObject(HIDDEN_MENUBAR_CMDS_KEY, hidden);
+    }
     setMenuBarExtensions((prev) => {
-      const extName = bundle.extName || bundle.extensionName || '';
-      const cmdName = bundle.cmdName || bundle.commandName || '';
       const idx = prev.findIndex(
         (entry) =>
           (entry.bundle.extName || entry.bundle.extensionName) === extName &&
@@ -616,7 +660,7 @@ const App: React.FC = () => {
       };
       return next;
     });
-  }, []);
+  }, [getMenuBarIdentity]);
 
   const remountMenuBarExtensionsForExtension = useCallback((extensionName: string) => {
     const normalized = (extensionName || '').trim();
@@ -984,12 +1028,19 @@ const App: React.FC = () => {
     (window as any).electron?.getMenuBarExtensions?.().then((exts: any[]) => {
       if (exts && exts.length > 0) {
         console.log(`[MenuBar] Loading ${exts.length} menu-bar extension(s)`);
+        const hidden = readJsonObject(HIDDEN_MENUBAR_CMDS_KEY);
         const runnable = exts
           .map((ext) => hydrateExtensionBundlePreferences(ext))
           .filter((ext) => {
             const missingPrefs = getMissingRequiredPreferences(ext);
             const missingArgs = getMissingRequiredArguments(ext);
             return missingPrefs.length === 0 && missingArgs.length === 0;
+          })
+          .filter((bundle) => {
+            const extName = bundle.extName || bundle.extensionName || '';
+            const cmdName = bundle.cmdName || bundle.commandName || '';
+            const storageKey = getMenuBarCommandKey(extName, cmdName);
+            return !hidden[storageKey];
           })
           .map((bundle) => ({
             key: `${bundle.extName || bundle.extensionName}:${bundle.cmdName || bundle.commandName}:initial`,
@@ -1778,9 +1829,13 @@ const App: React.FC = () => {
           }
 
           // Menu-bar commands run in the hidden tray runners, not in the overlay.
-          // Just hide the window — the tray will show the menu.
+          // Toggle behavior matches Raycast: running the same menu-bar command again hides it.
           if (hydrated.mode === 'menu-bar') {
-            upsertMenuBarExtension(hydrated);
+            if (isMenuBarExtensionMounted(hydrated)) {
+              hideMenuBarExtension(hydrated);
+            } else {
+              upsertMenuBarExtension(hydrated);
+            }
             window.electron.hideWindow();
             setSearchQuery('');
             setSelectedIndex(0);
@@ -2339,7 +2394,11 @@ const App: React.FC = () => {
                   setExtensionPreferenceSetup(null);
 
                   if (updatedBundle.mode === 'menu-bar') {
-                    upsertMenuBarExtension(updatedBundle);
+                    if (isMenuBarExtensionMounted(updatedBundle)) {
+                      hideMenuBarExtension(updatedBundle);
+                    } else {
+                      upsertMenuBarExtension(updatedBundle);
+                    }
                     window.electron.hideWindow();
                     setSearchQuery('');
                     setSelectedIndex(0);

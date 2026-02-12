@@ -5492,6 +5492,17 @@ return appURL's |path|() as text`,
     tray.setContextMenu(menu);
   });
 
+  ipcMain.on('menubar-remove', (_event: any, data: any) => {
+    const extId = String(data?.extId || '').trim();
+    if (!extId) return;
+    const tray = menuBarTrays.get(extId);
+    if (!tray) return;
+    try {
+      tray.destroy();
+    } catch {}
+    menuBarTrays.delete(extId);
+  });
+
   // Route native menu clicks back to the renderer
   function buildMenuBarTemplate(items: any[], extId: string): any[] {
     const resolveMenuItemIcon = (item: any) => {

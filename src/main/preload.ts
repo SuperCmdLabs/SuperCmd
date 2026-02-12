@@ -333,6 +333,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('get-menubar-extensions'),
   updateMenuBar: (data: any) =>
     ipcRenderer.send('menubar-update', data),
+  removeMenuBar: (extId: string): void =>
+    ipcRenderer.send('menubar-remove', { extId }),
   onMenuBarItemClick: (callback: (data: { extId: string; itemId: string }) => void) => {
     ipcRenderer.on('menubar-item-click', (_event: any, data: any) => callback(data));
   },

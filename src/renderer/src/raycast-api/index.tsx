@@ -4586,7 +4586,15 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: Me
   }, [registryVersion, icon, title, tooltip, extId, assetsPath, isMenuBar]);
 
   // Cleanup on unmount
-  useEffect(() => () => { _mbActions.delete(extId); }, [extId]);
+  useEffect(
+    () => () => {
+      _mbActions.delete(extId);
+      if (isMenuBar) {
+        (window as any).electron?.removeMenuBar?.(extId);
+      }
+    },
+    [extId, isMenuBar]
+  );
 
   if (isMenuBar) {
     // Render children in a hidden div so React hooks in items execute,

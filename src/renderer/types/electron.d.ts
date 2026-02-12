@@ -358,6 +358,10 @@ export interface ElectronAPI {
     canChooseFiles?: boolean;
     showHiddenFiles?: boolean;
   }) => Promise<string[]>;
+  getMenuBarExtensions: () => Promise<any[]>;
+  updateMenuBar: (data: any) => void;
+  removeMenuBar: (extId: string) => void;
+  onMenuBarItemClick: (callback: (data: { extId: string; itemId: string }) => void) => void;
 
   // AI
   aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }) => Promise<void>;
