@@ -1409,7 +1409,7 @@ function createWindow(): void {
   mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.on('blur', () => {
-    if (isVisible && !suppressBlurHide && launcherMode !== 'whisper' && launcherMode !== 'speak' && !whisperOverlayVisible) {
+    if (isVisible && !suppressBlurHide && launcherMode !== 'whisper' && launcherMode !== 'speak') {
       hideWindow();
     }
   });
