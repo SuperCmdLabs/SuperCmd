@@ -4366,12 +4366,23 @@ type SerializedMenuBarIcon = {
   iconEmoji?: string;
 };
 
+function pickMenuBarIconSource(icon: any): string {
+  if (!icon || typeof icon !== 'object') return '';
+  if (icon.source !== undefined) {
+    if (typeof icon.source === 'string') return icon.source;
+    if (icon.source && typeof icon.source === 'object') {
+      // Prefer light assets for menu-bar icons because they're shown against
+      // translucent/dark menu backgrounds on macOS.
+      return icon.source.light || icon.source.dark || '';
+    }
+  }
+  return icon.light || icon.dark || '';
+}
+
 function toMenuBarIconPayload(icon: any, assetsPath: string): SerializedMenuBarIcon | undefined {
   if (!icon) return undefined;
   const source = typeof icon === 'object' && icon !== null
-    ? (icon.source
-      ? (typeof icon.source === 'object' ? (icon.source.dark || icon.source.light) : icon.source)
-      : (icon.dark || icon.light))
+    ? pickMenuBarIconSource(icon)
     : icon;
 
   if (typeof source !== 'string' || !source.trim()) return undefined;
