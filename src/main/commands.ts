@@ -319,68 +319,11 @@ function cleanPaneName(raw: string): string {
 
   s = s.replace(/([a-z])([A-Z])/g, '$1 $2');
   s = s.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
-
-  const replacements: Record<string, string> = {
-    'And': '&',
-    'Energy Saver': 'Energy Saver',
-    'Print And Fax': 'Printers & Fax',
-    'Print And Scan': 'Printers & Scanners',
-    'Sharing Pref': 'Sharing',
-    'Expose': 'Mission Control',
-    'Universal Access Pref': 'Accessibility',
-    'Localization': 'Language & Region',
-    'Speech': 'Siri & Dictation',
-    'Discs': 'Discs Handling',
-    'Apple ID Pref Pane': 'Apple ID',
-    'Family Sharing Pref Pane': 'Family Sharing',
-    'Class Kit Preference Pane': 'Classroom',
-    'Desktop Screen Effects': 'Desktop & Screen Saver',
-    'Touch ID': 'Touch ID & Password',
-    'Digi Hub': 'CDs & DVDs',
-    'Power Preferences': 'Battery',
-    'PowerPreferences': 'Battery',
-    'Security': 'Privacy & Security',
-    'Print & Scan': 'Printers & Scanners',
-    'Print & Fax': 'Printers & Scanners',
-    'Keyboard Shortcuts': 'Keyboard',
-    'Trackpad Settings': 'Trackpad',
-  };
-
-  s = s.replace(/\bAnd\b/g, '&');
-
-  for (const [from, to] of Object.entries(replacements)) {
-    if (s === from) {
-      s = to;
-      break;
-    }
-  }
-
-  return s.trim();
+  return s.replace(/\s+/g, ' ').trim();
 }
 
 function canonicalSettingsTitle(title: string, bundleId?: string): string {
-  const cleaned = cleanPaneName(title);
-  const byBundle: Record<string, string> = {
-    'com.apple.settings.PrivacySecurity.extension': 'Privacy & Security',
-    'com.apple.preference.security': 'Privacy & Security',
-    'com.apple.preference.battery': 'Battery',
-    'com.apple.preference.energysaver': 'Battery',
-    'com.apple.preference.printfax': 'Printers & Scanners',
-    'com.apple.preference.print': 'Printers & Scanners',
-    'com.apple.preference.trackpad': 'Trackpad',
-  };
-  if (bundleId && byBundle[bundleId]) return byBundle[bundleId];
-
-  const byTitle: Record<string, string> = {
-    security: 'Privacy & Security',
-    'privacy security': 'Privacy & Security',
-    powerpreferences: 'Battery',
-    'power preferences': 'Battery',
-    'print & fax': 'Printers & Scanners',
-    'print & scan': 'Printers & Scanners',
-  };
-  const key = cleaned.toLowerCase().replace(/\s+/g, ' ').trim();
-  return byTitle[key] || cleaned;
+  return cleanPaneName(title);
 }
 
 function canonicalAppTitle(name: string): string {
@@ -389,11 +332,257 @@ function canonicalAppTitle(name: string): string {
   return name;
 }
 
+function collectAppBundles(rootDir: string, maxDepth = 4): string[] {
+  const results: string[] = [];
+  if (!rootDir || !fs.existsSync(rootDir)) return results;
+
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: rootDir, depth: 0 }];
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    let visitKey = current.dir;
+    try {
+      visitKey = fs.realpathSync(current.dir);
+    } catch {}
+    if (visited.has(visitKey)) continue;
+    visited.add(visitKey);
+
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(current.dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(current.dir, entry.name);
+      let isDir = entry.isDirectory();
+      if (!isDir && entry.isSymbolicLink()) {
+        try {
+          isDir = fs.statSync(fullPath).isDirectory();
+        } catch {}
+      }
+      if (!isDir) continue;
+
+      if (entry.name.endsWith('.app')) {
+        results.push(fullPath);
+        continue;
+      }
+
+      if (
+        entry.name.endsWith('.appex') ||
+        entry.name.endsWith('.prefPane') ||
+        entry.name.endsWith('.bundle') ||
+        entry.name.endsWith('.plugin')
+      ) {
+        continue;
+      }
+
+      if (current.depth < maxDepth) {
+        queue.push({ dir: fullPath, depth: current.depth + 1 });
+      }
+    }
+  }
+
+  return results;
+}
+
+function isPathInsideRoots(targetPath: string, roots: string[]): boolean {
+  const resolvedTarget = path.resolve(targetPath);
+  for (const root of roots) {
+    const resolvedRoot = path.resolve(root);
+    if (resolvedTarget === resolvedRoot) return true;
+    if (resolvedTarget.startsWith(`${resolvedRoot}${path.sep}`)) return true;
+  }
+  return false;
+}
+
+async function discoverAppBundlesViaSpotlight(allowedRoots: string[]): Promise<string[]> {
+  try {
+    const { stdout } = await execAsync(
+      `/usr/bin/mdfind "kMDItemContentTypeTree == 'com.apple.application-bundle'" 2>/dev/null`
+    );
+    return stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((p) => p.endsWith('.app') && !p.includes('.app/') && fs.existsSync(p))
+      .filter((p) => isPathInsideRoots(p, allowedRoots));
+  } catch {
+    return [];
+  }
+}
+
+function makeSettingsItemId(input: string): string {
+  return `settings-item-${crypto.createHash('md5').update(input).digest('hex').slice(0, 12)}`;
+}
+
+function splitSearchKeywords(value: string): string[] {
+  return String(value || '')
+    .split(',')
+    .map((term) => term.trim().toLowerCase())
+    .filter((term) => term.length >= 2);
+}
+
+function getLocaleCandidates(): string[] {
+  const set = new Set<string>();
+  const locale = String(Intl.DateTimeFormat().resolvedOptions().locale || '')
+    .replace('-', '_')
+    .trim();
+  const envLang = String(process.env.LANG || '')
+    .split('.')
+    .shift()
+    ?.replace('-', '_')
+    .trim();
+
+  if (locale) {
+    set.add(locale);
+    const base = locale.split('_')[0];
+    if (base) set.add(base);
+  }
+  if (envLang) {
+    set.add(envLang);
+    const base = envLang.split('_')[0];
+    if (base) set.add(base);
+  }
+  set.add('en_US');
+  set.add('en_GB');
+  set.add('en');
+  return Array.from(set);
+}
+
+function resolveSearchTermsFile(bundlePath: string, searchTermsFileName?: string): string | undefined {
+  const resourcesDir = path.join(bundlePath, 'Contents', 'Resources');
+  if (!fs.existsSync(resourcesDir)) return undefined;
+
+  const fileStem = String(searchTermsFileName || '').trim();
+  const localeCandidates = getLocaleCandidates();
+  if (fileStem) {
+    for (const locale of localeCandidates) {
+      const candidate = path.join(resourcesDir, `${locale}.lproj`, `${fileStem}.searchTerms`);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+
+  for (const locale of localeCandidates) {
+    const lprojDir = path.join(resourcesDir, `${locale}.lproj`);
+    if (!fs.existsSync(lprojDir)) continue;
+    try {
+      const files = fs.readdirSync(lprojDir).filter((f) => f.endsWith('.searchTerms'));
+      if (files.length > 0) return path.join(lprojDir, files[0]);
+    } catch {}
+  }
+
+  return undefined;
+}
+
+async function readPlistFileJson(plistPath: string): Promise<Record<string, any> | null> {
+  try {
+    if (!fs.existsSync(plistPath)) return null;
+    const safePath = plistPath.replace(/"/g, '\\"');
+    const { stdout } = await execAsync(
+      `/usr/bin/plutil -convert json -o - "${safePath}" 2>/dev/null`
+    );
+    return JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+}
+
+async function discoverSettingsSearchTermCommands(
+  bundlePath: string,
+  pane: CommandInfo,
+  bundleId?: string,
+  legacyBundleId?: string,
+  searchTermsFileName?: string
+): Promise<CommandInfo[]> {
+  const searchTermsFile = resolveSearchTermsFile(bundlePath, searchTermsFileName);
+  if (!searchTermsFile) return [];
+
+  const data = await readPlistFileJson(searchTermsFile);
+  if (!data || typeof data !== 'object') return [];
+
+  const commands: CommandInfo[] = [];
+  const seen = new Set<string>();
+  const paneTitleLower = String(pane.title || '').trim().toLowerCase();
+
+  const addCommand = (title: string, extraKeywords: string[], sourceKey: string) => {
+    const finalTitle = String(title || '').trim();
+    if (finalTitle.length < 2) return;
+
+    const dedupeKey = `${String(pane.path || '')}:${finalTitle.toLowerCase()}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+
+    commands.push({
+      id: makeSettingsItemId(`${dedupeKey}:${sourceKey}`),
+      title: finalTitle,
+      subtitle: pane.title,
+      keywords: buildSettingsKeywords(finalTitle, bundleId, legacyBundleId, extraKeywords),
+      iconDataUrl: pane.iconDataUrl,
+      category: 'settings',
+      path: pane.path,
+      _bundlePath: pane._bundlePath,
+    });
+  };
+
+  for (const [sectionRaw, sectionValue] of Object.entries(data)) {
+    const sectionTitle = cleanPaneName(sectionRaw);
+    const sectionKey = sectionRaw.toLowerCase();
+    const sectionKeywords: string[] = [sectionKey];
+
+    if (sectionTitle && sectionTitle.toLowerCase() !== paneTitleLower) {
+      addCommand(sectionTitle, sectionKeywords, `section:${sectionRaw}`);
+    }
+
+    const rows = Array.isArray((sectionValue as any)?.localizableStrings)
+      ? (sectionValue as any).localizableStrings
+      : [];
+
+    for (const row of rows) {
+      const rowTitle = String(row?.title || '').trim();
+      if (!rowTitle) continue;
+      const keywords = [
+        sectionKey,
+        sectionTitle.toLowerCase(),
+        ...splitSearchKeywords(String(row?.index || '')),
+      ].filter(Boolean);
+      addCommand(rowTitle, keywords, `${sectionRaw}:${rowTitle}`);
+    }
+  }
+
+  return commands;
+}
+
+function buildSettingsKeywords(
+  title: string,
+  bundleId?: string,
+  legacyBundleId?: string,
+  extraKeywords: string[] = []
+): string[] {
+  const lowerTitle = title.toLowerCase();
+
+  const set = new Set<string>([
+    'system settings',
+    'preferences',
+    lowerTitle,
+  ]);
+
+  if (bundleId) set.add(bundleId);
+  if (legacyBundleId) set.add(legacyBundleId);
+  for (const keyword of extraKeywords) {
+    const k = String(keyword || '').trim().toLowerCase();
+    if (k) set.add(k);
+  }
+
+  return Array.from(set);
+}
+
 // ─── Application Discovery ──────────────────────────────────────────
 
 async function discoverApplications(): Promise<CommandInfo[]> {
   const results: CommandInfo[] = [];
-  const seen = new Set<string>();
+  const usedIds = new Set<string>();
 
   const appDirs = [
     '/Applications',
@@ -402,52 +591,75 @@ async function discoverApplications(): Promise<CommandInfo[]> {
     path.join(process.env.HOME || '', 'Applications'),
   ];
 
+  const appPathsSet = new Set<string>();
+  const spotlightPaths = await discoverAppBundlesViaSpotlight(appDirs);
+  for (const appPath of spotlightPaths) {
+    appPathsSet.add(appPath);
+  }
+
   for (const dir of appDirs) {
-    if (!fs.existsSync(dir)) continue;
-
-    let entries: string[];
-    try {
-      entries = fs.readdirSync(dir);
-    } catch {
-      continue;
+    for (const appPath of collectAppBundles(dir)) {
+      appPathsSet.add(appPath);
     }
+  }
+  const finderPath = '/System/Library/CoreServices/Finder.app';
+  if (fs.existsSync(finderPath)) {
+    appPathsSet.add(finderPath);
+  }
 
-    const appPaths: string[] = [];
-    for (const entry of entries) {
-      if (entry.endsWith('.app')) {
-        appPaths.push(path.join(dir, entry));
-      }
+  const appPaths = Array.from(appPathsSet).sort((a, b) => a.localeCompare(b));
+  const BATCH = 15;
+  for (let i = 0; i < appPaths.length; i += BATCH) {
+    const batch = appPaths.slice(i, i + BATCH);
+    const items = await Promise.all(
+      batch.map(async (appPath) => {
+        const info = await readPlistJson(appPath);
+        if (info) {
+          const packageType = String(info.CFBundlePackageType || '').trim();
+          const isFinder = appPath === finderPath;
+          if (packageType && packageType !== 'APPL' && !isFinder) return null;
+          if (info.LSUIElement === true) return null;
+          if (info.NSUIElement === true) return null;
+          if (info.LSBackgroundOnly === true) return null;
+        }
+
+        const rawName = path.basename(appPath, '.app');
+        const name = canonicalAppTitle(rawName);
+        const key = name.toLowerCase().replace(/\s+/g, ' ').trim();
+        const slug = key.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
+        const idSuffix = crypto.createHash('md5').update(appPath).digest('hex').slice(0, 8);
+        const baseId = `app-${slug}`;
+        const id = usedIds.has(baseId) ? `${baseId}-${idSuffix}` : baseId;
+        usedIds.add(id);
+
+        const iconDataUrl = await getIconDataUrl(appPath);
+
+        return {
+          id,
+          title: name,
+          keywords: [key, rawName.toLowerCase()],
+          iconDataUrl,
+          category: 'app' as const,
+          path: appPath,
+          _bundlePath: appPath,
+        };
+      })
+    );
+
+    for (const item of items) {
+      if (item) results.push(item);
     }
+  }
 
-    const BATCH = 15;
-    for (let i = 0; i < appPaths.length; i += BATCH) {
-      const batch = appPaths.slice(i, i + BATCH);
-      const items = await Promise.all(
-        batch.map(async (appPath) => {
-          const rawName = path.basename(appPath, '.app');
-          const name = canonicalAppTitle(rawName);
-          const key = name.toLowerCase();
-          if (seen.has(key)) return null;
-          seen.add(key);
-
-          const iconDataUrl = await getIconDataUrl(appPath);
-
-          return {
-            id: `app-${key.replace(/[^a-z0-9]+/g, '-')}`,
-            title: name,
-            keywords: [key],
-            iconDataUrl,
-            category: 'app' as const,
-            path: appPath,
-            _bundlePath: appPath,
-          };
-        })
-      );
-
-      for (const item of items) {
-        if (item) results.push(item);
-      }
-    }
+  const titleCounts = new Map<string, number>();
+  for (const item of results) {
+    const key = item.title.toLowerCase();
+    titleCounts.set(key, (titleCounts.get(key) || 0) + 1);
+  }
+  for (const item of results) {
+    if (!item.path) continue;
+    if ((titleCounts.get(item.title.toLowerCase()) || 0) <= 1) continue;
+    item.subtitle = path.dirname(item.path);
   }
 
   return results;
@@ -494,6 +706,10 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
             typeof settingsAttrs.legacyBundleIdentifier === 'string'
               ? settingsAttrs.legacyBundleIdentifier
               : undefined;
+          const searchTermsFileName: string | undefined =
+            typeof settingsAttrs.searchTermsFileName === 'string'
+              ? settingsAttrs.searchTermsFileName
+              : undefined;
           const openIdentifier = legacyBundleId || bundleId;
 
           if (
@@ -519,15 +735,17 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
           // Try fast .icns extraction (will return undefined for Assets.car-only bundles)
           const iconDataUrl = await getIconDataUrl(extPath);
 
-          return {
+          const paneCommand: CommandInfo = {
             id: `settings-${key.replace(/[^a-z0-9]+/g, '-')}`,
             title: displayName,
-            keywords: ['system settings', 'preferences', key, bundleId, legacyBundleId || ''],
+            keywords: buildSettingsKeywords(displayName, bundleId, legacyBundleId),
             iconDataUrl,
             category: 'settings' as const,
             path: openIdentifier,
             _bundlePath: extPath,
           };
+
+          return paneCommand;
         })
       );
 
@@ -579,15 +797,17 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
 
           const iconDataUrl = await getIconDataUrl(panePath);
 
-          return {
+          const paneCommand: CommandInfo = {
             id: `settings-${key.replace(/[^a-z0-9]+/g, '-')}`,
             title: displayName,
-            keywords: ['system settings', 'preferences', key],
+            keywords: buildSettingsKeywords(displayName, paneBundleId),
             iconDataUrl,
             category: 'settings' as const,
             path: paneBundleId || rawName,
             _bundlePath: panePath,
           };
+
+          return paneCommand;
         })
       );
 
@@ -827,7 +1047,7 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
 
   if (bundlesNeedingIcon.length > 0) {
     console.log(`Extracting ${bundlesNeedingIcon.length} app/settings icons via NSWorkspace…`);
-    const bundlePaths = bundlesNeedingIcon.map((c) => c._bundlePath!);
+    const bundlePaths = Array.from(new Set(bundlesNeedingIcon.map((c) => c._bundlePath!)));
     const iconMap = await batchGetIconsViaWorkspace(bundlePaths);
 
     for (const cmd of bundlesNeedingIcon) {
@@ -842,11 +1062,11 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
   // If a settings icon is repeated many times, drop it so UI fallback icon is used.
   const settingsIconCounts = new Map<string, number>();
   for (const cmd of allCommands) {
-    if (cmd.category !== 'settings' || !cmd.iconDataUrl) continue;
+    if (cmd.category !== 'settings' || !cmd.iconDataUrl || cmd.subtitle) continue;
     settingsIconCounts.set(cmd.iconDataUrl, (settingsIconCounts.get(cmd.iconDataUrl) || 0) + 1);
   }
   for (const cmd of allCommands) {
-    if (cmd.category !== 'settings' || !cmd.iconDataUrl) continue;
+    if (cmd.category !== 'settings' || !cmd.iconDataUrl || cmd.subtitle) continue;
     if ((settingsIconCounts.get(cmd.iconDataUrl) || 0) >= 5) {
       cmd.iconDataUrl = undefined;
     }
