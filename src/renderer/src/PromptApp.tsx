@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Loader2, X } from 'lucide-react';
 
+const NO_AI_MODEL_ERROR = 'No AI model available. Configure one in Settings -> AI.';
+
 const PromptApp: React.FC = () => {
   const [promptText, setPromptText] = useState('');
   const [status, setStatus] = useState<'idle' | 'processing' | 'ready' | 'error'>('idle');
   const [errorText, setErrorText] = useState('');
+  const [aiAvailable, setAiAvailable] = useState(true);
   const requestIdRef = useRef<string | null>(null);
   const sourceTextRef = useRef('');
   const resultTextRef = useRef('');
@@ -43,6 +46,13 @@ const PromptApp: React.FC = () => {
   const submitPrompt = useCallback(async () => {
     const instruction = promptText.trim();
     if (!instruction || status === 'processing') return;
+    const aiReady = await window.electron.aiIsAvailable().catch(() => false);
+    setAiAvailable(aiReady);
+    if (!aiReady) {
+      setStatus('error');
+      setErrorText(NO_AI_MODEL_ERROR);
+      return;
+    }
 
     if (requestIdRef.current) {
       try {
@@ -85,6 +95,28 @@ const PromptApp: React.FC = () => {
   useEffect(() => {
     const timer = setTimeout(() => textareaRef.current?.focus(), 50);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electron.aiIsAvailable()
+      .then((available) => {
+        if (cancelled) return;
+        setAiAvailable(available);
+        if (!available) {
+          setStatus('error');
+          setErrorText(NO_AI_MODEL_ERROR);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAiAvailable(false);
+        setStatus('error');
+        setErrorText(NO_AI_MODEL_ERROR);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -153,7 +185,7 @@ const PromptApp: React.FC = () => {
           <button
             onClick={() => void submitPrompt()}
             className="cursor-prompt-submit"
-            disabled={!promptText.trim() || status === 'processing'}
+            disabled={!promptText.trim() || status === 'processing' || !aiAvailable}
             title="Submit prompt"
           >
             <ArrowUp className="w-3.5 h-3.5" strokeWidth={2.5} />
