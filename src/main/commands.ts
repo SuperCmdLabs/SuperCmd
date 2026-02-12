@@ -17,6 +17,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { discoverInstalledExtensionCommands } from './extension-runner';
+import { discoverScriptCommands } from './script-command-runner';
+import { loadSettings } from './settings-store';
 
 const execAsync = promisify(exec);
 let iconCounter = 0;
@@ -24,9 +26,11 @@ let iconCounter = 0;
 export interface CommandInfo {
   id: string;
   title: string;
+  subtitle?: string;
   keywords?: string[];
   iconDataUrl?: string;
-  category: 'app' | 'settings' | 'system' | 'extension';
+  iconEmoji?: string;
+  category: 'app' | 'settings' | 'system' | 'extension' | 'script';
   /** .app path for apps, bundle identifier for settings */
   path?: string;
   /** Extension command mode, e.g. view/no-view/menu-bar */
@@ -35,6 +39,17 @@ export interface CommandInfo {
   interval?: string;
   /** Whether command should start disabled until user enables it */
   disabledByDefault?: boolean;
+  /** Whether user confirmation is required before execution */
+  needsConfirmation?: boolean;
+  /** Argument definitions (used by script commands and extension no-view setup) */
+  commandArgumentDefinitions?: Array<{
+    name: string;
+    required?: boolean;
+    type?: string;
+    placeholder?: string;
+    title?: string;
+    data?: Array<{ title?: string; value?: string }>;
+  }>;
   /** Bundle path on disk (used for icon extraction) */
   _bundlePath?: string;
 }
@@ -729,6 +744,18 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-create-script-command',
+      title: 'Create Script Command',
+      keywords: ['script', 'command', 'create', 'custom', 'raycast', 'shell'],
+      category: 'system',
+    },
+    {
+      id: 'system-open-script-commands',
+      title: 'Open Script Commands Folder',
+      keywords: ['script', 'command', 'folder', 'directory', 'raycast', 'custom'],
+      category: 'system',
+    },
+    {
       id: 'system-import-snippets',
       title: 'Import Snippets',
       keywords: ['snippet', 'import', 'load', 'file'],
@@ -760,7 +787,35 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
     console.error('Failed to discover installed extensions:', e);
   }
 
-  const allCommands = [...apps, ...settings, ...extensionCommands, ...systemCommands];
+  // Raycast-compatible script commands
+  let scriptCommands: CommandInfo[] = [];
+  try {
+    scriptCommands = discoverScriptCommands().map((script) => ({
+      id: script.id,
+      title: script.title,
+      subtitle: script.packageName,
+      keywords: script.keywords,
+      iconDataUrl: script.iconDataUrl,
+      iconEmoji: script.iconEmoji,
+      category: 'script' as const,
+      path: script.scriptPath,
+      mode: script.mode,
+      interval: script.interval,
+      needsConfirmation: script.needsConfirmation,
+      commandArgumentDefinitions: script.arguments.map((arg) => ({
+        name: arg.name,
+        required: arg.required,
+        type: arg.type,
+        placeholder: arg.placeholder,
+        title: arg.placeholder,
+        data: arg.data,
+      })),
+    }));
+  } catch (e) {
+    console.error('Failed to discover script commands:', e);
+  }
+
+  const allCommands = [...apps, ...settings, ...extensionCommands, ...scriptCommands, ...systemCommands];
 
   // ── Batch-extract icons via NSWorkspace for app/settings bundles ──
   const bundlesNeedingIcon = allCommands.filter(
@@ -802,11 +857,23 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
     delete cmd._bundlePath;
   }
 
+  // Runtime metadata overlays (used by updateCommandMetadata and inline scripts).
+  try {
+    const commandMetadata = loadSettings().commandMetadata || {};
+    for (const cmd of allCommands) {
+      if (cmd.category === 'script' && cmd.mode !== 'inline') continue;
+      const subtitle = String(commandMetadata[cmd.id]?.subtitle || '').trim();
+      if (subtitle) {
+        cmd.subtitle = subtitle;
+      }
+    }
+  } catch {}
+
   cachedCommands = allCommands;
   cacheTimestamp = now;
 
   console.log(
-    `Discovered ${apps.length} apps, ${settings.length} settings panes, ${extensionCommands.length} extension commands in ${Date.now() - t0}ms`
+    `Discovered ${apps.length} apps, ${settings.length} settings panes, ${extensionCommands.length} extension commands, ${scriptCommands.length} script commands in ${Date.now() - t0}ms`
   );
 
   return cachedCommands;

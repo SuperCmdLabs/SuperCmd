@@ -5,13 +5,24 @@
 export interface CommandInfo {
   id: string;
   title: string;
+  subtitle?: string;
   keywords?: string[];
   iconDataUrl?: string;
-  category: 'app' | 'settings' | 'system' | 'extension';
+  iconEmoji?: string;
+  category: 'app' | 'settings' | 'system' | 'extension' | 'script';
   path?: string;
   mode?: string;
   interval?: string;
   disabledByDefault?: boolean;
+  needsConfirmation?: boolean;
+  commandArgumentDefinitions?: Array<{
+    name: string;
+    required?: boolean;
+    type?: string;
+    placeholder?: string;
+    title?: string;
+    data?: Array<{ title?: string; value?: string }>;
+  }>;
 }
 
 export interface ExtensionPreferenceSchema {
@@ -256,6 +267,11 @@ export interface ElectronAPI {
 
   // Extension Runner
   runExtension: (extName: string, cmdName: string) => Promise<ExtensionBundle | null>;
+  runScriptCommand: (payload: {
+    commandId: string;
+    arguments?: Record<string, any>;
+    background?: boolean;
+  }) => Promise<any>;
   getInstalledExtensionsSettingsSchema: () => Promise<InstalledExtensionSettingsSchema[]>;
 
   // Open URL

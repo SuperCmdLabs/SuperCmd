@@ -120,6 +120,10 @@ const ExtensionsTab: React.FC<{
         if (extName && cmdName) map.set(`${extName}/${cmdName}`, cmd);
         continue;
       }
+      if (cmd.category === 'script') {
+        map.set(`__script_commands/${cmd.id}`, cmd);
+        continue;
+      }
       if (cmd.category === 'system') {
         map.set(`__supercommand/${cmd.id}`, cmd);
       }
@@ -203,9 +207,32 @@ const ExtensionsTab: React.FC<{
       });
     }
 
+    const scriptCommands = commands.filter((cmd) => cmd.category === 'script');
+    if (scriptCommands.length > 0) {
+      byExt.set('__script_commands', {
+        extName: '__script_commands',
+        title: 'Script Commands',
+        description: 'Custom and Raycast-compatible script commands',
+        owner: 'supercommand',
+        iconDataUrl: undefined,
+        preferences: [],
+        commands: scriptCommands.map((cmd) => ({
+          name: cmd.id,
+          title: cmd.title,
+          description: cmd.subtitle || '',
+          mode: cmd.mode || 'no-view',
+          interval: cmd.interval,
+          disabledByDefault: Boolean(cmd.disabledByDefault),
+          preferences: [],
+        })),
+      });
+    }
+
     return Array.from(byExt.values()).sort((a, b) => {
       if (a.extName === '__supercommand') return -1;
       if (b.extName === '__supercommand') return 1;
+      if (a.extName === '__script_commands') return -1;
+      if (b.extName === '__script_commands') return 1;
       return a.title.localeCompare(b.title);
     });
   }, [schemas, commands]);

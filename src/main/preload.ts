@@ -131,6 +131,12 @@ contextBridge.exposeInMainWorld('electron', {
   // ─── Extension Runner ────────────────────────────────────────────
   runExtension: (extName: string, cmdName: string): Promise<any> =>
     ipcRenderer.invoke('run-extension', extName, cmdName),
+  runScriptCommand: (payload: {
+    commandId: string;
+    arguments?: Record<string, any>;
+    background?: boolean;
+  }): Promise<any> =>
+    ipcRenderer.invoke('run-script-command', payload),
   getInstalledExtensionsSettingsSchema: (): Promise<any[]> =>
     ipcRenderer.invoke('get-installed-extensions-settings-schema'),
 

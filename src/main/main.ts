@@ -17,6 +17,13 @@ import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
 import {
+  createScriptCommandTemplate,
+  executeScriptCommand,
+  getScriptCommandBySlug,
+  getSuperCmdScriptCommandsDirectory,
+  invalidateScriptCommandsCache,
+} from './script-command-runner';
+import {
   getCatalog,
   getExtensionScreenshotUrls,
   getInstalledExtensionNames,
@@ -1145,6 +1152,20 @@ function parseJsonObjectParam(raw: string | null): Record<string, any> {
   }
 }
 
+function parseScriptArgumentsFromQuery(parsed: URL): string[] {
+  const values = parsed.searchParams.getAll('arguments').map((v) => String(v || ''));
+  if (values.length > 0) return values;
+
+  const legacyObject = parseJsonObjectParam(parsed.searchParams.get('arguments'));
+  if (!legacyObject || Object.keys(legacyObject).length === 0) return [];
+
+  const out: string[] = [];
+  for (const value of Object.values(legacyObject)) {
+    out.push(String(value ?? ''));
+  }
+  return out;
+}
+
 type ParsedRaycastDeepLink =
   | {
       type: 'extension';
@@ -1158,7 +1179,7 @@ type ParsedRaycastDeepLink =
   | {
       type: 'scriptCommand';
       commandName: string;
-      arguments: Record<string, any>;
+      arguments: string[];
     };
 
 function parseRaycastDeepLink(url: string): ParsedRaycastDeepLink | null {
@@ -1188,7 +1209,7 @@ function parseRaycastDeepLink(url: string): ParsedRaycastDeepLink | null {
       return {
         type: 'scriptCommand',
         commandName,
-        arguments: parseJsonObjectParam(parsed.searchParams.get('arguments')),
+        arguments: parseScriptArgumentsFromQuery(parsed),
       };
     }
   } catch {
@@ -2459,6 +2480,39 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     await exportSnippetsToFile(mainWindow || undefined);
     return true;
   }
+  if (commandId === 'system-create-script-command') {
+    try {
+      const created = createScriptCommandTemplate();
+      invalidateScriptCommandsCache();
+      invalidateCache();
+      try {
+        await shell.openPath(created.scriptPath);
+      } catch {}
+      console.log(`[ScriptCommand] Created: ${path.basename(created.scriptPath)}`);
+      if (source === 'launcher') {
+        setTimeout(() => hideWindow(), 50);
+      }
+      return true;
+    } catch (error: any) {
+      console.error('Failed to create script command:', error);
+      console.error('[ScriptCommand] Failed to create script command.');
+      return false;
+    }
+  }
+  if (commandId === 'system-open-script-commands') {
+    try {
+      const dir = getSuperCmdScriptCommandsDirectory();
+      await shell.openPath(dir);
+      if (source === 'launcher') {
+        setTimeout(() => hideWindow(), 50);
+      }
+      return true;
+    } catch (error: any) {
+      console.error('Failed to open script command directory:', error);
+      console.error('[ScriptCommand] Failed to open script commands folder.');
+      return false;
+    }
+  }
 
   const success = await executeCommand(commandId);
   if (success && source === 'launcher') {
@@ -3673,10 +3727,28 @@ app.whenReady().then(async () => {
         return false;
       }
 
-      // Script command deeplinks are surfaced as no-op for now.
       if (deepLink.type === 'scriptCommand') {
-        console.warn(`Script command deeplink not yet supported: ${deepLink.commandName}`);
-        return false;
+        const script = getScriptCommandBySlug(deepLink.commandName);
+        if (!script) {
+          console.warn(`Script command deeplink target not found: ${deepLink.commandName}`);
+          return false;
+        }
+        try {
+          await showWindow();
+          const payload = JSON.stringify({
+            commandId: script.id,
+            arguments: deepLink.arguments || [],
+            source: 'deeplink',
+          });
+          await mainWindow?.webContents.executeJavaScript(
+            `window.dispatchEvent(new CustomEvent('sc-run-script-command', { detail: ${payload} }));`,
+            true
+          );
+          return true;
+        } catch (e) {
+          console.error(`Failed to launch script command deeplink: ${url}`, e);
+          return false;
+        }
       }
 
       try {
@@ -3750,6 +3822,85 @@ app.whenReady().then(async () => {
       } catch (e: any) {
         console.error(`run-extension error for ${extName}/${cmdName}:`, e);
         return { error: e?.message || 'Unknown error' };
+      }
+    }
+  );
+
+  // Run Raycast-style script command.
+  ipcMain.handle(
+    'run-script-command',
+    async (
+      _event: any,
+      payload: {
+        commandId: string;
+        arguments?: Record<string, any>;
+        background?: boolean;
+      }
+    ) => {
+      try {
+        const commandId = String(payload?.commandId || '').trim();
+        if (!commandId) {
+          return { success: false, error: 'commandId is required' };
+        }
+
+        const argumentValues =
+          payload?.arguments && typeof payload.arguments === 'object'
+            ? payload.arguments
+            : {};
+        const background = Boolean(payload?.background);
+
+        const executed = await executeScriptCommand(commandId, argumentValues);
+        if ('missingArguments' in executed) {
+          return {
+            success: false,
+            needsArguments: true,
+            commandId,
+            argumentDefinitions: executed.command.arguments.map((arg) => ({
+              name: arg.name,
+              required: arg.required,
+              type: arg.type,
+              placeholder: arg.placeholder,
+              title: arg.placeholder,
+              data: arg.data,
+            })),
+            missingArguments: executed.missingArguments.map((arg) => arg.name),
+            mode: executed.command.mode,
+            title: executed.command.title,
+          };
+        }
+
+        if (executed.mode === 'inline') {
+          const settings = loadSettings();
+          const metadata = { ...(settings.commandMetadata || {}) } as Record<string, { subtitle?: string }>;
+          const subtitle =
+            executed.exitCode === 0
+              ? String(executed.firstLine || '').trim()
+              : String(executed.lastLine || '').trim() || 'Script failed';
+          if (subtitle) {
+            metadata[executed.commandId] = { subtitle };
+          } else {
+            delete metadata[executed.commandId];
+          }
+          saveSettings({ commandMetadata: metadata });
+          invalidateCache();
+        }
+
+        if (!background && (executed.mode === 'compact' || executed.mode === 'silent')) {
+          const fallback = executed.exitCode === 0 ? 'Script finished.' : 'Script failed.';
+          const message = executed.message || fallback;
+          console.log(`[ScriptCommand] ${executed.title}: ${message}`);
+        }
+
+        return {
+          success: executed.exitCode === 0,
+          ...executed,
+        };
+      } catch (error: any) {
+        console.error('run-script-command error:', error);
+        return {
+          success: false,
+          error: error?.message || 'Failed to run script command',
+        };
       }
     }
   );

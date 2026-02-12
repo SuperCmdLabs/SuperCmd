@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic, Volume2, Loader2, CornerDownLeft, Brain } from 'lucide-react';
+import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic, Volume2, Loader2, CornerDownLeft, Brain, TerminalSquare } from 'lucide-react';
 import type { CommandInfo, ExtensionBundle, AppSettings, EdgeTtsVoice } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
@@ -53,6 +53,7 @@ function filterCommands(commands: CommandInfo[], query: string): CommandInfo[] {
   const scored = commands
     .map((cmd) => {
       const lowerTitle = cmd.title.toLowerCase();
+      const lowerSubtitle = String(cmd.subtitle || '').toLowerCase();
       const keywords = cmd.keywords?.map((k) => k.toLowerCase()) || [];
 
       let score = 0;
@@ -77,6 +78,10 @@ function filterCommands(commands: CommandInfo[], query: string): CommandInfo[] {
       else if (keywords.some((k) => k.includes(lowerQuery))) {
         score = 25;
       }
+      // Subtitle match
+      else if (lowerSubtitle.includes(lowerQuery)) {
+        score = 22;
+      }
 
       return { cmd, score };
     })
@@ -97,6 +102,8 @@ function getCategoryLabel(category: string): string {
       return 'System';
     case 'extension':
       return 'Extension';
+    case 'script':
+      return 'Script';
     case 'app':
     default:
       return 'Application';
@@ -226,6 +233,16 @@ function renderCommandIcon(command: CommandInfo): React.ReactNode {
       </div>
     );
   }
+  if (command.category === 'script') {
+    if (command.iconEmoji) {
+      return <span className="text-sm leading-none">{command.iconEmoji}</span>;
+    }
+    return (
+      <div className="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
+        <TerminalSquare className="w-3 h-3 text-emerald-300" />
+      </div>
+    );
+  }
   return (
     <div className="w-5 h-5 rounded bg-gray-500/20 flex items-center justify-center">
       <Settings className="w-3 h-3 text-gray-400" />
@@ -271,6 +288,17 @@ function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
     return (
       <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
         <FileText className="w-3 h-3 text-amber-300" />
+      </div>
+    );
+  }
+
+  if (
+    commandId === 'system-create-script-command' ||
+    commandId === 'system-open-script-commands'
+  ) {
+    return (
+      <div className="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
+        <TerminalSquare className="w-3 h-3 text-emerald-300" />
       </div>
     );
   }
@@ -349,12 +377,14 @@ const LAST_EXT_KEY = 'sc-last-extension';
 const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
 const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
 const CMD_ARGS_KEY_PREFIX = 'sc-ext-cmd-args:';
+const SCRIPT_CMD_ARGS_KEY_PREFIX = 'sc-script-cmd-args:';
 const HIDDEN_MENUBAR_CMDS_KEY = 'sc-hidden-menubar-cmds';
 const MAX_RECENT_COMMANDS = 30;
 const NO_AI_MODEL_ERROR = 'No AI model available. Configure one in Settings -> AI.';
 
 type PreferenceDefinition = NonNullable<ExtensionBundle['preferenceDefinitions']>[number];
 type ArgumentDefinition = NonNullable<ExtensionBundle['commandArgumentDefinitions']>[number];
+type ScriptArgumentDefinition = NonNullable<CommandInfo['commandArgumentDefinitions']>[number];
 
 function readJsonObject(key: string): Record<string, any> {
   try {
@@ -385,6 +415,10 @@ function getCmdPrefsKey(extName: string, cmdName: string): string {
 
 function getCmdArgsKey(extName: string, cmdName: string): string {
   return `${CMD_ARGS_KEY_PREFIX}${extName}/${cmdName}`;
+}
+
+function getScriptCmdArgsKey(commandId: string): string {
+  return `${SCRIPT_CMD_ARGS_KEY_PREFIX}${commandId}`;
 }
 
 function hydrateExtensionBundlePreferences(bundle: ExtensionBundle): ExtensionBundle {
@@ -495,6 +529,36 @@ function persistCommandArguments(extName: string, cmdName: string, values: Recor
   writeJsonObject(getCmdArgsKey(extName, cmdName), values);
 }
 
+function getMissingRequiredScriptArguments(
+  command: CommandInfo,
+  values?: Record<string, any>
+): ScriptArgumentDefinition[] {
+  const defs = command.commandArgumentDefinitions || [];
+  const current = values || {};
+  return defs.filter((def) => {
+    if (!def?.required) return false;
+    const value = current[def.name];
+    if (typeof value === 'string') return value.trim() === '';
+    return value === undefined || value === null;
+  });
+}
+
+function toScriptArgumentMapFromArray(
+  command: CommandInfo,
+  args: string[]
+): Record<string, any> {
+  const defs = (command.commandArgumentDefinitions || []).slice().sort((a, b) => {
+    const ai = Number(String(a.name || '').replace(/[^\d]/g, '')) || 0;
+    const bi = Number(String(b.name || '').replace(/[^\d]/g, '')) || 0;
+    return ai - bi;
+  });
+  const out: Record<string, any> = {};
+  defs.forEach((def, idx) => {
+    out[def.name] = String(args[idx] ?? '');
+  });
+  return out;
+}
+
 const App: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [pinnedCommands, setPinnedCommands] = useState<string[]>([]);
@@ -507,6 +571,15 @@ const App: React.FC = () => {
     bundle: ExtensionBundle;
     values: Record<string, any>;
     argumentValues: Record<string, any>;
+  } | null>(null);
+  const [scriptCommandSetup, setScriptCommandSetup] = useState<{
+    command: CommandInfo;
+    values: Record<string, any>;
+  } | null>(null);
+  const [scriptCommandOutput, setScriptCommandOutput] = useState<{
+    command: CommandInfo;
+    output: string;
+    exitCode: number;
   } | null>(null);
   const [showClipboardManager, setShowClipboardManager] = useState(false);
   const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
@@ -845,6 +918,8 @@ const App: React.FC = () => {
         setShowClipboardManager(false);
         setShowOnboarding(false);
         setExtensionPreferenceSetup(null);
+        setScriptCommandSetup(null);
+        setScriptCommandOutput(null);
         setExtensionView(null);
         setAiMode(false);
         return;
@@ -864,6 +939,8 @@ const App: React.FC = () => {
         setShowClipboardManager(false);
         setShowOnboarding(false);
         setExtensionPreferenceSetup(null);
+        setScriptCommandSetup(null);
+        setScriptCommandOutput(null);
         setExtensionView(null);
         setAiMode(false);
         return;
@@ -882,6 +959,8 @@ const App: React.FC = () => {
         setShowClipboardManager(false);
         setShowOnboarding(false);
         setExtensionPreferenceSetup(null);
+        setScriptCommandSetup(null);
+        setScriptCommandOutput(null);
         setExtensionView(null);
         setAiMode(false);
         setCursorPromptText('');
@@ -899,6 +978,8 @@ const App: React.FC = () => {
       setShowWhisperHint(false);
       setMemoryFeedback(null);
       setMemoryActionLoading(false);
+      setScriptCommandSetup(null);
+      setScriptCommandOutput(null);
       void refreshSelectedTextSnapshot();
 
       // If an extension is open, keep it alive — don't reset
@@ -1049,6 +1130,55 @@ const App: React.FC = () => {
     return () => window.removeEventListener('sc-launch-extension-bundle', onLaunchBundle as EventListener);
   }, [upsertMenuBarExtension]);
 
+  useEffect(() => {
+    const onRunScript = (event: Event) => {
+      const custom = event as CustomEvent<{
+        commandId?: string;
+        arguments?: string[];
+      }>;
+      const commandId = String(custom.detail?.commandId || '').trim();
+      if (!commandId) return;
+      void (async () => {
+        let command = commands.find((cmd) => cmd.id === commandId && cmd.category === 'script');
+        if (!command) {
+          const all = await window.electron.getAllCommands();
+          command = all.find((cmd) => cmd.id === commandId && cmd.category === 'script');
+        }
+        if (!command) return;
+        const values = toScriptArgumentMapFromArray(command, custom.detail?.arguments || []);
+        writeJsonObject(getScriptCmdArgsKey(command.id), values);
+        const result = await window.electron.runScriptCommand({
+          commandId: command.id,
+          arguments: values,
+          background: false,
+        });
+        if (!result) return;
+        if (result.needsArguments) {
+          setShowFileSearch(false);
+          setScriptCommandSetup({
+            command,
+            values: { ...values },
+          });
+          return;
+        }
+        if (result.mode === 'fullOutput') {
+          setShowFileSearch(false);
+          setScriptCommandOutput({
+            command,
+            output: String(result.output || result.stdout || result.stderr || '').trim(),
+            exitCode: Number(result.exitCode || 0),
+          });
+          return;
+        }
+        if (result.mode === 'inline') {
+          await fetchCommands();
+        }
+      })();
+    };
+    window.addEventListener('sc-run-script-command', onRunScript as EventListener);
+    return () => window.removeEventListener('sc-run-script-command', onRunScript as EventListener);
+  }, [commands, fetchCommands]);
+
   // LocalStorage changes should refresh menu-bar commands for the same extension.
   // This matches Raycast behavior where menu-bar commands observe state changes quickly.
   useEffect(() => {
@@ -1064,7 +1194,7 @@ const App: React.FC = () => {
     };
   }, [remountMenuBarExtensionsForExtension]);
 
-  // Launch background-refresh extension commands from manifest `interval`.
+  // Launch background-refresh commands from manifest `interval`.
   useEffect(() => {
     for (const timerId of intervalTimerIdsRef.current) {
       window.clearInterval(timerId);
@@ -1116,13 +1246,44 @@ const App: React.FC = () => {
       intervalTimerIdsRef.current.push(timerId);
     }
 
+    const inlineScriptCommands = commands.filter(
+      (cmd) =>
+        cmd.category === 'script' &&
+        cmd.mode === 'inline' &&
+        typeof cmd.interval === 'string'
+    );
+    for (const cmd of inlineScriptCommands) {
+      const ms = parseIntervalToMs(cmd.interval);
+      if (!ms) continue;
+
+      const timerId = window.setInterval(async () => {
+        try {
+          const storedArgs = readJsonObject(getScriptCmdArgsKey(cmd.id));
+          const missingArgs = getMissingRequiredScriptArguments(cmd, storedArgs);
+          if (missingArgs.length > 0) return;
+          const result = await window.electron.runScriptCommand({
+            commandId: cmd.id,
+            arguments: storedArgs,
+            background: true,
+          });
+          if (result?.mode === 'inline') {
+            await fetchCommands();
+          }
+        } catch (error) {
+          console.error('[BackgroundRefresh] Failed to run script command:', cmd.id, error);
+        }
+      }, ms);
+
+      intervalTimerIdsRef.current.push(timerId);
+    }
+
     return () => {
       for (const timerId of intervalTimerIdsRef.current) {
         window.clearInterval(timerId);
       }
       intervalTimerIdsRef.current = [];
     };
-  }, [commands]);
+  }, [commands, fetchCommands]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -1750,6 +1911,8 @@ const App: React.FC = () => {
       setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
+      setScriptCommandSetup(null);
+      setScriptCommandOutput(null);
       setShowClipboardManager(false);
       setShowSnippetManager(null);
       setShowFileSearch(false);
@@ -1766,6 +1929,8 @@ const App: React.FC = () => {
       setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
+      setScriptCommandSetup(null);
+      setScriptCommandOutput(null);
       setShowClipboardManager(false);
       setShowSnippetManager(null);
       setShowFileSearch(false);
@@ -1783,6 +1948,8 @@ const App: React.FC = () => {
       setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
+      setScriptCommandSetup(null);
+      setScriptCommandOutput(null);
       setShowOnboarding(false);
       setShowClipboardManager(true);
       setShowSnippetManager(null);
@@ -1799,6 +1966,8 @@ const App: React.FC = () => {
       setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
+      setScriptCommandSetup(null);
+      setScriptCommandOutput(null);
       setShowOnboarding(false);
       setShowClipboardManager(false);
       setShowFileSearch(false);
@@ -1815,6 +1984,8 @@ const App: React.FC = () => {
       setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
+      setScriptCommandSetup(null);
+      setScriptCommandOutput(null);
       setShowOnboarding(false);
       setShowClipboardManager(false);
       setShowFileSearch(false);
@@ -1831,6 +2002,8 @@ const App: React.FC = () => {
       setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
+      setScriptCommandSetup(null);
+      setScriptCommandOutput(null);
       setShowOnboarding(false);
       setShowClipboardManager(false);
       setShowSnippetManager(null);
@@ -1881,6 +2054,8 @@ const App: React.FC = () => {
       setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
+      setScriptCommandSetup(null);
+      setScriptCommandOutput(null);
       setShowOnboarding(false);
       setShowClipboardManager(false);
       setShowSnippetManager(null);
@@ -1903,6 +2078,8 @@ const App: React.FC = () => {
       setShowCursorPrompt(false);
       setExtensionView(null);
       setExtensionPreferenceSetup(null);
+      setScriptCommandSetup(null);
+      setScriptCommandOutput(null);
       setShowOnboarding(false);
       setShowClipboardManager(false);
       setShowSnippetManager(null);
@@ -1944,6 +2121,59 @@ const App: React.FC = () => {
     const timer = window.setTimeout(() => setShowWhisperHint(false), 7000);
     return () => window.clearTimeout(timer);
   }, [showWhisperHint, showWhisper]);
+
+  const runScriptCommand = useCallback(
+    async (
+      command: CommandInfo,
+      values?: Record<string, any>,
+      options?: { background?: boolean; skipRecent?: boolean }
+    ) => {
+      const payload = {
+        commandId: command.id,
+        arguments: values || {},
+        background: Boolean(options?.background),
+      };
+      const result = await window.electron.runScriptCommand(payload);
+
+      if (!result) return false;
+
+      if (result.needsArguments) {
+        if (!options?.background) {
+          setShowFileSearch(false);
+          setScriptCommandSetup({
+            command,
+            values: {
+              ...readJsonObject(getScriptCmdArgsKey(command.id)),
+              ...(values || {}),
+            },
+          });
+        }
+        return false;
+      }
+
+      if (result.mode === 'fullOutput') {
+        setShowFileSearch(false);
+        setScriptCommandOutput({
+          command,
+          output: String(result.output || result.stdout || result.stderr || '').trim(),
+          exitCode: Number(result.exitCode || 0),
+        });
+      } else if (result.mode === 'inline') {
+        await fetchCommands();
+      } else if (!options?.background) {
+        await window.electron.hideWindow();
+        setSearchQuery('');
+        setSelectedIndex(0);
+      }
+
+      if (!options?.background && !options?.skipRecent) {
+        await updateRecentCommands(command.id);
+      }
+
+      return Boolean(result.success);
+    },
+    [fetchCommands, updateRecentCommands]
+  );
 
   const handleCommandExecute = async (command: CommandInfo) => {
     try {
@@ -2004,6 +2234,25 @@ const App: React.FC = () => {
           cmdName,
           error: errMsg,
         } as any);
+        return;
+      }
+
+      if (command.category === 'script') {
+        if (command.needsConfirmation) {
+          const ok = window.confirm(`Run "${command.title}"?`);
+          if (!ok) return;
+        }
+        const storedArgs = readJsonObject(getScriptCmdArgsKey(command.id));
+        const missing = getMissingRequiredScriptArguments(command, storedArgs);
+        if (missing.length > 0) {
+          setShowFileSearch(false);
+          setScriptCommandSetup({
+            command,
+            values: { ...storedArgs },
+          });
+          return;
+        }
+        await runScriptCommand(command, storedArgs);
         return;
       }
 
@@ -2358,6 +2607,142 @@ const App: React.FC = () => {
     </>
   );
 
+  // ─── Script Command Setup ───────────────────────────────────────
+  if (scriptCommandSetup) {
+    const command = scriptCommandSetup.command;
+    const defs = (command.commandArgumentDefinitions || []).filter((d) => d?.name);
+    const missing = getMissingRequiredScriptArguments(command, scriptCommandSetup.values);
+    const hasBlockingMissing = missing.length > 0;
+
+    return (
+      <>
+        {alwaysMountedRunners}
+        <div className="w-full h-full">
+          <div className="glass-effect overflow-hidden h-full flex flex-col">
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+              <button
+                onClick={() => {
+                  setScriptCommandSetup(null);
+                  setSearchQuery('');
+                  setSelectedIndex(0);
+                }}
+                className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              </button>
+              <div className="text-white/85 text-[15px] font-medium truncate">
+                Configure Script Command
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <p className="text-sm text-white/55">Provide required arguments before running.</p>
+              {defs.map((arg) => {
+                const value = scriptCommandSetup.values?.[arg.name];
+                const argType = arg.type || 'text';
+                return (
+                  <div key={`script-arg:${arg.name}`} className="space-y-1">
+                    <label className="text-xs text-white/70 font-medium">
+                      {arg.title || arg.placeholder || arg.name}
+                      {arg.required ? <span className="text-red-400"> *</span> : null}
+                    </label>
+                    {argType === 'dropdown' ? (
+                      <select
+                        value={typeof value === 'string' ? value : ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setScriptCommandSetup((prev) => prev ? {
+                            ...prev,
+                            values: { ...prev.values, [arg.name]: v },
+                          } : prev);
+                        }}
+                        className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 outline-none"
+                      >
+                        <option value="">Select an option</option>
+                        {(arg.data || []).map((opt) => (
+                          <option key={opt?.value || opt?.title} value={opt?.value || ''}>
+                            {opt?.title || opt?.value || ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type={argType === 'password' ? 'password' : 'text'}
+                        value={value ?? ''}
+                        placeholder={arg.placeholder || ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setScriptCommandSetup((prev) => prev ? {
+                            ...prev,
+                            values: { ...prev.values, [arg.name]: v },
+                          } : prev);
+                        }}
+                        className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 placeholder-white/30 outline-none"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-end gap-2" style={{ background: 'rgba(28,28,32,0.90)' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  writeJsonObject(getScriptCmdArgsKey(command.id), scriptCommandSetup.values || {});
+                  setScriptCommandSetup(null);
+                  void runScriptCommand(command, scriptCommandSetup.values || {});
+                }}
+                disabled={hasBlockingMissing}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  hasBlockingMissing
+                    ? 'bg-white/[0.08] text-white/35 cursor-not-allowed'
+                    : 'bg-white/[0.16] hover:bg-white/[0.22] text-white'
+                }`}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ─── Script Output ──────────────────────────────────────────────
+  if (scriptCommandOutput) {
+    return (
+      <>
+        {alwaysMountedRunners}
+        <div className="w-full h-full">
+          <div className="glass-effect overflow-hidden h-full flex flex-col">
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+              <button
+                onClick={() => {
+                  setScriptCommandOutput(null);
+                  setSearchQuery('');
+                  setSelectedIndex(0);
+                }}
+                className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              </button>
+              <div className="text-white/85 text-[15px] font-medium truncate">
+                {scriptCommandOutput.command.title}
+              </div>
+              <div className={`ml-auto text-[11px] font-semibold ${scriptCommandOutput.exitCode === 0 ? 'text-emerald-300/80' : 'text-red-300/80'}`}>
+                {scriptCommandOutput.exitCode === 0 ? 'Success' : `Exit ${scriptCommandOutput.exitCode}`}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <pre className="text-xs leading-relaxed text-white/80 whitespace-pre-wrap break-words font-mono">
+                {scriptCommandOutput.output || '(No output)'}
+              </pre>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   // ─── Extension Preferences Setup ────────────────────────────────
   if (extensionPreferenceSetup) {
     const bundle = extensionPreferenceSetup.bundle;
@@ -2380,6 +2765,8 @@ const App: React.FC = () => {
               <button
                 onClick={() => {
                   setExtensionPreferenceSetup(null);
+                  setScriptCommandSetup(null);
+                  setScriptCommandOutput(null);
                   setSearchQuery('');
                   setSelectedIndex(0);
                 }}
@@ -2533,6 +2920,8 @@ const App: React.FC = () => {
                     launchArguments: { ...((bundle as any).launchArguments || {}), ...(extensionPreferenceSetup.argumentValues || {}) } as any,
                   };
                   setExtensionPreferenceSetup(null);
+                  setScriptCommandSetup(null);
+                  setScriptCommandOutput(null);
 
                   if (updatedBundle.mode === 'menu-bar') {
                     if (isMenuBarExtensionMounted(updatedBundle)) {
@@ -2982,6 +3371,11 @@ const App: React.FC = () => {
                               <div className="text-white/95 text-[13px] font-medium truncate tracking-[0.004em]">
                                 {getCommandDisplayTitle(command)}
                               </div>
+                              {command.subtitle ? (
+                                <div className="text-white/45 text-[11px] truncate mt-0.5">
+                                  {command.subtitle}
+                                </div>
+                              ) : null}
                             </div>
 
                             <div className="text-white/55 text-[11px] font-semibold flex-shrink-0">
