@@ -5437,6 +5437,26 @@ return appURL's |path|() as text`,
 
   // Route native menu clicks back to the renderer
   function buildMenuBarTemplate(items: any[], extId: string): any[] {
+    const resolveMenuItemIcon = (item: any) => {
+      const iconPath = typeof item?.iconPath === 'string' ? item.iconPath : '';
+      if (!iconPath) return undefined;
+      try {
+        if (require('fs').existsSync(iconPath)) {
+          const img = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+          if (!img.isEmpty()) return img;
+        }
+      } catch {}
+      return undefined;
+    };
+
+    const labelWithEmoji = (item: any) => {
+      const title = String(item?.title || '');
+      const emoji = typeof item?.iconEmoji === 'string' ? item.iconEmoji.trim() : '';
+      if (!emoji) return title;
+      if (!title) return emoji;
+      return `${emoji} ${title}`;
+    };
+
     const template: any[] = [];
     for (const item of items) {
       switch (item.type) {
@@ -5447,18 +5467,27 @@ return appURL's |path|() as text`,
           template.push({ label: item.title || '', enabled: false });
           break;
         case 'submenu':
+          const submenuIcon = resolveMenuItemIcon(item);
           template.push({
-            label: item.title || '',
+            label: labelWithEmoji(item),
+            ...(submenuIcon ? { icon: submenuIcon } : {}),
             submenu: buildMenuBarTemplate(item.children || [], extId),
           });
           break;
         case 'item':
         default:
+          const menuItemIcon = resolveMenuItemIcon(item);
+          const disabled = Boolean(item?.disabled);
           template.push({
-            label: item.title || '',
-            click: () => {
-              mainWindow?.webContents.send('menubar-item-click', { extId, itemId: item.id });
-            },
+            label: labelWithEmoji(item),
+            ...(menuItemIcon ? { icon: menuItemIcon } : {}),
+            ...(disabled
+              ? { enabled: false }
+              : {
+                  click: () => {
+                    mainWindow?.webContents.send('menubar-item-click', { extId, itemId: item.id });
+                  },
+                }),
           });
           break;
       }

@@ -524,10 +524,10 @@ export const Icon: Record<string, string> = new Proxy({} as Record<string, strin
 function isEmojiOrSymbol(s: string): boolean {
   if (!s) return false;
   if (s.startsWith('data:') || s.startsWith('http') || s.startsWith('/') || s.startsWith('.')) return false;
-  // Short strings (1-4 chars) that aren't file paths are likely emoji/symbols
-  if (s.length <= 4) return true;
-  // Check for emoji unicode ranges
-  if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{2702}-\u{27B0}]/u.test(s)) return true;
+  // Prefer proper Unicode emoji detection to avoid treating plain short text as icons.
+  if (/\p{Extended_Pictographic}/u.test(s)) return true;
+  // Symbol-only fallbacks used by some icon mappings.
+  if (/^[^\w\s]{1,4}$/u.test(s)) return true;
   return false;
 }
 
@@ -4317,6 +4317,49 @@ interface MBRegistryAPI {
   unregister: (id: string) => void;
 }
 
+type SerializedMenuBarIcon = {
+  iconPath?: string;
+  iconEmoji?: string;
+};
+
+function toMenuBarIconPayload(icon: any, assetsPath: string): SerializedMenuBarIcon | undefined {
+  if (!icon) return undefined;
+  const source = typeof icon === 'object' && icon !== null
+    ? (icon.source
+      ? (typeof icon.source === 'object' ? (icon.source.dark || icon.source.light) : icon.source)
+      : (icon.dark || icon.light))
+    : icon;
+
+  if (typeof source !== 'string' || !source.trim()) return undefined;
+  const src = source.trim();
+
+  if (isEmojiOrSymbol(src)) {
+    return { iconEmoji: src };
+  }
+
+  if (/^file:\/\//.test(src)) {
+    try {
+      const filePath = decodeURIComponent(new URL(src).pathname);
+      if (filePath) return { iconPath: filePath };
+    } catch {}
+  }
+
+  if (src.startsWith('sc-asset://ext-asset')) {
+    const raw = src.slice('sc-asset://ext-asset'.length);
+    return { iconPath: decodeURIComponent(raw) };
+  }
+
+  if (src.startsWith('/')) {
+    return { iconPath: src };
+  }
+
+  if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(src) && assetsPath) {
+    return { iconPath: `${assetsPath}/${src}` };
+  }
+
+  return undefined;
+}
+
 const MBRegistryContext = createContext<MBRegistryAPI | null>(null);
 const MBSectionIdContext = createContext<string | undefined>(undefined);
 const MBSectionTitleContext = createContext<string | undefined>(undefined);
@@ -4411,21 +4454,25 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: Me
       } else if (item.type === 'submenu') {
         // Serialize submenu with children
         const submenuChildren = (item.children || []).map(serializeItem);
+        const iconPayload = toMenuBarIconPayload(item.icon, assetsPath);
         return {
           type: 'submenu',
           title: item.title || '',
+          ...iconPayload,
           icon: item.icon,
           children: submenuChildren,
         };
       } else {
         // Regular item
         if (item.onAction) actions.set(item.id, withRuntimeContext(item.onAction));
+        const iconPayload = toMenuBarIconPayload(item.icon, assetsPath);
         const serializedItem: any = {
           type: 'item',
           id: item.id,
           title: item.title || '',
           subtitle: item.subtitle,
           tooltip: item.tooltip,
+          ...iconPayload,
         };
 
         // Add alternate item if present
@@ -4433,11 +4480,13 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: Me
           if (item.alternate.onAction) {
             actions.set(item.alternate.id, withRuntimeContext(item.alternate.onAction));
           }
+          const alternateIconPayload = toMenuBarIconPayload(item.alternate.icon, assetsPath);
           serializedItem.alternate = {
             id: item.alternate.id,
             title: item.alternate.title,
             subtitle: item.alternate.subtitle,
             tooltip: item.alternate.tooltip,
+            ...alternateIconPayload,
           };
         }
 
@@ -4446,20 +4495,20 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: Me
     };
 
     for (const item of allItems) {
+      const sectionChanged = item.sectionId !== prevSectionId;
       // Insert separator between sections
-      if (item.sectionId !== prevSectionId && prevSectionId != null) {
+      if (sectionChanged && prevSectionId != null) {
         serialized.push({ type: 'separator' });
       }
-      prevSectionId = item.sectionId;
-
       // Add section title if present
-      if (item.sectionTitle && item.sectionId !== prevSectionId) {
+      if (sectionChanged && item.sectionTitle) {
         serialized.push({
           type: 'item',
           title: item.sectionTitle,
           disabled: true,
         });
       }
+      prevSectionId = item.sectionId;
 
       serialized.push(serializeItem(item));
     }
@@ -4467,24 +4516,9 @@ function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: Me
     _mbActions.set(extId, actions);
 
     // Resolve icon for the Tray
-    let iconPath: string | undefined;
-    let iconEmoji: string | undefined;
-    if (icon && typeof icon === 'object') {
-      const src = icon.source
-        ? (typeof icon.source === 'object' ? (icon.source.dark || icon.source.light) : icon.source)
-        : (icon.dark || icon.light);
-      if (src && /\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(src) && assetsPath) {
-        iconPath = `${assetsPath}/${src}`;
-      } else if (src && isEmojiOrSymbol(src)) {
-        iconEmoji = src;
-      }
-    } else if (typeof icon === 'string') {
-      if (/\.\w+$/.test(icon) && assetsPath) {
-        iconPath = `${assetsPath}/${icon}`;
-      } else if (isEmojiOrSymbol(icon)) {
-        iconEmoji = icon;
-      }
-    }
+    const trayIconPayload = toMenuBarIconPayload(icon, assetsPath) || {};
+    const iconPath = trayIconPayload.iconPath;
+    const iconEmoji = trayIconPayload.iconEmoji;
 
     (window as any).electron?.updateMenuBar?.({
       extId,
