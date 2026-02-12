@@ -467,6 +467,7 @@ const App: React.FC = () => {
     rate: '+0%',
   });
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
   const [launcherShortcut, setLauncherShortcut] = useState('Command+Space');
   const [showActions, setShowActions] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
@@ -643,18 +644,22 @@ const App: React.FC = () => {
   const loadLauncherPreferences = useCallback(async () => {
     try {
       const settings = (await window.electron.getSettings()) as AppSettings;
+      const shortcutStatus = await window.electron.getGlobalShortcutStatus();
       setPinnedCommands(settings.pinnedCommands || []);
       setRecentCommands(settings.recentCommands || []);
       setLauncherShortcut(settings.globalShortcut || 'Command+Space');
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
-      setShowOnboarding(!settings.hasSeenOnboarding);
+      const shouldShowOnboarding = !settings.hasSeenOnboarding;
+      setShowOnboarding(shouldShowOnboarding);
+      setOnboardingRequiresShortcutFix(shouldShowOnboarding && !shortcutStatus.ok);
     } catch (e) {
       console.error('Failed to load launcher preferences:', e);
       setPinnedCommands([]);
       setRecentCommands([]);
       setLauncherShortcut('Command+Space');
       setShowOnboarding(false);
+      setOnboardingRequiresShortcutFix(false);
     }
   }, []);
 
@@ -2625,6 +2630,7 @@ const App: React.FC = () => {
         {alwaysMountedRunners}
         <OnboardingExtension
           initialShortcut={launcherShortcut}
+          requireWorkingShortcut={onboardingRequiresShortcutFix}
           onClose={() => {
             setShowOnboarding(false);
             setSearchQuery('');
@@ -2634,6 +2640,7 @@ const App: React.FC = () => {
           onComplete={async () => {
             await window.electron.saveSettings({ hasSeenOnboarding: true });
             setShowOnboarding(false);
+            setOnboardingRequiresShortcutFix(false);
             setSearchQuery('');
             setSelectedIndex(0);
             setTimeout(() => inputRef.current?.focus(), 50);

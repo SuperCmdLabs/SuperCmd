@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Accessibility,
   ArrowLeft,
@@ -17,6 +17,7 @@ import HotkeyRecorder from './settings/HotkeyRecorder';
 
 interface OnboardingExtensionProps {
   initialShortcut: string;
+  requireWorkingShortcut?: boolean;
   onComplete: () => void;
   onClose: () => void;
 }
@@ -53,13 +54,19 @@ const permissionTargets = [
 
 const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   initialShortcut,
+  requireWorkingShortcut = false,
   onComplete,
   onClose,
 }) => {
   const [step, setStep] = useState(0);
   const [shortcut, setShortcut] = useState(initialShortcut);
   const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [hasValidShortcut, setHasValidShortcut] = useState(!requireWorkingShortcut);
   const [openedPermissions, setOpenedPermissions] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setHasValidShortcut(!requireWorkingShortcut);
+  }, [requireWorkingShortcut]);
 
   const stepTitle = useMemo(() => {
     if (step === 0) return 'Welcome to SuperCmd';
@@ -73,13 +80,17 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     if (!nextShortcut) return;
     const ok = await window.electron.updateGlobalShortcut(nextShortcut);
     if (ok) {
+      setHasValidShortcut(true);
       setShortcutStatus('success');
       setTimeout(() => setShortcutStatus('idle'), 1800);
       return;
     }
+    setHasValidShortcut(false);
     setShortcutStatus('error');
     setTimeout(() => setShortcutStatus('idle'), 2500);
   };
+
+  const canCompleteOnboarding = !requireWorkingShortcut || hasValidShortcut;
 
   const openPermissionTarget = async (id: string, url: string) => {
     const ok = await window.electron.openUrl(url);
@@ -197,6 +208,11 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                 <p className="text-xs text-white/35">
                   You can change this anytime from SuperCmd Settings.
                 </p>
+                {requireWorkingShortcut && !hasValidShortcut ? (
+                  <p className="text-xs text-amber-300/85">
+                    Your current launcher shortcut is unavailable. Set a working shortcut to continue.
+                  </p>
+                ) : null}
               </div>
             </div>
           )}
@@ -254,14 +270,28 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
         <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-between" style={{ background: 'rgba(28,28,32,0.90)' }}>
           <button
-            onClick={step === 0 ? onComplete : () => setStep((prev) => Math.max(prev - 1, 0))}
-            className="px-3 py-1.5 rounded-md text-xs text-white/55 hover:text-white/80 hover:bg-white/[0.08] transition-colors"
+            onClick={() => {
+              if (step === 0) {
+                if (canCompleteOnboarding) onComplete();
+                return;
+              }
+              setStep((prev) => Math.max(prev - 1, 0));
+            }}
+            disabled={step === 0 && !canCompleteOnboarding}
+            className="px-3 py-1.5 rounded-md text-xs text-white/55 hover:text-white/80 hover:bg-white/[0.08] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {step === 0 ? 'Skip' : 'Back'}
           </button>
           <button
-            onClick={step === 2 ? onComplete : () => setStep((prev) => Math.min(prev + 1, 2))}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white/[0.14] hover:bg-white/[0.20] text-white text-xs font-medium transition-colors"
+            onClick={() => {
+              if (step === 2) {
+                if (canCompleteOnboarding) onComplete();
+                return;
+              }
+              setStep((prev) => Math.min(prev + 1, 2));
+            }}
+            disabled={step === 2 && !canCompleteOnboarding}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white/[0.14] hover:bg-white/[0.20] text-white text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {step === 2 ? 'Finish' : 'Continue'}
             {step === 2 ? <Check className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}

@@ -220,6 +220,11 @@ export interface ElectronAPI {
 
   // Settings
   getSettings: () => Promise<AppSettings>;
+  getGlobalShortcutStatus: () => Promise<{
+    requestedShortcut: string;
+    activeShortcut: string;
+    ok: boolean;
+  }>;
   saveSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
   getAllCommands: () => Promise<CommandInfo[]>;
   updateGlobalShortcut: (shortcut: string) => Promise<boolean>;

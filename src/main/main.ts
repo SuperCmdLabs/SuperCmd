@@ -227,6 +227,15 @@ let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
 let isVisible = false;
 let suppressBlurHide = false; // When true, blur won't hide the window (used during file dialogs)
 let currentShortcut = '';
+let globalShortcutRegistrationState: {
+  requestedShortcut: string;
+  activeShortcut: string;
+  ok: boolean;
+} = {
+  requestedShortcut: '',
+  activeShortcut: '',
+  ok: true,
+};
 let lastFrontmostApp: { name: string; path: string; bundleId?: string } | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
@@ -3180,6 +3189,7 @@ function openExtensionStoreWindow(): void {
 
 function registerGlobalShortcut(shortcut: string): boolean {
   const normalizedShortcut = normalizeAccelerator(shortcut);
+  globalShortcutRegistrationState.requestedShortcut = normalizedShortcut;
   // Unregister the previous global shortcut
   if (currentShortcut) {
     try {
@@ -3193,6 +3203,8 @@ function registerGlobalShortcut(shortcut: string): boolean {
     });
     if (success) {
       currentShortcut = normalizedShortcut;
+      globalShortcutRegistrationState.activeShortcut = normalizedShortcut;
+      globalShortcutRegistrationState.ok = true;
       console.log(`Global shortcut registered: ${normalizedShortcut}`);
       return true;
     } else {
@@ -3203,10 +3215,12 @@ function registerGlobalShortcut(shortcut: string): boolean {
           globalShortcut.register(currentShortcut, () => toggleWindow());
         } catch {}
       }
+      globalShortcutRegistrationState.ok = false;
       return false;
     }
   } catch (e) {
     console.error(`Error registering shortcut: ${e}`);
+    globalShortcutRegistrationState.ok = false;
     return false;
   }
 }
@@ -3513,6 +3527,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('get-settings', () => {
     return loadSettings();
+  });
+
+  ipcMain.handle('get-global-shortcut-status', () => {
+    return { ...globalShortcutRegistrationState };
   });
 
   ipcMain.handle(

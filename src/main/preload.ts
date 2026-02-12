@@ -95,6 +95,11 @@ contextBridge.exposeInMainWorld('electron', {
 
   // ─── Settings ───────────────────────────────────────────────────
   getSettings: (): Promise<any> => ipcRenderer.invoke('get-settings'),
+  getGlobalShortcutStatus: (): Promise<{
+    requestedShortcut: string;
+    activeShortcut: string;
+    ok: boolean;
+  }> => ipcRenderer.invoke('get-global-shortcut-status'),
   saveSettings: (patch: any): Promise<any> =>
     ipcRenderer.invoke('save-settings', patch),
   getAllCommands: (): Promise<any[]> =>
