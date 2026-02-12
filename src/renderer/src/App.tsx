@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic, Volume2, Loader2, CornerDownLeft, Brain } from 'lucide-react';
-import type { CommandInfo, ExtensionBundle, AppSettings } from '../types/electron';
+import type { CommandInfo, ExtensionBundle, AppSettings, EdgeTtsVoice } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
@@ -34,6 +34,11 @@ type MemoryFeedback = {
   type: 'success' | 'error';
   text: string;
 } | null;
+
+type ReadVoiceOption = {
+  value: string;
+  label: string;
+};
 
 /**
  * Filter and sort commands based on search query
@@ -121,6 +126,64 @@ function isSuperCmdSystemCommand(commandId: string): boolean {
     commandId === 'system-open-onboarding' ||
     commandId === 'system-quit-launcher'
   );
+}
+
+function getVoiceLanguageCode(voiceId: string): string {
+  const id = String(voiceId || '').trim();
+  const match = /^([a-z]{2}-[A-Z]{2})-/.exec(id);
+  return match?.[1] || '';
+}
+
+function getFallbackVoiceLabel(voiceId: string): string {
+  const id = String(voiceId || '').trim();
+  if (!id) return 'Voice';
+  const base = id.split('-').slice(2).join('-').replace(/Neural$/i, '').trim();
+  const lang = getVoiceLanguageCode(id);
+  return base ? `${base} (${lang || 'Unknown'})` : id;
+}
+
+function buildReadVoiceOptions(
+  allVoices: EdgeTtsVoice[],
+  currentVoice: string,
+  configuredVoice: string
+): ReadVoiceOption[] {
+  const configured = String(configuredVoice || '').trim();
+  const current = String(currentVoice || '').trim();
+  const targetVoice = configured || current;
+  const targetLang = getVoiceLanguageCode(targetVoice) || getVoiceLanguageCode(current);
+
+  const filtered = allVoices
+    .filter((voice) => (targetLang ? voice.languageCode === targetLang : true))
+    .slice()
+    .sort((a, b) => {
+      const genderScore = (v: EdgeTtsVoice) => (String(v.gender).toLowerCase() === 'female' ? 0 : 1);
+      const genderCmp = genderScore(a) - genderScore(b);
+      if (genderCmp !== 0) return genderCmp;
+      return String(a.label || '').localeCompare(String(b.label || ''));
+    });
+
+  const options: ReadVoiceOption[] = filtered.map((voice) => {
+    const style = String(voice.style || '').trim();
+    const gender = String(voice.gender || '').toLowerCase() === 'male' ? 'Male' : 'Female';
+    const languageCode = String(voice.languageCode || '').trim();
+    const languageSuffix = languageCode ? ` (${languageCode})` : '';
+    const styleSuffix = style ? ` - ${style}` : '';
+    return {
+      value: voice.id,
+      label: `${voice.label}${styleSuffix} - ${gender}${languageSuffix}`,
+    };
+  });
+
+  const ensureVoicePresent = (voiceId: string) => {
+    const id = String(voiceId || '').trim();
+    if (!id) return;
+    if (options.some((opt) => opt.value === id)) return;
+    options.unshift({ value: id, label: getFallbackVoiceLabel(id) });
+  };
+  ensureVoicePresent(current);
+  ensureVoicePresent(configured);
+
+  return options;
 }
 
 function renderSuperCmdLogoIcon(): React.ReactNode {
@@ -471,6 +534,9 @@ const App: React.FC = () => {
     voice: 'en-US-JennyNeural',
     rate: '+0%',
   });
+  const [edgeTtsVoices, setEdgeTtsVoices] = useState<EdgeTtsVoice[]>([]);
+  const [configuredEdgeTtsVoice, setConfiguredEdgeTtsVoice] = useState('en-US-JennyNeural');
+  const [configuredTtsModel, setConfiguredTtsModel] = useState('edge-tts');
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
   const [launcherShortcut, setLauncherShortcut] = useState('Command+Space');
@@ -514,6 +580,7 @@ const App: React.FC = () => {
   const intervalTimerIdsRef = useRef<number[]>([]);
   const menuBarRemountTimestampsRef = useRef<Record<string, number>>({});
   const whisperSessionRef = useRef(false);
+  const speakSessionShownRef = useRef(false);
   extensionViewRef.current = extensionView;
   pinnedCommandsRef.current = pinnedCommands;
 
@@ -694,6 +761,8 @@ const App: React.FC = () => {
       setLauncherShortcut(settings.globalShortcut || 'Command+Space');
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
+      setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-JennyNeural'));
+      setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
       const shouldShowOnboarding = !settings.hasSeenOnboarding;
       setShowOnboarding(shouldShowOnboarding);
       setOnboardingRequiresShortcutFix(shouldShowOnboarding && !shortcutStatus.ok);
@@ -702,6 +771,8 @@ const App: React.FC = () => {
       setPinnedCommands([]);
       setRecentCommands([]);
       setLauncherShortcut('Command+Space');
+      setConfiguredEdgeTtsVoice('en-US-JennyNeural');
+      setConfiguredTtsModel('edge-tts');
       setShowOnboarding(false);
       setOnboardingRequiresShortcutFix(false);
     }
@@ -872,6 +943,44 @@ const App: React.FC = () => {
       disposeSpeak();
     };
   }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    window.electron.edgeTtsListVoices()
+      .then((voices) => {
+        if (disposed || !Array.isArray(voices)) return;
+        setEdgeTtsVoices(voices.filter((voice) => String(voice?.id || '').trim()));
+      })
+      .catch(() => {
+        if (!disposed) setEdgeTtsVoices([]);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  const readVoiceOptions = useMemo(
+    () => buildReadVoiceOptions(edgeTtsVoices, speakOptions.voice, configuredEdgeTtsVoice),
+    [edgeTtsVoices, speakOptions.voice, configuredEdgeTtsVoice]
+  );
+
+  useEffect(() => {
+    if (!showSpeak) {
+      speakSessionShownRef.current = false;
+      return;
+    }
+    if (speakSessionShownRef.current) return;
+    speakSessionShownRef.current = true;
+    if (configuredTtsModel !== 'edge-tts') return;
+    const targetVoice = String(configuredEdgeTtsVoice || '').trim();
+    if (!targetVoice || targetVoice === speakOptions.voice) return;
+    window.electron.speakUpdateOptions({
+      voice: targetVoice,
+      restartCurrent: true,
+    }).then((next) => {
+      setSpeakOptions(next);
+    }).catch(() => {});
+  }, [showSpeak, configuredTtsModel, configuredEdgeTtsVoice, speakOptions.voice]);
 
   const handleSpeakVoiceChange = useCallback(async (voice: string) => {
     const next = await window.electron.speakUpdateOptions({
@@ -2123,6 +2232,7 @@ const App: React.FC = () => {
         <SuperCmdRead
           status={speakStatus}
           voice={speakOptions.voice}
+          voiceOptions={readVoiceOptions}
           rate={speakOptions.rate}
           portalTarget={speakPortalTarget}
           onVoiceChange={handleSpeakVoiceChange}

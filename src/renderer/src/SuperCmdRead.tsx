@@ -13,20 +13,13 @@ interface SpeakStatus {
 interface SuperCmdReadProps {
   status: SpeakStatus;
   voice: string;
+  voiceOptions: Array<{ value: string; label: string }>;
   rate: string;
   onVoiceChange: (voice: string) => void;
   onRateChange: (rate: string) => void;
   onClose: () => void;
   portalTarget?: HTMLElement | null;
 }
-
-const VOICE_PRESETS = [
-  { value: 'en-US-JennyNeural', label: 'Jenny (US)' },
-  { value: 'en-US-AriaNeural', label: 'Aria (US)' },
-  { value: 'en-US-GuyNeural', label: 'Guy (US)' },
-  { value: 'en-GB-SoniaNeural', label: 'Sonia (UK)' },
-  { value: 'en-GB-RyanNeural', label: 'Ryan (UK)' },
-];
 
 const SPEED_PRESETS = [
   { value: '-15%', label: '0.85x' },
@@ -38,6 +31,7 @@ const SPEED_PRESETS = [
 const SuperCmdRead: React.FC<SuperCmdReadProps> = ({
   status,
   voice,
+  voiceOptions,
   rate,
   onVoiceChange,
   onRateChange,
@@ -120,7 +114,7 @@ const SuperCmdRead: React.FC<SuperCmdReadProps> = ({
               onChange={(e) => onVoiceChange(e.target.value)}
               aria-label="Voice"
             >
-              {VOICE_PRESETS.map((opt) => (
+              {(voiceOptions.length > 0 ? voiceOptions : [{ value: voice, label: voice }]).map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
