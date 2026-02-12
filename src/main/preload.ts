@@ -109,12 +109,15 @@ contextBridge.exposeInMainWorld('electron', {
   ): Promise<boolean> =>
     ipcRenderer.invoke('toggle-command-enabled', commandId, enabled),
   openSettings: (): Promise<void> => ipcRenderer.invoke('open-settings'),
-  openSettingsTab: (tab: 'general' | 'ai' | 'extensions'): Promise<void> =>
-    ipcRenderer.invoke('open-settings-tab', tab),
+  openSettingsTab: (
+    tab: 'general' | 'ai' | 'extensions',
+    target?: { extensionName?: string; commandName?: string }
+  ): Promise<void> =>
+    ipcRenderer.invoke('open-settings-tab', { tab, target }),
   openExtensionStoreWindow: (): Promise<void> =>
     ipcRenderer.invoke('open-extension-store-window'),
-  onSettingsTabChanged: (callback: (tab: 'general' | 'ai' | 'extensions') => void) => {
-    ipcRenderer.on('settings-tab-changed', (_event, tab) => callback(tab));
+  onSettingsTabChanged: (callback: (payload: any) => void) => {
+    ipcRenderer.on('settings-tab-changed', (_event, payload) => callback(payload));
   },
 
   // ─── Extension Runner ────────────────────────────────────────────

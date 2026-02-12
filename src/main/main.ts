@@ -2393,12 +2393,12 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     return true;
   }
   if (commandId === 'system-open-ai-settings') {
-    openSettingsWindow('ai');
+    openSettingsWindow({ tab: 'ai' });
     if (source === 'launcher') hideWindow();
     return true;
   }
   if (commandId === 'system-open-extensions-settings') {
-    openSettingsWindow('extensions');
+    openSettingsWindow({ tab: 'extensions' });
     if (source === 'launcher') hideWindow();
     return true;
   }
@@ -2963,10 +2963,73 @@ async function refineWhisperTranscript(input: string): Promise<{ correctedText: 
 
 // ─── Settings Window ────────────────────────────────────────────────
 
-function openSettingsWindow(tab?: 'general' | 'ai' | 'extensions'): void {
+type SettingsTabId = 'general' | 'ai' | 'extensions';
+type SettingsPanelTarget = {
+  extensionName?: string;
+  commandName?: string;
+};
+type SettingsNavigationPayload = {
+  tab: SettingsTabId;
+  target?: SettingsPanelTarget;
+};
+
+function normalizeSettingsTabId(input: any): SettingsTabId | undefined {
+  if (input === 'general' || input === 'ai' || input === 'extensions') return input;
+  return undefined;
+}
+
+function normalizeSettingsTarget(input: any): SettingsPanelTarget | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const extensionName = typeof input.extensionName === 'string' ? input.extensionName.trim() : '';
+  const commandName = typeof input.commandName === 'string' ? input.commandName.trim() : '';
+  if (!extensionName && !commandName) return undefined;
+  return {
+    ...(extensionName ? { extensionName } : {}),
+    ...(commandName ? { commandName } : {}),
+  };
+}
+
+function resolveSettingsNavigationPayload(
+  input: any,
+  maybeTarget?: any
+): SettingsNavigationPayload | undefined {
+  if (typeof input === 'string') {
+    const tab = normalizeSettingsTabId(input);
+    if (!tab) return undefined;
+    return {
+      tab,
+      target: normalizeSettingsTarget(maybeTarget),
+    };
+  }
+  if (input && typeof input === 'object') {
+    const tab = normalizeSettingsTabId(input.tab);
+    if (!tab) return undefined;
+    return {
+      tab,
+      target: normalizeSettingsTarget(input.target),
+    };
+  }
+  return undefined;
+}
+
+function buildSettingsHash(payload?: SettingsNavigationPayload): string {
+  if (!payload) return '/settings';
+  const params = new URLSearchParams();
+  params.set('tab', payload.tab);
+  if (payload.target?.extensionName) {
+    params.set('extension', payload.target.extensionName);
+  }
+  if (payload.target?.commandName) {
+    params.set('command', payload.target.commandName);
+  }
+  const query = params.toString();
+  return query ? `/settings?${query}` : '/settings';
+}
+
+function openSettingsWindow(payload?: SettingsNavigationPayload): void {
   if (settingsWindow) {
-    if (tab) {
-      settingsWindow.webContents.send('settings-tab-changed', tab);
+    if (payload) {
+      settingsWindow.webContents.send('settings-tab-changed', payload);
     }
     settingsWindow.show();
     settingsWindow.focus();
@@ -3014,12 +3077,12 @@ function openSettingsWindow(tab?: 'general' | 'ai' | 'extensions'): void {
     },
   });
 
-  const hash = tab ? `/settings?tab=${encodeURIComponent(tab)}` : '/settings';
+  const hash = buildSettingsHash(payload);
   loadWindowUrl(settingsWindow, hash);
 
   settingsWindow.once('ready-to-show', () => {
-    if (tab) {
-      settingsWindow?.webContents.send('settings-tab-changed', tab);
+    if (payload) {
+      settingsWindow?.webContents.send('settings-tab-changed', payload);
     }
     settingsWindow?.show();
   });
@@ -3549,8 +3612,13 @@ app.whenReady().then(async () => {
     openSettingsWindow();
   });
 
-  ipcMain.handle('open-settings-tab', (_event: any, tab: 'general' | 'ai' | 'extensions') => {
-    openSettingsWindow(tab);
+  ipcMain.handle('open-settings-tab', (_event: any, payloadOrTab: any, maybeTarget?: any) => {
+    const payload = resolveSettingsNavigationPayload(payloadOrTab, maybeTarget);
+    if (!payload) {
+      openSettingsWindow({ tab: 'general' });
+      return;
+    }
+    openSettingsWindow(payload);
   });
 
   ipcMain.handle('open-extension-store-window', () => {

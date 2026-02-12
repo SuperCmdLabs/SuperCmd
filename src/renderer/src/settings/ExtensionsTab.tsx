@@ -28,6 +28,7 @@ import type {
 } from '../../types/electron';
 
 type SelectedTarget = { extName: string; cmdName?: string };
+type SettingsFocusTarget = { extensionName?: string; commandName?: string };
 
 const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
 const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
@@ -69,7 +70,16 @@ function isPreferenceMissing(pref: ExtensionPreferenceSchema, value: any): boole
   return value === undefined || value === null;
 }
 
-const ExtensionsTab: React.FC = () => {
+const normalizeMatchKey = (value: string): string =>
+  value.trim().toLowerCase().replace(/[\s_]+/g, '-');
+
+const ExtensionsTab: React.FC<{
+  focusTarget?: SettingsFocusTarget | null;
+  onFocusTargetHandled?: () => void;
+}> = ({
+  focusTarget = null,
+  onFocusTargetHandled,
+}) => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [schemas, setSchemas] = useState<InstalledExtensionSettingsSchema[]>([]);
@@ -250,6 +260,48 @@ const ExtensionsTab: React.FC = () => {
       return next;
     });
   }, [displaySchemas]);
+
+  useEffect(() => {
+    if (!focusTarget || displaySchemas.length === 0) return;
+
+    const requestedExtension = String(focusTarget.extensionName || '').trim();
+    const requestedCommand = String(focusTarget.commandName || '').trim();
+    if (!requestedExtension) {
+      onFocusTargetHandled?.();
+      return;
+    }
+
+    const normalizedRequestedExtension = normalizeMatchKey(requestedExtension);
+    const matchedSchema =
+      displaySchemas.find((schema) => schema.extName === requestedExtension) ||
+      displaySchemas.find((schema) => normalizeMatchKey(schema.extName) === normalizedRequestedExtension);
+
+    if (!matchedSchema) {
+      onFocusTargetHandled?.();
+      return;
+    }
+
+    setSearch('');
+    setActiveScope('all');
+    setExpandedExtensions((prev) => ({ ...prev, [matchedSchema.extName]: true }));
+
+    if (requestedCommand) {
+      const normalizedRequestedCommand = normalizeMatchKey(requestedCommand);
+      const matchedCommand = matchedSchema.commands.find((cmd) =>
+        cmd.name === requestedCommand
+        || normalizeMatchKey(cmd.name) === normalizedRequestedCommand
+        || normalizeMatchKey(cmd.title || '') === normalizedRequestedCommand
+      );
+      if (matchedCommand) {
+        setSelected({ extName: matchedSchema.extName, cmdName: matchedCommand.name });
+        onFocusTargetHandled?.();
+        return;
+      }
+    }
+
+    setSelected({ extName: matchedSchema.extName });
+    onFocusTargetHandled?.();
+  }, [displaySchemas, focusTarget, onFocusTargetHandled]);
 
   const isCommandEnabled = (command: CommandInfo | undefined): boolean => {
     if (!command || !settings) return true;
