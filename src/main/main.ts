@@ -5474,6 +5474,9 @@ return appURL's |path|() as text`,
           img = nativeImage.createFromPath(iconPath);
         }
         if (!img || img.isEmpty()) return undefined;
+        try {
+          img.setTemplateImage(false);
+        } catch {}
         return img.resize({ width: 16, height: 16 });
       } catch {}
       return undefined;
