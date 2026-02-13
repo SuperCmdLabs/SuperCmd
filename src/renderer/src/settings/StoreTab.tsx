@@ -21,6 +21,7 @@ interface CatalogEntry {
   iconUrl: string;
   screenshotUrls: string[];
   categories: string[];
+  platforms: string[];
   commands: { name: string; title: string; description: string }[];
 }
 

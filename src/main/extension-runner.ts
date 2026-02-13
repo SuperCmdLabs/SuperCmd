@@ -16,6 +16,10 @@
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  isCommandPlatformCompatible,
+  isManifestPlatformCompatible,
+} from './extension-platform';
 
 export interface ExtensionPreferenceSchema {
   scope: 'extension' | 'command';
@@ -164,6 +168,7 @@ export function discoverInstalledExtensionCommands(): ExtensionCommandInfo[] {
 
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      if (!isManifestPlatformCompatible(pkg)) continue;
       const iconDataUrl = getExtensionIconDataUrl(
         extPath,
         pkg.icon || 'icon.png'
@@ -171,6 +176,7 @@ export function discoverInstalledExtensionCommands(): ExtensionCommandInfo[] {
 
       for (const cmd of pkg.commands || []) {
         if (!cmd.name) continue;
+        if (!isCommandPlatformCompatible(cmd)) continue;
         results.push({
           id: `ext-${dir}-${cmd.name}`,
           title: cmd.title || cmd.name,
@@ -221,6 +227,7 @@ export function getInstalledExtensionsSettingsSchema(): InstalledExtensionSettin
 
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      if (!isManifestPlatformCompatible(pkg)) continue;
       const iconDataUrl = getExtensionIconDataUrl(extPath, pkg.icon || 'icon.png');
       const ownerRaw = pkg.owner || pkg.author || '';
       const owner = typeof ownerRaw === 'object' ? ownerRaw.name || '' : String(ownerRaw || '');
@@ -233,7 +240,7 @@ export function getInstalledExtensionsSettingsSchema(): InstalledExtensionSettin
 
       const commands: ExtensionCommandSettingsSchema[] = Array.isArray(pkg.commands)
         ? pkg.commands
-            .filter((cmd: any) => cmd && cmd.name)
+            .filter((cmd: any) => cmd && cmd.name && isCommandPlatformCompatible(cmd))
             .map((cmd: any) => ({
               name: cmd.name,
               title: cmd.title || cmd.name,
@@ -378,6 +385,10 @@ export async function buildAllCommands(extName: string): Promise<number> {
   let manifestExternal: string[] = [];
   try {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    if (!isManifestPlatformCompatible(pkg)) {
+      console.warn(`Skipping build for incompatible extension ${extName}`);
+      return 0;
+    }
     commands = pkg.commands || [];
     manifestExternal = Array.isArray(pkg.external)
       ? pkg.external.filter((v: any) => typeof v === 'string' && v.trim().length > 0)
@@ -400,6 +411,7 @@ export async function buildAllCommands(extName: string): Promise<number> {
 
   for (const cmd of commands) {
     if (!cmd.name) continue;
+    if (!isCommandPlatformCompatible(cmd)) continue;
 
     const entryFile = resolveEntryFile(extPath, cmd);
     if (!entryFile) {
@@ -688,7 +700,13 @@ export function getExtensionBundle(
   try {
     const pkgPath = path.join(extPath, 'package.json');
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    if (!isManifestPlatformCompatible(pkg)) {
+      return null;
+    }
     const cmd = (pkg.commands || []).find((c: any) => c.name === cmdName);
+    if (cmd && !isCommandPlatformCompatible(cmd)) {
+      return null;
+    }
     if (cmd?.title) title = cmd.title;
     if (cmd?.mode) mode = cmd.mode;
     if (pkg?.title) extensionDisplayName = pkg.title;

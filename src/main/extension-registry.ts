@@ -21,6 +21,11 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  getCurrentRaycastPlatform,
+  getManifestPlatforms,
+  isManifestPlatformCompatible,
+} from './extension-platform';
 
 const execAsync = promisify(exec);
 
@@ -42,6 +47,7 @@ export interface CatalogEntry {
   iconUrl: string; // full GitHub raw URL to icon
   screenshotUrls: string[];
   categories: string[];
+  platforms: string[];
   commands: { name: string; title: string; description: string }[];
 }
 
@@ -51,10 +57,48 @@ interface CatalogCache {
   version: number;
 }
 
-const CATALOG_VERSION = 5;
+const CATALOG_VERSION = 6;
 const CATALOG_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 let catalogCache: CatalogCache | null = null;
+
+function coerceCatalogEntry(raw: any): CatalogEntry | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const name = typeof raw.name === 'string' ? raw.name : '';
+  if (!name) return null;
+
+  const commands = Array.isArray(raw.commands)
+    ? raw.commands
+        .filter((cmd: any) => cmd && typeof cmd === 'object' && cmd.name)
+        .map((cmd: any) => ({
+          name: String(cmd.name || ''),
+          title: String(cmd.title || cmd.name || ''),
+          description: String(cmd.description || ''),
+        }))
+    : [];
+
+  return {
+    name,
+    title: typeof raw.title === 'string' ? raw.title : name,
+    description: typeof raw.description === 'string' ? raw.description : '',
+    author: typeof raw.author === 'string' ? raw.author : '',
+    contributors: Array.isArray(raw.contributors)
+      ? raw.contributors.filter((v: any) => typeof v === 'string')
+      : [],
+    icon: typeof raw.icon === 'string' ? raw.icon : '',
+    iconUrl: typeof raw.iconUrl === 'string' ? raw.iconUrl : '',
+    screenshotUrls: Array.isArray(raw.screenshotUrls)
+      ? raw.screenshotUrls.filter((v: any) => typeof v === 'string')
+      : [],
+    categories: Array.isArray(raw.categories)
+      ? raw.categories.filter((v: any) => typeof v === 'string')
+      : [],
+    platforms: Array.isArray(raw.platforms)
+      ? raw.platforms.filter((v: any) => typeof v === 'string')
+      : [],
+    commands,
+  };
+}
 
 // ─── Paths ──────────────────────────────────────────────────────────
 
@@ -79,10 +123,20 @@ function getInstalledPath(name: string): string {
 function loadCatalogFromDisk(): CatalogCache | null {
   try {
     const data = fs.readFileSync(getCatalogPath(), 'utf-8');
-    const cache: CatalogCache = JSON.parse(data);
-    if (cache.version === CATALOG_VERSION && Array.isArray(cache.entries)) {
-      return cache;
-    }
+    const parsed = JSON.parse(data) as Partial<CatalogCache>;
+    const entries = Array.isArray(parsed.entries)
+      ? parsed.entries
+          .map((entry: any) => coerceCatalogEntry(entry))
+          .filter(Boolean) as CatalogEntry[]
+      : [];
+    if (entries.length === 0) return null;
+    return {
+      entries,
+      fetchedAt:
+        typeof parsed.fetchedAt === 'number' ? parsed.fetchedAt : Date.now(),
+      version:
+        typeof parsed.version === 'number' ? parsed.version : CATALOG_VERSION,
+    };
   } catch {}
   return null;
 }
@@ -155,6 +209,10 @@ async function fetchCatalogFromGitHub(): Promise<CatalogEntry[]> {
           title: c.title || '',
           description: c.description || '',
         }));
+        const platforms = getManifestPlatforms(pkg);
+        if (!isManifestPlatformCompatible(pkg)) {
+          continue;
+        }
 
         const normalizePerson = (p: any): string | null => {
           if (!p) return null;
@@ -209,6 +267,7 @@ async function fetchCatalogFromGitHub(): Promise<CatalogEntry[]> {
           iconUrl,
           screenshotUrls,
           categories: pkg.categories || [],
+          platforms,
           commands,
         });
       } catch {
@@ -328,7 +387,10 @@ export async function installExtensionDeps(
     return;
   }
 
-  const deps = pkg.dependencies || {};
+  const deps = {
+    ...(pkg.dependencies || {}),
+    ...(pkg.optionalDependencies || {}),
+  };
   // Filter out @raycast/* packages (we provide shims) and any already-external modules
   const thirdPartyDeps = Object.entries(deps)
     .filter(([name]) => !name.startsWith('@raycast/'))
@@ -430,6 +492,20 @@ export async function installExtension(name: string): Promise<boolean> {
     const srcDir = path.join(tmpDir, 'extensions', name);
     if (!fs.existsSync(srcDir)) {
       console.error(`Extension "${name}" not found in repository.`);
+      return false;
+    }
+    const srcPkgPath = path.join(srcDir, 'package.json');
+    if (!fs.existsSync(srcPkgPath)) {
+      console.error(`Extension "${name}" has no manifest.`);
+      return false;
+    }
+    const srcPkg = JSON.parse(fs.readFileSync(srcPkgPath, 'utf-8'));
+    if (!isManifestPlatformCompatible(srcPkg)) {
+      const supported = getManifestPlatforms(srcPkg);
+      const supportedText = supported.length > 0 ? supported.join(', ') : 'unknown';
+      console.error(
+        `Extension "${name}" is not compatible with ${getCurrentRaycastPlatform()} (supports: ${supportedText}).`
+      );
       return false;
     }
 
