@@ -793,7 +793,8 @@ function fetchEdgeTtsVoiceCatalog(timeoutMs = 12000): Promise<EdgeTtsVoiceCatalo
   });
 }
 
-async function getSelectedTextForSpeak(): Promise<string> {
+async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: boolean }): Promise<string> {
+  const allowClipboardFallback = options?.allowClipboardFallback !== false;
   const fromAccessibility = await (async () => {
     try {
       const { execFile } = require('child_process');
@@ -819,30 +820,28 @@ async function getSelectedTextForSpeak(): Promise<string> {
     }
   })();
   if (fromAccessibility) return fromAccessibility;
+  if (!allowClipboardFallback) return '';
 
   const previousClipboard = systemClipboard.readText();
-  const sentinel = `__supercommand_speak_copy_probe__${Date.now()}_${Math.random().toString(36).slice(2)}`;
   try {
     const { execFile } = require('child_process');
     const { promisify } = require('util');
     const execFileAsync = promisify(execFile);
-    // Put a probe value on clipboard so we can reliably detect whether Cmd+C
-    // produced fresh selected text instead of reusing stale clipboard content.
-    systemClipboard.writeText(sentinel);
     await execFileAsync('/usr/bin/osascript', [
       '-e',
       'tell application "System Events" to keystroke "c" using command down',
     ]);
-    // Wait briefly for apps that populate clipboard asynchronously.
+    // Wait briefly for apps that populate clipboard asynchronously, but avoid
+    // injecting probe text into the user's clipboard.
     const waitUntil = Date.now() + 380;
     let latest = '';
     while (Date.now() < waitUntil) {
       latest = String(systemClipboard.readText() || '');
-      if (latest && latest !== sentinel) break;
+      if (latest !== String(previousClipboard || '')) break;
       await new Promise((resolve) => setTimeout(resolve, 35));
     }
     const captured = String(latest || systemClipboard.readText() || '').trim();
-    if (!captured || captured === sentinel) return '';
+    if (!captured || captured === String(previousClipboard || '').trim()) return '';
     return captured;
   } catch {
     return '';
@@ -882,7 +881,9 @@ async function captureSelectionSnapshotBeforeShow(): Promise<void> {
     return;
   }
   try {
-    const selected = String(await getSelectedTextForSpeak() || '');
+    const selected = String(
+      await getSelectedTextForSpeak({ allowClipboardFallback: false }) || ''
+    );
     rememberSelectionSnapshot(selected);
   } catch {
     rememberSelectionSnapshot('');
