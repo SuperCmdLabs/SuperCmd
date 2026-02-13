@@ -4241,9 +4241,21 @@ app.whenReady().then(async () => {
 
           const execFileSync = require('child_process').execFileSync;
           const normalizedCommand = resolveExecutablePath(command);
+          // Augment PATH so extensions can find brew, npm, nvm, etc. even when
+          // the app is launched from the Dock (where macOS strips the login PATH).
+          const extraPaths = [
+            '/opt/homebrew/bin', '/opt/homebrew/sbin',
+            '/usr/local/bin', '/usr/local/sbin',
+            '/usr/bin', '/usr/sbin', '/bin', '/sbin',
+          ];
+          const currentPath = (options?.env?.PATH ?? process.env.PATH ?? '');
+          const augmentedPath = [
+            ...extraPaths,
+            ...currentPath.split(':').filter(Boolean),
+          ].filter((v, i, a) => a.indexOf(v) === i).join(':');
           const spawnOptions: any = {
             shell: options?.shell ?? false,
-            env: { ...process.env, ...options?.env },
+            env: { ...process.env, ...options?.env, PATH: augmentedPath },
             cwd: options?.cwd || process.cwd(),
           };
 
@@ -4280,19 +4292,125 @@ app.whenReady().then(async () => {
             resolve({ stdout, stderr: err.message, exitCode: 1 });
           });
 
-          // Timeout after 30 seconds
+          // Timeout after 5 minutes — allows long-running commands (brew install, npm install, etc.)
           setTimeout(() => {
             try {
               proc.kill();
             } catch {}
             resolve({ stdout, stderr: stderr || 'Command timed out', exitCode: 124 });
-          }, 30000);
+          }, 300000);
         } catch (e: any) {
           resolve({ stdout: '', stderr: e?.message || 'Failed to execute command', exitCode: 1 });
         }
       });
     }
   );
+
+  // Streaming spawn — runs a process and pushes stdout/stderr chunks to the renderer in real-time.
+  // This is the generic fix for any extension that uses child_process.spawn with progressive output
+  // (e.g. speedtest CLI outputting JSON lines, ffmpeg progress, etc.)
+  {
+    const spawnedProcesses = new Map<number, any>();
+
+    ipcMain.handle(
+      'spawn-process',
+      (event: any, file: string, args: string[], options?: { shell?: boolean | string; env?: Record<string, string>; cwd?: string }) => {
+        const { spawn } = require('child_process');
+        const fs = require('fs');
+
+        const resolveExecutablePath = (input: string): string => {
+          if (!input || typeof input !== 'string') return input;
+          if (!input.startsWith('/')) return input;
+          if (fs.existsSync(input)) return input;
+          return input;
+        };
+
+        const extraPaths = [
+          '/opt/homebrew/bin', '/opt/homebrew/sbin',
+          '/usr/local/bin', '/usr/local/sbin',
+          '/usr/bin', '/usr/sbin', '/bin', '/sbin',
+        ];
+        const currentPath = (options?.env?.PATH ?? process.env.PATH ?? '');
+        const augmentedPath = [
+          ...extraPaths,
+          ...currentPath.split(':').filter(Boolean),
+        ].filter((v, i, a) => a.indexOf(v) === i).join(':');
+
+        const resolvedFile = resolveExecutablePath(file);
+        const spawnOpts: any = {
+          shell: options?.shell ?? false,
+          env: { ...process.env, ...options?.env, PATH: augmentedPath },
+          cwd: options?.cwd || process.cwd(),
+        };
+
+        const proc = options?.shell
+          ? spawn([resolvedFile, ...(args || [])].join(' '), [], { ...spawnOpts, shell: true })
+          : spawn(resolvedFile, args || [], spawnOpts);
+
+        const pid: number = proc.pid ?? -1;
+        if (pid !== -1) spawnedProcesses.set(pid, proc);
+
+        const sender = event.sender;
+        const safeSend = (channel: string, ...sendArgs: any[]) => {
+          try { if (!sender.isDestroyed()) sender.send(channel, ...sendArgs); } catch {}
+        };
+        let finalized = false;
+        let sequence = 0;
+        const nextSeq = () => sequence++;
+        const safeSendSpawnEvent = (payload: Record<string, any>) => {
+          safeSend('spawn-event', payload);
+        };
+        const finalize = () => {
+          if (finalized) return false;
+          finalized = true;
+          return true;
+        };
+
+        proc.stdout?.on('data', (data: Buffer) => {
+          const bytes = new Uint8Array(data);
+          const seq = nextSeq();
+          safeSendSpawnEvent({ pid, seq, type: 'stdout', data: bytes });
+          // Legacy channels kept for compatibility with older renderer code.
+          safeSend('spawn-stdout', pid, bytes);
+        });
+        proc.stderr?.on('data', (data: Buffer) => {
+          const bytes = new Uint8Array(data);
+          const seq = nextSeq();
+          safeSendSpawnEvent({ pid, seq, type: 'stderr', data: bytes });
+          // Legacy channels kept for compatibility with older renderer code.
+          safeSend('spawn-stderr', pid, bytes);
+        });
+        proc.on('close', (code: number | null) => {
+          if (!finalize()) return;
+          spawnedProcesses.delete(pid);
+          const exitCode = code ?? 0;
+          const seq = nextSeq();
+          safeSendSpawnEvent({ pid, seq, type: 'exit', code: exitCode });
+          // Legacy channels kept for compatibility with older renderer code.
+          safeSend('spawn-exit', pid, exitCode);
+        });
+        proc.on('error', (err: Error) => {
+          if (!finalize()) return;
+          spawnedProcesses.delete(pid);
+          const message = err.message;
+          const seq = nextSeq();
+          safeSendSpawnEvent({ pid, seq, type: 'error', message });
+          // Legacy channels kept for compatibility with older renderer code.
+          safeSend('spawn-error', pid, message);
+        });
+
+        return { pid };
+      }
+    );
+
+    ipcMain.handle('spawn-kill', (_event: any, pid: number) => {
+      const proc = spawnedProcesses.get(pid);
+      if (proc) {
+        try { proc.kill(); } catch {}
+        spawnedProcesses.delete(pid);
+      }
+    });
+  }
 
   // Synchronous shell command execution (for extensions using execFileSync/execSync)
   ipcMain.on(
@@ -4320,13 +4438,23 @@ app.whenReady().then(async () => {
           return input;
         };
         const normalizedCommand = resolveExecutablePath(command);
+        const extraPaths = [
+          '/opt/homebrew/bin', '/opt/homebrew/sbin',
+          '/usr/local/bin', '/usr/local/sbin',
+          '/usr/bin', '/usr/sbin', '/bin', '/sbin',
+        ];
+        const currentPath = (options?.env?.PATH ?? process.env.PATH ?? '');
+        const augmentedPath = [
+          ...extraPaths,
+          ...currentPath.split(':').filter(Boolean),
+        ].filter((v, i, a) => a.indexOf(v) === i).join(':');
         const spawnOptions: any = {
           shell: options?.shell ?? false,
-          env: { ...process.env, ...options?.env },
+          env: { ...process.env, ...options?.env, PATH: augmentedPath },
           cwd: options?.cwd || process.cwd(),
           input: options?.input,
           encoding: 'utf-8',
-          timeout: 30000,
+          timeout: 60000, // 60 s for sync operations (longer ops should use async exec)
         };
 
         let result: any;
@@ -4351,6 +4479,100 @@ app.whenReady().then(async () => {
       }
     }
   );
+
+  // Download a URL to a binary buffer via Node.js (bypasses CORS — renderer fetch cannot
+  // download from CDNs that don't send CORS headers, but Node.js has no such restriction).
+  // Returns a Uint8Array which IPC transmits via structured clone without encoding overhead.
+  ipcMain.handle('http-download-binary', async (_event: any, url: string) => {
+    const https = require('https');
+    const http = require('http');
+    const { execFile } = require('child_process');
+    const REQUEST_TIMEOUT_MS = 30_000;
+
+    const downloadUrl = async (targetUrl: string, redirectCount = 0): Promise<Uint8Array> => {
+      if (redirectCount > 10) throw new Error('Too many redirects');
+      const parsed = new URL(targetUrl);
+
+      return new Promise((resolve, reject) => {
+        const client = parsed.protocol === 'https:' ? https : http;
+        const req = client.get(
+          parsed.toString(),
+          {
+            headers: {
+              'User-Agent': 'SuperCmd/1.0 (+https://github.com/raycast/extensions)',
+              Accept: '*/*',
+            },
+          },
+          (res: any) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              res.resume();
+              const redirectUrl = new URL(res.headers.location, parsed).toString();
+              downloadUrl(redirectUrl, redirectCount + 1).then(resolve, reject);
+              return;
+            }
+            if (res.statusCode !== 200) {
+              res.resume();
+              reject(new Error(`HTTP ${res.statusCode}`));
+              return;
+            }
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () => resolve(new Uint8Array(Buffer.concat(chunks))));
+            res.on('error', reject);
+          }
+        );
+
+        req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+          req.destroy(new Error(`Request timed out after ${REQUEST_TIMEOUT_MS}ms`));
+        });
+        req.on('error', reject);
+      });
+    };
+
+    const downloadWithCurlFallback = async (): Promise<Uint8Array> => {
+      try {
+        return await downloadUrl(url);
+      } catch (primaryErr: any) {
+        const curlOutput = await new Promise<Uint8Array>((resolve, reject) => {
+          execFile(
+            '/usr/bin/curl',
+            [
+              '-fsSL',
+              '--connect-timeout',
+              '10',
+              '--max-time',
+              '60',
+              url,
+            ],
+            { encoding: null, maxBuffer: 100 * 1024 * 1024 },
+            (err: Error | null, stdout: Buffer, stderr: Buffer | string) => {
+              if (err) {
+                const stderrText = typeof stderr === 'string' ? stderr : String(stderr || '');
+                reject(
+                  new Error(
+                    `HTTP download failed (${primaryErr?.message || 'unknown'}) and curl fallback failed (${stderrText || err.message})`
+                  )
+                );
+                return;
+              }
+              resolve(new Uint8Array(stdout));
+            }
+          );
+        });
+        return curlOutput;
+      }
+    };
+
+    return downloadWithCurlFallback();
+  });
+
+  // Write raw binary data to a real file path (extensions use this for CLI tool downloads)
+  ipcMain.handle('fs-write-binary-file', async (_event: any, filePath: string, data: Uint8Array) => {
+    const fs = require('fs');
+    const nodePath = require('path');
+    await fs.promises.mkdir(nodePath.dirname(filePath), { recursive: true });
+    await fs.promises.writeFile(filePath, Buffer.from(data));
+  });
 
   // Get installed applications
   ipcMain.handle('get-applications', async (_event: any, targetPath?: string) => {
