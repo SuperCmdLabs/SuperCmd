@@ -3416,10 +3416,26 @@ app.whenReady().then(async () => {
   // Register the sc-asset:// protocol handler to serve extension asset files
   protocol.handle('sc-asset', (request: any) => {
     // URL format: sc-asset://ext-asset/path/to/file
-    const url = new URL(request.url);
-    const filePath = decodeURIComponent(url.pathname);
-    // Use net.fetch with file:// to serve the actual file
-    return net.fetch(`file://${filePath}`);
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== 'ext-asset') {
+        return new Response('Not Found', { status: 404 });
+      }
+
+      let filePath = decodeURIComponent(url.pathname || '');
+      if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
+        filePath = filePath.slice(1);
+      }
+      if (!filePath) {
+        return new Response('Bad Request', { status: 400 });
+      }
+
+      const { pathToFileURL } = require('url');
+      // Convert via pathToFileURL so spaces/special chars are encoded correctly.
+      return net.fetch(pathToFileURL(filePath).toString());
+    } catch {
+      return new Response('Bad Request', { status: 400 });
+    }
   });
 
   // Set a minimal application menu that only keeps essential Edit commands

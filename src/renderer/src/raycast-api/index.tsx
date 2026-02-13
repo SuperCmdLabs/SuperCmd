@@ -571,19 +571,49 @@ function isEmojiOrSymbol(s: string): boolean {
 }
 
 // Helper component to render icons
+function encodeAssetPathForUrl(filePath: string): string {
+  const normalized = String(filePath || '').replace(/\\/g, '/');
+  let decoded = normalized;
+  try {
+    decoded = decodeURIComponent(normalized);
+  } catch {
+    decoded = normalized;
+  }
+  const withLeadingSlash = decoded.startsWith('/') ? decoded : `/${decoded}`;
+  const segments = withLeadingSlash.split('/');
+  return segments
+    .map((segment, index) => (index === 0 ? '' : encodeURIComponent(segment)))
+    .join('/');
+}
+
+function toScAssetUrl(filePath: string): string {
+  return `sc-asset://ext-asset${encodeAssetPathForUrl(filePath)}`;
+}
+
+function normalizeScAssetUrl(src: string): string {
+  try {
+    const parsed = new URL(src);
+    if (parsed.protocol !== 'sc-asset:' || parsed.hostname !== 'ext-asset') return src;
+    return toScAssetUrl(parsed.pathname || '');
+  } catch {
+    return src;
+  }
+}
+
 // Resolve a relative icon/asset path to an sc-asset:// URL
 function resolveIconSrc(src: string): string {
   // Already absolute URL, data URI, or custom protocol — leave as-is
-  if (/^(https?:\/\/|data:|file:\/\/|sc-asset:\/\/)/.test(src)) return src;
+  if (/^https?:\/\//.test(src) || src.startsWith('data:') || src.startsWith('file://')) return src;
+  if (src.startsWith('sc-asset://')) return normalizeScAssetUrl(src);
   // Absolute filesystem path
   if (src.startsWith('/')) {
-    return `sc-asset://ext-asset${src}`;
+    return toScAssetUrl(src);
   }
   // If it looks like a file path (has an image/svg extension), resolve via extension assets
   if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(src)) {
     const ctx = getExtensionContext();
     if (ctx.assetsPath) {
-      return `sc-asset://ext-asset${ctx.assetsPath}/${src}`;
+      return toScAssetUrl(`${ctx.assetsPath}/${src}`);
     }
   }
   return src;
@@ -3000,11 +3030,13 @@ function resolveMarkdownImageSrc(src: string): string {
   // Strip Raycast-specific query params like ?&raycast-height=350
   const cleanSrc = src.replace(/\?.*$/, '');
   // If it's already an absolute URL or data URI, return as-is
-  if (/^(https?:\/\/|data:|file:\/\/|sc-asset:\/\/)/.test(cleanSrc)) return cleanSrc;
+  if (/^https?:\/\//.test(cleanSrc) || cleanSrc.startsWith('data:') || cleanSrc.startsWith('file://')) return cleanSrc;
+  if (cleanSrc.startsWith('sc-asset://')) return normalizeScAssetUrl(cleanSrc);
   // Resolve relative to extension assets using custom sc-asset:// protocol
+  if (cleanSrc.startsWith('/')) return toScAssetUrl(cleanSrc);
   const ctx = getExtensionContext();
   if (ctx.assetsPath) {
-    return `sc-asset://ext-asset${ctx.assetsPath}/${cleanSrc}`;
+    return toScAssetUrl(`${ctx.assetsPath}/${cleanSrc}`);
   }
   return cleanSrc;
 }
@@ -3373,16 +3405,52 @@ function DetailComponent({ markdown, isLoading, children, actions, metadata, nav
   );
 }
 
-const MetadataLabel = ({ title, text, icon }: { title: string; text?: string; icon?: any }) => (
-  <div className="text-xs text-white/50"><span className="text-white/30">{title}: </span>{text}</div>
-);
+function resolveMetadataText(
+  input: unknown
+): { value: string; color?: string } {
+  if (input == null) return { value: '' };
+  if (typeof input === 'object' && !Array.isArray(input)) {
+    const maybe = input as { value?: unknown; color?: unknown };
+    if ('value' in maybe || 'color' in maybe) {
+      const rawValue = maybe.value == null ? '' : String(maybe.value);
+      return {
+        value: rawValue,
+        color: resolveTintColor(maybe.color),
+      };
+    }
+  }
+  return { value: String(input) };
+}
+
+const MetadataLabel = ({ title, text, icon }: { title: string; text?: unknown; icon?: any }) => {
+  const normalized = resolveMetadataText(text);
+  return (
+    <div className="text-xs text-white/50 flex items-center gap-1.5">
+      <span className="text-white/30">{title}: </span>
+      {icon ? <span className="inline-flex items-center">{renderIcon(icon, 'w-3 h-3')}</span> : null}
+      <span style={normalized.color ? { color: normalized.color } : undefined}>{normalized.value}</span>
+    </div>
+  );
+};
 const MetadataSeparator = () => <hr className="border-white/[0.06] my-2" />;
 const MetadataLink = ({ title, target, text }: { title: string; target: string; text: string }) => (
   <div className="text-xs"><span className="text-white/30">{title}: </span><a href={target} className="text-blue-400 hover:underline">{text}</a></div>
 );
-const MetadataTagListItem = ({ text, color }: any) => (
-  <span className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-white/60 mr-1">{text}</span>
-);
+const MetadataTagListItem = ({ text, color }: any) => {
+  const normalized = resolveMetadataText(text);
+  const tint = resolveTintColor(color) || normalized.color;
+  const tagBg = tint
+    ? (addHexAlpha(tint, '22') || 'rgba(255,255,255,0.1)')
+    : 'rgba(255,255,255,0.1)';
+  return (
+    <span
+      className="text-xs px-1.5 py-0.5 rounded mr-1"
+      style={{ background: tagBg, color: tint || 'rgba(255,255,255,0.6)' }}
+    >
+      {normalized.value}
+    </span>
+  );
+};
 const MetadataTagList = Object.assign(
   ({ children, title }: any) => <div className="flex flex-wrap gap-1">{title && <span className="text-xs text-white/30 mr-1">{title}:</span>}{children}</div>,
   { Item: MetadataTagListItem }
