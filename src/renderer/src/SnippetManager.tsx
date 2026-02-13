@@ -949,32 +949,29 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {selectedSnippet ? (
             <div className="p-5">
-              <div className="mb-4">
-                <h3 className="text-white/90 text-base font-medium">
-                  {selectedSnippet.name}
-                </h3>
-                {selectedSnippet.keyword && (
-                  <div className="mt-2">
-                    <code className="text-xs px-2 py-1 rounded bg-white/[0.08] text-white/50">
-                      {selectedSnippet.keyword}
-                    </code>
-                  </div>
-                )}
-              </div>
-
               <pre className="text-white/80 text-sm whitespace-pre-wrap break-words font-mono leading-relaxed">
                 {selectedSnippet.content}
               </pre>
 
-              <div className="mt-4 space-y-1">
-                <div className="text-white/30 text-xs">
-                  Created {formatDate(selectedSnippet.createdAt)}
+              <div className="mt-4 pt-3 border-t border-white/[0.08] space-y-1.5">
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="text-white/35">Name</span>
+                  <span className="text-white/65 text-right truncate">
+                    {selectedSnippet.name || '-'}
+                  </span>
                 </div>
-                {selectedSnippet.updatedAt !== selectedSnippet.createdAt && (
-                  <div className="text-white/30 text-xs">
-                    Updated {formatDate(selectedSnippet.updatedAt)}
-                  </div>
-                )}
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="text-white/35">Tag</span>
+                  <span className="text-white/65 text-right truncate">
+                    {selectedSnippet.keyword || '-'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="text-white/35">Date</span>
+                  <span className="text-white/65 text-right truncate">
+                    {formatDate(selectedSnippet.updatedAt || selectedSnippet.createdAt)}
+                  </span>
+                </div>
               </div>
             </div>
           ) : (

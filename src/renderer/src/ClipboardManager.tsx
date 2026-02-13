@@ -329,11 +329,14 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     [filteredItems, selectedIndex, onClose, showActions, actions, selectedActionIndex]
   );
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
+  const formatDate = (timestamp: number): string =>
+    new Date(timestamp).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
 
   const getItemIcon = (type: string) => {
     switch (type) {
@@ -471,22 +474,21 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                     alt="Clipboard"
                     className="w-full rounded-lg border border-white/10"
                   />
-                  <div className="mt-4 space-y-1.5">
-                    <div className="text-white/50 text-sm">
-                      <span className="text-white/30">Dimensions:</span>{' '}
-                      {selectedItem.metadata?.width} × {selectedItem.metadata?.height}
-                    </div>
-                    <div className="text-white/50 text-sm">
-                      <span className="text-white/30">Size:</span>{' '}
-                      {selectedItem.metadata?.size && formatFileSize(selectedItem.metadata.size)}
-                    </div>
-                  </div>
                 </div>
               ) : (
                 <pre className="text-white/80 text-xs whitespace-pre-wrap break-words font-mono leading-normal">
                   {selectedItem.content}
                 </pre>
               )}
+
+              <div className="mt-4 pt-3 border-t border-white/[0.08]">
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="text-white/35">Date</span>
+                  <span className="text-white/65 text-right truncate">
+                    {formatDate(selectedItem.timestamp)}
+                  </span>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="flex items-center justify-center h-full text-white/50">

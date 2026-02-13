@@ -29,7 +29,7 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('get-last-frontmost-app'),
   restoreLastFrontmostApp: (): Promise<boolean> =>
     ipcRenderer.invoke('restore-last-frontmost-app'),
-  onWindowShown: (callback: (payload?: { mode?: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt' }) => void) => {
+  onWindowShown: (callback: (payload?: { mode?: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt'; systemCommandId?: string }) => void) => {
     const listener = (_event: any, payload: any) => callback(payload);
     ipcRenderer.on('window-shown', listener);
     return () => {

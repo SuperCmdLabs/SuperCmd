@@ -307,6 +307,17 @@ let activeSpeakSession: {
 let launcherMode: LauncherMode = 'default';
 let lastWhisperToggleAt = 0;
 let lastWhisperShownAt = 0;
+
+function isWindowShownRoutedSystemCommand(commandId: string): boolean {
+  return (
+    commandId === 'system-clipboard-manager' ||
+    commandId === 'system-search-snippets' ||
+    commandId === 'system-create-snippet' ||
+    commandId === 'system-search-files' ||
+    commandId === 'system-open-onboarding' ||
+    commandId === 'system-whisper-onboarding'
+  );
+}
 let lastTypingCaretPoint: { x: number; y: number } | null = null;
 let lastCursorPromptSelection = '';
 let lastLauncherSelectionSnapshot = '';
@@ -1883,7 +1894,7 @@ function captureFrontmostAppContext(): void {
   }
 }
 
-async function showWindow(): Promise<void> {
+async function showWindow(options?: { systemCommandId?: string }): Promise<void> {
   if (!mainWindow) return;
 
   // Capture the frontmost app BEFORE showing our window
@@ -1891,6 +1902,18 @@ async function showWindow(): Promise<void> {
   await captureSelectionSnapshotBeforeShow();
 
   applyLauncherBounds(launcherMode);
+
+  const windowShownPayload = {
+    mode: launcherMode,
+    systemCommandId: options?.systemCommandId,
+  };
+
+  // For routed system views (clipboard/snippets/file search, etc.), notify
+  // renderer before showing the window so React can switch view first.
+  if (options?.systemCommandId) {
+    mainWindow.webContents.send('window-shown', windowShownPayload);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 
   mainWindow.show();
   mainWindow.focus();
@@ -1903,7 +1926,9 @@ async function showWindow(): Promise<void> {
     unregisterWhisperEscapeShortcut();
   }
 
-  mainWindow.webContents.send('window-shown', { mode: launcherMode });
+  if (!options?.systemCommandId) {
+    mainWindow.webContents.send('window-shown', windowShownPayload);
+  }
   if (launcherMode === 'whisper') {
     lastWhisperShownAt = Date.now();
   }
@@ -2295,10 +2320,21 @@ async function openLauncherAndRunSystemCommand(
   setLauncherMode(options?.mode || 'default');
 
   const sendCommand = async () => {
-    if (showLauncher) {
-      await showWindow();
+    const routedViaWindowShown =
+      showLauncher && isWindowShownRoutedSystemCommand(commandId);
+
+    if (routedViaWindowShown) {
+      mainWindow?.webContents.send('run-system-command', commandId);
     }
-    mainWindow?.webContents.send('run-system-command', commandId);
+
+    if (showLauncher) {
+      await showWindow({
+        systemCommandId: routedViaWindowShown ? commandId : undefined,
+      });
+    }
+    if (!routedViaWindowShown) {
+      mainWindow?.webContents.send('run-system-command', commandId);
+    }
     if (preserveFocusWhenHidden && !showLauncher) {
       // Detached overlays can temporarily activate SuperCmd; restore the editor app.
       [50, 180, 360].forEach((delayMs) => {

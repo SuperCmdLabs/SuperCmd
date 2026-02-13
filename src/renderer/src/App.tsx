@@ -273,6 +273,7 @@ const App: React.FC = () => {
       const isWhisperMode = payload?.mode === 'whisper';
       const isSpeakMode = payload?.mode === 'speak';
       const isPromptMode = payload?.mode === 'prompt';
+      const routedSystemCommandId = String(payload?.systemCommandId || '');
       if (isWhisperMode) {
         whisperSessionRef.current = true;
         setSelectedTextSnapshot('');
@@ -297,6 +298,54 @@ const App: React.FC = () => {
         openCursorPrompt();
         resetCursorPromptState();
         return;
+      }
+      if (routedSystemCommandId) {
+        whisperSessionRef.current = false;
+        setShowCursorPrompt(false);
+        setShowWhisperHint(false);
+        setMemoryFeedback(null);
+        setMemoryActionLoading(false);
+        setScriptCommandSetup(null);
+        setScriptCommandOutput(null);
+        setExtensionView(null);
+        localStorage.removeItem(LAST_EXT_KEY);
+        setSearchQuery('');
+        setSelectedIndex(0);
+        exitAiMode();
+        if (routedSystemCommandId === 'system-clipboard-manager') {
+          setShowSnippetManager(null);
+          setShowFileSearch(false);
+          openClipboardManager();
+          return;
+        }
+        if (routedSystemCommandId === 'system-search-snippets') {
+          setShowClipboardManager(false);
+          setShowFileSearch(false);
+          openSnippetManager('search');
+          return;
+        }
+        if (routedSystemCommandId === 'system-create-snippet') {
+          setShowClipboardManager(false);
+          setShowFileSearch(false);
+          openSnippetManager('create');
+          return;
+        }
+        if (routedSystemCommandId === 'system-search-files') {
+          setShowClipboardManager(false);
+          setShowSnippetManager(null);
+          openFileSearch();
+          return;
+        }
+        if (routedSystemCommandId === 'system-open-onboarding') {
+          openOnboarding();
+          return;
+        }
+        if (routedSystemCommandId === 'system-whisper-onboarding') {
+          setWhisperOnboardingPracticeText('');
+          openWhisper();
+          openWhisperOnboarding();
+          return;
+        }
       }
 
       whisperSessionRef.current = false;
@@ -341,7 +390,7 @@ const App: React.FC = () => {
       inputRef.current?.focus();
     });
     return cleanupWindowShown;
-  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode]);
+  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openFileSearch, openOnboarding, setWhisperOnboardingPracticeText, openWhisperOnboarding]);
 
   useEffect(() => {
     const onLaunchBundle = (event: Event) => {
