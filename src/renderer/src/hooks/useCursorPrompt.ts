@@ -1,3 +1,19 @@
+/**
+ * useCursorPrompt.ts
+ *
+ * State and streaming logic for the inline AI cursor prompt (Command+K style).
+ * - Captures selected text from the active app via getSelectedTextStrict()
+ * - Builds a composite prompt: "rewrite selection" or "insert at cursor"
+ * - Streams AI response via ai-stream-chunk / ai-stream-done / ai-stream-error,
+ *   filtered to only this hook's requestId
+ * - applyCursorPromptResultToEditor(): replaces the previous selection or types
+ *   the generated text at the cursor using replaceLiveText / typeTextLive
+ * - Exposed by App.tsx to CursorPromptView (both inline and portal variants)
+ *
+ * Checks AI availability each time the prompt opens and surfaces a clear error
+ * message (NO_AI_MODEL_ERROR) if no model is configured.
+ */
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { NO_AI_MODEL_ERROR } from '../utils/constants';
 

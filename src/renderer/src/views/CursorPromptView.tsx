@@ -1,3 +1,17 @@
+/**
+ * CursorPromptView.tsx
+ *
+ * UI for the inline AI cursor prompt (Command+K style).
+ * Renders in two variants controlled by the `variant` prop:
+ * - "inline": shown inside the main launcher window when no detached portal is available;
+ *   shows "Applied in editor" confirmation, no Accept button needed
+ * - "portal": rendered in the detached overlay window; shows "Ready to apply" with an
+ *   Accept button that calls acceptCursorPrompt() to write the result to the editor
+ *
+ * State is managed by useCursorPrompt (hooks/useCursorPrompt.ts); this component is pure UI.
+ * Rendered by App.tsx both as an inline fallback and as a portal child.
+ */
+
 import React from 'react';
 import { X, Loader2, CornerDownLeft } from 'lucide-react';
 

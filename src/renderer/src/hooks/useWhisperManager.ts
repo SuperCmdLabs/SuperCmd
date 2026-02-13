@@ -1,3 +1,19 @@
+/**
+ * useWhisperManager.ts
+ *
+ * State and portal management for the Whisper speech-to-text overlay.
+ * - whisperSessionRef: true while a whisper session is active (used to suppress
+ *   launcher reset logic that would otherwise fire on window-shown)
+ * - whisperOnboardingPracticeText / appendWhisperOnboardingPracticeText: accumulates
+ *   transcribed text for the onboarding practice screen
+ * - whisperSpeakToggleLabel: label shown on the whisper/speak mode toggle button
+ * - whisperPortalTarget / whisperOnboardingPortalTarget: detached portal windows
+ *   for the whisper and whisper-onboarding overlays (via useDetachedPortalWindow)
+ *
+ * Listens for whisper-stop-and-close, whisper-start-listening, whisper-stop-listening,
+ * whisper-toggle-listening IPC events and syncs overlay visibility accordingly.
+ */
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useDetachedPortalWindow } from '../useDetachedPortalWindow';
 

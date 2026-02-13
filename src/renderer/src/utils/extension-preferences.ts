@@ -1,3 +1,18 @@
+/**
+ * extension-preferences.ts
+ *
+ * localStorage helpers and preference hydration for Raycast-compatible extensions.
+ * - readJsonObject / writeJsonObject: safe JSON read/write to localStorage
+ * - Key builders: getExtPrefsKey, getCmdPrefsKey, getCmdArgsKey, getScriptCmdArgsKey, getMenuBarCommandKey
+ * - hydrateExtensionBundlePreferences: merges stored prefs/args into an ExtensionBundle
+ * - Missing-pref checks: getMissingRequiredPreferences, getMissingRequiredArguments,
+ *   getMissingRequiredScriptArguments, getUnsetCriticalPreferences, shouldOpenCommandSetup
+ * - Persist helpers: persistExtensionPreferences, persistCommandArguments, toScriptArgumentMapFromArray
+ *
+ * This module is the single source of truth for all preference/argument storage logic.
+ * Import these helpers instead of reading localStorage directly.
+ */
+
 import type { ExtensionBundle, CommandInfo } from '../../types/electron';
 import {
   EXT_PREFS_KEY_PREFIX,

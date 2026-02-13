@@ -1,3 +1,19 @@
+/**
+ * useSpeakManager.ts
+ *
+ * State and logic for the SuperCmd Read (TTS / speak) overlay.
+ * - speakStatus: current playback state (idle → loading → speaking → done/error)
+ * - speakOptions: active voice + playback rate selection
+ * - edgeTtsVoices / configuredEdgeTtsVoice: Edge TTS voice list and user preference
+ * - configuredTtsModel: which TTS backend is active (edge-tts, system, etc.)
+ * - readVoiceOptions: memoized list of selectable voices for the UI dropdown
+ * - handleSpeakVoiceChange / handleSpeakRateChange: persist user selections to settings
+ * - Opens a detached portal window for the speak overlay via useDetachedPortalWindow
+ *
+ * Polls speak status from the main process while the overlay is visible, and syncs
+ * the configured voice from settings each time the overlay opens.
+ */
+
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import type { EdgeTtsVoice } from '../../types/electron';
 import { buildReadVoiceOptions, type ReadVoiceOption } from '../utils/command-helpers';

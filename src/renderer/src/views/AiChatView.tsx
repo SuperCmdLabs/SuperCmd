@@ -1,3 +1,16 @@
+/**
+ * AiChatView.tsx
+ *
+ * Full-screen AI chat panel shown when the launcher is in AI mode.
+ * - Editable query input at the top (pre-filled with the search text that triggered AI mode)
+ * - Streaming response area that auto-scrolls as chunks arrive
+ * - Enter re-submits, Escape exits AI mode
+ * - "Ask / Enter" button visible only when the input has content
+ *
+ * State is managed by useAiChat (hooks/useAiChat.ts); this component is pure UI.
+ * Rendered by App.tsx when aiMode === true.
+ */
+
 import React from 'react';
 import { X, Sparkles } from 'lucide-react';
 

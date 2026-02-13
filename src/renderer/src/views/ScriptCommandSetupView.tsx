@@ -1,3 +1,17 @@
+/**
+ * ScriptCommandSetupView.tsx
+ *
+ * Argument collection form for Raycast-compatible script commands that declare required
+ * or optional arguments (the `@argument` header fields in script metadata).
+ * - Renders a form field for each declared argument (text, password, dropdown)
+ * - Persists entered values to localStorage via getScriptCmdArgsKey so they are
+ *   pre-filled on the next run
+ * - "Continue" button is blocked while any required argument is empty
+ * - Back arrow / Escape returns to the launcher without running the command
+ *
+ * Shown by App.tsx when scriptCommandSetup is non-null.
+ */
+
 import React from 'react';
 import type { ScriptCommandSetup } from '../hooks/useAppViewManager';
 import { writeJsonObject, getScriptCmdArgsKey, getMissingRequiredScriptArguments } from '../utils/extension-preferences';

@@ -1,3 +1,13 @@
+/**
+ * constants.ts
+ *
+ * Shared string keys and magic numbers used across the renderer.
+ * - localStorage keys for extension prefs, command args, hidden menu-bar entries, recent commands
+ * - Global error messages and numeric limits
+ *
+ * Add new app-wide constants here instead of scattering them in individual files.
+ */
+
 export const LAST_EXT_KEY = 'sc-last-extension';
 export const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
 export const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';

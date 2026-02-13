@@ -18,18 +18,45 @@ SuperCommand is an open-source alternative to Raycast, designed to provide a sim
 ```
 launcher/
 ├── src/
-│   ├── main/              # Electron main process
-│   │   ├── extension-runner.ts    # Extension execution engine
-│   │   ├── extension-registry.ts  # Extension catalog & management
-│   │   ├── commands.ts            # Command management
-│   │   └── ...
-│   ├── renderer/          # Electron renderer process (UI)
+│   ├── main/                          # Electron main process
+│   │   ├── main.ts                    # Entry point; IPC handlers, window management, global shortcuts
+│   │   ├── preload.ts                 # contextBridge — exposes window.electron API to renderer
+│   │   ├── commands.ts                # App/settings/extension/script discovery; getAvailableCommands() with cache
+│   │   ├── extension-runner.ts        # Extension execution engine (esbuild bundle + require shim)
+│   │   ├── extension-registry.ts      # Extension catalog, install, uninstall, update
+│   │   ├── script-command-runner.ts   # Raycast-compatible script command execution
+│   │   ├── ai-provider.ts             # AI streaming (OpenAI / Anthropic / Ollama) via Node http/https
+│   │   └── settings-store.ts          # JSON settings persistence (AppSettings, cached in memory)
+│   ├── renderer/                      # Electron renderer process (UI)
+│   │   ├── types/
+│   │   │   └── electron.d.ts          # TypeScript types for window.electron IPC bridge
 │   │   └── src/
-│   │       ├── raycast-api/       # @raycast/api compatibility shim
-│   │       ├── ExtensionView.tsx  # Extension rendering component
-│   │       └── ...
-│   └── native/            # Native Swift modules
-└── dist/                  # Build output
+│   │       ├── App.tsx                # Root component — composes all hooks, routes to view components
+│   │       ├── raycast-api/
+│   │       │   └── index.tsx          # @raycast/api + @raycast/utils compatibility shim (~3800 lines)
+│   │       ├── hooks/                 # Feature hooks (state + logic, no JSX)
+│   │       │   ├── useAppViewManager.ts      # View state machine — which screen is active
+│   │       │   ├── useAiChat.ts              # AI chat mode state + streaming
+│   │       │   ├── useCursorPrompt.ts        # Inline AI cursor prompt state + streaming
+│   │       │   ├── useMenuBarExtensions.ts   # Menu-bar extension lifecycle
+│   │       │   ├── useBackgroundRefresh.ts   # Interval-based background refresh for extensions/scripts
+│   │       │   ├── useSpeakManager.ts        # TTS (Read) overlay state + portal
+│   │       │   └── useWhisperManager.ts      # Whisper STT overlay state + portals
+│   │       ├── views/                 # Full-screen view components (pure UI, state from hooks)
+│   │       │   ├── AiChatView.tsx                  # Full-screen AI chat panel
+│   │       │   ├── CursorPromptView.tsx             # Inline/portal AI cursor prompt UI
+│   │       │   ├── ScriptCommandSetupView.tsx       # Script argument collection form
+│   │       │   ├── ScriptCommandOutputView.tsx      # Script stdout/stderr output viewer
+│   │       │   └── ExtensionPreferenceSetupView.tsx # Extension preference/argument form
+│   │       ├── utils/                 # Pure utility modules (no side-effects)
+│   │       │   ├── constants.ts              # localStorage keys, magic numbers, error strings
+│   │       │   ├── command-helpers.tsx        # filterCommands, icon renderers, display helpers
+│   │       │   └── extension-preferences.ts  # localStorage helpers, preference hydration, missing-pref checks
+│   │       ├── ExtensionView.tsx      # Renders a live Raycast extension inside the launcher
+│   │       ├── settings/              # Settings window UI (AITab, ExtensionsTab, GeneralTab, etc.)
+│   │       └── useDetachedPortalWindow.ts    # Hook to open/manage a detached Electron overlay window
+│   └── native/                        # Native Swift modules
+└── dist/                              # Build output
 ```
 
 ### Extension Execution Model
@@ -190,8 +217,13 @@ When implementing a new Raycast API:
 
 - **API Shim**: All Raycast API implementations go in `src/renderer/src/raycast-api/index.tsx`
 - **Extension Loading**: Extension execution logic in `src/renderer/src/ExtensionView.tsx`
-- **System Integration**: Electron IPC handlers in `src/main/main.ts` and `src/main/preload.ts`
+- **System Integration**: Electron IPC handlers in `src/main/main.ts`; IPC bridge in `src/main/preload.ts`
 - **Extension Management**: Extension registry and installation in `src/main/extension-registry.ts`
+- **View State**: Which screen is shown is owned by `src/renderer/src/hooks/useAppViewManager.ts`
+- **Feature Logic**: Each major feature has a dedicated hook in `src/renderer/src/hooks/`
+- **View Components**: Full-screen UI panels live in `src/renderer/src/views/` (pure UI, no business logic)
+- **Shared Utilities**: Pure helpers in `src/renderer/src/utils/` — import from here, not inline in components
+- **App.tsx** is the orchestrator: it wires hooks together and routes to the correct view; avoid adding business logic directly to it
 
 ### API Version Tracking
 

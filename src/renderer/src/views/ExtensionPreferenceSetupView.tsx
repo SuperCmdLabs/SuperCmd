@@ -1,3 +1,19 @@
+/**
+ * ExtensionPreferenceSetupView.tsx
+ *
+ * Preference and argument collection form for Raycast-compatible extensions.
+ * Shown when an extension is launched but has missing required preferences or
+ * command arguments that must be filled before the extension can run.
+ * - Renders fields for extension-level preferences (EXT_PREFS) and command-level
+ *   preferences (CMD_PREFS), plus any required command arguments
+ * - Also surfaces "critical" optional preferences that are strongly recommended
+ * - Persists values to localStorage via persistExtensionPreferences / persistCommandArguments
+ * - "Continue" fires onLaunchExtension or onLaunchMenuBar with the completed bundle
+ * - Back arrow returns to the launcher without launching
+ *
+ * Shown by App.tsx when extensionPreferenceSetup is non-null.
+ */
+
 import React from 'react';
 import type { ExtensionBundle } from '../../types/electron';
 import type { ExtensionPreferenceSetup } from '../hooks/useAppViewManager';

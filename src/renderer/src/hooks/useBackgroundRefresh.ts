@@ -1,3 +1,16 @@
+/**
+ * useBackgroundRefresh.ts
+ *
+ * Registers interval timers for commands that declare an `interval` field (e.g. "1m", "12h").
+ * - Extension commands (category: "extension", mode: "no-view" | "menu-bar"): runs the
+ *   extension bundle in the background and dispatches sc-launch-extension-bundle
+ * - Inline script commands (category: "script", mode: "inline"): runs the script and
+ *   calls fetchCommands() to refresh the subtitle shown in the launcher
+ *
+ * All timers are cleared and re-registered whenever the `commands` list changes.
+ * This ensures newly installed or removed commands are handled correctly.
+ */
+
 import { useRef, useEffect } from 'react';
 import type { CommandInfo } from '../../types/electron';
 import { parseIntervalToMs } from '../utils/command-helpers';

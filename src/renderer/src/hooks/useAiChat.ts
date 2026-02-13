@@ -1,3 +1,19 @@
+/**
+ * useAiChat.ts
+ *
+ * State and streaming logic for the AI chat mode (the full-screen AI panel).
+ * - Manages aiQuery, aiResponse, aiStreaming, aiAvailable state
+ * - Listens for ai-stream-chunk / ai-stream-done / ai-stream-error IPC events,
+ *   routing them by requestId so cursor-prompt streams don't bleed in
+ * - startAiChat(query): enter AI mode and fire the first request
+ * - submitAiQuery(query): re-submit a new query inside AI mode (cancels in-flight)
+ * - exitAiMode(): cancel any in-flight request, reset state, restore launcher focus
+ *
+ * Uses aiStreamingRef (a mirror of aiStreaming state) to keep exitAiMode/submitAiQuery
+ * stable (no aiStreaming in their dep arrays) and avoid triggering the mount-time
+ * fetchCommands effect on every streaming update.
+ */
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 
 // ─── Interfaces ──────────────────────────────────────────────────────

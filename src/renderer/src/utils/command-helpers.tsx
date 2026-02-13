@@ -1,3 +1,17 @@
+/**
+ * command-helpers.tsx
+ *
+ * Pure utility functions and types for the launcher command list.
+ * - filterCommands: text search + hidden-command filtering
+ * - Icon renderers: renderCommandIcon, renderSuperCmdLogoIcon, getSystemCommandFallbackIcon
+ * - Display helpers: getCommandDisplayTitle, getCategoryLabel, formatShortcutLabel, renderShortcutLabel
+ * - Voice utilities: buildReadVoiceOptions, getVoiceLanguageCode, getFallbackVoiceLabel
+ * - parseIntervalToMs: converts interval strings like "1m", "12h" to milliseconds
+ * - Types: LauncherAction, MemoryFeedback, ReadVoiceOption
+ *
+ * No side-effects; all functions are stateless and safe to import anywhere.
+ */
+
 import React from 'react';
 import { Search, Power, Settings, Puzzle, Sparkles, Clipboard, FileText, Mic, Volume2, Brain, TerminalSquare } from 'lucide-react';
 import type { CommandInfo, EdgeTtsVoice } from '../../types/electron';

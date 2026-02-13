@@ -1,3 +1,17 @@
+/**
+ * useMenuBarExtensions.ts
+ *
+ * Manages the lifecycle of Raycast-compatible menu-bar and background no-view extensions.
+ * - Loads all eligible menu-bar extension commands on mount via getMenuBarExtensions()
+ * - menuBarExtensions[]: currently mounted menu-bar runners (unique key per entry so
+ *   React remounts when the extension reloads)
+ * - backgroundNoViewRuns[]: queued no-view extension bundles to execute in the background
+ * - upsertMenuBarExtension(): add or update an entry; { remount: true } forces a full remount
+ * - hideMenuBarExtension(): remove from UI and persist hidden state in localStorage
+ * - remountMenuBarExtensionsForExtension(): remounts all runners for an extension name
+ *   (debounced 200 ms) — triggered by sc-extension-storage-changed events
+ */
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ExtensionBundle } from '../../types/electron';
 import { HIDDEN_MENUBAR_CMDS_KEY } from '../utils/constants';

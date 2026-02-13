@@ -1,3 +1,15 @@
+/**
+ * ScriptCommandOutputView.tsx
+ *
+ * Read-only output viewer for script commands that run in "inline" mode (output
+ * rendered directly in the launcher rather than in a terminal or notification).
+ * - Displays stdout / stderr from the completed script run
+ * - Shows exit code for non-zero results
+ * - Back arrow / Escape returns to the launcher
+ *
+ * Shown by App.tsx when scriptCommandOutput is non-null.
+ */
+
 import React from 'react';
 import type { ScriptCommandOutput } from '../hooks/useAppViewManager';
 

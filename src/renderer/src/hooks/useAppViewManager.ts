@@ -1,3 +1,21 @@
+/**
+ * useAppViewManager.ts
+ *
+ * Central view-state machine for the launcher. Owns every boolean/object flag
+ * that determines which screen is shown (extension, preference setup, script
+ * command setup/output, clipboard, snippets, file search, cursor prompt,
+ * whisper, speak, onboarding, AI mode).
+ *
+ * Key exports:
+ * - resetAllViews(): sets all view flags back to their default (hidden) state
+ * - open*() transition functions: each calls resetAllViews() first, then
+ *   activates the target view — guarantees only one view is ever visible
+ * - Individual setters exposed for rare partial updates
+ *
+ * App.tsx wires the returned values to child components; nothing else should
+ * manage top-level view visibility directly.
+ */
+
 import { useState, useCallback } from 'react';
 import type { ExtensionBundle, CommandInfo } from '../../types/electron';
 
