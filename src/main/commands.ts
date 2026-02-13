@@ -896,7 +896,7 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
     {
       id: 'system-add-to-memory',
       title: 'Add This to Memory',
-      keywords: ['memory', 'mem0', 'memo0', 'selected text', 'remember', 'save context'],
+      keywords: ['memory', 'supermemory', 'selected text', 'remember', 'save context'],
       category: 'system',
     },
     {

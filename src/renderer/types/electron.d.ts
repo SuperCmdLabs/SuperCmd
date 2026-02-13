@@ -99,10 +99,10 @@ export interface AISettings {
   openaiApiKey: string;
   anthropicApiKey: string;
   elevenlabsApiKey: string;
-  mem0ApiKey: string;
-  mem0UserId: string;
-  mem0BaseUrl: string;
-  mem0LocalMode: boolean;
+  supermemoryApiKey: string;
+  supermemoryClient: string;
+  supermemoryBaseUrl: string;
+  supermemoryLocalMode: boolean;
   ollamaBaseUrl: string;
   defaultModel: string;
   speechCorrectionModel: string;

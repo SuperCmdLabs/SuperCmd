@@ -837,7 +837,7 @@ const App: React.FC = () => {
           source: 'launcher-selection',
         });
         if (!result.success) {
-          console.error('[Mem0] Failed to add memory:', result.error || 'Unknown error');
+          console.error('[Supermemory] Failed to add memory:', result.error || 'Unknown error');
           showMemoryFeedback('error', result.error || 'Failed to add to memory.');
           return true;
         }

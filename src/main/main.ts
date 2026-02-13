@@ -2445,7 +2445,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
       source: source === 'hotkey' ? 'hotkey' : 'launcher',
     });
     if (!result.success) {
-      console.warn('[Mem0] add memory failed:', result.error || 'Unknown error');
+      console.warn('[Supermemory] add memory failed:', result.error || 'Unknown error');
       return false;
     }
     if (source === 'launcher') {

@@ -123,7 +123,7 @@ const AITab: React.FC = () => {
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showElevenLabsKey, setShowElevenLabsKey] = useState(false);
-  const [showMem0Key, setShowMem0Key] = useState(false);
+  const [showSupermemoryKey, setShowSupermemoryKey] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
   const [hotkeyStatus, setHotkeyStatus] = useState<{
     type: 'idle' | 'success' | 'error';
@@ -451,44 +451,49 @@ const AITab: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="pt-1 border-t border-white/[0.06]">
+                  <p className="text-sm font-medium text-white/90">Supermemory</p>
+                  <p className="text-[11px] text-white/40 mt-0.5">Memory backend for long-term context.</p>
+                </div>
+
                 <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">Mem0 API Key</label>
+                  <label className="text-[11px] text-white/45 mb-1 block">Supermemory API Key</label>
                   <div className="relative">
                     <input
-                      type={showMem0Key ? 'text' : 'password'}
-                      value={ai.mem0ApiKey || ''}
-                      onChange={(e) => updateAI({ mem0ApiKey: e.target.value.trim() })}
-                      placeholder="m0-..."
+                      type={showSupermemoryKey ? 'text' : 'password'}
+                      value={ai.supermemoryApiKey || ''}
+                      onChange={(e) => updateAI({ supermemoryApiKey: e.target.value.trim() })}
+                      placeholder="sm-..."
                       className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 pr-9 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
                     />
                     <button
-                      onClick={() => setShowMem0Key(!showMem0Key)}
+                      onClick={() => setShowSupermemoryKey(!showSupermemoryKey)}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
                     >
-                      {showMem0Key ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showSupermemoryKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">Mem0 User ID</label>
+                  <label className="text-[11px] text-white/45 mb-1 block">Supermemory Client</label>
                   <input
                     type="text"
-                    value={ai.mem0UserId || ''}
-                    onChange={(e) => updateAI({ mem0UserId: e.target.value.trim() })}
-                    placeholder="user-123"
+                    value={ai.supermemoryClient || ''}
+                    onChange={(e) => updateAI({ supermemoryClient: e.target.value.trim() })}
+                    placeholder="client-123"
                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
                   />
-                  <p className="text-[10px] text-white/35 mt-1">Used to scope personal memory retrieval for prompt answers.</p>
+                  <p className="text-[10px] text-white/35 mt-1">Used to scope user memory retrieval.</p>
                 </div>
 
                 <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">Mem0 Base URL</label>
+                  <label className="text-[11px] text-white/45 mb-1 block">Supermemory Base URL</label>
                   <input
                     type="text"
-                    value={ai.mem0BaseUrl || 'https://api.mem0.ai'}
-                    onChange={(e) => updateAI({ mem0BaseUrl: e.target.value.trim() })}
-                    placeholder="https://api.mem0.ai"
+                    value={ai.supermemoryBaseUrl || 'https://api.supermemory.ai'}
+                    onChange={(e) => updateAI({ supermemoryBaseUrl: e.target.value.trim() })}
+                    placeholder="https://api.supermemory.ai"
                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
                   />
                 </div>
@@ -496,10 +501,10 @@ const AITab: React.FC = () => {
                 <label className="inline-flex items-center gap-2 text-[11px] text-white/65">
                   <input
                     type="checkbox"
-                    checked={Boolean(ai.mem0LocalMode)}
-                    onChange={(e) => updateAI({ mem0LocalMode: e.target.checked })}
+                    checked={Boolean(ai.supermemoryLocalMode)}
+                    onChange={(e) => updateAI({ supermemoryLocalMode: e.target.checked })}
                   />
-                  <span>Use local Mem0 mode (allow requests without API key)</span>
+                  <span>Use local Supermemory mode (allow requests without API key)</span>
                 </label>
               </div>
             </div>

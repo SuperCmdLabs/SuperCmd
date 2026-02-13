@@ -5,15 +5,15 @@ import * as path from 'path';
 import { app } from 'electron';
 import type { AppSettings } from './settings-store';
 
-const DEFAULT_MEM0_BASE_URL = 'https://api.mem0.ai';
-const DEFAULT_USER_ID = 'supercommand-user';
+const DEFAULT_SUPERMEMORY_BASE_URL = 'https://api.supermemory.ai';
+const DEFAULT_CLIENT_ID = 'supercommand-client';
 const DEFAULT_TOP_K = 6;
 const MAX_TOP_K = 20;
 const MAX_MEMORY_ITEM_CHARS = 320;
 const MAX_MEMORY_CONTEXT_CHARS = 2400;
 
 // ─── Local File-Based Memory Store ──────────────────────────────────────────
-// Used as a fallback when Mem0 is not configured. Persists to
+// Used as a fallback when Supermemory is not configured. Persists to
 // <userData>/local-memories.json so memories survive restarts.
 
 interface LocalMemoryEntry {
@@ -69,7 +69,7 @@ function searchLocalMemories(query: string, limit: number): LocalMemoryEntry[] {
 
 // ────────────────────────────────────────────────────────────────────────────
 
-type Mem0AuthMode = 'none' | 'token' | 'bearer';
+type SupermemoryAuthMode = 'none' | 'token' | 'bearer';
 
 export interface MemoryEntry {
   id?: string;
@@ -91,9 +91,9 @@ export interface AddMemoryResult {
   error?: string;
 }
 
-interface Mem0Config {
+interface SupermemoryConfig {
   apiKey: string;
-  userId: string;
+  clientId: string;
   baseUrl: string;
   localMode: boolean;
 }
@@ -105,7 +105,7 @@ function parseEnvBoolean(input: unknown): boolean {
 
 function normalizeBaseUrl(rawBaseUrl: string): string {
   const input = String(rawBaseUrl || '').trim();
-  if (!input) return DEFAULT_MEM0_BASE_URL;
+  if (!input) return DEFAULT_SUPERMEMORY_BASE_URL;
   if (/^https?:\/\//i.test(input)) return input.replace(/\/+$/, '');
   return `https://${input.replace(/\/+$/, '')}`;
 }
@@ -130,26 +130,26 @@ function isLikelyLocalBaseUrl(baseUrl: string): boolean {
   }
 }
 
-function resolveMem0Config(settings: AppSettings, userIdOverride?: string): Mem0Config {
+function resolveSupermemoryConfig(settings: AppSettings, userIdOverride?: string): SupermemoryConfig {
   const ai = settings.ai || ({} as any);
-  const apiKey = String(ai.mem0ApiKey || process.env.MEM0_API_KEY || '').trim();
-  const userId = String(
+  const apiKey = String(ai.supermemoryApiKey || process.env.SUPERMEMORY_API_KEY || '').trim();
+  const clientId = String(
     userIdOverride ||
-      ai.mem0UserId ||
-      process.env.MEM0_USER_ID ||
+      ai.supermemoryClient ||
+      process.env.SUPERMEMORY_CLIENT ||
       process.env.USER ||
       process.env.USERNAME ||
-      DEFAULT_USER_ID
+      DEFAULT_CLIENT_ID
   ).trim();
   const baseUrl = normalizeBaseUrl(
-    String(ai.mem0BaseUrl || process.env.MEM0_BASE_URL || DEFAULT_MEM0_BASE_URL)
+    String(ai.supermemoryBaseUrl || process.env.SUPERMEMORY_BASE_URL || DEFAULT_SUPERMEMORY_BASE_URL)
   );
-  const explicitLocalMode = Boolean(ai.mem0LocalMode);
-  const envLocalMode = parseEnvBoolean(process.env.MEM0_LOCAL);
+  const explicitLocalMode = Boolean(ai.supermemoryLocalMode);
+  const envLocalMode = parseEnvBoolean(process.env.SUPERMEMORY_LOCAL);
   const inferredLocalMode = isLikelyLocalBaseUrl(baseUrl);
   const localMode = explicitLocalMode || envLocalMode || inferredLocalMode;
 
-  return { apiKey, userId, baseUrl, localMode };
+  return { apiKey, clientId, baseUrl, localMode };
 }
 
 function sanitizeMemoryText(input: string): string {
@@ -220,13 +220,13 @@ function isPathUnsupportedError(error: unknown): boolean {
   return isStatusError(error, 404) || isStatusError(error, 405) || isStatusError(error, 501);
 }
 
-function buildAuthorizationHeader(apiKey: string, authMode: Mem0AuthMode): string | undefined {
+function buildAuthorizationHeader(apiKey: string, authMode: SupermemoryAuthMode): string | undefined {
   if (!apiKey || authMode === 'none') return undefined;
   if (authMode === 'bearer') return `Bearer ${apiKey}`;
   return `Token ${apiKey}`;
 }
 
-function getAuthModes(config: Mem0Config): Mem0AuthMode[] {
+function getAuthModes(config: SupermemoryConfig): SupermemoryAuthMode[] {
   if (config.localMode) {
     if (!config.apiKey) return ['none'];
     return ['none', 'token', 'bearer'];
@@ -235,11 +235,11 @@ function getAuthModes(config: Mem0Config): Mem0AuthMode[] {
   return ['token', 'bearer'];
 }
 
-function postMem0(
+function postSupermemory(
   baseUrl: string,
   path: string,
   apiKey: string,
-  authMode: Mem0AuthMode,
+  authMode: SupermemoryAuthMode,
   payload: Record<string, any>
 ): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -247,7 +247,7 @@ function postMem0(
     try {
       url = new URL(path, `${baseUrl}/`);
     } catch {
-      reject(new Error('Invalid Mem0 base URL.'));
+      reject(new Error('Invalid Supermemory base URL.'));
       return;
     }
 
@@ -279,7 +279,7 @@ function postMem0(
         res.on('end', () => {
           const statusCode = Number(res.statusCode || 0);
           if (statusCode >= 400) {
-            reject(new Error(`Mem0 HTTP ${statusCode}: ${responseBody.slice(0, 320)}`));
+            reject(new Error(`Supermemory HTTP ${statusCode}: ${responseBody.slice(0, 320)}`));
             return;
           }
           if (!responseBody.trim()) {
@@ -297,36 +297,36 @@ function postMem0(
 
     req.on('error', (error: Error) => reject(error));
     req.setTimeout(12_000, () => {
-      req.destroy(new Error('Mem0 request timed out.'));
+      req.destroy(new Error('Supermemory request timed out.'));
     });
     req.write(body);
     req.end();
   });
 }
 
-async function postMem0WithAuthFallback(
-  config: Mem0Config,
+async function postSupermemoryWithAuthFallback(
+  config: SupermemoryConfig,
   path: string,
   payload: Record<string, any>
 ): Promise<any> {
   const authModes = getAuthModes(config);
   if (!authModes.length) {
-    throw new Error('Mem0 API key missing.');
+    throw new Error('Supermemory API key missing.');
   }
 
   let lastError: unknown = null;
   for (const authMode of authModes) {
     try {
-      return await postMem0(config.baseUrl, path, config.apiKey, authMode, payload);
+      return await postSupermemory(config.baseUrl, path, config.apiKey, authMode, payload);
     } catch (error) {
       lastError = error;
     }
   }
-  throw lastError || new Error('Mem0 request failed.');
+  throw lastError || new Error('Supermemory request failed.');
 }
 
-async function requestMem0WithPathAndPayloadFallback(
-  config: Mem0Config,
+async function requestSupermemoryWithPathAndPayloadFallback(
+  config: SupermemoryConfig,
   paths: string[],
   payloads: Array<Record<string, any>>
 ): Promise<any> {
@@ -335,7 +335,7 @@ async function requestMem0WithPathAndPayloadFallback(
   for (const path of paths) {
     for (const payload of payloads) {
       try {
-        return await postMem0WithAuthFallback(config, path, payload);
+        return await postSupermemoryWithAuthFallback(config, path, payload);
       } catch (error) {
         lastError = error;
         if (!config.localMode && !isPathUnsupportedError(error)) {
@@ -345,15 +345,15 @@ async function requestMem0WithPathAndPayloadFallback(
     }
   }
 
-  throw lastError || new Error('Mem0 request failed.');
+  throw lastError || new Error('Supermemory request failed.');
 }
 
-export function isMem0Configured(settings: AppSettings): boolean {
-  const config = resolveMem0Config(settings);
-  return Boolean(config.userId && (config.localMode || config.apiKey));
+export function isSupermemoryConfigured(settings: AppSettings): boolean {
+  const config = resolveSupermemoryConfig(settings);
+  return Boolean(config.clientId && (config.localMode || config.apiKey));
 }
 
-/** True when any memory backend is available (Mem0 or local file fallback). */
+/** True when any memory backend is available (Supermemory or local file fallback). */
 export function isMemoryEnabled(_settings: AppSettings): boolean {
   return true;
 }
@@ -367,15 +367,15 @@ export async function addMemory(
     return { success: false, error: 'No text provided.' };
   }
 
-  const config = resolveMem0Config(settings, payload?.userId);
-  if (!config.userId) {
+  const config = resolveSupermemoryConfig(settings, payload?.userId);
+  if (!config.clientId) {
     return {
       success: false,
-      error: 'Mem0 user ID is missing. Set one in Settings -> AI.',
+      error: 'Supermemory client is missing. Set one in Settings -> AI.',
     };
   }
   if (!config.localMode && !config.apiKey) {
-    // No Mem0 configured — persist to local file so memories survive restarts
+    // No Supermemory configured — persist to local file so memories survive restarts
     const { id } = addLocalMemory(text);
     return { success: true, memoryId: id };
   }
@@ -385,33 +385,58 @@ export async function addMemory(
     ...(payload?.metadata || {}),
   };
 
-  const paths = ['/v2/memories', '/v1/memories', '/memories', '/memory'];
+  // Supermemory primary ingest endpoint is /v3/documents.
+  // Keep legacy fallbacks for compatibility with self-hosted/proxy backends.
+  const paths = ['/v3/documents', '/v3/memories', '/v2/memories', '/v1/memories', '/memories', '/memory'];
   const payloads = [
     {
+      content: text,
+      containerTag: config.clientId,
+      metadata,
+    },
+    {
+      content: text,
+      userId: config.clientId,
+      metadata,
+    },
+    {
+      content: text,
+      containerTags: [config.clientId],
+      metadata,
+    },
+    {
       messages: [{ role: 'user', content: text }],
-      user_id: config.userId,
+      user_id: config.clientId,
+      client_id: config.clientId,
+      client: config.clientId,
       metadata,
       version: 'v2',
     },
     {
       messages: [{ role: 'user', content: text }],
-      user_id: config.userId,
+      user_id: config.clientId,
+      client_id: config.clientId,
+      client: config.clientId,
       metadata,
     },
     {
       text,
-      user_id: config.userId,
+      user_id: config.clientId,
+      client_id: config.clientId,
+      client: config.clientId,
       metadata,
     },
     {
       memory: text,
-      user_id: config.userId,
+      user_id: config.clientId,
+      client_id: config.clientId,
+      client: config.clientId,
       metadata,
     },
   ];
 
   try {
-    const response = await requestMem0WithPathAndPayloadFallback(config, paths, payloads);
+    const response = await requestSupermemoryWithPathAndPayloadFallback(config, paths, payloads);
     return {
       success: true,
       memoryId: extractMemoryId(response),
@@ -431,38 +456,59 @@ export async function searchMemories(
   const query = String(options?.query || '').trim();
   if (!query) return [];
 
-  const config = resolveMem0Config(settings, options?.userId);
-  if (!config.userId) return [];
+  const config = resolveSupermemoryConfig(settings, options?.userId);
+  if (!config.clientId) return [];
   if (!config.localMode && !config.apiKey) {
-    // No Mem0 — search local file
+    // No Supermemory — search local file
     const limit = clampTopK(options?.limit);
     return searchLocalMemories(query, limit).map((m) => ({ id: m.id, text: m.text, raw: m }));
   }
 
   const limit = clampTopK(options?.limit);
-  const paths = ['/v2/memories/search', '/v1/memories/search', '/memories/search', '/search'];
+  // Supermemory memory search endpoint is /v4/search (low-latency memories),
+  // with /v3/search as broader document-search fallback.
+  const paths = ['/v4/search', '/v3/search', '/v2/memories/search', '/v1/memories/search', '/memories/search', '/search'];
   const payloads = [
+    {
+      q: query,
+      containerTag: config.clientId,
+      threshold: 0.6,
+      limit,
+    },
+    {
+      q: query,
+      containerTags: [config.clientId],
+      threshold: 0.6,
+      limit,
+    },
     {
       query,
       filters: {
-        AND: [{ user_id: config.userId }],
+        AND: [{ user_id: config.clientId }],
       },
+      user_id: config.clientId,
+      client_id: config.clientId,
+      client: config.clientId,
       top_k: limit,
       version: 'v2',
     },
     {
       query,
-      user_id: config.userId,
+      user_id: config.clientId,
+      client_id: config.clientId,
+      client: config.clientId,
       limit,
     },
     {
       query,
-      user_id: config.userId,
+      user_id: config.clientId,
+      client_id: config.clientId,
+      client: config.clientId,
       top_k: limit,
     },
   ];
 
-  const response = await requestMem0WithPathAndPayloadFallback(config, paths, payloads);
+  const response = await requestSupermemoryWithPathAndPayloadFallback(config, paths, payloads);
 
   const entries = pickArrayPayload(response);
   const output: MemoryEntry[] = [];
@@ -506,7 +552,7 @@ export async function buildMemoryContextSystemPrompt(
       limit: options?.limit ?? DEFAULT_TOP_K,
     });
   } catch (error) {
-    console.warn('[Mem0] search failed:', error);
+    console.warn('[Supermemory] search failed:', error);
     return '';
   }
 
@@ -530,12 +576,12 @@ export async function buildMemoryContextSystemPrompt(
   if (!lines.length) return '';
 
   return [
-    'You have access to relevant long-term user memory from Mem0.',
+    'You have access to relevant long-term user memory from Supermemory.',
     'Use this context only when it is directly helpful for the current request.',
     'If memory conflicts with the latest user instruction, follow the latest user instruction.',
     'Do not mention these memory notes unless the user asks.',
     '',
-    'Mem0 context:',
+    'Supermemory context:',
     ...lines,
   ].join('\n');
 }
