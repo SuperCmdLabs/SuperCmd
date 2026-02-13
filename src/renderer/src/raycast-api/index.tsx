@@ -2092,7 +2092,7 @@ function ActionPanelOverlay({
     // Extension-defined shortcuts work even when action panel is open
     if ((e.metaKey || e.altKey || e.ctrlKey) && !e.repeat) {
       // ⌘K closes the panel (handled by parent)
-      if (e.key === 'k' && e.metaKey) { e.preventDefault(); onClose(); return; }
+      if (isMetaK(e)) { e.preventDefault(); onClose(); return; }
       for (const action of actions) {
         if (action.shortcut && matchesShortcut(e, action.shortcut)) {
           e.preventDefault();
@@ -2458,6 +2458,10 @@ function matchesShortcut(e: React.KeyboardEvent | KeyboardEvent, shortcut?: { mo
   return true;
 }
 
+function isMetaK(e: React.KeyboardEvent | KeyboardEvent): boolean {
+  return e.metaKey && String(e.key || '').toLowerCase() === 'k';
+}
+
 function ListComponent({
   children, searchBarPlaceholder, onSearchTextChange, isLoading,
   searchText: controlledSearch, filtering, isShowingDetail,
@@ -2624,7 +2628,7 @@ function ListComponent({
   // ── Keyboard handler ───────────────────────────────────────────
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     // ⌘K toggles action panel
-    if (e.key === 'k' && e.metaKey) {
+    if (isMetaK(e)) {
       e.preventDefault();
       setShowActions(prev => !prev);
       return;
@@ -2705,7 +2709,12 @@ function ListComponent({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const actions = selectedActionsRef.current;
-      if (e.key === 'k' && e.metaKey) return;
+      if (isMetaK(e) && !e.repeat) {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowActions(prev => !prev);
+        return;
+      }
       if (!e.metaKey && !e.altKey && !e.ctrlKey) return;
       if (e.repeat) return;
 
@@ -3296,7 +3305,7 @@ function DetailComponent({ markdown, isLoading, children, actions, metadata, nav
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); pop(); return; }
-      if (e.key === 'k' && e.metaKey) { e.preventDefault(); setShowActions(prev => !prev); return; }
+      if (isMetaK(e)) { e.preventDefault(); setShowActions(prev => !prev); return; }
       if (e.key === 'Enter' && e.metaKey && !e.repeat && primaryAction) { e.preventDefault(); primaryAction.execute(); return; }
       if (!e.repeat) {
         for (const action of detailActions) {
@@ -3549,7 +3558,7 @@ function FormComponent({ children, actions, navigationTitle, isLoading, enableDr
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); pop(); return; }
       // ⌘K toggles action panel
-      if (e.key === 'k' && e.metaKey) { e.preventDefault(); setShowActions(prev => !prev); return; }
+      if (isMetaK(e)) { e.preventDefault(); setShowActions(prev => !prev); return; }
       // ⌘Enter triggers primary action
       if (e.key === 'Enter' && e.metaKey && !e.repeat && primaryAction) { e.preventDefault(); primaryAction.execute(); return; }
       // Extension-defined keyboard shortcuts
@@ -4118,7 +4127,7 @@ function GridComponent({
 
   // ── Keyboard handler ─────────────────────────────────────────────
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'k' && e.metaKey) {
+    if (isMetaK(e)) {
       e.preventDefault();
       setShowActions(prev => !prev);
       return;
@@ -4176,7 +4185,12 @@ function GridComponent({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const actions = selectedActionsRef.current;
-      if (e.key === 'k' && e.metaKey) return;
+      if (isMetaK(e) && !e.repeat) {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowActions(prev => !prev);
+        return;
+      }
       if (!e.metaKey && !e.altKey && !e.ctrlKey) return;
       if (e.repeat) return;
       for (const action of actions) {

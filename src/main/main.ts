@@ -307,6 +307,7 @@ let activeSpeakSession: {
 let launcherMode: LauncherMode = 'default';
 let lastWhisperToggleAt = 0;
 let lastWhisperShownAt = 0;
+const INTERNAL_CLIPBOARD_PROBE_REGEX = /^__supercommand_[a-z0-9_]+_probe__\d+_[a-z0-9]+$/i;
 
 function isWindowShownRoutedSystemCommand(commandId: string): boolean {
   return (
@@ -317,6 +318,17 @@ function isWindowShownRoutedSystemCommand(commandId: string): boolean {
     commandId === 'system-open-onboarding' ||
     commandId === 'system-whisper-onboarding'
   );
+}
+
+function scrubInternalClipboardProbe(reason: string): void {
+  try {
+    const current = String(systemClipboard.readText() || '').trim();
+    if (!INTERNAL_CLIPBOARD_PROBE_REGEX.test(current)) return;
+    systemClipboard.writeText('');
+    console.warn(`[Clipboard] Cleared internal probe token (${reason}).`);
+  } catch (error) {
+    console.warn('[Clipboard] Failed to clear internal probe token:', error);
+  }
 }
 let lastTypingCaretPoint: { x: number; y: number } | null = null;
 let lastCursorPromptSelection = '';
@@ -2106,6 +2118,8 @@ async function replaceTextViaBackspaceAndPaste(previousText: string, nextText: s
  * Used by both clipboard-paste-item and snippet-paste.
  */
 async function hideAndPaste(): Promise<boolean> {
+  scrubInternalClipboardProbe('before hideAndPaste');
+
   // Hide the window first
   if (mainWindow && isVisible) {
     emitWindowHidden();
@@ -3449,6 +3463,7 @@ protocol.registerSchemesAsPrivileged([
 
 app.whenReady().then(async () => {
   app.setAsDefaultProtocolClient('supercommand');
+  scrubInternalClipboardProbe('app startup');
 
   // Register the sc-asset:// protocol handler to serve extension asset files
   protocol.handle('sc-asset', (request: any) => {

@@ -629,6 +629,43 @@ const App: React.FC = () => {
     }
   }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
 
+  const isLauncherModeActive =
+    !showActions &&
+    !contextMenu &&
+    !aiMode &&
+    !extensionView &&
+    !showClipboardManager &&
+    !showSnippetManager &&
+    !showFileSearch &&
+    !showCursorPrompt &&
+    !showWhisper &&
+    !showSpeak &&
+    !showOnboarding &&
+    !showWhisperOnboarding;
+
+  useEffect(() => {
+    if (!isLauncherModeActive) return;
+    const onWindowKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (!e.metaKey || String(e.key || '').toLowerCase() !== 'k' || e.repeat) return;
+
+      const target = e.target as HTMLElement | null;
+      const active = document.activeElement as HTMLElement | null;
+      const searchInput = inputRef.current;
+      if (searchInput && (target === searchInput || active === searchInput)) return;
+
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu(null);
+      setShowActions((prev) => !prev);
+    };
+
+    window.addEventListener('keydown', onWindowKeyDown, true);
+    return () => window.removeEventListener('keydown', onWindowKeyDown, true);
+  }, [isLauncherModeActive]);
+
   useEffect(() => {
     return () => {
       if (memoryFeedbackTimerRef.current !== null) {
