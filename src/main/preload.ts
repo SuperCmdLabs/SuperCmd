@@ -30,15 +30,25 @@ contextBridge.exposeInMainWorld('electron', {
   restoreLastFrontmostApp: (): Promise<boolean> =>
     ipcRenderer.invoke('restore-last-frontmost-app'),
   onWindowShown: (callback: (payload?: { mode?: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt' }) => void) => {
-    ipcRenderer.on('window-shown', (_event: any, payload: any) => callback(payload));
+    const listener = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('window-shown', listener);
+    return () => {
+      ipcRenderer.removeListener('window-shown', listener);
+    };
   },
   onWindowHidden: (callback: () => void) => {
-    ipcRenderer.on('window-hidden', () => callback());
+    const listener = () => callback();
+    ipcRenderer.on('window-hidden', listener);
+    return () => {
+      ipcRenderer.removeListener('window-hidden', listener);
+    };
   },
   onRunSystemCommand: (callback: (commandId: string) => void) => {
-    ipcRenderer.on('run-system-command', (_event, commandId) =>
-      callback(commandId)
-    );
+    const listener = (_event: any, commandId: string) => callback(commandId);
+    ipcRenderer.on('run-system-command', listener);
+    return () => {
+      ipcRenderer.removeListener('run-system-command', listener);
+    };
   },
   setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean): void => {
     ipcRenderer.send('set-detached-overlay-state', { overlay, visible });

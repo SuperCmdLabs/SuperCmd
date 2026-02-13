@@ -1,14 +1,14 @@
 /**
  * Launcher App
- * 
+ *
  * Dynamically displays all applications and System Settings.
  * Shows category labels like Raycast.
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, X, Power, Settings, Puzzle, Sparkles, ArrowRight, Clipboard, FileText, Mic, Volume2, Loader2, CornerDownLeft, Brain, TerminalSquare } from 'lucide-react';
-import type { CommandInfo, ExtensionBundle, AppSettings, EdgeTtsVoice } from '../types/electron';
+import { X, Sparkles, ArrowRight, Loader2 } from 'lucide-react';
+import type { CommandInfo, ExtensionBundle, AppSettings } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
@@ -19,545 +19,32 @@ import SuperCmdWhisper from './SuperCmdWhisper';
 import SuperCmdRead from './SuperCmdRead';
 import { tryCalculate } from './smart-calculator';
 import { useDetachedPortalWindow } from './useDetachedPortalWindow';
-import supercmdLogo from '../../../supercmd.svg';
-
-interface LauncherAction {
-  id: string;
-  title: string;
-  shortcut?: string;
-  style?: 'default' | 'destructive';
-  enabled?: boolean;
-  execute: () => void | Promise<void>;
-}
-
-type MemoryFeedback = {
-  type: 'success' | 'error';
-  text: string;
-} | null;
-
-type ReadVoiceOption = {
-  value: string;
-  label: string;
-};
-
-/**
- * Filter and sort commands based on search query
- */
-function filterCommands(commands: CommandInfo[], query: string): CommandInfo[] {
-  if (!query.trim()) {
-    return commands;
-  }
-
-  const lowerQuery = query.toLowerCase().trim();
-
-  const scored = commands
-    .map((cmd) => {
-      const lowerTitle = cmd.title.toLowerCase();
-      const lowerSubtitle = String(cmd.subtitle || '').toLowerCase();
-      const keywords = cmd.keywords?.map((k) => k.toLowerCase()) || [];
-
-      let score = 0;
-
-      // Exact match
-      if (lowerTitle === lowerQuery) {
-        score = 200;
-      }
-      // Title starts with query
-      else if (lowerTitle.startsWith(lowerQuery)) {
-        score = 100;
-      }
-      // Title includes query
-      else if (lowerTitle.includes(lowerQuery)) {
-        score = 75;
-      }
-      // Keywords start with query
-      else if (keywords.some((k) => k.startsWith(lowerQuery))) {
-        score = 50;
-      }
-      // Keywords include query
-      else if (keywords.some((k) => k.includes(lowerQuery))) {
-        score = 25;
-      }
-      // Subtitle match
-      else if (lowerSubtitle.includes(lowerQuery)) {
-        score = 22;
-      }
-
-      return { cmd, score };
-    })
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score);
-
-  return scored.map(({ cmd }) => cmd);
-}
-
-/**
- * Get category display label
- */
-function getCategoryLabel(category: string): string {
-  switch (category) {
-    case 'settings':
-      return 'System Settings';
-    case 'system':
-      return 'System';
-    case 'extension':
-      return 'Extension';
-    case 'script':
-      return 'Script';
-    case 'app':
-    default:
-      return 'Application';
-  }
-}
-
-function formatShortcutLabel(shortcut: string): string {
-  return String(shortcut || '')
-    .replace(/Command/g, '\u2318')
-    .replace(/Control/g, '\u2303')
-    .replace(/Alt/g, '\u2325')
-    .replace(/Shift/g, '\u21E7')
-    .replace(/Period/g, '.')
-    .replace(/\+/g, ' ');
-}
-
-function isSuperCmdAppTitle(title: string): boolean {
-  const key = String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-  return key === 'supercommand' || key === 'supercmd';
-}
-
-function isSuperCmdSystemCommand(commandId: string): boolean {
-  return (
-    commandId === 'system-open-settings' ||
-    commandId === 'system-open-ai-settings' ||
-    commandId === 'system-open-extensions-settings' ||
-    commandId === 'system-open-onboarding' ||
-    commandId === 'system-quit-launcher'
-  );
-}
-
-function getVoiceLanguageCode(voiceId: string): string {
-  const id = String(voiceId || '').trim();
-  const match = /^([a-z]{2}-[A-Z]{2})-/.exec(id);
-  return match?.[1] || '';
-}
-
-function getFallbackVoiceLabel(voiceId: string): string {
-  const id = String(voiceId || '').trim();
-  if (!id) return 'Voice';
-  const base = id.split('-').slice(2).join('-').replace(/Neural$/i, '').trim();
-  const lang = getVoiceLanguageCode(id);
-  return base ? `${base} (${lang || 'Unknown'})` : id;
-}
-
-function buildReadVoiceOptions(
-  allVoices: EdgeTtsVoice[],
-  currentVoice: string,
-  configuredVoice: string
-): ReadVoiceOption[] {
-  const configured = String(configuredVoice || '').trim();
-  const current = String(currentVoice || '').trim();
-  const targetVoice = configured || current;
-  const targetLang = getVoiceLanguageCode(targetVoice) || getVoiceLanguageCode(current);
-
-  const filtered = allVoices
-    .filter((voice) => (targetLang ? voice.languageCode === targetLang : true))
-    .slice()
-    .sort((a, b) => {
-      const genderScore = (v: EdgeTtsVoice) => (String(v.gender).toLowerCase() === 'female' ? 0 : 1);
-      const genderCmp = genderScore(a) - genderScore(b);
-      if (genderCmp !== 0) return genderCmp;
-      return String(a.label || '').localeCompare(String(b.label || ''));
-    });
-
-  const options: ReadVoiceOption[] = filtered.map((voice) => {
-    const style = String(voice.style || '').trim();
-    const gender = String(voice.gender || '').toLowerCase() === 'male' ? 'Male' : 'Female';
-    const languageCode = String(voice.languageCode || '').trim();
-    const languageSuffix = languageCode ? ` (${languageCode})` : '';
-    const styleSuffix = style ? ` - ${style}` : '';
-    return {
-      value: voice.id,
-      label: `${voice.label}${styleSuffix} - ${gender}${languageSuffix}`,
-    };
-  });
-
-  const ensureVoicePresent = (voiceId: string) => {
-    const id = String(voiceId || '').trim();
-    if (!id) return;
-    if (options.some((opt) => opt.value === id)) return;
-    options.unshift({ value: id, label: getFallbackVoiceLabel(id) });
-  };
-  ensureVoicePresent(current);
-  ensureVoicePresent(configured);
-
-  return options;
-}
-
-function renderSuperCmdLogoIcon(): React.ReactNode {
-  return (
-    <img
-      src={supercmdLogo}
-      alt=""
-      className="w-5 h-5 object-contain"
-      draggable={false}
-    />
-  );
-}
-
-function getCommandDisplayTitle(command: CommandInfo): string {
-  if (command.category === 'app' && isSuperCmdAppTitle(command.title)) return 'SuperCmd';
-  return command.title;
-}
-
-function renderCommandIcon(command: CommandInfo): React.ReactNode {
-  if (command.category === 'app' && isSuperCmdAppTitle(command.title)) {
-    return renderSuperCmdLogoIcon();
-  }
-  if (command.iconDataUrl) {
-    return (
-      <img
-        src={command.iconDataUrl}
-        alt=""
-        className="w-5 h-5 object-contain"
-        draggable={false}
-      />
-    );
-  }
-  if (command.category === 'system') {
-    return getSystemCommandFallbackIcon(command.id);
-  }
-  if (command.category === 'extension') {
-    return (
-      <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
-        <Puzzle className="w-3 h-3 text-purple-400" />
-      </div>
-    );
-  }
-  if (command.category === 'script') {
-    if (command.iconEmoji) {
-      return <span className="text-sm leading-none">{command.iconEmoji}</span>;
-    }
-    return (
-      <div className="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
-        <TerminalSquare className="w-3 h-3 text-emerald-300" />
-      </div>
-    );
-  }
-  return (
-    <div className="w-5 h-5 rounded bg-gray-500/20 flex items-center justify-center">
-      <Settings className="w-3 h-3 text-gray-400" />
-    </div>
-  );
-}
-
-function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
-  if (isSuperCmdSystemCommand(commandId)) {
-    return renderSuperCmdLogoIcon();
-  }
-
-  if (commandId === 'system-cursor-prompt') {
-    return (
-      <div className="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
-        <Sparkles className="w-3 h-3 text-violet-300" />
-      </div>
-    );
-  }
-
-  if (commandId === 'system-add-to-memory') {
-    return (
-      <div className="w-5 h-5 rounded bg-fuchsia-500/20 flex items-center justify-center">
-        <Brain className="w-3 h-3 text-fuchsia-200" />
-      </div>
-    );
-  }
-
-  if (commandId === 'system-clipboard-manager') {
-    return (
-      <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
-        <Clipboard className="w-3 h-3 text-cyan-300" />
-      </div>
-    );
-  }
-
-  if (
-    commandId === 'system-create-snippet' ||
-    commandId === 'system-search-snippets' ||
-    commandId === 'system-import-snippets' ||
-    commandId === 'system-export-snippets'
-  ) {
-    return (
-      <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
-        <FileText className="w-3 h-3 text-amber-300" />
-      </div>
-    );
-  }
-
-  if (
-    commandId === 'system-create-script-command' ||
-    commandId === 'system-open-script-commands'
-  ) {
-    return (
-      <div className="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
-        <TerminalSquare className="w-3 h-3 text-emerald-300" />
-      </div>
-    );
-  }
-
-  if (commandId === 'system-search-files') {
-    return (
-      <div className="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
-        <Search className="w-3 h-3 text-emerald-300" />
-      </div>
-    );
-  }
-
-  if (commandId === 'system-supercommand-whisper') {
-    return (
-      <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
-        <Mic className="w-3 h-3 text-sky-300" />
-      </div>
-    );
-  }
-
-  if (commandId === 'system-whisper-onboarding') {
-    return (
-      <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
-        <Sparkles className="w-3 h-3 text-sky-200" />
-      </div>
-    );
-  }
-
-  if (commandId === 'system-supercommand-speak') {
-    return (
-      <div className="w-5 h-5 rounded bg-indigo-500/20 flex items-center justify-center">
-        <Volume2 className="w-3 h-3 text-indigo-200" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="w-5 h-5 rounded bg-red-500/20 flex items-center justify-center">
-      <Power className="w-3 h-3 text-red-400" />
-    </div>
-  );
-}
-
-function renderShortcutLabel(shortcut?: string): string {
-  if (!shortcut) return '';
-  return shortcut
-    .replace(/Command|Cmd/gi, '⌘')
-    .replace(/Control|Ctrl/gi, '⌃')
-    .replace(/Alt|Option/gi, '⌥')
-    .replace(/Shift/gi, '⇧')
-    .replace(/ArrowUp/g, '↑')
-    .replace(/ArrowDown/g, '↓')
-    .replace(/Backspace|Delete/g, '⌫')
-    .replace(/\+/g, ' ');
-}
-
-function parseIntervalToMs(interval?: string): number | null {
-  if (!interval) return null;
-  const trimmed = interval.trim();
-  const match = trimmed.match(/^(\d+)\s*([smhd])$/i);
-  if (!match) return null;
-
-  const value = Number(match[1]);
-  if (!Number.isFinite(value) || value <= 0) return null;
-
-  const unit = match[2].toLowerCase();
-  const unitMs =
-    unit === 's' ? 1_000 :
-    unit === 'm' ? 60_000 :
-    unit === 'h' ? 60 * 60_000 :
-    24 * 60 * 60_000;
-  return value * unitMs;
-}
-
-const LAST_EXT_KEY = 'sc-last-extension';
-const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
-const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
-const CMD_ARGS_KEY_PREFIX = 'sc-ext-cmd-args:';
-const SCRIPT_CMD_ARGS_KEY_PREFIX = 'sc-script-cmd-args:';
-const HIDDEN_MENUBAR_CMDS_KEY = 'sc-hidden-menubar-cmds';
-const MAX_RECENT_COMMANDS = 30;
-const NO_AI_MODEL_ERROR = 'No AI model available. Configure one in Settings -> AI.';
-
-type PreferenceDefinition = NonNullable<ExtensionBundle['preferenceDefinitions']>[number];
-type ArgumentDefinition = NonNullable<ExtensionBundle['commandArgumentDefinitions']>[number];
-type ScriptArgumentDefinition = NonNullable<CommandInfo['commandArgumentDefinitions']>[number];
-
-function readJsonObject(key: string): Record<string, any> {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeJsonObject(key: string, value: Record<string, any>) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
-function getMenuBarCommandKey(extName: string, cmdName: string): string {
-  return `${(extName || '').trim().toLowerCase()}/${(cmdName || '').trim().toLowerCase()}`;
-}
-
-function getExtPrefsKey(extName: string): string {
-  return `${EXT_PREFS_KEY_PREFIX}${extName}`;
-}
-
-function getCmdPrefsKey(extName: string, cmdName: string): string {
-  return `${CMD_PREFS_KEY_PREFIX}${extName}/${cmdName}`;
-}
-
-function getCmdArgsKey(extName: string, cmdName: string): string {
-  return `${CMD_ARGS_KEY_PREFIX}${extName}/${cmdName}`;
-}
-
-function getScriptCmdArgsKey(commandId: string): string {
-  return `${SCRIPT_CMD_ARGS_KEY_PREFIX}${commandId}`;
-}
-
-function hydrateExtensionBundlePreferences(bundle: ExtensionBundle): ExtensionBundle {
-  const extName = bundle.extName || bundle.extensionName || '';
-  const cmdName = bundle.cmdName || bundle.commandName || '';
-  const extStored = extName ? readJsonObject(getExtPrefsKey(extName)) : {};
-  const cmdStored = extName && cmdName ? readJsonObject(getCmdPrefsKey(extName, cmdName)) : {};
-  const argStored =
-    bundle.mode === 'no-view' && extName && cmdName
-      ? readJsonObject(getCmdArgsKey(extName, cmdName))
-      : {};
-  return {
-    ...bundle,
-    preferences: {
-      ...(bundle.preferences || {}),
-      ...extStored,
-      ...cmdStored,
-    },
-    launchArguments: {
-      ...(bundle as any).launchArguments,
-      ...argStored,
-    } as any,
-  };
-}
-
-function isMissingPreferenceValue(def: PreferenceDefinition, value: any): boolean {
-  if (!def.required) return false;
-  if (def.type === 'checkbox') return value === undefined || value === null;
-  if (typeof value === 'string') return value.trim() === '';
-  return value === undefined || value === null;
-}
-
-function getMissingRequiredPreferences(bundle: ExtensionBundle, values?: Record<string, any>): PreferenceDefinition[] {
-  const defs = bundle.preferenceDefinitions || [];
-  const prefs = values || bundle.preferences || {};
-  return defs.filter((def) => isMissingPreferenceValue(def, prefs[def.name]));
-}
-
-function isMissingArgumentValue(def: ArgumentDefinition, value: any): boolean {
-  if (!def.required) return false;
-  if (typeof value === 'string') return value.trim() === '';
-  return value === undefined || value === null;
-}
-
-function getMissingRequiredArguments(bundle: ExtensionBundle, values?: Record<string, any>): ArgumentDefinition[] {
-  const defs = bundle.commandArgumentDefinitions || [];
-  const args = values || (bundle as any).launchArguments || {};
-  return defs.filter((def) => isMissingArgumentValue(def, args[def.name]));
-}
-
-function getUnsetCriticalPreferences(bundle: ExtensionBundle, values?: Record<string, any>): PreferenceDefinition[] {
-  const defs = bundle.preferenceDefinitions || [];
-  const prefs = values || bundle.preferences || {};
-  const criticalName = /(api[-_ ]?key|token|secret|namespace|binary|protocol|preset)/i;
-  return defs.filter((def) => {
-    const type = (def.type || '').toLowerCase();
-    if (type !== 'textfield' && type !== 'password' && type !== 'dropdown') return false;
-    const v = prefs[def.name];
-    const empty = (typeof v === 'string' ? v.trim() === '' : v === undefined || v === null);
-    if (!empty) return false;
-    return Boolean(def.required) || criticalName.test(def.name || '') || criticalName.test(def.title || '');
-  });
-}
-
-function shouldOpenCommandSetup(bundle: ExtensionBundle): boolean {
-  const missingPrefs = getMissingRequiredPreferences(bundle);
-  if (missingPrefs.length > 0) return true;
-
-  const args = bundle.commandArgumentDefinitions || [];
-  const hasArgs = args.length > 0;
-  const missingArgs = getMissingRequiredArguments(bundle);
-
-  if (bundle.mode === 'no-view') {
-    // no-view commands have no UI to collect launch arguments at runtime.
-    if (hasArgs) return true;
-    return missingArgs.length > 0;
-  }
-
-  // View/menu-bar commands can collect optional inputs in their own UI.
-  return missingArgs.length > 0;
-}
-
-function persistExtensionPreferences(
-  extName: string,
-  cmdName: string,
-  defs: PreferenceDefinition[],
-  values: Record<string, any>
-) {
-  const extKey = getExtPrefsKey(extName);
-  const cmdKey = getCmdPrefsKey(extName, cmdName);
-  const extPrefs = readJsonObject(extKey);
-  const cmdPrefs = readJsonObject(cmdKey);
-
-  for (const def of defs) {
-    if (!def?.name) continue;
-    if (def.scope === 'command') {
-      cmdPrefs[def.name] = values[def.name];
-    } else {
-      extPrefs[def.name] = values[def.name];
-    }
-  }
-
-  writeJsonObject(extKey, extPrefs);
-  writeJsonObject(cmdKey, cmdPrefs);
-}
-
-function persistCommandArguments(extName: string, cmdName: string, values: Record<string, any>) {
-  writeJsonObject(getCmdArgsKey(extName, cmdName), values);
-}
-
-function getMissingRequiredScriptArguments(
-  command: CommandInfo,
-  values?: Record<string, any>
-): ScriptArgumentDefinition[] {
-  const defs = command.commandArgumentDefinitions || [];
-  const current = values || {};
-  return defs.filter((def) => {
-    if (!def?.required) return false;
-    const value = current[def.name];
-    if (typeof value === 'string') return value.trim() === '';
-    return value === undefined || value === null;
-  });
-}
-
-function toScriptArgumentMapFromArray(
-  command: CommandInfo,
-  args: string[]
-): Record<string, any> {
-  const defs = (command.commandArgumentDefinitions || []).slice().sort((a, b) => {
-    const ai = Number(String(a.name || '').replace(/[^\d]/g, '')) || 0;
-    const bi = Number(String(b.name || '').replace(/[^\d]/g, '')) || 0;
-    return ai - bi;
-  });
-  const out: Record<string, any> = {};
-  defs.forEach((def, idx) => {
-    out[def.name] = String(args[idx] ?? '');
-  });
-  return out;
-}
+import { useAppViewManager } from './hooks/useAppViewManager';
+import { useAiChat } from './hooks/useAiChat';
+import { useCursorPrompt } from './hooks/useCursorPrompt';
+import { useMenuBarExtensions } from './hooks/useMenuBarExtensions';
+import { useBackgroundRefresh } from './hooks/useBackgroundRefresh';
+import { useSpeakManager } from './hooks/useSpeakManager';
+import { useWhisperManager } from './hooks/useWhisperManager';
+import { LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
+import {
+  type LauncherAction, type MemoryFeedback,
+  filterCommands, getCategoryLabel, formatShortcutLabel,
+  renderCommandIcon, getCommandDisplayTitle,
+  renderShortcutLabel,
+} from './utils/command-helpers';
+import {
+  readJsonObject, writeJsonObject,
+  getScriptCmdArgsKey,
+  hydrateExtensionBundlePreferences,
+  shouldOpenCommandSetup,
+  getMissingRequiredScriptArguments, toScriptArgumentMapFromArray,
+} from './utils/extension-preferences';
+import ScriptCommandSetupView from './views/ScriptCommandSetupView';
+import ScriptCommandOutputView from './views/ScriptCommandOutputView';
+import ExtensionPreferenceSetupView from './views/ExtensionPreferenceSetupView';
+import AiChatView from './views/AiChatView';
+import CursorPromptView from './views/CursorPromptView';
 
 const App: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
@@ -566,52 +53,35 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [extensionView, setExtensionView] = useState<ExtensionBundle | null>(null);
-  const [extensionPreferenceSetup, setExtensionPreferenceSetup] = useState<{
-    bundle: ExtensionBundle;
-    values: Record<string, any>;
-    argumentValues: Record<string, any>;
-  } | null>(null);
-  const [scriptCommandSetup, setScriptCommandSetup] = useState<{
-    command: CommandInfo;
-    values: Record<string, any>;
-  } | null>(null);
-  const [scriptCommandOutput, setScriptCommandOutput] = useState<{
-    command: CommandInfo;
-    output: string;
-    exitCode: number;
-  } | null>(null);
-  const [showClipboardManager, setShowClipboardManager] = useState(false);
-  const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
-  const [showFileSearch, setShowFileSearch] = useState(false);
-  const [showCursorPrompt, setShowCursorPrompt] = useState(false);
-  const [cursorPromptText, setCursorPromptText] = useState('');
-  const [cursorPromptStatus, setCursorPromptStatus] = useState<'idle' | 'processing' | 'ready' | 'error'>('idle');
-  const [cursorPromptResult, setCursorPromptResult] = useState('');
-  const [cursorPromptError, setCursorPromptError] = useState('');
-  const [cursorPromptSourceText, setCursorPromptSourceText] = useState('');
-  const [showWhisper, setShowWhisper] = useState(false);
-  const [showSpeak, setShowSpeak] = useState(false);
-  const [showWhisperOnboarding, setShowWhisperOnboarding] = useState(false);
-  const [showWhisperHint, setShowWhisperHint] = useState(false);
-  const [whisperOnboardingPracticeText, setWhisperOnboardingPracticeText] = useState('');
-  const [whisperSpeakToggleLabel, setWhisperSpeakToggleLabel] = useState('\u2318 .');
-  const [speakStatus, setSpeakStatus] = useState<{
-    state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
-    text: string;
-    index: number;
-    total: number;
-    message?: string;
-    wordIndex?: number;
-  }>({ state: 'idle', text: '', index: 0, total: 0 });
-  const [speakOptions, setSpeakOptions] = useState<{ voice: string; rate: string }>({
-    voice: 'en-US-JennyNeural',
-    rate: '+0%',
+  const {
+    extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
+    showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt,
+    showWhisper, showSpeak, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
+    openOnboarding, openWhisper, openWhisperOnboarding, openClipboardManager,
+    openSnippetManager, openFileSearch, openCursorPrompt, openSpeak,
+    setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
+    setShowClipboardManager, setShowSnippetManager, setShowFileSearch, setShowCursorPrompt,
+    setShowWhisper, setShowSpeak, setShowWhisperOnboarding, setShowWhisperHint,
+    setShowOnboarding, setAiMode,
+  } = useAppViewManager();
+  const {
+    whisperOnboardingPracticeText, setWhisperOnboardingPracticeText,
+    whisperSpeakToggleLabel, setWhisperSpeakToggleLabel,
+    whisperSessionRef,
+    appendWhisperOnboardingPracticeText,
+    whisperPortalTarget, whisperOnboardingPortalTarget,
+  } = useWhisperManager({
+    showWhisper, setShowWhisper,
+    showWhisperOnboarding, setShowWhisperOnboarding,
+    showWhisperHint, setShowWhisperHint,
   });
-  const [edgeTtsVoices, setEdgeTtsVoices] = useState<EdgeTtsVoice[]>([]);
-  const [configuredEdgeTtsVoice, setConfiguredEdgeTtsVoice] = useState('en-US-JennyNeural');
-  const [configuredTtsModel, setConfiguredTtsModel] = useState('edge-tts');
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const {
+    speakStatus, speakOptions,
+    setConfiguredEdgeTtsVoice, setConfiguredTtsModel,
+    readVoiceOptions,
+    handleSpeakVoiceChange, handleSpeakRateChange,
+    speakPortalTarget,
+  } = useSpeakManager({ showSpeak, setShowSpeak });
   const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
   const [launcherShortcut, setLauncherShortcut] = useState('Alt+Space');
   const [showActions, setShowActions] = useState(false);
@@ -622,76 +92,63 @@ const App: React.FC = () => {
   } | null>(null);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [selectedContextActionIndex, setSelectedContextActionIndex] = useState(0);
-  const [menuBarExtensions, setMenuBarExtensions] = useState<
-    Array<{ key: string; bundle: ExtensionBundle }>
-  >([]);
-  const [backgroundNoViewRuns, setBackgroundNoViewRuns] = useState<
-    Array<{ runId: string; bundle: ExtensionBundle }>
-  >([]);
-  const [aiMode, setAiMode] = useState(false);
-  const [aiResponse, setAiResponse] = useState('');
-  const [aiStreaming, setAiStreaming] = useState(false);
-  const [aiAvailable, setAiAvailable] = useState(false);
-  const [aiQuery, setAiQuery] = useState('');
+  const {
+    menuBarExtensions,
+    backgroundNoViewRuns, setBackgroundNoViewRuns,
+    isMenuBarExtensionMounted,
+    hideMenuBarExtension,
+    upsertMenuBarExtension,
+  } = useMenuBarExtensions();
   const [selectedTextSnapshot, setSelectedTextSnapshot] = useState('');
   const [memoryFeedback, setMemoryFeedback] = useState<MemoryFeedback>(null);
   const [memoryActionLoading, setMemoryActionLoading] = useState(false);
-  const aiRequestIdRef = useRef<string | null>(null);
-  const cursorPromptRequestIdRef = useRef<string | null>(null);
-  const cursorPromptResultRef = useRef('');
-  const cursorPromptSourceTextRef = useRef('');
   const memoryFeedbackTimerRef = useRef<number | null>(null);
-  const aiResponseRef = useRef<HTMLDivElement>(null);
-  const aiInputRef = useRef<HTMLInputElement>(null);
-  const cursorPromptInputRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const restoreLauncherFocus = useCallback(() => {
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, []);
+
+  const onExitAiMode = useCallback(() => {
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
+  const {
+    aiResponse, aiStreaming, aiAvailable, aiQuery, setAiQuery,
+    aiResponseRef, aiInputRef, setAiAvailable,
+    startAiChat, submitAiQuery, exitAiMode,
+  } = useAiChat({
+    setAiMode,
+    onExitAiMode,
+  });
+
+  const {
+    cursorPromptText, setCursorPromptText,
+    cursorPromptStatus,
+    cursorPromptResult,
+    cursorPromptError,
+    cursorPromptInputRef,
+    submitCursorPrompt, applyCursorPromptResultToEditor,
+    closeCursorPrompt, resetCursorPromptState,
+  } = useCursorPrompt({
+    showCursorPrompt,
+    setShowCursorPrompt,
+    setAiAvailable,
+  });
+
+  const acceptCursorPrompt = applyCursorPromptResultToEditor;
+
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const actionsOverlayRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const pinnedCommandsRef = useRef<string[]>([]);
   const extensionViewRef = useRef<ExtensionBundle | null>(null);
-  const intervalTimerIdsRef = useRef<number[]>([]);
-  const menuBarRemountTimestampsRef = useRef<Record<string, number>>({});
-  const whisperSessionRef = useRef(false);
-  const speakSessionShownRef = useRef(false);
   extensionViewRef.current = extensionView;
   pinnedCommandsRef.current = pinnedCommands;
 
-  const whisperPortalTarget = useDetachedPortalWindow(showWhisper, {
-    name: 'supercommand-whisper-window',
-    title: 'SuperCmd Whisper',
-    width: showWhisperHint ? 620 : 272,
-    height: showWhisperHint ? 88 : 52,
-    anchor: 'center-bottom',
-    onClosed: () => {
-      whisperSessionRef.current = false;
-      setShowWhisper(false);
-    },
-  });
-
-  const whisperOnboardingPortalTarget = useDetachedPortalWindow(showWhisperOnboarding, {
-    name: 'supercommand-whisper-onboarding-window',
-    title: 'SuperCmd Whisper Onboarding',
-    width: 920,
-    height: 640,
-    anchor: 'center',
-    onClosed: () => {
-      setShowWhisperOnboarding(false);
-    },
-  });
-
-  const speakPortalTarget = useDetachedPortalWindow(showSpeak, {
-    name: 'supercommand-speak-window',
-    title: 'SuperCmd Read',
-    width: 520,
-    height: 112,
-    anchor: 'top-right',
-    onClosed: () => {
-      setShowSpeak(false);
-      void window.electron.speakStop();
-    },
-  });
 
   const cursorPromptPortalTarget = useDetachedPortalWindow(showCursorPrompt, {
     name: 'supercommand-prompt-window',
@@ -703,12 +160,6 @@ const App: React.FC = () => {
       setShowCursorPrompt(false);
     },
   });
-
-  const restoreLauncherFocus = useCallback(() => {
-    requestAnimationFrame(() => {
-      inputRef.current?.focus();
-    });
-  }, []);
 
   const showMemoryFeedback = useCallback((type: 'success' | 'error', text: string) => {
     if (memoryFeedbackTimerRef.current !== null) {
@@ -729,101 +180,6 @@ const App: React.FC = () => {
     } catch {
       setSelectedTextSnapshot('');
     }
-  }, []);
-
-  const appendWhisperOnboardingPracticeText = useCallback((chunk: string) => {
-    const nextChunk = String(chunk || '');
-    if (!nextChunk.trim()) return;
-    setWhisperOnboardingPracticeText((prev) => {
-      if (!prev) return nextChunk.trimStart();
-      const prevTrim = prev.replace(/\s+$/g, '');
-      const needsSpace = /[A-Za-z0-9)]$/.test(prevTrim) && /^[A-Za-z0-9(]/.test(nextChunk.trimStart());
-      return needsSpace ? `${prevTrim} ${nextChunk.trimStart()}` : `${prev}${nextChunk}`;
-    });
-  }, []);
-
-  const getMenuBarIdentity = useCallback((bundle: Partial<ExtensionBundle>) => {
-    const extName = bundle.extName || bundle.extensionName || '';
-    const cmdName = bundle.cmdName || bundle.commandName || '';
-    const extId = `${bundle.extensionName || bundle.extName || ''}/${bundle.commandName || bundle.cmdName || ''}`;
-    const storageKey = getMenuBarCommandKey(extName, cmdName);
-    return { extName, cmdName, extId, storageKey };
-  }, []);
-
-  const isMenuBarExtensionMounted = useCallback((bundle: Partial<ExtensionBundle>) => {
-    const { extName, cmdName } = getMenuBarIdentity(bundle);
-    if (!extName || !cmdName) return false;
-    return menuBarExtensions.some(
-      (entry) =>
-        (entry.bundle.extName || entry.bundle.extensionName) === extName &&
-        (entry.bundle.cmdName || entry.bundle.commandName) === cmdName
-    );
-  }, [menuBarExtensions, getMenuBarIdentity]);
-
-  const hideMenuBarExtension = useCallback((bundle: Partial<ExtensionBundle>) => {
-    const { extName, cmdName, extId, storageKey } = getMenuBarIdentity(bundle);
-    if (!extName || !cmdName) return;
-    setMenuBarExtensions((prev) =>
-      prev.filter(
-        (entry) =>
-          (entry.bundle.extName || entry.bundle.extensionName) !== extName ||
-          (entry.bundle.cmdName || entry.bundle.commandName) !== cmdName
-      )
-    );
-    const hidden = readJsonObject(HIDDEN_MENUBAR_CMDS_KEY);
-    hidden[storageKey] = true;
-    writeJsonObject(HIDDEN_MENUBAR_CMDS_KEY, hidden);
-    window.electron.removeMenuBar?.(extId);
-  }, [getMenuBarIdentity]);
-
-  const upsertMenuBarExtension = useCallback((bundle: ExtensionBundle, options?: { remount?: boolean }) => {
-    const remount = Boolean(options?.remount);
-    const { extName, cmdName, storageKey } = getMenuBarIdentity(bundle);
-    if (!extName || !cmdName) return;
-    const hidden = readJsonObject(HIDDEN_MENUBAR_CMDS_KEY);
-    if (hidden[storageKey]) {
-      delete hidden[storageKey];
-      writeJsonObject(HIDDEN_MENUBAR_CMDS_KEY, hidden);
-    }
-    setMenuBarExtensions((prev) => {
-      const idx = prev.findIndex(
-        (entry) =>
-          (entry.bundle.extName || entry.bundle.extensionName) === extName &&
-          (entry.bundle.cmdName || entry.bundle.commandName) === cmdName
-      );
-      if (idx === -1) {
-        return [...prev, { key: `${extName}:${cmdName}:${Date.now()}`, bundle }];
-      }
-      const next = [...prev];
-      next[idx] = {
-        key: remount ? `${extName}:${cmdName}:${Date.now()}` : next[idx].key,
-        bundle,
-      };
-      return next;
-    });
-  }, [getMenuBarIdentity]);
-
-  const remountMenuBarExtensionsForExtension = useCallback((extensionName: string) => {
-    const normalized = (extensionName || '').trim();
-    if (!normalized) return;
-    const now = Date.now();
-    const lastTs = menuBarRemountTimestampsRef.current[normalized] || 0;
-    if (now - lastTs < 200) return;
-    menuBarRemountTimestampsRef.current[normalized] = now;
-    setMenuBarExtensions((prev) => {
-      let changed = false;
-      const next = prev.map((entry) => {
-        const entryExt = (entry.bundle.extName || entry.bundle.extensionName || '').trim();
-        if (!entryExt || entryExt !== normalized) return entry;
-        changed = true;
-        const cmdName = entry.bundle.cmdName || entry.bundle.commandName || '';
-        return {
-          key: `${normalized}:${cmdName}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-          bundle: entry.bundle,
-        };
-      });
-      return changed ? next : prev;
-    });
   }, []);
 
   const loadLauncherPreferences = useCallback(async () => {
@@ -894,11 +250,15 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Mount-only initial load — must NOT re-run when callbacks are recreated
+  // or the loading flash triggers on every aiStreaming state change.
   useEffect(() => {
     fetchCommands();
     loadLauncherPreferences();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    window.electron.onWindowShown((payload) => {
+  useEffect(() => {
+    const cleanupWindowShown = window.electron.onWindowShown((payload) => {
       console.log('[WINDOW-SHOWN] fired', payload);
       const isWhisperMode = payload?.mode === 'whisper';
       const isSpeakMode = payload?.mode === 'speak';
@@ -908,20 +268,7 @@ const App: React.FC = () => {
         setSelectedTextSnapshot('');
         setMemoryFeedback(null);
         setMemoryActionLoading(false);
-        setShowCursorPrompt(false);
-        setShowWhisper(true);
-        setShowSpeak(false);
-        setShowWhisperOnboarding(false);
-        setShowWhisperHint(false);
-        setShowSnippetManager(null);
-        setShowFileSearch(false);
-        setShowClipboardManager(false);
-        setShowOnboarding(false);
-        setExtensionPreferenceSetup(null);
-        setScriptCommandSetup(null);
-        setScriptCommandOutput(null);
-        setExtensionView(null);
-        setAiMode(false);
+        openWhisper();
         return;
       }
       if (isSpeakMode) {
@@ -929,20 +276,7 @@ const App: React.FC = () => {
         setSelectedTextSnapshot('');
         setMemoryFeedback(null);
         setMemoryActionLoading(false);
-        setShowCursorPrompt(false);
-        setShowWhisper(false);
-        setShowSpeak(true);
-        setShowWhisperOnboarding(false);
-        setShowWhisperHint(false);
-        setShowSnippetManager(null);
-        setShowFileSearch(false);
-        setShowClipboardManager(false);
-        setShowOnboarding(false);
-        setExtensionPreferenceSetup(null);
-        setScriptCommandSetup(null);
-        setScriptCommandOutput(null);
-        setExtensionView(null);
-        setAiMode(false);
+        openSpeak();
         return;
       }
       if (isPromptMode) {
@@ -950,26 +284,8 @@ const App: React.FC = () => {
         setSelectedTextSnapshot('');
         setMemoryFeedback(null);
         setMemoryActionLoading(false);
-        setShowWhisper(false);
-        setShowSpeak(false);
-        setShowWhisperOnboarding(false);
-        setShowWhisperHint(false);
-        setShowSnippetManager(null);
-        setShowFileSearch(false);
-        setShowClipboardManager(false);
-        setShowOnboarding(false);
-        setExtensionPreferenceSetup(null);
-        setScriptCommandSetup(null);
-        setScriptCommandOutput(null);
-        setExtensionView(null);
-        setAiMode(false);
-        setCursorPromptText('');
-        setCursorPromptStatus('idle');
-        setCursorPromptResult('');
-        setCursorPromptError('');
-        setCursorPromptSourceText('');
-        cursorPromptRequestIdRef.current = null;
-        setShowCursorPrompt(true);
+        openCursorPrompt();
+        resetCursorPromptState();
         return;
       }
 
@@ -986,10 +302,7 @@ const App: React.FC = () => {
       if (extensionViewRef.current) return;
       setSearchQuery('');
       setSelectedIndex(0);
-      setAiMode(false);
-      setAiResponse('');
-      setAiStreaming(false);
-      setAiQuery('');
+      exitAiMode();
       setShowSnippetManager(null);
       setShowFileSearch(false);
       // Re-fetch commands every time the window is shown
@@ -999,86 +312,8 @@ const App: React.FC = () => {
       window.electron.aiIsAvailable().then(setAiAvailable);
       inputRef.current?.focus();
     });
-  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot]);
-
-  useEffect(() => {
-    window.electron.setDetachedOverlayState('whisper', showWhisper);
-  }, [showWhisper]);
-
-  useEffect(() => {
-    window.electron.setDetachedOverlayState('speak', showSpeak);
-  }, [showSpeak]);
-
-  useEffect(() => {
-    let disposed = false;
-    window.electron.speakGetOptions().then((options) => {
-      if (!disposed && options) setSpeakOptions(options);
-    }).catch(() => {});
-    window.electron.speakGetStatus().then((status) => {
-      if (!disposed && status) setSpeakStatus(status);
-    }).catch(() => {});
-    const disposeSpeak = window.electron.onSpeakStatus((payload) => {
-      setSpeakStatus(payload);
-    });
-    return () => {
-      disposed = true;
-      disposeSpeak();
-    };
-  }, []);
-
-  useEffect(() => {
-    let disposed = false;
-    window.electron.edgeTtsListVoices()
-      .then((voices) => {
-        if (disposed || !Array.isArray(voices)) return;
-        setEdgeTtsVoices(voices.filter((voice) => String(voice?.id || '').trim()));
-      })
-      .catch(() => {
-        if (!disposed) setEdgeTtsVoices([]);
-      });
-    return () => {
-      disposed = true;
-    };
-  }, []);
-
-  const readVoiceOptions = useMemo(
-    () => buildReadVoiceOptions(edgeTtsVoices, speakOptions.voice, configuredEdgeTtsVoice),
-    [edgeTtsVoices, speakOptions.voice, configuredEdgeTtsVoice]
-  );
-
-  useEffect(() => {
-    if (!showSpeak) {
-      speakSessionShownRef.current = false;
-      return;
-    }
-    if (speakSessionShownRef.current) return;
-    speakSessionShownRef.current = true;
-    if (configuredTtsModel !== 'edge-tts') return;
-    const targetVoice = String(configuredEdgeTtsVoice || '').trim();
-    if (!targetVoice || targetVoice === speakOptions.voice) return;
-    window.electron.speakUpdateOptions({
-      voice: targetVoice,
-      restartCurrent: true,
-    }).then((next) => {
-      setSpeakOptions(next);
-    }).catch(() => {});
-  }, [showSpeak, configuredTtsModel, configuredEdgeTtsVoice, speakOptions.voice]);
-
-  const handleSpeakVoiceChange = useCallback(async (voice: string) => {
-    const next = await window.electron.speakUpdateOptions({
-      voice,
-      restartCurrent: true,
-    });
-    setSpeakOptions(next);
-  }, []);
-
-  const handleSpeakRateChange = useCallback(async (rate: string) => {
-    const next = await window.electron.speakUpdateOptions({
-      rate,
-      restartCurrent: true,
-    });
-    setSpeakOptions(next);
-  }, []);
+    return cleanupWindowShown;
+  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode]);
 
   useEffect(() => {
     const onLaunchBundle = (event: Event) => {
@@ -1179,177 +414,10 @@ const App: React.FC = () => {
     return () => window.removeEventListener('sc-run-script-command', onRunScript as EventListener);
   }, [commands, fetchCommands]);
 
-  // LocalStorage changes should refresh menu-bar commands for the same extension.
-  // This matches Raycast behavior where menu-bar commands observe state changes quickly.
-  useEffect(() => {
-    const onStorageChanged = (event: Event) => {
-      const custom = event as CustomEvent<{ extensionName?: string }>;
-      const extensionName = (custom.detail?.extensionName || '').trim();
-      if (!extensionName) return;
-      remountMenuBarExtensionsForExtension(extensionName);
-    };
-    window.addEventListener('sc-extension-storage-changed', onStorageChanged as EventListener);
-    return () => {
-      window.removeEventListener('sc-extension-storage-changed', onStorageChanged as EventListener);
-    };
-  }, [remountMenuBarExtensionsForExtension]);
-
-  // Launch background-refresh commands from manifest `interval`.
-  useEffect(() => {
-    for (const timerId of intervalTimerIdsRef.current) {
-      window.clearInterval(timerId);
-    }
-    intervalTimerIdsRef.current = [];
-
-    const extensionCommands = commands.filter(
-      (cmd) => cmd.category === 'extension' && typeof cmd.interval === 'string' && cmd.path
-    );
-    if (extensionCommands.length === 0) return;
-
-    for (const cmd of extensionCommands) {
-      const ms = parseIntervalToMs(cmd.interval);
-      if (!ms) continue;
-
-      const [extName, cmdName] = (cmd.path || '').split('/');
-      if (!extName || !cmdName) continue;
-
-      const timerId = window.setInterval(async () => {
-        try {
-          const result = await window.electron.runExtension(extName, cmdName);
-          if (!result || !result.code) return;
-
-          const hydrated = hydrateExtensionBundlePreferences(result);
-          if (hydrated.mode !== 'no-view' && hydrated.mode !== 'menu-bar') return;
-
-          const missingPrefs = getMissingRequiredPreferences(hydrated);
-          const missingArgs = getMissingRequiredArguments(hydrated);
-          if (missingPrefs.length > 0 || missingArgs.length > 0) return;
-
-          window.dispatchEvent(
-            new CustomEvent('sc-launch-extension-bundle', {
-              detail: {
-                bundle: hydrated,
-                launchOptions: { type: 'background' },
-                source: {
-                  commandMode: 'background',
-                  extensionName: hydrated.extensionName || hydrated.extName,
-                  commandName: hydrated.commandName || hydrated.cmdName,
-                },
-              },
-            })
-          );
-        } catch (error) {
-          console.error('[BackgroundRefresh] Failed to run command:', cmd.id, error);
-        }
-      }, ms);
-
-      intervalTimerIdsRef.current.push(timerId);
-    }
-
-    const inlineScriptCommands = commands.filter(
-      (cmd) =>
-        cmd.category === 'script' &&
-        cmd.mode === 'inline' &&
-        typeof cmd.interval === 'string'
-    );
-    for (const cmd of inlineScriptCommands) {
-      const ms = parseIntervalToMs(cmd.interval);
-      if (!ms) continue;
-
-      const timerId = window.setInterval(async () => {
-        try {
-          const storedArgs = readJsonObject(getScriptCmdArgsKey(cmd.id));
-          const missingArgs = getMissingRequiredScriptArguments(cmd, storedArgs);
-          if (missingArgs.length > 0) return;
-          const result = await window.electron.runScriptCommand({
-            commandId: cmd.id,
-            arguments: storedArgs,
-            background: true,
-          });
-          if (result?.mode === 'inline') {
-            await fetchCommands();
-          }
-        } catch (error) {
-          console.error('[BackgroundRefresh] Failed to run script command:', cmd.id, error);
-        }
-      }, ms);
-
-      intervalTimerIdsRef.current.push(timerId);
-    }
-
-    return () => {
-      for (const timerId of intervalTimerIdsRef.current) {
-        window.clearInterval(timerId);
-      }
-      intervalTimerIdsRef.current = [];
-    };
-  }, [commands, fetchCommands]);
+  useBackgroundRefresh({ commands, fetchCommands });
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    if (!showCursorPrompt) return;
-    setTimeout(() => cursorPromptInputRef.current?.focus(), 0);
-  }, [showCursorPrompt]);
-
-  useEffect(() => {
-    if (!showCursorPrompt) return;
-    let cancelled = false;
-    window.electron.aiIsAvailable()
-      .then((available) => {
-        if (cancelled) return;
-        setAiAvailable(available);
-        if (!available) {
-          setCursorPromptStatus('error');
-          setCursorPromptError(NO_AI_MODEL_ERROR);
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setAiAvailable(false);
-        setCursorPromptStatus('error');
-        setCursorPromptError(NO_AI_MODEL_ERROR);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [showCursorPrompt]);
-
-  // Load and run menu-bar extensions in the background
-  useEffect(() => {
-    (window as any).electron?.getMenuBarExtensions?.().then((exts: any[]) => {
-      if (exts && exts.length > 0) {
-        console.log(`[MenuBar] Loading ${exts.length} menu-bar extension(s)`);
-        const hidden = readJsonObject(HIDDEN_MENUBAR_CMDS_KEY);
-        const runnable = exts
-          .map((ext) => hydrateExtensionBundlePreferences(ext))
-          .filter((ext) => {
-            const missingPrefs = getMissingRequiredPreferences(ext);
-            const missingArgs = getMissingRequiredArguments(ext);
-            return missingPrefs.length === 0 && missingArgs.length === 0;
-          })
-          .filter((bundle) => {
-            const extName = bundle.extName || bundle.extensionName || '';
-            const cmdName = bundle.cmdName || bundle.commandName || '';
-            const storageKey = getMenuBarCommandKey(extName, cmdName);
-            return !hidden[storageKey];
-          })
-          .map((bundle) => ({
-            key: `${bundle.extName || bundle.extensionName}:${bundle.cmdName || bundle.commandName}:initial`,
-            bundle,
-          }));
-        setMenuBarExtensions(runnable);
-      }
-    }).catch((err: any) => {
-      console.error('[MenuBar] Failed to load menu-bar extensions:', err);
-    });
-  }, []);
-
-  // Check AI availability
-  useEffect(() => {
-    window.electron.aiIsAvailable().then(setAiAvailable);
   }, []);
 
   useEffect(() => {
@@ -1458,187 +526,6 @@ const App: React.FC = () => {
     },
     [pinnedCommands, updatePinnedCommands]
   );
-
-  const submitCursorPrompt = useCallback(async () => {
-    const instruction = cursorPromptText.trim();
-    if (!instruction || cursorPromptStatus === 'processing') return;
-    const aiReady = await window.electron.aiIsAvailable().catch(() => false);
-    setAiAvailable(aiReady);
-    if (!aiReady) {
-      setCursorPromptStatus('error');
-      setCursorPromptError(NO_AI_MODEL_ERROR);
-      return;
-    }
-
-    if (cursorPromptRequestIdRef.current) {
-      try {
-        await window.electron.aiCancel(cursorPromptRequestIdRef.current);
-      } catch {}
-      cursorPromptRequestIdRef.current = null;
-    }
-
-    setCursorPromptStatus('processing');
-    setCursorPromptResult('');
-    setCursorPromptError('');
-    setCursorPromptSourceText('');
-    cursorPromptResultRef.current = '';
-    cursorPromptSourceTextRef.current = '';
-
-    const selectedText = String(await window.electron.getSelectedText()).trim();
-    const hasSelection = selectedText.length > 0;
-    if (hasSelection) {
-      setCursorPromptSourceText(selectedText);
-      cursorPromptSourceTextRef.current = selectedText;
-    }
-
-    const requestId = `cursor-prompt-${Date.now()}`;
-    cursorPromptRequestIdRef.current = requestId;
-    const compositePrompt = hasSelection
-      ? [
-          'Rewrite the selected text based on the instruction.',
-          'Return only the rewritten text. Do not include explanations.',
-          '',
-          `Instruction: ${instruction}`,
-          '',
-          'Selected text:',
-          selectedText,
-        ].join('\n')
-      : [
-          'Generate text to insert at the current cursor position, based on the instruction.',
-          'Return only the generated text. Do not include explanations.',
-          '',
-          `Instruction: ${instruction}`,
-        ].join('\n');
-    await window.electron.aiAsk(requestId, compositePrompt);
-  }, [cursorPromptStatus, cursorPromptText]);
-
-  const applyCursorPromptResultToEditor = useCallback(async () => {
-    const previousText = cursorPromptSourceTextRef.current;
-    const nextText = String(cursorPromptResultRef.current || '').trim();
-    if (!nextText) {
-      setCursorPromptStatus('error');
-      setCursorPromptError('Model returned an empty response.');
-      return;
-    }
-    const applied = previousText
-      ? await window.electron.replaceLiveText(previousText, nextText)
-      : await window.electron.typeTextLive(nextText);
-    if (applied) {
-      setCursorPromptStatus('ready');
-      setCursorPromptError('');
-      return;
-    }
-    setCursorPromptStatus('error');
-    setCursorPromptError('Could not apply update. Re-select text or place cursor and try again.');
-  }, []);
-
-  const closeCursorPrompt = useCallback(async () => {
-    if (cursorPromptRequestIdRef.current) {
-      try {
-        await window.electron.aiCancel(cursorPromptRequestIdRef.current);
-      } catch {}
-      cursorPromptRequestIdRef.current = null;
-    }
-    setShowCursorPrompt(false);
-    window.electron.hideWindow();
-  }, []);
-
-  // AI streaming listeners
-  useEffect(() => {
-    const handleChunk = (data: { requestId: string; chunk: string }) => {
-      if (data.requestId === aiRequestIdRef.current) {
-        setAiResponse((prev) => prev + data.chunk);
-        return;
-      }
-      if (data.requestId === cursorPromptRequestIdRef.current) {
-        cursorPromptResultRef.current += data.chunk;
-        setCursorPromptResult((prev) => prev + data.chunk);
-      }
-    };
-    const handleDone = (data: { requestId: string }) => {
-      if (data.requestId === aiRequestIdRef.current) {
-        setAiStreaming(false);
-        return;
-      }
-      if (data.requestId === cursorPromptRequestIdRef.current) {
-        cursorPromptRequestIdRef.current = null;
-        void applyCursorPromptResultToEditor();
-      }
-    };
-    const handleError = (data: { requestId: string; error: string }) => {
-      if (data.requestId === aiRequestIdRef.current) {
-        setAiResponse((prev) => prev + `\n\nError: ${data.error}`);
-        setAiStreaming(false);
-        return;
-      }
-      if (data.requestId === cursorPromptRequestIdRef.current) {
-        cursorPromptRequestIdRef.current = null;
-        setCursorPromptStatus('error');
-        setCursorPromptError(data.error || 'Failed to process this prompt.');
-      }
-    };
-
-    window.electron.onAIStreamChunk(handleChunk);
-    window.electron.onAIStreamDone(handleDone);
-    window.electron.onAIStreamError(handleError);
-  }, [applyCursorPromptResultToEditor]);
-
-  const startAiChat = useCallback(() => {
-    if (!searchQuery.trim() || !aiAvailable) return;
-    const requestId = `ai-${Date.now()}`;
-    aiRequestIdRef.current = requestId;
-    setAiQuery(searchQuery);
-    setAiResponse('');
-    setAiStreaming(true);
-    setAiMode(true);
-    window.electron.aiAsk(requestId, searchQuery);
-  }, [searchQuery, aiAvailable]);
-
-  const submitAiQuery = useCallback((query: string) => {
-    if (!query.trim()) return;
-    // Cancel any in-flight request
-    if (aiRequestIdRef.current && aiStreaming) {
-      window.electron.aiCancel(aiRequestIdRef.current);
-    }
-    const requestId = `ai-${Date.now()}`;
-    aiRequestIdRef.current = requestId;
-    setAiQuery(query);
-    setAiResponse('');
-    setAiStreaming(true);
-    window.electron.aiAsk(requestId, query);
-  }, [aiStreaming]);
-
-  const exitAiMode = useCallback(() => {
-    if (aiRequestIdRef.current && aiStreaming) {
-      window.electron.aiCancel(aiRequestIdRef.current);
-    }
-    aiRequestIdRef.current = null;
-    setAiMode(false);
-    setAiResponse('');
-    setAiStreaming(false);
-    setAiQuery('');
-    setTimeout(() => inputRef.current?.focus(), 50);
-  }, [aiStreaming]);
-
-  // Auto-scroll AI response
-  useEffect(() => {
-    if (aiResponseRef.current) {
-      aiResponseRef.current.scrollTop = aiResponseRef.current.scrollHeight;
-    }
-  }, [aiResponse]);
-
-  // Escape to exit AI mode
-  useEffect(() => {
-    if (!aiMode) return;
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        exitAiMode();
-      }
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, [aiMode, exitAiMode]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1844,7 +731,7 @@ const App: React.FC = () => {
         case 'Tab':
           if (searchQuery.trim() && aiAvailable) {
             e.preventDefault();
-            startAiChat();
+            startAiChat(searchQuery);
           }
           break;
 
@@ -1909,111 +796,34 @@ const App: React.FC = () => {
     if (commandId === 'system-open-onboarding') {
       await window.electron.setLauncherMode('onboarding');
       whisperSessionRef.current = false;
-      setShowCursorPrompt(false);
-      setExtensionView(null);
-      setExtensionPreferenceSetup(null);
-      setScriptCommandSetup(null);
-      setScriptCommandOutput(null);
-      setShowClipboardManager(false);
-      setShowSnippetManager(null);
-      setShowFileSearch(false);
-      setShowWhisper(false);
-      setShowSpeak(false);
-      setShowWhisperOnboarding(false);
-      setShowWhisperHint(false);
-      setAiMode(false);
-      setShowOnboarding(true);
+      openOnboarding();
       return true;
     }
     if (commandId === 'system-whisper-onboarding') {
       whisperSessionRef.current = false;
-      setShowCursorPrompt(false);
-      setExtensionView(null);
-      setExtensionPreferenceSetup(null);
-      setScriptCommandSetup(null);
-      setScriptCommandOutput(null);
-      setShowClipboardManager(false);
-      setShowSnippetManager(null);
-      setShowFileSearch(false);
-      setShowWhisper(true);
-      setShowSpeak(false);
-      setShowOnboarding(false);
-      setShowWhisperHint(false);
-      setAiMode(false);
+      openWhisper();
       setWhisperOnboardingPracticeText('');
-      setShowWhisperOnboarding(true);
+      openWhisperOnboarding();
       return true;
     }
     if (commandId === 'system-clipboard-manager') {
       whisperSessionRef.current = false;
-      setShowCursorPrompt(false);
-      setExtensionView(null);
-      setExtensionPreferenceSetup(null);
-      setScriptCommandSetup(null);
-      setScriptCommandOutput(null);
-      setShowOnboarding(false);
-      setShowClipboardManager(true);
-      setShowSnippetManager(null);
-      setShowFileSearch(false);
-      setShowWhisper(false);
-      setShowSpeak(false);
-      setShowWhisperOnboarding(false);
-      setShowWhisperHint(false);
-      setAiMode(false);
+      openClipboardManager();
       return true;
     }
     if (commandId === 'system-search-snippets') {
       whisperSessionRef.current = false;
-      setShowCursorPrompt(false);
-      setExtensionView(null);
-      setExtensionPreferenceSetup(null);
-      setScriptCommandSetup(null);
-      setScriptCommandOutput(null);
-      setShowOnboarding(false);
-      setShowClipboardManager(false);
-      setShowFileSearch(false);
-      setShowWhisper(false);
-      setShowSpeak(false);
-      setShowWhisperOnboarding(false);
-      setShowWhisperHint(false);
-      setAiMode(false);
-      setShowSnippetManager('search');
+      openSnippetManager('search');
       return true;
     }
     if (commandId === 'system-create-snippet') {
       whisperSessionRef.current = false;
-      setShowCursorPrompt(false);
-      setExtensionView(null);
-      setExtensionPreferenceSetup(null);
-      setScriptCommandSetup(null);
-      setScriptCommandOutput(null);
-      setShowOnboarding(false);
-      setShowClipboardManager(false);
-      setShowFileSearch(false);
-      setShowWhisper(false);
-      setShowSpeak(false);
-      setShowWhisperOnboarding(false);
-      setShowWhisperHint(false);
-      setAiMode(false);
-      setShowSnippetManager('create');
+      openSnippetManager('create');
       return true;
     }
     if (commandId === 'system-search-files') {
       whisperSessionRef.current = false;
-      setShowCursorPrompt(false);
-      setExtensionView(null);
-      setExtensionPreferenceSetup(null);
-      setScriptCommandSetup(null);
-      setScriptCommandOutput(null);
-      setShowOnboarding(false);
-      setShowClipboardManager(false);
-      setShowSnippetManager(null);
-      setAiMode(false);
-      setShowFileSearch(true);
-      setShowWhisper(false);
-      setShowSpeak(false);
-      setShowWhisperOnboarding(false);
-      setShowWhisperHint(false);
+      openFileSearch();
       return true;
     }
     if (commandId === 'system-add-to-memory') {
@@ -2052,44 +862,17 @@ const App: React.FC = () => {
     }
     if (commandId === 'system-supercommand-whisper') {
       whisperSessionRef.current = true;
-      setShowCursorPrompt(false);
-      setExtensionView(null);
-      setExtensionPreferenceSetup(null);
-      setScriptCommandSetup(null);
-      setScriptCommandOutput(null);
-      setShowOnboarding(false);
-      setShowClipboardManager(false);
-      setShowSnippetManager(null);
-      setShowFileSearch(false);
-      setAiMode(false);
-      setShowSpeak(false);
-      setShowWhisperHint(false);
+      openWhisper();
       const settings = (await window.electron.getSettings()) as AppSettings;
       if (!settings.hasSeenWhisperOnboarding) {
         setWhisperOnboardingPracticeText('');
-        setShowWhisperOnboarding(true);
-        setShowWhisper(true);
-      } else {
-        setShowWhisper(true);
+        openWhisperOnboarding();
       }
       return true;
     }
     if (commandId === 'system-supercommand-speak') {
       whisperSessionRef.current = false;
-      setShowCursorPrompt(false);
-      setExtensionView(null);
-      setExtensionPreferenceSetup(null);
-      setScriptCommandSetup(null);
-      setScriptCommandOutput(null);
-      setShowOnboarding(false);
-      setShowClipboardManager(false);
-      setShowSnippetManager(null);
-      setShowFileSearch(false);
-      setAiMode(false);
-      setShowWhisper(false);
-      setShowSpeak(true);
-      setShowWhisperOnboarding(false);
-      setShowWhisperHint(false);
+      openSpeak();
       return true;
     }
     if (commandId === 'system-supercommand-speak-close') {
@@ -2105,23 +888,18 @@ const App: React.FC = () => {
       return true;
     }
     return false;
-  }, [memoryActionLoading, showMemoryFeedback]);
+  }, [memoryActionLoading, showMemoryFeedback, openOnboarding, openWhisper, openWhisperOnboarding, openClipboardManager, openSnippetManager, openFileSearch, openSpeak]);
 
   useEffect(() => {
-    window.electron.onRunSystemCommand(async (commandId: string) => {
+    const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {
       try {
         await runLocalSystemCommand(commandId);
       } catch (error) {
         console.error('Failed to run system command from main process:', error);
       }
     });
+    return cleanup;
   }, [runLocalSystemCommand]);
-
-  useEffect(() => {
-    if (!showWhisperHint || !showWhisper) return;
-    const timer = window.setTimeout(() => setShowWhisperHint(false), 7000);
-    return () => window.clearTimeout(timer);
-  }, [showWhisperHint, showWhisper]);
 
   const runScriptCommand = useCallback(
     async (
@@ -2526,75 +1304,19 @@ const App: React.FC = () => {
       ) : null}
       {showCursorPrompt && cursorPromptPortalTarget
         ? createPortal(
-            <div className="w-full h-full p-1">
-              <div className="cursor-prompt-surface h-full flex flex-col gap-1.5 px-3.5 py-2.5">
-                <div className="cursor-prompt-topbar">
-                  <button
-                    onClick={() => void closeCursorPrompt()}
-                    className="cursor-prompt-close"
-                    aria-label="Close prompt"
-                    title="Close"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <textarea
-                    ref={cursorPromptInputRef}
-                    value={cursorPromptText}
-                    onChange={(e) => setCursorPromptText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        void submitCursorPrompt();
-                      }
-                    }}
-                    placeholder="Tell AI what to do with selected text..."
-                    className="cursor-prompt-textarea w-full bg-transparent border-none outline-none text-white/95 placeholder-white/42 text-[13px] font-medium tracking-[0.003em]"
-                    autoFocus
-                  />
-                  {cursorPromptStatus === 'ready' && cursorPromptResult.trim() ? (
-                    <div className="sr-only">{cursorPromptResult}</div>
-                  ) : null}
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="cursor-prompt-feedback">
-                    {cursorPromptStatus === 'processing' && (
-                      <div className="cursor-prompt-inline-status">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Processing...</span>
-                      </div>
-                    )}
-                    {cursorPromptStatus === 'error' && cursorPromptError && (
-                      <div className="cursor-prompt-error">{cursorPromptError}</div>
-                    )}
-                    {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
-                      <div className="cursor-prompt-success">Ready to apply</div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
-                      <button
-                        onClick={() => void acceptCursorPrompt()}
-                        className="cursor-prompt-submit"
-                        title="Apply update"
-                      >
-                        Accept
-                      </button>
-                    )}
-                    <button
-                      onClick={() => void submitCursorPrompt()}
-                      className="cursor-prompt-submit"
-                      disabled={!cursorPromptText.trim() || cursorPromptStatus === 'processing' || !aiAvailable}
-                      title="Submit prompt"
-                    >
-                      <CornerDownLeft className="w-3 h-3" />
-                      <span>Enter</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>,
+            <CursorPromptView
+              variant="portal"
+              cursorPromptText={cursorPromptText}
+              setCursorPromptText={setCursorPromptText}
+              cursorPromptStatus={cursorPromptStatus}
+              cursorPromptResult={cursorPromptResult}
+              cursorPromptError={cursorPromptError}
+              cursorPromptInputRef={cursorPromptInputRef}
+              aiAvailable={aiAvailable}
+              submitCursorPrompt={submitCursorPrompt}
+              closeCursorPrompt={closeCursorPrompt}
+              acceptCursorPrompt={acceptCursorPrompt}
+            />,
             cursorPromptPortalTarget
           )
         : null}
@@ -2610,353 +1332,81 @@ const App: React.FC = () => {
 
   // ─── Script Command Setup ───────────────────────────────────────
   if (scriptCommandSetup) {
-    const command = scriptCommandSetup.command;
-    const defs = (command.commandArgumentDefinitions || []).filter((d) => d?.name);
-    const missing = getMissingRequiredScriptArguments(command, scriptCommandSetup.values);
-    const hasBlockingMissing = missing.length > 0;
-
     return (
-      <>
-        {alwaysMountedRunners}
-        <div className="w-full h-full">
-          <div className="glass-effect overflow-hidden h-full flex flex-col">
-            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
-              <button
-                onClick={() => {
-                  setScriptCommandSetup(null);
-                  setSearchQuery('');
-                  setSelectedIndex(0);
-                }}
-                className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-              </button>
-              <div className="text-white/85 text-[15px] font-medium truncate">
-                Configure Script Command
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              <p className="text-sm text-white/55">Provide required arguments before running.</p>
-              {defs.map((arg) => {
-                const value = scriptCommandSetup.values?.[arg.name];
-                const argType = arg.type || 'text';
-                return (
-                  <div key={`script-arg:${arg.name}`} className="space-y-1">
-                    <label className="text-xs text-white/70 font-medium">
-                      {arg.title || arg.placeholder || arg.name}
-                      {arg.required ? <span className="text-red-400"> *</span> : null}
-                    </label>
-                    {argType === 'dropdown' ? (
-                      <select
-                        value={typeof value === 'string' ? value : ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setScriptCommandSetup((prev) => prev ? {
-                            ...prev,
-                            values: { ...prev.values, [arg.name]: v },
-                          } : prev);
-                        }}
-                        className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 outline-none"
-                      >
-                        <option value="">Select an option</option>
-                        {(arg.data || []).map((opt) => (
-                          <option key={opt?.value || opt?.title} value={opt?.value || ''}>
-                            {opt?.title || opt?.value || ''}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type={argType === 'password' ? 'password' : 'text'}
-                        value={value ?? ''}
-                        placeholder={arg.placeholder || ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setScriptCommandSetup((prev) => prev ? {
-                            ...prev,
-                            values: { ...prev.values, [arg.name]: v },
-                          } : prev);
-                        }}
-                        className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 placeholder-white/30 outline-none"
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-end gap-2" style={{ background: 'rgba(28,28,32,0.90)' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  writeJsonObject(getScriptCmdArgsKey(command.id), scriptCommandSetup.values || {});
-                  setScriptCommandSetup(null);
-                  void runScriptCommand(command, scriptCommandSetup.values || {});
-                }}
-                disabled={hasBlockingMissing}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  hasBlockingMissing
-                    ? 'bg-white/[0.08] text-white/35 cursor-not-allowed'
-                    : 'bg-white/[0.16] hover:bg-white/[0.22] text-white'
-                }`}
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        </div>
-      </>
+      <ScriptCommandSetupView
+        setup={scriptCommandSetup}
+        alwaysMountedRunners={alwaysMountedRunners}
+        onBack={() => {
+          setScriptCommandSetup(null);
+          setSearchQuery('');
+          setSelectedIndex(0);
+        }}
+        onContinue={(command, values) => {
+          setScriptCommandSetup(null);
+          void runScriptCommand(command, values);
+        }}
+        setScriptCommandSetup={setScriptCommandSetup}
+      />
     );
   }
 
   // ─── Script Output ──────────────────────────────────────────────
   if (scriptCommandOutput) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <div className="w-full h-full">
-          <div className="glass-effect overflow-hidden h-full flex flex-col">
-            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
-              <button
-                onClick={() => {
-                  setScriptCommandOutput(null);
-                  setSearchQuery('');
-                  setSelectedIndex(0);
-                }}
-                className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-              </button>
-              <div className="text-white/85 text-[15px] font-medium truncate">
-                {scriptCommandOutput.command.title}
-              </div>
-              <div className={`ml-auto text-[11px] font-semibold ${scriptCommandOutput.exitCode === 0 ? 'text-emerald-300/80' : 'text-red-300/80'}`}>
-                {scriptCommandOutput.exitCode === 0 ? 'Success' : `Exit ${scriptCommandOutput.exitCode}`}
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5">
-              <pre className="text-xs leading-relaxed text-white/80 whitespace-pre-wrap break-words font-mono">
-                {scriptCommandOutput.output || '(No output)'}
-              </pre>
-            </div>
-          </div>
-        </div>
-      </>
+      <ScriptCommandOutputView
+        output={scriptCommandOutput}
+        alwaysMountedRunners={alwaysMountedRunners}
+        onBack={() => {
+          setScriptCommandOutput(null);
+          setSearchQuery('');
+          setSelectedIndex(0);
+        }}
+      />
     );
   }
 
   // ─── Extension Preferences Setup ────────────────────────────────
   if (extensionPreferenceSetup) {
-    const bundle = extensionPreferenceSetup.bundle;
-    const defs = (bundle.preferenceDefinitions || []).filter((d) => d?.name);
-    const argDefs = (bundle.commandArgumentDefinitions || []).filter((d) => d?.name);
-    const missingPrefs = getMissingRequiredPreferences(bundle, extensionPreferenceSetup.values);
-    const missingArgs = getMissingRequiredArguments(bundle, extensionPreferenceSetup.argumentValues);
-    const criticalUnsetPrefs = getUnsetCriticalPreferences(bundle, extensionPreferenceSetup.values);
-    const hasBlockingMissing =
-      missingPrefs.length > 0 ||
-      missingArgs.length > 0;
-    const displayName = (bundle as any).extensionDisplayName || bundle.extensionName || bundle.extName || 'Extension';
-
     return (
-      <>
-        {alwaysMountedRunners}
-        <div className="w-full h-full">
-          <div className="glass-effect overflow-hidden h-full flex flex-col">
-            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
-              <button
-                onClick={() => {
-                  setExtensionPreferenceSetup(null);
-                  setScriptCommandSetup(null);
-                  setScriptCommandOutput(null);
-                  setSearchQuery('');
-                  setSelectedIndex(0);
-                }}
-                className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-              </button>
-              <div className="text-white/85 text-[15px] font-medium truncate">
-                Configure {displayName}
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              <p className="text-sm text-white/55">Configure command inputs and preferences before running.</p>
-              {criticalUnsetPrefs.length > 0 ? (
-                <p className="text-xs text-amber-300/80">
-                  Some important preferences are empty: {criticalUnsetPrefs.map((p) => p.title || p.name).join(', ')}.
-                </p>
-              ) : null}
-              {argDefs.length > 0 ? (
-                <div className="space-y-3">
-                  <div className="text-xs uppercase tracking-wide text-white/35">Arguments</div>
-                  {argDefs.map((arg) => {
-                    const value = extensionPreferenceSetup.argumentValues?.[arg.name];
-                    const argType = arg.type || 'text';
-                    return (
-                      <div key={`arg:${arg.name}`} className="space-y-1">
-                        <label className="text-xs text-white/70 font-medium">
-                          {arg.title || arg.name}
-                          {arg.required ? <span className="text-red-400"> *</span> : null}
-                        </label>
-                        {argType === 'dropdown' ? (
-                          <select
-                            value={typeof value === 'string' ? value : ''}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setExtensionPreferenceSetup((prev) => prev ? {
-                                ...prev,
-                                argumentValues: { ...prev.argumentValues, [arg.name]: v },
-                              } : prev);
-                            }}
-                            className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 outline-none"
-                          >
-                            <option value="">Select an option</option>
-                            {(arg.data || []).map((opt) => (
-                              <option key={opt?.value || opt?.title} value={opt?.value || ''}>
-                                {opt?.title || opt?.value || ''}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type={argType === 'password' ? 'password' : 'text'}
-                            value={value ?? ''}
-                            placeholder={arg.placeholder || ''}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setExtensionPreferenceSetup((prev) => prev ? {
-                                ...prev,
-                                argumentValues: { ...prev.argumentValues, [arg.name]: v },
-                              } : prev);
-                            }}
-                            className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 placeholder-white/30 outline-none"
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-              {defs.length > 0 ? <div className="text-xs uppercase tracking-wide text-white/35">Preferences</div> : null}
-              {defs.map((def) => {
-                const value = extensionPreferenceSetup.values?.[def.name];
-                const type = def.type || 'textfield';
-                return (
-                  <div key={`${def.scope}:${def.name}`} className="space-y-1">
-                    <label className="text-xs text-white/70 font-medium">
-                      {def.title || def.name}
-                      {def.required ? <span className="text-red-400"> *</span> : null}
-                    </label>
-                    {type === 'checkbox' ? (
-                      <label className="inline-flex items-center gap-2 text-sm text-white/80">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(value)}
-                          onChange={(e) => {
-                            setExtensionPreferenceSetup((prev) => prev ? {
-                              ...prev,
-                              values: { ...prev.values, [def.name]: e.target.checked },
-                            } : prev);
-                          }}
-                        />
-                        <span>Enabled</span>
-                      </label>
-                    ) : type === 'dropdown' ? (
-                      <select
-                        value={typeof value === 'string' ? value : ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setExtensionPreferenceSetup((prev) => prev ? {
-                            ...prev,
-                            values: { ...prev.values, [def.name]: v },
-                          } : prev);
-                        }}
-                        className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 outline-none"
-                      >
-                        <option value="">Select an option</option>
-                        {(def.data || []).map((opt) => (
-                          <option key={opt?.value || opt?.title} value={opt?.value || ''}>
-                            {opt?.title || opt?.value || ''}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type={type === 'password' ? 'password' : 'text'}
-                        value={value ?? ''}
-                        placeholder={def.placeholder || ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setExtensionPreferenceSetup((prev) => prev ? {
-                            ...prev,
-                            values: { ...prev.values, [def.name]: v },
-                          } : prev);
-                        }}
-                        className="w-full bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/90 placeholder-white/30 outline-none"
-                      />
-                    )}
-                    {def.description ? (
-                      <p className="text-xs text-white/40">{def.description}</p>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-end gap-2" style={{ background: 'rgba(28,28,32,0.90)' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  const extName = bundle.extName || bundle.extensionName || '';
-                  const cmdName = bundle.cmdName || bundle.commandName || '';
-                  if (!extName || !cmdName) return;
-                  persistExtensionPreferences(extName, cmdName, defs, extensionPreferenceSetup.values);
-                  if (bundle.mode === 'no-view') {
-                    persistCommandArguments(extName, cmdName, extensionPreferenceSetup.argumentValues || {});
-                  }
-                  const updatedBundle: ExtensionBundle = {
-                    ...bundle,
-                    preferences: { ...(bundle.preferences || {}), ...(extensionPreferenceSetup.values || {}) },
-                    launchArguments: { ...((bundle as any).launchArguments || {}), ...(extensionPreferenceSetup.argumentValues || {}) } as any,
-                  };
-                  setExtensionPreferenceSetup(null);
-                  setScriptCommandSetup(null);
-                  setScriptCommandOutput(null);
-
-                  if (updatedBundle.mode === 'menu-bar') {
-                    if (isMenuBarExtensionMounted(updatedBundle)) {
-                      hideMenuBarExtension(updatedBundle);
-                    } else {
-                      upsertMenuBarExtension(updatedBundle);
-                    }
-                    window.electron.hideWindow();
-                    setSearchQuery('');
-                    setSelectedIndex(0);
-                    localStorage.removeItem(LAST_EXT_KEY);
-                    return;
-                  }
-
-                  setExtensionView(updatedBundle);
-                  if (updatedBundle.mode === 'view') {
-                    localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
-                  } else {
-                    localStorage.removeItem(LAST_EXT_KEY);
-                  }
-                }}
-                disabled={hasBlockingMissing}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  hasBlockingMissing
-                    ? 'bg-white/[0.08] text-white/35 cursor-not-allowed'
-                    : 'bg-white/[0.16] hover:bg-white/[0.22] text-white'
-                }`}
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        </div>
-      </>
+      <ExtensionPreferenceSetupView
+        setup={extensionPreferenceSetup}
+        alwaysMountedRunners={alwaysMountedRunners}
+        onBack={() => {
+          setExtensionPreferenceSetup(null);
+          setScriptCommandSetup(null);
+          setScriptCommandOutput(null);
+          setSearchQuery('');
+          setSelectedIndex(0);
+        }}
+        onLaunchExtension={(updatedBundle) => {
+          setExtensionPreferenceSetup(null);
+          setScriptCommandSetup(null);
+          setScriptCommandOutput(null);
+          setExtensionView(updatedBundle);
+          const extName = updatedBundle.extName || (updatedBundle as any).extensionName || '';
+          const cmdName = updatedBundle.cmdName || (updatedBundle as any).commandName || '';
+          if (updatedBundle.mode === 'view') {
+            localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
+          } else {
+            localStorage.removeItem(LAST_EXT_KEY);
+          }
+        }}
+        onLaunchMenuBar={(updatedBundle) => {
+          setExtensionPreferenceSetup(null);
+          setScriptCommandSetup(null);
+          setScriptCommandOutput(null);
+          if (isMenuBarExtensionMounted(updatedBundle)) {
+            hideMenuBarExtension(updatedBundle);
+          } else {
+            upsertMenuBarExtension(updatedBundle);
+          }
+          window.electron.hideWindow();
+          setSearchQuery('');
+          setSelectedIndex(0);
+          localStorage.removeItem(LAST_EXT_KEY);
+        }}
+        setExtensionPreferenceSetup={setExtensionPreferenceSetup}
+      />
     );
   }
 
@@ -3022,69 +1472,20 @@ const App: React.FC = () => {
   // ─── Cursor Prompt mode ───────────────────────────────────────────
   if (showCursorPrompt && !cursorPromptPortalTarget) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <div className="w-full h-full p-1">
-          <div className="cursor-prompt-surface h-full flex flex-col gap-1.5 px-3.5 py-2.5">
-            <div className="cursor-prompt-topbar">
-              <button
-                onClick={() => void closeCursorPrompt()}
-                className="cursor-prompt-close"
-                aria-label="Close prompt"
-                title="Close"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="flex-1 min-w-0">
-              <textarea
-                ref={cursorPromptInputRef}
-                value={cursorPromptText}
-                onChange={(e) => setCursorPromptText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    void submitCursorPrompt();
-                  }
-                }}
-                placeholder="Tell AI what to do with selected text..."
-                className="cursor-prompt-textarea w-full bg-transparent border-none outline-none text-white/95 placeholder-white/42 text-[13px] font-medium tracking-[0.003em]"
-                autoFocus
-              />
-              {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
-                <div className="sr-only">{cursorPromptResult}</div>
-              )}
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <div className="cursor-prompt-feedback">
-                {cursorPromptStatus === 'processing' && (
-                  <div className="cursor-prompt-inline-status">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Processing...</span>
-                  </div>
-                )}
-                {cursorPromptStatus === 'error' && cursorPromptError && (
-                  <div className="cursor-prompt-error">{cursorPromptError}</div>
-                )}
-                {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (
-                  <div className="cursor-prompt-success">Applied in editor</div>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => void submitCursorPrompt()}
-                className="cursor-prompt-submit"
-                disabled={!cursorPromptText.trim() || cursorPromptStatus === 'processing' || !aiAvailable}
-                title="Submit prompt"
-              >
-                <CornerDownLeft className="w-3 h-3" />
-                <span>Enter</span>
-              </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </>
+      <CursorPromptView
+        variant="inline"
+        cursorPromptText={cursorPromptText}
+        setCursorPromptText={setCursorPromptText}
+        cursorPromptStatus={cursorPromptStatus}
+        cursorPromptResult={cursorPromptResult}
+        cursorPromptError={cursorPromptError}
+        cursorPromptInputRef={cursorPromptInputRef}
+        aiAvailable={aiAvailable}
+        submitCursorPrompt={submitCursorPrompt}
+        closeCursorPrompt={closeCursorPrompt}
+        acceptCursorPrompt={acceptCursorPrompt}
+        alwaysMountedRunners={alwaysMountedRunners}
+      />
     );
   }
 
@@ -3134,82 +1535,17 @@ const App: React.FC = () => {
   // ─── AI Chat mode ──────────────────────────────────────────────
   if (aiMode) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <div className="w-full h-full">
-          <div className="glass-effect overflow-hidden h-full flex flex-col">
-            {/* AI header — editable input */}
-            <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06]">
-              <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
-              <input
-                ref={aiInputRef}
-                type="text"
-                value={aiQuery}
-                onChange={(e) => setAiQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && aiQuery.trim()) {
-                    e.preventDefault();
-                    submitAiQuery(aiQuery);
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    exitAiMode();
-                  }
-                }}
-                placeholder="Ask AI anything..."
-                className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[15px] font-light tracking-wide min-w-0"
-                autoFocus
-              />
-              {aiQuery.trim() && (
-                <button
-                  onClick={() => submitAiQuery(aiQuery)}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-purple-500/15 hover:bg-purple-500/25 transition-colors flex-shrink-0 group"
-                >
-                  <span className="text-[11px] text-purple-400/70 group-hover:text-purple-400 transition-colors">Ask</span>
-                  <kbd className="text-[10px] text-purple-400/40 bg-purple-500/10 px-1 py-0.5 rounded font-mono leading-none">Enter</kbd>
-                </button>
-              )}
-              <button
-                onClick={exitAiMode}
-                className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* AI response */}
-            <div
-              ref={aiResponseRef}
-              className="flex-1 overflow-y-auto custom-scrollbar p-5"
-            >
-              {aiResponse ? (
-                <div className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap font-light">
-                  {aiResponse}
-                </div>
-              ) : aiStreaming ? (
-                <div className="flex items-center gap-2 text-white/40 text-sm">
-                  <div className="flex gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400/60 animate-pulse" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400/60 animate-pulse" style={{ animationDelay: '0.2s' }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400/60 animate-pulse" style={{ animationDelay: '0.4s' }} />
-                  </div>
-                  Thinking...
-                </div>
-              ) : null}
-            </div>
-
-            {/* Footer */}
-            <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-between text-xs text-white/40 font-medium" style={{ background: 'rgba(28,28,32,0.90)' }}>
-              <span>{aiStreaming ? 'Streaming...' : 'AI Response'}</span>
-              <div className="flex items-center gap-2">
-                <kbd className="text-[10px] text-white/20 bg-white/[0.06] px-1.5 py-0.5 rounded font-mono">Enter</kbd>
-                <span className="text-[10px] text-white/20">Ask</span>
-                <kbd className="text-[10px] text-white/20 bg-white/[0.06] px-1.5 py-0.5 rounded font-mono">Esc</kbd>
-                <span className="text-[10px] text-white/20">Back</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </>
+      <AiChatView
+        alwaysMountedRunners={alwaysMountedRunners}
+        aiQuery={aiQuery}
+        setAiQuery={setAiQuery}
+        aiResponse={aiResponse}
+        aiStreaming={aiStreaming}
+        aiInputRef={aiInputRef as React.RefObject<HTMLInputElement>}
+        aiResponseRef={aiResponseRef as React.RefObject<HTMLDivElement>}
+        submitAiQuery={submitAiQuery}
+        exitAiMode={exitAiMode}
+      />
     );
   }
 
@@ -3259,7 +1595,7 @@ const App: React.FC = () => {
           />
           {searchQuery && aiAvailable && (
             <button
-              onClick={startAiChat}
+              onClick={() => startAiChat(searchQuery)}
               className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.10] transition-colors flex-shrink-0 group"
             >
               <Sparkles className="w-3 h-3 text-white/30 group-hover:text-purple-400 transition-colors" />

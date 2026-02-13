@@ -58,6 +58,7 @@ export interface CommandInfo {
 
 let cachedCommands: CommandInfo[] | null = null;
 let cacheTimestamp = 0;
+let inflightDiscovery: Promise<CommandInfo[]> | null = null;
 const CACHE_TTL = 120_000; // 2 min
 
 // ─── Icon Disk Cache ────────────────────────────────────────────────
@@ -867,13 +868,20 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
     return cachedCommands;
   }
 
-  console.log('Discovering applications and settings…');
-  const t0 = Date.now();
+  // Deduplicate concurrent calls: return the in-flight promise if discovery is already running
+  if (inflightDiscovery) {
+    return inflightDiscovery;
+  }
 
-  const [apps, settings] = await Promise.all([
-    discoverApplications(),
-    discoverSystemSettings(),
-  ]);
+  inflightDiscovery = (async () => {
+    try {
+      const t0 = Date.now();
+      console.log('Discovering applications and settings…');
+
+      const [apps, settings] = await Promise.all([
+        discoverApplications(),
+        discoverSystemSettings(),
+      ]);
 
   apps.sort((a, b) => a.title.localeCompare(b.title));
   settings.sort((a, b) => a.title.localeCompare(b.title));
@@ -1089,14 +1097,20 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
     }
   } catch {}
 
-  cachedCommands = allCommands;
-  cacheTimestamp = now;
+      cachedCommands = allCommands;
+      cacheTimestamp = Date.now();
 
-  console.log(
-    `Discovered ${apps.length} apps, ${settings.length} settings panes, ${extensionCommands.length} extension commands, ${scriptCommands.length} script commands in ${Date.now() - t0}ms`
-  );
+      console.log(
+        `Discovered ${apps.length} apps, ${settings.length} settings panes, ${extensionCommands.length} extension commands, ${scriptCommands.length} script commands in ${Date.now() - t0}ms`
+      );
 
-  return cachedCommands;
+      return cachedCommands;
+    } finally {
+      inflightDiscovery = null;
+    }
+  })();
+
+  return inflightDiscovery;
 }
 
 export async function executeCommand(id: string): Promise<boolean> {
