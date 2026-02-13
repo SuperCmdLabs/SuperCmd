@@ -300,6 +300,8 @@ export interface ElectronAPI {
     bodyText: string;
     url: string;
   }>;
+  httpDownloadBinary: (url: string) => Promise<Uint8Array>;
+  fsWriteBinaryFile: (filePath: string, data: Uint8Array) => Promise<void>;
   execCommand: (
     command: string,
     args: string[],
@@ -310,6 +312,15 @@ export interface ElectronAPI {
     args: string[],
     options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
   ) => { stdout: string; stderr: string; exitCode: number };
+  spawnProcess: (file: string, args: string[], options?: { shell?: boolean | string; env?: Record<string, string>; cwd?: string }) => Promise<{ pid: number }>;
+  killSpawnProcess: (pid: number) => Promise<void>;
+  onSpawnStdout: (callback: (pid: number, data: Uint8Array) => void) => (() => void);
+  onSpawnStderr: (callback: (pid: number, data: Uint8Array) => void) => (() => void);
+  onSpawnExit: (callback: (pid: number, code: number) => void) => (() => void);
+  onSpawnError: (callback: (pid: number, message: string) => void) => (() => void);
+  onSpawnEvent: (
+    callback: (event: { pid: number; seq: number; type: 'stdout' | 'stderr' | 'exit' | 'error'; data?: Uint8Array; code?: number; message?: string }) => void
+  ) => (() => void);
   getApplications: (path?: string) => Promise<Array<{ name: string; path: string; bundleId?: string }>>;
   getFrontmostApplication: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   runAppleScript: (script: string) => Promise<string>;

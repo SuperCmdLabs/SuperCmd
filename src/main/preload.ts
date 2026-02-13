@@ -194,6 +194,14 @@ contextBridge.exposeInMainWorld('electron', {
     url: string;
   }> => ipcRenderer.invoke('http-request', options),
 
+  // Download a URL via Node.js (avoids renderer CORS restrictions for binary CDN downloads)
+  httpDownloadBinary: (url: string): Promise<Uint8Array> =>
+    ipcRenderer.invoke('http-download-binary', url),
+
+  // Write raw binary data to a file (used by extension download/install flows)
+  fsWriteBinaryFile: (filePath: string, data: Uint8Array): Promise<void> =>
+    ipcRenderer.invoke('fs-write-binary-file', filePath, data),
+
   // Execute shell commands
   execCommand: (
     command: string,
@@ -207,6 +215,39 @@ contextBridge.exposeInMainWorld('electron', {
     options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
   ): { stdout: string; stderr: string; exitCode: number } =>
     ipcRenderer.sendSync('exec-command-sync', command, args, options),
+
+  // Streaming spawn — real-time stdout/stderr for long-running processes (generic, works for all extensions)
+  spawnProcess: (file: string, args: string[], options?: { shell?: boolean | string; env?: Record<string, string>; cwd?: string }): Promise<{ pid: number }> =>
+    ipcRenderer.invoke('spawn-process', file, args, options),
+  killSpawnProcess: (pid: number): Promise<void> =>
+    ipcRenderer.invoke('spawn-kill', pid),
+  onSpawnStdout: (callback: (pid: number, data: Uint8Array) => void): (() => void) => {
+    const handler = (_e: any, pid: number, data: Uint8Array) => callback(pid, data);
+    ipcRenderer.on('spawn-stdout', handler);
+    return () => ipcRenderer.removeListener('spawn-stdout', handler);
+  },
+  onSpawnStderr: (callback: (pid: number, data: Uint8Array) => void): (() => void) => {
+    const handler = (_e: any, pid: number, data: Uint8Array) => callback(pid, data);
+    ipcRenderer.on('spawn-stderr', handler);
+    return () => ipcRenderer.removeListener('spawn-stderr', handler);
+  },
+  onSpawnExit: (callback: (pid: number, code: number) => void): (() => void) => {
+    const handler = (_e: any, pid: number, code: number) => callback(pid, code);
+    ipcRenderer.on('spawn-exit', handler);
+    return () => ipcRenderer.removeListener('spawn-exit', handler);
+  },
+  onSpawnError: (callback: (pid: number, message: string) => void): (() => void) => {
+    const handler = (_e: any, pid: number, message: string) => callback(pid, message);
+    ipcRenderer.on('spawn-error', handler);
+    return () => ipcRenderer.removeListener('spawn-error', handler);
+  },
+  onSpawnEvent: (
+    callback: (event: { pid: number; seq: number; type: 'stdout' | 'stderr' | 'exit' | 'error'; data?: Uint8Array; code?: number; message?: string }) => void
+  ): (() => void) => {
+    const handler = (_e: any, payload: any) => callback(payload);
+    ipcRenderer.on('spawn-event', handler);
+    return () => ipcRenderer.removeListener('spawn-event', handler);
+  },
 
   // Get installed applications
   getApplications: (path?: string): Promise<Array<{ name: string; path: string; bundleId?: string }>> =>

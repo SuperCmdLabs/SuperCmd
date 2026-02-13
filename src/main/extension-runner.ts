@@ -450,6 +450,14 @@ export async function buildAllCommands(extName: string): Promise<number> {
           'node-fetch',
           'undici',
           'undici/*',
+          // HTTP / file-download / archive packages — must be kept external so our renderer
+          // shim can intercept them and route file I/O through the main process (which has
+          // real filesystem access). Bundling them inline breaks binary downloads because the
+          // browser renderer cannot do streaming file writes or archive extraction natively.
+          'axios',
+          'tar',
+          'extract-zip',
+          'sha256-file',
           // Respect extension-defined externals from manifest
           ...manifestExternal,
           // Node.js built-ins — stubbed at runtime in the renderer

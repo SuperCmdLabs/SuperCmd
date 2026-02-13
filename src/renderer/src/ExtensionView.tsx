@@ -652,37 +652,60 @@ const fsStub: Record<string, any> = {
     return s;
   },
   createWriteStream: (p: any) => {
-    const path = resolveFsLookupPath(p);
-    const s: any = new (nodeBuiltinStubs?.stream?.Writable || class {})();
+    const filePath = resolveFsLookupPath(p);
+    const s: any = new WritableStub();
     const chunks: Uint8Array[] = [];
-    const capture = (chunk: any) => {
-      chunks.push(toUint8Array(chunk));
+    const defer = (fn: () => void) => {
+      if (typeof queueMicrotask === 'function') queueMicrotask(fn);
+      else Promise.resolve().then(fn);
     };
-    const originalWrite = typeof s.write === 'function' ? s.write.bind(s) : null;
-    const originalEnd = typeof s.end === 'function' ? s.end.bind(s) : null;
-    s.write = (chunk: any, ...args: any[]) => {
-      capture(chunk);
-      if (originalWrite) return originalWrite(chunk, ...args);
-      const cb = args.find((a) => typeof a === 'function');
-      if (cb) cb(null);
+    let ended = false;
+    s.write = (chunk: any, _enc?: any, cb?: Function) => {
+      chunks.push(toUint8Array(chunk));
+      const callback = typeof cb === 'function' ? cb : typeof _enc === 'function' ? _enc : null;
+      if (callback) callback(null);
       return true;
     };
-    s.end = (chunk?: any, ...args: any[]) => {
-      if (chunk != null && typeof chunk !== 'function') capture(chunk);
+    s.end = (chunk?: any, _enc?: any, cb?: Function) => {
+      if (ended) return s;
+      ended = true;
+      s.writableEnded = true;
+      if (chunk != null && typeof chunk !== 'function') chunks.push(toUint8Array(chunk));
       const total = chunks.reduce((sum, c) => sum + c.length, 0);
       const merged = new Uint8Array(total);
-      let offset = 0;
-      for (const c of chunks) {
-        merged.set(c, offset);
-        offset += c.length;
-      }
-      const text = new TextDecoder().decode(merged);
-      setStoredText(path, text);
-      if (originalEnd) return originalEnd(chunk, ...args);
-      const cb = args.find((a) => typeof a === 'function');
-      if (cb) cb(null);
-      s.emit?.('finish');
-      s.emit?.('close');
+      let off = 0;
+      for (const c of chunks) { merged.set(c, off); off += c.length; }
+      const callback = typeof cb === 'function' ? cb : typeof _enc === 'function' ? _enc : null;
+      // Write real binary to disk via IPC (extensions use this for CLI binary downloads)
+      const doWrite = async () => {
+        try {
+          const writeBinary = (window as any).electron?.fsWriteBinaryFile;
+          if (typeof writeBinary === 'function') {
+            await Promise.race([
+              writeBinary(filePath, merged),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error(`Timed out writing file: ${filePath}`)), 45_000)
+              ),
+            ]);
+          } else {
+            // Fallback for environments without binary file bridge.
+            setStoredText(filePath, new TextDecoder().decode(merged));
+          }
+          defer(() => {
+            if (callback) callback(null);
+            s.emit('finish');
+            s.emit('close');
+          });
+        } catch (e: any) {
+          const err = e instanceof Error ? e : new Error(String(e ?? 'write failed'));
+          defer(() => {
+            if (callback) callback(err);
+            s.emit('error', err);
+            s.emit('close');
+          });
+        }
+      };
+      doWrite();
       return s;
     };
     return s;
@@ -821,7 +844,14 @@ const fsStub: Record<string, any> = {
       const str = typeof data === 'string' ? data : (data?.toString?.() ?? String(data));
       setStoredText(path, str);
     },
-    mkdir: noopAsync,
+    mkdir: async (p: string, opts?: any) => {
+      const dirPath = resolveFsLookupPath(p);
+      const mkdirArgs = opts?.recursive ? ['-p', dirPath] : [dirPath];
+      const result = await (window as any).electron?.execCommand?.('/bin/mkdir', mkdirArgs, {});
+      if (result?.exitCode && result.exitCode !== 0) {
+        throw new Error(result.stderr || `mkdir failed with exit code ${result.exitCode}`);
+      }
+    },
     readdir: async (p: string) => fsStub.readdirSync(p),
     stat: async (p: string) => {
       const path = resolveFsLookupPath(p);
@@ -859,10 +889,24 @@ const fsStub: Record<string, any> = {
       throw err;
     },
     unlink: async (p: string) => { removeStoredText(resolveFsLookupPath(p)); },
-    rm: async (p: string) => { removeStoredText(resolveFsLookupPath(p)); },
+    rm: async (p: string, opts?: any) => {
+      const rmPath = resolveFsLookupPath(p);
+      removeStoredText(rmPath);
+      const rmArgs = opts?.recursive ? ['-rf', rmPath] : [rmPath];
+      const result = await (window as any).electron?.execCommand?.('/bin/rm', rmArgs, {});
+      if (result?.exitCode && result.exitCode !== 0) {
+        throw new Error(result.stderr || `rm failed with exit code ${result.exitCode}`);
+      }
+    },
     rename: async (oldPath: string, newPath: string) => { fsStub.renameSync(oldPath, newPath); },
     copyFile: async (src: string, dest: string) => { fsStub.copyFileSync(src, dest); },
-    chmod: noopAsync,
+    chmod: async (p: string, mode: string | number) => {
+      const chmodPath = resolveFsLookupPath(p);
+      const result = await (window as any).electron?.execCommand?.('/bin/chmod', [String(mode), chmodPath], {});
+      if (result?.exitCode && result.exitCode !== 0) {
+        throw new Error(result.stderr || `chmod failed with exit code ${result.exitCode}`);
+      }
+    },
     open: noopAsync,
   },
 };
@@ -901,6 +945,7 @@ const pathStub = {
   toNamespacedPath: (p: string) => p,
 };
 pathStub.posix = pathStub;
+pathStub.win32 = pathStub; // On macOS all paths are POSIX; win32 delegates to the same impl
 
 // ── os stub (with constants.signals and constants.errno) ────────
 // Use real home directory exposed via preload (lazy so it works even if module loads early)
@@ -1179,8 +1224,14 @@ class WritableStub extends EventEmitterStub {
   end(_chunk?: any, _enc?: any, cb?: Function) {
     this.writableEnded = true;
     const callback = typeof cb === 'function' ? cb : typeof _enc === 'function' ? _enc : typeof _chunk === 'function' ? _chunk : null;
-    if (callback) (callback as Function)();
-    this.emit('finish');
+    const defer = typeof queueMicrotask === 'function'
+      ? queueMicrotask
+      : (fn: () => void) => Promise.resolve().then(fn);
+    defer(() => {
+      if (callback) (callback as Function)();
+      this.emit('finish');
+      this.emit('close');
+    });
     return this;
   }
   destroy() { this.destroyed = true; this.emit('close'); return this; }
@@ -1549,8 +1600,129 @@ const childProcessStub = {
     cp.ref = noop;
     cp.unref = noop;
     cp.disconnect = noop;
-    if ((window as any).electron?.execCommand) {
-      (window as any).electron.execCommand(
+    const electron = (window as any).electron;
+    if (electron?.spawnProcess) {
+      // Streaming spawn: main process runs the binary and forwards stdout/stderr chunks in real-time.
+      // This is the generic solution for all extensions using child_process.spawn with progressive output.
+      let pid: number | null = null;
+      const cleanups: Array<() => void> = [];
+      const cleanup = () => { cleanups.forEach(fn => fn()); cleanups.length = 0; };
+      let didHandleTerminalEvent = false;
+      type PendingSpawnEvent =
+        | { kind: 'stdout'; p: number; data: any; seq?: number }
+        | { kind: 'stderr'; p: number; data: any; seq?: number }
+        | { kind: 'exit'; p: number; code: number }
+        | { kind: 'error'; p: number; message: string };
+      const pendingEvents: PendingSpawnEvent[] = [];
+      const isForCurrentProcess = (p: number) => pid !== null && p === pid;
+
+      const endChildStreams = () => {
+        try { cp.stdout.emit('end'); } catch {}
+        try { cp.stdout.emit('close'); } catch {}
+        try { cp.stderr.emit('end'); } catch {}
+        try { cp.stderr.emit('close'); } catch {}
+      };
+      const processSpawnEvent = (event: PendingSpawnEvent) => {
+        if (!isForCurrentProcess(event.p)) return;
+        if (didHandleTerminalEvent) return;
+        if (event.kind === 'stdout') {
+          cp.stdout.emit('data', BufferPolyfill.from(toUint8Array(event.data)));
+          return;
+        }
+        if (event.kind === 'stderr') {
+          cp.stderr.emit('data', BufferPolyfill.from(toUint8Array(event.data)));
+          return;
+        }
+        if (event.kind === 'exit') {
+          didHandleTerminalEvent = true;
+          endChildStreams();
+          cleanup();
+          cp.exitCode = event.code;
+          cp.emit('close', event.code, null);
+          cp.emit('exit', event.code, null);
+          return;
+        }
+        didHandleTerminalEvent = true;
+        cleanup();
+        const err = new Error(event.message);
+        cp.stderr.emit('data', BufferPolyfill.from(event.message));
+        cp.emit('error', err);
+        endChildStreams();
+        cp.emit('close', 1, null);
+        cp.emit('exit', 1, null);
+      };
+      const queueOrProcess = (event: PendingSpawnEvent) => {
+        if (pid === null) {
+          pendingEvents.push(event);
+          return;
+        }
+        processSpawnEvent(event);
+      };
+      const flushPendingEvents = () => {
+        if (pid === null || pendingEvents.length === 0) return;
+        const events = pendingEvents.splice(0, pendingEvents.length);
+        for (const event of events) {
+          processSpawnEvent(event);
+        }
+      };
+      if (typeof electron.onSpawnEvent === 'function') {
+        cleanups.push(
+          electron.onSpawnEvent((event: { pid: number; seq: number; type: 'stdout' | 'stderr' | 'exit' | 'error'; data?: any; code?: number; message?: string }) => {
+            if (!event || typeof event !== 'object') return;
+            if (event.type === 'stdout') {
+              queueOrProcess({ kind: 'stdout', p: event.pid, data: event.data, seq: event.seq });
+              return;
+            }
+            if (event.type === 'stderr') {
+              queueOrProcess({ kind: 'stderr', p: event.pid, data: event.data, seq: event.seq });
+              return;
+            }
+            if (event.type === 'exit') {
+              queueOrProcess({ kind: 'exit', p: event.pid, code: Number(event.code ?? 0) });
+              return;
+            }
+            if (event.type === 'error') {
+              queueOrProcess({ kind: 'error', p: event.pid, message: String(event.message || 'spawn failed') });
+            }
+          })
+        );
+      } else {
+        // Backward-compatible fallback: older main processes emit separate channels.
+        cleanups.push(electron.onSpawnStdout((p: number, data: Uint8Array) => {
+          queueOrProcess({ kind: 'stdout', p, data });
+        }));
+        cleanups.push(electron.onSpawnStderr((p: number, data: Uint8Array) => {
+          queueOrProcess({ kind: 'stderr', p, data });
+        }));
+        cleanups.push(electron.onSpawnExit((p: number, code: number) => {
+          queueOrProcess({ kind: 'exit', p, code });
+        }));
+        cleanups.push(electron.onSpawnError((p: number, message: string) => {
+          queueOrProcess({ kind: 'error', p, message });
+        }));
+      }
+
+      cp.kill = () => { if (pid !== null) electron.killSpawnProcess?.(pid); };
+
+      electron.spawnProcess(file, spawnArgs, {
+        shell: options?.shell ?? false,
+        env: options?.env,
+        cwd: options?.cwd,
+      }).then((result: { pid: number }) => {
+        pid = result.pid;
+        cp.pid = pid;
+        flushPendingEvents();
+      }).catch((err: any) => {
+        cleanup();
+        const message = String(err?.message || err || 'spawn failed');
+        cp.stderr.emit('data', BufferPolyfill.from(message));
+        cp.emit('error', new Error(message));
+        cp.emit('close', 1, null);
+        cp.emit('exit', 1, null);
+      });
+    } else if (electron?.execCommand) {
+      // Fallback for environments without streaming spawn: collect all output then emit
+      electron.execCommand(
         file,
         spawnArgs,
         { shell: options?.shell ?? false, env: options?.env, cwd: options?.cwd, input: options?.input }
@@ -1572,7 +1744,9 @@ const childProcessStub = {
           cp.emit('exit', 0, null);
           return;
         }
-        cp.stderr.emit('data', BufferPolyfill.from(String(err?.message || err || 'spawn failed')));
+        const message = String(err?.message || err || 'spawn failed');
+        cp.stderr.emit('data', BufferPolyfill.from(message));
+        cp.emit('error', new Error(message));
         cp.emit('close', 1, null);
         cp.emit('exit', 1, null);
       });
@@ -1991,6 +2165,192 @@ const nodeBuiltinStubs: Record<string, any> = {
   },
   diagnostics_channel: { channel: () => ({ subscribe: noop, unsubscribe: noop, publish: noop }), hasSubscribers: () => false },
   'node:test': { describe: noop, it: noop, test: noop },
+
+  // ── Third-party packages kept external so the renderer shim can intercept them ──
+  // These are marked external in esbuild so extensions don't bundle them inline.
+  // All file I/O is routed through the main process via IPC.
+
+  // axios: HTTP client — returns a ReadableStub for responseType:'stream' so
+  // extensions can pipe the response to a createWriteStream for binary CLI downloads.
+  axios: (() => {
+    const makeAxios = (defaults?: any) => {
+      const inst: any = async function axiosInstance(config: any) {
+        return inst.request(config);
+      };
+      inst.defaults = defaults || {};
+      inst.interceptors = {
+        request: { use: noop, eject: noop, clear: noop },
+        response: { use: noop, eject: noop, clear: noop },
+      };
+      inst.request = async (config: any) => inst.get(config?.url || '', config);
+      inst.get = async (url: string, config?: any) => {
+        const responseType = config?.responseType || 'json';
+        if (responseType === 'stream' || responseType === 'arraybuffer') {
+          // Route binary downloads through the main process (Node.js) to bypass CORS restrictions.
+          // The renderer's fetch() is blocked by CORS on CDN binary endpoints that don't send
+          // Access-Control-Allow-Origin headers (e.g. speedtest, GitHub releases).
+          let rawBytes: Uint8Array;
+          try {
+            const binaryDownloader = (window as any).electron?.httpDownloadBinary;
+            if (typeof binaryDownloader !== 'function') {
+              throw new Error('Binary download bridge unavailable');
+            }
+            rawBytes = await Promise.race([
+              binaryDownloader(url),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('Binary download timed out')), 45_000)
+              ),
+            ]);
+          } catch (e: any) {
+            const err: any = new Error(e?.message || 'Download failed');
+            err.isAxiosError = true;
+            throw err;
+          }
+          const bytes = toUint8Array(rawBytes);
+          if (responseType === 'arraybuffer') {
+            return { data: bytes.buffer, status: 200, headers: {} };
+          }
+          // responseType === 'stream': wrap in a ReadableStub so .pipe(writer) works
+          const stream = new ReadableStub();
+          const chunkSize = 64 * 1024;
+          let emitted = false;
+          const emitChunks = () => {
+            if (emitted) return;
+            emitted = true;
+            try {
+              for (let i = 0; i < bytes.length; i += chunkSize) {
+                stream.emit('data', bytes.subarray(i, Math.min(i + chunkSize, bytes.length)));
+              }
+            } catch (e: any) {
+              stream.emit('error', e instanceof Error ? e : new Error(String(e ?? 'streaming failed')));
+            } finally {
+              stream.emit('end');
+              stream.emit('close');
+            }
+          };
+
+          const originalPipe = stream.pipe.bind(stream);
+          stream.pipe = (dest: any) => {
+            // Deterministic pipe path for binary downloads: write all chunks and end destination.
+            // This avoids timing differences between browser-like streams and Node streams.
+            const defer = typeof queueMicrotask === 'function'
+              ? queueMicrotask
+              : (fn: () => void) => Promise.resolve().then(fn);
+            defer(() => {
+              try {
+                if (dest && typeof dest.write === 'function') {
+                  for (let i = 0; i < bytes.length; i += chunkSize) {
+                    dest.write(bytes.subarray(i, Math.min(i + chunkSize, bytes.length)));
+                  }
+                }
+                if (dest && typeof dest.end === 'function') {
+                  dest.end();
+                }
+              } catch (e: any) {
+                const err = e instanceof Error ? e : new Error(String(e ?? 'pipe failed'));
+                try { dest?.emit?.('error', err); } catch {}
+                stream.emit('error', err);
+              } finally {
+                emitChunks();
+              }
+            });
+            return dest ?? originalPipe(dest);
+          };
+
+          setTimeout(emitChunks, 0);
+          return { data: stream, status: 200, headers: {} };
+        }
+        // JSON / text responses: use fetch (no binary data, CORS is fine for APIs)
+        const fetchHeaders: Record<string, string> = config?.headers || {};
+        let response: Response;
+        try {
+          response = await fetch(url, { headers: fetchHeaders });
+        } catch (e: any) {
+          const err: any = new Error(e?.message || 'Network error');
+          err.isAxiosError = true;
+          throw err;
+        }
+        if (!response.ok) {
+          const err: any = new Error(`Request failed with status code ${response.status}`);
+          err.isAxiosError = true;
+          err.response = { status: response.status, data: null, headers: {} };
+          throw err;
+        }
+        const resHeaders: Record<string, string> = {};
+        response.headers.forEach((v, k) => { resHeaders[k] = v; });
+        if (responseType === 'blob') {
+          return { data: await response.blob(), status: response.status, headers: resHeaders };
+        }
+        const text = await response.text();
+        let data: any = text;
+        try { data = JSON.parse(text); } catch {}
+        return { data, status: response.status, headers: resHeaders };
+      };
+      inst.post = async (url: string, body?: any, config?: any) => {
+        const res = await fetch(url, {
+          method: 'POST',
+          body: body != null ? JSON.stringify(body) : undefined,
+          headers: { 'Content-Type': 'application/json', ...(config?.headers || {}) },
+        });
+        const text = await res.text();
+        let data: any = text;
+        try { data = JSON.parse(text); } catch {}
+        return { data, status: res.status };
+      };
+      inst.put = inst.patch = inst.delete = inst.head = inst.options = inst.post;
+      inst.create = (cfg?: any) => makeAxios({ ...inst.defaults, ...cfg });
+      inst.isAxiosError = (e: any) => !!(e?.isAxiosError);
+      inst.CancelToken = { source: () => ({ token: {}, cancel: noop }) };
+      inst.all = Promise.all.bind(Promise);
+      inst.spread = (fn: Function) => (arr: any[]) => fn(...arr);
+      return inst;
+    };
+    const axiosInstance = makeAxios();
+    axiosInstance.default = axiosInstance;
+    return axiosInstance;
+  })(),
+
+  // tar: archive extraction — routes to the system `tar` binary via execCommand
+  tar: {
+    extract: async (options: { file: string; cwd?: string; filter?: (path: string) => boolean }) => {
+      const { file, cwd } = options;
+      const args = ['-xzf', file];
+      if (cwd) args.push('-C', cwd);
+      const result = await (window as any).electron?.execCommand?.('/usr/bin/tar', args, {});
+      if (result && result.exitCode !== 0) {
+        throw new Error(result.stderr || `tar extraction failed with code ${result.exitCode}`);
+      }
+    },
+    create: noopAsync,
+    list: noopAsync,
+    replace: noopAsync,
+    update: noopAsync,
+  },
+
+  // extract-zip: ZIP extraction (Windows path; macOS uses tar above)
+  'extract-zip': async (file: string, options: { dir: string }) => {
+    const result = await (window as any).electron?.execCommand?.(
+      '/usr/bin/unzip', ['-o', file, '-d', options.dir], {}
+    );
+    if (result && result.exitCode !== 0) {
+      throw new Error(result.stderr || `unzip failed with code ${result.exitCode}`);
+    }
+  },
+
+  // sha256-file: callback-based SHA256 hash of a file on disk
+  'sha256-file': (filePath: string, callback: (err: Error | null, hash: string | null) => void) => {
+    (window as any).electron?.execCommand?.(
+      '/usr/bin/openssl', ['dgst', '-sha256', '-hex', filePath], {}
+    ).then((result: any) => {
+      if (result?.exitCode !== 0) {
+        callback(new Error(result?.stderr || 'sha256 failed'), null);
+        return;
+      }
+      // openssl output: "SHA256(file)= <hash>\n" or "SHA2-256(file)= <hash>"
+      const match = (result.stdout || '').match(/=\s*([0-9a-f]{64})/i);
+      callback(null, match ? match[1] : null);
+    }).catch((e: any) => callback(e, null));
+  },
 };
 
 // Also map node: prefixed versions
