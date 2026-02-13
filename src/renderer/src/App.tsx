@@ -46,6 +46,8 @@ import ExtensionPreferenceSetupView from './views/ExtensionPreferenceSetupView';
 import AiChatView from './views/AiChatView';
 import CursorPromptView from './views/CursorPromptView';
 
+const STALE_OVERLAY_RESET_MS = 60_000;
+
 const App: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [pinnedCommands, setPinnedCommands] = useState<string[]>([]);
@@ -144,6 +146,7 @@ const App: React.FC = () => {
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const actionsOverlayRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const lastWindowHiddenAtRef = useRef<number>(0);
   const pinnedCommandsRef = useRef<string[]>([]);
   const extensionViewRef = useRef<ExtensionBundle | null>(null);
   extensionViewRef.current = extensionView;
@@ -258,6 +261,13 @@ const App: React.FC = () => {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    const cleanupWindowHidden = window.electron.onWindowHidden(() => {
+      lastWindowHiddenAtRef.current = Date.now();
+    });
+    return cleanupWindowHidden;
+  }, []);
+
+  useEffect(() => {
     const cleanupWindowShown = window.electron.onWindowShown((payload) => {
       console.log('[WINDOW-SHOWN] fired', payload);
       const isWhisperMode = payload?.mode === 'whisper';
@@ -297,12 +307,30 @@ const App: React.FC = () => {
       setScriptCommandSetup(null);
       setScriptCommandOutput(null);
       void refreshSelectedTextSnapshot();
+      const shouldResetOverlays =
+        lastWindowHiddenAtRef.current > 0 &&
+        Date.now() - lastWindowHiddenAtRef.current > STALE_OVERLAY_RESET_MS;
+
+      if (shouldResetOverlays) {
+        setExtensionView(null);
+        localStorage.removeItem(LAST_EXT_KEY);
+        setShowActions(false);
+        setContextMenu(null);
+        setShowClipboardManager(false);
+        setShowSnippetManager(null);
+        setShowFileSearch(false);
+        setShowCursorPrompt(false);
+        setShowWhisper(false);
+        setShowSpeak(false);
+        setShowWhisperOnboarding(false);
+      }
 
       // If an extension is open, keep it alive — don't reset
-      if (extensionViewRef.current) return;
+      if (extensionViewRef.current && !shouldResetOverlays) return;
       setSearchQuery('');
       setSelectedIndex(0);
       exitAiMode();
+      setShowClipboardManager(false);
       setShowSnippetManager(null);
       setShowFileSearch(false);
       // Re-fetch commands every time the window is shown

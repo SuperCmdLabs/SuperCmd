@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, Trash2, Copy, Clipboard, Image as ImageIcon, Link, FileText } from 'lucide-react';
+import { Search, X, Trash2, Copy, Clipboard, Image as ImageIcon, Link, FileText, ArrowLeft } from 'lucide-react';
 import type { ClipboardItem } from '../types/electron';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
 
@@ -19,7 +19,7 @@ interface ClipboardManagerProps {
 interface Action {
   title: string;
   icon?: React.ReactNode;
-  shortcut?: string;
+  shortcut?: string[];
   execute: () => void | Promise<void>;
   style?: 'default' | 'destructive';
 }
@@ -32,10 +32,12 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   const [filterType, setFilterType] = useState<'all' | 'text' | 'image' | 'url' | 'file'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [showActions, setShowActions] = useState(false);
+  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [frontmostAppName, setFrontmostAppName] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const actionsOverlayRef = useRef<HTMLDivElement>(null);
 
   const loadHistory = useCallback(async (withLoading = false) => {
     if (withLoading) setIsLoading(true);
@@ -131,6 +133,12 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     scrollToSelected();
   }, [selectedIndex, scrollToSelected]);
 
+  useEffect(() => {
+    if (!showActions) return;
+    setSelectedActionIndex(0);
+    setTimeout(() => actionsOverlayRef.current?.focus(), 0);
+  }, [showActions]);
+
   const handlePasteItem = async (item?: ClipboardItem) => {
     const itemToPaste = item || filteredItems[selectedIndex];
     if (!itemToPaste) return;
@@ -182,23 +190,35 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   const actions: Action[] = [
     {
       title: pasteLabel,
+      icon: <Clipboard className="w-4 h-4" />,
+      shortcut: ['↩'],
       execute: () => handlePasteItem(),
     },
     {
       title: 'Copy to Clipboard',
+      icon: <Copy className="w-4 h-4" />,
+      shortcut: ['⌘', '↩'],
       execute: handleCopyToClipboard,
     },
     {
       title: 'Delete',
+      icon: <Trash2 className="w-4 h-4" />,
+      shortcut: ['⌃', 'X'],
       execute: () => handleDeleteItem(),
       style: 'destructive',
     },
     {
       title: 'Delete All Entries',
+      icon: <Trash2 className="w-4 h-4" />,
+      shortcut: ['⌃', '⇧', 'X'],
       execute: handleClearAll,
       style: 'destructive',
     },
   ];
+
+  const isMetaEnter = (e: React.KeyboardEvent) =>
+    e.metaKey &&
+    (e.key === 'Enter' || e.key === 'Return' || e.code === 'Enter' || e.code === 'NumpadEnter');
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -208,7 +228,67 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         return;
       }
 
-      if (showActions) return;
+      if (showActions) {
+        if (isMetaEnter(e)) {
+          e.preventDefault();
+          void handleCopyToClipboard();
+          setShowActions(false);
+          return;
+        }
+        if (e.key.toLowerCase() === 'x' && e.ctrlKey && e.shiftKey) {
+          e.preventDefault();
+          void handleClearAll();
+          setShowActions(false);
+          return;
+        }
+        if (e.key.toLowerCase() === 'x' && e.ctrlKey) {
+          e.preventDefault();
+          void handleDeleteItem();
+          setShowActions(false);
+          return;
+        }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setSelectedActionIndex((prev) => (prev < actions.length - 1 ? prev + 1 : prev));
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setSelectedActionIndex((prev) => (prev > 0 ? prev - 1 : 0));
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const action = actions[selectedActionIndex];
+          if (action) {
+            action.execute();
+          }
+          setShowActions(false);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setShowActions(false);
+          return;
+        }
+        return;
+      }
+
+      if (isMetaEnter(e)) {
+        e.preventDefault();
+        void handleCopyToClipboard();
+        return;
+      }
+      if (e.key.toLowerCase() === 'x' && e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
+        handleClearAll();
+        return;
+      }
+      if (e.key.toLowerCase() === 'x' && e.ctrlKey) {
+        e.preventDefault();
+        handleDeleteItem();
+        return;
+      }
 
       switch (e.key) {
         case 'ArrowDown':
@@ -232,7 +312,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
 
         case 'Backspace':
         case 'Delete':
-          if (e.metaKey || e.ctrlKey) {
+          if (e.metaKey) {
             e.preventDefault();
             if (filteredItems[selectedIndex]) {
               handleDeleteItem();
@@ -246,7 +326,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
           break;
       }
     },
-    [filteredItems, selectedIndex, onClose, showActions]
+    [filteredItems, selectedIndex, onClose, showActions, actions, selectedActionIndex]
   );
 
   const formatFileSize = (bytes: number): string => {
@@ -272,6 +352,13 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     <div className="w-full h-full flex flex-col" onKeyDown={handleKeyDown} tabIndex={-1}>
       {/* Header - transparent background same as main screen */}
       <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06]">
+        <button
+          onClick={onClose}
+          className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"
+          title="Back"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
         <input
           ref={inputRef}
           type="text"
@@ -377,12 +464,6 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {selectedItem ? (
             <div className="p-5">
-              <div className="mb-4">
-                <div className="text-white/50 text-xs uppercase tracking-wider">
-                  {selectedItem.type}
-                </div>
-              </div>
-
               {selectedItem.type === 'image' ? (
                 <div>
                   <img
@@ -402,11 +483,9 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                   </div>
                 </div>
               ) : (
-                <div className="bg-white/5 rounded-lg p-4 border border-white/10">
-                  <pre className="text-white/80 text-xs whitespace-pre-wrap break-words font-mono leading-normal">
-                    {selectedItem.content}
-                  </pre>
-                </div>
+                <pre className="text-white/80 text-xs whitespace-pre-wrap break-words font-mono leading-normal">
+                  {selectedItem.content}
+                </pre>
               )}
             </div>
           ) : (
@@ -443,7 +522,9 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
           style={{ background: 'rgba(0,0,0,0.15)' }}
         >
           <div
+            ref={actionsOverlayRef}
             className="absolute bottom-12 right-3 w-80 max-h-[65vh] rounded-xl overflow-hidden flex flex-col shadow-2xl"
+            tabIndex={0}
             style={{ 
               background: 'rgba(30,30,34,0.97)', 
               backdropFilter: 'blur(40px)', 
@@ -456,23 +537,38 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                 <div
                   key={idx}
                   className={`mx-1 px-2.5 py-1.5 rounded-lg flex items-center gap-2.5 cursor-pointer transition-colors ${
+                    idx === selectedActionIndex ? 'bg-white/[0.08]' : ''
+                  } ${
                     action.style === 'destructive'
                       ? 'hover:bg-white/[0.06] text-red-400'
                       : 'hover:bg-white/[0.06] text-white/80'
                   }`}
+                  onMouseMove={() => setSelectedActionIndex(idx)}
                   onClick={() => {
                     action.execute();
                     setShowActions(false);
                   }}
                 >
+                  {action.icon ? (
+                    <span className={action.style === 'destructive' ? 'text-red-400' : 'text-white/60'}>
+                      {action.icon}
+                    </span>
+                  ) : null}
                   <span className="flex-1 text-sm truncate">
                     {action.title}
                   </span>
-                  {idx === 0 && (
-                    <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] font-medium text-white/70">
-                      ↩
-                    </kbd>
-                  )}
+                  {action.shortcut ? (
+                    <span className="flex items-center gap-0.5">
+                      {action.shortcut.map((key, keyIdx) => (
+                        <kbd
+                          key={`${idx}-${key}-${keyIdx}`}
+                          className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] font-medium text-white/70"
+                        >
+                          {key}
+                        </kbd>
+                      ))}
+                    </span>
+                  ) : null}
                 </div>
               ))}
             </div>

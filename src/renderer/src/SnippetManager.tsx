@@ -606,6 +606,12 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
       execute: handleCopy,
     },
     {
+      title: 'Create Snippet',
+      icon: <Plus className="w-4 h-4" />,
+      shortcut: ['⌘', 'N'],
+      execute: () => setView('create'),
+    },
+    {
       title: activeSnippet?.pinned ? 'Unpin Snippet' : 'Pin Snippet',
       icon: activeSnippet?.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />,
       shortcut: ['⇧', '⌘', 'P'],
@@ -625,6 +631,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
     },
     {
       title: 'Export Snippets',
+      icon: <Files className="w-4 h-4" />,
       shortcut: ['⇧', '⌘', 'S'],
       execute: async () => {
         await window.electron.snippetExport();
@@ -632,6 +639,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
     },
     {
       title: 'Import Snippets',
+      icon: <Files className="w-4 h-4" />,
       shortcut: ['⇧', '⌘', 'I'],
       execute: async () => {
         await window.electron.snippetImport();
@@ -653,6 +661,10 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
       style: 'destructive',
     },
   ];
+
+  const isMetaEnter = (e: React.KeyboardEvent) =>
+    e.metaKey &&
+    (e.key === 'Enter' || e.key === 'Return' || e.code === 'Enter' || e.code === 'NumpadEnter');
 
   // ─── Keyboard ───────────────────────────────────────────────────
 
@@ -676,6 +688,24 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
       }
 
       if (showActions) {
+        if (isMetaEnter(e)) {
+          e.preventDefault();
+          void handleCopy();
+          setShowActions(false);
+          return;
+        }
+        if (e.key.toLowerCase() === 'x' && e.ctrlKey && e.shiftKey) {
+          e.preventDefault();
+          void handleDeleteAll();
+          setShowActions(false);
+          return;
+        }
+        if (e.key.toLowerCase() === 'x' && e.ctrlKey) {
+          e.preventDefault();
+          void handleDelete();
+          setShowActions(false);
+          return;
+        }
         if (e.key === 'ArrowDown') {
           e.preventDefault();
           setSelectedActionIndex((prev) => (prev < actions.length - 1 ? prev + 1 : prev));
@@ -715,6 +745,11 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         handleTogglePin();
         return;
       }
+      if (e.key.toLowerCase() === 'n' && e.metaKey) {
+        e.preventDefault();
+        setView('create');
+        return;
+      }
       if (e.key.toLowerCase() === 's' && e.metaKey && e.shiftKey) {
         e.preventDefault();
         window.electron.snippetExport();
@@ -735,7 +770,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         handleDelete();
         return;
       }
-      if (e.key === 'Enter' && e.metaKey) {
+      if (isMetaEnter(e)) {
         e.preventDefault();
         handleCopy();
         return;
@@ -927,11 +962,9 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
                 )}
               </div>
 
-              <div className="bg-white/5 rounded-lg p-4 border border-white/10">
-                <pre className="text-white/80 text-sm whitespace-pre-wrap break-words font-mono leading-relaxed">
-                  {selectedSnippet.content}
-                </pre>
-              </div>
+              <pre className="text-white/80 text-sm whitespace-pre-wrap break-words font-mono leading-relaxed">
+                {selectedSnippet.content}
+              </pre>
 
               <div className="mt-4 space-y-1">
                 <div className="text-white/30 text-xs">
