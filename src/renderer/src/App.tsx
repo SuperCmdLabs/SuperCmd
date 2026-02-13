@@ -565,13 +565,7 @@ const App: React.FC = () => {
     return searchQuery ? tryCalculate(searchQuery) : null;
   }, [searchQuery]);
   const calcOffset = calcResult ? 1 : 0;
-  const contextualCommands = useMemo(() => {
-    const hasSelection = selectedTextSnapshot.trim().length > 0;
-    return commands.filter((command) => {
-      if (command.id === 'system-add-to-memory') return hasSelection;
-      return true;
-    });
-  }, [commands, selectedTextSnapshot]);
+  const contextualCommands = commands;
   const filteredCommands = useMemo(
     () => filterCommands(contextualCommands, searchQuery),
     [contextualCommands, searchQuery]

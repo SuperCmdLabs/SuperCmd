@@ -822,7 +822,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
           placeholder="Search snippets..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[15px] font-light tracking-wide"
+          className="flex-1 bg-transparent border-none outline-none text-white/95 placeholder-white/45 text-[15px] font-medium tracking-[0.005em]"
           autoFocus
         />
         {searchQuery && (

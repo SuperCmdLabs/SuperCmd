@@ -1,5 +1,8 @@
 import * as http from 'http';
 import * as https from 'https';
+import * as fs from 'fs';
+import * as path from 'path';
+import { app } from 'electron';
 import type { AppSettings } from './settings-store';
 
 const DEFAULT_MEM0_BASE_URL = 'https://api.mem0.ai';
@@ -8,6 +11,63 @@ const DEFAULT_TOP_K = 6;
 const MAX_TOP_K = 20;
 const MAX_MEMORY_ITEM_CHARS = 320;
 const MAX_MEMORY_CONTEXT_CHARS = 2400;
+
+// ─── Local File-Based Memory Store ──────────────────────────────────────────
+// Used as a fallback when Mem0 is not configured. Persists to
+// <userData>/local-memories.json so memories survive restarts.
+
+interface LocalMemoryEntry {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
+function getLocalMemoryPath(): string {
+  return path.join(app.getPath('userData'), 'local-memories.json');
+}
+
+function readLocalMemories(): LocalMemoryEntry[] {
+  try {
+    const raw = fs.readFileSync(getLocalMemoryPath(), 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalMemories(memories: LocalMemoryEntry[]): void {
+  try {
+    fs.writeFileSync(getLocalMemoryPath(), JSON.stringify(memories, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[LocalMemory] Failed to write memories:', err);
+  }
+}
+
+function addLocalMemory(text: string): { id: string } {
+  const memories = readLocalMemories();
+  const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  memories.push({ id, text: sanitizeMemoryText(text), createdAt: new Date().toISOString() });
+  writeLocalMemories(memories);
+  return { id };
+}
+
+function searchLocalMemories(query: string, limit: number): LocalMemoryEntry[] {
+  const memories = readLocalMemories();
+  if (!query.trim()) return memories.slice(-limit).reverse();
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const scored = memories
+    .map((m) => {
+      const lower = m.text.toLowerCase();
+      const score = terms.reduce((acc, t) => acc + (lower.includes(t) ? 1 : 0), 0);
+      return { m, score };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map(({ m }) => m);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 
 type Mem0AuthMode = 'none' | 'token' | 'bearer';
 
@@ -293,6 +353,11 @@ export function isMem0Configured(settings: AppSettings): boolean {
   return Boolean(config.userId && (config.localMode || config.apiKey));
 }
 
+/** True when any memory backend is available (Mem0 or local file fallback). */
+export function isMemoryEnabled(_settings: AppSettings): boolean {
+  return true;
+}
+
 export async function addMemory(
   settings: AppSettings,
   payload: AddMemoryPayload
@@ -310,10 +375,9 @@ export async function addMemory(
     };
   }
   if (!config.localMode && !config.apiKey) {
-    return {
-      success: false,
-      error: 'Mem0 is not configured. Add API key or enable local Mem0 mode in Settings -> AI.',
-    };
+    // No Mem0 configured — persist to local file so memories survive restarts
+    const { id } = addLocalMemory(text);
+    return { success: true, memoryId: id };
   }
 
   const metadata = {
@@ -369,7 +433,11 @@ export async function searchMemories(
 
   const config = resolveMem0Config(settings, options?.userId);
   if (!config.userId) return [];
-  if (!config.localMode && !config.apiKey) return [];
+  if (!config.localMode && !config.apiKey) {
+    // No Mem0 — search local file
+    const limit = clampTopK(options?.limit);
+    return searchLocalMemories(query, limit).map((m) => ({ id: m.id, text: m.text, raw: m }));
+  }
 
   const limit = clampTopK(options?.limit);
   const paths = ['/v2/memories/search', '/v1/memories/search', '/memories/search', '/search'];
@@ -429,7 +497,7 @@ export async function buildMemoryContextSystemPrompt(
   query: string,
   options?: { limit?: number }
 ): Promise<string> {
-  if (!isMem0Configured(settings)) return '';
+  if (!isMemoryEnabled(settings)) return '';
 
   let memories: MemoryEntry[] = [];
   try {
