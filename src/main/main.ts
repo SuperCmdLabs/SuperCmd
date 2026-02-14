@@ -805,8 +805,9 @@ function fetchEdgeTtsVoiceCatalog(timeoutMs = 12000): Promise<EdgeTtsVoiceCatalo
   });
 }
 
-async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: boolean }): Promise<string> {
+async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: boolean; clipboardWaitMs?: number }): Promise<string> {
   const allowClipboardFallback = options?.allowClipboardFallback !== false;
+  const clipboardWaitMs = Math.max(0, Number(options?.clipboardWaitMs ?? 380) || 380);
   const fromAccessibility = await (async () => {
     try {
       const { execFile } = require('child_process');
@@ -845,7 +846,7 @@ async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: bool
     ]);
     // Wait briefly for apps that populate clipboard asynchronously, but avoid
     // injecting probe text into the user's clipboard.
-    const waitUntil = Date.now() + 380;
+    const waitUntil = Date.now() + clipboardWaitMs;
     let latest = '';
     while (Date.now() < waitUntil) {
       latest = String(systemClipboard.readText() || '');
@@ -894,7 +895,7 @@ async function captureSelectionSnapshotBeforeShow(): Promise<void> {
   }
   try {
     const selected = String(
-      await getSelectedTextForSpeak({ allowClipboardFallback: false }) || ''
+      await getSelectedTextForSpeak({ allowClipboardFallback: true, clipboardWaitMs: 90 }) || ''
     );
     rememberSelectionSnapshot(selected);
   } catch {
@@ -1919,14 +1920,13 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   const windowShownPayload = {
     mode: launcherMode,
     systemCommandId: options?.systemCommandId,
+    selectedTextSnapshot: getRecentSelectionSnapshot(),
   };
 
-  // For routed system views (clipboard/snippets/file search, etc.), notify
-  // renderer before showing the window so React can switch view first.
-  if (options?.systemCommandId) {
-    mainWindow.webContents.send('window-shown', windowShownPayload);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  // Notify renderer before showing the window so it can finalize view state
+  // (including contextual command list) before first paint.
+  mainWindow.webContents.send('window-shown', windowShownPayload);
+  await new Promise((resolve) => setTimeout(resolve, 10));
 
   mainWindow.show();
   mainWindow.focus();
@@ -1939,9 +1939,6 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     unregisterWhisperEscapeShortcut();
   }
 
-  if (!options?.systemCommandId) {
-    mainWindow.webContents.send('window-shown', windowShownPayload);
-  }
   if (launcherMode === 'whisper') {
     lastWhisperShownAt = Date.now();
   }
