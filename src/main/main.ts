@@ -3431,7 +3431,9 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
 // ─── App Initialization ─────────────────────────────────────────────
 
 async function rebuildExtensions() {
-  const installed = getInstalledExtensionNames();
+  const installed = Array.from(
+    new Set(getInstalledExtensionsSettingsSchema().map((schema) => schema.extName))
+  );
   if (installed.length > 0) {
     console.log(`Checking ${installed.length} installed extensions for rebuilds...`);
     for (const name of installed) {
@@ -3733,8 +3735,16 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     'save-settings',
-    (_event: any, patch: Partial<AppSettings>) => {
+    async (_event: any, patch: Partial<AppSettings>) => {
       const result = saveSettings(patch);
+      if (patch.customExtensionFolders !== undefined) {
+        invalidateCache();
+        try {
+          await rebuildExtensions();
+        } catch (error) {
+          console.error('Failed to rebuild extensions after updating custom folders:', error);
+        }
+      }
       if (patch.openAtLogin !== undefined) {
         applyOpenAtLogin(Boolean(patch.openAtLogin));
       }
@@ -6114,6 +6124,16 @@ return appURL's |path|() as text`,
   createWindow();
   registerGlobalShortcut(settings.globalShortcut);
   registerCommandHotkeys(settings.commandHotkeys);
+
+  // Fallback: when another SuperCmd window gains focus (e.g. Settings),
+  // close the launcher in default mode even if a native blur event was missed.
+  app.on('browser-window-focus', (_event: any, focusedWindow: InstanceType<typeof BrowserWindow>) => {
+    if (!mainWindow || !isVisible) return;
+    if (focusedWindow === mainWindow) return;
+    if (suppressBlurHide) return;
+    if (launcherMode !== 'default') return;
+    hideWindow();
+  });
 
   // Wait for the renderer to finish loading before showing the window.
   // Showing before load completes results in a blank/transparent frame.

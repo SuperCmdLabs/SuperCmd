@@ -15,11 +15,13 @@
 
 import { app } from 'electron';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import {
   isCommandPlatformCompatible,
   isManifestPlatformCompatible,
 } from './extension-platform';
+import { loadSettings } from './settings-store';
 
 export interface ExtensionPreferenceSchema {
   scope: 'extension' | 'command';
@@ -69,16 +71,112 @@ export interface ExtensionCommandInfo {
 
 // ─── Paths ──────────────────────────────────────────────────────────
 
-function getExtensionsDir(): string {
-  return path.join(app.getPath('userData'), 'extensions');
+interface InstalledExtensionSource {
+  extName: string;
+  extPath: string;
+  sourceRoot: string;
 }
 
-function getBuildDir(extName: string): string {
-  const dir = path.join(getExtensionsDir(), extName, '.sc-build');
+function getManagedExtensionsDir(): string {
+  const dir = path.join(app.getPath('userData'), 'extensions');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
   return dir;
+}
+
+function getBuildDir(extPath: string): string {
+  const dir = path.join(extPath, '.sc-build');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+function expandHome(inputPath: string): string {
+  const raw = String(inputPath || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
+  return raw;
+}
+
+function normalizeFsPath(inputPath: string): string {
+  return path.resolve(expandHome(inputPath));
+}
+
+function normalizeExtensionName(name: string): string {
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+  return raw.replace(/^@/, '').replace(/[\\/]/g, '-');
+}
+
+function getConfiguredExtensionRoots(): string[] {
+  const settingsPaths = Array.isArray(loadSettings().customExtensionFolders)
+    ? loadSettings().customExtensionFolders
+    : [];
+  const envPaths = String(process.env.SUPERCMD_EXTENSION_PATHS || '')
+    .split(path.delimiter)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  const unique = new Set<string>();
+  for (const root of [getManagedExtensionsDir(), ...settingsPaths, ...envPaths]) {
+    const normalized = normalizeFsPath(root);
+    if (!normalized) continue;
+    unique.add(normalized);
+  }
+  return [...unique];
+}
+
+function collectInstalledExtensions(): InstalledExtensionSource[] {
+  const results: InstalledExtensionSource[] = [];
+  const seen = new Set<string>();
+
+  const addIfValid = (extPath: string, sourceRoot: string, fallbackName: string) => {
+    const pkgPath = path.join(extPath, 'package.json');
+    if (!fs.existsSync(pkgPath)) return;
+    try {
+      if (!fs.statSync(extPath).isDirectory()) return;
+    } catch {
+      return;
+    }
+
+    const extName = normalizeExtensionName(fallbackName);
+    if (!extName) return;
+    const dedupeKey = extName.toLowerCase();
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    results.push({ extName, extPath, sourceRoot });
+  };
+
+  for (const sourceRoot of getConfiguredExtensionRoots()) {
+    if (!fs.existsSync(sourceRoot)) continue;
+
+    const sourceRootPkg = path.join(sourceRoot, 'package.json');
+    if (fs.existsSync(sourceRootPkg)) {
+      addIfValid(sourceRoot, sourceRoot, path.basename(sourceRoot));
+      continue;
+    }
+
+    let entries: string[] = [];
+    try {
+      entries = fs.readdirSync(sourceRoot);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      addIfValid(path.join(sourceRoot, entry), sourceRoot, entry);
+    }
+  }
+
+  return results;
+}
+
+function resolveInstalledExtensionPath(extName: string): string | null {
+  const normalized = normalizeExtensionName(extName);
+  if (!normalized) return null;
+  const match = collectInstalledExtensions().find((entry) => entry.extName === normalized);
+  return match?.extPath || null;
 }
 
 // ─── Icon extraction ────────────────────────────────────────────────
@@ -150,21 +248,11 @@ function normalizePreferenceSchema(pref: any, scope: 'extension' | 'command'): E
  * commands that should appear in the launcher.
  */
 export function discoverInstalledExtensionCommands(): ExtensionCommandInfo[] {
-  const extDir = getExtensionsDir();
-  if (!fs.existsSync(extDir)) return [];
-
   const results: ExtensionCommandInfo[] = [];
-
-  for (const dir of fs.readdirSync(extDir)) {
-    const extPath = path.join(extDir, dir);
+  for (const source of collectInstalledExtensions()) {
+    const extPath = source.extPath;
     const pkgPath = path.join(extPath, 'package.json');
-
-    try {
-      if (!fs.statSync(extPath).isDirectory()) continue;
-    } catch {
-      continue;
-    }
-    if (!fs.existsSync(pkgPath)) continue;
+    const extName = source.extName;
 
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
@@ -178,16 +266,16 @@ export function discoverInstalledExtensionCommands(): ExtensionCommandInfo[] {
         if (!cmd.name) continue;
         if (!isCommandPlatformCompatible(cmd)) continue;
         results.push({
-          id: `ext-${dir}-${cmd.name}`,
+          id: `ext-${extName}-${cmd.name}`,
           title: cmd.title || cmd.name,
-          extName: dir,
+          extName,
           cmdName: cmd.name,
           description: cmd.description || '',
           mode: cmd.mode || 'view',
           interval: typeof cmd.interval === 'string' ? cmd.interval : undefined,
           disabledByDefault: Boolean(cmd.disabledByDefault),
           keywords: [
-            dir,
+            extName,
             pkg.title || '',
             cmd.name,
             cmd.title || '',
@@ -209,21 +297,11 @@ export function discoverInstalledExtensionCommands(): ExtensionCommandInfo[] {
  * (extension + command preferences) for Settings UI and API parity.
  */
 export function getInstalledExtensionsSettingsSchema(): InstalledExtensionSettingsSchema[] {
-  const extDir = getExtensionsDir();
-  if (!fs.existsSync(extDir)) return [];
-
   const results: InstalledExtensionSettingsSchema[] = [];
-
-  for (const dir of fs.readdirSync(extDir)) {
-    const extPath = path.join(extDir, dir);
+  for (const source of collectInstalledExtensions()) {
+    const extPath = source.extPath;
     const pkgPath = path.join(extPath, 'package.json');
-
-    try {
-      if (!fs.statSync(extPath).isDirectory()) continue;
-    } catch {
-      continue;
-    }
-    if (!fs.existsSync(pkgPath)) continue;
+    const extName = source.extName;
 
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
@@ -257,8 +335,8 @@ export function getInstalledExtensionsSettingsSchema(): InstalledExtensionSettin
         : [];
 
       results.push({
-        extName: dir,
-        title: pkg.title || dir,
+        extName,
+        title: pkg.title || extName,
         description: pkg.description || '',
         owner,
         iconDataUrl,
@@ -372,8 +450,15 @@ function resolveEntryFile(extPath: string, cmd: any): string | null {
  *
  * Returns the number of commands successfully built.
  */
-export async function buildAllCommands(extName: string): Promise<number> {
-  const extPath = path.join(getExtensionsDir(), extName);
+export async function buildAllCommands(extName: string, extPathOverride?: string): Promise<number> {
+  const extPath = extPathOverride
+    ? normalizeFsPath(extPathOverride)
+    : resolveInstalledExtensionPath(extName);
+
+  if (!extPath) {
+    console.error(`Extension path not found for ${extName}`);
+    return 0;
+  }
   const pkgPath = path.join(extPath, 'package.json');
 
   if (!fs.existsSync(pkgPath)) {
@@ -401,7 +486,7 @@ export async function buildAllCommands(extName: string): Promise<number> {
 
   const esbuild = require('esbuild');
   const extNodeModules = path.join(extPath, 'node_modules');
-  const buildDir = getBuildDir(extName);
+  const buildDir = getBuildDir(extPath);
   // Avoid stale command bundles when extension source layout changes.
   try {
     fs.rmSync(buildDir, { recursive: true, force: true });
@@ -653,8 +738,13 @@ export function getExtensionBundle(
   extName: string,
   cmdName: string
 ): ExtensionBundleResult | null {
-  const extPath = path.join(getExtensionsDir(), extName);
-  const outFile = path.join(extPath, '.sc-build', `${cmdName}.js`);
+  const normalizedExtName = normalizeExtensionName(extName);
+  const extPath = resolveInstalledExtensionPath(normalizedExtName);
+  if (!extPath) {
+    console.error(`Extension not found: ${normalizedExtName}`);
+    return null;
+  }
+  let outFile = path.join(extPath, '.sc-build', `${cmdName}.js`);
 
   if (!fs.existsSync(outFile)) {
     console.error(
@@ -735,7 +825,7 @@ export function getExtensionBundle(
 
   // Compute paths
   const assetsPath = path.join(extPath, 'assets');
-  const supportPath = path.join(app.getPath('userData'), 'extension-support', extName);
+  const supportPath = path.join(app.getPath('userData'), 'extension-support', normalizedExtName);
 
   // Ensure support directory exists
   if (!fs.existsSync(supportPath)) {
@@ -746,7 +836,7 @@ export function getExtensionBundle(
     code,
     title,
     mode,
-    extensionName: extName,
+    extensionName: normalizedExtName,
     extensionDisplayName,
     extensionIconDataUrl,
     commandName: cmdName,

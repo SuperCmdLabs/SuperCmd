@@ -34,6 +34,7 @@ export interface AppSettings {
   openAtLogin: boolean;
   disabledCommands: string[];
   enabledCommands: string[];
+  customExtensionFolders: string[];
   commandHotkeys: Record<string, string>;
   pinnedCommands: string[];
   recentCommands: string[];
@@ -68,6 +69,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   openAtLogin: false,
   disabledCommands: [],
   enabledCommands: [],
+  customExtensionFolders: [],
   commandHotkeys: {
     'system-cursor-prompt': 'Command+K',
     'system-supercommand-whisper': 'Command+Shift+W',
@@ -112,12 +114,17 @@ export function loadSettings(): AppSettings {
     delete parsedHotkeys['system-supercommand-whisper-toggle'];
     delete parsedHotkeys['system-supercommand-whisper-start'];
     delete parsedHotkeys['system-supercommand-whisper-stop'];
-    settingsCache = {
-      globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
-      openAtLogin: parsed.openAtLogin ?? DEFAULT_SETTINGS.openAtLogin,
-      disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
-      enabledCommands: parsed.enabledCommands ?? DEFAULT_SETTINGS.enabledCommands,
-      commandHotkeys: {
+      settingsCache = {
+        globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
+        openAtLogin: parsed.openAtLogin ?? DEFAULT_SETTINGS.openAtLogin,
+        disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
+        enabledCommands: parsed.enabledCommands ?? DEFAULT_SETTINGS.enabledCommands,
+        customExtensionFolders: Array.isArray(parsed.customExtensionFolders)
+          ? parsed.customExtensionFolders
+              .map((value: any) => String(value || '').trim())
+              .filter(Boolean)
+          : DEFAULT_SETTINGS.customExtensionFolders,
+        commandHotkeys: {
         ...DEFAULT_SETTINGS.commandHotkeys,
         ...parsedHotkeys,
       },

@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
   Download,
+  Folder,
+  FolderPlus,
   Puzzle,
   Search,
   TerminalSquare,
@@ -92,13 +94,22 @@ const ExtensionsTab: React.FC<{
     type: 'idle' | 'success' | 'error';
     text: string;
   }>({ type: 'idle', text: '' });
+  const [folderStatus, setFolderStatus] = useState<{
+    type: 'idle' | 'success' | 'error';
+    text: string;
+  }>({ type: 'idle', text: '' });
+  const [folderBusy, setFolderBusy] = useState(false);
+  const [showTopActionsMenu, setShowTopActionsMenu] = useState(false);
+  const topActionsMenuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    Promise.all([
-      window.electron.getAllCommands(),
-      window.electron.getSettings(),
-      window.electron.getInstalledExtensionsSettingsSchema(),
-    ]).then(([cmds, sett, extSchemas]) => {
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [cmds, sett, extSchemas] = await Promise.all([
+        window.electron.getAllCommands(),
+        window.electron.getSettings(),
+        window.electron.getInstalledExtensionsSettingsSchema(),
+      ]);
       setCommands(cmds);
       setSettings(sett);
       setSchemas(extSchemas);
@@ -108,9 +119,14 @@ const ExtensionsTab: React.FC<{
       const expanded: Record<string, boolean> = {};
       for (const schema of extSchemas) expanded[schema.extName] = true;
       setExpandedExtensions(expanded);
+    } finally {
       setIsLoading(false);
-    });
+    }
   }, []);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const commandBySchemaKey = useMemo(() => {
     const map = new Map<string, CommandInfo>();
@@ -451,9 +467,87 @@ const ExtensionsTab: React.FC<{
     }
   };
 
+  const updateCustomExtensionFolders = useCallback(
+    async (nextFolders: string[]) => {
+      const unique = Array.from(
+        new Set(nextFolders.map((value) => String(value || '').trim()).filter(Boolean))
+      );
+      await window.electron.saveSettings({ customExtensionFolders: unique });
+      setSettings((prev) => (prev ? { ...prev, customExtensionFolders: unique } : prev));
+      await loadData();
+    },
+    [loadData]
+  );
+
+  const handleAddCustomExtensionFolder = useCallback(async () => {
+    const picked = await window.electron.pickFiles({
+      allowMultipleSelection: false,
+      canChooseDirectories: true,
+      canChooseFiles: false,
+    });
+    const pickedPath = String(picked?.[0] || '').trim();
+    if (!pickedPath) return;
+    const existing = Array.isArray(settings?.customExtensionFolders)
+      ? settings?.customExtensionFolders
+      : [];
+    if (existing.includes(pickedPath)) {
+      setFolderStatus({ type: 'error', text: 'Folder already added.' });
+      setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2200);
+      return;
+    }
+    setFolderBusy(true);
+    try {
+      await updateCustomExtensionFolders([...existing, pickedPath]);
+      setFolderStatus({ type: 'success', text: 'Extension folder added.' });
+      setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 1800);
+    } catch (error) {
+      console.error('Failed to add custom extension folder:', error);
+      setFolderStatus({ type: 'error', text: 'Failed to add extension folder.' });
+      setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2800);
+    } finally {
+      setFolderBusy(false);
+    }
+  }, [settings, updateCustomExtensionFolders]);
+
+  const handleRemoveCustomExtensionFolder = useCallback(
+    async (folderPath: string) => {
+      const existing = Array.isArray(settings?.customExtensionFolders)
+        ? settings.customExtensionFolders
+        : [];
+      const next = existing.filter((value) => value !== folderPath);
+      setFolderBusy(true);
+      try {
+        await updateCustomExtensionFolders(next);
+        setFolderStatus({ type: 'success', text: 'Extension folder removed.' });
+        setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 1800);
+      } catch (error) {
+        console.error('Failed to remove custom extension folder:', error);
+        setFolderStatus({ type: 'error', text: 'Failed to remove extension folder.' });
+        setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2800);
+      } finally {
+        setFolderBusy(false);
+      }
+    },
+    [settings, updateCustomExtensionFolders]
+  );
+
+  useEffect(() => {
+    if (!showTopActionsMenu) return;
+    const onMouseDown = (event: MouseEvent) => {
+      if (topActionsMenuRef.current?.contains(event.target as Node)) return;
+      setShowTopActionsMenu(false);
+    };
+    window.addEventListener('mousedown', onMouseDown);
+    return () => window.removeEventListener('mousedown', onMouseDown);
+  }, [showTopActionsMenu]);
+
   if (isLoading) {
     return <div className="text-white/50 text-sm">Loading extension settings…</div>;
   }
+
+  const customExtensionFolders = Array.isArray(settings?.customExtensionFolders)
+    ? settings.customExtensionFolders
+    : [];
 
   return (
     <div className="h-full min-h-0 flex flex-col">
@@ -488,13 +582,39 @@ const ExtensionsTab: React.FC<{
                   Commands
                 </button>
               </div>
-              <button
-                onClick={() => window.electron.openExtensionStoreWindow()}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 transition-colors whitespace-nowrap"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Install from Store</span>
-              </button>
+              <div className="relative" ref={topActionsMenuRef}>
+                <button
+                  onClick={() => setShowTopActionsMenu((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 transition-colors whitespace-nowrap"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Extensions</span>
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+                {showTopActionsMenu ? (
+                  <div className="absolute right-0 mt-1 w-44 rounded-lg border border-white/[0.10] bg-[#1a1c23]/95 backdrop-blur-md shadow-2xl overflow-hidden z-20">
+                    <button
+                      onClick={() => {
+                        setShowTopActionsMenu(false);
+                        window.electron.openExtensionStoreWindow();
+                      }}
+                      className="w-full px-2.5 py-2 text-left text-xs text-white/85 hover:bg-white/[0.08] transition-colors"
+                    >
+                      Install from Store
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowTopActionsMenu(false);
+                        void handleAddCustomExtensionFolder();
+                      }}
+                      disabled={folderBusy}
+                      className="w-full px-2.5 py-2 text-left text-xs text-white/85 hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Add Folder
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
             {hotkeyStatus.type !== 'idle' ? (
               <p
@@ -623,7 +743,52 @@ const ExtensionsTab: React.FC<{
           </div>
         </div>
 
-        <div className="flex-1 min-w-0 h-full min-h-0 overflow-hidden">
+        <div className="flex-1 min-w-0 h-full min-h-0 overflow-hidden flex flex-col">
+          <div className="px-4 py-3 border-b border-white/[0.06]">
+            <div className="rounded-lg border border-white/[0.10] bg-white/[0.03] px-2.5 py-2">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-white/85">
+                  <Folder className="w-3.5 h-3.5 text-white/70" />
+                  <span>Custom Extension Folders</span>
+                  <span className="text-white/45">({customExtensionFolders.length})</span>
+                </div>
+              </div>
+              {customExtensionFolders.length === 0 ? (
+                <p className="mt-1 text-[11px] text-white/45">
+                  Add a folder that contains one extension or multiple extension subfolders.
+                </p>
+              ) : (
+                <div className="mt-2 space-y-1.5">
+                  {customExtensionFolders.map((folderPath) => (
+                    <div
+                      key={folderPath}
+                      className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1"
+                    >
+                      <span className="flex-1 min-w-0 truncate text-[11px] text-white/70">{folderPath}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCustomExtensionFolder(folderPath)}
+                        disabled={folderBusy}
+                        className="text-[11px] text-red-300/90 hover:text-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {folderStatus.type !== 'idle' ? (
+                <p
+                  className={`mt-2 text-[11px] ${
+                    folderStatus.type === 'error' ? 'text-red-300/90' : 'text-emerald-300/90'
+                  }`}
+                >
+                  {folderStatus.text}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
           {!selectedSchema ? (
             <div className="h-full flex items-center justify-center text-sm text-white/35">Select an extension</div>
           ) : (
@@ -688,6 +853,7 @@ const ExtensionsTab: React.FC<{
               </div>
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

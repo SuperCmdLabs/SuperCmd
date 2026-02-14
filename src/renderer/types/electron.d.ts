@@ -128,6 +128,7 @@ export interface AppSettings {
   openAtLogin: boolean;
   disabledCommands: string[];
   enabledCommands: string[];
+  customExtensionFolders: string[];
   commandHotkeys: Record<string, string>;
   pinnedCommands: string[];
   recentCommands: string[];
