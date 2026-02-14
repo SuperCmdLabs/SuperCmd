@@ -4,7 +4,7 @@
  * Pure utility functions and types for the launcher command list.
  * - filterCommands: text search + hidden-command filtering
  * - Icon renderers: renderCommandIcon, renderSuperCmdLogoIcon, getSystemCommandFallbackIcon
- * - Display helpers: getCommandDisplayTitle, getCategoryLabel, formatShortcutLabel, renderShortcutLabel
+ * - Display helpers: getCommandDisplayTitle, getCategoryLabel, getCommandAccessoryLabel, formatShortcutLabel, renderShortcutLabel
  * - Voice utilities: buildReadVoiceOptions, getVoiceLanguageCode, getFallbackVoiceLabel
  * - parseIntervalToMs: converts interval strings like "1m", "12h" to milliseconds
  * - Types: LauncherAction, MemoryFeedback, ReadVoiceOption
@@ -104,6 +104,30 @@ export function getCategoryLabel(category: string): string {
     default:
       return 'Application';
   }
+}
+
+function toTitleCaseLabel(input: string): string {
+  return String(input || '')
+    .split('-')
+    .map((part) => part ? part[0].toUpperCase() + part.slice(1) : '')
+    .join(' ');
+}
+
+export function getCommandAccessoryLabel(command: CommandInfo): string {
+  if (command.category === 'extension') {
+    const extName = String(command.path || '').split('/')[0] || '';
+    if (extName) return toTitleCaseLabel(extName);
+  }
+
+  if (command.category === 'script') {
+    const subtitle = String(command.subtitle || '').trim();
+    if (subtitle) return subtitle;
+  }
+
+  const subtitle = String(command.subtitle || '').trim();
+  if (subtitle) return subtitle;
+
+  return '';
 }
 
 export function formatShortcutLabel(shortcut: string): string {

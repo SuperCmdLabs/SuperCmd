@@ -29,8 +29,9 @@ import { useWhisperManager } from './hooks/useWhisperManager';
 import { LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import {
   type LauncherAction, type MemoryFeedback,
-  filterCommands, getCategoryLabel, formatShortcutLabel,
+  filterCommands, formatShortcutLabel, getCategoryLabel,
   renderCommandIcon, getCommandDisplayTitle,
+  getCommandAccessoryLabel,
   renderShortcutLabel,
 } from './utils/command-helpers';
 import {
@@ -1786,6 +1787,8 @@ const App: React.FC = () => {
                     );
                     section.items.forEach((command, i) => {
                       const flatIndex = startIndex + i;
+                      const accessoryLabel = getCommandAccessoryLabel(command);
+                      const fallbackCategory = getCategoryLabel(command.category);
                       acc.nodes.push(
                         <div
                           key={command.id}
@@ -1811,19 +1814,19 @@ const App: React.FC = () => {
                               {renderCommandIcon(command)}
                             </div>
 
-                            <div className="flex-1 min-w-0">
-                              <div className="text-white/95 text-[13px] font-medium truncate tracking-[0.004em]">
+                            <div className="min-w-0 flex-1 flex items-center gap-2">
+                              <div className="text-white/95 text-[13px] font-semibold truncate tracking-[0.004em]">
                                 {getCommandDisplayTitle(command)}
                               </div>
-                              {command.subtitle ? (
-                                <div className="text-white/45 text-[11px] truncate mt-0.5">
-                                  {command.subtitle}
+                              {accessoryLabel ? (
+                                <div className="text-white/60 text-[12px] font-medium truncate">
+                                  {accessoryLabel}
                                 </div>
-                              ) : null}
-                            </div>
-
-                            <div className="text-white/55 text-[11px] font-semibold flex-shrink-0">
-                              {getCategoryLabel(command.category)}
+                              ) : (
+                                <div className="text-white/50 text-[11px] font-medium truncate">
+                                  {fallbackCategory}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>

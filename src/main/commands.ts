@@ -1003,6 +1003,7 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
     extensionCommands = discoverInstalledExtensionCommands().map((ext) => ({
       id: ext.id,
       title: ext.title,
+      subtitle: ext.extensionTitle,
       keywords: ext.keywords,
       iconDataUrl: ext.iconDataUrl,
       category: 'extension' as const,

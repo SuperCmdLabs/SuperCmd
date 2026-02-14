@@ -59,6 +59,7 @@ export interface InstalledExtensionSettingsSchema {
 export interface ExtensionCommandInfo {
   id: string;
   title: string;
+  extensionTitle: string;
   extName: string;
   cmdName: string;
   description: string;
@@ -268,6 +269,7 @@ export function discoverInstalledExtensionCommands(): ExtensionCommandInfo[] {
         results.push({
           id: `ext-${extName}-${cmd.name}`,
           title: cmd.title || cmd.name,
+          extensionTitle: pkg.title || extName,
           extName,
           cmdName: cmd.name,
           description: cmd.description || '',
