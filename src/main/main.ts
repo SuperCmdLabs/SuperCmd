@@ -3311,6 +3311,37 @@ function openExtensionStoreWindow(): void {
   });
 }
 
+function getDialogParentWindow(event?: { sender?: any }): InstanceType<typeof BrowserWindow> | undefined {
+  try {
+    const sender = event?.sender;
+    if (sender) {
+      const senderWindow = BrowserWindow.fromWebContents(sender);
+      if (senderWindow && !senderWindow.isDestroyed()) {
+        return senderWindow;
+      }
+    }
+  } catch {}
+
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed()) {
+    return focused;
+  }
+
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    return settingsWindow;
+  }
+
+  if (extensionStoreWindow && !extensionStoreWindow.isDestroyed()) {
+    return extensionStoreWindow;
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow;
+  }
+
+  return undefined;
+}
+
 // ─── Shortcut Management ────────────────────────────────────────────
 
 function applyOpenAtLogin(enabled: boolean): boolean {
@@ -5136,10 +5167,10 @@ return appURL's |path|() as text`,
     return await hideAndPaste();
   });
 
-  ipcMain.handle('snippet-import', async () => {
+  ipcMain.handle('snippet-import', async (event: any) => {
     suppressBlurHide = true;
     try {
-      const result = await importSnippetsFromFile(mainWindow || undefined);
+      const result = await importSnippetsFromFile(getDialogParentWindow(event));
       refreshSnippetExpander();
       return result;
     } finally {
@@ -5147,10 +5178,10 @@ return appURL's |path|() as text`,
     }
   });
 
-  ipcMain.handle('snippet-export', async () => {
+  ipcMain.handle('snippet-export', async (event: any) => {
     suppressBlurHide = true;
     try {
-      return await exportSnippetsToFile(mainWindow || undefined);
+      return await exportSnippetsToFile(getDialogParentWindow(event));
     } finally {
       suppressBlurHide = false;
     }
@@ -5895,7 +5926,7 @@ return appURL's |path|() as text`,
   ipcMain.handle(
     'pick-files',
     async (
-      _event: any,
+      event: any,
       options?: {
         allowMultipleSelection?: boolean;
         canChooseDirectories?: boolean;
@@ -5919,7 +5950,7 @@ return appURL's |path|() as text`,
 
       suppressBlurHide = true;
       try {
-        const result = await dialog.showOpenDialog(mainWindow || undefined, {
+        const result = await dialog.showOpenDialog(getDialogParentWindow(event), {
           properties: properties as any,
         });
         if (result.canceled) return [];
@@ -6146,6 +6177,16 @@ return appURL's |path|() as text`,
   }
 
   app.on('activate', () => {
+    const visibleNonLauncherWindow = BrowserWindow
+      .getAllWindows()
+      .find((win: InstanceType<typeof BrowserWindow>) => !win.isDestroyed() && win.isVisible() && win !== mainWindow);
+    if (visibleNonLauncherWindow) {
+      if (!visibleNonLauncherWindow.isFocused()) {
+        visibleNonLauncherWindow.focus();
+      }
+      return;
+    }
+
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
       // New window — wait for content to load before showing.

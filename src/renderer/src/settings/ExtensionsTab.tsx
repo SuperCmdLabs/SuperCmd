@@ -548,6 +548,11 @@ const ExtensionsTab: React.FC<{
   const customExtensionFolders = Array.isArray(settings?.customExtensionFolders)
     ? settings.customExtensionFolders
     : [];
+  const getFolderName = (folderPath: string): string => {
+    const normalized = String(folderPath || '').replace(/[\\/]+$/, '');
+    const parts = normalized.split(/[\\/]/).filter(Boolean);
+    return parts[parts.length - 1] || folderPath;
+  };
 
   return (
     <div className="h-full min-h-0 flex flex-col">
@@ -588,7 +593,7 @@ const ExtensionsTab: React.FC<{
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 transition-colors whitespace-nowrap"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Extensions</span>
+                  <span>Install Extension</span>
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
                 {showTopActionsMenu ? (
@@ -744,49 +749,46 @@ const ExtensionsTab: React.FC<{
         </div>
 
         <div className="flex-1 min-w-0 h-full min-h-0 overflow-hidden flex flex-col">
-          <div className="px-4 py-3 border-b border-white/[0.06]">
-            <div className="rounded-lg border border-white/[0.10] bg-white/[0.03] px-2.5 py-2">
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-white/85">
-                  <Folder className="w-3.5 h-3.5 text-white/70" />
-                  <span>Custom Extension Folders</span>
-                  <span className="text-white/45">({customExtensionFolders.length})</span>
-                </div>
-              </div>
-              {customExtensionFolders.length === 0 ? (
-                <p className="mt-1 text-[11px] text-white/45">
-                  Add a folder that contains one extension or multiple extension subfolders.
-                </p>
-              ) : (
-                <div className="mt-2 space-y-1.5">
-                  {customExtensionFolders.map((folderPath) => (
-                    <div
-                      key={folderPath}
-                      className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1"
-                    >
-                      <span className="flex-1 min-w-0 truncate text-[11px] text-white/70">{folderPath}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveCustomExtensionFolder(folderPath)}
-                        disabled={folderBusy}
-                        className="text-[11px] text-red-300/90 hover:text-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {folderStatus.type !== 'idle' ? (
-                <p
-                  className={`mt-2 text-[11px] ${
-                    folderStatus.type === 'error' ? 'text-red-300/90' : 'text-emerald-300/90'
-                  }`}
-                >
-                  {folderStatus.text}
-                </p>
-              ) : null}
+          <div className="px-4 py-2 border-b border-white/[0.06]">
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-white/45">
+              <Folder className="w-3.5 h-3.5 text-white/55" />
+              <span>Custom Folders</span>
+              <span className="text-white/35">({customExtensionFolders.length})</span>
             </div>
+            <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5">
+              {customExtensionFolders.length === 0 ? (
+                <span className="text-[11px] text-white/38">
+                  Add Folder from Install Extension
+                </span>
+              ) : (
+                customExtensionFolders.map((folderPath) => (
+                  <div
+                    key={folderPath}
+                    className="inline-flex max-w-[240px] items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1"
+                    title={folderPath}
+                  >
+                    <span className="truncate text-[11px] text-white/75">{getFolderName(folderPath)}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCustomExtensionFolder(folderPath)}
+                      disabled={folderBusy}
+                      className="text-[11px] text-red-300/90 hover:text-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            {folderStatus.type !== 'idle' ? (
+              <p
+                className={`mt-1 text-right text-[11px] ${
+                  folderStatus.type === 'error' ? 'text-red-300/90' : 'text-emerald-300/90'
+                }`}
+              >
+                {folderStatus.text}
+              </p>
+            ) : null}
           </div>
           <div className="flex-1 min-h-0 overflow-hidden">
           {!selectedSchema ? (
