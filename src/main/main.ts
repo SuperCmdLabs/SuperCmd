@@ -2370,6 +2370,27 @@ async function openLauncherAndRunSystemCommand(
   return true;
 }
 
+async function dispatchRendererCustomEvent(eventName: string, detail: any): Promise<boolean> {
+  if (!mainWindow) {
+    createWindow();
+  }
+  if (!mainWindow) return false;
+
+  if (mainWindow.webContents.isLoadingMainFrame()) {
+    await new Promise<void>((resolve) => {
+      mainWindow?.webContents.once('did-finish-load', () => resolve());
+    });
+  }
+
+  const eventNameLiteral = JSON.stringify(String(eventName || '').trim());
+  const detailLiteral = JSON.stringify(detail ?? {});
+  await mainWindow.webContents.executeJavaScript(
+    `window.dispatchEvent(new CustomEvent(${eventNameLiteral}, { detail: ${detailLiteral} }));`,
+    true
+  );
+  return true;
+}
+
 async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' = 'launcher'): Promise<boolean> {
   const isWhisperOpenCommand =
     commandId === 'system-supercommand-whisper' ||
@@ -2583,6 +2604,46 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     } catch (error: any) {
       console.error('Failed to open script command directory:', error);
       console.error('[ScriptCommand] Failed to open script commands folder.');
+      return false;
+    }
+  }
+
+  const allCommands = await getAvailableCommands();
+  const command = allCommands.find((item) => item.id === commandId);
+  if (command?.category === 'extension' && command.path) {
+    const [extName, cmdName] = command.path.split('/');
+    if (!extName || !cmdName) return false;
+    try {
+      const bundle = buildLaunchBundle({
+        extensionName: extName,
+        commandName: cmdName,
+        type: 'userInitiated',
+      });
+      await showWindow();
+      return await dispatchRendererCustomEvent('sc-launch-extension-bundle', {
+        bundle,
+        launchOptions: { type: bundle.launchType || 'userInitiated' },
+        source: {
+          commandMode: source,
+          extensionName: bundle.extensionName,
+          commandName: bundle.commandName,
+        },
+      });
+    } catch (error) {
+      console.error(`Failed to launch extension command via hotkey: ${commandId}`, error);
+      return false;
+    }
+  }
+
+  if (command?.category === 'script') {
+    try {
+      await showWindow();
+      return await dispatchRendererCustomEvent('sc-run-script-command', {
+        commandId: command.id,
+        arguments: [],
+      });
+    } catch (error) {
+      console.error(`Failed to launch script command via hotkey: ${commandId}`, error);
       return false;
     }
   }
