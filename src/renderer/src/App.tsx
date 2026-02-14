@@ -355,7 +355,7 @@ const App: React.FC = () => {
       setMemoryActionLoading(false);
       setScriptCommandSetup(null);
       setScriptCommandOutput(null);
-      void refreshSelectedTextSnapshot();
+      setSelectedTextSnapshot(String(payload?.selectedTextSnapshot || '').trim());
       const shouldResetOverlays =
         lastWindowHiddenAtRef.current > 0 &&
         Date.now() - lastWindowHiddenAtRef.current > STALE_OVERLAY_RESET_MS;
