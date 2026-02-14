@@ -258,6 +258,7 @@ export interface ElectronAPI {
     target?: { extensionName?: string; commandName?: string }
   ) => Promise<void>;
   openExtensionStoreWindow: () => Promise<void>;
+  openCustomScriptsFolder: () => Promise<{ success: boolean; folderPath: string; createdSample: boolean }>;
   onSettingsTabChanged: (
     callback: (payload:
       | 'general'

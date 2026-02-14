@@ -664,6 +664,36 @@ export function createScriptCommandTemplate(): { scriptPath: string; scriptsDir:
   return { scriptPath: targetPath, scriptsDir };
 }
 
+export function ensureSampleScriptCommand(): {
+  scriptsDir: string;
+  scriptPath?: string;
+  created: boolean;
+} {
+  const scriptsDir = getSuperCmdScriptsDir();
+  const hasAnyScriptCommand = discoverScriptFiles(scriptsDir)
+    .some((filePath) => Boolean(parseScriptCommandFile(filePath)));
+  if (hasAnyScriptCommand) {
+    return { scriptsDir, created: false };
+  }
+
+  const sampleTitle = 'Sample Script Command';
+  const sampleBaseName = 'sample-script-command';
+  let targetPath = path.join(scriptsDir, `${sampleBaseName}.sh`);
+  let seq = 2;
+  while (fs.existsSync(targetPath)) {
+    targetPath = path.join(scriptsDir, `${sampleBaseName}-${seq}.sh`);
+    seq += 1;
+  }
+
+  fs.writeFileSync(targetPath, buildTemplateScript(sampleTitle), { mode: 0o755 });
+  try {
+    fs.chmodSync(targetPath, 0o755);
+  } catch {}
+
+  invalidateScriptCommandsCache();
+  return { scriptsDir, scriptPath: targetPath, created: true };
+}
+
 export function getSuperCmdScriptCommandsDirectory(): string {
   return getSuperCmdScriptsDir();
 }

@@ -138,6 +138,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('open-settings-tab', { tab, target }),
   openExtensionStoreWindow: (): Promise<void> =>
     ipcRenderer.invoke('open-extension-store-window'),
+  openCustomScriptsFolder: (): Promise<{ success: boolean; folderPath: string; createdSample: boolean }> =>
+    ipcRenderer.invoke('open-custom-scripts-folder'),
   onSettingsTabChanged: (callback: (payload: any) => void) => {
     ipcRenderer.on('settings-tab-changed', (_event, payload) => callback(payload));
   },

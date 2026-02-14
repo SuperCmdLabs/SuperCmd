@@ -18,6 +18,7 @@ import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
 import {
   createScriptCommandTemplate,
+  ensureSampleScriptCommand,
   executeScriptCommand,
   getScriptCommandBySlug,
   getSuperCmdScriptCommandsDirectory,
@@ -3913,6 +3914,25 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('open-extension-store-window', () => {
     openExtensionStoreWindow();
+  });
+
+  ipcMain.handle('open-custom-scripts-folder', async () => {
+    try {
+      const ensured = ensureSampleScriptCommand();
+      await shell.openPath(ensured.scriptsDir);
+      return {
+        success: true,
+        folderPath: ensured.scriptsDir,
+        createdSample: ensured.created,
+      };
+    } catch (error: any) {
+      console.error('Failed to open custom scripts folder:', error);
+      return {
+        success: false,
+        folderPath: '',
+        createdSample: false,
+      };
+    }
   });
 
   // ─── IPC: Open URL (for extensions) ─────────────────────────────

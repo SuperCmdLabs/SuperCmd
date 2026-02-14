@@ -597,7 +597,7 @@ const ExtensionsTab: React.FC<{
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
                 {showTopActionsMenu ? (
-                  <div className="absolute right-0 mt-1 w-44 rounded-lg border border-white/[0.10] bg-[#1a1c23]/95 backdrop-blur-md shadow-2xl overflow-hidden z-20">
+                  <div className="absolute right-0 mt-1 w-48 rounded-lg border border-white/[0.10] bg-[#1a1c23]/95 backdrop-blur-md shadow-2xl overflow-hidden z-20">
                     <button
                       onClick={() => {
                         setShowTopActionsMenu(false);
@@ -616,6 +616,36 @@ const ExtensionsTab: React.FC<{
                       className="w-full px-2.5 py-2 text-left text-xs text-white/85 hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       Add Folder
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setShowTopActionsMenu(false);
+                        setFolderBusy(true);
+                        try {
+                          const result = await window.electron.openCustomScriptsFolder();
+                          if (result?.success) {
+                            setFolderStatus({
+                              type: 'success',
+                              text: result.createdSample
+                                ? 'Opened custom scripts folder with sample script.'
+                                : 'Opened custom scripts folder.',
+                            });
+                            setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2200);
+                          } else {
+                            setFolderStatus({ type: 'error', text: 'Failed to open custom scripts folder.' });
+                            setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2800);
+                          }
+                        } catch {
+                          setFolderStatus({ type: 'error', text: 'Failed to open custom scripts folder.' });
+                          setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2800);
+                        } finally {
+                          setFolderBusy(false);
+                        }
+                      }}
+                      disabled={folderBusy}
+                      className="w-full px-2.5 py-2 text-left text-xs text-white/85 hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Custom Script
                     </button>
                   </div>
                 ) : null}
