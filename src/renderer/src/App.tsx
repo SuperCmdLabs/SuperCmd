@@ -393,6 +393,22 @@ const App: React.FC = () => {
     return cleanupWindowShown;
   }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openFileSearch, openOnboarding, setWhisperOnboardingPracticeText, openWhisperOnboarding]);
 
+  // Listen for OAuth logout events from the settings window.
+  // When the user clicks "Logout" in settings, clear the in-memory token
+  // and reset the extension view so the auth prompt shows on next launch.
+  useEffect(() => {
+    const cleanup = window.electron.onOAuthLogout?.((provider: string) => {
+      try {
+        localStorage.removeItem(`sc-oauth-token:${provider}`);
+      } catch {}
+      // If the currently running extension matches this provider, tear it down
+      // so the in-memory token and client are discarded.
+      setExtensionView(null);
+      localStorage.removeItem(LAST_EXT_KEY);
+    });
+    return cleanup;
+  }, [setExtensionView]);
+
   useEffect(() => {
     const onLaunchBundle = (event: Event) => {
       const custom = event as CustomEvent<{

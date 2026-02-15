@@ -70,6 +70,10 @@ export function setExtensionContext(ctx: ExtensionContextType) {
   environment.assetsPath = ctx.assetsPath;
   environment.supportPath = ctx.supportPath;
   environment.ownerOrAuthorName = ctx.owner;
+  // Reset in-memory OAuth token so withAccessToken re-checks the store
+  // when a new extension (or the same extension after logout) mounts.
+  _accessTokenValue = null;
+  _accessTokenType = null;
 }
 
 export function getExtensionContext(): ExtensionContextType {
@@ -6104,6 +6108,8 @@ function ensureOAuthCallbackBridge() {
   try {
     (window as any).electron?.onOAuthCallback?.((url: string) => {
       if (!url) return;
+      console.log('[OAuth] Renderer received callback URL:', url);
+      console.log('[OAuth] Active waiters:', oauthCallbackWaiters.size);
       oauthCallbackQueue.push(url);
       for (const waiter of Array.from(oauthCallbackWaiters)) {
         waiter(url);
@@ -6192,21 +6198,61 @@ class PKCEClientCompat {
     try {
       localStorage.setItem(oauthTokenKey(this.providerId), JSON.stringify(tokens));
     } catch {}
+    // Also persist to main process store so tokens survive window resets
+    try {
+      const accessToken = tokens.accessToken || tokens.access_token || '';
+      if (accessToken) {
+        await (window as any).electron?.oauthSetToken?.(this.providerId, {
+          accessToken,
+          tokenType: tokens.tokenType || tokens.token_type || 'Bearer',
+          scope: tokens.scope || '',
+          expiresIn: tokens.expiresIn || tokens.expires_in,
+          obtainedAt: tokens.obtainedAt || new Date().toISOString(),
+        });
+      }
+    } catch {}
   }
 
   async getTokens() {
+    // Check localStorage first (fast, in-memory)
     try {
       const raw = localStorage.getItem(oauthTokenKey(this.providerId));
-      if (!raw) return undefined;
-      return JSON.parse(raw);
-    } catch {
-      return undefined;
-    }
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        // Sync up to main process store so the settings window can see it
+        const accessToken = parsed?.accessToken || parsed?.access_token || '';
+        if (accessToken) {
+          (window as any).electron?.oauthSetToken?.(this.providerId, {
+            accessToken,
+            tokenType: parsed?.tokenType || parsed?.token_type || 'Bearer',
+            scope: parsed?.scope || '',
+            expiresIn: parsed?.expiresIn || parsed?.expires_in,
+            obtainedAt: parsed?.obtainedAt || new Date().toISOString(),
+          })?.catch?.(() => {});
+        }
+        return parsed;
+      }
+    } catch {}
+    // Fall back to main process store (persisted to disk, survives window resets)
+    try {
+      const stored = await (window as any).electron?.oauthGetToken?.(this.providerId);
+      if (stored?.accessToken) {
+        // Sync back to localStorage for faster future lookups
+        try {
+          localStorage.setItem(oauthTokenKey(this.providerId), JSON.stringify(stored));
+        } catch {}
+        return stored;
+      }
+    } catch {}
+    return undefined;
   }
 
   async removeTokens() {
     try {
       localStorage.removeItem(oauthTokenKey(this.providerId));
+    } catch {}
+    try {
+      await (window as any).electron?.oauthRemoveToken?.(this.providerId);
     } catch {}
   }
 }
@@ -6266,6 +6312,9 @@ type OAuthServiceOptions = {
 
 function parseOAuthCallbackUrl(rawUrl: string): {
   code?: string;
+  accessToken?: string;
+  tokenType?: string;
+  provider?: string;
   state?: string;
   error?: string;
   errorDescription?: string;
@@ -6275,10 +6324,15 @@ function parseOAuthCallbackUrl(rawUrl: string): {
     if (parsed.protocol !== 'supercmd:') return null;
     const isOAuthCallback =
       (parsed.hostname === 'oauth' && parsed.pathname === '/callback') ||
-      parsed.pathname === '/oauth/callback';
+      parsed.pathname === '/oauth/callback' ||
+      (parsed.hostname === 'auth' && parsed.pathname === '/callback') ||
+      parsed.pathname === '/auth/callback';
     if (!isOAuthCallback) return null;
     return {
       code: parsed.searchParams.get('code') || undefined,
+      accessToken: parsed.searchParams.get('access_token') || undefined,
+      tokenType: parsed.searchParams.get('token_type') || undefined,
+      provider: parsed.searchParams.get('provider') || undefined,
       state: parsed.searchParams.get('state') || undefined,
       error: parsed.searchParams.get('error') || undefined,
       errorDescription: parsed.searchParams.get('error_description') || undefined,
@@ -6288,14 +6342,21 @@ function parseOAuthCallbackUrl(rawUrl: string): {
   }
 }
 
-async function waitForOAuthCallback(state: string, timeoutMs = OAUTH_CALLBACK_TIMEOUT_MS): Promise<{ code?: string; error?: string; errorDescription?: string }> {
+async function waitForOAuthCallback(state: string, timeoutMs = OAUTH_CALLBACK_TIMEOUT_MS): Promise<{ code?: string; accessToken?: string; tokenType?: string; provider?: string; error?: string; errorDescription?: string }> {
   ensureOAuthCallbackBridge();
+
+  const stateMatches = (parsed: ReturnType<typeof parseOAuthCallbackUrl>) => {
+    if (!parsed) return false;
+    // If no state was provided, accept any callback
+    if (!state) return true;
+    return parsed.state === state;
+  };
 
   for (let i = 0; i < oauthCallbackQueue.length; i++) {
     const parsed = parseOAuthCallbackUrl(oauthCallbackQueue[i]);
-    if (parsed?.state === state) {
+    if (stateMatches(parsed)) {
       oauthCallbackQueue.splice(i, 1);
-      return parsed;
+      return parsed!;
     }
   }
 
@@ -6307,10 +6368,10 @@ async function waitForOAuthCallback(state: string, timeoutMs = OAUTH_CALLBACK_TI
 
     const handler = (rawUrl: string) => {
       const parsed = parseOAuthCallbackUrl(rawUrl);
-      if (!parsed || parsed.state !== state) return;
+      if (!stateMatches(parsed)) return;
       clearTimeout(timer);
       oauthCallbackWaiters.delete(handler);
-      resolve(parsed);
+      resolve(parsed!);
     };
 
     oauthCallbackWaiters.add(handler);
@@ -6435,6 +6496,27 @@ export class OAuthService {
   }
 
   async beginAuthorization(): Promise<boolean> {
+    // If a custom authorize function is provided, use it directly (e.g. SuperCmd server-side OAuth)
+    if (typeof this.options.authorize === 'function') {
+      console.log('[OAuth] beginAuthorization: using custom authorize function');
+      ensureOAuthCallbackBridge();
+      console.log('[OAuth] beginAuthorization: bridge initialized, calling authorize()...');
+      const token = await this.options.authorize();
+      console.log('[OAuth] beginAuthorization: authorize() returned, token:', token ? `${token.slice(0, 20)}...` : 'null');
+      if (!token) return false;
+      const tokenSet = {
+        accessToken: token,
+        scope: this.options.scope || '',
+        tokenType: 'Bearer',
+        obtainedAt: new Date().toISOString(),
+      };
+      await this.options.client?.setTokens?.(tokenSet);
+      await Promise.resolve(
+        this.onAuthorize?.({ token, type: 'oauth' })
+      );
+      return true;
+    }
+
     const clientId = this.getConfiguredClientId();
     if (!clientId || !this.options.authorizeUrl || !this.options.scope) return false;
     const request = await this.options.client?.authorizationRequest?.({
@@ -6451,6 +6533,23 @@ export class OAuthService {
     if (callback.error) {
       throw new Error(callback.errorDescription || callback.error);
     }
+
+    // Support direct access_token in callback (server-side OAuth) or code exchange
+    const directToken = callback.accessToken;
+    if (directToken) {
+      const tokenSet = {
+        accessToken: directToken,
+        scope: this.options.scope || '',
+        tokenType: callback.tokenType || 'Bearer',
+        obtainedAt: new Date().toISOString(),
+      };
+      await this.options.client?.setTokens?.(tokenSet);
+      await Promise.resolve(
+        this.onAuthorize?.({ token: directToken, type: 'oauth' })
+      );
+      return true;
+    }
+
     if (!callback.code) {
       throw new Error('Authorization did not return a valid code.');
     }
@@ -6503,6 +6602,8 @@ export class OAuthService {
 
     if (typeof this.options.authorize === 'function') {
       const token = await this.options.authorize();
+      // Persist the token so getStoredToken() works on subsequent calls
+      await this.options.client?.setTokens?.({ accessToken: token, tokenType: 'Bearer', scope: this.options.scope || '' });
       await Promise.resolve(this.onAuthorize?.({ token, type: 'oauth' }));
       return token;
     }
@@ -6517,6 +6618,125 @@ export class OAuthService {
     const postAuth = await this.getStoredToken();
     if (!postAuth?.token) throw new Error('OAuth authorization failed');
     return postAuth.token;
+  }
+
+  // ── Built-in provider factories ──────────────────────────────────
+
+  static linear(options: { clientId?: string; scope: string; personalAccessToken?: string; authorize?: () => Promise<string>; onAuthorize?: OAuthServiceOptions['onAuthorize'] }): OAuthService {
+    const client = new PKCEClientCompat({ providerId: 'linear', providerName: 'Linear', providerIcon: 'linear-app-icon.png', description: 'Connect your Linear account' });
+    const supercmdAuthorize = async (): Promise<string> => {
+      console.log('[OAuth] supercmdAuthorize: starting...');
+      // Initialize the callback bridge before opening the browser to avoid race conditions
+      ensureOAuthCallbackBridge();
+      console.log('[OAuth] supercmdAuthorize: bridge initialized, opening auth URL...');
+      // Open SuperCmd's auth backend which handles OAuth app credentials server-side
+      await open('https://api.supercmd.sh/auth/linear/authorize');
+      console.log('[OAuth] supercmdAuthorize: URL opened, waiting for callback...');
+      // Wait for the OAuth callback with the access token
+      const callback = await waitForOAuthCallback('');
+      if (callback.error) {
+        throw new Error(callback.errorDescription || callback.error);
+      }
+      const token = callback.accessToken || callback.code;
+      if (!token) {
+        throw new Error('Linear authorization did not return a valid token.');
+      }
+      return token;
+    };
+    return new OAuthService({
+      client,
+      clientId: options.clientId || '_supercmd_linear',
+      scope: options.scope,
+      authorizeUrl: 'https://api.supercmd.sh/auth/linear/authorize',
+      tokenUrl: 'https://api.linear.app/oauth/token',
+      personalAccessToken: options.personalAccessToken,
+      authorize: options.authorize || supercmdAuthorize,
+      onAuthorize: options.onAuthorize,
+    });
+  }
+
+  static github(options: { clientId?: string; scope: string; personalAccessToken?: string; authorize?: () => Promise<string>; onAuthorize?: OAuthServiceOptions['onAuthorize'] }): OAuthService {
+    const client = new PKCEClientCompat({ providerId: 'github', providerName: 'GitHub', providerIcon: 'github-icon.png', description: 'Connect your GitHub account' });
+    return new OAuthService({
+      client,
+      clientId: options.clientId || 'supercmd-github',
+      scope: options.scope,
+      authorizeUrl: 'https://github.com/login/oauth/authorize',
+      tokenUrl: 'https://github.com/login/oauth/access_token',
+      personalAccessToken: options.personalAccessToken,
+      authorize: options.authorize,
+      onAuthorize: options.onAuthorize,
+    });
+  }
+
+  static google(options: { clientId: string; scope: string; personalAccessToken?: string; authorize?: () => Promise<string>; onAuthorize?: OAuthServiceOptions['onAuthorize'] }): OAuthService {
+    const client = new PKCEClientCompat({ providerId: 'google', providerName: 'Google', providerIcon: 'google-icon.png', description: 'Connect your Google account' });
+    return new OAuthService({
+      client,
+      clientId: options.clientId,
+      scope: options.scope,
+      authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+      tokenUrl: 'https://oauth2.googleapis.com/token',
+      personalAccessToken: options.personalAccessToken,
+      authorize: options.authorize,
+      onAuthorize: options.onAuthorize,
+    });
+  }
+
+  static asana(options: { clientId?: string; scope: string; personalAccessToken?: string; authorize?: () => Promise<string>; onAuthorize?: OAuthServiceOptions['onAuthorize'] }): OAuthService {
+    const client = new PKCEClientCompat({ providerId: 'asana', providerName: 'Asana', providerIcon: 'asana-icon.png', description: 'Connect your Asana account' });
+    return new OAuthService({
+      client,
+      clientId: options.clientId || 'supercmd-asana',
+      scope: options.scope,
+      authorizeUrl: 'https://app.asana.com/-/oauth_authorize',
+      tokenUrl: 'https://app.asana.com/-/oauth_token',
+      personalAccessToken: options.personalAccessToken,
+      authorize: options.authorize,
+      onAuthorize: options.onAuthorize,
+    });
+  }
+
+  static slack(options: { clientId?: string; scope: string; personalAccessToken?: string; authorize?: () => Promise<string>; onAuthorize?: OAuthServiceOptions['onAuthorize'] }): OAuthService {
+    const client = new PKCEClientCompat({ providerId: 'slack', providerName: 'Slack', providerIcon: 'slack-icon.png', description: 'Connect your Slack account' });
+    return new OAuthService({
+      client,
+      clientId: options.clientId || 'supercmd-slack',
+      scope: options.scope,
+      authorizeUrl: 'https://slack.com/oauth/v2/authorize',
+      tokenUrl: 'https://slack.com/api/oauth.v2.access',
+      personalAccessToken: options.personalAccessToken,
+      authorize: options.authorize,
+      onAuthorize: options.onAuthorize,
+    });
+  }
+
+  static jira(options: { clientId: string; scope: string; personalAccessToken?: string; authorize?: () => Promise<string>; onAuthorize?: OAuthServiceOptions['onAuthorize'] }): OAuthService {
+    const client = new PKCEClientCompat({ providerId: 'jira', providerName: 'Jira', providerIcon: 'jira-icon.png', description: 'Connect your Jira account' });
+    return new OAuthService({
+      client,
+      clientId: options.clientId,
+      scope: options.scope,
+      authorizeUrl: 'https://auth.atlassian.com/authorize',
+      tokenUrl: 'https://auth.atlassian.com/oauth/token',
+      personalAccessToken: options.personalAccessToken,
+      authorize: options.authorize,
+      onAuthorize: options.onAuthorize,
+    });
+  }
+
+  static zoom(options: { clientId: string; scope: string; personalAccessToken?: string; authorize?: () => Promise<string>; onAuthorize?: OAuthServiceOptions['onAuthorize'] }): OAuthService {
+    const client = new PKCEClientCompat({ providerId: 'zoom', providerName: 'Zoom', providerIcon: 'zoom-icon.png', description: 'Connect your Zoom account' });
+    return new OAuthService({
+      client,
+      clientId: options.clientId,
+      scope: options.scope,
+      authorizeUrl: 'https://zoom.us/oauth/authorize',
+      tokenUrl: 'https://zoom.us/oauth/token',
+      personalAccessToken: options.personalAccessToken,
+      authorize: options.authorize,
+      onAuthorize: options.onAuthorize,
+    });
   }
 }
 
@@ -6670,18 +6890,6 @@ export function withAccessToken(options: any) {
                 >
                   {oauthBusy ? 'Opening...' : `Sign in with ${oauthInfo?.name || 'Provider'}`}
                 </button>
-                <div className="mt-4">
-                  <input
-                    type="text"
-                    value={oauthClientIdInput}
-                    onChange={(e) => setOauthClientIdInput(e.target.value)}
-                    placeholder="OAuth Client ID"
-                    className="w-full max-w-[380px] mx-auto bg-white/[0.05] border border-white/[0.1] rounded-md px-3 py-2 text-sm text-white/85 placeholder-white/35 outline-none"
-                  />
-                  <div className="mt-1 text-xs text-white/40">
-                    Use your own OAuth app client ID for SuperCmd redirect support.
-                  </div>
-                </div>
               </div>
             </div>
             <div className="px-4 py-3 border-t border-white/[0.06] text-center text-sm text-white/55">

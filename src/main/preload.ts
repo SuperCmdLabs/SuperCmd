@@ -84,6 +84,21 @@ contextBridge.exposeInMainWorld('electron', {
   onOAuthCallback: (callback: (url: string) => void) => {
     ipcRenderer.on('oauth-callback', (_event, url) => callback(url));
   },
+  oauthGetToken: (provider: string): Promise<{ accessToken: string; tokenType?: string; scope?: string; expiresIn?: number; obtainedAt: string } | null> =>
+    ipcRenderer.invoke('oauth-get-token', provider),
+  oauthSetToken: (provider: string, token: { accessToken: string; tokenType?: string; scope?: string; expiresIn?: number; obtainedAt: string }): Promise<void> =>
+    ipcRenderer.invoke('oauth-set-token', provider, token),
+  oauthRemoveToken: (provider: string): Promise<void> =>
+    ipcRenderer.invoke('oauth-remove-token', provider),
+  oauthLogout: (provider: string): Promise<void> =>
+    ipcRenderer.invoke('oauth-logout', provider),
+  onOAuthLogout: (callback: (provider: string) => void) => {
+    const listener = (_event: any, provider: string) => callback(provider);
+    ipcRenderer.on('oauth-logout', listener);
+    return () => {
+      ipcRenderer.removeListener('oauth-logout', listener);
+    };
+  },
   onSpeakStatus: (callback: (payload: { state: 'idle' | 'loading' | 'speaking' | 'done' | 'error'; text: string; index: number; total: number; message?: string; wordIndex?: number }) => void) => {
     const listener = (_event: any, payload: any) => callback(payload);
     ipcRenderer.on('speak-status', listener);

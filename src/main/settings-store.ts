@@ -162,3 +162,58 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
 export function resetSettingsCache(): void {
   settingsCache = null;
 }
+
+// ─── OAuth Token Store ────────────────────────────────────────────
+// Stores OAuth tokens per provider in a separate JSON file so they
+// persist across app restarts and window resets.
+
+interface OAuthTokenEntry {
+  accessToken: string;
+  tokenType?: string;
+  scope?: string;
+  expiresIn?: number;
+  obtainedAt: string;
+}
+
+let oauthTokensCache: Record<string, OAuthTokenEntry> | null = null;
+
+function getOAuthTokensPath(): string {
+  return path.join(app.getPath('userData'), 'oauth-tokens.json');
+}
+
+function loadOAuthTokens(): Record<string, OAuthTokenEntry> {
+  if (oauthTokensCache) return oauthTokensCache;
+  try {
+    const raw = fs.readFileSync(getOAuthTokensPath(), 'utf-8');
+    oauthTokensCache = JSON.parse(raw) || {};
+  } catch {
+    oauthTokensCache = {};
+  }
+  return oauthTokensCache!;
+}
+
+function saveOAuthTokens(tokens: Record<string, OAuthTokenEntry>): void {
+  oauthTokensCache = tokens;
+  try {
+    fs.writeFileSync(getOAuthTokensPath(), JSON.stringify(tokens, null, 2));
+  } catch (e) {
+    console.error('Failed to save OAuth tokens:', e);
+  }
+}
+
+export function setOAuthToken(provider: string, token: OAuthTokenEntry): void {
+  const tokens = loadOAuthTokens();
+  tokens[provider] = token;
+  saveOAuthTokens(tokens);
+}
+
+export function getOAuthToken(provider: string): OAuthTokenEntry | null {
+  const tokens = loadOAuthTokens();
+  return tokens[provider] || null;
+}
+
+export function removeOAuthToken(provider: string): void {
+  const tokens = loadOAuthTokens();
+  delete tokens[provider];
+  saveOAuthTokens(tokens);
+}
