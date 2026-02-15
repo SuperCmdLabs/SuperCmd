@@ -32,6 +32,162 @@ import React, {
   createContext,
   useContext,
 } from 'react';
+import {
+  Airplane,
+  Alarm,
+  AlignCenterHorizontal,
+  AlignLeft,
+  AlignRight,
+  Anchor,
+  AppWindow,
+  ArrowsIn,
+  ArrowsOut,
+  ArrowClockwise,
+  ArrowCounterClockwise,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowUpRight,
+  At,
+  Bandaids,
+  Bank,
+  Barbell,
+  Barcode,
+  BatteryEmpty,
+  BatteryFull,
+  Bell,
+  BellSlash,
+  Bicycle,
+  Binoculars,
+  Bluetooth,
+  Boat,
+  Book,
+  Bookmark,
+  Broadcast,
+  Bug,
+  Buildings,
+  Calendar,
+  Camera,
+  Car,
+  ChartBar,
+  ChartLine,
+  ChatText,
+  Check,
+  CheckCircle,
+  Checks,
+  Circle,
+  CircleDashed,
+  ClipboardText,
+  Cloud,
+  Code,
+  Command,
+  Compass,
+  Copy,
+  Cpu,
+  CreditCard,
+  Crown,
+  CurrencyCircleDollar,
+  CursorText,
+  DotsThree,
+  DotsThreeCircle,
+  DotsThreeVertical,
+  DownloadSimple,
+  Drop,
+  Eraser,
+  Eye,
+  EyeClosed,
+  Eyedropper,
+  File,
+  FilePlus,
+  FilmStrip,
+  Fingerprint,
+  Fire,
+  Flag,
+  Folder,
+  FolderPlus,
+  Funnel,
+  GameController,
+  Gauge,
+  GearSix,
+  Gift,
+  GlobeHemisphereWest,
+  Hash,
+  Headphones,
+  Heart,
+  HeartBreak,
+  Image as ImageIcon,
+  Info,
+  Keyboard as KeyboardIcon,
+  Key,
+  Leaf,
+  Lightbulb,
+  Link,
+  ListBullets,
+  Lock,
+  LockOpen,
+  MagnifyingGlass,
+  MapPin,
+  Megaphone,
+  Microphone,
+  MicrophoneSlash,
+  Minus,
+  MinusCircle,
+  Moon,
+  Mouse,
+  MusicNote,
+  Paragraph,
+  Pause,
+  PencilSimple,
+  Percent,
+  Phone,
+  Play,
+  Plus,
+  PlusCircle,
+  Printer,
+  Prohibit,
+  Question,
+  SealCheck,
+  ShoppingCart,
+  Shuffle,
+  SidebarSimple,
+  Sparkle,
+  SpeakerHigh,
+  SpeakerLow,
+  SpeakerSlash,
+  Star,
+  Stop,
+  Storefront,
+  Sun,
+  Tag,
+  Target,
+  TerminalWindow,
+  TextAa,
+  TextT,
+  Thermometer,
+  ToggleLeft,
+  ToggleRight,
+  Train,
+  TrashSimple,
+  Trophy,
+  UploadSimple,
+  User,
+  UserCircle,
+  UserMinus,
+  UserPlus,
+  Users,
+  VideoCamera,
+  WarningCircle,
+  WarningDiamond,
+  WarningOctagon,
+  WifiHigh,
+  WifiSlash,
+  Wind,
+  Wrench,
+  X,
+  XCircle,
+} from '@phosphor-icons/react';
+import { RAYCAST_ICON_NAMES, RAYCAST_ICON_VALUE_TO_NAME, type RaycastIconName } from './raycast-icon-enum';
 
 // =====================================================================
 // ─── Extension Context (set by ExtensionView) ───────────────────────
@@ -377,168 +533,6 @@ export function clearSearchBar(options?: { forceScrollToTop?: boolean }): Promis
 // ─── Icon ───────────────────────────────────────────────────────────
 // =====================================================================
 
-// Map Raycast icon names to SVG paths or emoji
-const iconMap: Record<string, string> = {
-  // Common icons - using emoji as fallback
-  List: '☰',
-  MagnifyingGlass: '🔍',
-  Gear: '⚙️',
-  Trash: '🗑️',
-  Plus: '+',
-  Minus: '-',
-  Checkmark: '✓',
-  XMarkCircle: '✕',
-  ExclamationMark: '!',
-  Exclamationmark: '!',
-  Exclamationmark2: '‼',
-  Exclamationmark3: '⁉',
-  QuestionMark: '?',
-  Info: 'ℹ',
-  Star: '⭐',
-  StarFilled: '★',
-  Heart: '♡',
-  HeartFilled: '♥',
-  Folder: '📁',
-  Document: '📄',
-  Terminal: '>_',
-  Code: '</>',
-  Globe: '🌐',
-  GeoPin: '📍',
-  Geopin: '📍',
-  Link: '🔗',
-  Lock: '🔒',
-  Unlock: '🔓',
-  Key: '🔑',
-  Person: '👤',
-  PersonCircle: '👤',
-  Envelope: '✉️',
-  Message: '💬',
-  Phone: '📱',
-  Calendar: '📅',
-  Clock: '🕐',
-  Alarm: '⏰',
-  Bell: '🔔',
-  Camera: '📷',
-  Image: '🖼️',
-  Video: '🎬',
-  Music: '🎵',
-  Play: '▶',
-  Pause: '⏸',
-  Stop: '⏹',
-  Forward: '⏩',
-  Backward: '⏪',
-  Repeat: '🔁',
-  Shuffle: '🔀',
-  Download: '⬇️',
-  Upload: '⬆️',
-  Cloud: '☁️',
-  Sun: '☀️',
-  Moon: '🌙',
-  Bolt: '⚡',
-  Fire: '🔥',
-  Leaf: '🍃',
-  Tree: '🌳',
-  Bug: '🐛',
-  Hammer: '🔨',
-  Wrench: '🔧',
-  Pencil: '✏️',
-  Clipboard: '📋',
-  Copy: '📋',
-  Cut: '✂️',
-  Paste: '📋',
-  Undo: '↩️',
-  Redo: '↪️',
-  ArrowRight: '→',
-  ArrowLeft: '←',
-  ArrowUp: '↑',
-  ArrowDown: '↓',
-  ChevronRight: '›',
-  ChevronLeft: '‹',
-  ChevronUp: '⌃',
-  ChevronDown: '⌄',
-  CircleFilled: '●',
-  Circle: '○',
-  SquareFilled: '■',
-  Square: '□',
-  EyeDropper: '🎨',
-  Wand: '✨',
-  Sparkles: '✨',
-  Text: 'Aa',
-  TextCursor: '|',
-  Tag: '🏷️',
-  Bookmark: '🔖',
-  Filter: '⚙',
-  SortAscending: '↑',
-  SortDescending: '↓',
-  Window: '⬜',
-  Desktop: '🖥️',
-  Keyboard: '⌨️',
-  Mouse: '🖱️',
-  Printer: '🖨️',
-  Wifi: '📶',
-  Bluetooth: 'ᛒ',
-  Battery: '🔋',
-  Power: '⏻',
-  Home: '🏠',
-  Building: '🏢',
-  Map: '🗺️',
-  Pin: '📍',
-  Compass: '🧭',
-  Car: '🚗',
-  Airplane: '✈️',
-  Ship: '🚢',
-  Train: '🚂',
-  Wallet: '👛',
-  CreditCard: '💳',
-  Cart: '🛒',
-  Gift: '🎁',
-  Trophy: '🏆',
-  Flag: '🚩',
-  EmojiSad: '😢',
-  EmojiHappy: '😊',
-  Binoculars: '🔭',
-  Fingerprint: '🔐',
-  AppWindow: '⬜',
-  AppWindowGrid: '⊞',
-  Dot: '•',
-  BandAid: '🩹',
-  CricketBall: '🏏',
-  Ellipsis: '⋯',
-  Raindrop: '💧',
-  TwoPeople: '👥',
-  AddPerson: '👤+',
-  RemovePerson: '👤-',
-  SaveDocument: '💾',
-  NewDocument: '📄',
-  NewFolder: '📁',
-  Switch: '⇄',
-  Sidebar: '▊',
-  BarChart: '📊',
-  LineChart: '📈',
-  PieChart: '🥧',
-  Snippet: '{ }',
-  TextInput: '⌨',
-  Paragraph: '¶',
-  Uppercase: 'AA',
-  Lowercase: 'aa',
-  FullSignal: '📶',
-  RotateAntiClockwise: '↺',
-  RotateClockwise: '↻',
-  Maximize: '⤢',
-  Minimize: '⤡',
-  ArrowClockwise: '↻',
-  ArrowCounterClockwise: '↺',
-  Eraser: '⌫',
-  Megaphone: '📢',
-  ArrowNe: '↗',
-  ArrowRightCircle: '→',
-  Eye: '👁',
-  EyeDisabled: '🚫',
-  EyeSlash: '👁‍🗨',
-  Cog: '⚙️',
-  Bubble: '💬',
-};
-
 function normalizeIconName(name: string): string {
   return String(name || '')
     .trim()
@@ -546,20 +540,315 @@ function normalizeIconName(name: string): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
-const normalizedIconMap = new Map<string, string>(
-  Object.entries(iconMap).map(([key, value]) => [normalizeIconName(key), value])
-);
+type PhosphorIconComponent = React.ComponentType<{
+  className?: string;
+  size?: number | string;
+  color?: string;
+  style?: React.CSSProperties;
+  weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';
+}>;
 
-function lookupMappedIcon(name: string): string | undefined {
-  if (!name) return undefined;
-  return iconMap[name] || normalizedIconMap.get(normalizeIconName(name));
+const phosphorIconByName = new Map<string, PhosphorIconComponent>();
+const phosphorIconByNormalizedName = new Map<string, PhosphorIconComponent>();
+
+const phosphorIconCatalog: Record<string, PhosphorIconComponent> = {
+  Airplane,
+  Alarm,
+  AlignCenterHorizontal,
+  AlignLeft,
+  AlignRight,
+  Anchor,
+  AppWindow,
+  ArrowsIn,
+  ArrowsOut,
+  ArrowClockwise,
+  ArrowCounterClockwise,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowUpRight,
+  At,
+  Bandaids,
+  Bank,
+  Barbell,
+  Barcode,
+  BatteryEmpty,
+  BatteryFull,
+  Bell,
+  BellSlash,
+  Bicycle,
+  Binoculars,
+  Bluetooth,
+  Boat,
+  Book,
+  Bookmark,
+  Broadcast,
+  Bug,
+  Buildings,
+  Calendar,
+  Camera,
+  Car,
+  ChartBar,
+  ChartLine,
+  ChatText,
+  Check,
+  CheckCircle,
+  Checks,
+  Circle,
+  CircleDashed,
+  ClipboardText,
+  Cloud,
+  Code,
+  Command,
+  Compass,
+  Copy,
+  Cpu,
+  CreditCard,
+  Crown,
+  CurrencyCircleDollar,
+  CursorText,
+  DotsThree,
+  DotsThreeCircle,
+  DotsThreeVertical,
+  DownloadSimple,
+  Drop,
+  Eraser,
+  Eye,
+  EyeClosed,
+  Eyedropper,
+  File,
+  FilePlus,
+  FilmStrip,
+  Fingerprint,
+  Fire,
+  Flag,
+  Folder,
+  FolderPlus,
+  Funnel,
+  GameController,
+  Gauge,
+  GearSix,
+  Gift,
+  GlobeHemisphereWest,
+  Hash,
+  Headphones,
+  Heart,
+  HeartBreak,
+  Image: ImageIcon,
+  Info,
+  Keyboard: KeyboardIcon,
+  Key,
+  Leaf,
+  Lightbulb,
+  Link,
+  ListBullets,
+  Lock,
+  LockOpen,
+  MagnifyingGlass,
+  MapPin,
+  Megaphone,
+  Microphone,
+  MicrophoneSlash,
+  Minus,
+  MinusCircle,
+  Moon,
+  Mouse,
+  MusicNote,
+  Paragraph,
+  Pause,
+  PencilSimple,
+  Percent,
+  Phone,
+  Play,
+  Plus,
+  PlusCircle,
+  Printer,
+  Prohibit,
+  Question,
+  SealCheck,
+  ShoppingCart,
+  Shuffle,
+  SidebarSimple,
+  Sparkle,
+  SpeakerHigh,
+  SpeakerLow,
+  SpeakerSlash,
+  Star,
+  Stop,
+  Storefront,
+  Sun,
+  Tag,
+  Target,
+  TerminalWindow,
+  TextAa,
+  TextT,
+  Thermometer,
+  ToggleLeft,
+  ToggleRight,
+  Train,
+  TrashSimple,
+  Trophy,
+  UploadSimple,
+  User,
+  UserCircle,
+  UserMinus,
+  UserPlus,
+  Users,
+  VideoCamera,
+  WarningCircle,
+  WarningDiamond,
+  WarningOctagon,
+  WifiHigh,
+  WifiSlash,
+  Wind,
+  Wrench,
+  X,
+  XCircle,
+};
+
+for (const [name, comp] of Object.entries(phosphorIconCatalog)) {
+  phosphorIconByName.set(name, comp);
+  phosphorIconByNormalizedName.set(normalizeIconName(name), comp);
 }
 
-// Return the property name as the icon value. This works with our
-// renderer which shows the mapped icon or a dot for unknown icons.
+const raycastIconNamesSet = new Set<string>(RAYCAST_ICON_NAMES as readonly string[]);
+const raycastIconByNormalizedName = new Map<string, RaycastIconName>(
+  (RAYCAST_ICON_NAMES as readonly string[]).map((name) => [normalizeIconName(name), name as RaycastIconName])
+);
+
+const raycastToPhosphorAliases: Record<string, string> = {
+  AddPerson: 'UserPlus',
+  RemovePerson: 'UserMinus',
+  AlignCentre: 'AlignCenterHorizontal',
+  AtSymbol: 'At',
+  BandAid: 'Bandaids',
+  Bubble: 'ChatText',
+  BullsEye: 'Target',
+  BullsEyeMissed: 'Target',
+  Checkmark: 'Check',
+  Clipboard: 'ClipboardText',
+  Cog: 'GearSix',
+  CommandSymbol: 'Command',
+  ComputerChip: 'Cpu',
+  CopyClipboard: 'Copy',
+  Dot: 'Circle',
+  Droplets: 'Drop',
+  Ellipsis: 'DotsThree',
+  EllipsisVertical: 'DotsThreeVertical',
+  EmojiSad: 'Question',
+  EyeDisabled: 'EyeClosed',
+  ExclamationMark: 'WarningCircle',
+  Exclamationmark: 'WarningCircle',
+  Exclamationmark2: 'WarningDiamond',
+  Exclamationmark3: 'WarningOctagon',
+  Female: 'User',
+  Geopin: 'MapPin',
+  Gear: 'GearSix',
+  HardDrive: 'Cpu',
+  Hashtag: 'Hash',
+  HeartDisabled: 'HeartBreak',
+  Humidity: 'Drop',
+  Important: 'WarningCircle',
+  LightBulbOff: 'Lightbulb',
+  Livestream: 'Broadcast',
+  LivestreamDisabled: 'Broadcast',
+  LockDisabled: 'LockOpen',
+  LockUnlocked: 'LockOpen',
+  MagnifyingGlass: 'MagnifyingGlass',
+  MemoryChip: 'Cpu',
+  Message: 'ChatText',
+  MicrophoneDisabled: 'MicrophoneSlash',
+  MinusCircleFilled: 'MinusCircle',
+  NewDocument: 'FilePlus',
+  NewFolder: 'FolderPlus',
+  Person: 'User',
+  PersonCircle: 'UserCircle',
+  TwoPeople: 'Users',
+  Raindrop: 'Drop',
+  Slash: 'Prohibit',
+  Sparkles: 'Sparkle',
+  StarFilled: 'Star',
+  Store: 'Storefront',
+  Terminal: 'TerminalWindow',
+  TextCursor: 'TextT',
+  TextInput: 'TextT',
+  Trash: 'TrashSimple',
+  Xmark: 'X',
+  XmarkCircle: 'XCircle',
+  XMarkCircle: 'XCircle',
+};
+
+function resolveRaycastIconName(input: string): RaycastIconName | undefined {
+  if (!input) return undefined;
+  if (raycastIconNamesSet.has(input)) return input as RaycastIconName;
+  if (RAYCAST_ICON_VALUE_TO_NAME[input]) return RAYCAST_ICON_VALUE_TO_NAME[input];
+  return raycastIconByNormalizedName.get(normalizeIconName(input));
+}
+
+function tryResolvePhosphorByName(name: string): PhosphorIconComponent | undefined {
+  if (!name) return undefined;
+  if (phosphorIconByName.has(name)) return phosphorIconByName.get(name);
+  return phosphorIconByNormalizedName.get(normalizeIconName(name));
+}
+
+function resolvePhosphorIconFromRaycast(input: string): PhosphorIconComponent | undefined {
+  const raycastName = resolveRaycastIconName(input) || input;
+
+  const alias = raycastToPhosphorAliases[raycastName];
+  if (alias) {
+    const aliased = tryResolvePhosphorByName(alias);
+    if (aliased) return aliased;
+  }
+
+  const candidates = new Set<string>();
+  candidates.add(raycastName);
+  candidates.add(raycastName.replace(/Filled$/, ''));
+  candidates.add(raycastName.replace(/Disabled$/, 'Slash'));
+  candidates.add(raycastName.replace(/CircleFilled$/, 'Circle'));
+  candidates.add(raycastName.replace(/SquareFilled$/, 'Square'));
+  candidates.add(raycastName.replace(/CircleHalfDash$/, 'CircleDashed'));
+  candidates.add(raycastName.replace(/AppWindowGrid2x2$/, 'AppWindow'));
+  candidates.add(raycastName.replace(/AppWindowGrid3x3$/, 'AppWindow'));
+  candidates.add(raycastName.replace(/AppWindowList$/, 'AppWindow'));
+  candidates.add(raycastName.replace(/AppWindowSidebarLeft$/, 'SidebarSimple'));
+  candidates.add(raycastName.replace(/AppWindowSidebarRight$/, 'SidebarSimple'));
+  candidates.add(raycastName.replace(/ArrowNe$/, 'ArrowUpRight'));
+  candidates.add(raycastName.replace(/Xmark/g, 'XMark'));
+  candidates.add(raycastName.replace(/Geopin/g, 'MapPin'));
+  candidates.add(raycastName.replace(/Centre/g, 'Center'));
+  candidates.add(raycastName.replace(/And/g, ''));
+
+  const numberMatch = raycastName.match(/^Number(\d{2})$/);
+  if (numberMatch) {
+    candidates.add(`NumberCircle${String(parseInt(numberMatch[1], 10))}`);
+    candidates.add(`NumberSquare${String(parseInt(numberMatch[1], 10))}`);
+  }
+
+  for (const candidate of candidates) {
+    const icon = tryResolvePhosphorByName(candidate);
+    if (icon) return icon;
+  }
+
+  return undefined;
+}
+
+function renderPhosphorIcon(input: string, className: string, tint?: string): React.ReactNode {
+  const IconComponent = resolvePhosphorIconFromRaycast(input);
+  if (!IconComponent) return null;
+  return (
+    <IconComponent
+      className={className}
+      weight="regular"
+      style={{ color: tint || 'rgba(255,255,255,0.92)' }}
+    />
+  );
+}
+
+// Return the property name as icon token so renderers can resolve with Phosphor.
 export const Icon: Record<string, string> = new Proxy({} as Record<string, string>, {
   get(_target, prop: string) {
-    return lookupMappedIcon(prop) || '';
+    return String(prop || '');
   },
 });
 
@@ -594,6 +883,27 @@ function toScAssetUrl(filePath: string): string {
   return `sc-asset://ext-asset${encodeAssetPathForUrl(filePath)}`;
 }
 
+function localPathExists(filePath: string): boolean {
+  if (!filePath) return false;
+  try {
+    const stat = (window as any).electron?.statSync?.(filePath);
+    return Boolean(stat?.exists);
+  } catch {
+    return false;
+  }
+}
+
+function localPathFromScAssetUrl(src: string): string | null {
+  try {
+    const parsed = new URL(src);
+    if (parsed.protocol !== 'sc-asset:' || parsed.hostname !== 'ext-asset') return null;
+    const pathname = decodeURIComponent(parsed.pathname || '');
+    return pathname || null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeScAssetUrl(src: string): string {
   try {
     const parsed = new URL(src);
@@ -608,17 +918,26 @@ function normalizeScAssetUrl(src: string): string {
 function resolveIconSrc(src: string): string {
   // Already absolute URL, data URI, or custom protocol — leave as-is
   if (/^https?:\/\//.test(src) || src.startsWith('data:') || src.startsWith('file://')) return src;
-  if (src.startsWith('sc-asset://')) return normalizeScAssetUrl(src);
+  if (src.startsWith('sc-asset://')) {
+    const normalized = normalizeScAssetUrl(src);
+    const localPath = localPathFromScAssetUrl(normalized);
+    if (localPath && localPathExists(localPath)) return normalized;
+    return '';
+  }
   // Absolute filesystem path
   if (src.startsWith('/')) {
+    if (!localPathExists(src)) return '';
     return toScAssetUrl(src);
   }
   // If it looks like a file path (has an image/svg extension), resolve via extension assets
   if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(src)) {
     const ctx = getExtensionContext();
     if (ctx.assetsPath) {
-      return toScAssetUrl(`${ctx.assetsPath}/${src}`);
+      const candidatePath = `${ctx.assetsPath}/${src}`;
+      if (!localPathExists(candidatePath)) return '';
+      return toScAssetUrl(candidatePath);
     }
+    return '';
   }
   return src;
 }
@@ -724,17 +1043,13 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
       const resolved = resolveIconSrc(icon);
       return <img src={resolved} className={className + ' rounded'} alt="" />;
     }
-    // Check if it's a mapped icon
-    const mappedIcon = lookupMappedIcon(icon);
-    if (mappedIcon) {
-      return <span className="text-center" style={{ fontSize: '0.875rem' }}>{mappedIcon}</span>;
-    }
+    const phosphor = renderPhosphorIcon(icon, className);
+    if (phosphor) return phosphor;
     // Check if the icon itself is an emoji or symbol
     if (isEmojiOrSymbol(icon)) {
       return <span className="text-center" style={{ fontSize: '0.875rem' }}>{icon}</span>;
     }
-    // Otherwise show a dot
-    return <span className="opacity-50">•</span>;
+    return renderPhosphorIcon('Circle', className) || <span className="opacity-50">•</span>;
   }
 
   // If it's an object with source property (e.g., { source: Icon.Checkmark, tintColor: Color.Green })
@@ -747,19 +1062,20 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
     const tint = resolveTintColor(icon.tintColor);
 
     const sourceCandidate = icon.source
-      ? (typeof icon.source === 'string' ? icon.source : icon.source?.light || icon.source?.dark || '')
+      ? (typeof icon.source === 'string' ? icon.source : icon.source?.dark || icon.source?.light || '')
       : '';
     const fallbackCandidate = typeof icon.fallback === 'string' ? icon.fallback : '';
-    const source = sourceCandidate || fallbackCandidate;
+    const iconCandidates = [sourceCandidate, fallbackCandidate].filter(Boolean);
 
-    if (source) {
-      const src = source;
-      if (src) {
-        // Check if source is an emoji/symbol (from our Icon proxy) vs a real URL/path
-        if (isEmojiOrSymbol(src)) {
-          return <span className="text-center" style={{ fontSize: '0.875rem', color: tint }}>{src}</span>;
-        }
-        const resolved = resolveIconSrc(src);
+    for (const src of iconCandidates) {
+      const phosphor = renderPhosphorIcon(src, className, tint);
+      if (phosphor) return phosphor;
+      // Check if source is an emoji/symbol (from our Icon proxy) vs a real URL/path
+      if (isEmojiOrSymbol(src)) {
+        return <span className="text-center" style={{ fontSize: '0.875rem', color: tint }}>{src}</span>;
+      }
+      const resolved = resolveIconSrc(src);
+      if (resolved) {
         return <img src={resolved} className={className + ' rounded'} alt="" style={tint ? { filter: `brightness(0) saturate(100%)`, color: tint } : undefined} />;
       }
     }
@@ -767,16 +1083,20 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
     if (icon.light || icon.dark) {
       const src = icon.dark || icon.light;
       if (typeof src === 'string') {
+        const phosphor = renderPhosphorIcon(src, className, tint);
+        if (phosphor) return phosphor;
         if (isEmojiOrSymbol(src)) {
           return <span className="text-center" style={{ fontSize: '0.875rem', color: tint }}>{src}</span>;
         }
         const resolved = resolveIconSrc(src);
-        return <img src={resolved} className={className + ' rounded'} alt="" />;
+        if (resolved) {
+          return <img src={resolved} className={className + ' rounded'} alt="" />;
+        }
       }
     }
   }
 
-  return <span className="opacity-50">•</span>;
+  return renderPhosphorIcon('Circle', className) || <span className="opacity-50">•</span>;
 }
 
 // =====================================================================
@@ -6959,7 +7279,7 @@ export function withAccessToken(options: any) {
                   {iconSrc ? (
                     <img src={iconSrc} alt="" className="w-9 h-9 object-contain" />
                   ) : (
-                    <Sparkles className="w-5 h-5 text-white/70" />
+                    <Sparkle className="w-5 h-5 text-white/70" />
                   )}
                 </div>
                 <div className="text-white/95 text-[34px] leading-tight font-semibold mb-1">
