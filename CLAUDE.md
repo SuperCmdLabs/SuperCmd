@@ -307,8 +307,131 @@ When contributing:
 
 ## Notes
 
-- The compatibility shim is a single large file (`raycast-api/index.tsx`) for simplicity, but this could be refactored into modules as it grows
-- Extensions share React with the host app to ensure proper React context and hooks work correctly
-- All system operations go through Electron IPC for security and isolation
-- Extension code is bundled to CommonJS for compatibility with Node.js-style requires
+- The Raycast compatibility layer is being modularized; keep logic in focused runtime files and keep `index.tsx` as an integration/export surface.
+- Extensions share React with the host app to ensure proper React context and hooks work correctly.
+- All system operations go through Electron IPC for security and isolation.
+- Extension code is bundled to CommonJS for compatibility with Node.js-style requires.
 
+## Raycast API File Map
+
+Use this map when working in the Raycast compatibility layer:
+
+- `src/renderer/src/raycast-api/index.tsx`
+  Purpose: Main compatibility integration entrypoint and export surface for `@raycast/api` + `@raycast/utils`.
+  Use for: top-level wiring between component runtimes, hook runtimes, and shared API exports.
+
+- `src/renderer/src/raycast-api/icon-runtime.tsx`
+  Purpose: Public barrel for icon runtime exports.
+  Use for: `configureIconRuntime`, `Icon`, `Color`, `Image`, `Keyboard`, `renderIcon`, `resolveIconSrc`.
+
+- `src/renderer/src/raycast-api/icon-runtime-config.ts`
+  Purpose: Shared runtime configuration for icon resolution.
+  Use for: wiring `getExtensionContext` into icon asset resolution.
+
+- `src/renderer/src/raycast-api/icon-runtime-phosphor.tsx`
+  Purpose: Raycast icon-name to Phosphor icon mapping/resolution.
+  Use for: adding or fixing icon token mappings and fallback icon behavior.
+
+- `src/renderer/src/raycast-api/icon-runtime-assets.tsx`
+  Purpose: Asset path normalization and icon source/tint helpers.
+  Use for: `sc-asset://` handling, local asset existence checks, icon tint masking.
+
+- `src/renderer/src/raycast-api/icon-runtime-render.tsx`
+  Purpose: Icon renderer implementation.
+  Use for: object/string icon rendering, file icon fallback, `Color`/`Image`/`Keyboard` constants.
+
+- `src/renderer/src/raycast-api/platform-runtime.ts`
+  Purpose: Platform-facing runtime helpers.
+  Use for: `WindowManagement`, `BrowserExtension` stubs, `Tool` types, `executeSQL`, `withCache`.
+
+- `src/renderer/src/raycast-api/misc-runtime.ts`
+  Purpose: Misc API exports extracted from index.
+  Use for: preferences proxy/types, command metadata updates, deeplink creation.
+
+- `src/renderer/src/raycast-api/utility-runtime.ts`
+  Purpose: Shared utility helpers extracted from index.
+  Use for: favicon/avatar/progress icons, AppleScript execution, failure toasts.
+
+- `src/renderer/src/raycast-api/storage-events.ts`
+  Purpose: Extension storage change event bridge.
+  Use for: emitting `sc-extension-storage-changed` from shared storage mutations.
+
+- `src/renderer/src/raycast-api/context-scope-runtime.ts`
+  Purpose: Extension context snapshot/scope runtime.
+  Use for: safely running async callbacks with the extension context they were created with.
+
+- `src/renderer/src/raycast-api/oauth/index.ts`
+  Purpose: Public OAuth barrel.
+  Use for: `OAuth`, `OAuthService`, `withAccessToken`, token access helpers.
+
+- `src/renderer/src/raycast-api/oauth/runtime-config.ts`
+  Purpose: OAuth runtime dependency injection.
+  Use for: wiring `getExtensionContext`, `open`, and icon resolution into OAuth modules.
+
+- `src/renderer/src/raycast-api/oauth/oauth-bridge.ts`
+  Purpose: OAuth callback bridge and callback parsing/wait helpers.
+  Use for: callback URL parsing, callback queue/waiters, redirect URI generation.
+
+- `src/renderer/src/raycast-api/oauth/oauth-client.ts`
+  Purpose: PKCE client/token compatibility helpers.
+  Use for: provider token persistence, PKCE request generation, OAuth compatibility objects.
+
+- `src/renderer/src/raycast-api/oauth/oauth-service-core.ts`
+  Purpose: OAuthService core authorization flow.
+  Use for: authorize URL handling, token exchange, stored-token retrieval.
+
+- `src/renderer/src/raycast-api/oauth/oauth-service.ts`
+  Purpose: OAuthService public class + provider factory methods.
+  Use for: provider presets (`linear`, `spotify`, `jira`, etc.).
+
+- `src/renderer/src/raycast-api/oauth/with-access-token.tsx`
+  Purpose: `withAccessToken` HOC and runtime auth gate UI.
+  Use for: auth-required rendering, callback refresh flow, token state accessors.
+
+- `src/renderer/src/raycast-api/hooks/use-cached-state.ts`
+  Purpose: Extracted `useCachedState` hook.
+  Use for: persistent local state backed by localStorage.
+
+- `src/renderer/src/raycast-api/hooks/use-promise.ts`
+  Purpose: Extracted `usePromise` hook.
+  Use for: async execution lifecycle (`data/isLoading/error`) and mutate/revalidate support.
+
+- `src/renderer/src/raycast-api/hooks/use-fetch.ts`
+  Purpose: Extracted `useFetch` hook.
+  Use for: HTTP requests with optional pagination accumulation and mutate/revalidate behavior.
+
+- `src/renderer/src/raycast-api/hooks/use-cached-promise.ts`
+  Purpose: Extracted `useCachedPromise` hook.
+  Use for: cached async execution with optional cursor/page pagination pattern.
+
+- `src/renderer/src/raycast-api/hooks/use-form.ts`
+  Purpose: Extracted `FormValidation` + `useForm`.
+  Use for: form state, validation, and generated field props.
+
+- `src/renderer/src/raycast-api/hooks/use-exec.ts`
+  Purpose: Extracted `useExec` hook.
+  Use for: running shell commands through Electron IPC.
+
+- `src/renderer/src/raycast-api/hooks/use-sql.ts`
+  Purpose: Extracted `useSQL` hook.
+  Use for: running sqlite queries through Electron IPC.
+
+- `src/renderer/src/raycast-api/hooks/use-stream-json.ts`
+  Purpose: Extracted `useStreamJSON` hook.
+  Use for: fetch + transform/filter + client-side pagination for JSON APIs.
+
+- `src/renderer/src/raycast-api/hooks/use-ai.ts`
+  Purpose: Extracted `useAI` hook.
+  Use for: prompt execution with streaming/non-streaming result handling.
+
+- `src/renderer/src/raycast-api/hooks/use-frecency-sorting.ts`
+  Purpose: Extracted `useFrecencySorting` hook.
+  Use for: frequency+recency ranking and visit tracking.
+
+- `src/renderer/src/raycast-api/hooks/use-local-storage.ts`
+  Purpose: Extracted `useLocalStorage` hook.
+  Use for: synchronized localStorage state with extension storage-change events.
+
+- `src/renderer/src/raycast-api/raycast-icon-enum.ts`
+  Purpose: Canonical Raycast icon enum/value mapping used by icon resolution (auto-generated).
+  Use for: adding/fixing icon names and legacy icon token compatibility.
