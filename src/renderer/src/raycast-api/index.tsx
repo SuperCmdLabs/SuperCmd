@@ -6496,93 +6496,102 @@ export class OAuthService {
   }
 
   async beginAuthorization(): Promise<boolean> {
-    // If a custom authorize function is provided, use it directly (e.g. SuperCmd server-side OAuth)
-    if (typeof this.options.authorize === 'function') {
-      console.log('[OAuth] beginAuthorization: using custom authorize function');
-      ensureOAuthCallbackBridge();
-      console.log('[OAuth] beginAuthorization: bridge initialized, calling authorize()...');
-      const token = await this.options.authorize();
-      console.log('[OAuth] beginAuthorization: authorize() returned, token:', token ? `${token.slice(0, 20)}...` : 'null');
-      if (!token) return false;
+    try {
+      await (window as any).electron?.oauthSetFlowActive?.(true);
+    } catch {}
+    try {
+      // If a custom authorize function is provided, use it directly (e.g. SuperCmd server-side OAuth)
+      if (typeof this.options.authorize === 'function') {
+        console.log('[OAuth] beginAuthorization: using custom authorize function');
+        ensureOAuthCallbackBridge();
+        console.log('[OAuth] beginAuthorization: bridge initialized, calling authorize()...');
+        const token = await this.options.authorize();
+        console.log('[OAuth] beginAuthorization: authorize() returned, token:', token ? `${token.slice(0, 20)}...` : 'null');
+        if (!token) return false;
+        const tokenSet = {
+          accessToken: token,
+          scope: this.options.scope || '',
+          tokenType: 'Bearer',
+          obtainedAt: new Date().toISOString(),
+        };
+        await this.options.client?.setTokens?.(tokenSet);
+        await Promise.resolve(
+          this.onAuthorize?.({ token, type: 'oauth' })
+        );
+        return true;
+      }
+
+      const clientId = this.getConfiguredClientId();
+      if (!clientId || !this.options.authorizeUrl || !this.options.scope) return false;
+      const request = await this.options.client?.authorizationRequest?.({
+        endpoint: this.options.authorizeUrl,
+        clientId,
+        scope: this.options.scope,
+      });
+      const authUrl = request?.toURL ? request.toURL() : await this.getAuthorizationUrl();
+      if (!authUrl) return false;
+
+      await open(authUrl);
+      const callback = await waitForOAuthCallback(request?.state || '');
+
+      if (callback.error) {
+        throw new Error(callback.errorDescription || callback.error);
+      }
+
+      // Support direct access_token in callback (server-side OAuth) or code exchange
+      const directToken = callback.accessToken;
+      if (directToken) {
+        const tokenSet = {
+          accessToken: directToken,
+          scope: this.options.scope || '',
+          tokenType: callback.tokenType || 'Bearer',
+          obtainedAt: new Date().toISOString(),
+        };
+        await this.options.client?.setTokens?.(tokenSet);
+        await Promise.resolve(
+          this.onAuthorize?.({ token: directToken, type: 'oauth' })
+        );
+        return true;
+      }
+
+      if (!callback.code) {
+        throw new Error('Authorization did not return a valid code.');
+      }
+
+      const tokenResponse = await this.exchangeAuthorizationCode({
+        code: callback.code,
+        codeVerifier: request?.codeVerifier || '',
+        redirectUri: request?.redirectUri || buildOAuthRedirectUri((this.options.client as any)?.redirectMethod || 'web'),
+      });
+
+      const accessToken = tokenResponse?.access_token || tokenResponse?.accessToken;
+      if (!accessToken) {
+        throw new Error('OAuth token response did not include an access token.');
+      }
+
       const tokenSet = {
-        accessToken: token,
-        scope: this.options.scope || '',
-        tokenType: 'Bearer',
+        accessToken,
+        refreshToken: tokenResponse?.refresh_token || tokenResponse?.refreshToken,
+        idToken: tokenResponse?.id_token || tokenResponse?.idToken,
+        scope: tokenResponse?.scope || this.options.scope || '',
+        tokenType: tokenResponse?.token_type || tokenResponse?.tokenType || 'Bearer',
+        expiresIn: tokenResponse?.expires_in || tokenResponse?.expiresIn,
         obtainedAt: new Date().toISOString(),
       };
       await this.options.client?.setTokens?.(tokenSet);
       await Promise.resolve(
-        this.onAuthorize?.({ token, type: 'oauth' })
+        this.onAuthorize?.({
+          token: tokenSet.accessToken,
+          type: 'oauth',
+          idToken: tokenSet.idToken,
+        })
       );
       return true;
+    } finally {
+      try {
+        await (window as any).electron?.oauthSetFlowActive?.(false);
+      } catch {}
     }
-
-    const clientId = this.getConfiguredClientId();
-    if (!clientId || !this.options.authorizeUrl || !this.options.scope) return false;
-    const request = await this.options.client?.authorizationRequest?.({
-      endpoint: this.options.authorizeUrl,
-      clientId,
-      scope: this.options.scope,
-    });
-    const authUrl = request?.toURL ? request.toURL() : await this.getAuthorizationUrl();
-    if (!authUrl) return false;
-
-    await open(authUrl);
-    const callback = await waitForOAuthCallback(request?.state || '');
-
-    if (callback.error) {
-      throw new Error(callback.errorDescription || callback.error);
-    }
-
-    // Support direct access_token in callback (server-side OAuth) or code exchange
-    const directToken = callback.accessToken;
-    if (directToken) {
-      const tokenSet = {
-        accessToken: directToken,
-        scope: this.options.scope || '',
-        tokenType: callback.tokenType || 'Bearer',
-        obtainedAt: new Date().toISOString(),
-      };
-      await this.options.client?.setTokens?.(tokenSet);
-      await Promise.resolve(
-        this.onAuthorize?.({ token: directToken, type: 'oauth' })
-      );
-      return true;
-    }
-
-    if (!callback.code) {
-      throw new Error('Authorization did not return a valid code.');
-    }
-
-    const tokenResponse = await this.exchangeAuthorizationCode({
-      code: callback.code,
-      codeVerifier: request?.codeVerifier || '',
-      redirectUri: request?.redirectUri || buildOAuthRedirectUri((this.options.client as any)?.redirectMethod || 'web'),
-    });
-
-    const accessToken = tokenResponse?.access_token || tokenResponse?.accessToken;
-    if (!accessToken) {
-      throw new Error('OAuth token response did not include an access token.');
-    }
-
-    const tokenSet = {
-      accessToken,
-      refreshToken: tokenResponse?.refresh_token || tokenResponse?.refreshToken,
-      idToken: tokenResponse?.id_token || tokenResponse?.idToken,
-      scope: tokenResponse?.scope || this.options.scope || '',
-      tokenType: tokenResponse?.token_type || tokenResponse?.tokenType || 'Bearer',
-      expiresIn: tokenResponse?.expires_in || tokenResponse?.expiresIn,
-      obtainedAt: new Date().toISOString(),
-    };
-    await this.options.client?.setTokens?.(tokenSet);
-    await Promise.resolve(
-      this.onAuthorize?.({
-        token: tokenSet.accessToken,
-        type: 'oauth',
-        idToken: tokenSet.idToken,
-      })
-    );
-    return true;
   }
 
   async getStoredToken(): Promise<{ token: string; idToken?: string } | null> {
@@ -6774,6 +6783,20 @@ export function withAccessToken(options: any) {
       const [oauthHint, setOauthHint] = useState<string>('');
       const [oauthClientIdInput, setOauthClientIdInput] = useState('');
 
+      const refreshOAuthState = useCallback(async () => {
+        if (!(options instanceof OAuthService)) return false;
+        const stored = await options.getStoredToken();
+        if (!stored?.token) return false;
+        _accessTokenValue = stored.token;
+        _accessTokenType = 'oauth';
+        await Promise.resolve(options.onAuthorize?.({ token: stored.token, type: 'oauth', idToken: stored.idToken }));
+        setOauthNeedsAuth(false);
+        setReady(true);
+        setOauthBusy(false);
+        setOauthHint('');
+        return true;
+      }, [options]);
+
       useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -6784,15 +6807,11 @@ export function withAccessToken(options: any) {
               if (!cancelled) setOauthClientIdInput(options.getConfiguredClientId() || '');
               const authUrl = await options.getAuthorizationUrl();
               if (!cancelled) setOauthLink(authUrl || '');
-              const stored = await options.getStoredToken();
-              if (!stored?.token) {
+              const ok = await refreshOAuthState();
+              if (!ok) {
                 if (!cancelled) setOauthNeedsAuth(true);
                 return;
               }
-              _accessTokenValue = stored.token;
-              _accessTokenType = 'oauth';
-              await Promise.resolve(options.onAuthorize?.({ token: stored.token, type: 'oauth', idToken: stored.idToken }));
-              if (!cancelled) setReady(true);
               return;
             }
 
@@ -6812,7 +6831,83 @@ export function withAccessToken(options: any) {
         return () => {
           cancelled = true;
         };
-      }, []);
+      }, [options, refreshOAuthState]);
+
+      useEffect(() => {
+        if (!(options instanceof OAuthService)) return;
+        const off = (window as any).electron?.onOAuthCallback?.((rawUrl: string) => {
+          (async () => {
+            const parsed = parseOAuthCallbackUrl(rawUrl);
+            if (!parsed) return;
+            if (parsed.error) {
+              setOauthBusy(false);
+              setOauthHint(parsed.errorDescription || parsed.error);
+              return;
+            }
+
+            const providerKey = options.getProviderKey();
+            if (parsed.provider && parsed.provider !== providerKey) return;
+
+            const callbackToken = parsed.accessToken || parsed.code;
+            if (callbackToken) {
+              const tokenPayload = {
+                accessToken: callbackToken,
+                tokenType: parsed.tokenType || 'Bearer',
+                scope: '',
+                obtainedAt: new Date().toISOString(),
+              };
+              try {
+                localStorage.setItem(oauthTokenKey(providerKey), JSON.stringify(tokenPayload));
+              } catch {}
+              try {
+                await (window as any).electron?.oauthSetToken?.(providerKey, tokenPayload);
+              } catch {}
+            }
+
+            // Force auth state refresh immediately after callback so UI exits "Opening..."
+            const refreshed = await refreshOAuthState();
+            if (!refreshed) {
+              setOauthBusy(false);
+              setOauthNeedsAuth(true);
+              setOauthHint('Authorization callback received. Please try again.');
+            }
+          })().catch(() => {
+            setOauthBusy(false);
+          });
+        });
+        return () => {
+          if (typeof off === 'function') off();
+        };
+      }, [options, refreshOAuthState]);
+
+      useEffect(() => {
+        if (!(options instanceof OAuthService)) return;
+        if (!oauthBusy || !oauthNeedsAuth) return;
+
+        let cancelled = false;
+        let attempts = 0;
+        const maxAttempts = 40; // ~20s at 500ms interval
+        const tick = async () => {
+          if (cancelled) return;
+          attempts += 1;
+          const refreshed = await refreshOAuthState();
+          if (cancelled) return;
+          if (refreshed) return;
+          if (attempts >= maxAttempts) {
+            setOauthBusy(false);
+            setOauthHint('Authorization completed, but finalizing took too long. Try opening Linear once more.');
+            return;
+          }
+          setTimeout(() => {
+            void tick();
+          }, 500);
+        };
+
+        void tick();
+        return () => {
+          cancelled = true;
+        };
+      }, [options, oauthBusy, oauthNeedsAuth, refreshOAuthState]);
 
       const handleOAuthSignIn = useCallback(async () => {
         if (!(options instanceof OAuthService)) return;
@@ -6825,22 +6920,17 @@ export function withAccessToken(options: any) {
             setOauthHint('Unable to open authorization URL.');
             return;
           }
-          const stored = await options.getStoredToken();
-          if (!stored?.token) {
+          const refreshed = await refreshOAuthState();
+          if (!refreshed) {
             setOauthHint('Authorization finished but no token was stored.');
             return;
           }
-          _accessTokenValue = stored.token;
-          _accessTokenType = 'oauth';
-          await Promise.resolve(options.onAuthorize?.({ token: stored.token, type: 'oauth', idToken: stored.idToken }));
-          setOauthNeedsAuth(false);
-          setReady(true);
         } catch (e: any) {
           setOauthHint(e?.message || 'Failed to start OAuth authorization.');
         } finally {
           setOauthBusy(false);
         }
-      }, [options, oauthClientIdInput]);
+      }, [options, oauthClientIdInput, refreshOAuthState]);
 
       const handleOAuthCopyLink = useCallback(async () => {
         if (!oauthLink) return;
