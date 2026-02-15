@@ -1,8 +1,19 @@
-# SuperCmd
+<div align="center">
+<p align="center">
+  <img src="./supercmd.svg" width="96" height="96" alt="SuperCmd logo">
+</p>
 
-<img src="./assets/supercmd-logo.png" alt="SuperCmd logo" width="96" />
+<h1 align="center"><b>SuperCmd</b></h1>
+<h4 align="center">Raycast + Wispr Flow + Speechify + Memory + AI</h4>
 
-[supercmd.sh](https://supercmd.sh)
+<p align="center">
+  <a href="https://supercmd.sh"><img src="https://img.shields.io/badge/website-supercmd.sh-black.svg" alt="Website"></a>
+  <a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/electron-28-blue.svg" alt="Electron"></a>
+  <a href="http://makeapullrequest.com"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
+</p>
+
+<p align="center">Open-source launcher for macOS with Raycast-compatible extensions, voice workflows, and AI-native actions.</p>
+</div>
 
 ![SuperCmd Screenshot](./assets/supercmd.png)
 
