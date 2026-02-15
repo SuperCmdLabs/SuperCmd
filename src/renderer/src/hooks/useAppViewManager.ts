@@ -165,6 +165,7 @@ export function useAppViewManager(): AppViewManager {
   const openWhisper = useCallback(() => {
     resetAllViews();
     setShowWhisper(true);
+    setShowWhisperHint(true);
   }, [resetAllViews]);
 
   const openSpeak = useCallback(() => {

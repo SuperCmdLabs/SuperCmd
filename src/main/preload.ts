@@ -50,6 +50,13 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeListener('run-system-command', listener);
     };
   },
+  onOnboardingHotkeyPressed: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('onboarding-hotkey-pressed', listener);
+    return () => {
+      ipcRenderer.removeListener('onboarding-hotkey-pressed', listener);
+    };
+  },
   setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean): void => {
     ipcRenderer.send('set-detached-overlay-state', { overlay, visible });
   },
@@ -141,6 +148,10 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('set-open-at-login', enabled),
   replaceSpotlightWithSuperCmdShortcut: (): Promise<boolean> =>
     ipcRenderer.invoke('replace-spotlight-with-supercmd'),
+  onboardingRequestPermission: (
+    target: 'accessibility' | 'input-monitoring' | 'files' | 'microphone'
+  ): Promise<boolean> =>
+    ipcRenderer.invoke('onboarding-request-permission', target),
   updateCommandHotkey: (
     commandId: string,
     hotkey: string

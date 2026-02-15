@@ -182,7 +182,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const [waveBars, setWaveBars] = useState<number[]>(BASE_WAVE);
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
   const [speakToggleShortcutLabel, setSpeakToggleShortcutLabel] = useState('\u2318 .');
-  const speakToggleShortcutRef = useRef('Command+.');
+  const speakToggleShortcutRef = useRef('Fn');
 
   // Which backend to use — determined on settings load
   const backendRef = useRef<WhisperBackend>('native');
@@ -365,7 +365,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       const settings = await window.electron.getSettings();
       const language = settings.ai.speechLanguage || 'en-US';
       setSpeechLanguage(language);
-      const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Command+.';
+      const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn';
       speakToggleShortcutRef.current = speakToggleHotkey;
       setSpeakToggleShortcutLabel(formatShortcutLabel(speakToggleHotkey));
 

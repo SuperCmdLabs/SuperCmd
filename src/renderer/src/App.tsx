@@ -13,7 +13,6 @@ import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
 import OnboardingExtension from './OnboardingExtension';
-import WhisperOnboardingExtension from './WhisperOnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
 import SuperCmdWhisper from './SuperCmdWhisper';
 import SuperCmdRead from './SuperCmdRead';
@@ -61,7 +60,7 @@ const App: React.FC = () => {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
     showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt,
     showWhisper, showSpeak, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
-    openOnboarding, openWhisper, openWhisperOnboarding, openClipboardManager,
+    openOnboarding, openWhisper, openClipboardManager,
     openSnippetManager, openFileSearch, openCursorPrompt, openSpeak,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
     setShowClipboardManager, setShowSnippetManager, setShowFileSearch, setShowCursorPrompt,
@@ -73,7 +72,7 @@ const App: React.FC = () => {
     whisperSpeakToggleLabel, setWhisperSpeakToggleLabel,
     whisperSessionRef,
     appendWhisperOnboardingPracticeText,
-    whisperPortalTarget, whisperOnboardingPortalTarget,
+    whisperPortalTarget,
   } = useWhisperManager({
     showWhisper, setShowWhisper,
     showWhisperOnboarding, setShowWhisperOnboarding,
@@ -87,6 +86,7 @@ const App: React.FC = () => {
     speakPortalTarget,
   } = useSpeakManager({ showSpeak, setShowSpeak });
   const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
+  const [onboardingHotkeyPresses, setOnboardingHotkeyPresses] = useState(0);
   const [launcherShortcut, setLauncherShortcut] = useState('Alt+Space');
   const [showActions, setShowActions] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
@@ -194,7 +194,7 @@ const App: React.FC = () => {
       setPinnedCommands(settings.pinnedCommands || []);
       setRecentCommands(settings.recentCommands || []);
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
-      const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Command+.';
+      const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-JennyNeural'));
       setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
@@ -343,9 +343,7 @@ const App: React.FC = () => {
           return;
         }
         if (routedSystemCommandId === 'system-whisper-onboarding') {
-          setWhisperOnboardingPracticeText('');
-          openWhisper();
-          openWhisperOnboarding();
+          openOnboarding();
           return;
         }
       }
@@ -392,7 +390,7 @@ const App: React.FC = () => {
       inputRef.current?.focus();
     });
     return cleanupWindowShown;
-  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openFileSearch, openOnboarding, setWhisperOnboardingPracticeText, openWhisperOnboarding]);
+  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openFileSearch, openOnboarding]);
 
   // Listen for OAuth logout events from the settings window.
   // When the user clicks "Logout" in settings, clear the in-memory token
@@ -927,10 +925,9 @@ const App: React.FC = () => {
       return true;
     }
     if (commandId === 'system-whisper-onboarding') {
+      await window.electron.setLauncherMode('onboarding');
       whisperSessionRef.current = false;
-      openWhisper();
-      setWhisperOnboardingPracticeText('');
-      openWhisperOnboarding();
+      openOnboarding();
       return true;
     }
     if (commandId === 'system-clipboard-manager') {
@@ -989,16 +986,21 @@ const App: React.FC = () => {
     }
     if (commandId === 'system-supercmd-whisper') {
       whisperSessionRef.current = true;
-      openWhisper();
-      const settings = (await window.electron.getSettings()) as AppSettings;
-      if (!settings.hasSeenWhisperOnboarding) {
-        setWhisperOnboardingPracticeText('');
-        openWhisperOnboarding();
+      if (showOnboarding) {
+        setShowWhisper(true);
+        setShowWhisperOnboarding(true);
+        setShowWhisperHint(true);
+        return true;
       }
+      openWhisper();
       return true;
     }
     if (commandId === 'system-supercmd-speak') {
       whisperSessionRef.current = false;
+      if (showOnboarding) {
+        setShowSpeak(true);
+        return true;
+      }
       openSpeak();
       return true;
     }
@@ -1015,7 +1017,7 @@ const App: React.FC = () => {
       return true;
     }
     return false;
-  }, [memoryActionLoading, showMemoryFeedback, openOnboarding, openWhisper, openWhisperOnboarding, openClipboardManager, openSnippetManager, openFileSearch, openSpeak]);
+  }, [memoryActionLoading, showMemoryFeedback, showOnboarding, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openFileSearch, openSpeak, setShowSpeak]);
 
   useEffect(() => {
     const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {
@@ -1027,6 +1029,13 @@ const App: React.FC = () => {
     });
     return cleanup;
   }, [runLocalSystemCommand]);
+
+  useEffect(() => {
+    const cleanup = window.electron.onOnboardingHotkeyPressed(() => {
+      setOnboardingHotkeyPresses((prev) => prev + 1);
+    });
+    return cleanup;
+  }, []);
 
   const runScriptCommand = useCallback(
     async (
@@ -1390,30 +1399,11 @@ const App: React.FC = () => {
           onClose={() => {
             whisperSessionRef.current = false;
             setShowWhisper(false);
+            setShowWhisperOnboarding(false);
             setShowWhisperHint(false);
           }}
         />
       ) : null}
-      {showWhisperOnboarding && whisperOnboardingPortalTarget
-        ? createPortal(
-            <WhisperOnboardingExtension
-              speakToggleShortcutLabel={whisperSpeakToggleLabel}
-              practiceText={whisperOnboardingPracticeText}
-              onPracticeTextChange={setWhisperOnboardingPracticeText}
-              onClose={() => {
-                setShowWhisperOnboarding(false);
-                setShowWhisperHint(false);
-              }}
-              onComplete={async () => {
-                await window.electron.saveSettings({ hasSeenWhisperOnboarding: true });
-                setShowWhisperOnboarding(false);
-                setShowWhisper(true);
-                setShowWhisperHint(true);
-              }}
-            />,
-            whisperOnboardingPortalTarget
-          )
-        : null}
       {showSpeak && speakPortalTarget ? (
         <SuperCmdRead
           status={speakStatus}
@@ -1684,14 +1674,18 @@ const App: React.FC = () => {
         <OnboardingExtension
           initialShortcut={launcherShortcut}
           requireWorkingShortcut={onboardingRequiresShortcutFix}
+          dictationPracticeText={whisperOnboardingPracticeText}
+          onDictationPracticeTextChange={setWhisperOnboardingPracticeText}
+          onboardingHotkeyPresses={onboardingHotkeyPresses}
           onClose={async () => {
             await window.electron.setLauncherMode('onboarding');
             setShowOnboarding(true);
           }}
           onComplete={async () => {
             await window.electron.setLauncherMode('default');
-            await window.electron.saveSettings({ hasSeenOnboarding: true });
+            await window.electron.saveSettings({ hasSeenOnboarding: true, hasSeenWhisperOnboarding: true });
             setShowOnboarding(false);
+            setShowWhisperOnboarding(false);
             setOnboardingRequiresShortcutFix(false);
             setSearchQuery('');
             setSelectedIndex(0);

@@ -891,7 +891,7 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
     {
       id: 'system-cursor-prompt',
       title: 'Inline AI Prompt',
-      keywords: ['ai', 'prompt', 'cursor', 'inline', 'rewrite', 'edit', 'command+k'],
+      keywords: ['ai', 'prompt', 'cursor', 'inline', 'rewrite', 'edit', 'command+shift+k'],
       category: 'system',
     },
     {
@@ -922,12 +922,6 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       id: 'system-supercmd-whisper',
       title: 'SuperCmd Whisper',
       keywords: ['whisper', 'speech', 'voice', 'dictation', 'transcribe', 'overlay', 'supercmd'],
-      category: 'system',
-    },
-    {
-      id: 'system-whisper-onboarding',
-      title: 'SuperCmd Whisper Onboarding',
-      keywords: ['whisper', 'onboarding', 'dictation', 'voice', 'tutorial', 'hotkey', 'practice'],
       category: 'system',
     },
     {

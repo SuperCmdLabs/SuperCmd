@@ -62,7 +62,7 @@ import {
 } from './snippet-store';
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, clipboard: systemClipboard } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
 
 // ─── Native Binary Helpers ──────────────────────────────────────────
 
@@ -263,6 +263,12 @@ let whisperHoldWatcherStdoutBuffer = '';
 let whisperHoldRequestSeq = 0;
 let whisperHoldReleasedSeq = 0;
 let whisperHoldWatcherSeq = 0;
+let fnSpeakToggleWatcherProcess: any = null;
+let fnSpeakToggleWatcherStdoutBuffer = '';
+let fnSpeakToggleWatcherRestartTimer: NodeJS.Timeout | null = null;
+let fnSpeakToggleWatcherEnabled = false;
+let fnSpeakToggleLastPressedAt = 0;
+let fnSpeakToggleIsPressed = false;
 let edgeTtsRuntime: { command: string; baseArgs: string[] } | null = null;
 type SpeakChunkPrepared = {
   index: number;
@@ -348,8 +354,7 @@ function isWindowShownRoutedSystemCommand(commandId: string): boolean {
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
     commandId === 'system-search-files' ||
-    commandId === 'system-open-onboarding' ||
-    commandId === 'system-whisper-onboarding'
+    commandId === 'system-open-onboarding'
   );
 }
 
@@ -362,6 +367,93 @@ function scrubInternalClipboardProbe(reason: string): void {
   } catch (error) {
     console.warn('[Clipboard] Failed to clear internal probe token:', error);
   }
+}
+
+type OnboardingPermissionTarget = 'accessibility' | 'input-monitoring' | 'files' | 'microphone';
+
+async function primeAccessibilityPermissionPrompt(): Promise<boolean> {
+  if (process.platform !== 'darwin') return false;
+  try {
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const execFileAsync = promisify(execFile);
+    const script = `
+      use framework "ApplicationServices"
+      set opts to current application's NSDictionary's dictionaryWithObject:true forKey:(current application's kAXTrustedCheckOptionPrompt)
+      set trusted to current application's AXIsProcessTrustedWithOptions(opts)
+      if trusted then
+        return "1"
+      end if
+      return "0"
+    `;
+    const { stdout } = await execFileAsync('/usr/bin/osascript', ['-l', 'AppleScript', '-e', script]);
+    return String(stdout || '').trim() === '1';
+  } catch {
+    return false;
+  }
+}
+
+async function primeInputMonitoringPermissionPrompt(): Promise<boolean> {
+  if (process.platform !== 'darwin') return false;
+  try {
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const execFileAsync = promisify(execFile);
+    const script = `
+      use framework "CoreGraphics"
+      set granted to current application's CGRequestListenEventAccess()
+      if granted then
+        return "1"
+      end if
+      return "0"
+    `;
+    const { stdout } = await execFileAsync('/usr/bin/osascript', ['-l', 'AppleScript', '-e', script]);
+    return String(stdout || '').trim() === '1';
+  } catch {
+    return false;
+  }
+}
+
+async function primeFilesAndFoldersPermissionPrompt(): Promise<boolean> {
+  if (process.platform !== 'darwin') return false;
+  try {
+    const fs = require('fs');
+    const os = require('os');
+    const home = os.homedir();
+    const candidates = [
+      path.join(home, 'Desktop'),
+      path.join(home, 'Documents'),
+      path.join(home, 'Downloads'),
+    ];
+    let readable = false;
+    for (const candidate of candidates) {
+      try {
+        if (!fs.existsSync(candidate)) continue;
+        fs.readdirSync(candidate);
+        readable = true;
+      } catch {}
+    }
+    return readable;
+  } catch {
+    return false;
+  }
+}
+
+async function requestOnboardingPermissionAccess(target: OnboardingPermissionTarget): Promise<boolean> {
+  if (process.platform !== 'darwin') return false;
+  if (target === 'accessibility') return await primeAccessibilityPermissionPrompt();
+  if (target === 'input-monitoring') return await primeInputMonitoringPermissionPrompt();
+  if (target === 'files') return await primeFilesAndFoldersPermissionPrompt();
+  if (target === 'microphone') {
+    try {
+      const current = String(systemPreferences.getMediaAccessStatus('microphone') || '');
+      if (current === 'granted') return true;
+      return await systemPreferences.askForMediaAccess('microphone');
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 let lastTypingCaretPoint: { x: number; y: number } | null = null;
 let lastCursorPromptSelection = '';
@@ -1026,12 +1118,18 @@ function unregisterShortcutVariants(shortcut: string): void {
   }
 }
 
+function isFnOnlyShortcut(shortcut: string): boolean {
+  const normalized = normalizeAccelerator(shortcut).trim().toLowerCase();
+  return normalized === 'fn' || normalized === 'function';
+}
+
 function parseHoldShortcutConfig(shortcut: string): {
   keyCode: number;
   cmd: boolean;
   ctrl: boolean;
   alt: boolean;
   shift: boolean;
+  fn: boolean;
 } | null {
   const raw = normalizeAccelerator(shortcut);
   if (!raw) return null;
@@ -1047,16 +1145,18 @@ function parseHoldShortcutConfig(shortcut: string): {
     l: 37, j: 38, "'": 39, k: 40, ';': 41, '\\': 42, ',': 43, '/': 44,
     n: 45, m: 46, '.': 47, '`': 50,
     period: 47, comma: 43, slash: 44, semicolon: 41, quote: 39,
-    tab: 48, space: 49, return: 36, enter: 36, escape: 53,
+    tab: 48, space: 49, return: 36, enter: 36, escape: 53, fn: 63, function: 63,
   };
   const keyCode = map[keyToken];
   if (!Number.isFinite(keyCode)) return null;
+  const fnAsModifier = mods.has('fn') || mods.has('function');
   return {
     keyCode,
     cmd: mods.has('command') || mods.has('cmd') || mods.has('meta'),
     ctrl: mods.has('control') || mods.has('ctrl'),
     alt: mods.has('alt') || mods.has('option'),
     shift: mods.has('shift'),
+    fn: fnAsModifier || keyToken === 'fn' || keyToken === 'function',
   };
 }
 
@@ -1066,6 +1166,126 @@ function stopWhisperHoldWatcher(): void {
   whisperHoldWatcherProcess = null;
   whisperHoldWatcherStdoutBuffer = '';
   whisperHoldWatcherSeq = 0;
+}
+
+function stopFnSpeakToggleWatcher(): void {
+  fnSpeakToggleWatcherEnabled = false;
+  fnSpeakToggleIsPressed = false;
+  if (fnSpeakToggleWatcherRestartTimer) {
+    clearTimeout(fnSpeakToggleWatcherRestartTimer);
+    fnSpeakToggleWatcherRestartTimer = null;
+  }
+  if (!fnSpeakToggleWatcherProcess) return;
+  try { fnSpeakToggleWatcherProcess.kill('SIGTERM'); } catch {}
+  fnSpeakToggleWatcherProcess = null;
+  fnSpeakToggleWatcherStdoutBuffer = '';
+}
+
+function startFnSpeakToggleWatcher(): void {
+  if (fnSpeakToggleWatcherProcess || !fnSpeakToggleWatcherEnabled) return;
+  const config = parseHoldShortcutConfig('Fn');
+  if (!config) return;
+  const binaryPath = ensureWhisperHoldWatcherBinary();
+  if (!binaryPath) return;
+
+  const { spawn } = require('child_process');
+  fnSpeakToggleWatcherProcess = spawn(
+    binaryPath,
+    [
+      String(config.keyCode),
+      config.cmd ? '1' : '0',
+      config.ctrl ? '1' : '0',
+      config.alt ? '1' : '0',
+      config.shift ? '1' : '0',
+      config.fn ? '1' : '0',
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  fnSpeakToggleWatcherStdoutBuffer = '';
+
+  fnSpeakToggleWatcherProcess.stdout.on('data', (chunk: Buffer | string) => {
+    fnSpeakToggleWatcherStdoutBuffer += chunk.toString();
+    const lines = fnSpeakToggleWatcherStdoutBuffer.split('\n');
+    fnSpeakToggleWatcherStdoutBuffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const payload = JSON.parse(trimmed);
+        if (payload?.pressed) {
+          const now = Date.now();
+          if (now - fnSpeakToggleLastPressedAt < 180) continue;
+          fnSpeakToggleLastPressedAt = now;
+          fnSpeakToggleIsPressed = true;
+          void (async () => {
+            if (whisperOverlayVisible) {
+              captureFrontmostAppContext();
+              if (whisperChildWindow && !whisperChildWindow.isDestroyed()) {
+                const bounds = whisperChildWindow.getBounds();
+                const pos = computeDetachedPopupPosition(DETACHED_WHISPER_WINDOW_NAME, bounds.width, bounds.height);
+                whisperChildWindow.setPosition(pos.x, pos.y);
+              }
+              mainWindow?.webContents.send('whisper-start-listening');
+              return;
+            }
+            await openLauncherAndRunSystemCommand('system-supercmd-whisper', {
+              showWindow: false,
+              mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
+              preserveFocusWhenHidden: launcherMode !== 'onboarding',
+            });
+            lastWhisperShownAt = Date.now();
+            const startDelays = [180, 340, 520];
+            startDelays.forEach((delay) => {
+              setTimeout(() => {
+                if (!fnSpeakToggleIsPressed) return;
+                mainWindow?.webContents.send('whisper-start-listening');
+              }, delay);
+            });
+          })();
+        }
+        if (payload?.released) {
+          fnSpeakToggleIsPressed = false;
+          mainWindow?.webContents.send('whisper-stop-listening');
+        }
+      } catch {}
+    }
+  });
+
+  fnSpeakToggleWatcherProcess.stderr.on('data', (chunk: Buffer | string) => {
+    const text = chunk.toString().trim();
+    if (text) console.warn('[Whisper][fn-watcher]', text);
+  });
+
+  fnSpeakToggleWatcherProcess.on('error', () => {
+    fnSpeakToggleWatcherProcess = null;
+    fnSpeakToggleWatcherStdoutBuffer = '';
+    if (!fnSpeakToggleWatcherEnabled) return;
+    fnSpeakToggleWatcherRestartTimer = setTimeout(() => {
+      fnSpeakToggleWatcherRestartTimer = null;
+      startFnSpeakToggleWatcher();
+    }, 280);
+  });
+
+  fnSpeakToggleWatcherProcess.on('exit', () => {
+    fnSpeakToggleWatcherProcess = null;
+    fnSpeakToggleWatcherStdoutBuffer = '';
+    if (!fnSpeakToggleWatcherEnabled) return;
+    fnSpeakToggleWatcherRestartTimer = setTimeout(() => {
+      fnSpeakToggleWatcherRestartTimer = null;
+      startFnSpeakToggleWatcher();
+    }, 120);
+  });
+}
+
+function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
+  const speakToggle = String(hotkeys?.['system-supercmd-whisper-speak-toggle'] || '').trim();
+  const shouldEnable = isFnOnlyShortcut(speakToggle);
+  if (!shouldEnable) {
+    stopFnSpeakToggleWatcher();
+    return;
+  }
+  fnSpeakToggleWatcherEnabled = true;
+  startFnSpeakToggleWatcher();
 }
 
 function ensureWhisperHoldWatcherBinary(): string | null {
@@ -1122,6 +1342,7 @@ function startWhisperHoldWatcher(shortcut: string, holdSeq: number): void {
       config.ctrl ? '1' : '0',
       config.alt ? '1' : '0',
       config.shift ? '1' : '0',
+      config.fn ? '1' : '0',
     ],
     { stdio: ['ignore', 'pipe', 'pipe'] }
   );
@@ -1538,9 +1759,6 @@ function createWindow(): void {
       }
     }
   });
-
-  // Open DevTools for debugging (detached so it doesn't resize the overlay)
-  mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.on('blur', () => {
     if (
@@ -2360,6 +2578,20 @@ function toggleWindow(): void {
     return;
   }
 
+  if (isVisible && launcherMode === 'onboarding') {
+    try {
+      mainWindow?.webContents.send('onboarding-hotkey-pressed');
+    } catch {}
+    // If renderer completes onboarding in response to this signal, ensure the
+    // launcher becomes visible in default mode immediately.
+    setTimeout(() => {
+      if (launcherMode !== 'default') return;
+      if (isVisible) return;
+      void showWindow();
+    }, 90);
+    return;
+  }
+
   if (isVisible) {
     hideWindow();
   } else {
@@ -2484,22 +2716,11 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     lastWhisperToggleAt = now;
   }
 
-  if (isWhisperCommand) {
-    const settings = loadSettings();
-    if (!settings.hasSeenWhisperOnboarding) {
-      whisperHoldRequestSeq += 1;
-      stopWhisperHoldWatcher();
-      return await openLauncherAndRunSystemCommand('system-whisper-onboarding', {
-        showWindow: true,
-        mode: 'default',
-      });
-    }
-  }
-
   if (isWhisperSpeakToggleCommand) {
-    const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Command+.');
+    const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn');
     const holdSeq = ++whisperHoldRequestSeq;
     if (whisperOverlayVisible) {
+      captureFrontmostAppContext();
       // Reposition whisper window to the current cursor's screen
       if (whisperChildWindow && !whisperChildWindow.isDestroyed()) {
         const bounds = whisperChildWindow.getBounds();
@@ -2513,7 +2734,8 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     startWhisperHoldWatcher(speakToggleHotkey, holdSeq);
     await openLauncherAndRunSystemCommand('system-supercmd-whisper', {
       showWindow: false,
-      mode: 'default',
+      mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
+      preserveFocusWhenHidden: launcherMode !== 'onboarding',
     });
     lastWhisperShownAt = Date.now();
     // Opening detached whisper can race with renderer listener binding;
@@ -2538,7 +2760,8 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     if (!started) return false;
     await openLauncherAndRunSystemCommand('system-supercmd-speak', {
       showWindow: false,
-      mode: 'default',
+      mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
+      preserveFocusWhenHidden: launcherMode !== 'onboarding',
     });
     return started;
   }
@@ -2619,12 +2842,17 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     commandId === 'system-clipboard-manager' ||
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
-    commandId === 'system-search-files' ||
-    commandId === 'system-whisper-onboarding'
+    commandId === 'system-search-files'
   ) {
     return await openLauncherAndRunSystemCommand(commandId, {
       showWindow: true,
       mode: 'default',
+    });
+  }
+  if (commandId === 'system-whisper-onboarding') {
+    return await openLauncherAndRunSystemCommand('system-open-onboarding', {
+      showWindow: true,
+      mode: 'onboarding',
     });
   }
   if (commandId === 'system-open-onboarding') {
@@ -2639,7 +2867,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     stopWhisperHoldWatcher();
     return await openLauncherAndRunSystemCommand('system-supercmd-whisper', {
       showWindow: source === 'launcher',
-      mode: 'default',
+      mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
     });
   }
   if (commandId === 'system-import-snippets') {
@@ -3586,6 +3814,9 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
   for (const [commandId, shortcut] of Object.entries(hotkeys)) {
     if (!shortcut) continue;
     const normalizedShortcut = normalizeAccelerator(shortcut);
+    if (commandId === 'system-supercmd-whisper-speak-toggle' && isFnOnlyShortcut(normalizedShortcut)) {
+      continue;
+    }
     try {
       const success = globalShortcut.register(normalizedShortcut, async () => {
         await runCommandById(commandId, 'hotkey');
@@ -3595,6 +3826,8 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
       }
     } catch {}
   }
+
+  syncFnSpeakToggleWatcher(hotkeys);
 }
 
 // ─── App Initialization ─────────────────────────────────────────────
@@ -3974,6 +4207,10 @@ app.whenReady().then(async () => {
     return replaceSpotlightWithSuperCmdShortcut();
   });
 
+  ipcMain.handle('onboarding-request-permission', async (_event: any, target: OnboardingPermissionTarget) => {
+    return await requestOnboardingPermissionAccess(target);
+  });
+
   ipcMain.handle(
     'update-command-hotkey',
     async (_event: any, commandId: string, hotkey: string) => {
@@ -3999,11 +4236,17 @@ app.whenReady().then(async () => {
           }
         }
 
+        const isFnSpeakToggle =
+          commandId === 'system-supercmd-whisper-speak-toggle' &&
+          isFnOnlyShortcut(normalizedHotkey);
+
         // Register the new one
         try {
-          const success = globalShortcut.register(normalizedHotkey, async () => {
-            await runCommandById(commandId, 'hotkey');
-          });
+          const success = isFnSpeakToggle
+            ? true
+            : globalShortcut.register(normalizedHotkey, async () => {
+                await runCommandById(commandId, 'hotkey');
+              });
           if (!success) {
             // Attempt to restore old mapping if the new one failed.
             if (oldHotkey) {
@@ -4020,7 +4263,9 @@ app.whenReady().then(async () => {
             return { success: false, error: 'unavailable' as const };
           }
           hotkeys[commandId] = hotkey;
-          registeredHotkeys.set(normalizedHotkey, commandId);
+          if (!isFnSpeakToggle) {
+            registeredHotkeys.set(normalizedHotkey, commandId);
+          }
         } catch {
           return { success: false, error: 'unavailable' as const };
         }
@@ -4029,6 +4274,7 @@ app.whenReady().then(async () => {
       }
 
       saveSettings({ commandHotkeys: hotkeys });
+      syncFnSpeakToggleWatcher(hotkeys);
       return { success: true as const };
     }
   );
@@ -5443,6 +5689,8 @@ return appURL's |path|() as text`,
       return { typed: false, fallbackClipboard: false };
     }
 
+    await activateLastFrontmostApp();
+    await new Promise((resolve) => setTimeout(resolve, 70));
     let typed = await pasteTextToActiveApp(nextText);
     if (!typed) {
       typed = await typeTextDirectly(nextText);
@@ -6427,6 +6675,7 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   stopWhisperHoldWatcher();
+  stopFnSpeakToggleWatcher();
   stopSpeakSession({ resetStatus: false });
   stopClipboardMonitor();
   stopSnippetExpander();

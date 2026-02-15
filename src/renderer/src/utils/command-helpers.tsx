@@ -369,6 +369,7 @@ export function renderShortcutLabel(shortcut?: string): string {
     .replace(/Control|Ctrl/gi, '⌃')
     .replace(/Alt|Option/gi, '⌥')
     .replace(/Shift/gi, '⇧')
+    .replace(/Function|Fn/gi, 'fn')
     .replace(/ArrowUp/g, '↑')
     .replace(/ArrowDown/g, '↓')
     .replace(/Backspace|Delete/g, '⌫')

@@ -72,9 +72,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   enabledCommands: [],
   customExtensionFolders: [],
   commandHotkeys: {
-    'system-cursor-prompt': 'Command+K',
+    'system-cursor-prompt': 'Command+Shift+K',
     'system-supercmd-whisper': 'Command+Shift+W',
-    'system-supercmd-whisper-speak-toggle': 'Command+.',
+    'system-supercmd-whisper-speak-toggle': 'Fn',
     'system-supercmd-speak': 'Command+Shift+S',
   },
   pinnedCommands: [],

@@ -50,7 +50,7 @@ export function useWhisperManager({
   setShowWhisperHint,
 }: UseWhisperManagerOptions): UseWhisperManagerReturn {
   const [whisperOnboardingPracticeText, setWhisperOnboardingPracticeText] = useState('');
-  const [whisperSpeakToggleLabel, setWhisperSpeakToggleLabel] = useState('\u2318 .');
+  const [whisperSpeakToggleLabel, setWhisperSpeakToggleLabel] = useState('fn');
 
   const whisperSessionRef = useRef(false);
 
@@ -68,16 +68,9 @@ export function useWhisperManager({
     },
   });
 
-  const whisperOnboardingPortalTarget = useDetachedPortalWindow(showWhisperOnboarding, {
-    name: 'supercmd-whisper-onboarding-window',
-    title: 'SuperCmd Whisper Onboarding',
-    width: 920,
-    height: 640,
-    anchor: 'center',
-    onClosed: () => {
-      setShowWhisperOnboarding(false);
-    },
-  });
+  // Whisper onboarding now lives inside the main onboarding screen, so we no
+  // longer open a separate detached onboarding window.
+  const whisperOnboardingPortalTarget: HTMLElement | null = null;
 
   // ── Effects ────────────────────────────────────────────────────────
 

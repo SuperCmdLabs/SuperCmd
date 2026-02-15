@@ -24,6 +24,9 @@ function keyEventToAccelerator(e: React.KeyboardEvent): string | null {
   if (e.altKey) parts.push('Alt');
   if (e.shiftKey) parts.push('Shift');
 
+  // Support fn/function as a standalone hold key for whisper dictation.
+  if (e.key === 'Fn' || e.key === 'Function') return 'Fn';
+
   // Ignore standalone modifier keys
   const key = e.key;
   if (['Meta', 'Control', 'Alt', 'Shift'].includes(key)) return null;

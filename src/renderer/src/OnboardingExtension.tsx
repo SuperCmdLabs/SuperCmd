@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Accessibility,
   ArrowLeft,
   Bot,
   BookOpen,
@@ -13,6 +12,7 @@ import {
   Keyboard,
   Mic,
   Search,
+  Shield,
   Volume2,
 } from 'lucide-react';
 import HotkeyRecorder from './settings/HotkeyRecorder';
@@ -22,15 +22,22 @@ import onboardingIconVideo from '../../../assets/icon.mp4';
 interface OnboardingExtensionProps {
   initialShortcut: string;
   requireWorkingShortcut?: boolean;
+  dictationPracticeText: string;
+  onDictationPracticeTextChange: (value: string) => void;
+  onboardingHotkeyPresses?: number;
   onComplete: () => void;
   onClose: () => void;
 }
+
+type PermissionTargetId = 'accessibility' | 'input-monitoring' | 'files' | 'microphone';
 
 const STEPS = [
   'Welcome',
   'Core Features',
   'Hotkey Setup',
-  'Access',
+  'Permissions',
+  'Dictation Mode',
+  'Read Mode',
   'Final Check',
 ];
 
@@ -44,35 +51,58 @@ const featureCards = [
   { id: 'instant-dictionary', title: 'Instant Dictionary', description: 'Fast definitions without context switching.', icon: BookOpen },
 ];
 
-const permissionTargets = [
+const permissionTargets: Array<{
+  id: PermissionTargetId;
+  title: string;
+  description: string;
+  url: string;
+  icon: any;
+  iconTone: string;
+  iconBg: string;
+}> = [
+  {
+    id: 'accessibility',
+    title: 'Accessibility',
+    description: 'Required for text selection, keyboard automation, and reliable typing into other apps.',
+    url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+    icon: Shield,
+    iconTone: 'text-rose-100',
+    iconBg: 'bg-rose-500/22 border-rose-100/30',
+  },
+  {
+    id: 'input-monitoring',
+    title: 'Input Monitoring',
+    description: 'Required for hold-to-talk key detection and stable hotkey behavior in every app.',
+    url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
+    icon: Keyboard,
+    iconTone: 'text-indigo-100',
+    iconBg: 'bg-indigo-500/22 border-indigo-100/30',
+  },
   {
     id: 'files',
     title: 'Files and Folders',
-    description: 'Needed for file search, opening files from results, and extension workflows that operate on files.',
+    description: 'Required for file workflows and opening search results across Documents/Desktop/Downloads.',
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders',
     icon: FolderOpen,
     iconTone: 'text-amber-100',
     iconBg: 'bg-amber-500/22 border-amber-100/30',
   },
   {
-    id: 'accessibility',
-    title: 'Accessibility',
-    description: 'Needed for global clipboard actions, keyboard automation, and reliable paste/type behavior across apps.',
-    url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
-    icon: Clipboard,
-    iconTone: 'text-rose-100',
-    iconBg: 'bg-rose-500/22 border-rose-100/30',
-  },
-  {
     id: 'microphone',
     title: 'Microphone',
-    description: 'Required for Whisper so you can dictate and insert text with your hotkey.',
+    description: 'Required for SuperCmd Whisper dictation.',
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
     icon: Mic,
     iconTone: 'text-cyan-100',
     iconBg: 'bg-cyan-500/22 border-cyan-100/30',
   },
 ];
+
+const DICTATION_SAMPLE =
+  'It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness.';
+
+const READ_SAMPLE =
+  'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.';
 
 function toHotkeyCaps(shortcut: string): string[] {
   const map: Record<string, string> = {
@@ -82,6 +112,7 @@ function toHotkeyCaps(shortcut: string): string[] {
     Shift: '\u21E7',
     Space: 'Space',
     Return: 'Enter',
+    Fn: 'fn',
   };
   return String(shortcut || '')
     .split('+')
@@ -93,6 +124,9 @@ function toHotkeyCaps(shortcut: string): string[] {
 const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   initialShortcut,
   requireWorkingShortcut = false,
+  dictationPracticeText,
+  onDictationPracticeTextChange,
+  onboardingHotkeyPresses = 0,
   onComplete,
   onClose,
 }) => {
@@ -101,14 +135,30 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [hasValidShortcut, setHasValidShortcut] = useState(!requireWorkingShortcut);
   const [openedPermissions, setOpenedPermissions] = useState<Record<string, boolean>>({});
+  const [permissionLoading, setPermissionLoading] = useState<Record<string, boolean>>({});
   const [isReplacingSpotlight, setIsReplacingSpotlight] = useState(false);
   const [spotlightStatus, setSpotlightStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [hotkeyTested, setHotkeyTested] = useState(false);
+  const [whisperHoldKey, setWhisperHoldKey] = useState('Fn');
+  const [whisperKeyStatus, setWhisperKeyStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [whisperKeyTested, setWhisperKeyTested] = useState(false);
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     setHasValidShortcut(!requireWorkingShortcut);
   }, [requireWorkingShortcut]);
+
+  useEffect(() => {
+    window.electron.getSettings().then((settings) => {
+      const saved = String(settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn').trim();
+      setWhisperHoldKey(saved || 'Fn');
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!onboardingHotkeyPresses) return;
+    if (step !== STEPS.length - 1) return;
+    onComplete();
+  }, [onboardingHotkeyPresses, step, onComplete]);
 
   useEffect(() => {
     const video = introVideoRef.current;
@@ -163,6 +213,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
   const stepTitle = useMemo(() => STEPS[step] || STEPS[0], [step]);
   const hotkeyCaps = useMemo(() => toHotkeyCaps(shortcut || 'Alt+Space'), [shortcut]);
+  const whisperKeyCaps = useMemo(() => toHotkeyCaps(whisperHoldKey || 'Fn'), [whisperHoldKey]);
 
   const handleShortcutChange = async (nextShortcut: string) => {
     setShortcutStatus('idle');
@@ -183,10 +234,30 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     setTimeout(() => setShortcutStatus('idle'), 2200);
   };
 
-  const openPermissionTarget = async (id: string, url: string) => {
-    const ok = await window.electron.openUrl(url);
-    if (ok) {
-      setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
+  const handleWhisperKeyChange = async (nextShortcut: string) => {
+    const target = nextShortcut || 'Fn';
+    setWhisperKeyStatus('idle');
+    setWhisperHoldKey(target);
+    const result = await window.electron.updateCommandHotkey('system-supercmd-whisper-speak-toggle', target);
+    if (result.success) {
+      setWhisperKeyStatus('success');
+      setTimeout(() => setWhisperKeyStatus('idle'), 1600);
+      return;
+    }
+    setWhisperKeyStatus('error');
+    setTimeout(() => setWhisperKeyStatus('idle'), 2200);
+  };
+
+  const openPermissionTarget = async (id: PermissionTargetId, url: string) => {
+    setPermissionLoading((prev) => ({ ...prev, [id]: true }));
+    try {
+      await window.electron.onboardingRequestPermission(id);
+      const ok = await window.electron.openUrl(url);
+      if (ok) {
+        setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
+      }
+    } finally {
+      setPermissionLoading((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -209,8 +280,10 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   };
 
   const canCompleteOnboarding = !requireWorkingShortcut || hasValidShortcut;
-  const canContinue = step !== 2 || canCompleteOnboarding;
-  const canFinish = canCompleteOnboarding && hotkeyTested;
+  const canContinueBase = step !== 2 || canCompleteOnboarding;
+  const canContinueDictation = step !== 4 || whisperKeyTested;
+  const canContinue = canContinueBase && canContinueDictation;
+  const canFinish = canCompleteOnboarding && whisperKeyTested;
   const contentBackground = step === 0
     ? 'radial-gradient(circle at 10% 0%, rgba(255, 90, 118, 0.26), transparent 34%), radial-gradient(circle at 92% 2%, rgba(255, 84, 70, 0.19), transparent 36%), linear-gradient(180deg, rgba(5,5,7,0.98) 0%, rgba(8,8,11,0.95) 48%, rgba(10,10,13,0.93) 100%)'
     : 'radial-gradient(circle at 5% 0%, rgba(255, 92, 127, 0.30), transparent 36%), radial-gradient(circle at 100% 10%, rgba(255, 87, 73, 0.24), transparent 38%), radial-gradient(circle at 82% 100%, rgba(84, 212, 255, 0.12), transparent 34%), transparent';
@@ -267,7 +340,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                 </div>
 
                 <div
-                  className="relative rounded-3xl border border-white/[0.20] p-5 lg:p-6 flex flex-col justify-between lg:h-[430px] self-center"
+                  className="relative rounded-3xl border border-white/[0.20] p-5 lg:p-6 flex flex-col gap-4 lg:h-[430px] self-center"
                   style={{
                     background:
                       'linear-gradient(168deg, rgba(20,20,24,0.86) 0%, rgba(26,26,31,0.72) 48%, rgba(34,20,20,0.52) 100%)',
@@ -275,28 +348,22 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                       'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -14px 34px rgba(7, 7, 10, 0.45), 0 14px 38px rgba(0,0,0,0.36)',
                   }}
                 >
-                  <div
-                    className="pointer-events-none absolute inset-0"
-                    style={{
-                      background: 'linear-gradient(180deg, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.10) 40%, rgba(0,0,0,0.36) 100%)',
-                    }}
-                  />
-                  <div>
-                    <span className="relative z-10 inline-flex px-2.5 py-1 rounded-full border border-white/20 bg-white/[0.06] text-[10px] tracking-[0.14em] uppercase text-white/82 mb-3">
-                      SuperCmd Onboarding
-                    </span>
-                    <h2 className="relative z-10 text-white text-[26px] lg:text-[30px] leading-[1.1] font-semibold max-w-xl">
-                      Supercharge your Mac with SuperCmd.
-                    </h2>
-                    <p className="relative z-10 text-white/72 text-[15px] leading-relaxed mt-3 max-w-xl">
-                      A single command surface for launching apps, running workflows, and triggering AI-powered actions
-                      without leaving your keyboard.
-                    </p>
-                  </div>
-                  <div className="relative z-10 rounded-2xl border border-white/[0.10] bg-black/24 px-4 py-2.5 mt-4">
-                    <p className="text-white/82 text-[15px]">
-                      Built for speed, polished with real glass depth, and ready for instant daily use.
-                    </p>
+                  <span className="inline-flex w-fit px-2.5 py-1 rounded-full border border-white/20 bg-white/[0.06] text-[10px] tracking-[0.14em] uppercase text-white/82">
+                    SuperCmd Setup
+                  </span>
+                  <h2 className="text-white text-[26px] lg:text-[30px] leading-[1.1] font-semibold max-w-xl">
+                    One command surface for launch, ask, dictate, and read.
+                  </h2>
+                  <p className="text-white/72 text-[15px] leading-relaxed max-w-xl">
+                    We will configure launcher hotkeys, privacy permissions, and whisper mode in one pass.
+                  </p>
+                  <div className="rounded-2xl border border-white/[0.10] bg-black/24 px-4 py-3">
+                    <p className="text-white/88 text-sm mb-2">What gets configured now:</p>
+                    <div className="text-white/72 text-sm space-y-1">
+                      <p>1. Launcher hotkey and inline prompt defaults</p>
+                      <p>2. Accessibility, Input Monitoring, Files, Microphone</p>
+                      <p>3. Whisper dictation and Read mode practice</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -355,10 +422,10 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <Keyboard className="w-4 h-4 text-rose-100" />
-                    <p className="text-white/90 text-sm font-medium">Current Hotkey</p>
+                    <p className="text-white/90 text-sm font-medium">Current Launcher Hotkey</p>
                   </div>
                   <p className="text-white/62 text-xs mb-5">
-                    This is your current launcher shortcut.
+                    Inline prompt default is now Cmd + Shift + K. Configure launcher key below.
                   </p>
 
                   <div className="flex flex-wrap items-center gap-2 mb-5">
@@ -378,7 +445,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     {shortcutStatus === 'error' ? <span className="text-xs text-rose-300">Shortcut unavailable</span> : null}
                   </div>
 
-                  <p className="text-white/52 text-xs mb-4">Click the hotkey field above to update your shortcut.</p>
+                  <p className="text-white/52 text-xs mb-4">Click the hotkey field above to update your launcher shortcut.</p>
 
                   <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
                     <div className="flex items-center gap-2 mb-1.5">
@@ -403,7 +470,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                 </div>
 
                 {requireWorkingShortcut && !hasValidShortcut ? (
-                  <p className="text-xs text-amber-200/92">
+                  <p className="text-xs text-amber-200/92 mt-2">
                     Your current launcher shortcut is unavailable. Set a working shortcut to continue.
                   </p>
                 ) : null}
@@ -413,42 +480,53 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
           {step === 3 && (
             <div className="min-h-full flex items-center justify-center">
-              <div className="w-full max-w-6xl space-y-4">
+              <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
                 <div
-                  className="rounded-2xl border border-rose-200/24 px-5 py-4"
+                  className="rounded-3xl border border-white/[0.16] p-5"
                   style={{
                     background:
-                      'linear-gradient(160deg, rgba(255, 94, 122, 0.18), rgba(255, 120, 90, 0.07))',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.24), 0 12px 30px rgba(0,0,0,0.28)',
+                      'linear-gradient(180deg, rgba(33, 19, 24, 0.82), rgba(16, 17, 25, 0.72))',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 18px 34px rgba(0,0,0,0.34)',
                   }}
                 >
-                  <p className="text-white text-base font-semibold mb-1">Action Required: Grant Access</p>
-                  <p className="text-white/78 text-sm">
-                    SuperCmd needs these permissions to work reliably across clipboard actions, file workflows, and whisper dictation.
+                  <p className="text-white text-[20px] leading-tight font-semibold mb-2">Grant Access</p>
+                  <p className="text-white/72 text-sm leading-relaxed mb-4">
+                    We now request each permission first, then jump to the exact Privacy & Security page so SuperCmd appears where needed.
                   </p>
+                  <div className="space-y-2 text-xs text-white/70">
+                    <p>1. Click each card once</p>
+                    <p>2. Enable SuperCmd in System Settings</p>
+                    <p>3. Return and continue setup</p>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {permissionTargets.map((target) => {
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {permissionTargets.map((target, index) => {
                     const Icon = target.icon;
+                    const isDone = Boolean(openedPermissions[target.id]);
                     return (
                       <div
                         key={target.id}
-                        className="rounded-2xl border border-white/[0.18] p-4 flex flex-col"
+                        className="rounded-2xl border p-4 flex flex-col relative overflow-hidden"
                         style={{
-                          background:
-                            'linear-gradient(160deg, rgba(255,255,255,0.13), rgba(255,255,255,0.04))',
-                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.24), 0 14px 32px rgba(0,0,0,0.34)',
+                          borderColor: isDone ? 'rgba(110, 231, 183, 0.44)' : 'rgba(255,255,255,0.16)',
+                          background: isDone
+                            ? 'linear-gradient(160deg, rgba(16, 82, 56, 0.34), rgba(23, 34, 41, 0.26))'
+                            : 'linear-gradient(160deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04))',
+                          boxShadow: isDone
+                            ? 'inset 0 1px 0 rgba(167,243,208,0.35), 0 14px 30px rgba(0,0,0,0.28)'
+                            : 'inset 0 1px 0 rgba(255,255,255,0.22), 0 14px 30px rgba(0,0,0,0.28)',
                         }}
                       >
+                        <div className="absolute right-3 top-3 text-white/25 text-[11px] font-semibold">{String(index + 1).padStart(2, '0')}</div>
                         <div className="flex items-center justify-between gap-2 mb-3.5">
                           <div className={`w-8 h-8 rounded-lg border flex items-center justify-center ${target.iconBg}`}>
                             <Icon className={`w-4 h-4 ${target.iconTone}`} />
                           </div>
-                          {openedPermissions[target.id] ? (
+                          {isDone ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-emerald-200/35 bg-emerald-500/22 text-emerald-100">
                               <Check className="w-3 h-3" />
-                              Added
+                              Opened
                             </span>
                           ) : (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border border-rose-200/30 bg-rose-500/20 text-rose-100">
@@ -457,12 +535,13 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                           )}
                         </div>
                         <p className="text-white/96 text-sm font-semibold mb-1">{target.title}</p>
-                        <p className="text-white/66 text-xs leading-relaxed flex-1">{target.description}</p>
+                        <p className="text-white/68 text-xs leading-relaxed flex-1">{target.description}</p>
                         <button
                           onClick={() => openPermissionTarget(target.id, target.url)}
-                          className="mt-4 inline-flex w-full justify-center items-center gap-1.5 px-3 py-2 rounded-md border border-rose-200/25 bg-gradient-to-r from-rose-500/58 to-red-500/58 hover:from-rose-500/75 hover:to-red-500/75 text-white text-xs font-medium transition-colors"
+                          disabled={Boolean(permissionLoading[target.id])}
+                          className="mt-4 inline-flex w-full justify-center items-center gap-1.5 px-3 py-2 rounded-md border border-white/20 bg-white/[0.10] hover:bg-white/[0.18] text-white text-xs font-medium transition-colors disabled:opacity-60"
                         >
-                          Open Settings
+                          {permissionLoading[target.id] ? 'Requesting...' : 'Request + Open Settings'}
                           <ExternalLink className="w-3 h-3" />
                         </button>
                       </div>
@@ -474,12 +553,81 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
           )}
 
           {step === 4 && (
+            <div className="max-w-6xl mx-auto min-h-full flex items-center">
+              <div className="grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] gap-5 w-full items-center">
+                <div className="space-y-4">
+                  <div className="w-10 h-10 rounded-xl border border-cyan-200/25 bg-cyan-500/15 flex items-center justify-center">
+                    <Mic className="w-5 h-5 text-cyan-100" />
+                  </div>
+                  <h3 className="text-white text-[34px] leading-[1.05] font-semibold">Dictation Mode</h3>
+                  <p className="text-white/72 text-[22px] leading-tight">Test your Whisper hold key first.</p>
+                  <div className="space-y-2 text-white/82 text-[16px]">
+                    <p>1. Hold {whisperKeyCaps.join(' + ')}</p>
+                    <p>2. Read the sample message</p>
+                    <p>3. Release key to insert text</p>
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <HotkeyRecorder value={whisperHoldKey} onChange={handleWhisperKeyChange} compact />
+                    {whisperKeyStatus === 'success' ? <span className="text-xs text-emerald-300">Whisper key updated</span> : null}
+                    {whisperKeyStatus === 'error' ? <span className="text-xs text-rose-300">Shortcut unavailable</span> : null}
+                  </div>
+                  <button
+                    onClick={() => setWhisperKeyTested((prev) => !prev)}
+                    className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-colors ${
+                      whisperKeyTested
+                        ? 'border-emerald-200/35 bg-emerald-500/22 text-emerald-100'
+                        : 'border-white/20 bg-white/[0.10] hover:bg-white/[0.16] text-white/88'
+                    }`}
+                  >
+                    {whisperKeyTested ? <Check className="w-3.5 h-3.5" /> : null}
+                    The whisper key works
+                  </button>
+                </div>
+
+                <div className="rounded-3xl border border-white/[0.16] p-5 bg-white/[0.04]">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/20 bg-white/[0.06] text-white/85 text-xs mb-3">
+                    <Mic className="w-3.5 h-3.5" />
+                    Messages sample
+                  </div>
+                  <div className="rounded-2xl border border-white/[0.12] bg-white/[0.06] p-4 mb-4">
+                    <p className="text-white/92 text-sm leading-relaxed">“{DICTATION_SAMPLE}”</p>
+                  </div>
+                  <p className="text-white/70 text-sm mb-2">Hold down your whisper key and read the message above:</p>
+                  <textarea
+                    value={dictationPracticeText}
+                    onChange={(e) => onDictationPracticeTextChange(e.target.value)}
+                    placeholder="Dictated text appears here..."
+                    className="w-full h-40 resize-none rounded-xl border border-cyan-300/55 bg-white/[0.05] px-4 py-3 text-white/90 placeholder:text-white/40 text-base leading-relaxed outline-none shadow-[0_0_0_3px_rgba(34,211,238,0.15)]"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 5 && (
+            <div className="min-h-full flex items-center justify-center">
+              <div className="w-full max-w-4xl space-y-4">
+                <div className="rounded-2xl border border-white/[0.18] bg-white/[0.06] p-6">
+                  <p className="text-white text-xl font-semibold mb-2">Whisper Read Test</p>
+                  <p className="text-white/68 text-sm leading-relaxed mb-4">
+                    Select the paragraph below and press <span className="text-white font-semibold">Cmd + Shift + S</span> to read it aloud.
+                  </p>
+
+                  <div className="rounded-xl border border-white/[0.12] bg-white/[0.04] p-4 mb-4">
+                    <p className="text-white/90 text-[15px] leading-relaxed select-text">{READ_SAMPLE}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 6 && (
             <div className="min-h-full flex items-center justify-center">
               <div className="w-full max-w-3xl space-y-4">
                 <div className="rounded-2xl border border-white/[0.18] bg-white/[0.06] p-6">
-                  <p className="text-white text-xl font-semibold mb-2">Final step: test your hotkey</p>
+                  <p className="text-white text-xl font-semibold mb-2">Final step: test your launcher key</p>
                   <p className="text-white/68 text-sm leading-relaxed mb-4">
-                    Press your global shortcut to open SuperCmd from any app. If this window closes, use the hotkey to reopen it.
+                    Press your global shortcut to open SuperCmd from any app.
                   </p>
 
                   <div className="flex flex-wrap gap-2 mb-4">
@@ -492,18 +640,6 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                       </span>
                     ))}
                   </div>
-
-                  <button
-                    onClick={() => setHotkeyTested((prev) => !prev)}
-                    className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-colors ${
-                      hotkeyTested
-                        ? 'border-emerald-200/35 bg-emerald-500/22 text-emerald-100'
-                        : 'border-white/20 bg-white/[0.10] hover:bg-white/[0.16] text-white/88'
-                    }`}
-                  >
-                    {hotkeyTested ? <Check className="w-3.5 h-3.5" /> : null}
-                    I pressed the hotkey and it works
-                  </button>
                 </div>
               </div>
             </div>

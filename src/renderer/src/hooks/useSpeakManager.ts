@@ -19,6 +19,35 @@ import type { EdgeTtsVoice } from '../../types/electron';
 import { buildReadVoiceOptions, type ReadVoiceOption } from '../utils/command-helpers';
 import { useDetachedPortalWindow } from '../useDetachedPortalWindow';
 
+const ELEVENLABS_VOICES: Array<{ id: string; label: string }> = [
+  { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel' },
+  { id: 'AZnzlk1XvdvUeBnXmlld', label: 'Domi' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', label: 'Bella' },
+  { id: 'ErXwobaYiN019PkySvjV', label: 'Antoni' },
+  { id: 'MF3mGyEYCl7XYWbV9V6O', label: 'Elli' },
+  { id: 'TxGEqnHWrfWFTfGW9XjX', label: 'Josh' },
+  { id: 'VR6AewLTigWG4xSOukaG', label: 'Arnold' },
+  { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam' },
+  { id: 'yoZ06aMxZJJ28mfd3POQ', label: 'Sam' },
+];
+
+const DEFAULT_ELEVENLABS_VOICE_ID = ELEVENLABS_VOICES[0].id;
+
+function parseElevenLabsSpeakModel(raw: string): { model: string; voiceId: string } {
+  const value = String(raw || '').trim();
+  const explicitVoice = /@([A-Za-z0-9]{8,})$/.exec(value)?.[1];
+  const modelOnly = explicitVoice ? value.replace(/@[A-Za-z0-9]{8,}$/, '') : value;
+  const model = modelOnly.startsWith('elevenlabs-') ? modelOnly : 'elevenlabs-multilingual-v2';
+  const voiceId = explicitVoice || DEFAULT_ELEVENLABS_VOICE_ID;
+  return { model, voiceId };
+}
+
+function buildElevenLabsSpeakModel(model: string, voiceId: string): string {
+  const normalizedModel = String(model || '').trim() || 'elevenlabs-multilingual-v2';
+  const normalizedVoice = String(voiceId || '').trim() || DEFAULT_ELEVENLABS_VOICE_ID;
+  return `${normalizedModel}@${normalizedVoice}`;
+}
+
 // ─── Types ───────────────────────────────────────────────────────────
 
 export interface SpeakStatus {
@@ -134,8 +163,10 @@ export function useSpeakManager({
     }
     if (speakSessionShownRef.current) return;
     speakSessionShownRef.current = true;
-    if (configuredTtsModel !== 'edge-tts') return;
-    const targetVoice = String(configuredEdgeTtsVoice || '').trim();
+    const usingElevenLabs = String(configuredTtsModel || '').startsWith('elevenlabs-');
+    const targetVoice = usingElevenLabs
+      ? parseElevenLabsSpeakModel(configuredTtsModel).voiceId
+      : String(configuredEdgeTtsVoice || '').trim();
     if (!targetVoice || targetVoice === speakOptions.voice) return;
     window.electron.speakUpdateOptions({
       voice: targetVoice,
@@ -148,19 +179,46 @@ export function useSpeakManager({
   // ── Memos ──────────────────────────────────────────────────────────
 
   const readVoiceOptions = useMemo(
-    () => buildReadVoiceOptions(edgeTtsVoices, speakOptions.voice, configuredEdgeTtsVoice),
-    [edgeTtsVoices, speakOptions.voice, configuredEdgeTtsVoice]
+    () => {
+      if (String(configuredTtsModel || '').startsWith('elevenlabs-')) {
+        return ELEVENLABS_VOICES.map((voice) => ({
+          value: voice.id,
+          label: `${voice.label} (ElevenLabs)`,
+        }));
+      }
+      return buildReadVoiceOptions(edgeTtsVoices, speakOptions.voice, configuredEdgeTtsVoice);
+    },
+    [configuredTtsModel, edgeTtsVoices, speakOptions.voice, configuredEdgeTtsVoice]
   );
 
   // ── Callbacks ──────────────────────────────────────────────────────
 
   const handleSpeakVoiceChange = useCallback(async (voice: string) => {
+    if (String(configuredTtsModel || '').startsWith('elevenlabs-')) {
+      try {
+        const settings = await window.electron.getSettings();
+        const parsed = parseElevenLabsSpeakModel(settings.ai?.textToSpeechModel || configuredTtsModel);
+        const nextModel = buildElevenLabsSpeakModel(parsed.model, voice);
+        const updated = await window.electron.saveSettings({
+          ai: { ...settings.ai, textToSpeechModel: nextModel },
+        } as any);
+        const updatedModel = String(updated.ai?.textToSpeechModel || nextModel);
+        setConfiguredTtsModel(updatedModel);
+        const next = await window.electron.speakUpdateOptions({
+          voice,
+          restartCurrent: true,
+        });
+        setSpeakOptions(next);
+      } catch {}
+      return;
+    }
+
     const next = await window.electron.speakUpdateOptions({
       voice,
       restartCurrent: true,
     });
     setSpeakOptions(next);
-  }, []);
+  }, [configuredTtsModel]);
 
   const handleSpeakRateChange = useCallback(async (rate: string) => {
     const next = await window.electron.speakUpdateOptions({

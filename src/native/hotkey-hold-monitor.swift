@@ -7,14 +7,16 @@ final class MonitorState {
     let needCtrl: Bool
     let needAlt: Bool
     let needShift: Bool
+    let needFn: Bool
     var isPressed: Bool
 
-    init(targetKeyCode: CGKeyCode, needCmd: Bool, needCtrl: Bool, needAlt: Bool, needShift: Bool) {
+    init(targetKeyCode: CGKeyCode, needCmd: Bool, needCtrl: Bool, needAlt: Bool, needShift: Bool, needFn: Bool) {
         self.targetKeyCode = targetKeyCode
         self.needCmd = needCmd
         self.needCtrl = needCtrl
         self.needAlt = needAlt
         self.needShift = needShift
+        self.needFn = needFn
         self.isPressed = false
     }
 }
@@ -38,15 +40,17 @@ func modifiersSatisfied(flags: CGEventFlags, state: MonitorState) -> Bool {
     let ctrl = flags.contains(.maskControl)
     let alt = flags.contains(.maskAlternate)
     let shift = flags.contains(.maskShift)
+    let fn = flags.contains(.maskSecondaryFn)
     if cmd != state.needCmd { return false }
     if ctrl != state.needCtrl { return false }
     if alt != state.needAlt { return false }
     if shift != state.needShift { return false }
+    if fn != state.needFn { return false }
     return true
 }
 
-guard CommandLine.arguments.count >= 6 else {
-    emit(["error": "Usage: hotkey-hold-monitor <keyCode> <cmd0|1> <ctrl0|1> <alt0|1> <shift0|1>"])
+guard CommandLine.arguments.count >= 7 else {
+    emit(["error": "Usage: hotkey-hold-monitor <keyCode> <cmd0|1> <ctrl0|1> <alt0|1> <shift0|1> <fn0|1>"])
     exit(1)
 }
 
@@ -60,7 +64,8 @@ let state = MonitorState(
     needCmd: parseBool(CommandLine.arguments[2]),
     needCtrl: parseBool(CommandLine.arguments[3]),
     needAlt: parseBool(CommandLine.arguments[4]),
-    needShift: parseBool(CommandLine.arguments[5])
+    needShift: parseBool(CommandLine.arguments[5]),
+    needFn: parseBool(CommandLine.arguments[6])
 )
 
 let statePtr = Unmanaged.passRetained(state).toOpaque()
@@ -81,8 +86,9 @@ let callback: CGEventTapCallBack = { _, type, event, userInfo in
     let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
 
     if !state.isPressed {
-        if type == .keyDown && keyCode == state.targetKeyCode && modifiersSatisfied(flags: flags, state: state) {
+        if (type == .keyDown || type == .flagsChanged) && keyCode == state.targetKeyCode && modifiersSatisfied(flags: flags, state: state) {
             state.isPressed = true
+            emit(["pressed": true])
         }
         return Unmanaged.passUnretained(event)
     }

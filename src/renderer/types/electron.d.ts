@@ -205,6 +205,7 @@ export interface ElectronAPI {
   onWindowShown: (callback: (payload?: { mode?: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt'; systemCommandId?: string; selectedTextSnapshot?: string }) => void) => (() => void);
   onWindowHidden: (callback: () => void) => (() => void);
   onRunSystemCommand: (callback: (commandId: string) => void) => (() => void);
+  onOnboardingHotkeyPressed: (callback: () => void) => (() => void);
   setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean) => void;
   onWhisperStopAndClose: (callback: () => void) => (() => void);
   onWhisperStartListening: (callback: () => void) => (() => void);
@@ -251,6 +252,7 @@ export interface ElectronAPI {
   updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
   setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
   replaceSpotlightWithSuperCmdShortcut: () => Promise<boolean>;
+  onboardingRequestPermission: (target: 'accessibility' | 'input-monitoring' | 'files' | 'microphone') => Promise<boolean>;
   updateCommandHotkey: (
     commandId: string,
     hotkey: string
