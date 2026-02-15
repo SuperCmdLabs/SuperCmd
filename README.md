@@ -1,8 +1,10 @@
 # SuperCmd
 
-![SuperCmd](./supercmd.png)
+<img src="./assets/supercmd-logo.png" alt="SuperCmd logo" width="96" />
 
 [supercmd.sh](https://supercmd.sh)
+
+![SuperCmd Screenshot](./assets/supercmd.png)
 
 Open-source launcher for macOS: **Raycast + Wispr Flow + Speechify + Memory + AI** in one app.
 
