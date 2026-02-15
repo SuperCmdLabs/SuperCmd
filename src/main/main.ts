@@ -63,6 +63,9 @@ import {
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
+try {
+  app.setName('SuperCmd');
+} catch {}
 
 // ─── Native Binary Helpers ──────────────────────────────────────────
 
@@ -370,90 +373,46 @@ function scrubInternalClipboardProbe(reason: string): void {
 }
 
 type OnboardingPermissionTarget = 'accessibility' | 'input-monitoring' | 'files' | 'microphone';
+type OnboardingPermissionResult = {
+  granted: boolean;
+  requested: boolean;
+  mode: 'prompted' | 'already-granted' | 'manual';
+};
 
-async function primeAccessibilityPermissionPrompt(): Promise<boolean> {
-  if (process.platform !== 'darwin') return false;
-  try {
-    const { execFile } = require('child_process');
-    const { promisify } = require('util');
-    const execFileAsync = promisify(execFile);
-    const script = `
-      use framework "ApplicationServices"
-      set opts to current application's NSDictionary's dictionaryWithObject:true forKey:(current application's kAXTrustedCheckOptionPrompt)
-      set trusted to current application's AXIsProcessTrustedWithOptions(opts)
-      if trusted then
-        return "1"
-      end if
-      return "0"
-    `;
-    const { stdout } = await execFileAsync('/usr/bin/osascript', ['-l', 'AppleScript', '-e', script]);
-    return String(stdout || '').trim() === '1';
-  } catch {
-    return false;
+async function requestOnboardingPermissionAccess(target: OnboardingPermissionTarget): Promise<OnboardingPermissionResult> {
+  if (process.platform !== 'darwin') {
+    return { granted: false, requested: false, mode: 'manual' };
   }
-}
 
-async function primeInputMonitoringPermissionPrompt(): Promise<boolean> {
-  if (process.platform !== 'darwin') return false;
-  try {
-    const { execFile } = require('child_process');
-    const { promisify } = require('util');
-    const execFileAsync = promisify(execFile);
-    const script = `
-      use framework "CoreGraphics"
-      set granted to current application's CGRequestListenEventAccess()
-      if granted then
-        return "1"
-      end if
-      return "0"
-    `;
-    const { stdout } = await execFileAsync('/usr/bin/osascript', ['-l', 'AppleScript', '-e', script]);
-    return String(stdout || '').trim() === '1';
-  } catch {
-    return false;
-  }
-}
-
-async function primeFilesAndFoldersPermissionPrompt(): Promise<boolean> {
-  if (process.platform !== 'darwin') return false;
-  try {
-    const fs = require('fs');
-    const os = require('os');
-    const home = os.homedir();
-    const candidates = [
-      path.join(home, 'Desktop'),
-      path.join(home, 'Documents'),
-      path.join(home, 'Downloads'),
-    ];
-    let readable = false;
-    for (const candidate of candidates) {
-      try {
-        if (!fs.existsSync(candidate)) continue;
-        fs.readdirSync(candidate);
-        readable = true;
-      } catch {}
+  if (target === 'accessibility') {
+    try {
+      const before = systemPreferences.isTrustedAccessibilityClient(false);
+      if (before) {
+        return { granted: true, requested: true, mode: 'already-granted' };
+      }
+      const after = systemPreferences.isTrustedAccessibilityClient(true);
+      return { granted: Boolean(after), requested: true, mode: 'prompted' };
+    } catch {
+      return { granted: false, requested: true, mode: 'prompted' };
     }
-    return readable;
-  } catch {
-    return false;
   }
-}
 
-async function requestOnboardingPermissionAccess(target: OnboardingPermissionTarget): Promise<boolean> {
-  if (process.platform !== 'darwin') return false;
-  if (target === 'accessibility') return await primeAccessibilityPermissionPrompt();
-  if (target === 'input-monitoring') return await primeInputMonitoringPermissionPrompt();
-  if (target === 'files') return await primeFilesAndFoldersPermissionPrompt();
   if (target === 'microphone') {
     try {
       const current = String(systemPreferences.getMediaAccessStatus('microphone') || '');
-      if (current === 'granted') return true;
-      return await systemPreferences.askForMediaAccess('microphone');
+      if (current === 'granted') {
+        return { granted: true, requested: true, mode: 'already-granted' };
+      }
+      const granted = await systemPreferences.askForMediaAccess('microphone');
+      return { granted: Boolean(granted), requested: true, mode: 'prompted' };
     } catch {
-      return false;
+      return { granted: false, requested: true, mode: 'prompted' };
     }
   }
-  return false;
+
+  // Input Monitoring and Files/Folders are opened as manual flows in onboarding.
+  // Avoid false-positive "granted/requested" states from helper processes.
+  return { granted: false, requested: false, mode: 'manual' };
 }
 let lastTypingCaretPoint: { x: number; y: number } | null = null;
 let lastCursorPromptSelection = '';

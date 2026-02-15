@@ -104,6 +104,18 @@ const DICTATION_SAMPLE =
 const READ_SAMPLE =
   'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.';
 
+const SPEECH_LANGUAGE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'en-US', label: 'English (US)' },
+  { value: 'en-GB', label: 'English (UK)' },
+  { value: 'es-ES', label: 'Spanish' },
+  { value: 'fr-FR', label: 'French' },
+  { value: 'de-DE', label: 'German' },
+  { value: 'it-IT', label: 'Italian' },
+  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
+  { value: 'hi-IN', label: 'Hindi' },
+  { value: 'ja-JP', label: 'Japanese' },
+];
+
 function toHotkeyCaps(shortcut: string): string[] {
   const map: Record<string, string> = {
     Command: '\u2318',
@@ -135,12 +147,14 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [hasValidShortcut, setHasValidShortcut] = useState(!requireWorkingShortcut);
   const [openedPermissions, setOpenedPermissions] = useState<Record<string, boolean>>({});
+  const [requestedPermissions, setRequestedPermissions] = useState<Record<string, boolean>>({});
   const [permissionLoading, setPermissionLoading] = useState<Record<string, boolean>>({});
   const [isReplacingSpotlight, setIsReplacingSpotlight] = useState(false);
   const [spotlightStatus, setSpotlightStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [whisperHoldKey, setWhisperHoldKey] = useState('Fn');
   const [whisperKeyStatus, setWhisperKeyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [whisperKeyTested, setWhisperKeyTested] = useState(false);
+  const [speechLanguage, setSpeechLanguage] = useState('en-US');
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -151,8 +165,24 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     window.electron.getSettings().then((settings) => {
       const saved = String(settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn').trim();
       setWhisperHoldKey(saved || 'Fn');
+      const savedLanguage = String(settings.ai?.speechLanguage || 'en-US').trim();
+      setSpeechLanguage(savedLanguage || 'en-US');
     }).catch(() => {});
   }, []);
+
+  const handleSpeechLanguageChange = async (nextLanguage: string) => {
+    const targetLanguage = String(nextLanguage || 'en-US').trim() || 'en-US';
+    setSpeechLanguage(targetLanguage);
+    try {
+      const settings = await window.electron.getSettings();
+      await window.electron.saveSettings({
+        ai: {
+          ...(settings?.ai || {}),
+          speechLanguage: targetLanguage,
+        },
+      } as any);
+    } catch {}
+  };
 
   useEffect(() => {
     if (!onboardingHotkeyPresses) return;
@@ -251,10 +281,32 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const openPermissionTarget = async (id: PermissionTargetId, url: string) => {
     setPermissionLoading((prev) => ({ ...prev, [id]: true }));
     try {
-      await window.electron.onboardingRequestPermission(id);
+      const result = await window.electron.onboardingRequestPermission(id);
+      const granted = Boolean(result?.granted);
+      const requested = Boolean(result?.requested);
+      const mode = String(result?.mode || '');
+      if (requested) {
+        setRequestedPermissions((prev) => ({ ...prev, [id]: true }));
+      }
+      if (granted) {
+        setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
+      }
+
+      // For microphone, also trigger request from renderer capture path.
+      // This ensures the app is registered in macOS privacy for the actual
+      // media capture process used by Whisper.
+      if (id === 'microphone' && !granted) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((track) => track.stop());
+          setRequestedPermissions((prev) => ({ ...prev, [id]: true }));
+        } catch {}
+      }
       const ok = await window.electron.openUrl(url);
       if (ok) {
-        setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
+        if (mode === 'manual' && !requested) {
+          setRequestedPermissions((prev) => ({ ...prev, [id]: false }));
+        }
       }
     } finally {
       setPermissionLoading((prev) => ({ ...prev, [id]: false }));
@@ -504,6 +556,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   {permissionTargets.map((target, index) => {
                     const Icon = target.icon;
                     const isDone = Boolean(openedPermissions[target.id]);
+                    const isRequested = Boolean(requestedPermissions[target.id]);
                     return (
                       <div
                         key={target.id}
@@ -526,7 +579,11 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                           {isDone ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-emerald-200/35 bg-emerald-500/22 text-emerald-100">
                               <Check className="w-3 h-3" />
-                              Opened
+                              Granted
+                            </span>
+                          ) : isRequested ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border border-amber-200/30 bg-amber-500/20 text-amber-100">
+                              Requested
                             </span>
                           ) : (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border border-rose-200/30 bg-rose-500/20 text-rose-100">
@@ -544,6 +601,16 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                           {permissionLoading[target.id] ? 'Requesting...' : 'Request + Open Settings'}
                           <ExternalLink className="w-3 h-3" />
                         </button>
+                        {!isDone && isRequested ? (
+                          <p className="mt-2 text-[11px] text-amber-100/85">
+                            Permission request sent. Enable SuperCmd in System Settings, then return.
+                          </p>
+                        ) : null}
+                        {!isDone && target.id === 'microphone' ? (
+                          <p className="mt-1 text-[11px] text-white/52">
+                            If not listed immediately, press this again after opening Whisper once.
+                          </p>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -570,6 +637,21 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     <HotkeyRecorder value={whisperHoldKey} onChange={handleWhisperKeyChange} compact />
                     {whisperKeyStatus === 'success' ? <span className="text-xs text-emerald-300">Whisper key updated</span> : null}
                     {whisperKeyStatus === 'error' ? <span className="text-xs text-rose-300">Shortcut unavailable</span> : null}
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-white/82 text-xs">Dictation language</p>
+                    <select
+                      value={speechLanguage}
+                      onChange={(e) => { void handleSpeechLanguageChange(e.target.value); }}
+                      className="w-full max-w-[260px] bg-white/[0.06] border border-white/[0.18] rounded-md px-3 py-2 text-sm text-white/92 focus:outline-none focus:border-cyan-300/70"
+                    >
+                      {SPEECH_LANGUAGE_OPTIONS.map((item) => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </select>
+                    <p className="text-white/54 text-[11px]">
+                      Default is English. This language is used for Whisper transcription, including ElevenLabs.
+                    </p>
                   </div>
                   <button
                     onClick={() => setWhisperKeyTested((prev) => !prev)}
@@ -610,7 +692,13 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                 <div className="rounded-2xl border border-white/[0.18] bg-white/[0.06] p-6">
                   <p className="text-white text-xl font-semibold mb-2">Whisper Read Test</p>
                   <p className="text-white/68 text-sm leading-relaxed mb-4">
-                    Select the paragraph below and press <span className="text-white font-semibold">Cmd + Shift + S</span> to read it aloud.
+                    Select the paragraph below and press{' '}
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-white/25 bg-white/[0.12] text-white text-xs font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]">
+                      <span>⌘</span>
+                      <span>⇧</span>
+                      <span>S</span>
+                    </span>{' '}
+                    to read it aloud.
                   </p>
 
                   <div className="rounded-xl border border-white/[0.12] bg-white/[0.04] p-4 mb-4">

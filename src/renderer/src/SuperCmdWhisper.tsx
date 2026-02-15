@@ -317,6 +317,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   }, []);
 
   const restoreEditorFocusOnce = useCallback((delayMs = 0) => {
+    // Onboarding whisper practice is intentionally in-app; never steal focus
+    // to another app while the user is typing in the onboarding editor.
+    if (onboardingCaptureMode) return;
     if (editorFocusRestoredRef.current) return;
     editorFocusRestoredRef.current = true;
     const run = () => {
@@ -333,7 +336,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       return;
     }
     run();
-  }, []);
+  }, [onboardingCaptureMode]);
 
   const playRecordingCue = useCallback((kind: 'start' | 'end') => {
     try {
