@@ -915,7 +915,7 @@ function normalizeScAssetUrl(src: string): string {
 }
 
 // Resolve a relative icon/asset path to an sc-asset:// URL
-function resolveIconSrc(src: string): string {
+function resolveIconSrc(src: string, assetsPathOverride?: string): string {
   // Already absolute URL, data URI, or custom protocol — leave as-is
   if (/^https?:\/\//.test(src) || src.startsWith('data:') || src.startsWith('file://')) return src;
   if (src.startsWith('sc-asset://')) {
@@ -931,9 +931,9 @@ function resolveIconSrc(src: string): string {
   }
   // If it looks like a file path (has an image/svg extension), resolve via extension assets
   if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(src)) {
-    const ctx = getExtensionContext();
-    if (ctx.assetsPath) {
-      const candidatePath = `${ctx.assetsPath}/${src}`;
+    const candidateAssetsPath = assetsPathOverride || getExtensionContext().assetsPath;
+    if (candidateAssetsPath) {
+      const candidatePath = `${candidateAssetsPath}/${src}`;
       if (!localPathExists(candidatePath)) return '';
       return toScAssetUrl(candidatePath);
     }
@@ -992,6 +992,20 @@ function addHexAlpha(color: string, alphaHex: string): string | undefined {
   return `#${hex}${alphaHex}`;
 }
 
+function renderTintedAssetIcon(resolvedSrc: string, className: string, tint: string): React.ReactNode {
+  return (
+    <span
+      className={className}
+      style={{
+        display: 'inline-block',
+        backgroundColor: tint,
+        WebkitMask: `url("${resolvedSrc}") center / contain no-repeat`,
+        mask: `url("${resolvedSrc}") center / contain no-repeat`,
+      }}
+    />
+  );
+}
+
 const fileIconCache = new Map<string, string | null>();
 
 function FileIcon({ filePath, className }: { filePath: string; className: string }) {
@@ -1030,7 +1044,7 @@ function FileIcon({ filePath, className }: { filePath: string; className: string
   return <span className="text-center" style={{ fontSize: '0.875rem' }}>{isDirectory ? '📁' : '📄'}</span>;
 }
 
-export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
+export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?: string): React.ReactNode {
   if (!icon) return null;
 
   // If it's a string URL or data URL, render as image
@@ -1040,8 +1054,12 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
     }
     // Check if it looks like a file path (has image extension) — resolve via extension assets
     if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(icon)) {
-      const resolved = resolveIconSrc(icon);
+      const resolved = resolveIconSrc(icon, assetsPathOverride);
       return <img src={resolved} className={className + ' rounded'} alt="" />;
+    }
+    // .icns and other absolute file paths should use native icon extraction, not <img>.
+    if (icon.startsWith('/') && (icon.endsWith('.icns') || !/\.[a-z0-9]+$/i.test(icon))) {
+      return <FileIcon filePath={icon} className={className} />;
     }
     const phosphor = renderPhosphorIcon(icon, className);
     if (phosphor) return phosphor;
@@ -1074,9 +1092,12 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
       if (isEmojiOrSymbol(src)) {
         return <span className="text-center" style={{ fontSize: '0.875rem', color: tint }}>{src}</span>;
       }
-      const resolved = resolveIconSrc(src);
+      const resolved = resolveIconSrc(src, assetsPathOverride);
       if (resolved) {
-        return <img src={resolved} className={className + ' rounded'} alt="" style={tint ? { filter: `brightness(0) saturate(100%)`, color: tint } : undefined} />;
+        if (tint) {
+          return renderTintedAssetIcon(resolved, className, tint);
+        }
+        return <img src={resolved} className={className + ' rounded'} alt="" />;
       }
     }
     // Handle { light, dark } theme icons
@@ -1088,7 +1109,7 @@ export function renderIcon(icon: any, className = 'w-4 h-4'): React.ReactNode {
         if (isEmojiOrSymbol(src)) {
           return <span className="text-center" style={{ fontSize: '0.875rem', color: tint }}>{src}</span>;
         }
-        const resolved = resolveIconSrc(src);
+        const resolved = resolveIconSrc(src, assetsPathOverride);
         if (resolved) {
           return <img src={resolved} className={className + ' rounded'} alt="" />;
         }
@@ -2584,13 +2605,14 @@ type ListItemAccessory = { text?: string | { value?: string; color?: string }; i
 // ── ListItemRenderer — the actual visual row ────────────────────────
 
 function ListItemRenderer({
-  title, subtitle, icon, accessories, isSelected, dataIdx, onSelect, onActivate, onContextAction,
+  title, subtitle, icon, accessories, isSelected, dataIdx, onSelect, onActivate, onContextAction, assetsPath,
 }: ListItemProps & {
   isSelected: boolean;
   dataIdx: number;
   onSelect: () => void;
   onActivate: () => void;
   onContextAction: (e: React.MouseEvent<HTMLDivElement>) => void;
+  assetsPath?: string;
 }) {
   const titleStr = typeof title === 'string' ? title : (title as any)?.value || '';
   const subtitleStr = typeof subtitle === 'string' ? subtitle : (subtitle as any)?.value || '';
@@ -2608,7 +2630,7 @@ function ListItemRenderer({
       <div className="flex items-center gap-2.5 w-full">
         {icon && (
           <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-white/55 text-xs">
-            {renderIcon(icon, 'w-5 h-5')}
+            {renderIcon(icon, 'w-5 h-5', assetsPath)}
           </div>
         )}
         <div className="flex-1 min-w-0">
@@ -2633,7 +2655,7 @@ function ListItemRenderer({
 
           return (
             <span key={i} className="text-[12px] leading-5 flex-shrink-0 flex items-center gap-1.5" style={{ color: accTextColor || tagColor || 'rgba(255,255,255,0.35)' }}>
-              {acc?.icon && <span className="text-[10px]">{renderIcon(acc.icon, 'w-3 h-3')}</span>}
+              {acc?.icon && <span className="text-[10px]">{renderIcon(acc.icon, 'w-3 h-3', assetsPath)}</span>}
               {tagText ? (
                 <span className="px-2 py-0.5 rounded text-[11px]" style={{ background: tagBg, color: tagColor || 'rgba(255,255,255,0.55)' }}>{tagText}</span>
               ) : accText || dateStr || ''}
@@ -3213,6 +3235,7 @@ function ListComponent({
               <ListItemRenderer
                 key={item.id}
                 {...item.props}
+                assetsPath={extInfo.assetsPath || getExtensionContext().assetsPath}
                 isSelected={globalIdx === selectedIdx}
                 dataIdx={globalIdx}
                 onSelect={() => setSelectedIdx(globalIdx)}

@@ -3692,8 +3692,13 @@ app.whenReady().then(async () => {
     console.warn('[SnippetExpander] Failed to start:', e);
   }
 
-  // Rebuild extensions in background
-  rebuildExtensions().catch(console.error);
+  // Rebuilding all extensions on every startup can stall app launch if one
+  // extension build hangs. Keep startup fast by default; allow opt-in.
+  if (process.env.SUPERCMD_REBUILD_EXTENSIONS_ON_STARTUP === '1') {
+    rebuildExtensions().catch(console.error);
+  } else {
+    console.log('Skipping startup extension rebuild (set SUPERCMD_REBUILD_EXTENSIONS_ON_STARTUP=1 to enable).');
+  }
 
   // ─── IPC: Launcher ──────────────────────────────────────────────
 

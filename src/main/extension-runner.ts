@@ -38,9 +38,10 @@ function requireEsbuild(): any {
         return require(unpackedPath);
       }
     }
-    return requireEsbuild();
+    return require('esbuild');
   } catch {
-    return requireEsbuild();
+    // Fallback for environments where require.resolve behaves differently.
+    return require('esbuild');
   }
 }
 
