@@ -21,6 +21,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import {
   getCurrentRaycastPlatform,
   getManifestPlatforms,
@@ -28,6 +29,172 @@ import {
 } from './extension-platform';
 
 const execAsync = promisify(exec);
+
+function shellQuoteSingle(value: string): string {
+  return `'${String(value || '').replace(/'/g, `'\\''`)}'`;
+}
+
+function buildExecutablePath(primaryDir?: string): string {
+  const parts = [
+    primaryDir || '',
+    String(process.env.PATH || ''),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    '/usr/bin',
+    '/bin',
+    '/usr/sbin',
+    '/sbin',
+  ].filter(Boolean);
+
+  const deduped: string[] = [];
+  for (const part of parts) {
+    if (!deduped.includes(part)) deduped.push(part);
+  }
+  return deduped.join(':');
+}
+
+function formatExecError(error: any): string {
+  const message = String(error?.message || '');
+  const stderr = String(error?.stderr || '').trim();
+  if (!stderr) return message || 'Unknown error';
+  return `${message}\n${stderr}`.trim();
+}
+
+function resolveNpmExecutable(): string | null {
+  const home = os.homedir();
+  const nvmNodesDir = path.join(home, '.nvm', 'versions', 'node');
+  const nvmCandidates: string[] = [];
+  try {
+    const versions = fs
+      .readdirSync(nvmNodesDir)
+      .map((v) => path.join(nvmNodesDir, v, 'bin', 'npm'))
+      .filter((p) => fs.existsSync(p))
+      .sort()
+      .reverse();
+    nvmCandidates.push(...versions);
+  } catch {}
+
+  const candidates = [
+    String(process.env.npm_execpath || '').trim(),
+    String(process.env.NPM || '').trim(),
+    path.join(home, '.volta', 'bin', 'npm'),
+    path.join(home, '.fnm', 'current', 'bin', 'npm'),
+    ...nvmCandidates,
+    '/opt/homebrew/bin/npm',
+    '/usr/local/bin/npm',
+    '/usr/bin/npm',
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {}
+  }
+
+  return null;
+}
+
+function resolveGitExecutable(): string | null {
+  const home = os.homedir();
+  const candidates = [
+    String(process.env.GIT || '').trim(),
+    '/usr/bin/git',
+    '/opt/homebrew/bin/git',
+    '/usr/local/bin/git',
+    path.join(home, '.volta', 'bin', 'git'),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {}
+  }
+  return null;
+}
+
+async function runNpmCommand(extPath: string, args: string, timeoutMs: number): Promise<void> {
+  const npmExecutable = resolveNpmExecutable();
+  let directError: any = null;
+  if (npmExecutable) {
+    const npmBinDir = path.dirname(npmExecutable);
+    try {
+      await execAsync(`"${npmExecutable}" ${args}`, {
+        cwd: extPath,
+        timeout: timeoutMs,
+        maxBuffer: 10 * 1024 * 1024,
+        env: {
+          ...process.env,
+          PATH: buildExecutablePath(npmBinDir),
+        },
+      });
+      return;
+    } catch (error: any) {
+      directError = error;
+      console.warn(`Direct npm invocation failed, trying shell fallback: ${formatExecError(error)}`);
+    }
+  }
+
+  // Fallback for GUI-launched app sessions where PATH/env differs from terminal.
+  const script = `cd ${shellQuoteSingle(extPath)} && npm ${args}`;
+  try {
+    await execAsync(`/bin/zsh -ilc ${shellQuoteSingle(script)}`, {
+      timeout: timeoutMs,
+      maxBuffer: 10 * 1024 * 1024,
+      env: {
+        ...process.env,
+        PATH: buildExecutablePath(),
+      },
+    });
+  } catch (shellError: any) {
+    if (directError) {
+      throw new Error(
+        `npm failed (direct and shell fallback).\nDirect: ${formatExecError(directError)}\nShell fallback: ${formatExecError(shellError)}`
+      );
+    }
+    throw shellError;
+  }
+}
+
+async function runGitCommand(cwd: string, args: string, timeoutMs: number): Promise<void> {
+  const gitExecutable = resolveGitExecutable();
+  if (gitExecutable) {
+    try {
+      await execAsync(`"${gitExecutable}" ${args}`, {
+        cwd,
+        timeout: timeoutMs,
+        maxBuffer: 10 * 1024 * 1024,
+        env: {
+          ...process.env,
+          PATH: buildExecutablePath(path.dirname(gitExecutable)),
+        },
+      });
+      return;
+    } catch (error: any) {
+      const message = String(error?.message || '');
+      if (!/not found|ENOENT/i.test(message)) {
+        throw error;
+      }
+    }
+  }
+
+  const script = `cd ${shellQuoteSingle(cwd)} && git ${args}`;
+  await execAsync(`/bin/zsh -ilc ${shellQuoteSingle(script)}`, {
+    timeout: timeoutMs,
+    maxBuffer: 10 * 1024 * 1024,
+    env: {
+      ...process.env,
+      PATH: buildExecutablePath(),
+    },
+  });
+}
+
+function hasNodeModules(extPath: string): boolean {
+  try {
+    return fs.existsSync(path.join(extPath, 'node_modules'));
+  } catch {
+    return false;
+  }
+}
 
 const REPO_URL = 'https://github.com/raycast/extensions.git';
 const GITHUB_RAW =
@@ -165,15 +332,17 @@ async function fetchCatalogFromGitHub(): Promise<CatalogEntry[]> {
     console.log('Cloning extension catalog (sparse)…');
 
     // Sparse clone: only tree structure, no blobs
-    await execAsync(
-      `git clone --depth 1 --filter=blob:none --sparse "${REPO_URL}" "${tmpDir}"`,
-      { timeout: 60_000 }
+    await runGitCommand(
+      app.getPath('temp'),
+      `clone --depth 1 --filter=blob:none --sparse "${REPO_URL}" "${tmpDir}"`,
+      60_000
     );
 
     // Checkout only package manifests (fast); screenshots are fetched lazily.
-    await execAsync(
-      `cd "${tmpDir}" && git sparse-checkout set --no-cone "extensions/*/package.json"`,
-      { timeout: 120_000 }
+    await runGitCommand(
+      tmpDir,
+      'sparse-checkout set --no-cone "extensions/*/package.json"',
+      120_000
     );
 
     const extensionsDir = path.join(tmpDir, 'extensions');
@@ -396,6 +565,9 @@ export async function installExtensionDeps(
     .filter(([name]) => !name.startsWith('@raycast/'))
     .map(([name, version]) => `${name}@${version}`)
     .filter(Boolean);
+  const quotedThirdPartyDeps = thirdPartyDeps
+    .map((dep) => `"${String(dep).replace(/"/g, '\\"')}"`)
+    .join(' ');
 
   if (thirdPartyDeps.length === 0) {
     console.log(`No third-party dependencies for ${path.basename(extPath)}`);
@@ -409,10 +581,14 @@ export async function installExtensionDeps(
   try {
     // Install only third-party deps explicitly — avoids @raycast/api issues
     // REMOVED --ignore-scripts to allow postinstall scripts for binaries
-    await execAsync(
-      `npm install --no-save --legacy-peer-deps ${thirdPartyDeps.join(' ')}`,
-      { cwd: extPath, timeout: 120_000 }
+    await runNpmCommand(
+      extPath,
+      `install --no-save --legacy-peer-deps ${quotedThirdPartyDeps}`,
+      300_000
     );
+    if (!hasNodeModules(extPath)) {
+      throw new Error('npm completed but node_modules is still missing');
+    }
     console.log(`Dependencies installed for ${path.basename(extPath)}`);
   } catch (e1: any) {
     console.warn(
@@ -420,17 +596,21 @@ export async function installExtensionDeps(
     );
     // Fall back to full npm install (also allow scripts)
     try {
-      await execAsync(
-        `npm install --production --legacy-peer-deps`,
-        { cwd: extPath, timeout: 120_000 }
+      await runNpmCommand(
+        extPath,
+        'install --production --legacy-peer-deps',
+        300_000
       );
+      if (!hasNodeModules(extPath)) {
+        throw new Error('npm completed but node_modules is still missing');
+      }
       console.log(
         `Fallback npm install succeeded for ${path.basename(extPath)}`
       );
     } catch (e2: any) {
-      console.error(
-        `npm install failed for ${path.basename(extPath)}: ${e2.message || e2}`
-      );
+      const reason = String(e2?.message || e2 || 'Unknown npm error');
+      console.error(`npm install failed for ${path.basename(extPath)}: ${reason}`);
+      throw new Error(`Dependency installation failed for ${path.basename(extPath)}: ${reason}`);
     }
   }
 }
@@ -478,15 +658,17 @@ export async function installExtension(name: string): Promise<boolean> {
     console.log(`Installing extension: ${name}…`);
 
     // Sparse clone
-    await execAsync(
-      `git clone --depth 1 --filter=blob:none --sparse "${REPO_URL}" "${tmpDir}"`,
-      { timeout: 60_000 }
+    await runGitCommand(
+      app.getPath('temp'),
+      `clone --depth 1 --filter=blob:none --sparse "${REPO_URL}" "${tmpDir}"`,
+      60_000
     );
 
     // Checkout only this extension
-    await execAsync(
-      `cd "${tmpDir}" && git sparse-checkout set "extensions/${name}"`,
-      { timeout: 60_000 }
+    await runGitCommand(
+      tmpDir,
+      `sparse-checkout set "extensions/${name}"`,
+      60_000
     );
 
     const srcDir = path.join(tmpDir, 'extensions', name);

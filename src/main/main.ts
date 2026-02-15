@@ -5157,11 +5157,12 @@ return appURL's |path|() as text`,
     'install-extension',
     async (_event: any, name: string) => {
       const success = await installExtension(name);
-      if (success) {
-        // Invalidate command cache so new extensions appear in the launcher
-        invalidateCache();
+      if (!success) {
+        throw new Error(`Failed to install extension "${name}". Check SuperCmd main-process logs for details.`);
       }
-      return success;
+      // Invalidate command cache so new extensions appear in the launcher
+      invalidateCache();
+      return true;
     }
   );
 

@@ -138,10 +138,15 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const handleInstall = async (name: string) => {
     setBusyName(name);
     try {
+      setError(null);
       const success = await window.electron.installExtension(name);
       if (success) {
         setInstalledNames((prev) => new Set([...prev, name]));
+      } else {
+        setError(`Failed to install "${name}".`);
       }
+    } catch (e: any) {
+      setError(e?.message || `Failed to install "${name}".`);
     } finally {
       setBusyName(null);
     }
@@ -150,6 +155,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const handleUninstall = async (name: string) => {
     setBusyName(name);
     try {
+      setError(null);
       const success = await window.electron.uninstallExtension(name);
       if (success) {
         setInstalledNames((prev) => {
@@ -157,7 +163,11 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
           next.delete(name);
           return next;
         });
+      } else {
+        setError(`Failed to uninstall "${name}".`);
       }
+    } catch (e: any) {
+      setError(e?.message || `Failed to uninstall "${name}".`);
     } finally {
       setBusyName(null);
     }

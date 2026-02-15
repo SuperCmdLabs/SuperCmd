@@ -609,7 +609,7 @@ async function discoverApplications(): Promise<CommandInfo[]> {
   }
 
   const appPaths = Array.from(appPathsSet).sort((a, b) => a.localeCompare(b));
-  const BATCH = 15;
+  const BATCH = 6;
   for (let i = 0; i < appPaths.length; i += BATCH) {
     const batch = appPaths.slice(i, i + BATCH);
     const items = await Promise.all(
@@ -684,7 +684,7 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
 
     const allAppex = files.filter((f) => f.endsWith('.appex'));
 
-    const BATCH = 15;
+    const BATCH = 6;
     for (let i = 0; i < allAppex.length; i += BATCH) {
       const batch = allAppex.slice(i, i + BATCH);
       const items = await Promise.all(
@@ -780,7 +780,7 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
       }
     }
 
-    const BATCH = 15;
+    const BATCH = 6;
     for (let i = 0; i < panePaths.length; i += BATCH) {
       const batch = panePaths.slice(i, i + BATCH);
       const items = await Promise.all(
@@ -878,10 +878,11 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       const t0 = Date.now();
       console.log('Discovering applications and settings…');
 
-      const [apps, settings] = await Promise.all([
-        discoverApplications(),
-        discoverSystemSettings(),
-      ]);
+      // Run discovery sequentially to reduce startup process churn.
+      // On some systems, launching too many plist/icon subprocesses in parallel can
+      // destabilize Electron during early startup.
+      const apps = await discoverApplications();
+      const settings = await discoverSystemSettings();
 
   apps.sort((a, b) => a.title.localeCompare(b.title));
   settings.sort((a, b) => a.title.localeCompare(b.title));

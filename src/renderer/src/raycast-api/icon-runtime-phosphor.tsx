@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import * as Phosphor from '@phosphor-icons/react';
+import * as Phosphor from '../../../../node_modules/@phosphor-icons/react/dist/index.es.js';
 import { RAYCAST_ICON_NAMES, RAYCAST_ICON_VALUE_TO_NAME, type RaycastIconName } from './raycast-icon-enum';
 
 type PhosphorIconComponent = React.ComponentType<{
@@ -22,28 +22,62 @@ function normalizeIconName(name: string): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
-const phosphorIconByName = new Map<string, PhosphorIconComponent>();
-const phosphorIconByNormalizedName = new Map<string, PhosphorIconComponent>();
+const raycastIconNameSet: Set<string> =
+  RAYCAST_ICON_NAMES instanceof Set
+    ? new Set(Array.from(RAYCAST_ICON_NAMES))
+    : Array.isArray(RAYCAST_ICON_NAMES)
+      ? new Set(RAYCAST_ICON_NAMES)
+      : new Set();
+const raycastIconValueToNameMap = new Map<string, RaycastIconName>();
 
-for (const [name, value] of Object.entries(Phosphor)) {
-  if (typeof value !== 'function') continue;
-  const component = value as unknown as PhosphorIconComponent;
-  phosphorIconByName.set(name, component);
-  phosphorIconByNormalizedName.set(normalizeIconName(name), component);
+function registerRaycastIconValueEntry(key: string, value: RaycastIconName) {
+  const rawKey = String(key || '').trim();
+  if (!rawKey) return;
+  raycastIconValueToNameMap.set(rawKey, value);
+  raycastIconValueToNameMap.set(normalizeIconName(rawKey), value);
+}
+
+if (RAYCAST_ICON_VALUE_TO_NAME instanceof Map) {
+  for (const [key, value] of RAYCAST_ICON_VALUE_TO_NAME.entries()) {
+    registerRaycastIconValueEntry(String(key), value as RaycastIconName);
+  }
+} else if (Array.isArray(RAYCAST_ICON_VALUE_TO_NAME)) {
+  for (const entry of RAYCAST_ICON_VALUE_TO_NAME) {
+    if (!Array.isArray(entry) || entry.length < 2) continue;
+    registerRaycastIconValueEntry(String(entry[0]), entry[1] as RaycastIconName);
+  }
+} else if (RAYCAST_ICON_VALUE_TO_NAME && typeof RAYCAST_ICON_VALUE_TO_NAME === 'object') {
+  for (const [key, value] of Object.entries(RAYCAST_ICON_VALUE_TO_NAME as Record<string, unknown>)) {
+    registerRaycastIconValueEntry(key, value as RaycastIconName);
+  }
 }
 
 function resolveRaycastIconName(input: string): RaycastIconName | undefined {
+  const rawInput = String(input || '').trim();
   const normalized = normalizeIconName(input);
-  if (!normalized) return undefined;
-  if (RAYCAST_ICON_NAMES.has(input as RaycastIconName)) return input as RaycastIconName;
-  return RAYCAST_ICON_VALUE_TO_NAME.get(normalized);
+  if (!rawInput && !normalized) return undefined;
+  if (raycastIconNameSet.has(rawInput)) return rawInput as RaycastIconName;
+  return raycastIconValueToNameMap.get(rawInput) || raycastIconValueToNameMap.get(normalized);
 }
 
 function tryResolvePhosphorByName(name: string): PhosphorIconComponent | undefined {
   if (!name) return undefined;
-  const direct = phosphorIconByName.get(name);
-  if (direct) return direct;
-  return phosphorIconByNormalizedName.get(normalizeIconName(name));
+
+  const direct = (Phosphor as Record<string, unknown>)[name];
+  if (typeof direct === 'function') return direct as PhosphorIconComponent;
+
+  const normalizedTarget = normalizeIconName(name);
+  if (!normalizedTarget) return undefined;
+
+  // Some bundling modes can make namespace entries non-enumerable for Object.entries.
+  // getOwnPropertyNames is more robust for resolving the export keys.
+  for (const key of Object.getOwnPropertyNames(Phosphor)) {
+    if (normalizeIconName(key) !== normalizedTarget) continue;
+    const candidate = (Phosphor as Record<string, unknown>)[key];
+    if (typeof candidate === 'function') return candidate as PhosphorIconComponent;
+  }
+
+  return undefined;
 }
 
 function resolvePhosphorIconFromRaycast(input: string): PhosphorIconComponent | undefined {
@@ -130,5 +164,5 @@ export function renderPhosphorIcon(input: string, className: string, tint?: stri
 }
 
 export function isRaycastIconName(name: string): boolean {
-  return RAYCAST_ICON_NAMES.has(name as RaycastIconName);
+  return raycastIconNameSet.has(name);
 }

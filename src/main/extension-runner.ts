@@ -510,6 +510,19 @@ export async function buildAllCommands(extName: string, extPathOverride?: string
 
   const esbuild = requireEsbuild();
   const extNodeModules = path.join(extPath, 'node_modules');
+  if (!fs.existsSync(extNodeModules)) {
+    try {
+      const { installExtensionDeps } = require('./extension-registry');
+      await installExtensionDeps(extPath);
+    } catch (e: any) {
+      console.error(`Failed to install dependencies for ${extName}:`, e?.message || e);
+      return 0;
+    }
+    if (!fs.existsSync(extNodeModules)) {
+      console.error(`Dependencies missing for ${extName}: ${extNodeModules} not found`);
+      return 0;
+    }
+  }
   const buildDir = getBuildDir(extPath);
   // Avoid stale command bundles when extension source layout changes.
   try {
@@ -817,7 +830,9 @@ export async function buildSingleCommand(extName: string, cmdName: string): Prom
       await installExtensionDeps(extPath);
     } catch (e: any) {
       console.error(`  Failed to install dependencies for ${extName}:`, e?.message);
+      return false;
     }
+    if (!fs.existsSync(extNodeModules)) return false;
   }
 
   try {
@@ -899,7 +914,37 @@ export async function getExtensionBundle(
     console.log(`Pre-built bundle not found for ${normalizedExtName}/${cmdName}, building on-demand…`);
     const built = await buildSingleCommand(normalizedExtName, cmdName);
     if (!built || !fs.existsSync(outFile)) {
-      const msg = `On-demand build failed for ${normalizedExtName}/${cmdName}. Extension path: ${extPath}. Expected output: ${outFile}`;
+      // Fallback: some extensions require full-workspace bundling to hydrate deps.
+      try {
+        console.log(`Single-command build failed for ${normalizedExtName}/${cmdName}; trying full extension rebuild…`);
+        await buildAllCommands(normalizedExtName);
+      } catch (rebuildError) {
+        console.warn(`Full rebuild fallback failed for ${normalizedExtName}:`, rebuildError);
+      }
+    }
+
+    if (!fs.existsSync(outFile)) {
+      let diagnostic = '';
+      try {
+        const pkgPath = path.join(extPath, 'package.json');
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        const commands = Array.isArray(pkg?.commands) ? pkg.commands : [];
+        const cmd = commands.find((c: any) => c?.name === cmdName);
+        const nodeModulesExists = fs.existsSync(path.join(extPath, 'node_modules'));
+
+        if (!cmd) {
+          diagnostic = ` Command "${cmdName}" not found in package.json.`;
+        } else {
+          const entry = resolveEntryFile(extPath, cmd);
+          if (!entry) {
+            diagnostic = ` Entry file not found for "${cmdName}".`;
+          } else if (!nodeModulesExists) {
+            diagnostic = ' node_modules is missing (dependency installation likely failed).';
+          }
+        }
+      } catch {}
+
+      const msg = `On-demand build failed for ${normalizedExtName}/${cmdName}. Extension path: ${extPath}. Expected output: ${outFile}.${diagnostic}`;
       console.error(msg);
       throw new Error(msg);
     }

@@ -32,8 +32,14 @@ launcher/
 │   │   │   └── electron.d.ts          # TypeScript types for window.electron IPC bridge
 │   │   └── src/
 │   │       ├── App.tsx                # Root component — composes all hooks, routes to view components
-│   │       ├── raycast-api/
-│   │       │   └── index.tsx          # @raycast/api + @raycast/utils compatibility shim (~3800 lines)
+│   │       ├── raycast-api/            # @raycast/api + @raycast/utils compatibility runtime modules
+│   │       │   ├── index.tsx          # Integration/export surface (wires runtime modules)
+│   │       │   ├── action-runtime*.tsx # Action/ActionPanel registry + overlay runtime
+│   │       │   ├── list-runtime*.tsx   # List runtime (item registry, renderers, detail)
+│   │       │   ├── form-runtime*.tsx   # Form runtime (container + fields + context)
+│   │       │   ├── grid-runtime*.tsx   # Grid runtime (item registry + renderer + container)
+│   │       │   ├── detail-runtime.tsx  # Detail runtime
+│   │       │   └── menubar-runtime*.tsx # MenuBarExtra runtime
 │   │       ├── hooks/                 # Feature hooks (state + logic, no JSX)
 │   │       │   ├── useAppViewManager.ts      # View state machine — which screen is active
 │   │       │   ├── useAiChat.ts              # AI chat mode state + streaming
@@ -71,7 +77,7 @@ launcher/
 
 ### API Compatibility Layer
 
-The `src/renderer/src/raycast-api/index.tsx` file provides a comprehensive compatibility shim that implements Raycast APIs. This shim:
+The `src/renderer/src/raycast-api/` runtime modules (wired by `index.tsx`) provide a comprehensive compatibility shim that implements Raycast APIs. This shim:
 
 - Intercepts all `@raycast/api` and `@raycast/utils` imports from extensions
 - Provides React-compatible implementations of Raycast components
@@ -319,6 +325,70 @@ Use this map when working in the Raycast compatibility layer:
 - `src/renderer/src/raycast-api/index.tsx`
   Purpose: Main compatibility integration entrypoint and export surface for `@raycast/api` + `@raycast/utils`.
   Use for: top-level wiring between component runtimes, hook runtimes, and shared API exports.
+
+- `src/renderer/src/raycast-api/action-runtime.tsx`
+  Purpose: Action runtime entrypoint.
+  Use for: wiring `Action`, `ActionPanel`, action registry hooks, shortcut helpers, and action overlay extraction.
+
+- `src/renderer/src/raycast-api/action-runtime-registry.tsx`
+  Purpose: Action registration + execution semantics.
+  Use for: `ActionRegistryContext`, `useCollectedActions`, `useActionRegistration`, and action executor behavior.
+
+- `src/renderer/src/raycast-api/action-runtime-overlay.tsx`
+  Purpose: Action overlay rendering and static action extraction.
+  Use for: `ActionPanelOverlay` UI and `extractActionsFromElement` fallback.
+
+- `src/renderer/src/raycast-api/action-runtime-components.tsx`
+  Purpose: `Action` / `ActionPanel` component surface.
+  Use for: action component registration wrappers (`CopyToClipboard`, `SubmitForm`, `Push`, etc.).
+
+- `src/renderer/src/raycast-api/action-runtime-shortcuts.tsx`
+  Purpose: Shortcut matching/rendering helpers.
+  Use for: `matchesShortcut`, `isMetaK`, and shortcut badge rendering.
+
+- `src/renderer/src/raycast-api/form-runtime.tsx`
+  Purpose: Form container runtime.
+  Use for: form action handling, footer/actions UI, keyboard shortcuts, and context wiring.
+
+- `src/renderer/src/raycast-api/form-runtime-fields.tsx`
+  Purpose: Form field component implementations.
+  Use for: `Form.TextField`, `TextArea`, `Dropdown`, `DatePicker`, `FilePicker`, etc.
+
+- `src/renderer/src/raycast-api/form-runtime-context.tsx`
+  Purpose: Form context and global form snapshots.
+  Use for: `getFormValues`/`getFormErrors` data used by `Action.SubmitForm`.
+
+- `src/renderer/src/raycast-api/list-runtime.tsx`
+  Purpose: List container runtime.
+  Use for: selection/filtering/grouping logic, action overlay integration, and `List` surface wiring.
+
+- `src/renderer/src/raycast-api/list-runtime-hooks.ts`
+  Purpose: List registry/grouping helper hooks.
+  Use for: list item registry snapshots, emoji-grid heuristics, and grouped-section derivation.
+
+- `src/renderer/src/raycast-api/list-runtime-renderers.tsx`
+  Purpose: List row renderers and list subcomponents.
+  Use for: `List.Item` registration, row visuals, emoji grid cells, `List.EmptyView`, `List.Dropdown`.
+
+- `src/renderer/src/raycast-api/list-runtime-detail.tsx`
+  Purpose: `List.Item.Detail` runtime helpers.
+  Use for: markdown detail rendering and image source normalization.
+
+- `src/renderer/src/raycast-api/list-runtime-types.tsx`
+  Purpose: List runtime types + contexts.
+  Use for: list registry contracts and empty-view registry context.
+
+- `src/renderer/src/raycast-api/grid-runtime.tsx`
+  Purpose: Grid container runtime.
+  Use for: grid selection/filter/action handling and `Grid` surface wiring.
+
+- `src/renderer/src/raycast-api/grid-runtime-hooks.ts`
+  Purpose: Grid registry/grouping helper hooks.
+  Use for: grid registry snapshots and grouped-section derivation.
+
+- `src/renderer/src/raycast-api/grid-runtime-items.tsx`
+  Purpose: Grid item registration and cell renderer primitives.
+  Use for: `Grid.Item`, `Grid.Section`, and grid cell image rendering behavior.
 
 - `src/renderer/src/raycast-api/icon-runtime.tsx`
   Purpose: Public barrel for icon runtime exports.

@@ -28,7 +28,7 @@ function encodeAssetPathForUrl(filePath: string): string {
   return segments.map((segment, index) => (index === 0 ? '' : encodeURIComponent(segment))).join('/');
 }
 
-function toScAssetUrl(filePath: string): string {
+export function toScAssetUrl(filePath: string): string {
   return `sc-asset://ext-asset${encodeAssetPathForUrl(filePath)}`;
 }
 
@@ -53,7 +53,7 @@ function localPathFromScAssetUrl(src: string): string | null {
   }
 }
 
-function normalizeScAssetUrl(src: string): string {
+export function normalizeScAssetUrl(src: string): string {
   try {
     const parsed = new URL(src);
     if (parsed.protocol !== 'sc-asset:' || parsed.hostname !== 'ext-asset') return src;
@@ -120,6 +120,13 @@ export function resolveTintColor(tintColor: any): string | undefined {
     return isValidCssColor(normalized) ? normalized : undefined;
   }
   return undefined;
+}
+
+export function addHexAlpha(color: string, alphaHex: string): string | undefined {
+  const m = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!m) return undefined;
+  const hex = m[1].length === 3 ? m[1].split('').map((c) => c + c).join('') : m[1];
+  return `#${hex}${alphaHex}`;
 }
 
 export function renderTintedAssetIcon(resolvedSrc: string, className: string, tint: string): React.ReactNode {
