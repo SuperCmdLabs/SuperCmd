@@ -15,11 +15,31 @@ type PhosphorIconComponent = React.ComponentType<{
   weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';
 }>;
 
+type PhosphorExportValue = unknown;
+
 function normalizeIconName(name: string): string {
   return String(name || '')
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
+}
+
+function splitIconTokens(name: string): string[] {
+  const spaced = String(name || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+    .toLowerCase();
+  if (!spaced) return [];
+  return spaced.split(/\s+/).filter(Boolean);
+}
+
+function isRenderablePhosphorComponent(candidate: PhosphorExportValue): candidate is PhosphorIconComponent {
+  if (typeof candidate === 'function') return true;
+  if (!candidate || typeof candidate !== 'object') return false;
+  const maybe = candidate as Record<string, unknown>;
+  return Boolean(maybe.$$typeof || maybe.render || maybe.type);
 }
 
 const raycastIconNameSet: Set<string> =
@@ -64,7 +84,7 @@ function tryResolvePhosphorByName(name: string): PhosphorIconComponent | undefin
   if (!name) return undefined;
 
   const direct = (Phosphor as Record<string, unknown>)[name];
-  if (typeof direct === 'function') return direct as PhosphorIconComponent;
+  if (isRenderablePhosphorComponent(direct)) return direct as PhosphorIconComponent;
 
   const normalizedTarget = normalizeIconName(name);
   if (!normalizedTarget) return undefined;
@@ -74,10 +94,96 @@ function tryResolvePhosphorByName(name: string): PhosphorIconComponent | undefin
   for (const key of Object.getOwnPropertyNames(Phosphor)) {
     if (normalizeIconName(key) !== normalizedTarget) continue;
     const candidate = (Phosphor as Record<string, unknown>)[key];
-    if (typeof candidate === 'function') return candidate as PhosphorIconComponent;
+    if (isRenderablePhosphorComponent(candidate)) return candidate as PhosphorIconComponent;
   }
 
   return undefined;
+}
+
+const EXPLICIT_RAYCAST_TO_PHOSPHOR: Record<string, string[]> = {
+  addperson: ['UserPlus'],
+  aligncentre: ['AlignCenterHorizontal'],
+  appwindowgrid2x2: ['RowsPlusTop', 'SquaresFour'],
+  appwindowgrid3x3: ['DotsNine', 'SquaresFour'],
+  appwindowlist: ['Rows'],
+  appwindowsidebarleft: ['SidebarSimple'],
+  appwindowsidebarright: ['SidebarSimple'],
+  arrowscontract: ['ArrowsInSimple'],
+  arrowsexpand: ['ArrowsOutSimple'],
+  atsymbol: ['At'],
+  bandaid: ['Bandage'],
+  barchart: ['ChartBar'],
+  batterydisabled: ['BatteryVerticalEmpty'],
+  belldisabled: ['BellSlash'],
+  bullseye: ['Target'],
+  bullseyemissed: ['Target'],
+  checkrosette: ['SealCheck'],
+  cog: ['Gear'],
+  commandsymbol: ['Command'],
+  computerchip: ['Cpu'],
+  copyclipboard: ['Copy'],
+  droplets: ['Drop'],
+  eyedisabled: ['EyeSlash'],
+  hashsymbol: ['Hash'],
+  hashtag: ['Hash'],
+  lightbulboff: ['LightbulbFilament'],
+  livestream: ['Broadcast'],
+  livestreamdisabled: ['Broadcast'],
+  lockunlocked: ['LockOpen'],
+  lowercase: ['TextLowercase'],
+  uppercase: ['TextUppercase'],
+  magnifyingglass: ['MagnifyingGlass'],
+  medicalsupport: ['FirstAidKit'],
+  moonrise: ['MoonStars'],
+  network: ['Network'],
+  number00: ['NumberCircleZero'],
+  quicklink: ['LinkSimple'],
+  rss: ['Rss'],
+  twopeople: ['Users'],
+  xmark: ['X'],
+  xmarkcircle: ['XCircle'],
+  xmarkcirclefilled: ['XCircle'],
+};
+
+const phosphorExportKeys = Object.getOwnPropertyNames(Phosphor);
+const phosphorNamePool = Array.from(new Set(
+  phosphorExportKeys
+    .map((key) => key.replace(/Icon$/, ''))
+    .filter((key) => Boolean(tryResolvePhosphorByName(key)))
+));
+const phosphorTokenPool = phosphorNamePool.map((name) => ({
+  name,
+  normalized: normalizeIconName(name),
+  tokens: new Set(splitIconTokens(name)),
+}));
+
+function bestFuzzyPhosphorCandidate(input: string): string | undefined {
+  const inputTokens = splitIconTokens(input);
+  if (inputTokens.length === 0) return undefined;
+  const inputSet = new Set(inputTokens);
+  const normalizedInput = normalizeIconName(input);
+
+  let bestName = '';
+  let bestScore = -1;
+  for (const candidate of phosphorTokenPool) {
+    let overlap = 0;
+    for (const token of inputSet) {
+      if (candidate.tokens.has(token)) overlap += 1;
+    }
+    if (overlap === 0) continue;
+
+    let score = overlap * 10;
+    if (candidate.normalized === normalizedInput) score += 100;
+    if (candidate.normalized.startsWith(normalizedInput) || normalizedInput.startsWith(candidate.normalized)) score += 20;
+    if (candidate.tokens.size <= inputSet.size + 1) score += 2;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestName = candidate.name;
+    }
+  }
+
+  return bestName || undefined;
 }
 
 function resolvePhosphorIconFromRaycast(input: string): PhosphorIconComponent | undefined {
@@ -93,6 +199,12 @@ function resolvePhosphorIconFromRaycast(input: string): PhosphorIconComponent | 
   ];
 
   for (const candidate of directCandidates) {
+    const resolved = tryResolvePhosphorByName(candidate);
+    if (resolved) return resolved;
+  }
+
+  const explicitAliases = EXPLICIT_RAYCAST_TO_PHOSPHOR[normalized] || [];
+  for (const candidate of explicitAliases) {
     const resolved = tryResolvePhosphorByName(candidate);
     if (resolved) return resolved;
   }
@@ -147,7 +259,13 @@ function resolvePhosphorIconFromRaycast(input: string): PhosphorIconComponent | 
     if (icon) return icon;
   }
 
-  return undefined;
+  const fuzzyCandidate = bestFuzzyPhosphorCandidate(iconName);
+  if (fuzzyCandidate) {
+    const fuzzyResolved = tryResolvePhosphorByName(fuzzyCandidate);
+    if (fuzzyResolved) return fuzzyResolved;
+  }
+
+  return tryResolvePhosphorByName('Question') || tryResolvePhosphorByName('Circle');
 }
 
 export function renderPhosphorIcon(input: string, className: string, tint?: string): React.ReactNode {

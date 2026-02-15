@@ -56,6 +56,41 @@ export const Icon: Record<string, string> = new Proxy({} as Record<string, strin
   },
 });
 
+function isThemeAwareSourceObject(source: unknown): source is { light?: unknown; dark?: unknown } {
+  return Boolean(source && typeof source === 'object' && ('light' in (source as any) || 'dark' in (source as any)));
+}
+
+function prefersDarkMode(): boolean {
+  try {
+    return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-color-scheme: dark)').matches
+      : true;
+  } catch {
+    return true;
+  }
+}
+
+function pickImageSourceValue(source: unknown): string | null {
+  if (typeof source === 'string') return source;
+  if (!isThemeAwareSourceObject(source)) return null;
+
+  const dark = typeof source.dark === 'string' ? source.dark : '';
+  const light = typeof source.light === 'string' ? source.light : '';
+  const selected = prefersDarkMode() ? (dark || light) : (light || dark);
+  return selected || null;
+}
+
+function renderResolvedImageIcon(resolved: string, className: string, tintColor?: string, mask?: string): React.ReactNode {
+  if (tintColor) return renderTintedAssetIcon(resolved, className, tintColor);
+  const style: React.CSSProperties = {};
+  if (mask === 'circle') {
+    style.borderRadius = '9999px';
+  } else if (mask === 'roundedRectangle') {
+    style.borderRadius = '6px';
+  }
+  return <img src={resolved} className={className + ' rounded'} style={style} alt="" />;
+}
+
 export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?: string): React.ReactNode {
   if (!icon) return null;
 
@@ -87,24 +122,23 @@ export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?
     const source = icon.source;
     const fallback = icon.fallback;
     const tintColor = resolveTintColor(icon.tintColor);
+    const mask = typeof icon.mask === 'string' ? icon.mask : undefined;
+    const sourceValue = pickImageSourceValue(source);
 
-    if (typeof source === 'string') {
-      if (source.startsWith('http') || source.startsWith('data:') || source.startsWith('/')) {
-        const resolved = resolveIconSrc(source, assetsPathOverride);
-        if (resolved) {
-          if (tintColor) return renderTintedAssetIcon(resolved, className, tintColor);
-          return <img src={resolved} className={className + ' rounded'} alt="" />;
-        }
-      } else {
-        if (source.startsWith('Icon.') || isRaycastIconName(source)) {
-          const key = source.replace(/^Icon\./, '');
-          const phosphor = renderPhosphorIcon(key, className, tintColor);
-          if (phosphor) return phosphor;
-        }
+    if (typeof sourceValue === 'string') {
+      if (sourceValue.startsWith('http') || sourceValue.startsWith('data:') || sourceValue.startsWith('/') || /\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(sourceValue)) {
+        const resolved = resolveIconSrc(sourceValue, assetsPathOverride);
+        if (resolved) return renderResolvedImageIcon(resolved, className, tintColor, mask);
+      }
 
-        const phosphor = renderPhosphorIcon(source, className, tintColor);
+      if (sourceValue.startsWith('Icon.') || isRaycastIconName(sourceValue)) {
+        const key = sourceValue.replace(/^Icon\./, '');
+        const phosphor = renderPhosphorIcon(key, className, tintColor);
         if (phosphor) return phosphor;
       }
+
+      const phosphor = renderPhosphorIcon(sourceValue, className, tintColor);
+      if (phosphor) return phosphor;
     }
 
     if (typeof fallback === 'string') {
