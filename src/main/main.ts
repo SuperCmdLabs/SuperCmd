@@ -237,6 +237,9 @@ let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
 let isVisible = false;
 let suppressBlurHide = false; // When true, blur won't hide the window (used during file dialogs)
+let oauthBlurHideSuppressionDepth = 0; // Keep launcher alive while OAuth browser flow is in progress
+let oauthBlurHideSuppressionTimer: NodeJS.Timeout | null = null;
+const OAUTH_BLUR_SUPPRESSION_TIMEOUT_MS = 3 * 60 * 1000;
 let currentShortcut = '';
 let globalShortcutRegistrationState: {
   requestedShortcut: string;
@@ -291,6 +294,35 @@ let speakRuntimeOptions: SpeakRuntimeOptions = {
   voice: 'en-US-JennyNeural',
   rate: '+0%',
 };
+
+function clearOAuthBlurHideSuppression(): void {
+  oauthBlurHideSuppressionDepth = 0;
+  if (oauthBlurHideSuppressionTimer) {
+    clearTimeout(oauthBlurHideSuppressionTimer);
+    oauthBlurHideSuppressionTimer = null;
+  }
+}
+
+function setOAuthBlurHideSuppression(active: boolean): void {
+  if (active) {
+    oauthBlurHideSuppressionDepth += 1;
+  } else {
+    oauthBlurHideSuppressionDepth = Math.max(0, oauthBlurHideSuppressionDepth - 1);
+  }
+  if (oauthBlurHideSuppressionDepth > 0) {
+    if (oauthBlurHideSuppressionTimer) {
+      clearTimeout(oauthBlurHideSuppressionTimer);
+    }
+    oauthBlurHideSuppressionTimer = setTimeout(() => {
+      clearOAuthBlurHideSuppression();
+    }, OAUTH_BLUR_SUPPRESSION_TIMEOUT_MS);
+    return;
+  }
+  if (oauthBlurHideSuppressionTimer) {
+    clearTimeout(oauthBlurHideSuppressionTimer);
+    oauthBlurHideSuppressionTimer = null;
+  }
+}
 let edgeVoiceCatalogCache: { expiresAt: number; voices: EdgeTtsVoiceCatalogEntry[] } | null = null;
 let speakSessionCounter = 0;
 let activeSpeakSession: {
@@ -1137,6 +1169,8 @@ function handleOAuthCallbackUrl(rawUrl: string): void {
       (parsed.hostname === 'auth' && parsed.pathname === '/callback') ||
       parsed.pathname === '/auth/callback';
     if (!isOAuthCallback) return;
+    // OAuth callback received: release temporary blur suppression immediately.
+    clearOAuthBlurHideSuppression();
 
     // Persist the token immediately so it survives window resets and app restarts.
     const provider = parsed.searchParams.get('provider') || '';
@@ -1501,6 +1535,7 @@ function createWindow(): void {
     if (
       isVisible &&
       !suppressBlurHide &&
+      oauthBlurHideSuppressionDepth === 0 &&
       launcherMode !== 'whisper' &&
       launcherMode !== 'speak' &&
       launcherMode !== 'onboarding'
@@ -4048,6 +4083,10 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle('oauth-set-flow-active', (_event: any, active: boolean) => {
+    setOAuthBlurHideSuppression(Boolean(active));
+  });
+
   // ─── IPC: Open URL (for extensions) ─────────────────────────────
 
   ipcMain.handle('open-url', async (_event: any, url: string) => {
@@ -6295,6 +6334,7 @@ return appURL's |path|() as text`,
     if (!mainWindow || !isVisible) return;
     if (focusedWindow === mainWindow) return;
     if (suppressBlurHide) return;
+    if (oauthBlurHideSuppressionDepth > 0) return;
     if (launcherMode !== 'default') return;
     hideWindow();
   });

@@ -82,7 +82,11 @@ contextBridge.exposeInMainWorld('electron', {
     };
   },
   onOAuthCallback: (callback: (url: string) => void) => {
-    ipcRenderer.on('oauth-callback', (_event, url) => callback(url));
+    const listener = (_event: any, url: string) => callback(url);
+    ipcRenderer.on('oauth-callback', listener);
+    return () => {
+      ipcRenderer.removeListener('oauth-callback', listener);
+    };
   },
   oauthGetToken: (provider: string): Promise<{ accessToken: string; tokenType?: string; scope?: string; expiresIn?: number; obtainedAt: string } | null> =>
     ipcRenderer.invoke('oauth-get-token', provider),
@@ -92,6 +96,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('oauth-remove-token', provider),
   oauthLogout: (provider: string): Promise<void> =>
     ipcRenderer.invoke('oauth-logout', provider),
+  oauthSetFlowActive: (active: boolean): Promise<void> =>
+    ipcRenderer.invoke('oauth-set-flow-active', active),
   onOAuthLogout: (callback: (provider: string) => void) => {
     const listener = (_event: any, provider: string) => callback(provider);
     ipcRenderer.on('oauth-logout', listener);
