@@ -252,7 +252,9 @@ export interface ElectronAPI {
   updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
   setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
   replaceSpotlightWithSuperCmdShortcut: () => Promise<boolean>;
-  onboardingRequestPermission: (target: 'accessibility' | 'input-monitoring' | 'files' | 'microphone') => Promise<boolean>;
+  onboardingRequestPermission: (
+    target: 'accessibility' | 'input-monitoring' | 'files' | 'microphone'
+  ) => Promise<{ granted: boolean; requested: boolean; mode: 'prompted' | 'already-granted' | 'manual' }>;
   updateCommandHotkey: (
     commandId: string,
     hotkey: string

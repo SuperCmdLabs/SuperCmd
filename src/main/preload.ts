@@ -150,7 +150,7 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('replace-spotlight-with-supercmd'),
   onboardingRequestPermission: (
     target: 'accessibility' | 'input-monitoring' | 'files' | 'microphone'
-  ): Promise<boolean> =>
+  ): Promise<{ granted: boolean; requested: boolean; mode: 'prompted' | 'already-granted' | 'manual' }> =>
     ipcRenderer.invoke('onboarding-request-permission', target),
   updateCommandHotkey: (
     commandId: string,
