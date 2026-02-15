@@ -141,7 +141,7 @@ const ExtensionsTab: React.FC<{
         continue;
       }
       if (cmd.category === 'system') {
-        map.set(`__supercommand/${cmd.id}`, cmd);
+        map.set(`__supercmd/${cmd.id}`, cmd);
       }
     }
     return map;
@@ -204,11 +204,11 @@ const ExtensionsTab: React.FC<{
 
     const systemCommands = commands.filter((cmd) => cmd.category === 'system');
     if (systemCommands.length > 0) {
-      byExt.set('__supercommand', {
-        extName: '__supercommand',
+      byExt.set('__supercmd', {
+        extName: '__supercmd',
         title: 'SuperCmd',
         description: 'Built-in SuperCmd commands',
-        owner: 'supercommand',
+        owner: 'supercmd',
         iconDataUrl: undefined,
         preferences: [],
         commands: systemCommands.map((cmd) => ({
@@ -229,7 +229,7 @@ const ExtensionsTab: React.FC<{
         extName: '__script_commands',
         title: 'Script Commands',
         description: 'Custom and Raycast-compatible script commands',
-        owner: 'supercommand',
+        owner: 'supercmd',
         iconDataUrl: undefined,
         preferences: [],
         commands: scriptCommands.map((cmd) => ({
@@ -245,8 +245,8 @@ const ExtensionsTab: React.FC<{
     }
 
     return Array.from(byExt.values()).sort((a, b) => {
-      if (a.extName === '__supercommand') return -1;
-      if (b.extName === '__supercommand') return 1;
+      if (a.extName === '__supercmd') return -1;
+      if (b.extName === '__supercmd') return 1;
       if (a.extName === '__script_commands') return -1;
       if (b.extName === '__script_commands') return 1;
       return a.title.localeCompare(b.title);
@@ -695,7 +695,7 @@ const ExtensionsTab: React.FC<{
                       )}
                       {(schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)) ? (
                         <img src={schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)} alt="" className="w-4 h-4 rounded-sm object-contain" draggable={false} />
-                      ) : schema.extName === '__supercommand' ? (
+                      ) : schema.extName === '__supercmd' ? (
                         <img src={supercmdLogo} alt="" className="w-4 h-4 object-contain" draggable={false} />
                       ) : (
                         <Puzzle className="w-4 h-4 text-violet-300/80" />
@@ -735,7 +735,7 @@ const ExtensionsTab: React.FC<{
                           >
                             {commandInfo?.iconDataUrl ? (
                               <img src={commandInfo.iconDataUrl} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0" draggable={false} />
-                            ) : schema.extName === '__supercommand' ? (
+                            ) : schema.extName === '__supercmd' ? (
                               getCoreCommandIcon(commandInfo?.id)
                             ) : (
                               <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />

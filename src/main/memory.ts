@@ -6,7 +6,7 @@ import { app } from 'electron';
 import type { AppSettings } from './settings-store';
 
 const DEFAULT_SUPERMEMORY_BASE_URL = 'https://api.supermemory.ai';
-const DEFAULT_CLIENT_ID = 'supercommand-client';
+const DEFAULT_CLIENT_ID = 'supercmd-client';
 const DEFAULT_TOP_K = 6;
 const MAX_TOP_K = 20;
 const MAX_MEMORY_ITEM_CHARS = 320;
@@ -381,7 +381,7 @@ export async function addMemory(
   }
 
   const metadata = {
-    source: payload?.source || 'supercommand',
+    source: payload?.source || 'supercmd',
     ...(payload?.metadata || {}),
   };
 

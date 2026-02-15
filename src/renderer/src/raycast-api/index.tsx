@@ -55,7 +55,7 @@ let _extensionContext: ExtensionContextType = {
   extensionIconDataUrl: '',
   commandName: '',
   assetsPath: '',
-  supportPath: '/tmp/supercommand',
+  supportPath: '/tmp/supercmd',
   owner: '',
   preferences: {},
   commandMode: 'view',
@@ -164,7 +164,7 @@ export const environment: Record<string, any> = {
   commandName: '',
   commandMode: 'view',
   assetsPath: '',
-  supportPath: '/tmp/supercommand',
+  supportPath: '/tmp/supercmd',
   raycastVersion: '1.80.0',
   ownerOrAuthorName: '',
   launchType: LaunchType.UserInitiated,
@@ -1627,7 +1627,7 @@ export async function getFrontmostApplication(): Promise<Application> {
   } catch (e) {
     console.error('getFrontmostApplication error:', e);
   }
-  return { name: 'SuperCmd', path: '', bundleId: 'com.supercommand' };
+  return { name: 'SuperCmd', path: '', bundleId: 'com.supercmd' };
 }
 
 export async function getDefaultApplication(path: string): Promise<Application> {
@@ -6119,7 +6119,7 @@ function toBase64Url(bytes: Uint8Array): string {
 }
 
 function buildOAuthRedirectUri(redirectMethod: string, extensionName?: string): string {
-  const pkg = extensionName || getExtensionContext().extensionName || 'supercommand-extension';
+  const pkg = extensionName || getExtensionContext().extensionName || 'supercmd-extension';
   switch (redirectMethod) {
     case 'web':
     case 'app':
@@ -6127,7 +6127,7 @@ function buildOAuthRedirectUri(redirectMethod: string, extensionName?: string): 
     default:
       // SuperCmd-owned OAuth callback deep link.
       // Must be registered in each provider app config.
-      return `supercommand://oauth/callback?packageName=${encodeURIComponent(pkg)}`;
+      return `supercmd://oauth/callback?packageName=${encodeURIComponent(pkg)}`;
   }
 }
 
@@ -6146,7 +6146,7 @@ class PKCEClientCompat {
     this.providerId = options?.providerId || this.providerName.toLowerCase().replace(/\s+/g, '-');
     this.description = options?.description;
     // Capture extension identity at construction time to avoid cross-extension context bleed.
-    this.extensionName = getExtensionContext().extensionName || 'supercommand-extension';
+    this.extensionName = getExtensionContext().extensionName || 'supercmd-extension';
   }
 
   async authorizationRequest(options: any) {
@@ -6272,7 +6272,7 @@ function parseOAuthCallbackUrl(rawUrl: string): {
 } | null {
   try {
     const parsed = new URL(rawUrl);
-    if (parsed.protocol !== 'supercommand:') return null;
+    if (parsed.protocol !== 'supercmd:') return null;
     const isOAuthCallback =
       (parsed.hostname === 'oauth' && parsed.pathname === '/callback') ||
       parsed.pathname === '/oauth/callback';

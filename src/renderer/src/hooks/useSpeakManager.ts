@@ -74,7 +74,7 @@ export function useSpeakManager({
   // ── Portal ─────────────────────────────────────────────────────────
 
   const speakPortalTarget = useDetachedPortalWindow(showSpeak, {
-    name: 'supercommand-speak-window',
+    name: 'supercmd-speak-window',
     title: 'SuperCmd Read',
     width: 520,
     height: 112,

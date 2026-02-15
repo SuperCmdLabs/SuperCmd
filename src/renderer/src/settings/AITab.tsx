@@ -111,8 +111,8 @@ const EDGE_TTS_FALLBACK_VOICES: EdgeVoiceDef[] = [
   { id: 'es-ES-AlvaroNeural', label: 'Alvaro', languageCode: 'es-ES', languageLabel: 'Spanish (Spain)', gender: 'male' },
 ];
 
-const WHISPER_SPEAK_TOGGLE_COMMAND_ID = 'system-supercommand-whisper-speak-toggle';
-const WHISPER_OPEN_COMMAND_ID = 'system-supercommand-whisper';
+const WHISPER_SPEAK_TOGGLE_COMMAND_ID = 'system-supercmd-whisper-speak-toggle';
+const WHISPER_OPEN_COMMAND_ID = 'system-supercmd-whisper';
 
 type TabId = 'api-models' | 'whisper' | 'speak';
 

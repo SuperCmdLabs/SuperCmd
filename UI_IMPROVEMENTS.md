@@ -1,4 +1,4 @@
-# SuperCommand UI Improvements
+# SuperCmd UI Improvements
 
 ## Changes Made
 

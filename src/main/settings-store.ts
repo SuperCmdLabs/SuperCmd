@@ -72,9 +72,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   customExtensionFolders: [],
   commandHotkeys: {
     'system-cursor-prompt': 'Command+K',
-    'system-supercommand-whisper': 'Command+Shift+W',
-    'system-supercommand-whisper-speak-toggle': 'Command+.',
-    'system-supercommand-speak': 'Command+Shift+S',
+    'system-supercmd-whisper': 'Command+Shift+W',
+    'system-supercmd-whisper-speak-toggle': 'Command+.',
+    'system-supercmd-speak': 'Command+Shift+S',
   },
   pinnedCommands: [],
   recentCommands: [],
@@ -96,24 +96,24 @@ export function loadSettings(): AppSettings {
     const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
     const parsed = JSON.parse(raw);
     const parsedHotkeys = { ...(parsed.commandHotkeys || {}) };
-    if (!parsedHotkeys['system-supercommand-whisper-speak-toggle']) {
-      if (parsedHotkeys['system-supercommand-whisper-start']) {
-        parsedHotkeys['system-supercommand-whisper-speak-toggle'] = parsedHotkeys['system-supercommand-whisper-start'];
-      } else if (parsedHotkeys['system-supercommand-whisper-stop']) {
-        parsedHotkeys['system-supercommand-whisper-speak-toggle'] = parsedHotkeys['system-supercommand-whisper-stop'];
+    if (!parsedHotkeys['system-supercmd-whisper-speak-toggle']) {
+      if (parsedHotkeys['system-supercmd-whisper-start']) {
+        parsedHotkeys['system-supercmd-whisper-speak-toggle'] = parsedHotkeys['system-supercmd-whisper-start'];
+      } else if (parsedHotkeys['system-supercmd-whisper-stop']) {
+        parsedHotkeys['system-supercmd-whisper-speak-toggle'] = parsedHotkeys['system-supercmd-whisper-stop'];
       }
     }
-    if (parsedHotkeys['system-supercommand-whisper-toggle']) {
-      if (!parsedHotkeys['system-supercommand-whisper-start']) {
-        parsedHotkeys['system-supercommand-whisper-start'] = parsedHotkeys['system-supercommand-whisper-toggle'];
+    if (parsedHotkeys['system-supercmd-whisper-toggle']) {
+      if (!parsedHotkeys['system-supercmd-whisper-start']) {
+        parsedHotkeys['system-supercmd-whisper-start'] = parsedHotkeys['system-supercmd-whisper-toggle'];
       }
-      if (!parsedHotkeys['system-supercommand-whisper']) {
-        parsedHotkeys['system-supercommand-whisper'] = parsedHotkeys['system-supercommand-whisper-toggle'];
+      if (!parsedHotkeys['system-supercmd-whisper']) {
+        parsedHotkeys['system-supercmd-whisper'] = parsedHotkeys['system-supercmd-whisper-toggle'];
       }
     }
-    delete parsedHotkeys['system-supercommand-whisper-toggle'];
-    delete parsedHotkeys['system-supercommand-whisper-start'];
-    delete parsedHotkeys['system-supercommand-whisper-stop'];
+    delete parsedHotkeys['system-supercmd-whisper-toggle'];
+    delete parsedHotkeys['system-supercmd-whisper-start'];
+    delete parsedHotkeys['system-supercmd-whisper-stop'];
       settingsCache = {
         globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
         openAtLogin: parsed.openAtLogin ?? DEFAULT_SETTINGS.openAtLogin,

@@ -1,5 +1,5 @@
 {
-  "name": "supercommand",
+  "name": "supercmd",
   "version": "1.0.0",
   "description": "SuperCmd — A Raycast-like launcher for macOS",
   "main": "dist/main/main.js",
@@ -43,7 +43,7 @@
     "react-dom": "^18.2.0"
   },
   "build": {
-    "appId": "com.supercommand.app",
+    "appId": "com.supercmd.app",
     "productName": "SuperCmd",
     "icon": "supercmd.icns",
     "files": [
@@ -51,7 +51,9 @@
       "package.json"
     ],
     "asarUnpack": [
-      "dist/native/**"
+      "dist/native/**",
+      "node_modules/esbuild/**",
+      "node_modules/@esbuild/**"
     ],
     "directories": {
       "output": "out"

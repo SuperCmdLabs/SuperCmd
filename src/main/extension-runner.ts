@@ -23,6 +23,27 @@ import {
 } from './extension-platform';
 import { loadSettings } from './settings-store';
 
+/**
+ * Require esbuild, handling the asar-packed Electron case.
+ * When the app is packaged, esbuild's native binary lives in app.asar.unpacked/
+ * but requireEsbuild() resolves to the asar path where spawn fails with ENOTDIR.
+ */
+function requireEsbuild(): any {
+  try {
+    // Try the unpacked path first (works in packaged app)
+    const mainPath = require.resolve('esbuild');
+    if (mainPath.includes('app.asar')) {
+      const unpackedPath = mainPath.replace('app.asar', 'app.asar.unpacked');
+      if (fs.existsSync(unpackedPath)) {
+        return require(unpackedPath);
+      }
+    }
+    return requireEsbuild();
+  } catch {
+    return requireEsbuild();
+  }
+}
+
 export interface ExtensionPreferenceSchema {
   scope: 'extension' | 'command';
   name: string;
@@ -486,7 +507,7 @@ export async function buildAllCommands(extName: string, extPathOverride?: string
 
   if (commands.length === 0) return 0;
 
-  const esbuild = require('esbuild');
+  const esbuild = requireEsbuild();
   const extNodeModules = path.join(extPath, 'node_modules');
   const buildDir = getBuildDir(extPath);
   // Avoid stale command bundles when extension source layout changes.
@@ -733,13 +754,106 @@ function parsePreferences(
 }
 
 /**
- * Get a pre-built extension command bundle.
- * Returns null if the bundle doesn't exist (extension not built).
+ * Build a single command for an extension on-demand.
+ * Used as a fallback when the pre-built bundle is missing.
  */
-export function getExtensionBundle(
+export async function buildSingleCommand(extName: string, cmdName: string): Promise<boolean> {
+  const extPath = resolveInstalledExtensionPath(extName);
+  if (!extPath) return false;
+
+  const pkgPath = path.join(extPath, 'package.json');
+  if (!fs.existsSync(pkgPath)) return false;
+
+  let cmd: any;
+  let manifestExternal: string[] = [];
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    if (!isManifestPlatformCompatible(pkg)) return false;
+    const commands = pkg.commands || [];
+    cmd = commands.find((c: any) => c.name === cmdName);
+    manifestExternal = Array.isArray(pkg.external)
+      ? pkg.external.filter((v: any) => typeof v === 'string' && v.trim().length > 0)
+      : [];
+  } catch {
+    return false;
+  }
+
+  if (!cmd) return false;
+  if (!isCommandPlatformCompatible(cmd)) return false;
+
+  const entryFile = resolveEntryFile(extPath, cmd);
+  if (!entryFile) return false;
+
+  const buildDir = getBuildDir(extPath);
+  fs.mkdirSync(buildDir, { recursive: true });
+  const outFile = path.join(buildDir, `${cmdName}.js`);
+  const extNodeModules = path.join(extPath, 'node_modules');
+
+  try {
+    const esbuild = requireEsbuild();
+    console.log(`  On-demand building ${extName}/${cmdName}…`);
+    await esbuild.build({
+      entryPoints: [entryFile],
+      bundle: true,
+      format: 'cjs',
+      platform: 'node',
+      outfile: outFile,
+      plugins: [
+        {
+          name: 'swift-external',
+          setup(build: any) {
+            build.onResolve({ filter: /^swift:/ }, (args: any) => ({
+              path: args.path,
+              external: true,
+            }));
+          },
+        },
+      ],
+      external: [
+        'react', 'react-dom', 'react-dom/*', 'react/jsx-runtime', 'react/jsx-dev-runtime',
+        '@raycast/api', '@raycast/utils',
+        're2', 'better-sqlite3', 'fsevents',
+        'raycast-cross-extension',
+        'node-fetch', 'undici', 'undici/*',
+        'axios', 'tar', 'extract-zip', 'sha256-file',
+        ...manifestExternal,
+        ...nodeBuiltins,
+      ],
+      nodePaths: fs.existsSync(extNodeModules) ? [extNodeModules] : [],
+      target: 'es2020',
+      jsx: 'automatic',
+      jsxImportSource: 'react',
+      tsconfigRaw: JSON.stringify({
+        compilerOptions: {
+          target: 'ES2020',
+          jsx: 'react-jsx',
+          jsxImportSource: 'react',
+          strict: false,
+          esModuleInterop: true,
+          moduleResolution: 'node',
+        },
+      }),
+      define: {
+        'process.env.NODE_ENV': '"production"',
+        'global': 'globalThis',
+      },
+      logLevel: 'warning',
+    });
+    return fs.existsSync(outFile);
+  } catch (e) {
+    console.error(`  On-demand esbuild failed for ${extName}/${cmdName}:`, e);
+    return false;
+  }
+}
+
+/**
+ * Get a pre-built extension command bundle.
+ * Falls back to on-demand building if the bundle is missing.
+ */
+export async function getExtensionBundle(
   extName: string,
   cmdName: string
-): ExtensionBundleResult | null {
+): Promise<ExtensionBundleResult | null> {
   const normalizedExtName = normalizeExtensionName(extName);
   const extPath = resolveInstalledExtensionPath(normalizedExtName);
   if (!extPath) {
@@ -749,10 +863,12 @@ export function getExtensionBundle(
   let outFile = path.join(extPath, '.sc-build', `${cmdName}.js`);
 
   if (!fs.existsSync(outFile)) {
-    console.error(
-      `Pre-built bundle not found: ${outFile}. Was the extension built?`
-    );
-    return null;
+    console.log(`Pre-built bundle not found for ${normalizedExtName}/${cmdName}, building on-demand…`);
+    const built = await buildSingleCommand(normalizedExtName, cmdName);
+    if (!built || !fs.existsSync(outFile)) {
+      console.error(`Failed to build ${normalizedExtName}/${cmdName} on-demand.`);
+      return null;
+    }
   }
 
   const code = fs.readFileSync(outFile, 'utf-8');

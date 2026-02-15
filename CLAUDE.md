@@ -1,13 +1,13 @@
-# SuperCommand - Open Source Raycast Alternative
+# SuperCmd - Open Source Raycast Alternative
 
 ## Project Overview
 
-SuperCommand is an open-source alternative to Raycast, designed to provide a similar launcher experience while maintaining full compatibility with Raycast extensions. The project aims to achieve feature parity with Raycast while remaining open-source and community-driven.
+SuperCmd is an open-source alternative to Raycast, designed to provide a similar launcher experience while maintaining full compatibility with Raycast extensions. The project aims to achieve feature parity with Raycast while remaining open-source and community-driven.
 
 ### Core Principles
 
 1. **Extension Compatibility**: The app must be compatible with existing Raycast extensions without requiring modifications to extension code
-2. **Runtime Control**: All changes and enhancements must be implemented in SuperCommand itself, not in extensions, since we cannot control extension code at runtime
+2. **Runtime Control**: All changes and enhancements must be implemented in SuperCmd itself, not in extensions, since we cannot control extension code at runtime
 3. **API Parity**: Keep APIs in sync with `@raycast/api` and track implementation status against the official Raycast API
 4. **Progressive Enhancement**: Gradually implement all Raycast APIs to achieve full parity
 
@@ -233,7 +233,7 @@ When implementing a new Raycast API:
 
 ## Extension Registry Integration
 
-SuperCommand integrates with the Raycast extension registry to:
+SuperCmd integrates with the Raycast extension registry to:
 
 1. **Browse Extensions**: Access the full catalog of Raycast extensions
 2. **Install Extensions**: Download and install extensions from the registry
@@ -244,7 +244,7 @@ Extensions are stored locally and executed through the compatibility shim.
 
 ## AI Integration
 
-SuperCommand supports AI features through:
+SuperCmd supports AI features through:
 
 - **Ollama**: Local AI models via Ollama
 - **OpenAI**: Cloud-based AI via OpenAI API

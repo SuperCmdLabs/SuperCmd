@@ -2389,11 +2389,11 @@ function ensureGlobals() {
 
   // fetch bridge — route extension HTTP(S) through main process to avoid CORS.
   // Keep native fetch for non-HTTP URLs and unsupported body types.
-  if (!g.__SUPERCOMMAND_NATIVE_FETCH && typeof g.fetch === 'function') {
-    g.__SUPERCOMMAND_NATIVE_FETCH = g.fetch.bind(g);
+  if (!g.__SUPERCMD_NATIVE_FETCH && typeof g.fetch === 'function') {
+    g.__SUPERCMD_NATIVE_FETCH = g.fetch.bind(g);
   }
-  if (!g.__SUPERCOMMAND_FETCH_PATCHED) {
-    const nativeFetch = g.__SUPERCOMMAND_NATIVE_FETCH;
+  if (!g.__SUPERCMD_FETCH_PATCHED) {
+    const nativeFetch = g.__SUPERCMD_NATIVE_FETCH;
     const isHttpUrl = (value: string) => /^https?:\/\//i.test(value);
     const toHeadersObject = (headersLike: any): Record<string, string> => {
       const out: Record<string, string> = {};
@@ -2484,7 +2484,7 @@ function ensureGlobals() {
       return response;
     };
 
-    g.__SUPERCOMMAND_FETCH_PATCHED = true;
+    g.__SUPERCMD_FETCH_PATCHED = true;
   }
 }
 
@@ -2554,7 +2554,7 @@ function loadExtensionExport(
         case 'react': {
           // Return React directly - the exact same module the host uses
           console.log('[fakeRequire] Providing React directly');
-          (globalThis as any).__SUPERCOMMAND_REACT = React;
+          (globalThis as any).__SUPERCMD_REACT = React;
           return React;
         }
         case 'react-dom':
@@ -2917,7 +2917,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   extensionIconDataUrl = '',
   commandName = '',
   assetsPath = '',
-  supportPath = '/tmp/supercommand',
+  supportPath = '/tmp/supercmd',
   extensionPath = '',
   owner = '',
   preferences = {},

@@ -329,7 +329,7 @@ function canonicalSettingsTitle(title: string, bundleId?: string): string {
 
 function canonicalAppTitle(name: string): string {
   const key = name.toLowerCase().replace(/[^a-z0-9]+/g, '');
-  if (key === 'supercommand' || key === 'supercmd') return 'SuperCmd';
+  if (key === 'supercmd' || key === 'supercmd') return 'SuperCmd';
   return name;
 }
 
@@ -908,19 +908,19 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
     {
       id: 'system-open-settings',
       title: 'SuperCmd Settings',
-      keywords: ['settings', 'preferences', 'config', 'configuration', 'supercommand'],
+      keywords: ['settings', 'preferences', 'config', 'configuration', 'supercmd'],
       category: 'system',
     },
     {
       id: 'system-open-ai-settings',
       title: 'SuperCmd AI',
-      keywords: ['ai', 'model', 'provider', 'openai', 'anthropic', 'ollama', 'supercommand'],
+      keywords: ['ai', 'model', 'provider', 'openai', 'anthropic', 'ollama', 'supercmd'],
       category: 'system',
     },
     {
-      id: 'system-supercommand-whisper',
+      id: 'system-supercmd-whisper',
       title: 'SuperCmd Whisper',
-      keywords: ['whisper', 'speech', 'voice', 'dictation', 'transcribe', 'overlay', 'supercommand'],
+      keywords: ['whisper', 'speech', 'voice', 'dictation', 'transcribe', 'overlay', 'supercmd'],
       category: 'system',
     },
     {
@@ -930,21 +930,21 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
-      id: 'system-supercommand-speak',
+      id: 'system-supercmd-speak',
       title: 'SuperCmd Read',
-      keywords: ['speak', 'tts', 'read', 'selected text', 'edge-tts', 'speechify', 'jarvis', 'supercommand'],
+      keywords: ['speak', 'tts', 'read', 'selected text', 'edge-tts', 'speechify', 'jarvis', 'supercmd'],
       category: 'system',
     },
     {
       id: 'system-open-extensions-settings',
       title: 'SuperCmd Extensions',
-      keywords: ['extensions', 'store', 'community', 'hotkey', 'supercommand'],
+      keywords: ['extensions', 'store', 'community', 'hotkey', 'supercmd'],
       category: 'system',
     },
     {
       id: 'system-open-onboarding',
       title: 'SuperCmd Onboarding',
-      keywords: ['welcome', 'onboarding', 'intro', 'setup', 'supercommand'],
+      keywords: ['welcome', 'onboarding', 'intro', 'setup', 'supercmd'],
       category: 'system',
     },
     {

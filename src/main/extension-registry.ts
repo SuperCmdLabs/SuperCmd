@@ -158,7 +158,7 @@ function saveCatalogToDisk(catalog: CatalogCache): void {
 async function fetchCatalogFromGitHub(): Promise<CatalogEntry[]> {
   const tmpDir = path.join(
     app.getPath('temp'),
-    `supercommand-catalog-${Date.now()}`
+    `supercmd-catalog-${Date.now()}`
   );
 
   try {
@@ -471,7 +471,7 @@ export async function installExtension(name: string): Promise<boolean> {
 
   const tmpDir = path.join(
     app.getPath('temp'),
-    `supercommand-install-${Date.now()}`
+    `supercmd-install-${Date.now()}`
   );
 
   try {

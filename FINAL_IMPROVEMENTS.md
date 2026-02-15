@@ -1,4 +1,4 @@
-# SuperCommand UI Improvements - Final Update
+# SuperCmd UI Improvements - Final Update
 
 ## All Changes Completed ✅
 
@@ -108,7 +108,7 @@ Total size: 430KB (gzipped: 98KB)
 ## Ready to Use!
 
 Run `npm run dev` and test:
-1. Open SuperCommand (⌘Space)
+1. Open SuperCmd (⌘Space)
 2. Type "Clipboard History"
 3. Copy some text/images
 4. Navigate with arrows

@@ -142,7 +142,7 @@ export function formatShortcutLabel(shortcut: string): string {
 
 export function isSuperCmdAppTitle(title: string): boolean {
   const key = String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-  return key === 'supercommand' || key === 'supercmd';
+  return key === 'supercmd' || key === 'supercmd';
 }
 
 export function isSuperCmdSystemCommand(commandId: string): boolean {
@@ -331,7 +331,7 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     );
   }
 
-  if (commandId === 'system-supercommand-whisper') {
+  if (commandId === 'system-supercmd-whisper') {
     return (
       <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
         <Mic className="w-3 h-3 text-sky-300" />
@@ -347,7 +347,7 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     );
   }
 
-  if (commandId === 'system-supercommand-speak') {
+  if (commandId === 'system-supercmd-speak') {
     return (
       <div className="w-5 h-5 rounded bg-indigo-500/20 flex items-center justify-center">
         <Volume2 className="w-3 h-3 text-indigo-200" />

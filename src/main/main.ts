@@ -91,10 +91,10 @@ const CURSOR_PROMPT_WINDOW_HEIGHT = 90;
 const CURSOR_PROMPT_LEFT_OFFSET = 20;
 const WHISPER_WINDOW_WIDTH = 266;
 const WHISPER_WINDOW_HEIGHT = 84;
-const DETACHED_WHISPER_WINDOW_NAME = 'supercommand-whisper-window';
-const DETACHED_WHISPER_ONBOARDING_WINDOW_NAME = 'supercommand-whisper-onboarding-window';
-const DETACHED_SPEAK_WINDOW_NAME = 'supercommand-speak-window';
-const DETACHED_PROMPT_WINDOW_NAME = 'supercommand-prompt-window';
+const DETACHED_WHISPER_WINDOW_NAME = 'supercmd-whisper-window';
+const DETACHED_WHISPER_ONBOARDING_WINDOW_NAME = 'supercmd-whisper-onboarding-window';
+const DETACHED_SPEAK_WINDOW_NAME = 'supercmd-speak-window';
+const DETACHED_PROMPT_WINDOW_NAME = 'supercmd-prompt-window';
 const DETACHED_WINDOW_QUERY_KEY = 'sc_detached';
 type LauncherMode = 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt';
 
@@ -308,7 +308,7 @@ let activeSpeakSession: {
 let launcherMode: LauncherMode = 'default';
 let lastWhisperToggleAt = 0;
 let lastWhisperShownAt = 0;
-const INTERNAL_CLIPBOARD_PROBE_REGEX = /^__supercommand_[a-z0-9_]+_probe__\d+_[a-z0-9]+$/i;
+const INTERNAL_CLIPBOARD_PROBE_REGEX = /^__supercmd_[a-z0-9_]+_probe__\d+_[a-z0-9]+$/i;
 
 function isWindowShownRoutedSystemCommand(commandId: string): boolean {
   return (
@@ -912,7 +912,7 @@ function stopSpeakSession(options?: { resetStatus?: boolean; cleanupWindow?: boo
     }
     if (options?.cleanupWindow) {
       try {
-        mainWindow?.webContents.send('run-system-command', 'system-supercommand-speak-close');
+        mainWindow?.webContents.send('run-system-command', 'system-supercmd-speak-close');
       } catch {}
     }
     return;
@@ -941,7 +941,7 @@ function stopSpeakSession(options?: { resetStatus?: boolean; cleanupWindow?: boo
   }
   if (options?.cleanupWindow) {
     try {
-      mainWindow?.webContents.send('run-system-command', 'system-supercommand-speak-close');
+      mainWindow?.webContents.send('run-system-command', 'system-supercmd-speak-close');
     } catch {}
   }
 }
@@ -1129,7 +1129,7 @@ function handleOAuthCallbackUrl(rawUrl: string): void {
   if (!rawUrl) return;
   try {
     const parsed = new URL(rawUrl);
-    if (parsed.protocol !== 'supercommand:') return;
+    if (parsed.protocol !== 'supercmd:') return;
     const isOAuthCallback =
       (parsed.hostname === 'oauth' && parsed.pathname === '/callback') ||
       parsed.pathname === '/oauth/callback';
@@ -1248,7 +1248,7 @@ function parseRaycastDeepLink(url: string): ParsedRaycastDeepLink | null {
   return null;
 }
 
-function buildLaunchBundle(options: {
+async function buildLaunchBundle(options: {
   extensionName: string;
   commandName: string;
   args?: Record<string, any>;
@@ -1268,7 +1268,7 @@ function buildLaunchBundle(options: {
     sourceExtensionName,
     sourcePreferences,
   } = options;
-  const result = getExtensionBundle(extensionName, commandName);
+  const result = await getExtensionBundle(extensionName, commandName);
   if (!result) {
     throw new Error(`Command "${commandName}" not found in extension "${extensionName}"`);
   }
@@ -1901,7 +1901,7 @@ function captureFrontmostAppContext(): void {
     `;
     const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
     const [name, appPath, bundleId] = result.split('|||');
-    if (bundleId !== 'com.supercommand' && name !== 'SuperCmd' && name !== 'Electron') {
+    if (bundleId !== 'com.supercmd' && name !== 'SuperCmd' && name !== 'Electron') {
       lastFrontmostApp = { name, path: appPath, bundleId };
     }
   } catch {
@@ -2393,11 +2393,11 @@ async function dispatchRendererCustomEvent(eventName: string, detail: any): Prom
 
 async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' = 'launcher'): Promise<boolean> {
   const isWhisperOpenCommand =
-    commandId === 'system-supercommand-whisper' ||
-    commandId === 'system-supercommand-whisper-toggle';
-  const isWhisperSpeakToggleCommand = commandId === 'system-supercommand-whisper-speak-toggle';
+    commandId === 'system-supercmd-whisper' ||
+    commandId === 'system-supercmd-whisper-toggle';
+  const isWhisperSpeakToggleCommand = commandId === 'system-supercmd-whisper-speak-toggle';
   const isWhisperCommand = isWhisperOpenCommand || isWhisperSpeakToggleCommand;
-  const isSpeakCommand = commandId === 'system-supercommand-speak';
+  const isSpeakCommand = commandId === 'system-supercmd-speak';
   const isCursorPromptCommand = commandId === 'system-cursor-prompt';
 
   if (isWhisperOpenCommand && source === 'hotkey') {
@@ -2421,7 +2421,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
   }
 
   if (isWhisperSpeakToggleCommand) {
-    const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.');
+    const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Command+.');
     const holdSeq = ++whisperHoldRequestSeq;
     if (whisperOverlayVisible) {
       // Reposition whisper window to the current cursor's screen
@@ -2435,7 +2435,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
       return true;
     }
     startWhisperHoldWatcher(speakToggleHotkey, holdSeq);
-    await openLauncherAndRunSystemCommand('system-supercommand-whisper', {
+    await openLauncherAndRunSystemCommand('system-supercmd-whisper', {
       showWindow: false,
       mode: 'default',
     });
@@ -2460,7 +2460,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     }
     const started = await startSpeakFromSelection();
     if (!started) return false;
-    await openLauncherAndRunSystemCommand('system-supercommand-speak', {
+    await openLauncherAndRunSystemCommand('system-supercmd-speak', {
       showWindow: false,
       mode: 'default',
     });
@@ -2561,7 +2561,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     lastWhisperShownAt = Date.now();
     whisperHoldRequestSeq += 1;
     stopWhisperHoldWatcher();
-    return await openLauncherAndRunSystemCommand('system-supercommand-whisper', {
+    return await openLauncherAndRunSystemCommand('system-supercmd-whisper', {
       showWindow: source === 'launcher',
       mode: 'default',
     });
@@ -2614,7 +2614,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     const [extName, cmdName] = command.path.split('/');
     if (!extName || !cmdName) return false;
     try {
-      const bundle = buildLaunchBundle({
+      const bundle = await buildLaunchBundle({
         extensionName: extName,
         commandName: cmdName,
         type: 'userInitiated',
@@ -2709,7 +2709,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
   const fs = require('fs');
   const os = require('os');
   const pathMod = require('path');
-  const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'supercommand-speak-'));
+  const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'supercmd-speak-'));
   const sessionId = ++speakSessionCounter;
   const session = {
     id: sessionId,
@@ -3554,7 +3554,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.whenReady().then(async () => {
-  app.setAsDefaultProtocolClient('supercommand');
+  app.setAsDefaultProtocolClient('supercmd');
   scrubInternalClipboardProbe('app startup');
 
   // Register the sc-asset:// protocol handler to serve extension asset files
@@ -3741,7 +3741,7 @@ app.whenReady().then(async () => {
       const pathMod = require('path');
       const { spawn } = require('child_process');
 
-      const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'supercommand-voice-preview-'));
+      const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'supercmd-voice-preview-'));
       const audioPath = pathMod.join(tmpDir, 'preview.mp3');
 
       try {
@@ -4033,7 +4033,7 @@ app.whenReady().then(async () => {
       }
 
       try {
-        const bundle = buildLaunchBundle({
+        const bundle = await buildLaunchBundle({
           extensionName: deepLink.extensionName,
           commandName: deepLink.commandName,
           args: deepLink.arguments,
@@ -4074,10 +4074,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     'run-extension',
-    (_event: any, extName: string, cmdName: string) => {
+    async (_event: any, extName: string, cmdName: string) => {
       try {
-        // Just read the pre-built bundle (built at install time)
-        const result = getExtensionBundle(extName, cmdName);
+        // Read the pre-built bundle (built at install time), or build on-demand
+        const result = await getExtensionBundle(extName, cmdName);
         if (!result) {
           return { error: `No pre-built bundle for ${extName}/${cmdName}. Try reinstalling the extension.` };
         }
@@ -4214,7 +4214,7 @@ app.whenReady().then(async () => {
           throw new Error('extensionName is required for launchCommand. Intra-extension launches are not yet fully supported.');
         }
 
-        const bundle = buildLaunchBundle({
+        const bundle = await buildLaunchBundle({
           extensionName,
           commandName: name,
           args: args || {},
@@ -4875,7 +4875,7 @@ return appURL's |path|() as text`,
       const [name, appPath, bundleId] = result.split('|||');
       return { name, path: appPath, bundleId };
     } catch (e) {
-      return { name: 'SuperCmd', path: '', bundleId: 'com.supercommand' };
+      return { name: 'SuperCmd', path: '', bundleId: 'com.supercmd' };
     }
   });
 
@@ -6054,7 +6054,7 @@ return appURL's |path|() as text`,
 
     const bundles: any[] = [];
     for (const cmd of menuBarCmds) {
-      const bundle = getExtensionBundle(cmd.extName, cmd.cmdName);
+      const bundle = await getExtensionBundle(cmd.extName, cmd.cmdName);
       if (bundle) {
         bundles.push({
           code: bundle.code,

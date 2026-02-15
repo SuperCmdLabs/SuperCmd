@@ -57,7 +57,7 @@ export function useWhisperManager({
   // ── Portals ────────────────────────────────────────────────────────
 
   const whisperPortalTarget = useDetachedPortalWindow(showWhisper, {
-    name: 'supercommand-whisper-window',
+    name: 'supercmd-whisper-window',
     title: 'SuperCmd Whisper',
     width: showWhisperHint ? 620 : 272,
     height: showWhisperHint ? 88 : 52,
@@ -69,7 +69,7 @@ export function useWhisperManager({
   });
 
   const whisperOnboardingPortalTarget = useDetachedPortalWindow(showWhisperOnboarding, {
-    name: 'supercommand-whisper-onboarding-window',
+    name: 'supercmd-whisper-onboarding-window',
     title: 'SuperCmd Whisper Onboarding',
     width: 920,
     height: 640,

@@ -35,7 +35,7 @@ const MAX_ITEMS = 1000;
 const POLL_INTERVAL = 1000; // 1 second
 const MAX_TEXT_LENGTH = 100_000; // Don't store huge text items
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB max per image
-const INTERNAL_CLIPBOARD_PROBE_REGEX = /^__supercommand_[a-z0-9_]+_probe__\d+_[a-z0-9]+$/i;
+const INTERNAL_CLIPBOARD_PROBE_REGEX = /^__supercmd_[a-z0-9_]+_probe__\d+_[a-z0-9]+$/i;
 
 let clipboardHistory: ClipboardItem[] = [];
 let lastClipboardText = '';

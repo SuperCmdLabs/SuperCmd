@@ -111,7 +111,7 @@ Renderer: ✅ Compiled (429KB)
 
 ## How to Test Paste
 
-1. Open SuperCommand
+1. Open SuperCmd
 2. Search "Clipboard History"
 3. Copy some text in any app
 4. See it appear in clipboard history

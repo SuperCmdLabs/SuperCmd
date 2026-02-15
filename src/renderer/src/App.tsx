@@ -155,7 +155,7 @@ const App: React.FC = () => {
 
 
   const cursorPromptPortalTarget = useDetachedPortalWindow(showCursorPrompt, {
-    name: 'supercommand-prompt-window',
+    name: 'supercmd-prompt-window',
     title: 'SuperCmd Prompt',
     width: 500,
     height: 132,
@@ -193,7 +193,7 @@ const App: React.FC = () => {
       setPinnedCommands(settings.pinnedCommands || []);
       setRecentCommands(settings.recentCommands || []);
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
-      const speakToggleHotkey = settings.commandHotkeys?.['system-supercommand-whisper-speak-toggle'] || 'Command+.';
+      const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Command+.';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-JennyNeural'));
       setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
@@ -969,7 +969,7 @@ const App: React.FC = () => {
       await window.electron.executeCommand(commandId);
       return true;
     }
-    if (commandId === 'system-supercommand-whisper') {
+    if (commandId === 'system-supercmd-whisper') {
       whisperSessionRef.current = true;
       openWhisper();
       const settings = (await window.electron.getSettings()) as AppSettings;
@@ -979,12 +979,12 @@ const App: React.FC = () => {
       }
       return true;
     }
-    if (commandId === 'system-supercommand-speak') {
+    if (commandId === 'system-supercmd-speak') {
       whisperSessionRef.current = false;
       openSpeak();
       return true;
     }
-    if (commandId === 'system-supercommand-speak-close') {
+    if (commandId === 'system-supercmd-speak-close') {
       setShowSpeak(false);
       return true;
     }
