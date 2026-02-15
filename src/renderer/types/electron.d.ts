@@ -136,6 +136,7 @@ export interface AppSettings {
   hasSeenWhisperOnboarding: boolean;
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
+  debugMode: boolean;
 }
 
 export interface CatalogEntry {

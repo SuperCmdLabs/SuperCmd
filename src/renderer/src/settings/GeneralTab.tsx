@@ -4,8 +4,8 @@
  * Allows the user to configure the global launcher shortcut.
  */
 
-import React, { useState, useEffect } from 'react';
-import { Keyboard, Info } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Keyboard, Info, Bug } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings } from '../../types/electron';
 
@@ -62,6 +62,29 @@ const GeneralTab: React.FC = () => {
             <span className="text-sm text-red-400">Failed — shortcut may be used by another app</span>
           )}
         </div>
+      </div>
+
+      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Bug className="w-4 h-4 text-white/50" />
+          <h3 className="text-sm font-medium text-white/90">Debug Mode</h3>
+        </div>
+        <p className="text-sm text-white/45 mb-3">
+          Show detailed error messages when extensions fail to load or build.
+        </p>
+        <label className="inline-flex items-center gap-2 text-sm text-white/70 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.debugMode ?? false}
+            onChange={async (e) => {
+              const debugMode = e.target.checked;
+              setSettings((prev) => prev ? { ...prev, debugMode } : prev);
+              await window.electron.saveSettings({ debugMode });
+            }}
+            className="accent-cyan-400"
+          />
+          Enable debug mode
+        </label>
       </div>
 
       <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">

@@ -4197,8 +4197,15 @@ app.whenReady().then(async () => {
           commandArgumentDefinitions: result.commandArgumentDefinitions,
         };
       } catch (e: any) {
+        const errorMsg = e?.message || 'Unknown error';
+        const stack = e?.stack || '';
         console.error(`run-extension error for ${extName}/${cmdName}:`, e);
-        return { error: e?.message || 'Unknown error' };
+        const settings = loadSettings();
+        return {
+          error: settings.debugMode
+            ? `[${extName}/${cmdName}] ${errorMsg}\n\n${stack}`
+            : `Extension load failed: ${errorMsg}`,
+        };
       }
     }
   );

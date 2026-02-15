@@ -226,10 +226,6 @@ export function setExtensionContext(ctx: ExtensionContextType) {
   environment.assetsPath = ctx.assetsPath;
   environment.supportPath = ctx.supportPath;
   environment.ownerOrAuthorName = ctx.owner;
-  // Reset in-memory OAuth token so withAccessToken re-checks the store
-  // when a new extension (or the same extension after logout) mounts.
-  _accessTokenValue = null;
-  _accessTokenType = null;
 }
 
 export function getExtensionContext(): ExtensionContextType {
@@ -2933,11 +2929,25 @@ function ListComponent({
   const emojiGridCols = 8;
 
   // ── Search bar control ─────────────────────────────────────────
+  // Debounce the extension's onSearchTextChange callback to avoid excessive API calls
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleSearchChange = useCallback((text: string) => {
     setInternalSearch(text);
-    onSearchTextChange?.(text);
     setSelectedIdx(0);
-  }, [onSearchTextChange]);
+    if (onSearchTextChange) {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      if (throttle !== false) {
+        searchDebounceRef.current = setTimeout(() => {
+          onSearchTextChange(text);
+        }, 300);
+      } else {
+        onSearchTextChange(text);
+      }
+    }
+  }, [onSearchTextChange, throttle]);
+  useEffect(() => {
+    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
+  }, []);
 
   // Register clearSearchBar callback
   useEffect(() => {
@@ -4445,11 +4455,25 @@ function GridComponent({
   }, [allItems, searchText, filtering, onSearchTextChange]);
 
   // ── Search bar control ──────────────────────────────────────────
+  // Debounce the extension's onSearchTextChange callback to avoid excessive API calls
+  const gridSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleSearchChange = useCallback((text: string) => {
     setInternalSearch(text);
-    onSearchTextChange?.(text);
     setSelectedIdx(0);
-  }, [onSearchTextChange]);
+    if (onSearchTextChange) {
+      if (gridSearchDebounceRef.current) clearTimeout(gridSearchDebounceRef.current);
+      if (throttle !== false) {
+        gridSearchDebounceRef.current = setTimeout(() => {
+          onSearchTextChange(text);
+        }, 300);
+      } else {
+        onSearchTextChange(text);
+      }
+    }
+  }, [onSearchTextChange, throttle]);
+  useEffect(() => {
+    return () => { if (gridSearchDebounceRef.current) clearTimeout(gridSearchDebounceRef.current); };
+  }, []);
 
   // ── Action collection ───────────────────────────────────────────
   const selectedItem = filteredItems[selectedIdx];
@@ -5269,6 +5293,14 @@ export function usePromise<T>(
   const [data, setData] = useState<T | undefined>(options?.initialData);
   const [isLoading, setIsLoading] = useState(options?.execute !== false);
   const [error, setError] = useState<Error | undefined>(undefined);
+
+  // Track mounted state to prevent state updates after unmount
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   const fnRef = useRef(fn);
   const argsRef = useRef(args || []);
   const runtimeCtxRef = useRef<ExtensionContextType>(snapshotExtensionContext());
@@ -5278,6 +5310,7 @@ export function usePromise<T>(
 
   const execute = useCallback(() => {
     if (options?.execute === false) return;
+    if (!mountedRef.current) return;
     setIsLoading(true);
     setError(undefined);
     withExtensionContext(runtimeCtxRef.current, () => {
@@ -5288,6 +5321,7 @@ export function usePromise<T>(
     Promise.resolve()
       .then(() => withExtensionContext(runtimeCtxRef.current, () => fnRef.current(...argsRef.current)))
       .then((result) => {
+        if (!mountedRef.current) return;
         setData(result);
         setIsLoading(false);
         withExtensionContext(runtimeCtxRef.current, () => {
@@ -5295,6 +5329,7 @@ export function usePromise<T>(
         });
       })
       .catch((err) => {
+        if (!mountedRef.current) return;
         const e = err instanceof Error ? err : new Error(String(err));
         setError(e);
         setIsLoading(false);
@@ -5382,6 +5417,13 @@ export function useFetch<T = any, U = undefined>(
   const [isLoading, setIsLoading] = useState(options?.execute !== false);
   const [error, setError] = useState<Error | undefined>(undefined);
 
+  // Track mounted state to prevent state updates after unmount
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   // Use refs to avoid stale closures in fetchData
   const urlRef = useRef(url);
   const optionsRef = useRef(options);
@@ -5391,6 +5433,7 @@ export function useFetch<T = any, U = undefined>(
   const fetchData = useCallback(async (pageNum: number, currentCursor?: string) => {
     const opts = optionsRef.current;
     if (opts?.execute === false) return;
+    if (!mountedRef.current) return;
     setIsLoading(true);
     setError(undefined);
 
@@ -5421,6 +5464,7 @@ export function useFetch<T = any, U = undefined>(
       }
 
       const parsed = opts?.parseResponse ? await opts.parseResponse(res) : await res.json();
+      if (!mountedRef.current) return;
       const mapped = opts?.mapResult ? opts.mapResult(parsed) : parsed;
 
       // Handle pagination format { data, hasMore, cursor }
@@ -5449,11 +5493,12 @@ export function useFetch<T = any, U = undefined>(
         opts?.onData?.(mapped as T);
       }
     } catch (err) {
+      if (!mountedRef.current) return;
       const e = err instanceof Error ? err : new Error(String(err));
       setError(e);
       opts?.onError?.(e);
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
   }, []); // No dependencies - we use refs
 
@@ -5570,6 +5615,13 @@ export function useCachedPromise<T>(
   const [error, setError] = useState<Error | undefined>(undefined);
   const [isPaginated, setIsPaginated] = useState(false);
 
+  // Track mounted state to prevent state updates after unmount
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   const fnRef = useRef(fn);
   const argsRef = useRef(args || []);
   const optionsRef = useRef(options);
@@ -5582,6 +5634,7 @@ export function useCachedPromise<T>(
   const fetchPage = useCallback(async (pageNum: number, currentCursor?: string) => {
     const opts = optionsRef.current;
     if (opts?.execute === false) return;
+    if (!mountedRef.current) return;
     setIsLoading(true);
     setError(undefined);
 
@@ -5605,6 +5658,7 @@ export function useCachedPromise<T>(
         setIsPaginated(true);
         const paginationOptions = { page: pageNum, cursor: currentCursor, lastItem: undefined };
         const innerResult = await withExtensionContext(runtimeCtxRef.current, () => outerResult(paginationOptions));
+        if (!mountedRef.current) return;
 
         // Check if result is paginated format { data, hasMore, cursor }
         if (innerResult && typeof innerResult === 'object' && 'data' in innerResult) {
@@ -5632,6 +5686,7 @@ export function useCachedPromise<T>(
       } else {
         // Not a pagination function - treat as a regular promise
         const result = await outerResult;
+        if (!mountedRef.current) return;
 
         // Check if regular result happens to be paginated format
         if (result && typeof result === 'object' && 'data' in result && 'hasMore' in result) {
@@ -5662,13 +5717,14 @@ export function useCachedPromise<T>(
         }
       }
     } catch (err) {
+      if (!mountedRef.current) return;
       const e = err instanceof Error ? err : new Error(String(err));
       setError(e);
       withExtensionContext(runtimeCtxRef.current, () => {
         opts?.onError?.(e);
       });
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
   }, []); // No dependencies - using refs
 
@@ -7138,16 +7194,29 @@ export class OAuthService {
     });
   }
 
-  static jira(options: { clientId: string; scope: string; personalAccessToken?: string; authorize?: () => Promise<string>; onAuthorize?: OAuthServiceOptions['onAuthorize'] }): OAuthService {
+  static jira(options: { clientId?: string; scope: string; personalAccessToken?: string; authorize?: () => Promise<string>; onAuthorize?: OAuthServiceOptions['onAuthorize'] }): OAuthService {
     const client = new PKCEClientCompat({ providerId: 'jira', providerName: 'Jira', providerIcon: 'jira-icon.png', description: 'Connect your Jira account' });
+    const supercmdAuthorize = async (): Promise<string> => {
+      ensureOAuthCallbackBridge();
+      await open('https://api.supercmd.sh/auth/jira/authorize');
+      const callback = await waitForOAuthCallback('');
+      if (callback.error) {
+        throw new Error(callback.errorDescription || callback.error);
+      }
+      const token = callback.accessToken || callback.code;
+      if (!token) {
+        throw new Error('Jira authorization did not return a valid token.');
+      }
+      return token;
+    };
     return new OAuthService({
       client,
-      clientId: options.clientId,
+      clientId: options.clientId || '_supercmd_jira',
       scope: options.scope,
-      authorizeUrl: 'https://auth.atlassian.com/authorize',
+      authorizeUrl: 'https://api.supercmd.sh/auth/jira/authorize',
       tokenUrl: 'https://auth.atlassian.com/oauth/token',
       personalAccessToken: options.personalAccessToken,
-      authorize: options.authorize,
+      authorize: options.authorize || supercmdAuthorize,
       onAuthorize: options.onAuthorize,
     });
   }
@@ -7434,6 +7503,11 @@ export function getAccessToken(): { token: string; type: 'oauth' | 'personal' } 
     throw new Error('getAccessToken must be used when authenticated');
   }
   return { token: _accessTokenValue, type: _accessTokenType };
+}
+
+export function resetAccessToken(): void {
+  _accessTokenValue = null;
+  _accessTokenType = null;
 }
 
 // getPreferenceValues already exported above

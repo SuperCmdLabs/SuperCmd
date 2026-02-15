@@ -27,6 +27,7 @@ import { useBackgroundRefresh } from './hooks/useBackgroundRefresh';
 import { useSpeakManager } from './hooks/useSpeakManager';
 import { useWhisperManager } from './hooks/useWhisperManager';
 import { LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
+import { resetAccessToken } from './raycast-api';
 import {
   type LauncherAction, type MemoryFeedback,
   filterCommands, formatShortcutLabel, getCategoryLabel,
@@ -401,8 +402,9 @@ const App: React.FC = () => {
       try {
         localStorage.removeItem(`sc-oauth-token:${provider}`);
       } catch {}
-      // If the currently running extension matches this provider, tear it down
-      // so the in-memory token and client are discarded.
+      // Clear the in-memory OAuth token and tear down the extension view
+      // so the auth prompt shows on next launch.
+      resetAccessToken();
       setExtensionView(null);
       localStorage.removeItem(LAST_EXT_KEY);
     });

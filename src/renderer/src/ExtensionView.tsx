@@ -2959,7 +2959,11 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
       preferences,
       commandMode: mode as 'view' | 'no-view' | 'menu-bar',
     });
-    return loadExtensionExport(code, extensionPath);
+    const result = loadExtensionExport(code, extensionPath);
+    if (!result) {
+      setError(`Failed to load extension module for ${extensionName}/${commandName}. Check the console for details.`);
+    }
+    return result;
   }, [code, buildError, extensionName, extensionDisplayName, extensionIconDataUrl, commandName, assetsPath, supportPath, extensionPath, owner, preferences, mode]);
 
   // Is this a no-view command? Trust the mode from package.json.
@@ -3006,7 +3010,8 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
     return () => window.removeEventListener('keydown', handler);
   }, [onClose, pop, navStack.length]);
 
-  if (error) {
+  if (error || !ExtExport) {
+    const errorMessage = error || 'Failed to load extension. No valid export found.';
     return (
       <div className="flex flex-col h-full">
         <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
@@ -3019,31 +3024,10 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
           <span className="text-sm text-white/70">{title}</span>
         </div>
         <div className="flex-1 flex items-center justify-center p-8">
-          <div className="text-center">
+          <div className="text-center max-w-lg">
             <AlertTriangle className="w-8 h-8 text-red-400/60 mx-auto mb-3" />
-            <p className="text-sm text-red-400/80">{error}</p>
+            <p className="text-sm text-red-400/80 whitespace-pre-wrap break-words text-left">{errorMessage}</p>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!ExtExport) {
-    return (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
-          <button
-            onClick={onClose}
-            className="text-white/40 hover:text-white/70 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <span className="text-sm text-white/70">{title}</span>
-        </div>
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-white/40">
-            Failed to load extension
-          </p>
         </div>
       </div>
     );

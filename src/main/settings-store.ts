@@ -42,6 +42,7 @@ export interface AppSettings {
   hasSeenWhisperOnboarding: boolean;
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
+  debugMode: boolean;
 }
 
 const DEFAULT_AI_SETTINGS: AISettings = {
@@ -81,6 +82,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   hasSeenOnboarding: false,
   hasSeenWhisperOnboarding: false,
   ai: { ...DEFAULT_AI_SETTINGS },
+  debugMode: false,
 };
 
 let settingsCache: AppSettings | null = null;
@@ -137,6 +139,7 @@ export function loadSettings(): AppSettings {
         parsed.hasSeenWhisperOnboarding ?? false,
       ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
       commandMetadata: parsed.commandMetadata ?? {},
+      debugMode: parsed.debugMode ?? DEFAULT_SETTINGS.debugMode,
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };

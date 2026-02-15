@@ -760,35 +760,65 @@ function parsePreferences(
  */
 export async function buildSingleCommand(extName: string, cmdName: string): Promise<boolean> {
   const extPath = resolveInstalledExtensionPath(extName);
-  if (!extPath) return false;
+  if (!extPath) {
+    console.error(`buildSingleCommand: extension path not found for ${extName}`);
+    return false;
+  }
 
   const pkgPath = path.join(extPath, 'package.json');
-  if (!fs.existsSync(pkgPath)) return false;
+  if (!fs.existsSync(pkgPath)) {
+    console.error(`buildSingleCommand: package.json not found at ${pkgPath}`);
+    return false;
+  }
 
   let cmd: any;
   let manifestExternal: string[] = [];
   try {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    if (!isManifestPlatformCompatible(pkg)) return false;
+    if (!isManifestPlatformCompatible(pkg)) {
+      console.error(`buildSingleCommand: platform not compatible for ${extName}`);
+      return false;
+    }
     const commands = pkg.commands || [];
     cmd = commands.find((c: any) => c.name === cmdName);
     manifestExternal = Array.isArray(pkg.external)
       ? pkg.external.filter((v: any) => typeof v === 'string' && v.trim().length > 0)
       : [];
-  } catch {
+  } catch (e: any) {
+    console.error(`buildSingleCommand: failed to parse package.json for ${extName}:`, e?.message);
     return false;
   }
 
-  if (!cmd) return false;
-  if (!isCommandPlatformCompatible(cmd)) return false;
+  if (!cmd) {
+    console.error(`buildSingleCommand: command "${cmdName}" not found in ${extName} package.json`);
+    return false;
+  }
+  if (!isCommandPlatformCompatible(cmd)) {
+    console.error(`buildSingleCommand: command "${cmdName}" not compatible with current platform`);
+    return false;
+  }
 
   const entryFile = resolveEntryFile(extPath, cmd);
-  if (!entryFile) return false;
+  if (!entryFile) {
+    console.error(`buildSingleCommand: entry file not found for ${extName}/${cmdName}`);
+    return false;
+  }
 
   const buildDir = getBuildDir(extPath);
   fs.mkdirSync(buildDir, { recursive: true });
   const outFile = path.join(buildDir, `${cmdName}.js`);
   const extNodeModules = path.join(extPath, 'node_modules');
+
+  // If node_modules is missing, install dependencies first
+  if (!fs.existsSync(extNodeModules)) {
+    console.log(`  node_modules missing for ${extName}, installing dependencies…`);
+    try {
+      const { installExtensionDeps } = require('./extension-registry');
+      await installExtensionDeps(extPath);
+    } catch (e: any) {
+      console.error(`  Failed to install dependencies for ${extName}:`, e?.message);
+    }
+  }
 
   try {
     const esbuild = requireEsbuild();
@@ -858,8 +888,10 @@ export async function getExtensionBundle(
   const normalizedExtName = normalizeExtensionName(extName);
   const extPath = resolveInstalledExtensionPath(normalizedExtName);
   if (!extPath) {
-    console.error(`Extension not found: ${normalizedExtName}`);
-    return null;
+    const searchRoots = getConfiguredExtensionRoots();
+    const msg = `Extension directory not found: ${normalizedExtName}. Searched roots: ${searchRoots.join(', ')}`;
+    console.error(msg);
+    throw new Error(msg);
   }
   let outFile = path.join(extPath, '.sc-build', `${cmdName}.js`);
 
@@ -867,15 +899,17 @@ export async function getExtensionBundle(
     console.log(`Pre-built bundle not found for ${normalizedExtName}/${cmdName}, building on-demand…`);
     const built = await buildSingleCommand(normalizedExtName, cmdName);
     if (!built || !fs.existsSync(outFile)) {
-      console.error(`Failed to build ${normalizedExtName}/${cmdName} on-demand.`);
-      return null;
+      const msg = `On-demand build failed for ${normalizedExtName}/${cmdName}. Extension path: ${extPath}. Expected output: ${outFile}`;
+      console.error(msg);
+      throw new Error(msg);
     }
   }
 
   const code = fs.readFileSync(outFile, 'utf-8');
   if (!code) {
-    console.error(`Pre-built bundle is empty: ${outFile}`);
-    return null;
+    const msg = `Pre-built bundle is empty: ${outFile}`;
+    console.error(msg);
+    throw new Error(msg);
   }
 
   // Read command info, preferences, and metadata from package.json
