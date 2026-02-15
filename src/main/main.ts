@@ -12,7 +12,7 @@
 
 import * as path from 'path';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
-import { loadSettings, saveSettings } from './settings-store';
+import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken } from './settings-store';
 import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
@@ -1127,20 +1127,49 @@ function startWhisperHoldWatcher(shortcut: string, holdSeq: number): void {
 
 function handleOAuthCallbackUrl(rawUrl: string): void {
   if (!rawUrl) return;
+  console.log('[OAuth] handleOAuthCallbackUrl called with:', rawUrl);
   try {
     const parsed = new URL(rawUrl);
     if (parsed.protocol !== 'supercmd:') return;
     const isOAuthCallback =
       (parsed.hostname === 'oauth' && parsed.pathname === '/callback') ||
-      parsed.pathname === '/oauth/callback';
+      parsed.pathname === '/oauth/callback' ||
+      (parsed.hostname === 'auth' && parsed.pathname === '/callback') ||
+      parsed.pathname === '/auth/callback';
     if (!isOAuthCallback) return;
+
+    // Persist the token immediately so it survives window resets and app restarts.
+    const provider = parsed.searchParams.get('provider') || '';
+    const accessToken = parsed.searchParams.get('access_token') || '';
+    const tokenType = parsed.searchParams.get('token_type') || 'Bearer';
+    const expiresIn = parseInt(parsed.searchParams.get('expires_in') || '0', 10) || undefined;
+    const scope = parsed.searchParams.get('scope') || '';
+    if (provider && accessToken) {
+      console.log('[OAuth] Persisting token for provider:', provider);
+      setOAuthToken(provider, {
+        accessToken,
+        tokenType,
+        scope,
+        expiresIn,
+        obtainedAt: new Date().toISOString(),
+      });
+    }
 
     if (!mainWindow) {
       pendingOAuthCallbackUrls.push(rawUrl);
       return;
     }
 
-    void showWindow();
+    // Focus the existing window without resetting app state —
+    // the extension view with the OAuth prompt must stay mounted.
+    // Set isVisible = true so that the app.on('activate') handler
+    // (triggered by macOS when the deep link brings the app forward)
+    // skips calling openLauncherFromUserEntry().
+    isVisible = true;
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+    mainWindow.focus();
     mainWindow.webContents.send('oauth-callback', rawUrl);
   } catch {
     // ignore invalid URLs
@@ -1149,6 +1178,7 @@ function handleOAuthCallbackUrl(rawUrl: string): void {
 
 app.on('open-url', (event: any, url: string) => {
   event.preventDefault();
+  console.log('[OAuth] open-url event received:', url);
   handleOAuthCallbackUrl(url);
 });
 
@@ -3996,6 +4026,28 @@ app.whenReady().then(async () => {
     }
   });
 
+  // ─── IPC: OAuth Token Store ──────────────────────────────────────
+
+  ipcMain.handle('oauth-get-token', (_event: any, provider: string) => {
+    return getOAuthToken(provider);
+  });
+
+  ipcMain.handle('oauth-set-token', (_event: any, provider: string, token: { accessToken: string; tokenType?: string; scope?: string; expiresIn?: number; obtainedAt: string }) => {
+    setOAuthToken(provider, token);
+  });
+
+  ipcMain.handle('oauth-remove-token', (_event: any, provider: string) => {
+    removeOAuthToken(provider);
+  });
+
+  ipcMain.handle('oauth-logout', (_event: any, provider: string) => {
+    removeOAuthToken(provider);
+    // Notify the main launcher window to clear the in-memory token and reset the extension view
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('oauth-logout', provider);
+    }
+  });
+
   // ─── IPC: Open URL (for extensions) ─────────────────────────────
 
   ipcMain.handle('open-url', async (_event: any, url: string) => {
@@ -6258,6 +6310,10 @@ return appURL's |path|() as text`,
   }
 
   app.on('activate', () => {
+    // If the launcher is already visible (e.g. brought back by an OAuth
+    // callback deep link), don't reset it.
+    if (isVisible) return;
+
     const visibleNonLauncherWindow = BrowserWindow
       .getAllWindows()
       .find((win: InstanceType<typeof BrowserWindow>) => !win.isDestroyed() && win.isVisible() && win !== mainWindow);

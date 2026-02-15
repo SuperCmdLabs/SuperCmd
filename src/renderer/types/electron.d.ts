@@ -210,6 +210,11 @@ export interface ElectronAPI {
   onWhisperStopListening: (callback: () => void) => (() => void);
   onWhisperToggleListening: (callback: () => void) => (() => void);
   onOAuthCallback: (callback: (url: string) => void) => void;
+  oauthGetToken: (provider: string) => Promise<{ accessToken: string; tokenType?: string; scope?: string; expiresIn?: number; obtainedAt: string } | null>;
+  oauthSetToken: (provider: string, token: { accessToken: string; tokenType?: string; scope?: string; expiresIn?: number; obtainedAt: string }) => Promise<void>;
+  oauthRemoveToken: (provider: string) => Promise<void>;
+  oauthLogout: (provider: string) => Promise<void>;
+  onOAuthLogout: (callback: (provider: string) => void) => (() => void);
   onSpeakStatus: (callback: (payload: {
     state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
     text: string;

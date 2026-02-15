@@ -100,6 +100,7 @@ const ExtensionsTab: React.FC<{
   }>({ type: 'idle', text: '' });
   const [folderBusy, setFolderBusy] = useState(false);
   const [showTopActionsMenu, setShowTopActionsMenu] = useState(false);
+  const [oauthTokens, setOauthTokens] = useState<Record<string, { accessToken: string; provider: string } | null>>({});
   const topActionsMenuRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
@@ -265,6 +266,34 @@ const ExtensionsTab: React.FC<{
     if (!selectedSchema || !selected?.cmdName) return null;
     return selectedSchema.commands.find((cmd) => cmd.name === selected.cmdName) || null;
   }, [selectedSchema, selected]);
+
+  // Check for OAuth tokens for the selected extension
+  useEffect(() => {
+    if (!selectedSchema) return;
+    const extName = selectedSchema.extName;
+    if (oauthTokens[extName] !== undefined) return; // already checked
+    (async () => {
+      try {
+        const token = await window.electron.oauthGetToken(extName);
+        setOauthTokens((prev) => ({ ...prev, [extName]: token ? { accessToken: token.accessToken, provider: extName } : null }));
+      } catch {
+        setOauthTokens((prev) => ({ ...prev, [extName]: null }));
+      }
+    })();
+  }, [selectedSchema, oauthTokens]);
+
+  const handleOAuthLogout = useCallback(async (extName: string) => {
+    try {
+      // Remove from main process store AND notify the launcher window to
+      // clear the in-memory token + reset the extension view.
+      await window.electron.oauthLogout(extName);
+      // Also clear localStorage in THIS window (settings window)
+      try {
+        localStorage.removeItem(`sc-oauth-token:${extName}`);
+      } catch {}
+      setOauthTokens((prev) => ({ ...prev, [extName]: null }));
+    } catch {}
+  }, []);
 
   const filteredSchemas = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -859,6 +888,23 @@ const ExtensionsTab: React.FC<{
                         compact
                       />
                     </div>
+                  </div>
+                ) : null}
+
+                {oauthTokens[selectedSchema.extName]?.accessToken ? (
+                  <div className="space-y-2">
+                    <div className="text-xs text-white/50 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/80 inline-block" />
+                      Logged into {selectedSchema.title}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOAuthLogout(selectedSchema.extName)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-white/[0.08] hover:bg-white/[0.14] text-white/80 transition-colors"
+                    >
+                      <LogOut className="w-3 h-3" />
+                      Logout
+                    </button>
                   </div>
                 ) : null}
 
