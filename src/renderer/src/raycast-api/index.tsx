@@ -6750,6 +6750,28 @@ export class OAuthService {
     localStorage.setItem(key, trimmed);
   }
 
+  private getManagedAuthorizeUrl(): string | null {
+    const providerId = String(this.options.client?.providerId || '').trim().toLowerCase();
+    const providerName = String(this.options.client?.providerName || '').trim().toLowerCase();
+    const configuredAuthorizeUrl = String(this.options.authorizeUrl || '').trim().toLowerCase();
+
+    if (
+      providerId === 'spotify' ||
+      providerName === 'spotify' ||
+      configuredAuthorizeUrl.includes('accounts.spotify.com/authorize')
+    ) {
+      return 'https://api.supercmd.sh/auth/spotify/authorize';
+    }
+    if (
+      providerId === 'linear' ||
+      providerName === 'linear' ||
+      configuredAuthorizeUrl.includes('api.linear.app/oauth/authorize')
+    ) {
+      return 'https://api.supercmd.sh/auth/linear/authorize';
+    }
+    return null;
+  }
+
   private async exchangeAuthorizationCode(params: {
     code: string;
     codeVerifier: string;
@@ -6809,6 +6831,9 @@ export class OAuthService {
   }
 
   async getAuthorizationUrl(): Promise<string | null> {
+    const managedAuthorizeUrl = this.getManagedAuthorizeUrl();
+    if (managedAuthorizeUrl) return managedAuthorizeUrl;
+
     if (!this.options.authorizeUrl || !this.options.scope) return null;
     const clientId = this.getConfiguredClientId();
     if (!clientId) return null;
@@ -6861,6 +6886,29 @@ export class OAuthService {
         await Promise.resolve(
           this.onAuthorize?.({ token, type: 'oauth' })
         );
+        return true;
+      }
+
+      const managedAuthorizeUrl = this.getManagedAuthorizeUrl();
+      if (managedAuthorizeUrl) {
+        ensureOAuthCallbackBridge();
+        await open(managedAuthorizeUrl);
+        const callback = await waitForOAuthCallback('');
+        if (callback.error) {
+          throw new Error(callback.errorDescription || callback.error);
+        }
+        const token = callback.accessToken || callback.code;
+        if (!token) {
+          throw new Error('Authorization did not return a valid token.');
+        }
+        const tokenSet = {
+          accessToken: token,
+          scope: this.options.scope || '',
+          tokenType: callback.tokenType || 'Bearer',
+          obtainedAt: new Date().toISOString(),
+        };
+        await this.options.client?.setTokens?.(tokenSet);
+        await Promise.resolve(this.onAuthorize?.({ token, type: 'oauth' }));
         return true;
       }
 
@@ -7001,6 +7049,33 @@ export class OAuthService {
       scope: options.scope,
       authorizeUrl: 'https://api.supercmd.sh/auth/linear/authorize',
       tokenUrl: 'https://api.linear.app/oauth/token',
+      personalAccessToken: options.personalAccessToken,
+      authorize: options.authorize || supercmdAuthorize,
+      onAuthorize: options.onAuthorize,
+    });
+  }
+
+  static spotify(options: { clientId?: string; scope: string; personalAccessToken?: string; authorize?: () => Promise<string>; onAuthorize?: OAuthServiceOptions['onAuthorize'] }): OAuthService {
+    const client = new PKCEClientCompat({ providerId: 'spotify', providerName: 'Spotify', providerIcon: 'spotify-icon.png', description: 'Connect your Spotify account' });
+    const supercmdAuthorize = async (): Promise<string> => {
+      ensureOAuthCallbackBridge();
+      await open('https://api.supercmd.sh/auth/spotify/authorize');
+      const callback = await waitForOAuthCallback('');
+      if (callback.error) {
+        throw new Error(callback.errorDescription || callback.error);
+      }
+      const token = callback.accessToken || callback.code;
+      if (!token) {
+        throw new Error('Spotify authorization did not return a valid token.');
+      }
+      return token;
+    };
+    return new OAuthService({
+      client,
+      clientId: options.clientId || '_supercmd_spotify',
+      scope: options.scope,
+      authorizeUrl: 'https://api.supercmd.sh/auth/spotify/authorize',
+      tokenUrl: 'https://accounts.spotify.com/api/token',
       personalAccessToken: options.personalAccessToken,
       authorize: options.authorize || supercmdAuthorize,
       onAuthorize: options.onAuthorize,
