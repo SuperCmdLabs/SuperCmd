@@ -116,6 +116,30 @@ You can configure everything from the app UI:
 - ElevenLabs (for STT/TTS options): set `elevenlabsApiKey`
 - Built-in Edge TTS option does not require an API key
 
+### ElevenLabs quick voice test
+
+Working preset voices in SuperCmd:
+
+- `Rachel` (`21m00Tcm4TlvDq8ikWAM`)
+- `Domi` (`AZnzlk1XvdvUeBnXmlld`)
+- `Bella` (`EXAVITQu4vr4xnSDxMaL`)
+- `Antoni` (`ErXwobaYiN019PkySvjV`)
+- `Elli` (`MF3mGyEYCl7XYWbV9V6O`)
+- `Josh` (`TxGEqnHWrfWFTfGW9XjX`)
+- `Arnold` (`VR6AewLTigWG4xSOukaG`)
+- `Adam` (`pNInz6obpgDQGcFmaJgB`)
+- `Sam` (`yoZ06aMxZJJ28mfd3POQ`)
+
+Sample curl command:
+
+```bash
+curl -X POST "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM?output_format=mp3_44100_128" \
+  -H "xi-api-key: $ELEVENLABS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello from SuperCmd","model_id":"eleven_multilingual_v2"}' \
+  --output elevenlabs-sample.mp3
+```
+
 ### Memory keys
 
 - Supermemory API key: `supermemoryApiKey`

@@ -537,9 +537,14 @@ function getElevenLabsApiKey(settings: AppSettings): string {
   return normalizeApiKey(process.env.ELEVENLABS_API_KEY);
 }
 
+const DEFAULT_ELEVENLABS_TTS_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // Rachel
+
 function resolveElevenLabsTtsConfig(selectedModel: string): { modelId: string; voiceId: string } {
   const raw = String(selectedModel || '').trim();
-  const explicitVoice = /@([A-Za-z0-9]{8,})$/.exec(raw)?.[1];
+  const explicitVoiceRaw = /@([A-Za-z0-9]{8,})$/.exec(raw)?.[1];
+  const explicitVoice = explicitVoiceRaw === 'EXAVITQu4vr4xnSDxMa'
+    ? 'EXAVITQu4vr4xnSDxMaL'
+    : explicitVoiceRaw;
   const modelSource = explicitVoice ? raw.replace(/@[A-Za-z0-9]{8,}$/, '') : raw;
   const normalized = modelSource.toLowerCase();
   const modelRaw = normalized.replace(/^elevenlabs-/, '');
@@ -547,11 +552,17 @@ function resolveElevenLabsTtsConfig(selectedModel: string): { modelId: string; v
   if (modelId === 'multilingual_v2' || modelId === 'multilingual-v2') {
     modelId = 'eleven_multilingual_v2';
   }
+  if (modelId === 'flash_v2_5' || modelId === 'flash-v2-5') {
+    modelId = 'eleven_flash_v2_5';
+  }
+  if (modelId === 'turbo_v2_5' || modelId === 'turbo-v2-5') {
+    modelId = 'eleven_turbo_v2_5';
+  }
   if (!modelId) {
     modelId = 'eleven_multilingual_v2';
   }
   // Allow an optional explicit voice id suffix: "elevenlabs-model@voiceId"
-  const voiceId = explicitVoice || 'EXAVITQu4vr4xnSDxMa';
+  const voiceId = explicitVoice || DEFAULT_ELEVENLABS_TTS_VOICE_ID;
   return { modelId, voiceId };
 }
 
@@ -3794,17 +3805,13 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     'speak-preview-voice',
-    async (_event: any, payload?: { voice: string; text?: string; rate?: string }) => {
-      const runtime = resolveEdgeTtsRuntime();
-      if (!runtime) return false;
-
+    async (_event: any, payload?: { voice: string; text?: string; rate?: string; provider?: 'edge-tts' | 'elevenlabs'; model?: string }) => {
+      const settings = loadSettings();
+      const provider = payload?.provider || (String(settings.ai?.textToSpeechModel || '').startsWith('elevenlabs-') ? 'elevenlabs' : 'edge-tts');
       const voice = String(payload?.voice || speakRuntimeOptions.voice || 'en-US-JennyNeural').trim();
       const rate = parseSpeakRateInput(payload?.rate ?? speakRuntimeOptions.rate);
       const sampleTextRaw = String(payload?.text || 'Hi, this is my voice in SuperCmd.');
       const sampleText = sampleTextRaw.trim().slice(0, 240) || 'Hi, this is my voice in SuperCmd.';
-
-      const langMatch = /^([a-z]{2}-[A-Z]{2})-/.exec(voice);
-      const lang = langMatch?.[1] || String(loadSettings().ai?.speechLanguage || 'en-US');
 
       const fs = require('fs');
       const os = require('os');
@@ -3815,30 +3822,50 @@ app.whenReady().then(async () => {
       const audioPath = pathMod.join(tmpDir, 'preview.mp3');
 
       try {
-        const synthesizeErr = await new Promise<Error | null>((resolve) => {
-          const args = [
-            ...runtime.baseArgs,
-            '-t', sampleText,
-            '-f', audioPath,
-            '-v', voice,
-            '-l', lang,
-            '-r', rate,
-            '--timeout', '45000',
-          ];
-          const proc = spawn(runtime.command, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-          let stderr = '';
-          proc.stderr.on('data', (chunk: Buffer | string) => { stderr += String(chunk || ''); });
-          proc.on('error', (err: Error) => resolve(err));
-          proc.on('close', (code: number | null) => {
-            if (code !== 0) {
-              resolve(new Error(stderr.trim() || `node-edge-tts exited with ${code}`));
-              return;
-            }
-            resolve(null);
+        if (provider === 'elevenlabs') {
+          const apiKey = getElevenLabsApiKey(settings);
+          if (!apiKey) return false;
+          const configuredModel = String(payload?.model || settings.ai?.textToSpeechModel || 'elevenlabs-multilingual-v2');
+          const ttsConfig = resolveElevenLabsTtsConfig(configuredModel);
+          const voiceId = voice || ttsConfig.voiceId;
+          await synthesizeElevenLabsToFile({
+            text: sampleText,
+            apiKey,
+            modelId: ttsConfig.modelId,
+            voiceId,
+            audioPath,
+            timeoutMs: 45000,
           });
-        });
+        } else {
+          const runtime = resolveEdgeTtsRuntime();
+          if (!runtime) return false;
+          const langMatch = /^([a-z]{2}-[A-Z]{2})-/.exec(voice);
+          const lang = langMatch?.[1] || String(settings.ai?.speechLanguage || 'en-US');
+          const synthesizeErr = await new Promise<Error | null>((resolve) => {
+            const args = [
+              ...runtime.baseArgs,
+              '-t', sampleText,
+              '-f', audioPath,
+              '-v', voice,
+              '-l', lang,
+              '-r', rate,
+              '--timeout', '45000',
+            ];
+            const proc = spawn(runtime.command, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+            let stderr = '';
+            proc.stderr.on('data', (chunk: Buffer | string) => { stderr += String(chunk || ''); });
+            proc.on('error', (err: Error) => resolve(err));
+            proc.on('close', (code: number | null) => {
+              if (code !== 0) {
+                resolve(new Error(stderr.trim() || `node-edge-tts exited with ${code}`));
+                return;
+              }
+              resolve(null);
+            });
+          });
 
-        if (synthesizeErr) throw synthesizeErr;
+          if (synthesizeErr) throw synthesizeErr;
+        }
 
         const playErr = await new Promise<Error | null>((resolve) => {
           const proc = spawn('/usr/bin/afplay', [audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });

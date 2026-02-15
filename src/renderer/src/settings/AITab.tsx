@@ -65,6 +65,8 @@ const WHISPER_STT_OPTIONS = [
 const SPEAK_TTS_OPTIONS = [
   { id: 'edge-tts', label: 'Edge TTS (Default)' },
   { id: 'elevenlabs-multilingual-v2', label: 'ElevenLabs Multilingual v2' },
+  { id: 'elevenlabs-flash-v2-5', label: 'ElevenLabs Flash v2.5' },
+  { id: 'elevenlabs-turbo-v2-5', label: 'ElevenLabs Turbo v2.5' },
 ];
 
 type EdgeVoiceGender = 'female' | 'male';
@@ -77,6 +79,40 @@ type EdgeVoiceDef = {
   gender: EdgeVoiceGender;
   style?: string;
 };
+
+type ElevenLabsVoiceDef = {
+  id: string;
+  label: string;
+};
+
+const ELEVENLABS_VOICES: ElevenLabsVoiceDef[] = [
+  { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel' },
+  { id: 'AZnzlk1XvdvUeBnXmlld', label: 'Domi' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', label: 'Bella' },
+  { id: 'ErXwobaYiN019PkySvjV', label: 'Antoni' },
+  { id: 'MF3mGyEYCl7XYWbV9V6O', label: 'Elli' },
+  { id: 'TxGEqnHWrfWFTfGW9XjX', label: 'Josh' },
+  { id: 'VR6AewLTigWG4xSOukaG', label: 'Arnold' },
+  { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam' },
+  { id: 'yoZ06aMxZJJ28mfd3POQ', label: 'Sam' },
+];
+
+const DEFAULT_ELEVENLABS_VOICE_ID = ELEVENLABS_VOICES[0].id;
+
+function parseElevenLabsSpeakModel(raw: string): { model: string; voiceId: string } {
+  const value = String(raw || '').trim();
+  const explicitVoice = /@([A-Za-z0-9]{8,})$/.exec(value)?.[1];
+  const modelOnly = explicitVoice ? value.replace(/@[A-Za-z0-9]{8,}$/, '') : value;
+  const model = modelOnly.startsWith('elevenlabs-') ? modelOnly : 'elevenlabs-multilingual-v2';
+  const voiceId = explicitVoice || DEFAULT_ELEVENLABS_VOICE_ID;
+  return { model, voiceId };
+}
+
+function buildElevenLabsSpeakModel(model: string, voiceId: string): string {
+  const normalizedModel = String(model || '').trim() || 'elevenlabs-multilingual-v2';
+  const normalizedVoice = String(voiceId || '').trim() || DEFAULT_ELEVENLABS_VOICE_ID;
+  return `${normalizedModel}@${normalizedVoice}`;
+}
 
 const EDGE_TTS_FALLBACK_VOICES: EdgeVoiceDef[] = [
   { id: 'ar-EG-SalmaNeural', label: 'Salma', languageCode: 'ar-EG', languageLabel: 'Arabic', gender: 'female' },
@@ -288,9 +324,15 @@ const AITab: React.FC = () => {
     ? 'native'
     : ai.speechToTextModel;
 
+  const parsedElevenLabsSpeak = parseElevenLabsSpeakModel(ai.textToSpeechModel);
   const speakModelValue = (!ai.textToSpeechModel || ai.textToSpeechModel === 'default' || ai.textToSpeechModel.startsWith('openai-'))
     ? 'edge-tts'
-    : ai.textToSpeechModel;
+    : ai.textToSpeechModel.startsWith('elevenlabs-')
+      ? parsedElevenLabsSpeak.model
+      : ai.textToSpeechModel;
+  const selectedElevenLabsVoiceId = ELEVENLABS_VOICES.some((voice) => voice.id === parsedElevenLabsSpeak.voiceId)
+    ? parsedElevenLabsSpeak.voiceId
+    : DEFAULT_ELEVENLABS_VOICE_ID;
 
   const correctionModelOptions = genericModels;
   const allEdgeVoices = edgeVoices.length > 0 ? edgeVoices : EDGE_TTS_FALLBACK_VOICES;
@@ -824,7 +866,9 @@ const AITab: React.FC = () => {
                       updateAI({ textToSpeechModel: 'edge-tts' });
                       return;
                     }
-                    updateAI({ textToSpeechModel: nextModel });
+                    updateAI({
+                      textToSpeechModel: buildElevenLabsSpeakModel(nextModel, selectedElevenLabsVoiceId),
+                    });
                   }}
                   className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 text-sm text-white/90 focus:outline-none focus:border-blue-500/50"
                 >
@@ -912,15 +956,70 @@ const AITab: React.FC = () => {
               )}
 
               {speakModelValue.startsWith('elevenlabs-') && (
-                <div className="bg-white/[0.02] rounded-md border border-white/[0.06] p-2.5">
-                  <p className="text-[11px] text-white/45 mb-1">ElevenLabs TTS Model</p>
-                  <input
-                    type="text"
-                    value={ai.textToSpeechModel}
-                    onChange={(e) => updateAI({ textToSpeechModel: e.target.value.trim() || 'elevenlabs-multilingual-v2' })}
-                    placeholder="elevenlabs-multilingual-v2"
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500/50"
-                  />
+                <div className="bg-white/[0.02] rounded-md border border-white/[0.06] p-2.5 space-y-2.5">
+                  <div>
+                    <p className="text-[11px] text-white/45 mb-1">ElevenLabs Model</p>
+                    <select
+                      value={speakModelValue}
+                      onChange={(e) =>
+                        updateAI({
+                          textToSpeechModel: buildElevenLabsSpeakModel(e.target.value, selectedElevenLabsVoiceId),
+                        })}
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 text-sm text-white/90 focus:outline-none focus:border-blue-500/50"
+                    >
+                      {SPEAK_TTS_OPTIONS.filter((m) => m.id.startsWith('elevenlabs-')).map((m) => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] text-white/45 mb-1">ElevenLabs Voice</p>
+                    <select
+                      value={selectedElevenLabsVoiceId}
+                      onChange={(e) =>
+                        updateAI({
+                          textToSpeechModel: buildElevenLabsSpeakModel(speakModelValue, e.target.value),
+                        })}
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 text-sm text-white/90 focus:outline-none focus:border-blue-500/50"
+                    >
+                      {ELEVENLABS_VOICES.map((voice) => (
+                        <option key={voice.id} value={voice.id}>
+                          {voice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={previewingVoice || !ai.elevenlabsApiKey}
+                    onClick={async () => {
+                      try {
+                        setPreviewingVoice(true);
+                        const selectedVoice = ELEVENLABS_VOICES.find((v) => v.id === selectedElevenLabsVoiceId);
+                        const intro = `Hi, this is ${selectedVoice?.label || 'my voice'} from ElevenLabs in SuperCmd.`;
+                        await window.electron.speakPreviewVoice({
+                          provider: 'elevenlabs',
+                          model: speakModelValue,
+                          voice: selectedElevenLabsVoiceId,
+                          text: intro,
+                        });
+                      } catch {
+                        // Non-blocking preview.
+                      } finally {
+                        setPreviewingVoice(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-blue-200 bg-blue-500/15 border border-blue-400/25 hover:bg-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {previewingVoice ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Volume2 className="w-3 h-3" />}
+                    {previewingVoice ? 'Playing sample...' : 'Play Sample Voice'}
+                  </button>
+
+                  <p className="text-[10px] text-white/35">
+                    SuperCmd stores this as <code className="text-white/55">{`${speakModelValue}@${selectedElevenLabsVoiceId}`}</code>.
+                  </p>
                   {!ai.elevenlabsApiKey && (
                     <p className="text-[11px] text-amber-300 mt-1.5">Add ElevenLabs API key in API Keys & Models.</p>
                   )}

@@ -236,7 +236,7 @@ export interface ElectronAPI {
   }>;
   speakGetOptions: () => Promise<{ voice: string; rate: string }>;
   speakUpdateOptions: (patch: { voice?: string; rate?: string; restartCurrent?: boolean }) => Promise<{ voice: string; rate: string }>;
-  speakPreviewVoice: (payload: { voice: string; text?: string; rate?: string }) => Promise<boolean>;
+  speakPreviewVoice: (payload: { voice: string; text?: string; rate?: string; provider?: 'edge-tts' | 'elevenlabs'; model?: string }) => Promise<boolean>;
   edgeTtsListVoices: () => Promise<EdgeTtsVoice[]>;
 
   // Settings
