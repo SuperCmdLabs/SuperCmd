@@ -4278,20 +4278,39 @@ function disableMacSpotlightShortcuts(): boolean {
   if (process.platform !== 'darwin') return false;
   try {
     const { execFileSync } = require('child_process');
+    const os = require('os');
+    const plistPath = `${os.homedir()}/Library/Preferences/com.apple.symbolichotkeys.plist`;
     let applied = false;
-    for (const key of ['64', '65', '60', '61']) {
+    // Keys: 64 = Spotlight search (Cmd+Space), 65 = Spotlight window (Cmd+Option+Space)
+    for (const key of ['64', '65']) {
       try {
-        execFileSync('/usr/bin/defaults', [
-          'write',
-          'com.apple.symbolichotkeys',
-          'AppleSymbolicHotKeys',
-          '-dict-add',
-          key,
-          '{enabled = 0;}',
+        // Try PlistBuddy first — modifies only the `enabled` field, preserving the
+        // rest of the entry so macOS can re-enable it correctly later.
+        execFileSync('/usr/libexec/PlistBuddy', [
+          '-c', `Set :AppleSymbolicHotKeys:${key}:enabled false`,
+          plistPath,
         ]);
         applied = true;
-      } catch (error) {
-        console.warn(`[Spotlight] Failed to disable macOS symbolic hotkey ${key}:`, error);
+      } catch {
+        // PlistBuddy Set fails when the key path doesn't yet exist.
+        // Fall back to defaults write with the full standard structure so macOS
+        // can parse the entry properly (a bare `{enabled = 0;}` dict may be ignored).
+        try {
+          const fullValue = key === '64'
+            ? '{ enabled = 0; value = { parameters = (32, 49, 1048576); type = standard; }; }'
+            : '{ enabled = 0; value = { parameters = (32, 49, 1572864); type = standard; }; }';
+          execFileSync('/usr/bin/defaults', [
+            'write',
+            'com.apple.symbolichotkeys',
+            'AppleSymbolicHotKeys',
+            '-dict-add',
+            key,
+            fullValue,
+          ]);
+          applied = true;
+        } catch (error) {
+          console.warn(`[Spotlight] Failed to disable macOS symbolic hotkey ${key}:`, error);
+        }
       }
     }
     try { execFileSync('/usr/bin/killall', ['cfprefsd']); } catch {}
@@ -7256,6 +7275,18 @@ return appURL's |path|() as text`,
   }
 
   app.on('activate', () => {
+    // During onboarding the window is shown but may lose visual focus to a system
+    // permission dialog (e.g. "SuperCmd wants access to control System Events").
+    // When the user dismisses the dialog, macOS activates SuperCmd and we get this
+    // event. Bring the onboarding window back to the front so setup can continue.
+    if (isVisible && launcherMode === 'onboarding' && mainWindow && !mainWindow.isDestroyed()) {
+      try { app.focus({ steal: true }); } catch {}
+      try { mainWindow.show(); } catch {}
+      try { mainWindow.focus(); } catch {}
+      try { mainWindow.moveTop(); } catch {}
+      return;
+    }
+
     // If the launcher is already visible (e.g. brought back by an OAuth
     // callback deep link), don't reset it.
     if (isVisible) return;
