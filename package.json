@@ -1,13 +1,11 @@
 {
   "name": "supercmd",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SuperCmd — Productivity supercharged",
+  "author": "Shobhit Bhosure - (https://x.com/nullbytes00)",
+  "homepage": "https://supercmd.sh",
   "main": "dist/main/main.js",
   "repository": "https://github.com/SuperCmdLabs/SuperCmd",
-  "publish": {
-    "provider": "github",
-    "releaseType": "release"
-  },
   "scripts": {
     "dev": "npm run build:main && concurrently \"npm run watch:main\" \"npm run dev:renderer\" \"npm run start:electron\"",
     "watch:main": "tsc -p tsconfig.main.json --watch",
@@ -21,7 +19,6 @@
     "start": "electron .",
     "package": "npm run build && electron-builder"
   },
-  "author": "",
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^20.11.5",
@@ -53,6 +50,14 @@
   "build": {
     "appId": "com.supercmd.app",
     "productName": "SuperCmd",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SuperCmdLabs",
+        "repo": "SuperCmd",
+        "releaseType": "release"
+      }
+    ],
     "icon": "supercmd.icns",
     "files": [
       "dist/**/*",
@@ -70,7 +75,15 @@
     "mac": {
       "category": "public.app-category.utilities",
       "icon": "supercmd.icns",
-      "target": "dmg",
+      "target": [
+        {
+          "target": "default",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
       "hardenedRuntime": true,
       "notarize": {
         "teamId": "T7HT4U4666"
@@ -81,8 +94,7 @@
       "extendInfo": {
         "NSMicrophoneUsageDescription": "SuperCmd needs microphone access for Whisper dictation.",
         "NSSpeechRecognitionUsageDescription": "SuperCmd uses speech recognition for native Whisper dictation."
-      },
-      "publish": null
+      }
     },
     "linux": {
       "icon": "supercmd.svg"
