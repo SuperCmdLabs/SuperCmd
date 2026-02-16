@@ -122,6 +122,7 @@ const EDGE_TTS_FALLBACK_VOICES: EdgeVoiceDef[] = [
   { id: 'en-GB-SoniaNeural', label: 'Sonia', languageCode: 'en-GB', languageLabel: 'English (UK)', gender: 'female' },
   { id: 'en-GB-RyanNeural', label: 'Ryan', languageCode: 'en-GB', languageLabel: 'English (UK)', gender: 'male' },
   { id: 'en-US-JennyNeural', label: 'Jenny', languageCode: 'en-US', languageLabel: 'English (US)', gender: 'female' },
+  { id: 'en-US-EricNeural', label: 'Eric', languageCode: 'en-US', languageLabel: 'English (US)', gender: 'male' },
   { id: 'en-US-GuyNeural', label: 'Guy', languageCode: 'en-US', languageLabel: 'English (US)', gender: 'male' },
   { id: 'fr-CA-SylvieNeural', label: 'Sylvie', languageCode: 'fr-CA', languageLabel: 'French (Canada)', gender: 'female' },
   { id: 'fr-CA-JeanNeural', label: 'Jean', languageCode: 'fr-CA', languageLabel: 'French (Canada)', gender: 'male' },
@@ -337,7 +338,7 @@ const AITab: React.FC = () => {
   const allEdgeVoices = edgeVoices.length > 0 ? edgeVoices : EDGE_TTS_FALLBACK_VOICES;
 
   const selectedEdgeVoice = allEdgeVoices.find((v) => v.id === ai.edgeTtsVoice)
-    || allEdgeVoices.find((v) => v.id === 'en-US-JennyNeural')
+    || allEdgeVoices.find((v) => v.id === 'en-US-EricNeural')
     || allEdgeVoices[0];
 
   const selectedEdgeLanguageCode = selectedEdgeVoice.languageCode;

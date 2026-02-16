@@ -305,7 +305,7 @@ let speakStatusSnapshot: {
   wordIndex?: number;
 } = { state: 'idle', text: '', index: 0, total: 0 };
 let speakRuntimeOptions: SpeakRuntimeOptions = {
-  voice: 'en-US-JennyNeural',
+  voice: 'en-US-EricNeural',
   rate: '+0%',
 };
 
@@ -1099,7 +1099,7 @@ function resolveEdgeVoice(language?: string): string {
   if (lang.startsWith('de')) return 'de-DE-KatjaNeural';
   if (lang.startsWith('it')) return 'it-IT-ElsaNeural';
   if (lang.startsWith('pt')) return 'pt-BR-FranciscaNeural';
-  return 'en-US-JennyNeural';
+  return 'en-US-EricNeural';
 }
 
 function resolveElevenLabsSttModel(model: string): string {
@@ -4636,7 +4636,7 @@ app.whenReady().then(async () => {
     async (_event: any, payload?: { voice: string; text?: string; rate?: string; provider?: 'edge-tts' | 'elevenlabs'; model?: string }) => {
       const settings = loadSettings();
       const provider = payload?.provider || (String(settings.ai?.textToSpeechModel || '').startsWith('elevenlabs-') ? 'elevenlabs' : 'edge-tts');
-      const voice = String(payload?.voice || speakRuntimeOptions.voice || 'en-US-JennyNeural').trim();
+      const voice = String(payload?.voice || speakRuntimeOptions.voice || 'en-US-EricNeural').trim();
       const rate = parseSpeakRateInput(payload?.rate ?? speakRuntimeOptions.rate);
       const sampleTextRaw = String(payload?.text || 'Hi, this is my voice in SuperCmd.');
       const sampleText = sampleTextRaw.trim().slice(0, 240) || 'Hi, this is my voice in SuperCmd.';

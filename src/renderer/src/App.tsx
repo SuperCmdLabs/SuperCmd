@@ -196,7 +196,7 @@ const App: React.FC = () => {
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
-      setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-JennyNeural'));
+      setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
       setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
       const shouldShowOnboarding = !settings.hasSeenOnboarding;
       setShowOnboarding(shouldShowOnboarding);
@@ -206,7 +206,7 @@ const App: React.FC = () => {
       setPinnedCommands([]);
       setRecentCommands([]);
       setLauncherShortcut('Alt+Space');
-      setConfiguredEdgeTtsVoice('en-US-JennyNeural');
+      setConfiguredEdgeTtsVoice('en-US-EricNeural');
       setConfiguredTtsModel('edge-tts');
       setShowOnboarding(false);
       setOnboardingRequiresShortcutFix(false);

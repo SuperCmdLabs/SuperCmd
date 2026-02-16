@@ -91,11 +91,11 @@ export function useSpeakManager({
     total: 0,
   });
   const [speakOptions, setSpeakOptions] = useState<{ voice: string; rate: string }>({
-    voice: 'en-US-JennyNeural',
+    voice: 'en-US-EricNeural',
     rate: '+0%',
   });
   const [edgeTtsVoices, setEdgeTtsVoices] = useState<EdgeTtsVoice[]>([]);
-  const [configuredEdgeTtsVoice, setConfiguredEdgeTtsVoice] = useState('en-US-JennyNeural');
+  const [configuredEdgeTtsVoice, setConfiguredEdgeTtsVoice] = useState('en-US-EricNeural');
   const [configuredTtsModel, setConfiguredTtsModel] = useState('edge-tts');
 
   const speakSessionShownRef = useRef(false);

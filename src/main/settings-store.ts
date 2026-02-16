@@ -60,7 +60,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   speechToTextModel: 'native',
   speechLanguage: 'en-US',
   textToSpeechModel: 'edge-tts',
-  edgeTtsVoice: 'en-US-JennyNeural',
+  edgeTtsVoice: 'en-US-EricNeural',
   speechCorrectionEnabled: true,
   enabled: true,
 };
