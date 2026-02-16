@@ -246,7 +246,7 @@ const GeneralTab: React.FC = () => {
           <h3 className="text-sm font-medium text-white/90">About</h3>
         </div>
         <p className="text-sm text-white/45">
-          SuperCmd v{currentVersion} — A fast, Raycast-inspired launcher for macOS.
+          SuperCmd v{currentVersion} — Supercharged productivity.
         </p>
       </div>
     </div>
