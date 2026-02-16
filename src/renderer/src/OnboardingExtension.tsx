@@ -68,7 +68,7 @@ const permissionTargets: Array<{
   {
     id: 'input-monitoring',
     title: 'Input Monitoring',
-    description: 'Required for hold-to-talk key detection and stable hotkey behavior in every app.',
+    description: 'Required for hold-to-talk key detection. Click the button, then in System Settings click "+" and add SuperCmd.',
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
     icon: Keyboard,
     iconTone: 'text-indigo-100',
@@ -225,6 +225,13 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     return () => window.removeEventListener('focus', handleFocus);
   }, [step]);
 
+  // Auto-unlock Continue on step 4 once the user has dictated something.
+  useEffect(() => {
+    if (dictationPracticeText.trim()) {
+      setWhisperKeyTested(true);
+    }
+  }, [dictationPracticeText]);
+
   // Fix 6: Enable Fn watcher when user reaches the Dictation test step (step 4).
   // By this point the user has passed the permissions step, so Input Monitoring
   // should already be granted and it is safe to start the CGEventTap binary.
@@ -292,6 +299,15 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     if (step !== STEPS.length - 1) return;
     onComplete();
   }, [onboardingHotkeyPresses, step, onComplete]);
+
+  // Clear any lingering text selection when the user navigates between steps.
+  // Without this, text selected on the Read Mode step (step 5) stays highlighted
+  // when the user continues to the Final Check step.
+  useEffect(() => {
+    try {
+      window.getSelection()?.removeAllRanges();
+    } catch {}
+  }, [step]);
 
   const stepTitle = useMemo(() => STEPS[step] || STEPS[0], [step]);
   const hotkeyCaps = useMemo(() => toHotkeyCaps(shortcut || 'Alt+Space'), [shortcut]);
@@ -424,7 +440,14 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
         ok = await window.electron.openUrl(candidate);
       }
       if (ok) {
-        if (mode === 'manual' && !requested) {
+        if (id === 'input-monitoring') {
+          // macOS 13+ does not auto-add apps to Input Monitoring via CGEventTap.
+          // The user must click "+" in System Settings and manually select SuperCmd.
+          setPermissionNotes((prev) => ({
+            ...prev,
+            [id]: 'In Input Monitoring, click "+" at the bottom left and add SuperCmd from your Applications folder.',
+          }));
+        } else if (mode === 'manual' && !requested) {
           setRequestedPermissions((prev) => ({ ...prev, [id]: false }));
         }
       }
@@ -811,15 +834,23 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
               <div className="w-full max-w-4xl space-y-4">
                 <div className="rounded-2xl border border-white/[0.18] bg-white/[0.06] p-6">
                   <p className="text-white text-xl font-semibold mb-2">Whisper Read Test</p>
-                  <p className="text-white/68 text-sm leading-relaxed mb-4">
-                    Select the paragraph below and press{' '}
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-white/25 bg-white/[0.12] text-white text-xs font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]">
-                      <span>⌘</span>
-                      <span>⇧</span>
-                      <span>S</span>
-                    </span>{' '}
-                    to read it aloud.
-                  </p>
+                  <div className="flex items-center gap-2 flex-wrap mb-4">
+                    <p className="text-white/68 text-sm leading-relaxed">Select the paragraph below and press</p>
+                    {([
+                      { symbol: '⌘', label: 'Cmd' },
+                      { symbol: '⇧', label: 'Shift' },
+                      { symbol: 'S', label: null },
+                    ] as Array<{ symbol: string; label: string | null }>).map((cap, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex flex-col min-w-[36px] h-10 px-2.5 items-center justify-center rounded-lg border border-white/25 bg-white/[0.12] text-white/95 font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.32)]"
+                      >
+                        <span className="text-sm leading-none">{cap.symbol}</span>
+                        {cap.label && <span className="text-[9px] text-white/60 leading-none mt-0.5">{cap.label}</span>}
+                      </span>
+                    ))}
+                    <p className="text-white/68 text-sm leading-relaxed">to read it aloud.</p>
+                  </div>
 
                   <div className="rounded-xl border border-white/[0.12] bg-white/[0.04] p-4 mb-4">
                     <p className="text-white/90 text-[15px] leading-relaxed select-text">{READ_SAMPLE}</p>

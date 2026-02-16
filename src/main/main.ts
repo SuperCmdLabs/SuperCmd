@@ -663,24 +663,31 @@ async function requestOnboardingPermissionAccess(target: OnboardingPermissionTar
     };
   }
 
-  // Input Monitoring: spawn hotkey-hold-monitor briefly to trigger the macOS TCC
-  // Input Monitoring permission dialog and register SuperCmd in the System Settings list.
+  // Input Monitoring: spawn input-monitoring-request which attempts a CGEventTap.
+  // On failure it stays alive for 3.5 s so macOS TCC has time to register
+  // SuperCmd in System Settings → Privacy → Input Monitoring.
   if (process.platform === 'darwin') {
     try {
-      const binaryPath = ensureWhisperHoldWatcherBinary();
-      const config = parseHoldShortcutConfig('Fn');
-      if (binaryPath && config) {
-        const { spawn } = require('child_process');
-        const proc = spawn(binaryPath, [
-          String(config.keyCode),
-          config.cmd ? '1' : '0',
-          config.ctrl ? '1' : '0',
-          config.alt ? '1' : '0',
-          config.shift ? '1' : '0',
-          config.fn ? '1' : '0',
-        ], { stdio: ['ignore', 'ignore', 'ignore'] });
-        // Kill after 1.5s — just long enough to register the CGEventTap TCC event
-        setTimeout(() => { try { proc.kill('SIGTERM'); } catch {} }, 1500);
+      const fs = require('fs') as typeof import('fs');
+      const { spawn, execFileSync } = require('child_process') as typeof import('child_process');
+      let binaryPath = getNativeBinaryPath('input-monitoring-request');
+      if (!fs.existsSync(binaryPath)) {
+        const sourceCandidates = [
+          path.join(app.getAppPath(), 'src', 'native', 'input-monitoring-request.swift'),
+          path.join(process.cwd(), 'src', 'native', 'input-monitoring-request.swift'),
+          path.join(__dirname, '..', '..', 'src', 'native', 'input-monitoring-request.swift'),
+        ];
+        const sourcePath = sourceCandidates.find((c) => fs.existsSync(c));
+        if (sourcePath) {
+          fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
+          execFileSync('swiftc', ['-O', '-o', binaryPath, sourcePath]);
+        } else {
+          binaryPath = '';
+        }
+      }
+      if (binaryPath) {
+        // Detached — exits on its own (0.5 s on success, 3.5 s on failure).
+        spawn(binaryPath, [], { stdio: ['ignore', 'ignore', 'ignore'], detached: true }).unref();
       }
     } catch {}
   }
@@ -2718,9 +2725,14 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   if (!mainWindow) return;
   setLauncherOverlayTopmost(true);
 
-  // Capture the frontmost app BEFORE showing our window
-  captureFrontmostAppContext();
-  await captureSelectionSnapshotBeforeShow();
+  // Capture the frontmost app BEFORE showing our window.
+  // Skip during onboarding: captureFrontmostAppContext() runs an osascript
+  // "tell application System Events" command that triggers the macOS Automation
+  // permission dialog on first launch, stealing focus from the onboarding screen.
+  if (launcherMode !== 'onboarding') {
+    captureFrontmostAppContext();
+    await captureSelectionSnapshotBeforeShow();
+  }
 
   applyLauncherBounds(launcherMode);
 
