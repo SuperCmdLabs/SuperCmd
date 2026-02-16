@@ -66,15 +66,6 @@ const permissionTargets: Array<{
     iconBg: 'bg-rose-500/22 border-rose-100/30',
   },
   {
-    id: 'input-monitoring',
-    title: 'Input Monitoring',
-    description: 'Required for hold-to-talk key detection. Click the button, then in System Settings click "+" and add SuperCmd.',
-    url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
-    icon: Keyboard,
-    iconTone: 'text-indigo-100',
-    iconBg: 'bg-indigo-500/22 border-indigo-100/30',
-  },
-  {
     id: 'speech-recognition',
     title: 'Speech Recognition',
     description: 'Required for native Whisper transcription.',
@@ -98,7 +89,7 @@ const DICTATION_SAMPLE =
   'It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness.';
 
 const READ_SAMPLE =
-  'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.';
+  'Voice-first interfaces are having a moment. After years of being dismissed as gimmicks, a new wave of tools is making it genuinely faster to speak than type — with transcription that keeps up, smart corrections, and shortcut keys that slot into existing workflows without disruption.';
 
 const SPEECH_LANGUAGE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'en-US', label: 'English (US)' },
@@ -831,29 +822,65 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
           {step === 5 && (
             <div className="min-h-full flex items-center justify-center">
-              <div className="w-full max-w-4xl space-y-4">
-                <div className="rounded-2xl border border-white/[0.18] bg-white/[0.06] p-6">
-                  <p className="text-white text-xl font-semibold mb-2">Whisper Read Test</p>
-                  <div className="flex items-center gap-2 flex-wrap mb-4">
-                    <p className="text-white/68 text-sm leading-relaxed">Select the paragraph below and press</p>
-                    {([
-                      { symbol: '⌘', label: 'Cmd' },
-                      { symbol: '⇧', label: 'Shift' },
-                      { symbol: 'S', label: null },
-                    ] as Array<{ symbol: string; label: string | null }>).map((cap, i) => (
-                      <span
-                        key={i}
-                        className="inline-flex flex-col min-w-[36px] h-10 px-2.5 items-center justify-center rounded-lg border border-white/25 bg-white/[0.12] text-white/95 font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.32)]"
-                      >
-                        <span className="text-sm leading-none">{cap.symbol}</span>
-                        {cap.label && <span className="text-[9px] text-white/60 leading-none mt-0.5">{cap.label}</span>}
-                      </span>
-                    ))}
-                    <p className="text-white/68 text-sm leading-relaxed">to read it aloud.</p>
+              <div className="w-full max-w-3xl">
+                {/* Article card */}
+                <div
+                  className="rounded-2xl border border-white/[0.18] overflow-hidden"
+                  style={{
+                    background: 'linear-gradient(180deg, rgba(22,22,28,0.92) 0%, rgba(16,16,22,0.88) 100%)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 16px 40px rgba(0,0,0,0.38)',
+                  }}
+                >
+                  {/* Article header bar */}
+                  <div className="flex items-center gap-2 px-5 py-3 border-b border-white/[0.08] bg-white/[0.03]">
+                    <div className="flex gap-1.5">
+                      <div className="w-3 h-3 rounded-full bg-rose-500/60" />
+                      <div className="w-3 h-3 rounded-full bg-amber-400/60" />
+                      <div className="w-3 h-3 rounded-full bg-emerald-400/60" />
+                    </div>
+                    <div className="flex-1 mx-3">
+                      <div className="h-5 rounded-full border border-white/[0.12] bg-white/[0.05] flex items-center px-3 gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full border border-white/20 bg-white/10 shrink-0" />
+                        <span className="text-[10px] text-white/35 truncate">classic-literature.com/pride-and-prejudice</span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="rounded-xl border border-white/[0.12] bg-white/[0.04] p-4 mb-4">
-                    <p className="text-white/90 text-[15px] leading-relaxed select-text">{READ_SAMPLE}</p>
+                  {/* Article content */}
+                  <div className="px-8 py-6">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-rose-200/25 bg-rose-500/15 text-[10px] text-rose-200/85 font-medium uppercase tracking-wider">
+                        <Volume2 className="w-2.5 h-2.5" />
+                        Classic Literature
+                      </span>
+                      <span className="text-white/28 text-[10px]">·</span>
+                      <span className="text-white/38 text-[10px]">1 min read</span>
+                    </div>
+
+                    <h2 className="text-white/92 text-xl font-semibold mb-1 leading-snug">Pride and Prejudice</h2>
+                    <p className="text-white/42 text-xs mb-4">Jane Austen · Chapter I · 1813</p>
+
+                    <div className="w-10 h-px bg-white/[0.14] mb-4" />
+
+                    <p className="text-white/88 text-[15px] leading-[1.75] select-text font-light">{READ_SAMPLE}</p>
+
+                    <div className="mt-5 pt-4 border-t border-white/[0.08] flex items-center gap-2 flex-wrap">
+                      <p className="text-white/45 text-xs">Select the text above then press</p>
+                      {([
+                        { symbol: '⌘', label: 'Cmd' },
+                        { symbol: '⇧', label: 'Shift' },
+                        { symbol: 'S', label: null },
+                      ] as Array<{ symbol: string; label: string | null }>).map((cap, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex flex-col min-w-[34px] h-9 px-2 items-center justify-center rounded-md border border-white/20 bg-white/[0.10] text-white/85 font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]"
+                        >
+                          <span className="text-sm leading-none">{cap.symbol}</span>
+                          {cap.label && <span className="text-[8px] text-white/50 leading-none mt-0.5">{cap.label}</span>}
+                        </span>
+                      ))}
+                      <p className="text-white/45 text-xs">to hear it read aloud.</p>
+                    </div>
                   </div>
                 </div>
               </div>
