@@ -202,5 +202,9 @@ while isRunning {
 audioEngine.stop()
 inputNode.removeTap(onBus: 0)
 currentRequest?.endAudio()
+// Give the speech recognizer up to 2 seconds to emit its final result before
+// we cancel and exit. Without this, the last spoken words before key release
+// are cut off because endAudio() needs time to flush the recognition pipeline.
+RunLoop.current.run(until: Date(timeIntervalSinceNow: 2.0))
 currentTask?.cancel()
 exit(0)

@@ -852,6 +852,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         stopNativeSilenceWatchdog();
         stopNativeProcessTimer();
         flushNativeCurrentPartial('stop');
+        // Drain any chunks that were already in the queue before key release.
         const drainStartedAt = Date.now();
         while (nativeFlushInFlightRef.current || nativeFlushQueueRef.current.length > 0) {
           if (Date.now() - drainStartedAt > NATIVE_FINAL_DRAIN_TIMEOUT_MS) {
@@ -866,11 +867,28 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           }
           await new Promise((r) => setTimeout(r, 40));
         }
+        // Send SIGTERM BEFORE disconnecting the chunk listener.
+        // The speech-recognizer process waits up to 2s after endAudio() so it can
+        // emit its final isFinal:true result. We keep the listener alive to receive it.
+        void window.electron.whisperStopNative().catch(() => {});
+        // Wait for the post-SIGTERM final result to arrive and drain (up to 2.5s).
+        const postStopDrainStart = Date.now();
+        let idleTicks = 0;
+        while (Date.now() - postStopDrainStart < 2500) {
+          if (nativeFlushQueueRef.current.length > 0 || nativeFlushInFlightRef.current) {
+            idleTicks = 0;
+            await new Promise((r) => setTimeout(r, 40));
+            continue;
+          }
+          idleTicks += 1;
+          // After 3 consecutive empty-queue ticks (~120ms), assume no more chunks.
+          if (idleTicks >= 3) break;
+          await new Promise((r) => setTimeout(r, 40));
+        }
         if (nativeChunkDisposerRef.current) {
           nativeChunkDisposerRef.current();
           nativeChunkDisposerRef.current = null;
         }
-        void window.electron.whisperStopNative().catch(() => {});
         stopVisualizer();
       }
 

@@ -150,6 +150,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [whisperKeyStatus, setWhisperKeyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [whisperKeyTested, setWhisperKeyTested] = useState(false);
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
+  const [spotlightReplaceStatus, setSpotlightReplaceStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -178,6 +179,62 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       } as any);
     } catch {}
   };
+
+  const handleReplaceSpotlight = async () => {
+    setSpotlightReplaceStatus('loading');
+    try {
+      const ok = await window.electron.replaceSpotlightWithSuperCmdShortcut();
+      if (ok) {
+        setSpotlightReplaceStatus('success');
+        setShortcut('Command+Space');
+        setShortcutStatus('success');
+        setTimeout(() => setShortcutStatus('idle'), 1600);
+      } else {
+        setSpotlightReplaceStatus('error');
+      }
+    } catch {
+      setSpotlightReplaceStatus('error');
+    }
+  };
+
+  // Fix 4: Auto-refresh permission statuses when user returns from System Settings.
+  useEffect(() => {
+    if (step !== 3) return;
+    const checkPermissions = async () => {
+      try {
+        const statuses = await window.electron.checkOnboardingPermissions();
+        setOpenedPermissions((prev) => {
+          const next = { ...prev };
+          for (const [id, granted] of Object.entries(statuses)) {
+            if (granted) next[id] = true;
+          }
+          return next;
+        });
+        setRequestedPermissions((prev) => {
+          const next = { ...prev };
+          for (const [id, granted] of Object.entries(statuses)) {
+            if (granted) next[id] = true;
+          }
+          return next;
+        });
+      } catch {}
+    };
+    void checkPermissions();
+    const handleFocus = () => { void checkPermissions(); };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [step]);
+
+  // Fix 6: Enable Fn watcher when user reaches the Dictation test step (step 4).
+  // By this point the user has passed the permissions step, so Input Monitoring
+  // should already be granted and it is safe to start the CGEventTap binary.
+  useEffect(() => {
+    if (step !== 4) return;
+    void window.electron.enableFnWatcherForOnboarding().catch(() => {});
+    return () => {
+      void window.electron.disableFnWatcherForOnboarding().catch(() => {});
+    };
+  }, [step]);
 
   useEffect(() => {
     const video = introVideoRef.current;
@@ -545,11 +602,29 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   <p className="text-white/52 text-xs mb-4">Click the hotkey field above to update your launcher shortcut.</p>
 
                   <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
-                    <p className="text-white/86 text-xs font-medium mb-1.5">Use Cmd + Space (manual setup)</p>
-                    <div className="text-white/60 text-xs space-y-1">
-                      <p>1. Open System Settings → Keyboard → Keyboard Shortcuts.</p>
-                      <p>2. Go to Spotlight and remove/disable its shortcut.</p>
-                      <p>3. Return here and set SuperCmd launcher to Cmd + Space.</p>
+                    <div className="flex items-center justify-between gap-3 mb-1.5">
+                      <p className="text-white/86 text-xs font-medium">Replace Spotlight (Cmd + Space)</p>
+                      <button
+                        onClick={() => { void handleReplaceSpotlight(); }}
+                        disabled={spotlightReplaceStatus === 'loading' || spotlightReplaceStatus === 'success'}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors disabled:opacity-60 ${
+                          spotlightReplaceStatus === 'success'
+                            ? 'border-emerald-200/35 bg-emerald-500/22 text-emerald-100'
+                            : 'border-white/20 bg-white/[0.10] hover:bg-white/[0.18] text-white'
+                        }`}
+                      >
+                        {spotlightReplaceStatus === 'success' ? <Check className="w-3 h-3" /> : null}
+                        {spotlightReplaceStatus === 'loading' ? 'Replacing…' : spotlightReplaceStatus === 'success' ? 'Replaced' : 'Auto Replace'}
+                      </button>
+                    </div>
+                    {spotlightReplaceStatus === 'success' ? (
+                      <p className="text-emerald-200/85 text-xs mb-1.5">Spotlight shortcut disabled. SuperCmd is now Cmd + Space.</p>
+                    ) : spotlightReplaceStatus === 'error' ? (
+                      <p className="text-rose-200/85 text-xs mb-1.5">Auto-replace failed. Use the manual steps below.</p>
+                    ) : null}
+                    <div className="text-white/55 text-xs space-y-1">
+                      <p>Manual: System Settings → Keyboard → Keyboard Shortcuts → Spotlight → disable.</p>
+                      <p>Then set the launcher hotkey above to Cmd + Space.</p>
                     </div>
                   </div>
                 </div>

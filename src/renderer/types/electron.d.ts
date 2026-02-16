@@ -252,6 +252,9 @@ export interface ElectronAPI {
   updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
   setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
   replaceSpotlightWithSuperCmdShortcut: () => Promise<boolean>;
+  checkOnboardingPermissions: () => Promise<Record<string, boolean>>;
+  enableFnWatcherForOnboarding: () => Promise<void>;
+  disableFnWatcherForOnboarding: () => Promise<void>;
   onboardingRequestPermission: (
     target: 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition'
   ) => Promise<{

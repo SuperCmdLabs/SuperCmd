@@ -148,6 +148,12 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('set-open-at-login', enabled),
   replaceSpotlightWithSuperCmdShortcut: (): Promise<boolean> =>
     ipcRenderer.invoke('replace-spotlight-with-supercmd'),
+  checkOnboardingPermissions: (): Promise<Record<string, boolean>> =>
+    ipcRenderer.invoke('check-onboarding-permissions'),
+  enableFnWatcherForOnboarding: (): Promise<void> =>
+    ipcRenderer.invoke('enable-fn-watcher-for-onboarding'),
+  disableFnWatcherForOnboarding: (): Promise<void> =>
+    ipcRenderer.invoke('disable-fn-watcher-for-onboarding'),
   onboardingRequestPermission: (
     target: 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition'
   ): Promise<{

@@ -270,6 +270,8 @@ let fnSpeakToggleWatcherProcess: any = null;
 let fnSpeakToggleWatcherStdoutBuffer = '';
 let fnSpeakToggleWatcherRestartTimer: NodeJS.Timeout | null = null;
 let fnSpeakToggleWatcherEnabled = false;
+// When true, the Fn watcher is allowed to start even during onboarding (step 4 — Dictation test).
+let fnWatcherOnboardingOverride = false;
 let fnSpeakToggleLastPressedAt = 0;
 let fnSpeakToggleIsPressed = false;
 type LocalSpeakBackend = 'edge-tts' | 'system-say';
@@ -661,9 +663,28 @@ async function requestOnboardingPermissionAccess(target: OnboardingPermissionTar
     };
   }
 
-  // Input Monitoring is opened as a manual flow in onboarding.
-  // Avoid false-positive "granted/requested" states from helper processes.
-  return { granted: false, requested: false, mode: 'manual' };
+  // Input Monitoring: spawn hotkey-hold-monitor briefly to trigger the macOS TCC
+  // Input Monitoring permission dialog and register SuperCmd in the System Settings list.
+  if (process.platform === 'darwin') {
+    try {
+      const binaryPath = ensureWhisperHoldWatcherBinary();
+      const config = parseHoldShortcutConfig('Fn');
+      if (binaryPath && config) {
+        const { spawn } = require('child_process');
+        const proc = spawn(binaryPath, [
+          String(config.keyCode),
+          config.cmd ? '1' : '0',
+          config.ctrl ? '1' : '0',
+          config.alt ? '1' : '0',
+          config.shift ? '1' : '0',
+          config.fn ? '1' : '0',
+        ], { stdio: ['ignore', 'ignore', 'ignore'] });
+        // Kill after 1.5s — just long enough to register the CGEventTap TCC event
+        setTimeout(() => { try { proc.kill('SIGTERM'); } catch {} }, 1500);
+      }
+    } catch {}
+  }
+  return { granted: false, requested: true, mode: 'manual' };
 }
 let lastTypingCaretPoint: { x: number; y: number } | null = null;
 let lastCursorPromptSelection = '';
@@ -1753,7 +1774,9 @@ function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
   // Do not start the CGEventTap-based Fn watcher during onboarding.
   // The tap requires Input Monitoring (and sometimes Accessibility) permission,
   // which would trigger system dialogs before the user reaches the Grant Access step.
-  if (!loadSettings().hasSeenOnboarding) {
+  // Exception: fnWatcherOnboardingOverride is set when the user reaches the Dictation
+  // test step (step 4) so they can actually test the Fn key during setup.
+  if (!loadSettings().hasSeenOnboarding && !fnWatcherOnboardingOverride) {
     stopFnSpeakToggleWatcher();
     return;
   }
@@ -2731,6 +2754,22 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
       isVisible = true;
     } catch {}
   }, 140);
+
+  // For onboarding, keep re-raising the window at multiple intervals.
+  // Permission dialogs and the Launchpad close animation can push the window
+  // behind other apps; these retries guarantee it stays in front.
+  if (launcherMode === 'onboarding') {
+    [300, 700, 1500].forEach((delay) => {
+      setTimeout(() => {
+        if (!mainWindow || mainWindow.isDestroyed() || !isVisible) return;
+        if (launcherMode !== 'onboarding') return;
+        try { app.focus({ steal: true }); } catch {}
+        try { mainWindow.show(); } catch {}
+        try { mainWindow.focus(); } catch {}
+        try { mainWindow.moveTop(); } catch {}
+      }, delay);
+    });
+  }
 
   if (launcherMode === 'whisper') {
     registerWhisperEscapeShortcut();
@@ -4694,6 +4733,7 @@ app.whenReady().then(async () => {
       // When onboarding completes: hide dock, then start services that were
       // deferred to avoid triggering permission dialogs during onboarding.
       if (patch.hasSeenOnboarding === true) {
+        fnWatcherOnboardingOverride = false;
         if (process.platform === 'darwin') {
           app.dock.hide();
         }
@@ -4742,6 +4782,39 @@ app.whenReady().then(async () => {
   ipcMain.handle('whisper-ensure-speech-recognition-access', async (_event: any, options?: { prompt?: boolean }) => {
     const prompt = options?.prompt !== false;
     return await ensureSpeechRecognitionAccess(prompt);
+  });
+
+  // ─── IPC: Check permission statuses without triggering dialogs ──────
+  // Used by the onboarding screen to refresh green/amber badges when the user
+  // returns from System Settings after granting a permission.
+  ipcMain.handle('check-onboarding-permissions', async () => {
+    const statuses: Record<string, boolean> = {};
+    if (process.platform === 'darwin') {
+      try {
+        statuses['accessibility'] = systemPreferences.isTrustedAccessibilityClient(false);
+      } catch {}
+      try {
+        const micResult = await ensureMicrophoneAccess(false);
+        statuses['microphone'] = Boolean(micResult.granted);
+      } catch {}
+      try {
+        const srResult = await ensureSpeechRecognitionAccess(false);
+        statuses['speech-recognition'] = Boolean(srResult.granted);
+      } catch {}
+    }
+    return statuses;
+  });
+
+  // ─── IPC: Fn watcher override for onboarding dictation test (step 4) ─
+  ipcMain.handle('enable-fn-watcher-for-onboarding', () => {
+    fnWatcherOnboardingOverride = true;
+    syncFnSpeakToggleWatcher(loadSettings().commandHotkeys);
+  });
+  ipcMain.handle('disable-fn-watcher-for-onboarding', () => {
+    fnWatcherOnboardingOverride = false;
+    if (!loadSettings().hasSeenOnboarding) {
+      stopFnSpeakToggleWatcher();
+    }
   });
 
   ipcMain.handle(
