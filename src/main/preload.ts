@@ -138,6 +138,66 @@ contextBridge.exposeInMainWorld('electron', {
     activeShortcut: string;
     ok: boolean;
   }> => ipcRenderer.invoke('get-global-shortcut-status'),
+  appUpdaterGetStatus: (): Promise<{
+    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+    supported: boolean;
+    currentVersion: string;
+    latestVersion?: string;
+    releaseName?: string;
+    releaseDate?: string;
+    progressPercent?: number;
+    transferredBytes?: number;
+    totalBytes?: number;
+    bytesPerSecond?: number;
+    message?: string;
+  }> => ipcRenderer.invoke('app-updater-get-status'),
+  appUpdaterCheckForUpdates: (): Promise<{
+    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+    supported: boolean;
+    currentVersion: string;
+    latestVersion?: string;
+    releaseName?: string;
+    releaseDate?: string;
+    progressPercent?: number;
+    transferredBytes?: number;
+    totalBytes?: number;
+    bytesPerSecond?: number;
+    message?: string;
+  }> => ipcRenderer.invoke('app-updater-check-for-updates'),
+  appUpdaterDownloadUpdate: (): Promise<{
+    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+    supported: boolean;
+    currentVersion: string;
+    latestVersion?: string;
+    releaseName?: string;
+    releaseDate?: string;
+    progressPercent?: number;
+    transferredBytes?: number;
+    totalBytes?: number;
+    bytesPerSecond?: number;
+    message?: string;
+  }> => ipcRenderer.invoke('app-updater-download-update'),
+  appUpdaterQuitAndInstall: (): Promise<boolean> =>
+    ipcRenderer.invoke('app-updater-quit-and-install'),
+  onAppUpdaterStatus: (callback: (payload: {
+    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+    supported: boolean;
+    currentVersion: string;
+    latestVersion?: string;
+    releaseName?: string;
+    releaseDate?: string;
+    progressPercent?: number;
+    transferredBytes?: number;
+    totalBytes?: number;
+    bytesPerSecond?: number;
+    message?: string;
+  }) => void) => {
+    const listener = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('app-updater-status', listener);
+    return () => {
+      ipcRenderer.removeListener('app-updater-status', listener);
+    };
+  },
   saveSettings: (patch: any): Promise<any> =>
     ipcRenderer.invoke('save-settings', patch),
   getAllCommands: (): Promise<any[]> =>

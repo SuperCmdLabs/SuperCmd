@@ -1,8 +1,13 @@
 {
   "name": "supercmd",
   "version": "1.0.0",
-  "description": "SuperCmd — A Raycast-like launcher for macOS",
+  "description": "SuperCmd — Productivity supercharged",
   "main": "dist/main/main.js",
+  "repository": "https://github.com/SuperCmdLabs/SuperCmd",
+  "publish": {
+    "provider": "github",
+    "releaseType": "release"
+  },
   "scripts": {
     "dev": "npm run build:main && concurrently \"npm run watch:main\" \"npm run dev:renderer\" \"npm run start:electron\"",
     "watch:main": "tsc -p tsconfig.main.json --watch",
@@ -38,6 +43,7 @@
     "@phosphor-icons/react": "^2.1.10",
     "@raycast/api": "^1.104.5",
     "electron-builder-notarize": "^1.5.2",
+    "electron-updater": "^6.7.3",
     "esbuild": "^0.19.12",
     "lucide-react": "^0.312.0",
     "node-edge-tts": "^1.2.10",

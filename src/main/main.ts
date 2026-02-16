@@ -253,6 +253,41 @@ let globalShortcutRegistrationState: {
   activeShortcut: '',
   ok: true,
 };
+type AppUpdaterState =
+  | 'idle'
+  | 'unsupported'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error';
+type AppUpdaterStatusSnapshot = {
+  state: AppUpdaterState;
+  supported: boolean;
+  currentVersion: string;
+  latestVersion?: string;
+  releaseName?: string;
+  releaseDate?: string;
+  progressPercent?: number;
+  transferredBytes?: number;
+  totalBytes?: number;
+  bytesPerSecond?: number;
+  message?: string;
+};
+let appUpdaterConfigured = false;
+let appUpdater: any | null = null;
+let appUpdaterCheckPromise: Promise<void> | null = null;
+let appUpdaterDownloadPromise: Promise<void> | null = null;
+let appUpdaterStatusSnapshot: AppUpdaterStatusSnapshot = {
+  state: 'idle',
+  supported: false,
+  currentVersion: app.getVersion(),
+  progressPercent: 0,
+  transferredBytes: 0,
+  totalBytes: 0,
+  bytesPerSecond: 0,
+};
 let lastFrontmostApp: { name: string; path: string; bundleId?: string } | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
@@ -4259,6 +4294,332 @@ function getDialogParentWindow(event?: { sender?: any }): InstanceType<typeof Br
   return undefined;
 }
 
+function sendAppUpdaterStatusToRenderers(): void {
+  const payload = { ...appUpdaterStatusSnapshot };
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    try {
+      window.webContents.send('app-updater-status', payload);
+    } catch {}
+  }
+}
+
+function updateAppUpdaterStatus(patch: Partial<AppUpdaterStatusSnapshot>): void {
+  appUpdaterStatusSnapshot = {
+    ...appUpdaterStatusSnapshot,
+    ...patch,
+  };
+  sendAppUpdaterStatusToRenderers();
+}
+
+function parseGithubRepository(input: string): { owner: string; repo: string } | null {
+  const value = String(input || '').trim();
+  if (!value) return null;
+  const direct = /^([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)$/.exec(value);
+  if (direct) {
+    return { owner: direct[1], repo: direct[2] };
+  }
+  const match = /github\.com[/:]([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:\/|$)/i.exec(value);
+  if (!match) return null;
+  return {
+    owner: match[1],
+    repo: match[2],
+  };
+}
+
+function readAppPackageJson(): Record<string, any> | null {
+  const fs = require('fs');
+  const candidatePaths = [
+    path.join(app.getAppPath(), 'package.json'),
+    path.join(process.cwd(), 'package.json'),
+  ];
+
+  for (const filePath of candidatePaths) {
+    try {
+      if (!fs.existsSync(filePath)) continue;
+      return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    } catch {}
+  }
+
+  return null;
+}
+
+function resolveAppUpdaterFeedConfig(): Record<string, any> | null {
+  const pkg = readAppPackageJson();
+  if (!pkg || typeof pkg !== 'object') return null;
+
+  const publishFromRoot = Array.isArray((pkg as any).publish) ? (pkg as any).publish[0] : (pkg as any).publish;
+  const publishFromBuild = Array.isArray((pkg as any).build?.publish) ? (pkg as any).build?.publish[0] : (pkg as any).build?.publish;
+  const publish = (publishFromRoot && typeof publishFromRoot === 'object')
+    ? publishFromRoot
+    : (publishFromBuild && typeof publishFromBuild === 'object' ? publishFromBuild : null);
+  if (!publish) return null;
+
+  const provider = String((publish as any).provider || '').trim().toLowerCase();
+  if (provider !== 'github') {
+    return publish;
+  }
+
+  const repositoryRaw = typeof (pkg as any).repository === 'string'
+    ? (pkg as any).repository
+    : String((pkg as any).repository?.url || '');
+  const parsedRepo = parseGithubRepository(repositoryRaw);
+  const owner = String((publish as any).owner || parsedRepo?.owner || '').trim();
+  const repo = String((publish as any).repo || parsedRepo?.repo || '').trim();
+  if (!owner || !repo) {
+    return null;
+  }
+
+  return {
+    ...publish,
+    provider: 'github',
+    owner,
+    repo,
+  };
+}
+
+function ensureAppUpdaterConfigured(): void {
+  if (appUpdaterConfigured) return;
+  appUpdaterConfigured = true;
+
+  updateAppUpdaterStatus({
+    currentVersion: app.getVersion(),
+    progressPercent: 0,
+    transferredBytes: 0,
+    totalBytes: 0,
+    bytesPerSecond: 0,
+  });
+
+  if (!app.isPackaged) {
+    updateAppUpdaterStatus({
+      state: 'unsupported',
+      supported: false,
+      message: 'Updates are available in packaged builds.',
+    });
+    return;
+  }
+
+  try {
+    const { autoUpdater } = require('electron-updater');
+    appUpdater = autoUpdater;
+  } catch (error: any) {
+    appUpdater = null;
+    updateAppUpdaterStatus({
+      state: 'unsupported',
+      supported: false,
+      message: String(error?.message || error || 'electron-updater is unavailable.'),
+    });
+    return;
+  }
+
+  if (!appUpdater) {
+    updateAppUpdaterStatus({
+      state: 'unsupported',
+      supported: false,
+      message: 'electron-updater is unavailable.',
+    });
+    return;
+  }
+
+  try {
+    appUpdater.autoDownload = false;
+    appUpdater.autoInstallOnAppQuit = false;
+  } catch {}
+
+  try {
+    appUpdater.logger = console;
+  } catch {}
+
+  const feedConfig = resolveAppUpdaterFeedConfig();
+  if (feedConfig) {
+    try {
+      appUpdater.setFeedURL(feedConfig);
+    } catch (error) {
+      console.warn('[Updater] Failed to set feed URL from package.json:', error);
+    }
+  } else {
+    console.warn('[Updater] No publish/repository config found for auto updates.');
+  }
+
+  appUpdater.on('checking-for-update', () => {
+    updateAppUpdaterStatus({
+      state: 'checking',
+      supported: true,
+      message: 'Checking for updates...',
+      progressPercent: 0,
+      transferredBytes: 0,
+      totalBytes: 0,
+      bytesPerSecond: 0,
+    });
+  });
+
+  appUpdater.on('update-available', (info: any) => {
+    updateAppUpdaterStatus({
+      state: 'available',
+      supported: true,
+      latestVersion: String(info?.version || '').trim() || undefined,
+      releaseName: String(info?.releaseName || '').trim() || undefined,
+      releaseDate: info?.releaseDate ? String(info.releaseDate) : undefined,
+      message: 'Update available.',
+      progressPercent: 0,
+      transferredBytes: 0,
+      totalBytes: 0,
+      bytesPerSecond: 0,
+    });
+  });
+
+  appUpdater.on('update-not-available', (info: any) => {
+    updateAppUpdaterStatus({
+      state: 'not-available',
+      supported: true,
+      latestVersion: String(info?.version || '').trim() || app.getVersion(),
+      message: 'You are up to date.',
+      progressPercent: 0,
+      transferredBytes: 0,
+      totalBytes: 0,
+      bytesPerSecond: 0,
+    });
+  });
+
+  appUpdater.on('download-progress', (progress: any) => {
+    updateAppUpdaterStatus({
+      state: 'downloading',
+      supported: true,
+      progressPercent: Number(progress?.percent || 0),
+      transferredBytes: Number(progress?.transferred || 0),
+      totalBytes: Number(progress?.total || 0),
+      bytesPerSecond: Number(progress?.bytesPerSecond || 0),
+      message: 'Downloading update...',
+    });
+  });
+
+  appUpdater.on('update-downloaded', (info: any) => {
+    updateAppUpdaterStatus({
+      state: 'downloaded',
+      supported: true,
+      latestVersion: String(info?.version || '').trim() || appUpdaterStatusSnapshot.latestVersion,
+      releaseName: String(info?.releaseName || '').trim() || appUpdaterStatusSnapshot.releaseName,
+      releaseDate: info?.releaseDate ? String(info.releaseDate) : appUpdaterStatusSnapshot.releaseDate,
+      progressPercent: 100,
+      message: 'Update ready. Restart to install.',
+    });
+  });
+
+  appUpdater.on('error', (error: any) => {
+    updateAppUpdaterStatus({
+      state: 'error',
+      supported: true,
+      message: String(error?.message || error || 'Failed to update.'),
+    });
+  });
+
+  updateAppUpdaterStatus({
+    state: 'idle',
+    supported: true,
+    message: '',
+  });
+}
+
+async function checkForAppUpdates(): Promise<AppUpdaterStatusSnapshot> {
+  ensureAppUpdaterConfigured();
+  if (!appUpdater) {
+    return { ...appUpdaterStatusSnapshot };
+  }
+
+  if (appUpdaterCheckPromise) {
+    await appUpdaterCheckPromise;
+    return { ...appUpdaterStatusSnapshot };
+  }
+
+  if (appUpdaterDownloadPromise) {
+    return { ...appUpdaterStatusSnapshot };
+  }
+
+  appUpdaterCheckPromise = Promise.resolve()
+    .then(async () => {
+      await appUpdater.checkForUpdates();
+    })
+    .catch((error: any) => {
+      updateAppUpdaterStatus({
+        state: 'error',
+        supported: true,
+        message: String(error?.message || error || 'Failed to check for updates.'),
+      });
+    })
+    .finally(() => {
+      appUpdaterCheckPromise = null;
+    });
+
+  await appUpdaterCheckPromise;
+  return { ...appUpdaterStatusSnapshot };
+}
+
+async function downloadAppUpdate(): Promise<AppUpdaterStatusSnapshot> {
+  ensureAppUpdaterConfigured();
+  if (!appUpdater) {
+    return { ...appUpdaterStatusSnapshot };
+  }
+
+  if (appUpdaterCheckPromise) {
+    await appUpdaterCheckPromise;
+  }
+
+  if (appUpdaterDownloadPromise) {
+    await appUpdaterDownloadPromise;
+    return { ...appUpdaterStatusSnapshot };
+  }
+
+  const canDownload = appUpdaterStatusSnapshot.state === 'available' || appUpdaterStatusSnapshot.state === 'downloading';
+  if (!canDownload) {
+    updateAppUpdaterStatus({
+      state: 'error',
+      supported: true,
+      message: 'No update is ready to download. Check for updates first.',
+    });
+    return { ...appUpdaterStatusSnapshot };
+  }
+
+  appUpdaterDownloadPromise = Promise.resolve()
+    .then(async () => {
+      updateAppUpdaterStatus({
+        state: 'downloading',
+        supported: true,
+        message: 'Downloading update...',
+      });
+      await appUpdater.downloadUpdate();
+    })
+    .catch((error: any) => {
+      updateAppUpdaterStatus({
+        state: 'error',
+        supported: true,
+        message: String(error?.message || error || 'Failed to download update.'),
+      });
+    })
+    .finally(() => {
+      appUpdaterDownloadPromise = null;
+    });
+
+  await appUpdaterDownloadPromise;
+  return { ...appUpdaterStatusSnapshot };
+}
+
+function restartAndInstallAppUpdate(): boolean {
+  ensureAppUpdaterConfigured();
+  if (!appUpdater) return false;
+  if (appUpdaterStatusSnapshot.state !== 'downloaded') return false;
+  try {
+    setTimeout(() => {
+      try {
+        appUpdater.quitAndInstall(false, true);
+      } catch {}
+    }, 40);
+    return true;
+  } catch (error) {
+    console.warn('[Updater] Failed to quit and install update:', error);
+    return false;
+  }
+}
+
 // ─── Shortcut Management ────────────────────────────────────────────
 
 function applyOpenAtLogin(enabled: boolean): boolean {
@@ -4516,6 +4877,7 @@ app.whenReady().then(async () => {
 
   const settings = loadSettings();
   applyOpenAtLogin(Boolean((settings as any).openAtLogin));
+  ensureAppUpdaterConfigured();
 
   // Start clipboard monitor only after onboarding is complete.
   // On macOS Sonoma+, reading the clipboard at startup can trigger an
@@ -4744,6 +5106,23 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('get-global-shortcut-status', () => {
     return { ...globalShortcutRegistrationState };
+  });
+
+  ipcMain.handle('app-updater-get-status', () => {
+    ensureAppUpdaterConfigured();
+    return { ...appUpdaterStatusSnapshot };
+  });
+
+  ipcMain.handle('app-updater-check-for-updates', async () => {
+    return await checkForAppUpdates();
+  });
+
+  ipcMain.handle('app-updater-download-update', async () => {
+    return await downloadAppUpdate();
+  });
+
+  ipcMain.handle('app-updater-quit-and-install', () => {
+    return restartAndInstallAppUpdate();
   });
 
   ipcMain.handle(

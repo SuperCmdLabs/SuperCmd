@@ -123,6 +123,20 @@ export interface EdgeTtsVoice {
   style?: string;
 }
 
+export interface AppUpdaterStatus {
+  state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+  supported: boolean;
+  currentVersion: string;
+  latestVersion?: string;
+  releaseName?: string;
+  releaseDate?: string;
+  progressPercent?: number;
+  transferredBytes?: number;
+  totalBytes?: number;
+  bytesPerSecond?: number;
+  message?: string;
+}
+
 export interface AppSettings {
   globalShortcut: string;
   openAtLogin: boolean;
@@ -247,6 +261,11 @@ export interface ElectronAPI {
     activeShortcut: string;
     ok: boolean;
   }>;
+  appUpdaterGetStatus: () => Promise<AppUpdaterStatus>;
+  appUpdaterCheckForUpdates: () => Promise<AppUpdaterStatus>;
+  appUpdaterDownloadUpdate: () => Promise<AppUpdaterStatus>;
+  appUpdaterQuitAndInstall: () => Promise<boolean>;
+  onAppUpdaterStatus: (callback: (status: AppUpdaterStatus) => void) => (() => void);
   saveSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
   getAllCommands: () => Promise<CommandInfo[]>;
   updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
