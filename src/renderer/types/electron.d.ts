@@ -253,8 +253,15 @@ export interface ElectronAPI {
   setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
   replaceSpotlightWithSuperCmdShortcut: () => Promise<boolean>;
   onboardingRequestPermission: (
-    target: 'accessibility' | 'input-monitoring' | 'files' | 'microphone'
-  ) => Promise<{ granted: boolean; requested: boolean; mode: 'prompted' | 'already-granted' | 'manual' }>;
+    target: 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition'
+  ) => Promise<{
+    granted: boolean;
+    requested: boolean;
+    mode: 'prompted' | 'already-granted' | 'manual';
+    status?: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    canPrompt?: boolean;
+    error?: string;
+  }>;
   updateCommandHotkey: (
     commandId: string,
     hotkey: string
@@ -419,6 +426,24 @@ export interface ElectronAPI {
   ) => Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }>;
   whisperDebugLog: (tag: string, message: string, data?: any) => void;
   whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }) => Promise<string>;
+  whisperEnsureMicrophoneAccess: (
+    options?: { prompt?: boolean }
+  ) => Promise<{
+    granted: boolean;
+    requested: boolean;
+    status: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    canPrompt: boolean;
+    error?: string;
+  }>;
+  whisperEnsureSpeechRecognitionAccess: (
+    options?: { prompt?: boolean }
+  ) => Promise<{
+    granted: boolean;
+    requested: boolean;
+    speechStatus: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    microphoneStatus: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    error?: string;
+  }>;
   whisperStartNative: (language?: string) => Promise<void>;
   whisperStopNative: () => Promise<void>;
   onWhisperNativeChunk: (callback: (data: {

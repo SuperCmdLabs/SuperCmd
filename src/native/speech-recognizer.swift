@@ -2,14 +2,16 @@ import Foundation
 import Speech
 import AVFoundation
 
-// Usage: speech-recognizer [language-code]
+// Usage: speech-recognizer [language-code] [--auth-only]
 // Streams NDJSON to stdout:
 //   {"ready":true}
 //   {"transcript":"hello","isFinal":false}
 //   {"transcript":"hello world","isFinal":true}
 //   {"error":"..."}
 
-let lang = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "en-US"
+let rawArgs = Array(CommandLine.arguments.dropFirst())
+let authOnly = rawArgs.contains("--auth-only")
+let lang = rawArgs.first(where: { !$0.hasPrefix("--") }) ?? "en-US"
 
 func emit(_ dict: [String: Any]) {
     if let data = try? JSONSerialization.data(withJSONObject: dict, options: []),
@@ -43,16 +45,69 @@ switch authStatus {
 case .authorized:
     break
 case .denied:
-    emit(["error": "Speech recognition permission denied. Open System Settings → Privacy & Security → Speech Recognition to allow."])
+    emit([
+        "error": "Speech recognition permission denied. Open System Settings -> Privacy & Security -> Speech Recognition to allow SuperCmd.",
+        "speechStatus": "denied"
+    ])
     exit(1)
 case .restricted:
-    emit(["error": "Speech recognition is restricted on this device."])
+    emit([
+        "error": "Speech recognition is restricted on this device.",
+        "speechStatus": "restricted"
+    ])
     exit(1)
 case .notDetermined:
-    emit(["error": "Speech recognition permission not determined."])
+    emit([
+        "error": "Speech recognition permission not determined.",
+        "speechStatus": "not-determined"
+    ])
     exit(1)
 @unknown default:
-    emit(["error": "Unknown speech recognition authorization status."])
+    emit([
+        "error": "Unknown speech recognition authorization status.",
+        "speechStatus": "unknown"
+    ])
+    exit(1)
+}
+
+// ─── Read microphone authorization (no prompt from helper process) ────
+
+func microphoneStatusString(_ status: AVAuthorizationStatus) -> String {
+    switch status {
+    case .authorized:
+        return "granted"
+    case .denied:
+        return "denied"
+    case .restricted:
+        return "restricted"
+    case .notDetermined:
+        return "not-determined"
+    @unknown default:
+        return "unknown"
+    }
+}
+
+let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+let micStatusValue = microphoneStatusString(micStatus)
+
+if authOnly {
+    var payload: [String: Any] = [
+        "authorized": true,
+        "speechStatus": "granted",
+        "microphoneStatus": micStatusValue
+    ]
+    if micStatus != .authorized {
+        payload["error"] = "Microphone permission is required. Open System Settings -> Privacy & Security -> Microphone to allow SuperCmd."
+    }
+    emit(payload)
+    exit(0)
+}
+
+if micStatus != .authorized {
+    emit([
+        "error": "Microphone permission is required. Open System Settings -> Privacy & Security -> Microphone to allow SuperCmd.",
+        "microphoneStatus": micStatusValue
+    ])
     exit(1)
 }
 

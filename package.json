@@ -11,7 +11,7 @@
     "build": "npm run build:main && npm run build:renderer && npm run build:native",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
-    "build:native": "mkdir -p dist/native && swiftc -O -o dist/native/color-picker src/native/color-picker.swift -framework AppKit && swiftc -O -o dist/native/snippet-expander src/native/snippet-expander.swift -framework AppKit && swiftc -O -o dist/native/hotkey-hold-monitor src/native/hotkey-hold-monitor.swift -framework CoreGraphics -framework AppKit -framework Carbon && swiftc -O -o dist/native/speech-recognizer src/native/speech-recognizer.swift -framework Speech -framework AVFoundation",
+    "build:native": "mkdir -p dist/native && swiftc -O -o dist/native/color-picker src/native/color-picker.swift -framework AppKit && swiftc -O -o dist/native/snippet-expander src/native/snippet-expander.swift -framework AppKit && swiftc -O -o dist/native/hotkey-hold-monitor src/native/hotkey-hold-monitor.swift -framework CoreGraphics -framework AppKit -framework Carbon && swiftc -O -o dist/native/speech-recognizer src/native/speech-recognizer.swift -framework Speech -framework AVFoundation && swiftc -O -o dist/native/microphone-access src/native/microphone-access.swift -framework AVFoundation",
     "postinstall": "electron-builder install-app-deps",
     "start": "electron .",
     "package": "npm run build && electron-builder"
@@ -37,6 +37,7 @@
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
     "@raycast/api": "^1.104.5",
+    "electron-builder-notarize": "^1.5.2",
     "esbuild": "^0.19.12",
     "lucide-react": "^0.312.0",
     "node-edge-tts": "^1.2.10",
@@ -54,7 +55,8 @@
     "asarUnpack": [
       "dist/native/**",
       "node_modules/esbuild/**",
-      "node_modules/@esbuild/**"
+      "node_modules/@esbuild/**",
+      "node_modules/node-edge-tts/**"
     ],
     "directories": {
       "output": "out"
@@ -63,6 +65,17 @@
       "category": "public.app-category.utilities",
       "icon": "supercmd.icns",
       "target": "dmg",
+      "hardenedRuntime": true,
+      "notarize": {
+        "teamId": "T7HT4U4666"
+      },
+      "identity": "Shobhit Bhosure (T7HT4U4666)",
+      "entitlements": "./entitlements.mac.plist",
+      "entitlementsInherit": "./entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "SuperCmd needs microphone access for Whisper dictation.",
+        "NSSpeechRecognitionUsageDescription": "SuperCmd uses speech recognition for native Whisper dictation."
+      },
       "publish": null
     },
     "linux": {

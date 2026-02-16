@@ -967,6 +967,49 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
   const startListening = useCallback(async () => {
     if (state === 'listening' || state === 'processing') return;
+    let preflightStream: MediaStream | null = null;
+    try {
+      const micAccess = await window.electron.whisperEnsureMicrophoneAccess();
+      if (!micAccess?.granted) {
+        try {
+          preflightStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          });
+        } catch {
+          setState('error');
+          setStatusText('Microphone permission required.');
+          const status = String(micAccess?.status || '');
+          if (status === 'denied' || status === 'restricted') {
+            setErrorText('Enable SuperCmd in System Settings -> Privacy & Security -> Microphone, then retry.');
+          } else {
+            setErrorText(micAccess?.error || 'Allow microphone permission to use SuperCmd Whisper.');
+          }
+          stopVisualizer();
+          return;
+        }
+      }
+    } catch (error: any) {
+      try {
+        preflightStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+      } catch {
+        setState('error');
+        setStatusText('Microphone permission check failed.');
+        setErrorText(error?.message || 'Allow microphone permission to use SuperCmd Whisper.');
+        stopVisualizer();
+        return;
+      }
+    }
+
     const requestSeq = ++startRequestSeqRef.current;
     const sessionConfig = await resolveSessionConfig();
 
@@ -1011,7 +1054,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
     try {
       // Get microphone stream for the audio visualizer
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = preflightStream || await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,

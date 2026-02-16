@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Required for Electron's V8 JIT compiler -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- Required for Electron's heap execution -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Required for Electron's dyld environment variables -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+
+    <!-- Microphone access: required for Whisper dictation (getUserMedia + AVFoundation) -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- AppleScript / Automation: required for osascript (keystroke, getSelectedText, etc.) -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+  </dict>
+</plist>

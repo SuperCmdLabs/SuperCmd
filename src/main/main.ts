@@ -272,7 +272,10 @@ let fnSpeakToggleWatcherRestartTimer: NodeJS.Timeout | null = null;
 let fnSpeakToggleWatcherEnabled = false;
 let fnSpeakToggleLastPressedAt = 0;
 let fnSpeakToggleIsPressed = false;
-let edgeTtsRuntime: { command: string; baseArgs: string[] } | null = null;
+type LocalSpeakBackend = 'edge-tts' | 'system-say';
+let edgeTtsConstructorResolved = false;
+let edgeTtsConstructor: any | null = null;
+let edgeTtsConstructorError = '';
 type SpeakChunkPrepared = {
   index: number;
   text: string;
@@ -304,17 +307,38 @@ let speakRuntimeOptions: SpeakRuntimeOptions = {
   rate: '+0%',
 };
 
+function setLauncherOverlayTopmost(enabled: boolean): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.setAlwaysOnTop(Boolean(enabled));
+  } catch {}
+  try {
+    if (enabled) {
+      mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } else {
+      mainWindow.setVisibleOnAllWorkspaces(false);
+    }
+  } catch {}
+}
+
 function clearOAuthBlurHideSuppression(): void {
   oauthBlurHideSuppressionDepth = 0;
   if (oauthBlurHideSuppressionTimer) {
     clearTimeout(oauthBlurHideSuppressionTimer);
     oauthBlurHideSuppressionTimer = null;
   }
+  setLauncherOverlayTopmost(true);
 }
 
 function setOAuthBlurHideSuppression(active: boolean): void {
   if (active) {
     oauthBlurHideSuppressionDepth += 1;
+    setLauncherOverlayTopmost(false);
+    try {
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) {
+        mainWindow.blur();
+      }
+    } catch {}
   } else {
     oauthBlurHideSuppressionDepth = Math.max(0, oauthBlurHideSuppressionDepth - 1);
   }
@@ -331,6 +355,7 @@ function setOAuthBlurHideSuppression(active: boolean): void {
     clearTimeout(oauthBlurHideSuppressionTimer);
     oauthBlurHideSuppressionTimer = null;
   }
+  setLauncherOverlayTopmost(true);
 }
 let edgeVoiceCatalogCache: { expiresAt: number; voices: EdgeTtsVoiceCatalogEntry[] } | null = null;
 let speakSessionCounter = 0;
@@ -372,15 +397,210 @@ function scrubInternalClipboardProbe(reason: string): void {
   }
 }
 
-type OnboardingPermissionTarget = 'accessibility' | 'input-monitoring' | 'files' | 'microphone';
+type OnboardingPermissionTarget = 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition';
 type OnboardingPermissionResult = {
   granted: boolean;
   requested: boolean;
   mode: 'prompted' | 'already-granted' | 'manual';
+  status?: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+  canPrompt?: boolean;
+  error?: string;
 };
+
+type MicrophoneAccessStatus = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+type MicrophonePermissionResult = {
+  granted: boolean;
+  requested: boolean;
+  status: MicrophoneAccessStatus;
+  canPrompt: boolean;
+  error?: string;
+};
+
+function describeMicrophoneStatus(status: MicrophoneAccessStatus): string {
+  if (status === 'denied') {
+    return 'Microphone access is denied. Enable SuperCmd in System Settings -> Privacy & Security -> Microphone.';
+  }
+  if (status === 'restricted') {
+    return 'Microphone access is restricted on this device.';
+  }
+  if (status === 'not-determined') {
+    return 'Microphone access is not determined yet. Press request again to trigger the prompt.';
+  }
+  return 'Failed to request microphone access.';
+}
+
+function readMicrophoneAccessStatus(): MicrophoneAccessStatus {
+  if (process.platform !== 'darwin') return 'granted';
+  try {
+    const raw = String(systemPreferences.getMediaAccessStatus('microphone') || '').toLowerCase();
+    if (
+      raw === 'granted' ||
+      raw === 'denied' ||
+      raw === 'restricted' ||
+      raw === 'not-determined'
+    ) {
+      return raw;
+    }
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+async function requestMicrophoneAccessViaNative(prompt: boolean): Promise<MicrophonePermissionResult | null> {
+  if (process.platform !== 'darwin') return null;
+  const fs = require('fs');
+  const binaryPath = getNativeBinaryPath('microphone-access');
+  if (!fs.existsSync(binaryPath)) return null;
+
+  return await new Promise<MicrophonePermissionResult | null>((resolve) => {
+    const { spawn } = require('child_process');
+    const args = prompt ? ['--prompt'] : [];
+    const proc = spawn(binaryPath, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (chunk: Buffer | string) => {
+      stdout += String(chunk || '');
+    });
+    proc.stderr.on('data', (chunk: Buffer | string) => {
+      stderr += String(chunk || '');
+    });
+
+    proc.on('error', () => {
+      resolve(null);
+    });
+
+    proc.on('close', () => {
+      const lines = stdout
+        .split('\n')
+        .map((line: string) => line.trim())
+        .filter(Boolean);
+      for (let i = lines.length - 1; i >= 0; i -= 1) {
+        try {
+          const payload = JSON.parse(lines[i]);
+          const status = normalizePermissionStatus(payload?.status);
+          const granted = Boolean(payload?.granted) || status === 'granted';
+          const requested = Boolean(payload?.requested);
+          const canPrompt = typeof payload?.canPrompt === 'boolean'
+            ? Boolean(payload.canPrompt)
+            : status === 'not-determined' || status === 'unknown';
+          const result: MicrophonePermissionResult = {
+            granted,
+            requested,
+            status,
+            canPrompt,
+            error: granted
+              ? undefined
+              : String(payload?.error || '').trim() || (stderr.trim() || undefined),
+          };
+          resolve(result);
+          return;
+        } catch {}
+      }
+      resolve(null);
+    });
+  });
+}
+
+async function ensureMicrophoneAccess(prompt = true): Promise<MicrophonePermissionResult> {
+  if (process.platform !== 'darwin') {
+    return {
+      granted: true,
+      requested: false,
+      status: 'granted',
+      canPrompt: false,
+    };
+  }
+
+  const before = readMicrophoneAccessStatus();
+  if (before === 'granted') {
+    return {
+      granted: true,
+      requested: false,
+      status: before,
+      canPrompt: false,
+    };
+  }
+
+  if (!prompt) {
+    const nativeResult = await requestMicrophoneAccessViaNative(false);
+    if (nativeResult) return nativeResult;
+    const canPrompt = before === 'not-determined' || before === 'unknown';
+    return {
+      granted: false,
+      requested: false,
+      status: before,
+      canPrompt,
+    };
+  }
+
+  // Request from the Electron app process first so macOS registers SuperCmd
+  // itself in Privacy & Security -> Microphone.
+  let requested = false;
+  let electronError = '';
+  try {
+    try {
+      app.focus({ steal: true });
+    } catch {}
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isVisible()) {
+          mainWindow.focus();
+        }
+      }
+    } catch {}
+    const granted = await systemPreferences.askForMediaAccess('microphone');
+    requested = true;
+    const after = readMicrophoneAccessStatus();
+    if (Boolean(granted) || after === 'granted') {
+      return {
+        granted: true,
+        requested,
+        status: 'granted',
+        canPrompt: false,
+      };
+    }
+    if (after === 'denied' || after === 'restricted' || after === 'not-determined') {
+      return {
+        granted: false,
+        requested,
+        status: after,
+        canPrompt: after === 'not-determined',
+        error: describeMicrophoneStatus(after),
+      };
+    }
+  } catch (error: any) {
+    electronError = String(error?.message || error || '').trim();
+  }
+
+  // Fallback to native helper for additional status/error detail only.
+  // Keep prompt disabled here so the helper process never owns the TCC request.
+  const nativeResult = await requestMicrophoneAccessViaNative(false);
+  const after = readMicrophoneAccessStatus();
+  const status = nativeResult?.status && nativeResult.status !== 'unknown'
+    ? nativeResult.status
+    : after;
+  const granted = Boolean(nativeResult?.granted) || after === 'granted' || status === 'granted';
+  const canPrompt = status === 'not-determined' || status === 'unknown';
+  return {
+    granted,
+    requested: requested || Boolean(nativeResult?.requested),
+    status,
+    canPrompt,
+    error: granted
+      ? undefined
+      : nativeResult?.error || electronError || describeMicrophoneStatus(status),
+  };
+}
 
 async function requestOnboardingPermissionAccess(target: OnboardingPermissionTarget): Promise<OnboardingPermissionResult> {
   if (process.platform !== 'darwin') {
+    if (target === 'microphone' || target === 'speech-recognition') {
+      return { granted: true, requested: false, mode: 'already-granted', status: 'granted', canPrompt: false };
+    }
     return { granted: false, requested: false, mode: 'manual' };
   }
 
@@ -397,20 +617,51 @@ async function requestOnboardingPermissionAccess(target: OnboardingPermissionTar
     }
   }
 
-  if (target === 'microphone') {
-    try {
-      const current = String(systemPreferences.getMediaAccessStatus('microphone') || '');
-      if (current === 'granted') {
-        return { granted: true, requested: true, mode: 'already-granted' };
-      }
-      const granted = await systemPreferences.askForMediaAccess('microphone');
-      return { granted: Boolean(granted), requested: true, mode: 'prompted' };
-    } catch {
-      return { granted: false, requested: true, mode: 'prompted' };
+  if (target === 'speech-recognition') {
+    const result = await ensureSpeechRecognitionAccess(true);
+    const speechStatus = normalizePermissionStatus(result.speechStatus);
+    const canPrompt = speechStatus === 'not-determined' || speechStatus === 'unknown';
+    if (result.granted) {
+      return {
+        granted: true,
+        requested: result.requested,
+        mode: result.requested ? 'prompted' : 'already-granted',
+        status: speechStatus,
+        canPrompt,
+      };
     }
+    return {
+      granted: false,
+      requested: result.requested,
+      mode: result.requested ? 'prompted' : 'manual',
+      status: speechStatus,
+      canPrompt,
+      error: result.error,
+    };
   }
 
-  // Input Monitoring and Files/Folders are opened as manual flows in onboarding.
+  if (target === 'microphone') {
+    const result = await ensureMicrophoneAccess(true);
+    if (result.granted) {
+      return {
+        granted: true,
+        requested: result.requested,
+        mode: result.requested ? 'prompted' : 'already-granted',
+        status: result.status,
+        canPrompt: result.canPrompt,
+      };
+    }
+    return {
+      granted: false,
+      requested: result.requested,
+      mode: result.requested ? 'prompted' : 'manual',
+      status: result.status,
+      canPrompt: result.canPrompt,
+      error: result.error,
+    };
+  }
+
+  // Input Monitoring is opened as a manual flow in onboarding.
   // Avoid false-positive "granted/requested" states from helper processes.
   return { granted: false, requested: false, mode: 'manual' };
 }
@@ -529,23 +780,285 @@ function parseCueTimeMs(value: any): number {
   return 0;
 }
 
-function resolveEdgeTtsRuntime(): { command: string; baseArgs: string[] } | null {
-  if (edgeTtsRuntime) return edgeTtsRuntime;
-  const fs = require('fs');
-  const pathMod = require('path');
-  const candidates = [
-    pathMod.join(app.getAppPath(), 'node_modules', '.bin', 'node-edge-tts'),
-    pathMod.join(process.cwd(), 'node_modules', '.bin', 'node-edge-tts'),
-    pathMod.join(__dirname, '..', '..', 'node_modules', '.bin', 'node-edge-tts'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      edgeTtsRuntime = { command: candidate, baseArgs: [] };
-      return edgeTtsRuntime;
-    }
+function normalizePermissionStatus(raw: any): MicrophoneAccessStatus {
+  const value = String(raw || '').trim().toLowerCase().replace(/_/g, '-');
+  if (value === 'authorized') return 'granted';
+  if (value === 'notdetermined') return 'not-determined';
+  if (
+    value === 'granted' ||
+    value === 'denied' ||
+    value === 'restricted' ||
+    value === 'not-determined'
+  ) {
+    return value;
   }
-  edgeTtsRuntime = { command: 'npx', baseArgs: ['--no-install', 'node-edge-tts'] };
-  return edgeTtsRuntime;
+  return 'unknown';
+}
+
+function resolveEdgeTtsConstructor(): any | null {
+  if (edgeTtsConstructorResolved) return edgeTtsConstructor;
+  edgeTtsConstructorResolved = true;
+  try {
+    const mod = require('node-edge-tts');
+    const ctor = mod?.EdgeTTS || mod?.default?.EdgeTTS || mod?.default || mod;
+    if (typeof ctor === 'function') {
+      edgeTtsConstructor = ctor;
+      edgeTtsConstructorError = '';
+      return edgeTtsConstructor;
+    }
+    edgeTtsConstructor = null;
+    edgeTtsConstructorError = 'node-edge-tts module did not expose EdgeTTS.';
+    return null;
+  } catch (error: any) {
+    edgeTtsConstructor = null;
+    edgeTtsConstructorError = String(error?.message || error || 'Failed to load node-edge-tts.');
+    return null;
+  }
+}
+
+function resolveLocalSpeakBackend(): LocalSpeakBackend | null {
+  if (resolveEdgeTtsConstructor()) return 'edge-tts';
+  if (process.platform === 'darwin') return 'system-say';
+  return null;
+}
+
+async function synthesizeWithEdgeTts(opts: {
+  text: string;
+  audioPath: string;
+  voice: string;
+  lang: string;
+  rate: string;
+  saveSubtitles: boolean;
+  timeoutMs: number;
+}): Promise<void> {
+  const EdgeTTS = resolveEdgeTtsConstructor();
+  if (!EdgeTTS) {
+    throw new Error(edgeTtsConstructorError || 'node-edge-tts is unavailable.');
+  }
+  const tts = new EdgeTTS({
+    voice: opts.voice,
+    lang: opts.lang,
+    rate: opts.rate,
+    saveSubtitles: Boolean(opts.saveSubtitles),
+    timeout: Math.max(5000, opts.timeoutMs || 45000),
+  });
+  await tts.ttsPromise(opts.text, opts.audioPath);
+}
+
+function parseSayRateWordsPerMinute(rate: string): string {
+  const raw = String(rate || '').trim();
+  const pctMatch = /^([+-]?\d+)%$/.exec(raw);
+  const pct = pctMatch ? Number(pctMatch[1]) : 0;
+  const wpm = Math.max(90, Math.min(420, Math.round(175 * (1 + (Number.isFinite(pct) ? pct : 0) / 100))));
+  return String(wpm);
+}
+
+function resolveSystemSayVoice(language: string): string | null {
+  const normalized = String(language || '').toLowerCase();
+  if (normalized.startsWith('en-gb')) return 'Daniel';
+  if (normalized.startsWith('en-au')) return 'Karen';
+  if (normalized.startsWith('en-us') || normalized.startsWith('en')) return 'Samantha';
+  if (normalized.startsWith('es')) return 'Monica';
+  if (normalized.startsWith('fr')) return 'Thomas';
+  if (normalized.startsWith('de')) return 'Anna';
+  if (normalized.startsWith('it')) return 'Alice';
+  if (normalized.startsWith('pt')) return 'Luciana';
+  if (normalized.startsWith('ja')) return 'Kyoko';
+  if (normalized.startsWith('hi')) return 'Veena';
+  return null;
+}
+
+function runSystemSay(args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const { spawn } = require('child_process');
+    const proc = spawn('/usr/bin/say', args, {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let stderr = '';
+    proc.stderr.on('data', (chunk: Buffer | string) => {
+      stderr += String(chunk || '');
+    });
+    proc.on('error', (error: Error) => {
+      reject(error);
+    });
+    proc.on('close', (code: number | null) => {
+      if (code && code !== 0) {
+        reject(new Error(stderr.trim() || `say exited with ${code}`));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+async function synthesizeWithSystemSay(opts: {
+  text: string;
+  audioPath: string;
+  lang: string;
+  rate: string;
+}): Promise<void> {
+  if (process.platform !== 'darwin') {
+    throw new Error('System speech fallback is only available on macOS.');
+  }
+  const rate = parseSayRateWordsPerMinute(opts.rate);
+  const voice = resolveSystemSayVoice(opts.lang);
+  const baseArgs = ['-o', opts.audioPath, '-r', rate];
+  if (voice) {
+    try {
+      await runSystemSay([...baseArgs, '-v', voice, opts.text]);
+      return;
+    } catch {}
+  }
+  await runSystemSay([...baseArgs, opts.text]);
+}
+
+type SpeechRecognitionPermissionResult = {
+  granted: boolean;
+  requested: boolean;
+  speechStatus: MicrophoneAccessStatus;
+  microphoneStatus: MicrophoneAccessStatus;
+  error?: string;
+};
+
+async function ensureSpeechRecognitionAccess(prompt = true): Promise<SpeechRecognitionPermissionResult> {
+  if (process.platform !== 'darwin') {
+    return {
+      granted: true,
+      requested: false,
+      speechStatus: 'granted',
+      microphoneStatus: 'granted',
+    };
+  }
+
+  if (!prompt) {
+    return {
+      granted: false,
+      requested: false,
+      speechStatus: 'unknown',
+      microphoneStatus: readMicrophoneAccessStatus(),
+    };
+  }
+
+  const fs = require('fs');
+  const binaryPath = getNativeBinaryPath('speech-recognizer');
+  if (!fs.existsSync(binaryPath)) {
+    return {
+      granted: false,
+      requested: false,
+      speechStatus: 'unknown',
+      microphoneStatus: readMicrophoneAccessStatus(),
+      error: 'Speech recognizer helper is missing. Reinstall SuperCmd and retry.',
+    };
+  }
+
+  const settings = loadSettings();
+  const language = String(settings.ai?.speechLanguage || 'en-US').trim() || 'en-US';
+
+  return await new Promise<SpeechRecognitionPermissionResult>((resolve) => {
+    const { spawn } = require('child_process');
+    const proc = spawn(binaryPath, [language, '--auth-only'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let settled = false;
+    let stdoutBuffer = '';
+    let stderrBuffer = '';
+    let helperError = '';
+    let speechStatus: MicrophoneAccessStatus = 'unknown';
+    let microphoneStatus: MicrophoneAccessStatus = readMicrophoneAccessStatus();
+    let timeout: NodeJS.Timeout | null = null;
+
+    const finalize = (result: SpeechRecognitionPermissionResult) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      resolve(result);
+    };
+
+    const parseLine = (line: string) => {
+      const trimmed = String(line || '').trim();
+      if (!trimmed) return;
+      try {
+        const payload = JSON.parse(trimmed) as any;
+        if (payload?.speechStatus !== undefined) {
+          speechStatus = normalizePermissionStatus(payload.speechStatus);
+        }
+        if (payload?.microphoneStatus !== undefined) {
+          microphoneStatus = normalizePermissionStatus(payload.microphoneStatus);
+        }
+        if (payload?.authorized === true) {
+          speechStatus = 'granted';
+          if (microphoneStatus === 'unknown') {
+            microphoneStatus = 'granted';
+          }
+        }
+        if (payload?.error) {
+          helperError = String(payload.error || '').trim();
+        }
+      } catch {}
+    };
+
+    proc.stdout.on('data', (chunk: Buffer | string) => {
+      stdoutBuffer += String(chunk || '');
+      const lines = stdoutBuffer.split('\n');
+      stdoutBuffer = lines.pop() || '';
+      for (const line of lines) {
+        parseLine(line);
+      }
+    });
+
+    proc.stderr.on('data', (chunk: Buffer | string) => {
+      stderrBuffer += String(chunk || '');
+    });
+
+    proc.on('error', (error: Error) => {
+      finalize({
+        granted: false,
+        requested: false,
+        speechStatus,
+        microphoneStatus,
+        error: error.message || 'Failed to request speech recognition access.',
+      });
+    });
+
+    proc.on('close', (code: number | null) => {
+      if (stdoutBuffer.trim()) {
+        parseLine(stdoutBuffer.trim());
+      }
+      const finalMicStatus = microphoneStatus === 'unknown'
+        ? readMicrophoneAccessStatus()
+        : microphoneStatus;
+      const granted = speechStatus === 'granted';
+      let error = helperError || '';
+      if (!granted && !error) {
+        const stderr = stderrBuffer.trim();
+        if (stderr) {
+          error = stderr;
+        } else if (code && code !== 0) {
+          error = `Speech recognition permission check exited with code ${code}.`;
+        } else {
+          error = 'Speech recognition permission is required for Whisper.';
+        }
+      }
+      finalize({
+        granted,
+        requested: true,
+        speechStatus,
+        microphoneStatus: finalMicStatus,
+        error: error || undefined,
+      });
+    });
+
+    timeout = setTimeout(() => {
+      try { proc.kill('SIGTERM'); } catch {}
+      finalize({
+        granted: speechStatus === 'granted',
+        requested: true,
+        speechStatus,
+        microphoneStatus: readMicrophoneAccessStatus(),
+        error: helperError || 'Speech permission prompt timed out. Please allow access and retry.',
+      });
+    }, 15000);
+  });
 }
 
 function resolveEdgeVoice(language?: string): string {
@@ -1237,6 +1750,13 @@ function startFnSpeakToggleWatcher(): void {
 }
 
 function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
+  // Do not start the CGEventTap-based Fn watcher during onboarding.
+  // The tap requires Input Monitoring (and sometimes Accessibility) permission,
+  // which would trigger system dialogs before the user reaches the Grant Access step.
+  if (!loadSettings().hasSeenOnboarding) {
+    stopFnSpeakToggleWatcher();
+    return;
+  }
   const speakToggle = String(hotkeys?.['system-supercmd-whisper-speak-toggle'] || '').trim();
   const shouldEnable = isFnOnlyShortcut(speakToggle);
   if (!shouldEnable) {
@@ -1598,6 +2118,15 @@ function createWindow(): void {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
+  });
+
+  // Allow renderer getUserMedia requests so Chromium can surface native prompts.
+  mainWindow.webContents.session.setPermissionRequestHandler((_wc: any, permission: any, callback: any) => {
+    if (permission === 'media' || permission === 'microphone') {
+      callback(true);
+      return;
+    }
+    callback(true);
   });
 
   mainWindow.webContents.setWindowOpenHandler((details: any) => {
@@ -2164,6 +2693,7 @@ function captureFrontmostAppContext(): void {
 
 async function showWindow(options?: { systemCommandId?: string }): Promise<void> {
   if (!mainWindow) return;
+  setLauncherOverlayTopmost(true);
 
   // Capture the frontmost app BEFORE showing our window
   captureFrontmostAppContext();
@@ -2182,10 +2712,25 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   mainWindow.webContents.send('window-shown', windowShownPayload);
   await new Promise((resolve) => setTimeout(resolve, 10));
 
+  try {
+    app.focus({ steal: true });
+  } catch {}
   mainWindow.show();
   mainWindow.focus();
   mainWindow.moveTop();
   isVisible = true;
+
+  // First launch after app reopen can race with macOS activation; retry once.
+  setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isVisible()) return;
+    try {
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.moveTop();
+      isVisible = true;
+    } catch {}
+  }, 140);
 
   if (launcherMode === 'whisper') {
     registerWhisperEscapeShortcut();
@@ -2603,16 +3148,19 @@ async function openLauncherAndRunSystemCommand(
     const routedViaWindowShown =
       showLauncher && isWindowShownRoutedSystemCommand(commandId);
 
-    if (routedViaWindowShown) {
-      mainWindow?.webContents.send('run-system-command', commandId);
-    }
-
     if (showLauncher) {
       await showWindow({
         systemCommandId: routedViaWindowShown ? commandId : undefined,
       });
     }
-    if (!routedViaWindowShown) {
+    if (routedViaWindowShown) {
+      // Fallback dispatch after show. This avoids missing onboarding on first
+      // app-open when renderer listeners are still attaching.
+      setTimeout(() => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        mainWindow.webContents.send('run-system-command', commandId);
+      }, 180);
+    } else {
       mainWindow?.webContents.send('run-system-command', commandId);
     }
     if (preserveFocusWhenHidden && !showLauncher) {
@@ -2955,15 +3503,15 @@ async function startSpeakFromSelection(): Promise<boolean> {
     speakRuntimeOptions.voice = configuredEdgeVoice;
   }
 
-  const runtime = usingElevenLabsTts ? null : resolveEdgeTtsRuntime();
+  const localSpeakBackend = usingElevenLabsTts ? null : resolveLocalSpeakBackend();
   if (!usingElevenLabsTts) {
-    if (!runtime) {
+    if (!localSpeakBackend) {
       setSpeakStatus({
         state: 'error',
         text: '',
         index: 0,
         total: chunks.length,
-        message: 'Node edge-tts is not installed. Run: npm i node-edge-tts',
+        message: 'No local speech runtime is available. Reinstall SuperCmd and retry.',
       });
       return false;
     }
@@ -3008,9 +3556,9 @@ async function startSpeakFromSelection(): Promise<boolean> {
         reject(new Error('Speak session stopped'));
         return;
       }
-      const audioPath = pathMod.join(tmpDir, `chunk-${index}.mp3`);
+      const outputExtension = !usingElevenLabsTts && localSpeakBackend === 'system-say' ? 'aiff' : 'mp3';
+      const audioPath = pathMod.join(tmpDir, `chunk-${index}.${outputExtension}`);
       const synthesizeChunkWithRetry = async (): Promise<void> => {
-        const { spawn } = require('child_process');
         const maxAttempts = 3;
         let lastErr: Error | null = null;
 
@@ -3039,45 +3587,36 @@ async function startSpeakFromSelection(): Promise<boolean> {
               return;
             }
 
-            if (!runtime) {
-              attemptResolve(new Error('Edge TTS runtime is unavailable.'));
+            if (!localSpeakBackend) {
+              attemptResolve(new Error('No local speech backend is available.'));
               return;
             }
-            const args = [
-              ...runtime.baseArgs,
-              '-t', session.chunks[index],
-              '-f', audioPath,
-              '-v', speakRuntimeOptions.voice,
-              '-l', lang,
-              '-r', speakRuntimeOptions.rate,
-              '--saveSubtitles',
-              '--timeout', '45000',
-            ];
-            const proc = spawn(runtime.command, args, {
-              stdio: ['ignore', 'pipe', 'pipe'],
-            });
-            session.ttsProcesses.add(proc);
+            const synthPromise = localSpeakBackend === 'edge-tts'
+              ? synthesizeWithEdgeTts({
+                  text: session.chunks[index],
+                  audioPath,
+                  voice: speakRuntimeOptions.voice,
+                  lang,
+                  rate: speakRuntimeOptions.rate,
+                  saveSubtitles: true,
+                  timeoutMs: 45000,
+                })
+              : synthesizeWithSystemSay({
+                  text: session.chunks[index],
+                  audioPath,
+                  lang,
+                  rate: speakRuntimeOptions.rate,
+                });
 
-            let stderr = '';
-            proc.stderr.on('data', (chunk: Buffer | string) => {
-              stderr += String(chunk || '');
-            });
-            proc.on('error', (err: Error) => {
-              session.ttsProcesses.delete(proc);
-              attemptResolve(err);
-            });
-            proc.on('close', (code: number | null) => {
-              session.ttsProcesses.delete(proc);
+            synthPromise.then(() => {
               if (session.stopRequested) {
                 attemptResolve(new Error('Speak session stopped'));
                 return;
               }
-              if (code !== 0) {
-                const text = stderr.trim() || `node-edge-tts exited with ${code}`;
-                attemptResolve(new Error(text));
-                return;
-              }
               attemptResolve(null);
+            }).catch((err: any) => {
+              const text = String(err?.message || err || 'Speech synthesis failed');
+              attemptResolve(new Error(text));
             });
           });
 
@@ -3094,47 +3633,49 @@ async function startSpeakFromSelection(): Promise<boolean> {
           await new Promise((r) => setTimeout(r, waitMs));
         }
 
-        throw lastErr || new Error('node-edge-tts failed');
+        throw lastErr || new Error('Speech synthesis failed');
       };
 
       synthesizeChunkWithRetry().then(() => {
         let wordCues: Array<{ start: number; end: number; wordIndex: number }> = [];
-        try {
-          const subtitleCandidates = [
-            audioPath.replace(/\.mp3$/i, '.json'),
-            `${audioPath}.json`,
-            audioPath.replace(/\.[a-z0-9]+$/i, '.json'),
-          ];
-          for (const subtitlePath of subtitleCandidates) {
-            if (!fs.existsSync(subtitlePath)) continue;
-            const raw = fs.readFileSync(subtitlePath, 'utf-8');
-            const parsed = JSON.parse(raw);
-            if (!Array.isArray(parsed)) continue;
-            let wordIndex = 0;
-            for (const entry of parsed) {
-              const part = String(entry?.part || '').trim();
-              const start = parseCueTimeMs(entry?.start);
-              const endRaw = parseCueTimeMs(entry?.end);
-              const end = Math.max(start + 1, endRaw);
-              const words = part.split(/\s+/g).filter(Boolean);
-              if (words.length === 0) continue;
-              const span = Math.max(1, end - start);
-              const step = span / words.length;
-              for (let i = 0; i < words.length; i += 1) {
-                wordCues.push({
-                  start: Math.max(0, Math.round(start + i * step)),
-                  end: Math.max(1, Math.round(start + (i + 1) * step)),
-                  wordIndex,
-                });
-                wordIndex += 1;
+        if (localSpeakBackend === 'edge-tts') {
+          try {
+            const subtitleCandidates = [
+              audioPath.replace(/\.mp3$/i, '.json'),
+              `${audioPath}.json`,
+              audioPath.replace(/\.[a-z0-9]+$/i, '.json'),
+            ];
+            for (const subtitlePath of subtitleCandidates) {
+              if (!fs.existsSync(subtitlePath)) continue;
+              const raw = fs.readFileSync(subtitlePath, 'utf-8');
+              const parsed = JSON.parse(raw);
+              if (!Array.isArray(parsed)) continue;
+              let wordIndex = 0;
+              for (const entry of parsed) {
+                const part = String(entry?.part || '').trim();
+                const start = parseCueTimeMs(entry?.start);
+                const endRaw = parseCueTimeMs(entry?.end);
+                const end = Math.max(start + 1, endRaw);
+                const words = part.split(/\s+/g).filter(Boolean);
+                if (words.length === 0) continue;
+                const span = Math.max(1, end - start);
+                const step = span / words.length;
+                for (let i = 0; i < words.length; i += 1) {
+                  wordCues.push({
+                    start: Math.max(0, Math.round(start + i * step)),
+                    end: Math.max(1, Math.round(start + (i + 1) * step)),
+                    wordIndex,
+                  });
+                  wordIndex += 1;
+                }
               }
+              if (wordCues.length > 0) break;
             }
-            if (wordCues.length > 0) break;
-          }
-        } catch {}
+          } catch {}
+        }
         resolve({ index, text: session.chunks[index], audioPath, wordCues });
       }).catch((err: any) => {
-        const message = String(err?.message || err || 'node-edge-tts failed');
+        const message = String(err?.message || err || 'Speech synthesis failed');
         if (/timed out|timeout/i.test(message)) {
           reject(new Error('Speech request timed out. Please try again.'));
           return;
@@ -3686,36 +4227,56 @@ function disableMacSpotlightShortcuts(): boolean {
   if (process.platform !== 'darwin') return false;
   try {
     const { execFileSync } = require('child_process');
-    execFileSync('/usr/bin/defaults', [
-      'write',
-      'com.apple.symbolichotkeys',
-      'AppleSymbolicHotKeys',
-      '-dict-add',
-      '64',
-      '{enabled = 0;}',
-    ]);
-    execFileSync('/usr/bin/defaults', [
-      'write',
-      'com.apple.symbolichotkeys',
-      'AppleSymbolicHotKeys',
-      '-dict-add',
-      '65',
-      '{enabled = 0;}',
-    ]);
+    let applied = false;
+    for (const key of ['64', '65', '60', '61']) {
+      try {
+        execFileSync('/usr/bin/defaults', [
+          'write',
+          'com.apple.symbolichotkeys',
+          'AppleSymbolicHotKeys',
+          '-dict-add',
+          key,
+          '{enabled = 0;}',
+        ]);
+        applied = true;
+      } catch (error) {
+        console.warn(`[Spotlight] Failed to disable macOS symbolic hotkey ${key}:`, error);
+      }
+    }
     try { execFileSync('/usr/bin/killall', ['cfprefsd']); } catch {}
     try { execFileSync('/usr/bin/killall', ['SystemUIServer']); } catch {}
-    return true;
+    return applied;
   } catch (error) {
     console.warn('[Spotlight] Failed to disable Spotlight shortcuts:', error);
     return false;
   }
 }
 
-function replaceSpotlightWithSuperCmdShortcut(): boolean {
+async function replaceSpotlightWithSuperCmdShortcut(): Promise<boolean> {
   const disabled = disableMacSpotlightShortcuts();
   const targetShortcut = 'Command+Space';
-  const registered = registerGlobalShortcut(targetShortcut);
-  if (!registered) return false;
+  const delaysMs = [0, 140, 340];
+  let registered = false;
+  for (const delay of delaysMs) {
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    registered = registerGlobalShortcut(targetShortcut);
+    if (registered) break;
+  }
+
+  if (!registered) {
+    if (disabled && process.platform === 'darwin') {
+      // Symbolic hotkey changes can take a moment to propagate. Persist now and retry soon.
+      saveSettings({ globalShortcut: targetShortcut });
+      setTimeout(() => {
+        try { registerGlobalShortcut(targetShortcut); } catch {}
+      }, 1000);
+      return true;
+    }
+    return false;
+  }
+
   saveSettings({ globalShortcut: targetShortcut });
   if (!disabled && process.platform === 'darwin') {
     console.warn('[Spotlight] Spotlight shortcut might still be enabled.');
@@ -3886,8 +4447,13 @@ app.whenReady().then(async () => {
   const settings = loadSettings();
   applyOpenAtLogin(Boolean((settings as any).openAtLogin));
 
-  // Start clipboard monitor
-  startClipboardMonitor();
+  // Start clipboard monitor only after onboarding is complete.
+  // On macOS Sonoma+, reading the clipboard at startup can trigger an
+  // Automation permission dialog for whichever app last wrote to the clipboard,
+  // which should not appear while the user is on the onboarding screen.
+  if (settings.hasSeenOnboarding) {
+    startClipboardMonitor();
+  }
 
   // Initialize snippet store
   initSnippetStore();
@@ -4009,9 +4575,11 @@ app.whenReady().then(async () => {
       const os = require('os');
       const pathMod = require('path');
       const { spawn } = require('child_process');
+      const localSpeakBackend = provider === 'edge-tts' ? resolveLocalSpeakBackend() : null;
 
       const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'supercmd-voice-preview-'));
-      const audioPath = pathMod.join(tmpDir, 'preview.mp3');
+      const previewExtension = provider === 'elevenlabs' || localSpeakBackend === 'edge-tts' ? 'mp3' : 'aiff';
+      const audioPath = pathMod.join(tmpDir, `preview.${previewExtension}`);
 
       try {
         if (provider === 'elevenlabs') {
@@ -4029,34 +4597,27 @@ app.whenReady().then(async () => {
             timeoutMs: 45000,
           });
         } else {
-          const runtime = resolveEdgeTtsRuntime();
-          if (!runtime) return false;
+          if (!localSpeakBackend) return false;
           const langMatch = /^([a-z]{2}-[A-Z]{2})-/.exec(voice);
           const lang = langMatch?.[1] || String(settings.ai?.speechLanguage || 'en-US');
-          const synthesizeErr = await new Promise<Error | null>((resolve) => {
-            const args = [
-              ...runtime.baseArgs,
-              '-t', sampleText,
-              '-f', audioPath,
-              '-v', voice,
-              '-l', lang,
-              '-r', rate,
-              '--timeout', '45000',
-            ];
-            const proc = spawn(runtime.command, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-            let stderr = '';
-            proc.stderr.on('data', (chunk: Buffer | string) => { stderr += String(chunk || ''); });
-            proc.on('error', (err: Error) => resolve(err));
-            proc.on('close', (code: number | null) => {
-              if (code !== 0) {
-                resolve(new Error(stderr.trim() || `node-edge-tts exited with ${code}`));
-                return;
-              }
-              resolve(null);
+          if (localSpeakBackend === 'edge-tts') {
+            await synthesizeWithEdgeTts({
+              text: sampleText,
+              audioPath,
+              voice,
+              lang,
+              rate,
+              saveSubtitles: false,
+              timeoutMs: 45000,
             });
-          });
-
-          if (synthesizeErr) throw synthesizeErr;
+          } else {
+            await synthesizeWithSystemSay({
+              text: sampleText,
+              audioPath,
+              lang,
+              rate,
+            });
+          }
         }
 
         const playErr = await new Promise<Error | null>((resolve) => {
@@ -4130,9 +4691,14 @@ app.whenReady().then(async () => {
       if (patch.openAtLogin !== undefined) {
         applyOpenAtLogin(Boolean(patch.openAtLogin));
       }
-      // When onboarding completes, hide the dock so the app becomes an overlay.
-      if (patch.hasSeenOnboarding === true && process.platform === 'darwin') {
-        app.dock.hide();
+      // When onboarding completes: hide dock, then start services that were
+      // deferred to avoid triggering permission dialogs during onboarding.
+      if (patch.hasSeenOnboarding === true) {
+        if (process.platform === 'darwin') {
+          app.dock.hide();
+        }
+        startClipboardMonitor();
+        syncFnSpeakToggleWatcher(loadSettings().commandHotkeys);
       }
       return result;
     }
@@ -4162,12 +4728,20 @@ app.whenReady().then(async () => {
     return applied;
   });
 
-  ipcMain.handle('replace-spotlight-with-supercmd', () => {
-    return replaceSpotlightWithSuperCmdShortcut();
+  ipcMain.handle('replace-spotlight-with-supercmd', async () => {
+    return await replaceSpotlightWithSuperCmdShortcut();
   });
 
   ipcMain.handle('onboarding-request-permission', async (_event: any, target: OnboardingPermissionTarget) => {
     return await requestOnboardingPermissionAccess(target);
+  });
+  ipcMain.handle('whisper-ensure-microphone-access', async (_event: any, options?: { prompt?: boolean }) => {
+    const prompt = options?.prompt !== false;
+    return await ensureMicrophoneAccess(prompt);
+  });
+  ipcMain.handle('whisper-ensure-speech-recognition-access', async (_event: any, options?: { prompt?: boolean }) => {
+    const prompt = options?.prompt !== false;
+    return await ensureSpeechRecognitionAccess(prompt);
   });
 
   ipcMain.handle(

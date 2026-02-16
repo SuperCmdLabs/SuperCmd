@@ -149,8 +149,15 @@ contextBridge.exposeInMainWorld('electron', {
   replaceSpotlightWithSuperCmdShortcut: (): Promise<boolean> =>
     ipcRenderer.invoke('replace-spotlight-with-supercmd'),
   onboardingRequestPermission: (
-    target: 'accessibility' | 'input-monitoring' | 'files' | 'microphone'
-  ): Promise<{ granted: boolean; requested: boolean; mode: 'prompted' | 'already-granted' | 'manual' }> =>
+    target: 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition'
+  ): Promise<{
+    granted: boolean;
+    requested: boolean;
+    mode: 'prompted' | 'already-granted' | 'manual';
+    status?: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    canPrompt?: boolean;
+    error?: string;
+  }> =>
     ipcRenderer.invoke('onboarding-request-permission', target),
   updateCommandHotkey: (
     commandId: string,
@@ -447,6 +454,26 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.send('whisper-debug-log', { tag, message, data }),
   whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }): Promise<string> =>
     ipcRenderer.invoke('whisper-transcribe', audioBuffer, options),
+  whisperEnsureMicrophoneAccess: (
+    options?: { prompt?: boolean }
+  ): Promise<{
+    granted: boolean;
+    requested: boolean;
+    status: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    canPrompt: boolean;
+    error?: string;
+  }> =>
+    ipcRenderer.invoke('whisper-ensure-microphone-access', options),
+  whisperEnsureSpeechRecognitionAccess: (
+    options?: { prompt?: boolean }
+  ): Promise<{
+    granted: boolean;
+    requested: boolean;
+    speechStatus: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    microphoneStatus: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    error?: string;
+  }> =>
+    ipcRenderer.invoke('whisper-ensure-speech-recognition-access', options),
   whisperStartNative: (language?: string): Promise<void> =>
     ipcRenderer.invoke('whisper-start-native', language),
   whisperStopNative: (): Promise<void> =>

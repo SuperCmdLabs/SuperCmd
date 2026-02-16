@@ -62,7 +62,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   textToSpeechModel: 'edge-tts',
   edgeTtsVoice: 'en-US-JennyNeural',
   speechCorrectionEnabled: true,
-  enabled: false,
+  enabled: true,
 };
 
 const DEFAULT_SETTINGS: AppSettings = {

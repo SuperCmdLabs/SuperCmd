@@ -2,16 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Bot,
-  BookOpen,
   Calculator,
   Check,
   Clipboard,
   ExternalLink,
   FileText,
-  FolderOpen,
   Keyboard,
   Mic,
-  Search,
   Shield,
   Volume2,
 } from 'lucide-react';
@@ -29,7 +26,7 @@ interface OnboardingExtensionProps {
   onClose: () => void;
 }
 
-type PermissionTargetId = 'accessibility' | 'input-monitoring' | 'files' | 'microphone';
+type PermissionTargetId = 'accessibility' | 'input-monitoring' | 'speech-recognition' | 'microphone';
 
 const STEPS = [
   'Welcome',
@@ -48,7 +45,6 @@ const featureCards = [
   { id: 'read', title: 'Read', description: 'Read selected text with natural voice.', icon: Volume2 },
   { id: 'global-ai-prompt', title: 'Global AI Prompt', description: 'Transform text from anywhere.', icon: Bot },
   { id: 'unit-conversion', title: 'Unit Conversion', description: 'Convert values directly in launcher.', icon: Calculator },
-  { id: 'instant-dictionary', title: 'Instant Dictionary', description: 'Fast definitions without context switching.', icon: BookOpen },
 ];
 
 const permissionTargets: Array<{
@@ -79,13 +75,13 @@ const permissionTargets: Array<{
     iconBg: 'bg-indigo-500/22 border-indigo-100/30',
   },
   {
-    id: 'files',
-    title: 'Files and Folders',
-    description: 'Required for file workflows and opening search results across Documents/Desktop/Downloads.',
-    url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders',
-    icon: FolderOpen,
-    iconTone: 'text-amber-100',
-    iconBg: 'bg-amber-500/22 border-amber-100/30',
+    id: 'speech-recognition',
+    title: 'Speech Recognition',
+    description: 'Required for native Whisper transcription.',
+    url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition',
+    icon: Volume2,
+    iconTone: 'text-emerald-100',
+    iconBg: 'bg-emerald-500/22 border-emerald-100/30',
   },
   {
     id: 'microphone',
@@ -149,8 +145,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [openedPermissions, setOpenedPermissions] = useState<Record<string, boolean>>({});
   const [requestedPermissions, setRequestedPermissions] = useState<Record<string, boolean>>({});
   const [permissionLoading, setPermissionLoading] = useState<Record<string, boolean>>({});
-  const [isReplacingSpotlight, setIsReplacingSpotlight] = useState(false);
-  const [spotlightStatus, setSpotlightStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [permissionNotes, setPermissionNotes] = useState<Record<string, string>>({});
   const [whisperHoldKey, setWhisperHoldKey] = useState('Fn');
   const [whisperKeyStatus, setWhisperKeyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [whisperKeyTested, setWhisperKeyTested] = useState(false);
@@ -183,12 +178,6 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       } as any);
     } catch {}
   };
-
-  useEffect(() => {
-    if (!onboardingHotkeyPresses) return;
-    if (step !== STEPS.length - 1) return;
-    onComplete();
-  }, [onboardingHotkeyPresses, step, onComplete]);
 
   useEffect(() => {
     const video = introVideoRef.current;
@@ -241,6 +230,12 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (!onboardingHotkeyPresses) return;
+    if (step !== STEPS.length - 1) return;
+    onComplete();
+  }, [onboardingHotkeyPresses, step, onComplete]);
+
   const stepTitle = useMemo(() => STEPS[step] || STEPS[0], [step]);
   const hotkeyCaps = useMemo(() => toHotkeyCaps(shortcut || 'Alt+Space'), [shortcut]);
   const whisperKeyCaps = useMemo(() => toHotkeyCaps(whisperHoldKey || 'Fn'), [whisperHoldKey]);
@@ -280,11 +275,14 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
   const openPermissionTarget = async (id: PermissionTargetId, url: string) => {
     setPermissionLoading((prev) => ({ ...prev, [id]: true }));
+    setPermissionNotes((prev) => ({ ...prev, [id]: '' }));
     try {
       const result = await window.electron.onboardingRequestPermission(id);
-      const granted = Boolean(result?.granted);
-      const requested = Boolean(result?.requested);
+      let granted = Boolean(result?.granted);
+      let requested = Boolean(result?.requested);
       const mode = String(result?.mode || '');
+      let status = String(result?.status || '');
+      let latestError = String(result?.error || '').trim();
       if (requested) {
         setRequestedPermissions((prev) => ({ ...prev, [id]: true }));
       }
@@ -292,17 +290,82 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
         setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
       }
 
-      // For microphone, also trigger request from renderer capture path.
-      // This ensures the app is registered in macOS privacy for the actual
-      // media capture process used by Whisper.
-      if (id === 'microphone' && !granted) {
+      if (id === 'microphone') {
+        // For microphone, always trigger request from renderer capture path.
+        // This ensures the real media capture path is primed in macOS privacy.
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           stream.getTracks().forEach((track) => track.stop());
-          setRequestedPermissions((prev) => ({ ...prev, [id]: true }));
+          requested = true;
+          granted = true;
+          status = 'granted';
+          latestError = '';
+        } catch {}
+        if (!granted) {
+          try {
+            const verify = await window.electron.whisperEnsureMicrophoneAccess({ prompt: true });
+            granted = granted || Boolean(verify?.granted);
+            requested = requested || Boolean(verify?.requested);
+            status = String(verify?.status || status);
+            if (verify?.error) {
+              latestError = String(verify.error || '').trim();
+            }
+          } catch {}
+        }
+      }
+      if (id === 'speech-recognition' && !granted) {
+        try {
+          const verify = await window.electron.whisperEnsureSpeechRecognitionAccess({ prompt: true });
+          granted = Boolean(verify?.granted);
+          requested = requested || Boolean(verify?.requested);
+          status = String(verify?.speechStatus || status);
+          if (verify?.error) {
+            latestError = String(verify.error || '').trim();
+          }
         } catch {}
       }
-      const ok = await window.electron.openUrl(url);
+
+      if (requested) {
+        setRequestedPermissions((prev) => ({ ...prev, [id]: true }));
+      }
+      if (granted) {
+        setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
+      } else if (id === 'microphone' || id === 'speech-recognition') {
+        const targetLabel = id === 'microphone' ? 'Microphone' : 'Speech Recognition';
+        if (status === 'denied' || status === 'restricted') {
+          setPermissionNotes((prev) => ({
+            ...prev,
+            [id]: `${targetLabel} access is blocked. Enable SuperCmd in System Settings, then return.`,
+          }));
+        } else if (latestError) {
+          if (/failed to request microphone access/i.test(latestError)) {
+            setPermissionNotes((prev) => ({
+              ...prev,
+              [id]: 'Could not trigger the permission prompt. Open System Settings -> Privacy & Security, enable SuperCmd, then press request again.',
+            }));
+          } else {
+            setPermissionNotes((prev) => ({ ...prev, [id]: latestError }));
+          }
+        } else if (!requested || mode === 'manual' || status === 'not-determined') {
+          setPermissionNotes((prev) => ({
+            ...prev,
+            [id]: 'Permission prompt did not appear. Open Whisper once and press this again.',
+          }));
+        }
+      }
+      if (id === 'microphone') {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+      const candidateUrls = id === 'microphone'
+        ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone']
+        : id === 'speech-recognition'
+          ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_SpeechRecognition']
+          : [url];
+      let ok = false;
+      for (const candidate of candidateUrls) {
+        if (ok) break;
+        ok = await window.electron.openUrl(candidate);
+      }
       if (ok) {
         if (mode === 'manual' && !requested) {
           setRequestedPermissions((prev) => ({ ...prev, [id]: false }));
@@ -313,25 +376,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     }
   };
 
-  const handleReplaceSpotlight = async () => {
-    setIsReplacingSpotlight(true);
-    setSpotlightStatus('idle');
-    try {
-      const ok = await window.electron.replaceSpotlightWithSuperCmdShortcut();
-      if (ok) {
-        setShortcut('Command+Space');
-        setHasValidShortcut(true);
-        setSpotlightStatus('success');
-        return;
-      }
-      setSpotlightStatus('error');
-    } finally {
-      setIsReplacingSpotlight(false);
-      setTimeout(() => setSpotlightStatus('idle'), 2400);
-    }
-  };
-
-  const canCompleteOnboarding = !requireWorkingShortcut || hasValidShortcut;
+  const canCompleteOnboarding = hasValidShortcut;
   const canContinueBase = step !== 2 || canCompleteOnboarding;
   const canContinueDictation = step !== 4 || whisperKeyTested;
   const canContinue = canContinueBase && canContinueDictation;
@@ -413,7 +458,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     <p className="text-white/88 text-sm mb-2">What gets configured now:</p>
                     <div className="text-white/72 text-sm space-y-1">
                       <p>1. Launcher hotkey and inline prompt defaults</p>
-                      <p>2. Accessibility, Input Monitoring, Files, Microphone</p>
+                      <p>2. Accessibility, Input Monitoring, Speech Recognition, Microphone</p>
                       <p>3. Whisper dictation and Read mode practice</p>
                     </div>
                   </div>
@@ -500,24 +545,12 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   <p className="text-white/52 text-xs mb-4">Click the hotkey field above to update your launcher shortcut.</p>
 
                   <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Search className="w-3.5 h-3.5 text-amber-100" />
-                      <p className="text-white/86 text-xs font-medium">Replace Spotlight</p>
+                    <p className="text-white/86 text-xs font-medium mb-1.5">Use Cmd + Space (manual setup)</p>
+                    <div className="text-white/60 text-xs space-y-1">
+                      <p>1. Open System Settings → Keyboard → Keyboard Shortcuts.</p>
+                      <p>2. Go to Spotlight and remove/disable its shortcut.</p>
+                      <p>3. Return here and set SuperCmd launcher to Cmd + Space.</p>
                     </div>
-                    <p className="text-white/56 text-xs mb-2.5">
-                      Disable Spotlight shortcut and set SuperCmd to Cmd + Space.
-                    </p>
-                    <button
-                      onClick={handleReplaceSpotlight}
-                      disabled={isReplacingSpotlight}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/22 bg-white/[0.11] hover:bg-white/[0.18] text-white/90 text-xs transition-colors disabled:opacity-55"
-                    >
-                      Replace Spotlight
-                      {spotlightStatus === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : null}
-                    </button>
-                    {spotlightStatus === 'error' ? (
-                      <p className="text-rose-300 text-xs mt-2">Could not replace automatically.</p>
-                    ) : null}
                   </div>
                 </div>
 
@@ -546,21 +579,22 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     We now request each permission first, then jump to the exact Privacy & Security page so SuperCmd appears where needed.
                   </p>
                   <div className="space-y-2 text-xs text-white/70">
-                    <p>1. Click each card once</p>
+                    <p>1. Click each access row once</p>
                     <p>2. Enable SuperCmd in System Settings</p>
                     <p>3. Return and continue setup</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-3xl border border-white/[0.16] bg-white/[0.05] p-4 space-y-3">
                   {permissionTargets.map((target, index) => {
                     const Icon = target.icon;
                     const isDone = Boolean(openedPermissions[target.id]);
                     const isRequested = Boolean(requestedPermissions[target.id]);
+                    const note = permissionNotes[target.id];
                     return (
                       <div
                         key={target.id}
-                        className="rounded-2xl border p-4 flex flex-col relative overflow-hidden"
+                        className="rounded-2xl border p-3.5"
                         style={{
                           borderColor: isDone ? 'rgba(110, 231, 183, 0.44)' : 'rgba(255,255,255,0.16)',
                           background: isDone
@@ -571,44 +605,55 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                             : 'inset 0 1px 0 rgba(255,255,255,0.22), 0 14px 30px rgba(0,0,0,0.28)',
                         }}
                       >
-                        <div className="absolute right-3 top-3 text-white/25 text-[11px] font-semibold">{String(index + 1).padStart(2, '0')}</div>
-                        <div className="flex items-center justify-between gap-2 mb-3.5">
-                          <div className={`w-8 h-8 rounded-lg border flex items-center justify-center ${target.iconBg}`}>
-                            <Icon className={`w-4 h-4 ${target.iconTone}`} />
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="text-white/35 text-[11px] font-semibold mt-1">{String(index + 1).padStart(2, '0')}</div>
+                            <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${target.iconBg}`}>
+                              <Icon className={`w-4 h-4 ${target.iconTone}`} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <p className="text-white/96 text-sm font-semibold">{target.title}</p>
+                                {isDone ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-emerald-200/35 bg-emerald-500/22 text-emerald-100">
+                                    <Check className="w-3 h-3" />
+                                    Granted
+                                  </span>
+                                ) : isRequested ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border border-amber-200/30 bg-amber-500/20 text-amber-100">
+                                    Requested
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border border-rose-200/30 bg-rose-500/20 text-rose-100">
+                                    Required
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-white/68 text-xs leading-relaxed">{target.description}</p>
+                            </div>
                           </div>
-                          {isDone ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-emerald-200/35 bg-emerald-500/22 text-emerald-100">
-                              <Check className="w-3 h-3" />
-                              Granted
-                            </span>
-                          ) : isRequested ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border border-amber-200/30 bg-amber-500/20 text-amber-100">
-                              Requested
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border border-rose-200/30 bg-rose-500/20 text-rose-100">
-                              Required
-                            </span>
-                          )}
+                          <button
+                            onClick={() => openPermissionTarget(target.id, target.url)}
+                            disabled={Boolean(permissionLoading[target.id])}
+                            className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-md border border-white/20 bg-white/[0.10] hover:bg-white/[0.18] text-white text-xs font-medium transition-colors disabled:opacity-60 md:min-w-[190px]"
+                          >
+                            {permissionLoading[target.id] ? 'Requesting...' : 'Request + Open Settings'}
+                            <ExternalLink className="w-3 h-3" />
+                          </button>
                         </div>
-                        <p className="text-white/96 text-sm font-semibold mb-1">{target.title}</p>
-                        <p className="text-white/68 text-xs leading-relaxed flex-1">{target.description}</p>
-                        <button
-                          onClick={() => openPermissionTarget(target.id, target.url)}
-                          disabled={Boolean(permissionLoading[target.id])}
-                          className="mt-4 inline-flex w-full justify-center items-center gap-1.5 px-3 py-2 rounded-md border border-white/20 bg-white/[0.10] hover:bg-white/[0.18] text-white text-xs font-medium transition-colors disabled:opacity-60"
-                        >
-                          {permissionLoading[target.id] ? 'Requesting...' : 'Request + Open Settings'}
-                          <ExternalLink className="w-3 h-3" />
-                        </button>
                         {!isDone && isRequested ? (
                           <p className="mt-2 text-[11px] text-amber-100/85">
                             Permission request sent. Enable SuperCmd in System Settings, then return.
                           </p>
                         ) : null}
-                        {!isDone && target.id === 'microphone' ? (
+                        {!isDone && (target.id === 'microphone' || target.id === 'speech-recognition') ? (
                           <p className="mt-1 text-[11px] text-white/52">
-                            If not listed immediately, press this again after opening Whisper once.
+                            If this opens Privacy & Security, select the matching access row and press request again.
+                          </p>
+                        ) : null}
+                        {!isDone && note ? (
+                          <p className="mt-1 text-[11px] text-rose-100/85">
+                            {note}
                           </p>
                         ) : null}
                       </div>
@@ -713,9 +758,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
             <div className="min-h-full flex items-center justify-center">
               <div className="w-full max-w-3xl space-y-4">
                 <div className="rounded-2xl border border-white/[0.18] bg-white/[0.06] p-6">
-                  <p className="text-white text-xl font-semibold mb-2">Final step: test your launcher key</p>
+                  <p className="text-white text-xl font-semibold mb-2">Final step: start SuperCmd from anywhere</p>
                   <p className="text-white/68 text-sm leading-relaxed mb-4">
-                    Press your global shortcut to open SuperCmd from any app.
+                    Press your global shortcut now to start SuperCmd from any app.
                   </p>
 
                   <div className="flex flex-wrap gap-2 mb-4">
