@@ -1,6 +1,6 @@
 {
   "name": "supercmd",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SuperCmd — Productivity supercharged",
   "author": "Shobhit Bhosure - (https://x.com/nullbytes00)",
   "homepage": "https://supercmd.sh",
@@ -75,7 +75,15 @@
     "mac": {
       "category": "public.app-category.utilities",
       "icon": "supercmd.icns",
-      "target": "dmg",
+      "target": [
+        {
+          "target": "default",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
       "hardenedRuntime": true,
       "notarize": {
         "teamId": "T7HT4U4666"

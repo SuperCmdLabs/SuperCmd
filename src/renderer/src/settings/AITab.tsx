@@ -7,7 +7,7 @@
  * - SuperCmd Read
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   AlertCircle,
   Brain,
@@ -115,6 +115,10 @@ function buildElevenLabsSpeakModel(model: string, voiceId: string): string {
   return `${normalizedModel}@${normalizedVoice}`;
 }
 
+function normalizeOllamaModelName(raw: string): string {
+  return String(raw || '').trim().replace(/:latest$/i, '');
+}
+
 const EDGE_TTS_FALLBACK_VOICES: EdgeVoiceDef[] = [
   { id: 'ar-EG-SalmaNeural', label: 'Salma', languageCode: 'ar-EG', languageLabel: 'Arabic', gender: 'female' },
   { id: 'ar-EG-ShakirNeural', label: 'Shakir', languageCode: 'ar-EG', languageLabel: 'Arabic', gender: 'male' },
@@ -176,10 +180,17 @@ const AITab: React.FC = () => {
   const [previewingVoice, setPreviewingVoice] = useState(false);
   const [edgeVoices, setEdgeVoices] = useState<EdgeVoiceDef[]>([]);
   const [edgeVoicesLoading, setEdgeVoicesLoading] = useState(false);
+  const settingsRef = useRef<AppSettings | null>(null);
+  const pullingModelRef = useRef<string | null>(null);
+  const selectingOllamaDefaultRef = useRef(false);
 
   useEffect(() => {
     window.electron.getSettings().then(setSettings);
   }, []);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   useEffect(() => {
     let cancelled = false;
@@ -222,23 +233,63 @@ const AITab: React.FC = () => {
     setTimeout(() => setSaveStatus('idle'), 1600);
   };
 
-  const refreshOllamaStatus = useCallback(() => {
+  const maybeSelectOllamaDefaultModel = useCallback((availableNames: string[], preferredName?: string) => {
+    const currentSettings = settingsRef.current;
+    if (!currentSettings) return;
+    if (currentSettings.ai.provider !== 'ollama') return;
+    if (availableNames.length === 0) return;
+
+    const configuredDefault = String(currentSettings.ai.defaultModel || '').trim();
+    const configuredName = configuredDefault.startsWith('ollama-')
+      ? normalizeOllamaModelName(configuredDefault.slice('ollama-'.length))
+      : '';
+    if (configuredName && availableNames.includes(configuredName)) return;
+
+    const preferred = normalizeOllamaModelName(preferredName || '');
+    const targetName = preferred && availableNames.includes(preferred)
+      ? preferred
+      : availableNames[0];
+    const nextDefault = `ollama-${targetName}`;
+    if (configuredDefault === nextDefault || selectingOllamaDefaultRef.current) return;
+
+    selectingOllamaDefaultRef.current = true;
+    window.electron.saveSettings({
+      ai: {
+        ...currentSettings.ai,
+        defaultModel: nextDefault,
+      },
+    } as any).then((updated) => {
+      settingsRef.current = updated;
+      setSettings(updated);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 1600);
+    }).catch(() => {}).finally(() => {
+      selectingOllamaDefaultRef.current = false;
+    });
+  }, []);
+
+  const refreshOllamaStatus = useCallback((preferredModelName?: string) => {
     setOllamaRunning(null);
     window.electron.ollamaStatus().then((result) => {
       setOllamaRunning(result.running);
       if (result.running) {
-        const names = new Set(result.models.map((m: any) => m.name.replace(':latest', '')));
-        setLocalModels(names);
+        const names = Array.from(new Set(
+          result.models
+            .map((m: any) => normalizeOllamaModelName(m?.name))
+            .filter(Boolean)
+        ));
+        setLocalModels(new Set(names));
+        maybeSelectOllamaDefaultModel(names, preferredModelName);
       } else {
         setLocalModels(new Set());
       }
     });
-  }, []);
+  }, [maybeSelectOllamaDefaultModel]);
 
   useEffect(() => {
     if (!settings) return;
     refreshOllamaStatus();
-  }, [settings?.ai?.ollamaBaseUrl, refreshOllamaStatus]);
+  }, [settings?.ai?.ollamaBaseUrl, settings?.ai?.provider, refreshOllamaStatus]);
 
   useEffect(() => {
     window.electron.onOllamaPullProgress((data) => {
@@ -246,9 +297,11 @@ const AITab: React.FC = () => {
       setPullProgress({ status: data.status, percent });
     });
     window.electron.onOllamaPullDone(() => {
+      const preferredModel = pullingModelRef.current || undefined;
+      pullingModelRef.current = null;
       setPullingModel(null);
       setPullProgress({ status: '', percent: 0 });
-      refreshOllamaStatus();
+      refreshOllamaStatus(preferredModel);
     });
     window.electron.onOllamaPullError((data) => {
       setPullingModel(null);
@@ -260,6 +313,7 @@ const AITab: React.FC = () => {
 
   const handlePull = (modelName: string) => {
     const requestId = `ollama-pull-${Date.now()}`;
+    pullingModelRef.current = modelName;
     setPullingModel(modelName);
     setPullProgress({ status: 'Starting download...', percent: 0 });
     setOllamaError(null);
@@ -565,7 +619,15 @@ const AITab: React.FC = () => {
                     {PROVIDER_OPTIONS.map((p) => (
                       <button
                         key={p.id}
-                        onClick={() => updateAI({ provider: p.id, defaultModel: '' })}
+                        onClick={() => {
+                          if (p.id === 'ollama') {
+                            const firstInstalled = Array.from(localModels)[0];
+                            const nextDefault = firstInstalled ? `ollama-${firstInstalled}` : '';
+                            updateAI({ provider: p.id, defaultModel: nextDefault });
+                            return;
+                          }
+                          updateAI({ provider: p.id, defaultModel: '' });
+                        }}
                         className={`rounded-md border px-2 py-2 text-left transition-colors ${
                           ai.provider === p.id
                             ? 'bg-blue-500/15 border-blue-500/35 text-blue-100'

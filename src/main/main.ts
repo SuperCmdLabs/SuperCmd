@@ -404,7 +404,7 @@ let activeSpeakSession: {
   currentIndex: number;
   chunks: string[];
   tmpDir: string;
-  chunkPromises: Map<number, Promise<SpeakChunkPrepared>>;
+  chunkPromises: Map<string, Promise<SpeakChunkPrepared>>;
   afplayProc: any | null;
   ttsProcesses: Set<any>;
   restartFrom: (index: number) => void;
@@ -1699,10 +1699,15 @@ function stopSpeakSession(options?: { resetStatus?: boolean; cleanupWindow?: boo
   }
   session.ttsProcesses.clear();
 
-  try {
-    const fs = require('fs');
-    fs.rmSync(session.tmpDir, { recursive: true, force: true });
-  } catch {}
+  // Delay temp dir cleanup slightly so any in-flight synthesizer workers that
+  // were just interrupted do not race on removed chunk paths.
+  const tmpDirToCleanup = session.tmpDir;
+  setTimeout(() => {
+    try {
+      const fs = require('fs');
+      fs.rmSync(tmpDirToCleanup, { recursive: true, force: true });
+    } catch {}
+  }, 2500);
 
   if (activeSpeakSession?.id === session.id) {
     activeSpeakSession = null;
@@ -3716,7 +3721,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
     currentIndex: 0,
     chunks,
     tmpDir,
-    chunkPromises: new Map<number, Promise<SpeakChunkPrepared>>(),
+    chunkPromises: new Map<string, Promise<SpeakChunkPrepared>>(),
     afplayProc: null as any,
     ttsProcesses: new Set<any>(),
     restartFrom: (_index: number) => {},
@@ -3731,11 +3736,12 @@ async function startSpeakFromSelection(): Promise<boolean> {
     speakRuntimeOptions.voice = resolveEdgeVoice(settings.ai?.speechLanguage || 'en-US');
   }
 
-  const ensureChunkPrepared = (index: number): Promise<SpeakChunkPrepared> => {
+  const ensureChunkPrepared = (index: number, generation: number): Promise<SpeakChunkPrepared> => {
     if (index < 0 || index >= chunks.length) {
       return Promise.reject(new Error('Chunk index out of range'));
     }
-    const existing = session.chunkPromises.get(index);
+    const cacheKey = `${generation}:${index}`;
+    const existing = session.chunkPromises.get(cacheKey);
     if (existing) return existing;
 
     const promise = new Promise<SpeakChunkPrepared>((resolve, reject) => {
@@ -3744,7 +3750,9 @@ async function startSpeakFromSelection(): Promise<boolean> {
         return;
       }
       const outputExtension = !usingElevenLabsTts && localSpeakBackend === 'system-say' ? 'aiff' : 'mp3';
-      const audioPath = pathMod.join(tmpDir, `chunk-${index}.${outputExtension}`);
+      // Use generation-scoped chunk paths so quick restarts (voice/rate changes)
+      // never overlap on the same file path.
+      const audioPath = pathMod.join(tmpDir, `chunk-${generation}-${index}.${outputExtension}`);
       const synthesizeChunkWithRetry = async (): Promise<void> => {
         const maxAttempts = 3;
         let lastErr: Error | null = null;
@@ -3876,7 +3884,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
       });
     });
 
-    session.chunkPromises.set(index, promise);
+    session.chunkPromises.set(cacheKey, promise);
     return promise;
   };
 
@@ -3986,9 +3994,9 @@ async function startSpeakFromSelection(): Promise<boolean> {
     });
 
     // Prime first and second chunks for lower startup latency.
-    void ensureChunkPrepared(safeStart).catch(() => {});
+    void ensureChunkPrepared(safeStart, generation).catch(() => {});
     if (safeStart + 1 < session.chunks.length) {
-      void ensureChunkPrepared(safeStart + 1).catch(() => {});
+      void ensureChunkPrepared(safeStart + 1, generation).catch(() => {});
     }
 
     (async () => {
@@ -4000,7 +4008,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
           activeSpeakSession?.id !== sessionId
         ) return;
         session.currentIndex = index;
-        const prepared = await ensureChunkPrepared(index);
+        const prepared = await ensureChunkPrepared(index, generation);
         if (
           generation !== session.playbackGeneration ||
           session.stopRequested ||
@@ -4010,7 +4018,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
         const nextIndex = index + 1;
         if (nextIndex < session.chunks.length) {
           // Prefetch the next chunk while current chunk is being played.
-          void ensureChunkPrepared(nextIndex).catch(() => {});
+          void ensureChunkPrepared(nextIndex, generation).catch(() => {});
         }
 
         setSpeakStatus({
@@ -4024,7 +4032,11 @@ async function startSpeakFromSelection(): Promise<boolean> {
         await playAudioFile(prepared);
       }
 
-      if (activeSpeakSession?.id !== sessionId) return;
+      if (
+        generation !== session.playbackGeneration ||
+        session.stopRequested ||
+        activeSpeakSession?.id !== sessionId
+      ) return;
       setSpeakStatus({
         state: 'done',
         text: '',
@@ -4033,7 +4045,11 @@ async function startSpeakFromSelection(): Promise<boolean> {
         message: 'Done',
       });
       setTimeout(() => {
-        if (activeSpeakSession?.id === sessionId) {
+        if (
+          generation === session.playbackGeneration &&
+          !session.stopRequested &&
+          activeSpeakSession?.id === sessionId
+        ) {
           stopSpeakSession({ resetStatus: true, cleanupWindow: true });
         }
       }, 520);

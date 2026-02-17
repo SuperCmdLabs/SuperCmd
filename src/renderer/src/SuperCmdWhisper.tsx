@@ -222,6 +222,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const nativeProcessTimerRef = useRef<number | null>(null);
   const nativeSilenceTimerRef = useRef<number | null>(null);
   const nativeLastTranscriptAtRef = useRef(0);
+  const nativeProcessEndedRef = useRef(false);
   const nativeRawAnchorRef = useRef('');
   const nativeLastQueuedSuffixRef = useRef('');
   const nativeCurrentPartialRef = useRef('');
@@ -494,6 +495,11 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   }, [refineAndApplyLiveTranscript]);
 
   const processNativeFlushQueue = useCallback(async () => {
+    if (PUSH_TO_TALK_MODE) {
+      nativeFlushQueueRef.current = [];
+      nativeFlushInFlightRef.current = false;
+      return;
+    }
     if (nativeFlushInFlightRef.current) return;
     nativeFlushInFlightRef.current = true;
     try {
@@ -584,6 +590,13 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const enqueueNativeSuffix = useCallback((reason: NativeFlushReason, rawSnapshot: string) => {
     const nextRaw = normalizeTranscript(rawSnapshot);
     if (!nextRaw) return;
+
+    if (PUSH_TO_TALK_MODE) {
+      combinedTranscriptRef.current = mergeTranscriptChunks(combinedTranscriptRef.current, nextRaw);
+      nativeRawAnchorRef.current = nextRaw;
+      return;
+    }
+
     const prevRaw = normalizeTranscript(nativeRawAnchorRef.current);
     if (nextRaw === prevRaw) return;
 
@@ -873,19 +886,19 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         // The speech-recognizer process waits up to 2s after endAudio() so it can
         // emit its final isFinal:true result. We keep the listener alive to receive it.
         void window.electron.whisperStopNative().catch(() => {});
-        // Wait for the post-SIGTERM final result to arrive and drain (up to 2.5s).
+        // Wait for post-SIGTERM final result(s) to arrive and settle.
         const postStopDrainStart = Date.now();
-        let idleTicks = 0;
-        while (Date.now() - postStopDrainStart < 2500) {
-          if (nativeFlushQueueRef.current.length > 0 || nativeFlushInFlightRef.current) {
-            idleTicks = 0;
+        while (Date.now() - postStopDrainStart < 2800) {
+          const hasQueuedFlush =
+            nativeFlushQueueRef.current.length > 0 || nativeFlushInFlightRef.current;
+          const waitingForRecognizerEnd = !nativeProcessEndedRef.current;
+          const lastAt = nativeLastTranscriptAtRef.current;
+          const transcriptStillSettling = lastAt > 0 && Date.now() - lastAt < 140;
+          if (hasQueuedFlush || waitingForRecognizerEnd || transcriptStillSettling) {
             await new Promise((r) => setTimeout(r, 40));
             continue;
           }
-          idleTicks += 1;
-          // After 3 consecutive empty-queue ticks (~120ms), assume no more chunks.
-          if (idleTicks >= 3) break;
-          await new Promise((r) => setTimeout(r, 40));
+          break;
         }
         if (nativeChunkDisposerRef.current) {
           nativeChunkDisposerRef.current();
@@ -1058,6 +1071,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     nativeCurrentPartialRef.current = '';
     nativeFlushQueueRef.current = [];
     nativeFlushInFlightRef.current = false;
+    nativeProcessEndedRef.current = false;
     stopNativeSilenceWatchdog();
     stopNativeProcessTimer();
     if (editorFocusRestoreTimerRef.current !== null) {
@@ -1157,9 +1171,10 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         // Listen for chunks from the native process
         const dispose = window.electron.onWhisperNativeChunk((data) => {
           if (requestSeq !== startRequestSeqRef.current) return;
-          if (finalizingRef.current) return;
+          const isFinalizingNow = finalizingRef.current;
 
           if (data.ready) {
+            if (isFinalizingNow) return;
             setState('listening');
             playRecordingCue('start');
             setStatusText(
@@ -1177,6 +1192,10 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           if (data.error) {
             console.error('[Whisper][native] Error:', data.error);
             window.electron.whisperDebugLog('error', 'native speech error', { error: data.error });
+            if (isFinalizingNow) {
+              nativeProcessEndedRef.current = true;
+              return;
+            }
             setState('error');
             setStatusText('Speech recognition error.');
             setErrorText(data.error);
@@ -1187,6 +1206,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           }
 
           if (data.ended) {
+            nativeProcessEndedRef.current = true;
             stopNativeProcessTimer();
             flushNativeCurrentPartial('ended');
             // Process exited (e.g. silence timeout) — finalize what we have
@@ -1200,7 +1220,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
             const normalized = normalizeTranscript(data.transcript);
             nativeLastTranscriptAtRef.current = Date.now();
             nativeCurrentPartialRef.current = normalized;
-            scheduleNativeProcessTimer();
+            if (!isFinalizingNow) {
+              scheduleNativeProcessTimer();
+            }
             console.log(`[Whisper][native] transcript: "${normalized}" (final=${data.isFinal})`);
             window.electron.whisperDebugLog('result', 'native transcript', {
               transcript: normalized,
@@ -1213,7 +1235,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
             });
             if (normalized) {
               if (PUSH_TO_TALK_MODE) {
-                combinedTranscriptRef.current = normalized;
+                combinedTranscriptRef.current = mergeTranscriptChunks(combinedTranscriptRef.current, normalized);
               }
               if (data.isFinal && !PUSH_TO_TALK_MODE) {
                 stopNativeProcessTimer();
