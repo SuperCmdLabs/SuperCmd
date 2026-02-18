@@ -130,17 +130,8 @@ export function loadSettings(): AppSettings {
     delete parsedHotkeys['system-supercmd-whisper-toggle'];
     delete parsedHotkeys['system-supercmd-whisper-start'];
     delete parsedHotkeys['system-supercmd-whisper-stop'];
-    // On Windows, Alt+Space cannot be registered as a global shortcut
-    // (Windows reserves it for the system window menu). Migrate any saved
-    // Alt+Space to the Windows default (Ctrl+Space) automatically.
-    const savedShortcut: string = parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut;
-    const migratedShortcut =
-      process.platform === 'win32' && savedShortcut === 'Alt+Space'
-        ? DEFAULT_SETTINGS.globalShortcut
-        : savedShortcut;
-
-      settingsCache = {
-        globalShortcut: migratedShortcut,
+    settingsCache = {
+        globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
         openAtLogin: parsed.openAtLogin ?? DEFAULT_SETTINGS.openAtLogin,
         disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
         enabledCommands: parsed.enabledCommands ?? DEFAULT_SETTINGS.enabledCommands,

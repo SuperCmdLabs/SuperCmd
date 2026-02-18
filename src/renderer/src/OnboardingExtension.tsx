@@ -656,32 +656,42 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
                   <p className="text-white/52 text-xs mb-4">Click the hotkey field above to update your launcher shortcut.</p>
 
-                  {!isWindows && <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
-                    <div className="flex items-center justify-between gap-3 mb-1.5">
-                      <p className="text-white/86 text-xs font-medium">Replace Spotlight (Cmd + Space)</p>
-                      <button
-                        onClick={() => { void handleReplaceSpotlight(); }}
-                        disabled={spotlightReplaceStatus === 'loading' || spotlightReplaceStatus === 'success'}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors disabled:opacity-60 ${
-                          spotlightReplaceStatus === 'success'
-                            ? 'border-emerald-200/35 bg-emerald-500/22 text-emerald-100'
-                            : 'border-white/20 bg-white/[0.10] hover:bg-white/[0.18] text-white'
-                        }`}
-                      >
-                        {spotlightReplaceStatus === 'success' ? <Check className="w-3 h-3" /> : null}
-                        {spotlightReplaceStatus === 'loading' ? 'Replacing…' : spotlightReplaceStatus === 'success' ? 'Replaced' : 'Auto Replace'}
-                      </button>
+                  {isWindows ? (
+                    <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
+                      <p className="text-white/86 text-xs font-medium mb-1.5">Using PowerToys or FancyZones?</p>
+                      <div className="text-white/55 text-xs space-y-1">
+                        <p>If you have PowerToys Run bound to Alt+Space, you can set Alt+Space here to use SuperCmd instead — disable the PowerToys binding first.</p>
+                        <p>Otherwise, Ctrl+Space is recommended as the default on Windows.</p>
+                      </div>
                     </div>
-                    {spotlightReplaceStatus === 'success' ? (
-                      <p className="text-emerald-200/85 text-xs mb-1.5">Spotlight shortcut disabled. SuperCmd is now Cmd + Space.</p>
-                    ) : spotlightReplaceStatus === 'error' ? (
-                      <p className="text-rose-200/85 text-xs mb-1.5">Auto-replace failed. Use the manual steps below.</p>
-                    ) : null}
-                    <div className="text-white/55 text-xs space-y-1">
-                      <p>Manual: System Settings → Keyboard → Keyboard Shortcuts → Spotlight → disable.</p>
-                      <p>Then set the launcher hotkey above to Cmd + Space.</p>
+                  ) : (
+                    <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
+                      <div className="flex items-center justify-between gap-3 mb-1.5">
+                        <p className="text-white/86 text-xs font-medium">Replace Spotlight (Cmd + Space)</p>
+                        <button
+                          onClick={() => { void handleReplaceSpotlight(); }}
+                          disabled={spotlightReplaceStatus === 'loading' || spotlightReplaceStatus === 'success'}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors disabled:opacity-60 ${
+                            spotlightReplaceStatus === 'success'
+                              ? 'border-emerald-200/35 bg-emerald-500/22 text-emerald-100'
+                              : 'border-white/20 bg-white/[0.10] hover:bg-white/[0.18] text-white'
+                          }`}
+                        >
+                          {spotlightReplaceStatus === 'success' ? <Check className="w-3 h-3" /> : null}
+                          {spotlightReplaceStatus === 'loading' ? 'Replacing…' : spotlightReplaceStatus === 'success' ? 'Replaced' : 'Auto Replace'}
+                        </button>
+                      </div>
+                      {spotlightReplaceStatus === 'success' ? (
+                        <p className="text-emerald-200/85 text-xs mb-1.5">Spotlight shortcut disabled. SuperCmd is now Cmd + Space.</p>
+                      ) : spotlightReplaceStatus === 'error' ? (
+                        <p className="text-rose-200/85 text-xs mb-1.5">Auto-replace failed. Use the manual steps below.</p>
+                      ) : null}
+                      <div className="text-white/55 text-xs space-y-1">
+                        <p>Manual: System Settings → Keyboard → Keyboard Shortcuts → Spotlight → disable.</p>
+                        <p>Then set the launcher hotkey above to Cmd + Space.</p>
+                      </div>
                     </div>
-                  </div>}
+                  )}
                 </div>
 
                 {requireWorkingShortcut && !hasValidShortcut ? (
