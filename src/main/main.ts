@@ -1486,6 +1486,42 @@ function fetchEdgeTtsVoiceCatalog(timeoutMs = 12000): Promise<EdgeTtsVoiceCatalo
 async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: boolean; clipboardWaitMs?: number }): Promise<string> {
   const allowClipboardFallback = options?.allowClipboardFallback !== false;
   const clipboardWaitMs = Math.max(0, Number(options?.clipboardWaitMs ?? 380) || 380);
+
+  // ── Windows path ────────────────────────────────────────────────────────────
+  // osascript is macOS-only. On Windows, simulate Ctrl+C on the foreground
+  // window (which still has focus because speak mode runs with showWindow:false)
+  // then read the clipboard. The previous clipboard content is restored after.
+  if (process.platform === 'win32') {
+    if (!allowClipboardFallback) return '';
+    const previousClipboard = systemClipboard.readText();
+    try {
+      const { execFile } = require('child_process');
+      const { promisify } = require('util');
+      const execFileAsync = promisify(execFile);
+      await execFileAsync('powershell', [
+        '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command',
+        'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("^c")',
+      ]);
+      const waitUntil = Date.now() + clipboardWaitMs;
+      let latest = '';
+      while (Date.now() < waitUntil) {
+        latest = String(systemClipboard.readText() || '');
+        if (latest !== String(previousClipboard || '')) break;
+        await new Promise((resolve) => setTimeout(resolve, 35));
+      }
+      const captured = String(latest || systemClipboard.readText() || '').trim();
+      if (!captured || captured === String(previousClipboard || '').trim()) return '';
+      return captured;
+    } catch {
+      return '';
+    } finally {
+      try {
+        systemClipboard.writeText(previousClipboard);
+      } catch {}
+    }
+  }
+
+  // ── macOS path ──────────────────────────────────────────────────────────────
   const fromAccessibility = await (async () => {
     try {
       const { execFile } = require('child_process');
