@@ -6,6 +6,11 @@ import ExtensionStoreApp from './ExtensionStoreApp';
 import PromptApp from './PromptApp';
 import '../styles/index.css';
 
+// Stamp the OS platform on <body> so CSS can target [data-platform="win32"] etc.
+if (window.electron?.platform) {
+  document.body.setAttribute('data-platform', window.electron.platform);
+}
+
 // Hash-based routing: launcher uses #/ , settings uses #/settings
 const hash = window.location.hash;
 const isSettings = hash.includes('/settings');

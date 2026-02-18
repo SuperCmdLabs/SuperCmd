@@ -49,6 +49,8 @@ import CursorPromptView from './views/CursorPromptView';
 
 const STALE_OVERLAY_RESET_MS = 60_000;
 
+const isWindows = window.electron?.platform === 'win32';
+
 const App: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [pinnedCommands, setPinnedCommands] = useState<string[]>([]);
@@ -1949,8 +1951,8 @@ const App: React.FC = () => {
           tabIndex={0}
           onKeyDown={handleActionsOverlayKeyDown}
           style={{
-            background: 'rgba(30,30,34,0.97)',
-            backdropFilter: 'blur(40px)',
+            background: isWindows ? 'rgba(28,28,34,0.99)' : 'rgba(30,30,34,0.97)',
+            backdropFilter: isWindows ? 'none' : 'blur(40px)',
             border: '1px solid rgba(255,255,255,0.08)',
           }}
           onClick={(e) => e.stopPropagation()}
@@ -2004,8 +2006,8 @@ const App: React.FC = () => {
           style={{
             left: Math.min(contextMenu.x, window.innerWidth - 340),
             top: Math.min(contextMenu.y, window.innerHeight - 320),
-            background: 'rgba(30,30,34,0.97)',
-            backdropFilter: 'blur(40px)',
+            background: isWindows ? 'rgba(28,28,34,0.99)' : 'rgba(30,30,34,0.97)',
+            backdropFilter: isWindows ? 'none' : 'blur(40px)',
             border: '1px solid rgba(255,255,255,0.08)',
           }}
           onClick={(e) => e.stopPropagation()}

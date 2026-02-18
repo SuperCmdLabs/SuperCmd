@@ -247,6 +247,30 @@ kbd {
   -webkit-app-region: no-drag;
 }
 
+/* ── Windows overrides ──────────────────────────────────────────────────────
+   On Windows, backdrop-filter compositing causes a visible fade-in delay and
+   the semi-transparent rgba values look far more see-through than on macOS.
+   Override all glass surfaces to be fully opaque with no backdrop blur.    */
+[data-platform="win32"] .glass-effect {
+  background: rgba(12, 12, 18, 0.97);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+[data-platform="win32"] .cursor-prompt-surface {
+  background: rgba(12, 12, 18, 0.97);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Actions / context-menu overlay panels rendered via inline styles get a
+   helper class so we can also lift their opacity on Windows. */
+[data-platform="win32"] .win-panel {
+  background: rgba(28, 28, 34, 0.99) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 /* Extension toast notifications */
 .sc-toast {
   position: fixed;

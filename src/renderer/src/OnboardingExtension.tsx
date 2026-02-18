@@ -493,20 +493,30 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const canCompleteOnboarding = hasValidShortcut;
   const canContinue = step !== 2 || canCompleteOnboarding;
   const canFinish = canCompleteOnboarding;
+
+  // On Windows, backdrop-filter compositing causes a visible fade-in and the
+  // semi-transparent rgba values look far more see-through than on macOS.
+  // Use fully-opaque backgrounds without blur on Windows.
+  const wrapperStyle: React.CSSProperties = isWindows
+    ? { background: 'linear-gradient(140deg, rgba(10, 10, 14, 0.99) 0%, rgba(14, 14, 20, 0.99) 52%, rgba(18, 10, 12, 0.99) 100%)' }
+    : {
+        background: 'linear-gradient(140deg, rgba(6, 8, 12, 0.80) 0%, rgba(12, 14, 20, 0.78) 52%, rgba(20, 11, 13, 0.76) 100%)',
+        WebkitBackdropFilter: 'blur(50px) saturate(165%)',
+        backdropFilter: 'blur(50px) saturate(165%)',
+      };
+
   const contentBackground = step === 0
     ? 'radial-gradient(circle at 10% 0%, rgba(255, 90, 118, 0.26), transparent 34%), radial-gradient(circle at 92% 2%, rgba(255, 84, 70, 0.19), transparent 36%), linear-gradient(180deg, rgba(5,5,7,0.98) 0%, rgba(8,8,11,0.95) 48%, rgba(10,10,13,0.93) 100%)'
-    : 'radial-gradient(circle at 5% 0%, rgba(255, 92, 127, 0.30), transparent 36%), radial-gradient(circle at 100% 10%, rgba(255, 87, 73, 0.24), transparent 38%), radial-gradient(circle at 82% 100%, rgba(84, 212, 255, 0.12), transparent 34%), transparent';
+    : isWindows
+      // On Windows, end in an opaque dark base so nothing bleeds through
+      ? 'radial-gradient(circle at 5% 0%, rgba(255, 92, 127, 0.20), transparent 36%), radial-gradient(circle at 100% 10%, rgba(255, 87, 73, 0.16), transparent 38%), radial-gradient(circle at 82% 100%, rgba(84, 212, 255, 0.08), transparent 34%), linear-gradient(180deg, rgba(10,10,14,0.99) 0%, rgba(12,12,16,0.99) 100%)'
+      : 'radial-gradient(circle at 5% 0%, rgba(255, 92, 127, 0.30), transparent 36%), radial-gradient(circle at 100% 10%, rgba(255, 87, 73, 0.24), transparent 38%), radial-gradient(circle at 82% 100%, rgba(84, 212, 255, 0.12), transparent 34%), transparent';
 
   return (
     <div className="w-full h-full">
       <div
         className="glass-effect overflow-hidden h-full flex flex-col"
-        style={{
-          background:
-            'linear-gradient(140deg, rgba(6, 8, 12, 0.80) 0%, rgba(12, 14, 20, 0.78) 52%, rgba(20, 11, 13, 0.76) 100%)',
-          WebkitBackdropFilter: 'blur(50px) saturate(165%)',
-          backdropFilter: 'blur(50px) saturate(165%)',
-        }}
+        style={wrapperStyle}
       >
         <div className="flex items-center gap-3 px-6 py-4 border-b border-white/[0.08]">
           <button
