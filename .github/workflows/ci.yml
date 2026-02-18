@@ -36,8 +36,8 @@ jobs:
           node-version: 20
           cache: npm
 
-      # Skip postinstall — electron-builder install-app-deps not needed for a
-      # compile check. The build:native script is a no-op on Windows.
+      # Skip postinstall — electron-builder install-app-deps not needed here.
+      # build:native now compiles hotkey-hold-monitor.exe via gcc (MinGW).
       - run: npm ci --ignore-scripts
 
       - name: Build (main + renderer + native)
@@ -51,3 +51,12 @@ jobs:
           # empty strings as relative paths (→ cwd), which causes a "not a file"
           # error. Leave it unset and rely on CSC_IDENTITY_AUTO_DISCOVERY=false.
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload portable Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SuperCmd-win-x64-portable
+          # Upload the unpacked dir — extract and run SuperCmd.exe to test
+          # without needing a full NSIS installer.
+          path: out/win-unpacked/
+          retention-days: 14
