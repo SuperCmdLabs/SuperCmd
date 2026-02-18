@@ -29,7 +29,8 @@ const REQUIRED_SIZES = [
   'icon_512x512@2x.png',
 ];
 
-describe('supercmd.icns', () => {
+// iconutil is macOS-only — skip this suite on Linux/Windows CI
+describe.runIf(process.platform === 'darwin')('supercmd.icns', () => {
   it('exists', () => {
     expect(fs.existsSync(ICNS), `${ICNS} not found`).toBe(true);
   });
