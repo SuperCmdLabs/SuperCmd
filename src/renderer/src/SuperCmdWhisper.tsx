@@ -11,9 +11,10 @@ interface SuperCmdWhisperProps {
 
 type WhisperState = 'idle' | 'listening' | 'processing' | 'error';
 
-// 'whisper' = OpenAI Whisper API (needs API key)
-// 'native'  = macOS SFSpeechRecognizer (no API key needed, like Chrome)
-type WhisperBackend = 'whisper' | 'native';
+// 'whisper'  = OpenAI Whisper API (needs API key)
+// 'native'   = macOS SFSpeechRecognizer (no API key needed)
+// 'webspeech' = Chromium Web Speech API (Windows — uses Google's servers, no API key)
+type WhisperBackend = 'whisper' | 'native' | 'webspeech';
 type NativeFlushReason = 'timer' | 'silence' | 'final' | 'stop' | 'ended';
 type NativeQueuedSuffix = { text: string; attempts: number; reason: NativeFlushReason };
 
@@ -217,6 +218,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const whisperStateRef = useRef<WhisperState>('idle');
   const startInFlightRef = useRef(false);
 
+  // Web Speech API backend refs (Windows)
+  const speechRecognitionRef = useRef<any>(null);
+
   // Native backend refs
   const nativeChunkDisposerRef = useRef<(() => void) | null>(null);
   const nativeProcessTimerRef = useRef<number | null>(null);
@@ -380,7 +384,10 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       const canUseCloud =
         (wantsOpenAI && !!settings.ai.openaiApiKey) ||
         (wantsElevenLabs && !!settings.ai.elevenlabsApiKey);
-      const backend: WhisperBackend = canUseCloud ? 'whisper' : 'native';
+      const isWindowsPlatform = window.electron?.platform === 'win32';
+      // On Windows there is no macOS SFSpeechRecognizer binary — use Chromium's
+      // built-in Web Speech API instead (same engine as Chrome, no API key needed).
+      const backend: WhisperBackend = canUseCloud ? 'whisper' : (isWindowsPlatform ? 'webspeech' : 'native');
       backendRef.current = backend;
       return { backend, language };
     } catch {
@@ -783,6 +790,10 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       nativeChunkDisposerRef.current = null;
     }
     void window.electron.whisperStopNative().catch(() => {});
+    if (speechRecognitionRef.current) {
+      try { speechRecognitionRef.current.abort(); } catch {}
+      speechRecognitionRef.current = null;
+    }
     stopVisualizer();
   }, [stopNativeSilenceWatchdog, stopNativeProcessTimer, stopVisualizer]);
 
@@ -827,7 +838,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     setStatusText('Finishing whisper...');
     try {
       const backend = backendRef.current;
-      const isNativeBackend = backend === 'native';
+      // webspeech behaves like native: text is collected in combinedTranscriptRef
+      // and pasted at the end — no separate cloud upload.
+      const isNativeBackend = backend === 'native' || backend === 'webspeech';
 
       if (backend === 'whisper') {
         // Stop periodic timer
@@ -862,8 +875,18 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
             transcribeInFlightRef.current = false;
           }
         }
+      } else if (backend === 'webspeech') {
+        // Web Speech API — just stop the recognition; any pending onresult events
+        // fire synchronously before onend so the transcript is already captured.
+        if (speechRecognitionRef.current) {
+          try { speechRecognitionRef.current.stop(); } catch {}
+          speechRecognitionRef.current = null;
+        }
+        // Brief wait for any trailing onresult / onend callbacks to flush.
+        await new Promise((r) => setTimeout(r, 250));
+        stopVisualizer();
       } else {
-        // native backend — stop the native process
+        // native macOS backend — stop the native process
         stopNativeSilenceWatchdog();
         stopNativeProcessTimer();
         flushNativeCurrentPartial('stop');
@@ -1163,6 +1186,89 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
         recorder.start(500);
         restoreEditorFocusOnce(150);
+
+      } else if (backend === 'webspeech') {
+        stopRecording();
+        // ── Chromium Web Speech API path (Windows) ────────────────
+        // Uses the same Google speech service as Chrome, no API key required.
+        const SpeechRecognitionAPI =
+          (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognitionAPI) {
+          setState('error');
+          whisperStateRef.current = 'error';
+          setStatusText('Speech recognition unavailable.');
+          setErrorText(
+            'The Web Speech API is not available in this version. ' +
+            'Please set an OpenAI API key in Settings → AI to use cloud transcription.'
+          );
+          stopVisualizer();
+          return;
+        }
+
+        const recognition = new SpeechRecognitionAPI();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = sessionConfig.language;
+        speechRecognitionRef.current = recognition;
+
+        recognition.onstart = () => {
+          if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) return;
+          setState('listening');
+          playRecordingCue('start');
+          setStatusText('Listening... release shortcut to process.');
+          window.electron.whisperDebugLog('start', 'Web Speech API started');
+        };
+
+        recognition.onresult = (event: any) => {
+          if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) return;
+          // Accumulate all results (final + interim) into the combined transcript.
+          let accumulated = '';
+          for (let i = 0; i < event.results.length; i += 1) {
+            accumulated += event.results[i][0].transcript;
+          }
+          const normalized = normalizeTranscript(accumulated);
+          if (normalized) {
+            combinedTranscriptRef.current = normalized;
+            nativeCurrentPartialRef.current = normalized;
+          }
+        };
+
+        recognition.onerror = (event: any) => {
+          const code = String(event.error || '');
+          // 'aborted' fires when we call recognition.stop() — not a real error.
+          if (code === 'aborted') return;
+          window.electron.whisperDebugLog('error', 'Web Speech API error', { error: code });
+          if (finalizingRef.current) return;
+          setState('error');
+          setStatusText('Speech recognition error.');
+          setErrorText(
+            code === 'network'
+              ? 'No internet connection — speech recognition requires a network. Configure an OpenAI API key in Settings → AI for offline use.'
+              : `Speech recognition error: ${code}`
+          );
+          stopVisualizer();
+        };
+
+        recognition.onend = () => {
+          window.electron.whisperDebugLog('stop', 'Web Speech API ended');
+          nativeProcessEndedRef.current = true;
+          // If we ended unexpectedly (not triggered by our stop()), finalize what we have.
+          if (!finalizingRef.current && combinedTranscriptRef.current) {
+            void finalizeAndClose();
+          }
+        };
+
+        try {
+          recognition.start();
+          restoreEditorFocusOnce(150);
+        } catch (err: any) {
+          setState('error');
+          whisperStateRef.current = 'error';
+          setStatusText('Speech recognition failed to start.');
+          setErrorText(err?.message || 'Failed to start speech recognition.');
+          stopVisualizer();
+          return;
+        }
 
       } else {
         stopRecording();
