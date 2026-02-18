@@ -30,8 +30,9 @@ export type LocalSpeakBackend = 'edge-tts' | 'system-say';
 export interface HotkeyModifiers {
   cmd: boolean;
   ctrl: boolean;
-  shift: boolean;
   alt: boolean;
+  shift: boolean;
+  fn: boolean;
 }
 
 // ── Platform interface ────────────────────────────────────────────────────────
@@ -70,8 +71,7 @@ export interface PlatformCapabilities {
    */
   spawnHotkeyHoldMonitor(
     keyCode: number,
-    modifiers: HotkeyModifiers,
-    holdMs: number
+    modifiers: HotkeyModifiers
   ): ChildProcess | null;
 
   /**

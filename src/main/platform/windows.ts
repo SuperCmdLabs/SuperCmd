@@ -46,8 +46,7 @@ export const windows: PlatformCapabilities = {
 
   spawnHotkeyHoldMonitor(
     _keyCode: number,
-    _modifiers: HotkeyModifiers,
-    _holdMs: number
+    _modifiers: HotkeyModifiers
   ) {
     // Hold-to-talk requires a low-level keyboard hook. Windows implementation
     // (Win32 SetWindowsHookEx / RegisterHotKey) will be added in a follow-up PR.

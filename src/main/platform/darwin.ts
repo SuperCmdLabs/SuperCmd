@@ -123,24 +123,49 @@ export const darwin: PlatformCapabilities = {
 
   spawnHotkeyHoldMonitor(
     keyCode: number,
-    modifiers: HotkeyModifiers,
-    holdMs: number
+    modifiers: HotkeyModifiers
   ): ChildProcess | null {
     const fs = require('fs');
-    const binaryPath = getNativeBinaryPath('hotkey-hold-monitor');
-    if (!fs.existsSync(binaryPath)) return null;
+    const { execFileSync, spawn } = require('child_process');
 
-    const { spawn } = require('child_process');
+    let binaryPath = getNativeBinaryPath('hotkey-hold-monitor');
+    if (!fs.existsSync(binaryPath)) {
+      // Compile on demand (dev mode — packaged builds include the pre-built binary).
+      const sourceCandidates = [
+        path.join(app.getAppPath(), 'src', 'native', 'hotkey-hold-monitor.swift'),
+        path.join(process.cwd(), 'src', 'native', 'hotkey-hold-monitor.swift'),
+        path.join(__dirname, '..', '..', 'src', 'native', 'hotkey-hold-monitor.swift'),
+      ];
+      const sourcePath = sourceCandidates.find((c) => fs.existsSync(c));
+      if (!sourcePath) {
+        console.warn('[Whisper][hold] Source file not found for hotkey-hold-monitor.swift');
+        return null;
+      }
+      try {
+        fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
+        execFileSync('swiftc', [
+          '-O', '-o', binaryPath, sourcePath,
+          '-framework', 'CoreGraphics',
+          '-framework', 'AppKit',
+          '-framework', 'Carbon',
+        ]);
+      } catch (error) {
+        console.warn('[Whisper][hold] Failed to compile hotkey hold monitor:', error);
+        return null;
+      }
+    }
+
     try {
+      // Args match the Swift binary's expected order: keyCode cmd ctrl alt shift fn
       return spawn(
         binaryPath,
         [
           String(keyCode),
           modifiers.cmd ? '1' : '0',
           modifiers.ctrl ? '1' : '0',
-          modifiers.shift ? '1' : '0',
           modifiers.alt ? '1' : '0',
-          String(holdMs),
+          modifiers.shift ? '1' : '0',
+          modifiers.fn ? '1' : '0',
         ],
         { stdio: ['ignore', 'pipe', 'pipe'] }
       );

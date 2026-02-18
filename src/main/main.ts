@@ -1846,22 +1846,8 @@ function startFnSpeakToggleWatcher(): void {
   if (fnSpeakToggleWatcherProcess || !fnSpeakToggleWatcherEnabled) return;
   const config = parseHoldShortcutConfig('Fn');
   if (!config) return;
-  const binaryPath = ensureWhisperHoldWatcherBinary();
-  if (!binaryPath) return;
-
-  const { spawn } = require('child_process');
-  fnSpeakToggleWatcherProcess = spawn(
-    binaryPath,
-    [
-      String(config.keyCode),
-      config.cmd ? '1' : '0',
-      config.ctrl ? '1' : '0',
-      config.alt ? '1' : '0',
-      config.shift ? '1' : '0',
-      config.fn ? '1' : '0',
-    ],
-    { stdio: ['ignore', 'pipe', 'pipe'] }
-  );
+  fnSpeakToggleWatcherProcess = platform.spawnHotkeyHoldMonitor(config.keyCode, config);
+  if (!fnSpeakToggleWatcherProcess) return;
   fnSpeakToggleWatcherStdoutBuffer = '';
 
   fnSpeakToggleWatcherProcess.stdout.on('data', (chunk: Buffer | string) => {
@@ -1958,38 +1944,6 @@ function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
   startFnSpeakToggleWatcher();
 }
 
-function ensureWhisperHoldWatcherBinary(): string | null {
-  const fs = require('fs');
-  const binaryPath = getNativeBinaryPath('hotkey-hold-monitor');
-  if (fs.existsSync(binaryPath)) return binaryPath;
-  try {
-    const { execFileSync } = require('child_process');
-    const sourceCandidates = [
-      path.join(app.getAppPath(), 'src', 'native', 'hotkey-hold-monitor.swift'),
-      path.join(process.cwd(), 'src', 'native', 'hotkey-hold-monitor.swift'),
-      path.join(__dirname, '..', '..', 'src', 'native', 'hotkey-hold-monitor.swift'),
-    ];
-    const sourcePath = sourceCandidates.find((candidate) => fs.existsSync(candidate));
-    if (!sourcePath) {
-      console.warn('[Whisper][hold] Source file not found for hotkey-hold-monitor.swift');
-      return null;
-    }
-    fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
-    execFileSync('swiftc', [
-      '-O',
-      '-o', binaryPath,
-      sourcePath,
-      '-framework', 'CoreGraphics',
-      '-framework', 'AppKit',
-      '-framework', 'Carbon',
-    ]);
-    return binaryPath;
-  } catch (error) {
-    console.warn('[Whisper][hold] Failed to compile hotkey hold monitor:', error);
-    return null;
-  }
-}
-
 function startWhisperHoldWatcher(shortcut: string, holdSeq: number): void {
   if (whisperHoldWatcherProcess) return;
   const config = parseHoldShortcutConfig(shortcut);
@@ -1997,25 +1951,11 @@ function startWhisperHoldWatcher(shortcut: string, holdSeq: number): void {
     console.warn('[Whisper][hold] Unsupported shortcut for hold-to-talk:', shortcut);
     return;
   }
-  const binaryPath = ensureWhisperHoldWatcherBinary();
-  if (!binaryPath) {
-    console.warn('[Whisper][hold] Hold monitor binary unavailable');
+  whisperHoldWatcherProcess = platform.spawnHotkeyHoldMonitor(config.keyCode, config);
+  if (!whisperHoldWatcherProcess) {
+    console.warn('[Whisper][hold] Hold monitor unavailable on this platform');
     return;
   }
-
-  const { spawn } = require('child_process');
-  whisperHoldWatcherProcess = spawn(
-    binaryPath,
-    [
-      String(config.keyCode),
-      config.cmd ? '1' : '0',
-      config.ctrl ? '1' : '0',
-      config.alt ? '1' : '0',
-      config.shift ? '1' : '0',
-      config.fn ? '1' : '0',
-    ],
-    { stdio: ['ignore', 'pipe', 'pipe'] }
-  );
   whisperHoldWatcherSeq = holdSeq;
   whisperHoldWatcherStdoutBuffer = '';
 
@@ -3271,7 +3211,6 @@ function stopSnippetExpander(): void {
 }
 
 function refreshSnippetExpander(): void {
-  if (process.platform !== 'darwin') return;
   stopSnippetExpander();
 
   const keywords = getAllSnippets()
@@ -3280,28 +3219,9 @@ function refreshSnippetExpander(): void {
 
   if (keywords.length === 0) return;
 
-  const expanderPath = getNativeBinaryPath('snippet-expander');
-  const fs = require('fs');
-  if (!fs.existsSync(expanderPath)) {
-    try {
-      const { execFileSync } = require('child_process');
-      const sourcePath = path.join(app.getAppPath(), 'src', 'native', 'snippet-expander.swift');
-      execFileSync('swiftc', ['-O', '-o', expanderPath, sourcePath, '-framework', 'AppKit']);
-    } catch (error) {
-      console.warn('[SnippetExpander] Native helper not found and compile failed:', error);
-      return;
-    }
-  }
+  snippetExpanderProcess = platform.spawnSnippetExpander(keywords);
+  if (!snippetExpanderProcess) return;
 
-  const { spawn } = require('child_process');
-  try {
-    snippetExpanderProcess = spawn(expanderPath, [JSON.stringify(keywords)], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } catch (error) {
-    console.warn('[SnippetExpander] Failed to spawn native helper:', error);
-    return;
-  }
   console.log(`[SnippetExpander] Started with ${keywords.length} keyword(s)`);
 
   snippetExpanderProcess.stdout.on('data', (chunk: Buffer | string) => {
