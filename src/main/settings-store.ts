@@ -88,7 +88,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   commandHotkeys: {
     'system-cursor-prompt': `${MOD}+Shift+K`,
     'system-supercmd-whisper': `${MOD}+Shift+W`,
-    'system-supercmd-whisper-speak-toggle': 'Fn',
+    // Fn is a firmware key on Windows — Win32 never sees it. Use Ctrl+Shift+Space instead.
+    'system-supercmd-whisper-speak-toggle': process.platform === 'win32' ? 'Ctrl+Shift+Space' : 'Fn',
     'system-supercmd-speak': `${MOD}+Shift+S`,
   },
   pinnedCommands: [],

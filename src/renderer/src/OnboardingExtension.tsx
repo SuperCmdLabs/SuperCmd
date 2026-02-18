@@ -711,31 +711,46 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   <div
                     className="rounded-3xl border border-white/[0.16] p-6"
                     style={{
-                      background: 'linear-gradient(180deg, rgba(33, 19, 24, 0.82), rgba(16, 17, 25, 0.72))',
+                      background: 'linear-gradient(180deg, rgba(33, 19, 24, 0.92), rgba(16, 17, 25, 0.88))',
                       boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 18px 34px rgba(0,0,0,0.34)',
                     }}
                   >
                     <p className="text-white text-[20px] leading-tight font-semibold mb-2">Permissions</p>
-                    <p className="text-white/72 text-sm leading-relaxed mb-4">
-                      Windows manages Accessibility and Input Monitoring automatically — no System Settings changes needed.
+                    <p className="text-white/80 text-sm leading-relaxed">
+                      No Accessibility or Input Monitoring setup needed — Windows handles those automatically.
+                      The only permission required is Microphone access for Whisper dictation.
                     </p>
-                    <div className="space-y-2 text-xs text-white/70">
-                      <p>Microphone access is requested the first time you use Whisper dictation.</p>
-                      <p>Click Continue to proceed to the dictation test.</p>
-                    </div>
                   </div>
                   <div
-                    className="rounded-2xl border border-white/[0.14] p-4 flex items-start gap-3"
-                    style={{ background: 'linear-gradient(160deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03))' }}
+                    className="rounded-2xl border border-white/[0.18] p-4 flex items-start gap-4"
+                    style={{ background: 'linear-gradient(160deg, rgba(28,24,38,0.96), rgba(18,16,28,0.94))' }}
                   >
-                    <div className="w-8 h-8 rounded-lg border border-cyan-200/25 bg-cyan-500/15 flex items-center justify-center shrink-0">
+                    <div className="w-9 h-9 rounded-lg border border-cyan-200/25 bg-cyan-500/15 flex items-center justify-center shrink-0 mt-0.5">
                       <Mic className="w-4 h-4 text-cyan-100" />
                     </div>
-                    <div>
-                      <p className="text-white/92 text-sm font-semibold mb-1">Microphone</p>
-                      <p className="text-white/62 text-xs leading-relaxed">
-                        Windows will prompt for microphone access when you first start Whisper. Grant it to enable voice dictation.
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-3 mb-1">
+                        <p className="text-white/92 text-sm font-semibold">Microphone</p>
+                        {openedPermissions['microphone'] ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-emerald-300">
+                            <Check className="w-3 h-3" /> Granted
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => void openPermissionTarget('microphone', '')}
+                            disabled={permissionLoading['microphone']}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-white/20 bg-white/[0.10] hover:bg-white/[0.18] text-white text-xs font-medium transition-colors disabled:opacity-60"
+                          >
+                            {permissionLoading['microphone'] ? 'Requesting…' : 'Request Access'}
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-white/68 text-xs leading-relaxed">
+                        Click to trigger the Windows microphone permission prompt. Grant access to enable Whisper dictation.
                       </p>
+                      {permissionNotes['microphone'] ? (
+                        <p className="mt-1.5 text-xs text-amber-200/85">{permissionNotes['microphone']}</p>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -888,7 +903,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   />
                   <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
                     {isWindows
-                      ? 'Edge TTS is used for read-back on Windows. For dictation, set an OpenAI API key in Settings → AI. If the Fn key does not respond, pick a different hold key above.'
+                      ? 'The Fn key is a firmware key on Windows and is not visible to apps — use Ctrl+Shift+Space (the default) or any other combo above. For dictation, set an OpenAI API key in Settings → AI.'
                       : 'Native speech recognition is used by default. For the best experience, use ElevenLabs.'}
                   </p>
                 </div>
