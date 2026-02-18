@@ -48,7 +48,8 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
   }
   // If the model key is not in our routing table, strip provider prefix and route directly
   if (model) {
-    const prefixes = ['openai-', 'anthropic-', 'ollama-', 'openai-compatible-'] as const;
+    // Order matters: check longer prefixes first to avoid partial matches
+    const prefixes = ['openai-compatible-', 'anthropic-', 'ollama-', 'openai-'] as const;
     for (const prefix of prefixes) {
       if (model.startsWith(prefix)) {
         return { provider: prefix.slice(0, -1) as 'openai' | 'anthropic' | 'ollama' | 'openai-compatible', modelId: model.slice(prefix.length) };
@@ -62,7 +63,8 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
       return MODEL_ROUTES[config.defaultModel];
     }
     // Handle dynamic model IDs (e.g. "ollama-llama3.2")
-    const prefixes = ['openai-', 'anthropic-', 'ollama-', 'openai-compatible-'] as const;
+    // Order matters: check longer prefixes first to avoid partial matches
+    const prefixes = ['openai-compatible-', 'anthropic-', 'ollama-', 'openai-'] as const;
     for (const prefix of prefixes) {
       if (config.defaultModel.startsWith(prefix)) {
         return { provider: prefix.slice(0, -1) as 'openai' | 'anthropic' | 'ollama' | 'openai-compatible', modelId: config.defaultModel.slice(prefix.length) };
