@@ -64,10 +64,20 @@ import { platform } from './platform';
 import type { MicrophoneAccessStatus, MicrophonePermissionResult, LocalSpeakBackend } from './platform';
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, nativeTheme, clipboard: systemClipboard } = electron;
 try {
   app.setName('SuperCmd');
 } catch {}
+
+// Force dark mode so native form controls (selects, scrollbars, etc.) render
+// correctly on Windows regardless of the user's system light/dark setting.
+try { nativeTheme.themeSource = 'dark'; } catch {}
+
+// Set the App User Model ID so Windows taskbar groups all SuperCmd windows
+// under one icon and shows the correct name in alt-tab / taskbar previews.
+if (process.platform === 'win32') {
+  try { app.setAppUserModelId('com.supercmd.app'); } catch {}
+}
 
 // ─── Native Binary Helpers ──────────────────────────────────────────
 
@@ -2260,6 +2270,7 @@ function createWindow(): void {
     backgroundColor: '#00000000',
     vibrancy: 'fullscreen-ui',
     visualEffectState: 'active',
+    icon: process.platform === 'win32' ? path.join(__dirname, '../../supercmd.ico') : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -4333,6 +4344,7 @@ function openSettingsWindow(payload?: SettingsNavigationPayload): void {
     vibrancy: 'hud',
     visualEffectState: 'active',
     show: false,
+    icon: process.platform === 'win32' ? path.join(__dirname, '../../supercmd.ico') : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -4400,6 +4412,7 @@ function openExtensionStoreWindow(): void {
     vibrancy: 'hud',
     visualEffectState: 'active',
     show: false,
+    icon: process.platform === 'win32' ? path.join(__dirname, '../../supercmd.ico') : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
