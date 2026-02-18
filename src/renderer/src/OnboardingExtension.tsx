@@ -660,8 +660,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     <div className="rounded-xl border border-white/[0.18] bg-white/[0.08] p-3.5">
                       <p className="text-white/90 text-xs font-medium mb-1.5">Want to use Alt+Space?</p>
                       <div className="text-white/78 text-xs space-y-1.5">
-                        <p>Windows passes Alt+Space to PowerToys Run (or the system window menu) before SuperCmd can see it, so the recorder won't capture it while those are active.</p>
-                        <p className="font-medium text-white/92">To use Alt+Space: open PowerToys → PowerToys Run → disable the Alt+Space shortcut first, then click the hotkey field here and press Alt+Space.</p>
+                        <p>If another app (such as a launcher or the system window menu) is already bound to Alt+Space, Windows will route it there before SuperCmd can capture it.</p>
+                        <p className="font-medium text-white/92">Disable that app's Alt+Space binding first, then click the hotkey field here and press Alt+Space.</p>
                         <p className="text-white/65">Otherwise Ctrl+Space works out of the box and is the recommended default.</p>
                       </div>
                     </div>
