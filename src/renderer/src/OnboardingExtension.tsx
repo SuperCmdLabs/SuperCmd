@@ -441,13 +441,17 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
         if (status === 'denied' || status === 'restricted') {
           setPermissionNotes((prev) => ({
             ...prev,
-            [id]: `${targetLabel} access is blocked. Enable SuperCmd in System Settings, then return.`,
+            [id]: isWindows
+              ? `${targetLabel} access is blocked. Open Settings → Privacy & Security → Microphone and enable SuperCmd, then return.`
+              : `${targetLabel} access is blocked. Enable SuperCmd in System Settings, then return.`,
           }));
         } else if (latestError) {
           if (/failed to request microphone access/i.test(latestError)) {
             setPermissionNotes((prev) => ({
               ...prev,
-              [id]: 'Could not trigger the permission prompt. Open System Settings -> Privacy & Security, enable SuperCmd, then press request again.',
+              [id]: isWindows
+                ? 'Could not trigger the permission prompt. Open Settings → Privacy & Security → Microphone and enable SuperCmd, then press request again.'
+                : 'Could not trigger the permission prompt. Open System Settings -> Privacy & Security, enable SuperCmd, then press request again.',
             }));
           } else {
             setPermissionNotes((prev) => ({ ...prev, [id]: latestError }));
@@ -462,13 +466,19 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       if (id === 'microphone') {
         await new Promise((resolve) => setTimeout(resolve, 350));
       }
-      const candidateUrls = id === 'microphone'
-        ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone']
-        : id === 'speech-recognition'
-          ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_SpeechRecognition']
-          : id === 'input-monitoring'
-            ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent']
-          : [url];
+      // On Windows, never open macOS x-apple.systempreferences URLs.
+      // Only open Windows Settings if access is explicitly blocked.
+      const candidateUrls = isWindows
+        ? (id === 'microphone' && !granted && (status === 'denied' || status === 'restricted')
+            ? ['ms-settings:privacy-microphone']
+            : [])
+        : id === 'microphone'
+          ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone']
+          : id === 'speech-recognition'
+            ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_SpeechRecognition']
+            : id === 'input-monitoring'
+              ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent']
+              : [url];
       let ok = false;
       for (const candidate of candidateUrls) {
         if (ok) break;
