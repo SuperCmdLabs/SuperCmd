@@ -1488,20 +1488,47 @@ async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: bool
   const clipboardWaitMs = Math.max(0, Number(options?.clipboardWaitMs ?? 380) || 380);
 
   // ── Windows path ────────────────────────────────────────────────────────────
-  // osascript is macOS-only. On Windows, simulate Ctrl+C on the foreground
-  // window (which still has focus because speak mode runs with showWindow:false)
-  // then read the clipboard. The previous clipboard content is restored after.
   if (process.platform === 'win32') {
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const execFileAsync = promisify(execFile);
+
+    // Primary: UIAutomation — reads the focused element's selected text directly,
+    // like macOS AXSelectedText, without sending any keystrokes to the user's app.
+    const fromUIA = await (async () => {
+      try {
+        const psScript = [
+          'Add-Type -AssemblyName UIAutomationClient',
+          'Add-Type -AssemblyName UIAutomationTypes',
+          'try {',
+          '  $el = [System.Windows.Automation.AutomationElement]::FocusedElement',
+          '  if ($el) {',
+          '    $pat = $el.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)',
+          '    $sel = $pat.GetSelection()',
+          '    if ($sel.Length -gt 0) { Write-Output ($sel[0].GetText(-1)) }',
+          '  }',
+          '} catch { }',
+        ].join('; ');
+        const { stdout } = await execFileAsync('powershell', [
+          '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript,
+        ], { windowsHide: true } as any);
+        return String(stdout || '').trim();
+      } catch {
+        return '';
+      }
+    })();
+    if (fromUIA) return fromUIA;
+
+    // Fallback: clipboard copy — only when UIAutomation returns nothing (app
+    // doesn't expose the TextPattern). Ctrl+C goes to the foreground window,
+    // which still has focus because speak mode runs with showWindow:false.
     if (!allowClipboardFallback) return '';
     const previousClipboard = systemClipboard.readText();
     try {
-      const { execFile } = require('child_process');
-      const { promisify } = require('util');
-      const execFileAsync = promisify(execFile);
       await execFileAsync('powershell', [
         '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command',
         'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("^c")',
-      ]);
+      ], { windowsHide: true } as any);
       const waitUntil = Date.now() + clipboardWaitMs;
       let latest = '';
       while (Date.now() < waitUntil) {
@@ -3863,7 +3890,17 @@ async function startSpeakFromSelection(): Promise<boolean> {
         return;
       }
       const { spawn } = require('child_process');
-      const proc = spawn('/usr/bin/afplay', [prepared.audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+      // On Windows afplay doesn't exist; use PowerShell STA + MediaPlayer to play MP3.
+      const proc = process.platform === 'win32'
+        ? spawn('powershell', [
+            '-STA', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command',
+            'Add-Type -AssemblyName presentationCore; $p=[System.Windows.Media.MediaPlayer]::new(); $p.Open([uri]$env:SUPERCMD_AUDIO_PATH); $p.Play(); $sw=[Diagnostics.Stopwatch]::StartNew(); while(-not $p.NaturalDuration.HasTimeSpan -and $sw.ElapsedMilliseconds -lt 5000){[Threading.Thread]::Sleep(50)}; if($p.NaturalDuration.HasTimeSpan){[Threading.Thread]::Sleep([Math]::Max(0,[int]$p.NaturalDuration.TimeSpan.TotalMilliseconds-80))}; $p.Close()',
+          ], {
+            stdio: ['ignore', 'ignore', 'pipe'],
+            windowsHide: true,
+            env: { ...process.env, SUPERCMD_AUDIO_PATH: `file:///${prepared.audioPath.replace(/\\/g, '/')}` },
+          } as any)
+        : spawn('/usr/bin/afplay', [prepared.audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
       session.afplayProc = proc;
       let stderr = '';
       const startedAt = Date.now();
@@ -5163,13 +5200,22 @@ app.whenReady().then(async () => {
         }
 
         const playErr = await new Promise<Error | null>((resolve) => {
-          const proc = spawn('/usr/bin/afplay', [audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+          const proc = process.platform === 'win32'
+            ? spawn('powershell', [
+                '-STA', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command',
+                'Add-Type -AssemblyName presentationCore; $p=[System.Windows.Media.MediaPlayer]::new(); $p.Open([uri]$env:SUPERCMD_AUDIO_PATH); $p.Play(); $sw=[Diagnostics.Stopwatch]::StartNew(); while(-not $p.NaturalDuration.HasTimeSpan -and $sw.ElapsedMilliseconds -lt 5000){[Threading.Thread]::Sleep(50)}; if($p.NaturalDuration.HasTimeSpan){[Threading.Thread]::Sleep([Math]::Max(0,[int]$p.NaturalDuration.TimeSpan.TotalMilliseconds-80))}; $p.Close()',
+              ], {
+                stdio: ['ignore', 'ignore', 'pipe'],
+                windowsHide: true,
+                env: { ...process.env, SUPERCMD_AUDIO_PATH: `file:///${audioPath.replace(/\\/g, '/')}` },
+              } as any)
+            : spawn('/usr/bin/afplay', [audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
           let stderr = '';
           proc.stderr.on('data', (chunk: Buffer | string) => { stderr += String(chunk || ''); });
           proc.on('error', (err: Error) => resolve(err));
           proc.on('close', (code: number | null) => {
             if (code && code !== 0) {
-              resolve(new Error(stderr.trim() || `afplay exited with ${code}`));
+              resolve(new Error(stderr.trim() || `audio playback exited with ${code}`));
               return;
             }
             resolve(null);
