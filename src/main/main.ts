@@ -8166,10 +8166,11 @@ return appURL's |path|() as text`,
         if (!img || img.isEmpty()) return undefined;
         const shouldTemplate =
           explicitTemplate ?? (iconDataUrl.startsWith('data:image/svg+xml') ? true : false);
+        const resized = img.resize({ width: 16, height: 16 });
         try {
-          img.setTemplateImage(shouldTemplate);
+          resized.setTemplateImage(shouldTemplate);
         } catch {}
-        return img.resize({ width: 16, height: 16 });
+        return resized;
       } catch {}
       return undefined;
     };
