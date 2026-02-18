@@ -2510,10 +2510,107 @@ function computePromptWindowBounds(
   preCapturedCaretRect?: { x: number; y: number; width: number; height: number } | null,
   preCapturedInputRect?: { x: number; y: number; width: number; height: number } | null,
 ): { x: number; y: number; width: number; height: number } {
-  const caretRect = preCapturedCaretRect !== undefined ? preCapturedCaretRect : getTypingCaretRect();
-  const focusedInputRect = preCapturedInputRect !== undefined ? preCapturedInputRect : getFocusedInputRect();
+  const rawCaretRect = preCapturedCaretRect !== undefined ? preCapturedCaretRect : getTypingCaretRect();
+  const rawFocusedInputRect = preCapturedInputRect !== undefined ? preCapturedInputRect : getFocusedInputRect();
+
+  const frontWindowRect = (() => {
+    try {
+      const { execFileSync } = require('child_process');
+      const script = `
+        tell application "System Events"
+          try
+            set frontApp to first application process whose frontmost is true
+            set frontWindow to first window of frontApp
+            set b to bounds of frontWindow
+            set x1 to item 1 of b
+            set y1 to item 2 of b
+            set x2 to item 3 of b
+            set y2 to item 4 of b
+            return (x1 as string) & "," & (y1 as string) & "," & ((x2 - x1) as string) & "," & ((y2 - y1) as string)
+          on error
+            return ""
+          end try
+        end tell
+      `;
+      const out = String(
+        execFileSync('/usr/bin/osascript', ['-e', script], {
+          encoding: 'utf-8',
+          timeout: 220,
+        }) || ''
+      ).trim();
+      if (!out) return null;
+      const [rawX, rawY, rawW, rawH] = out.split(',').map((part) => Number(String(part || '').trim()));
+      if (![rawX, rawY, rawW, rawH].every((n) => Number.isFinite(n))) return null;
+      return {
+        x: Math.round(rawX),
+        y: Math.round(rawY),
+        width: Math.max(1, Math.round(rawW)),
+        height: Math.max(1, Math.round(rawH)),
+      };
+    } catch {
+      return null;
+    }
+  })();
+
+  const normalizeRectToScreenSpace = (
+    rect: { x: number; y: number; width: number; height: number } | null
+  ): { x: number; y: number; width: number; height: number } | null => {
+    if (!rect) return null;
+    if (!frontWindowRect) return rect;
+    const margin = 48;
+    const looksLocalToWindow =
+      rect.x >= -margin &&
+      rect.y >= -margin &&
+      rect.x <= frontWindowRect.width + margin &&
+      rect.y <= frontWindowRect.height + margin;
+    const looksOutsideGlobalWindow =
+      rect.x < frontWindowRect.x - margin ||
+      rect.y < frontWindowRect.y - margin ||
+      rect.x > frontWindowRect.x + frontWindowRect.width + margin ||
+      rect.y > frontWindowRect.y + frontWindowRect.height + margin;
+    if (looksLocalToWindow && looksOutsideGlobalWindow) {
+      return {
+        x: rect.x + frontWindowRect.x,
+        y: rect.y + frontWindowRect.y,
+        width: rect.width,
+        height: rect.height,
+      };
+    }
+    return rect;
+  };
+
+  const focusedInputRect = normalizeRectToScreenSpace(rawFocusedInputRect);
+  let caretRect = rawCaretRect;
+  caretRect = normalizeRectToScreenSpace(caretRect);
   const width = CURSOR_PROMPT_WINDOW_WIDTH;
   const height = CURSOR_PROMPT_WINDOW_HEIGHT;
+
+  // In Chromium-based apps (e.g. GitHub in Arc/Chrome), AX caret bounds can
+  // occasionally refer to stale page selection while focus is in a different
+  // editable control. Prefer the focused input rect when they conflict.
+  if (caretRect && focusedInputRect) {
+    const display = screen.getDisplayNearestPoint({ x: focusedInputRect.x, y: focusedInputRect.y });
+    const area = display?.workArea || screen.getPrimaryDisplay().workArea;
+    const focusedArea = focusedInputRect.width * focusedInputRect.height;
+    const workAreaSize = area.width * area.height;
+    const focusedIsHuge =
+      focusedInputRect.width >= Math.floor(area.width * 0.9) &&
+      focusedInputRect.height >= Math.floor(area.height * 0.72) &&
+      focusedArea >= Math.floor(workAreaSize * 0.6);
+
+    if (!focusedIsHuge) {
+      const margin = 26;
+      const caretInsideFocused =
+        caretRect.x >= focusedInputRect.x - margin &&
+        caretRect.y >= focusedInputRect.y - margin &&
+        caretRect.x + caretRect.width <= focusedInputRect.x + focusedInputRect.width + margin &&
+        caretRect.y + caretRect.height <= focusedInputRect.y + focusedInputRect.height + margin;
+      if (!caretInsideFocused) {
+        caretRect = null;
+      }
+    }
+  }
+
   const promptAnchorPoint = caretRect
     ? {
         x: caretRect.x,
