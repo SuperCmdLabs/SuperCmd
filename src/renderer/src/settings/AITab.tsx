@@ -617,7 +617,7 @@ const AITab: React.FC = () => {
 
                 <div>
                   <label className="text-[11px] text-white/45 mb-1 block">Provider</label>
-                  <div className="grid grid-cols-2 xl:grid-cols-4 gap-1.5">
+                  <div className="grid grid-cols-2 gap-2">
                     {PROVIDER_OPTIONS.map((p) => (
                       <button
                         key={p.id}
