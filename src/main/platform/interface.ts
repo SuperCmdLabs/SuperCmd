@@ -18,8 +18,9 @@ export type MicrophoneAccessStatus =
 
 export interface MicrophonePermissionResult {
   granted: boolean;
+  requested: boolean;
   status: MicrophoneAccessStatus;
-  requested?: boolean;
+  canPrompt: boolean;
   error?: string;
 }
 

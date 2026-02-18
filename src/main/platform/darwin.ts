@@ -15,8 +15,7 @@ import type {
   HotkeyModifiers,
 } from './interface';
 
-const electron = require('electron');
-const { app, systemPreferences } = electron;
+import { app, systemPreferences } from 'electron';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -71,16 +70,24 @@ export const darwin: PlatformCapabilities = {
       });
       proc.on('error', () => resolve(null));
       proc.on('close', () => {
-        try {
-          const lines = stdout.split('\n').filter(Boolean);
-          for (const line of lines) {
-            const parsed = JSON.parse(line);
-            if (parsed && typeof parsed === 'object') {
-              resolve(parsed as MicrophonePermissionResult);
-              return;
-            }
-          }
-        } catch {}
+        const lines = stdout.split('\n').map((l: string) => l.trim()).filter(Boolean);
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const payload = JSON.parse(lines[i]);
+            const raw = String(payload?.status || '').toLowerCase().replace(/_/g, '-');
+            const status: MicrophoneAccessStatus =
+              raw === 'authorized' ? 'granted' :
+              raw === 'notdetermined' ? 'not-determined' :
+              (['granted', 'denied', 'restricted', 'not-determined'].includes(raw) ? raw as MicrophoneAccessStatus : 'unknown');
+            const granted = Boolean(payload?.granted) || status === 'granted';
+            const requested = Boolean(payload?.requested);
+            const canPrompt = typeof payload?.canPrompt === 'boolean'
+              ? Boolean(payload.canPrompt)
+              : status === 'not-determined' || status === 'unknown';
+            resolve({ granted, requested, status, canPrompt, error: payload?.error });
+            return;
+          } catch {}
+        }
         resolve(null);
       });
     });

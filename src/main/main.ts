@@ -60,6 +60,8 @@ import {
   importSnippetsFromFile,
   exportSnippetsToFile,
 } from './snippet-store';
+import { platform } from './platform';
+import type { MicrophoneAccessStatus, MicrophonePermissionResult, LocalSpeakBackend } from './platform';
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
@@ -312,7 +314,7 @@ let fnSpeakToggleWatcherEnabled = false;
 let fnWatcherOnboardingOverride = false;
 let fnSpeakToggleLastPressedAt = 0;
 let fnSpeakToggleIsPressed = false;
-type LocalSpeakBackend = 'edge-tts' | 'system-say';
+// LocalSpeakBackend imported from './platform'
 let edgeTtsConstructorResolved = false;
 let edgeTtsConstructor: any | null = null;
 let edgeTtsConstructorError = '';
@@ -448,14 +450,7 @@ type OnboardingPermissionResult = {
   error?: string;
 };
 
-type MicrophoneAccessStatus = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
-type MicrophonePermissionResult = {
-  granted: boolean;
-  requested: boolean;
-  status: MicrophoneAccessStatus;
-  canPrompt: boolean;
-  error?: string;
-};
+// MicrophoneAccessStatus and MicrophonePermissionResult imported from './platform'
 
 function describeMicrophoneStatus(status: MicrophoneAccessStatus): string {
   if (status === 'denied') {
@@ -471,21 +466,7 @@ function describeMicrophoneStatus(status: MicrophoneAccessStatus): string {
 }
 
 function readMicrophoneAccessStatus(): MicrophoneAccessStatus {
-  if (process.platform !== 'darwin') return 'granted';
-  try {
-    const raw = String(systemPreferences.getMediaAccessStatus('microphone') || '').toLowerCase();
-    if (
-      raw === 'granted' ||
-      raw === 'denied' ||
-      raw === 'restricted' ||
-      raw === 'not-determined'
-    ) {
-      return raw;
-    }
-    return 'unknown';
-  } catch {
-    return 'unknown';
-  }
+  return platform.readMicrophoneAccessStatus();
 }
 
 async function requestMicrophoneAccessViaNative(prompt: boolean): Promise<MicrophonePermissionResult | null> {
@@ -927,23 +908,7 @@ function parseCueTimeMs(value: any): number {
 }
 
 function probeAudioDurationMs(audioPath: string): number | null {
-  const target = String(audioPath || '').trim();
-  if (!target) return null;
-  if (process.platform !== 'darwin') return null;
-  try {
-    const { spawnSync } = require('child_process');
-    const result = spawnSync('/usr/bin/afinfo', [target], {
-      encoding: 'utf-8',
-      timeout: 4000,
-    });
-    const output = `${String(result?.stdout || '')}\n${String(result?.stderr || '')}`;
-    const secMatch = /estimated duration:\s*([0-9]+(?:\.[0-9]+)?)\s*sec/i.exec(output);
-    const seconds = secMatch ? Number(secMatch[1]) : NaN;
-    if (Number.isFinite(seconds) && seconds > 0) {
-      return Math.round(seconds * 1000);
-    }
-  } catch {}
-  return null;
+  return platform.probeAudioDurationMs(audioPath);
 }
 
 function normalizePermissionStatus(raw: any): MicrophoneAccessStatus {
@@ -983,9 +948,7 @@ function resolveEdgeTtsConstructor(): any | null {
 }
 
 function resolveLocalSpeakBackend(): LocalSpeakBackend | null {
-  if (resolveEdgeTtsConstructor()) return 'edge-tts';
-  if (process.platform === 'darwin') return 'system-say';
-  return null;
+  return platform.resolveSpeakBackend();
 }
 
 async function synthesizeWithEdgeTts(opts: {
@@ -7621,34 +7584,9 @@ return appURL's |path|() as text`,
   // ─── IPC: Native Color Picker ──────────────────────────────────
 
   ipcMain.handle('native-pick-color', async () => {
-    const { execFile } = require('child_process');
-    const colorPickerPath = getNativeBinaryPath('color-picker');
-
     // Keep the launcher open while the native picker is focused.
     suppressBlurHide = true;
-    const pickedColor = await new Promise((resolve) => {
-      execFile(colorPickerPath, (error: any, stdout: string) => {
-        if (error) {
-          console.error('Color picker failed:', error);
-          resolve(null);
-          return;
-        }
-
-        const trimmed = stdout.trim();
-        if (trimmed === 'null' || !trimmed) {
-          resolve(null);
-          return;
-        }
-
-        try {
-          const color = JSON.parse(trimmed);
-          resolve(color);
-        } catch (e) {
-          console.error('Failed to parse color picker output:', e);
-          resolve(null);
-        }
-      });
-    });
+    const pickedColor = await platform.pickColor();
     suppressBlurHide = false;
     return pickedColor;
   });
