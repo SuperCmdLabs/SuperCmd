@@ -17,7 +17,9 @@
     "build:native": "mkdir -p dist/native && swiftc -O -o dist/native/color-picker src/native/color-picker.swift -framework AppKit && swiftc -O -o dist/native/snippet-expander src/native/snippet-expander.swift -framework AppKit && swiftc -O -o dist/native/hotkey-hold-monitor src/native/hotkey-hold-monitor.swift -framework CoreGraphics -framework AppKit -framework Carbon && swiftc -O -o dist/native/speech-recognizer src/native/speech-recognizer.swift -framework Speech -framework AVFoundation && swiftc -O -o dist/native/microphone-access src/native/microphone-access.swift -framework AVFoundation && swiftc -O -o dist/native/input-monitoring-request src/native/input-monitoring-request.swift -framework CoreGraphics",
     "postinstall": "electron-builder install-app-deps",
     "start": "electron .",
-    "package": "npm run build && electron-builder"
+    "package": "npm run build && electron-builder",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "license": "ISC",
   "devDependencies": {
@@ -34,6 +36,7 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "vite": "^5.0.11",
+    "vitest": "^4.0.18",
     "wait-on": "^7.2.0"
   },
   "dependencies": {
