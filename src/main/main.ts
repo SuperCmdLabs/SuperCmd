@@ -1489,6 +1489,22 @@ async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: bool
 
   // ── Windows path ────────────────────────────────────────────────────────────
   if (process.platform === 'win32') {
+    // First priority: if a SuperCmd Electron window (e.g. onboarding) is focused,
+    // read the selection directly from the renderer via executeJavaScript.
+    // UIAutomation and Ctrl+C do not work for text inside Chromium renderers.
+    const allWindows = BrowserWindow.getAllWindows();
+    for (const win of allWindows) {
+      if (!win.isDestroyed() && win.isFocused()) {
+        try {
+          const sel = await win.webContents.executeJavaScript('(window.getSelection() || {toString:()=>""}).toString()');
+          const selStr = String(sel || '').trim();
+          if (selStr) return selStr;
+        } catch {
+          // ignore — fall through to UIAutomation
+        }
+      }
+    }
+
     const { execFile } = require('child_process');
     const { promisify } = require('util');
     const execFileAsync = promisify(execFile);
