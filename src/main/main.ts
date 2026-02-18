@@ -89,8 +89,8 @@ function getNativeBinaryPath(name: string): string {
 
 const DEFAULT_WINDOW_WIDTH = 860;
 const DEFAULT_WINDOW_HEIGHT = 540;
-const ONBOARDING_WINDOW_WIDTH = 1120;
-const ONBOARDING_WINDOW_HEIGHT = 740;
+const ONBOARDING_WINDOW_WIDTH = 900;
+const ONBOARDING_WINDOW_HEIGHT = 600;
 const CURSOR_PROMPT_WINDOW_WIDTH = 500;
 const CURSOR_PROMPT_WINDOW_HEIGHT = 90;
 const CURSOR_PROMPT_LEFT_OFFSET = 20;
@@ -2688,18 +2688,20 @@ function applyLauncherBounds(mode: LauncherMode): void {
     ? displayY + displayHeight - size.height - 18
     : mode === 'speak'
       ? displayY + 16
-      : mode === 'prompt'
-        ? (() => {
-            const baseY = caretRect
-              ? caretRect.y
-              : focusedInputRect
-                ? focusedInputRect.y
-                : (promptAnchorPoint?.y ?? promptFallbackY);
-            const preferred = baseY - size.height - 10;
-            if (preferred >= displayY + 8) return preferred;
-            return clamp(baseY + 16, displayY + 8, displayY + displayHeight - size.height - 8);
-          })()
-        : displayY + Math.floor(displayHeight * size.topFactor);
+      : mode === 'onboarding'
+        ? displayY + Math.floor((displayHeight - size.height) / 2)
+        : mode === 'prompt'
+          ? (() => {
+              const baseY = caretRect
+                ? caretRect.y
+                : focusedInputRect
+                  ? focusedInputRect.y
+                  : (promptAnchorPoint?.y ?? promptFallbackY);
+              const preferred = baseY - size.height - 10;
+              if (preferred >= displayY + 8) return preferred;
+              return clamp(baseY + 16, displayY + 8, displayY + displayHeight - size.height - 8);
+            })()
+          : displayY + Math.floor(displayHeight * size.topFactor);
   mainWindow.setBounds({
     x: windowX,
     y: windowY,
