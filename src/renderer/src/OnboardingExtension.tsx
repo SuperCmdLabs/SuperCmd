@@ -147,7 +147,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [requestedPermissions, setRequestedPermissions] = useState<Record<string, boolean>>({});
   const [permissionLoading, setPermissionLoading] = useState<Record<string, boolean>>({});
   const [permissionNotes, setPermissionNotes] = useState<Record<string, string>>({});
-  const [whisperHoldKey, setWhisperHoldKey] = useState('Fn');
+  const DEFAULT_WHISPER_HOTKEY = isWindows ? 'Ctrl+Shift+Space' : 'Fn';
+  const [whisperHoldKey, setWhisperHoldKey] = useState(DEFAULT_WHISPER_HOTKEY);
   const [whisperKeyStatus, setWhisperKeyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isHoldKeyActive, setIsHoldKeyActive] = useState(false);
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
@@ -160,8 +161,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
   useEffect(() => {
     window.electron.getSettings().then((settings) => {
-      const saved = String(settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn').trim();
-      setWhisperHoldKey(saved || 'Fn');
+      const saved = String(settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || DEFAULT_WHISPER_HOTKEY).trim();
+      setWhisperHoldKey(saved || DEFAULT_WHISPER_HOTKEY);
       const savedLanguage = String(settings.ai?.speechLanguage || 'en-US').trim();
       setSpeechLanguage(savedLanguage || 'en-US');
     }).catch(() => {});
