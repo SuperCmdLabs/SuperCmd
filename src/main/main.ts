@@ -6923,9 +6923,14 @@ return appURL's |path|() as text`,
         provider = 'openai';
         model = 'gpt-4o-transcribe';
       } else if (sttModel === 'native') {
-        // Renderer should not call cloud transcription in native mode.
-        // Return empty transcript instead of surfacing an IPC error.
-        return '';
+        if (process.platform === 'win32') {
+          // No native Swift speech recognizer on Windows — fall back to OpenAI cloud transcription.
+          provider = 'openai';
+          model = 'gpt-4o-transcribe';
+        } else {
+          // macOS: native mode is handled entirely by the renderer's SFSpeechRecognizer path.
+          return '';
+        }
       } else if (sttModel.startsWith('openai-')) {
         provider = 'openai';
         model = sttModel.slice('openai-'.length);

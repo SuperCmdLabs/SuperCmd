@@ -60,7 +60,8 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   ollamaBaseUrl: 'http://localhost:11434',
   defaultModel: '',
   speechCorrectionModel: '',
-  speechToTextModel: 'native',
+  // 'native' uses the macOS Swift speech recognizer; no equivalent on Windows.
+  speechToTextModel: process.platform === 'win32' ? '' : 'native',
   speechLanguage: 'en-US',
   textToSpeechModel: 'edge-tts',
   edgeTtsVoice: 'en-US-EricNeural',
