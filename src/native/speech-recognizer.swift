@@ -11,6 +11,7 @@ import AVFoundation
 
 let rawArgs = Array(CommandLine.arguments.dropFirst())
 let authOnly = rawArgs.contains("--auth-only")
+let singleUtterance = rawArgs.contains("--single-utterance")
 let lang = rawArgs.first(where: { !$0.hasPrefix("--") }) ?? "en-US"
 
 func emit(_ dict: [String: Any]) {
@@ -140,10 +141,15 @@ func startRecognition() {
                 "isFinal": result.isFinal
             ])
             if result.isFinal {
-                // Utterance complete — start a new recognition session
-                // for continuous dictation
-                DispatchQueue.main.async {
-                    if isRunning { startRecognition() }
+                if singleUtterance {
+                    // Push-to-talk path: a single utterance per hold avoids
+                    // restart overlap that can duplicate phrase segments.
+                    isRunning = false
+                } else {
+                    // Continuous dictation mode
+                    DispatchQueue.main.async {
+                        if isRunning { startRecognition() }
+                    }
                 }
             }
         }

@@ -550,8 +550,11 @@ contextBridge.exposeInMainWorld('electron', {
     error?: string;
   }> =>
     ipcRenderer.invoke('whisper-ensure-speech-recognition-access', options),
-  whisperStartNative: (language?: string): Promise<void> =>
-    ipcRenderer.invoke('whisper-start-native', language),
+  whisperStartNative: (
+    language?: string,
+    options?: { singleUtterance?: boolean }
+  ): Promise<void> =>
+    ipcRenderer.invoke('whisper-start-native', language, options),
   whisperStopNative: (): Promise<void> =>
     ipcRenderer.invoke('whisper-stop-native'),
   onWhisperNativeChunk: (callback: (data: { transcript?: string; isFinal?: boolean; error?: string; ready?: boolean; ended?: boolean }) => void) => {

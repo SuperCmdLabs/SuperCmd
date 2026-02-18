@@ -7431,7 +7431,15 @@ return appURL's |path|() as text`,
 
   // ─── IPC: Native Speech Recognition (macOS SFSpeechRecognizer) ──
 
-  ipcMain.handle('whisper-start-native', async (event: any, language?: string) => {
+  ipcMain.handle(
+    'whisper-start-native',
+    async (
+      event: any,
+      language?: string,
+      options?: {
+        singleUtterance?: boolean;
+      }
+    ) => {
     // Kill any existing process
     if (nativeSpeechProcess) {
       try { nativeSpeechProcess.kill('SIGTERM'); } catch {}
@@ -7461,7 +7469,12 @@ return appURL's |path|() as text`,
     }
 
     const { spawn } = require('child_process');
-    nativeSpeechProcess = spawn(binaryPath, [lang], {
+    const args: string[] = [lang];
+    if (options?.singleUtterance) {
+      args.push('--single-utterance');
+    }
+
+    nativeSpeechProcess = spawn(binaryPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     nativeSpeechStdoutBuffer = '';
@@ -7496,7 +7509,8 @@ return appURL's |path|() as text`,
       // Notify renderer that native recognition ended
       try { event.sender.send('whisper-native-chunk', { ended: true }); } catch {}
     });
-  });
+    }
+  );
 
   ipcMain.handle('whisper-stop-native', async () => {
     if (nativeSpeechProcess) {

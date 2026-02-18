@@ -592,7 +592,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     if (!nextRaw) return;
 
     if (PUSH_TO_TALK_MODE) {
-      combinedTranscriptRef.current = mergeTranscriptChunks(combinedTranscriptRef.current, nextRaw);
+      combinedTranscriptRef.current = nextRaw;
       nativeRawAnchorRef.current = nextRaw;
       return;
     }
@@ -1235,7 +1235,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
             });
             if (normalized) {
               if (PUSH_TO_TALK_MODE) {
-                combinedTranscriptRef.current = mergeTranscriptChunks(combinedTranscriptRef.current, normalized);
+                // In push-to-talk we want a single evolving snapshot for the
+                // current utterance, not merged segments from partial rewrites.
+                combinedTranscriptRef.current = normalized;
               }
               if (data.isFinal && !PUSH_TO_TALK_MODE) {
                 stopNativeProcessTimer();
@@ -1249,7 +1251,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
         // Start the native recognizer process
         try {
-          await window.electron.whisperStartNative(sessionConfig.language);
+          await window.electron.whisperStartNative(sessionConfig.language, {
+            singleUtterance: PUSH_TO_TALK_MODE,
+          });
           if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) {
             dispose();
             if (nativeChunkDisposerRef.current === dispose) {

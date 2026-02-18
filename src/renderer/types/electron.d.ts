@@ -481,7 +481,10 @@ export interface ElectronAPI {
     microphoneStatus: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
     error?: string;
   }>;
-  whisperStartNative: (language?: string) => Promise<void>;
+  whisperStartNative: (
+    language?: string,
+    options?: { singleUtterance?: boolean }
+  ) => Promise<void>;
   whisperStopNative: () => Promise<void>;
   onWhisperNativeChunk: (callback: (data: {
     transcript?: string;
