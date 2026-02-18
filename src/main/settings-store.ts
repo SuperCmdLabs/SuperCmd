@@ -71,17 +71,25 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   openaiCompatibleModel: '',
 };
 
+// Alt+Space is reserved by Windows (opens the window system menu) and cannot
+// be registered as a global shortcut. Use Ctrl+Space as the Windows default.
+const DEFAULT_GLOBAL_SHORTCUT =
+  process.platform === 'win32' ? 'Ctrl+Space' : 'Alt+Space';
+
+// macOS uses Command key; Windows uses Ctrl for system-wide shortcuts.
+const MOD = process.platform === 'win32' ? 'Ctrl' : 'Command';
+
 const DEFAULT_SETTINGS: AppSettings = {
-  globalShortcut: 'Alt+Space',
+  globalShortcut: DEFAULT_GLOBAL_SHORTCUT,
   openAtLogin: false,
   disabledCommands: [],
   enabledCommands: [],
   customExtensionFolders: [],
   commandHotkeys: {
-    'system-cursor-prompt': 'Command+Shift+K',
-    'system-supercmd-whisper': 'Command+Shift+W',
+    'system-cursor-prompt': `${MOD}+Shift+K`,
+    'system-supercmd-whisper': `${MOD}+Shift+W`,
     'system-supercmd-whisper-speak-toggle': 'Fn',
-    'system-supercmd-speak': 'Command+Shift+S',
+    'system-supercmd-speak': `${MOD}+Shift+S`,
   },
   pinnedCommands: [],
   recentCommands: [],
@@ -122,8 +130,17 @@ export function loadSettings(): AppSettings {
     delete parsedHotkeys['system-supercmd-whisper-toggle'];
     delete parsedHotkeys['system-supercmd-whisper-start'];
     delete parsedHotkeys['system-supercmd-whisper-stop'];
+    // On Windows, Alt+Space cannot be registered as a global shortcut
+    // (Windows reserves it for the system window menu). Migrate any saved
+    // Alt+Space to the Windows default (Ctrl+Space) automatically.
+    const savedShortcut: string = parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut;
+    const migratedShortcut =
+      process.platform === 'win32' && savedShortcut === 'Alt+Space'
+        ? DEFAULT_SETTINGS.globalShortcut
+        : savedShortcut;
+
       settingsCache = {
-        globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
+        globalShortcut: migratedShortcut,
         openAtLogin: parsed.openAtLogin ?? DEFAULT_SETTINGS.openAtLogin,
         disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
         enabledCommands: parsed.enabledCommands ?? DEFAULT_SETTINGS.enabledCommands,

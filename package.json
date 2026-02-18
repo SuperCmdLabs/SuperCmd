@@ -10,32 +10,32 @@
     "dev": "npm run build:main && concurrently \"npm run watch:main\" \"npm run dev:renderer\" \"npm run start:electron\"",
     "watch:main": "tsc -p tsconfig.main.json --watch",
     "dev:renderer": "vite",
-    "start:electron": "wait-on dist/main/main.js && cross-env NODE_ENV=development electron .",
+    "start:electron": "wait-on dist/main/main.js && cross-env NODE_ENV=development node scripts/launch-electron.js",
     "build": "npm run build:main && npm run build:renderer && npm run build:native",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "build:native": "node scripts/build-native.js",
     "test": "vitest run",
     "postinstall": "electron-builder install-app-deps",
-    "start": "electron .",
+    "start": "node scripts/launch-electron.js",
     "package": "npm run build && electron-builder"
   },
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^20.11.5",
-    "vitest": "^4.0.0",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
-    "electron": "^28.1.3",
+    "electron": "^28.3.3",
     "electron-builder": "^24.13.3",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "vite": "^5.0.11",
+    "vitest": "^4.0.0",
     "wait-on": "^7.2.0"
   },
   "dependencies": {
@@ -103,7 +103,10 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },
