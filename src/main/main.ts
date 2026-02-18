@@ -470,74 +470,11 @@ function readMicrophoneAccessStatus(): MicrophoneAccessStatus {
 }
 
 async function requestMicrophoneAccessViaNative(prompt: boolean): Promise<MicrophonePermissionResult | null> {
-  if (process.platform !== 'darwin') return null;
-  const fs = require('fs');
-  const binaryPath = getNativeBinaryPath('microphone-access');
-  if (!fs.existsSync(binaryPath)) return null;
-
-  return await new Promise<MicrophonePermissionResult | null>((resolve) => {
-    const { spawn } = require('child_process');
-    const args = prompt ? ['--prompt'] : [];
-    const proc = spawn(binaryPath, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (chunk: Buffer | string) => {
-      stdout += String(chunk || '');
-    });
-    proc.stderr.on('data', (chunk: Buffer | string) => {
-      stderr += String(chunk || '');
-    });
-
-    proc.on('error', () => {
-      resolve(null);
-    });
-
-    proc.on('close', () => {
-      const lines = stdout
-        .split('\n')
-        .map((line: string) => line.trim())
-        .filter(Boolean);
-      for (let i = lines.length - 1; i >= 0; i -= 1) {
-        try {
-          const payload = JSON.parse(lines[i]);
-          const status = normalizePermissionStatus(payload?.status);
-          const granted = Boolean(payload?.granted) || status === 'granted';
-          const requested = Boolean(payload?.requested);
-          const canPrompt = typeof payload?.canPrompt === 'boolean'
-            ? Boolean(payload.canPrompt)
-            : status === 'not-determined' || status === 'unknown';
-          const result: MicrophonePermissionResult = {
-            granted,
-            requested,
-            status,
-            canPrompt,
-            error: granted
-              ? undefined
-              : String(payload?.error || '').trim() || (stderr.trim() || undefined),
-          };
-          resolve(result);
-          return;
-        } catch {}
-      }
-      resolve(null);
-    });
-  });
+  return platform.requestMicrophoneAccessViaNative(prompt);
 }
 
 async function ensureMicrophoneAccess(prompt = true): Promise<MicrophonePermissionResult> {
-  if (process.platform !== 'darwin') {
-    return {
-      granted: true,
-      requested: false,
-      status: 'granted',
-      canPrompt: false,
-    };
-  }
-
-  const before = readMicrophoneAccessStatus();
+  const before = readMicrophoneAccessStatus();  // returns 'granted' on non-darwin via platform layer
   if (before === 'granted') {
     return {
       granted: true,
