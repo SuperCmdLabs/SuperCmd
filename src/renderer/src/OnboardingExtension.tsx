@@ -138,8 +138,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   onComplete,
   onClose,
 }) => {
+  const isWindows = window.electron.platform === 'win32';
   const [step, setStep] = useState(0);
-  const [shortcut, setShortcut] = useState(initialShortcut || 'Alt+Space');
+  const [shortcut, setShortcut] = useState(initialShortcut || (isWindows ? 'Ctrl+Space' : 'Alt+Space'));
   const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [hasValidShortcut, setHasValidShortcut] = useState(!requireWorkingShortcut);
   const [openedPermissions, setOpenedPermissions] = useState<Record<string, boolean>>({});
@@ -341,7 +342,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   }, [step]);
 
   const stepTitle = useMemo(() => STEPS[step] || STEPS[0], [step]);
-  const hotkeyCaps = useMemo(() => toHotkeyCaps(shortcut || 'Alt+Space'), [shortcut]);
+  const hotkeyCaps = useMemo(() => toHotkeyCaps(shortcut || (isWindows ? 'Ctrl+Space' : 'Alt+Space')), [shortcut, isWindows]);
   const whisperKeyCaps = useMemo(() => toHotkeyCaps(whisperHoldKey || 'Fn'), [whisperHoldKey]);
 
   const handleShortcutChange = async (nextShortcut: string) => {
@@ -569,7 +570,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     <p className="text-white/88 text-sm mb-2">What gets configured now:</p>
                     <div className="text-white/72 text-sm space-y-1">
                       <p>1. Launcher hotkey and inline prompt defaults</p>
-                      <p>2. Accessibility, Input Monitoring, Speech Recognition, Microphone</p>
+                      <p>2. {isWindows ? 'Microphone access for Whisper' : 'Accessibility, Input Monitoring, Speech Recognition, Microphone'}</p>
                       <p>3. Whisper dictation and Read mode practice</p>
                     </div>
                   </div>
@@ -633,7 +634,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     <p className="text-white/90 text-sm font-medium">Current Launcher Hotkey</p>
                   </div>
                   <p className="text-white/62 text-xs mb-5">
-                    Inline prompt default is now Cmd + Shift + K. Configure launcher key below.
+                    Inline prompt default is now {isWindows ? 'Ctrl' : 'Cmd'} + Shift + K. Configure launcher key below.
                   </p>
 
                   <div className="flex flex-wrap items-center gap-2 mb-5">
@@ -655,7 +656,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
                   <p className="text-white/52 text-xs mb-4">Click the hotkey field above to update your launcher shortcut.</p>
 
-                  <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
+                  {!isWindows && <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
                     <div className="flex items-center justify-between gap-3 mb-1.5">
                       <p className="text-white/86 text-xs font-medium">Replace Spotlight (Cmd + Space)</p>
                       <button
@@ -680,7 +681,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                       <p>Manual: System Settings → Keyboard → Keyboard Shortcuts → Spotlight → disable.</p>
                       <p>Then set the launcher hotkey above to Cmd + Space.</p>
                     </div>
-                  </div>
+                  </div>}
                 </div>
 
                 {requireWorkingShortcut && !hasValidShortcut ? (
@@ -694,6 +695,40 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
           {step === 3 && (
             <div className="min-h-full flex items-center justify-center">
+              {isWindows ? (
+                <div className="w-full max-w-3xl space-y-4">
+                  <div
+                    className="rounded-3xl border border-white/[0.16] p-6"
+                    style={{
+                      background: 'linear-gradient(180deg, rgba(33, 19, 24, 0.82), rgba(16, 17, 25, 0.72))',
+                      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 18px 34px rgba(0,0,0,0.34)',
+                    }}
+                  >
+                    <p className="text-white text-[20px] leading-tight font-semibold mb-2">Permissions</p>
+                    <p className="text-white/72 text-sm leading-relaxed mb-4">
+                      Windows manages Accessibility and Input Monitoring automatically — no System Settings changes needed.
+                    </p>
+                    <div className="space-y-2 text-xs text-white/70">
+                      <p>Microphone access is requested the first time you use Whisper dictation.</p>
+                      <p>Click Continue to proceed to the dictation test.</p>
+                    </div>
+                  </div>
+                  <div
+                    className="rounded-2xl border border-white/[0.14] p-4 flex items-start gap-3"
+                    style={{ background: 'linear-gradient(160deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03))' }}
+                  >
+                    <div className="w-8 h-8 rounded-lg border border-cyan-200/25 bg-cyan-500/15 flex items-center justify-center shrink-0">
+                      <Mic className="w-4 h-4 text-cyan-100" />
+                    </div>
+                    <div>
+                      <p className="text-white/92 text-sm font-semibold mb-1">Microphone</p>
+                      <p className="text-white/62 text-xs leading-relaxed">
+                        Windows will prompt for microphone access when you first start Whisper. Grant it to enable voice dictation.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
               <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
                 <div
                   className="rounded-3xl border border-white/[0.16] p-5"
@@ -790,6 +825,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   })}
                 </div>
               </div>
+              )}
             </div>
           )}
 
@@ -840,7 +876,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     className="w-full h-[250px] resize-none rounded-xl border border-cyan-300/55 bg-white/[0.05] px-4 py-3 text-white/90 placeholder:text-white/40 text-base leading-relaxed outline-none shadow-[0_0_0_3px_rgba(34,211,238,0.15)]"
                   />
                   <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
-                    Native speech recognition is used by default. For the best experience, use ElevenLabs.
+                    {isWindows
+                      ? 'Edge TTS is used for read-back on Windows. For dictation, set an OpenAI API key in Settings → AI. If the Fn key does not respond, pick a different hold key above.'
+                      : 'Native speech recognition is used by default. For the best experience, use ElevenLabs.'}
                   </p>
                 </div>
               </div>
@@ -893,11 +931,18 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
                     <div className="mt-5 pt-4 border-t border-white/[0.08] flex items-center gap-2 flex-wrap">
                       <p className="text-white/45 text-xs">Select the text above then press</p>
-                      {([
-                        { symbol: '⌘', label: 'Cmd' },
-                        { symbol: '⇧', label: 'Shift' },
-                        { symbol: 'S', label: ''},
-                      ] as Array<{ symbol: string; label: string | null }>).map((cap, i) => (
+                      {(isWindows
+                        ? [
+                            { symbol: 'Ctrl', label: '' as string | null },
+                            { symbol: '⇧', label: 'Shift' as string | null },
+                            { symbol: 'S', label: '' as string | null },
+                          ]
+                        : [
+                            { symbol: '⌘', label: 'Cmd' as string | null },
+                            { symbol: '⇧', label: 'Shift' as string | null },
+                            { symbol: 'S', label: '' as string | null },
+                          ]
+                      ).map((cap, i) => (
                         <React.Fragment key={`${cap.symbol}-${i}`}>
                           <span className="inline-flex items-center gap-2 min-w-[70px] h-9 px-3 rounded-md border border-white/20 bg-white/[0.10] text-white/90 font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]">
                             <span className="inline-flex w-5 h-5 items-center justify-center rounded bg-white/[0.08] text-[11px] leading-none">
