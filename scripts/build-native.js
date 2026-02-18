@@ -199,6 +199,58 @@ if (process.platform === 'win32') {
     }
   }
 
+  // ── C# binaries (compiled with csc.exe from .NET Framework — always available on Windows 10/11) ──
+  function findCsc() {
+    // Try .NET Framework 4.x csc.exe (guaranteed on Windows 10/11)
+    const cscPaths = [
+      'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe',
+      'C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\csc.exe',
+    ];
+    for (const p of cscPaths) {
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  }
+
+  // System.Speech.dll lives in the WPF subfolder of the .NET Framework directory.
+  function findSystemSpeechDll(cscPath) {
+    const netDir = path.dirname(cscPath); // e.g. C:\Windows\Microsoft.NET\Framework64\v4.0.30319
+    const wpfPath = path.join(netDir, 'WPF', 'System.Speech.dll');
+    if (fs.existsSync(wpfPath)) return wpfPath;
+    return null;
+  }
+
+  const cscBinaries = [
+    {
+      out: 'speech-recognizer.exe',
+      src: 'src/native/speech-recognizer.cs',
+    },
+  ];
+
+  const csc = findCsc();
+  if (!csc) {
+    console.warn('[build-native] WARNING: csc.exe not found — speech-recognizer.exe will not be built.');
+    console.warn('[build-native] Dictation will fall back to cloud transcription if an API key is configured.');
+  } else {
+    const speechDll = findSystemSpeechDll(csc);
+    if (!speechDll) {
+      console.warn('[build-native] WARNING: System.Speech.dll not found — speech-recognizer.exe will not be built.');
+    } else {
+      for (const { out, src } of cscBinaries) {
+        const outPath = path.join(outDir, out);
+        const srcPath = path.join(__dirname, '..', src); // absolute path required by csc.exe
+        const cmd = `"${csc}" /nologo /target:exe /optimize+ /r:"${speechDll}" /out:"${outPath}" "${srcPath}"`;
+        console.log(`[build-native] Compiling ${out} with csc.exe...`);
+        try {
+          execSync(cmd, { stdio: 'inherit' });
+        } catch (err) {
+          console.warn(`[build-native] WARNING: Failed to compile ${out}:`, err.message);
+          console.warn('[build-native] Dictation will fall back to cloud transcription if an API key is configured.');
+        }
+      }
+    }
+  }
+
   console.log('[build-native] Done (Windows).');
   process.exit(0);
 }

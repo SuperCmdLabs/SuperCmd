@@ -385,9 +385,11 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         (wantsOpenAI && !!settings.ai.openaiApiKey) ||
         (wantsElevenLabs && !!settings.ai.elevenlabsApiKey);
       const isWindowsPlatform = window.electron?.platform === 'win32';
-      // On Windows there is no macOS SFSpeechRecognizer binary — use Chromium's
-      // built-in Web Speech API instead (same engine as Chrome, no API key needed).
-      const backend: WhisperBackend = canUseCloud ? 'whisper' : (isWindowsPlatform ? 'webspeech' : 'native');
+      // On Windows use the native System.Speech recognizer binary (compiled from
+      // src/native/speech-recognizer.cs) instead of the macOS SFSpeechRecognizer.
+      // The Web Speech API ('webspeech') requires Google API keys that Electron
+      // does not include, so it fails with network errors on non-Chrome builds.
+      const backend: WhisperBackend = canUseCloud ? 'whisper' : 'native';
       backendRef.current = backend;
       return { backend, language };
     } catch {

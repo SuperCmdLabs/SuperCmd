@@ -21,7 +21,9 @@ import { app } from 'electron';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getNativeBinaryPath(name: string): string {
-  const base = path.join(__dirname, '..', 'native', name);
+  // windows.ts compiles to dist/main/platform/windows.js, so __dirname is
+  // dist/main/platform — go up two levels to reach dist/, then into native/.
+  const base = path.join(__dirname, '..', '..', 'native', name);
   if (app.isPackaged) {
     return base.replace('app.asar', 'app.asar.unpacked');
   }

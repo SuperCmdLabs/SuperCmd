@@ -7088,23 +7088,44 @@ return appURL's |path|() as text`,
     }
 
     const lang = language || loadSettings().ai.speechLanguage || 'en-US';
-    const binaryPath = getNativeBinaryPath('speech-recognizer');
+    // On Windows the binary has an .exe extension; on macOS it has none.
+    const binaryName = process.platform === 'win32' ? 'speech-recognizer.exe' : 'speech-recognizer';
+    const binaryPath = getNativeBinaryPath(binaryName);
     const fs = require('fs');
 
-    // Compile on demand (same pattern as color-picker / snippet-expander)
+    // Compile on demand if binary is missing.
     if (!fs.existsSync(binaryPath)) {
       try {
         const { execFileSync } = require('child_process');
-        const sourcePath = path.join(app.getAppPath(), 'src', 'native', 'speech-recognizer.swift');
-        execFileSync('swiftc', [
-          '-O', '-o', binaryPath, sourcePath,
-          '-framework', 'Speech',
-          '-framework', 'AVFoundation',
-        ]);
+        if (process.platform === 'win32') {
+          // Compile the C# speech recognizer with .NET Framework csc.exe.
+          const cscCandidates = [
+            'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe',
+            'C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\csc.exe',
+          ];
+          const csc = cscCandidates.find((p) => fs.existsSync(p));
+          if (!csc) throw new Error('csc.exe not found — run `npm run build:native` after installing .NET Framework.');
+          const sourcePath = path.join(app.getAppPath(), 'src', 'native', 'speech-recognizer.cs');
+          // System.Speech.dll lives in the WPF subfolder next to csc.exe.
+          const netDir = path.dirname(csc);
+          const speechDll = path.join(netDir, 'WPF', 'System.Speech.dll');
+          execFileSync(csc, ['/nologo', '/target:exe', '/optimize+', `/r:${speechDll}`, `/out:${binaryPath}`, sourcePath]);
+        } else {
+          const sourcePath = path.join(app.getAppPath(), 'src', 'native', 'speech-recognizer.swift');
+          execFileSync('swiftc', [
+            '-O', '-o', binaryPath, sourcePath,
+            '-framework', 'Speech',
+            '-framework', 'AVFoundation',
+          ]);
+        }
         console.log('[Whisper][native] Compiled speech-recognizer binary');
       } catch (error) {
         console.error('[Whisper][native] Compile failed:', error);
-        throw new Error('Failed to compile native speech recognizer. Ensure Xcode Command Line Tools are installed.');
+        throw new Error(
+          process.platform === 'win32'
+            ? 'Failed to compile Windows speech recognizer. Run `npm run build:native` to build it.'
+            : 'Failed to compile native speech recognizer. Ensure Xcode Command Line Tools are installed.'
+        );
       }
     }
 
