@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feat/windows-foundation]
+  pull_request:
+    branches: [main, feat/windows-foundation]
+
+jobs:
+  # ── Unit tests (Linux, fast) ────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Skip postinstall (electron-builder install-app-deps) — not needed for unit tests
+      - run: npm ci --ignore-scripts
+
+      - run: npm test
+
+  # ── Windows build verification ──────────────────────────────────────────────
+  build-windows:
+    name: Windows build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Skip postinstall — electron-builder install-app-deps not needed for a
+      # compile check. The build:native script is a no-op on Windows.
+      - run: npm ci --ignore-scripts
+
+      - name: Build (main + renderer + native)
+        run: npm run build
+
+      - name: Package (unsigned dir build — no code signing needed)
+        run: npx electron-builder --win dir --x64
+        env:
+          # Disable code signing — no cert available in CI
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          WIN_CSC_LINK: ""
