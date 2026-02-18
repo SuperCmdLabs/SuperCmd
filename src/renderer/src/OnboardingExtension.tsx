@@ -658,10 +658,11 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
                   {isWindows ? (
                     <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
-                      <p className="text-white/86 text-xs font-medium mb-1.5">Using PowerToys or FancyZones?</p>
-                      <div className="text-white/55 text-xs space-y-1">
-                        <p>If you have PowerToys Run bound to Alt+Space, you can set Alt+Space here to use SuperCmd instead — disable the PowerToys binding first.</p>
-                        <p>Otherwise, Ctrl+Space is recommended as the default on Windows.</p>
+                      <p className="text-white/90 text-xs font-medium mb-1.5">Want to use Alt+Space?</p>
+                      <div className="text-white/75 text-xs space-y-1.5">
+                        <p>Windows passes Alt+Space to PowerToys Run (or the system window menu) before SuperCmd can see it, so the recorder won't capture it while those are active.</p>
+                        <p className="font-medium text-white/90">To use Alt+Space: open PowerToys → PowerToys Run → disable the Alt+Space shortcut first, then click the hotkey field here and press Alt+Space.</p>
+                        <p className="text-white/55">Otherwise Ctrl+Space works out of the box and is the recommended default.</p>
                       </div>
                     </div>
                   ) : (
