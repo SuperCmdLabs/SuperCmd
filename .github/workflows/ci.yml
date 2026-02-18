@@ -46,6 +46,8 @@ jobs:
       - name: Package (unsigned dir build — no code signing needed)
         run: npx electron-builder --win dir --x64
         env:
-          # Disable code signing — no cert available in CI
+          # Disable code signing — no cert available in CI.
+          # Do NOT set WIN_CSC_LINK to an empty string; electron-builder resolves
+          # empty strings as relative paths (→ cwd), which causes a "not a file"
+          # error. Leave it unset and rely on CSC_IDENTITY_AUTO_DISCOVERY=false.
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          WIN_CSC_LINK: ""
