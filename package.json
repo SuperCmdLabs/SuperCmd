@@ -14,7 +14,7 @@
     "build": "npm run build:main && npm run build:renderer && npm run build:native",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
-    "build:native": "mkdir -p dist/native && swiftc -O -o dist/native/color-picker src/native/color-picker.swift -framework AppKit && swiftc -O -o dist/native/snippet-expander src/native/snippet-expander.swift -framework AppKit && swiftc -O -o dist/native/hotkey-hold-monitor src/native/hotkey-hold-monitor.swift -framework CoreGraphics -framework AppKit -framework Carbon && swiftc -O -o dist/native/speech-recognizer src/native/speech-recognizer.swift -framework Speech -framework AVFoundation && swiftc -O -o dist/native/microphone-access src/native/microphone-access.swift -framework AVFoundation && swiftc -O -o dist/native/input-monitoring-request src/native/input-monitoring-request.swift -framework CoreGraphics",
+    "build:native": "node scripts/build-native.js",
     "postinstall": "electron-builder install-app-deps",
     "start": "electron .",
     "package": "npm run build && electron-builder"
@@ -95,6 +95,21 @@
         "NSMicrophoneUsageDescription": "SuperCmd needs microphone access for Whisper dictation.",
         "NSSpeechRecognitionUsageDescription": "SuperCmd uses speech recognition for native Whisper dictation."
       }
+    },
+    "win": {
+      "icon": "supercmd.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64", "arm64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     },
     "linux": {
       "icon": "supercmd.svg"
