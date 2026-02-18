@@ -621,19 +621,19 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
             <div className="min-h-full flex items-center justify-center">
               <div className="w-full max-w-3xl">
                 <div
-                  className="rounded-2xl border border-white/[0.18] p-7"
+                  className="rounded-2xl border border-white/[0.22] p-7"
                   style={{
                     background:
-                      'linear-gradient(160deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04))',
+                      'linear-gradient(160deg, rgba(28, 24, 38, 0.96), rgba(18, 16, 28, 0.94))',
                     boxShadow:
-                      'inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -10px 24px rgba(12, 10, 20, 0.35), 0 12px 30px rgba(0,0,0,0.32)',
+                      'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -10px 24px rgba(12, 10, 20, 0.35), 0 12px 30px rgba(0,0,0,0.32)',
                   }}
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <Keyboard className="w-4 h-4 text-rose-100" />
                     <p className="text-white/90 text-sm font-medium">Current Launcher Hotkey</p>
                   </div>
-                  <p className="text-white/62 text-xs mb-5">
+                  <p className="text-white/78 text-xs mb-5">
                     Inline prompt default is now {isWindows ? 'Ctrl' : 'Cmd'} + Shift + K. Configure launcher key below.
                   </p>
 
@@ -654,21 +654,21 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     {shortcutStatus === 'error' ? <span className="text-xs text-rose-300">Shortcut unavailable</span> : null}
                   </div>
 
-                  <p className="text-white/52 text-xs mb-4">Click the hotkey field above to update your launcher shortcut.</p>
+                  <p className="text-white/68 text-xs mb-4">Click the hotkey field above to update your launcher shortcut.</p>
 
                   {isWindows ? (
-                    <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
+                    <div className="rounded-xl border border-white/[0.18] bg-white/[0.08] p-3.5">
                       <p className="text-white/90 text-xs font-medium mb-1.5">Want to use Alt+Space?</p>
-                      <div className="text-white/75 text-xs space-y-1.5">
+                      <div className="text-white/78 text-xs space-y-1.5">
                         <p>Windows passes Alt+Space to PowerToys Run (or the system window menu) before SuperCmd can see it, so the recorder won't capture it while those are active.</p>
-                        <p className="font-medium text-white/90">To use Alt+Space: open PowerToys → PowerToys Run → disable the Alt+Space shortcut first, then click the hotkey field here and press Alt+Space.</p>
-                        <p className="text-white/55">Otherwise Ctrl+Space works out of the box and is the recommended default.</p>
+                        <p className="font-medium text-white/92">To use Alt+Space: open PowerToys → PowerToys Run → disable the Alt+Space shortcut first, then click the hotkey field here and press Alt+Space.</p>
+                        <p className="text-white/65">Otherwise Ctrl+Space works out of the box and is the recommended default.</p>
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
+                    <div className="rounded-xl border border-white/[0.18] bg-white/[0.08] p-3.5">
                       <div className="flex items-center justify-between gap-3 mb-1.5">
-                        <p className="text-white/86 text-xs font-medium">Replace Spotlight (Cmd + Space)</p>
+                        <p className="text-white/90 text-xs font-medium">Replace Spotlight (Cmd + Space)</p>
                         <button
                           onClick={() => { void handleReplaceSpotlight(); }}
                           disabled={spotlightReplaceStatus === 'loading' || spotlightReplaceStatus === 'success'}
@@ -687,7 +687,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                       ) : spotlightReplaceStatus === 'error' ? (
                         <p className="text-rose-200/85 text-xs mb-1.5">Auto-replace failed. Use the manual steps below.</p>
                       ) : null}
-                      <div className="text-white/55 text-xs space-y-1">
+                      <div className="text-white/75 text-xs space-y-1">
                         <p>Manual: System Settings → Keyboard → Keyboard Shortcuts → Spotlight → disable.</p>
                         <p>Then set the launcher hotkey above to Cmd + Space.</p>
                       </div>
