@@ -20,8 +20,8 @@
 | Fuzzy search across all commands | — | Scored search across title, keywords, subtitle | ✅ |
 | Recent commands | — | Most-used commands float to top | ✅ |
 | Pinned commands | — | Pin any command to keep it at top | ✅ |
-| Disable commands | — | Hide any command from results | 🟡 |
-| Per-command hotkeys | — | Assign a global hotkey to any command | 🟡 |
+| Disable commands | — | Hide any command from results | ✅ |
+| Per-command hotkeys | — | Assign a global hotkey to any command | ✅ |
 | Launcher window show/hide | — | Window hides on blur and on Escape | 🟡 |
 | Settings window | `system-open-settings` | Full settings UI | 🟡 |
 | Onboarding wizard | `system-open-onboarding` | Multi-step setup flow | 🟡 |
