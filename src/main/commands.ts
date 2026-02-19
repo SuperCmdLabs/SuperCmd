@@ -987,6 +987,20 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       keywords: ['snippet', 'export', 'save', 'backup', 'file'],
       category: 'system',
     },
+    {
+      id: 'system-openclaw-open',
+      title: 'OpenClaw',
+      subtitle: 'Open dashboard or setup wizard',
+      keywords: ['openclaw', 'ai', 'agent', 'gateway', 'telegram', 'whatsapp', 'imessage', 'bot', 'assistant'],
+      category: 'system',
+    },
+    {
+      id: 'system-openclaw-setup',
+      title: 'OpenClaw Setup',
+      subtitle: 'Run the OpenClaw setup wizard',
+      keywords: ['openclaw', 'setup', 'wizard', 'install', 'configure', 'onboard'],
+      category: 'system',
+    },
   ];
 
   // Installed community extensions
