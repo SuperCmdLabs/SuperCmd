@@ -61,6 +61,16 @@ function openclawExec(args: string) {
   return window.electron.execCommand('/bin/zsh', ['-c', script], { shell: false, env: { HOME } });
 }
 
+// Low-level: open Terminal.app and run a command — kills the spawned in-app process first if needed
+function runInTerminal(cmd: string) {
+  const safe = cmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  window.electron.execCommand(
+    'osascript',
+    ['-e', 'tell application "Terminal" to activate', '-e', `tell application "Terminal" to do script "${safe}"`],
+    { shell: false, env: { HOME } },
+  ).catch(() => {});
+}
+
 // Detect node version error in streamed output
 function hasNodeVersionError(text: string): boolean {
   const t = text.toLowerCase();
@@ -431,7 +441,7 @@ const OpenClawOnboarding: React.FC<OpenClawOnboardingProps> = ({ onClose }) => {
     setOpenClawInstalled(null);   // reset so broken state doesn't linger during reinstall
     setInstallLines(['Starting installation...\n']);
     // Use login shell so nvm/volta/fnm are active and npm installs to the right Node version
-    const installCmd = 'curl -fsSL https://openclaw.ai/install.sh | bash';
+    const installCmd = 'curl -fsSL https://openclaw.ai/install.sh | bash 2>&1 | tee /tmp/openclaw-install.log';
     try {
       const { pid } = await window.electron.spawnProcess('/bin/zsh', ['-l', '-c', installCmd], {
         shell: false,
@@ -512,7 +522,7 @@ const OpenClawOnboarding: React.FC<OpenClawOnboardingProps> = ({ onClose }) => {
       await loginShellExec('openclaw doctor --fix 2>/dev/null || true');
       const { pid } = await window.electron.spawnProcess(
         '/bin/zsh',
-        ['-l', '-c', 'openclaw onboard --non-interactive --accept-risk --install-daemon'],
+        ['-l', '-c', 'openclaw onboard --non-interactive --accept-risk --install-daemon 2>&1 | tee /tmp/openclaw-onboard.log'],
         { shell: false, env: LOGIN_ENV },
       );
       onboardSpawnPid.current = pid;
@@ -899,7 +909,7 @@ if(memory){let user='';try{user=fs.readFileSync(ws+'/USER.md','utf8');}catch(e){
     try {
       const { pid } = await window.electron.spawnProcess(
         '/bin/zsh',
-        ['-l', '-c', 'openclaw gateway --port 18789'],
+        ['-l', '-c', 'openclaw gateway --port 18789 2>&1 | tee /tmp/openclaw-gateway.log'],
         { shell: false, env: LOGIN_ENV },
       );
       gatewaySpawnPid.current = pid;
@@ -917,6 +927,37 @@ if(memory){let user='';try{user=fs.readFileSync(ws+'/USER.md','utf8');}catch(e){
       setGatewayStartStatus('error');
     }
   }, [checkGatewayStatus]);
+
+  // ─── Pop-out to Terminal ──────────────────────────────────────────
+  // Kills the currently running in-app process (if any) and reopens the same
+  // command in a real Terminal.app window so the user can watch/intercept it.
+
+  // Pop out to Terminal: mirrors the live output of the in-app process without killing it.
+  // If the process is already running, tail the tee'd log file so the user sees the same stream.
+  // If not yet started, open Terminal ready to run the command manually.
+  const popOutInstall = useCallback(() => {
+    if (installStatus === 'running') {
+      runInTerminal('tail -f /tmp/openclaw-install.log');
+    } else {
+      runInTerminal('curl -fsSL https://openclaw.ai/install.sh | bash');
+    }
+  }, [installStatus]);
+
+  const popOutOnboard = useCallback(() => {
+    if (onboardStatus === 'running') {
+      runInTerminal('tail -f /tmp/openclaw-onboard.log');
+    } else {
+      runInTerminal('openclaw onboard --non-interactive --accept-risk --install-daemon');
+    }
+  }, [onboardStatus]);
+
+  const popOutGateway = useCallback(() => {
+    if (gatewayStartStatus === 'running' || gatewayStartStatus === 'done') {
+      runInTerminal('tail -f /tmp/openclaw-gateway.log');
+    } else {
+      runInTerminal('openclaw gateway --port 18789');
+    }
+  }, [gatewayStartStatus]);
 
   // ─── Navigation helpers ───────────────────────────────────────────
   const canGoNext = () => {
@@ -1904,21 +1945,37 @@ if(memory){let user='';try{user=fs.readFileSync(ws+'/USER.md','utf8');}catch(e){
                     )}
 
                     {installStatus === 'pending' && (
-                      <button
-                        onClick={runInstall}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium text-white transition-colors"
-                        style={{ border: `1px solid ${BRAND.redBorder}`, background: BRAND.redDim }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(234,70,71,0.34)'; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = BRAND.redDim; }}
-                      >
-                        <Terminal className="w-4 h-4" />
-                        {openClawInstalled === 'broken' ? 'Reinstall OpenClaw' : 'Install OpenClaw'}
-                      </button>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <button
+                          onClick={runInstall}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium text-white transition-colors"
+                          style={{ border: `1px solid ${BRAND.redBorder}`, background: BRAND.redDim }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(234,70,71,0.34)'; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = BRAND.redDim; }}
+                        >
+                          <Terminal className="w-4 h-4" />
+                          {openClawInstalled === 'broken' ? 'Reinstall OpenClaw' : 'Install OpenClaw'}
+                        </button>
+                        <button
+                          onClick={popOutInstall}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-white/12 bg-white/[0.04] text-white/40 text-xs hover:text-white/65 hover:bg-white/[0.08] transition-colors"
+                        >
+                          <Terminal className="w-3 h-3" /> Open in Terminal
+                        </button>
+                      </div>
                     )}
                     {installStatus === 'running' && (
-                      <div className="flex items-center gap-2 text-white/55 text-xs">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: BRAND.red }} />
-                        Installing… usually about a minute
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex items-center gap-2 text-white/55 text-xs">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: BRAND.red }} />
+                          Installing… usually about a minute
+                        </div>
+                        <button
+                          onClick={popOutInstall}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-white/12 bg-white/[0.04] text-white/40 text-xs hover:text-white/65 hover:bg-white/[0.08] transition-colors"
+                        >
+                          <Terminal className="w-3 h-3" /> Open in Terminal
+                        </button>
                       </div>
                     )}
                     {installStatus === 'error' && (
@@ -2012,21 +2069,37 @@ if(memory){let user='';try{user=fs.readFileSync(ws+'/USER.md','utf8');}catch(e){
                             <strong className="text-white/70">Heads up:</strong> Once set up, OpenClaw starts automatically and may open your browser to the dashboard. If that happens, just close the browser tab and come back here to finish.
                           </p>
                         </div>
-                        <button
-                          onClick={runOnboard}
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium text-white transition-colors"
-                          style={{ border: `1px solid ${BRAND.redBorder}`, background: BRAND.redDim }}
-                          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(234,70,71,0.34)'; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = BRAND.redDim; }}
-                        >
-                          <Zap className="w-4 h-4" /> Set Up OpenClaw
-                        </button>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <button
+                            onClick={runOnboard}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium text-white transition-colors"
+                            style={{ border: `1px solid ${BRAND.redBorder}`, background: BRAND.redDim }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(234,70,71,0.34)'; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = BRAND.redDim; }}
+                          >
+                            <Zap className="w-4 h-4" /> Set Up OpenClaw
+                          </button>
+                          <button
+                            onClick={popOutOnboard}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-white/12 bg-white/[0.04] text-white/40 text-xs hover:text-white/65 hover:bg-white/[0.08] transition-colors"
+                          >
+                            <Terminal className="w-3 h-3" /> Open in Terminal
+                          </button>
+                        </div>
                       </div>
                     )}
                     {onboardStatus === 'running' && (
-                      <div className="flex items-center gap-2 text-white/55 text-xs">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: BRAND.red }} />
-                        Setting up your assistant — please wait
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex items-center gap-2 text-white/55 text-xs">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: BRAND.red }} />
+                          Setting up your assistant — please wait
+                        </div>
+                        <button
+                          onClick={popOutOnboard}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-white/12 bg-white/[0.04] text-white/40 text-xs hover:text-white/65 hover:bg-white/[0.08] transition-colors"
+                        >
+                          <Terminal className="w-3 h-3" /> Open in Terminal
+                        </button>
                       </div>
                     )}
                     {onboardStatus === 'done' && (
@@ -2647,6 +2720,14 @@ if(memory){let user='';try{user=fs.readFileSync(ws+'/USER.md','utf8');}catch(e){
                       {gatewayCheckLoading && <Loader2 className="w-3 h-3 animate-spin" />}
                       Refresh
                     </button>
+                    {gatewayStatus !== 'running' && (
+                      <button
+                        onClick={popOutGateway}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-white/12 bg-white/[0.04] text-white/40 text-xs hover:text-white/65 hover:bg-white/[0.08] transition-colors"
+                      >
+                        <Terminal className="w-3 h-3" /> Open in Terminal
+                      </button>
+                    )}
                     {gatewayStatus === 'running' && (
                       <button
                         onClick={() => window.electron.openUrl(gatewayToken ? `http://127.0.0.1:18789/?token=${encodeURIComponent(gatewayToken)}` : 'http://127.0.0.1:18789/')}
