@@ -18,7 +18,7 @@
 |---|---|---|---|
 | Global hotkey (open/close) | — | Configurable global shortcut, default `Ctrl+Space` | ✅ |
 | Fuzzy search across all commands | — | Scored search across title, keywords, subtitle | ✅ |
-| Recent commands | — | Most-used commands float to top | 🟡 |
+| Recent commands | — | Most-used commands float to top | ✅ |
 | Pinned commands | — | Pin any command to keep it at top | 🟡 |
 | Disable commands | — | Hide any command from results | 🟡 |
 | Per-command hotkeys | — | Assign a global hotkey to any command | 🟡 |
