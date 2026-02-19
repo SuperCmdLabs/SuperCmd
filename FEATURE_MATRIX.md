@@ -23,9 +23,9 @@
 | Disable commands | — | Hide any command from results | ✅ |
 | Per-command hotkeys | — | Assign a global hotkey to any command | ✅ |
 | Launcher window show/hide | — | Window hides on blur and on Escape | ✅ |
-| Settings window | `system-open-settings` | Full settings UI | 🟡 |
-| Onboarding wizard | `system-open-onboarding` | Multi-step setup flow | 🟡 |
-| Quit | `system-quit-launcher` | Exits the app | 🟡 |
+| Settings window | `system-open-settings` | Full settings UI | ✅ |
+| Onboarding wizard | `system-open-onboarding` | Multi-step setup flow | ✅ |
+| Quit | `system-quit-launcher` | Exits the app | ✅ |
 | Auto-launch at login | — | Toggle in settings | 🟡 |
 | App updater | — | Auto-update via electron-updater | 🟡 |
 
