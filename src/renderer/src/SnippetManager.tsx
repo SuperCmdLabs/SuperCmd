@@ -382,6 +382,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [showActions, setShowActions] = useState(false);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [editingSnippet, setEditingSnippet] = useState<Snippet | undefined>(undefined);
@@ -642,8 +643,12 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
       icon: <Files className="w-4 h-4" />,
       shortcut: ['⇧', '⌘', 'I'],
       execute: async () => {
-        await window.electron.snippetImport();
+        const result = await window.electron.snippetImport();
         await loadSnippets();
+        if (result.imported > 0 || result.skipped > 0) {
+          setImportResult(result);
+          setTimeout(() => setImportResult(null), 4000);
+        }
       },
     },
     {
@@ -757,7 +762,13 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
       }
       if (e.key.toLowerCase() === 'i' && e.metaKey && e.shiftKey) {
         e.preventDefault();
-        window.electron.snippetImport().then(() => loadSnippets());
+        window.electron.snippetImport().then((result) => {
+          loadSnippets();
+          if (result.imported > 0 || result.skipped > 0) {
+            setImportResult(result);
+            setTimeout(() => setImportResult(null), 4000);
+          }
+        });
         return;
       }
       if (e.key.toLowerCase() === 'x' && e.ctrlKey && e.shiftKey) {
@@ -876,6 +887,19 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
           <Plus className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Import result banner */}
+      {importResult && (
+        <div className={`px-5 py-2 text-xs flex items-center gap-2 border-b ${
+          importResult.imported > 0
+            ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'
+            : 'text-amber-300 bg-amber-500/10 border-amber-500/20'
+        }`}>
+          {importResult.imported > 0
+            ? `✓ Imported ${importResult.imported} snippet${importResult.imported !== 1 ? 's' : ''}${importResult.skipped > 0 ? ` · ${importResult.skipped} duplicate${importResult.skipped !== 1 ? 's' : ''} skipped` : ''}`
+            : `All ${importResult.skipped} snippet${importResult.skipped !== 1 ? 's' : ''} already exist — nothing to import`}
+        </div>
+      )}
 
       {/* Main content */}
       <div className="flex-1 flex min-h-0">

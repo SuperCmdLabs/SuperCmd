@@ -386,18 +386,31 @@ export async function importSnippetsFromFile(parentWindow?: BrowserWindow): Prom
   try {
     const data = fs.readFileSync(result.filePaths[0], 'utf-8');
     const parsed = JSON.parse(data);
-
+    // Normalised shape after field remapping
     let snippetsToImport: Array<{ name: string; content: string; keyword?: string; pinned?: boolean }> = [];
 
-    // Support our export format
+    // Collect the raw items from whichever format was used
+    let rawItems: any[] = [];
     if (parsed.type === 'snippets' && Array.isArray(parsed.snippets)) {
-      snippetsToImport = parsed.snippets;
-    }
-    // Also support a plain array
-    else if (Array.isArray(parsed)) {
-      snippetsToImport = parsed;
+      // SuperCmd native export: { type: 'snippets', snippets: [...] }
+      rawItems = parsed.snippets;
+    } else if (Array.isArray(parsed)) {
+      // Plain array — covers both SuperCmd and Raycast exports
+      rawItems = parsed;
     } else {
       return { imported: 0, skipped: 0 };
+    }
+
+    // Normalise field names so Raycast exports ("text") map to our schema ("content")
+    for (const item of rawItems) {
+      const content = item.content ?? item.text ?? '';
+      if (!item.name || !content) continue;
+      snippetsToImport.push({
+        name: item.name,
+        content,
+        keyword: item.keyword || undefined,
+        pinned: Boolean(item.pinned),
+      });
     }
 
     if (!snippetsCache) snippetsCache = loadFromDisk();
@@ -406,14 +419,11 @@ export async function importSnippetsFromFile(parentWindow?: BrowserWindow): Prom
     let skipped = 0;
 
     for (const item of snippetsToImport) {
-      if (!item.name || !item.content) {
-        skipped++;
-        continue;
-      }
-
-      // Skip duplicates by name
+      // Deduplicate by name (case-insensitive) or by keyword
       const exists = snippetsCache.some(
-        (s) => s.name.toLowerCase() === item.name.toLowerCase()
+        (s) =>
+          s.name.toLowerCase() === item.name.toLowerCase() ||
+          (item.keyword && s.keyword && s.keyword.toLowerCase() === item.keyword.toLowerCase())
       );
       if (exists) {
         skipped++;
