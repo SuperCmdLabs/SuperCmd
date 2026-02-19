@@ -13,6 +13,7 @@ import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
 import OnboardingExtension from './OnboardingExtension';
+import ExtensionHub from './ExtensionHub';
 import FileSearchExtension from './FileSearchExtension';
 import SuperCmdWhisper from './SuperCmdWhisper';
 import SuperCmdRead from './SuperCmdRead';
@@ -59,13 +60,13 @@ const App: React.FC = () => {
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
     showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt,
-    showWhisper, showSpeak, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
-    openOnboarding, openWhisper, openClipboardManager,
+    showWhisper, showSpeak, showWhisperOnboarding, showWhisperHint, showOnboarding, showExtensionHub, aiMode,
+    openOnboarding, openExtensionHub, openWhisper, openClipboardManager,
     openSnippetManager, openFileSearch, openCursorPrompt, openSpeak,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
     setShowClipboardManager, setShowSnippetManager, setShowFileSearch, setShowCursorPrompt,
     setShowWhisper, setShowSpeak, setShowWhisperOnboarding, setShowWhisperHint,
-    setShowOnboarding, setAiMode,
+    setShowOnboarding, setShowExtensionHub, setAiMode,
   } = useAppViewManager();
   const {
     whisperOnboardingPracticeText, setWhisperOnboardingPracticeText,
@@ -660,10 +661,10 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showOnboarding) {
+    if (!showActions && !contextMenu && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showOnboarding && !showExtensionHub) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
+  }, [showActions, contextMenu, aiMode, extensionView, showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showOnboarding, showExtensionHub, showWhisperOnboarding, restoreLauncherFocus]);
 
   const isLauncherModeActive =
     !showActions &&
@@ -677,6 +678,7 @@ const App: React.FC = () => {
     !showWhisper &&
     !showSpeak &&
     !showOnboarding &&
+    !showExtensionHub &&
     !showWhisperOnboarding;
 
   useEffect(() => {
@@ -1035,8 +1037,13 @@ const App: React.FC = () => {
       await window.electron.snippetExport();
       return true;
     }
+    if (commandId === 'system-extension-hub') {
+      whisperSessionRef.current = false;
+      openExtensionHub();
+      return true;
+    }
     return false;
-  }, [memoryActionLoading, showMemoryFeedback, showOnboarding, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openFileSearch, openSpeak, setShowSpeak]);
+  }, [memoryActionLoading, showMemoryFeedback, showOnboarding, openOnboarding, openExtensionHub, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openFileSearch, openSpeak, setShowSpeak]);
 
   useEffect(() => {
     const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {
@@ -1706,6 +1713,23 @@ const App: React.FC = () => {
             setShowOnboarding(false);
             setShowWhisperOnboarding(false);
             setOnboardingRequiresShortcutFix(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </>
+    );
+  }
+
+  // ─── Extension Hub mode ─────────────────────────────────────────
+  if (showExtensionHub) {
+    return (
+      <>
+        {alwaysMountedRunners}
+        <ExtensionHub
+          onClose={() => {
+            setShowExtensionHub(false);
             setSearchQuery('');
             setSelectedIndex(0);
             setTimeout(() => inputRef.current?.focus(), 50);

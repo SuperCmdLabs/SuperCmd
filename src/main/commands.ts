@@ -933,6 +933,13 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-extension-hub',
+      title: 'SuperCmd Store',
+      subtitle: 'Browse and add SuperCmd extensions',
+      keywords: ['supercmd store', 'extension store', 'store', 'extensions', 'hub', 'plugins', 'browse', 'install', 'add', 'community', 'raycast'],
+      category: 'system',
+    },
+    {
       id: 'system-quit-launcher',
       title: 'Quit SuperCmd',
       keywords: ['exit', 'close', 'quit', 'stop'],
