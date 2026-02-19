@@ -48,8 +48,11 @@ function keyEventToAccelerator(e: React.KeyboardEvent): string | null {
 
   const mappedKey = keyMap[key] || (key.length === 1 ? key.toUpperCase() : key);
 
-  // Must have at least one modifier
-  if (parts.length === 0) return null;
+  // F1–F24 are valid standalone Electron accelerators — no modifier needed.
+  // On Mac keyboards with media-key defaults, Fn+F5 sends a bare F5 event,
+  // so this is the natural way to bind function keys.
+  const isFunctionKey = /^F([1-9]|1[0-9]|2[0-4])$/.test(mappedKey);
+  if (parts.length === 0 && !isFunctionKey) return null;
 
   parts.push(mappedKey);
   return parts.join('+');
