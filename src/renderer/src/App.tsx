@@ -643,7 +643,12 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!contextMenu) return;
-    const onMouseDown = () => setContextMenu(null);
+    const onMouseDown = (e: MouseEvent) => {
+      // If the click is inside the context menu panel, don't dismiss —
+      // the action item's onClick needs to fire first (mousedown precedes click).
+      if (contextMenuRef.current?.contains(e.target as Node)) return;
+      setContextMenu(null);
+    };
     window.addEventListener('mousedown', onMouseDown);
     return () => window.removeEventListener('mousedown', onMouseDown);
   }, [contextMenu]);
