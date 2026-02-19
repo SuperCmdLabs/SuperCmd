@@ -620,7 +620,9 @@ async function discoverApplications(): Promise<CommandInfo[]> {
         if (info) {
           const packageType = String(info.CFBundlePackageType || '').trim();
           const isFinder = appPath === finderPath;
-          if (packageType && packageType !== 'APPL' && !isFinder) return null;
+          const isAllowedType =
+            !packageType || packageType === 'APPL' || packageType === 'XPC!';
+          if (!isAllowedType && !isFinder) return null;
           if (info.LSUIElement === true) return null;
           if (info.NSUIElement === true) return null;
           if (info.LSBackgroundOnly === true) return null;
