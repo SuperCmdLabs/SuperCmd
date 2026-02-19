@@ -90,6 +90,7 @@ const ExtensionsTab: React.FC<{
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [schemas, setSchemas] = useState<InstalledExtensionSettingsSchema[]>([]);
+  const [installedExtensionNames, setInstalledExtensionNames] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [activeScope, setActiveScope] = useState<'all' | 'commands'>('all');
   const [isLoading, setIsLoading] = useState(true);
@@ -105,6 +106,23 @@ const ExtensionsTab: React.FC<{
     type: 'idle' | 'success' | 'error';
     text: string;
   }>({ type: 'idle', text: '' });
+  const [extensionActionStatus, setExtensionActionStatus] = useState<{
+    type: 'idle' | 'success' | 'error';
+    text: string;
+  }>({ type: 'idle', text: '' });
+  const [extensionContextMenu, setExtensionContextMenu] = useState<{
+    x: number;
+    y: number;
+    extName: string;
+    title: string;
+    iconDataUrl?: string;
+  } | null>(null);
+  const [uninstallDialog, setUninstallDialog] = useState<{
+    extName: string;
+    title: string;
+    iconDataUrl?: string;
+  } | null>(null);
+  const [busyUninstallExtName, setBusyUninstallExtName] = useState<string | null>(null);
   const [folderBusy, setFolderBusy] = useState(false);
   const [showTopActionsMenu, setShowTopActionsMenu] = useState(false);
   const [oauthTokens, setOauthTokens] = useState<Record<string, { accessToken: string; provider: string } | null>>({});
@@ -113,14 +131,22 @@ const ExtensionsTab: React.FC<{
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [cmds, sett, extSchemas] = await Promise.all([
+      const [cmds, sett, extSchemas, installedNames] = await Promise.all([
         window.electron.getAllCommands(),
         window.electron.getSettings(),
         window.electron.getInstalledExtensionsSettingsSchema(),
+        window.electron.getInstalledExtensionNames(),
       ]);
       setCommands(cmds);
       setSettings(sett);
       setSchemas(extSchemas);
+      setInstalledExtensionNames(
+        new Set(
+          (installedNames || [])
+            .map((value: string) => String(value || '').trim())
+            .filter(Boolean)
+        )
+      );
       if (extSchemas.length > 0) {
         setSelected((prev) => prev || { extName: extSchemas[0].extName });
       }
@@ -648,6 +674,43 @@ const ExtensionsTab: React.FC<{
     }
   };
 
+  const canUninstallExtension = useCallback(
+    (extName: string): boolean => installedExtensionNames.has(extName),
+    [installedExtensionNames]
+  );
+
+  const handleUninstallExtension = useCallback(
+    async (extName: string, extensionTitle: string) => {
+      if (!canUninstallExtension(extName)) {
+        setExtensionContextMenu(null);
+        setUninstallDialog(null);
+        return;
+      }
+
+      setExtensionContextMenu(null);
+      setUninstallDialog(null);
+      setBusyUninstallExtName(extName);
+      try {
+        const success = await window.electron.uninstallExtension(extName);
+        if (success) {
+          setExtensionActionStatus({ type: 'success', text: `Uninstalled "${extensionTitle}".` });
+          setTimeout(() => setExtensionActionStatus({ type: 'idle', text: '' }), 2200);
+          await loadData();
+        } else {
+          setExtensionActionStatus({ type: 'error', text: `Failed to uninstall "${extensionTitle}".` });
+          setTimeout(() => setExtensionActionStatus({ type: 'idle', text: '' }), 3200);
+        }
+      } catch (error) {
+        console.error('Failed to uninstall extension:', error);
+        setExtensionActionStatus({ type: 'error', text: `Failed to uninstall "${extensionTitle}".` });
+        setTimeout(() => setExtensionActionStatus({ type: 'idle', text: '' }), 3200);
+      } finally {
+        setBusyUninstallExtName(null);
+      }
+    },
+    [canUninstallExtension, loadData]
+  );
+
   const updateCustomExtensionFolders = useCallback(
     async (nextFolders: string[]) => {
       const unique = Array.from(
@@ -714,6 +777,8 @@ const ExtensionsTab: React.FC<{
 
   useEffect(() => {
     if (!showTopActionsMenu) return;
+    setExtensionContextMenu(null);
+    setUninstallDialog(null);
     const onMouseDown = (event: MouseEvent) => {
       if (topActionsMenuRef.current?.contains(event.target as Node)) return;
       setShowTopActionsMenu(false);
@@ -721,6 +786,20 @@ const ExtensionsTab: React.FC<{
     window.addEventListener('mousedown', onMouseDown);
     return () => window.removeEventListener('mousedown', onMouseDown);
   }, [showTopActionsMenu]);
+
+  useEffect(() => {
+    if (!extensionContextMenu && !uninstallDialog) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (!busyUninstallExtName) {
+          setExtensionContextMenu(null);
+          setUninstallDialog(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [extensionContextMenu, uninstallDialog, busyUninstallExtName]);
 
   if (isLoading) {
     return <div className="text-white/50 text-sm">Loading extension settings…</div>;
@@ -841,6 +920,15 @@ const ExtensionsTab: React.FC<{
                 {hotkeyStatus.text}
               </p>
             ) : null}
+            {extensionActionStatus.type !== 'idle' ? (
+              <p
+                className={`mt-1 text-xs ${
+                  extensionActionStatus.type === 'error' ? 'text-red-300/90' : 'text-emerald-300/90'
+                }`}
+              >
+                {extensionActionStatus.text}
+              </p>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-[1fr_120px_100px_130px_82px] px-4 py-2 text-[11px] uppercase tracking-wider text-white/35 border-b border-white/[0.06]">
@@ -855,12 +943,29 @@ const ExtensionsTab: React.FC<{
             {filteredSchemas.length === 0 ? (
               <div className="px-4 py-8 text-center text-xs text-white/30">No matching extensions</div>
             ) : (
-              filteredSchemas.map((schema) => (
+              filteredSchemas.map((schema) => {
+                const uninstallable = canUninstallExtension(schema.extName);
+                return (
                 <div key={schema.extName} className="border-b border-white/[0.04] last:border-b-0">
                   <button
                     onClick={() => {
                       setSelected({ extName: schema.extName });
                       toggleExtensionExpanded(schema.extName);
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      if (!uninstallable) {
+                        setExtensionContextMenu(null);
+                        return;
+                      }
+                      setSelected({ extName: schema.extName });
+                      setExtensionContextMenu({
+                        x: event.clientX,
+                        y: event.clientY,
+                        extName: schema.extName,
+                        title: schema.title,
+                        iconDataUrl: schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName),
+                      });
                     }}
                     className={`w-full grid grid-cols-[1fr_120px_100px_130px_82px] items-center gap-2 px-4 py-1.5 text-left transition-colors ${
                       selected?.extName === schema.extName && !selected?.cmdName
@@ -1016,7 +1121,7 @@ const ExtensionsTab: React.FC<{
                     );
                   })}
                 </div>
-              ))
+              )})
             )}
           </div>
         </div>
@@ -1156,6 +1261,94 @@ const ExtensionsTab: React.FC<{
           </div>
         </div>
       </div>
+      {uninstallDialog ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/12"
+          onClick={() => {
+            if (!busyUninstallExtName) setUninstallDialog(null);
+          }}
+        >
+          <div
+            className="glass-effect w-[296px] max-w-[82vw] rounded-xl border border-white/[0.10] p-3 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-md bg-white/[0.04] border border-white/[0.08]">
+              {uninstallDialog.iconDataUrl ? (
+                <img
+                  src={uninstallDialog.iconDataUrl}
+                  alt=""
+                  className="h-5 w-5 rounded object-contain"
+                  draggable={false}
+                />
+              ) : (
+                <Puzzle className="h-4.5 w-4.5 text-white/65" />
+              )}
+            </div>
+
+            <div className="text-center text-[18px] font-semibold leading-tight text-white/92">
+              Uninstall "{uninstallDialog.title}"?
+            </div>
+            <p className="mt-1 text-center text-[11px] leading-snug text-white/45">
+              This extension and its commands will be removed from SuperCmd.
+            </p>
+
+            <div className="mt-2.5 flex items-center gap-2">
+              <button
+                type="button"
+                disabled={Boolean(busyUninstallExtName)}
+                onClick={() => setUninstallDialog(null)}
+                className="flex-1 rounded-md border border-white/[0.12] bg-white/[0.04] px-2.5 py-1.5 text-[12px] font-medium text-white/80 hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(busyUninstallExtName)}
+                onClick={() => void handleUninstallExtension(uninstallDialog.extName, uninstallDialog.title)}
+                className="flex-1 rounded-md border border-red-400/25 bg-red-500/10 px-2.5 py-1.5 text-[12px] font-semibold text-red-200/90 hover:bg-red-500/18 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {busyUninstallExtName ? 'Uninstalling…' : 'Uninstall'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {extensionContextMenu ? (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setExtensionContextMenu(null)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setExtensionContextMenu(null);
+          }}
+        >
+          <div
+            className="absolute min-w-[150px] rounded-xl border border-white/[0.12] bg-[#1f2129]/95 shadow-2xl backdrop-blur-xl p-1"
+            style={{
+              left: Math.min(extensionContextMenu.x, window.innerWidth - 180),
+              top: Math.min(extensionContextMenu.y, window.innerHeight - 120),
+            }}
+            onClick={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <button
+              type="button"
+              disabled={busyUninstallExtName === extensionContextMenu.extName}
+              onClick={() => {
+                setUninstallDialog({
+                  extName: extensionContextMenu.extName,
+                  title: extensionContextMenu.title,
+                  iconDataUrl: extensionContextMenu.iconDataUrl,
+                });
+                setExtensionContextMenu(null);
+              }}
+              className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-300/90 hover:text-red-200 hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {busyUninstallExtName === extensionContextMenu.extName ? 'Uninstalling…' : 'Uninstall'}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
