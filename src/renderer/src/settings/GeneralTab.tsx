@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Keyboard, Info, Bug, RefreshCw, Download, RotateCcw } from 'lucide-react';
+import { Keyboard, Info, Bug, RefreshCw, Download, RotateCcw, Power } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AppUpdaterStatus } from '../../types/electron';
 
@@ -215,6 +215,29 @@ const GeneralTab: React.FC = () => {
             Restart to Install
           </button>
         </div>
+      </div>
+
+      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Power className="w-4 h-4 text-white/50" />
+          <h3 className="text-sm font-medium text-white/90">Launch at Login</h3>
+        </div>
+        <p className="text-sm text-white/45 mb-3">
+          Automatically start SuperCmd when you log in.
+        </p>
+        <label className="inline-flex items-center gap-2 text-sm text-white/70 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.openAtLogin ?? false}
+            onChange={async (e) => {
+              const openAtLogin = e.target.checked;
+              setSettings((prev) => prev ? { ...prev, openAtLogin } : prev);
+              await window.electron.setOpenAtLogin(openAtLogin);
+            }}
+            className="accent-cyan-400"
+          />
+          Launch at login
+        </label>
       </div>
 
       <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
