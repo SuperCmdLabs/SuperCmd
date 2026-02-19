@@ -650,6 +650,50 @@ if($res.Count -eq 0){Write-Output '[]';exit}
     });
   }
 
+  // ── UWP / Store apps via Get-StartApps ───────────────────────────────────
+  // Get-StartApps returns all Start Menu entries including UWP apps whose
+  // AppID contains '!' (PackageFamilyName!AppId).  Traditional .exe shortcuts
+  // are already covered above, so we only add entries not yet in results.
+  const existingNames = new Set(results.map((r) => r.title.toLowerCase()));
+  try {
+    const uwpScript = `Get-StartApps | Where-Object { $_.AppID -match '!' } | Select-Object Name,AppID | ConvertTo-Json -Compress`;
+    const uwpEncoded = Buffer.from(uwpScript, 'utf16le').toString('base64');
+    const { stdout: uwpOut } = await execAsync(
+      `powershell -NoProfile -NonInteractive -EncodedCommand ${uwpEncoded}`,
+      { timeout: 15_000 }
+    );
+    const rawUwp = uwpOut.trim();
+    if (rawUwp && rawUwp !== '[]') {
+      const parsedUwp = JSON.parse(rawUwp);
+      const uwpApps: Array<{ Name: string; AppID: string }> = Array.isArray(parsedUwp)
+        ? parsedUwp
+        : [parsedUwp];
+      for (const item of uwpApps) {
+        const name = String(item?.Name || '').trim();
+        const appId = String(item?.AppID || '').trim();
+        if (!name || !appId) continue;
+        if (WIN_APP_SKIP_RE.test(name)) continue;
+        if (existingNames.has(name.toLowerCase())) continue;
+        existingNames.add(name.toLowerCase());
+
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
+        const idSuffix = crypto.createHash('md5').update(appId).digest('hex').slice(0, 8);
+        const id = `win-app-${slug}-${idSuffix}`;
+
+        results.push({
+          id,
+          title: name,
+          keywords: [name.toLowerCase()],
+          category: 'app' as const,
+          // shell: URI — opened via shell.openExternal in openAppByPath
+          path: `shell:AppsFolder\\${appId}`,
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('[Win] UWP app scan failed:', e);
+  }
+
   return results;
 }
 
@@ -1005,6 +1049,11 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
 async function openAppByPath(appPath: string): Promise<void> {
   if (process.platform === 'win32') {
     const { shell } = require('electron');
+    // UWP/Store apps are stored as shell:AppsFolder\{AUMID}
+    if (appPath.startsWith('shell:')) {
+      await shell.openExternal(appPath);
+      return;
+    }
     const err = await shell.openPath(appPath);
     if (err) throw new Error(err);
     return;
@@ -1169,6 +1218,62 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       id: 'system-export-snippets',
       title: 'Export Snippets',
       keywords: ['snippet', 'export', 'save', 'backup', 'file'],
+      category: 'system',
+    },
+    {
+      id: 'system-color-picker',
+      title: 'Pick Color',
+      subtitle: 'Copy hex to clipboard',
+      keywords: ['color', 'picker', 'hex', 'rgb', 'colour', 'eyedropper', 'powertoys'],
+      iconEmoji: '🎨',
+      category: 'system',
+    },
+    {
+      id: 'system-calculator',
+      title: 'Calculator',
+      subtitle: 'Type a math expression to calculate',
+      keywords: ['calculator', 'math', 'compute', 'calculate', 'arithmetic', 'unit', 'convert'],
+      iconEmoji: '🧮',
+      category: 'system',
+    },
+    {
+      id: 'system-toggle-dark-mode',
+      title: 'Toggle Dark / Light Mode',
+      subtitle: 'Switch system appearance',
+      keywords: ['dark mode', 'light mode', 'theme', 'appearance', 'night', 'powertoys', 'light switch'],
+      iconEmoji: '🌙',
+      category: 'system',
+    },
+    {
+      id: 'system-awake-toggle',
+      title: 'Awake — Prevent Sleep',
+      subtitle: 'Keep display awake',
+      keywords: ['awake', 'sleep', 'prevent sleep', 'caffeinate', 'display', 'powertoys'],
+      iconEmoji: '☕',
+      category: 'system',
+    },
+    {
+      id: 'system-hosts-editor',
+      title: 'Hosts File Editor',
+      subtitle: 'Edit hosts file with admin rights',
+      keywords: ['hosts', 'dns', 'block', 'redirect', 'etc hosts', 'network', 'powertoys'],
+      iconEmoji: '📝',
+      category: 'system',
+    },
+    {
+      id: 'system-env-variables',
+      title: 'Environment Variables',
+      subtitle: 'Open system environment variables',
+      keywords: ['environment', 'variables', 'env', 'path', 'system', 'powertoys'],
+      iconEmoji: '⚙️',
+      category: 'system',
+    },
+    {
+      id: 'system-shortcut-guide',
+      title: 'Shortcut Guide',
+      subtitle: 'View keyboard shortcuts',
+      keywords: ['shortcut', 'hotkey', 'keyboard', 'help', 'guide', 'cheatsheet', 'powertoys'],
+      iconEmoji: '⌨️',
       category: 'system',
     },
   ];
