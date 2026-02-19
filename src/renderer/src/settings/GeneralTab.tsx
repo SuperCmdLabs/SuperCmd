@@ -1,13 +1,22 @@
 /**
  * General Settings Tab
  *
- * Allows the user to configure the global launcher shortcut.
+ * Structured row layout aligned with the settings design system.
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Keyboard, Info, Bug, RefreshCw, Download, RotateCcw } from 'lucide-react';
+import { Keyboard, Info, Bug, RefreshCw, Download, RotateCcw, Type } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AppUpdaterStatus } from '../../types/electron';
+import { applyAppFontSize, getDefaultAppFontSize } from '../utils/font-size';
+
+type FontSizeOption = NonNullable<AppSettings['fontSize']>;
+
+const FONT_SIZE_OPTIONS: Array<{ id: FontSizeOption; label: string }> = [
+  { id: 'small', label: 'Small' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'large', label: 'Large' },
+];
 
 function formatBytes(bytes?: number): string {
   const value = Number(bytes || 0);
@@ -19,16 +28,52 @@ function formatBytes(bytes?: number): string {
   return `${scaled.toFixed(precision)} ${units[exponent]}`;
 }
 
+type SettingsRowProps = {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  withBorder?: boolean;
+  children: React.ReactNode;
+};
+
+const SettingsRow: React.FC<SettingsRowProps> = ({
+  icon,
+  title,
+  description,
+  withBorder = true,
+  children,
+}) => (
+  <div
+    className={`grid gap-3 px-4 py-3.5 md:px-5 md:grid-cols-[220px_minmax(0,1fr)] ${
+      withBorder ? 'border-b border-white/[0.08]' : ''
+    }`}
+  >
+    <div className="flex items-start gap-2.5">
+      <div className="mt-0.5 text-white/65 shrink-0">{icon}</div>
+      <div className="min-w-0">
+        <h3 className="text-[13px] font-semibold text-white/95">{title}</h3>
+        <p className="mt-0.5 text-[12px] text-white/50 leading-snug">{description}</p>
+      </div>
+    </div>
+    <div className="flex items-center min-h-[32px]">{children}</div>
+  </div>
+);
+
 const GeneralTab: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [updaterStatus, setUpdaterStatus] = useState<AppUpdaterStatus | null>(null);
   const [updaterActionError, setUpdaterActionError] = useState('');
-  const [shortcutStatus, setShortcutStatus] = useState<
-    'idle' | 'success' | 'error'
-  >('idle');
+  const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   useEffect(() => {
-    window.electron.getSettings().then(setSettings);
+    window.electron.getSettings().then((nextSettings) => {
+      const normalizedFontSize = nextSettings.fontSize || getDefaultAppFontSize();
+      applyAppFontSize(normalizedFontSize);
+      setSettings({
+        ...nextSettings,
+        fontSize: normalizedFontSize,
+      });
+    });
   }, []);
 
   useEffect(() => {
@@ -61,6 +106,22 @@ const GeneralTab: React.FC = () => {
     } else {
       setShortcutStatus('error');
       setTimeout(() => setShortcutStatus('idle'), 3000);
+    }
+  };
+
+  const handleFontSizeChange = async (nextFontSize: FontSizeOption) => {
+    if (!settings) return;
+    const previousFontSize = settings.fontSize || getDefaultAppFontSize();
+    if (previousFontSize === nextFontSize) return;
+
+    setSettings((prev) => (prev ? { ...prev, fontSize: nextFontSize } : prev));
+    applyAppFontSize(nextFontSize);
+
+    try {
+      await window.electron.saveSettings({ fontSize: nextFontSize });
+    } catch {
+      setSettings((prev) => (prev ? { ...prev, fontSize: previousFontSize } : prev));
+      applyAppFontSize(previousFontSize);
     }
   };
 
@@ -101,7 +162,7 @@ const GeneralTab: React.FC = () => {
   const updaterSupported = updaterStatus?.supported !== false;
   const currentVersion = updaterStatus?.currentVersion || '1.0.0';
   const updaterPrimaryMessage = useMemo(() => {
-    if (!updaterStatus) return 'Check for new versions and install updates from Settings.';
+    if (!updaterStatus) return 'Check for and install packaged-app updates.';
     if (updaterStatus.message) return updaterStatus.message;
     switch (updaterStatus.state) {
       case 'unsupported':
@@ -119,139 +180,164 @@ const GeneralTab: React.FC = () => {
       case 'error':
         return 'Could not complete the update action.';
       default:
-        return 'Check for new versions and install updates from Settings.';
+        return 'Check for and install packaged-app updates.';
     }
   }, [updaterStatus]);
 
   if (!settings) {
-    return (
-      <div className="p-8 text-white/50 text-sm">Loading settings...</div>
-    );
+    return <div className="p-6 text-white/50 text-[12px]">Loading settings...</div>;
   }
 
+  const selectedFontSize = settings.fontSize || getDefaultAppFontSize();
+
   return (
-    <div className="p-4 w-full max-w-5xl space-y-4">
-      <h2 className="text-xl font-semibold text-white">General</h2>
+    <div className="w-full max-w-[980px] mx-auto space-y-3">
+      <h2 className="text-[15px] font-semibold text-white">General</h2>
 
-      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-6">
-        <div className="flex items-center gap-2 mb-2">
-          <Keyboard className="w-5 h-5 text-white/60" />
-          <h3 className="text-base font-semibold text-white/95">Launcher Shortcut</h3>
-        </div>
-        <p className="text-sm text-white/45 mb-5">
-          Set the global shortcut to open and close SuperCmd.
-        </p>
-
-        <div className="flex items-center gap-4">
-          <HotkeyRecorder value={settings.globalShortcut} onChange={handleShortcutChange} large />
-          {shortcutStatus === 'success' && <span className="text-sm text-green-400">Shortcut updated</span>}
-          {shortcutStatus === 'error' && (
-            <span className="text-sm text-red-400">Failed — shortcut may be used by another app</span>
-          )}
-        </div>
-      </div>
-
-      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
-        <div className="flex items-center gap-2 mb-1">
-          <RefreshCw className={`w-4 h-4 text-white/50 ${updaterState === 'checking' ? 'animate-spin' : ''}`} />
-          <h3 className="text-sm font-medium text-white/90">App Updates</h3>
-        </div>
-        <p className="text-sm text-white/45 mb-1">
-          {updaterPrimaryMessage}
-        </p>
-        <p className="text-xs text-white/40">
-          Current version: v{currentVersion}
-          {updaterStatus?.latestVersion ? ` · Latest: v${updaterStatus.latestVersion}` : ''}
-        </p>
-
-        {updaterState === 'downloading' && (
-          <div className="mt-3">
-            <div className="w-full h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
-              <div
-                className="h-full bg-cyan-400 transition-all duration-200"
-                style={{ width: `${updaterProgress}%` }}
-              />
-            </div>
-            <p className="mt-1 text-xs text-white/45">
-              {updaterProgress.toFixed(0)}% · {formatBytes(updaterStatus?.transferredBytes)} / {formatBytes(updaterStatus?.totalBytes)}
-            </p>
+      <div className="overflow-hidden rounded-xl border border-white/[0.10] bg-white/[0.02]">
+        <SettingsRow
+          icon={<Keyboard className="w-4 h-4" />}
+          title="Launcher Shortcut"
+          description="Set the global shortcut to open and close SuperCmd."
+        >
+          <div className="flex flex-wrap items-center gap-4">
+            <HotkeyRecorder value={settings.globalShortcut} onChange={handleShortcutChange} large />
+            {shortcutStatus === 'success' && <span className="text-[12px] text-green-400">Shortcut updated</span>}
+            {shortcutStatus === 'error' && (
+              <span className="text-[12px] text-red-400">Failed. Shortcut may be used by another app.</span>
+            )}
           </div>
-        )}
+        </SettingsRow>
 
-        {(updaterActionError || updaterState === 'error') && (
-          <p className="mt-2 text-xs text-red-400">
-            {updaterActionError || updaterStatus?.message || 'Update failed.'}
+        <SettingsRow
+          icon={<Type className="w-4 h-4" />}
+          title="Font Size"
+          description="Scale text size across the app."
+        >
+          <div className="inline-flex items-center gap-0.5 rounded-lg border border-white/[0.16] bg-white/[0.03] p-0.5">
+            {FONT_SIZE_OPTIONS.map((option) => {
+              const active = selectedFontSize === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => void handleFontSizeChange(option.id)}
+                  className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors ${
+                    active
+                      ? 'bg-white/[0.2] text-white'
+                      : 'text-white/65 hover:text-white/90 hover:bg-white/[0.08]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<RefreshCw className={`w-4 h-4 ${updaterState === 'checking' ? 'animate-spin' : ''}`} />}
+          title="App Updates"
+          description="Check for and install packaged-app updates."
+        >
+          <div className="w-full space-y-2">
+            <div>
+              <p className="text-[13px] font-semibold text-white/92 leading-snug">
+                {updaterPrimaryMessage}
+              </p>
+              <p className="text-[12px] text-white/45 mt-0.5 leading-tight">
+                Current version: v{currentVersion}
+                {updaterStatus?.latestVersion ? ` · Latest: v${updaterStatus.latestVersion}` : ''}
+              </p>
+            </div>
+
+            {updaterState === 'downloading' && (
+              <div>
+                <div className="w-full h-1 rounded-full bg-white/[0.08] overflow-hidden">
+                  <div
+                    className="h-full bg-cyan-400 transition-all duration-200"
+                    style={{ width: `${updaterProgress}%` }}
+                  />
+                </div>
+                <p className="mt-0.5 text-[12px] text-white/45">
+                  {updaterProgress.toFixed(0)}% · {formatBytes(updaterStatus?.transferredBytes)} / {formatBytes(updaterStatus?.totalBytes)}
+                </p>
+              </div>
+            )}
+
+            {(updaterActionError || updaterState === 'error') && (
+              <p className="text-[12px] text-red-400">
+                {updaterActionError || updaterStatus?.message || 'Update failed.'}
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCheckForUpdates}
+                disabled={!updaterSupported || updaterState === 'checking' || updaterState === 'downloading'}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[12px] border border-white/[0.14] text-white/90 hover:bg-white/[0.06] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${updaterState === 'checking' ? 'animate-spin' : ''}`} />
+                Check for Updates
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadUpdate}
+                disabled={!updaterSupported || (updaterState !== 'available' && updaterState !== 'downloading')}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[12px] border border-cyan-400/40 text-cyan-200 hover:bg-cyan-400/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Download className={`w-3.5 h-3.5 ${updaterState === 'downloading' ? 'animate-pulse' : ''}`} />
+                {updaterState === 'downloading' ? 'Downloading...' : 'Download Update'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRestartToInstall}
+                disabled={!updaterSupported || updaterState !== 'downloaded'}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[12px] border border-emerald-400/40 text-emerald-200 hover:bg-emerald-400/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Restart to Install
+              </button>
+            </div>
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<Bug className="w-4 h-4" />}
+          title="Debug Mode"
+          description="Show detailed logs when extensions fail to load or build."
+        >
+          <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.debugMode ?? false}
+              onChange={async (e) => {
+                const debugMode = e.target.checked;
+                setSettings((prev) => (prev ? { ...prev, debugMode } : prev));
+                await window.electron.saveSettings({ debugMode });
+              }}
+              className="w-4 h-4 rounded accent-cyan-400"
+            />
+            Enable debug mode
+          </label>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<Info className="w-4 h-4" />}
+          title="About"
+          description="Version information."
+          withBorder={false}
+        >
+          <p className="text-[13px] font-semibold text-white/88 leading-snug">
+            SuperCmd v{currentVersion}
           </p>
-        )}
-
-        <div className="mt-4 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleCheckForUpdates}
-            disabled={!updaterSupported || updaterState === 'checking' || updaterState === 'downloading'}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-white/[0.14] text-white/90 hover:bg-white/[0.06] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${updaterState === 'checking' ? 'animate-spin' : ''}`} />
-            Check for Updates
-          </button>
-
-          <button
-            type="button"
-            onClick={handleDownloadUpdate}
-            disabled={!updaterSupported || (updaterState !== 'available' && updaterState !== 'downloading')}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-cyan-400/40 text-cyan-200 hover:bg-cyan-400/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Download className={`w-4 h-4 ${updaterState === 'downloading' ? 'animate-pulse' : ''}`} />
-            {updaterState === 'downloading' ? 'Downloading...' : 'Download Update'}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleRestartToInstall}
-            disabled={!updaterSupported || updaterState !== 'downloaded'}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-emerald-400/40 text-emerald-200 hover:bg-emerald-400/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Restart to Install
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
-        <div className="flex items-center gap-2 mb-1">
-          <Bug className="w-4 h-4 text-white/50" />
-          <h3 className="text-sm font-medium text-white/90">Debug Mode</h3>
-        </div>
-        <p className="text-sm text-white/45 mb-3">
-          Show detailed error messages when extensions fail to load or build.
-        </p>
-        <label className="inline-flex items-center gap-2 text-sm text-white/70 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={settings.debugMode ?? false}
-            onChange={async (e) => {
-              const debugMode = e.target.checked;
-              setSettings((prev) => prev ? { ...prev, debugMode } : prev);
-              await window.electron.saveSettings({ debugMode });
-            }}
-            className="accent-cyan-400"
-          />
-          Enable debug mode
-        </label>
-      </div>
-
-      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
-        <div className="flex items-center gap-2 mb-1">
-          <Info className="w-4 h-4 text-white/50" />
-          <h3 className="text-sm font-medium text-white/90">About</h3>
-        </div>
-        <p className="text-sm text-white/45">
-          SuperCmd v{currentVersion} — Supercharged productivity.
-        </p>
+        </SettingsRow>
       </div>
     </div>
   );
 };
 
 export default GeneralTab;
-

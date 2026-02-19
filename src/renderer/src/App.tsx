@@ -41,6 +41,7 @@ import {
   shouldOpenCommandSetup,
   getMissingRequiredScriptArguments, toScriptArgumentMapFromArray,
 } from './utils/extension-preferences';
+import { applyAppFontSize, getDefaultAppFontSize } from './utils/font-size';
 import ScriptCommandSetupView from './views/ScriptCommandSetupView';
 import ScriptCommandOutputView from './views/ScriptCommandOutputView';
 import ExtensionPreferenceSetupView from './views/ExtensionPreferenceSetupView';
@@ -211,6 +212,7 @@ const App: React.FC = () => {
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
       setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
+      applyAppFontSize(settings.fontSize);
       const shouldShowOnboarding = !settings.hasSeenOnboarding;
       setShowOnboarding(shouldShowOnboarding);
       setOnboardingRequiresShortcutFix(shouldShowOnboarding && !shortcutStatus.ok);
@@ -222,6 +224,7 @@ const App: React.FC = () => {
       setLauncherShortcut('Alt+Space');
       setConfiguredEdgeTtsVoice('en-US-EricNeural');
       setConfiguredTtsModel('edge-tts');
+      applyAppFontSize(getDefaultAppFontSize());
       setShowOnboarding(false);
       setOnboardingRequiresShortcutFix(false);
     }

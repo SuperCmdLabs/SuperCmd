@@ -1,16 +1,15 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Search,
-  Download,
-  Trash2,
   RefreshCw,
   Package,
-  ExternalLink,
   Users,
   List,
   Info,
   Image as ImageIcon,
 } from 'lucide-react';
+import { InternalActionPanelOverlay } from '../raycast-api';
+import type { ExtractedAction } from '../raycast-api/action-runtime-types';
 
 interface CatalogEntry {
   name: string;
@@ -43,6 +42,8 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   const [screenshotsByName, setScreenshotsByName] = useState<Record<string, string[]>>({});
   const [loadingScreenshotsFor, setLoadingScreenshotsFor] = useState<string | null>(null);
+  const [showActions, setShowActions] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const loadCatalog = useCallback(async (force = false) => {
     setIsLoading(true);
@@ -116,6 +117,12 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const selectedExtension = useMemo(
     () => sortedCatalog.find((entry) => entry.name === selectedName) || null,
     [sortedCatalog, selectedName]
+  );
+  const selectedInstalled = selectedExtension ? installedNames.has(selectedExtension.name) : false;
+  const isSelectedBusy = selectedExtension ? busyName === selectedExtension.name : false;
+  const busyExtension = useMemo(
+    () => (busyName ? catalog.find((entry) => entry.name === busyName) || null : null),
+    [busyName, catalog]
   );
 
   useEffect(() => {
@@ -192,139 +199,310 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
     await window.electron.openUrl(url);
   };
 
+  const handlePrimaryAction = useCallback(async () => {
+    if (!selectedExtension || isSelectedBusy) return;
+    await handleInstall(selectedExtension.name);
+  }, [handleInstall, isSelectedBusy, selectedExtension]);
+
+  const moveSelection = useCallback(
+    (delta: number) => {
+      if (sortedCatalog.length === 0) return;
+      const currentIndex = selectedName
+        ? sortedCatalog.findIndex((entry) => entry.name === selectedName)
+        : 0;
+      const safeCurrent = currentIndex >= 0 ? currentIndex : 0;
+      const nextIndex = Math.max(0, Math.min(safeCurrent + delta, sortedCatalog.length - 1));
+      const next = sortedCatalog[nextIndex];
+      if (next && next.name !== selectedName) {
+        setSelectedName(next.name);
+      }
+    },
+    [selectedName, sortedCatalog]
+  );
+
+  const storeActions = useMemo<ExtractedAction[]>(() => {
+    const actions: ExtractedAction[] = [
+      {
+        title: selectedInstalled ? 'Update Extension' : 'Install Extension',
+        shortcut: { modifiers: ['cmd'], key: 'enter' },
+        execute: () => void handlePrimaryAction(),
+      },
+      {
+        title: 'Refresh Catalog',
+        shortcut: { modifiers: ['cmd'], key: 'r' },
+        execute: () => void loadCatalog(true),
+      },
+    ];
+
+    if (!selectedExtension) return actions;
+
+    actions.push({
+      title: 'Open README',
+      shortcut: { modifiers: ['cmd'], key: 'o' },
+      execute: () => void openRepoPage(selectedExtension.name, true),
+    });
+    actions.push({
+      title: 'View Source',
+      shortcut: { modifiers: ['cmd', 'shift'], key: 'o' },
+      execute: () => void openRepoPage(selectedExtension.name, false),
+    });
+    if (selectedInstalled) {
+      actions.push({
+        title: 'Uninstall Extension',
+        shortcut: { modifiers: ['cmd'], key: 'backspace' },
+        style: 'destructive',
+        execute: () => void handleUninstall(selectedExtension.name),
+      });
+    }
+
+    return actions;
+  }, [
+    handlePrimaryAction,
+    handleUninstall,
+    loadCatalog,
+    openRepoPage,
+    selectedExtension,
+    selectedInstalled,
+  ]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isMetaK = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k';
+      const isMetaEnter = (event.metaKey || event.ctrlKey) && (event.key === 'Enter' || event.code === 'NumpadEnter');
+
+      if (isMetaK) {
+        event.preventDefault();
+        setShowActions((prev) => !prev);
+        return;
+      }
+
+      if (isMetaEnter) {
+        if (showActions) return;
+        event.preventDefault();
+        void handlePrimaryAction();
+        return;
+      }
+
+      if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          moveSelection(1);
+          return;
+        }
+        if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          moveSelection(-1);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handlePrimaryAction, moveSelection, showActions]);
+
+  useEffect(() => {
+    if (!selectedName) return;
+    const row = listRef.current?.querySelector<HTMLButtonElement>(`button[data-ext-name="${selectedName}"]`);
+    row?.scrollIntoView({ block: 'nearest' });
+  }, [selectedName]);
+
   return (
     <div className={embedded ? '' : 'h-full flex flex-col'}>
-      <div className="flex items-center justify-between mb-2">
-        <h2 className={`${embedded ? 'text-base' : 'text-xl'} font-semibold text-white`}>
-          {embedded ? 'Community' : 'Store'}
-        </h2>
-        <button
-          onClick={() => loadCatalog(true)}
-          disabled={isLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/50 hover:text-white/80 bg-white/[0.04] hover:bg-white/[0.08] rounded-lg transition-colors disabled:opacity-40"
-        >
-          <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-      </div>
-
-      <p className="text-xs text-white/35 mb-4">
-        Installed extensions appear first.
-      </p>
-
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-        <input
-          type="text"
-          placeholder="Search extensions..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-white/20 transition-colors"
-        />
-      </div>
-
-      {isLoading && catalog.length === 0 && (
-        <div className="text-center py-20">
-          <RefreshCw className="w-6 h-6 text-white/20 animate-spin mx-auto mb-3" />
-          <p className="text-sm text-white/40">Loading extension catalog...</p>
+      <div className="w-full h-full flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+          <h2 className="text-[15px] font-semibold text-white">{embedded ? 'Community' : 'Store'}</h2>
+          <span className="text-[12px] text-white/45">Installed extensions appear first.</span>
         </div>
-      )}
 
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-5 mb-6">
-          <p className="text-sm text-red-400">{error}</p>
-          <button
-            onClick={() => loadCatalog(true)}
-            className="text-xs text-red-400/70 hover:text-red-400 underline mt-2"
-          >
-            Try again
-          </button>
-        </div>
-      )}
-
-      {!isLoading && sortedCatalog.length === 0 && !error && (
-        <div className="text-center py-20 text-white/30">
-          <Package className="w-8 h-8 mx-auto mb-3 opacity-40" />
-          <p className="text-sm">
-            {searchQuery.trim() ? 'No extensions match your search' : 'No extensions available'}
-          </p>
-        </div>
-      )}
-
-      {sortedCatalog.length > 0 && (
-        <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
-          <div className="col-span-5 border border-white/[0.06] rounded-xl bg-white/[0.02] p-2 min-h-0">
-            <div className="space-y-1 h-full overflow-y-auto custom-scrollbar pr-1">
-              {sortedCatalog.map((ext) => {
-                const selected = selectedName === ext.name;
-                const installed = installedNames.has(ext.name);
-                return (
-                  <button
-                    key={ext.name}
-                    type="button"
-                    onClick={() => {
-                      setSelectedName(ext.name);
-                      setDetailTab('overview');
-                    }}
-                    className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                      selected ? 'bg-white/[0.10]' : 'hover:bg-white/[0.05]'
-                    }`}
-                  >
-                    <div className="w-9 h-9 rounded-lg bg-white/[0.06] flex items-center justify-center overflow-hidden flex-shrink-0">
-                      <img
-                        src={ext.iconUrl}
-                        alt=""
-                        className="w-9 h-9 object-contain"
-                        draggable={false}
-                        onError={(e) => {
-                          const target = e.currentTarget;
-                          target.style.display = 'none';
-                        }}
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-white/90 truncate">
-                          {ext.title}
-                        </span>
-                        {installed && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-green-500/15 text-green-400/80 rounded">
-                            Installed
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-white/35 truncate">{ext.description || ext.name}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="col-span-7 border border-white/[0.06] rounded-xl bg-white/[0.02] p-4 flex flex-col min-h-0">
-            {selectedExtension ? (
-              <CommunityDetails
-                ext={selectedExtension}
-                screenshots={
-                  screenshotsByName[selectedExtension.name] ?? selectedExtension.screenshotUrls ?? []
-                }
-                screenshotsLoading={loadingScreenshotsFor === selectedExtension.name}
-                detailTab={detailTab}
-                onTabChange={setDetailTab}
-                installed={installedNames.has(selectedExtension.name)}
-                busy={busyName === selectedExtension.name}
-                onInstall={() => handleInstall(selectedExtension.name)}
-                onUninstall={() => handleUninstall(selectedExtension.name)}
-                onOpenReadme={() => openRepoPage(selectedExtension.name, true)}
-                onOpenSource={() => openRepoPage(selectedExtension.name, false)}
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="px-4 py-3 border-b border-white/[0.08] flex items-center gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+              <input
+                type="text"
+                placeholder="Search extensions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-white/[0.20] transition-colors"
               />
-            ) : (
-              <div className="h-full flex items-center justify-center text-sm text-white/35">
-                Select an extension to view details
-              </div>
-            )}
+            </div>
+            <button
+              onClick={() => loadCatalog(true)}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/60 hover:text-white/85 border border-white/[0.10] bg-white/[0.03] hover:bg-white/[0.08] rounded-lg transition-colors disabled:opacity-40"
+            >
+              <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
           </div>
+
+          {isLoading && catalog.length === 0 && (
+            <div className="text-center py-20">
+              <RefreshCw className="w-6 h-6 text-white/20 animate-spin mx-auto mb-3" />
+              <p className="text-sm text-white/40">Loading extension catalog...</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="mx-4 mt-4 bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+              <p className="text-sm text-red-400">{error}</p>
+              <button
+                onClick={() => loadCatalog(true)}
+                className="text-xs text-red-400/70 hover:text-red-400 underline mt-2"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {!isLoading && sortedCatalog.length === 0 && !error && (
+            <div className="text-center py-20 text-white/30">
+              <Package className="w-8 h-8 mx-auto mb-3 opacity-40" />
+              <p className="text-sm">
+                {searchQuery.trim() ? 'No extensions match your search' : 'No extensions available'}
+              </p>
+            </div>
+          )}
+
+          {sortedCatalog.length > 0 && (
+            <div className="grid grid-cols-12 flex-1 min-h-0">
+              <div className="col-span-5 border-r border-white/[0.08] min-h-0">
+                <div ref={listRef} className="space-y-1 h-full overflow-y-auto custom-scrollbar px-2 py-2">
+                  {sortedCatalog.map((ext) => {
+                    const selected = selectedName === ext.name;
+                    const installed = installedNames.has(ext.name);
+                    return (
+                      <button
+                        key={ext.name}
+                        data-ext-name={ext.name}
+                        type="button"
+                        onClick={() => {
+                          setSelectedName(ext.name);
+                          setDetailTab('overview');
+                        }}
+                        className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                          selected ? 'bg-white/[0.10]' : 'hover:bg-white/[0.05]'
+                        }`}
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-white/[0.06] flex items-center justify-center overflow-hidden flex-shrink-0">
+                          <img
+                            src={ext.iconUrl}
+                            alt=""
+                            className="w-9 h-9 object-contain"
+                            draggable={false}
+                            onError={(e) => {
+                              const target = e.currentTarget;
+                              target.style.display = 'none';
+                            }}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-white/90 truncate">
+                              {ext.title}
+                            </span>
+                            {installed && (
+                              <span className="text-[10px] px-1.5 py-0.5 bg-green-500/15 text-green-400/80 rounded">
+                                Installed
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-white/35 truncate">{ext.description || ext.name}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="col-span-7 flex flex-col min-h-0 p-4">
+                {selectedExtension ? (
+                  <CommunityDetails
+                    ext={selectedExtension}
+                    screenshots={
+                      screenshotsByName[selectedExtension.name] ?? selectedExtension.screenshotUrls ?? []
+                    }
+                    screenshotsLoading={loadingScreenshotsFor === selectedExtension.name}
+                    detailTab={detailTab}
+                    onTabChange={setDetailTab}
+                    installed={installedNames.has(selectedExtension.name)}
+                    busy={busyName === selectedExtension.name}
+                  />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-sm text-white/35">
+                    Select an extension to view details
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!isLoading && (
+            <div
+              className="flex items-center px-4 py-3.5 border-t border-white/[0.06]"
+              style={{ background: 'rgba(28,28,32,0.90)' }}
+            >
+              <div className="flex items-center gap-2 text-white/45 text-xs flex-1 min-w-0 font-medium truncate">
+                {busyExtension ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0 text-white/65" />
+                    <span className="truncate text-white/65">Installing {busyExtension.title}...</span>
+                  </>
+                ) : selectedExtension ? (
+                  <>
+                    <img
+                      src={selectedExtension.iconUrl}
+                      alt=""
+                      className="w-4 h-4 object-contain rounded-sm flex-shrink-0"
+                      draggable={false}
+                    />
+                    <span className="truncate">{selectedExtension.title}</span>
+                  </>
+                ) : (
+                  <span>{sortedCatalog.length} extensions</span>
+                )}
+              </div>
+
+              {selectedExtension && (
+                <div className="flex items-center gap-2 mr-3">
+                  <button
+                    onClick={() => void handlePrimaryAction()}
+                    disabled={isSelectedBusy}
+                    className="text-white text-xs font-semibold hover:text-white/85 disabled:text-white/40 transition-colors"
+                  >
+                    {selectedInstalled ? 'Update Extension' : 'Install Extension'}
+                  </button>
+                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">
+                    ⌘
+                  </kbd>
+                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">
+                    ↩
+                  </kbd>
+                </div>
+              )}
+
+              <button
+                onClick={() => setShowActions(true)}
+                className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
+              >
+                <span className="text-xs font-medium">Actions</span>
+                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
+                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
+              </button>
+            </div>
+          )}
         </div>
+      </div>
+
+      {showActions && storeActions.length > 0 && (
+        <InternalActionPanelOverlay
+          actions={storeActions}
+          onClose={() => setShowActions(false)}
+          onExecute={(action) => {
+            setShowActions(false);
+            action.execute();
+          }}
+        />
       )}
     </div>
   );
@@ -379,11 +557,7 @@ const CommunityDetails: React.FC<{
   onTabChange: (tab: DetailTab) => void;
   installed: boolean;
   busy: boolean;
-  onInstall: () => void;
-  onUninstall: () => void;
-  onOpenReadme: () => void;
-  onOpenSource: () => void;
-}> = ({ ext, screenshots, screenshotsLoading, detailTab, onTabChange, installed, busy, onInstall, onUninstall, onOpenReadme, onOpenSource }) => {
+}> = ({ ext, screenshots, screenshotsLoading, detailTab, onTabChange, installed, busy }) => {
   const team = ext.contributors?.length ? ext.contributors : ext.author ? [ext.author] : [];
   const visibleCommands = ext.commands.slice(0, 7);
 
@@ -553,56 +727,6 @@ const CommunityDetails: React.FC<{
         )}
       </div>
 
-      <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onOpenReadme}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-md bg-white/[0.06] hover:bg-white/[0.10] text-white/80 transition-colors"
-          >
-            Open README
-            <ExternalLink className="w-3 h-3" />
-          </button>
-          <button
-            onClick={onOpenSource}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-md bg-white/[0.06] hover:bg-white/[0.10] text-white/80 transition-colors"
-          >
-            View Code
-            <ExternalLink className="w-3 h-3" />
-          </button>
-        </div>
-
-        {busy ? (
-          <div className="text-xs text-white/50 inline-flex items-center gap-1.5">
-            <RefreshCw className="w-3 h-3 animate-spin" />
-            Working...
-          </div>
-        ) : installed ? (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onInstall}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Update
-            </button>
-            <button
-              onClick={onUninstall}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-red-500/15 hover:bg-red-500/25 text-red-300 transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Uninstall
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={onInstall}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 transition-colors"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Install Extension
-          </button>
-        )}
-      </div>
     </div>
   );
 };

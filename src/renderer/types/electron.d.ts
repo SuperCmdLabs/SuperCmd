@@ -164,6 +164,7 @@ export interface AppSettings {
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
+  fontSize: 'small' | 'medium' | 'large';
 }
 
 export interface CatalogEntry {

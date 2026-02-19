@@ -1428,6 +1428,7 @@ const {
 
 export const Action = actionRuntime.Action;
 export const ActionPanel = actionRuntime.ActionPanel;
+export const InternalActionPanelOverlay = ActionPanelOverlay;
 
 // =====================================================================
 // ─── List ───────────────────────────────────────────────────────────

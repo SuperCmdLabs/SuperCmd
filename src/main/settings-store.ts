@@ -32,6 +32,8 @@ export interface AISettings {
   openaiCompatibleModel: string;
 }
 
+export type AppFontSize = 'small' | 'medium' | 'large';
+
 export interface AppSettings {
   globalShortcut: string;
   openAtLogin: boolean;
@@ -47,6 +49,7 @@ export interface AppSettings {
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
+  fontSize: AppFontSize;
 }
 
 const DEFAULT_AI_SETTINGS: AISettings = {
@@ -91,9 +94,16 @@ const DEFAULT_SETTINGS: AppSettings = {
   hasSeenWhisperOnboarding: false,
   ai: { ...DEFAULT_AI_SETTINGS },
   debugMode: false,
+  fontSize: 'medium',
 };
 
 let settingsCache: AppSettings | null = null;
+
+function normalizeFontSize(value: any): AppFontSize {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'small' || normalized === 'large') return normalized;
+  return 'medium';
+}
 
 function getSettingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json');
@@ -132,17 +142,17 @@ export function loadSettings(): AppSettings {
       if (!normalizedCommandId || !normalizedAlias) continue;
       normalizedAliases[normalizedCommandId] = normalizedAlias;
     }
-      settingsCache = {
-        globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
-        openAtLogin: parsed.openAtLogin ?? DEFAULT_SETTINGS.openAtLogin,
-        disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
-        enabledCommands: parsed.enabledCommands ?? DEFAULT_SETTINGS.enabledCommands,
-        customExtensionFolders: Array.isArray(parsed.customExtensionFolders)
-          ? parsed.customExtensionFolders
-              .map((value: any) => String(value || '').trim())
-              .filter(Boolean)
-          : DEFAULT_SETTINGS.customExtensionFolders,
-        commandHotkeys: {
+    settingsCache = {
+      globalShortcut: parsed.globalShortcut ?? DEFAULT_SETTINGS.globalShortcut,
+      openAtLogin: parsed.openAtLogin ?? DEFAULT_SETTINGS.openAtLogin,
+      disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
+      enabledCommands: parsed.enabledCommands ?? DEFAULT_SETTINGS.enabledCommands,
+      customExtensionFolders: Array.isArray(parsed.customExtensionFolders)
+        ? parsed.customExtensionFolders
+            .map((value: any) => String(value || '').trim())
+            .filter(Boolean)
+        : DEFAULT_SETTINGS.customExtensionFolders,
+      commandHotkeys: {
         ...DEFAULT_SETTINGS.commandHotkeys,
         ...parsedHotkeys,
       },
@@ -160,6 +170,7 @@ export function loadSettings(): AppSettings {
       ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
       commandMetadata: parsed.commandMetadata ?? {},
       debugMode: parsed.debugMode ?? DEFAULT_SETTINGS.debugMode,
+      fontSize: normalizeFontSize(parsed.fontSize),
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };

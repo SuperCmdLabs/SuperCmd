@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Loader2, X } from 'lucide-react';
+import { applyAppFontSize, getDefaultAppFontSize } from './utils/font-size';
 
 const NO_AI_MODEL_ERROR = 'No AI model available. Configure one in Settings -> AI.';
 
@@ -100,6 +101,20 @@ const PromptApp: React.FC = () => {
         ].join('\n');
     await window.electron.aiAsk(requestId, compositePrompt);
   }, [promptText, status]);
+
+  useEffect(() => {
+    let disposed = false;
+    window.electron.getSettings()
+      .then((settings) => {
+        if (!disposed) applyAppFontSize(settings.fontSize);
+      })
+      .catch(() => {
+        if (!disposed) applyAppFontSize(getDefaultAppFontSize());
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => textareaRef.current?.focus(), 50);
