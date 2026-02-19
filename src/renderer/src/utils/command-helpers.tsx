@@ -39,7 +39,7 @@ export type ReadVoiceOption = {
 /**
  * Filter and sort commands based on search query
  */
-export function filterCommands(commands: CommandInfo[], query: string): CommandInfo[] {
+export function filterCommands(commands: CommandInfo[], query: string, aliases?: Record<string, string>): CommandInfo[] {
   if (!query.trim()) {
     return commands;
   }
@@ -51,20 +51,33 @@ export function filterCommands(commands: CommandInfo[], query: string): CommandI
       const lowerTitle = cmd.title.toLowerCase();
       const lowerSubtitle = String(cmd.subtitle || '').toLowerCase();
       const keywords = cmd.keywords?.map((k) => k.toLowerCase()) || [];
+      const alias = (aliases?.[cmd.id] || '').toLowerCase();
 
       let score = 0;
 
-      // Exact match
-      if (lowerTitle === lowerQuery) {
+      // Alias exact match — highest priority (user explicitly set this shorthand)
+      if (alias && alias === lowerQuery) {
+        score = 250;
+      }
+      // Exact title match
+      else if (lowerTitle === lowerQuery) {
         score = 200;
       }
       // Title starts with query
       else if (lowerTitle.startsWith(lowerQuery)) {
         score = 100;
       }
+      // Alias starts with query
+      else if (alias && alias.startsWith(lowerQuery)) {
+        score = 90;
+      }
       // Title includes query
       else if (lowerTitle.includes(lowerQuery)) {
         score = 75;
+      }
+      // Alias includes query
+      else if (alias && alias.includes(lowerQuery)) {
+        score = 60;
       }
       // Keywords start with query
       else if (keywords.some((k) => k.startsWith(lowerQuery))) {

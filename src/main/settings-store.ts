@@ -45,6 +45,7 @@ export interface AppSettings {
   hasSeenWhisperOnboarding: boolean;
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
+  commandAliases?: Record<string, string>;
   debugMode: boolean;
 }
 
@@ -145,6 +146,7 @@ export function loadSettings(): AppSettings {
         parsed.hasSeenWhisperOnboarding ?? false,
       ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
       commandMetadata: parsed.commandMetadata ?? {},
+      commandAliases: parsed.commandAliases ?? {},
       debugMode: parsed.debugMode ?? DEFAULT_SETTINGS.debugMode,
     };
   } catch {

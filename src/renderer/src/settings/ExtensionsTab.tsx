@@ -106,6 +106,8 @@ const ExtensionsTab: React.FC<{
   const [folderBusy, setFolderBusy] = useState(false);
   const [showTopActionsMenu, setShowTopActionsMenu] = useState(false);
   const [oauthTokens, setOauthTokens] = useState<Record<string, { accessToken: string; provider: string } | null>>({});
+  const [aliasEditingId, setAliasEditingId] = useState<string | null>(null);
+  const [aliasInputValue, setAliasInputValue] = useState('');
   const topActionsMenuRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
@@ -359,6 +361,18 @@ const ExtensionsTab: React.FC<{
       setOauthTokens((prev) => ({ ...prev, [extName]: null }));
     } catch {}
   }, []);
+
+  const saveAlias = useCallback(async (commandId: string, alias: string) => {
+    const current = settings?.commandAliases || {};
+    const next = { ...current };
+    if (alias) {
+      next[commandId] = alias;
+    } else {
+      delete next[commandId];
+    }
+    await window.electron.saveSettings({ commandAliases: next });
+    setSettings((prev) => prev ? { ...prev, commandAliases: next } : prev);
+  }, [settings]);
 
   const filteredSchemas = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -867,7 +881,46 @@ const ExtensionsTab: React.FC<{
                             <span className="text-xs text-white/85 truncate">{cmd.title}</span>
                           </button>
                           <span className="text-xs text-white/55">{getModeTypeLabel(cmd.mode, commandInfo)}</span>
-                          <span className="text-xs text-white/45">Add Alias</span>
+                          <span className="flex items-center min-w-0">
+                            {commandInfo ? (
+                              aliasEditingId === commandInfo.id ? (
+                                <input
+                                  autoFocus
+                                  value={aliasInputValue}
+                                  onChange={(e) => setAliasInputValue(e.target.value)}
+                                  onKeyDown={async (e) => {
+                                    if (e.key === 'Enter') {
+                                      await saveAlias(commandInfo.id, aliasInputValue.trim());
+                                      setAliasEditingId(null);
+                                    } else if (e.key === 'Escape') {
+                                      setAliasEditingId(null);
+                                    }
+                                  }}
+                                  onBlur={async () => {
+                                    await saveAlias(commandInfo.id, aliasInputValue.trim());
+                                    setAliasEditingId(null);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-full bg-white/[0.08] border border-white/20 rounded px-1.5 py-0.5 text-xs text-white/90 outline-none placeholder-white/30"
+                                  placeholder="Enter alias…"
+                                />
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setAliasEditingId(commandInfo.id);
+                                    setAliasInputValue((settings?.commandAliases || {})[commandInfo.id] || '');
+                                  }}
+                                  className="text-xs text-white/45 hover:text-white/75 transition-colors truncate max-w-full"
+                                  title={(settings?.commandAliases || {})[commandInfo.id] ? `Alias: ${(settings?.commandAliases || {})[commandInfo.id]}` : 'Click to add alias'}
+                                >
+                                  {(settings?.commandAliases || {})[commandInfo.id] || 'Add Alias'}
+                                </button>
+                              )
+                            ) : (
+                              <span className="text-xs text-white/25">--</span>
+                            )}
+                          </span>
                           {commandInfo ? (
                             <>
                               <div className="flex items-center">

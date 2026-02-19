@@ -153,6 +153,7 @@ export interface AppSettings {
   hasSeenWhisperOnboarding: boolean;
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
+  commandAliases?: Record<string, string>;
   debugMode: boolean;
 }
 
