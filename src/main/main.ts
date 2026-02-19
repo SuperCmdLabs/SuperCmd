@@ -1977,6 +1977,10 @@ function startFnSpeakToggleWatcher(): void {
       try {
         const payload = JSON.parse(trimmed);
         if (payload?.pressed) {
+          // Don't fire while the settings window is focused — the user is
+          // likely recording a hotkey in HotkeyRecorder and the Fn keydown
+          // should not open whisper or trigger any command.
+          if (settingsWindow && !settingsWindow.isDestroyed() && settingsWindow.isFocused()) continue;
           const now = Date.now();
           if (now - fnSpeakToggleLastPressedAt < 180) continue;
           fnSpeakToggleLastPressedAt = now;

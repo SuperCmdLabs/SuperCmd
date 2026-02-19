@@ -4,6 +4,11 @@
  * A component that captures keyboard shortcuts.
  * Click to start recording → press key combo → saves as Electron accelerator string.
  * Press Escape to cancel, Backspace/Delete to clear.
+ *
+ * Fn handling: pressing Fn alone enters a brief "pending" state (400 ms).
+ * If another key follows (e.g. F5 from Fn+F5), that key is recorded instead.
+ * If the timer expires without a follow-up, 'Fn' itself is saved.
+ * This prevents the Fn hold-watcher from stealing input while the recorder is open.
  */
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -25,12 +30,9 @@ function keyEventToAccelerator(e: React.KeyboardEvent): string | null {
   if (e.altKey) parts.push('Alt');
   if (e.shiftKey) parts.push('Shift');
 
-  // Support fn/function as a standalone hold key for whisper dictation.
-  if (e.key === 'Fn' || e.key === 'Function') return 'Fn';
-
-  // Ignore standalone modifier keys
+  // Ignore standalone modifier keys (Fn is handled separately in the component)
   const key = e.key;
-  if (['Meta', 'Control', 'Alt', 'Shift'].includes(key)) return null;
+  if (['Meta', 'Control', 'Alt', 'Shift', 'Fn', 'Function'].includes(key)) return null;
 
   // Map special keys to Electron accelerator names
   const keyMap: Record<string, string> = {
@@ -75,11 +77,29 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
   active,
 }) => {
   const [isRecording, setIsRecording] = useState(false);
+  const [fnPending, setFnPending] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const fnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelFnTimer = () => {
+    if (fnTimerRef.current !== null) {
+      clearTimeout(fnTimerRef.current);
+      fnTimerRef.current = null;
+    }
+  };
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => cancelFnTimer();
+  }, []);
 
   useEffect(() => {
     if (isRecording && ref.current) {
       ref.current.focus();
+    }
+    if (!isRecording) {
+      cancelFnTimer();
+      setFnPending(false);
     }
   }, [isRecording]);
 
@@ -88,6 +108,8 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
     e.stopPropagation();
 
     if (e.key === 'Escape') {
+      cancelFnTimer();
+      setFnPending(false);
       setIsRecording(false);
       return;
     }
@@ -100,9 +122,31 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
       !e.altKey &&
       !e.shiftKey
     ) {
+      cancelFnTimer();
+      setFnPending(false);
       onChange('');
       setIsRecording(false);
       return;
+    }
+
+    // Fn key: wait briefly for a follow-up key (e.g. Fn+F5 → user wants F5).
+    // If no follow-up arrives within 400 ms, commit 'Fn' as the shortcut.
+    if (e.key === 'Fn' || e.key === 'Function') {
+      if (fnPending) return; // already waiting
+      setFnPending(true);
+      fnTimerRef.current = setTimeout(() => {
+        fnTimerRef.current = null;
+        setFnPending(false);
+        onChange('Fn');
+        setIsRecording(false);
+      }, 400);
+      return;
+    }
+
+    // If Fn was pending and another key follows, cancel timer and use that key instead.
+    if (fnPending) {
+      cancelFnTimer();
+      setFnPending(false);
     }
 
     const accelerator = keyEventToAccelerator(e);
@@ -111,6 +155,8 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
       setIsRecording(false);
     }
   };
+
+  const recordingLabel = fnPending ? 'Fn…' : 'Type shortcut…';
 
   if (compact) {
     return (
@@ -136,7 +182,7 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
           `}
         >
           {isRecording
-            ? 'Type shortcut…'
+            ? recordingLabel
             : value
               ? formatShortcut(value)
               : '—'}
@@ -186,7 +232,7 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
       `}
     >
       {isRecording ? (
-        <span>Press a key combination…</span>
+        <span>{fnPending ? 'Fn… (press key or wait)' : 'Press a key combination…'}</span>
       ) : (
         <span className="font-mono">
           {value ? formatShortcut(value) : 'Click to record'}
