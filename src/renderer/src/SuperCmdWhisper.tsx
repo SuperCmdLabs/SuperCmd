@@ -1384,7 +1384,11 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
   return createPortal(
     <div className="whisper-widget-host">
-      <div className="whisper-widget-shell">
+      <div
+        className="whisper-widget-shell"
+        onMouseEnter={() => window.electron.setWhisperIgnoreMouseEvents(false)}
+        onMouseLeave={() => window.electron.setWhisperIgnoreMouseEvents(true)}
+      >
         {bannerText ? (
           <div className="whisper-coachmark-inline">{bannerText}</div>
         ) : null}

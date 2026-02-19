@@ -372,7 +372,7 @@ body.sc-detached-window .whisper-widget-host {
   padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
   align-items: flex-end;
   justify-content: center;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 body.sc-detached-window .whisper-widget-shell {
@@ -426,9 +426,11 @@ body.sc-detached-window .whisper-shortcut-hint {
 
 .whisper-close-button {
   width: 16px;
+  height: 14px;
   padding: 0;
   opacity: 0;
   pointer-events: none;
+  align-self: center;
 }
 
 .whisper-widget-shell:hover .whisper-close-button {

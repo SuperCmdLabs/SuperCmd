@@ -2488,6 +2488,7 @@ function createWindow(): void {
         skipTaskbar: true,
         alwaysOnTop: true,
         show: true,
+        acceptFirstMouse: true,
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
@@ -2520,6 +2521,8 @@ function createWindow(): void {
     if (detachedPopupName === DETACHED_WHISPER_WINDOW_NAME) {
       whisperChildWindow = childWindow;
       try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
+      // Ignore mouse events by default so clicks pass through; widget will re-enable on hover
+      try { childWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
       childWindow.on('closed', () => {
         if (whisperChildWindow === childWindow) whisperChildWindow = null;
       });
@@ -5479,6 +5482,13 @@ app.whenReady().then(async () => {
     }
     if (overlay === 'speak') {
       speakOverlayVisible = visible;
+    }
+  });
+
+  ipcMain.on('whisper-ignore-mouse-events', (_event: any, payload?: { ignore?: boolean }) => {
+    const ignore = Boolean(payload?.ignore);
+    if (whisperChildWindow && !whisperChildWindow.isDestroyed()) {
+      whisperChildWindow.setIgnoreMouseEvents(ignore, { forward: true });
     }
   });
 

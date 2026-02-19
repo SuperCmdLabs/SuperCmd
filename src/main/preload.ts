@@ -68,6 +68,9 @@ contextBridge.exposeInMainWorld('electron', {
   setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean): void => {
     ipcRenderer.send('set-detached-overlay-state', { overlay, visible });
   },
+  setWhisperIgnoreMouseEvents: (ignore: boolean): void => {
+    ipcRenderer.send('whisper-ignore-mouse-events', { ignore });
+  },
   onWhisperStopAndClose: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on('whisper-stop-and-close', listener);
