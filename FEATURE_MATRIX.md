@@ -26,8 +26,8 @@
 | Settings window | `system-open-settings` | Full settings UI | ✅ |
 | Onboarding wizard | `system-open-onboarding` | Multi-step setup flow | ✅ |
 | Quit | `system-quit-launcher` | Exits the app | ✅ |
-| Auto-launch at login | — | Toggle in settings | 🟡 |
-| App updater | — | Auto-update via electron-updater | 🟡 |
+| Auto-launch at login | — | Toggle in settings | 🔵 test on packaged .exe |
+| App updater | — | Auto-update via electron-updater | 🔵 test on packaged .exe |
 
 ### 1.2 App & Settings Discovery
 
