@@ -51,6 +51,7 @@ export interface AppViewManager {
   showWhisperOnboarding: boolean;
   showWhisperHint: boolean;
   showOnboarding: boolean;
+  showCameraPreview: boolean;
   aiMode: boolean;
 
   // Reset all views to defaults
@@ -70,6 +71,7 @@ export interface AppViewManager {
   openWhisperOnboarding: () => void;
   openOnboarding: () => void;
   openAiMode: () => void;
+  openCameraPreview: () => void;
   closeCurrentView: () => void;
 
   // Individual setters for partial updates (used when only one flag changes)
@@ -86,6 +88,7 @@ export interface AppViewManager {
   setShowWhisperOnboarding: React.Dispatch<React.SetStateAction<boolean>>;
   setShowWhisperHint: React.Dispatch<React.SetStateAction<boolean>>;
   setShowOnboarding: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowCameraPreview: React.Dispatch<React.SetStateAction<boolean>>;
   setAiMode: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
@@ -103,6 +106,7 @@ export function useAppViewManager(): AppViewManager {
   const [showWhisperOnboarding, setShowWhisperOnboarding] = useState(false);
   const [showWhisperHint, setShowWhisperHint] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showCameraPreview, setShowCameraPreview] = useState(false);
   const [aiMode, setAiMode] = useState(false);
 
   const resetAllViews = useCallback(() => {
@@ -119,6 +123,7 @@ export function useAppViewManager(): AppViewManager {
     setShowWhisperOnboarding(false);
     setShowWhisperHint(false);
     setShowOnboarding(false);
+    setShowCameraPreview(false);
     setAiMode(false);
   }, []);
 
@@ -188,6 +193,12 @@ export function useAppViewManager(): AppViewManager {
     setAiMode(true);
   }, [resetAllViews]);
 
+  // Camera preview is a floating overlay — does NOT call resetAllViews
+  // so it can coexist with the launcher being hidden rather than replacing it.
+  const openCameraPreview = useCallback(() => {
+    setShowCameraPreview(true);
+  }, []);
+
   const closeCurrentView = useCallback(() => {
     resetAllViews();
   }, [resetAllViews]);
@@ -206,6 +217,7 @@ export function useAppViewManager(): AppViewManager {
     showWhisperOnboarding,
     showWhisperHint,
     showOnboarding,
+    showCameraPreview,
     aiMode,
 
     resetAllViews,
@@ -223,6 +235,7 @@ export function useAppViewManager(): AppViewManager {
     openWhisperOnboarding,
     openOnboarding,
     openAiMode,
+    openCameraPreview,
     closeCurrentView,
 
     setExtensionView,
@@ -238,6 +251,7 @@ export function useAppViewManager(): AppViewManager {
     setShowWhisperOnboarding,
     setShowWhisperHint,
     setShowOnboarding,
+    setShowCameraPreview,
     setAiMode,
   };
 }

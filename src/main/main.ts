@@ -99,6 +99,7 @@ const DETACHED_WHISPER_WINDOW_NAME = 'supercmd-whisper-window';
 const DETACHED_WHISPER_ONBOARDING_WINDOW_NAME = 'supercmd-whisper-onboarding-window';
 const DETACHED_SPEAK_WINDOW_NAME = 'supercmd-speak-window';
 const DETACHED_PROMPT_WINDOW_NAME = 'supercmd-prompt-window';
+const DETACHED_CAMERA_WINDOW_NAME = 'supercmd-camera-window';
 const DETACHED_WINDOW_QUERY_KEY = 'sc_detached';
 type LauncherMode = 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt';
 
@@ -131,15 +132,18 @@ function resolveDetachedPopupName(details: any): string | null {
     byFrameName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME ||
     byFrameName === DETACHED_SPEAK_WINDOW_NAME ||
     byFrameName === DETACHED_PROMPT_WINDOW_NAME ||
+    byFrameName === DETACHED_CAMERA_WINDOW_NAME ||
     byFrameName.startsWith(`${DETACHED_WHISPER_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_WHISPER_ONBOARDING_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_SPEAK_WINDOW_NAME}-`) ||
-    byFrameName.startsWith(`${DETACHED_PROMPT_WINDOW_NAME}-`)
+    byFrameName.startsWith(`${DETACHED_PROMPT_WINDOW_NAME}-`) ||
+    byFrameName.startsWith(`${DETACHED_CAMERA_WINDOW_NAME}-`)
   ) {
     if (byFrameName.startsWith(DETACHED_WHISPER_WINDOW_NAME)) return DETACHED_WHISPER_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_WHISPER_ONBOARDING_WINDOW_NAME)) return DETACHED_WHISPER_ONBOARDING_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_SPEAK_WINDOW_NAME)) return DETACHED_SPEAK_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_PROMPT_WINDOW_NAME)) return DETACHED_PROMPT_WINDOW_NAME;
+    if (byFrameName.startsWith(DETACHED_CAMERA_WINDOW_NAME)) return DETACHED_CAMERA_WINDOW_NAME;
     return byFrameName;
   }
   const rawUrl = String(details?.url || '').trim();
@@ -151,7 +155,8 @@ function resolveDetachedPopupName(details: any): string | null {
       byQuery === DETACHED_WHISPER_WINDOW_NAME ||
       byQuery === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME ||
       byQuery === DETACHED_SPEAK_WINDOW_NAME ||
-      byQuery === DETACHED_PROMPT_WINDOW_NAME
+      byQuery === DETACHED_PROMPT_WINDOW_NAME ||
+      byQuery === DETACHED_CAMERA_WINDOW_NAME
     ) {
       return byQuery;
     }
@@ -172,6 +177,13 @@ function computeDetachedPopupPosition(
     return {
       x: workArea.x + workArea.width - width - 20,
       y: workArea.y + 16,
+    };
+  }
+
+  if (popupName === DETACHED_CAMERA_WINDOW_NAME) {
+    return {
+      x: workArea.x + Math.floor((workArea.width - width) / 2),
+      y: workArea.y + Math.floor((workArea.height - height) / 2),
     };
   }
 
@@ -823,6 +835,8 @@ let whisperEscapeRegistered = false;
 let whisperOverlayVisible = false;
 let speakOverlayVisible = false;
 let whisperChildWindow: InstanceType<typeof BrowserWindow> | null = null;
+let cameraChildWindow: InstanceType<typeof BrowserWindow> | null = null;
+let cameraOverlayVisible = false;
 const LAUNCHER_SELECTION_SNAPSHOT_TTL_MS = 15_000;
 
 function registerWhisperEscapeShortcut(): void {
@@ -2444,6 +2458,8 @@ function createWindow(): void {
         ? 920
       : detachedPopupName === DETACHED_PROMPT_WINDOW_NAME
         ? CURSOR_PROMPT_WINDOW_WIDTH
+      : detachedPopupName === DETACHED_CAMERA_WINDOW_NAME
+        ? 320
         : 520;
     const defaultHeight = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME
       ? 52
@@ -2451,6 +2467,8 @@ function createWindow(): void {
         ? 640
       : detachedPopupName === DETACHED_PROMPT_WINDOW_NAME
         ? CURSOR_PROMPT_WINDOW_HEIGHT
+      : detachedPopupName === DETACHED_CAMERA_WINDOW_NAME
+        ? 300
         : 112;
     const finalWidth = typeof popupBounds.width === 'number' ? popupBounds.width : defaultWidth;
     const finalHeight = typeof popupBounds.height === 'number' ? popupBounds.height : defaultHeight;
@@ -2471,6 +2489,8 @@ function createWindow(): void {
               ? 'SuperCmd Whisper Onboarding'
             : detachedPopupName === DETACHED_PROMPT_WINDOW_NAME
               ? 'SuperCmd Prompt'
+            : detachedPopupName === DETACHED_CAMERA_WINDOW_NAME
+              ? 'Camera Preview'
               : 'SuperCmd Read',
         frame: false,
         titleBarStyle: 'hidden',
@@ -2525,6 +2545,15 @@ function createWindow(): void {
       try { childWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
       childWindow.on('closed', () => {
         if (whisperChildWindow === childWindow) whisperChildWindow = null;
+      });
+    }
+
+    if (detachedPopupName === DETACHED_CAMERA_WINDOW_NAME) {
+      cameraChildWindow = childWindow;
+      try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
+      childWindow.on('closed', () => {
+        if (cameraChildWindow === childWindow) cameraChildWindow = null;
+        cameraOverlayVisible = false;
       });
     }
   });
@@ -3786,6 +3815,18 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
       preserveFocusWhenHidden: launcherMode !== 'onboarding',
     });
     return started;
+  }
+
+  if (commandId === 'system-camera-preview') {
+    if (cameraOverlayVisible) {
+      mainWindow?.webContents.send('run-system-command', 'system-camera-preview-close');
+      return true;
+    }
+    await openLauncherAndRunSystemCommand('system-camera-preview', {
+      showWindow: false,
+      preserveFocusWhenHidden: true,
+    });
+    return true;
   }
 
   if (
@@ -5467,7 +5508,7 @@ app.whenReady().then(async () => {
     setLauncherMode(mode);
   });
 
-  ipcMain.on('set-detached-overlay-state', (_event: any, payload?: { overlay?: 'whisper' | 'speak'; visible?: boolean }) => {
+  ipcMain.on('set-detached-overlay-state', (_event: any, payload?: { overlay?: 'whisper' | 'speak' | 'camera'; visible?: boolean }) => {
     const overlay = payload?.overlay;
     const visible = Boolean(payload?.visible);
     if (overlay === 'whisper') {
@@ -5482,6 +5523,9 @@ app.whenReady().then(async () => {
     }
     if (overlay === 'speak') {
       speakOverlayVisible = visible;
+    }
+    if (overlay === 'camera') {
+      cameraOverlayVisible = visible;
     }
   });
 
