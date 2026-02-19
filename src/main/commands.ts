@@ -992,6 +992,7 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       title: 'OpenClaw',
       subtitle: 'Open dashboard or setup wizard',
       keywords: ['openclaw', 'ai', 'agent', 'gateway', 'telegram', 'whatsapp', 'imessage', 'bot', 'assistant'],
+      iconDataUrl: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/openclaw.png',
       category: 'system',
     },
     {
@@ -999,6 +1000,7 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       title: 'OpenClaw Setup',
       subtitle: 'Run the OpenClaw setup wizard',
       keywords: ['openclaw', 'setup', 'wizard', 'install', 'configure', 'onboard'],
+      iconDataUrl: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/openclaw.png',
       category: 'system',
     },
   ];
