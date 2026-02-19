@@ -91,6 +91,7 @@ const App: React.FC = () => {
   const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
   const [onboardingHotkeyPresses, setOnboardingHotkeyPresses] = useState(0);
   const [launcherShortcut, setLauncherShortcut] = useState('Alt+Space');
+  const [cameraPhotosDirectory, setCameraPhotosDirectory] = useState<string | undefined>(undefined);
   const [showActions, setShowActions] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -204,6 +205,7 @@ const App: React.FC = () => {
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
       setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
+      setCameraPhotosDirectory(settings.cameraPhotosDirectory || undefined);
       const shouldShowOnboarding = !settings.hasSeenOnboarding;
       setShowOnboarding(shouldShowOnboarding);
       setOnboardingRequiresShortcutFix(shouldShowOnboarding && !shortcutStatus.ok);
@@ -1471,6 +1473,7 @@ const App: React.FC = () => {
         <CameraPreviewView
           portalTarget={cameraPortalTarget}
           onClose={() => setShowCameraPreview(false)}
+          photosDirectory={cameraPhotosDirectory}
         />
       ) : null}
       {showSpeak && speakPortalTarget ? (

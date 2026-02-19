@@ -46,6 +46,7 @@ export interface AppSettings {
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
+  cameraPhotosDirectory?: string;
 }
 
 const DEFAULT_AI_SETTINGS: AISettings = {
@@ -146,6 +147,7 @@ export function loadSettings(): AppSettings {
       ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
       commandMetadata: parsed.commandMetadata ?? {},
       debugMode: parsed.debugMode ?? DEFAULT_SETTINGS.debugMode,
+      cameraPhotosDirectory: parsed.cameraPhotosDirectory ?? undefined,
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };

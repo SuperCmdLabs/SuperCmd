@@ -5,12 +5,14 @@ import { X, Camera, FlipHorizontal, RefreshCw } from 'lucide-react';
 interface CameraPreviewViewProps {
   portalTarget: HTMLElement;
   onClose: () => void;
+  photosDirectory?: string;
 }
 
-const CameraPreviewView: React.FC<CameraPreviewViewProps> = ({ portalTarget, onClose }) => {
+const CameraPreviewView: React.FC<CameraPreviewViewProps> = ({ portalTarget, onClose, photosDirectory }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mirroredRef = useRef(true);
+  const photosDirectoryRef = useRef(photosDirectory);
 
   const [error, setError] = useState<string | null>(null);
   const [mirrored, setMirrored] = useState(true);
@@ -18,12 +20,15 @@ const CameraPreviewView: React.FC<CameraPreviewViewProps> = ({ portalTarget, onC
   const [deviceIndex, setDeviceIndex] = useState(0);
   const [captureFlash, setCaptureFlash] = useState(false);
 
-  // Keep mirroredRef in sync for stable capture callback
   useEffect(() => {
     mirroredRef.current = mirrored;
   }, [mirrored]);
 
-  // Enumerate video input devices (after first camera permission is granted)
+  useEffect(() => {
+    photosDirectoryRef.current = photosDirectory;
+  }, [photosDirectory]);
+
+  // Enumerate video input devices
   useEffect(() => {
     navigator.mediaDevices
       .enumerateDevices()
@@ -89,7 +94,7 @@ const CameraPreviewView: React.FC<CameraPreviewViewProps> = ({ portalTarget, onC
     }
     ctx.drawImage(video, 0, 0);
 
-    // White flash feedback
+    // Flash feedback
     setCaptureFlash(true);
     setTimeout(() => setCaptureFlash(false), 150);
 
@@ -102,22 +107,25 @@ const CameraPreviewView: React.FC<CameraPreviewViewProps> = ({ portalTarget, onC
         const pad = (n: number) => String(n).padStart(2, '0');
         const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         const homeDir = (window as any).electron?.homeDir || '';
-        await (window as any).electron.fsWriteBinaryFile(
-          `${homeDir}/Desktop/Camera ${ts}.png`,
-          data
-        );
+        const saveDir = photosDirectoryRef.current || `${homeDir}/Desktop`;
+        await (window as any).electron.fsWriteBinaryFile(`${saveDir}/Camera ${ts}.png`, data);
       } catch {
         // silently ignore save errors
       }
     }, 'image/png');
   }, []);
 
-  // Register Cmd+S in the child window so the shortcut fires when the overlay is focused
+  // Register keyboard shortcuts in the child window
   useEffect(() => {
     const childWindow = portalTarget.ownerDocument.defaultView;
     if (!childWindow) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         capturePhoto();
@@ -126,7 +134,7 @@ const CameraPreviewView: React.FC<CameraPreviewViewProps> = ({ portalTarget, onC
 
     childWindow.addEventListener('keydown', handleKeyDown);
     return () => childWindow.removeEventListener('keydown', handleKeyDown);
-  }, [capturePhoto, portalTarget]);
+  }, [capturePhoto, onClose, portalTarget]);
 
   const switchCamera = useCallback(() => {
     setDeviceIndex((i) => (i + 1) % Math.max(devices.length, 1));
@@ -202,7 +210,7 @@ const CameraPreviewView: React.FC<CameraPreviewViewProps> = ({ portalTarget, onC
           <div className="w-4 h-4 rounded-full bg-white/90" />
         </button>
 
-        {/* Switch camera (only shown when multiple devices are detected) */}
+        {/* Switch camera – only shown when multiple devices are detected */}
         {devices.length > 1 && (
           <button
             onClick={switchCamera}
@@ -226,17 +234,17 @@ const CameraPreviewView: React.FC<CameraPreviewViewProps> = ({ portalTarget, onC
           background: 'rgba(0,0,0,0.55)',
           WebkitAppRegion: 'no-drag',
         } as React.CSSProperties}
-        title="Close Camera Preview"
+        title="Close Camera Preview (Esc)"
       >
         <X style={{ width: 12, height: 12, color: 'rgba(255,255,255,0.8)' }} />
       </button>
 
-      {/* Shortcut hint */}
+      {/* Shortcut hints */}
       <div
-        className="absolute top-2 left-2 text-white/25 text-[9px] pointer-events-none select-none"
+        className="absolute top-2 left-2 text-white/25 text-[9px] pointer-events-none select-none leading-relaxed"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
-        ⌘S
+        ⌘S photo · Esc close
       </div>
     </div>
   );

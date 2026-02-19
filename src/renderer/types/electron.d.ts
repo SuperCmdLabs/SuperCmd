@@ -163,6 +163,7 @@ export interface AppSettings {
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
+  cameraPhotosDirectory?: string;
 }
 
 export interface CatalogEntry {
