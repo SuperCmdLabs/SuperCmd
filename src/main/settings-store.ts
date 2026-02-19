@@ -32,6 +32,23 @@ export interface AISettings {
   openaiCompatibleModel: string;
 }
 
+export type HyperKeyTrigger =
+  | 'caps_lock'
+  | 'left_control'
+  | 'right_control'
+  | 'left_shift'
+  | 'right_shift'
+  | 'left_option'
+  | 'right_option'
+  | 'left_command'
+  | 'right_command';
+
+export interface HyperKeySettings {
+  enabled: boolean;
+  triggerKey: HyperKeyTrigger;
+  preserveOriginal: boolean;
+}
+
 export interface AppSettings {
   globalShortcut: string;
   openAtLogin: boolean;
@@ -47,6 +64,7 @@ export interface AppSettings {
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
+  hyperKey: HyperKeySettings;
 }
 
 const DEFAULT_AI_SETTINGS: AISettings = {
@@ -91,6 +109,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   hasSeenWhisperOnboarding: false,
   ai: { ...DEFAULT_AI_SETTINGS },
   debugMode: false,
+  hyperKey: {
+    enabled: false,
+    triggerKey: 'caps_lock',
+    preserveOriginal: true,
+  },
 };
 
 let settingsCache: AppSettings | null = null;
@@ -160,12 +183,13 @@ export function loadSettings(): AppSettings {
       ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
       commandMetadata: parsed.commandMetadata ?? {},
       debugMode: parsed.debugMode ?? DEFAULT_SETTINGS.debugMode,
+      hyperKey: { ...DEFAULT_SETTINGS.hyperKey, ...(parsed.hyperKey ?? {}) },
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };
   }
 
-  return { ...settingsCache };
+  return { ...settingsCache! };
 }
 
 export function saveSettings(patch: Partial<AppSettings>): AppSettings {

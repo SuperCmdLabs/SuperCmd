@@ -5,13 +5,14 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Settings, Puzzle, Brain } from 'lucide-react';
+import { Settings, Puzzle, Brain, SlidersHorizontal } from 'lucide-react';
 import supercmdLogo from '../../../supercmd.svg';
 import GeneralTab from './settings/GeneralTab';
 import AITab from './settings/AITab';
 import ExtensionsTab from './settings/ExtensionsTab';
+import AdvancedTab from './settings/AdvancedTab';
 
-type Tab = 'general' | 'ai' | 'extensions';
+type Tab = 'general' | 'ai' | 'extensions' | 'advanced';
 type SettingsTarget = { extensionName?: string; commandName?: string };
 type SettingsNavigationPayload = { tab: Tab; target?: SettingsTarget };
 
@@ -31,10 +32,15 @@ const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     label: 'Extensions',
     icon: <Puzzle className="w-4 h-4" />,
   },
+  {
+    id: 'advanced',
+    label: 'Advanced',
+    icon: <SlidersHorizontal className="w-4 h-4" />,
+  },
 ];
 
 function normalizeTab(input: any): Tab | undefined {
-  if (input === 'general' || input === 'ai' || input === 'extensions') return input;
+  if (input === 'general' || input === 'ai' || input === 'extensions' || input === 'advanced') return input;
   return undefined;
 }
 
@@ -138,6 +144,7 @@ const SettingsApp: React.FC = () => {
           <div className={activeTab === 'ai' ? 'px-6 pt-2 pb-3' : 'p-6'}>
             {activeTab === 'general' && <GeneralTab />}
             {activeTab === 'ai' && <AITab />}
+            {activeTab === 'advanced' && <AdvancedTab />}
           </div>
         )}
       </div>

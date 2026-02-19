@@ -149,6 +149,23 @@ export interface AppUpdaterStatus {
   message?: string;
 }
 
+export type HyperKeyTrigger =
+  | 'caps_lock'
+  | 'left_control'
+  | 'right_control'
+  | 'left_shift'
+  | 'right_shift'
+  | 'left_option'
+  | 'right_option'
+  | 'left_command'
+  | 'right_command';
+
+export interface HyperKeySettings {
+  enabled: boolean;
+  triggerKey: HyperKeyTrigger;
+  preserveOriginal: boolean;
+}
+
 export interface AppSettings {
   globalShortcut: string;
   openAtLogin: boolean;
@@ -164,6 +181,7 @@ export interface AppSettings {
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
+  hyperKey: HyperKeySettings;
 }
 
 export interface CatalogEntry {
@@ -284,6 +302,9 @@ export interface ElectronAPI {
   appUpdaterQuitAndInstall: () => Promise<boolean>;
   onAppUpdaterStatus: (callback: (status: AppUpdaterStatus) => void) => (() => void);
   saveSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+  updateHyperKeySettings: (settings: HyperKeySettings) => Promise<{ success: boolean }>;
+  getHyperKeyStatus: () => Promise<{ running: boolean; error?: string }>;
+  onHyperKeyStatus: (callback: (payload: { running: boolean; error?: string }) => void) => (() => void);
   getAllCommands: () => Promise<CommandInfo[]>;
   updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
   setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
