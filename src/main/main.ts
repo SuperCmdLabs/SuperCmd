@@ -1975,39 +1975,65 @@ function startFnSpeakToggleWatcher(): void {
       try {
         const payload = JSON.parse(trimmed);
         if (payload?.pressed) {
+          // Don't fire while the settings window is focused — the user is
+          // likely recording a hotkey in HotkeyRecorder and the Fn keydown
+          // should not open whisper or trigger any command.
+          if (settingsWindow && !settingsWindow.isDestroyed() && settingsWindow.isFocused()) continue;
           const now = Date.now();
           if (now - fnSpeakToggleLastPressedAt < 180) continue;
           fnSpeakToggleLastPressedAt = now;
           fnSpeakToggleIsPressed = true;
-          void (async () => {
-            if (whisperOverlayVisible) {
-              captureFrontmostAppContext();
-              if (whisperChildWindow && !whisperChildWindow.isDestroyed()) {
-                const bounds = whisperChildWindow.getBounds();
-                const pos = computeDetachedPopupPosition(DETACHED_WHISPER_WINDOW_NAME, bounds.width, bounds.height);
-                whisperChildWindow.setPosition(pos.x, pos.y);
-              }
-              mainWindow?.webContents.send('whisper-start-listening');
-              return;
-            }
-            await openLauncherAndRunSystemCommand('system-supercmd-whisper', {
-              showWindow: false,
-              mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
-              preserveFocusWhenHidden: launcherMode !== 'onboarding',
-            });
-            lastWhisperShownAt = Date.now();
-            const startDelays = [180, 340, 520];
-            startDelays.forEach((delay) => {
-              setTimeout(() => {
-                if (!fnSpeakToggleIsPressed) return;
+
+          // Determine which command owns the Fn hotkey.
+          const currentHotkeys = loadSettings().commandHotkeys;
+          const whisperHasFn = isFnOnlyShortcut(
+            String(currentHotkeys['system-supercmd-whisper-speak-toggle'] || '')
+          );
+
+          if (whisperHasFn) {
+            // Original whisper speak-toggle behaviour.
+            void (async () => {
+              if (whisperOverlayVisible) {
+                captureFrontmostAppContext();
+                if (whisperChildWindow && !whisperChildWindow.isDestroyed()) {
+                  const bounds = whisperChildWindow.getBounds();
+                  const pos = computeDetachedPopupPosition(DETACHED_WHISPER_WINDOW_NAME, bounds.width, bounds.height);
+                  whisperChildWindow.setPosition(pos.x, pos.y);
+                }
                 mainWindow?.webContents.send('whisper-start-listening');
-              }, delay);
-            });
-          })();
+                return;
+              }
+              await openLauncherAndRunSystemCommand('system-supercmd-whisper', {
+                showWindow: false,
+                mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
+                preserveFocusWhenHidden: launcherMode !== 'onboarding',
+              });
+              lastWhisperShownAt = Date.now();
+              const startDelays = [180, 340, 520];
+              startDelays.forEach((delay) => {
+                setTimeout(() => {
+                  if (!fnSpeakToggleIsPressed) return;
+                  mainWindow?.webContents.send('whisper-start-listening');
+                }, delay);
+              });
+            })();
+          } else {
+            // Generic: run whichever command has Fn as its hotkey.
+            const fnCommandId = Object.entries(currentHotkeys).find(
+              ([, hotkey]) => isFnOnlyShortcut(String(hotkey || ''))
+            )?.[0];
+            if (fnCommandId) {
+              void runCommandById(fnCommandId, 'hotkey');
+            }
+          }
         }
         if (payload?.released) {
           fnSpeakToggleIsPressed = false;
-          mainWindow?.webContents.send('whisper-stop-listening');
+          // Only send stop-listening for whisper; other commands are fire-and-forget.
+          const currentHotkeys = loadSettings().commandHotkeys;
+          if (isFnOnlyShortcut(String(currentHotkeys['system-supercmd-whisper-speak-toggle'] || ''))) {
+            mainWindow?.webContents.send('whisper-stop-listening');
+          }
         }
       } catch {}
     }
@@ -2049,8 +2075,10 @@ function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
     stopFnSpeakToggleWatcher();
     return;
   }
-  const speakToggle = String(hotkeys?.['system-supercmd-whisper-speak-toggle'] || '').trim();
-  const shouldEnable = isFnOnlyShortcut(speakToggle);
+  // Enable the watcher whenever ANY command has Fn as its hotkey.
+  const shouldEnable = Object.values(hotkeys || {}).some(
+    (h) => isFnOnlyShortcut(String(h || ''))
+  );
   if (!shouldEnable) {
     stopFnSpeakToggleWatcher();
     return;
@@ -5273,8 +5301,8 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
   for (const [commandId, shortcut] of Object.entries(hotkeys)) {
     if (!shortcut) continue;
     const normalizedShortcut = normalizeAccelerator(shortcut);
-    if (commandId === 'system-supercmd-whisper-speak-toggle' && isFnOnlyShortcut(normalizedShortcut)) {
-      continue;
+    if (isFnOnlyShortcut(normalizedShortcut)) {
+      continue; // Fn hotkeys are dispatched via the hold-watcher, not globalShortcut
     }
     try {
       const success = globalShortcut.register(normalizedShortcut, async () => {
@@ -5806,13 +5834,12 @@ app.whenReady().then(async () => {
           }
         }
 
-        const isFnSpeakToggle =
-          commandId === 'system-supercmd-whisper-speak-toggle' &&
-          isFnOnlyShortcut(normalizedHotkey);
+        // Fn-only shortcuts are handled by the hold-watcher for any command.
+        const isFnHotkey = isFnOnlyShortcut(normalizedHotkey);
 
         // Register the new one
         try {
-          const success = isFnSpeakToggle
+          const success = isFnHotkey
             ? true
             : globalShortcut.register(normalizedHotkey, async () => {
                 await runCommandById(commandId, 'hotkey');
@@ -5833,7 +5860,7 @@ app.whenReady().then(async () => {
             return { success: false, error: 'unavailable' as const };
           }
           hotkeys[commandId] = hotkey;
-          if (!isFnSpeakToggle) {
+          if (!isFnHotkey) {
             registeredHotkeys.set(normalizedHotkey, commandId);
           }
         } catch {
