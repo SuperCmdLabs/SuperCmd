@@ -602,7 +602,7 @@ foreach($d in $dirs){
       try {
         $sc=$shell.CreateShortcut($_.FullName)
         $t=$sc.TargetPath
-        if($t -and $t -match '\\.exe$' -and (Test-Path $t)){
+        if($t -and $t -match '\\.exe$' -and $t -notmatch 'WindowsApps' -and (Test-Path $t)){
           $res+=[PSCustomObject]@{n=$_.BaseName;p=$t}
         }
       } catch {}
@@ -1049,9 +1049,14 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
 async function openAppByPath(appPath: string): Promise<void> {
   if (process.platform === 'win32') {
     const { shell } = require('electron');
-    // UWP/Store apps are stored as shell:AppsFolder\{AUMID}
+    // UWP/Store apps are stored as shell:AppsFolder\{AUMID}.
+    // shell.openExternal is unreliable for shell: URIs on Windows;
+    // PowerShell Start-Process handles them correctly.
     if (appPath.startsWith('shell:')) {
-      await shell.openExternal(appPath);
+      const { execFile } = require('child_process');
+      const psCmd = `Start-Process "${appPath.replace(/"/g, '`"')}"`;
+      const encoded = Buffer.from(psCmd, 'utf16le').toString('base64');
+      execFile('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded]);
       return;
     }
     const err = await shell.openPath(appPath);
