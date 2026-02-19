@@ -316,6 +316,8 @@ let fnSpeakToggleWatcherEnabled = false;
 let fnWatcherOnboardingOverride = false;
 let fnSpeakToggleLastPressedAt = 0;
 let fnSpeakToggleIsPressed = false;
+let hyperKeyDaemonProcess: any = null;
+let hyperKeyDaemonStdoutBuffer = '';
 type LocalSpeakBackend = 'edge-tts' | 'system-say';
 let edgeTtsConstructorResolved = false;
 let edgeTtsConstructor: any | null = null;
@@ -2057,6 +2059,144 @@ function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
   }
   fnSpeakToggleWatcherEnabled = true;
   startFnSpeakToggleWatcher();
+}
+
+// ─── Hyper Key Daemon ─────────────────────────────────────────────────────
+
+const HYPER_KEY_CODES: Record<string, number> = {
+  caps_lock:     57,
+  left_control:  59,
+  right_control: 62,
+  left_shift:    56,
+  right_shift:   60,
+  left_option:   58,
+  right_option:  61,
+  left_command:  55,
+  right_command: 54,
+};
+
+function ensureHyperKeyDaemonBinary(): string | null {
+  const fs = require('fs');
+  const binaryPath = getNativeBinaryPath('hyper-key-daemon');
+  if (fs.existsSync(binaryPath)) return binaryPath;
+  try {
+    const { execFileSync } = require('child_process');
+    const sourceCandidates = [
+      path.join(app.getAppPath(), 'src', 'native', 'hyper-key-daemon.swift'),
+      path.join(process.cwd(), 'src', 'native', 'hyper-key-daemon.swift'),
+      path.join(__dirname, '..', '..', 'src', 'native', 'hyper-key-daemon.swift'),
+    ];
+    const sourcePath = sourceCandidates.find((c) => fs.existsSync(c));
+    if (!sourcePath) {
+      console.warn('[HyperKey] Source file not found for hyper-key-daemon.swift');
+      return null;
+    }
+    fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
+    execFileSync('swiftc', [
+      '-O',
+      '-o', binaryPath,
+      sourcePath,
+      '-framework', 'CoreGraphics',
+      '-framework', 'AppKit',
+    ]);
+    console.log('[HyperKey] Compiled hyper-key-daemon binary');
+    return binaryPath;
+  } catch (error) {
+    console.warn('[HyperKey] Failed to compile hyper-key-daemon:', error);
+    return null;
+  }
+}
+
+function stopHyperKeyDaemon(): void {
+  if (hyperKeyDaemonProcess) {
+    try { hyperKeyDaemonProcess.kill(); } catch {}
+    hyperKeyDaemonProcess = null;
+  }
+  hyperKeyDaemonStdoutBuffer = '';
+}
+
+function startHyperKeyDaemon(keyCode: number, preserveOriginal: boolean): void {
+  stopHyperKeyDaemon();
+  const binaryPath = ensureHyperKeyDaemonBinary();
+  if (!binaryPath) {
+    console.warn('[HyperKey] Binary unavailable – cannot start daemon');
+    settingsWindow?.webContents.send('hyper-key-status', {
+      running: false,
+      error: 'Failed to build hyper-key-daemon binary. Ensure Xcode Command Line Tools are installed.',
+    });
+    return;
+  }
+
+  const { spawn } = require('child_process');
+  hyperKeyDaemonProcess = spawn(
+    binaryPath,
+    [String(keyCode), preserveOriginal ? '1' : '0'],
+    { stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  hyperKeyDaemonStdoutBuffer = '';
+
+  hyperKeyDaemonProcess.stdout.on('data', (chunk: Buffer | string) => {
+    hyperKeyDaemonStdoutBuffer += chunk.toString();
+    const lines = hyperKeyDaemonStdoutBuffer.split('\n');
+    hyperKeyDaemonStdoutBuffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const payload = JSON.parse(trimmed);
+        if (payload?.ready) {
+          console.log('[HyperKey] Daemon ready');
+          settingsWindow?.webContents.send('hyper-key-status', { running: true });
+        } else if (payload?.error) {
+          console.error('[HyperKey] Daemon error:', payload.error);
+          settingsWindow?.webContents.send('hyper-key-status', { running: false, error: payload.error });
+        }
+      } catch {}
+    }
+  });
+
+  hyperKeyDaemonProcess.stderr.on('data', (chunk: Buffer | string) => {
+    const text = chunk.toString().trim();
+    if (text) console.warn('[HyperKey]', text);
+  });
+
+  hyperKeyDaemonProcess.on('error', (error: any) => {
+    console.warn('[HyperKey] Process error:', error);
+    hyperKeyDaemonProcess = null;
+    hyperKeyDaemonStdoutBuffer = '';
+    settingsWindow?.webContents.send('hyper-key-status', {
+      running: false,
+      error: String(error?.message || error),
+    });
+  });
+
+  hyperKeyDaemonProcess.on('exit', (code: number | null) => {
+    hyperKeyDaemonProcess = null;
+    hyperKeyDaemonStdoutBuffer = '';
+    if (code !== null && code !== 0) {
+      settingsWindow?.webContents.send('hyper-key-status', {
+        running: false,
+        error: `Daemon exited with code ${code}. Check Accessibility permission.`,
+      });
+    }
+  });
+}
+
+function applyHyperKeySettings(settings: { enabled: boolean; triggerKey: string; preserveOriginal: boolean }): void {
+  if (!settings.enabled) {
+    stopHyperKeyDaemon();
+    return;
+  }
+  if (process.platform !== 'darwin') {
+    console.warn('[HyperKey] Only supported on macOS');
+    return;
+  }
+  const keyCode = HYPER_KEY_CODES[settings.triggerKey];
+  if (keyCode === undefined) {
+    console.warn('[HyperKey] Unknown trigger key:', settings.triggerKey);
+    return;
+  }
+  startHyperKeyDaemon(keyCode, settings.preserveOriginal);
 }
 
 function ensureWhisperHoldWatcherBinary(): string | null {
@@ -5849,6 +5989,20 @@ app.whenReady().then(async () => {
     }
   );
 
+  // ─── IPC: Hyper Key ──────────────────────────────────────────────
+  ipcMain.handle(
+    'update-hyper-key-settings',
+    (_event: any, settings: { enabled: boolean; triggerKey: string; preserveOriginal: boolean }) => {
+      saveSettings({ hyperKey: settings as any });
+      applyHyperKeySettings(settings);
+      return { success: true };
+    }
+  );
+
+  ipcMain.handle('get-hyper-key-status', () => {
+    return { running: hyperKeyDaemonProcess !== null };
+  });
+
   ipcMain.handle(
     'toggle-command-enabled',
     (_event: any, commandId: string, enabled: boolean) => {
@@ -8341,6 +8495,9 @@ return appURL's |path|() as text`,
   registerGlobalShortcut(settings.globalShortcut);
   registerCommandHotkeys(settings.commandHotkeys);
   registerDevToolsShortcut();
+  if (settings.hyperKey?.enabled) {
+    applyHyperKeySettings(settings.hyperKey);
+  }
 
   // Fallback: when another SuperCmd window gains focus (e.g. Settings),
   // close the launcher in default mode even if a native blur event was missed.
@@ -8414,6 +8571,7 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   stopWhisperHoldWatcher();
   stopFnSpeakToggleWatcher();
+  stopHyperKeyDaemon();
   stopSpeakSession({ resetStatus: false });
   stopClipboardMonitor();
   stopSnippetExpander();

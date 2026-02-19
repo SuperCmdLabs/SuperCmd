@@ -213,6 +213,19 @@ contextBridge.exposeInMainWorld('electron', {
   },
   saveSettings: (patch: any): Promise<any> =>
     ipcRenderer.invoke('save-settings', patch),
+  updateHyperKeySettings: (
+    settings: { enabled: boolean; triggerKey: string; preserveOriginal: boolean }
+  ): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('update-hyper-key-settings', settings),
+  getHyperKeyStatus: (): Promise<{ running: boolean; error?: string }> =>
+    ipcRenderer.invoke('get-hyper-key-status'),
+  onHyperKeyStatus: (callback: (payload: { running: boolean; error?: string }) => void) => {
+    const listener = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('hyper-key-status', listener);
+    return () => {
+      ipcRenderer.removeListener('hyper-key-status', listener);
+    };
+  },
   getAllCommands: (): Promise<any[]> =>
     ipcRenderer.invoke('get-all-commands'),
   updateGlobalShortcut: (shortcut: string): Promise<boolean> =>
