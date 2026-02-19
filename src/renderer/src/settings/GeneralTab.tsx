@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Keyboard, Info, Bug, RefreshCw, Download, RotateCcw, Type, LayoutGrid } from 'lucide-react';
+import { Keyboard, Info, Bug, RefreshCw, Download, RotateCcw, Type } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AppUpdaterStatus } from '../../types/electron';
 import { applyAppFontSize, getDefaultAppFontSize } from '../utils/font-size';
@@ -64,7 +64,6 @@ const GeneralTab: React.FC = () => {
   const [updaterStatus, setUpdaterStatus] = useState<AppUpdaterStatus | null>(null);
   const [updaterActionError, setUpdaterActionError] = useState('');
   const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [contentSize, setContentSize] = useState<FontSizeOption>('medium');
 
   useEffect(() => {
     window.electron.getSettings().then((nextSettings) => {
@@ -223,32 +222,6 @@ const GeneralTab: React.FC = () => {
                   key={option.id}
                   type="button"
                   onClick={() => void handleFontSizeChange(option.id)}
-                  className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors ${
-                    active
-                      ? 'bg-white/[0.2] text-white'
-                      : 'text-white/65 hover:text-white/90 hover:bg-white/[0.08]'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          icon={<LayoutGrid className="w-4 h-4" />}
-          title="Content Size"
-          description="Scale text and spacing across the app."
-        >
-          <div className="inline-flex items-center gap-0.5 rounded-lg border border-white/[0.16] bg-white/[0.03] p-0.5">
-            {FONT_SIZE_OPTIONS.map((option) => {
-              const active = contentSize === option.id;
-              return (
-                <button
-                  key={`content-${option.id}`}
-                  type="button"
-                  onClick={() => setContentSize(option.id)}
                   className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors ${
                     active
                       ? 'bg-white/[0.2] text-white'

@@ -5,9 +5,9 @@ export type AppFontSize = NonNullable<AppSettings['fontSize']>;
 const DEFAULT_FONT_SIZE: AppFontSize = 'medium';
 
 const ROOT_FONT_SIZE_MAP: Record<AppFontSize, number> = {
-  small: 15,
+  small: 14,
   medium: 16,
-  large: 17,
+  large: 18,
 };
 
 function normalizeAppFontSize(raw: any): AppFontSize {
