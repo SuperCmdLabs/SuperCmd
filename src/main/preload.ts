@@ -614,6 +614,10 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('ollama-pull-error', (_event: any, data: any) => callback(data));
   },
 
+  // ─── Display ─────────────────────────────────────────────────────
+  updateUiScale: (scale: number): Promise<void> =>
+    ipcRenderer.invoke('update-ui-scale', scale),
+
   // ─── WindowManagement ────────────────────────────────────────────
   getActiveWindow: (): Promise<any> =>
     ipcRenderer.invoke('window-management-get-active-window'),

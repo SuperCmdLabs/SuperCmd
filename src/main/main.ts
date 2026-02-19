@@ -2552,6 +2552,12 @@ function createWindow(): void {
     },
   });
 
+  // Apply saved UI zoom factor so the launcher opens at the right scale.
+  {
+    const savedZoom = loadSettings().uiScale ?? 1.0;
+    if (savedZoom !== 1.0) mainWindow.webContents.setZoomFactor(savedZoom);
+  }
+
   // Allow renderer getUserMedia requests so Chromium can surface native prompts.
   mainWindow.webContents.session.setPermissionRequestHandler((_wc: any, permission: any, callback: any) => {
     if (permission === 'media' || permission === 'microphone') {
@@ -4819,6 +4825,8 @@ function openSettingsWindow(payload?: SettingsNavigationPayload): void {
   loadWindowUrl(settingsWindow, hash);
 
   settingsWindow.once('ready-to-show', () => {
+    const zoom = loadSettings().uiScale ?? 1.0;
+    if (zoom !== 1.0) settingsWindow?.webContents.setZoomFactor(zoom);
     if (payload) {
       settingsWindow?.webContents.send('settings-tab-changed', payload);
     }
@@ -4886,6 +4894,8 @@ function openExtensionStoreWindow(): void {
   loadWindowUrl(extensionStoreWindow, '/extension-store');
 
   extensionStoreWindow.once('ready-to-show', () => {
+    const zoom = loadSettings().uiScale ?? 1.0;
+    if (zoom !== 1.0) extensionStoreWindow?.webContents.setZoomFactor(zoom);
     extensionStoreWindow?.show();
   });
 
@@ -5790,6 +5800,17 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('get-settings', () => {
     return loadSettings();
+  });
+
+  ipcMain.handle('update-ui-scale', (_event: any, scale: number) => {
+    const clamped = Math.max(0.5, Math.min(3.0, Number(scale) || 1.0));
+    saveSettings({ uiScale: clamped });
+    const applyZoom = (w: InstanceType<typeof BrowserWindow> | null) => {
+      if (w && !w.isDestroyed()) w.webContents.setZoomFactor(clamped);
+    };
+    applyZoom(mainWindow);
+    applyZoom(settingsWindow);
+    applyZoom(extensionStoreWindow);
   });
 
   ipcMain.handle('get-global-shortcut-status', () => {

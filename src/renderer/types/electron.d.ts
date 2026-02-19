@@ -182,6 +182,7 @@ export interface AppSettings {
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
   hyperKey: HyperKeySettings;
+  uiScale: number;
 }
 
 export interface CatalogEntry {
@@ -305,6 +306,7 @@ export interface ElectronAPI {
   updateHyperKeySettings: (settings: HyperKeySettings) => Promise<{ success: boolean }>;
   getHyperKeyStatus: () => Promise<{ running: boolean; error?: string }>;
   onHyperKeyStatus: (callback: (payload: { running: boolean; error?: string }) => void) => (() => void);
+  updateUiScale: (scale: number) => Promise<void>;
   getAllCommands: () => Promise<CommandInfo[]>;
   updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
   setOpenAtLogin: (enabled: boolean) => Promise<boolean>;

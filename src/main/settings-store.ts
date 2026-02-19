@@ -65,6 +65,7 @@ export interface AppSettings {
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
   hyperKey: HyperKeySettings;
+  uiScale: number;
 }
 
 const DEFAULT_AI_SETTINGS: AISettings = {
@@ -114,6 +115,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     triggerKey: 'caps_lock',
     preserveOriginal: true,
   },
+  uiScale: 1.0,
 };
 
 let settingsCache: AppSettings | null = null;
@@ -184,6 +186,9 @@ export function loadSettings(): AppSettings {
       commandMetadata: parsed.commandMetadata ?? {},
       debugMode: parsed.debugMode ?? DEFAULT_SETTINGS.debugMode,
       hyperKey: { ...DEFAULT_SETTINGS.hyperKey, ...(parsed.hyperKey ?? {}) },
+      uiScale: typeof parsed.uiScale === 'number' && parsed.uiScale > 0
+        ? parsed.uiScale
+        : DEFAULT_SETTINGS.uiScale,
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };

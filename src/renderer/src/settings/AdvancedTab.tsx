@@ -6,8 +6,17 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Zap, Info, AlertCircle, CheckCircle } from 'lucide-react';
+import { Zap, Info, AlertCircle, CheckCircle, Monitor } from 'lucide-react';
 import type { AppSettings, HyperKeyTrigger } from '../../types/electron';
+
+const SCALE_OPTIONS: { label: string; value: number }[] = [
+  { label: '80%', value: 0.8 },
+  { label: '90%', value: 0.9 },
+  { label: '100%', value: 1.0 },
+  { label: '110%', value: 1.1 },
+  { label: '125%', value: 1.25 },
+  { label: '150%', value: 1.5 },
+];
 
 const TRIGGER_KEY_OPTIONS: { value: HyperKeyTrigger; label: string }[] = [
   { value: 'caps_lock',     label: 'Caps Lock' },
@@ -25,9 +34,14 @@ const AdvancedTab: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [status, setStatus] = useState<{ running: boolean; error?: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uiScale, setUiScale] = useState<number>(1.0);
+  const [scaleStatus, setScaleStatus] = useState<'idle' | 'saved'>('idle');
 
   useEffect(() => {
-    window.electron.getSettings().then(setSettings);
+    window.electron.getSettings().then((s) => {
+      setSettings(s);
+      setUiScale(s.uiScale ?? 1.0);
+    });
     window.electron.getHyperKeyStatus().then(setStatus);
     const dispose = window.electron.onHyperKeyStatus((payload) => {
       setStatus(payload);
@@ -49,6 +63,13 @@ const AdvancedTab: React.FC = () => {
     },
     [settings]
   );
+
+  const handleScaleChange = async (value: number) => {
+    setUiScale(value);
+    await window.electron.updateUiScale(value);
+    setScaleStatus('saved');
+    setTimeout(() => setScaleStatus('idle'), 1500);
+  };
 
   if (!settings) {
     return <div className="p-8 text-white/50 text-sm">Loading settings...</div>;
@@ -205,6 +226,43 @@ const AdvancedTab: React.FC = () => {
             conflicts.
           </li>
         </ul>
+      </div>
+
+      {/* ── Display / UI Scale ───────────────────────────────────────── */}
+      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Monitor className="w-5 h-5 text-white/50" />
+          <h3 className="text-base font-semibold text-white/95">Display</h3>
+        </div>
+        <p className="text-sm text-white/50 -mt-1">
+          Scale the entire SuperCmd UI. Useful if you use macOS&apos;s &ldquo;More Space&rdquo;
+          display setting and find the text too small.
+        </p>
+
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1 bg-white/[0.05] border border-white/[0.08] rounded-lg p-1">
+            {SCALE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => handleScaleChange(opt.value)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  uiScale === opt.value
+                    ? 'bg-white/[0.14] text-white border border-white/[0.16]'
+                    : 'text-white/50 hover:text-white/80 hover:bg-white/[0.06]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {scaleStatus === 'saved' && (
+            <span className="text-xs text-green-400">Applied</span>
+          )}
+        </div>
+
+        <p className="text-xs text-white/30">
+          Changes take effect immediately across all SuperCmd windows.
+        </p>
       </div>
     </div>
   );
