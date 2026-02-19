@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { Search, Power, Settings, Puzzle, Sparkles, Clipboard, FileText, Mic, Volume2, Brain, TerminalSquare } from 'lucide-react';
+import { Search, Power, Settings, Puzzle, Sparkles, Clipboard, FileText, Mic, Volume2, Brain, TerminalSquare, Pipette, Calculator, SunMoon, Coffee, Globe, Variable, Keyboard } from 'lucide-react';
 import type { CommandInfo, EdgeTtsVoice } from '../../types/electron';
 import supercmdLogo from '../../../../supercmd.svg';
 
@@ -39,44 +39,105 @@ export type ReadVoiceOption = {
 /**
  * Filter and sort commands based on search query
  */
+/**
+ * Score a single query word against a target string.
+ * Returns 0 if the word does not match at all.
+ *
+ * Tiers (highest wins):
+ *   1000 exact
+ *    700 target starts with query
+ *    500 query appears at a word boundary in target  ("color" in "Color Picker")
+ *    400 query appears anywhere in target            ("olor" in "Color Picker")
+ *    350 acronym exact   — "ev"  matches "Environment Variables"
+ *    300 acronym prefix  — "env" matches "Environment Variables" via initials "EV"
+ *    250 acronym contains
+ *   1–150 fuzzy subsequence — all chars of query appear in order, consecutive/word-start bonuses
+ */
+function scoreWord(query: string, target: string): number {
+  const q = query.toLowerCase();
+  const t = target.toLowerCase();
+  if (!q || !t) return 0;
+
+  // Tier 1: exact
+  if (t === q) return 1000;
+
+  // Tier 2: starts-with
+  if (t.startsWith(q)) return 700;
+
+  // Tier 3/4: substring — check for word-boundary bonus
+  const idx = t.indexOf(q);
+  if (idx >= 0) {
+    const atBoundary = idx === 0 || /[\s\-_/&.,()]/.test(t[idx - 1]);
+    return atBoundary ? 500 : 400;
+  }
+
+  // Tier 5–7: acronym matching (first letters of each word)
+  const wordStarts = t
+    .split(/[\s\-_/&.,()]+/)
+    .filter(Boolean)
+    .map((w) => w[0] ?? '');
+  const initials = wordStarts.join('');
+
+  if (initials === q) return 350;
+  if (initials.startsWith(q)) return 300;
+  if (initials.includes(q)) return 250;
+
+  // Tier 8: fuzzy subsequence — all chars of query must appear in order
+  let qi = 0;
+  let lastIdx = -1;
+  let fuzzyScore = 0;
+  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+    if (t[ti] === q[qi]) {
+      const isConsecutive = lastIdx === ti - 1;
+      const isWordStart = ti === 0 || /[\s\-_/&.,()]/.test(t[ti - 1]);
+      fuzzyScore += isWordStart ? 20 : isConsecutive ? 12 : 5;
+      lastIdx = ti;
+      qi++;
+    }
+  }
+  if (qi === q.length) return Math.min(fuzzyScore, 149); // cap below tier 7
+
+  return 0;
+}
+
 export function filterCommands(commands: CommandInfo[], query: string): CommandInfo[] {
   if (!query.trim()) {
     return commands;
   }
 
-  const lowerQuery = query.toLowerCase().trim();
+  // Split into individual words so "dark mode" matches "Toggle Dark / Light Mode"
+  const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
 
   const scored = commands
     .map((cmd) => {
-      const lowerTitle = cmd.title.toLowerCase();
-      const lowerSubtitle = String(cmd.subtitle || '').toLowerCase();
-      const keywords = cmd.keywords?.map((k) => k.toLowerCase()) || [];
+      const title = cmd.title;
+      const subtitle = String(cmd.subtitle || '');
+      const keywords = cmd.keywords || [];
 
       let score = 0;
 
-      // Exact match
-      if (lowerTitle === lowerQuery) {
-        score = 200;
-      }
-      // Title starts with query
-      else if (lowerTitle.startsWith(lowerQuery)) {
-        score = 100;
-      }
-      // Title includes query
-      else if (lowerTitle.includes(lowerQuery)) {
-        score = 75;
-      }
-      // Keywords start with query
-      else if (keywords.some((k) => k.startsWith(lowerQuery))) {
-        score = 50;
-      }
-      // Keywords include query
-      else if (keywords.some((k) => k.includes(lowerQuery))) {
-        score = 25;
-      }
-      // Subtitle match
-      else if (lowerSubtitle.includes(lowerQuery)) {
-        score = 22;
+      if (words.length === 1) {
+        const q = words[0];
+        const titleScore = scoreWord(q, title);
+        const keywordScore = keywords.reduce((best, k) => Math.max(best, scoreWord(q, k) * 0.85), 0);
+        const subtitleScore = scoreWord(q, subtitle) * 0.5;
+        score = Math.max(titleScore, keywordScore, subtitleScore);
+      } else {
+        // Every word must match somewhere (title or any keyword).
+        // Score = average of each word's best match; any word with 0 eliminates the command.
+        let total = 0;
+        let allMatch = true;
+        for (const word of words) {
+          const titleScore = scoreWord(word, title);
+          const keywordScore = keywords.reduce((best, k) => Math.max(best, scoreWord(word, k) * 0.85), 0);
+          const best = Math.max(titleScore, keywordScore);
+          if (best === 0) {
+            allMatch = false;
+            break;
+          }
+          total += best;
+        }
+        if (allMatch) score = total / words.length;
       }
 
       return { cmd, score };
@@ -351,6 +412,62 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     return (
       <div className="w-5 h-5 rounded bg-indigo-500/20 flex items-center justify-center">
         <Volume2 className="w-3 h-3 text-indigo-200" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-color-picker') {
+    return (
+      <div className="w-5 h-5 rounded bg-yellow-500/20 flex items-center justify-center">
+        <Pipette className="w-3 h-3 text-yellow-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-calculator') {
+    return (
+      <div className="w-5 h-5 rounded bg-blue-500/20 flex items-center justify-center">
+        <Calculator className="w-3 h-3 text-blue-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-toggle-dark-mode') {
+    return (
+      <div className="w-5 h-5 rounded bg-slate-500/20 flex items-center justify-center">
+        <SunMoon className="w-3 h-3 text-slate-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-awake-toggle') {
+    return (
+      <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
+        <Coffee className="w-3 h-3 text-amber-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-hosts-editor') {
+    return (
+      <div className="w-5 h-5 rounded bg-teal-500/20 flex items-center justify-center">
+        <Globe className="w-3 h-3 text-teal-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-env-variables') {
+    return (
+      <div className="w-5 h-5 rounded bg-green-500/20 flex items-center justify-center">
+        <Variable className="w-3 h-3 text-green-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-shortcut-guide') {
+    return (
+      <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
+        <Keyboard className="w-3 h-3 text-purple-300" />
       </div>
     );
   }
