@@ -33,10 +33,10 @@
 
 | Feature | Description | Status |
 |---|---|---|
-| Windows apps (Start Menu) | Scans Start Menu `.lnk` shortcuts → resolves `.exe` targets | 🟡 |
+| Windows apps (Start Menu) | Scans Start Menu `.lnk` shortcuts → resolves `.exe` targets | ✅ |
 | Windows app icons | Extracted via `System.Drawing.Icon` (PowerShell batch) | 🟡 |
 | Windows Settings panels | 37 pre-defined `ms-settings:` URIs | 🟡 |
-| UWP / Store apps | **NOT discovered** — shortcuts don't point to `.exe` | 🔴 |
+| UWP / Store apps | Discovered via `Get-StartApps`, launched via PowerShell `Start-Process` | ✅ |
 | macOS apps | Spotlight + filesystem scan | ⬜ |
 | macOS System Settings | `.prefPane` + `.appex` scan | ⬜ |
 
