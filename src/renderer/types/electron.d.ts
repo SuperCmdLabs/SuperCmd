@@ -163,6 +163,7 @@ export interface AppSettings {
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
+  cameraPhotosDirectory?: string;
 }
 
 export interface CatalogEntry {
@@ -234,7 +235,7 @@ export interface ElectronAPI {
   onWindowHidden: (callback: () => void) => (() => void);
   onRunSystemCommand: (callback: (commandId: string) => void) => (() => void);
   onOnboardingHotkeyPressed: (callback: () => void) => (() => void);
-  setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean) => void;
+  setDetachedOverlayState: (overlay: 'whisper' | 'speak' | 'camera', visible: boolean) => void;
   setWhisperIgnoreMouseEvents: (ignore: boolean) => void;
   onWhisperStopAndClose: (callback: () => void) => (() => void);
   onWhisperStartListening: (callback: () => void) => (() => void);

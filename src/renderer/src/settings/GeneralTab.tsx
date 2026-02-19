@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Keyboard, Info, Bug, RefreshCw, Download, RotateCcw } from 'lucide-react';
+import { Keyboard, Info, Bug, RefreshCw, Download, RotateCcw, Camera, FolderOpen } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AppUpdaterStatus } from '../../types/electron';
 
@@ -238,6 +238,52 @@ const GeneralTab: React.FC = () => {
           />
           Enable debug mode
         </label>
+      </div>
+
+      <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Camera className="w-4 h-4 text-white/50" />
+          <h3 className="text-sm font-medium text-white/90">Camera Preview</h3>
+        </div>
+        <p className="text-sm text-white/45 mb-3">
+          Photos captured via Camera Preview are saved here. Default is Desktop.
+        </p>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 px-3 py-1.5 rounded-lg text-sm border border-white/[0.10] bg-white/[0.04] text-white/60 truncate">
+            {settings.cameraPhotosDirectory || '~/Desktop (default)'}
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              const result = await window.electron.pickFiles({
+                canChooseDirectories: true,
+                canChooseFiles: false,
+                allowMultipleSelection: false,
+              });
+              if (result && result[0]) {
+                const dir = result[0];
+                setSettings((prev) => prev ? { ...prev, cameraPhotosDirectory: dir } : prev);
+                await window.electron.saveSettings({ cameraPhotosDirectory: dir });
+              }
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-white/[0.14] text-white/90 hover:bg-white/[0.06] transition-colors shrink-0"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            Choose
+          </button>
+          {settings.cameraPhotosDirectory && (
+            <button
+              type="button"
+              onClick={async () => {
+                setSettings((prev) => prev ? { ...prev, cameraPhotosDirectory: undefined } : prev);
+                await window.electron.saveSettings({ cameraPhotosDirectory: undefined });
+              }}
+              className="px-3 py-1.5 rounded-lg text-sm border border-white/[0.10] text-white/50 hover:bg-white/[0.06] transition-colors shrink-0"
+            >
+              Reset
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white/[0.03] rounded-xl border border-white/[0.06] p-5">

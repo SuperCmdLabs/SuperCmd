@@ -25,6 +25,8 @@ import { useMenuBarExtensions } from './hooks/useMenuBarExtensions';
 import { useBackgroundRefresh } from './hooks/useBackgroundRefresh';
 import { useSpeakManager } from './hooks/useSpeakManager';
 import { useWhisperManager } from './hooks/useWhisperManager';
+import { useCameraPreviewManager } from './hooks/useCameraPreviewManager';
+import CameraPreviewView from './views/CameraPreviewView';
 import { LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { resetAccessToken } from './raycast-api';
 import {
@@ -59,13 +61,13 @@ const App: React.FC = () => {
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
     showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt,
-    showWhisper, showSpeak, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
+    showWhisper, showSpeak, showWhisperOnboarding, showWhisperHint, showOnboarding, showCameraPreview, aiMode,
     openOnboarding, openWhisper, openClipboardManager,
-    openSnippetManager, openFileSearch, openCursorPrompt, openSpeak,
+    openSnippetManager, openFileSearch, openCursorPrompt, openSpeak, openCameraPreview,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
     setShowClipboardManager, setShowSnippetManager, setShowFileSearch, setShowCursorPrompt,
     setShowWhisper, setShowSpeak, setShowWhisperOnboarding, setShowWhisperHint,
-    setShowOnboarding, setAiMode,
+    setShowOnboarding, setShowCameraPreview, setAiMode,
   } = useAppViewManager();
   const {
     whisperOnboardingPracticeText, setWhisperOnboardingPracticeText,
@@ -85,9 +87,11 @@ const App: React.FC = () => {
     handleSpeakVoiceChange, handleSpeakRateChange,
     speakPortalTarget,
   } = useSpeakManager({ showSpeak, setShowSpeak });
+  const { cameraPortalTarget } = useCameraPreviewManager({ showCameraPreview, setShowCameraPreview });
   const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
   const [onboardingHotkeyPresses, setOnboardingHotkeyPresses] = useState(0);
   const [launcherShortcut, setLauncherShortcut] = useState('Alt+Space');
+  const [cameraPhotosDirectory, setCameraPhotosDirectory] = useState<string | undefined>(undefined);
   const [showActions, setShowActions] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -201,6 +205,7 @@ const App: React.FC = () => {
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
       setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
+      setCameraPhotosDirectory(settings.cameraPhotosDirectory || undefined);
       const shouldShowOnboarding = !settings.hasSeenOnboarding;
       setShowOnboarding(shouldShowOnboarding);
       setOnboardingRequiresShortcutFix(shouldShowOnboarding && !shortcutStatus.ok);
@@ -1056,6 +1061,18 @@ const App: React.FC = () => {
       setShowSpeak(false);
       return true;
     }
+    if (commandId === 'system-camera-preview') {
+      if (showCameraPreview) {
+        setShowCameraPreview(false);
+      } else {
+        openCameraPreview();
+      }
+      return true;
+    }
+    if (commandId === 'system-camera-preview-close') {
+      setShowCameraPreview(false);
+      return true;
+    }
     if (commandId === 'system-import-snippets') {
       await window.electron.snippetImport();
       return true;
@@ -1065,7 +1082,7 @@ const App: React.FC = () => {
       return true;
     }
     return false;
-  }, [memoryActionLoading, showMemoryFeedback, showOnboarding, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openFileSearch, openSpeak, setShowSpeak]);
+  }, [memoryActionLoading, showMemoryFeedback, showOnboarding, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openFileSearch, openSpeak, setShowSpeak, showCameraPreview, openCameraPreview, setShowCameraPreview]);
 
   useEffect(() => {
     const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {
@@ -1450,6 +1467,13 @@ const App: React.FC = () => {
             setShowWhisperOnboarding(false);
             setShowWhisperHint(false);
           }}
+        />
+      ) : null}
+      {showCameraPreview && cameraPortalTarget ? (
+        <CameraPreviewView
+          portalTarget={cameraPortalTarget}
+          onClose={() => setShowCameraPreview(false)}
+          photosDirectory={cameraPhotosDirectory}
         />
       ) : null}
       {showSpeak && speakPortalTarget ? (

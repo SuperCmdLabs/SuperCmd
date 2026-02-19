@@ -65,7 +65,7 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeListener('onboarding-hotkey-pressed', listener);
     };
   },
-  setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean): void => {
+  setDetachedOverlayState: (overlay: 'whisper' | 'speak' | 'camera', visible: boolean): void => {
     ipcRenderer.send('set-detached-overlay-state', { overlay, visible });
   },
   setWhisperIgnoreMouseEvents: (ignore: boolean): void => {

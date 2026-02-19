@@ -980,6 +980,12 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       keywords: ['snippet', 'export', 'save', 'backup', 'file'],
       category: 'system',
     },
+    {
+      id: 'system-camera-preview',
+      title: 'Camera Preview',
+      keywords: ['camera', 'webcam', 'preview', 'video', 'mirror', 'selfie', 'facetime'],
+      category: 'system',
+    },
   ];
 
   // Installed community extensions
