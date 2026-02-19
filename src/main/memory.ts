@@ -12,6 +12,8 @@ const MAX_TOP_K = 20;
 const MAX_MEMORY_ITEM_CHARS = 320;
 const MAX_MEMORY_CONTEXT_CHARS = 2400;
 
+let pendingMemorySave: NodeJS.Timeout | null = null;
+
 // ─── Local File-Based Memory Store ──────────────────────────────────────────
 // Used as a fallback when Supermemory is not configured. Persists to
 // <userData>/local-memories.json so memories survive restarts.
@@ -37,11 +39,14 @@ function readLocalMemories(): LocalMemoryEntry[] {
 }
 
 function writeLocalMemories(memories: LocalMemoryEntry[]): void {
-  try {
-    fs.writeFileSync(getLocalMemoryPath(), JSON.stringify(memories, null, 2), 'utf8');
-  } catch (err) {
-    console.error('[LocalMemory] Failed to write memories:', err);
-  }
+  if (pendingMemorySave) clearTimeout(pendingMemorySave);
+  pendingMemorySave = setTimeout(() => {
+    try {
+      fs.writeFileSync(getLocalMemoryPath(), JSON.stringify(memories, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[LocalMemory] Failed to write memories:', err);
+    }
+  }, 100); // Batch writes within 100ms
 }
 
 function addLocalMemory(text: string): { id: string } {

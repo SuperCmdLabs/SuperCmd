@@ -168,6 +168,21 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   return { ...updated };
 }
 
+export async function saveSettingsAsync(patch: Partial<AppSettings>): Promise<AppSettings> {
+  const current = loadSettings();
+  const updated = { ...current, ...patch };
+  settingsCache = updated;
+  
+  // Fire-and-forget async write
+  try {
+    await fs.promises.writeFile(getSettingsPath(), JSON.stringify(updated, null, 2));
+  } catch (e) {
+    console.error('Failed to save settings:', e);
+  }
+  
+  return { ...updated };
+}
+
 export function resetSettingsCache(): void {
   settingsCache = null;
 }
@@ -185,6 +200,7 @@ interface OAuthTokenEntry {
 }
 
 let oauthTokensCache: Record<string, OAuthTokenEntry> | null = null;
+let pendingOAuthSave: NodeJS.Timeout | null = null;
 
 function getOAuthTokensPath(): string {
   return path.join(app.getPath('userData'), 'oauth-tokens.json');
@@ -203,11 +219,14 @@ function loadOAuthTokens(): Record<string, OAuthTokenEntry> {
 
 function saveOAuthTokens(tokens: Record<string, OAuthTokenEntry>): void {
   oauthTokensCache = tokens;
-  try {
-    fs.writeFileSync(getOAuthTokensPath(), JSON.stringify(tokens, null, 2));
-  } catch (e) {
-    console.error('Failed to save OAuth tokens:', e);
-  }
+  if (pendingOAuthSave) clearTimeout(pendingOAuthSave);
+  pendingOAuthSave = setTimeout(() => {
+    try {
+      fs.writeFileSync(getOAuthTokensPath(), JSON.stringify(tokens, null, 2));
+    } catch (e) {
+      console.error('Failed to save OAuth tokens:', e);
+    }
+  }, 100); // Batch writes within 100ms
 }
 
 export function setOAuthToken(provider: string, token: OAuthTokenEntry): void {

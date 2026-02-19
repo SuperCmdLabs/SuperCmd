@@ -42,23 +42,27 @@ let lastClipboardText = '';
 let lastClipboardImage: Buffer | null = null;
 let pollInterval: NodeJS.Timeout | null = null;
 let isEnabled = true;
+let pendingSave: NodeJS.Timeout | null = null;
 
 // ─── Paths ──────────────────────────────────────────────────────────
 
 function getClipboardDir(): string {
-  const dir = path.join(app.getPath('userData'), 'clipboard-history');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return dir;
+  return path.join(app.getPath('userData'), 'clipboard-history');
 }
 
 function getImagesDir(): string {
-  const dir = path.join(getClipboardDir(), 'images');
+  return path.join(getClipboardDir(), 'images');
+}
+
+function ensureClipboardDirs(): void {
+  const dir = getClipboardDir();
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  return dir;
+  const imagesDir = getImagesDir();
+  if (!fs.existsSync(imagesDir)) {
+    fs.mkdirSync(imagesDir, { recursive: true });
+  }
 }
 
 function getHistoryFilePath(): string {
@@ -105,12 +109,15 @@ function loadHistory(): void {
 }
 
 function saveHistory(): void {
-  try {
-    const historyPath = getHistoryFilePath();
-    fs.writeFileSync(historyPath, JSON.stringify(clipboardHistory, null, 2));
-  } catch (e) {
-    console.error('Failed to save clipboard history:', e);
-  }
+  if (pendingSave) clearTimeout(pendingSave);
+  pendingSave = setTimeout(() => {
+    try {
+      const historyPath = getHistoryFilePath();
+      fs.writeFileSync(historyPath, JSON.stringify(clipboardHistory, null, 2));
+    } catch (e) {
+      console.error('Failed to save clipboard history:', e);
+    }
+  }, 100); // Batch writes within 100ms
 }
 
 // ─── Clipboard Monitoring ───────────────────────────────────────────
@@ -277,6 +284,9 @@ function pollClipboard(): void {
 // ─── Public API ─────────────────────────────────────────────────────
 
 export function startClipboardMonitor(): void {
+  // Ensure directories exist once at startup
+  ensureClipboardDirs();
+  
   loadHistory();
   
   // Initial read

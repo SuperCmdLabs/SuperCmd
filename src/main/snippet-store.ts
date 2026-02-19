@@ -24,15 +24,19 @@ export interface Snippet {
 }
 
 let snippetsCache: Snippet[] | null = null;
+let pendingSave: NodeJS.Timeout | null = null;
 
 // ─── Paths ──────────────────────────────────────────────────────────
 
 function getSnippetsDir(): string {
-  const dir = path.join(app.getPath('userData'), 'snippets');
+  return path.join(app.getPath('userData'), 'snippets');
+}
+
+function ensureSnippetsDir(): void {
+  const dir = getSnippetsDir();
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  return dir;
 }
 
 function getSnippetsFilePath(): string {
@@ -66,17 +70,21 @@ function loadFromDisk(): Snippet[] {
 }
 
 function saveToDisk(): void {
-  try {
-    const filePath = getSnippetsFilePath();
-    fs.writeFileSync(filePath, JSON.stringify(snippetsCache || [], null, 2), 'utf-8');
-  } catch (e) {
-    console.error('Failed to save snippets to disk:', e);
-  }
+  if (pendingSave) clearTimeout(pendingSave);
+  pendingSave = setTimeout(() => {
+    try {
+      const filePath = getSnippetsFilePath();
+      fs.writeFileSync(filePath, JSON.stringify(snippetsCache || [], null, 2), 'utf-8');
+    } catch (e) {
+      console.error('Failed to save snippets to disk:', e);
+    }
+  }, 100); // Batch writes within 100ms
 }
 
 // ─── Public API ─────────────────────────────────────────────────────
 
 export function initSnippetStore(): void {
+  ensureSnippetsDir();
   snippetsCache = loadFromDisk();
   console.log(`[Snippets] Loaded ${snippetsCache.length} snippet(s)`);
 }
