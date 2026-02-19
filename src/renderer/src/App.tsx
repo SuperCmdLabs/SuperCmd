@@ -46,6 +46,7 @@ import ScriptCommandOutputView from './views/ScriptCommandOutputView';
 import ExtensionPreferenceSetupView from './views/ExtensionPreferenceSetupView';
 import AiChatView from './views/AiChatView';
 import CursorPromptView from './views/CursorPromptView';
+import ShortcutGuide from './ShortcutGuide';
 
 const STALE_OVERLAY_RESET_MS = 60_000;
 
@@ -63,11 +64,11 @@ const App: React.FC = () => {
     showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt,
     showWhisper, showSpeak, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
     openOnboarding, openWhisper, openClipboardManager,
-    openSnippetManager, openFileSearch, openCursorPrompt, openSpeak,
+    openSnippetManager, openFileSearch, openCursorPrompt, openSpeak, openShortcutGuide,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
     setShowClipboardManager, setShowSnippetManager, setShowFileSearch, setShowCursorPrompt,
     setShowWhisper, setShowSpeak, setShowWhisperOnboarding, setShowWhisperHint,
-    setShowOnboarding, setAiMode,
+    setShowOnboarding, setAiMode, showShortcutGuide, setShowShortcutGuide,
   } = useAppViewManager();
   const {
     whisperOnboardingPracticeText, setWhisperOnboardingPracticeText,
@@ -644,7 +645,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!contextMenu) return;
-    const onMouseDown = () => setContextMenu(null);
+    const onMouseDown = (e: MouseEvent) => {
+      if (contextMenuRef.current?.contains(e.target as Node)) return;
+      setContextMenu(null);
+    };
     window.addEventListener('mousedown', onMouseDown);
     return () => window.removeEventListener('mousedown', onMouseDown);
   }, [contextMenu]);
@@ -679,7 +683,8 @@ const App: React.FC = () => {
     !showWhisper &&
     !showSpeak &&
     !showOnboarding &&
-    !showWhisperOnboarding;
+    !showWhisperOnboarding &&
+    !showShortcutGuide;
 
   useEffect(() => {
     if (!isLauncherModeActive) return;
@@ -830,7 +835,9 @@ const App: React.FC = () => {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.metaKey && (e.key === 'k' || e.key === 'K') && !e.repeat) {
+      // On Windows Cmd = Win key; use Ctrl instead as the primary modifier.
+      const cmdOrCtrl = e.metaKey || (isWindows && e.ctrlKey);
+      if (cmdOrCtrl && (e.key === 'k' || e.key === 'K') && !e.repeat) {
         e.preventDefault();
         setShowActions((prev) => !prev);
         setContextMenu(null);
@@ -845,29 +852,29 @@ const App: React.FC = () => {
         }
         return;
       }
-      if (e.metaKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+      if (cmdOrCtrl && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
         e.preventDefault();
         togglePinSelectedCommand();
         return;
       }
-      if (e.metaKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+      if (cmdOrCtrl && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
         e.preventDefault();
         disableSelectedCommand();
         return;
       }
-      if (e.metaKey && (e.key === 'Backspace' || e.key === 'Delete')) {
+      if (cmdOrCtrl && (e.key === 'Backspace' || e.key === 'Delete')) {
         if (selectedCommand?.category === 'extension') {
           e.preventDefault();
           uninstallSelectedExtension();
           return;
         }
       }
-      if (e.metaKey && e.altKey && e.key === 'ArrowUp') {
+      if (cmdOrCtrl && e.altKey && e.key === 'ArrowUp') {
         e.preventDefault();
         moveSelectedPinnedCommand('up');
         return;
       }
-      if (e.metaKey && e.altKey && e.key === 'ArrowDown') {
+      if (cmdOrCtrl && e.altKey && e.key === 'ArrowDown') {
         e.preventDefault();
         moveSelectedPinnedCommand('down');
         return;
@@ -1037,8 +1044,19 @@ const App: React.FC = () => {
       await window.electron.snippetExport();
       return true;
     }
+    if (commandId === 'system-calculator') {
+      // Calculator is already inline — clear search so the user can type a math expression
+      setSearchQuery('');
+      setSelectedIndex(0);
+      inputRef.current?.focus();
+      return true;
+    }
+    if (commandId === 'system-shortcut-guide') {
+      openShortcutGuide();
+      return true;
+    }
     return false;
-  }, [memoryActionLoading, showMemoryFeedback, showOnboarding, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openFileSearch, openSpeak, setShowSpeak]);
+  }, [memoryActionLoading, showMemoryFeedback, showOnboarding, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openFileSearch, openSpeak, setShowSpeak, openShortcutGuide]);
 
   useEffect(() => {
     const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {
@@ -1220,19 +1238,19 @@ const App: React.FC = () => {
             : command.category === 'extension'
               ? 'Pin Extension'
               : 'Pin Command',
-          shortcut: 'Cmd+Shift+P',
+          shortcut: isWindows ? 'Ctrl+Shift+P' : 'Cmd+Shift+P',
           execute: () => pinToggleForCommand(command),
         },
         {
           id: 'disable',
           title: 'Disable Command',
-          shortcut: 'Cmd+Shift+D',
+          shortcut: isWindows ? 'Ctrl+Shift+D' : 'Cmd+Shift+D',
           execute: () => disableCommand(command),
         },
         {
           id: 'uninstall',
           title: 'Uninstall',
-          shortcut: 'Cmd+Delete',
+          shortcut: isWindows ? 'Ctrl+Delete' : 'Cmd+Delete',
           style: 'destructive',
           enabled: command.category === 'extension',
           execute: () => uninstallExtensionCommand(command),
@@ -1240,14 +1258,14 @@ const App: React.FC = () => {
         {
           id: 'move-up',
           title: 'Move Up',
-          shortcut: 'Cmd+Alt+Up',
+          shortcut: isWindows ? 'Ctrl+Alt+Up' : 'Cmd+Alt+Up',
           enabled: isPinned && pinnedIndex > 0,
           execute: () => movePinnedCommand(command, 'up'),
         },
         {
           id: 'move-down',
           title: 'Move Down',
-          shortcut: 'Cmd+Alt+Down',
+          shortcut: isWindows ? 'Ctrl+Alt+Down' : 'Cmd+Alt+Down',
           enabled: isPinned && pinnedIndex >= 0 && pinnedIndex < pinnedCommands.length - 1,
           execute: () => movePinnedCommand(command, 'down'),
         },
@@ -1988,6 +2006,15 @@ const App: React.FC = () => {
           </div>
         </div>
       </div>
+    )}
+    {showShortcutGuide && (
+      <ShortcutGuide
+        launcherShortcut={launcherShortcut}
+        onClose={() => {
+          setShowShortcutGuide(false);
+          restoreLauncherFocus();
+        }}
+      />
     )}
     {contextMenu && contextActions.length > 0 && (
       <div
