@@ -5670,6 +5670,12 @@ app.whenReady().then(async () => {
         submenu: [
           { role: 'about' },
           { type: 'separator' },
+          {
+            label: 'Preferences...',
+            accelerator: 'Cmd+,',
+            click: () => openSettingsWindow(),
+          },
+          { type: 'separator' },
           { role: 'hide' },
           { role: 'hideOthers' },
           { role: 'unhide' },
