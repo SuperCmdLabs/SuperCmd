@@ -111,6 +111,7 @@ export function MenuBarExtraSubmenuComponent({ children, title, icon }: MenuBarS
 
   const submenuRegistryRef = useRef(new Map<string, MBItemRegistration>());
   const [submenuVersion, setSubmenuVersion] = useState(0);
+  const [expanded, setExpanded] = useState(false);
 
   const submenuAPI = useMemo<MBRegistryAPI>(() => ({
     register: (item: MBItemRegistration) => {
@@ -142,7 +143,6 @@ export function MenuBarExtraSubmenuComponent({ children, title, icon }: MenuBarS
   }, [icon, order, registry, sectionId, sectionTitle, stableId, submenuVersion, title]);
 
   if (!registry) {
-    const [expanded, setExpanded] = useState(false);
     return (
       <div>
         <button

@@ -3133,6 +3133,36 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onClose, pop, navStack.length]);
+  // Per-extension React context (safe for concurrent menu-bar extensions)
+  const extInfoValue = useMemo(() => ({
+    extId: `${extensionName}/${commandName}`,
+    assetsPath,
+    commandMode: (mode || 'view') as 'view' | 'no-view' | 'menu-bar',
+    extensionDisplayName: extensionDisplayName || extensionName,
+    extensionIconDataUrl: extensionIconDataUrl || '',
+  }), [extensionName, extensionDisplayName, extensionIconDataUrl, commandName, assetsPath, mode]);
+
+  const scopedCtx = useMemo<ExtensionContextType>(() => ({
+    extensionName,
+    extensionDisplayName,
+    extensionIconDataUrl,
+    commandName,
+    assetsPath,
+    supportPath,
+    owner,
+    preferences,
+    commandMode: mode as 'view' | 'no-view' | 'menu-bar',
+  }), [
+    extensionName,
+    extensionDisplayName,
+    extensionIconDataUrl,
+    commandName,
+    assetsPath,
+    supportPath,
+    owner,
+    preferences,
+    mode,
+  ]);
 
   if (error || !ExtExport) {
     const errorMessage = error || 'Failed to load extension. No valid export found.';
@@ -3191,36 +3221,49 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   const currentView =
     navStack.length > 0 ? navStack[navStack.length - 1] : null;
 
-  // Per-extension React context (safe for concurrent menu-bar extensions)
-  const extInfoValue = useMemo(() => ({
-    extId: `${extensionName}/${commandName}`,
-    assetsPath,
-    commandMode: (mode || 'view') as 'view' | 'no-view' | 'menu-bar',
-    extensionDisplayName: extensionDisplayName || extensionName,
-    extensionIconDataUrl: extensionIconDataUrl || '',
-  }), [extensionName, extensionDisplayName, extensionIconDataUrl, commandName, assetsPath, mode]);
+  if (error || !ExtExport) {
+    const errorMessage = error || 'Failed to load extension. No valid export found.';
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+          <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <span className="text-sm text-white/70">{title}</span>
+        </div>
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center max-w-lg">
+            <AlertTriangle className="w-8 h-8 text-red-400/60 mx-auto mb-3" />
+            <p className="text-sm text-red-400/80 whitespace-pre-wrap break-words text-left">
+              {errorMessage}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const scopedCtx = useMemo<ExtensionContextType>(() => ({
-    extensionName,
-    extensionDisplayName,
-    extensionIconDataUrl,
-    commandName,
-    assetsPath,
-    supportPath,
-    owner,
-    preferences,
-    commandMode: mode as 'view' | 'no-view' | 'menu-bar',
-  }), [
-    extensionName,
-    extensionDisplayName,
-    extensionIconDataUrl,
-    commandName,
-    assetsPath,
-    supportPath,
-    owner,
-    preferences,
-    mode,
-  ]);
+  // ─── No-view command: execute the function directly ───────────
+  if (isNoView) {
+    return (
+      <div className="flex flex-col h-full">
+        <ScopedExtensionContext ctx={scopedCtx}>
+          <NoViewRunner
+            fn={ExtExport}
+            title={title}
+            onClose={onClose}
+            launchArguments={launchArguments}
+            launchContext={launchContext}
+            fallbackText={fallbackText}
+            launchType={launchType}
+          />
+        </ScopedExtensionContext>
+      </div>
+    );
+  }
+
+  // ─── View command: render as React component ──────────────────
+  const currentView = navStack.length > 0 ? navStack[navStack.length - 1] : null;
 
   return (
     <ExtensionInfoReactContext.Provider value={extInfoValue}>

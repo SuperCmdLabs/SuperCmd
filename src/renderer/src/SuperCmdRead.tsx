@@ -38,10 +38,8 @@ const SuperCmdRead: React.FC<SuperCmdReadProps> = ({
   onClose,
   portalTarget,
 }) => {
-  if (typeof document === 'undefined') return null;
-  const target = portalTarget || document.body;
-  if (!target) return null;
   const textScrollRef = useRef<HTMLDivElement | null>(null);
+  const target = portalTarget || (typeof document !== 'undefined' ? document.body : null);
 
   const caption =
     status.state === 'speaking'
@@ -98,6 +96,8 @@ const SuperCmdRead: React.FC<SuperCmdReadProps> = ({
       behavior: 'smooth',
     });
   }, [status.state, status.wordIndex]);
+
+  if (!target) return null;
 
   return createPortal(
     <div className="speak-widget-host">
