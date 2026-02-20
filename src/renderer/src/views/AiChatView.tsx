@@ -102,7 +102,7 @@ const AiChatView: React.FC<AiChatViewProps> = ({
           </div>
 
           {/* Footer */}
-          <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-between text-xs text-white/40 font-medium" style={{ background: 'rgba(28,28,32,0.90)' }}>
+          <div className="sc-glass-footer px-4 py-3.5 flex items-center justify-between text-xs text-white/40 font-medium">
             <span>{aiStreaming ? 'Streaming...' : 'AI Response'}</span>
             <div className="flex items-center gap-2">
               <kbd className="text-[10px] text-white/20 bg-white/[0.06] px-1.5 py-0.5 rounded font-mono">Enter</kbd>

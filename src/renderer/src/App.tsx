@@ -1981,13 +1981,7 @@ const App: React.FC = () => {
         {/* Footer actions */}
         {!isLoading && (
           <div
-            className="absolute bottom-0 left-0 right-0 z-10 flex items-center px-4 py-2.5 border-t border-white/[0.08]"
-            style={{
-              background:
-                'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03)), rgba(28,29,34,0.84)',
-              backdropFilter: 'blur(48px) saturate(170%)',
-              WebkitBackdropFilter: 'blur(48px) saturate(170%)',
-            }}
+            className="sc-glass-footer absolute bottom-0 left-0 right-0 z-10 flex items-center px-4 py-2.5"
           >
             <div
               className={`flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate ${

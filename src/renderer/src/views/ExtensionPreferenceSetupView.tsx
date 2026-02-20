@@ -196,7 +196,7 @@ export default function ExtensionPreferenceSetupView({
             })}
           </div>
 
-          <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-end gap-2" style={{ background: 'rgba(28,28,32,0.90)' }}>
+          <div className="sc-glass-footer px-4 py-3.5 flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={() => {

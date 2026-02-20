@@ -81,6 +81,16 @@ select {
   pointer-events: none;
 }
 
+/* Unified glass footer used by extension bottom action bars */
+.sc-glass-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03)),
+    rgba(28, 29, 34, 0.84);
+  -webkit-backdrop-filter: blur(48px) saturate(170%);
+  backdrop-filter: blur(48px) saturate(170%);
+}
+
 .cursor-prompt-surface {
   border-radius: 10px;
   background: rgba(12, 12, 16, 0.74);
