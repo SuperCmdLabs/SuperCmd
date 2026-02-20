@@ -27,7 +27,7 @@ import { useSpeakManager } from './hooks/useSpeakManager';
 import { useWhisperManager } from './hooks/useWhisperManager';
 import { LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { applyBaseColor } from './utils/base-color';
-import { resetAccessToken } from './raycast-api';
+import { resetAccessToken, showToast } from './raycast-api';
 import {
   type LauncherAction, type MemoryFeedback,
   filterCommands, formatShortcutLabel, getCategoryLabel,
@@ -1129,6 +1129,21 @@ const App: React.FC = () => {
     }
     if (commandId === 'system-export-snippets') {
       await window.electron.snippetExport();
+      return true;
+    }
+    if (commandId === 'system-check-for-updates') {
+      const result = await window.electron.appUpdaterCheckAndInstall();
+      if (result.success) {
+        if (result.state === 'restarting') {
+          await showToast({ title: 'Restarting to install update...', style: 'success' });
+        } else if (result.message) {
+          await showToast({ title: result.message, style: 'success' });
+        } else {
+          await showToast({ title: 'Already up to date!', style: 'success' });
+        }
+      } else {
+        await showToast({ title: result.error || 'Update check failed', style: 'failure' });
+      }
       return true;
     }
     return false;

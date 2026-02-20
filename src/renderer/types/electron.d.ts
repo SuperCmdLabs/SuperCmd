@@ -311,6 +311,7 @@ export interface ElectronAPI {
   appUpdaterCheckForUpdates: () => Promise<AppUpdaterStatus>;
   appUpdaterDownloadUpdate: () => Promise<AppUpdaterStatus>;
   appUpdaterQuitAndInstall: () => Promise<boolean>;
+  appUpdaterCheckAndInstall: () => Promise<{ success: boolean; error?: string; message?: string; state?: string }>;
   onAppUpdaterStatus: (callback: (status: AppUpdaterStatus) => void) => (() => void);
   saveSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
   getAllCommands: () => Promise<CommandInfo[]>;

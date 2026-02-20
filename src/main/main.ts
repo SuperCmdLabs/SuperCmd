@@ -4227,6 +4227,38 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     }
   }
 
+  if (commandId === 'system-check-for-updates') {
+    try {
+      ensureAppUpdaterConfigured();
+      if (!appUpdater) {
+        console.warn('[Updater] Not available in development mode');
+        return false;
+      }
+      const checkStatus = await checkForAppUpdates();
+      if (checkStatus.state === 'not-available') {
+        console.log('[Updater] Already on latest version');
+        return true;
+      }
+      if (checkStatus.state === 'available') {
+        const downloadStatus = await downloadAppUpdate();
+        if (downloadStatus.state === 'error') {
+          console.error('[Updater] Download failed:', downloadStatus.message);
+          return false;
+        }
+      }
+      if (appUpdaterStatusSnapshot.state === 'downloaded') {
+        const installed = restartAndInstallAppUpdate();
+        if (installed) {
+          return true;
+        }
+      }
+      return true;
+    } catch (error) {
+      console.error('[Updater] Update flow failed:', error);
+      return false;
+    }
+  }
+
   const success = await executeCommand(commandId);
   if (success && source === 'launcher') {
     setTimeout(() => hideWindow(), 50);
@@ -5971,6 +6003,46 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('app-updater-quit-and-install', () => {
     return restartAndInstallAppUpdate();
+  });
+
+  // Full update flow: check → download → restart
+  ipcMain.handle('app-updater-check-and-install', async () => {
+    ensureAppUpdaterConfigured();
+    if (!appUpdater) {
+      return { success: false, error: 'Updater not available' };
+    }
+
+    try {
+      // Step 1: Check for updates
+      const checkStatus = await checkForAppUpdates();
+      if (checkStatus.state === 'not-available') {
+        return { success: true, message: 'Already on latest version', state: checkStatus.state };
+      }
+      if (checkStatus.state === 'error') {
+        return { success: false, error: checkStatus.message || 'Failed to check for updates' };
+      }
+
+      // Step 2: Download if available
+      if (checkStatus.state === 'available') {
+        const downloadStatus = await downloadAppUpdate();
+        if (downloadStatus.state === 'error') {
+          return { success: false, error: downloadStatus.message || 'Failed to download update' };
+        }
+      }
+
+      // Step 3: Restart if downloaded
+      if (appUpdaterStatusSnapshot.state === 'downloaded') {
+        const installed = restartAndInstallAppUpdate();
+        if (installed) {
+          return { success: true, message: 'Restarting to install update...', state: 'restarting' };
+        }
+        return { success: false, error: 'Failed to restart for update installation' };
+      }
+
+      return { success: true, message: checkStatus.message || 'Update check complete', state: checkStatus.state };
+    } catch (error: any) {
+      return { success: false, error: String(error?.message || error || 'Update flow failed') };
+    }
   });
 
   ipcMain.handle(

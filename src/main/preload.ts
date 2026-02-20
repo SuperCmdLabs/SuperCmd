@@ -192,6 +192,8 @@ contextBridge.exposeInMainWorld('electron', {
   }> => ipcRenderer.invoke('app-updater-download-update'),
   appUpdaterQuitAndInstall: (): Promise<boolean> =>
     ipcRenderer.invoke('app-updater-quit-and-install'),
+  appUpdaterCheckAndInstall: (): Promise<{ success: boolean; error?: string; message?: string; state?: string }> =>
+    ipcRenderer.invoke('app-updater-check-and-install'),
   onAppUpdaterStatus: (callback: (payload: {
     state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
     supported: boolean;

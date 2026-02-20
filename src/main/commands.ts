@@ -982,6 +982,12 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       keywords: ['snippet', 'export', 'save', 'backup', 'file'],
       category: 'system',
     },
+    {
+      id: 'system-check-for-updates',
+      title: 'Check for Updates',
+      keywords: ['update', 'upgrade', 'version', 'download', 'install', 'supercmd'],
+      category: 'system',
+    },
   ];
 
   // Installed community extensions
