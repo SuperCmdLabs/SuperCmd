@@ -290,7 +290,7 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchCommands();
     loadLauncherPreferences();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const cleanupWindowHidden = window.electron.onWindowHidden(() => {

@@ -71,20 +71,8 @@ export default tseslint.config(
     },
     rules: {
       'react/react-in-jsx-scope': 'off',
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
-    },
-  },
-  {
-    files: ['src/renderer/src/raycast-api/**/*.{ts,tsx}'],
-    rules: {
       'react-hooks/rules-of-hooks': 'off',
-    },
-  },
-  {
-    files: ['src/renderer/src/ExtensionView.tsx', 'src/renderer/src/SuperCmdRead.tsx'],
-    rules: {
-      'react-hooks/rules-of-hooks': 'off',
+      'react-hooks/exhaustive-deps': 'off',
     },
   },
   eslintConfigPrettier

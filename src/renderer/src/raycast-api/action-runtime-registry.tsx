@@ -162,7 +162,6 @@ export function createActionRegistryRuntime(deps: RegistryDeps) {
       });
 
       return () => registry.unregister(idRef.current);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [registry, props.title, props.icon, props.shortcut, props.style, sectionTitle]);
 
     return null;
@@ -217,7 +216,6 @@ export function createActionRegistryRuntime(deps: RegistryDeps) {
 
     const collectedActions = useMemo(() => {
       return Array.from(registryRef.current.values()).sort((a, b) => a.order - b.order);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [version]);
 
     return { collectedActions, registryAPI };
