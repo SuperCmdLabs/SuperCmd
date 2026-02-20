@@ -166,6 +166,7 @@ export interface AppSettings {
   debugMode: boolean;
   fontSize: 'small' | 'medium' | 'large';
   baseColor: string;
+  appUpdaterLastCheckedAt: number;
   hyperKeySource:
     | 'none'
     | 'caps-lock'

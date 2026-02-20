@@ -51,6 +51,7 @@ export interface AppSettings {
   debugMode: boolean;
   fontSize: AppFontSize;
   baseColor: string;
+  appUpdaterLastCheckedAt: number;
   hyperKeySource:
     | 'none'
     | 'caps-lock'
@@ -123,6 +124,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   debugMode: false,
   fontSize: 'medium',
   baseColor: '#101113',
+  appUpdaterLastCheckedAt: 0,
   hyperKeySource: 'none',
   hyperKeyIncludeShift: true,
   hyperKeyQuickPressAction: 'toggle-caps-lock',
@@ -259,6 +261,9 @@ export function loadSettings(): AppSettings {
       debugMode: parsed.debugMode ?? DEFAULT_SETTINGS.debugMode,
       fontSize: normalizeFontSize(parsed.fontSize),
       baseColor: normalizeBaseColor(parsed.baseColor),
+      appUpdaterLastCheckedAt: Number.isFinite(Number(parsed.appUpdaterLastCheckedAt))
+        ? Math.max(0, Number(parsed.appUpdaterLastCheckedAt))
+        : DEFAULT_SETTINGS.appUpdaterLastCheckedAt,
       hyperKeySource: normalizeHyperKeySource(parsed.hyperKeySource),
       hyperKeyIncludeShift: parsed.hyperKeyIncludeShift ?? DEFAULT_SETTINGS.hyperKeyIncludeShift,
       hyperKeyQuickPressAction: normalizeHyperKeyQuickPressAction(parsed.hyperKeyQuickPressAction),

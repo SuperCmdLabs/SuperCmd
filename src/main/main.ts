@@ -285,6 +285,8 @@ let appUpdaterConfigured = false;
 let appUpdater: any | null = null;
 let appUpdaterCheckPromise: Promise<void> | null = null;
 let appUpdaterDownloadPromise: Promise<void> | null = null;
+const APP_UPDATER_AUTO_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+let appUpdaterAutoCheckTimer: NodeJS.Timeout | null = null;
 let appUpdaterStatusSnapshot: AppUpdaterStatusSnapshot = {
   state: 'idle',
   supported: false,
@@ -294,6 +296,37 @@ let appUpdaterStatusSnapshot: AppUpdaterStatusSnapshot = {
   totalBytes: 0,
   bytesPerSecond: 0,
 };
+
+function readAppUpdaterLastCheckedAt(): number {
+  const raw = Number((loadSettings() as any).appUpdaterLastCheckedAt || 0);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.floor(raw);
+}
+
+function persistAppUpdaterLastCheckedAt(timestampMs: number): void {
+  const safeValue = Math.max(0, Math.floor(Number(timestampMs) || 0));
+  const current = readAppUpdaterLastCheckedAt();
+  if (safeValue <= 0 || current === safeValue) return;
+  saveSettings({ appUpdaterLastCheckedAt: safeValue } as Partial<AppSettings>);
+}
+
+function clearAppUpdaterAutoCheckTimer(): void {
+  if (appUpdaterAutoCheckTimer) {
+    clearTimeout(appUpdaterAutoCheckTimer);
+    appUpdaterAutoCheckTimer = null;
+  }
+}
+
+function scheduleNextAppUpdaterAutoCheck(lastCheckedAtMs: number): void {
+  clearAppUpdaterAutoCheckTimer();
+  if (!app.isPackaged) return;
+  const ageMs = Math.max(0, Date.now() - Math.max(0, lastCheckedAtMs));
+  const delayMs = Math.max(60_000, APP_UPDATER_AUTO_CHECK_INTERVAL_MS - ageMs);
+  appUpdaterAutoCheckTimer = setTimeout(() => {
+    appUpdaterAutoCheckTimer = null;
+    void runBackgroundAppUpdaterCheck();
+  }, delayMs);
+}
 let lastFrontmostApp: { name: string; path: string; bundleId?: string } | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
@@ -5281,7 +5314,32 @@ async function checkForAppUpdates(): Promise<AppUpdaterStatusSnapshot> {
     });
 
   await appUpdaterCheckPromise;
+  const checkedAt = Date.now();
+  persistAppUpdaterLastCheckedAt(checkedAt);
+  scheduleNextAppUpdaterAutoCheck(checkedAt);
   return { ...appUpdaterStatusSnapshot };
+}
+
+async function runBackgroundAppUpdaterCheck(): Promise<void> {
+  if (!app.isPackaged) return;
+  ensureAppUpdaterConfigured();
+  if (!appUpdater || appUpdaterStatusSnapshot.supported === false) return;
+
+  const lastCheckedAt = readAppUpdaterLastCheckedAt();
+  const now = Date.now();
+  if (lastCheckedAt > 0 && (now - lastCheckedAt) < APP_UPDATER_AUTO_CHECK_INTERVAL_MS) {
+    scheduleNextAppUpdaterAutoCheck(lastCheckedAt);
+    return;
+  }
+
+  try {
+    await checkForAppUpdates();
+  } catch {
+    // Keep background checks non-fatal.
+  } finally {
+    const latestCheckedAt = readAppUpdaterLastCheckedAt();
+    scheduleNextAppUpdaterAutoCheck(latestCheckedAt || Date.now());
+  }
 }
 
 async function downloadAppUpdate(): Promise<AppUpdaterStatusSnapshot> {
@@ -5637,6 +5695,8 @@ app.whenReady().then(async () => {
   const settings = loadSettings();
   applyOpenAtLogin(Boolean((settings as any).openAtLogin));
   ensureAppUpdaterConfigured();
+  // Daily background update check (once every 24h).
+  void runBackgroundAppUpdaterCheck();
 
   // Start clipboard monitor only after onboarding is complete.
   // On macOS Sonoma+, reading the clipboard at startup can trigger an
@@ -8701,6 +8761,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  clearAppUpdaterAutoCheckTimer();
   stopWhisperHoldWatcher();
   stopFnSpeakToggleWatcher();
   stopAllFnCommandWatchers();
