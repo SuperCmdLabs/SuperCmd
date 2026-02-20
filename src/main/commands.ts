@@ -935,6 +935,13 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-extension-hub',
+      title: 'SuperCmd Store',
+      subtitle: 'Browse and add SuperCmd extensions',
+      keywords: ['supercmd store', 'extension store', 'store', 'extensions', 'hub', 'plugins', 'browse', 'install', 'add', 'community', 'raycast'],
+      category: 'system',
+    },
+    {
       id: 'system-quit-launcher',
       title: 'Quit SuperCmd',
       keywords: ['exit', 'close', 'quit', 'stop'],
@@ -980,6 +987,22 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       id: 'system-export-snippets',
       title: 'Export Snippets',
       keywords: ['snippet', 'export', 'save', 'backup', 'file'],
+      category: 'system',
+    },
+    {
+      id: 'system-openclaw-open',
+      title: 'OpenClaw',
+      subtitle: 'Open dashboard or setup wizard',
+      keywords: ['openclaw', 'ai', 'agent', 'gateway', 'telegram', 'whatsapp', 'imessage', 'bot', 'assistant'],
+      iconDataUrl: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/openclaw.png',
+      category: 'system',
+    },
+    {
+      id: 'system-openclaw-setup',
+      title: 'OpenClaw Setup',
+      subtitle: 'Run the OpenClaw setup wizard',
+      keywords: ['openclaw', 'setup', 'wizard', 'install', 'configure', 'onboard'],
+      iconDataUrl: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/openclaw.png',
       category: 'system',
     },
   ];

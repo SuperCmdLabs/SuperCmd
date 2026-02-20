@@ -79,6 +79,8 @@ const SUPERCMD_EXTENSION_NAME = '__supercmd';
 const SCRIPT_COMMANDS_EXTENSION_NAME = '__script_commands';
 const INSTALLED_APPLICATIONS_NAME = '__installed_applications';
 const SYSTEM_SETTINGS_NAME = '__system_settings';
+const OPENCLAW_EXTENSION_NAME = '__openclaw';
+const OPENCLAW_COMMAND_IDS = new Set(['system-openclaw-open', 'system-openclaw-setup']);
 
 const ExtensionsTab: React.FC<{
   focusTarget?: SettingsFocusTarget | null;
@@ -184,7 +186,11 @@ const ExtensionsTab: React.FC<{
         continue;
       }
       if (cmd.category === 'system') {
-        map.set(`${SUPERCMD_EXTENSION_NAME}/${cmd.id}`, cmd);
+        if (OPENCLAW_COMMAND_IDS.has(cmd.id)) {
+          map.set(`${OPENCLAW_EXTENSION_NAME}/${cmd.id}`, cmd);
+        } else {
+          map.set(`${SUPERCMD_EXTENSION_NAME}/${cmd.id}`, cmd);
+        }
         continue;
       }
       if (cmd.category === 'app') {
@@ -253,7 +259,37 @@ const ExtensionsTab: React.FC<{
       }
     }
 
-    const systemCommands = commands.filter((cmd) => cmd.category === 'system');
+    // OpenClaw: show its own group whenever the user has completed setup.
+    // Falls back to hardcoded command definitions if the main process hasn't
+    // restarted yet to pick up the new commands.ts entries.
+    const isOpenClawInstalled = localStorage.getItem('openclaw_setup_done') === 'true';
+    if (isOpenClawInstalled) {
+      const openclawCmds = commands.filter((cmd) => cmd.category === 'system' && OPENCLAW_COMMAND_IDS.has(cmd.id));
+      const openclawCommandDefs: ExtensionCommandSettingsSchema[] = openclawCmds.length > 0
+        ? openclawCmds.map((cmd) => ({
+            name: cmd.id,
+            title: cmd.title,
+            description: cmd.subtitle || '',
+            mode: 'no-view' as const,
+            disabledByDefault: false,
+            preferences: [],
+          }))
+        : [
+            { name: 'system-openclaw-open',  title: 'OpenClaw',       description: 'Open dashboard or setup wizard', mode: 'no-view' as const, disabledByDefault: false, preferences: [] },
+            { name: 'system-openclaw-setup', title: 'OpenClaw Setup', description: 'Run the OpenClaw setup wizard',  mode: 'no-view' as const, disabledByDefault: false, preferences: [] },
+          ];
+      byExt.set(OPENCLAW_EXTENSION_NAME, {
+        extName: OPENCLAW_EXTENSION_NAME,
+        title: 'OpenClaw',
+        description: 'Self-hosted AI agent gateway',
+        owner: 'openclaw',
+        iconDataUrl: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/openclaw.png',
+        preferences: [],
+        commands: openclawCommandDefs,
+      });
+    }
+
+    const systemCommands = commands.filter((cmd) => cmd.category === 'system' && !OPENCLAW_COMMAND_IDS.has(cmd.id));
     if (systemCommands.length > 0) {
       byExt.set(SUPERCMD_EXTENSION_NAME, {
         extName: SUPERCMD_EXTENSION_NAME,
@@ -343,15 +379,20 @@ const ExtensionsTab: React.FC<{
       });
     }
 
+    const systemGroupOrder = [INSTALLED_APPLICATIONS_NAME, SYSTEM_SETTINGS_NAME, SCRIPT_COMMANDS_EXTENSION_NAME];
     return Array.from(byExt.values()).sort((a, b) => {
+      // Pinned at top
       if (a.extName === SUPERCMD_EXTENSION_NAME) return -1;
       if (b.extName === SUPERCMD_EXTENSION_NAME) return 1;
-      if (a.extName === INSTALLED_APPLICATIONS_NAME) return -1;
-      if (b.extName === INSTALLED_APPLICATIONS_NAME) return 1;
-      if (a.extName === SYSTEM_SETTINGS_NAME) return -1;
-      if (b.extName === SYSTEM_SETTINGS_NAME) return 1;
-      if (a.extName === SCRIPT_COMMANDS_EXTENSION_NAME) return -1;
-      if (b.extName === SCRIPT_COMMANDS_EXTENSION_NAME) return 1;
+      if (a.extName === OPENCLAW_EXTENSION_NAME) return -1;
+      if (b.extName === OPENCLAW_EXTENSION_NAME) return 1;
+      // Utility groups (Apps, Settings, Scripts) sink to the bottom
+      const aIsUtil = systemGroupOrder.includes(a.extName);
+      const bIsUtil = systemGroupOrder.includes(b.extName);
+      if (aIsUtil && !bIsUtil) return 1;
+      if (!aIsUtil && bIsUtil) return -1;
+      if (aIsUtil && bIsUtil) return systemGroupOrder.indexOf(a.extName) - systemGroupOrder.indexOf(b.extName);
+      // Community extensions: alphabetical, appear above the utility groups
       return a.title.localeCompare(b.title);
     });
   }, [schemas, commands]);
@@ -628,6 +669,7 @@ const ExtensionsTab: React.FC<{
 
   const getSchemaTypeLabel = (extName: string): string => {
     if (extName === SUPERCMD_EXTENSION_NAME) return 'Built-in';
+    if (extName === OPENCLAW_EXTENSION_NAME) return 'Integration';
     if (extName === INSTALLED_APPLICATIONS_NAME) return 'Apps';
     if (extName === SYSTEM_SETTINGS_NAME) return 'Settings';
     if (extName === SCRIPT_COMMANDS_EXTENSION_NAME) return 'Scripts';
@@ -990,7 +1032,7 @@ const ExtensionsTab: React.FC<{
                         <ChevronRight className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />
                       )}
                       {(schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)) ? (
-                        <img src={schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)} alt="" className="w-4 h-4 rounded-sm object-contain" draggable={false} />
+                        <img src={schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)} alt="" className="w-4 h-4 rounded-sm object-contain" draggable={false} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       ) : schema.extName === SUPERCMD_EXTENSION_NAME ? (
                         <img src={supercmdLogo} alt="" className="w-4 h-4 object-contain" draggable={false} />
                       ) : schema.extName === SYSTEM_SETTINGS_NAME ? (
