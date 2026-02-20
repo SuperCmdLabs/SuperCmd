@@ -335,7 +335,7 @@ function canonicalAppTitle(name: string): string {
   return name;
 }
 
-function collectAppBundles(rootDir: string, maxDepth = 4): string[] {
+function collectAppBundles(rootDir: string, maxDepth = 6): string[] {
   const results: string[] = [];
   if (!rootDir || !fs.existsSync(rootDir)) return results;
 
@@ -589,8 +589,11 @@ async function discoverApplications(): Promise<CommandInfo[]> {
 
   const appDirs = [
     '/Applications',
+    '/Applications/Utilities',
     '/System/Applications',
     '/System/Applications/Utilities',
+    '/System/Library/CoreServices',
+    '/System/Library/CoreServices/Applications',
     path.join(process.env.HOME || '', 'Applications'),
   ];
 
@@ -620,11 +623,7 @@ async function discoverApplications(): Promise<CommandInfo[]> {
         if (info) {
           const packageType = String(info.CFBundlePackageType || '').trim();
           const isFinder = appPath === finderPath;
-          const isAllowedType =
-            !packageType || packageType === 'APPL' || packageType === 'XPC!';
-          if (!isAllowedType && !isFinder) return null;
-          if (info.LSUIElement === true) return null;
-          if (info.NSUIElement === true) return null;
+          if (packageType && packageType !== 'APPL' && !isFinder) return null;
           if (info.LSBackgroundOnly === true) return null;
         }
 
