@@ -185,6 +185,21 @@ describe('streamAI provider dispatch (mocked network)', () => {
     expect(call.protocol).toBe('http');
     expect(call.opts.path).toBe('/api/generate');
   });
+
+  it('propagates HTTP >=400 response body errors from streamAI', async () => {
+    const ai = await loadAI();
+
+    netMocks.setHttpsHandler(({ callback }) => {
+      const res = new EventEmitter() as any;
+      res.statusCode = 401;
+      callback(res);
+      res.emit('data', 'invalid api key provided');
+      res.emit('end');
+    });
+
+    const stream = ai.streamAI(cfg({ provider: 'openai' }), { prompt: 'hi' });
+    await expect(stream.next()).rejects.toThrow('HTTP 401: invalid api key provided');
+  });
 });
 
 describe('transcribeAudio (mocked network)', () => {

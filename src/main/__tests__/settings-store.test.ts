@@ -5,9 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
   let userDataDir = '';
+  let failWrites = false;
   return {
     setUserDataDir(value: string) {
       userDataDir = value;
+    },
+    setFailWrites(value: boolean) {
+      failWrites = value;
+    },
+    shouldFailWrites() {
+      return failWrites;
     },
     appGetPath: vi.fn((_name: string) => userDataDir),
   };
@@ -19,6 +26,19 @@ vi.mock('electron', () => ({
   },
 }));
 
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('fs')>('fs');
+  return {
+    ...actual,
+    writeFileSync: (...args: any[]) => {
+      if (mocks.shouldFailWrites()) {
+        throw new Error('disk full');
+      }
+      return (actual.writeFileSync as any)(...args);
+    },
+  };
+});
+
 async function loadStore() {
   return import('../settings-store');
 }
@@ -28,6 +48,7 @@ let tempDir = '';
 beforeEach(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-store-test-'));
   mocks.setUserDataDir(tempDir);
+  mocks.setFailWrites(false);
   vi.resetModules();
 });
 
@@ -92,6 +113,15 @@ describe('loadSettings/saveSettings', () => {
     expect(onDisk.globalShortcut).toBe('Ctrl+J');
     expect(onDisk.debugMode).toBe(true);
   });
+
+  it('saveSettings does not throw when disk write fails', async () => {
+    const store = await loadStore();
+    mocks.setFailWrites(true);
+
+    const updated = store.saveSettings({ globalShortcut: 'Ctrl+K' });
+    expect(updated.globalShortcut).toBe('Ctrl+K');
+    expect(store.loadSettings().globalShortcut).toBe('Ctrl+K');
+  });
 });
 
 describe('OAuth token store', () => {
@@ -116,5 +146,22 @@ describe('OAuth token store', () => {
 
     store.removeOAuthToken('github');
     expect(store.getOAuthToken('github')).toBeNull();
+  });
+
+  it('keeps oauth tokens in memory even when persistence write fails', async () => {
+    const store = await loadStore();
+    mocks.setFailWrites(true);
+
+    expect(() =>
+      store.setOAuthToken('github', {
+        accessToken: 'abc',
+        obtainedAt: '2025-01-01T00:00:00.000Z',
+      })
+    ).not.toThrow();
+
+    expect(store.getOAuthToken('github')).toEqual({
+      accessToken: 'abc',
+      obtainedAt: '2025-01-01T00:00:00.000Z',
+    });
   });
 });
