@@ -146,7 +146,8 @@ export function isSuperCmdSystemCommand(commandId: string): boolean {
     commandId === 'system-open-ai-settings' ||
     commandId === 'system-open-extensions-settings' ||
     commandId === 'system-open-onboarding' ||
-    commandId === 'system-quit-launcher'
+    commandId === 'system-quit-launcher' ||
+    commandId === 'system-extension-hub'
   );
 }
 

@@ -51,6 +51,7 @@ export interface AppViewManager {
   showWhisperOnboarding: boolean;
   showWhisperHint: boolean;
   showOnboarding: boolean;
+  showExtensionHub: boolean;
   aiMode: boolean;
 
   // Reset all views to defaults
@@ -69,6 +70,7 @@ export interface AppViewManager {
   openSpeak: () => void;
   openWhisperOnboarding: () => void;
   openOnboarding: () => void;
+  openExtensionHub: () => void;
   openAiMode: () => void;
   closeCurrentView: () => void;
 
@@ -86,6 +88,7 @@ export interface AppViewManager {
   setShowWhisperOnboarding: React.Dispatch<React.SetStateAction<boolean>>;
   setShowWhisperHint: React.Dispatch<React.SetStateAction<boolean>>;
   setShowOnboarding: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowExtensionHub: React.Dispatch<React.SetStateAction<boolean>>;
   setAiMode: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
@@ -103,6 +106,7 @@ export function useAppViewManager(): AppViewManager {
   const [showWhisperOnboarding, setShowWhisperOnboarding] = useState(false);
   const [showWhisperHint, setShowWhisperHint] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showExtensionHub, setShowExtensionHub] = useState(false);
   const [aiMode, setAiMode] = useState(false);
 
   const resetAllViews = useCallback(() => {
@@ -119,6 +123,7 @@ export function useAppViewManager(): AppViewManager {
     setShowWhisperOnboarding(false);
     setShowWhisperHint(false);
     setShowOnboarding(false);
+    setShowExtensionHub(false);
     setAiMode(false);
   }, []);
 
@@ -183,6 +188,11 @@ export function useAppViewManager(): AppViewManager {
     setShowOnboarding(true);
   }, [resetAllViews]);
 
+  const openExtensionHub = useCallback(() => {
+    resetAllViews();
+    setShowExtensionHub(true);
+  }, [resetAllViews]);
+
   const openAiMode = useCallback(() => {
     resetAllViews();
     setAiMode(true);
@@ -206,6 +216,7 @@ export function useAppViewManager(): AppViewManager {
     showWhisperOnboarding,
     showWhisperHint,
     showOnboarding,
+    showExtensionHub,
     aiMode,
 
     resetAllViews,
@@ -222,6 +233,7 @@ export function useAppViewManager(): AppViewManager {
     openSpeak,
     openWhisperOnboarding,
     openOnboarding,
+    openExtensionHub,
     openAiMode,
     closeCurrentView,
 
@@ -238,6 +250,7 @@ export function useAppViewManager(): AppViewManager {
     setShowWhisperOnboarding,
     setShowWhisperHint,
     setShowOnboarding,
+    setShowExtensionHub,
     setAiMode,
   };
 }

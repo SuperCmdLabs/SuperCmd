@@ -343,15 +343,18 @@ const ExtensionsTab: React.FC<{
       });
     }
 
+    const systemGroupOrder = [INSTALLED_APPLICATIONS_NAME, SYSTEM_SETTINGS_NAME, SCRIPT_COMMANDS_EXTENSION_NAME];
     return Array.from(byExt.values()).sort((a, b) => {
+      // Pinned at top
       if (a.extName === SUPERCMD_EXTENSION_NAME) return -1;
       if (b.extName === SUPERCMD_EXTENSION_NAME) return 1;
-      if (a.extName === INSTALLED_APPLICATIONS_NAME) return -1;
-      if (b.extName === INSTALLED_APPLICATIONS_NAME) return 1;
-      if (a.extName === SYSTEM_SETTINGS_NAME) return -1;
-      if (b.extName === SYSTEM_SETTINGS_NAME) return 1;
-      if (a.extName === SCRIPT_COMMANDS_EXTENSION_NAME) return -1;
-      if (b.extName === SCRIPT_COMMANDS_EXTENSION_NAME) return 1;
+      // Utility groups (Apps, Settings, Scripts) sink to the bottom
+      const aIsUtil = systemGroupOrder.includes(a.extName);
+      const bIsUtil = systemGroupOrder.includes(b.extName);
+      if (aIsUtil && !bIsUtil) return 1;
+      if (!aIsUtil && bIsUtil) return -1;
+      if (aIsUtil && bIsUtil) return systemGroupOrder.indexOf(a.extName) - systemGroupOrder.indexOf(b.extName);
+      // Community extensions: alphabetical, appear above the utility groups
       return a.title.localeCompare(b.title);
     });
   }, [schemas, commands]);
@@ -990,7 +993,7 @@ const ExtensionsTab: React.FC<{
                         <ChevronRight className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />
                       )}
                       {(schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)) ? (
-                        <img src={schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)} alt="" className="w-4 h-4 rounded-sm object-contain" draggable={false} />
+                        <img src={schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)} alt="" className="w-4 h-4 rounded-sm object-contain" draggable={false} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       ) : schema.extName === SUPERCMD_EXTENSION_NAME ? (
                         <img src={supercmdLogo} alt="" className="w-4 h-4 object-contain" draggable={false} />
                       ) : schema.extName === SYSTEM_SETTINGS_NAME ? (

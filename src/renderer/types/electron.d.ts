@@ -250,6 +250,10 @@ export interface OllamaLocalModel {
 }
 
 export interface ElectronAPI {
+  // System info
+  homeDir: string;
+  platform: string;
+
   // Launcher
   getCommands: () => Promise<CommandInfo[]>;
   executeCommand: (commandId: string) => Promise<boolean>;
