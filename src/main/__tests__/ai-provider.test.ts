@@ -238,6 +238,13 @@ describe('resolveModel', () => {
       }))).toEqual({ provider: 'openai-compatible', modelId: 'gpt-4o' });
     });
   });
+
+  it('uses configured provider when model has no known prefix', () => {
+    expect(resolveModel('custom-model-x', cfg({ provider: 'anthropic' }))).toEqual({
+      provider: 'anthropic',
+      modelId: 'custom-model-x',
+    });
+  });
 });
 
 // ─── resolveCompatibleChatUrl ─────────────────────────────────────────
@@ -266,6 +273,14 @@ describe('resolveCompatibleChatUrl', () => {
   it('does not double-insert /v1 when already present', () => {
     const result = resolveCompatibleChatUrl('https://api.groq.com/openai/v1');
     expect(result).not.toContain('/v1/v1');
+  });
+  it('preserves custom path and appends /v1/chat/completions', () => {
+    expect(resolveCompatibleChatUrl('https://api.example.com/custom/path'))
+      .toBe('https://api.example.com/custom/path/v1/chat/completions');
+  });
+  it('handles custom path already ending with /v1', () => {
+    expect(resolveCompatibleChatUrl('https://api.example.com/custom/path/v1/'))
+      .toBe('https://api.example.com/custom/path/v1/chat/completions');
   });
 });
 
@@ -326,6 +341,18 @@ describe('parseSSE', () => {
     const stream = makeStream([payload]) as any;
     expect(await collect(parseSSE(stream, openaiExtract))).toEqual(['tail']);
   });
+
+  it('handles CRLF lines and mixed event metadata', async () => {
+    const payload = [
+      'event: message\r\n',
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'crlf' } }] })}\r\n`,
+      ': keepalive\r\n',
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'ok' } }] })}\r\n`,
+      '\r\n',
+    ].join('');
+    const stream = makeStream([payload]) as any;
+    expect(await collect(parseSSE(stream, openaiExtract))).toEqual(['crlf', 'ok']);
+  });
 });
 
 // ─── parseNDJSON ──────────────────────────────────────────────────────
@@ -365,6 +392,13 @@ describe('parseNDJSON', () => {
     const stream = makeStream([full.slice(0, half), full.slice(half) + '\n']) as any;
     expect(await collect(parseNDJSON(stream, ollamaExtract))).toEqual(['reassembled']);
   });
+
+  it('handles mixed valid and invalid lines with trailing buffer', async () => {
+    const payloadA = `${JSON.stringify({ response: 'a' })}\n{bad json}\n`;
+    const payloadB = `${JSON.stringify({ response: 'tail' })}`;
+    const stream = makeStream([payloadA, payloadB]) as any;
+    expect(await collect(parseNDJSON(stream, ollamaExtract))).toEqual(['a', 'tail']);
+  });
 });
 
 // ─── resolveUploadMeta ────────────────────────────────────────────────
@@ -396,5 +430,17 @@ describe('resolveUploadMeta', () => {
   });
   it('defaults to audio.webm when mimeType is empty string', () => {
     expect(resolveUploadMeta('')).toEqual({ filename: 'audio.webm', contentType: 'audio/webm' });
+  });
+  it('handles uppercase mime types', () => {
+    expect(resolveUploadMeta('AUDIO/WAV')).toEqual({ filename: 'audio.wav', contentType: 'audio/wav' });
+  });
+  it('maps m4a-like types to audio.m4a', () => {
+    expect(resolveUploadMeta('audio/x-m4a')).toEqual({ filename: 'audio.m4a', contentType: 'audio/mp4' });
+  });
+  it('matches mp3 substring in nonstandard mime type', () => {
+    expect(resolveUploadMeta('application/octet-stream; codec=mp3')).toEqual({
+      filename: 'audio.mp3',
+      contentType: 'audio/mpeg',
+    });
   });
 });
