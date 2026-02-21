@@ -1,11 +1,11 @@
-name: Lint and Format
+name: Lint
 
 on:
   push:
   pull_request:
 
 jobs:
-  lint-and-format:
+  lint:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,6 +23,3 @@ jobs:
 
       - name: Run ESLint
         run: npm run lint
-
-      - name: Check Prettier formatting
-        run: npm run format:check

@@ -1,9 +1,0 @@
-dist
-out
-build
-node_modules
-assets
-supercmd.icns
-supercmd.png
-supercmd.svg
-src/native/input-monitoring-request
