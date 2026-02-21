@@ -17,6 +17,8 @@
     "build:native": "node scripts/build-native.js",
     "test": "vitest run",
     "test:windows-regression": "vitest run src/main/__tests__/snippet-store.test.ts src/renderer/src/__tests__/shortcut-format.test.ts src/renderer/src/__tests__/smart-calculator.test.ts",
+    "test:e2e:windows": "npx playwright test -c playwright.e2e.config.ts --project=windows-launcher",
+    "test:windows:full": "npm run test:windows-regression && npm run test:e2e:windows",
     "postinstall": "electron-builder install-app-deps",
     "start": "node scripts/launch-electron.js",
     "package": "npm run build && electron-builder"

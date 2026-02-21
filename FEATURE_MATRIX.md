@@ -149,6 +149,7 @@ Automated checks are now documented in `WINDOWS_REGRESSION_TEST_PLAN.md` and run
 
 - `npm test`
 - `npm run test:windows-regression`
+- `npm run test:e2e:windows`
 
 Current automated guardrails:
 
@@ -157,3 +158,4 @@ Current automated guardrails:
 | Shortcut label platform parity | `src/renderer/src/__tests__/shortcut-format.test.ts` | Prevents regressions where Windows renders macOS key labels (`Cmd`, mac symbols) instead of `Ctrl`/`Del`/`Backspace`. |
 | Calculator + unit conversion correctness | `src/renderer/src/__tests__/smart-calculator.test.ts` | Validates arithmetic, conversions, and non-calculation fallback behavior. |
 | Snippet import/export pipeline | `src/main/__tests__/snippet-store.test.ts` | Validates export shape, Raycast-style imports (`text`), duplicate skipping, and keyword sanitization. |
+| Launcher Windows shortcut UI smoke | `e2e/windows/launcher-shortcuts.spec.ts` | Validates Electron launcher UI shows `Ctrl`-based actions and `Ctrl+K` overlay behavior on Windows. |

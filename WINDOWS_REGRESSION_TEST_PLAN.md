@@ -32,6 +32,14 @@ Run:
 ```bash
 npm test
 npm run test:windows-regression
+npm run test:e2e:windows
+```
+
+If Playwright is not installed yet in your environment:
+
+```bash
+npm install -D @playwright/test playwright
+npx playwright install
 ```
 
 Coverage currently automated:
@@ -44,6 +52,9 @@ Coverage currently automated:
   - Verifies snippet export JSON shape.
   - Verifies Raycast-style import (`text` field) support.
   - Verifies duplicate detection and keyword sanitization.
+- `e2e/windows/launcher-shortcuts.spec.ts`
+  - Launches the Electron app and validates Windows `Ctrl` shortcut rendering in launcher/actions surfaces.
+  - Validates `Ctrl+K` opens the actions overlay and exposes core action rows.
 
 ## Manual Windows Certification
 

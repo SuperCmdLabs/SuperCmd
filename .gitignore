@@ -4,6 +4,8 @@ out/
 .DS_Store
 *.log
 *.obj
+playwright-report/
+test-results/
 
 
 
