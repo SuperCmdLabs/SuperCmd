@@ -1,8 +1,15 @@
 /**
  * Launcher App
  *
- * Dynamically displays all applications and System Settings.
- * Shows category labels like Raycast.
+ * What this file is:
+ * - The main renderer surface that orchestrates launcher/search modes.
+ *
+ * What it does:
+ * - Coordinates command discovery, mode switching, overlays, and command execution.
+ * - Hosts system surfaces (AI, snippets, clipboard, file search, onboarding, extension views).
+ *
+ * Why we need it:
+ * - Centralizes command UX flow so global shortcuts and launcher interactions stay consistent.
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -50,6 +57,300 @@ import AiChatView from './views/AiChatView';
 import CursorPromptView from './views/CursorPromptView';
 
 const STALE_OVERLAY_RESET_MS = 60_000;
+const DEFAULT_LAUNCHER_SHORTCUT = 'Alt+Space';
+const DEFAULT_EDGE_TTS_VOICE = 'en-US-EricNeural';
+const DEFAULT_TTS_MODEL = 'edge-tts';
+const DEFAULT_BASE_COLOR = '#101113';
+
+type GroupedCommands = {
+  contextual: CommandInfo[];
+  pinned: CommandInfo[];
+  recent: CommandInfo[];
+  other: CommandInfo[];
+};
+
+type CommandSectionMeta = {
+  title: string;
+  items: CommandInfo[];
+  startIndex: number;
+};
+
+/**
+ * Removes empty alias keys/values to keep search matches deterministic.
+ */
+function normalizeCommandAliases(rawAliases: Record<string, unknown>): Record<string, string> {
+  return Object.entries(rawAliases || {}).reduce((acc, [commandId, alias]) => {
+    const normalizedCommandId = String(commandId || '').trim();
+    const normalizedAlias = String(alias || '').trim();
+    if (!normalizedCommandId || !normalizedAlias) return acc;
+    acc[normalizedCommandId] = normalizedAlias;
+    return acc;
+  }, {} as Record<string, string>);
+}
+
+/**
+ * Builds launcher sections (contextual/pinned/recent/other) from current filters and history.
+ */
+function buildGroupedCommands(
+  sourceCommands: CommandInfo[],
+  pinnedCommands: string[],
+  recentCommands: string[],
+  selectedTextSnapshot: string
+): GroupedCommands {
+  const sourceMap = new Map(sourceCommands.map((cmd) => [cmd.id, cmd]));
+  const hasSelection = selectedTextSnapshot.trim().length > 0;
+  const contextual = hasSelection
+    ? (sourceMap.get('system-add-to-memory') ? [sourceMap.get('system-add-to-memory') as CommandInfo] : [])
+    : [];
+  const contextualIds = new Set(contextual.map((c) => c.id));
+
+  const pinned = pinnedCommands
+    .map((id) => sourceMap.get(id))
+    .filter((cmd): cmd is CommandInfo => Boolean(cmd) && !contextualIds.has((cmd as CommandInfo).id));
+  const pinnedSet = new Set(pinned.map((c) => c.id));
+
+  const recent = recentCommands
+    .map((id) => sourceMap.get(id))
+    .filter(
+      (c): c is CommandInfo =>
+        Boolean(c) &&
+        !pinnedSet.has((c as CommandInfo).id) &&
+        !contextualIds.has((c as CommandInfo).id)
+    );
+  const recentSet = new Set(recent.map((c) => c.id));
+
+  const other = sourceCommands.filter(
+    (c) => !pinnedSet.has(c.id) && !recentSet.has(c.id) && !contextualIds.has(c.id)
+  );
+
+  return { contextual, pinned, recent, other };
+}
+
+type CommandListContentProps = {
+  listRef: React.RefObject<HTMLDivElement>;
+  itemRefs: React.MutableRefObject<(HTMLDivElement | null)[]>;
+  isLoading: boolean;
+  displayCommands: CommandInfo[];
+  calcResult: Awaited<ReturnType<typeof tryCalculateAsync>> | null;
+  selectedIndex: number;
+  commandSections: CommandSectionMeta[];
+  commandAliases: Record<string, string>;
+  searchQuery: string;
+  calcOffset: number;
+  onSetSelectedIndex: (index: number) => void;
+  onExecuteCommand: (command: CommandInfo) => void;
+  onHideWindow: () => void;
+  onOpenContextMenu: (x: number, y: number, commandId: string, selectedFlatIndex: number) => void;
+};
+
+/**
+ * Renders launcher list results, calculator card, and grouped command rows.
+ *
+ * Why:
+ * - Keeps the root App render focused on mode orchestration rather than list markup.
+ */
+const CommandListContent: React.FC<CommandListContentProps> = ({
+  listRef,
+  itemRefs,
+  isLoading,
+  displayCommands,
+  calcResult,
+  selectedIndex,
+  commandSections,
+  commandAliases,
+  searchQuery,
+  calcOffset,
+  onSetSelectedIndex,
+  onExecuteCommand,
+  onHideWindow,
+  onOpenContextMenu,
+}) => (
+  <div
+    ref={listRef}
+    className="flex-1 overflow-y-auto custom-scrollbar p-1.5 list-area"
+  >
+    {isLoading ? (
+      <div className="flex items-center justify-center h-full text-white/50">
+        <p className="text-sm">Discovering apps...</p>
+      </div>
+    ) : displayCommands.length === 0 && !calcResult ? (
+      <div className="flex items-center justify-center h-full text-white/50">
+        <p className="text-sm">No matching results</p>
+      </div>
+    ) : (
+      <div className="space-y-0.5">
+        {calcResult && (
+          <div
+            ref={(el) => (itemRefs.current[0] = el)}
+            className={`mx-1 mt-0.5 mb-2 px-6 py-4 rounded-xl cursor-pointer transition-colors border ${
+              selectedIndex === 0
+                ? 'bg-white/[0.08] border-white/[0.12]'
+                : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.05]'
+            }`}
+            onClick={() => {
+              navigator.clipboard.writeText(calcResult.result);
+              onHideWindow();
+            }}
+            onMouseMove={() => onSetSelectedIndex(0)}
+          >
+            <div className="flex items-center justify-center gap-6">
+              <div className="text-center">
+                <div className="text-white/80 text-xl font-medium">{calcResult.input}</div>
+                <div className="text-white/35 text-xs mt-1">{calcResult.inputLabel}</div>
+              </div>
+              <ArrowRight className="w-5 h-5 text-white/25 flex-shrink-0" />
+              <div className="text-center">
+                <div className="text-white text-xl font-medium">{calcResult.result}</div>
+                <div className="text-white/35 text-xs mt-1">{calcResult.resultLabel}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {commandSections.map((section) => (
+          <React.Fragment key={`section-${section.title}`}>
+            <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider text-white/50 font-medium">
+              {section.title}
+            </div>
+            {section.items.map((command, i) => {
+              const flatIndex = section.startIndex + i;
+              const accessoryLabel = getCommandAccessoryLabel(command);
+              const fallbackCategory = getCategoryLabel(command.category);
+              const commandAlias = String(commandAliases[command.id] || '').trim();
+              const aliasMatchesSearch =
+                Boolean(commandAlias) &&
+                Boolean(searchQuery.trim()) &&
+                commandAlias.toLowerCase().includes(searchQuery.trim().toLowerCase());
+
+              return (
+                <div
+                  key={command.id}
+                  ref={(el) => (itemRefs.current[flatIndex + calcOffset] = el)}
+                  className={`command-item px-3 py-2 rounded-lg cursor-pointer ${
+                    flatIndex + calcOffset === selectedIndex ? 'selected' : ''
+                  }`}
+                  onClick={() => onExecuteCommand(command)}
+                  onMouseMove={() => onSetSelectedIndex(flatIndex + calcOffset)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    onOpenContextMenu(e.clientX, e.clientY, command.id, flatIndex + calcOffset);
+                  }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      {renderCommandIcon(command)}
+                    </div>
+                    <div className="min-w-0 flex-1 flex items-center gap-2">
+                      <div className="text-white/95 text-[13px] font-medium truncate tracking-[0.004em]">
+                        {getCommandDisplayTitle(command)}
+                      </div>
+                      {accessoryLabel ? (
+                        <div className="text-white/60 text-[12px] font-medium truncate">
+                          {accessoryLabel}
+                        </div>
+                      ) : (
+                        <div className="text-white/50 text-[11px] font-medium truncate">
+                          {fallbackCategory}
+                        </div>
+                      )}
+                      {aliasMatchesSearch ? (
+                        <div className="inline-flex items-center h-5 rounded-md border border-white/[0.20] bg-white/[0.03] px-1.5 text-[10px] font-mono text-white/75 leading-none flex-shrink-0">
+                          {commandAlias}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </React.Fragment>
+        ))}
+      </div>
+    )}
+  </div>
+);
+
+type LauncherFooterProps = {
+  isLoading: boolean;
+  memoryActionLoading: boolean;
+  memoryFeedback: MemoryFeedback;
+  selectedCommand: CommandInfo | null;
+  displayCommandsCount: number;
+  primaryAction?: LauncherAction;
+  onOpenActions: () => void;
+};
+
+/**
+ * Renders bottom action/status bar for the launcher list mode.
+ */
+const LauncherFooter: React.FC<LauncherFooterProps> = ({
+  isLoading,
+  memoryActionLoading,
+  memoryFeedback,
+  selectedCommand,
+  displayCommandsCount,
+  primaryAction,
+  onOpenActions,
+}) => {
+  if (isLoading) return null;
+
+  return (
+    <div className="sc-glass-footer absolute bottom-0 left-0 right-0 z-10 flex items-center px-4 py-2.5">
+      <div
+        className={`flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate ${
+          memoryActionLoading
+            ? 'text-white/60'
+            : memoryFeedback
+              ? memoryFeedback.type === 'success'
+                ? 'text-emerald-300'
+                : 'text-red-300'
+              : 'text-white/50'
+        }`}
+      >
+        {memoryActionLoading ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+            <span>Adding to memory...</span>
+          </>
+        ) : memoryFeedback ? (
+          memoryFeedback.text
+        ) : selectedCommand ? (
+          <>
+            <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {renderCommandIcon(selectedCommand)}
+            </span>
+            <span className="truncate">{getCommandDisplayTitle(selectedCommand)}</span>
+          </>
+        ) : (
+          `${displayCommandsCount} results`
+        )}
+      </div>
+      {primaryAction && (
+        <div className="flex items-center gap-2 mr-3">
+          <button
+            onClick={() => primaryAction.execute()}
+            className="text-white text-xs font-normal hover:text-white/85 transition-colors"
+          >
+            {primaryAction.title}
+          </button>
+          {primaryAction.shortcut && (
+            <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">
+              {renderShortcutLabel(primaryAction.shortcut)}
+            </kbd>
+          )}
+        </div>
+      )}
+      <button
+        onClick={onOpenActions}
+        className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
+      >
+        <span className="text-xs font-normal">Actions</span>
+        <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
+        <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
+      </button>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
@@ -90,7 +391,7 @@ const App: React.FC = () => {
   } = useSpeakManager({ showSpeak, setShowSpeak });
   const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
   const [onboardingHotkeyPresses, setOnboardingHotkeyPresses] = useState(0);
-  const [launcherShortcut, setLauncherShortcut] = useState('Alt+Space');
+  const [launcherShortcut, setLauncherShortcut] = useState(DEFAULT_LAUNCHER_SHORTCUT);
   const [showActions, setShowActions] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -120,9 +421,22 @@ const App: React.FC = () => {
     });
   }, []);
 
-  const onExitAiMode = useCallback(() => {
+  /**
+   * Resets search selection state when returning to launcher list mode.
+   */
+  const resetLauncherSelection = useCallback(() => {
+    setSearchQuery('');
+    setSelectedIndex(0);
+  }, []);
+
+  /**
+   * Focuses search input after a short delay for transitions.
+   */
+  const focusSearchInputSoon = useCallback(() => {
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
+
+  const onExitAiMode = focusSearchInputSoon;
 
   const {
     aiResponse, aiStreaming, aiAvailable, aiQuery, setAiQuery,
@@ -199,22 +513,14 @@ const App: React.FC = () => {
       const shortcutStatus = await window.electron.getGlobalShortcutStatus();
       setPinnedCommands(settings.pinnedCommands || []);
       setRecentCommands(settings.recentCommands || []);
-      setCommandAliases(
-        Object.entries(settings.commandAliases || {}).reduce((acc, [commandId, alias]) => {
-          const normalizedCommandId = String(commandId || '').trim();
-          const normalizedAlias = String(alias || '').trim();
-          if (!normalizedCommandId || !normalizedAlias) return acc;
-          acc[normalizedCommandId] = normalizedAlias;
-          return acc;
-        }, {} as Record<string, string>)
-      );
-      setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
+      setCommandAliases(normalizeCommandAliases(settings.commandAliases || {}));
+      setLauncherShortcut(settings.globalShortcut || DEFAULT_LAUNCHER_SHORTCUT);
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
-      setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
-      setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
+      setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || DEFAULT_EDGE_TTS_VOICE));
+      setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || DEFAULT_TTS_MODEL));
       applyAppFontSize(settings.fontSize);
-      applyBaseColor(settings.baseColor || '#101113');
+      applyBaseColor(settings.baseColor || DEFAULT_BASE_COLOR);
       const shouldShowOnboarding = !settings.hasSeenOnboarding;
       setShowOnboarding(shouldShowOnboarding);
       setOnboardingRequiresShortcutFix(shouldShowOnboarding && !shortcutStatus.ok);
@@ -223,11 +529,11 @@ const App: React.FC = () => {
       setPinnedCommands([]);
       setRecentCommands([]);
       setCommandAliases({});
-      setLauncherShortcut('Alt+Space');
-      setConfiguredEdgeTtsVoice('en-US-EricNeural');
-      setConfiguredTtsModel('edge-tts');
+      setLauncherShortcut(DEFAULT_LAUNCHER_SHORTCUT);
+      setConfiguredEdgeTtsVoice(DEFAULT_EDGE_TTS_VOICE);
+      setConfiguredTtsModel(DEFAULT_TTS_MODEL);
       applyAppFontSize(getDefaultAppFontSize());
-      applyBaseColor('#101113');
+      applyBaseColor(DEFAULT_BASE_COLOR);
       setShowOnboarding(false);
       setOnboardingRequiresShortcutFix(false);
     }
@@ -432,8 +738,8 @@ const App: React.FC = () => {
   useEffect(() => {
     const cleanup = window.electron.onSettingsUpdated?.((settings: AppSettings) => {
       applyAppFontSize(settings.fontSize);
-      applyBaseColor(settings.baseColor || '#101113');
-      setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
+      applyBaseColor(settings.baseColor || DEFAULT_BASE_COLOR);
+      setLauncherShortcut(settings.globalShortcut || DEFAULT_LAUNCHER_SHORTCUT);
     });
     return cleanup;
   }, []);
@@ -785,35 +1091,33 @@ const App: React.FC = () => {
   const sourceCommands =
     calcResult && filteredCommands.length === 0 ? contextualCommands : filteredCommands;
 
-  const groupedCommands = useMemo(() => {
-    const sourceMap = new Map(sourceCommands.map((cmd) => [cmd.id, cmd]));
-    const hasSelection = selectedTextSnapshot.trim().length > 0;
-    const contextual = hasSelection
-      ? (sourceMap.get('system-add-to-memory') ? [sourceMap.get('system-add-to-memory') as CommandInfo] : [])
-      : [];
-    const contextualIds = new Set(contextual.map((c) => c.id));
+  const groupedCommands = useMemo(
+    () => buildGroupedCommands(sourceCommands, pinnedCommands, recentCommands, selectedTextSnapshot),
+    [sourceCommands, pinnedCommands, recentCommands, selectedTextSnapshot]
+  );
 
-    const pinned = pinnedCommands
-      .map((id) => sourceMap.get(id))
-      .filter((cmd): cmd is CommandInfo => Boolean(cmd) && !contextualIds.has((cmd as CommandInfo).id));
-    const pinnedSet = new Set(pinned.map((c) => c.id));
+  /**
+   * Precomputes section order and flat-list start indexes used by keyboard navigation.
+   */
+  const commandSections = useMemo(() => {
+    const baseSections = [
+      { title: 'Selected Text', items: groupedCommands.contextual },
+      { title: 'Pinned', items: groupedCommands.pinned },
+      { title: 'Recent', items: groupedCommands.recent },
+      { title: 'Other', items: groupedCommands.other },
+    ].filter((section) => section.items.length > 0);
 
-    const recent = recentCommands
-      .map((id) => sourceMap.get(id))
-      .filter(
-        (c): c is CommandInfo =>
-          Boolean(c) &&
-          !pinnedSet.has((c as CommandInfo).id) &&
-          !contextualIds.has((c as CommandInfo).id)
-      );
-    const recentSet = new Set(recent.map((c) => c.id));
-
-    const other = sourceCommands.filter(
-      (c) => !pinnedSet.has(c.id) && !recentSet.has(c.id) && !contextualIds.has(c.id)
-    );
-
-    return { contextual, pinned, recent, other };
-  }, [sourceCommands, pinnedCommands, recentCommands, selectedTextSnapshot]);
+    let runningIndex = 0;
+    return baseSections.map((section) => {
+      const resolved: CommandSectionMeta = {
+        title: section.title,
+        items: section.items,
+        startIndex: runningIndex,
+      };
+      runningIndex += section.items.length;
+      return resolved;
+    });
+  }, [groupedCommands]);
 
   const displayCommands = useMemo(
     () => [
@@ -1669,9 +1973,8 @@ const App: React.FC = () => {
               onClose={() => {
                 setExtensionView(null);
                 localStorage.removeItem(LAST_EXT_KEY);
-                setSearchQuery('');
-                setSelectedIndex(0);
-                setTimeout(() => inputRef.current?.focus(), 50);
+                resetLauncherSelection();
+                focusSearchInputSoon();
               }}
             />
           </div>
@@ -1690,9 +1993,8 @@ const App: React.FC = () => {
             <ClipboardManager
               onClose={() => {
                 setShowClipboardManager(false);
-                setSearchQuery('');
-                setSelectedIndex(0);
-                setTimeout(() => inputRef.current?.focus(), 50);
+                resetLauncherSelection();
+                focusSearchInputSoon();
               }}
             />
           </div>
@@ -1732,9 +2034,8 @@ const App: React.FC = () => {
               initialView={showSnippetManager}
               onClose={() => {
                 setShowSnippetManager(null);
-                setSearchQuery('');
-                setSelectedIndex(0);
-                setTimeout(() => inputRef.current?.focus(), 50);
+                resetLauncherSelection();
+                focusSearchInputSoon();
               }}
             />
           </div>
@@ -1753,9 +2054,8 @@ const App: React.FC = () => {
             <FileSearchExtension
               onClose={() => {
                 setShowFileSearch(false);
-                setSearchQuery('');
-                setSelectedIndex(0);
-                setTimeout(() => inputRef.current?.focus(), 50);
+                resetLauncherSelection();
+                focusSearchInputSoon();
               }}
             />
           </div>
@@ -1802,9 +2102,8 @@ const App: React.FC = () => {
             setShowOnboarding(false);
             setShowWhisperOnboarding(false);
             setOnboardingRequiresShortcutFix(false);
-            setSearchQuery('');
-            setSelectedIndex(0);
-            setTimeout(() => inputRef.current?.focus(), 50);
+            resetLauncherSelection();
+            focusSearchInputSoon();
           }}
         />
       </>
@@ -1849,197 +2148,39 @@ const App: React.FC = () => {
           )}
         </div>
 
-        {/* Command list */}
-        <div
-          ref={listRef}
-          className="flex-1 overflow-y-auto custom-scrollbar p-1.5 list-area"
-        >
-          {isLoading ? (
-            <div className="flex items-center justify-center h-full text-white/50">
-              <p className="text-sm">Discovering apps...</p>
-            </div>
-          ) : displayCommands.length === 0 && !calcResult ? (
-            <div className="flex items-center justify-center h-full text-white/50">
-              <p className="text-sm">No matching results</p>
-            </div>
-          ) : (
-            <div className="space-y-0.5">
-              {/* Calculator card */}
-              {calcResult && (
-                <div
-                  ref={(el) => (itemRefs.current[0] = el)}
-                  className={`mx-1 mt-0.5 mb-2 px-6 py-4 rounded-xl cursor-pointer transition-colors border ${
-                    selectedIndex === 0
-                      ? 'bg-white/[0.08] border-white/[0.12]'
-                      : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.05]'
-                  }`}
-                  onClick={() => {
-                    navigator.clipboard.writeText(calcResult.result);
-                    window.electron.hideWindow();
-                  }}
-                  onMouseMove={() => setSelectedIndex(0)}
-                >
-                  <div className="flex items-center justify-center gap-6">
-                    <div className="text-center">
-                      <div className="text-white/80 text-xl font-medium">{calcResult.input}</div>
-                      <div className="text-white/35 text-xs mt-1">{calcResult.inputLabel}</div>
-                    </div>
-                    <ArrowRight className="w-5 h-5 text-white/25 flex-shrink-0" />
-                    <div className="text-center">
-                      <div className="text-white text-xl font-medium">{calcResult.result}</div>
-                      <div className="text-white/35 text-xs mt-1">{calcResult.resultLabel}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
+        <CommandListContent
+          listRef={listRef}
+          itemRefs={itemRefs}
+          isLoading={isLoading}
+          displayCommands={displayCommands}
+          calcResult={calcResult}
+          selectedIndex={selectedIndex}
+          commandSections={commandSections}
+          commandAliases={commandAliases}
+          searchQuery={searchQuery}
+          calcOffset={calcOffset}
+          onSetSelectedIndex={setSelectedIndex}
+          onExecuteCommand={handleCommandExecute}
+          onHideWindow={() => window.electron.hideWindow()}
+          onOpenContextMenu={(x, y, commandId, selectedFlatIndex) => {
+            setSelectedIndex(selectedFlatIndex);
+            setShowActions(false);
+            setContextMenu({ x, y, commandId });
+          }}
+        />
 
-              {[
-                { title: 'Selected Text', items: groupedCommands.contextual },
-                { title: 'Pinned', items: groupedCommands.pinned },
-                { title: 'Recent', items: groupedCommands.recent },
-                { title: 'Other', items: groupedCommands.other },
-              ]
-                .filter((section) => section.items.length > 0)
-                .map((section) => section)
-                .reduce(
-                  (acc, section) => {
-                    const startIndex = acc.index;
-                    acc.nodes.push(
-                      <div
-                        key={`section-${section.title}`}
-                        className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider text-white/50 font-medium"
-                      >
-                        {section.title}
-                      </div>
-                    );
-                    section.items.forEach((command, i) => {
-                      const flatIndex = startIndex + i;
-                      const accessoryLabel = getCommandAccessoryLabel(command);
-                      const fallbackCategory = getCategoryLabel(command.category);
-                      const commandAlias = String(commandAliases[command.id] || '').trim();
-                      const aliasMatchesSearch =
-                        Boolean(commandAlias) &&
-                        Boolean(searchQuery.trim()) &&
-                        commandAlias.toLowerCase().includes(searchQuery.trim().toLowerCase());
-                      acc.nodes.push(
-                        <div
-                          key={command.id}
-                          ref={(el) => (itemRefs.current[flatIndex + calcOffset] = el)}
-                          className={`command-item px-3 py-2 rounded-lg cursor-pointer ${
-                            flatIndex + calcOffset === selectedIndex ? 'selected' : ''
-                          }`}
-                          onClick={() => handleCommandExecute(command)}
-                          onMouseMove={() => setSelectedIndex(flatIndex + calcOffset)}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            setSelectedIndex(flatIndex + calcOffset);
-                            setShowActions(false);
-                            setContextMenu({
-                              x: e.clientX,
-                              y: e.clientY,
-                              commandId: command.id,
-                            });
-                          }}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                              {renderCommandIcon(command)}
-                            </div>
-
-                            <div className="min-w-0 flex-1 flex items-center gap-2">
-                              <div className="text-white/95 text-[13px] font-medium truncate tracking-[0.004em]">
-                                {getCommandDisplayTitle(command)}
-                              </div>
-                              {accessoryLabel ? (
-                                <div className="text-white/60 text-[12px] font-medium truncate">
-                                  {accessoryLabel}
-                                </div>
-                              ) : (
-                                <div className="text-white/50 text-[11px] font-medium truncate">
-                                  {fallbackCategory}
-                                </div>
-                              )}
-                              {aliasMatchesSearch ? (
-                                <div className="inline-flex items-center h-5 rounded-md border border-white/[0.20] bg-white/[0.03] px-1.5 text-[10px] font-mono text-white/75 leading-none flex-shrink-0">
-                                  {commandAlias}
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    });
-                    acc.index += section.items.length;
-                    return acc;
-                  },
-                  { nodes: [] as React.ReactNode[], index: 0 }
-                ).nodes}
-            </div>
-          )}
-        </div>
-        
-        {/* Footer actions */}
-        {!isLoading && (
-          <div
-            className="sc-glass-footer absolute bottom-0 left-0 right-0 z-10 flex items-center px-4 py-2.5"
-          >
-            <div
-              className={`flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate ${
-                memoryActionLoading
-                  ? 'text-white/60'
-                  : memoryFeedback
-                  ? memoryFeedback.type === 'success'
-                    ? 'text-emerald-300'
-                    : 'text-red-300'
-                  : 'text-white/50'
-              }`}
-            >
-              {memoryActionLoading ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
-                  <span>Adding to memory...</span>
-                </>
-              ) : memoryFeedback
-                ? memoryFeedback.text
-                : selectedCommand
-                  ? (
-                    <>
-                      <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                        {renderCommandIcon(selectedCommand)}
-                      </span>
-                      <span className="truncate">{getCommandDisplayTitle(selectedCommand)}</span>
-                    </>
-                  )
-                  : `${displayCommands.length} results`}
-            </div>
-            {selectedActions[0] && (
-              <div className="flex items-center gap-2 mr-3">
-                <button
-                  onClick={() => selectedActions[0].execute()}
-                  className="text-white text-xs font-normal hover:text-white/85 transition-colors"
-                >
-                  {selectedActions[0].title}
-                </button>
-                {selectedActions[0].shortcut && (
-                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">
-                    {renderShortcutLabel(selectedActions[0].shortcut)}
-                  </kbd>
-                )}
-              </div>
-            )}
-            <button
-              onClick={() => {
-                setContextMenu(null);
-                setShowActions(true);
-              }}
-              className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
-            >
-              <span className="text-xs font-normal">Actions</span>
-              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
-              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
-            </button>
-          </div>
-        )}
+        <LauncherFooter
+          isLoading={isLoading}
+          memoryActionLoading={memoryActionLoading}
+          memoryFeedback={memoryFeedback}
+          selectedCommand={selectedCommand}
+          displayCommandsCount={displayCommands.length}
+          primaryAction={selectedActions[0]}
+          onOpenActions={() => {
+            setContextMenu(null);
+            setShowActions(true);
+          }}
+        />
       </div>
     </div>
     {showActions && selectedActions.length > 0 && (
