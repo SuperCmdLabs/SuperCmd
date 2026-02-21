@@ -5,13 +5,15 @@
  */
 
 import React, { createContext, useContext, useEffect, useRef } from 'react';
+import { resolveTintColor } from './icon-runtime-assets';
+import { renderIcon } from './icon-runtime-render';
 
 export interface GridItemRegistration {
   id: string;
   props: {
     title?: string;
     subtitle?: string;
-    content?: { source?: string; tintColor?: string } | string;
+    content?: any;
     actions?: React.ReactElement;
     keywords?: string[];
     id?: string;
@@ -56,25 +58,106 @@ export function createGridItemsRuntime(resolveIconSrc: (src: string) => string) 
   }
 
   function GridItemRenderer({ title, subtitle, content, isSelected, dataIdx, onSelect, onActivate, onContextAction }: any) {
-    const getGridImageSource = (value: any): string => {
-      if (!value) return '';
-      if (typeof value === 'string') return resolveIconSrc(value);
-
-      if (typeof value === 'object') {
-        const directSource = value.source;
-        const nestedSource = value.value?.source;
-        const candidate = directSource ?? nestedSource;
-
-        if (typeof candidate === 'string') return resolveIconSrc(candidate);
-        if (candidate && typeof candidate === 'object') {
-          const themed = candidate.dark || candidate.light || '';
-          if (typeof themed === 'string') return resolveIconSrc(themed);
-        }
+    const isImageLikeSourceString = (value: string): boolean => {
+      const source = String(value || '').trim();
+      if (!source) return false;
+      if (
+        source.startsWith('http') ||
+        source.startsWith('data:') ||
+        source.startsWith('sc-asset:') ||
+        source.startsWith('file://') ||
+        source.startsWith('/') ||
+        /^[a-zA-Z]:[\\/]/.test(source) ||
+        source.startsWith('\\\\')
+      ) {
+        return true;
       }
-      return '';
+      return /\.(svg|png|jpe?g|gif|webp|ico|tiff?)(\?.*)?$/i.test(source);
     };
 
-    const imageSource = getGridImageSource(content);
+    const getGridColor = (value: any): string | null => {
+      if (!value || typeof value !== 'object') return null;
+      const hasVisualSource = value.source !== undefined || value.value !== undefined || value.fileIcon !== undefined;
+      if (hasVisualSource) return null;
+      return resolveTintColor(value.color) || null;
+    };
+
+    const normalizeSourceString = (value: string): string => {
+      const source = String(value || '').trim();
+      if (!source) return '';
+      const resolved = resolveIconSrc(source);
+      return resolved || source;
+    };
+
+    const toRenderableContent = (value: any): any => {
+      if (!value) return null;
+      if (typeof value === 'string') {
+        const normalized = normalizeSourceString(value);
+        return normalized || null;
+      }
+
+      if (typeof value !== 'object') return null;
+
+      if (typeof value.fileIcon === 'string' && value.fileIcon.trim()) {
+        return { fileIcon: value.fileIcon.trim() };
+      }
+
+      if (value.source !== undefined) {
+        const sourceValue = value.source;
+        if (typeof sourceValue === 'string') {
+          const normalizedSource = normalizeSourceString(sourceValue);
+          if (!normalizedSource) return null;
+          const sourceTint =
+            value.tintColor
+            || (!isImageLikeSourceString(normalizedSource) ? value.color : undefined);
+          return {
+            source: normalizedSource,
+            tintColor: sourceTint,
+            mask: value.mask,
+            fallback: value.fallback,
+          };
+        }
+        if (sourceValue && typeof sourceValue === 'object') {
+          return {
+            source: sourceValue,
+            tintColor: value.tintColor,
+            mask: value.mask,
+            fallback: value.fallback,
+          };
+        }
+      }
+
+      if (value.value !== undefined) {
+        const nestedValue = value.value;
+        if (typeof nestedValue === 'string') {
+          const normalizedNested = normalizeSourceString(nestedValue);
+          if (!normalizedNested) return null;
+          const nestedTint =
+            !isImageLikeSourceString(normalizedNested) ? value.color : undefined;
+          return nestedTint
+            ? { source: normalizedNested, tintColor: nestedTint }
+            : normalizedNested;
+        }
+        if (nestedValue && typeof nestedValue === 'object') {
+          if (typeof nestedValue.fileIcon === 'string' && nestedValue.fileIcon.trim()) {
+            return { fileIcon: nestedValue.fileIcon.trim() };
+          }
+
+          if (nestedValue.source !== undefined) {
+            return nestedValue;
+          }
+
+          if (nestedValue.light !== undefined || nestedValue.dark !== undefined) {
+            return { source: nestedValue };
+          }
+        }
+      }
+
+      return null;
+    };
+
+    const swatchColor = getGridColor(content);
+    const renderableContent = swatchColor ? null : toRenderableContent(content);
 
     return (
       <div
@@ -88,13 +171,12 @@ export function createGridItemsRuntime(resolveIconSrc: (src: string) => string) 
         onContextMenu={onContextAction}
       >
         <div className="flex-1 flex items-center justify-center overflow-hidden p-1.5 min-h-0">
-          {imageSource ? (
-            <img
-              src={typeof imageSource === 'string' ? imageSource : ''}
-              alt={title || ''}
-              className="max-w-full max-h-full object-contain rounded"
-              loading="lazy"
-            />
+          {swatchColor ? (
+            <div className="w-full h-full rounded" style={{ backgroundColor: swatchColor }} />
+          ) : renderableContent ? (
+            <div className="w-full h-full flex items-center justify-center">
+              {renderIcon(renderableContent, 'w-full h-full object-contain')}
+            </div>
           ) : (
             <div className="w-full h-full bg-white/[0.03] rounded flex items-center justify-center text-white/20 text-2xl">
               {title ? title.charAt(0) : '?'}

@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Loader2, X } from 'lucide-react';
+import { applyAppFontSize, getDefaultAppFontSize } from './utils/font-size';
+import { applyBaseColor } from './utils/base-color';
 
 const NO_AI_MODEL_ERROR = 'No AI model available. Configure one in Settings -> AI.';
 
@@ -13,15 +15,24 @@ const PromptApp: React.FC = () => {
   const resultTextRef = useRef('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const closePrompt = useCallback(async () => {
-    if (requestIdRef.current) {
+  const resetPromptState = useCallback(async (cancelActiveRequest = false) => {
+    if (cancelActiveRequest && requestIdRef.current) {
       try {
         await window.electron.aiCancel(requestIdRef.current);
       } catch {}
-      requestIdRef.current = null;
     }
-    await window.electron.closePromptWindow();
+    requestIdRef.current = null;
+    sourceTextRef.current = '';
+    resultTextRef.current = '';
+    setPromptText('');
+    setStatus('idle');
+    setErrorText('');
   }, []);
+
+  const closePrompt = useCallback(async () => {
+    await resetPromptState(true);
+    await window.electron.closePromptWindow();
+  }, [resetPromptState]);
 
   const applyResult = useCallback(async () => {
     const nextText = String(resultTextRef.current || '');
@@ -93,9 +104,52 @@ const PromptApp: React.FC = () => {
   }, [promptText, status]);
 
   useEffect(() => {
+    let disposed = false;
+    window.electron.getSettings()
+      .then((settings) => {
+        if (!disposed) {
+          applyAppFontSize(settings.fontSize);
+          applyBaseColor(settings.baseColor || '#101113');
+        }
+      })
+      .catch(() => {
+        if (!disposed) applyAppFontSize(getDefaultAppFontSize());
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const cleanup = window.electron.onSettingsUpdated?.((settings) => {
+      applyAppFontSize(settings.fontSize);
+      applyBaseColor(settings.baseColor || '#101113');
+    });
+    return cleanup;
+  }, []);
+
+  useEffect(() => {
     const timer = setTimeout(() => textareaRef.current?.focus(), 50);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      void (async () => {
+        await resetPromptState(true);
+        const available = await window.electron.aiIsAvailable().catch(() => false);
+        setAiAvailable(available);
+        if (!available) {
+          setStatus('error');
+          setErrorText(NO_AI_MODEL_ERROR);
+        }
+        setTimeout(() => textareaRef.current?.focus(), 20);
+      })();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [resetPromptState]);
 
   useEffect(() => {
     let cancelled = false;

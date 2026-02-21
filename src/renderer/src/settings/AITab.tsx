@@ -2,7 +2,8 @@
  * AI Settings Tab
  *
  * Compact grouped layout with horizontal tabs for:
- * - API Keys & Generic Models
+ * - API Keys
+ * - LLM
  * - SuperCmd Whisper
  * - SuperCmd Read
  */
@@ -21,7 +22,12 @@ import {
   Volume2,
 } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
-import type { AppSettings, AISettings, EdgeTtsVoice } from '../../types/electron';
+import type { AppSettings, AISettings, EdgeTtsVoice, ElevenLabsVoice } from '../../types/electron';
+import {
+  clearElevenLabsVoiceCache,
+  getCachedElevenLabsVoices,
+  setCachedElevenLabsVoices,
+} from '../utils/voice-cache';
 
 const PROVIDER_OPTIONS = [
   { id: 'openai' as const, label: 'OpenAI', description: 'GPT family models' },
@@ -157,11 +163,11 @@ const EDGE_TTS_FALLBACK_VOICES: EdgeVoiceDef[] = [
 
 const WHISPER_SPEAK_TOGGLE_COMMAND_ID = 'system-supercmd-whisper-speak-toggle';
 
-type TabId = 'api-models' | 'whisper' | 'speak';
+type TabId = 'api-keys' | 'llm' | 'whisper' | 'speak';
 
 const AITab: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>('api-models');
+  const [activeTab, setActiveTab] = useState<TabId>('api-keys');
 
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
@@ -183,6 +189,9 @@ const AITab: React.FC = () => {
   const [previewingVoice, setPreviewingVoice] = useState(false);
   const [edgeVoices, setEdgeVoices] = useState<EdgeVoiceDef[]>([]);
   const [edgeVoicesLoading, setEdgeVoicesLoading] = useState(false);
+  const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
+  const [elevenLabsVoicesLoading, setElevenLabsVoicesLoading] = useState(false);
+  const [elevenLabsVoicesError, setElevenLabsVoicesError] = useState<string | null>(null);
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
   const selectingOllamaDefaultRef = useRef(false);
@@ -211,7 +220,7 @@ const AITab: React.FC = () => {
             label: String(v.label || '').trim(),
             languageCode: String(v.languageCode || '').trim(),
             languageLabel: String(v.languageLabel || '').trim(),
-            gender: String(v.gender || '').toLowerCase() === 'male' ? 'male' : 'female',
+            gender: (String(v.gender || '').toLowerCase() === 'male' ? 'male' : 'female') as EdgeVoiceGender,
             style: v.style ? String(v.style).trim() : undefined,
           }))
           .filter((v) => v.id && v.label && v.languageCode);
@@ -226,6 +235,51 @@ const AITab: React.FC = () => {
 
     return () => { cancelled = true; };
   }, []);
+
+  // Fetch ElevenLabs voices when API key is present and tab is speak
+  useEffect(() => {
+    let cancelled = false;
+    const fetchVoices = async () => {
+      if (!settings?.ai?.elevenlabsApiKey || activeTab !== 'speak') {
+        setElevenLabsVoices([]);
+        setElevenLabsVoicesError(null);
+        return;
+      }
+
+      // Check shared cache first
+      const cached = getCachedElevenLabsVoices();
+      if (cached) {
+        setElevenLabsVoices(cached);
+        setElevenLabsVoicesLoading(false);
+        return;
+      }
+
+      setElevenLabsVoicesLoading(true);
+      setElevenLabsVoicesError(null);
+      try {
+        const result = await window.electron.elevenLabsListVoices();
+        if (cancelled) return;
+        if (result.error) {
+          clearElevenLabsVoiceCache();
+          setElevenLabsVoicesError(result.error);
+          setElevenLabsVoices([]);
+        } else {
+          setElevenLabsVoices(result.voices);
+          // Update shared cache
+          setCachedElevenLabsVoices(result.voices);
+        }
+      } catch {
+        if (!cancelled) {
+          setElevenLabsVoicesError('Failed to fetch voices.');
+          setElevenLabsVoices([]);
+        }
+      } finally {
+        if (!cancelled) setElevenLabsVoicesLoading(false);
+      }
+    };
+    fetchVoices();
+    return () => { cancelled = true; };
+  }, [settings?.ai?.elevenlabsApiKey, activeTab]);
 
   const updateAI = async (patch: Partial<AISettings>) => {
     if (!settings) return;
@@ -367,7 +421,7 @@ const AITab: React.FC = () => {
   };
 
   if (!settings) {
-    return <div className="p-6 text-white/50 text-sm">Loading settings...</div>;
+    return <div className="p-5 text-white/50 text-[12px]">Loading settings...</div>;
   }
 
   const ai = settings.ai;
@@ -393,7 +447,9 @@ const AITab: React.FC = () => {
     : ai.textToSpeechModel.startsWith('elevenlabs-')
       ? parsedElevenLabsSpeak.model
       : ai.textToSpeechModel;
-  const selectedElevenLabsVoiceId = ELEVENLABS_VOICES.some((voice) => voice.id === parsedElevenLabsSpeak.voiceId)
+  const isValidVoiceId = ELEVENLABS_VOICES.some((voice) => voice.id === parsedElevenLabsSpeak.voiceId) ||
+    elevenLabsVoices.some((voice) => voice.id === parsedElevenLabsSpeak.voiceId);
+  const selectedElevenLabsVoiceId = isValidVoiceId
     ? parsedElevenLabsSpeak.voiceId
     : DEFAULT_ELEVENLABS_VOICE_ID;
 
@@ -446,7 +502,7 @@ const AITab: React.FC = () => {
   const TabButton = ({ id, label }: { id: TabId; label: string }) => (
     <button
       onClick={() => setActiveTab(id)}
-      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+      className={`px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
         activeTab === id
           ? 'bg-blue-500/25 text-blue-200 border border-blue-400/30'
           : 'bg-white/[0.03] text-white/55 border border-white/[0.08] hover:text-white/80 hover:bg-white/[0.06]'
@@ -456,18 +512,58 @@ const AITab: React.FC = () => {
     </button>
   );
 
+  const AIRow: React.FC<{
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    withBorder?: boolean;
+    children: React.ReactNode;
+  }> = ({ icon, title, description, withBorder = true, children }) => (
+    <div
+      className={`grid gap-3 px-4 py-3.5 md:px-5 md:grid-cols-[220px_minmax(0,1fr)] ${
+        withBorder ? 'border-b border-white/[0.08]' : ''
+      }`}
+    >
+      <div className="flex items-start gap-2.5">
+        <div className="mt-0.5 text-white/65 shrink-0">{icon}</div>
+        <div className="min-w-0">
+          <h3 className="text-[13px] font-semibold text-white/95">{title}</h3>
+          <p className="mt-0.5 text-[12px] text-white/50 leading-snug">{description}</p>
+        </div>
+      </div>
+      <div className="flex items-center min-h-[32px]">{children}</div>
+    </div>
+  );
+
+  const SectionToggle = ({
+    enabled,
+    onToggle,
+    label,
+  }: {
+    enabled: boolean;
+    onToggle: () => void;
+    label: string;
+  }) => (
+    <button
+      onClick={onToggle}
+      className={`relative w-10 h-6 rounded-full transition-colors ${enabled ? 'bg-blue-500' : 'bg-white/10'}`}
+      aria-label={label}
+    >
+      <span
+        className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${enabled ? 'left-5' : 'left-1'}`}
+      />
+    </button>
+  );
+
   return (
-    <div className="w-full max-w-6xl mx-auto">
-      <div className="bg-white/[0.03] rounded-lg border border-white/[0.07] p-2.5 mb-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <Brain className="w-4 h-4 text-white/55" />
-            <div>
-              <p className="text-sm text-white/90">Enable AI</p>
-              <p className="text-[11px] text-white/40">Master switch for AI features.</p>
-            </div>
-          </div>
-          {saveStatus === 'saved' && <span className="text-[11px] text-green-400 mr-1">Saved</span>}
+    <div className="w-full max-w-[980px] mx-auto">
+      <div className="overflow-hidden rounded-xl border border-white/[0.10] bg-[rgba(20,20,20,0.34)]">
+      <AIRow
+        icon={<Brain className="w-4 h-4" />}
+        title="Enable AI"
+        description="Master switch for AI features."
+      >
+        <div className="flex items-center gap-2">
           <button
             onClick={() => updateAI({ enabled: !ai.enabled })}
             className={`relative w-10 h-6 rounded-full transition-colors ${
@@ -480,27 +576,23 @@ const AITab: React.FC = () => {
               }`}
             />
           </button>
+          {saveStatus === 'saved' && <span className="text-[12px] text-green-400">Saved</span>}
         </div>
-      </div>
+      </AIRow>
 
-      <div className="flex items-center gap-2 mb-2 overflow-x-auto pb-0.5">
-        <TabButton id="api-models" label="API Keys & Models" />
+      <div className="flex items-center gap-1.5 px-4 py-3 border-b border-white/[0.08] md:px-5 overflow-x-auto">
+        <TabButton id="api-keys" label="API Keys" />
+        <TabButton id="llm" label="LLM" />
         <TabButton id="whisper" label="SuperCmd Whisper" />
         <TabButton id="speak" label="SuperCmd Read" />
       </div>
 
-      <div className={!ai.enabled ? 'opacity-65 pointer-events-none select-none space-y-2' : 'space-y-2'}>
-        {activeTab === 'api-models' && (
-          <div className="grid items-start grid-cols-1 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-2">
-            <div className="bg-white/[0.03] rounded-lg border border-white/[0.06] p-3 space-y-3 self-start">
-              <div>
-                <h3 className="text-sm font-medium text-white/90">API Keys</h3>
-                <p className="text-[11px] text-white/40 mt-0.5">ChatGPT, Claude, and ElevenLabs credentials.</p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2.5">
+      <div className={`${!ai.enabled ? 'opacity-65 pointer-events-none select-none' : ''}`}>
+        {(activeTab === 'api-keys' || activeTab === 'llm') && (
+          <div className="grid grid-cols-1">
+            <div className={`px-4 py-3.5 md:px-5 space-y-3 ${activeTab === 'llm' ? 'hidden' : ''}`}>
                 <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">ChatGPT (OpenAI) API Key</label>
+                  <label className="text-[12px] text-white/50 mb-1 block">ChatGPT (OpenAI) API Key</label>
                   <div className="relative">
                     <input
                       type={showOpenAIKey ? 'text' : 'password'}
@@ -519,7 +611,7 @@ const AITab: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">Claude (Anthropic) API Key</label>
+                  <label className="text-[12px] text-white/50 mb-1 block">Claude (Anthropic) API Key</label>
                   <div className="relative">
                     <input
                       type={showAnthropicKey ? 'text' : 'password'}
@@ -538,7 +630,7 @@ const AITab: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">ElevenLabs API Key</label>
+                  <label className="text-[12px] text-white/50 mb-1 block">ElevenLabs API Key</label>
                   <div className="relative">
                     <input
                       type={showElevenLabsKey ? 'text' : 'password'}
@@ -557,12 +649,12 @@ const AITab: React.FC = () => {
                 </div>
 
                 <div className="pt-1 border-t border-white/[0.06]">
-                  <p className="text-sm font-medium text-white/90">Supermemory</p>
-                  <p className="text-[11px] text-white/40 mt-0.5">Memory backend for long-term context.</p>
+                  <p className="text-[13px] font-semibold text-white/95">Supermemory</p>
+                  <p className="text-[12px] text-white/50 mt-0.5 leading-snug">Memory backend for long-term context.</p>
                 </div>
 
                 <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">Supermemory API Key</label>
+                  <label className="text-[12px] text-white/50 mb-1 block">Supermemory API Key</label>
                   <div className="relative">
                     <input
                       type={showSupermemoryKey ? 'text' : 'password'}
@@ -581,7 +673,7 @@ const AITab: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">Supermemory Client</label>
+                  <label className="text-[12px] text-white/50 mb-1 block">Supermemory Client</label>
                   <input
                     type="text"
                     value={ai.supermemoryClient || ''}
@@ -593,7 +685,7 @@ const AITab: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">Supermemory Base URL</label>
+                  <label className="text-[12px] text-white/50 mb-1 block">Supermemory Base URL</label>
                   <input
                     type="text"
                     value={ai.supermemoryBaseUrl || 'https://api.supermemory.ai'}
@@ -611,18 +703,29 @@ const AITab: React.FC = () => {
                   />
                   <span>Use local Supermemory mode (allow requests without API key)</span>
                 </label>
-              </div>
             </div>
 
-            <div className="space-y-2 self-start">
-              <div className="bg-white/[0.03] rounded-lg border border-white/[0.06] p-3 space-y-3">
+            <div className={`px-4 py-3.5 md:px-5 space-y-3 self-start ${activeTab === 'llm' ? '' : 'hidden'}`}>
+              <div className="flex items-center justify-between gap-3 pb-1">
                 <div>
-                  <h3 className="text-sm font-medium text-white/90">Generic Model Selection</h3>
-                  <p className="text-[11px] text-white/40 mt-0.5">Used by extensions and model-agnostic AI actions.</p>
+                  <h3 className="text-[13px] font-semibold text-white/95">Enable LLM</h3>
+                  <p className="text-[12px] text-white/50 mt-0.5 leading-snug">Toggle model-based AI features.</p>
                 </div>
+                <SectionToggle
+                  enabled={ai.llmEnabled !== false}
+                  onToggle={() => updateAI({ llmEnabled: ai.llmEnabled === false })}
+                  label="Toggle LLM section"
+                />
+              </div>
 
-                <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">Provider</label>
+              <div className={`${ai.llmEnabled === false ? 'opacity-65 pointer-events-none select-none' : ''}`}>
+              <div>
+                <h3 className="text-[13px] font-semibold text-white/95">Generic Model Selection</h3>
+                <p className="text-[12px] text-white/50 mt-0.5 leading-snug">Used by extensions and model-agnostic AI actions.</p>
+              </div>
+
+              <div>
+                  <label className="text-[12px] text-white/50 mb-1 block">Provider</label>
                   <div className="grid grid-cols-2 gap-2">
                     {PROVIDER_OPTIONS.map((p) => (
                       <button
@@ -656,7 +759,7 @@ const AITab: React.FC = () => {
 
                 {ai.provider === 'ollama' && (
                   <div>
-                    <label className="text-[11px] text-white/45 mb-1 block">Ollama Server URL</label>
+                    <label className="text-[12px] text-white/50 mb-1 block">Ollama Server URL</label>
                     <input
                       type="text"
                       value={ai.ollamaBaseUrl}
@@ -670,7 +773,7 @@ const AITab: React.FC = () => {
                 {ai.provider === 'openai-compatible' && (
                   <div className="space-y-3">
                     <div>
-                      <label className="text-[11px] text-white/45 mb-1 block">Base URL</label>
+                      <label className="text-[12px] text-white/50 mb-1 block">Base URL</label>
                       <input
                         type="text"
                         value={ai.openaiCompatibleBaseUrl}
@@ -682,7 +785,7 @@ const AITab: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="text-[11px] text-white/45 mb-1 block">API Key</label>
+                      <label className="text-[12px] text-white/50 mb-1 block">API Key</label>
                       <div className="relative">
                         <input
                           type={showOpenAICompatibleKey ? 'text' : 'password'}
@@ -701,7 +804,7 @@ const AITab: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="text-[11px] text-white/45 mb-1 block">Model Name</label>
+                      <label className="text-[12px] text-white/50 mb-1 block">Model Name</label>
                       <input
                         type="text"
                         value={ai.openaiCompatibleModel}
@@ -720,8 +823,8 @@ const AITab: React.FC = () => {
                   </div>
                 )}
 
-                <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">Default Model</label>
+                <div className="mt-2">
+                  <label className="text-[12px] text-white/50 mb-1 block">Default Model</label>
                   <select
                     value={ai.defaultModel}
                     onChange={(e) => updateAI({ defaultModel: e.target.value })}
@@ -735,16 +838,15 @@ const AITab: React.FC = () => {
                     ))}
                   </select>
                 </div>
-              </div>
 
               {ai.provider === 'ollama' && (
-                <div className="bg-white/[0.03] rounded-lg border border-white/[0.06] p-3">
+                <div className="pt-3 border-t border-white/[0.08]">
                   <div className="flex items-center justify-between mb-2.5">
-                    <h3 className="text-sm font-medium text-white/90">Ollama Models</h3>
+                    <h3 className="text-[13px] font-semibold text-white/95">Ollama Models</h3>
                     {ollamaRunning && (
                       <button
                         onClick={refreshOllamaStatus}
-                        className="flex items-center gap-1 px-2 py-1 text-[11px] text-white/45 hover:text-white/75 rounded-md transition-colors"
+                        className="flex items-center gap-1 px-2 py-1 text-[12px] text-white/50 hover:text-white/75 rounded-md transition-colors"
                       >
                         <RefreshCw className="w-3 h-3" />
                         Refresh
@@ -765,7 +867,7 @@ const AITab: React.FC = () => {
                         <AlertCircle className="w-4 h-4 text-red-400/70" />
                       </div>
                       <p className="text-xs text-white/60 mb-0.5">Ollama is not running</p>
-                      <p className="text-[11px] text-white/35 mb-3">Install and run Ollama to use local models.</p>
+                      <p className="text-[12px] text-white/45 mb-3">Install and run Ollama to use local models.</p>
                       <button
                         onClick={() => window.electron.ollamaOpenDownload()}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-md transition-colors"
@@ -807,7 +909,7 @@ const AITab: React.FC = () => {
                                       <span className="text-[10px] px-1.5 py-0.5 bg-green-500/15 text-green-400/80 rounded">Installed</span>
                                     )}
                                   </div>
-                                  <p className="text-[11px] text-white/35 mt-0.5">{model.description}</p>
+                                  <p className="text-[12px] text-white/45 mt-0.5">{model.description}</p>
                                 </div>
 
                                 {isPulling ? (
@@ -859,23 +961,36 @@ const AITab: React.FC = () => {
                   )}
                 </div>
               )}
+              </div>
             </div>
           </div>
         )}
 
         {activeTab === 'whisper' && (
-          <div className="grid items-start grid-cols-1 xl:grid-cols-2 gap-2">
-            <div className="bg-white/[0.03] rounded-lg border border-white/[0.06] p-3 space-y-3">
+          <>
+          <div className="px-4 py-3 md:px-5 border-b border-white/[0.08] flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-[13px] font-semibold text-white/95">Enable SuperCmd Whisper</h3>
+              <p className="text-[12px] text-white/50 mt-0.5 leading-snug">Toggle speech-to-text features.</p>
+            </div>
+            <SectionToggle
+              enabled={ai.whisperEnabled !== false}
+              onToggle={() => updateAI({ whisperEnabled: ai.whisperEnabled === false })}
+              label="Toggle SuperCmd Whisper section"
+            />
+          </div>
+          <div className={`grid grid-cols-1 xl:grid-cols-2 gap-0 ${ai.whisperEnabled === false ? 'opacity-65 pointer-events-none select-none' : ''}`}>
+            <div className="px-4 py-3.5 md:px-5 space-y-3 border-b border-white/[0.08] xl:border-b-0 xl:border-r xl:border-white/[0.08]">
               <div className="flex items-center gap-2">
-                <Mic className="w-4 h-4 text-white/55" />
+                <Mic className="w-4 h-4 text-white/65 shrink-0" />
                 <div>
-                  <h3 className="text-sm font-medium text-white/90">SuperCmd Whisper</h3>
-                  <p className="text-[11px] text-white/40">Speech-to-text and transcript cleanup.</p>
+                  <h3 className="text-[13px] font-semibold text-white/95">SuperCmd Whisper</h3>
+                  <p className="text-[12px] text-white/50 mt-0.5 leading-snug">Speech-to-text and transcript cleanup.</p>
                 </div>
               </div>
 
               <div>
-                <label className="text-[11px] text-white/45 mb-1 block">Transcription Model</label>
+                <label className="text-[12px] text-white/50 mb-1 block">Transcription Model</label>
                 <select
                   value={whisperModelValue}
                   onChange={(e) => updateAI({ speechToTextModel: e.target.value })}
@@ -889,7 +1004,7 @@ const AITab: React.FC = () => {
 
               {whisperModelValue.startsWith('openai-') && !ai.openaiApiKey && (
                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-md px-2.5 py-2">
-                  <p className="text-[11px] text-amber-300">OpenAI Whisper selected. Add OpenAI API key in API Keys & Models.</p>
+                  <p className="text-[11px] text-amber-300">OpenAI Whisper selected. Add OpenAI API key in API Keys.</p>
                 </div>
               )}
 
@@ -898,15 +1013,15 @@ const AITab: React.FC = () => {
                   <p className="text-[11px] text-amber-300">
                     {ai.elevenlabsApiKey
                       ? 'ElevenLabs STT selected. Cloud transcription will use your ElevenLabs key.'
-                      : 'ElevenLabs STT selected. Add ElevenLabs API key in API Keys & Models.'}
+                      : 'ElevenLabs STT selected. Add ElevenLabs API key in API Keys.'}
                   </p>
                 </div>
               )}
 
-              <div className="bg-white/[0.02] rounded-md border border-white/[0.06] p-2.5 space-y-2">
-                <p className="text-[11px] text-white/45">Whisper Hotkeys</p>
+              <div className="pt-2 border-t border-white/[0.08] space-y-2">
+                <p className="text-[12px] text-white/50">Whisper Hotkeys</p>
                 <div>
-                  <p className="text-[11px] text-white/45 mb-1.5">Start/Stop Speaking</p>
+                  <p className="text-[12px] text-white/50 mb-1.5">Start/Stop Speaking</p>
                   <HotkeyRecorder
                     value={(settings.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] || 'Fn'}
                     onChange={(hotkey) => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey); }}
@@ -925,11 +1040,11 @@ const AITab: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-white/[0.03] rounded-lg border border-white/[0.06] p-3 space-y-3">
+            <div className="px-4 py-3.5 md:px-5 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-medium text-white/90">Smooth Output</h3>
-                  <p className="text-[11px] text-white/40 mt-0.5">Clean up filler words and self-corrections.</p>
+                  <h3 className="text-[13px] font-semibold text-white/95">Smooth Output</h3>
+                  <p className="text-[12px] text-white/50 mt-0.5 leading-snug">Clean up filler words and self-corrections.</p>
                 </div>
                 <button
                   onClick={() => updateAI({ speechCorrectionEnabled: !ai.speechCorrectionEnabled })}
@@ -948,7 +1063,7 @@ const AITab: React.FC = () => {
 
               {ai.speechCorrectionEnabled && (
                 <div>
-                  <label className="text-[11px] text-white/45 mb-1 block">Smoothing Model</label>
+                  <label className="text-[12px] text-white/50 mb-1 block">Smoothing Model</label>
                   <select
                     value={ai.speechCorrectionModel || ''}
                     onChange={(e) => updateAI({ speechCorrectionModel: e.target.value })}
@@ -959,26 +1074,39 @@ const AITab: React.FC = () => {
                       <option key={m.id} value={m.id}>{m.label}</option>
                     ))}
                   </select>
-                  <p className="text-[11px] text-white/35 mt-1">Uses your current provider models.</p>
+                  <p className="text-[12px] text-white/45 mt-1">Uses your current provider models.</p>
                 </div>
               )}
             </div>
           </div>
+          </>
         )}
 
         {activeTab === 'speak' && (
-          <div className="grid items-start grid-cols-1 xl:grid-cols-2 gap-2">
-            <div className="bg-white/[0.03] rounded-lg border border-white/[0.06] p-3 space-y-3">
+          <>
+          <div className="px-4 py-3 md:px-5 border-b border-white/[0.08] flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-[13px] font-semibold text-white/95">Enable SuperCmd Read</h3>
+              <p className="text-[12px] text-white/50 mt-0.5 leading-snug">Toggle text-to-speech features.</p>
+            </div>
+            <SectionToggle
+              enabled={ai.readEnabled !== false}
+              onToggle={() => updateAI({ readEnabled: ai.readEnabled === false })}
+              label="Toggle SuperCmd Read section"
+            />
+          </div>
+          <div className={`grid grid-cols-1 xl:grid-cols-2 gap-0 ${ai.readEnabled === false ? 'opacity-65 pointer-events-none select-none' : ''}`}>
+            <div className="px-4 py-3.5 md:px-5 space-y-3 border-b border-white/[0.08] xl:border-b-0 xl:border-r xl:border-white/[0.08]">
               <div className="flex items-center gap-2">
-                <Volume2 className="w-4 h-4 text-white/55" />
+                <Volume2 className="w-4 h-4 text-white/65 shrink-0" />
                 <div>
-                  <h3 className="text-sm font-medium text-white/90">SuperCmd Read</h3>
-                  <p className="text-[11px] text-white/40">Read selected text aloud.</p>
+                  <h3 className="text-[13px] font-semibold text-white/95">SuperCmd Read</h3>
+                  <p className="text-[12px] text-white/50 mt-0.5 leading-snug">Read selected text aloud.</p>
                 </div>
               </div>
 
               <div>
-                <label className="text-[11px] text-white/45 mb-1 block">Speech Provider</label>
+                <label className="text-[12px] text-white/50 mb-1 block">Speech Provider</label>
                 <select
                   value={speakModelValue}
                   onChange={(e) => {
@@ -1000,9 +1128,9 @@ const AITab: React.FC = () => {
               </div>
 
               {speakModelValue === 'edge-tts' && (
-                <div className="bg-white/[0.02] rounded-md border border-white/[0.06] p-2.5 space-y-2.5">
+                <div className="pt-2 border-t border-white/[0.08] space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-[11px] text-white/45">Edge TTS Voice</p>
+                    <p className="text-[12px] text-white/50">Edge TTS Voice</p>
                     {edgeVoicesLoading && (
                       <span className="inline-flex items-center gap-1 text-[10px] text-white/40">
                         <RefreshCw className="w-3 h-3 animate-spin" />
@@ -1012,7 +1140,7 @@ const AITab: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="text-[11px] text-white/45 mb-1 block">Language</label>
+                    <label className="text-[12px] text-white/50 mb-1 block">Language</label>
                     <select
                       value={selectedEdgeLanguageCode}
                       onChange={(e) => handleEdgeLanguageChange(e.target.value)}
@@ -1025,7 +1153,7 @@ const AITab: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="text-[11px] text-white/45 mb-1 block">Voice Gender</label>
+                    <label className="text-[12px] text-white/50 mb-1 block">Voice Gender</label>
                     <select
                       value={selectedEdgeGender}
                       onChange={(e) => handleEdgeGenderChange(e.target.value as EdgeVoiceGender)}
@@ -1037,7 +1165,7 @@ const AITab: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="text-[11px] text-white/45 mb-1 block">Voice</label>
+                    <label className="text-[12px] text-white/50 mb-1 block">Voice</label>
                     <select
                       value={selectedEdgeVoice.id}
                       onChange={(e) => applyEdgeVoice(e.target.value)}
@@ -1077,9 +1205,9 @@ const AITab: React.FC = () => {
               )}
 
               {speakModelValue.startsWith('elevenlabs-') && (
-                <div className="bg-white/[0.02] rounded-md border border-white/[0.06] p-2.5 space-y-2.5">
+                <div className="pt-2 border-t border-white/[0.08] space-y-2.5">
                   <div>
-                    <p className="text-[11px] text-white/45 mb-1">ElevenLabs Model</p>
+                    <p className="text-[12px] text-white/50 mb-1">ElevenLabs Model</p>
                     <select
                       value={speakModelValue}
                       onChange={(e) =>
@@ -1095,7 +1223,18 @@ const AITab: React.FC = () => {
                   </div>
 
                   <div>
-                    <p className="text-[11px] text-white/45 mb-1">ElevenLabs Voice</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[12px] text-white/50">ElevenLabs Voice</p>
+                      {elevenLabsVoicesLoading && (
+                        <span className="text-[10px] text-white/35 flex items-center gap-1">
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          Fetching your voices...
+                        </span>
+                      )}
+                    </div>
+                    {elevenLabsVoicesError && (
+                      <p className="text-[10px] text-amber-300 mb-1.5">{elevenLabsVoicesError}</p>
+                    )}
                     <select
                       value={selectedElevenLabsVoiceId}
                       onChange={(e) =>
@@ -1104,12 +1243,54 @@ const AITab: React.FC = () => {
                         })}
                       className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-2 text-sm text-white/90 focus:outline-none focus:border-blue-500/50"
                     >
-                      {ELEVENLABS_VOICES.map((voice) => (
-                        <option key={voice.id} value={voice.id}>
-                          {voice.label}
-                        </option>
-                      ))}
+                      {ELEVENLABS_VOICES.length > 0 && (
+                        <optgroup label="Built-in Voices">
+                          {ELEVENLABS_VOICES.map((voice) => (
+                            <option key={voice.id} value={voice.id}>
+                              {voice.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {elevenLabsVoices.filter(v => v.category === 'premade' && !ELEVENLABS_VOICES.some(bv => bv.id === v.id)).length > 0 && (
+                        <optgroup label="Additional Premade Voices">
+                          {elevenLabsVoices
+                            .filter(v => v.category === 'premade' && !ELEVENLABS_VOICES.some(bv => bv.id === v.id))
+                            .map((voice) => (
+                              <option key={voice.id} value={voice.id}>
+                                {voice.name}
+                              </option>
+                            ))}
+                        </optgroup>
+                      )}
+                      {elevenLabsVoices.filter(v => v.category === 'cloned' || v.category === 'generated').length > 0 && (
+                        <optgroup label="Your Custom Voices (Cloned/Generated)">
+                          {elevenLabsVoices
+                            .filter(v => v.category === 'cloned' || v.category === 'generated')
+                            .map((voice) => (
+                              <option key={voice.id} value={voice.id}>
+                                {voice.name} {voice.labels?.accent ? `(${voice.labels.accent})` : ''}
+                              </option>
+                            ))}
+                        </optgroup>
+                      )}
+                      {elevenLabsVoices.filter(v => v.category === 'professional').length > 0 && (
+                        <optgroup label="Professional Voice Clones">
+                          {elevenLabsVoices
+                            .filter(v => v.category === 'professional')
+                            .map((voice) => (
+                              <option key={voice.id} value={voice.id}>
+                                {voice.name}
+                              </option>
+                            ))}
+                        </optgroup>
+                      )}
                     </select>
+                    {elevenLabsVoices.length > 0 && (
+                      <p className="text-[10px] text-white/35 mt-1">
+                        {elevenLabsVoices.length} custom voice{elevenLabsVoices.length !== 1 ? 's' : ''} available from your ElevenLabs account
+                      </p>
+                    )}
                   </div>
 
                   <button
@@ -1118,8 +1299,8 @@ const AITab: React.FC = () => {
                     onClick={async () => {
                       try {
                         setPreviewingVoice(true);
-                        const selectedVoice = ELEVENLABS_VOICES.find((v) => v.id === selectedElevenLabsVoiceId);
-                        const intro = `Hi, this is ${selectedVoice?.label || 'my voice'} from ElevenLabs in SuperCmd.`;
+                        const selectedVoice = ELEVENLABS_VOICES.find((v) => v.id === selectedElevenLabsVoiceId) || elevenLabsVoices.find((v) => v.id === selectedElevenLabsVoiceId);
+                        const intro = `Hi, this is ${selectedVoice?.label || selectedVoice?.name || 'my voice'} from ElevenLabs in SuperCmd.`;
                         await window.electron.speakPreviewVoice({
                           provider: 'elevenlabs',
                           model: speakModelValue,
@@ -1142,22 +1323,25 @@ const AITab: React.FC = () => {
                     SuperCmd stores this as <code className="text-white/55">{`${speakModelValue}@${selectedElevenLabsVoiceId}`}</code>.
                   </p>
                   {!ai.elevenlabsApiKey && (
-                    <p className="text-[11px] text-amber-300 mt-1.5">Add ElevenLabs API key in API Keys & Models.</p>
+                    <p className="text-[11px] text-amber-300 mt-1.5">Add ElevenLabs API key in API Keys.</p>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="bg-white/[0.03] rounded-lg border border-white/[0.06] p-3">
-              <h3 className="text-sm font-medium text-white/90">Notes</h3>
-              <div className="mt-2 space-y-1.5 text-[11px] text-white/45 leading-relaxed">
+            <div className="px-4 py-3.5 md:px-5">
+              <h3 className="text-[13px] font-semibold text-white/95">Notes</h3>
+              <div className="mt-2 space-y-1.5 text-[12px] text-white/50 leading-relaxed">
                 <p>Whisper default is Native for fast local dictation.</p>
                 <p>Speak default is Edge TTS with per-language male/female voice selection.</p>
                 <p>English voice options are intentionally limited to US and UK variants.</p>
+                <p>ElevenLabs custom voices (cloned/generated) will appear automatically when your API key is configured.</p>
               </div>
             </div>
           </div>
+          </>
         )}
+      </div>
       </div>
     </div>
   );

@@ -154,6 +154,16 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
   const [spotlightReplaceStatus, setSpotlightReplaceStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
+  const openedPermissionsRef = useRef<Record<string, boolean>>({});
+  const requestedPermissionsRef = useRef<Record<string, boolean>>({});
+
+  useEffect(() => {
+    openedPermissionsRef.current = openedPermissions;
+  }, [openedPermissions]);
+
+  useEffect(() => {
+    requestedPermissionsRef.current = requestedPermissions;
+  }, [requestedPermissions]);
 
   useEffect(() => {
     setHasValidShortcut(!requireWorkingShortcut);
@@ -208,14 +218,32 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
         setOpenedPermissions((prev) => {
           const next = { ...prev };
           for (const [id, granted] of Object.entries(statuses)) {
-            if (granted) next[id] = true;
+            if (!granted) continue;
+            // Avoid auto-marking Input Monitoring unless the user has already
+            // initiated that row in onboarding.
+            if (
+              id === 'input-monitoring' &&
+              !openedPermissionsRef.current[id] &&
+              !requestedPermissionsRef.current[id]
+            ) {
+              continue;
+            }
+            next[id] = true;
           }
           return next;
         });
         setRequestedPermissions((prev) => {
           const next = { ...prev };
           for (const [id, granted] of Object.entries(statuses)) {
-            if (granted) next[id] = true;
+            if (!granted) continue;
+            if (
+              id === 'input-monitoring' &&
+              !openedPermissionsRef.current[id] &&
+              !requestedPermissionsRef.current[id]
+            ) {
+              continue;
+            }
+            next[id] = true;
           }
           return next;
         });
@@ -860,6 +888,11 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                         {!isDone && (target.id === 'microphone' || target.id === 'speech-recognition') ? (
                           <p className="mt-1 text-[11px] text-white/52">
                             If this opens Privacy & Security, select the matching access row and press request again.
+                          </p>
+                        ) : null}
+                        {target.id === 'input-monitoring' ? (
+                          <p className="mt-1 text-[11px] text-amber-100/85">
+                            If SuperCmd is not visible here, click + and manually add SuperCmd from the Applications folder.
                           </p>
                         ) : null}
                         {!isDone && note ? (

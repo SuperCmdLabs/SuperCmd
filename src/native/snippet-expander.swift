@@ -24,19 +24,31 @@ let keywords = Set(parsed.map { $0.lowercased() })
 let sortedKeywords = Array(keywords).sorted { $0.count > $1.count }
 let maxKeywordLength = max(sortedKeywords.first?.count ?? 1, 1)
 
-let allowedChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
-let delimiters = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".,!?;:()[]{}<>/\\|@#$%^&*+=`~\"'"))
+var allowedChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+var delimiters = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".,!?;:()[]{}<>/\\|@#$%^&*+=`~\"'"))
+
+// Allow any symbol characters that appear in configured keywords (e.g. ";email").
+// If a character is part of a keyword, it must not be treated as a delimiter.
+for keyword in keywords {
+  for scalar in keyword.unicodeScalars {
+    if CharacterSet.whitespacesAndNewlines.contains(scalar) { continue }
+    allowedChars.insert(scalar)
+    delimiters.remove(scalar)
+  }
+}
 
 var currentToken = ""
 
 func isAllowedTokenChar(_ char: Character) -> Bool {
-  guard let scalar = char.unicodeScalars.first, char.unicodeScalars.count == 1 else { return false }
-  return allowedChars.contains(scalar)
+  let scalars = char.unicodeScalars
+  if scalars.isEmpty { return false }
+  return scalars.allSatisfy { allowedChars.contains($0) }
 }
 
 func isDelimiter(_ char: Character) -> Bool {
-  guard let scalar = char.unicodeScalars.first, char.unicodeScalars.count == 1 else { return false }
-  return delimiters.contains(scalar)
+  let scalars = char.unicodeScalars
+  if scalars.isEmpty { return false }
+  return scalars.allSatisfy { delimiters.contains($0) }
 }
 
 func emit(keyword: String, delimiter: String) {

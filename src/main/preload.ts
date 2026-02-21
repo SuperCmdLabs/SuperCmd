@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('electron', {
   executeCommand: (commandId: string): Promise<boolean> =>
     ipcRenderer.invoke('execute-command', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
+  openDevTools: (): Promise<boolean> => ipcRenderer.invoke('open-devtools'),
   closePromptWindow: (): Promise<void> => ipcRenderer.invoke('close-prompt-window'),
   setLauncherMode: (mode: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt'): Promise<void> =>
     ipcRenderer.invoke('set-launcher-mode', mode),
@@ -66,6 +67,9 @@ contextBridge.exposeInMainWorld('electron', {
   },
   setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean): void => {
     ipcRenderer.send('set-detached-overlay-state', { overlay, visible });
+  },
+  setWhisperIgnoreMouseEvents: (ignore: boolean): void => {
+    ipcRenderer.send('whisper-ignore-mouse-events', { ignore });
   },
   onWhisperStopAndClose: (callback: () => void) => {
     const listener = () => callback();
@@ -137,6 +141,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('speak-preview-voice', payload),
   edgeTtsListVoices: (): Promise<Array<{ id: string; label: string; languageCode: string; languageLabel: string; gender: 'female' | 'male'; style?: string }>> =>
     ipcRenderer.invoke('edge-tts-list-voices'),
+  elevenLabsListVoices: (): Promise<{ voices: Array<{ id: string; name: string; category: string; description?: string; labels?: Record<string, string>; previewUrl?: string }>; error?: string }> =>
+    ipcRenderer.invoke('elevenlabs-list-voices'),
 
   // ─── Settings ───────────────────────────────────────────────────
   getSettings: (): Promise<any> => ipcRenderer.invoke('get-settings'),
@@ -235,7 +241,7 @@ contextBridge.exposeInMainWorld('electron', {
   updateCommandHotkey: (
     commandId: string,
     hotkey: string
-  ): Promise<{ success: boolean; error?: 'duplicate' | 'unavailable' }> =>
+  ): Promise<{ success: boolean; error?: 'duplicate' | 'unavailable'; conflictCommandId?: string }> =>
     ipcRenderer.invoke('update-command-hotkey', commandId, hotkey),
   toggleCommandEnabled: (
     commandId: string,
@@ -244,7 +250,7 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('toggle-command-enabled', commandId, enabled),
   openSettings: (): Promise<void> => ipcRenderer.invoke('open-settings'),
   openSettingsTab: (
-    tab: 'general' | 'ai' | 'extensions',
+    tab: 'general' | 'ai' | 'extensions' | 'advanced',
     target?: { extensionName?: string; commandName?: string }
   ): Promise<void> =>
     ipcRenderer.invoke('open-settings-tab', { tab, target }),
@@ -254,6 +260,13 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('open-custom-scripts-folder'),
   onSettingsTabChanged: (callback: (payload: any) => void) => {
     ipcRenderer.on('settings-tab-changed', (_event, payload) => callback(payload));
+  },
+  onSettingsUpdated: (callback: (settings: any) => void) => {
+    const listener = (_event: any, settings: any) => callback(settings);
+    ipcRenderer.on('settings-updated', listener);
+    return () => {
+      ipcRenderer.removeListener('settings-updated', listener);
+    };
   },
 
   // ─── Extension Runner ────────────────────────────────────────────
@@ -291,6 +304,13 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('install-extension', name),
   uninstallExtension: (name: string): Promise<boolean> =>
     ipcRenderer.invoke('uninstall-extension', name),
+  onExtensionsChanged: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('extensions-updated', listener);
+    return () => {
+      ipcRenderer.removeListener('extensions-updated', listener);
+    };
+  },
 
   // ─── Extension APIs (for @raycast/api compatibility) ─────────────
 
@@ -433,7 +453,7 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('clipboard-paste-item', id),
   clipboardSetEnabled: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke('clipboard-set-enabled', enabled),
-  clipboardWrite: (payload: { text?: string; html?: string }): Promise<boolean> =>
+  clipboardWrite: (payload: { text?: string; html?: string; file?: string }): Promise<boolean> =>
     ipcRenderer.invoke('clipboard-write', payload),
   clipboardReadText: (): Promise<string> =>
     ipcRenderer.invoke('clipboard-read-text'),
@@ -493,7 +513,7 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('prompt-apply-generated-text', payload),
 
   // ─── Native Helpers ─────────────────────────────────────────────
-  nativePickColor: (): Promise<{ red: number; green: number; blue: number; alpha: number } | null> =>
+  nativePickColor: (): Promise<{ red: number; green: number; blue: number; alpha: number; colorSpace: string } | null> =>
     ipcRenderer.invoke('native-pick-color'),
   pickFiles: (options?: {
     allowMultipleSelection?: boolean;
@@ -547,8 +567,11 @@ contextBridge.exposeInMainWorld('electron', {
     error?: string;
   }> =>
     ipcRenderer.invoke('whisper-ensure-speech-recognition-access', options),
-  whisperStartNative: (language?: string): Promise<void> =>
-    ipcRenderer.invoke('whisper-start-native', language),
+  whisperStartNative: (
+    language?: string,
+    options?: { singleUtterance?: boolean }
+  ): Promise<void> =>
+    ipcRenderer.invoke('whisper-start-native', language, options),
   whisperStopNative: (): Promise<void> =>
     ipcRenderer.invoke('whisper-stop-native'),
   onWhisperNativeChunk: (callback: (data: { transcript?: string; isFinal?: boolean; error?: string; ready?: boolean; ended?: boolean }) => void) => {

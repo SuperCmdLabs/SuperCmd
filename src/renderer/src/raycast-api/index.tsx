@@ -223,6 +223,28 @@ export enum LaunchType {
 
 // Forward-declared AI availability cache (set asynchronously in the AI section below)
 let _aiAvailableCache: boolean | null = null;
+let _aiAvailabilityRefreshPromise: Promise<boolean> | null = null;
+
+async function refreshAIAvailabilityCache(force = false): Promise<boolean> {
+  if (!force && _aiAvailabilityRefreshPromise) {
+    return _aiAvailabilityRefreshPromise;
+  }
+
+  _aiAvailabilityRefreshPromise = (async () => {
+    try {
+      const available = await (window as any).electron?.aiIsAvailable?.() ?? false;
+      _aiAvailableCache = available;
+      return available;
+    } catch {
+      _aiAvailableCache = false;
+      return false;
+    } finally {
+      _aiAvailabilityRefreshPromise = null;
+    }
+  })();
+
+  return _aiAvailabilityRefreshPromise;
+}
 
 // =====================================================================
 // ─── Environment ────────────────────────────────────────────────────
@@ -245,7 +267,10 @@ export const environment: Record<string, any> = {
     // If checking AI access, use the cached availability
     // Extensions call: environment.canAccess(AI) — the AI object has a Model property
     if (resource && resource.Model && resource.ask) {
-      return _aiAvailableCache ?? false;
+      // Keep this permissive and refresh in the background so stale cache values
+      // don't block AI features immediately after settings updates.
+      void refreshAIAvailabilityCache();
+      return true;
     }
     return true;
   },
@@ -436,6 +461,24 @@ let _clearSearchBarCallback: (() => void) | null = null;
 
 export function clearSearchBar(options?: { forceScrollToTop?: boolean }): Promise<void> {
   _clearSearchBarCallback?.();
+  try {
+    const candidates = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[data-supercmd-search-input="true"]')
+    );
+    const visible = candidates.find((input) => {
+      if (!input || input.disabled) return false;
+      return input.getClientRects().length > 0;
+    });
+    const target = visible || candidates[0] || null;
+    if (target && target.value !== '') {
+      const descriptor = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value'
+      );
+      descriptor?.set?.call(target, '');
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  } catch {}
   return Promise.resolve();
 }
 
@@ -458,27 +501,83 @@ export namespace Clipboard {
   }
 }
 
+const CLIPBOARD_MEDIA_PATH_REGEX = /\.(gif|png|jpe?g|webp|bmp|tiff?|heic|heif|mp4|mov|m4v)$/i;
+
+async function inferClipboardFilePath(rawValue: string, electron: any): Promise<string> {
+  const value = String(rawValue || '').trim();
+  if (!value) return '';
+
+  const maybePathLike =
+    value.startsWith('/') ||
+    value.startsWith('~/') ||
+    value.startsWith('file://');
+  if (!maybePathLike) return '';
+
+  let candidate = value;
+  if (candidate.startsWith('file://')) {
+    try {
+      candidate = decodeURIComponent(candidate.replace(/^file:\/\//i, ''));
+      if (!candidate.startsWith('/')) candidate = `/${candidate}`;
+    } catch {}
+  }
+
+  if (!CLIPBOARD_MEDIA_PATH_REGEX.test(candidate)) return '';
+
+  try {
+    const exists = await electron?.fileExists?.(candidate);
+    if (exists) return candidate;
+  } catch {}
+
+  if (candidate.startsWith('~/')) {
+    try {
+      const homeDir = String(electron?.homeDir || '').trim();
+      if (homeDir) {
+        const expanded = `${homeDir}/${candidate.slice(2)}`;
+        const exists = await electron?.fileExists?.(expanded);
+        if (exists) return expanded;
+      }
+    } catch {}
+  }
+
+  return '';
+}
+
 export const Clipboard = {
   async copy(
     content: string | number | Clipboard.Content,
     options?: Clipboard.CopyOptions
   ): Promise<void> {
+    const electron = (window as any).electron;
     let text = '';
     let html = '';
+    let file = '';
 
     // Parse content
     if (typeof content === 'string' || typeof content === 'number') {
       text = String(content);
     } else if (typeof content === 'object') {
       text = content.text || content.file || '';
+      file = content.file || '';
       html = content.html || '';
+    }
+
+    if (!file && !html && text) {
+      const inferredFile = await inferClipboardFilePath(text, electron);
+      if (inferredFile) file = inferredFile;
     }
 
     let copied = false;
 
     try {
-      // Copy to clipboard
-      if (html) {
+      // File payloads should stay as file content (not plain text paths).
+      if (file) {
+        if (electron?.clipboardWrite) {
+          copied = await electron.clipboardWrite({ text, html, file }) || false;
+        } else {
+          await navigator.clipboard.writeText(file);
+          copied = true;
+        }
+      } else if (html) {
         // For HTML content, we need to use ClipboardItem
         const blob = new Blob([html], { type: 'text/html' });
         const textBlob = new Blob([text], { type: 'text/plain' });
@@ -495,8 +594,7 @@ export const Clipboard = {
     } catch (e) {
       // Fallback for unfocused renderer documents.
       try {
-        const electron = (window as any).electron;
-        copied = await electron?.clipboardWrite?.({ text, html }) || false;
+        copied = await electron?.clipboardWrite?.({ text, html, file }) || false;
       } catch {}
       if (!copied) {
         console.error('Clipboard copy error:', e);
@@ -516,18 +614,25 @@ export const Clipboard = {
       const electron = (window as any).electron;
       let text = '';
       let html = '';
+      let file = '';
 
       if (typeof content === 'string' || typeof content === 'number') {
         text = String(content);
       } else if (content && typeof content === 'object') {
         text = content.text || content.file || '';
+        file = content.file || '';
         html = content.html || '';
+      }
+
+      if (!file && !html && text) {
+        const inferredFile = await inferClipboardFilePath(text, electron);
+        if (inferredFile) file = inferredFile;
       }
 
       // Prefer main-process paste flow: hides SuperCmd first and pastes into
       // the previously focused app/editor. This prevents pasting into the
       // launcher's own search field.
-      if (!html && electron?.pasteText) {
+      if (!html && !file && electron?.pasteText) {
         const pasted = await electron.pasteText(text);
         if (pasted) return;
       }
@@ -1020,12 +1125,21 @@ function ensureAIListeners(): void {
 
 // Initialize AI availability cache
 (async () => {
-  try {
-    _aiAvailableCache = await (window as any).electron?.aiIsAvailable?.() ?? false;
-  } catch {
-    _aiAvailableCache = false;
-  }
+  await refreshAIAvailabilityCache(true);
 })();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', () => {
+    void refreshAIAvailabilityCache(true);
+  });
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        void refreshAIAvailabilityCache(true);
+      }
+    });
+  }
+}
 
 export const AI = {
   Model: AIModel,
@@ -1039,6 +1153,7 @@ export const AI = {
     }
   ): StreamingPromise {
     ensureAIListeners();
+    void refreshAIAvailabilityCache();
 
     const sp = new StreamingPromise();
     const requestId = nextRequestId();
@@ -1313,6 +1428,7 @@ const {
 
 export const Action = actionRuntime.Action;
 export const ActionPanel = actionRuntime.ActionPanel;
+export const InternalActionPanelOverlay = ActionPanelOverlay;
 
 // =====================================================================
 // ─── List ───────────────────────────────────────────────────────────

@@ -24,6 +24,23 @@ export interface Snippet {
 }
 
 let snippetsCache: Snippet[] | null = null;
+const INVALID_SNIPPET_KEYWORD_CHARS = /["'`]/;
+
+function normalizeSnippetKeywordStored(value: unknown): string | undefined {
+  const keyword = typeof value === 'string' ? value.trim() : '';
+  if (!keyword) return undefined;
+  if (INVALID_SNIPPET_KEYWORD_CHARS.test(keyword)) return undefined;
+  return keyword;
+}
+
+function normalizeSnippetKeywordInput(value: unknown): string | undefined {
+  const keyword = typeof value === 'string' ? value.trim() : '';
+  if (!keyword) return undefined;
+  if (INVALID_SNIPPET_KEYWORD_CHARS.test(keyword)) {
+    throw new Error('Snippet keyword cannot include ", \', or ` characters.');
+  }
+  return keyword;
+}
 
 // ─── Paths ──────────────────────────────────────────────────────────
 
@@ -52,7 +69,7 @@ function loadFromDisk(): Snippet[] {
           id: String(item.id || crypto.randomUUID()),
           name: String(item.name || ''),
           content: String(item.content || ''),
-          keyword: typeof item.keyword === 'string' && item.keyword.trim() ? item.keyword.trim() : undefined,
+          keyword: normalizeSnippetKeywordStored(item.keyword),
           pinned: Boolean(item.pinned),
           createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
           updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : Date.now(),
@@ -112,12 +129,13 @@ export function getSnippetById(id: string): Snippet | null {
 
 export function createSnippet(data: { name: string; content: string; keyword?: string }): Snippet {
   if (!snippetsCache) snippetsCache = loadFromDisk();
+  const normalizedKeyword = normalizeSnippetKeywordInput(data.keyword);
 
   const snippet: Snippet = {
     id: crypto.randomUUID(),
     name: data.name,
     content: data.content,
-    keyword: data.keyword || undefined,
+    keyword: normalizedKeyword,
     pinned: false,
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -140,7 +158,7 @@ export function updateSnippet(
   const snippet = snippetsCache[index];
   if (data.name !== undefined) snippet.name = data.name;
   if (data.content !== undefined) snippet.content = data.content;
-  if (data.keyword !== undefined) snippet.keyword = data.keyword || undefined;
+  if (data.keyword !== undefined) snippet.keyword = normalizeSnippetKeywordInput(data.keyword);
   if (data.pinned !== undefined) snippet.pinned = Boolean(data.pinned);
   snippet.updatedAt = Date.now();
 
@@ -386,18 +404,31 @@ export async function importSnippetsFromFile(parentWindow?: BrowserWindow): Prom
   try {
     const data = fs.readFileSync(result.filePaths[0], 'utf-8');
     const parsed = JSON.parse(data);
-
+    // Normalised shape after field remapping
     let snippetsToImport: Array<{ name: string; content: string; keyword?: string; pinned?: boolean }> = [];
 
-    // Support our export format
+    // Collect the raw items from whichever format was used
+    let rawItems: any[] = [];
     if (parsed.type === 'snippets' && Array.isArray(parsed.snippets)) {
-      snippetsToImport = parsed.snippets;
-    }
-    // Also support a plain array
-    else if (Array.isArray(parsed)) {
-      snippetsToImport = parsed;
+      // SuperCmd native export: { type: 'snippets', snippets: [...] }
+      rawItems = parsed.snippets;
+    } else if (Array.isArray(parsed)) {
+      // Plain array — covers both SuperCmd and Raycast exports
+      rawItems = parsed;
     } else {
       return { imported: 0, skipped: 0 };
+    }
+
+    // Normalise field names so Raycast exports ("text") map to our schema ("content")
+    for (const item of rawItems) {
+      const content = item.content ?? item.text ?? '';
+      if (!item.name || !content) continue;
+      snippetsToImport.push({
+        name: item.name,
+        content,
+        keyword: normalizeSnippetKeywordStored(item.keyword),
+        pinned: Boolean(item.pinned),
+      });
     }
 
     if (!snippetsCache) snippetsCache = loadFromDisk();
@@ -406,14 +437,11 @@ export async function importSnippetsFromFile(parentWindow?: BrowserWindow): Prom
     let skipped = 0;
 
     for (const item of snippetsToImport) {
-      if (!item.name || !item.content) {
-        skipped++;
-        continue;
-      }
-
-      // Skip duplicates by name
+      // Deduplicate by name (case-insensitive) or by keyword
       const exists = snippetsCache.some(
-        (s) => s.name.toLowerCase() === item.name.toLowerCase()
+        (s) =>
+          s.name.toLowerCase() === item.name.toLowerCase() ||
+          (item.keyword && s.keyword && s.keyword.toLowerCase() === item.keyword.toLowerCase())
       );
       if (exists) {
         skipped++;
@@ -424,7 +452,7 @@ export async function importSnippetsFromFile(parentWindow?: BrowserWindow): Prom
         id: crypto.randomUUID(),
         name: item.name,
         content: item.content,
-        keyword: item.keyword || undefined,
+        keyword: item.keyword,
         pinned: Boolean(item.pinned),
         createdAt: Date.now(),
         updatedAt: Date.now(),

@@ -98,7 +98,7 @@ const WhisperOnboardingExtension: React.FC<WhisperOnboardingExtensionProps> = ({
           </div>
         </div>
 
-        <div className="px-4 py-3.5 border-t border-white/[0.06] flex items-center justify-between" style={{ background: 'rgba(28,28,32,0.90)' }}>
+        <div className="sc-glass-footer px-4 py-3.5 flex items-center justify-between">
           <span className="text-xs text-white/45">Whisper stays near the bottom when active.</span>
           <button
             onClick={onComplete}

@@ -70,6 +70,44 @@ function prefersDarkMode(): boolean {
   }
 }
 
+function normalizeFileIconPath(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  if (raw.startsWith('file://')) {
+    try {
+      const filePath = decodeURIComponent(new URL(raw).pathname || '');
+      return filePath || null;
+    } catch {
+      return null;
+    }
+  }
+  if (/^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('\\\\')) {
+    return raw;
+  }
+  return raw.startsWith('/') ? raw : null;
+}
+
+function pickFileIconPath(iconLike: unknown): string | null {
+  if (!iconLike || typeof iconLike !== 'object') return null;
+  const root = iconLike as Record<string, unknown>;
+
+  const direct = normalizeFileIconPath(root.fileIcon);
+  if (direct) return direct;
+
+  if (root.source && typeof root.source === 'object') {
+    const sourceFileIcon = normalizeFileIconPath((root.source as Record<string, unknown>).fileIcon);
+    if (sourceFileIcon) return sourceFileIcon;
+  }
+
+  if (root.value && typeof root.value === 'object') {
+    const valueFileIcon = normalizeFileIconPath((root.value as Record<string, unknown>).fileIcon);
+    if (valueFileIcon) return valueFileIcon;
+  }
+
+  return null;
+}
+
 function pickImageSourceValue(source: unknown): string | null {
   if (typeof source === 'string') return source;
   if (!isThemeAwareSourceObject(source)) return null;
@@ -104,8 +142,9 @@ export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?
       return <img src={resolved} className={className + ' rounded'} alt="" />;
     }
 
-    if (icon.startsWith('/') && (icon.endsWith('.icns') || !/\.[a-z0-9]+$/i.test(icon))) {
-      return <FileIcon filePath={icon} className={className} />;
+    const absolutePath = normalizeFileIconPath(icon);
+    if (absolutePath) {
+      return <FileIcon filePath={absolutePath} className={className} />;
     }
 
     const phosphor = renderPhosphorIcon(icon, className);
@@ -119,6 +158,11 @@ export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?
   }
 
   if (typeof icon === 'object') {
+    const fileIconPath = pickFileIconPath(icon);
+    if (fileIconPath) {
+      return <FileIcon filePath={fileIconPath} className={className} />;
+    }
+
     const source = icon.source;
     const fallback = icon.fallback;
     const tintColor = resolveTintColor(icon.tintColor);

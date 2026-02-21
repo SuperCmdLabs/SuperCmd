@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { formatShortcutForDisplay } from './utils/hyper-key';
 
 interface SuperCmdWhisperProps {
   onClose: () => void;
@@ -32,13 +33,7 @@ const NATIVE_FINAL_DRAIN_TIMEOUT_MS = 3000;
 const PUSH_TO_TALK_MODE = true;
 
 function formatShortcutLabel(shortcut: string): string {
-  return String(shortcut || '')
-    .replace(/Command/g, '\u2318')
-    .replace(/Control/g, '\u2303')
-    .replace(/Alt/g, '\u2325')
-    .replace(/Shift/g, '\u21E7')
-    .replace(/Period/g, '.')
-    .replace(/\+/g, ' ');
+  return formatShortcutForDisplay(shortcut).replace(/ \+ /g, ' ');
 }
 
 function normalizeTranscript(value: string): string {
@@ -601,7 +596,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     if (!nextRaw) return;
 
     if (PUSH_TO_TALK_MODE) {
-      combinedTranscriptRef.current = mergeTranscriptChunks(combinedTranscriptRef.current, nextRaw);
+      combinedTranscriptRef.current = nextRaw;
       nativeRawAnchorRef.current = nextRaw;
       return;
     }
@@ -1343,7 +1338,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
             });
             if (normalized) {
               if (PUSH_TO_TALK_MODE) {
-                combinedTranscriptRef.current = mergeTranscriptChunks(combinedTranscriptRef.current, normalized);
+                // In push-to-talk we want a single evolving snapshot for the
+                // current utterance, not merged segments from partial rewrites.
+                combinedTranscriptRef.current = normalized;
               }
               if (data.isFinal && !PUSH_TO_TALK_MODE) {
                 stopNativeProcessTimer();
@@ -1357,7 +1354,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
         // Start the native recognizer process
         try {
-          await window.electron.whisperStartNative(sessionConfig.language);
+          await window.electron.whisperStartNative(sessionConfig.language, {
+            singleUtterance: PUSH_TO_TALK_MODE,
+          });
           if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) {
             dispose();
             if (nativeChunkDisposerRef.current === dispose) {
@@ -1488,7 +1487,11 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
   return createPortal(
     <div className="whisper-widget-host">
-      <div className="whisper-widget-shell">
+      <div
+        className="whisper-widget-shell"
+        onMouseEnter={() => window.electron.setWhisperIgnoreMouseEvents(false)}
+        onMouseLeave={() => window.electron.setWhisperIgnoreMouseEvents(true)}
+      >
         {bannerText ? (
           <div className="whisper-coachmark-inline">{bannerText}</div>
         ) : null}

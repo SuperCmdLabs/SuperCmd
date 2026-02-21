@@ -25,6 +25,34 @@ func emit(_ payload: [String: Any]) {
 
 let checkOnly = CommandLine.arguments.contains("--check")
 
+let preflightGranted: Bool? = {
+    if #available(macOS 10.15, *) {
+        return CGPreflightListenEventAccess()
+    }
+    return nil
+}()
+
+if checkOnly, let granted = preflightGranted {
+    emit(["granted": granted])
+    exit(0)
+}
+
+if let granted = preflightGranted, granted {
+    emit(["granted": true])
+    if checkOnly {
+        exit(0)
+    }
+    // Already granted — no need to rely on event tap probing.
+    exit(0)
+}
+
+if !checkOnly {
+    if #available(macOS 10.15, *) {
+        // Ask macOS to register/request listen-event access for this process.
+        _ = CGRequestListenEventAccess()
+    }
+}
+
 let eventMask: CGEventMask =
     (1 << CGEventType.keyDown.rawValue) |
     (1 << CGEventType.keyUp.rawValue)

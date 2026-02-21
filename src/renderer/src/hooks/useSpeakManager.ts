@@ -15,9 +15,14 @@
  */
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import type { EdgeTtsVoice } from '../../types/electron';
+import type { EdgeTtsVoice, ElevenLabsVoice } from '../../types/electron';
 import { buildReadVoiceOptions, type ReadVoiceOption } from '../utils/command-helpers';
 import { useDetachedPortalWindow } from '../useDetachedPortalWindow';
+import {
+  clearElevenLabsVoiceCache,
+  getCachedElevenLabsVoices,
+  setCachedElevenLabsVoices,
+} from '../utils/voice-cache';
 
 const ELEVENLABS_VOICES: Array<{ id: string; label: string }> = [
   { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel' },
@@ -95,6 +100,7 @@ export function useSpeakManager({
     rate: '+0%',
   });
   const [edgeTtsVoices, setEdgeTtsVoices] = useState<EdgeTtsVoice[]>([]);
+  const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
   const [configuredEdgeTtsVoice, setConfiguredEdgeTtsVoice] = useState('en-US-EricNeural');
   const [configuredTtsModel, setConfiguredTtsModel] = useState('edge-tts');
 
@@ -155,6 +161,90 @@ export function useSpeakManager({
     };
   }, []);
 
+  // ElevenLabs custom voice list fetch (with shared cache)
+  useEffect(() => {
+    let disposed = false;
+    // Only fetch when using ElevenLabs
+    if (!String(configuredTtsModel || '').startsWith('elevenlabs-')) {
+      setElevenLabsVoices([]);
+      return;
+    }
+    
+    // Check shared cache first
+    const cached = getCachedElevenLabsVoices();
+    if (cached) {
+      setElevenLabsVoices(cached);
+      return;
+    }
+    
+    window.electron.elevenLabsListVoices()
+      .then((result) => {
+        if (disposed) return;
+        if (result.error) {
+          clearElevenLabsVoiceCache();
+          setElevenLabsVoices([]);
+          return;
+        }
+        const nextVoices = Array.isArray(result.voices) ? result.voices : [];
+        setElevenLabsVoices(nextVoices);
+        // Update shared cache only with non-empty successful results.
+        setCachedElevenLabsVoices(nextVoices);
+      })
+      .catch(() => {
+        if (!disposed) {
+          clearElevenLabsVoiceCache();
+          setElevenLabsVoices([]);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [configuredTtsModel]);
+
+  // Sync configured voice from settings whenever they change
+  useEffect(() => {
+    let disposed = false;
+    const syncFromSettings = async () => {
+      try {
+        const settings = await window.electron.getSettings();
+        if (disposed) return;
+        
+        const ttsModel = String(settings.ai?.textToSpeechModel || 'edge-tts');
+        const edgeVoice = String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural');
+        
+        setConfiguredTtsModel(ttsModel);
+        setConfiguredEdgeTtsVoice(edgeVoice);
+        
+        // Also sync speakOptions to match settings
+        const usingElevenLabs = ttsModel.startsWith('elevenlabs-');
+        const targetVoice = usingElevenLabs
+          ? parseElevenLabsSpeakModel(ttsModel).voiceId
+          : edgeVoice;
+        
+        if (targetVoice && targetVoice !== speakOptions.voice) {
+          const next = await window.electron.speakUpdateOptions({
+            voice: targetVoice,
+            restartCurrent: false,
+          });
+          setSpeakOptions(next);
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+    
+    // Initial sync
+    syncFromSettings();
+    
+    // Poll for settings changes every 2 seconds while widget is relevant
+    const interval = setInterval(syncFromSettings, 2000);
+    
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   // Auto-sync configured voice when speak view opens
   useEffect(() => {
     if (!showSpeak) {
@@ -181,14 +271,29 @@ export function useSpeakManager({
   const readVoiceOptions = useMemo(
     () => {
       if (String(configuredTtsModel || '').startsWith('elevenlabs-')) {
-        return ELEVENLABS_VOICES.map((voice) => ({
+        // Start with built-in voices
+        const builtInOptions = ELEVENLABS_VOICES.map((voice) => ({
           value: voice.id,
-          label: `${voice.label} (ElevenLabs)`,
+          label: voice.label, // Short label for widget
         }));
+
+        // Add custom voices from ElevenLabs account - use short name only
+        const customVoices = elevenLabsVoices
+          .filter((v) => !ELEVENLABS_VOICES.some((bv) => bv.id === v.id))
+          .map((voice) => {
+            // Extract just the name (remove description after " - ")
+            const shortName = voice.name.split(' - ')[0].trim();
+            return {
+              value: voice.id,
+              label: shortName,
+            };
+          });
+
+        return [...builtInOptions, ...customVoices];
       }
       return buildReadVoiceOptions(edgeTtsVoices, speakOptions.voice, configuredEdgeTtsVoice);
     },
-    [configuredTtsModel, edgeTtsVoices, speakOptions.voice, configuredEdgeTtsVoice]
+    [configuredTtsModel, edgeTtsVoices, elevenLabsVoices, speakOptions.voice, configuredEdgeTtsVoice]
   );
 
   // ── Callbacks ──────────────────────────────────────────────────────
@@ -213,11 +318,19 @@ export function useSpeakManager({
       return;
     }
 
-    const next = await window.electron.speakUpdateOptions({
-      voice,
-      restartCurrent: true,
-    });
-    setSpeakOptions(next);
+    // Edge TTS: save to settings and update runtime
+    try {
+      const settings = await window.electron.getSettings();
+      const updated = await window.electron.saveSettings({
+        ai: { ...settings.ai, edgeTtsVoice: voice },
+      } as any);
+      setConfiguredEdgeTtsVoice(String(updated.ai?.edgeTtsVoice || voice));
+      const next = await window.electron.speakUpdateOptions({
+        voice,
+        restartCurrent: true,
+      });
+      setSpeakOptions(next);
+    } catch {}
   }, [configuredTtsModel]);
 
   const handleSpeakRateChange = useCallback(async (rate: string) => {

@@ -5,6 +5,8 @@
 
 import React, { createContext } from 'react';
 import { getMenuBarRuntimeDeps } from './menubar-runtime-config';
+import { resolveTintColor } from './icon-runtime-assets';
+import { renderPhosphorIconDataUrl, renderPhosphorIconDataUrlForNative } from './icon-runtime-phosphor';
 
 export type MenuBarActionEvent = {
   type: 'left-click' | 'right-click';
@@ -61,7 +63,9 @@ export type MBRegistryAPI = {
 
 export type SerializedMenuBarIcon = {
   iconPath?: string;
+  iconDataUrl?: string;
   iconEmoji?: string;
+  iconTemplate?: boolean;
 };
 
 export const MBRegistryContext = createContext<MBRegistryAPI | null>(null);
@@ -108,9 +112,11 @@ export function nextMenuBarSectionOrder(): number {
 
 function pickMenuBarIconSource(icon: any): string {
   if (!icon || typeof icon !== 'object') return '';
+  if (typeof icon.fileIcon === 'string') return icon.fileIcon;
   if (icon.source !== undefined) {
     if (typeof icon.source === 'string') return icon.source;
     if (icon.source && typeof icon.source === 'object') {
+      if (typeof icon.source.fileIcon === 'string') return icon.source.fileIcon;
       return icon.source.light || icon.source.dark || '';
     }
   }
@@ -120,6 +126,7 @@ function pickMenuBarIconSource(icon: any): string {
 export function toMenuBarIconPayload(icon: any, assetsPath: string): SerializedMenuBarIcon | undefined {
   if (!icon) return undefined;
   const deps = getMenuBarRuntimeDeps();
+  const tintColor = resolveTintColor(icon?.tintColor);
 
   const source = typeof icon === 'object' && icon !== null ? pickMenuBarIconSource(icon) : icon;
   if (typeof source !== 'string' || !source.trim()) return undefined;
@@ -145,6 +152,53 @@ export function toMenuBarIconPayload(icon: any, assetsPath: string): SerializedM
   if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(src) && assetsPath) {
     return { iconPath: `${assetsPath}/${src}` };
   }
+
+  const iconToken = src.replace(/^Icon\./, '');
+  const dataUrl = renderPhosphorIconDataUrl(iconToken, {
+    size: 18,
+    color: tintColor || '#000000',
+  });
+  if (dataUrl) return { iconDataUrl: dataUrl, iconTemplate: !tintColor };
+
+  return undefined;
+}
+
+export async function toMenuBarIconPayloadAsync(icon: any, assetsPath: string): Promise<SerializedMenuBarIcon | undefined> {
+  if (!icon) return undefined;
+  const deps = getMenuBarRuntimeDeps();
+  const tintColor = resolveTintColor(icon?.tintColor);
+
+  const source = typeof icon === 'object' && icon !== null ? pickMenuBarIconSource(icon) : icon;
+  if (typeof source !== 'string' || !source.trim()) return undefined;
+
+  const src = source.trim();
+  if (deps.isEmojiOrSymbol(src)) return { iconEmoji: src };
+
+  if (/^file:\/\//.test(src)) {
+    try {
+      const filePath = decodeURIComponent(new URL(src).pathname);
+      if (filePath) return { iconPath: filePath };
+    } catch {
+      // best-effort
+    }
+  }
+
+  if (src.startsWith('sc-asset://ext-asset')) {
+    const raw = src.slice('sc-asset://ext-asset'.length);
+    return { iconPath: decodeURIComponent(raw) };
+  }
+
+  if (src.startsWith('/')) return { iconPath: src };
+  if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(src) && assetsPath) {
+    return { iconPath: `${assetsPath}/${src}` };
+  }
+
+  const iconToken = src.replace(/^Icon\./, '');
+  const dataUrl = await renderPhosphorIconDataUrlForNative(iconToken, {
+    size: 18,
+    color: tintColor || '#000000',
+  });
+  if (dataUrl) return { iconDataUrl: dataUrl, iconTemplate: !tintColor };
 
   return undefined;
 }

@@ -111,7 +111,7 @@ export function createListRuntime(deps: ListRuntimeDeps) {
       setSelectedIdx(0);
       if (!onSearchTextChange) return;
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-      if (throttle !== false) searchDebounceRef.current = setTimeout(() => onSearchTextChange(value), 300);
+      if (throttle === true) searchDebounceRef.current = setTimeout(() => onSearchTextChange(value), 300);
       else onSearchTextChange(value);
     }, [onSearchTextChange, throttle]);
 
@@ -264,13 +264,13 @@ export function createListRuntime(deps: ListRuntimeDeps) {
         <div className="flex flex-col h-full" onKeyDown={handleKeyDown}>
           <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
             <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg></button>
-            <input ref={inputRef} type="text" placeholder={searchBarPlaceholder || 'Search…'} value={searchText} onChange={(event) => handleSearchChange(event.target.value)} className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[14px] font-light" autoFocus />
+            <input ref={inputRef} data-supercmd-search-input="true" type="text" placeholder={searchBarPlaceholder || 'Search…'} value={searchText} onChange={(event) => handleSearchChange(event.target.value)} className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[14px] font-light" autoFocus />
             {searchBarAccessory && <div className="flex-shrink-0">{searchBarAccessory}</div>}
           </div>
 
           {isShowingDetail ? <div className="flex flex-1 overflow-hidden"><div className="w-1/3 flex flex-col overflow-hidden">{listContent}</div>{detailElement ? <div className="flex-1 border-l border-white/[0.06] overflow-y-auto"><div className="p-4">{detailElement}</div></div> : null}</div> : listContent}
 
-          <div className="flex items-center px-4 py-3 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
+          <div className="sc-glass-footer flex items-center px-4 py-3">
             <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">{footerIcon ? <img src={footerIcon} alt="" className="w-4 h-4 rounded-sm object-contain flex-shrink-0" /> : null}<span className="truncate">{footerTitle}</span></div>
             {primaryAction && <button type="button" onClick={() => primaryAction.execute()} className="flex items-center gap-2 mr-3 text-white hover:text-white/90 transition-colors"><span className="text-white text-xs font-semibold">{primaryAction.title}</span><kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd></button>}
             <button onClick={() => setShowActions(true)} className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"><span className="text-xs font-medium">Actions</span><kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd><kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd></button>

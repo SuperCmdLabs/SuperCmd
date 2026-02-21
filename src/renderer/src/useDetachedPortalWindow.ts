@@ -9,6 +9,12 @@ interface DetachedPortalWindowOptions {
   height: number;
   anchor: DetachedWindowAnchor;
   onClosed?: () => void;
+  /**
+   * Optional height to use for positioning calculations. When set, the window is
+   * positioned as if it has this height, regardless of the actual height. This keeps
+   * the window anchored at a consistent visual position when the content height changes.
+   */
+  positionHeight?: number;
 }
 
 const PORTAL_ROOT_ID = '__sc_detached_portal_root__';
@@ -118,6 +124,7 @@ export function useDetachedPortalWindow(
   const programmaticCloseRef = useRef(false);
   const onClosedRef = useRef<(() => void) | undefined>(options.onClosed);
   const windowNameRef = useRef<string>('');
+  const positionRef = useRef<{ left: number; top: number } | null>(null);
 
   useEffect(() => {
     onClosedRef.current = options.onClosed;
@@ -129,6 +136,7 @@ export function useDetachedPortalWindow(
       if (!current || current.closed) {
         childWindowRef.current = null;
         windowNameRef.current = '';
+        positionRef.current = null;
         setPortalTarget(null);
         return;
       }
@@ -138,6 +146,7 @@ export function useDetachedPortalWindow(
       } catch {}
       childWindowRef.current = null;
       windowNameRef.current = '';
+      positionRef.current = null;
       setPortalTarget(null);
       programmaticCloseRef.current = false;
     };
@@ -147,7 +156,8 @@ export function useDetachedPortalWindow(
       return;
     }
 
-    const features = buildWindowFeatures(options.width, options.height, options.anchor);
+    const positionHeight = options.positionHeight ?? options.height;
+    const features = buildWindowFeatures(options.width, positionHeight, options.anchor);
     let child = childWindowRef.current;
     if (!child || child.closed) {
       if (!windowNameRef.current) {
@@ -160,11 +170,37 @@ export function useDetachedPortalWindow(
         return;
       }
       childWindowRef.current = child;
+      // Capture actual window position after it settles (browser may adjust from requested)
+      const capturePosition = () => {
+        try {
+          positionRef.current = {
+            left: (child as any).screenX ?? 0,
+            top: (child as any).screenY ?? 0,
+          };
+        } catch {
+          positionRef.current = computeWindowPosition(options.anchor, options.width, positionHeight);
+        }
+      };
+      // Try immediately, then again after a short delay to catch any browser adjustments
+      capturePosition();
+      setTimeout(capturePosition, 100);
     } else {
       try {
-        const { left, top } = computeWindowPosition(options.anchor, options.width, options.height);
-        child.resizeTo(Math.round(options.width), Math.round(options.height));
-        child.moveTo(left, top);
+        const stored = positionRef.current;
+        if (stored) {
+          // Get current dimensions to calculate center-preserving offset
+          const currentWidth = (child as any).outerWidth || options.width;
+          const currentHeight = (child as any).outerHeight || options.height;
+          // Adjust position so center stays in same place when resizing
+          const dx = (currentWidth - options.width) / 2;
+          const dy = (currentHeight - options.height) / 2;
+          child.resizeTo(Math.round(options.width), Math.round(options.height));
+          child.moveTo(Math.round(stored.left + dx), Math.round(stored.top + dy));
+        } else {
+          const { left, top } = computeWindowPosition(options.anchor, options.width, positionHeight);
+          child.resizeTo(Math.round(options.width), Math.round(options.height));
+          child.moveTo(left, top);
+        }
       } catch {}
     }
 

@@ -16,7 +16,7 @@ import OnboardingExtension from './OnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
 import SuperCmdWhisper from './SuperCmdWhisper';
 import SuperCmdRead from './SuperCmdRead';
-import { tryCalculate } from './smart-calculator';
+import { tryCalculate, tryCalculateAsync } from './smart-calculator';
 import { useDetachedPortalWindow } from './useDetachedPortalWindow';
 import { useAppViewManager } from './hooks/useAppViewManager';
 import { useAiChat } from './hooks/useAiChat';
@@ -26,6 +26,7 @@ import { useBackgroundRefresh } from './hooks/useBackgroundRefresh';
 import { useSpeakManager } from './hooks/useSpeakManager';
 import { useWhisperManager } from './hooks/useWhisperManager';
 import { LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
+import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
 import {
   type LauncherAction, type MemoryFeedback,
@@ -41,19 +42,18 @@ import {
   shouldOpenCommandSetup,
   getMissingRequiredScriptArguments, toScriptArgumentMapFromArray,
 } from './utils/extension-preferences';
+import { applyAppFontSize, getDefaultAppFontSize } from './utils/font-size';
 import ScriptCommandSetupView from './views/ScriptCommandSetupView';
 import ScriptCommandOutputView from './views/ScriptCommandOutputView';
 import ExtensionPreferenceSetupView from './views/ExtensionPreferenceSetupView';
 import AiChatView from './views/AiChatView';
 import CursorPromptView from './views/CursorPromptView';
-import ShortcutGuide from './ShortcutGuide';
 
 const STALE_OVERLAY_RESET_MS = 60_000;
 
-const isWindows = window.electron?.platform === 'win32';
-
 const App: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
+  const [commandAliases, setCommandAliases] = useState<Record<string, string>>({});
   const [pinnedCommands, setPinnedCommands] = useState<string[]>([]);
   const [recentCommands, setRecentCommands] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,11 +64,11 @@ const App: React.FC = () => {
     showClipboardManager, showSnippetManager, showFileSearch, showCursorPrompt,
     showWhisper, showSpeak, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
     openOnboarding, openWhisper, openClipboardManager,
-    openSnippetManager, openFileSearch, openCursorPrompt, openSpeak, openShortcutGuide,
+    openSnippetManager, openFileSearch, openCursorPrompt, openSpeak,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
     setShowClipboardManager, setShowSnippetManager, setShowFileSearch, setShowCursorPrompt,
     setShowWhisper, setShowSpeak, setShowWhisperOnboarding, setShowWhisperHint,
-    setShowOnboarding, setAiMode, showShortcutGuide, setShowShortcutGuide,
+    setShowOnboarding, setAiMode,
   } = useAppViewManager();
   const {
     whisperOnboardingPracticeText, setWhisperOnboardingPracticeText,
@@ -154,6 +154,7 @@ const App: React.FC = () => {
   const actionsOverlayRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const lastWindowHiddenAtRef = useRef<number>(0);
+  const calcRequestSeqRef = useRef(0);
   const pinnedCommandsRef = useRef<string[]>([]);
   const extensionViewRef = useRef<ExtensionBundle | null>(null);
   extensionViewRef.current = extensionView;
@@ -198,11 +199,22 @@ const App: React.FC = () => {
       const shortcutStatus = await window.electron.getGlobalShortcutStatus();
       setPinnedCommands(settings.pinnedCommands || []);
       setRecentCommands(settings.recentCommands || []);
+      setCommandAliases(
+        Object.entries(settings.commandAliases || {}).reduce((acc, [commandId, alias]) => {
+          const normalizedCommandId = String(commandId || '').trim();
+          const normalizedAlias = String(alias || '').trim();
+          if (!normalizedCommandId || !normalizedAlias) return acc;
+          acc[normalizedCommandId] = normalizedAlias;
+          return acc;
+        }, {} as Record<string, string>)
+      );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
       setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
+      applyAppFontSize(settings.fontSize);
+      applyBaseColor(settings.baseColor || '#101113');
       const shouldShowOnboarding = !settings.hasSeenOnboarding;
       setShowOnboarding(shouldShowOnboarding);
       setOnboardingRequiresShortcutFix(shouldShowOnboarding && !shortcutStatus.ok);
@@ -210,9 +222,12 @@ const App: React.FC = () => {
       console.error('Failed to load launcher preferences:', e);
       setPinnedCommands([]);
       setRecentCommands([]);
+      setCommandAliases({});
       setLauncherShortcut('Alt+Space');
       setConfiguredEdgeTtsVoice('en-US-EricNeural');
       setConfiguredTtsModel('edge-tts');
+      applyAppFontSize(getDefaultAppFontSize());
+      applyBaseColor('#101113');
       setShowOnboarding(false);
       setOnboardingRequiresShortcutFix(false);
     }
@@ -412,6 +427,15 @@ const App: React.FC = () => {
       setSelectedTextSnapshot(String(payload?.selectedTextSnapshot || '').trim());
     });
     return cleanupSelectionSnapshotUpdated;
+  }, []);
+
+  useEffect(() => {
+    const cleanup = window.electron.onSettingsUpdated?.((settings: AppSettings) => {
+      applyAppFontSize(settings.fontSize);
+      applyBaseColor(settings.baseColor || '#101113');
+      setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
+    });
+    return cleanup;
   }, []);
 
   // Listen for OAuth logout events from the settings window.
@@ -646,6 +670,8 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!contextMenu) return;
     const onMouseDown = (e: MouseEvent) => {
+      // If the click is inside the context menu panel, don't dismiss —
+      // the action item's onClick needs to fire first (mousedown precedes click).
       if (contextMenuRef.current?.contains(e.target as Node)) return;
       setContextMenu(null);
     };
@@ -683,8 +709,7 @@ const App: React.FC = () => {
     !showWhisper &&
     !showSpeak &&
     !showOnboarding &&
-    !showWhisperOnboarding &&
-    !showShortcutGuide;
+    !showWhisperOnboarding;
 
   useEffect(() => {
     if (!isLauncherModeActive) return;
@@ -718,9 +743,37 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const calcResult = useMemo(() => {
+  const syncCalcResult = useMemo(() => {
     return searchQuery ? tryCalculate(searchQuery) : null;
   }, [searchQuery]);
+  const [asyncCalcResult, setAsyncCalcResult] =
+    useState<Awaited<ReturnType<typeof tryCalculateAsync>>>(null);
+  useEffect(() => {
+    calcRequestSeqRef.current += 1;
+    const requestSeq = calcRequestSeqRef.current;
+
+    if (!searchQuery || syncCalcResult) {
+      setAsyncCalcResult(null);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void tryCalculateAsync(searchQuery)
+        .then((result) => {
+          if (calcRequestSeqRef.current !== requestSeq) return;
+          setAsyncCalcResult(result);
+        })
+        .catch(() => {
+          if (calcRequestSeqRef.current !== requestSeq) return;
+          setAsyncCalcResult(null);
+        });
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [searchQuery, syncCalcResult]);
+  const calcResult = syncCalcResult ?? asyncCalcResult;
   const calcOffset = calcResult ? 1 : 0;
   const contextualCommands = commands;
   const filteredCommands = useMemo(
@@ -833,16 +886,44 @@ const App: React.FC = () => {
     [selectedCommand, movePinnedCommand]
   );
 
+  const moveSelection = useCallback(
+    (direction: 'up' | 'down', options: { wrap?: boolean } = {}) => {
+      const { wrap = false } = options;
+      setSelectedIndex((prev) => {
+        const max = Math.max(0, displayCommands.length + calcOffset - 1);
+        if (direction === 'down') {
+          if (prev < max) return prev + 1;
+          return wrap ? 0 : max;
+        }
+        if (prev > 0) return prev - 1;
+        return wrap ? max : 0;
+      });
+    },
+    [displayCommands.length, calcOffset]
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      // On Windows Cmd = Win key; use Ctrl instead as the primary modifier.
-      const cmdOrCtrl = e.metaKey || (isWindows && e.ctrlKey);
-      if (cmdOrCtrl && (e.key === 'k' || e.key === 'K') && !e.repeat) {
+      if (e.metaKey && (e.key === 'k' || e.key === 'K') && !e.repeat) {
         e.preventDefault();
         setShowActions((prev) => !prev);
         setContextMenu(null);
         return;
       }
+
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        if (e.key === 'j' || e.key === 'J') {
+          e.preventDefault();
+          moveSelection('down');
+          return;
+        }
+        if (e.key === 'k' || e.key === 'K') {
+          e.preventDefault();
+          moveSelection('up');
+          return;
+        }
+      }
+
       if (showActions || contextMenu) {
         if (e.key === 'Escape') {
           e.preventDefault();
@@ -852,29 +933,29 @@ const App: React.FC = () => {
         }
         return;
       }
-      if (cmdOrCtrl && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+      if (e.metaKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
         e.preventDefault();
         togglePinSelectedCommand();
         return;
       }
-      if (cmdOrCtrl && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+      if (e.metaKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
         e.preventDefault();
         disableSelectedCommand();
         return;
       }
-      if (cmdOrCtrl && (e.key === 'Backspace' || e.key === 'Delete')) {
+      if (e.metaKey && (e.key === 'Backspace' || e.key === 'Delete')) {
         if (selectedCommand?.category === 'extension') {
           e.preventDefault();
           uninstallSelectedExtension();
           return;
         }
       }
-      if (cmdOrCtrl && e.altKey && e.key === 'ArrowUp') {
+      if (e.metaKey && e.altKey && e.key === 'ArrowUp') {
         e.preventDefault();
         moveSelectedPinnedCommand('up');
         return;
       }
-      if (cmdOrCtrl && e.altKey && e.key === 'ArrowDown') {
+      if (e.metaKey && e.altKey && e.key === 'ArrowDown') {
         e.preventDefault();
         moveSelectedPinnedCommand('down');
         return;
@@ -890,15 +971,12 @@ const App: React.FC = () => {
 
         case 'ArrowDown':
           e.preventDefault();
-          setSelectedIndex((prev) => {
-            const max = displayCommands.length + calcOffset - 1;
-            return prev < max ? prev + 1 : prev;
-          });
+          moveSelection('down');
           break;
 
         case 'ArrowUp':
           e.preventDefault();
-          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : 0));
+          moveSelection('up');
           break;
 
         case 'Enter':
@@ -928,6 +1006,7 @@ const App: React.FC = () => {
       }
     },
     [
+      moveSelection,
       displayCommands,
       selectedIndex,
       searchQuery,
@@ -946,6 +1025,14 @@ const App: React.FC = () => {
   );
 
   const runLocalSystemCommand = useCallback(async (commandId: string): Promise<boolean> => {
+    if (commandId === 'system-supercmd-whisper' || commandId === 'system-supercmd-speak') {
+      try {
+        const settings = await window.electron.getSettings();
+        if (settings.ai?.enabled === false) {
+          return true;
+        }
+      } catch {}
+    }
     if (commandId === 'system-open-onboarding') {
       await window.electron.setLauncherMode('onboarding');
       whisperSessionRef.current = false;
@@ -1044,19 +1131,8 @@ const App: React.FC = () => {
       await window.electron.snippetExport();
       return true;
     }
-    if (commandId === 'system-calculator') {
-      // Calculator is already inline — clear search so the user can type a math expression
-      setSearchQuery('');
-      setSelectedIndex(0);
-      inputRef.current?.focus();
-      return true;
-    }
-    if (commandId === 'system-shortcut-guide') {
-      openShortcutGuide();
-      return true;
-    }
     return false;
-  }, [memoryActionLoading, showMemoryFeedback, showOnboarding, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openFileSearch, openSpeak, setShowSpeak, openShortcutGuide]);
+  }, [memoryActionLoading, showMemoryFeedback, showOnboarding, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openFileSearch, openSpeak, setShowSpeak]);
 
   useEffect(() => {
     const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {
@@ -1238,19 +1314,19 @@ const App: React.FC = () => {
             : command.category === 'extension'
               ? 'Pin Extension'
               : 'Pin Command',
-          shortcut: isWindows ? 'Ctrl+Shift+P' : 'Cmd+Shift+P',
+          shortcut: 'Cmd+Shift+P',
           execute: () => pinToggleForCommand(command),
         },
         {
           id: 'disable',
           title: 'Disable Command',
-          shortcut: isWindows ? 'Ctrl+Shift+D' : 'Cmd+Shift+D',
+          shortcut: 'Cmd+Shift+D',
           execute: () => disableCommand(command),
         },
         {
           id: 'uninstall',
           title: 'Uninstall',
-          shortcut: isWindows ? 'Ctrl+Delete' : 'Cmd+Delete',
+          shortcut: 'Cmd+Delete',
           style: 'destructive',
           enabled: command.category === 'extension',
           execute: () => uninstallExtensionCommand(command),
@@ -1258,14 +1334,14 @@ const App: React.FC = () => {
         {
           id: 'move-up',
           title: 'Move Up',
-          shortcut: isWindows ? 'Ctrl+Alt+Up' : 'Cmd+Alt+Up',
+          shortcut: 'Cmd+Alt+Up',
           enabled: isPinned && pinnedIndex > 0,
           execute: () => movePinnedCommand(command, 'up'),
         },
         {
           id: 'move-down',
           title: 'Move Down',
-          shortcut: isWindows ? 'Ctrl+Alt+Down' : 'Cmd+Alt+Down',
+          shortcut: 'Cmd+Alt+Down',
           enabled: isPinned && pinnedIndex >= 0 && pinnedIndex < pinnedCommands.length - 1,
           execute: () => movePinnedCommand(command, 'down'),
         },
@@ -1740,7 +1816,7 @@ const App: React.FC = () => {
     <>
     {alwaysMountedRunners}
     <div className="w-full h-full">
-      <div className="glass-effect overflow-hidden h-full flex flex-col">
+      <div className="glass-effect overflow-hidden h-full flex flex-col relative">
         {/* Search header - transparent background */}
         <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06]">
           <input
@@ -1750,7 +1826,7 @@ const App: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent border-none outline-none text-white/95 placeholder-white/45 text-[15px] font-medium tracking-[0.005em]"
+            className="flex-1 bg-transparent border-none outline-none text-white/95 placeholder-white/45 placeholder:font-medium text-[15px] font-medium tracking-[0.005em]"
             autoFocus
           />
           {searchQuery && aiAvailable && (
@@ -1810,7 +1886,7 @@ const App: React.FC = () => {
                     </div>
                     <ArrowRight className="w-5 h-5 text-white/25 flex-shrink-0" />
                     <div className="text-center">
-                      <div className="text-white text-xl font-semibold">{calcResult.result}</div>
+                      <div className="text-white text-xl font-medium">{calcResult.result}</div>
                       <div className="text-white/35 text-xs mt-1">{calcResult.resultLabel}</div>
                     </div>
                   </div>
@@ -1831,7 +1907,7 @@ const App: React.FC = () => {
                     acc.nodes.push(
                       <div
                         key={`section-${section.title}`}
-                        className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider text-white/50 font-semibold"
+                        className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider text-white/50 font-medium"
                       >
                         {section.title}
                       </div>
@@ -1840,6 +1916,11 @@ const App: React.FC = () => {
                       const flatIndex = startIndex + i;
                       const accessoryLabel = getCommandAccessoryLabel(command);
                       const fallbackCategory = getCategoryLabel(command.category);
+                      const commandAlias = String(commandAliases[command.id] || '').trim();
+                      const aliasMatchesSearch =
+                        Boolean(commandAlias) &&
+                        Boolean(searchQuery.trim()) &&
+                        commandAlias.toLowerCase().includes(searchQuery.trim().toLowerCase());
                       acc.nodes.push(
                         <div
                           key={command.id}
@@ -1866,7 +1947,7 @@ const App: React.FC = () => {
                             </div>
 
                             <div className="min-w-0 flex-1 flex items-center gap-2">
-                              <div className="text-white/95 text-[13px] font-semibold truncate tracking-[0.004em]">
+                              <div className="text-white/95 text-[13px] font-medium truncate tracking-[0.004em]">
                                 {getCommandDisplayTitle(command)}
                               </div>
                               {accessoryLabel ? (
@@ -1878,6 +1959,11 @@ const App: React.FC = () => {
                                   {fallbackCategory}
                                 </div>
                               )}
+                              {aliasMatchesSearch ? (
+                                <div className="inline-flex items-center h-5 rounded-md border border-white/[0.20] bg-white/[0.03] px-1.5 text-[10px] font-mono text-white/75 leading-none flex-shrink-0">
+                                  {commandAlias}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         </div>
@@ -1895,11 +1981,10 @@ const App: React.FC = () => {
         {/* Footer actions */}
         {!isLoading && (
           <div
-            className="flex items-center px-4 py-3.5 border-t border-white/[0.06]"
-            style={{ background: 'rgba(28,28,32,0.90)' }}
+            className="sc-glass-footer absolute bottom-0 left-0 right-0 z-10 flex items-center px-4 py-2.5"
           >
             <div
-              className={`flex items-center gap-2 text-xs flex-1 min-w-0 font-medium truncate ${
+              className={`flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate ${
                 memoryActionLoading
                   ? 'text-white/60'
                   : memoryFeedback
@@ -1931,7 +2016,7 @@ const App: React.FC = () => {
               <div className="flex items-center gap-2 mr-3">
                 <button
                   onClick={() => selectedActions[0].execute()}
-                  className="text-white text-xs font-semibold hover:text-white/85 transition-colors"
+                  className="text-white text-xs font-normal hover:text-white/85 transition-colors"
                 >
                   {selectedActions[0].title}
                 </button>
@@ -1949,7 +2034,7 @@ const App: React.FC = () => {
               }}
               className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
             >
-              <span className="text-xs font-medium">Actions</span>
+              <span className="text-xs font-normal">Actions</span>
               <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
               <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
             </button>
@@ -1969,8 +2054,8 @@ const App: React.FC = () => {
           tabIndex={0}
           onKeyDown={handleActionsOverlayKeyDown}
           style={{
-            background: isWindows ? 'rgba(28,28,34,0.99)' : 'rgba(30,30,34,0.97)',
-            backdropFilter: isWindows ? 'none' : 'blur(40px)',
+            background: 'rgba(30,30,34,0.97)',
+            backdropFilter: 'blur(40px)',
             border: '1px solid rgba(255,255,255,0.08)',
           }}
           onClick={(e) => e.stopPropagation()}
@@ -2007,15 +2092,6 @@ const App: React.FC = () => {
         </div>
       </div>
     )}
-    {showShortcutGuide && (
-      <ShortcutGuide
-        launcherShortcut={launcherShortcut}
-        onClose={() => {
-          setShowShortcutGuide(false);
-          restoreLauncherFocus();
-        }}
-      />
-    )}
     {contextMenu && contextActions.length > 0 && (
       <div
         className="fixed inset-0 z-50"
@@ -2033,8 +2109,8 @@ const App: React.FC = () => {
           style={{
             left: Math.min(contextMenu.x, window.innerWidth - 340),
             top: Math.min(contextMenu.y, window.innerHeight - 320),
-            background: isWindows ? 'rgba(28,28,34,0.99)' : 'rgba(30,30,34,0.97)',
-            backdropFilter: isWindows ? 'none' : 'blur(40px)',
+            background: 'rgba(30,30,34,0.97)',
+            backdropFilter: 'blur(40px)',
             border: '1px solid rgba(255,255,255,0.08)',
           }}
           onClick={(e) => e.stopPropagation()}

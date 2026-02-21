@@ -83,15 +83,33 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
 
 // ─── Availability check ──────────────────────────────────────────────
 
-export function isAIAvailable(config: AISettings): boolean {
-  if (!config.enabled) return false;
-  switch (config.provider) {
-    case 'openai': return !!config.openaiApiKey;
-    case 'anthropic': return !!config.anthropicApiKey;
-    case 'ollama': return !!config.ollamaBaseUrl;
-    case 'openai-compatible': return !!(config.openaiCompatibleBaseUrl && config.openaiCompatibleApiKey);
-    default: return false;
+function hasProviderCredentials(provider: ModelRoute['provider'], config: AISettings): boolean {
+  switch (provider) {
+    case 'openai':
+      return !!config.openaiApiKey;
+    case 'anthropic':
+      return !!config.anthropicApiKey;
+    case 'ollama':
+      return !!config.ollamaBaseUrl;
+    case 'openai-compatible':
+      return !!(config.openaiCompatibleBaseUrl && config.openaiCompatibleApiKey);
+    default:
+      return false;
   }
+}
+
+export function isAIAvailable(config: AISettings): boolean {
+  // Treat missing/legacy "enabled" as enabled by default.
+  if (config.enabled === false) return false;
+  if (config.llmEnabled === false) return false;
+
+  // Availability should follow the effective model route (defaultModel can
+  // point to a different provider than config.provider).
+  const route = resolveModel(undefined, config);
+  if (hasProviderCredentials(route.provider, config)) return true;
+
+  // Fallback to configured provider in case defaultModel is invalid.
+  return hasProviderCredentials(config.provider, config);
 }
 
 // ─── Streaming implementation ────────────────────────────────────────

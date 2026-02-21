@@ -9,7 +9,7 @@
  */
 
 import * as React from 'react';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as ReactDOM from 'react-dom';
 import * as JsxRuntime from 'react/jsx-runtime';
 import { ArrowLeft, AlertTriangle } from 'lucide-react';
@@ -2174,6 +2174,62 @@ const nodeBuiltinStubs: Record<string, any> = {
   // extensions can pipe the response to a createWriteStream for binary CLI downloads.
   axios: (() => {
     const makeAxios = (defaults?: any) => {
+      const appendParams = (url: string, params?: any) => {
+        if (!params || typeof params !== 'object') return url;
+        try {
+          const baseOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : 'https://local.supercmd';
+          const parsed = new URL(url, baseOrigin);
+          for (const [key, rawValue] of Object.entries(params)) {
+            if (rawValue == null) continue;
+            if (Array.isArray(rawValue)) {
+              for (const item of rawValue) {
+                if (item == null) continue;
+                parsed.searchParams.append(key, String(item));
+              }
+              continue;
+            }
+            parsed.searchParams.set(key, String(rawValue));
+          }
+          const out = parsed.toString();
+          // Preserve relative URLs by stripping synthetic origin when used.
+          return out.startsWith(baseOrigin) ? out.slice(baseOrigin.length) : out;
+        } catch {
+          return url;
+        }
+      };
+      const resolveUrl = (inputUrl: string, config?: any) => {
+        const baseURL = String(config?.baseURL || defaults?.baseURL || '').trim();
+        const raw = String(inputUrl || '').trim();
+        const merged = baseURL && raw && !/^https?:\/\//i.test(raw)
+          ? `${baseURL.replace(/\/+$/, '')}/${raw.replace(/^\/+/, '')}`
+          : (raw || baseURL);
+        const mergedParams = {
+          ...(defaults?.params && typeof defaults.params === 'object' ? defaults.params : {}),
+          ...(config?.params && typeof config.params === 'object' ? config.params : {}),
+        };
+        return appendParams(merged, mergedParams);
+      };
+      const requestWithMethod = async (method: string, url: string, body?: any, config?: any) => {
+        const resolvedUrl = resolveUrl(url, config);
+        const fetchHeaders: Record<string, string> = { ...(defaults?.headers || {}), ...(config?.headers || {}) };
+        const hasContentType = Object.keys(fetchHeaders).some((key) => key.toLowerCase() === 'content-type');
+        const requestBody =
+          body == null || typeof body === 'string' || body instanceof Blob || body instanceof ArrayBuffer
+            ? body
+            : JSON.stringify(body);
+        if (!hasContentType && requestBody != null && typeof requestBody === 'string') {
+          fetchHeaders['Content-Type'] = 'application/json';
+        }
+        const res = await fetch(resolvedUrl, {
+          method,
+          body: method === 'GET' || method === 'HEAD' ? undefined : (requestBody as any),
+          headers: fetchHeaders,
+        });
+        const text = await res.text();
+        let data: any = text;
+        try { data = JSON.parse(text); } catch {}
+        return { data, status: res.status, headers: {} };
+      };
       const inst: any = async function axiosInstance(config: any) {
         return inst.request(config);
       };
@@ -2182,10 +2238,19 @@ const nodeBuiltinStubs: Record<string, any> = {
         request: { use: noop, eject: noop, clear: noop },
         response: { use: noop, eject: noop, clear: noop },
       };
-      inst.request = async (config: any) => inst.get(config?.url || '', config);
+      inst.request = async (config: any = {}) => {
+        const method = String(config?.method || 'get').toLowerCase();
+        const url = resolveUrl(config?.url || '', config);
+        if (method === 'get' || method === 'delete' || method === 'head' || method === 'options') {
+          return inst.get(url, { ...config, method });
+        }
+        return requestWithMethod(method.toUpperCase(), url, config?.data, config);
+      };
       inst.get = async (url: string, config?: any) => {
+        const resolvedUrl = resolveUrl(url, config);
+        const requestMethod = String(config?.method || 'GET').toUpperCase();
         const responseType = config?.responseType || 'json';
-        if (responseType === 'stream' || responseType === 'arraybuffer') {
+        if ((responseType === 'stream' || responseType === 'arraybuffer') && requestMethod === 'GET') {
           // Route binary downloads through the main process (Node.js) to bypass CORS restrictions.
           // The renderer's fetch() is blocked by CORS on CDN binary endpoints that don't send
           // Access-Control-Allow-Origin headers (e.g. speedtest, GitHub releases).
@@ -2196,7 +2261,7 @@ const nodeBuiltinStubs: Record<string, any> = {
               throw new Error('Binary download bridge unavailable');
             }
             rawBytes = await Promise.race([
-              binaryDownloader(url),
+              binaryDownloader(resolvedUrl),
               new Promise<never>((_, reject) =>
                 setTimeout(() => reject(new Error('Binary download timed out')), 45_000)
               ),
@@ -2261,10 +2326,10 @@ const nodeBuiltinStubs: Record<string, any> = {
           return { data: stream, status: 200, headers: {} };
         }
         // JSON / text responses: use fetch (no binary data, CORS is fine for APIs)
-        const fetchHeaders: Record<string, string> = config?.headers || {};
+        const fetchHeaders: Record<string, string> = { ...(defaults?.headers || {}), ...(config?.headers || {}) };
         let response: Response;
         try {
-          response = await fetch(url, { headers: fetchHeaders });
+          response = await fetch(resolvedUrl, { method: requestMethod, headers: fetchHeaders });
         } catch (e: any) {
           const err: any = new Error(e?.message || 'Network error');
           err.isAxiosError = true;
@@ -2287,17 +2352,13 @@ const nodeBuiltinStubs: Record<string, any> = {
         return { data, status: response.status, headers: resHeaders };
       };
       inst.post = async (url: string, body?: any, config?: any) => {
-        const res = await fetch(url, {
-          method: 'POST',
-          body: body != null ? JSON.stringify(body) : undefined,
-          headers: { 'Content-Type': 'application/json', ...(config?.headers || {}) },
-        });
-        const text = await res.text();
-        let data: any = text;
-        try { data = JSON.parse(text); } catch {}
-        return { data, status: res.status };
+        return requestWithMethod('POST', url, body, config);
       };
-      inst.put = inst.patch = inst.delete = inst.head = inst.options = inst.post;
+      inst.put = async (url: string, body?: any, config?: any) => requestWithMethod('PUT', url, body, config);
+      inst.patch = async (url: string, body?: any, config?: any) => requestWithMethod('PATCH', url, body, config);
+      inst.delete = async (url: string, config?: any) => inst.get(url, { ...(config || {}), method: 'DELETE' });
+      inst.head = async (url: string, config?: any) => inst.get(url, { ...(config || {}), method: 'HEAD' });
+      inst.options = async (url: string, config?: any) => inst.get(url, { ...(config || {}), method: 'OPTIONS' });
       inst.create = (cfg?: any) => makeAxios({ ...inst.defaults, ...cfg });
       inst.isAxiosError = (e: any) => !!(e?.isAxiosError);
       inst.CancelToken = { source: () => ({ token: {}, cancel: noop }) };
@@ -2500,6 +2561,17 @@ function loadExtensionExport(
   code: string,
   extensionPath?: string
 ): Function | null {
+  const patchSchemeDynamicImports = (sourceCode: string): string => {
+    // Extension bundles may emit dynamic imports for native Raycast bridges
+    // (e.g. import("swift:../swift/color-picker")). Our runtime executes in
+    // a custom CJS wrapper, so we rewrite these to a loader hook that can
+    // resolve the scheme via fakeRequire.
+    return String(sourceCode || '').replace(
+      /\bimport\(\s*(["'])(swift:[^"']+|rust:[^"']+)\1\s*\)/g,
+      (_match, quote, specifier) => `__scDynamicImport(${quote}${specifier}${quote})`
+    );
+  };
+
   // Make sure Node globals (process, Buffer, global) are available
   ensureGlobals();
 
@@ -2529,6 +2601,7 @@ function loadExtensionExport(
   try {
     const moduleExports: any = {};
     const fakeModule = { exports: moduleExports };
+    const executableCode = patchSchemeDynamicImports(code);
 
     // Custom require that provides our shim modules.
     // This is the critical bridge between extension code and the
@@ -2695,6 +2768,27 @@ function loadExtensionExport(
         return {};
       }
 
+      // ── Rust native bridges (Raycast-specific) ─────────────
+      // Some extension bundles include rust: dynamic imports on non-mac paths.
+      // Keep parity with swift bridge stubs.
+      if (name.startsWith('rust:')) {
+        if (name.includes('color-picker')) {
+          return {
+            pick_color: async () => {
+              try {
+                const result = await window.electron.nativePickColor();
+                return result;
+              } catch (e) {
+                console.error('Native color picker (rust bridge) failed:', e);
+                return undefined;
+              }
+            },
+          };
+        }
+        // Unknown rust module — return empty
+        return {};
+      }
+
       // ── Handle deep imports (e.g. 'stream/web', 'util/types') ─
       const slashIdx = name.indexOf('/');
       if (slashIdx > 0) {
@@ -2730,6 +2824,18 @@ function loadExtensionExport(
     fakeRequire.extensions = {};
     fakeRequire.main = undefined;
 
+    const scDynamicImport = async (specifier: string): Promise<any> => {
+      const id = String(specifier || '');
+      if (id.startsWith('swift:') || id.startsWith('rust:')) {
+        const mod = fakeRequire(id);
+        if (mod && typeof mod === 'object') {
+          return { default: mod, ...mod };
+        }
+        return { default: mod };
+      }
+      throw new Error(`Unsupported dynamic import in extension runtime: ${id}`);
+    };
+
     // Execute the CJS bundle in a function scope.
     // We pass all the standard CJS arguments plus `process`, `Buffer`,
     // and `global` to ensure they are always in scope even when the
@@ -2746,7 +2852,8 @@ function loadExtensionExport(
       'globalThis',
       'setImmediate',
       'clearImmediate',
-      code
+      '__scDynamicImport',
+      executableCode
     );
 
     fn(
@@ -2761,6 +2868,7 @@ function loadExtensionExport(
       globalThis,
       (cb: Function, ...args: any[]) => setTimeout(() => cb(...args), 0),
       clearTimeout,
+      scDynamicImport,
     );
 
     // Get the default export
@@ -2814,8 +2922,18 @@ const NoViewRunner: React.FC<{
 }) => {
   const [status, setStatus] = useState<'running' | 'done' | 'error'>('running');
   const [errorMsg, setErrorMsg] = useState('');
+  const hasStartedRef = useRef(false);
+  const closeTimerRef = useRef<number | null>(null);
+  const onCloseRef = useRef(onClose);
 
   useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
+
     let cancelled = false;
 
     (async () => {
@@ -2828,7 +2946,7 @@ const NoViewRunner: React.FC<{
         });
         if (!cancelled) {
           setStatus('done');
-          setTimeout(() => onClose(), 600);
+          closeTimerRef.current = window.setTimeout(() => onCloseRef.current(), 600);
         }
       } catch (e: any) {
         if (!cancelled) {
@@ -2838,8 +2956,14 @@ const NoViewRunner: React.FC<{
       }
     })();
 
-    return () => { cancelled = true; };
-  }, [fn, onClose, launchArguments, launchContext, fallbackText, launchType]);
+    return () => {
+      cancelled = true;
+      if (closeTimerRef.current != null) {
+        window.clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
+  }, [fn, launchArguments, launchContext, fallbackText, launchType]);
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-3">

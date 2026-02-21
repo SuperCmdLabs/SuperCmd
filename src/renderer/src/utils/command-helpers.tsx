@@ -16,6 +16,7 @@ import React from 'react';
 import { Search, Power, Settings, Puzzle, Sparkles, Clipboard, FileText, Mic, Volume2, Brain, TerminalSquare, Pipette, Calculator, SunMoon, Coffee, Globe, Variable, Keyboard } from 'lucide-react';
 import type { CommandInfo, EdgeTtsVoice } from '../../types/electron';
 import supercmdLogo from '../../../../supercmd.svg';
+import { formatShortcutForDisplay } from './hyper-key';
 
 export interface LauncherAction {
   id: string;
@@ -192,13 +193,7 @@ export function getCommandAccessoryLabel(command: CommandInfo): string {
 }
 
 export function formatShortcutLabel(shortcut: string): string {
-  return String(shortcut || '')
-    .replace(/Command/g, '\u2318')
-    .replace(/Control/g, '\u2303')
-    .replace(/Alt/g, '\u2325')
-    .replace(/Shift/g, '\u21E7')
-    .replace(/Period/g, '.')
-    .replace(/\+/g, ' ');
+  return formatShortcutForDisplay(shortcut).replace(/ \+ /g, ' ');
 }
 
 export function isSuperCmdAppTitle(title: string): boolean {
@@ -481,16 +476,7 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
 
 export function renderShortcutLabel(shortcut?: string): string {
   if (!shortcut) return '';
-  return shortcut
-    .replace(/Command|Cmd/gi, '⌘')
-    .replace(/Control|Ctrl/gi, '⌃')
-    .replace(/Alt|Option/gi, '⌥')
-    .replace(/Shift/gi, '⇧')
-    .replace(/Function|Fn/gi, 'fn')
-    .replace(/ArrowUp/g, '↑')
-    .replace(/ArrowDown/g, '↓')
-    .replace(/Backspace|Delete/g, '⌫')
-    .replace(/\+/g, ' ');
+  return formatShortcutForDisplay(shortcut).replace(/ \+ /g, ' ');
 }
 
 export function parseIntervalToMs(interval?: string): number | null {

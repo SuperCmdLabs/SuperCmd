@@ -75,6 +75,11 @@ function isPreferenceMissing(pref: ExtensionPreferenceSchema, value: any): boole
 const normalizeMatchKey = (value: string): string =>
   value.trim().toLowerCase().replace(/[\s_]+/g, '-');
 
+const SUPERCMD_EXTENSION_NAME = '__supercmd';
+const SCRIPT_COMMANDS_EXTENSION_NAME = '__script_commands';
+const INSTALLED_APPLICATIONS_NAME = '__installed_applications';
+const SYSTEM_SETTINGS_NAME = '__system_settings';
+
 const ExtensionsTab: React.FC<{
   focusTarget?: SettingsFocusTarget | null;
   onFocusTargetHandled?: () => void;
@@ -85,6 +90,7 @@ const ExtensionsTab: React.FC<{
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [schemas, setSchemas] = useState<InstalledExtensionSettingsSchema[]>([]);
+  const [installedExtensionNames, setInstalledExtensionNames] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [activeScope, setActiveScope] = useState<'all' | 'commands'>('all');
   const [isLoading, setIsLoading] = useState(true);
@@ -94,10 +100,29 @@ const ExtensionsTab: React.FC<{
     type: 'idle' | 'success' | 'error';
     text: string;
   }>({ type: 'idle', text: '' });
+  const [aliasDrafts, setAliasDrafts] = useState<Record<string, string>>({});
+  const [editingAliasCommandId, setEditingAliasCommandId] = useState<string | null>(null);
   const [folderStatus, setFolderStatus] = useState<{
     type: 'idle' | 'success' | 'error';
     text: string;
   }>({ type: 'idle', text: '' });
+  const [extensionActionStatus, setExtensionActionStatus] = useState<{
+    type: 'idle' | 'success' | 'error';
+    text: string;
+  }>({ type: 'idle', text: '' });
+  const [extensionContextMenu, setExtensionContextMenu] = useState<{
+    x: number;
+    y: number;
+    extName: string;
+    title: string;
+    iconDataUrl?: string;
+  } | null>(null);
+  const [uninstallDialog, setUninstallDialog] = useState<{
+    extName: string;
+    title: string;
+    iconDataUrl?: string;
+  } | null>(null);
+  const [busyUninstallExtName, setBusyUninstallExtName] = useState<string | null>(null);
   const [folderBusy, setFolderBusy] = useState(false);
   const [showTopActionsMenu, setShowTopActionsMenu] = useState(false);
   const [oauthTokens, setOauthTokens] = useState<Record<string, { accessToken: string; provider: string } | null>>({});
@@ -106,14 +131,22 @@ const ExtensionsTab: React.FC<{
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [cmds, sett, extSchemas] = await Promise.all([
+      const [cmds, sett, extSchemas, installedNames] = await Promise.all([
         window.electron.getAllCommands(),
         window.electron.getSettings(),
         window.electron.getInstalledExtensionsSettingsSchema(),
+        window.electron.getInstalledExtensionNames(),
       ]);
       setCommands(cmds);
       setSettings(sett);
       setSchemas(extSchemas);
+      setInstalledExtensionNames(
+        new Set(
+          (installedNames || [])
+            .map((value: string) => String(value || '').trim())
+            .filter(Boolean)
+        )
+      );
       if (extSchemas.length > 0) {
         setSelected((prev) => prev || { extName: extSchemas[0].extName });
       }
@@ -129,6 +162,15 @@ const ExtensionsTab: React.FC<{
     void loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const dispose = window.electron.onExtensionsChanged(() => {
+      void loadData();
+    });
+    return () => {
+      dispose?.();
+    };
+  }, [loadData]);
+
   const commandBySchemaKey = useMemo(() => {
     const map = new Map<string, CommandInfo>();
     for (const cmd of commands) {
@@ -138,19 +180,19 @@ const ExtensionsTab: React.FC<{
         continue;
       }
       if (cmd.category === 'script') {
-        map.set(`__script_commands/${cmd.id}`, cmd);
+        map.set(`${SCRIPT_COMMANDS_EXTENSION_NAME}/${cmd.id}`, cmd);
         continue;
       }
       if (cmd.category === 'system') {
-        map.set(`__supercmd/${cmd.id}`, cmd);
+        map.set(`${SUPERCMD_EXTENSION_NAME}/${cmd.id}`, cmd);
         continue;
       }
       if (cmd.category === 'app') {
-        map.set(`__apps/${cmd.id}`, cmd);
+        map.set(`${INSTALLED_APPLICATIONS_NAME}/${cmd.id}`, cmd);
         continue;
       }
       if (cmd.category === 'settings') {
-        map.set(`__settings/${cmd.id}`, cmd);
+        map.set(`${SYSTEM_SETTINGS_NAME}/${cmd.id}`, cmd);
       }
     }
     return map;
@@ -213,8 +255,8 @@ const ExtensionsTab: React.FC<{
 
     const systemCommands = commands.filter((cmd) => cmd.category === 'system');
     if (systemCommands.length > 0) {
-      byExt.set('__supercmd', {
-        extName: '__supercmd',
+      byExt.set(SUPERCMD_EXTENSION_NAME, {
+        extName: SUPERCMD_EXTENSION_NAME,
         title: 'SuperCmd',
         description: 'Built-in SuperCmd commands',
         owner: 'supercmd',
@@ -234,8 +276,8 @@ const ExtensionsTab: React.FC<{
 
     const scriptCommands = commands.filter((cmd) => cmd.category === 'script');
     if (scriptCommands.length > 0) {
-      byExt.set('__script_commands', {
-        extName: '__script_commands',
+      byExt.set(SCRIPT_COMMANDS_EXTENSION_NAME, {
+        extName: SCRIPT_COMMANDS_EXTENSION_NAME,
         title: 'Script Commands',
         description: 'Custom and Raycast-compatible script commands',
         owner: 'supercmd',
@@ -253,20 +295,24 @@ const ExtensionsTab: React.FC<{
       });
     }
 
-    const appCommands = commands.filter((cmd) => cmd.category === 'app');
-    if (appCommands.length > 0) {
-      byExt.set('__apps', {
-        extName: '__apps',
+    const installedApplications = commands
+      .filter((cmd) => cmd.category === 'app')
+      .sort((a, b) => a.title.localeCompare(b.title));
+    if (installedApplications.length > 0) {
+      const finderIcon = installedApplications.find((cmd) => cmd.title.toLowerCase() === 'finder')?.iconDataUrl;
+      const fallbackIcon = installedApplications.find((cmd) => Boolean(cmd.iconDataUrl))?.iconDataUrl;
+      byExt.set(INSTALLED_APPLICATIONS_NAME, {
+        extName: INSTALLED_APPLICATIONS_NAME,
         title: 'Applications',
-        description: 'Installed applications',
+        description: 'Installed macOS applications with launch and hotkey support.',
         owner: 'supercmd',
-        iconDataUrl: undefined,
+        iconDataUrl: finderIcon || fallbackIcon,
         preferences: [],
-        commands: appCommands.map((cmd) => ({
+        commands: installedApplications.map((cmd) => ({
           name: cmd.id,
           title: cmd.title,
-          description: cmd.subtitle || '',
-          mode: cmd.mode || 'no-view',
+          description: cmd.subtitle || 'Application',
+          mode: 'no-view',
           interval: cmd.interval,
           disabledByDefault: Boolean(cmd.disabledByDefault),
           preferences: [],
@@ -274,20 +320,22 @@ const ExtensionsTab: React.FC<{
       });
     }
 
-    const settingsCommands = commands.filter((cmd) => cmd.category === 'settings');
-    if (settingsCommands.length > 0) {
-      byExt.set('__settings', {
-        extName: '__settings',
+    const systemSettingsCommands = commands
+      .filter((cmd) => cmd.category === 'settings')
+      .sort((a, b) => a.title.localeCompare(b.title));
+    if (systemSettingsCommands.length > 0) {
+      byExt.set(SYSTEM_SETTINGS_NAME, {
+        extName: SYSTEM_SETTINGS_NAME,
         title: 'System Settings',
-        description: 'System settings panels',
+        description: 'macOS settings panes with launch and hotkey support.',
         owner: 'supercmd',
-        iconDataUrl: undefined,
+        iconDataUrl: systemSettingsCommands.find((cmd) => Boolean(cmd.iconDataUrl))?.iconDataUrl,
         preferences: [],
-        commands: settingsCommands.map((cmd) => ({
+        commands: systemSettingsCommands.map((cmd) => ({
           name: cmd.id,
           title: cmd.title,
-          description: cmd.subtitle || '',
-          mode: cmd.mode || 'no-view',
+          description: cmd.subtitle || 'System Settings pane',
+          mode: 'no-view',
           interval: cmd.interval,
           disabledByDefault: Boolean(cmd.disabledByDefault),
           preferences: [],
@@ -296,14 +344,14 @@ const ExtensionsTab: React.FC<{
     }
 
     return Array.from(byExt.values()).sort((a, b) => {
-      if (a.extName === '__supercmd') return -1;
-      if (b.extName === '__supercmd') return 1;
-      if (a.extName === '__script_commands') return -1;
-      if (b.extName === '__script_commands') return 1;
-      if (a.extName === '__apps') return -1;
-      if (b.extName === '__apps') return 1;
-      if (a.extName === '__settings') return -1;
-      if (b.extName === '__settings') return 1;
+      if (a.extName === SUPERCMD_EXTENSION_NAME) return -1;
+      if (b.extName === SUPERCMD_EXTENSION_NAME) return 1;
+      if (a.extName === INSTALLED_APPLICATIONS_NAME) return -1;
+      if (b.extName === INSTALLED_APPLICATIONS_NAME) return 1;
+      if (a.extName === SYSTEM_SETTINGS_NAME) return -1;
+      if (b.extName === SYSTEM_SETTINGS_NAME) return 1;
+      if (a.extName === SCRIPT_COMMANDS_EXTENSION_NAME) return -1;
+      if (b.extName === SCRIPT_COMMANDS_EXTENSION_NAME) return 1;
       return a.title.localeCompare(b.title);
     });
   }, [schemas, commands]);
@@ -359,17 +407,23 @@ const ExtensionsTab: React.FC<{
           schema.extName.toLowerCase().includes(q) ||
           schema.description.toLowerCase().includes(q);
         const commandsMatched = schema.commands.filter(
-          (cmd) =>
-            cmd.title.toLowerCase().includes(q) ||
-            cmd.name.toLowerCase().includes(q) ||
-            cmd.description.toLowerCase().includes(q)
+          (cmd) => {
+            const commandInfo = resolveCommandInfo(schema.extName, cmd.name);
+            const commandAlias = commandInfo ? String(settings?.commandAliases?.[commandInfo.id] || '').toLowerCase() : '';
+            return (
+              cmd.title.toLowerCase().includes(q) ||
+              cmd.name.toLowerCase().includes(q) ||
+              cmd.description.toLowerCase().includes(q) ||
+              commandAlias.includes(q)
+            );
+          }
         );
         if (matchesExtension) return schema;
         if (commandsMatched.length > 0) return { ...schema, commands: commandsMatched };
         return null;
       })
       .filter(Boolean) as InstalledExtensionSettingsSchema[];
-  }, [displaySchemas, search]);
+  }, [displaySchemas, search, settings]);
 
   useEffect(() => {
     if (displaySchemas.length === 0) {
@@ -385,7 +439,12 @@ const ExtensionsTab: React.FC<{
     setExpandedExtensions((prev) => {
       const next = { ...prev };
       for (const schema of displaySchemas) {
-        if (next[schema.extName] === undefined) next[schema.extName] = true;
+        if (next[schema.extName] === undefined) {
+          next[schema.extName] =
+            schema.extName === INSTALLED_APPLICATIONS_NAME || schema.extName === SYSTEM_SETTINGS_NAME
+              ? false
+              : true;
+        }
       }
       return next;
     });
@@ -465,7 +524,9 @@ const ExtensionsTab: React.FC<{
     const result = await window.electron.updateCommandHotkey(command.id, hotkey);
     if (!result.success) {
       const message = result.error === 'duplicate'
-        ? 'Hotkey already used by another SuperCmd command.'
+        ? result.conflictCommandId
+          ? `Hotkey already used by "${result.conflictCommandId}".`
+          : 'Hotkey already used by another SuperCmd command.'
         : 'Hotkey unavailable. It may be used by macOS or another app.';
       setHotkeyStatus({ type: 'error', text: message });
       setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 3200);
@@ -481,6 +542,54 @@ const ExtensionsTab: React.FC<{
     setHotkeyStatus({ type: 'success', text: hotkey ? 'Hotkey updated.' : 'Hotkey removed.' });
     setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 1800);
   };
+
+  const getCommandAlias = useCallback(
+    (commandId: string): string => String(settings?.commandAliases?.[commandId] || '').trim(),
+    [settings]
+  );
+
+  const startAliasEditing = useCallback(
+    (commandId: string) => {
+      const existingAlias = getCommandAlias(commandId);
+      setAliasDrafts((prev) => ({ ...prev, [commandId]: existingAlias }));
+      setEditingAliasCommandId(commandId);
+    },
+    [getCommandAlias]
+  );
+
+  const cancelAliasEditing = useCallback((commandId: string) => {
+    setEditingAliasCommandId((prev) => (prev === commandId ? null : prev));
+    setAliasDrafts((prev) => {
+      const next = { ...prev };
+      delete next[commandId];
+      return next;
+    });
+  }, []);
+
+  const saveCommandAlias = useCallback(
+    async (commandId: string, draftValue: string) => {
+      if (!settings) return;
+      const trimmed = String(draftValue || '').trim();
+      const existing = getCommandAlias(commandId);
+
+      if (trimmed === existing) {
+        cancelAliasEditing(commandId);
+        return;
+      }
+
+      const nextAliases = { ...(settings.commandAliases || {}) };
+      if (trimmed) {
+        nextAliases[commandId] = trimmed;
+      } else {
+        delete nextAliases[commandId];
+      }
+
+      await window.electron.saveSettings({ commandAliases: nextAliases });
+      setSettings((prev) => (prev ? { ...prev, commandAliases: nextAliases } : prev));
+      cancelAliasEditing(commandId);
+    },
+    [cancelAliasEditing, getCommandAlias, settings]
+  );
 
   const getPreferenceValues = (extName: string, cmdName?: string): Record<string, any> => {
     if (!cmdName) return readJsonObject(getExtPrefsKey(extName));
@@ -517,7 +626,17 @@ const ExtensionsTab: React.FC<{
     ? resolveCommandInfo(selectedSchema?.extName || '', selectedCommandSchema.name)
     : undefined;
 
-  const getModeTypeLabel = (mode: string): string => {
+  const getSchemaTypeLabel = (extName: string): string => {
+    if (extName === SUPERCMD_EXTENSION_NAME) return 'Built-in';
+    if (extName === INSTALLED_APPLICATIONS_NAME) return 'Apps';
+    if (extName === SYSTEM_SETTINGS_NAME) return 'Settings';
+    if (extName === SCRIPT_COMMANDS_EXTENSION_NAME) return 'Scripts';
+    return 'Extension';
+  };
+
+  const getModeTypeLabel = (mode: string, command?: CommandInfo): string => {
+    if (command?.category === 'app') return 'Application';
+    if (command?.category === 'settings') return 'Settings';
     if (mode === 'menu-bar') return 'Menu Bar C...';
     if (mode === 'no-view') return 'Command';
     return 'Command';
@@ -542,6 +661,13 @@ const ExtensionsTab: React.FC<{
     return <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />;
   };
 
+  const getSystemExtensionCommandIcon = (command?: CommandInfo) => {
+    if (command?.category === 'settings') {
+      return <Settings className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+    }
+    return <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />;
+  };
+
   const setExtensionEnabled = async (schema: InstalledExtensionSettingsSchema, enabled: boolean) => {
     for (const cmd of schema.commands) {
       const commandInfo = resolveCommandInfo(schema.extName, cmd.name);
@@ -549,6 +675,43 @@ const ExtensionsTab: React.FC<{
       await setCommandEnabled(commandInfo, enabled);
     }
   };
+
+  const canUninstallExtension = useCallback(
+    (extName: string): boolean => installedExtensionNames.has(extName),
+    [installedExtensionNames]
+  );
+
+  const handleUninstallExtension = useCallback(
+    async (extName: string, extensionTitle: string) => {
+      if (!canUninstallExtension(extName)) {
+        setExtensionContextMenu(null);
+        setUninstallDialog(null);
+        return;
+      }
+
+      setExtensionContextMenu(null);
+      setUninstallDialog(null);
+      setBusyUninstallExtName(extName);
+      try {
+        const success = await window.electron.uninstallExtension(extName);
+        if (success) {
+          setExtensionActionStatus({ type: 'success', text: `Uninstalled "${extensionTitle}".` });
+          setTimeout(() => setExtensionActionStatus({ type: 'idle', text: '' }), 2200);
+          await loadData();
+        } else {
+          setExtensionActionStatus({ type: 'error', text: `Failed to uninstall "${extensionTitle}".` });
+          setTimeout(() => setExtensionActionStatus({ type: 'idle', text: '' }), 3200);
+        }
+      } catch (error) {
+        console.error('Failed to uninstall extension:', error);
+        setExtensionActionStatus({ type: 'error', text: `Failed to uninstall "${extensionTitle}".` });
+        setTimeout(() => setExtensionActionStatus({ type: 'idle', text: '' }), 3200);
+      } finally {
+        setBusyUninstallExtName(null);
+      }
+    },
+    [canUninstallExtension, loadData]
+  );
 
   const updateCustomExtensionFolders = useCallback(
     async (nextFolders: string[]) => {
@@ -616,6 +779,8 @@ const ExtensionsTab: React.FC<{
 
   useEffect(() => {
     if (!showTopActionsMenu) return;
+    setExtensionContextMenu(null);
+    setUninstallDialog(null);
     const onMouseDown = (event: MouseEvent) => {
       if (topActionsMenuRef.current?.contains(event.target as Node)) return;
       setShowTopActionsMenu(false);
@@ -623,6 +788,20 @@ const ExtensionsTab: React.FC<{
     window.addEventListener('mousedown', onMouseDown);
     return () => window.removeEventListener('mousedown', onMouseDown);
   }, [showTopActionsMenu]);
+
+  useEffect(() => {
+    if (!extensionContextMenu && !uninstallDialog) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (!busyUninstallExtName) {
+          setExtensionContextMenu(null);
+          setUninstallDialog(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [extensionContextMenu, uninstallDialog, busyUninstallExtName]);
 
   if (isLoading) {
     return <div className="text-white/50 text-sm">Loading extension settings…</div>;
@@ -639,7 +818,7 @@ const ExtensionsTab: React.FC<{
 
   return (
     <div className="h-full min-h-0 flex flex-col">
-      <div className="flex flex-1 min-h-0 bg-white/[0.01]">
+      <div className="flex flex-1 min-h-0 bg-[rgba(20,20,20,0.30)]">
         <div className="flex-[0_0_66%] min-w-[600px] h-full border-r border-white/[0.08] flex flex-col">
           <div className="px-3 py-2 border-b border-white/[0.06]">
             <div className="flex items-center gap-2">
@@ -680,7 +859,15 @@ const ExtensionsTab: React.FC<{
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
                 {showTopActionsMenu ? (
-                  <div className="absolute right-0 mt-1 w-48 rounded-lg border border-white/[0.10] bg-[#1a1c23]/95 backdrop-blur-md shadow-2xl overflow-hidden z-20">
+                  <div
+                    className="absolute right-0 mt-1 w-48 rounded-lg border border-white/[0.10] shadow-2xl overflow-hidden z-20"
+                    style={{
+                      background:
+                        'linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03)), rgba(30,31,36,0.66)',
+                      backdropFilter: 'blur(48px) saturate(170%)',
+                      WebkitBackdropFilter: 'blur(48px) saturate(170%)',
+                    }}
+                  >
                     <button
                       onClick={() => {
                         setShowTopActionsMenu(false);
@@ -743,6 +930,15 @@ const ExtensionsTab: React.FC<{
                 {hotkeyStatus.text}
               </p>
             ) : null}
+            {extensionActionStatus.type !== 'idle' ? (
+              <p
+                className={`mt-1 text-xs ${
+                  extensionActionStatus.type === 'error' ? 'text-red-300/90' : 'text-emerald-300/90'
+                }`}
+              >
+                {extensionActionStatus.text}
+              </p>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-[1fr_120px_100px_130px_82px] px-4 py-2 text-[11px] uppercase tracking-wider text-white/35 border-b border-white/[0.06]">
@@ -757,12 +953,29 @@ const ExtensionsTab: React.FC<{
             {filteredSchemas.length === 0 ? (
               <div className="px-4 py-8 text-center text-xs text-white/30">No matching extensions</div>
             ) : (
-              filteredSchemas.map((schema) => (
+              filteredSchemas.map((schema) => {
+                const uninstallable = canUninstallExtension(schema.extName);
+                return (
                 <div key={schema.extName} className="border-b border-white/[0.04] last:border-b-0">
                   <button
                     onClick={() => {
                       setSelected({ extName: schema.extName });
                       toggleExtensionExpanded(schema.extName);
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      if (!uninstallable) {
+                        setExtensionContextMenu(null);
+                        return;
+                      }
+                      setSelected({ extName: schema.extName });
+                      setExtensionContextMenu({
+                        x: event.clientX,
+                        y: event.clientY,
+                        extName: schema.extName,
+                        title: schema.title,
+                        iconDataUrl: schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName),
+                      });
                     }}
                     className={`w-full grid grid-cols-[1fr_120px_100px_130px_82px] items-center gap-2 px-4 py-1.5 text-left transition-colors ${
                       selected?.extName === schema.extName && !selected?.cmdName
@@ -778,14 +991,20 @@ const ExtensionsTab: React.FC<{
                       )}
                       {(schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)) ? (
                         <img src={schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)} alt="" className="w-4 h-4 rounded-sm object-contain" draggable={false} />
-                      ) : schema.extName === '__supercmd' ? (
+                      ) : schema.extName === SUPERCMD_EXTENSION_NAME ? (
                         <img src={supercmdLogo} alt="" className="w-4 h-4 object-contain" draggable={false} />
+                      ) : schema.extName === SYSTEM_SETTINGS_NAME ? (
+                        <Settings className="w-4 h-4 text-white/65 flex-shrink-0" />
+                      ) : schema.extName === INSTALLED_APPLICATIONS_NAME ? (
+                        <TerminalSquare className="w-4 h-4 text-white/60 flex-shrink-0" />
+                      ) : schema.extName === SCRIPT_COMMANDS_EXTENSION_NAME ? (
+                        <TerminalSquare className="w-4 h-4 text-white/60 flex-shrink-0" />
                       ) : (
                         <Puzzle className="w-4 h-4 text-violet-300/80" />
                       )}
                       <span className="text-sm text-white/90 truncate">{schema.title}</span>
                     </span>
-                    <span className="text-sm text-white/55">Extension</span>
+                    <span className="text-sm text-white/55">{getSchemaTypeLabel(schema.extName)}</span>
                     <span className="text-sm text-white/45">--</span>
                     <span className="text-sm text-white/45">--</span>
                     <span className="flex items-center justify-start">
@@ -802,6 +1021,9 @@ const ExtensionsTab: React.FC<{
                   {expandedExtensions[schema.extName] && schema.commands.map((cmd) => {
                     const commandInfo = resolveCommandInfo(schema.extName, cmd.name);
                     const enabled = isCommandEnabled(commandInfo);
+                    const currentAlias = commandInfo ? getCommandAlias(commandInfo.id) : '';
+                    const isAliasEditing = commandInfo ? editingAliasCommandId === commandInfo.id : false;
+                    const aliasDraftValue = commandInfo ? (aliasDrafts[commandInfo.id] ?? currentAlias) : '';
                     return (
                       <div
                         key={`${schema.extName}/${cmd.name}`}
@@ -818,15 +1040,68 @@ const ExtensionsTab: React.FC<{
                           >
                             {commandInfo?.iconDataUrl ? (
                               <img src={commandInfo.iconDataUrl} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0" draggable={false} />
-                            ) : schema.extName === '__supercmd' ? (
+                            ) : schema.extName === SUPERCMD_EXTENSION_NAME ? (
                               getCoreCommandIcon(commandInfo?.id)
+                            ) : schema.extName === INSTALLED_APPLICATIONS_NAME || schema.extName === SYSTEM_SETTINGS_NAME ? (
+                              getSystemExtensionCommandIcon(commandInfo)
                             ) : (
                               <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />
                             )}
                             <span className="text-xs text-white/85 truncate">{cmd.title}</span>
                           </button>
-                          <span className="text-xs text-white/55">{getModeTypeLabel(cmd.mode)}</span>
-                          <span className="text-xs text-white/45">Add Alias</span>
+                          <span className="text-xs text-white/55">{getModeTypeLabel(cmd.mode, commandInfo)}</span>
+                          {commandInfo ? (
+                            <div className="min-w-0">
+                              {isAliasEditing ? (
+                                <input
+                                  autoFocus
+                                  value={aliasDraftValue}
+                                  onChange={(e) => setAliasDrafts((prev) => ({ ...prev, [commandInfo.id]: e.target.value }))}
+                                  onBlur={(e) => {
+                                    if (e.currentTarget.dataset.cancelled === '1') {
+                                      e.currentTarget.dataset.cancelled = '0';
+                                      cancelAliasEditing(commandInfo.id);
+                                      return;
+                                    }
+                                    void saveCommandAlias(commandInfo.id, e.target.value);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      (e.currentTarget as HTMLInputElement).blur();
+                                      return;
+                                    }
+                                    if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      e.currentTarget.dataset.cancelled = '1';
+                                      (e.currentTarget as HTMLInputElement).blur();
+                                    }
+                                  }}
+                                  placeholder="Add Alias"
+                                  className="h-6 w-full min-w-0 rounded-md border border-white/[0.18] bg-white/[0.02] px-2 font-mono text-[11px] text-white/80 placeholder-white/38 outline-none focus:border-white/[0.36]"
+                                />
+                              ) : currentAlias ? (
+                                <button
+                                  type="button"
+                                  onClick={() => startAliasEditing(commandInfo.id)}
+                                  className="inline-flex h-6 max-w-full items-center rounded-md border border-white/[0.18] bg-white/[0.02] px-2 font-mono text-[11px] text-white/72 hover:border-white/[0.28] hover:text-white/78 transition-colors"
+                                  title="Edit alias"
+                                >
+                                  <span className="truncate">{currentAlias}</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => startAliasEditing(commandInfo.id)}
+                                  className="text-xs text-white/45 hover:text-white/75 transition-colors"
+                                >
+                                  Add Alias
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-white/25">--</span>
+                          )}
                           {commandInfo ? (
                             <>
                               <div className="flex items-center">
@@ -856,7 +1131,7 @@ const ExtensionsTab: React.FC<{
                     );
                   })}
                 </div>
-              ))
+              )})
             )}
           </div>
         </div>
@@ -912,6 +1187,14 @@ const ExtensionsTab: React.FC<{
                 <div className="flex items-center gap-2">
                   {selectedSchema.iconDataUrl ? (
                     <img src={selectedSchema.iconDataUrl} alt="" className="w-5 h-5 rounded object-contain" draggable={false} />
+                  ) : selectedSchema.extName === SUPERCMD_EXTENSION_NAME ? (
+                    <img src={supercmdLogo} alt="" className="w-5 h-5 object-contain" draggable={false} />
+                  ) : selectedSchema.extName === SYSTEM_SETTINGS_NAME ? (
+                    <Settings className="w-5 h-5 text-white/65" />
+                  ) : selectedSchema.extName === INSTALLED_APPLICATIONS_NAME ? (
+                    <TerminalSquare className="w-5 h-5 text-white/60" />
+                  ) : selectedSchema.extName === SCRIPT_COMMANDS_EXTENSION_NAME ? (
+                    <TerminalSquare className="w-5 h-5 text-white/60" />
                   ) : (
                     <Puzzle className="w-5 h-5 text-violet-300/80" />
                   )}
@@ -988,6 +1271,98 @@ const ExtensionsTab: React.FC<{
           </div>
         </div>
       </div>
+      {uninstallDialog ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/12"
+          onClick={() => {
+            if (!busyUninstallExtName) setUninstallDialog(null);
+          }}
+        >
+          <div
+            className="glass-effect w-[296px] max-w-[82vw] rounded-xl border border-white/[0.10] p-3 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-md bg-white/[0.04] border border-white/[0.08]">
+              {uninstallDialog.iconDataUrl ? (
+                <img
+                  src={uninstallDialog.iconDataUrl}
+                  alt=""
+                  className="h-5 w-5 rounded object-contain"
+                  draggable={false}
+                />
+              ) : (
+                <Puzzle className="h-4.5 w-4.5 text-white/65" />
+              )}
+            </div>
+
+            <div className="text-center text-[18px] font-semibold leading-tight text-white/92">
+              Uninstall "{uninstallDialog.title}"?
+            </div>
+            <p className="mt-1 text-center text-[11px] leading-snug text-white/45">
+              This extension and its commands will be removed from SuperCmd.
+            </p>
+
+            <div className="mt-2.5 flex items-center gap-2">
+              <button
+                type="button"
+                disabled={Boolean(busyUninstallExtName)}
+                onClick={() => setUninstallDialog(null)}
+                className="flex-1 rounded-md border border-white/[0.12] bg-white/[0.04] px-2.5 py-1.5 text-[12px] font-medium text-white/80 hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(busyUninstallExtName)}
+                onClick={() => void handleUninstallExtension(uninstallDialog.extName, uninstallDialog.title)}
+                className="flex-1 rounded-md border border-red-400/25 bg-red-500/10 px-2.5 py-1.5 text-[12px] font-semibold text-red-200/90 hover:bg-red-500/18 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {busyUninstallExtName ? 'Uninstalling…' : 'Uninstall'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {extensionContextMenu ? (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setExtensionContextMenu(null)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setExtensionContextMenu(null);
+          }}
+        >
+          <div
+            className="absolute min-w-[150px] rounded-xl border border-white/[0.12] shadow-2xl p-1"
+            style={{
+              left: Math.min(extensionContextMenu.x, window.innerWidth - 180),
+              top: Math.min(extensionContextMenu.y, window.innerHeight - 120),
+              background:
+                'linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03)), rgba(30,31,36,0.66)',
+              backdropFilter: 'blur(48px) saturate(170%)',
+              WebkitBackdropFilter: 'blur(48px) saturate(170%)',
+            }}
+            onClick={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <button
+              type="button"
+              disabled={busyUninstallExtName === extensionContextMenu.extName}
+              onClick={() => {
+                setUninstallDialog({
+                  extName: extensionContextMenu.extName,
+                  title: extensionContextMenu.title,
+                  iconDataUrl: extensionContextMenu.iconDataUrl,
+                });
+                setExtensionContextMenu(null);
+              }}
+              className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-300/90 hover:text-red-200 hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {busyUninstallExtName === extensionContextMenu.extName ? 'Uninstalling…' : 'Uninstall'}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

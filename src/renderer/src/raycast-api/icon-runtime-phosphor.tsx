@@ -4,15 +4,17 @@
  */
 
 import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import * as Phosphor from '../../../../node_modules/@phosphor-icons/react/dist/index.es.js';
 import { RAYCAST_ICON_NAMES, RAYCAST_ICON_VALUE_TO_NAME, type RaycastIconName } from './raycast-icon-enum';
 
+type PhosphorIconWeight = 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';
 type PhosphorIconComponent = React.ComponentType<{
   className?: string;
   size?: number | string;
   color?: string;
   style?: React.CSSProperties;
-  weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';
+  weight?: PhosphorIconWeight;
 }>;
 
 type PhosphorExportValue = unknown;
@@ -103,6 +105,10 @@ function tryResolvePhosphorByName(name: string): PhosphorIconComponent | undefin
 const EXPLICIT_RAYCAST_TO_PHOSPHOR: Record<string, string[]> = {
   addperson: ['UserPlus'],
   aligncentre: ['AlignCenterHorizontal'],
+  arrowdowncircle: ['ArrowCircleDown'],
+  arrowleftcircle: ['ArrowCircleLeft'],
+  arrowrightcircle: ['ArrowCircleRight'],
+  arrowupcircle: ['ArrowCircleUp'],
   appwindowgrid2x2: ['RowsPlusTop', 'SquaresFour'],
   appwindowgrid3x3: ['DotsNine', 'SquaresFour'],
   appwindowlist: ['Rows'],
@@ -124,6 +130,7 @@ const EXPLICIT_RAYCAST_TO_PHOSPHOR: Record<string, string[]> = {
   copyclipboard: ['Copy'],
   droplets: ['Drop'],
   eyedisabled: ['EyeSlash'],
+  eyedropper: ['Eyedropper'],
   hashsymbol: ['Hash'],
   hashtag: ['Hash'],
   lightbulboff: ['LightbulbFilament'],
@@ -140,8 +147,9 @@ const EXPLICIT_RAYCAST_TO_PHOSPHOR: Record<string, string[]> = {
   quicklink: ['LinkSimple'],
   rss: ['Rss'],
   twopeople: ['Users'],
-  xmark: ['X'],
+  geopin: ['MapPin'],
   xmarkcircle: ['XCircle'],
+  xmark: ['X'],
   xmarkcirclefilled: ['XCircle'],
 };
 
@@ -186,27 +194,42 @@ function bestFuzzyPhosphorCandidate(input: string): string | undefined {
   return bestName || undefined;
 }
 
-function resolvePhosphorIconFromRaycast(input: string): PhosphorIconComponent | undefined {
-  const iconName = resolveRaycastIconName(input) || input;
+function resolvePhosphorIconFromRaycast(input: string): { icon: PhosphorIconComponent; weight: PhosphorIconWeight } | undefined {
+  const resolvedRaycastName = resolveRaycastIconName(input);
+  const iconName = (resolvedRaycastName || input || '').replace(/^Icon\./, '');
   const normalized = normalizeIconName(iconName);
+  const baseIconName = iconName.replace(/Filled$/, '');
+  const normalizedBase = normalizeIconName(baseIconName);
+  const shouldUseFillWeight = /filled$/i.test(iconName);
 
   const directCandidates = [
     iconName,
+    baseIconName,
     iconName.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/\s+/g, ''),
     iconName.replace(/[^a-zA-Z0-9]/g, ''),
     iconName.replace(/^Icon\./, ''),
     iconName.replace(/Icon$/, ''),
+    baseIconName.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/\s+/g, ''),
+    baseIconName.replace(/[^a-zA-Z0-9]/g, ''),
+    baseIconName.replace(/Icon$/, ''),
   ];
 
   for (const candidate of directCandidates) {
     const resolved = tryResolvePhosphorByName(candidate);
-    if (resolved) return resolved;
+    if (resolved) {
+      return { icon: resolved, weight: shouldUseFillWeight ? 'fill' : 'regular' };
+    }
   }
 
-  const explicitAliases = EXPLICIT_RAYCAST_TO_PHOSPHOR[normalized] || [];
+  const explicitAliases = [
+    ...(EXPLICIT_RAYCAST_TO_PHOSPHOR[normalized] || []),
+    ...(EXPLICIT_RAYCAST_TO_PHOSPHOR[normalizedBase] || []),
+  ];
   for (const candidate of explicitAliases) {
     const resolved = tryResolvePhosphorByName(candidate);
-    if (resolved) return resolved;
+    if (resolved) {
+      return { icon: resolved, weight: shouldUseFillWeight ? 'fill' : 'regular' };
+    }
   }
 
   const candidates = new Set<string>();
@@ -256,29 +279,137 @@ function resolvePhosphorIconFromRaycast(input: string): PhosphorIconComponent | 
 
   for (const candidate of candidates) {
     const icon = tryResolvePhosphorByName(candidate);
-    if (icon) return icon;
+    if (icon) {
+      return { icon, weight: shouldUseFillWeight ? 'fill' : 'regular' };
+    }
   }
 
   const fuzzyCandidate = bestFuzzyPhosphorCandidate(iconName);
   if (fuzzyCandidate) {
     const fuzzyResolved = tryResolvePhosphorByName(fuzzyCandidate);
-    if (fuzzyResolved) return fuzzyResolved;
+    if (fuzzyResolved) {
+      return { icon: fuzzyResolved, weight: shouldUseFillWeight ? 'fill' : 'regular' };
+    }
   }
 
-  return tryResolvePhosphorByName('Question') || tryResolvePhosphorByName('Circle');
+  const fallback = tryResolvePhosphorByName('Question') || tryResolvePhosphorByName('Circle');
+  if (!fallback) return undefined;
+  return { icon: fallback, weight: shouldUseFillWeight ? 'fill' : 'regular' };
 }
 
 export function renderPhosphorIcon(input: string, className: string, tint?: string): React.ReactNode {
-  const IconComponent = resolvePhosphorIconFromRaycast(input);
-  if (!IconComponent) return null;
+  const spec = resolvePhosphorIconFromRaycast(input);
+  if (!spec) return null;
+  const { icon: IconComponent, weight } = spec;
 
   return (
     <IconComponent
       className={className}
-      weight="regular"
+      weight={weight}
       style={{ color: tint || 'rgba(255,255,255,0.92)' }}
     />
   );
+}
+
+export function renderPhosphorIconDataUrl(
+  input: string,
+  options?: { size?: number; color?: string; weight?: PhosphorIconWeight }
+): string | undefined {
+  const spec = resolvePhosphorIconFromRaycast(input);
+  if (!spec) return undefined;
+  const { icon: IconComponent, weight } = spec;
+  const size = Number.isFinite(Number(options?.size)) ? Math.max(8, Number(options?.size)) : 16;
+  const color = String(options?.color || '#000000');
+  const finalWeight = options?.weight || weight;
+
+  const svg = renderToStaticMarkup(
+    <IconComponent size={size} weight={finalWeight} color={color} />
+  );
+  if (!svg) return undefined;
+
+  // Use base64 SVG data URLs for Electron nativeImage compatibility.
+  const toBase64 = (value: string): string => {
+    try {
+      if (typeof Buffer !== 'undefined') {
+        return Buffer.from(value, 'utf8').toString('base64');
+      }
+    } catch {
+      // fallback below
+    }
+    try {
+      const bytes = new TextEncoder().encode(value);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 1) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    } catch {
+      return '';
+    }
+  };
+
+  const base64 = toBase64(svg);
+  if (!base64) return undefined;
+  return `data:image/svg+xml;base64,${base64}`;
+}
+
+const nativeIconDataUrlCache = new Map<string, Promise<string | undefined>>();
+
+function svgDataUrlToPngDataUrl(svgDataUrl: string, size: number): Promise<string | undefined> {
+  if (typeof window === 'undefined' || typeof Image === 'undefined' || typeof document === 'undefined') {
+    return Promise.resolve(svgDataUrl);
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(svgDataUrl);
+        return;
+      }
+
+      const img = new Image();
+      img.onload = () => {
+        try {
+          ctx.clearRect(0, 0, size, size);
+          ctx.drawImage(img, 0, 0, size, size);
+          const pngDataUrl = canvas.toDataURL('image/png');
+          resolve(pngDataUrl || svgDataUrl);
+        } catch {
+          resolve(svgDataUrl);
+        }
+      };
+      img.onerror = () => resolve(svgDataUrl);
+      img.src = svgDataUrl;
+    } catch {
+      resolve(svgDataUrl);
+    }
+  });
+}
+
+export function renderPhosphorIconDataUrlForNative(
+  input: string,
+  options?: { size?: number; color?: string; weight?: PhosphorIconWeight }
+): Promise<string | undefined> {
+  const size = Number.isFinite(Number(options?.size)) ? Math.max(8, Number(options?.size)) : 16;
+  const color = String(options?.color || '#000000');
+  const weight = options?.weight || 'regular';
+  const cacheKey = `${input}::${size}::${color}::${weight}`;
+  const cached = nativeIconDataUrlCache.get(cacheKey);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    const svgDataUrl = renderPhosphorIconDataUrl(input, { size, color, weight: options?.weight });
+    if (!svgDataUrl) return undefined;
+    if (!svgDataUrl.startsWith('data:image/svg+xml')) return svgDataUrl;
+    return svgDataUrlToPngDataUrl(svgDataUrl, size);
+  })();
+
+  nativeIconDataUrlCache.set(cacheKey, promise);
+  return promise;
 }
 
 export function isRaycastIconName(name: string): boolean {

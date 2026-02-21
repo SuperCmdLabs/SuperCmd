@@ -26,8 +26,7 @@ const ExtensionActionFooter: React.FC<ExtensionActionFooterProps> = ({
 
   return (
     <div
-      className="flex items-center px-4 py-3.5 border-t border-white/[0.06]"
-      style={{ background: 'rgba(28,28,32,0.90)' }}
+      className="sc-glass-footer flex items-center px-4 py-3.5"
     >
       <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">{leftContent}</div>
 

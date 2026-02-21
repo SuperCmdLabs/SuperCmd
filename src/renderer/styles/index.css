@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --sc-base-rgb: 20, 20, 20;
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -54,13 +58,37 @@ select {
   height: 100vh;
 }
 
-/* Glass effect background - dark frosted glass like terminal */
+/* Glass effect background - native macOS-style frosted glass */
 .glass-effect {
-  background: rgba(12, 12, 16, 0.74);
-  -webkit-backdrop-filter: blur(40px) saturate(150%);
-  backdrop-filter: blur(40px) saturate(150%);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    rgba(var(--sc-base-rgb), 0.96);
+  -webkit-backdrop-filter: blur(54px) saturate(170%);
+  backdrop-filter: blur(54px) saturate(170%);
+  position: relative;
+  border-radius: 14px;
   border: none;
+  background-clip: padding-box;
   box-shadow: none;
+}
+
+.glass-effect::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 13px;
+  border: 1px solid rgba(184, 190, 198, 0.22);
+  pointer-events: none;
+}
+
+/* Unified glass footer used by extension bottom action bars */
+.sc-glass-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03)),
+    rgba(28, 29, 34, 0.84);
+  -webkit-backdrop-filter: blur(48px) saturate(170%);
+  backdrop-filter: blur(48px) saturate(170%);
 }
 
 .cursor-prompt-surface {
@@ -203,7 +231,7 @@ select {
 
 .command-item.selected {
   background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: transparent;
 }
 
 /* Search input — inline, no background */
@@ -433,7 +461,7 @@ body.sc-detached-window .whisper-widget-host {
   padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
   align-items: flex-end;
   justify-content: center;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 body.sc-detached-window .whisper-widget-shell {
@@ -487,9 +515,11 @@ body.sc-detached-window .whisper-shortcut-hint {
 
 .whisper-close-button {
   width: 16px;
+  height: 14px;
   padding: 0;
   opacity: 0;
   pointer-events: none;
+  align-self: center;
 }
 
 .whisper-widget-shell:hover .whisper-close-button {

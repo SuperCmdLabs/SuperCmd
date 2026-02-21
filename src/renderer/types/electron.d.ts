@@ -112,6 +112,9 @@ export interface AISettings {
   edgeTtsVoice: string;
   speechCorrectionEnabled: boolean;
   enabled: boolean;
+  llmEnabled: boolean;
+  whisperEnabled: boolean;
+  readEnabled: boolean;
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
@@ -124,6 +127,15 @@ export interface EdgeTtsVoice {
   languageLabel: string;
   gender: 'female' | 'male';
   style?: string;
+}
+
+export interface ElevenLabsVoice {
+  id: string;
+  name: string;
+  category: 'premade' | 'cloned' | 'generated' | 'professional';
+  description?: string;
+  labels?: Record<string, string>;
+  previewUrl?: string;
 }
 
 export interface AppUpdaterStatus {
@@ -147,6 +159,7 @@ export interface AppSettings {
   enabledCommands: string[];
   customExtensionFolders: string[];
   commandHotkeys: Record<string, string>;
+  commandAliases: Record<string, string>;
   pinnedCommands: string[];
   recentCommands: string[];
   hasSeenOnboarding: boolean;
@@ -154,6 +167,35 @@ export interface AppSettings {
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
+  fontSize: 'small' | 'medium' | 'large';
+  baseColor: string;
+  appUpdaterLastCheckedAt: number;
+  hyperKeySource:
+    | 'none'
+    | 'caps-lock'
+    | 'left-command'
+    | 'right-command'
+    | 'left-control'
+    | 'right-control'
+    | 'left-shift'
+    | 'right-shift'
+    | 'left-option'
+    | 'right-option'
+    | 'f1'
+    | 'f2'
+    | 'f3'
+    | 'f4'
+    | 'f5'
+    | 'f6'
+    | 'f7'
+    | 'f8'
+    | 'f9'
+    | 'f10'
+    | 'f11'
+    | 'f12';
+  hyperKeyIncludeShift: boolean;
+  hyperKeyQuickPressAction: 'toggle-caps-lock' | 'escape' | 'none';
+  hyperReplaceModifierGlyphsWithHyper: boolean;
 }
 
 export interface CatalogEntry {
@@ -219,6 +261,7 @@ export interface ElectronAPI {
   getCommands: () => Promise<CommandInfo[]>;
   executeCommand: (commandId: string) => Promise<boolean>;
   hideWindow: () => Promise<void>;
+  openDevTools: () => Promise<boolean>;
   closePromptWindow: () => Promise<void>;
   setLauncherMode: (mode: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt') => Promise<void>;
   getLastFrontmostApp: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
@@ -229,6 +272,7 @@ export interface ElectronAPI {
   onRunSystemCommand: (callback: (commandId: string) => void) => (() => void);
   onOnboardingHotkeyPressed: (callback: () => void) => (() => void);
   setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean) => void;
+  setWhisperIgnoreMouseEvents: (ignore: boolean) => void;
   onWhisperStopAndClose: (callback: () => void) => (() => void);
   onWhisperStartListening: (callback: () => void) => (() => void);
   onWhisperStopListening: (callback: () => void) => (() => void);
@@ -261,6 +305,7 @@ export interface ElectronAPI {
   speakUpdateOptions: (patch: { voice?: string; rate?: string; restartCurrent?: boolean }) => Promise<{ voice: string; rate: string }>;
   speakPreviewVoice: (payload: { voice: string; text?: string; rate?: string; provider?: 'edge-tts' | 'elevenlabs'; model?: string }) => Promise<boolean>;
   edgeTtsListVoices: () => Promise<EdgeTtsVoice[]>;
+  elevenLabsListVoices: () => Promise<{ voices: ElevenLabsVoice[]; error?: string }>;
 
   // Settings
   getSettings: () => Promise<AppSettings>;
@@ -295,14 +340,14 @@ export interface ElectronAPI {
   updateCommandHotkey: (
     commandId: string,
     hotkey: string
-  ) => Promise<{ success: boolean; error?: 'duplicate' | 'unavailable' }>;
+  ) => Promise<{ success: boolean; error?: 'duplicate' | 'unavailable'; conflictCommandId?: string }>;
   toggleCommandEnabled: (
     commandId: string,
     enabled: boolean
   ) => Promise<boolean>;
   openSettings: () => Promise<void>;
   openSettingsTab: (
-    tab: 'general' | 'ai' | 'extensions',
+    tab: 'general' | 'ai' | 'extensions' | 'advanced',
     target?: { extensionName?: string; commandName?: string }
   ) => Promise<void>;
   openExtensionStoreWindow: () => Promise<void>;
@@ -312,12 +357,14 @@ export interface ElectronAPI {
       | 'general'
       | 'ai'
       | 'extensions'
+      | 'advanced'
       | {
-          tab: 'general' | 'ai' | 'extensions';
+          tab: 'general' | 'ai' | 'extensions' | 'advanced';
           target?: { extensionName?: string; commandName?: string };
         }
     ) => void
   ) => void;
+  onSettingsUpdated: (callback: (settings: AppSettings) => void) => (() => void);
 
   // Extension Runner
   runExtension: (extName: string, cmdName: string) => Promise<ExtensionBundle | null>;
@@ -337,6 +384,7 @@ export interface ElectronAPI {
   getInstalledExtensionNames: () => Promise<string[]>;
   installExtension: (name: string) => Promise<boolean>;
   uninstallExtension: (name: string) => Promise<boolean>;
+  onExtensionsChanged: (callback: () => void) => (() => void);
 
   // Extension APIs (for @raycast/api compatibility)
   httpRequest: (options: {
@@ -399,7 +447,7 @@ export interface ElectronAPI {
   clipboardCopyItem: (id: string) => Promise<boolean>;
   clipboardPasteItem: (id: string) => Promise<boolean>;
   clipboardSetEnabled: (enabled: boolean) => Promise<void>;
-  clipboardWrite: (payload: { text?: string; html?: string }) => Promise<boolean>;
+  clipboardWrite: (payload: { text?: string; html?: string; file?: string }) => Promise<boolean>;
   clipboardReadText: () => Promise<string>;
   getSelectedText: () => Promise<string>;
   getSelectedTextStrict: () => Promise<string>;
@@ -432,7 +480,7 @@ export interface ElectronAPI {
   promptApplyGeneratedText: (payload: { previousText?: string; nextText: string }) => Promise<boolean>;
 
   // Native helpers
-  nativePickColor: () => Promise<{ red: number; green: number; blue: number; alpha: number } | null>;
+  nativePickColor: () => Promise<{ red: number; green: number; blue: number; alpha: number; colorSpace: string } | null>;
   pickFiles: (options?: {
     allowMultipleSelection?: boolean;
     canChooseDirectories?: boolean;
@@ -474,7 +522,10 @@ export interface ElectronAPI {
     microphoneStatus: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
     error?: string;
   }>;
-  whisperStartNative: (language?: string) => Promise<void>;
+  whisperStartNative: (
+    language?: string,
+    options?: { singleUtterance?: boolean }
+  ) => Promise<void>;
   whisperStopNative: () => Promise<void>;
   onWhisperNativeChunk: (callback: (data: {
     transcript?: string;

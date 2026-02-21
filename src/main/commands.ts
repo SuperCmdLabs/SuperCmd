@@ -839,7 +839,9 @@ async function discoverApplications(): Promise<CommandInfo[]> {
         if (info) {
           const packageType = String(info.CFBundlePackageType || '').trim();
           const isFinder = appPath === finderPath;
-          if (packageType && packageType !== 'APPL' && !isFinder) return null;
+          const isAllowedType =
+            !packageType || packageType === 'APPL' || packageType === 'XPC!';
+          if (!isAllowedType && !isFinder) return null;
           if (info.LSUIElement === true) return null;
           if (info.NSUIElement === true) return null;
           if (info.LSBackgroundOnly === true) return null;
@@ -1393,12 +1395,19 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
 
   // Runtime metadata overlays (used by updateCommandMetadata and inline scripts).
   try {
-    const commandMetadata = loadSettings().commandMetadata || {};
+    const loadedSettings = loadSettings();
+    const commandMetadata = loadedSettings.commandMetadata || {};
+    const commandAliases = loadedSettings.commandAliases || {};
     for (const cmd of allCommands) {
-      if (cmd.category === 'script' && cmd.mode !== 'inline') continue;
-      const subtitle = String(commandMetadata[cmd.id]?.subtitle || '').trim();
-      if (subtitle) {
-        cmd.subtitle = subtitle;
+      if (!(cmd.category === 'script' && cmd.mode !== 'inline')) {
+        const subtitle = String(commandMetadata[cmd.id]?.subtitle || '').trim();
+        if (subtitle) {
+          cmd.subtitle = subtitle;
+        }
+      }
+      const alias = String(commandAliases[cmd.id] || '').trim();
+      if (alias) {
+        cmd.keywords = Array.from(new Set([...(cmd.keywords || []), alias]));
       }
     }
   } catch {}

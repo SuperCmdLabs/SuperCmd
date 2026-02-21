@@ -27,6 +27,8 @@ interface Action {
   style?: 'default' | 'destructive';
 }
 
+const INVALID_SNIPPET_KEYWORD_CHARS = /["'`]/;
+
 function parseArgumentPlaceholderToken(rawToken: string): { key: string; name: string; defaultValue?: string } | null {
   const token = rawToken.trim();
   if (!token.startsWith('argument')) return null;
@@ -187,6 +189,10 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
     const newErrors: Record<string, string> = {};
     if (!name.trim()) newErrors.name = 'Name is required';
     if (!content.trim()) newErrors.content = 'Snippet content is required';
+    const trimmedKeyword = keyword.trim();
+    if (trimmedKeyword && INVALID_SNIPPET_KEYWORD_CHARS.test(trimmedKeyword)) {
+      newErrors.keyword = 'Keyword cannot include ", \', or `';
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -290,19 +296,25 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
             <input
               type="text"
               value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
+              onChange={(e) => {
+                setKeyword(e.target.value);
+                setErrors((p) => ({ ...p, keyword: '' }));
+              }}
               placeholder="Optional keyword"
               className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-white/90 text-[13px] placeholder-white/30 outline-none focus:border-white/20 transition-colors"
             />
+            {errors.keyword && <p className="text-red-400 text-xs mt-1">{errors.keyword}</p>}
             <p className="text-white/25 text-xs mt-2">
               Typing this keyword in the snippet search instantly targets this snippet for replacement.
+              <br />
+              Disallowed characters: ", ', `
             </p>
           </div>
         </div>
       </div>
 
       {/* Footer */}
-      <div className="flex items-center px-4 py-3.5 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
+      <div className="sc-glass-footer flex items-center px-4 py-3.5">
         <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
           <span className="truncate">{snippet ? 'Edit Snippet' : 'Create Snippet'}</span>
         </div>
@@ -382,6 +394,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [showActions, setShowActions] = useState(false);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [editingSnippet, setEditingSnippet] = useState<Snippet | undefined>(undefined);
@@ -642,8 +655,12 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
       icon: <Files className="w-4 h-4" />,
       shortcut: ['⇧', '⌘', 'I'],
       execute: async () => {
-        await window.electron.snippetImport();
+        const result = await window.electron.snippetImport();
         await loadSnippets();
+        if (result.imported > 0 || result.skipped > 0) {
+          setImportResult(result);
+          setTimeout(() => setImportResult(null), 4000);
+        }
       },
     },
     {
@@ -757,7 +774,13 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
       }
       if (e.key.toLowerCase() === 'i' && e.metaKey && e.shiftKey) {
         e.preventDefault();
-        window.electron.snippetImport().then(() => loadSnippets());
+        window.electron.snippetImport().then((result) => {
+          loadSnippets();
+          if (result.imported > 0 || result.skipped > 0) {
+            setImportResult(result);
+            setTimeout(() => setImportResult(null), 4000);
+          }
+        });
         return;
       }
       if (e.key.toLowerCase() === 'x' && e.ctrlKey && e.shiftKey) {
@@ -876,6 +899,19 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
           <Plus className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Import result banner */}
+      {importResult && (
+        <div className={`px-5 py-2 text-xs flex items-center gap-2 border-b ${
+          importResult.imported > 0
+            ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'
+            : 'text-amber-300 bg-amber-500/10 border-amber-500/20'
+        }`}>
+          {importResult.imported > 0
+            ? `✓ Imported ${importResult.imported} snippet${importResult.imported !== 1 ? 's' : ''}${importResult.skipped > 0 ? ` · ${importResult.skipped} duplicate${importResult.skipped !== 1 ? 's' : ''} skipped` : ''}`
+            : `All ${importResult.skipped} snippet${importResult.skipped !== 1 ? 's' : ''} already exist — nothing to import`}
+        </div>
+      )}
 
       {/* Main content */}
       <div className="flex-1 flex min-h-0">

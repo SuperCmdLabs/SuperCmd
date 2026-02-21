@@ -9,6 +9,7 @@
 <p align="center">
   <a href="https://supercmd.sh"><img src="https://img.shields.io/badge/website-supercmd.sh-black.svg" alt="Website"></a>
   <a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/electron-28-blue.svg" alt="Electron"></a>
+  <a href="https://discord.gg/CsdbknHqx5"><img src="https://img.shields.io/badge/Discord-Join%20chat-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
   <a href="http://makeapullrequest.com"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
 </p>
 
@@ -229,3 +230,7 @@ npm run package        # Build and package app with electron-builder
 
 - Raycast API docs: https://developers.raycast.com/api-reference/
 - Raycast extension store: https://www.raycast.com/store
+
+## GitHub Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=SuperCmdLabs/SuperCmd&type=Date)](https://star-history.com/#SuperCmdLabs/SuperCmd&Date)

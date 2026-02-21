@@ -13,7 +13,7 @@ import {
   removeMenuBarActions,
   resetMenuBarOrderCounters,
   setMenuBarActions,
-  toMenuBarIconPayload,
+  toMenuBarIconPayloadAsync,
   type MenuBarActionEvent,
   type MenuBarProps,
 } from './menubar-runtime-shared';
@@ -63,86 +63,102 @@ export function MenuBarExtraComponent({ children, icon, title, tooltip, isLoadin
 
   useEffect(() => {
     if (!isMenuBar) return;
+    let cancelled = false;
 
-    const allItems = Array.from(registryRef.current.values()).sort((a, b) => a.order - b.order);
-    const actions = new Map<string, (event: MenuBarActionEvent) => void>();
-    const serialized: any[] = [];
-    let prevSectionId: string | undefined | null = null;
+    const syncMenuBar = async () => {
+      const allItems = Array.from(registryRef.current.values()).sort((a, b) => a.order - b.order);
+      const actions = new Map<string, (event: MenuBarActionEvent) => void>();
+      const serialized: any[] = [];
+      let prevSectionId: string | undefined | null = null;
 
-    const withRuntimeContext = (fn: (event: MenuBarActionEvent) => void): (() => void) => {
-      return () => {
-        deps.setExtensionContext({ ...runtimeCtxRef.current });
-        fn({ type: 'left-click' });
-      };
-    };
-
-    const serializeItem = (item: MBItemRegistration): any => {
-      if (item.type === 'separator') return { type: 'separator' };
-
-      if (item.type === 'submenu') {
-        const submenuChildren = (item.children || []).map(serializeItem);
-        const iconPayload = toMenuBarIconPayload(item.icon, assetsPath);
-        return {
-          type: 'submenu',
-          title: item.title || '',
-          ...iconPayload,
-          icon: item.icon,
-          children: submenuChildren,
+      const withRuntimeContext = (fn: (event: MenuBarActionEvent) => void): (() => void) => {
+        return () => {
+          deps.setExtensionContext({ ...runtimeCtxRef.current });
+          fn({ type: 'left-click' });
         };
-      }
-
-      if (item.onAction) actions.set(item.id, withRuntimeContext(item.onAction));
-      const iconPayload = toMenuBarIconPayload(item.icon, assetsPath);
-      const serializedItem: any = {
-        type: 'item',
-        id: item.id,
-        title: item.title || '',
-        subtitle: item.subtitle,
-        tooltip: item.tooltip,
-        ...iconPayload,
       };
 
-      if (item.alternate) {
-        if (item.alternate.onAction) {
-          actions.set(item.alternate.id, withRuntimeContext(item.alternate.onAction));
+      const serializeItem = async (item: MBItemRegistration): Promise<any> => {
+        if (item.type === 'separator') return { type: 'separator' };
+
+        if (item.type === 'submenu') {
+          const submenuChildren = await Promise.all((item.children || []).map(serializeItem));
+          const iconPayload = await toMenuBarIconPayloadAsync(item.icon, assetsPath);
+          return {
+            type: 'submenu',
+            title: item.title || '',
+            ...iconPayload,
+            children: submenuChildren,
+          };
         }
-        const alternateIconPayload = toMenuBarIconPayload(item.alternate.icon, assetsPath);
-        serializedItem.alternate = {
-          id: item.alternate.id,
-          title: item.alternate.title,
-          subtitle: item.alternate.subtitle,
-          tooltip: item.alternate.tooltip,
-          ...alternateIconPayload,
+
+        if (item.onAction) actions.set(item.id, withRuntimeContext(item.onAction));
+        const iconPayload = await toMenuBarIconPayloadAsync(item.icon, assetsPath);
+        const serializedItem: any = {
+          type: 'item',
+          id: item.id,
+          title: item.title || '',
+          subtitle: item.subtitle,
+          tooltip: item.tooltip,
+          ...iconPayload,
         };
+
+        if (item.alternate) {
+          if (item.alternate.onAction) {
+            actions.set(item.alternate.id, withRuntimeContext(item.alternate.onAction));
+          }
+          const alternateIconPayload = await toMenuBarIconPayloadAsync(item.alternate.icon, assetsPath);
+          serializedItem.alternate = {
+            id: item.alternate.id,
+            title: item.alternate.title,
+            subtitle: item.alternate.subtitle,
+            tooltip: item.alternate.tooltip,
+            ...alternateIconPayload,
+          };
+        }
+
+        return serializedItem;
+      };
+
+      for (const item of allItems) {
+        const sectionChanged = item.sectionId !== prevSectionId;
+        if (sectionChanged && prevSectionId != null) {
+          serialized.push({ type: 'separator' });
+        }
+        if (sectionChanged && item.sectionTitle) {
+          serialized.push({ type: 'item', title: item.sectionTitle, disabled: true });
+        }
+        prevSectionId = item.sectionId;
+        serialized.push(await serializeItem(item));
       }
 
-      return serializedItem;
+      const trayIconPayload =
+        (await toMenuBarIconPayloadAsync(icon, assetsPath)) ||
+        (extInfo.extensionIconDataUrl ? { iconDataUrl: extInfo.extensionIconDataUrl, iconTemplate: false } : {});
+
+      if (cancelled) return;
+      setMenuBarActions(extId, actions as unknown as Map<string, () => void>);
+      (window as any).electron?.updateMenuBar?.({
+        extId,
+        iconPath: trayIconPayload.iconPath,
+        iconDataUrl: trayIconPayload.iconDataUrl,
+        iconEmoji: trayIconPayload.iconEmoji,
+        iconTemplate: trayIconPayload.iconTemplate,
+        fallbackIconDataUrl: extInfo.extensionIconDataUrl || '',
+        title: title || '',
+        tooltip: tooltip || '',
+        items: serialized,
+      });
     };
 
-    for (const item of allItems) {
-      const sectionChanged = item.sectionId !== prevSectionId;
-      if (sectionChanged && prevSectionId != null) {
-        serialized.push({ type: 'separator' });
-      }
-      if (sectionChanged && item.sectionTitle) {
-        serialized.push({ type: 'item', title: item.sectionTitle, disabled: true });
-      }
-      prevSectionId = item.sectionId;
-      serialized.push(serializeItem(item));
-    }
-
-    setMenuBarActions(extId, actions as unknown as Map<string, () => void>);
-
-    const trayIconPayload = toMenuBarIconPayload(icon, assetsPath) || {};
-    (window as any).electron?.updateMenuBar?.({
-      extId,
-      iconPath: trayIconPayload.iconPath,
-      iconEmoji: trayIconPayload.iconEmoji,
-      title: title || '',
-      tooltip: tooltip || '',
-      items: serialized,
+    syncMenuBar().catch((error) => {
+      console.error('Failed to serialize menu bar payload:', error);
     });
-  }, [assetsPath, extId, icon, isMenuBar, registryVersion, title, tooltip]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assetsPath, extId, extInfo.extensionIconDataUrl, icon, isMenuBar, registryVersion, title, tooltip]);
 
   useEffect(() => {
     return () => {

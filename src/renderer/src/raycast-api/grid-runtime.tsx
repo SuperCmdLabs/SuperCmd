@@ -92,7 +92,7 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
         if (!onSearchTextChange) return;
 
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        if (throttle !== false) {
+        if (throttle === true) {
           debounceRef.current = setTimeout(() => onSearchTextChange(value), 300);
         } else {
           onSearchTextChange(value);
@@ -191,7 +191,7 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
             <button onClick={pop} className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0 p-0.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
             </button>
-            <input ref={inputRef} type="text" placeholder={searchBarPlaceholder || 'Search…'} value={searchText} onChange={(event) => handleSearchChange(event.target.value)} className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[14px] font-light" autoFocus />
+            <input ref={inputRef} data-supercmd-search-input="true" type="text" placeholder={searchBarPlaceholder || 'Search…'} value={searchText} onChange={(event) => handleSearchChange(event.target.value)} className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder-white/30 text-[14px] font-light" autoFocus />
             {searchBarAccessory && <div className="flex-shrink-0">{searchBarAccessory}</div>}
           </div>
 
@@ -214,7 +214,7 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
             )}
           </div>
 
-          <div className="flex items-center px-4 py-3 border-t border-white/[0.06]" style={{ background: 'rgba(28,28,32,0.90)' }}>
+          <div className="sc-glass-footer flex items-center px-4 py-3">
             <div className="flex items-center gap-2 text-white/40 text-xs flex-1 min-w-0 font-medium">
               {footerIcon ? <img src={footerIcon} alt="" className="w-4 h-4 rounded-sm object-contain flex-shrink-0" /> : null}
               <span className="truncate">{footerTitle}</span>
