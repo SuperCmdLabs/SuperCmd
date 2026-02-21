@@ -140,3 +140,20 @@ A Windows release is accepted only when all lines below are completed on at leas
 Current summary:
 - Core Windows paths have been implemented for shared text insertion and snippet keyword expansion.
 - Remaining work is runtime certification and any bugfixes found during that pass.
+
+---
+
+## 10) Automated Regression Coverage (Now Enforced)
+
+Automated checks are now documented in `WINDOWS_REGRESSION_TEST_PLAN.md` and runnable via:
+
+- `npm test`
+- `npm run test:windows-regression`
+
+Current automated guardrails:
+
+| Area | Test file | What it catches |
+|---|---|---|
+| Shortcut label platform parity | `src/renderer/src/__tests__/shortcut-format.test.ts` | Prevents regressions where Windows renders macOS key labels (`Cmd`, mac symbols) instead of `Ctrl`/`Del`/`Backspace`. |
+| Calculator + unit conversion correctness | `src/renderer/src/__tests__/smart-calculator.test.ts` | Validates arithmetic, conversions, and non-calculation fallback behavior. |
+| Snippet import/export pipeline | `src/main/__tests__/snippet-store.test.ts` | Validates export shape, Raycast-style imports (`text`), duplicate skipping, and keyword sanitization. |

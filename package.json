@@ -16,6 +16,7 @@
     "build:renderer": "vite build",
     "build:native": "node scripts/build-native.js",
     "test": "vitest run",
+    "test:windows-regression": "vitest run src/main/__tests__/snippet-store.test.ts src/renderer/src/__tests__/shortcut-format.test.ts src/renderer/src/__tests__/smart-calculator.test.ts",
     "postinstall": "electron-builder install-app-deps",
     "start": "node scripts/launch-electron.js",
     "package": "npm run build && electron-builder"
