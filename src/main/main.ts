@@ -7960,7 +7960,7 @@ return appURL's |path|() as text`,
   ipcMain.handle('snippet-import', async (event: any) => {
     suppressBlurHide = true;
     try {
-      const parent = process.platform === 'win32' ? undefined : getDialogParentWindow(event);
+      const parent = getDialogParentWindow(event);
       const result = await importSnippetsFromFile(parent);
       refreshSnippetExpander();
       return result;
@@ -7972,7 +7972,7 @@ return appURL's |path|() as text`,
   ipcMain.handle('snippet-export', async (event: any) => {
     suppressBlurHide = true;
     try {
-      const parent = process.platform === 'win32' ? undefined : getDialogParentWindow(event);
+      const parent = getDialogParentWindow(event);
       return await exportSnippetsToFile(parent);
     } finally {
       suppressBlurHide = false;
