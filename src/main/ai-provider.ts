@@ -18,7 +18,7 @@ export interface AIRequestOptions {
 
 // ─── Model routing ────────────────────────────────────────────────────
 
-interface ModelRoute {
+export interface ModelRoute {
   provider: 'openai' | 'anthropic' | 'ollama' | 'openai-compatible';
   modelId: string;
 }
@@ -42,7 +42,7 @@ const MODEL_ROUTES: Record<string, ModelRoute> = {
   'ollama-codellama': { provider: 'ollama', modelId: 'codellama' },
 };
 
-function resolveModel(model: string | undefined, config: AISettings): ModelRoute {
+export function resolveModel(model: string | undefined, config: AISettings): ModelRoute {
   if (model && MODEL_ROUTES[model]) {
     return MODEL_ROUTES[model];
   }
@@ -83,7 +83,7 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
 
 // ─── Availability check ──────────────────────────────────────────────
 
-function hasProviderCredentials(provider: ModelRoute['provider'], config: AISettings): boolean {
+export function hasProviderCredentials(provider: ModelRoute['provider'], config: AISettings): boolean {
   switch (provider) {
     case 'openai':
       return !!config.openaiApiKey;
@@ -331,7 +331,7 @@ async function* streamOllama(
 
 // ─── HTTP helpers ────────────────────────────────────────────────────
 
-interface HttpRequestOptions {
+export interface HttpRequestOptions {
   hostname: string;
   port?: number;
   path: string;
@@ -342,7 +342,7 @@ interface HttpRequestOptions {
   useHttps: boolean;
 }
 
-function httpRequest(opts: HttpRequestOptions): Promise<http.IncomingMessage> {
+export function httpRequest(opts: HttpRequestOptions): Promise<http.IncomingMessage> {
   return new Promise((resolve, reject) => {
     const mod = opts.useHttps ? https : http;
 

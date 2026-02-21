@@ -20,6 +20,7 @@ import { tryCalculate, tryCalculateAsync } from './smart-calculator';
 import { useDetachedPortalWindow } from './useDetachedPortalWindow';
 import { useAppViewManager } from './hooks/useAppViewManager';
 import { useAiChat } from './hooks/useAiChat';
+import { useAgentChat } from './hooks/useAgentChat';
 import { useCursorPrompt } from './hooks/useCursorPrompt';
 import { useMenuBarExtensions } from './hooks/useMenuBarExtensions';
 import { useBackgroundRefresh } from './hooks/useBackgroundRefresh';
@@ -47,6 +48,7 @@ import ScriptCommandSetupView from './views/ScriptCommandSetupView';
 import ScriptCommandOutputView from './views/ScriptCommandOutputView';
 import ExtensionPreferenceSetupView from './views/ExtensionPreferenceSetupView';
 import AiChatView from './views/AiChatView';
+import AgentChatView from './views/AgentChatView';
 import CursorPromptView from './views/CursorPromptView';
 
 const STALE_OVERLAY_RESET_MS = 60_000;
@@ -132,6 +134,14 @@ const App: React.FC = () => {
     setAiMode,
     onExitAiMode,
   });
+
+  const agentChat = useAgentChat({
+    setAiMode,
+    onExitAgentMode: onExitAiMode,
+  });
+
+  // Use agent mode when available (agent is enabled by default)
+  const useAgent = agentChat.agentAvailable;
 
   const {
     cursorPromptText, setCursorPromptText,
@@ -963,9 +973,13 @@ const App: React.FC = () => {
 
       switch (e.key) {
         case 'Tab':
-          if (searchQuery.trim() && aiAvailable) {
+          if (searchQuery.trim() && (aiAvailable || agentChat.agentAvailable)) {
             e.preventDefault();
-            startAiChat(searchQuery);
+            if (useAgent) {
+              agentChat.startAgentChat(searchQuery);
+            } else {
+              startAiChat(searchQuery);
+            }
           }
           break;
 
@@ -1764,8 +1778,26 @@ const App: React.FC = () => {
     );
   }
 
-  // ─── AI Chat mode ──────────────────────────────────────────────
+  // ─── AI Chat mode (agent or simple) ────────────────────────────
   if (aiMode) {
+    if (useAgent) {
+      return (
+        <AgentChatView
+          alwaysMountedRunners={alwaysMountedRunners}
+          conversation={agentChat.conversation}
+          isRunning={agentChat.isRunning}
+          pendingConfirmation={agentChat.pendingConfirmation}
+          agentQuery={agentChat.agentQuery}
+          setAgentQuery={agentChat.setAgentQuery}
+          submitQuery={agentChat.submitQuery}
+          confirmTool={agentChat.confirmTool}
+          cancelAgent={agentChat.cancelAgent}
+          exitAgentMode={agentChat.exitAgentMode}
+          inputRef={agentChat.inputRef as React.RefObject<HTMLInputElement>}
+          scrollRef={agentChat.scrollRef as React.RefObject<HTMLDivElement>}
+        />
+      );
+    }
     return (
       <AiChatView
         alwaysMountedRunners={alwaysMountedRunners}
@@ -1829,13 +1861,13 @@ const App: React.FC = () => {
             className="flex-1 bg-transparent border-none outline-none text-white/95 placeholder-white/45 placeholder:font-medium text-[15px] font-medium tracking-[0.005em]"
             autoFocus
           />
-          {searchQuery && aiAvailable && (
+          {searchQuery && (aiAvailable || agentChat.agentAvailable) && (
             <button
-              onClick={() => startAiChat(searchQuery)}
+              onClick={() => useAgent ? agentChat.startAgentChat(searchQuery) : startAiChat(searchQuery)}
               className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.10] transition-colors flex-shrink-0 group"
             >
               <Sparkles className="w-3 h-3 text-white/30 group-hover:text-purple-400 transition-colors" />
-              <span className="text-[11px] text-white/30 group-hover:text-white/50 transition-colors">Ask AI</span>
+              <span className="text-[11px] text-white/30 group-hover:text-white/50 transition-colors">{useAgent ? 'Agent' : 'Ask AI'}</span>
               <kbd className="text-[10px] text-white/20 bg-white/[0.06] px-1 py-0.5 rounded font-mono leading-none">Tab</kbd>
             </button>
           )}

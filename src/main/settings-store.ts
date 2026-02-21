@@ -32,6 +32,22 @@ export interface AISettings {
   openaiCompatibleModel: string;
 }
 
+export interface AgentSettings {
+  enabled: boolean;
+  accessLevel: 'safe' | 'power' | 'ultimate';
+  soulPrompt: string;
+  personalityPrompt: string;
+  personalityPreset: 'balanced' | 'operator' | 'builder' | 'analyst';
+  enabledSkills: string[];
+  customSkills: string[];
+  adaptiveLearning: boolean;
+  autoRecover: boolean;
+  autoSelectBestModel: boolean;
+  enabledToolCategories: string[];
+  autoApproveCategories: string[];
+  maxSteps: number;
+}
+
 export type AppFontSize = 'small' | 'medium' | 'large';
 
 export interface AppSettings {
@@ -78,7 +94,24 @@ export interface AppSettings {
   hyperKeyIncludeShift: boolean;
   hyperKeyQuickPressAction: 'toggle-caps-lock' | 'escape' | 'none';
   hyperReplaceModifierGlyphsWithHyper: boolean;
+  agent: AgentSettings;
 }
+
+const DEFAULT_AGENT_SETTINGS: AgentSettings = {
+  enabled: true,
+  accessLevel: 'power',
+  soulPrompt: '',
+  personalityPrompt: '',
+  personalityPreset: 'balanced',
+  enabledSkills: ['organize', 'cleanup', 'coding', 'research'],
+  customSkills: [],
+  adaptiveLearning: true,
+  autoRecover: true,
+  autoSelectBestModel: true,
+  enabledToolCategories: ['shell', 'filesystem', 'clipboard', 'applescript', 'http', 'app_control', 'memory'],
+  autoApproveCategories: ['clipboard', 'memory', 'http', 'app_control'],
+  maxSteps: 30,
+};
 
 const DEFAULT_AI_SETTINGS: AISettings = {
   provider: 'openai',
@@ -129,6 +162,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   hyperKeyIncludeShift: true,
   hyperKeyQuickPressAction: 'toggle-caps-lock',
   hyperReplaceModifierGlyphsWithHyper: true,
+  agent: { ...DEFAULT_AGENT_SETTINGS },
 };
 
 let settingsCache: AppSettings | null = null;
@@ -269,6 +303,7 @@ export function loadSettings(): AppSettings {
       hyperKeyQuickPressAction: normalizeHyperKeyQuickPressAction(parsed.hyperKeyQuickPressAction),
       hyperReplaceModifierGlyphsWithHyper:
         parsed.hyperReplaceModifierGlyphsWithHyper ?? DEFAULT_SETTINGS.hyperReplaceModifierGlyphsWithHyper,
+      agent: { ...DEFAULT_AGENT_SETTINGS, ...parsed.agent },
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };
