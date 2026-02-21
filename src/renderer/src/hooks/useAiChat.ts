@@ -102,7 +102,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [aiQuery, aiResponse, aiStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [aiQuery, aiResponse, aiStreaming]);
 
   // ── AI availability check on mount ──────────────────────────────
 

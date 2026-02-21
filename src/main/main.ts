@@ -247,7 +247,7 @@ let oauthBlurHideSuppressionTimer: NodeJS.Timeout | null = null;
 const OAUTH_BLUR_SUPPRESSION_TIMEOUT_MS = 3 * 60 * 1000;
 let currentShortcut = '';
 const DEVTOOLS_SHORTCUT = normalizeAccelerator('CommandOrControl+Option+I');
-let globalShortcutRegistrationState: {
+const globalShortcutRegistrationState: {
   requestedShortcut: string;
   activeShortcut: string;
   ok: boolean;
@@ -384,7 +384,7 @@ let speakStatusSnapshot: {
   message?: string;
   wordIndex?: number;
 } = { state: 'idle', text: '', index: 0, total: 0 };
-let speakRuntimeOptions: SpeakRuntimeOptions = {
+const speakRuntimeOptions: SpeakRuntimeOptions = {
   voice: 'en-US-EricNeural',
   rate: '+0%',
 };
@@ -4428,7 +4428,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
       };
 
       synthesizeChunkWithRetry().then(() => {
-        let wordCues: Array<{ start: number; end: number; wordIndex: number }> = [];
+        const wordCues: Array<{ start: number; end: number; wordIndex: number }> = [];
         if (localSpeakBackend === 'edge-tts') {
           try {
             const subtitleCandidates = [

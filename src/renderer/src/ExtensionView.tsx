@@ -3133,6 +3133,36 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onClose, pop, navStack.length]);
+  // Per-extension React context (safe for concurrent menu-bar extensions)
+  const extInfoValue = useMemo(() => ({
+    extId: `${extensionName}/${commandName}`,
+    assetsPath,
+    commandMode: (mode || 'view') as 'view' | 'no-view' | 'menu-bar',
+    extensionDisplayName: extensionDisplayName || extensionName,
+    extensionIconDataUrl: extensionIconDataUrl || '',
+  }), [extensionName, extensionDisplayName, extensionIconDataUrl, commandName, assetsPath, mode]);
+
+  const scopedCtx = useMemo<ExtensionContextType>(() => ({
+    extensionName,
+    extensionDisplayName,
+    extensionIconDataUrl,
+    commandName,
+    assetsPath,
+    supportPath,
+    owner,
+    preferences,
+    commandMode: mode as 'view' | 'no-view' | 'menu-bar',
+  }), [
+    extensionName,
+    extensionDisplayName,
+    extensionIconDataUrl,
+    commandName,
+    assetsPath,
+    supportPath,
+    owner,
+    preferences,
+    mode,
+  ]);
 
   if (error || !ExtExport) {
     const errorMessage = error || 'Failed to load extension. No valid export found.';
@@ -3188,39 +3218,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
   }
 
   // ─── View command: render as React component ──────────────────
-  const currentView =
-    navStack.length > 0 ? navStack[navStack.length - 1] : null;
-
-  // Per-extension React context (safe for concurrent menu-bar extensions)
-  const extInfoValue = useMemo(() => ({
-    extId: `${extensionName}/${commandName}`,
-    assetsPath,
-    commandMode: (mode || 'view') as 'view' | 'no-view' | 'menu-bar',
-    extensionDisplayName: extensionDisplayName || extensionName,
-    extensionIconDataUrl: extensionIconDataUrl || '',
-  }), [extensionName, extensionDisplayName, extensionIconDataUrl, commandName, assetsPath, mode]);
-
-  const scopedCtx = useMemo<ExtensionContextType>(() => ({
-    extensionName,
-    extensionDisplayName,
-    extensionIconDataUrl,
-    commandName,
-    assetsPath,
-    supportPath,
-    owner,
-    preferences,
-    commandMode: mode as 'view' | 'no-view' | 'menu-bar',
-  }), [
-    extensionName,
-    extensionDisplayName,
-    extensionIconDataUrl,
-    commandName,
-    assetsPath,
-    supportPath,
-    owner,
-    preferences,
-    mode,
-  ]);
+  const currentView = navStack.length > 0 ? navStack[navStack.length - 1] : null;
 
   return (
     <ExtensionInfoReactContext.Provider value={extInfoValue}>

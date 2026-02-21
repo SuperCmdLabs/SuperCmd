@@ -57,7 +57,6 @@ export function useListRegistry() {
 
   const allItems = useMemo(() => {
     return Array.from(registryRef.current.values()).sort((a, b) => a.order - b.order);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [registryVersion]);
 
   return { registryAPI, allItems };

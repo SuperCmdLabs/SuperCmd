@@ -405,7 +405,7 @@ export async function importSnippetsFromFile(parentWindow?: BrowserWindow): Prom
     const data = fs.readFileSync(result.filePaths[0], 'utf-8');
     const parsed = JSON.parse(data);
     // Normalised shape after field remapping
-    let snippetsToImport: Array<{ name: string; content: string; keyword?: string; pinned?: boolean }> = [];
+    const snippetsToImport: Array<{ name: string; content: string; keyword?: string; pinned?: boolean }> = [];
 
     // Collect the raw items from whichever format was used
     let rawItems: any[] = [];

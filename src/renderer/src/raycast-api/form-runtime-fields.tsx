@@ -33,7 +33,17 @@ function FormFieldRow({
 }
 
 export function attachFormFields(FormComponent: any) {
-  FormComponent.TextField = ({ id, title, placeholder, value, onChange, defaultValue, error, info, autoFocus }: any) => {
+  FormComponent.TextField = function TextField({
+    id,
+    title,
+    placeholder,
+    value,
+    onChange,
+    defaultValue,
+    error,
+    info,
+    autoFocus,
+  }: any) {
     const form = useContext(FormContext);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
     const fieldError = error ?? form.errors[id];
@@ -58,7 +68,15 @@ export function attachFormFields(FormComponent: any) {
     );
   };
 
-  FormComponent.TextArea = ({ id, title, placeholder, value, onChange, defaultValue, error }: any) => {
+  FormComponent.TextArea = function TextArea({
+    id,
+    title,
+    placeholder,
+    value,
+    onChange,
+    defaultValue,
+    error,
+  }: any) {
     const form = useContext(FormContext);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
     const fieldError = error ?? form.errors[id];
@@ -82,7 +100,15 @@ export function attachFormFields(FormComponent: any) {
     );
   };
 
-  FormComponent.PasswordField = ({ id, title, placeholder, value, onChange, defaultValue, error }: any) => {
+  FormComponent.PasswordField = function PasswordField({
+    id,
+    title,
+    placeholder,
+    value,
+    onChange,
+    defaultValue,
+    error,
+  }: any) {
     const form = useContext(FormContext);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
     const fieldError = error ?? form.errors[id];
@@ -106,7 +132,15 @@ export function attachFormFields(FormComponent: any) {
     );
   };
 
-  FormComponent.Checkbox = ({ id, title, label, value, onChange, defaultValue, error }: any) => {
+  FormComponent.Checkbox = function CheckboxField({
+    id,
+    title,
+    label,
+    value,
+    onChange,
+    defaultValue,
+    error,
+  }: any) {
     const form = useContext(FormContext);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? false;
     const fieldError = error ?? form.errors[id];
@@ -127,35 +161,34 @@ export function attachFormFields(FormComponent: any) {
     );
   };
 
-  FormComponent.Dropdown = Object.assign(
-    ({ id, title, children, value, onChange, defaultValue, error }: any) => {
-      const form = useContext(FormContext);
-      const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
-      const fieldError = error ?? form.errors[id];
+  function DropdownField({ id, title, children, value, onChange, defaultValue, error }: any) {
+    const form = useContext(FormContext);
+    const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
+    const fieldError = error ?? form.errors[id];
 
-      const handleChange = (event: any) => {
-        const nextValue = event.target.value;
-        if (id) form.setValue(id, nextValue);
-        onChange?.(nextValue);
-      };
+    const handleChange = (event: any) => {
+      const nextValue = event.target.value;
+      if (id) form.setValue(id, nextValue);
+      onChange?.(nextValue);
+    };
 
-      return (
-        <FormFieldRow title={title} error={fieldError}>
-          <select
-            value={fieldValue}
-            onChange={handleChange}
-            className="w-full bg-white/[0.06] border border-white/[0.12] rounded-lg px-3 py-2 text-[15px] text-white/95 outline-none focus:border-white/30"
-          >
-            {children}
-          </select>
-        </FormFieldRow>
-      );
-    },
-    {
-      Item: ({ value, title }: any) => <option value={value}>{title}</option>,
-      Section: ({ children, title }: any) => <optgroup label={title}>{children}</optgroup>,
-    },
-  );
+    return (
+      <FormFieldRow title={title} error={fieldError}>
+        <select
+          value={fieldValue}
+          onChange={handleChange}
+          className="w-full bg-white/[0.06] border border-white/[0.12] rounded-lg px-3 py-2 text-[15px] text-white/95 outline-none focus:border-white/30"
+        >
+          {children}
+        </select>
+      </FormFieldRow>
+    );
+  }
+
+  FormComponent.Dropdown = Object.assign(DropdownField, {
+    Item: ({ value, title }: any) => <option value={value}>{title}</option>,
+    Section: ({ children, title }: any) => <optgroup label={title}>{children}</optgroup>,
+  });
 
   FormComponent.DatePicker = Object.assign(
     ({ title, value, onChange, error, type }: any) => (
@@ -191,7 +224,7 @@ export function attachFormFields(FormComponent: any) {
     { Item: ({ title }: any) => <span className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-white/60">{title}</span> },
   );
 
-  FormComponent.FilePicker = ({
+  FormComponent.FilePicker = function FilePickerField({
     id,
     title,
     value,
@@ -202,7 +235,7 @@ export function attachFormFields(FormComponent: any) {
     canChooseFiles,
     showHiddenFiles,
     error,
-  }: any) => {
+  }: any) {
     const form = useContext(FormContext);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? [];
     const fieldError = error ?? form.errors[id];
