@@ -42,7 +42,7 @@ const MODEL_ROUTES: Record<string, ModelRoute> = {
   'ollama-codellama': { provider: 'ollama', modelId: 'codellama' },
 };
 
-function resolveModel(model: string | undefined, config: AISettings): ModelRoute {
+export function resolveModel(model: string | undefined, config: AISettings): ModelRoute {
   if (model && MODEL_ROUTES[model]) {
     return MODEL_ROUTES[model];
   }
@@ -192,6 +192,14 @@ async function* streamOpenAI(
 
 // ─── OpenAI-Compatible (Generic) ──────────────────────────────────────
 
+/** Resolves a base URL (with or without /v1) to the full chat completions path. */
+export function resolveCompatibleChatUrl(baseUrl: string): string {
+  const normalized = baseUrl.replace(/\/$/, '');
+  return normalized.endsWith('/v1')
+    ? `${normalized}/chat/completions`
+    : `${normalized}/v1/chat/completions`;
+}
+
 async function* streamOpenAICompatible(
   baseUrl: string,
   apiKey: string,
@@ -212,11 +220,7 @@ async function* streamOpenAICompatible(
     stream: true,
   });
 
-  // Ensure baseUrl ends with /v1 and append /chat/completions
-  const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
-  const chatUrl = normalizedBaseUrl.endsWith('/v1') 
-    ? `${normalizedBaseUrl}/chat/completions`
-    : `${normalizedBaseUrl}/v1/chat/completions`;
+  const chatUrl = resolveCompatibleChatUrl(baseUrl);
   
   const url = new URL(chatUrl);
   const useHttps = url.protocol === 'https:';
@@ -386,7 +390,7 @@ function httpRequest(opts: HttpRequestOptions): Promise<http.IncomingMessage> {
   });
 }
 
-async function* parseSSE(
+export async function* parseSSE(
   response: http.IncomingMessage,
   extractChunk: (data: string) => string | null
 ): AsyncGenerator<string> {
@@ -418,7 +422,7 @@ async function* parseSSE(
   }
 }
 
-async function* parseNDJSON(
+export async function* parseNDJSON(
   response: http.IncomingMessage,
   extractChunk: (obj: any) => string | null
 ): AsyncGenerator<string> {
@@ -463,7 +467,7 @@ export interface TranscribeOptions {
   signal?: AbortSignal;
 }
 
-function resolveUploadMeta(mimeType?: string): { filename: string; contentType: string } {
+export function resolveUploadMeta(mimeType?: string): { filename: string; contentType: string } {
   const normalized = String(mimeType || '').toLowerCase();
   if (normalized.includes('wav')) return { filename: 'audio.wav', contentType: 'audio/wav' };
   if (normalized.includes('mpeg') || normalized.includes('mp3')) return { filename: 'audio.mp3', contentType: 'audio/mpeg' };
