@@ -908,7 +908,7 @@ export async function getExtensionBundle(
     console.error(msg);
     throw new Error(msg);
   }
-  let outFile = path.join(extPath, '.sc-build', `${cmdName}.js`);
+  const outFile = path.join(extPath, '.sc-build', `${cmdName}.js`);
 
   if (!fs.existsSync(outFile)) {
     console.log(`Pre-built bundle not found for ${normalizedExtName}/${cmdName}, building on-demand…`);
