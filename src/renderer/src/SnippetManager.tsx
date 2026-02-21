@@ -88,6 +88,8 @@ interface SnippetFormProps {
 }
 
 const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) => {
+  const isMac = window.electron.platform === 'darwin';
+  const primaryModifierLabel = isMac ? '⌘' : 'Ctrl';
   const [name, setName] = useState(snippet?.name || '');
   const [content, setContent] = useState(snippet?.content || '');
   const [keyword, setKeyword] = useState(snippet?.keyword || '');
@@ -207,7 +209,7 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && e.metaKey) {
+    if (e.key === 'Enter' && (isMac ? e.metaKey : e.ctrlKey)) {
       e.preventDefault();
       handleSave();
     } else if (e.key === 'Escape') {
@@ -323,7 +325,7 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
           className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
         >
           <span className="text-white text-xs font-semibold">Save Snippet</span>
-          <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
+          <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">{primaryModifierLabel}</kbd>
           <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">↩</kbd>
         </button>
       </div>
@@ -388,6 +390,9 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
 // ─── Snippet Manager ─────────────────────────────────────────────────
 
 const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView }) => {
+  const isMac = window.electron.platform === 'darwin';
+  const primaryModifierLabel = isMac ? '⌘' : 'Ctrl';
+  const primaryModifierPressed = (e: React.KeyboardEvent) => (isMac ? e.metaKey : e.ctrlKey);
   const [view, setView] = useState<'search' | 'create' | 'edit'>(initialView);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [filteredSnippets, setFilteredSnippets] = useState<Snippet[]>([]);
@@ -615,37 +620,37 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
     {
       title: 'Copy to Clipboard',
       icon: <Copy className="w-4 h-4" />,
-      shortcut: ['⌘', '↩'],
+      shortcut: [primaryModifierLabel, '↩'],
       execute: handleCopy,
     },
     {
       title: 'Create Snippet',
       icon: <Plus className="w-4 h-4" />,
-      shortcut: ['⌘', 'N'],
+      shortcut: [primaryModifierLabel, 'N'],
       execute: () => setView('create'),
     },
     {
       title: activeSnippet?.pinned ? 'Unpin Snippet' : 'Pin Snippet',
       icon: activeSnippet?.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />,
-      shortcut: ['⇧', '⌘', 'P'],
+      shortcut: ['⇧', primaryModifierLabel, 'P'],
       execute: handleTogglePin,
     },
     {
       title: 'Edit Snippet',
       icon: <Pencil className="w-4 h-4" />,
-      shortcut: ['⌘', 'E'],
+      shortcut: [primaryModifierLabel, 'E'],
       execute: handleEdit,
     },
     {
       title: 'Duplicate Snippet',
       icon: <Files className="w-4 h-4" />,
-      shortcut: ['⌘', 'D'],
+      shortcut: [primaryModifierLabel, 'D'],
       execute: handleDuplicate,
     },
     {
       title: 'Export Snippets',
       icon: <Files className="w-4 h-4" />,
-      shortcut: ['⇧', '⌘', 'S'],
+      shortcut: ['⇧', primaryModifierLabel, 'S'],
       execute: async () => {
         await window.electron.snippetExport();
       },
@@ -653,7 +658,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
     {
       title: 'Import Snippets',
       icon: <Files className="w-4 h-4" />,
-      shortcut: ['⇧', '⌘', 'I'],
+      shortcut: ['⇧', primaryModifierLabel, 'I'],
       execute: async () => {
         const result = await window.electron.snippetImport();
         await loadSnippets();
@@ -680,14 +685,14 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
   ];
 
   const isMetaEnter = (e: React.KeyboardEvent) =>
-    e.metaKey &&
+    primaryModifierPressed(e) &&
     (e.key === 'Enter' || e.key === 'Return' || e.code === 'Enter' || e.code === 'NumpadEnter');
 
   // ─── Keyboard ───────────────────────────────────────────────────
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'k' && e.metaKey && !e.repeat) {
+      if (e.key === 'k' && primaryModifierPressed(e) && !e.repeat) {
         e.preventDefault();
         setShowActions((p) => !p);
         return;
@@ -697,7 +702,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         if (e.key === 'Escape') {
           e.preventDefault();
           setDynamicPrompt(null);
-        } else if (e.key === 'Enter' && e.metaKey) {
+        } else if (e.key === 'Enter' && primaryModifierPressed(e)) {
           e.preventDefault();
           handleConfirmDynamicPrompt();
         }
@@ -747,32 +752,32 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         }
       }
 
-      if (e.key.toLowerCase() === 'e' && e.metaKey) {
+      if (e.key.toLowerCase() === 'e' && primaryModifierPressed(e)) {
         e.preventDefault();
         handleEdit();
         return;
       }
-      if (e.key.toLowerCase() === 'd' && e.metaKey) {
+      if (e.key.toLowerCase() === 'd' && primaryModifierPressed(e)) {
         e.preventDefault();
         handleDuplicate();
         return;
       }
-      if (e.key.toLowerCase() === 'p' && e.metaKey && e.shiftKey) {
+      if (e.key.toLowerCase() === 'p' && primaryModifierPressed(e) && e.shiftKey) {
         e.preventDefault();
         handleTogglePin();
         return;
       }
-      if (e.key.toLowerCase() === 'n' && e.metaKey) {
+      if (e.key.toLowerCase() === 'n' && primaryModifierPressed(e)) {
         e.preventDefault();
         setView('create');
         return;
       }
-      if (e.key.toLowerCase() === 's' && e.metaKey && e.shiftKey) {
+      if (e.key.toLowerCase() === 's' && primaryModifierPressed(e) && e.shiftKey) {
         e.preventDefault();
         window.electron.snippetExport();
         return;
       }
-      if (e.key.toLowerCase() === 'i' && e.metaKey && e.shiftKey) {
+      if (e.key.toLowerCase() === 'i' && primaryModifierPressed(e) && e.shiftKey) {
         e.preventDefault();
         window.electron.snippetImport().then((result) => {
           loadSnippets();
@@ -1032,7 +1037,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         actionsButton={{
           label: 'Actions',
           onClick: () => setShowActions(true),
-          shortcut: ['⌘', 'K'],
+          shortcut: [primaryModifierLabel, 'K'],
         }}
       />
 

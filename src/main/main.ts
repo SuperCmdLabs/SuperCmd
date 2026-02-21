@@ -4316,11 +4316,11 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' =
     });
   }
   if (commandId === 'system-import-snippets') {
-    await importSnippetsFromFile(mainWindow || undefined);
+    await importSnippetsFromFile(process.platform === 'win32' ? undefined : (mainWindow || undefined));
     return true;
   }
   if (commandId === 'system-export-snippets') {
-    await exportSnippetsToFile(mainWindow || undefined);
+    await exportSnippetsToFile(process.platform === 'win32' ? undefined : (mainWindow || undefined));
     return true;
   }
   if (commandId === 'system-create-script-command') {
@@ -7951,7 +7951,8 @@ return appURL's |path|() as text`,
   ipcMain.handle('snippet-import', async (event: any) => {
     suppressBlurHide = true;
     try {
-      const result = await importSnippetsFromFile(getDialogParentWindow(event));
+      const parent = process.platform === 'win32' ? undefined : getDialogParentWindow(event);
+      const result = await importSnippetsFromFile(parent);
       refreshSnippetExpander();
       return result;
     } finally {
@@ -7962,7 +7963,8 @@ return appURL's |path|() as text`,
   ipcMain.handle('snippet-export', async (event: any) => {
     suppressBlurHide = true;
     try {
-      return await exportSnippetsToFile(getDialogParentWindow(event));
+      const parent = process.platform === 'win32' ? undefined : getDialogParentWindow(event);
+      return await exportSnippetsToFile(parent);
     } finally {
       suppressBlurHide = false;
     }

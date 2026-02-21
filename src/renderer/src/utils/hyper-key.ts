@@ -8,6 +8,9 @@ export function collapseHyperShortcut(shortcut: string): string {
 }
 
 export function formatShortcutForDisplay(shortcut: string): string {
+  const isMac =
+    typeof window !== 'undefined' &&
+    (window as any)?.electron?.platform === 'darwin';
   const collapsed = collapseHyperShortcut(shortcut);
   return collapsed
     .split('+')
@@ -15,10 +18,10 @@ export function formatShortcutForDisplay(shortcut: string): string {
       const value = String(token || '').trim();
       if (!value) return value;
       if (/^hyper$/i.test(value) || value === '✦') return 'Hyper';
-      if (/^(command|cmd)$/i.test(value)) return '⌘';
-      if (/^(control|ctrl)$/i.test(value)) return '⌃';
-      if (/^(alt|option)$/i.test(value)) return '⌥';
-      if (/^shift$/i.test(value)) return '⇧';
+      if (/^(command|cmd)$/i.test(value)) return isMac ? '⌘' : 'Ctrl';
+      if (/^(control|ctrl)$/i.test(value)) return isMac ? '⌃' : 'Ctrl';
+      if (/^(alt|option)$/i.test(value)) return isMac ? '⌥' : 'Alt';
+      if (/^shift$/i.test(value)) return isMac ? '⇧' : 'Shift';
       if (/^(function|fn)$/i.test(value)) return 'fn';
       if (/^arrowup$/i.test(value)) return '↑';
       if (/^arrowdown$/i.test(value)) return '↓';

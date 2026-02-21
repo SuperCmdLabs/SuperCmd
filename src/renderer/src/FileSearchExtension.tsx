@@ -124,6 +124,9 @@ function matchesFileNameTerms(filePath: string, terms: string[]): boolean {
 }
 
 const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose }) => {
+  const isMac = window.electron.platform === 'darwin';
+  const primaryModifierLabel = isMac ? '⌘' : 'Ctrl';
+  const primaryModifierPressed = (e: React.KeyboardEvent<HTMLDivElement>) => (isMac ? e.metaKey : e.ctrlKey);
   const [query, setQuery] = useState('');
   const [scopes, setScopes] = useState<SearchScope[]>([]);
   const [scopeId, setScopeId] = useState('home');
@@ -317,7 +320,11 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose }) =>
     if (!selectedPath || opening) return;
     setOpening(true);
     try {
-      await window.electron.execCommand('open', [selectedPath]);
+      if (window.electron.platform === 'win32') {
+        await window.electron.openUrl(selectedPath);
+      } else {
+        await window.electron.execCommand('open', [selectedPath]);
+      }
       await window.electron.hideWindow();
     } catch (error) {
       console.error('Failed to open file:', error);
@@ -329,7 +336,11 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose }) =>
   const revealSelectedFile = useCallback(async () => {
     if (!selectedPath) return;
     try {
-      await window.electron.execCommand('open', ['-R', selectedPath]);
+      if (window.electron.platform === 'win32') {
+        await window.electron.execCommand('explorer.exe', ['/select,', selectedPath]);
+      } else {
+        await window.electron.execCommand('open', ['-R', selectedPath]);
+      }
     } catch (error) {
       console.error('Failed to reveal file:', error);
     }
@@ -348,14 +359,14 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose }) =>
     if (!selectedPath) return [];
     return [
       { title: 'Open', shortcut: '↩', execute: openSelectedFile },
-      { title: 'Reveal in Finder', shortcut: '⌘ ↩', execute: revealSelectedFile },
-      { title: 'Copy Path', shortcut: '⌘ ⇧ C', execute: copySelectedPath },
+      { title: isMac ? 'Reveal in Finder' : 'Reveal in Explorer', shortcut: `${primaryModifierLabel} ↩`, execute: revealSelectedFile },
+      { title: 'Copy Path', shortcut: `${primaryModifierLabel} ⇧ C`, execute: copySelectedPath },
     ];
-  }, [selectedPath, openSelectedFile, revealSelectedFile, copySelectedPath]);
+  }, [selectedPath, openSelectedFile, revealSelectedFile, copySelectedPath, isMac, primaryModifierLabel]);
 
   const handleKeyDown = useCallback(
     async (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.key.toLowerCase() === 'k' && e.metaKey && !e.repeat) {
+      if (e.key.toLowerCase() === 'k' && primaryModifierPressed(e) && !e.repeat) {
         e.preventDefault();
         setShowActions((prev) => !prev);
         return;
@@ -399,14 +410,14 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose }) =>
       }
       if (e.key === 'Enter') {
         e.preventDefault();
-        if (e.metaKey) {
+        if (primaryModifierPressed(e)) {
           await revealSelectedFile();
           return;
         }
         await openSelectedFile();
         return;
       }
-      if (e.key.toLowerCase() === 'c' && e.metaKey && e.shiftKey) {
+      if (e.key.toLowerCase() === 'c' && primaryModifierPressed(e) && e.shiftKey) {
         e.preventDefault();
         await copySelectedPath();
         return;
@@ -569,7 +580,7 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose }) =>
         actionsButton={{
           label: 'Actions',
           onClick: () => setShowActions((prev) => !prev),
-          shortcut: ['⌘', 'K'],
+          shortcut: [primaryModifierLabel, 'K'],
         }}
       />
 

@@ -25,6 +25,9 @@ interface Action {
 }
 
 const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
+  const isMac = window.electron.platform === 'darwin';
+  const primaryModifierLabel = isMac ? '⌘' : 'Ctrl';
+  const primaryModifierPressed = (e: React.KeyboardEvent) => (isMac ? e.metaKey : e.ctrlKey);
   const [items, setItems] = useState<ClipboardItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<ClipboardItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -144,7 +147,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     if (!itemToPaste) return;
     
     try {
-      // This copies to clipboard, hides window, and simulates Cmd+V
+      // This copies to clipboard, hides window, and simulates system paste.
       await window.electron.clipboardPasteItem(itemToPaste.id);
     } catch (e) {
       console.error('Failed to paste item:', e);
@@ -197,7 +200,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     {
       title: 'Copy to Clipboard',
       icon: <Copy className="w-4 h-4" />,
-      shortcut: ['⌘', '↩'],
+      shortcut: [primaryModifierLabel, '↩'],
       execute: handleCopyToClipboard,
     },
     {
@@ -217,12 +220,12 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   ];
 
   const isMetaEnter = (e: React.KeyboardEvent) =>
-    e.metaKey &&
+    primaryModifierPressed(e) &&
     (e.key === 'Enter' || e.key === 'Return' || e.code === 'Enter' || e.code === 'NumpadEnter');
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'k' && e.metaKey && !e.repeat) {
+      if (e.key === 'k' && primaryModifierPressed(e) && !e.repeat) {
         e.preventDefault();
         setShowActions(p => !p);
         return;
@@ -312,7 +315,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
 
         case 'Backspace':
         case 'Delete':
-          if (e.metaKey) {
+          if (primaryModifierPressed(e) || e.ctrlKey) {
             e.preventDefault();
             if (filteredItems[selectedIndex]) {
               handleDeleteItem();
@@ -512,7 +515,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         actionsButton={{
           label: 'Actions',
           onClick: () => setShowActions(true),
-          shortcut: ['⌘', 'K'],
+          shortcut: [primaryModifierLabel, 'K'],
         }}
       />
 
