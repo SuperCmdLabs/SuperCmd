@@ -647,25 +647,25 @@ const ExtensionsTab: React.FC<{
   };
 
   const getCoreCommandIcon = (commandId?: string) => {
-    if (!commandId) return <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />;
-    if (commandId.includes('clipboard')) return <ClipboardList className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
-    if (commandId.includes('open-settings')) return <Settings className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
-    if (commandId.includes('open-ai-settings')) return <Brain className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
-    if (commandId.includes('open-extensions-settings')) return <Wand2 className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
-    if (commandId.includes('search-files')) return <FileSearch className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
-    if (commandId.includes('create-snippet')) return <FilePlus2 className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
-    if (commandId.includes('import-snippets')) return <FileInput className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
-    if (commandId.includes('export-snippets')) return <FileOutput className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
-    if (commandId.includes('quit')) return <LogOut className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
-    if (commandId.includes('onboarding')) return <Sparkles className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
-    return <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />;
+    if (!commandId) return <TerminalSquare className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
+    if (commandId.includes('clipboard')) return <ClipboardList className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
+    if (commandId.includes('open-settings')) return <Settings className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
+    if (commandId.includes('open-ai-settings')) return <Brain className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
+    if (commandId.includes('open-extensions-settings')) return <Wand2 className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
+    if (commandId.includes('search-files')) return <FileSearch className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
+    if (commandId.includes('create-snippet')) return <FilePlus2 className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
+    if (commandId.includes('import-snippets')) return <FileInput className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
+    if (commandId.includes('export-snippets')) return <FileOutput className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
+    if (commandId.includes('quit')) return <LogOut className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
+    if (commandId.includes('onboarding')) return <Sparkles className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
+    return <TerminalSquare className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
   };
 
   const getSystemExtensionCommandIcon = (command?: CommandInfo) => {
     if (command?.category === 'settings') {
-      return <Settings className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />;
+      return <Settings className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
     }
-    return <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />;
+    return <TerminalSquare className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />;
   };
 
   const setExtensionEnabled = async (schema: InstalledExtensionSettingsSchema, enabled: boolean) => {
@@ -804,7 +804,7 @@ const ExtensionsTab: React.FC<{
   }, [extensionContextMenu, uninstallDialog, busyUninstallExtName]);
 
   if (isLoading) {
-    return <div className="text-white/50 text-[13px]">Loading extension settings…</div>;
+    return <div className="text-[var(--text-muted)] text-[13px]">Loading extension settings…</div>;
   }
 
   const customExtensionFolders = Array.isArray(settings?.customExtensionFolders)
@@ -823,19 +823,19 @@ const ExtensionsTab: React.FC<{
           <div className="px-3 py-2 border-b border-[var(--ui-divider)]">
             <div className="flex items-center gap-2">
               <div className="relative w-[360px] max-w-full shrink-0">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-subtle)]" />
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search..."
-                  className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-lg pl-9 pr-4 py-1.5 text-[13px] text-white placeholder-white/30 outline-none focus:border-[var(--ui-segment-border)] transition-colors"
+                  className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-lg pl-9 pr-4 py-1.5 text-[13px] text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-[var(--ui-segment-border)] transition-colors"
                 />
               </div>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setActiveScope('all')}
                   className={`px-2.5 py-1 rounded-md text-xs ${
-                    activeScope === 'all' ? 'bg-[var(--ui-segment-active-bg)] text-white' : 'text-white/50 hover:text-white/80'
+                    activeScope === 'all' ? 'bg-[var(--ui-segment-active-bg)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                   }`}
                 >
                   All
@@ -843,7 +843,7 @@ const ExtensionsTab: React.FC<{
                 <button
                   onClick={() => setActiveScope('commands')}
                   className={`px-2.5 py-1 rounded-md text-xs ${
-                    activeScope === 'commands' ? 'bg-[var(--ui-segment-active-bg)] text-white' : 'text-white/50 hover:text-white/80'
+                    activeScope === 'commands' ? 'bg-[var(--ui-segment-active-bg)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                   }`}
                 >
                   Commands
@@ -872,7 +872,7 @@ const ExtensionsTab: React.FC<{
                         setShowTopActionsMenu(false);
                         window.electron.openExtensionStoreWindow();
                       }}
-                      className="w-full px-2.5 py-2 text-left text-xs text-white/85 hover:bg-[var(--ui-segment-hover-bg)] transition-colors"
+                      className="w-full px-2.5 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors"
                     >
                       Install from Store
                     </button>
@@ -882,7 +882,7 @@ const ExtensionsTab: React.FC<{
                         void handleAddCustomExtensionFolder();
                       }}
                       disabled={folderBusy}
-                      className="w-full px-2.5 py-2 text-left text-xs text-white/85 hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="w-full px-2.5 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       Add Folder
                     </button>
@@ -912,7 +912,7 @@ const ExtensionsTab: React.FC<{
                         }
                       }}
                       disabled={folderBusy}
-                      className="w-full px-2.5 py-2 text-left text-xs text-white/85 hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="w-full px-2.5 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       Custom Script
                     </button>
@@ -940,7 +940,7 @@ const ExtensionsTab: React.FC<{
             ) : null}
           </div>
 
-          <div className="grid grid-cols-[1fr_120px_100px_130px_82px] px-4 py-2 text-[11px] uppercase tracking-wider text-white/35 border-b border-[var(--ui-divider)]">
+          <div className="grid grid-cols-[1fr_120px_100px_130px_82px] px-4 py-2 text-[11px] uppercase tracking-wider text-[var(--text-subtle)] border-b border-[var(--ui-divider)]">
             <div className="pr-2 border-r border-[var(--ui-divider)]">Name</div>
             <div className="px-2 border-r border-[var(--ui-divider)]">Type</div>
             <div className="px-2 border-r border-[var(--ui-divider)]">Alias</div>
@@ -950,7 +950,7 @@ const ExtensionsTab: React.FC<{
 
           <div className="flex-1 min-h-0 overflow-y-scroll custom-scrollbar" style={{ scrollbarGutter: 'stable' }}>
             {filteredSchemas.length === 0 ? (
-              <div className="px-4 py-8 text-center text-xs text-white/30">No matching extensions</div>
+              <div className="px-4 py-8 text-center text-xs text-[var(--text-subtle)]">No matching extensions</div>
             ) : (
               filteredSchemas.map((schema) => {
                 const uninstallable = canUninstallExtension(schema.extName);
@@ -984,28 +984,28 @@ const ExtensionsTab: React.FC<{
                   >
                     <span className="flex items-center gap-2 min-w-0">
                       {expandedExtensions[schema.extName] ? (
-                        <ChevronDown className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />
+                        <ChevronDown className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />
                       ) : (
-                        <ChevronRight className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />
+                        <ChevronRight className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />
                       )}
                       {(schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)) ? (
                         <img src={schema.iconDataUrl || extensionIconFallbackByName.get(schema.extName)} alt="" className="w-4 h-4 rounded-sm object-contain" draggable={false} />
                       ) : schema.extName === SUPERCMD_EXTENSION_NAME ? (
                         <img src={supercmdLogo} alt="" className="w-4 h-4 object-contain" draggable={false} />
                       ) : schema.extName === SYSTEM_SETTINGS_NAME ? (
-                        <Settings className="w-4 h-4 text-white/65 flex-shrink-0" />
+                        <Settings className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
                       ) : schema.extName === INSTALLED_APPLICATIONS_NAME ? (
-                        <TerminalSquare className="w-4 h-4 text-white/60 flex-shrink-0" />
+                        <TerminalSquare className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
                       ) : schema.extName === SCRIPT_COMMANDS_EXTENSION_NAME ? (
-                        <TerminalSquare className="w-4 h-4 text-white/60 flex-shrink-0" />
+                        <TerminalSquare className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
                       ) : (
                         <Puzzle className="w-4 h-4 text-violet-300/80" />
                       )}
-                      <span className="text-[13px] text-white/90 truncate">{schema.title}</span>
+                      <span className="text-[13px] text-[var(--text-secondary)] truncate">{schema.title}</span>
                     </span>
-                    <span className="text-[13px] text-white/55">{getSchemaTypeLabel(schema.extName)}</span>
-                    <span className="text-[13px] text-white/45">--</span>
-                    <span className="text-[13px] text-white/45">--</span>
+                    <span className="text-[13px] text-[var(--text-subtle)]">{getSchemaTypeLabel(schema.extName)}</span>
+                    <span className="text-[13px] text-[var(--text-subtle)]">--</span>
+                    <span className="text-[13px] text-[var(--text-subtle)]">--</span>
                     <span className="flex items-center justify-start">
                       <input
                         type="checkbox"
@@ -1044,11 +1044,11 @@ const ExtensionsTab: React.FC<{
                             ) : schema.extName === INSTALLED_APPLICATIONS_NAME || schema.extName === SYSTEM_SETTINGS_NAME ? (
                               getSystemExtensionCommandIcon(commandInfo)
                             ) : (
-                              <TerminalSquare className="w-3.5 h-3.5 text-white/45 flex-shrink-0" />
+                              <TerminalSquare className="w-3.5 h-3.5 text-[var(--text-subtle)] flex-shrink-0" />
                             )}
-                            <span className="text-xs text-white/85 truncate">{cmd.title}</span>
+                            <span className="text-xs text-[var(--text-secondary)] truncate">{cmd.title}</span>
                           </button>
-                          <span className="text-xs text-white/55">{getModeTypeLabel(cmd.mode, commandInfo)}</span>
+                          <span className="text-xs text-[var(--text-subtle)]">{getModeTypeLabel(cmd.mode, commandInfo)}</span>
                           {commandInfo ? (
                             <div className="min-w-0">
                               {isAliasEditing ? (
@@ -1077,13 +1077,13 @@ const ExtensionsTab: React.FC<{
                                     }
                                   }}
                                   placeholder="Add Alias"
-                                  className="h-6 w-full min-w-0 rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2 font-mono text-[11px] text-white/80 placeholder-white/38 outline-none focus:border-[var(--ui-segment-border)]"
+                                  className="h-6 w-full min-w-0 rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2 font-mono text-[11px] text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-[var(--ui-segment-border)]"
                                 />
                               ) : currentAlias ? (
                                 <button
                                   type="button"
                                   onClick={() => startAliasEditing(commandInfo.id)}
-                                  className="inline-flex h-6 max-w-full items-center rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2 font-mono text-[11px] text-white/72 hover:border-[var(--ui-segment-border)] hover:text-white/78 transition-colors"
+                                  className="inline-flex h-6 max-w-full items-center rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2 font-mono text-[11px] text-[var(--text-secondary)] hover:border-[var(--ui-segment-border)] hover:text-[var(--text-primary)] transition-colors"
                                   title="Edit alias"
                                 >
                                   <span className="truncate">{currentAlias}</span>
@@ -1092,14 +1092,14 @@ const ExtensionsTab: React.FC<{
                                 <button
                                   type="button"
                                   onClick={() => startAliasEditing(commandInfo.id)}
-                                  className="text-xs text-white/45 hover:text-white/75 transition-colors"
+                                  className="text-xs text-[var(--text-subtle)] hover:text-[var(--text-secondary)] transition-colors"
                                 >
                                   Add Alias
                                 </button>
                               )}
                             </div>
                           ) : (
-                            <span className="text-xs text-white/25">--</span>
+                            <span className="text-xs text-[var(--text-subtle)]">--</span>
                           )}
                           {commandInfo ? (
                             <>
@@ -1121,8 +1121,8 @@ const ExtensionsTab: React.FC<{
                             </>
                           ) : (
                             <>
-                              <span className="text-xs text-white/25">Record Hotkey</span>
-                              <span className="text-xs text-white/25">-</span>
+                              <span className="text-xs text-[var(--text-subtle)]">Record Hotkey</span>
+                              <span className="text-xs text-[var(--text-subtle)]">-</span>
                             </>
                           )}
                         </div>
@@ -1137,14 +1137,14 @@ const ExtensionsTab: React.FC<{
 
         <div className="flex-1 min-w-0 h-full min-h-0 overflow-hidden flex flex-col">
           <div className="px-4 py-2 border-b border-[var(--ui-divider)]">
-            <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-white/45">
-              <Folder className="w-3.5 h-3.5 text-white/55" />
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-[var(--text-subtle)]">
+              <Folder className="w-3.5 h-3.5 text-[var(--text-subtle)]" />
               <span>Custom Folders</span>
-              <span className="text-white/35">({customExtensionFolders.length})</span>
+              <span className="text-[var(--text-subtle)]">({customExtensionFolders.length})</span>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5">
               {customExtensionFolders.length === 0 ? (
-                <span className="text-[11px] text-white/38">
+                <span className="text-[11px] text-[var(--text-subtle)]">
                   Add Folder from Install Extension
                 </span>
               ) : (
@@ -1154,7 +1154,7 @@ const ExtensionsTab: React.FC<{
                     className="inline-flex max-w-[240px] items-center gap-1 rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-2 py-1"
                     title={folderPath}
                   >
-                    <span className="truncate text-[11px] text-white/75">{getFolderName(folderPath)}</span>
+                    <span className="truncate text-[11px] text-[var(--text-secondary)]">{getFolderName(folderPath)}</span>
                     <button
                       type="button"
                       onClick={() => handleRemoveCustomExtensionFolder(folderPath)}
@@ -1179,7 +1179,7 @@ const ExtensionsTab: React.FC<{
           </div>
           <div className="flex-1 min-h-0 overflow-hidden">
           {!selectedSchema ? (
-            <div className="h-full flex items-center justify-center text-[13px] text-white/35">Select an extension</div>
+            <div className="h-full flex items-center justify-center text-[13px] text-[var(--text-subtle)]">Select an extension</div>
           ) : (
             <div className="h-full min-h-0 flex flex-col">
               <div className="px-4 py-3 border-b border-[var(--ui-divider)]">
@@ -1189,19 +1189,19 @@ const ExtensionsTab: React.FC<{
                   ) : selectedSchema.extName === SUPERCMD_EXTENSION_NAME ? (
                     <img src={supercmdLogo} alt="" className="w-5 h-5 object-contain" draggable={false} />
                   ) : selectedSchema.extName === SYSTEM_SETTINGS_NAME ? (
-                    <Settings className="w-5 h-5 text-white/65" />
+                    <Settings className="w-5 h-5 text-[var(--text-muted)]" />
                   ) : selectedSchema.extName === INSTALLED_APPLICATIONS_NAME ? (
-                    <TerminalSquare className="w-5 h-5 text-white/60" />
+                    <TerminalSquare className="w-5 h-5 text-[var(--text-muted)]" />
                   ) : selectedSchema.extName === SCRIPT_COMMANDS_EXTENSION_NAME ? (
-                    <TerminalSquare className="w-5 h-5 text-white/60" />
+                    <TerminalSquare className="w-5 h-5 text-[var(--text-muted)]" />
                   ) : (
                     <Puzzle className="w-5 h-5 text-violet-300/80" />
                   )}
-                  <div className="text-[13px] font-semibold text-white/90">
+                  <div className="text-[13px] font-semibold text-[var(--text-secondary)]">
                     {selectedCommandSchema ? selectedCommandSchema.title : selectedSchema.title}
                   </div>
                 </div>
-                <div className="mt-1 text-xs text-white/45">
+                <div className="mt-1 text-xs text-[var(--text-subtle)]">
                   {selectedCommandSchema ? selectedCommandSchema.description : selectedSchema.description}
                 </div>
               </div>
@@ -1209,7 +1209,7 @@ const ExtensionsTab: React.FC<{
               <div className="flex-1 min-h-0 overflow-y-scroll custom-scrollbar p-4 space-y-5" style={{ scrollbarGutter: 'stable' }}>
                 {selectedCommandSchema && selectedCommandInfo ? (
                   <div className="grid grid-cols-2 gap-3">
-                    <label className="inline-flex items-center gap-2 text-xs text-white/70">
+                    <label className="inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">
                       <input
                         type="checkbox"
                         checked={isCommandEnabled(selectedCommandInfo)}
@@ -1230,14 +1230,14 @@ const ExtensionsTab: React.FC<{
 
                 {oauthTokens[selectedSchema.extName]?.accessToken ? (
                   <div className="space-y-2">
-                    <div className="text-xs text-white/50 flex items-center gap-1.5">
+                    <div className="text-xs text-[var(--text-muted)] flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/80 inline-block" />
                       Logged into {selectedSchema.title}
                     </div>
                     <button
                       type="button"
                       onClick={() => handleOAuthLogout(selectedSchema.extName)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--ui-segment-hover-bg)] hover:bg-[var(--ui-segment-active-bg)] text-white/80 transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--ui-segment-hover-bg)] hover:bg-[var(--ui-segment-active-bg)] text-[var(--text-secondary)] transition-colors"
                     >
                       <LogOut className="w-3 h-3" />
                       Logout
@@ -1291,14 +1291,14 @@ const ExtensionsTab: React.FC<{
                   draggable={false}
                 />
               ) : (
-                <Puzzle className="h-4.5 w-4.5 text-white/65" />
+                <Puzzle className="h-4.5 w-4.5 text-[var(--text-muted)]" />
               )}
             </div>
 
-            <div className="text-center text-[18px] font-semibold leading-tight text-white/92">
+            <div className="text-center text-[18px] font-semibold leading-tight text-[var(--text-primary)]">
               Uninstall "{uninstallDialog.title}"?
             </div>
-            <p className="mt-1 text-center text-[11px] leading-snug text-white/45">
+            <p className="mt-1 text-center text-[11px] leading-snug text-[var(--text-subtle)]">
               This extension and its commands will be removed from SuperCmd.
             </p>
 
@@ -1307,7 +1307,7 @@ const ExtensionsTab: React.FC<{
                 type="button"
                 disabled={Boolean(busyUninstallExtName)}
                 onClick={() => setUninstallDialog(null)}
-                className="flex-1 rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2.5 py-1.5 text-[12px] font-medium text-white/80 hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex-1 rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Cancel
               </button>
@@ -1378,15 +1378,15 @@ const PreferenceSection: React.FC<{
   if (!preferences || preferences.length === 0) {
     return (
       <div className="space-y-2">
-        <div className="text-[11px] uppercase tracking-wider text-white/35">{title}</div>
-        <div className="text-xs text-white/40">No preferences</div>
+        <div className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">{title}</div>
+        <div className="text-xs text-[var(--text-subtle)]">No preferences</div>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      <div className="text-[11px] uppercase tracking-wider text-white/35">{title}</div>
+      <div className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">{title}</div>
       {preferences.map((pref) => {
         const value = values[pref.name] ?? getDefaultValue(pref);
         const missing = isPreferenceMissing(pref, value);
@@ -1398,12 +1398,12 @@ const PreferenceSection: React.FC<{
           <div key={`${cmdName || 'extension'}:${pref.name}`} className="space-y-1">
             {type === 'checkbox' ? (
               <div className="flex items-center justify-between gap-3">
-                <div className="text-xs text-white/75 font-medium">
+                <div className="text-xs text-[var(--text-secondary)] font-medium">
                   {titleText}
                   {pref.required ? <span className="text-red-400"> *</span> : null}
                   {missing ? <span className="text-red-300/80 ml-2">(Required)</span> : null}
                 </div>
-                <label className="inline-flex items-center gap-2 text-xs text-white/75 min-w-[140px] justify-end">
+                <label className="inline-flex items-center gap-2 text-xs text-[var(--text-secondary)] min-w-[140px] justify-end">
                   <span>{pref.label || 'Enabled'}</span>
                   <input
                     type="checkbox"
@@ -1415,7 +1415,7 @@ const PreferenceSection: React.FC<{
               </div>
             ) : (
               <>
-                <label className="text-xs text-white/75 font-medium">
+                <label className="text-xs text-[var(--text-secondary)] font-medium">
                   {titleText}
                   {pref.required ? <span className="text-red-400"> *</span> : null}
                   {missing ? <span className="text-red-300/80 ml-2">(Required)</span> : null}
@@ -1424,7 +1424,7 @@ const PreferenceSection: React.FC<{
                   <select
                     value={textValue}
                     onChange={(e) => setPreferenceValue(extName, pref, e.target.value, cmdName)}
-                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs text-white/90 outline-none"
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs text-[var(--text-secondary)] outline-none"
                   >
                     <option value="">Select an option</option>
                     {(pref.data || []).map((opt) => (
@@ -1440,13 +1440,13 @@ const PreferenceSection: React.FC<{
                       value={textValue}
                       placeholder={pref.placeholder || ''}
                       onChange={(e) => setPreferenceValue(extName, pref, e.target.value, cmdName)}
-                      className="flex-1 bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs text-white/90 placeholder-white/30 outline-none"
+                      className="flex-1 bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none"
                     />
                     {(type === 'file' || type === 'directory' || type === 'appPicker') && (
                       <button
                         type="button"
                         onClick={() => pickPathForPreference(extName, pref, cmdName)}
-                        className="px-2 py-1.5 text-[11px] rounded-md border border-[var(--ui-segment-border)] text-white/70 hover:bg-[var(--ui-segment-bg)]"
+                        className="px-2 py-1.5 text-[11px] rounded-md border border-[var(--ui-segment-border)] text-[var(--text-muted)] hover:bg-[var(--ui-segment-bg)]"
                       >
                         Browse
                       </button>
@@ -1456,7 +1456,7 @@ const PreferenceSection: React.FC<{
               </>
             )}
 
-            {pref.description ? <p className="text-[11px] text-white/40">{pref.description}</p> : null}
+            {pref.description ? <p className="text-[11px] text-[var(--text-subtle)]">{pref.description}</p> : null}
           </div>
         );
       })}

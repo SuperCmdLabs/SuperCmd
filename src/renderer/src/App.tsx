@@ -1828,7 +1828,7 @@ const App: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent border-none outline-none text-white/95 placeholder-white/45 placeholder:font-medium text-[15px] font-medium tracking-[0.005em]"
+            className="flex-1 bg-transparent border-none outline-none text-[var(--text-primary)] placeholder:text-[color:var(--text-subtle)] placeholder:font-medium text-[15px] font-medium tracking-[0.005em]"
             autoFocus
           />
           {searchQuery && aiAvailable && (
@@ -1949,20 +1949,20 @@ const App: React.FC = () => {
                             </div>
 
                             <div className="min-w-0 flex-1 flex items-center gap-2">
-                              <div className="text-white/95 text-[13px] font-medium truncate tracking-[0.004em]">
+                              <div className="text-[var(--text-primary)] text-[13px] font-medium truncate tracking-[0.004em]">
                                 {getCommandDisplayTitle(command)}
                               </div>
                               {accessoryLabel ? (
-                                <div className="text-white/60 text-[12px] font-medium truncate">
+                                <div className="text-[var(--text-muted)] text-[12px] font-medium truncate">
                                   {accessoryLabel}
                                 </div>
                               ) : (
-                                <div className="text-white/50 text-[11px] font-medium truncate">
+                                <div className="text-[var(--text-subtle)] text-[11px] font-medium truncate">
                                   {fallbackCategory}
                                 </div>
                               )}
                               {aliasMatchesSearch ? (
-                                <div className="inline-flex items-center h-5 rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[10px] font-mono text-white/75 leading-none flex-shrink-0">
+                                <div className="inline-flex items-center h-5 rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[10px] font-mono text-[var(--text-muted)] leading-none flex-shrink-0">
                                   {commandAlias}
                                 </div>
                               ) : null}

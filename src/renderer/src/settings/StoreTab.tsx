@@ -310,26 +310,26 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
     <div className={embedded ? '' : 'h-full flex flex-col'}>
       <div className="w-full h-full flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--ui-divider)]">
-          <h2 className="text-[15px] font-semibold text-white">{embedded ? 'Community' : 'Store'}</h2>
-          <span className="text-[12px] text-white/45">Installed extensions appear first.</span>
+          <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">{embedded ? 'Community' : 'Store'}</h2>
+          <span className="text-[12px] text-[var(--text-subtle)]">Installed extensions appear first.</span>
         </div>
 
         <div className="flex-1 min-h-0 flex flex-col">
           <div className="px-4 py-3 border-b border-[var(--ui-divider)] flex items-center gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-subtle)]" />
               <input
                 type="text"
                 placeholder="Search extensions..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-[var(--ui-segment-border)] transition-colors"
+                className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-lg pl-10 pr-4 py-2 text-sm text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-[var(--ui-segment-border)] transition-colors"
               />
             </div>
             <button
               onClick={() => loadCatalog(true)}
               disabled={isLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/60 hover:text-white/85 border border-[var(--ui-panel-border)] bg-[var(--ui-segment-bg)] hover:bg-[var(--ui-segment-hover-bg)] rounded-lg transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] border border-[var(--ui-panel-border)] bg-[var(--ui-segment-bg)] hover:bg-[var(--ui-segment-hover-bg)] rounded-lg transition-colors disabled:opacity-40"
             >
               <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
@@ -338,8 +338,8 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
 
           {isLoading && catalog.length === 0 && (
             <div className="text-center py-20">
-              <RefreshCw className="w-6 h-6 text-white/20 animate-spin mx-auto mb-3" />
-              <p className="text-sm text-white/40">Loading extension catalog...</p>
+              <RefreshCw className="w-6 h-6 text-[var(--text-subtle)] animate-spin mx-auto mb-3" />
+              <p className="text-sm text-[var(--text-subtle)]">Loading extension catalog...</p>
             </div>
           )}
 
@@ -356,7 +356,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
           )}
 
           {!isLoading && sortedCatalog.length === 0 && !error && (
-            <div className="text-center py-20 text-white/30">
+            <div className="text-center py-20 text-[var(--text-subtle)]">
               <Package className="w-8 h-8 mx-auto mb-3 opacity-40" />
               <p className="text-sm">
                 {searchQuery.trim() ? 'No extensions match your search' : 'No extensions available'}
@@ -398,7 +398,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-white/90 truncate">
+                            <span className="text-sm font-medium text-[var(--text-secondary)] truncate">
                               {ext.title}
                             </span>
                             {installed && (
@@ -407,7 +407,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                               </span>
                             )}
                           </div>
-                          <div className="text-xs text-white/35 truncate">{ext.description || ext.name}</div>
+                          <div className="text-xs text-[var(--text-subtle)] truncate">{ext.description || ext.name}</div>
                         </div>
                       </button>
                     );
@@ -429,7 +429,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                     busy={busyName === selectedExtension.name}
                   />
                 ) : (
-                  <div className="h-full flex items-center justify-center text-sm text-white/35">
+                  <div className="h-full flex items-center justify-center text-sm text-[var(--text-subtle)]">
                     Select an extension to view details
                   </div>
                 )}
@@ -447,11 +447,11 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                 WebkitBackdropFilter: 'blur(48px) saturate(170%)',
               }}
             >
-              <div className="flex items-center gap-2 text-white/45 text-xs flex-1 min-w-0 font-medium truncate">
+              <div className="flex items-center gap-2 text-[var(--text-subtle)] text-xs flex-1 min-w-0 font-medium truncate">
                 {busyExtension ? (
                   <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0 text-white/65" />
-                    <span className="truncate text-white/65">Installing {busyExtension.title}...</span>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0 text-[var(--text-muted)]" />
+                    <span className="truncate text-[var(--text-muted)]">Installing {busyExtension.title}...</span>
                   </>
                 ) : selectedExtension ? (
                   <>
@@ -473,14 +473,14 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                   <button
                     onClick={() => void handlePrimaryAction()}
                     disabled={isSelectedBusy}
-                    className="text-white text-xs font-semibold hover:text-white/85 disabled:text-white/40 transition-colors"
+                    className="text-[var(--text-primary)] text-xs font-semibold hover:text-[var(--text-secondary)] disabled:text-[var(--text-subtle)] transition-colors"
                   >
                     {selectedInstalled ? 'Update Extension' : 'Install Extension'}
                   </button>
-                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--ui-segment-hover-bg)] text-[11px] text-white/40 font-medium">
+                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--ui-segment-hover-bg)] text-[11px] text-[var(--text-subtle)] font-medium">
                     ⌘
                   </kbd>
-                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--ui-segment-hover-bg)] text-[11px] text-white/40 font-medium">
+                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--ui-segment-hover-bg)] text-[11px] text-[var(--text-subtle)] font-medium">
                     ↩
                   </kbd>
                 </div>
@@ -488,11 +488,11 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
 
               <button
                 onClick={() => setShowActions(true)}
-                className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
+                className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-muted)] transition-colors"
               >
                 <span className="text-xs font-medium">Actions</span>
-                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--ui-segment-hover-bg)] text-[11px] text-white/40 font-medium">⌘</kbd>
-                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--ui-segment-hover-bg)] text-[11px] text-white/40 font-medium">K</kbd>
+                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--ui-segment-hover-bg)] text-[11px] text-[var(--text-subtle)] font-medium">⌘</kbd>
+                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--ui-segment-hover-bg)] text-[11px] text-[var(--text-subtle)] font-medium">K</kbd>
               </button>
             </div>
           )}
@@ -523,8 +523,8 @@ const DetailTabButton: React.FC<{
     onClick={onClick}
     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors ${
       active
-        ? 'bg-[var(--ui-segment-active-bg)] text-white'
-        : 'bg-[var(--ui-segment-bg)] text-white/60 hover:text-white/85'
+        ? 'bg-[var(--ui-segment-active-bg)] text-[var(--text-primary)]'
+        : 'bg-[var(--ui-segment-bg)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
     }`}
   >
     {icon}
@@ -536,7 +536,7 @@ const ContributorAvatar: React.FC<{ name: string }> = ({ name }) => {
   const [imgFailed, setImgFailed] = useState(false);
   return (
     <div className="flex items-center gap-2 w-full">
-      <div className="w-5 h-5 rounded-full bg-[var(--ui-segment-active-bg)] overflow-hidden flex items-center justify-center text-[10px] text-white/85">
+      <div className="w-5 h-5 rounded-full bg-[var(--ui-segment-active-bg)] overflow-hidden flex items-center justify-center text-[10px] text-[var(--text-secondary)]">
         {!imgFailed ? (
           <img
             src={avatarUrlFor(name)}
@@ -549,7 +549,7 @@ const ContributorAvatar: React.FC<{ name: string }> = ({ name }) => {
           <span>{initialFor(name)}</span>
         )}
       </div>
-      <span className="text-sm text-white/85 truncate">{name}</span>
+      <span className="text-sm text-[var(--text-secondary)] truncate">{name}</span>
     </div>
   );
 };
@@ -573,8 +573,8 @@ const CommunityDetails: React.FC<{
           <img src={ext.iconUrl} alt="" className="w-12 h-12 object-contain" draggable={false} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-lg font-semibold text-white truncate">{ext.title}</div>
-          <div className="text-sm text-white/50">by {ext.author || 'Unknown'}</div>
+          <div className="text-lg font-semibold text-[var(--text-primary)] truncate">{ext.title}</div>
+          <div className="text-sm text-[var(--text-muted)]">by {ext.author || 'Unknown'}</div>
         </div>
       </div>
 
@@ -609,13 +609,13 @@ const CommunityDetails: React.FC<{
         {detailTab === 'overview' && (
           <div className="space-y-4">
             <div>
-              <div className="text-white/35 uppercase tracking-wider text-xs mb-1">Description</div>
-              <div className="text-white/85 text-sm leading-relaxed">{ext.description || 'No description provided.'}</div>
+              <div className="text-[var(--text-subtle)] uppercase tracking-wider text-xs mb-1">Description</div>
+              <div className="text-[var(--text-secondary)] text-sm leading-relaxed">{ext.description || 'No description provided.'}</div>
             </div>
             <div>
-              <div className="text-white/35 uppercase tracking-wider text-xs mb-1">Screenshots</div>
+              <div className="text-[var(--text-subtle)] uppercase tracking-wider text-xs mb-1">Screenshots</div>
               {screenshotsLoading ? (
-                <div className="text-sm text-white/40">Loading screenshots...</div>
+                <div className="text-sm text-[var(--text-subtle)]">Loading screenshots...</div>
               ) : screenshots && screenshots.length > 0 ? (
                 <div className="grid grid-cols-2 gap-2">
                   {screenshots.slice(0, 4).map((url, idx) => (
@@ -629,11 +629,11 @@ const CommunityDetails: React.FC<{
                   ))}
                 </div>
               ) : (
-                <div className="text-sm text-white/40">No screenshots declared.</div>
+                <div className="text-sm text-[var(--text-subtle)]">No screenshots declared.</div>
               )}
             </div>
             <div>
-              <div className="text-white/35 uppercase tracking-wider text-xs mb-1">Top Commands</div>
+              <div className="text-[var(--text-subtle)] uppercase tracking-wider text-xs mb-1">Top Commands</div>
               <div className="space-y-1.5">
                 {ext.commands.slice(0, 4).map((cmd) => (
                   <div key={cmd.name || cmd.title} className="flex items-start gap-2">
@@ -644,32 +644,32 @@ const CommunityDetails: React.FC<{
                       draggable={false}
                     />
                     <div>
-                      <div className="text-sm text-white/90">{cmd.title || cmd.name}</div>
-                      <div className="text-xs text-white/45 line-clamp-1">
+                      <div className="text-sm text-[var(--text-secondary)]">{cmd.title || cmd.name}</div>
+                      <div className="text-xs text-[var(--text-subtle)] line-clamp-1">
                         {cmd.description || 'No description'}
                       </div>
                     </div>
                   </div>
                 ))}
                 {ext.commands.length === 0 && (
-                  <div className="text-sm text-white/40">No commands declared.</div>
+                  <div className="text-sm text-[var(--text-subtle)]">No commands declared.</div>
                 )}
               </div>
             </div>
             <div>
-              <div className="text-white/35 uppercase tracking-wider text-xs mb-1">Categories</div>
+              <div className="text-[var(--text-subtle)] uppercase tracking-wider text-xs mb-1">Categories</div>
               <div className="flex flex-wrap gap-1.5">
                 {ext.categories.length > 0 ? (
                   ext.categories.map((cat) => (
                     <span
                       key={cat}
-                      className="text-[11px] px-2 py-0.5 rounded bg-[var(--ui-segment-hover-bg)] text-white/75"
+                      className="text-[11px] px-2 py-0.5 rounded bg-[var(--ui-segment-hover-bg)] text-[var(--text-secondary)]"
                     >
                       {cat}
                     </span>
                   ))
                 ) : (
-                  <span className="text-sm text-white/40">None</span>
+                  <span className="text-sm text-[var(--text-subtle)]">None</span>
                 )}
               </div>
             </div>
@@ -684,17 +684,17 @@ const CommunityDetails: React.FC<{
                   <div className="flex items-start gap-2">
                     <img src={ext.iconUrl} alt="" className="w-4 h-4 object-contain mt-0.5 rounded-sm" draggable={false} />
                     <div>
-                      <div className="text-sm font-medium text-white/90">{cmd.title || cmd.name}</div>
-                      <div className="text-xs text-white/45">{cmd.description || 'No description'}</div>
+                      <div className="text-sm font-medium text-[var(--text-secondary)]">{cmd.title || cmd.name}</div>
+                      <div className="text-xs text-[var(--text-subtle)]">{cmd.description || 'No description'}</div>
                     </div>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="text-sm text-white/40">No commands declared.</div>
+              <div className="text-sm text-[var(--text-subtle)]">No commands declared.</div>
             )}
             {ext.commands.length > visibleCommands.length && (
-              <div className="text-xs text-white/40">
+              <div className="text-xs text-[var(--text-subtle)]">
                 +{ext.commands.length - visibleCommands.length} more commands
               </div>
             )}
@@ -706,7 +706,7 @@ const CommunityDetails: React.FC<{
             {team.length > 0 ? (
               team.slice(0, 8).map((name) => <ContributorAvatar key={name} name={name} />)
             ) : (
-              <div className="text-sm text-white/40">No contributors declared.</div>
+              <div className="text-sm text-[var(--text-subtle)]">No contributors declared.</div>
             )}
           </div>
         )}
@@ -714,7 +714,7 @@ const CommunityDetails: React.FC<{
         {detailTab === 'screenshots' && (
           <div className="space-y-3">
             {screenshotsLoading ? (
-              <div className="text-sm text-white/40">Loading screenshots...</div>
+              <div className="text-sm text-[var(--text-subtle)]">Loading screenshots...</div>
             ) : screenshots && screenshots.length > 0 ? (
               screenshots.map((url, idx) => (
                 <button
@@ -726,7 +726,7 @@ const CommunityDetails: React.FC<{
                 </button>
               ))
             ) : (
-              <div className="text-sm text-white/40">No screenshots available for this extension.</div>
+              <div className="text-sm text-[var(--text-subtle)]">No screenshots available for this extension.</div>
             )}
           </div>
         )}
