@@ -446,6 +446,75 @@ function shebangArgs(firstLine: string): string[] {
   return body.split(/\s+/g).filter(Boolean);
 }
 
+function commandExists(bin: string): boolean {
+  const candidate = String(bin || '').trim();
+  if (!candidate) return false;
+  try {
+    const { spawnSync } = require('child_process');
+    const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+    const result = spawnSync(whichCmd, [candidate], { stdio: 'ignore' });
+    return Number(result?.status) === 0;
+  } catch {
+    return false;
+  }
+}
+
+function resolveScriptSpawn(
+  scriptPath: string,
+  shebang: string[],
+  args: string[]
+): { command: string; args: string[] } {
+  const ext = path.extname(scriptPath).toLowerCase();
+
+  if (shebang.length > 0) {
+    let command = shebang[0];
+    let commandArgs = shebang.slice(1);
+    if (path.basename(command).toLowerCase() === 'env' && commandArgs.length > 0) {
+      command = commandArgs[0];
+      commandArgs = commandArgs.slice(1);
+    }
+    return { command, args: [...commandArgs, scriptPath, ...args] };
+  }
+
+  if (process.platform === 'win32') {
+    if (ext === '.ps1') {
+      return {
+        command: 'powershell.exe',
+        args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args],
+      };
+    }
+    if (ext === '.cmd' || ext === '.bat') {
+      return {
+        command: 'cmd.exe',
+        args: ['/d', '/s', '/c', scriptPath, ...args],
+      };
+    }
+    if (ext === '.js' || ext === '.mjs' || ext === '.cjs') {
+      return {
+        command: 'node',
+        args: [scriptPath, ...args],
+      };
+    }
+    if (ext === '.py') {
+      const pyLauncher = commandExists('py') ? 'py' : 'python';
+      const pyArgs = pyLauncher === 'py' ? ['-3', scriptPath, ...args] : [scriptPath, ...args];
+      return { command: pyLauncher, args: pyArgs };
+    }
+    if (ext === '.sh') {
+      return {
+        command: 'bash',
+        args: [scriptPath, ...args],
+      };
+    }
+    return {
+      command: 'powershell.exe',
+      args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args],
+    };
+  }
+
+  return { command: '/bin/bash', args: [scriptPath, ...args] };
+}
+
 function buildScriptArgs(
   cmd: ScriptCommandInfo,
   argumentValues?: Record<string, any>
@@ -499,7 +568,9 @@ export async function executeScriptCommand(
 
   const env = {
     ...process.env,
-    PATH: `${process.env.PATH || ''}:/usr/local/bin`,
+    PATH: process.platform === 'win32'
+      ? String(process.env.PATH || '')
+      : `${process.env.PATH || ''}:/usr/local/bin`,
     RAYCAST_TITLE: cmd.title,
     RAYCAST_MODE: cmd.mode,
     RAYCAST_COMMAND_ID: cmd.id,
@@ -509,12 +580,9 @@ export async function executeScriptCommand(
 
   const cwd = cmd.currentDirectoryPath || cmd.scriptDir;
 
-  const spawnCommand =
-    shebang.length > 0 ? shebang[0] : '/bin/bash';
-  const spawnArgs =
-    shebang.length > 0
-      ? [...shebang.slice(1), cmd.scriptPath, ...args]
-      : [cmd.scriptPath, ...args];
+  const spawnSpec = resolveScriptSpawn(cmd.scriptPath, shebang, args);
+  const spawnCommand = spawnSpec.command;
+  const spawnArgs = spawnSpec.args;
 
   const run = await new Promise<{
     stdout: string;
@@ -622,6 +690,22 @@ export async function executeScriptCommand(
 
 function buildTemplateScript(title: string): string {
   const escapedTitle = title.replace(/"/g, '\\"');
+  if (process.platform === 'win32') {
+    return `# Required parameters:
+# @raycast.schemaVersion 1
+# @raycast.title ${escapedTitle}
+# @raycast.mode fullOutput
+
+# Optional parameters:
+# @raycast.packageName SuperCmd
+# @raycast.icon 💡
+
+# Documentation:
+# @raycast.description Describe what this command does
+
+Write-Output "Hello from ${escapedTitle}"
+`;
+  }
   return `#!/bin/bash
 
 # Required parameters:
@@ -643,10 +727,11 @@ echo "Hello from ${escapedTitle}"
 export function createScriptCommandTemplate(): { scriptPath: string; scriptsDir: string } {
   const scriptsDir = getSuperCmdScriptsDir();
   const baseName = 'custom-script-command';
-  let targetPath = path.join(scriptsDir, `${baseName}.sh`);
+  const ext = process.platform === 'win32' ? '.ps1' : '.sh';
+  let targetPath = path.join(scriptsDir, `${baseName}${ext}`);
   let seq = 2;
   while (fs.existsSync(targetPath)) {
-    targetPath = path.join(scriptsDir, `${baseName}-${seq}.sh`);
+    targetPath = path.join(scriptsDir, `${baseName}-${seq}${ext}`);
     seq += 1;
   }
 
@@ -678,10 +763,11 @@ export function ensureSampleScriptCommand(): {
 
   const sampleTitle = 'Sample Script Command';
   const sampleBaseName = 'sample-script-command';
-  let targetPath = path.join(scriptsDir, `${sampleBaseName}.sh`);
+  const ext = process.platform === 'win32' ? '.ps1' : '.sh';
+  let targetPath = path.join(scriptsDir, `${sampleBaseName}${ext}`);
   let seq = 2;
   while (fs.existsSync(targetPath)) {
-    targetPath = path.join(scriptsDir, `${sampleBaseName}-${seq}.sh`);
+    targetPath = path.join(scriptsDir, `${sampleBaseName}-${seq}${ext}`);
     seq += 1;
   }
 

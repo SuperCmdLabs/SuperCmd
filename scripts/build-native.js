@@ -185,6 +185,11 @@ if (process.platform === 'win32') {
       src: 'src/native/hotkey-hold-monitor.c',
       libs: ['user32'],
     },
+    {
+      out: 'snippet-expander-win.exe',
+      src: 'src/native/snippet-expander-win.c',
+      libs: ['user32'],
+    },
   ];
 
   for (const { out, src, libs } of binaries) {

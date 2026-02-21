@@ -136,10 +136,38 @@ export const windows: PlatformCapabilities = {
     }
   },
 
-  spawnSnippetExpander(_keywords: string[]): ChildProcess | null {
-    // Snippet expansion requires a system-wide keyboard hook.
-    // Windows implementation will be added in a follow-up PR.
-    return null;
+  spawnSnippetExpander(keywords: string[]): ChildProcess | null {
+    const fs = require('fs');
+    const { spawn } = require('child_process');
+
+    const filtered = Array.from(
+      new Set(
+        (keywords || [])
+          .map((kw) => String(kw || '').trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
+    if (filtered.length === 0) return null;
+
+    const binaryPath = getNativeBinaryPath('snippet-expander-win.exe');
+    if (!fs.existsSync(binaryPath)) {
+      console.warn(
+        '[Windows][snippet] snippet-expander-win.exe not found.',
+        'Run `npm run build:native` to compile it.',
+        binaryPath
+      );
+      return null;
+    }
+
+    try {
+      return spawn(
+        binaryPath,
+        [JSON.stringify(filtered)],
+        { stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+    } catch {
+      return null;
+    }
   },
 
   async pickColor(): Promise<string | null> {

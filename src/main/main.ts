@@ -2007,6 +2007,12 @@ function parseHoldShortcutConfig(shortcut: string): {
   };
 }
 
+/**
+ * Stops the active whisper hold watcher process and clears tracking state.
+ *
+ * Why:
+ * - Avoids stale native listeners and duplicate release events.
+ */
 function stopWhisperHoldWatcher(): void {
   if (!whisperHoldWatcherProcess) return;
   try { whisperHoldWatcherProcess.kill('SIGTERM'); } catch {}
@@ -2015,6 +2021,9 @@ function stopWhisperHoldWatcher(): void {
   whisperHoldWatcherSeq = 0;
 }
 
+/**
+ * Stops the dedicated Fn watcher used for whisper/speak toggle.
+ */
 function stopFnSpeakToggleWatcher(): void {
   fnSpeakToggleWatcherEnabled = false;
   fnSpeakToggleIsPressed = false;
@@ -2028,6 +2037,9 @@ function stopFnSpeakToggleWatcher(): void {
   fnSpeakToggleWatcherStdoutBuffer = '';
 }
 
+/**
+ * Stops one per-command Fn watcher and removes related buffers/timers.
+ */
 function stopFnCommandWatcher(commandId: string): void {
   const timer = fnCommandWatcherRestartTimers.get(commandId);
   if (timer) {
@@ -2037,11 +2049,13 @@ function stopFnCommandWatcher(commandId: string): void {
   const proc = fnCommandWatcherProcesses.get(commandId);
   if (proc) {
     try { proc.kill('SIGTERM'); } catch {}
-    fnCommandWatcherProcesses.delete(commandId);
   }
-  fnCommandWatcherStdoutBuffers.delete(commandId);
+  clearFnCommandWatcherRuntimeState(commandId);
 }
 
+/**
+ * Stops all per-command Fn watchers and clears desired watcher configuration.
+ */
 function stopAllFnCommandWatchers(): void {
   for (const commandId of Array.from(fnCommandWatcherProcesses.keys())) {
     stopFnCommandWatcher(commandId);
@@ -2049,6 +2063,39 @@ function stopAllFnCommandWatchers(): void {
   fnCommandWatcherConfigs.clear();
 }
 
+/**
+ * Clears runtime process/buffer state for a single Fn command watcher.
+ */
+function clearFnCommandWatcherRuntimeState(commandId: string): void {
+  fnCommandWatcherProcesses.delete(commandId);
+  fnCommandWatcherStdoutBuffers.delete(commandId);
+}
+
+/**
+ * Schedules restart for a per-command Fn watcher if configuration still exists.
+ */
+function scheduleFnCommandWatcherRestart(commandId: string, delayMs: number = 120): void {
+  if (!fnCommandWatcherConfigs.has(commandId)) return;
+  const existing = fnCommandWatcherRestartTimers.get(commandId);
+  if (existing) {
+    clearTimeout(existing);
+    fnCommandWatcherRestartTimers.delete(commandId);
+  }
+  const restartTimer = setTimeout(() => {
+    fnCommandWatcherRestartTimers.delete(commandId);
+    const desired = fnCommandWatcherConfigs.get(commandId);
+    if (!desired) return;
+    startFnCommandWatcher(commandId, desired);
+  }, delayMs);
+  fnCommandWatcherRestartTimers.set(commandId, restartTimer);
+}
+
+/**
+ * Starts one per-command Fn watcher process for a configured shortcut.
+ *
+ * Why:
+ * - Enables Fn-based command triggers not representable via Electron accelerators.
+ */
 function startFnCommandWatcher(commandId: string, shortcut: string): void {
   const configuredShortcut = String(fnCommandWatcherConfigs.get(commandId) || '').trim();
   if (!configuredShortcut || configuredShortcut !== String(shortcut || '').trim()) return;
@@ -2097,30 +2144,20 @@ function startFnCommandWatcher(commandId: string, shortcut: string): void {
     if (text) console.warn('[Hotkey][fn-watcher]', text);
   });
 
-  const scheduleRestart = () => {
-    if (!fnCommandWatcherConfigs.has(commandId)) return;
-    const restartTimer = setTimeout(() => {
-      fnCommandWatcherRestartTimers.delete(commandId);
-      const desired = fnCommandWatcherConfigs.get(commandId);
-      if (!desired) return;
-      startFnCommandWatcher(commandId, desired);
-    }, 120);
-    fnCommandWatcherRestartTimers.set(commandId, restartTimer);
-  };
-
   proc.on('error', () => {
-    fnCommandWatcherProcesses.delete(commandId);
-    fnCommandWatcherStdoutBuffers.delete(commandId);
-    scheduleRestart();
+    clearFnCommandWatcherRuntimeState(commandId);
+    scheduleFnCommandWatcherRestart(commandId);
   });
 
   proc.on('exit', () => {
-    fnCommandWatcherProcesses.delete(commandId);
-    fnCommandWatcherStdoutBuffers.delete(commandId);
-    scheduleRestart();
+    clearFnCommandWatcherRuntimeState(commandId);
+    scheduleFnCommandWatcherRestart(commandId);
   });
 }
 
+/**
+ * Starts the Fn-only watcher used by whisper/speak toggle behavior.
+ */
 function startFnSpeakToggleWatcher(): void {
   if (fnSpeakToggleWatcherProcess || !fnSpeakToggleWatcherEnabled) return;
   const config = parseHoldShortcutConfig('Fn');
@@ -2207,6 +2244,9 @@ function startFnSpeakToggleWatcher(): void {
   });
 }
 
+/**
+ * Enables or disables Fn speak-toggle watcher based on settings and hotkey config.
+ */
 function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
   // Do not start the CGEventTap-based Fn watcher during onboarding.
   // The tap requires Input Monitoring (and sometimes Accessibility) permission,
@@ -2232,6 +2272,18 @@ function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
   startFnSpeakToggleWatcher();
 }
 
+/**
+ * Synchronizes per-command Fn-based watchers.
+ *
+ * What it does:
+ * - Tracks only commands whose accelerators include Fn.
+ * - Starts watchers for new/changed bindings.
+ * - Stops watchers for removed/changed bindings.
+ *
+ * Why:
+ * - GlobalShortcut cannot represent Fn-only behavior on macOS reliably,
+ *   so we manage those shortcuts with native watchers.
+ */
 function syncFnCommandWatchers(hotkeys: Record<string, string>): void {
   const desired = new Map<string, string>();
   for (const [commandId, shortcutRaw] of Object.entries(hotkeys || {})) {
@@ -2263,6 +2315,16 @@ function syncFnCommandWatchers(hotkeys: Record<string, string>): void {
   }
 }
 
+/**
+ * Ensures the hotkey hold monitor binary exists and returns its path.
+ *
+ * What it does:
+ * - Reuses packaged binary when present.
+ * - Builds from Swift source in development when binary is missing.
+ *
+ * Why:
+ * - Fn/hold behavior depends on native monitoring not provided by Electron.
+ */
 function ensureWhisperHoldWatcherBinary(): string | null {
   const fs = require('fs');
   const binaryPath = getNativeBinaryPath('hotkey-hold-monitor');
@@ -2294,6 +2356,15 @@ function ensureWhisperHoldWatcherBinary(): string | null {
     return null;
   }
 }
+
+/**
+ * Starts whisper hold-to-talk watcher for a specific shortcut sequence.
+ *
+ * What it does:
+ * - Starts native monitor with parsed modifier config.
+ * - Emits stop-listening when key release is observed.
+ * - Tracks sequence ID to avoid acting on stale watcher exits.
+ */
 function startWhisperHoldWatcher(shortcut: string, holdSeq: number): void {
   if (whisperHoldWatcherProcess) return;
   const config = parseHoldShortcutConfig(shortcut);
@@ -3282,6 +3353,48 @@ function setLauncherMode(mode: LauncherMode): void {
 }
 
 function captureFrontmostAppContext(): void {
+  if (process.platform === 'win32') {
+    try {
+      const { execFileSync } = require('child_process');
+      const psScript = [
+        '$sig = @"',
+        'using System;',
+        'using System.Runtime.InteropServices;',
+        'public static class NativeWin {',
+        '  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+        '  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);',
+        '}',
+        '"@',
+        'Add-Type -TypeDefinition $sig -ErrorAction SilentlyContinue | Out-Null',
+        '$hwnd = [NativeWin]::GetForegroundWindow()',
+        '$pid = 0',
+        '[void][NativeWin]::GetWindowThreadProcessId($hwnd, [ref]$pid)',
+        'if ($pid -gt 0) {',
+        '  try {',
+        '    $p = Get-Process -Id $pid -ErrorAction Stop',
+        '    $name = [string]$p.ProcessName',
+        '    $path = ""',
+        '    try { $path = [string]$p.MainModule.FileName } catch {}',
+        '    if ($name -and $name -ne "SuperCmd" -and $name -ne "electron") {',
+        '      Write-Output ($name + "|||" + $path)',
+        '    }',
+        '  } catch {}',
+        '}',
+      ].join('; ');
+      const output = String(
+        execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript], { encoding: 'utf-8' }) || ''
+      ).trim();
+      if (output) {
+        const [name, appPath] = output.split('|||');
+        if (name && name !== 'SuperCmd' && name !== 'electron') {
+          lastFrontmostApp = { name, path: appPath || '' };
+        }
+      }
+    } catch {
+      // keep previously captured value
+    }
+    return;
+  }
   if (process.platform !== 'darwin') return;
   try {
     const { execFileSync } = require('child_process');
@@ -3468,6 +3581,27 @@ async function activateLastFrontmostApp(): Promise<boolean> {
   const { promisify } = require('util');
   const execFileAsync = promisify(execFile);
 
+  if (process.platform === 'win32') {
+    try {
+      const name = String(lastFrontmostApp.name || '').trim();
+      if (name) {
+        const escapedName = name.replace(/'/g, "''");
+        const psScript = `Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.Interaction]::AppActivate('${escapedName}') | Out-Null`;
+        await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript], { windowsHide: true } as any);
+        return true;
+      }
+    } catch {}
+
+    try {
+      const appPath = String(lastFrontmostApp.path || '').trim();
+      if (appPath) {
+        await shell.openPath(appPath);
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
   try {
     if (lastFrontmostApp.bundleId) {
       await execFileAsync('osascript', [
@@ -3512,6 +3646,32 @@ async function typeTextDirectly(text: string): Promise<boolean> {
   const { execFile } = require('child_process');
   const { promisify } = require('util');
   const execFileAsync = promisify(execFile);
+
+  if (process.platform === 'win32') {
+    const escaped = value
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/\{/g, '{{}')
+      .replace(/\}/g, '{}}')
+      .replace(/\+/g, '{+}')
+      .replace(/\^/g, '{^}')
+      .replace(/%/g, '{%}')
+      .replace(/~/g, '{~}')
+      .replace(/\(/g, '{(}')
+      .replace(/\)/g, '{)}')
+      .replace(/\[/g, '{[}')
+      .replace(/\]/g, '{]}')
+      .replace(/\n/g, '{ENTER}');
+    try {
+      const psScript = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${escaped.replace(/'/g, "''")}')`;
+      await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript], { windowsHide: true } as any);
+      return true;
+    } catch (error) {
+      console.error('Direct keystroke fallback failed:', error);
+      return false;
+    }
+  }
+
   const escaped = value
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
@@ -3541,10 +3701,21 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
 
   try {
     systemClipboard.writeText(value);
-    await execFileAsync('osascript', [
-      '-e',
-      'tell application "System Events" to keystroke "v" using command down',
-    ]);
+    if (process.platform === 'win32') {
+      await execFileAsync('powershell', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
+        '-Command',
+        'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("^v")',
+      ], { windowsHide: true } as any);
+    } else {
+      await execFileAsync('osascript', [
+        '-e',
+        'tell application "System Events" to keystroke "v" using command down',
+      ]);
+    }
     setTimeout(() => {
       try {
         systemClipboard.writeText(previousClipboardText);
@@ -3567,14 +3738,20 @@ async function replaceTextDirectly(previousText: string, nextText: string): Prom
 
   try {
     if (prev.length > 0) {
-      const script = `
-        tell application "System Events"
-          repeat ${prev.length} times
-            key code 51
-          end repeat
-        end tell
-      `;
-      await execFileAsync('osascript', ['-e', script]);
+      if (process.platform === 'win32') {
+        const keys = '{BACKSPACE}'.repeat(Math.min(prev.length, 5000));
+        const psScript = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${keys}')`;
+        await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript], { windowsHide: true } as any);
+      } else {
+        const script = `
+          tell application "System Events"
+            repeat ${prev.length} times
+              key code 51
+            end repeat
+          end tell
+        `;
+        await execFileAsync('osascript', ['-e', script]);
+      }
     }
     if (next.length > 0) {
       return await typeTextDirectly(next);
@@ -3596,14 +3773,20 @@ async function replaceTextViaBackspaceAndPaste(previousText: string, nextText: s
 
   try {
     if (prev.length > 0) {
-      const script = `
-        tell application "System Events"
-          repeat ${prev.length} times
-            key code 51
-          end repeat
-        end tell
-      `;
-      await execFileAsync('osascript', ['-e', script]);
+      if (process.platform === 'win32') {
+        const keys = '{BACKSPACE}'.repeat(Math.min(prev.length, 5000));
+        const psScript = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${keys}')`;
+        await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript], { windowsHide: true } as any);
+      } else {
+        const script = `
+          tell application "System Events"
+            repeat ${prev.length} times
+              key code 51
+            end repeat
+          end tell
+        `;
+        await execFileAsync('osascript', ['-e', script]);
+      }
       await new Promise((resolve) => setTimeout(resolve, 18));
     }
     if (next.length > 0) {
@@ -3640,6 +3823,23 @@ async function hideAndPaste(): Promise<boolean> {
 
   // Small delay to let the target app gain focus
   await new Promise(resolve => setTimeout(resolve, 200));
+
+  if (process.platform === 'win32') {
+    try {
+      await execFileAsync('powershell', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
+        '-Command',
+        'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("^v")',
+      ], { windowsHide: true } as any);
+      return true;
+    } catch (e) {
+      console.error('Failed to simulate paste keystroke:', e);
+      return false;
+    }
+  }
 
   try {
     await execFileAsync('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down']);
@@ -3683,16 +3883,26 @@ async function expandSnippetKeywordInPlace(keyword: string, delimiter: string): 
     const { promisify } = require('util');
     const execFileAsync = promisify(execFile);
 
-    const script = `
-      tell application "System Events"
-        repeat ${backspaceCount} times
-          key code 51
-        end repeat
-        keystroke "v" using command down
-      end tell
-    `;
+    if (process.platform === 'win32') {
+      const keys = '{BACKSPACE}'.repeat(Math.min(backspaceCount, 5000));
+      const psScript = [
+        'Add-Type -AssemblyName System.Windows.Forms',
+        `[System.Windows.Forms.SendKeys]::SendWait('${keys}')`,
+        '[System.Windows.Forms.SendKeys]::SendWait("^v")',
+      ].join('; ');
+      await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript], { windowsHide: true } as any);
+    } else {
+      const script = `
+        tell application "System Events"
+          repeat ${backspaceCount} times
+            key code 51
+          end repeat
+          keystroke "v" using command down
+        end tell
+      `;
 
-    await execFileAsync('osascript', ['-e', script]);
+      await execFileAsync('osascript', ['-e', script]);
+    }
 
     // Restore user's clipboard after insertion.
     setTimeout(() => {
@@ -6996,6 +7206,41 @@ app.whenReady().then(async () => {
       try {
         return await downloadUrl(url);
       } catch (primaryErr: any) {
+        if (process.platform === 'win32') {
+          const psOutput = await new Promise<Uint8Array>((resolve, reject) => {
+            const escapedUrl = String(url || '').replace(/'/g, "''");
+            const psScript = [
+              `$u='${escapedUrl}'`,
+              '$resp = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 60',
+              '$ms = New-Object System.IO.MemoryStream',
+              '$resp.RawContentStream.CopyTo($ms)',
+              '$bytes = $ms.ToArray()',
+              '[Console]::Out.Write([Convert]::ToBase64String($bytes))',
+            ].join('; ');
+            execFile(
+              'powershell',
+              ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript],
+              { encoding: 'utf-8', maxBuffer: 100 * 1024 * 1024, windowsHide: true } as any,
+              (err: Error | null, stdout: string, stderr: string) => {
+                if (err) {
+                  reject(
+                    new Error(
+                      `HTTP download failed (${primaryErr?.message || 'unknown'}) and PowerShell fallback failed (${stderr || err.message})`
+                    )
+                  );
+                  return;
+                }
+                try {
+                  resolve(new Uint8Array(Buffer.from(String(stdout || '').trim(), 'base64')));
+                } catch (decodeErr: any) {
+                  reject(new Error(`PowerShell fallback decode failed: ${decodeErr?.message || 'unknown'}`));
+                }
+              }
+            );
+          });
+          return psOutput;
+        }
+
         const curlOutput = await new Promise<Uint8Array>((resolve, reject) => {
           execFile(
             '/usr/bin/curl',
@@ -7039,6 +7284,57 @@ app.whenReady().then(async () => {
 
   // Get installed applications
   ipcMain.handle('get-applications', async (_event: any, targetPath?: string) => {
+    if (process.platform === 'win32') {
+      const { execFileSync } = require('child_process');
+      const commands = await getAvailableCommands();
+      let apps = commands
+        .filter((c) => c.category === 'app')
+        .map((c) => ({
+          name: c.title,
+          path: c.path || '',
+          bundleId: undefined,
+        }));
+
+      if (targetPath && typeof targetPath === 'string') {
+        try {
+          const escaped = String(targetPath).replace(/'/g, "''");
+          const psScript = [
+            `$target='${escaped}'`,
+            '$ext = [System.IO.Path]::GetExtension($target)',
+            'if (-not $ext) { return }',
+            "$progId = ''",
+            'try {',
+            "  $userChoice = Get-ItemProperty -Path (\"Registry::HKEY_CURRENT_USER\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\FileExts\\\\\" + $ext + \"\\\\UserChoice\") -ErrorAction Stop",
+            "  $progId = [string]$userChoice.ProgId",
+            '} catch {}',
+            'if (-not $progId) {',
+            '  try { $progId = [string](Get-ItemProperty -Path ("Registry::HKEY_CLASSES_ROOT\\\\" + $ext) -ErrorAction Stop)."(default)" } catch {}',
+            '}',
+            'if (-not $progId) { return }',
+            "$cmd=''",
+            'try { $cmd = [string](Get-ItemProperty -Path ("Registry::HKEY_CLASSES_ROOT\\\\" + $progId + \"\\\\shell\\\\open\\\\command\") -ErrorAction Stop).\"(default)\" } catch {}',
+            'if (-not $cmd) { return }',
+            "$exe=''",
+            "if ($cmd -match '^\\s*\"([^\"]+)\"') { $exe = $matches[1] } elseif ($cmd -match '^\\s*([^\\s]+)') { $exe = $matches[1] }",
+            'if ($exe) { Write-Output $exe }',
+          ].join('; ');
+          const resolvedPath = String(
+            execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript], { encoding: 'utf-8' }) || ''
+          ).trim();
+          if (resolvedPath) {
+            const normalized = resolvedPath.toLowerCase();
+            apps = apps.filter((a) => String(a.path || '').toLowerCase() === normalized);
+          } else {
+            apps = [];
+          }
+        } catch {
+          apps = [];
+        }
+      }
+
+      return apps;
+    }
+
     const { execFileSync } = require('child_process');
     const fsNative = require('fs');
 
@@ -7109,6 +7405,46 @@ return appURL's |path|() as text`,
 
   // Get default application for a file/URL
   ipcMain.handle('get-default-application', async (_event: any, filePath: string) => {
+    if (process.platform === 'win32') {
+      try {
+        const { execFileSync } = require('child_process');
+        const escaped = String(filePath || '').replace(/'/g, "''");
+        const psScript = [
+          `$target='${escaped}'`,
+          '$ext = [System.IO.Path]::GetExtension($target)',
+          'if (-not $ext) { throw "No extension found" }',
+          "$progId = ''",
+          'try {',
+          "  $userChoice = Get-ItemProperty -Path (\"Registry::HKEY_CURRENT_USER\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\FileExts\\\\\" + $ext + \"\\\\UserChoice\") -ErrorAction Stop",
+          "  $progId = [string]$userChoice.ProgId",
+          '} catch {}',
+          'if (-not $progId) {',
+          '  try { $progId = [string](Get-ItemProperty -Path ("Registry::HKEY_CLASSES_ROOT\\\\" + $ext) -ErrorAction Stop)."(default)" } catch {}',
+          '}',
+          'if (-not $progId) { throw "No ProgId found" }',
+          "$cmd=''",
+          'try { $cmd = [string](Get-ItemProperty -Path ("Registry::HKEY_CLASSES_ROOT\\\\" + $progId + \"\\\\shell\\\\open\\\\command\") -ErrorAction Stop).\"(default)\" } catch {}',
+          'if (-not $cmd) { throw "No open command found" }',
+          "$exe=''",
+          "if ($cmd -match '^\\s*\"([^\"]+)\"') { $exe = $matches[1] } elseif ($cmd -match '^\\s*([^\\s]+)') { $exe = $matches[1] }",
+          'if (-not $exe) { throw "Unable to resolve executable" }',
+          '$name = [System.IO.Path]::GetFileNameWithoutExtension($exe)',
+          'Write-Output ($name + "|||" + $exe + "|||")',
+        ].join('; ');
+        const result = String(
+          execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript], { encoding: 'utf-8' }) || ''
+        ).trim();
+        const [name, appPath] = result.split('|||');
+        if (!name || !appPath) {
+          throw new Error('No default application found');
+        }
+        return { name, path: appPath, bundleId: undefined };
+      } catch (e: any) {
+        console.error('get-default-application error:', e);
+        throw new Error(`No default application found for: ${filePath}`);
+      }
+    }
+
     try {
       const { execSync } = require('child_process');
       // Use Launch Services via AppleScript to find default app
@@ -7136,6 +7472,43 @@ return appURL's |path|() as text`,
 
   // Get frontmost application
   ipcMain.handle('get-frontmost-application', async () => {
+    if (process.platform === 'win32') {
+      try {
+        const { execFileSync } = require('child_process');
+        const psScript = [
+          '$sig = @"',
+          'using System;',
+          'using System.Runtime.InteropServices;',
+          'public static class NativeWin {',
+          '  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+          '  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);',
+          '}',
+          '"@',
+          'Add-Type -TypeDefinition $sig -ErrorAction SilentlyContinue | Out-Null',
+          '$hwnd = [NativeWin]::GetForegroundWindow()',
+          '$pid = 0',
+          '[void][NativeWin]::GetWindowThreadProcessId($hwnd, [ref]$pid)',
+          'if ($pid -gt 0) {',
+          '  try {',
+          '    $p = Get-Process -Id $pid -ErrorAction Stop',
+          '    $name = [string]$p.ProcessName',
+          '    $path = \"\"',
+          '    try { $path = [string]$p.MainModule.FileName } catch {}',
+          '    Write-Output ($name + \"|||\" + $path)',
+          '  } catch {}',
+          '}',
+        ].join('; ');
+        const output = String(
+          execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript], { encoding: 'utf-8' }) || ''
+        ).trim();
+        if (output) {
+          const [name, appPath] = output.split('|||');
+          return { name: name || 'Unknown', path: appPath || '' };
+        }
+      } catch {}
+      return { name: 'SuperCmd', path: '', bundleId: 'com.supercmd' };
+    }
+
     try {
       const { execSync } = require('child_process');
       const script = `
@@ -7157,6 +7530,9 @@ return appURL's |path|() as text`,
 
   // Run AppleScript
   ipcMain.handle('run-applescript', async (_event: any, script: string) => {
+    if (process.platform !== 'darwin') {
+      throw new Error('runAppleScript is only supported on macOS');
+    }
     try {
       const { spawnSync } = require('child_process');
       const proc = spawnSync('/usr/bin/osascript', ['-l', 'AppleScript'], {
@@ -8354,6 +8730,17 @@ return appURL's |path|() as text`,
 
   // ─── IPC: Native Color Picker ──────────────────────────────────
 
+  /**
+   * Opens the platform color picker with single-flight protection.
+   *
+   * What it does:
+   * - Reuses one in-flight picker promise to avoid overlapping dialogs.
+   * - Prevents launcher blur-hide while picker is active.
+   *
+   * Why:
+   * - Concurrent invocations can cause duplicate dialogs and inconsistent
+   *   blur state; this keeps behavior stable across platforms.
+   */
   ipcMain.handle('native-pick-color', async () => {
     if (nativeColorPickerPromise) {
       return nativeColorPickerPromise;
