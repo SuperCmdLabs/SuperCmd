@@ -277,6 +277,7 @@ type LauncherFooterProps = {
   selectedCommand: CommandInfo | null;
   displayCommandsCount: number;
   primaryAction?: LauncherAction;
+  primaryModifierLabel: string;
   onOpenActions: () => void;
 };
 
@@ -290,6 +291,7 @@ const LauncherFooter: React.FC<LauncherFooterProps> = ({
   selectedCommand,
   displayCommandsCount,
   primaryAction,
+  primaryModifierLabel,
   onOpenActions,
 }) => {
   if (isLoading) return null;
@@ -345,7 +347,7 @@ const LauncherFooter: React.FC<LauncherFooterProps> = ({
         className="flex items-center gap-1.5 text-white/50 hover:text-white/70 transition-colors"
       >
         <span className="text-xs font-normal">Actions</span>
-        <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">⌘</kbd>
+        <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">{primaryModifierLabel}</kbd>
         <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-white/[0.08] text-[11px] text-white/40 font-medium">K</kbd>
       </button>
     </div>
@@ -353,6 +355,8 @@ const LauncherFooter: React.FC<LauncherFooterProps> = ({
 };
 
 const App: React.FC = () => {
+  const isMac = window.electron.platform === 'darwin';
+  const primaryModifierLabel = isMac ? '⌘' : 'Ctrl';
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [commandAliases, setCommandAliases] = useState<Record<string, string>>({});
   const [pinnedCommands, setPinnedCommands] = useState<string[]>([]);
@@ -1017,11 +1021,19 @@ const App: React.FC = () => {
     !showOnboarding &&
     !showWhisperOnboarding;
 
+  const isPrimaryModifierPressed = useCallback(
+    (event: Pick<KeyboardEvent, 'metaKey' | 'ctrlKey'> | Pick<React.KeyboardEvent, 'metaKey' | 'ctrlKey'>) => {
+      return isMac ? event.metaKey : event.ctrlKey;
+    },
+    [isMac]
+  );
+
   useEffect(() => {
     if (!isLauncherModeActive) return;
     const onWindowKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (!e.metaKey || String(e.key || '').toLowerCase() !== 'k' || e.repeat) return;
+      if (!isPrimaryModifierPressed(e) || String(e.key || '').toLowerCase() !== 'k' || e.repeat) return;
+      if (e.shiftKey || e.altKey) return;
 
       const target = e.target as HTMLElement | null;
       const active = document.activeElement as HTMLElement | null;
@@ -1038,7 +1050,7 @@ const App: React.FC = () => {
 
     window.addEventListener('keydown', onWindowKeyDown, true);
     return () => window.removeEventListener('keydown', onWindowKeyDown, true);
-  }, [isLauncherModeActive]);
+  }, [isLauncherModeActive, isPrimaryModifierPressed]);
 
   useEffect(() => {
     return () => {
@@ -1208,7 +1220,7 @@ const App: React.FC = () => {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.metaKey && (e.key === 'k' || e.key === 'K') && !e.repeat) {
+      if (isPrimaryModifierPressed(e) && (e.key === 'k' || e.key === 'K') && !e.repeat && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         setShowActions((prev) => !prev);
         setContextMenu(null);
@@ -1237,29 +1249,29 @@ const App: React.FC = () => {
         }
         return;
       }
-      if (e.metaKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+      if (isPrimaryModifierPressed(e) && e.shiftKey && !e.altKey && (e.key === 'P' || e.key === 'p')) {
         e.preventDefault();
         togglePinSelectedCommand();
         return;
       }
-      if (e.metaKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+      if (isPrimaryModifierPressed(e) && e.shiftKey && !e.altKey && (e.key === 'D' || e.key === 'd')) {
         e.preventDefault();
         disableSelectedCommand();
         return;
       }
-      if (e.metaKey && (e.key === 'Backspace' || e.key === 'Delete')) {
+      if (isPrimaryModifierPressed(e) && !e.shiftKey && !e.altKey && (e.key === 'Backspace' || e.key === 'Delete')) {
         if (selectedCommand?.category === 'extension') {
           e.preventDefault();
           uninstallSelectedExtension();
           return;
         }
       }
-      if (e.metaKey && e.altKey && e.key === 'ArrowUp') {
+      if (isPrimaryModifierPressed(e) && e.altKey && !e.shiftKey && e.key === 'ArrowUp') {
         e.preventDefault();
         moveSelectedPinnedCommand('up');
         return;
       }
-      if (e.metaKey && e.altKey && e.key === 'ArrowDown') {
+      if (isPrimaryModifierPressed(e) && e.altKey && !e.shiftKey && e.key === 'ArrowDown') {
         e.preventDefault();
         moveSelectedPinnedCommand('down');
         return;
@@ -1311,6 +1323,7 @@ const App: React.FC = () => {
     },
     [
       moveSelection,
+      isPrimaryModifierPressed,
       displayCommands,
       selectedIndex,
       searchQuery,
@@ -2176,6 +2189,7 @@ const App: React.FC = () => {
           selectedCommand={selectedCommand}
           displayCommandsCount={displayCommands.length}
           primaryAction={selectedActions[0]}
+          primaryModifierLabel={primaryModifierLabel}
           onOpenActions={() => {
             setContextMenu(null);
             setShowActions(true);

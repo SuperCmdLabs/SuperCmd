@@ -25,7 +25,8 @@ export function formatShortcutForDisplay(shortcut: string): string {
       if (/^(function|fn)$/i.test(value)) return 'fn';
       if (/^arrowup$/i.test(value)) return '↑';
       if (/^arrowdown$/i.test(value)) return '↓';
-      if (/^(backspace|delete)$/i.test(value)) return '⌫';
+      if (/^backspace$/i.test(value)) return isMac ? '⌫' : 'Backspace';
+      if (/^delete$/i.test(value)) return isMac ? '⌦' : 'Del';
       if (/^period$/i.test(value)) return '.';
       return value.length === 1 ? value.toUpperCase() : value;
     })

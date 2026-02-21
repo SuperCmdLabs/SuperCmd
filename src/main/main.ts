@@ -3355,7 +3355,7 @@ function setLauncherMode(mode: LauncherMode): void {
 function captureFrontmostAppContext(): void {
   if (process.platform === 'win32') {
     try {
-      const { execFileSync } = require('child_process');
+      const { execFile } = require('child_process');
       const psScript = [
         '$sig = @"',
         'using System;',
@@ -3381,15 +3381,19 @@ function captureFrontmostAppContext(): void {
         '  } catch {}',
         '}',
       ].join('; ');
-      const output = String(
-        execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript], { encoding: 'utf-8' }) || ''
-      ).trim();
-      if (output) {
-        const [name, appPath] = output.split('|||');
-        if (name && name !== 'SuperCmd' && name !== 'electron') {
-          lastFrontmostApp = { name, path: appPath || '' };
+      execFile(
+        'powershell',
+        ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript],
+        { encoding: 'utf-8', windowsHide: true } as any,
+        (_err: Error | null, stdout?: string) => {
+          const output = String(stdout || '').trim();
+          if (!output) return;
+          const [name, appPath] = output.split('|||');
+          if (name && name !== 'SuperCmd' && name !== 'electron') {
+            lastFrontmostApp = { name, path: appPath || '' };
+          }
         }
-      }
+      );
     } catch {
       // keep previously captured value
     }
@@ -5899,6 +5903,11 @@ app.whenReady().then(async () => {
   try { refreshSnippetExpander(); } catch (e) {
     console.warn('[SnippetExpander] Failed to start:', e);
   }
+
+  // Warm command discovery in the background so first launcher open is fast.
+  void getAvailableCommands().catch((error) => {
+    console.warn('[Commands] Prewarm failed:', error);
+  });
 
   // Rebuilding all extensions on every startup can stall app launch if one
   // extension build hangs. Keep startup fast by default; allow opt-in.
