@@ -1,16 +1,24 @@
 /**
  * General Settings Tab
  *
- * Structured row layout aligned with the settings design system.
+ * What this file is:
+ * - A focused settings surface for app-level controls users access frequently.
+ *
+ * What it does:
+ * - Manages launcher shortcut, UI font size, update actions, launch-at-login, and version info.
+ *
+ * Why we need it:
+ * - Keeps everyday settings in one place while separating advanced controls into dedicated tabs.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type } from 'lucide-react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Power } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AppUpdaterStatus } from '../../types/electron';
 import { applyAppFontSize, getDefaultAppFontSize } from '../utils/font-size';
 
 type FontSizeOption = NonNullable<AppSettings['fontSize']>;
+type ShortcutStatus = 'idle' | 'success' | 'error';
 
 const FONT_SIZE_OPTIONS: Array<{ id: FontSizeOption; label: string }> = [
   { id: 'small', label: 'Small' },
@@ -18,6 +26,9 @@ const FONT_SIZE_OPTIONS: Array<{ id: FontSizeOption; label: string }> = [
   { id: 'large', label: 'Large' },
 ];
 
+/**
+ * Formats bytes into a readable unit for updater progress text.
+ */
 function formatBytes(bytes?: number): string {
   const value = Number(bytes || 0);
   if (!Number.isFinite(value) || value <= 0) return '0 B';
@@ -28,6 +39,33 @@ function formatBytes(bytes?: number): string {
   return `${scaled.toFixed(precision)} ${units[exponent]}`;
 }
 
+/**
+ * Maps updater state to a short human-readable summary.
+ */
+function getUpdaterPrimaryMessage(status: AppUpdaterStatus | null): string {
+  if (!status) return 'Check for and install packaged-app updates.';
+  if (status.message) return status.message;
+
+  switch (status.state) {
+    case 'unsupported':
+      return 'Updates are only available in packaged builds.';
+    case 'checking':
+      return 'Checking for updates...';
+    case 'available':
+      return `Update v${status.latestVersion || 'latest'} is available.`;
+    case 'not-available':
+      return 'You are already on the latest version.';
+    case 'downloading':
+      return 'Downloading update...';
+    case 'downloaded':
+      return 'Update downloaded. Restart to install.';
+    case 'error':
+      return 'Could not complete the update action.';
+    default:
+      return 'Check for and install packaged-app updates.';
+  }
+}
+
 type SettingsRowProps = {
   icon: React.ReactNode;
   title: string;
@@ -36,6 +74,12 @@ type SettingsRowProps = {
   children: React.ReactNode;
 };
 
+/**
+ * Shared row shell used across settings sections.
+ *
+ * Why:
+ * - Enforces consistent spacing/typography so each setting can stay lean.
+ */
 const SettingsRow: React.FC<SettingsRowProps> = ({
   icon,
   title,
@@ -59,73 +103,94 @@ const SettingsRow: React.FC<SettingsRowProps> = ({
   </div>
 );
 
-const GeneralTab: React.FC = () => {
+/**
+ * Encapsulates async settings/update side effects so render JSX stays focused.
+ */
+function useGeneralTabController() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [updaterStatus, setUpdaterStatus] = useState<AppUpdaterStatus | null>(null);
   const [updaterActionError, setUpdaterActionError] = useState('');
-  const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [shortcutStatus, setShortcutStatus] = useState<ShortcutStatus>('idle');
 
   useEffect(() => {
     window.electron.getSettings().then((nextSettings) => {
       const normalizedFontSize = nextSettings.fontSize || getDefaultAppFontSize();
       applyAppFontSize(normalizedFontSize);
-      setSettings({
-        ...nextSettings,
-        fontSize: normalizedFontSize,
-      });
+      setSettings({ ...nextSettings, fontSize: normalizedFontSize });
     });
   }, []);
 
   useEffect(() => {
     let disposed = false;
-    window.electron.appUpdaterGetStatus()
+
+    window.electron
+      .appUpdaterGetStatus()
       .then((status) => {
         if (!disposed) setUpdaterStatus(status);
       })
       .catch(() => {});
+
     const disposeUpdater = window.electron.onAppUpdaterStatus((status) => {
       if (!disposed) setUpdaterStatus(status);
     });
+
     return () => {
       disposed = true;
       disposeUpdater();
     };
   }, []);
 
-  const handleShortcutChange = async (newShortcut: string) => {
+  /**
+   * Updates launcher shortcut and provides immediate success/error feedback.
+   */
+  const handleShortcutChange = useCallback(async (newShortcut: string) => {
     if (!newShortcut) return;
     setShortcutStatus('idle');
 
     const success = await window.electron.updateGlobalShortcut(newShortcut);
     if (success) {
-      setSettings((prev) =>
-        prev ? { ...prev, globalShortcut: newShortcut } : prev
-      );
+      setSettings((prev) => (prev ? { ...prev, globalShortcut: newShortcut } : prev));
       setShortcutStatus('success');
       setTimeout(() => setShortcutStatus('idle'), 2000);
-    } else {
-      setShortcutStatus('error');
-      setTimeout(() => setShortcutStatus('idle'), 3000);
+      return;
     }
-  };
 
-  const handleFontSizeChange = async (nextFontSize: FontSizeOption) => {
-    if (!settings) return;
-    const previousFontSize = settings.fontSize || getDefaultAppFontSize();
-    if (previousFontSize === nextFontSize) return;
+    setShortcutStatus('error');
+    setTimeout(() => setShortcutStatus('idle'), 3000);
+  }, []);
 
-    setSettings((prev) => (prev ? { ...prev, fontSize: nextFontSize } : prev));
-    applyAppFontSize(nextFontSize);
+  /**
+   * Applies font size optimistically, then persists it.
+   * Reverts UI if persistence fails.
+   */
+  const handleFontSizeChange = useCallback(
+    async (nextFontSize: FontSizeOption) => {
+      if (!settings) return;
+      const previousFontSize = settings.fontSize || getDefaultAppFontSize();
+      if (previousFontSize === nextFontSize) return;
 
-    try {
-      await window.electron.saveSettings({ fontSize: nextFontSize });
-    } catch {
-      setSettings((prev) => (prev ? { ...prev, fontSize: previousFontSize } : prev));
-      applyAppFontSize(previousFontSize);
-    }
-  };
+      setSettings((prev) => (prev ? { ...prev, fontSize: nextFontSize } : prev));
+      applyAppFontSize(nextFontSize);
 
-  const handleCheckForUpdates = async () => {
+      try {
+        await window.electron.saveSettings({ fontSize: nextFontSize });
+      } catch {
+        setSettings((prev) => (prev ? { ...prev, fontSize: previousFontSize } : prev));
+        applyAppFontSize(previousFontSize);
+      }
+    },
+    [settings]
+  );
+
+  /**
+   * Toggles open-at-login and keeps UI state in sync with OS setting.
+   */
+  const handleOpenAtLoginChange = useCallback(async (openAtLogin: boolean) => {
+    setSettings((prev) => (prev ? { ...prev, openAtLogin } : prev));
+    await window.electron.setOpenAtLogin(openAtLogin);
+  }, []);
+
+  const handleCheckForUpdates = useCallback(async () => {
     setUpdaterActionError('');
     try {
       const status = await window.electron.appUpdaterCheckForUpdates();
@@ -133,9 +198,9 @@ const GeneralTab: React.FC = () => {
     } catch (error: any) {
       setUpdaterActionError(String(error?.message || error || 'Failed to check for updates.'));
     }
-  };
+  }, []);
 
-  const handleDownloadUpdate = async () => {
+  const handleDownloadUpdate = useCallback(async () => {
     setUpdaterActionError('');
     try {
       const status = await window.electron.appUpdaterDownloadUpdate();
@@ -143,9 +208,9 @@ const GeneralTab: React.FC = () => {
     } catch (error: any) {
       setUpdaterActionError(String(error?.message || error || 'Failed to download update.'));
     }
-  };
+  }, []);
 
-  const handleRestartToInstall = async () => {
+  const handleRestartToInstall = useCallback(async () => {
     setUpdaterActionError('');
     try {
       const ok = await window.electron.appUpdaterQuitAndInstall();
@@ -155,34 +220,47 @@ const GeneralTab: React.FC = () => {
     } catch (error: any) {
       setUpdaterActionError(String(error?.message || error || 'Failed to restart for update.'));
     }
+  }, []);
+
+  return {
+    settings,
+    updaterStatus,
+    updaterActionError,
+    shortcutStatus,
+    handleShortcutChange,
+    handleFontSizeChange,
+    handleOpenAtLoginChange,
+    handleCheckForUpdates,
+    handleDownloadUpdate,
+    handleRestartToInstall,
   };
+}
+
+/**
+ * General settings screen.
+ *
+ * Why this component exists:
+ * - Keeps common global settings easy to discover and change.
+ */
+const GeneralTab: React.FC = () => {
+  const {
+    settings,
+    updaterStatus,
+    updaterActionError,
+    shortcutStatus,
+    handleShortcutChange,
+    handleFontSizeChange,
+    handleOpenAtLoginChange,
+    handleCheckForUpdates,
+    handleDownloadUpdate,
+    handleRestartToInstall,
+  } = useGeneralTabController();
 
   const updaterProgress = Math.max(0, Math.min(100, Number(updaterStatus?.progressPercent || 0)));
   const updaterState = updaterStatus?.state || 'idle';
   const updaterSupported = updaterStatus?.supported !== false;
   const currentVersion = updaterStatus?.currentVersion || '1.0.0';
-  const updaterPrimaryMessage = useMemo(() => {
-    if (!updaterStatus) return 'Check for and install packaged-app updates.';
-    if (updaterStatus.message) return updaterStatus.message;
-    switch (updaterStatus.state) {
-      case 'unsupported':
-        return 'Updates are only available in packaged builds.';
-      case 'checking':
-        return 'Checking for updates...';
-      case 'available':
-        return `Update v${updaterStatus.latestVersion || 'latest'} is available.`;
-      case 'not-available':
-        return 'You are already on the latest version.';
-      case 'downloading':
-        return 'Downloading update...';
-      case 'downloaded':
-        return 'Update downloaded. Restart to install.';
-      case 'error':
-        return 'Could not complete the update action.';
-      default:
-        return 'Check for and install packaged-app updates.';
-    }
-  }, [updaterStatus]);
+  const updaterPrimaryMessage = useMemo(() => getUpdaterPrimaryMessage(updaterStatus), [updaterStatus]);
 
   if (!settings) {
     return <div className="p-6 text-white/50 text-[12px]">Loading settings...</div>;
@@ -242,9 +320,7 @@ const GeneralTab: React.FC = () => {
         >
           <div className="w-full space-y-2">
             <div>
-              <p className="text-[13px] font-semibold text-white/92 leading-snug">
-                {updaterPrimaryMessage}
-              </p>
+              <p className="text-[13px] font-semibold text-white/92 leading-snug">{updaterPrimaryMessage}</p>
               <p className="text-[12px] text-white/45 mt-0.5 leading-tight">
                 Current version: v{currentVersion}
                 {updaterStatus?.latestVersion ? ` · Latest: v${updaterStatus.latestVersion}` : ''}
@@ -260,7 +336,8 @@ const GeneralTab: React.FC = () => {
                   />
                 </div>
                 <p className="mt-0.5 text-[12px] text-white/45">
-                  {updaterProgress.toFixed(0)}% · {formatBytes(updaterStatus?.transferredBytes)} / {formatBytes(updaterStatus?.totalBytes)}
+                  {updaterProgress.toFixed(0)}% · {formatBytes(updaterStatus?.transferredBytes)} /{' '}
+                  {formatBytes(updaterStatus?.totalBytes)}
                 </p>
               </div>
             )}
@@ -306,14 +383,30 @@ const GeneralTab: React.FC = () => {
         </SettingsRow>
 
         <SettingsRow
+          icon={<Power className="w-4 h-4" />}
+          title="Launch at Login"
+          description="Automatically start SuperCmd when you log in."
+        >
+          <label className="inline-flex items-center gap-2 text-[13px] text-white/85 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.openAtLogin ?? false}
+              onChange={(e) => {
+                void handleOpenAtLoginChange(e.target.checked);
+              }}
+              className="w-4 h-4 rounded accent-cyan-400"
+            />
+            Launch at login
+          </label>
+        </SettingsRow>
+
+        <SettingsRow
           icon={<Info className="w-4 h-4" />}
           title="About"
           description="Version information."
           withBorder={false}
         >
-          <p className="text-[13px] font-semibold text-white/88 leading-snug">
-            SuperCmd v{currentVersion}
-          </p>
+          <p className="text-[13px] font-semibold text-white/88 leading-snug">SuperCmd v{currentVersion}</p>
         </SettingsRow>
       </div>
     </div>

@@ -21,6 +21,9 @@ const ExtensionActionFooter: React.FC<ExtensionActionFooterProps> = ({
   primaryAction,
   actionsButton,
 }) => {
+  const isMac =
+    typeof window !== 'undefined' &&
+    (window as any)?.electron?.platform === 'darwin';
   const primaryVisible = Boolean(primaryAction?.label);
   const showDivider = primaryVisible;
 
@@ -58,7 +61,7 @@ const ExtensionActionFooter: React.FC<ExtensionActionFooterProps> = ({
           className="flex items-center gap-1.5 text-white/50 hover:text-white/70 disabled:text-white/35 transition-colors"
         >
           <span className="text-xs font-medium">{actionsButton.label}</span>
-          {(actionsButton.shortcut || ['⌘', 'K']).map((key) => (
+          {(actionsButton.shortcut || [isMac ? '⌘' : 'Ctrl', 'K']).map((key) => (
             <kbd key={`actions-${key}`} className={KEY_CLASS}>
               {key}
             </kbd>

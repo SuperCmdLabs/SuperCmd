@@ -1,3 +1,17 @@
+/**
+ * Extensions Settings Tab
+ *
+ * What this file is:
+ * - The control center for extension-level command settings.
+ *
+ * What it does:
+ * - Loads command/extension schemas, lets users configure hotkeys and preferences,
+ *   and handles extension install/uninstall related actions.
+ *
+ * Why we need it:
+ * - Extension commands are dynamic, so they need a dedicated configuration surface.
+ */
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
@@ -35,14 +49,23 @@ type SettingsFocusTarget = { extensionName?: string; commandName?: string };
 const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
 const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
 
+/**
+ * Builds localStorage key for extension-scoped preferences.
+ */
 function getExtPrefsKey(extName: string): string {
   return `${EXT_PREFS_KEY_PREFIX}${extName}`;
 }
 
+/**
+ * Builds localStorage key for command-scoped preferences.
+ */
 function getCmdPrefsKey(extName: string, cmdName: string): string {
   return `${CMD_PREFS_KEY_PREFIX}${extName}/${cmdName}`;
 }
 
+/**
+ * Reads and validates JSON object storage payloads.
+ */
 function readJsonObject(key: string): Record<string, any> {
   try {
     const raw = localStorage.getItem(key);
@@ -54,10 +77,16 @@ function readJsonObject(key: string): Record<string, any> {
   }
 }
 
+/**
+ * Persists JSON objects used by extension preference drafts.
+ */
 function writeJsonObject(key: string, value: Record<string, any>) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+/**
+ * Resolves an initial preference value from schema defaults.
+ */
 function getDefaultValue(pref: ExtensionPreferenceSchema): any {
   if (pref.default !== undefined) return pref.default;
   if (pref.type === 'checkbox') return false;
@@ -65,6 +94,9 @@ function getDefaultValue(pref: ExtensionPreferenceSchema): any {
   return '';
 }
 
+/**
+ * Detects whether a required preference currently has no usable value.
+ */
 function isPreferenceMissing(pref: ExtensionPreferenceSchema, value: any): boolean {
   if (!pref.required) return false;
   if (pref.type === 'checkbox') return value === undefined || value === null;
@@ -72,6 +104,9 @@ function isPreferenceMissing(pref: ExtensionPreferenceSchema, value: any): boole
   return value === undefined || value === null;
 }
 
+/**
+ * Creates comparable keys for resilient cross-source name matching.
+ */
 const normalizeMatchKey = (value: string): string =>
   value.trim().toLowerCase().replace(/[\s_]+/g, '-');
 

@@ -649,6 +649,19 @@ export const Clipboard = {
   keystroke "v" using command down
 end tell`
         );
+      } else if (electron?.platform === 'win32' && electron?.execCommand) {
+        await electron.execCommand(
+          'powershell',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-WindowStyle',
+            'Hidden',
+            '-Command',
+            'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("^v")',
+          ],
+          { shell: false }
+        );
       }
     } catch (e) {
       console.error('Clipboard paste error:', e);
@@ -1216,8 +1229,25 @@ export async function open(target: string, application?: string | Application): 
   const electron = (window as any).electron;
   if (application) {
     const appName = typeof application === 'string' ? application : application.name;
-    // Use 'open -a' to open with a specific application
     if (electron?.execCommand) {
+      if (electron?.platform === 'win32') {
+        const escapedApp = String(appName || '').replace(/'/g, "''");
+        const escapedTarget = String(target || '').replace(/'/g, "''");
+        await electron.execCommand(
+          'powershell',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-WindowStyle',
+            'Hidden',
+            '-Command',
+            `Start-Process -FilePath '${escapedApp}' -ArgumentList @('${escapedTarget}')`,
+          ],
+          { shell: false }
+        );
+        return;
+      }
+      // macOS compatibility path
       await electron.execCommand('open', ['-a', appName, target]);
       return;
     }

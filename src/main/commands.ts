@@ -581,9 +581,228 @@ function buildSettingsKeywords(
   return Array.from(set);
 }
 
+// ─── Windows: Application Discovery ─────────────────────────────────
+
+const WIN_APP_SKIP_RE = /uninstall|uninst|^setup\s/i;
+
+async function discoverWindowsApplications(): Promise<CommandInfo[]> {
+  const startMenuDirs = [
+    path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+    path.join(process.env.ProgramData || 'C:\\ProgramData', 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+  ].filter(Boolean);
+
+  // Single PowerShell invocation: resolve all .lnk shortcuts to exe target paths.
+  // Uses WScript.Shell COM object; single-quotes in paths are doubled (PS convention).
+  const psScript = `$shell=New-Object -ComObject WScript.Shell
+$res=@()
+$dirs=@(${startMenuDirs.map((d) => `'${d.replace(/'/g, "''")}'`).join(',')})
+foreach($d in $dirs){
+  if(Test-Path $d){
+    Get-ChildItem $d -Recurse -Filter *.lnk | ForEach-Object {
+      try {
+        $sc=$shell.CreateShortcut($_.FullName)
+        $t=$sc.TargetPath
+        if($t -and $t -match '\\.exe$' -and $t -notmatch 'WindowsApps' -and (Test-Path $t)){
+          $res+=[PSCustomObject]@{n=$_.BaseName;p=$t}
+        }
+      } catch {}
+    }
+  }
+}
+if($res.Count -eq 0){Write-Output '[]';exit}
+($res | Group-Object p | ForEach-Object { $_.Group[0] }) | ConvertTo-Json -Compress`;
+
+  const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+  let apps: Array<{ n: string; p: string }> = [];
+  try {
+    const { stdout } = await execAsync(
+      `powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
+      { timeout: 30_000 }
+    );
+    const raw = stdout.trim();
+    if (raw && raw !== '[]') {
+      const parsed = JSON.parse(raw);
+      apps = Array.isArray(parsed) ? parsed : [parsed];
+    }
+  } catch (e) {
+    console.warn('[Win] Start Menu scan failed:', e);
+  }
+
+  const results: CommandInfo[] = [];
+  for (const item of apps) {
+    const name = String(item?.n || '').trim();
+    const exePath = String(item?.p || '').trim();
+    if (!name || !exePath) continue;
+    if (WIN_APP_SKIP_RE.test(name)) continue;
+
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
+    const idSuffix = crypto.createHash('md5').update(exePath).digest('hex').slice(0, 8);
+    const id = `win-app-${slug}-${idSuffix}`;
+
+    results.push({
+      id,
+      title: name,
+      keywords: [name.toLowerCase()],
+      iconDataUrl: getCachedIcon(exePath),
+      category: 'app' as const,
+      path: exePath,
+      _bundlePath: exePath,
+    });
+  }
+
+  // ── UWP / Store apps via Get-StartApps ───────────────────────────────────
+  // Get-StartApps returns all Start Menu entries including UWP apps whose
+  // AppID contains '!' (PackageFamilyName!AppId).  Traditional .exe shortcuts
+  // are already covered above, so we only add entries not yet in results.
+  const existingNames = new Set(results.map((r) => r.title.toLowerCase()));
+  try {
+    const uwpScript = `Get-StartApps | Where-Object { $_.AppID -match '!' } | Select-Object Name,AppID | ConvertTo-Json -Compress`;
+    const uwpEncoded = Buffer.from(uwpScript, 'utf16le').toString('base64');
+    const { stdout: uwpOut } = await execAsync(
+      `powershell -NoProfile -NonInteractive -EncodedCommand ${uwpEncoded}`,
+      { timeout: 15_000 }
+    );
+    const rawUwp = uwpOut.trim();
+    if (rawUwp && rawUwp !== '[]') {
+      const parsedUwp = JSON.parse(rawUwp);
+      const uwpApps: Array<{ Name: string; AppID: string }> = Array.isArray(parsedUwp)
+        ? parsedUwp
+        : [parsedUwp];
+      for (const item of uwpApps) {
+        const name = String(item?.Name || '').trim();
+        const appId = String(item?.AppID || '').trim();
+        if (!name || !appId) continue;
+        if (WIN_APP_SKIP_RE.test(name)) continue;
+        if (existingNames.has(name.toLowerCase())) continue;
+        existingNames.add(name.toLowerCase());
+
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
+        const idSuffix = crypto.createHash('md5').update(appId).digest('hex').slice(0, 8);
+        const id = `win-app-${slug}-${idSuffix}`;
+
+        results.push({
+          id,
+          title: name,
+          keywords: [name.toLowerCase()],
+          category: 'app' as const,
+          // shell: URI — opened via shell.openExternal in openAppByPath
+          path: `shell:AppsFolder\\${appId}`,
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('[Win] UWP app scan failed:', e);
+  }
+
+  return results;
+}
+
+/**
+ * Batch-extract icons from Windows .exe files via PowerShell + System.Drawing.
+ * Returns a map of exePath → "data:image/png;base64,…".
+ */
+async function extractWindowsIcons(exePaths: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (exePaths.length === 0) return result;
+
+  // Single-quote each path; escape embedded single quotes by doubling.
+  const pathsPs = exePaths.map((p) => `'${p.replace(/'/g, "''")}'`).join(',');
+  const psScript = `Add-Type -AssemblyName System.Drawing
+$paths=@(${pathsPs})
+$r=[ordered]@{}
+foreach($p in $paths){
+  try{
+    $ic=[System.Drawing.Icon]::ExtractAssociatedIcon($p)
+    $bm=$ic.ToBitmap()
+    $ms=New-Object System.IO.MemoryStream
+    $bm.Save($ms,[System.Drawing.Imaging.ImageFormat]::Png)
+    $r[$p]=[Convert]::ToBase64String($ms.ToArray())
+    $ic.Dispose();$bm.Dispose();$ms.Dispose()
+  }catch{$r[$p]=''}
+}
+$r|ConvertTo-Json -Compress`;
+
+  const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+  try {
+    const { stdout } = await execAsync(
+      `powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
+      { timeout: 60_000 }
+    );
+    const raw = stdout.trim();
+    if (raw) {
+      const parsed: Record<string, string> = JSON.parse(raw);
+      for (const [exePath, b64] of Object.entries(parsed)) {
+        if (typeof b64 === 'string' && b64) {
+          result.set(exePath, `data:image/png;base64,${b64}`);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[Win] Icon batch extraction failed:', e);
+  }
+  return result;
+}
+
+// ─── Windows: System Settings Discovery ──────────────────────────────
+
+const WINDOWS_SETTINGS_PANELS: Array<{
+  id: string; title: string; path: string; keywords: string[]; iconEmoji: string;
+}> = [
+  { id: 'win-settings-display',        title: 'Display',                path: 'ms-settings:display',                   keywords: ['display','screen','resolution','brightness','monitor','refresh rate'],            iconEmoji: '🖥️' },
+  { id: 'win-settings-nightlight',      title: 'Night Light',            path: 'ms-settings:nightlight',               keywords: ['night light','blue light','eye strain','warm','color temperature'],              iconEmoji: '🌙' },
+  { id: 'win-settings-sound',           title: 'Sound',                  path: 'ms-settings:sound',                    keywords: ['sound','audio','volume','speakers','microphone','headphones','output'],            iconEmoji: '🔊' },
+  { id: 'win-settings-bluetooth',       title: 'Bluetooth & Devices',    path: 'ms-settings:bluetooth',                keywords: ['bluetooth','devices','connect','pair','wireless','mouse','keyboard','printer'],   iconEmoji: '📡' },
+  { id: 'win-settings-network',         title: 'Network & Internet',     path: 'ms-settings:network-status',           keywords: ['network','wifi','internet','ethernet','vpn','proxy','connection','status'],        iconEmoji: '🌐' },
+  { id: 'win-settings-wifi',            title: 'Wi-Fi',                  path: 'ms-settings:network-wifi',             keywords: ['wifi','wireless','network','connect','internet','ssid'],                          iconEmoji: '📶' },
+  { id: 'win-settings-vpn',             title: 'VPN',                    path: 'ms-settings:network-vpn',              keywords: ['vpn','network','private','tunnel','secure'],                                       iconEmoji: '🔒' },
+  { id: 'win-settings-personalization', title: 'Personalization',        path: 'ms-settings:personalization',          keywords: ['personalization','wallpaper','theme','background','colors','dark mode'],           iconEmoji: '🎨' },
+  { id: 'win-settings-background',      title: 'Background',             path: 'ms-settings:personalization-background', keywords: ['background','wallpaper','desktop','picture','slideshow'],                     iconEmoji: '🖼️' },
+  { id: 'win-settings-colors',          title: 'Colors & Themes',        path: 'ms-settings:colors',                   keywords: ['colors','themes','accent','dark mode','light mode','appearance','transparent'],   iconEmoji: '🎨' },
+  { id: 'win-settings-taskbar',         title: 'Taskbar',                path: 'ms-settings:taskbar',                  keywords: ['taskbar','start','notification area','system tray','pinned'],                      iconEmoji: '📌' },
+  { id: 'win-settings-apps',            title: 'Apps & Features',        path: 'ms-settings:appsfeatures',             keywords: ['apps','features','uninstall','programs','install','remove'],                       iconEmoji: '📦' },
+  { id: 'win-settings-defaultapps',     title: 'Default Apps',           path: 'ms-settings:defaultapps',              keywords: ['default','apps','browser','email','media','association','open with'],             iconEmoji: '✅' },
+  { id: 'win-settings-startup',         title: 'Startup Apps',           path: 'ms-settings:startupapps',              keywords: ['startup','autostart','boot','apps','login','launch on start'],                     iconEmoji: '🚀' },
+  { id: 'win-settings-accounts',        title: 'Accounts',               path: 'ms-settings:accounts',                 keywords: ['accounts','sign-in','email','sync','profile','microsoft account'],                  iconEmoji: '👤' },
+  { id: 'win-settings-signin',          title: 'Sign-in Options',        path: 'ms-settings:signinoptions',            keywords: ['sign-in','password','pin','fingerprint','face','hello','lock screen'],             iconEmoji: '🔑' },
+  { id: 'win-settings-datetime',        title: 'Date & Time',            path: 'ms-settings:dateandtime',              keywords: ['date','time','timezone','clock','calendar','synchronize'],                          iconEmoji: '🕐' },
+  { id: 'win-settings-language',        title: 'Language & Region',      path: 'ms-settings:regionformatting',         keywords: ['language','region','locale','format','keyboard layout','input'],                   iconEmoji: '🌍' },
+  { id: 'win-settings-notifications',   title: 'Notifications',          path: 'ms-settings:notifications',            keywords: ['notifications','focus assist','do not disturb','alerts','banners','sounds'],     iconEmoji: '🔔' },
+  { id: 'win-settings-battery',         title: 'Battery & Power',        path: 'ms-settings:batterysaver',             keywords: ['battery','power','charge','sleep','hibernate','energy','saver'],                    iconEmoji: '🔋' },
+  { id: 'win-settings-storage',         title: 'Storage',                path: 'ms-settings:storagesense',             keywords: ['storage','disk','space','cleanup','drive','files','free up'],                       iconEmoji: '💾' },
+  { id: 'win-settings-multitasking',    title: 'Multitasking',           path: 'ms-settings:multitasking',             keywords: ['multitasking','snap','virtual desktop','window','alt-tab','split'],               iconEmoji: '🪟' },
+  { id: 'win-settings-privacy',         title: 'Privacy & Security',     path: 'ms-settings:privacy',                  keywords: ['privacy','security','permissions','location','camera','microphone','data'],        iconEmoji: '🔐' },
+  { id: 'win-settings-mic',             title: 'Microphone Privacy',     path: 'ms-settings:privacy-microphone',       keywords: ['microphone','privacy','mic','recording','permissions','voice'],                     iconEmoji: '🎙️' },
+  { id: 'win-settings-camera',          title: 'Camera Privacy',         path: 'ms-settings:privacy-webcam',           keywords: ['camera','webcam','privacy','video','permissions'],                                  iconEmoji: '📷' },
+  { id: 'win-settings-location',        title: 'Location',               path: 'ms-settings:privacy-location',         keywords: ['location','gps','privacy','maps','where','geolocation'],                           iconEmoji: '📍' },
+  { id: 'win-settings-update',          title: 'Windows Update',         path: 'ms-settings:windowsupdate',            keywords: ['update','windows update','patch','upgrade','security updates'],                     iconEmoji: '🔄' },
+  { id: 'win-settings-troubleshoot',    title: 'Troubleshoot',           path: 'ms-settings:troubleshoot',             keywords: ['troubleshoot','fix','repair','help','diagnose','wizard'],                          iconEmoji: '🔧' },
+  { id: 'win-settings-recovery',        title: 'Recovery',               path: 'ms-settings:recovery',                 keywords: ['recovery','reset','restore','reinstall','factory reset'],                          iconEmoji: '♻️' },
+  { id: 'win-settings-activation',      title: 'Activation',             path: 'ms-settings:activation',               keywords: ['activation','license','product key','genuine','windows license'],                  iconEmoji: '🔑' },
+  { id: 'win-settings-developer',       title: 'Developer Mode',         path: 'ms-settings:developers',               keywords: ['developer','dev mode','sideload','debug','terminal','advanced'],                   iconEmoji: '💻' },
+  { id: 'win-settings-mouse',           title: 'Mouse',                  path: 'ms-settings:mousetouchpad',            keywords: ['mouse','cursor','pointer','scroll','click','buttons'],                             iconEmoji: '🖱️' },
+  { id: 'win-settings-keyboard',        title: 'Keyboard',               path: 'ms-settings:keyboard',                 keywords: ['keyboard','shortcut','typing','input','layout','accessibility'],                   iconEmoji: '⌨️' },
+  { id: 'win-settings-printer',         title: 'Printers & Scanners',    path: 'ms-settings:printers',                 keywords: ['printer','scanner','print','fax','output device'],                                 iconEmoji: '🖨️' },
+  { id: 'win-settings-gaming',          title: 'Gaming',                 path: 'ms-settings:gaming-gamebar',           keywords: ['gaming','game bar','xbox','game mode','capture','fps','overlay'],                  iconEmoji: '🎮' },
+  { id: 'win-settings-optional',        title: 'Optional Features',      path: 'ms-settings:optionalfeatures',         keywords: ['optional','features','windows features','components','telnet','ssh'],              iconEmoji: '⚙️' },
+  { id: 'win-settings-about',           title: 'About This PC',          path: 'ms-settings:about',                    keywords: ['about','pc','specs','ram','cpu','version','system info','computer name'],           iconEmoji: 'ℹ️' },
+];
+
+function discoverWindowsSystemSettings(): CommandInfo[] {
+  return WINDOWS_SETTINGS_PANELS.map((s) => ({
+    id: s.id,
+    title: s.title,
+    keywords: s.keywords,
+    iconEmoji: s.iconEmoji,
+    category: 'settings' as const,
+    path: s.path,
+  }));
+}
+
 // ─── Application Discovery ──────────────────────────────────────────
 
 async function discoverApplications(): Promise<CommandInfo[]> {
+  if (process.platform === 'win32') return discoverWindowsApplications();
+
   const results: CommandInfo[] = [];
   const usedIds = new Set<string>();
 
@@ -673,6 +892,8 @@ async function discoverApplications(): Promise<CommandInfo[]> {
 // ─── System Settings Discovery ──────────────────────────────────────
 
 async function discoverSystemSettings(): Promise<CommandInfo[]> {
+  if (process.platform === 'win32') return discoverWindowsSystemSettings();
+
   const results: CommandInfo[] = [];
   const seen = new Set<string>();
 
@@ -828,10 +1049,34 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
 // ─── Command Execution ──────────────────────────────────────────────
 
 async function openAppByPath(appPath: string): Promise<void> {
+  if (process.platform === 'win32') {
+    const { shell } = require('electron');
+    // UWP/Store apps are stored as shell:AppsFolder\{AUMID}.
+    // shell.openExternal is unreliable for shell: URIs on Windows;
+    // PowerShell Start-Process handles them correctly.
+    if (appPath.startsWith('shell:')) {
+      const { execFile } = require('child_process');
+      const psCmd = `Start-Process "${appPath.replace(/"/g, '`"')}"`;
+      const encoded = Buffer.from(psCmd, 'utf16le').toString('base64');
+      execFile('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded]);
+      return;
+    }
+    const err = await shell.openPath(appPath);
+    if (err) throw new Error(err);
+    return;
+  }
   await execAsync(`open "${appPath}"`);
 }
 
 async function openSettingsPane(identifier: string): Promise<void> {
+  if (process.platform === 'win32') {
+    // ms-settings: URIs are opened via shell.openExternal which routes through
+    // Windows URI handler → Settings app.
+    const { shell } = require('electron');
+    await shell.openExternal(identifier);
+    return;
+  }
+
   if (identifier.startsWith('com.apple.')) {
     try {
       await execAsync(`open "x-apple.systempreferences:${identifier}"`);
@@ -982,6 +1227,62 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       keywords: ['snippet', 'export', 'save', 'backup', 'file'],
       category: 'system',
     },
+    {
+      id: 'system-color-picker',
+      title: 'Pick Color',
+      subtitle: 'Copy hex to clipboard',
+      keywords: ['color', 'picker', 'hex', 'rgb', 'colour', 'eyedropper', 'powertoys'],
+      iconEmoji: '🎨',
+      category: 'system',
+    },
+    {
+      id: 'system-calculator',
+      title: 'Calculator',
+      subtitle: 'Type a math expression to calculate',
+      keywords: ['calculator', 'math', 'compute', 'calculate', 'arithmetic', 'unit', 'convert'],
+      iconEmoji: '🧮',
+      category: 'system',
+    },
+    {
+      id: 'system-toggle-dark-mode',
+      title: 'Toggle Dark / Light Mode',
+      subtitle: 'Switch system appearance',
+      keywords: ['dark mode', 'light mode', 'theme', 'appearance', 'night', 'powertoys', 'light switch'],
+      iconEmoji: '🌙',
+      category: 'system',
+    },
+    {
+      id: 'system-awake-toggle',
+      title: 'Awake — Prevent Sleep',
+      subtitle: 'Keep display awake',
+      keywords: ['awake', 'sleep', 'prevent sleep', 'caffeinate', 'display', 'powertoys'],
+      iconEmoji: '☕',
+      category: 'system',
+    },
+    {
+      id: 'system-hosts-editor',
+      title: 'Hosts File Editor',
+      subtitle: 'Edit hosts file with admin rights',
+      keywords: ['hosts', 'dns', 'block', 'redirect', 'etc hosts', 'network', 'powertoys'],
+      iconEmoji: '📝',
+      category: 'system',
+    },
+    {
+      id: 'system-env-variables',
+      title: 'Environment Variables',
+      subtitle: 'Open system environment variables',
+      keywords: ['environment', 'variables', 'env', 'path', 'system', 'powertoys'],
+      iconEmoji: '⚙️',
+      category: 'system',
+    },
+    {
+      id: 'system-shortcut-guide',
+      title: 'Shortcut Guide',
+      subtitle: 'View keyboard shortcuts',
+      keywords: ['shortcut', 'hotkey', 'keyboard', 'help', 'guide', 'cheatsheet', 'powertoys'],
+      iconEmoji: '⌨️',
+      category: 'system',
+    },
   ];
 
   // Installed community extensions
@@ -1033,7 +1334,7 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
 
   const allCommands = [...apps, ...settings, ...extensionCommands, ...scriptCommands, ...systemCommands];
 
-  // ── Batch-extract icons via NSWorkspace for app/settings bundles ──
+  // ── Batch-extract icons for app/settings bundles that don't have one yet ──
   const bundlesNeedingIcon = allCommands.filter(
     (c) =>
       !c.iconDataUrl &&
@@ -1042,14 +1343,33 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
   );
 
   if (bundlesNeedingIcon.length > 0) {
-    console.log(`Extracting ${bundlesNeedingIcon.length} app/settings icons via NSWorkspace…`);
-    const bundlePaths = Array.from(new Set(bundlesNeedingIcon.map((c) => c._bundlePath!)));
-    const iconMap = await batchGetIconsViaWorkspace(bundlePaths);
-
-    for (const cmd of bundlesNeedingIcon) {
-      const dataUrl = iconMap.get(cmd._bundlePath!);
-      if (dataUrl) {
-        cmd.iconDataUrl = dataUrl;
+    if (process.platform === 'win32') {
+      // Windows: extract icons from .exe files via PowerShell + System.Drawing.
+      const allPaths = Array.from(new Set(bundlesNeedingIcon.map((c) => c._bundlePath!)));
+      console.log(`Extracting ${allPaths.length} Windows app icons via System.Drawing…`);
+      const BATCH = 20;
+      for (let i = 0; i < allPaths.length; i += BATCH) {
+        const batchPaths = allPaths.slice(i, i + BATCH);
+        const iconMap = await extractWindowsIcons(batchPaths);
+        for (const cmd of bundlesNeedingIcon) {
+          if (!cmd._bundlePath || cmd.iconDataUrl) continue;
+          const dataUrl = iconMap.get(cmd._bundlePath);
+          if (dataUrl) {
+            cmd.iconDataUrl = dataUrl;
+            setCachedIcon(cmd._bundlePath, dataUrl);
+          }
+        }
+      }
+    } else {
+      // macOS: use NSWorkspace JXA batch extraction.
+      console.log(`Extracting ${bundlesNeedingIcon.length} app/settings icons via NSWorkspace…`);
+      const bundlePaths = Array.from(new Set(bundlesNeedingIcon.map((c) => c._bundlePath!)));
+      const iconMap = await batchGetIconsViaWorkspace(bundlePaths);
+      for (const cmd of bundlesNeedingIcon) {
+        const dataUrl = iconMap.get(cmd._bundlePath!);
+        if (dataUrl) {
+          cmd.iconDataUrl = dataUrl;
+        }
       }
     }
   }

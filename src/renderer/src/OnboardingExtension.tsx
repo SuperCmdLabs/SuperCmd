@@ -138,15 +138,17 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   onComplete,
   onClose,
 }) => {
+  const isWindows = window.electron.platform === 'win32';
   const [step, setStep] = useState(0);
-  const [shortcut, setShortcut] = useState(initialShortcut || 'Alt+Space');
+  const [shortcut, setShortcut] = useState(initialShortcut || (isWindows ? 'Ctrl+Space' : 'Alt+Space'));
   const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [hasValidShortcut, setHasValidShortcut] = useState(!requireWorkingShortcut);
   const [openedPermissions, setOpenedPermissions] = useState<Record<string, boolean>>({});
   const [requestedPermissions, setRequestedPermissions] = useState<Record<string, boolean>>({});
   const [permissionLoading, setPermissionLoading] = useState<Record<string, boolean>>({});
   const [permissionNotes, setPermissionNotes] = useState<Record<string, string>>({});
-  const [whisperHoldKey, setWhisperHoldKey] = useState('Fn');
+  const DEFAULT_WHISPER_HOTKEY = isWindows ? 'Ctrl+Shift+Space' : 'Fn';
+  const [whisperHoldKey, setWhisperHoldKey] = useState(DEFAULT_WHISPER_HOTKEY);
   const [whisperKeyStatus, setWhisperKeyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isHoldKeyActive, setIsHoldKeyActive] = useState(false);
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
@@ -169,8 +171,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
   useEffect(() => {
     window.electron.getSettings().then((settings) => {
-      const saved = String(settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn').trim();
-      setWhisperHoldKey(saved || 'Fn');
+      const saved = String(settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || DEFAULT_WHISPER_HOTKEY).trim();
+      setWhisperHoldKey(saved || DEFAULT_WHISPER_HOTKEY);
       const savedLanguage = String(settings.ai?.speechLanguage || 'en-US').trim();
       setSpeechLanguage(savedLanguage || 'en-US');
     }).catch(() => {});
@@ -369,7 +371,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   }, [step]);
 
   const stepTitle = useMemo(() => STEPS[step] || STEPS[0], [step]);
-  const hotkeyCaps = useMemo(() => toHotkeyCaps(shortcut || 'Alt+Space'), [shortcut]);
+  const hotkeyCaps = useMemo(() => toHotkeyCaps(shortcut || (isWindows ? 'Ctrl+Space' : 'Alt+Space')), [shortcut, isWindows]);
   const whisperKeyCaps = useMemo(() => toHotkeyCaps(whisperHoldKey || 'Fn'), [whisperHoldKey]);
 
   const handleShortcutChange = async (nextShortcut: string) => {
@@ -467,13 +469,17 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
         if (status === 'denied' || status === 'restricted') {
           setPermissionNotes((prev) => ({
             ...prev,
-            [id]: `${targetLabel} access is blocked. Enable SuperCmd in System Settings, then return.`,
+            [id]: isWindows
+              ? `${targetLabel} access is blocked. Open Settings → Privacy & Security → Microphone and enable SuperCmd, then return.`
+              : `${targetLabel} access is blocked. Enable SuperCmd in System Settings, then return.`,
           }));
         } else if (latestError) {
           if (/failed to request microphone access/i.test(latestError)) {
             setPermissionNotes((prev) => ({
               ...prev,
-              [id]: 'Could not trigger the permission prompt. Open System Settings -> Privacy & Security, enable SuperCmd, then press request again.',
+              [id]: isWindows
+                ? 'Could not trigger the permission prompt. Open Settings → Privacy & Security → Microphone and enable SuperCmd, then press request again.'
+                : 'Could not trigger the permission prompt. Open System Settings -> Privacy & Security, enable SuperCmd, then press request again.',
             }));
           } else {
             setPermissionNotes((prev) => ({ ...prev, [id]: latestError }));
@@ -488,13 +494,19 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       if (id === 'microphone') {
         await new Promise((resolve) => setTimeout(resolve, 350));
       }
-      const candidateUrls = id === 'microphone'
-        ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone']
-        : id === 'speech-recognition'
-          ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_SpeechRecognition']
-          : id === 'input-monitoring'
-            ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent']
-          : [url];
+      // On Windows, never open macOS x-apple.systempreferences URLs.
+      // Only open Windows Settings if access is explicitly blocked.
+      const candidateUrls = isWindows
+        ? (id === 'microphone' && !granted && (status === 'denied' || status === 'restricted')
+            ? ['ms-settings:privacy-microphone']
+            : [])
+        : id === 'microphone'
+          ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone']
+          : id === 'speech-recognition'
+            ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_SpeechRecognition']
+            : id === 'input-monitoring'
+              ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent']
+              : [url];
       let ok = false;
       for (const candidate of candidateUrls) {
         if (ok) break;
@@ -520,20 +532,30 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const canCompleteOnboarding = hasValidShortcut;
   const canContinue = step !== 2 || canCompleteOnboarding;
   const canFinish = canCompleteOnboarding;
+
+  // On Windows, backdrop-filter compositing causes a visible fade-in and the
+  // semi-transparent rgba values look far more see-through than on macOS.
+  // Use fully-opaque backgrounds without blur on Windows.
+  const wrapperStyle: React.CSSProperties = isWindows
+    ? { background: 'linear-gradient(140deg, rgba(10, 10, 14, 0.99) 0%, rgba(14, 14, 20, 0.99) 52%, rgba(18, 10, 12, 0.99) 100%)' }
+    : {
+        background: 'linear-gradient(140deg, rgba(6, 8, 12, 0.80) 0%, rgba(12, 14, 20, 0.78) 52%, rgba(20, 11, 13, 0.76) 100%)',
+        WebkitBackdropFilter: 'blur(50px) saturate(165%)',
+        backdropFilter: 'blur(50px) saturate(165%)',
+      };
+
   const contentBackground = step === 0
     ? 'radial-gradient(circle at 10% 0%, rgba(255, 90, 118, 0.26), transparent 34%), radial-gradient(circle at 92% 2%, rgba(255, 84, 70, 0.19), transparent 36%), linear-gradient(180deg, rgba(5,5,7,0.98) 0%, rgba(8,8,11,0.95) 48%, rgba(10,10,13,0.93) 100%)'
-    : 'radial-gradient(circle at 5% 0%, rgba(255, 92, 127, 0.30), transparent 36%), radial-gradient(circle at 100% 10%, rgba(255, 87, 73, 0.24), transparent 38%), radial-gradient(circle at 82% 100%, rgba(84, 212, 255, 0.12), transparent 34%), transparent';
+    : isWindows
+      // On Windows, end in an opaque dark base so nothing bleeds through
+      ? 'radial-gradient(circle at 5% 0%, rgba(255, 92, 127, 0.20), transparent 36%), radial-gradient(circle at 100% 10%, rgba(255, 87, 73, 0.16), transparent 38%), radial-gradient(circle at 82% 100%, rgba(84, 212, 255, 0.08), transparent 34%), linear-gradient(180deg, rgba(10,10,14,0.99) 0%, rgba(12,12,16,0.99) 100%)'
+      : 'radial-gradient(circle at 5% 0%, rgba(255, 92, 127, 0.30), transparent 36%), radial-gradient(circle at 100% 10%, rgba(255, 87, 73, 0.24), transparent 38%), radial-gradient(circle at 82% 100%, rgba(84, 212, 255, 0.12), transparent 34%), transparent';
 
   return (
     <div className="w-full h-full">
       <div
         className="glass-effect overflow-hidden h-full flex flex-col"
-        style={{
-          background:
-            'linear-gradient(140deg, rgba(6, 8, 12, 0.80) 0%, rgba(12, 14, 20, 0.78) 52%, rgba(20, 11, 13, 0.76) 100%)',
-          WebkitBackdropFilter: 'blur(50px) saturate(165%)',
-          backdropFilter: 'blur(50px) saturate(165%)',
-        }}
+        style={wrapperStyle}
       >
         <div className="flex items-center gap-3 px-6 py-4 border-b border-white/[0.08]">
           <button
@@ -597,7 +619,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     <p className="text-white/88 text-sm mb-2">What gets configured now:</p>
                     <div className="text-white/72 text-sm space-y-1">
                       <p>1. Launcher hotkey and inline prompt defaults</p>
-                      <p>2. Accessibility, Input Monitoring, Speech Recognition, Microphone</p>
+                      <p>2. {isWindows ? 'Microphone access for Whisper' : 'Accessibility, Input Monitoring, Speech Recognition, Microphone'}</p>
                       <p>3. Whisper dictation and Read mode practice</p>
                     </div>
                   </div>
@@ -648,20 +670,20 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
             <div className="min-h-full flex items-center justify-center">
               <div className="w-full max-w-3xl">
                 <div
-                  className="rounded-2xl border border-white/[0.18] p-7"
+                  className="rounded-2xl border border-white/[0.22] p-7"
                   style={{
                     background:
-                      'linear-gradient(160deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04))',
+                      'linear-gradient(160deg, rgba(28, 24, 38, 0.96), rgba(18, 16, 28, 0.94))',
                     boxShadow:
-                      'inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -10px 24px rgba(12, 10, 20, 0.35), 0 12px 30px rgba(0,0,0,0.32)',
+                      'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -10px 24px rgba(12, 10, 20, 0.35), 0 12px 30px rgba(0,0,0,0.32)',
                   }}
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <Keyboard className="w-4 h-4 text-rose-100" />
                     <p className="text-white/90 text-sm font-medium">Current Launcher Hotkey</p>
                   </div>
-                  <p className="text-white/62 text-xs mb-5">
-                    Inline prompt default is now Cmd + Shift + K. Configure launcher key below.
+                  <p className="text-white/78 text-xs mb-5">
+                    Inline prompt default is now {isWindows ? 'Ctrl' : 'Cmd'} + Shift + K. Configure launcher key below.
                   </p>
 
                   <div className="flex flex-wrap items-center gap-2 mb-5">
@@ -681,34 +703,45 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     {shortcutStatus === 'error' ? <span className="text-xs text-rose-300">Shortcut unavailable</span> : null}
                   </div>
 
-                  <p className="text-white/52 text-xs mb-4">Click the hotkey field above to update your launcher shortcut.</p>
+                  <p className="text-white/68 text-xs mb-4">Click the hotkey field above to update your launcher shortcut.</p>
 
-                  <div className="rounded-xl border border-white/[0.12] bg-white/[0.05] p-3.5">
-                    <div className="flex items-center justify-between gap-3 mb-1.5">
-                      <p className="text-white/86 text-xs font-medium">Replace Spotlight (Cmd + Space)</p>
-                      <button
-                        onClick={() => { void handleReplaceSpotlight(); }}
-                        disabled={spotlightReplaceStatus === 'loading' || spotlightReplaceStatus === 'success'}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors disabled:opacity-60 ${
-                          spotlightReplaceStatus === 'success'
-                            ? 'border-emerald-200/35 bg-emerald-500/22 text-emerald-100'
-                            : 'border-white/20 bg-white/[0.10] hover:bg-white/[0.18] text-white'
-                        }`}
-                      >
-                        {spotlightReplaceStatus === 'success' ? <Check className="w-3 h-3" /> : null}
-                        {spotlightReplaceStatus === 'loading' ? 'Replacing…' : spotlightReplaceStatus === 'success' ? 'Replaced' : 'Auto Replace'}
-                      </button>
+                  {isWindows ? (
+                    <div className="rounded-xl border border-white/[0.18] bg-white/[0.08] p-3.5">
+                      <p className="text-white/90 text-xs font-medium mb-1.5">Want to use Alt+Space?</p>
+                      <div className="text-white/78 text-xs space-y-1.5">
+                        <p>If another app (such as a launcher or the system window menu) is already bound to Alt+Space, Windows will route it there before SuperCmd can capture it.</p>
+                        <p className="font-medium text-white/92">Disable that app's Alt+Space binding first, then click the hotkey field here and press Alt+Space.</p>
+                        <p className="text-white/65">Otherwise Ctrl+Space works out of the box and is the recommended default.</p>
+                      </div>
                     </div>
-                    {spotlightReplaceStatus === 'success' ? (
-                      <p className="text-emerald-200/85 text-xs mb-1.5">Spotlight shortcut disabled. SuperCmd is now Cmd + Space.</p>
-                    ) : spotlightReplaceStatus === 'error' ? (
-                      <p className="text-rose-200/85 text-xs mb-1.5">Auto-replace failed. Use the manual steps below.</p>
-                    ) : null}
-                    <div className="text-white/55 text-xs space-y-1">
-                      <p>Manual: System Settings → Keyboard → Keyboard Shortcuts → Spotlight → disable.</p>
-                      <p>Then set the launcher hotkey above to Cmd + Space.</p>
+                  ) : (
+                    <div className="rounded-xl border border-white/[0.18] bg-white/[0.08] p-3.5">
+                      <div className="flex items-center justify-between gap-3 mb-1.5">
+                        <p className="text-white/90 text-xs font-medium">Replace Spotlight (Cmd + Space)</p>
+                        <button
+                          onClick={() => { void handleReplaceSpotlight(); }}
+                          disabled={spotlightReplaceStatus === 'loading' || spotlightReplaceStatus === 'success'}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors disabled:opacity-60 ${
+                            spotlightReplaceStatus === 'success'
+                              ? 'border-emerald-200/35 bg-emerald-500/22 text-emerald-100'
+                              : 'border-white/20 bg-white/[0.10] hover:bg-white/[0.18] text-white'
+                          }`}
+                        >
+                          {spotlightReplaceStatus === 'success' ? <Check className="w-3 h-3" /> : null}
+                          {spotlightReplaceStatus === 'loading' ? 'Replacing…' : spotlightReplaceStatus === 'success' ? 'Replaced' : 'Auto Replace'}
+                        </button>
+                      </div>
+                      {spotlightReplaceStatus === 'success' ? (
+                        <p className="text-emerald-200/85 text-xs mb-1.5">Spotlight shortcut disabled. SuperCmd is now Cmd + Space.</p>
+                      ) : spotlightReplaceStatus === 'error' ? (
+                        <p className="text-rose-200/85 text-xs mb-1.5">Auto-replace failed. Use the manual steps below.</p>
+                      ) : null}
+                      <div className="text-white/75 text-xs space-y-1">
+                        <p>Manual: System Settings → Keyboard → Keyboard Shortcuts → Spotlight → disable.</p>
+                        <p>Then set the launcher hotkey above to Cmd + Space.</p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {requireWorkingShortcut && !hasValidShortcut ? (
@@ -722,6 +755,55 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
           {step === 3 && (
             <div className="min-h-full flex items-center justify-center">
+              {isWindows ? (
+                <div className="w-full max-w-3xl space-y-4">
+                  <div
+                    className="rounded-3xl border border-white/[0.16] p-6"
+                    style={{
+                      background: 'linear-gradient(180deg, rgba(33, 19, 24, 0.92), rgba(16, 17, 25, 0.88))',
+                      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 18px 34px rgba(0,0,0,0.34)',
+                    }}
+                  >
+                    <p className="text-white text-[20px] leading-tight font-semibold mb-2">Permissions</p>
+                    <p className="text-white/80 text-sm leading-relaxed">
+                      No Accessibility or Input Monitoring setup needed — Windows handles those automatically.
+                      The only permission required is Microphone access for Whisper dictation.
+                    </p>
+                  </div>
+                  <div
+                    className="rounded-2xl border border-white/[0.18] p-4 flex items-start gap-4"
+                    style={{ background: 'linear-gradient(160deg, rgba(28,24,38,0.96), rgba(18,16,28,0.94))' }}
+                  >
+                    <div className="w-9 h-9 rounded-lg border border-cyan-200/25 bg-cyan-500/15 flex items-center justify-center shrink-0 mt-0.5">
+                      <Mic className="w-4 h-4 text-cyan-100" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-3 mb-1">
+                        <p className="text-white/92 text-sm font-semibold">Microphone</p>
+                        {openedPermissions['microphone'] ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-emerald-300">
+                            <Check className="w-3 h-3" /> Granted
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => void openPermissionTarget('microphone', '')}
+                            disabled={permissionLoading['microphone']}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-white/20 bg-white/[0.10] hover:bg-white/[0.18] text-white text-xs font-medium transition-colors disabled:opacity-60"
+                          >
+                            {permissionLoading['microphone'] ? 'Requesting…' : 'Request Access'}
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-white/68 text-xs leading-relaxed">
+                        Click to trigger the Windows microphone permission prompt. Grant access to enable Whisper dictation.
+                      </p>
+                      {permissionNotes['microphone'] ? (
+                        <p className="mt-1.5 text-xs text-amber-200/85">{permissionNotes['microphone']}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : (
               <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
                 <div
                   className="rounded-3xl border border-white/[0.16] p-5"
@@ -823,6 +905,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   })}
                 </div>
               </div>
+              )}
             </div>
           )}
 
@@ -873,7 +956,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     className="w-full h-[250px] resize-none rounded-xl border border-cyan-300/55 bg-white/[0.05] px-4 py-3 text-white/90 placeholder:text-white/40 text-base leading-relaxed outline-none shadow-[0_0_0_3px_rgba(34,211,238,0.15)]"
                   />
                   <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
-                    Native speech recognition is used by default. For the best experience, use ElevenLabs.
+                    {isWindows
+                      ? 'The Fn key is a firmware key on Windows and is not visible to apps — use Ctrl+Shift+Space (the default) or any other combo above. For dictation, set an OpenAI API key in Settings → AI.'
+                      : 'Native speech recognition is used by default. For the best experience, use ElevenLabs.'}
                   </p>
                 </div>
               </div>
@@ -926,11 +1011,18 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
                     <div className="mt-5 pt-4 border-t border-white/[0.08] flex items-center gap-2 flex-wrap">
                       <p className="text-white/45 text-xs">Select the text above then press</p>
-                      {([
-                        { symbol: '⌘', label: 'Cmd' },
-                        { symbol: '⇧', label: 'Shift' },
-                        { symbol: 'S', label: ''},
-                      ] as Array<{ symbol: string; label: string | null }>).map((cap, i) => (
+                      {(isWindows
+                        ? [
+                            { symbol: 'Ctrl', label: '' as string | null },
+                            { symbol: '⇧', label: 'Shift' as string | null },
+                            { symbol: 'S', label: '' as string | null },
+                          ]
+                        : [
+                            { symbol: '⌘', label: 'Cmd' as string | null },
+                            { symbol: '⇧', label: 'Shift' as string | null },
+                            { symbol: 'S', label: '' as string | null },
+                          ]
+                      ).map((cap, i) => (
                         <React.Fragment key={`${cap.symbol}-${i}`}>
                           <span className="inline-flex items-center gap-2 min-w-[70px] h-9 px-3 rounded-md border border-white/20 bg-white/[0.10] text-white/90 font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]">
                             <span className="inline-flex w-5 h-5 items-center justify-center rounded bg-white/[0.08] text-[11px] leading-none">

@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feat/windows-foundation]
+  pull_request:
+    branches: [main, feat/windows-foundation]
+
+jobs:
+  # ── Unit tests (Linux, fast) ────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Skip postinstall (electron-builder install-app-deps) — not needed for unit tests
+      - run: npm ci --ignore-scripts
+
+      - run: npm test
+
+  # ── Windows build verification ──────────────────────────────────────────────
+  build-windows:
+    name: Windows build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Skip postinstall — electron-builder install-app-deps not needed here.
+      # build:native now compiles hotkey-hold-monitor.exe via gcc (MinGW).
+      - run: npm ci --ignore-scripts
+
+      - name: Build (main + renderer + native)
+        run: npm run build
+
+      - name: Package (unsigned dir build — no code signing needed)
+        run: npx electron-builder --win dir --x64
+        env:
+          # Disable code signing — no cert available in CI.
+          # Do NOT set WIN_CSC_LINK to an empty string; electron-builder resolves
+          # empty strings as relative paths (→ cwd), which causes a "not a file"
+          # error. Leave it unset and rely on CSC_IDENTITY_AUTO_DISCOVERY=false.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload portable Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SuperCmd-win-x64-portable
+          # Upload the unpacked dir — extract and run SuperCmd.exe to test
+          # without needing a full NSIS installer.
+          path: out/win-unpacked/
+          retention-days: 14
