@@ -16,6 +16,9 @@ import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthTo
 import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
+import { runAgentOrchestrated } from './agent/orchestrator';
+import { DEFAULT_AGENT_SETTINGS } from './agent/types';
+import type { AgentEvent } from './agent/types';
 import {
   createScriptCommandTemplate,
   ensureSampleScriptCommand,
@@ -7774,6 +7777,80 @@ return appURL's |path|() as text`,
   ipcMain.handle('ai-is-available', () => {
     const s = loadSettings();
     return isAIAvailable(s.ai);
+  });
+
+  // ─── IPC: Agent ─────────────────────────────────────────────────
+
+  const pendingAgentConfirmations = new Map<string, { resolve: (approved: boolean) => void }>();
+
+  ipcMain.handle(
+    'agent-run',
+    async (event: any, requestId: string, prompt: string, conversationHistory?: any[]) => {
+      const s = loadSettings();
+      if (!isAIAvailable(s.ai)) {
+        event.sender.send('agent-event', {
+          requestId,
+          type: 'error',
+          error: 'AI is not configured. Please set up an API key in Settings → AI.',
+        } as AgentEvent);
+        return;
+      }
+
+      const controller = new AbortController();
+      activeAIRequests.set(requestId, controller);
+
+      const sendEvent = (evt: AgentEvent) => {
+        if (!controller.signal.aborted) {
+          event.sender.send('agent-event', evt);
+        }
+      };
+
+      const waitForConfirmation = (toolCallId: string): Promise<boolean> => {
+        return new Promise((resolve) => {
+          pendingAgentConfirmations.set(toolCallId, { resolve });
+          // Auto-deny after 60s
+          setTimeout(() => {
+            if (pendingAgentConfirmations.has(toolCallId)) {
+              pendingAgentConfirmations.delete(toolCallId);
+              resolve(false);
+            }
+          }, 60_000);
+        });
+      };
+
+      try {
+        await runAgentOrchestrated({
+          requestId,
+          prompt,
+          aiConfig: s.ai,
+          agentSettings: s.agent || DEFAULT_AGENT_SETTINGS,
+          signal: controller.signal,
+          sendEvent,
+          waitForConfirmation,
+          conversationHistory,
+        });
+      } catch (e: any) {
+        sendEvent({ requestId, type: 'error', error: e?.message || 'Agent failed' });
+      } finally {
+        activeAIRequests.delete(requestId);
+      }
+    }
+  );
+
+  ipcMain.handle('agent-confirm', (_event: any, toolCallId: string, approved: boolean) => {
+    const pending = pendingAgentConfirmations.get(toolCallId);
+    if (pending) {
+      pending.resolve(approved);
+      pendingAgentConfirmations.delete(toolCallId);
+    }
+  });
+
+  ipcMain.handle('agent-cancel', (_event: any, requestId: string) => {
+    const controller = activeAIRequests.get(requestId);
+    if (controller) {
+      controller.abort();
+      activeAIRequests.delete(requestId);
+    }
   });
 
   ipcMain.handle('whisper-refine-transcript', async (_event: any, transcript: string) => {

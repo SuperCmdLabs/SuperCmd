@@ -534,6 +534,19 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('menubar-item-click', (_event: any, data: any) => callback(data));
   },
 
+  // ─── Agent ─────────────────────────────────────────────────────
+  agentRun: (requestId: string, prompt: string, conversationHistory?: any[]): Promise<void> =>
+    ipcRenderer.invoke('agent-run', requestId, prompt, conversationHistory),
+  agentConfirm: (toolCallId: string, approved: boolean): Promise<void> =>
+    ipcRenderer.invoke('agent-confirm', toolCallId, approved),
+  agentCancel: (requestId: string): Promise<void> =>
+    ipcRenderer.invoke('agent-cancel', requestId),
+  onAgentEvent: (callback: (event: any) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('agent-event', listener);
+    return () => { ipcRenderer.removeListener('agent-event', listener); };
+  },
+
   // ─── AI ────────────────────────────────────────────────────────
   aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }): Promise<void> =>
     ipcRenderer.invoke('ai-ask', requestId, prompt, options),

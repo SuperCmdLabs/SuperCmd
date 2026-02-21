@@ -149,6 +149,51 @@ export interface AppUpdaterStatus {
   message?: string;
 }
 
+export interface AgentSettings {
+  enabled: boolean;
+  accessLevel: 'safe' | 'power' | 'ultimate';
+  soulPrompt: string;
+  personalityPrompt: string;
+  personalityPreset: 'balanced' | 'operator' | 'builder' | 'analyst';
+  enabledSkills: string[];
+  customSkills: string[];
+  adaptiveLearning: boolean;
+  autoRecover: boolean;
+  autoSelectBestModel: boolean;
+  enabledToolCategories: string[];
+  autoApproveCategories: string[];
+  maxSteps: number;
+}
+
+export interface AgentEvent {
+  requestId: string;
+  type: 'thinking' | 'tool_call' | 'tool_result' | 'confirm_needed' | 'text_chunk' | 'done' | 'error' | 'status';
+  text?: string;
+  toolCall?: {
+    id: string;
+    name: string;
+    args: Record<string, any>;
+    dangerous: boolean;
+    confirmationMessage?: string;
+  };
+  toolResult?: {
+    id: string;
+    name: string;
+    success: boolean;
+    output: string;
+    durationMs: number;
+  };
+  confirmation?: {
+    toolCallId: string;
+    toolName: string;
+    message: string;
+    args: Record<string, any>;
+  };
+  error?: string;
+  status?: string;
+  stepNumber?: number;
+}
+
 export interface AppSettings {
   globalShortcut: string;
   openAtLogin: boolean;
@@ -193,6 +238,7 @@ export interface AppSettings {
   hyperKeyIncludeShift: boolean;
   hyperKeyQuickPressAction: 'toggle-caps-lock' | 'escape' | 'none';
   hyperReplaceModifierGlyphsWithHyper: boolean;
+  agent: AgentSettings;
 }
 
 export interface CatalogEntry {
@@ -484,6 +530,12 @@ export interface ElectronAPI {
   updateMenuBar: (data: any) => void;
   removeMenuBar: (extId: string) => void;
   onMenuBarItemClick: (callback: (data: { extId: string; itemId: string }) => void) => void;
+
+  // Agent
+  agentRun: (requestId: string, prompt: string, conversationHistory?: any[]) => Promise<void>;
+  agentConfirm: (toolCallId: string, approved: boolean) => Promise<void>;
+  agentCancel: (requestId: string) => Promise<void>;
+  onAgentEvent: (callback: (event: AgentEvent) => void) => (() => void);
 
   // AI
   aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }) => Promise<void>;
