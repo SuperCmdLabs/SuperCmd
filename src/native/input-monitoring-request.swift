@@ -32,16 +32,15 @@ let preflightGranted: Bool? = {
     return nil
 }()
 
-if checkOnly, let granted = preflightGranted {
-    emit(["granted": granted])
+if checkOnly {
+    // Check mode must never trigger a system prompt. Only report the
+    // preflight status and exit.
+    emit(["granted": preflightGranted ?? false])
     exit(0)
 }
 
 if let granted = preflightGranted, granted {
     emit(["granted": true])
-    if checkOnly {
-        exit(0)
-    }
     // Already granted — no need to rely on event tap probing.
     exit(0)
 }

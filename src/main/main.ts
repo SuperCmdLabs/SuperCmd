@@ -4494,6 +4494,7 @@ function scheduleKeyspyListenerRetry(delayMs: number = 1800): void {
 async function recoverKeyspyMacPermissions(_reason: string): Promise<void> {
   if (process.platform !== 'darwin') return;
   if (keyspyPermissionRecoveryInFlight) return;
+  if (!loadSettings().hasSeenOnboarding) return;
   if (!hasAnyConfiguredKeyspyShortcut() && !keyspyHotkeyCaptureSession) return;
 
   keyspyPermissionRecoveryInFlight = true;
@@ -4521,6 +4522,23 @@ async function recoverKeyspyMacPermissions(_reason: string): Promise<void> {
   } finally {
     keyspyPermissionRecoveryInFlight = false;
   }
+}
+
+async function canStartKeyspyWithoutPrompt(): Promise<boolean> {
+  if (process.platform !== 'darwin') return true;
+  let accessibilityGranted = false;
+  let inputMonitoringGranted = false;
+  try {
+    accessibilityGranted = Boolean(systemPreferences.isTrustedAccessibilityClient(false));
+  } catch {
+    accessibilityGranted = false;
+  }
+  try {
+    inputMonitoringGranted = await checkInputMonitoringAccess();
+  } catch {
+    inputMonitoringGranted = false;
+  }
+  return accessibilityGranted && inputMonitoringGranted;
 }
 
 function clearElectronFallbackShortcuts(): void {
@@ -9527,10 +9545,15 @@ app.whenReady().then(async () => {
     homeDir: app.getPath('home'),
     includeProtectedHomeRoots: Boolean(settings.fileSearchProtectedRootsEnabled),
   });
-  const keyspyReady = await ensureKeyspyListener();
-  if (!keyspyReady) {
-    globalShortcutRegistrationState.ok = false;
-    void recoverKeyspyMacPermissions('app-startup');
+  if (settings.hasSeenOnboarding) {
+    const canStartKeyspy = await canStartKeyspyWithoutPrompt();
+    if (canStartKeyspy) {
+      const keyspyReady = await ensureKeyspyListener();
+      if (!keyspyReady) {
+        globalShortcutRegistrationState.ok = false;
+        void recoverKeyspyMacPermissions('app-startup');
+      }
+    }
   }
   // Daily background update check (once every 24h).
   void runBackgroundAppUpdaterCheck();
@@ -10000,10 +10023,6 @@ app.whenReady().then(async () => {
         if (!listenerReady) {
           return false;
         }
-      } else if (!keyspyListener) {
-        // Best effort: keep keyspy features when available, but do not block
-        // standard accelerators on environments where keyspy cannot start.
-        void ensureKeyspyListener();
       }
       const success = registerGlobalShortcut(newShortcut);
       if (success) {
@@ -10104,9 +10123,6 @@ app.whenReady().then(async () => {
           if (!listenerReady) {
             return { success: false, error: 'unavailable' as const };
           }
-        } else if (!keyspyListener) {
-          // Do not block standard accelerators if keyspy fails to start.
-          void ensureKeyspyListener();
         }
         hotkeys[commandId] = trimmedHotkey;
       } else {
@@ -12954,8 +12970,11 @@ if let tiff = image?.tiffRepresentation {
   }
 
   app.on('activate', () => {
-    if (!keyspyListener && hasAnyConfiguredKeyspyShortcut()) {
-      scheduleKeyspyListenerRetry(250);
+    if (!keyspyListener && loadSettings().hasSeenOnboarding && hasAnyConfiguredKeyspyShortcut()) {
+      void canStartKeyspyWithoutPrompt().then((canStart) => {
+        if (!canStart) return;
+        scheduleKeyspyListenerRetry(250);
+      }).catch(() => {});
     }
 
     // During onboarding the window is shown but may lose visual focus to a system
