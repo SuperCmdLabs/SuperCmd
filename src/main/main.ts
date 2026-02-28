@@ -4283,6 +4283,46 @@ const KEYSPY_MODIFIER_NAMES: Record<keyof NormalizedShortcutModifiers, string[]>
   fn: ['FN'],
 };
 
+const KEYSPY_HYPER_SOURCE_EVENT_NAMES_BY_KEYCODE: Record<number, string[]> = {
+  57: ['CAPS LOCK', 'CAPSLOCK'],
+  59: ['LEFT CTRL'],
+  56: ['LEFT SHIFT'],
+  58: ['LEFT ALT'],
+  55: ['LEFT META'],
+  62: ['RIGHT CTRL'],
+  60: ['RIGHT SHIFT'],
+  61: ['RIGHT ALT'],
+  54: ['RIGHT META'],
+  63: ['FN', 'FUNCTION'],
+  122: ['F1'],
+  120: ['F2'],
+  99: ['F3'],
+  118: ['F4'],
+  96: ['F5'],
+  97: ['F6'],
+  98: ['F7'],
+  100: ['F8'],
+  101: ['F9'],
+  109: ['F10'],
+  103: ['F11'],
+  111: ['F12'],
+  90: ['F20'],
+};
+
+function isKeyspyHyperSourceEvent(event: IGlobalKeyEvent, sourceKeyCode: number | null | undefined): boolean {
+  const normalizedSource = Number(sourceKeyCode);
+  if (!Number.isFinite(normalizedSource)) return false;
+  const source = Math.round(normalizedSource);
+  const eventVKey = Number(event?.vKey);
+  if (Number.isFinite(eventVKey) && Math.round(eventVKey) === source) {
+    return true;
+  }
+  const eventName = String(event?.name || '').trim().toUpperCase();
+  if (!eventName) return false;
+  const expectedNames = KEYSPY_HYPER_SOURCE_EVENT_NAMES_BY_KEYCODE[source] || [];
+  return expectedNames.includes(eventName);
+}
+
 function parseShortcutModifiersAndKey(shortcut: string): {
   modifiers: NormalizedShortcutModifiers;
   keyToken: string;
@@ -4914,19 +4954,40 @@ function processKeyspyHotkeyCaptureEvent(event: IGlobalKeyEvent, down: IGlobalKe
   const session = keyspyHotkeyCaptureSession;
   if (!session) return false;
   const hyperSourceKeyCode = Number(keyspyHyperConfig.sourceKeyCode);
-  const isHyperSourceEvent =
-    Number.isFinite(hyperSourceKeyCode) &&
-    Number(event.vKey) === hyperSourceKeyCode;
+  const isHyperSourceEvent = isKeyspyHyperSourceEvent(event, hyperSourceKeyCode);
+  const isCapsLockHyperSource = Number(hyperSourceKeyCode) === 57;
 
-  const modifier = keyspyEventToCaptureModifier(event);
-  if (event.state === 'DOWN') {
-    if (isHyperSourceEvent) {
+  if (isHyperSourceEvent) {
+    if (isCapsLockHyperSource) {
+      // Caps Lock emits flag-changed transitions that can report as DOWN on both
+      // key press and key release. Toggle capture state per source event.
+      session.hyperSourceActive = !session.hyperSourceActive;
+    } else if (event.state === 'DOWN') {
       session.hyperSourceActive = true;
+    } else if (event.state === 'UP') {
+      session.hyperSourceActive = false;
+    }
+
+    if (session.hyperSourceActive) {
       for (const hyperModifier of getCaptureHyperModifiers()) {
         session.modifierHistory.add(hyperModifier);
       }
-      return true;
+    } else if (
+      session.activeModifiers.size === 0 &&
+      session.modifierHistory.size > 0 &&
+      !hasAnyNonModifierDown(down)
+    ) {
+      const shortcut = buildModifierOnlyShortcut(session.modifierHistory);
+      if (shortcut) {
+        resolveKeyspyHotkeyCapture(shortcut);
+      }
     }
+
+    return true;
+  }
+
+  const modifier = keyspyEventToCaptureModifier(event);
+  if (event.state === 'DOWN') {
     if (modifier) {
       session.activeModifiers.add(modifier);
       session.modifierHistory.add(modifier);
@@ -4945,21 +5006,6 @@ function processKeyspyHotkeyCaptureEvent(event: IGlobalKeyEvent, down: IGlobalKe
       return true;
     }
     return false;
-  }
-
-  if (event.state === 'UP' && isHyperSourceEvent) {
-    session.hyperSourceActive = false;
-    if (
-      session.activeModifiers.size === 0 &&
-      session.modifierHistory.size > 0 &&
-      !hasAnyNonModifierDown(down)
-    ) {
-      const shortcut = buildModifierOnlyShortcut(session.modifierHistory);
-      if (shortcut) {
-        resolveKeyspyHotkeyCapture(shortcut);
-      }
-    }
-    return true;
   }
 
   if (event.state === 'UP' && modifier) {
@@ -5260,14 +5306,29 @@ async function ensureKeyspyListener(): Promise<boolean> {
         return stopPropagation;
       }
       const hyperSourceKeyCode = keyspyHyperConfig.sourceKeyCode;
-      const isHyperSourceEvent =
-        Number.isFinite(Number(hyperSourceKeyCode)) &&
-        Number(event.vKey) === Number(hyperSourceKeyCode);
+      const isHyperSourceEvent = isKeyspyHyperSourceEvent(event, hyperSourceKeyCode);
+      const isCapsLockHyperSource = Number(hyperSourceKeyCode) === 57;
       const wasHyperUsedAsModifier = keyspyHyperUsedAsModifier;
+      let hyperSourceReleased = false;
 
-      if (isHyperSourceEvent && event.state === 'DOWN') {
-        keyspyHyperPressed = true;
-        keyspyHyperUsedAsModifier = false;
+      if (isHyperSourceEvent) {
+        if (isCapsLockHyperSource) {
+          // Caps Lock can report flag changes as DOWN on both press/release.
+          // Treat each source event as a transition.
+          if (keyspyHyperPressed) {
+            keyspyHyperPressed = false;
+            hyperSourceReleased = true;
+          } else {
+            keyspyHyperPressed = true;
+            keyspyHyperUsedAsModifier = false;
+          }
+        } else if (event.state === 'DOWN') {
+          keyspyHyperPressed = true;
+          keyspyHyperUsedAsModifier = false;
+        } else if (event.state === 'UP') {
+          keyspyHyperPressed = false;
+          hyperSourceReleased = true;
+        }
       }
       if (keyspyHyperPressed && !isHyperSourceEvent && event.state === 'DOWN') {
         keyspyHyperUsedAsModifier = true;
@@ -5287,13 +5348,12 @@ async function ensureKeyspyListener(): Promise<boolean> {
         handleKeyspyShortcutPressed(spec);
       }
 
-      if (isHyperSourceEvent && event.state === 'UP') {
+      if (hyperSourceReleased) {
         triggerHyperQuickPressAction();
-        keyspyHyperPressed = false;
         keyspyHyperUsedAsModifier = false;
       }
 
-      if (isHyperSourceEvent && Number(hyperSourceKeyCode) === 57) {
+      if (isHyperSourceEvent && isCapsLockHyperSource) {
         const quickPressAction = keyspyHyperConfig.quickPressAction;
         if (quickPressAction === 'none' || quickPressAction === 'escape') {
           stopPropagation = true;
@@ -6914,27 +6974,8 @@ function captureFrontmostAppContext(): void {
       }
     }
   } catch {
-    // Fallback below.
-  }
-
-  try {
-    const { execSync } = require('child_process');
-    const script = `
-      tell application "System Events"
-        set frontApp to first application process whose frontmost is true
-        set appName to name of frontApp
-        set appPath to POSIX path of (file of frontApp as alias)
-        set appId to bundle identifier of frontApp
-        return appName & "|||" & appPath & "|||" & appId
-      end tell
-    `;
-    const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
-    const [name, appPath, bundleId] = result.split('|||');
-    if (bundleId !== 'com.supercmd' && name !== 'SuperCmd' && name !== 'Electron') {
-      lastFrontmostApp = { name, path: appPath, bundleId };
-    }
-  } catch {
-    // keep previously captured value
+    // Keep previously captured value. Avoid System Events fallback here so
+    // launcher startup never triggers an Automation permission dialog.
   }
 }
 

@@ -824,11 +824,6 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                             If SuperCmd is not visible here, click + and manually add SuperCmd from the Applications folder.
                           </p>
                         ) : null}
-                        {target.id === 'home-folder' ? (
-                          <p className="mt-1 text-[11px] text-white/52">
-                            Pick your Home folder when prompted.
-                          </p>
-                        ) : null}
                         {!isDone && note ? (
                           <p className="mt-1 text-[11px] text-rose-100/85">
                             {note}
