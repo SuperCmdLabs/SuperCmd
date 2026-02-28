@@ -91,7 +91,7 @@ import {
 } from 'keyspy';
 
 const electron = require('electron');
-const { app, BrowserWindow, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
 try {
   app.setName('SuperCmd');
 } catch {}
@@ -1346,6 +1346,9 @@ let keyspyHyperConfig: KeyspyHyperConfig = {
   quickPressAction: 'toggle-caps-lock',
 };
 let keyspyHotkeyCaptureSession: KeyspyHotkeyCaptureSession | null = null;
+const electronFallbackRegisteredShortcuts = new Map<string, string>(); // shortcut -> actionId
+const HOTKEY_DEDUPE_WINDOW_MS = 220;
+let lastHotkeyInvocation: { actionId: string; at: number } | null = null;
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
 const pendingOAuthCallbackUrls: string[] = [];
 let snippetExpanderProcess: any = null;
@@ -4360,6 +4363,103 @@ function mapTokenToModifierKey(token: string): keyof NormalizedShortcutModifiers
   return null;
 }
 
+function shouldSuppressDuplicateHotkeyInvocation(actionId: string): boolean {
+  const now = Date.now();
+  if (
+    lastHotkeyInvocation &&
+    lastHotkeyInvocation.actionId === actionId &&
+    (now - lastHotkeyInvocation.at) < HOTKEY_DEDUPE_WINDOW_MS
+  ) {
+    return true;
+  }
+  lastHotkeyInvocation = { actionId, at: now };
+  return false;
+}
+
+function isElectronShortcutSupported(shortcut: string): boolean {
+  const parsed = parseShortcutModifiersAndKey(shortcut);
+  if (!parsed) return false;
+  const keyToken = String(parsed.keyToken || '').trim().toLowerCase();
+  if (!keyToken) return false;
+  if (
+    keyToken === 'command' ||
+    keyToken === 'cmd' ||
+    keyToken === 'control' ||
+    keyToken === 'ctrl' ||
+    keyToken === 'alt' ||
+    keyToken === 'option' ||
+    keyToken === 'shift' ||
+    keyToken === 'fn' ||
+    keyToken === 'function' ||
+    keyToken === 'meta' ||
+    keyToken === 'super' ||
+    keyToken === 'hyper' ||
+    keyToken === '✦'
+  ) {
+    return false;
+  }
+  if (parsed.modifiers.fn) return false;
+  return true;
+}
+
+function clearElectronFallbackShortcuts(): void {
+  for (const shortcut of electronFallbackRegisteredShortcuts.keys()) {
+    try { globalShortcut.unregister(shortcut); } catch {}
+  }
+  electronFallbackRegisteredShortcuts.clear();
+}
+
+function registerElectronFallbackShortcut(
+  shortcut: string,
+  actionId: string,
+  handler: () => void
+): void {
+  const normalized = normalizeAccelerator(shortcut);
+  if (!normalized) return;
+  if (!isElectronShortcutSupported(normalized)) return;
+  if (electronFallbackRegisteredShortcuts.has(normalized)) return;
+  try {
+    const ok = globalShortcut.register(normalized, () => {
+      if (shouldSuppressDuplicateHotkeyInvocation(actionId)) return;
+      handler();
+    });
+    if (ok) {
+      electronFallbackRegisteredShortcuts.set(normalized, actionId);
+    }
+  } catch {}
+}
+
+function syncElectronFallbackShortcuts(): void {
+  clearElectronFallbackShortcuts();
+
+  const launcherShortcut = String(currentShortcut || '').trim();
+  if (launcherShortcut) {
+    registerElectronFallbackShortcut(launcherShortcut, 'launcher', () => {
+      markOpeningShortcutForSuppression(launcherShortcut);
+      toggleWindow();
+    });
+  }
+
+  for (const [shortcut, commandId] of registeredHotkeys.entries()) {
+    const normalizedCommandId = String(commandId || '').trim();
+    if (!normalizedCommandId) continue;
+    // Hold-to-talk requires key-up handling; keep it on keyspy-only.
+    if (normalizedCommandId === 'system-supercmd-whisper-speak-toggle') continue;
+    registerElectronFallbackShortcut(shortcut, `command:${normalizedCommandId}`, () => {
+      void runCommandById(normalizedCommandId, 'hotkey');
+    });
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    registerElectronFallbackShortcut(DEVTOOLS_SHORTCUT, 'devtools', () => {
+      const opened = openPreferredDevTools();
+      if (!opened) {
+        console.warn('[DevTools] No window available to open developer tools.');
+      }
+    });
+  }
+}
+
 function parseKeyspyShortcutSpec(
   id: string,
   shortcut: string,
@@ -4872,12 +4972,14 @@ function handleWhisperSpeakToggleHotkeyRelease(): void {
 
 function handleKeyspyShortcutPressed(spec: KeyspyShortcutSpec): void {
   if (spec.handler === 'launcher') {
+    if (shouldSuppressDuplicateHotkeyInvocation('launcher')) return;
     markOpeningShortcutForSuppression(spec.shortcut);
     toggleWindow();
     return;
   }
 
   if (spec.handler === 'devtools') {
+    if (shouldSuppressDuplicateHotkeyInvocation('devtools')) return;
     const opened = openPreferredDevTools();
     if (!opened) {
       console.warn('[DevTools] No window available to open developer tools.');
@@ -4887,6 +4989,7 @@ function handleKeyspyShortcutPressed(spec: KeyspyShortcutSpec): void {
 
   const commandId = String(spec.commandId || '').trim();
   if (!commandId) return;
+  if (shouldSuppressDuplicateHotkeyInvocation(`command:${commandId}`)) return;
   if (commandId === 'system-supercmd-whisper-speak-toggle') {
     void handleWhisperSpeakToggleHotkeyPress();
     return;
@@ -4930,6 +5033,8 @@ function rebuildKeyspyShortcutSpecs(): void {
       keyspyShortcutSpecs.set(devtoolsSpec.id, devtoolsSpec);
     }
   }
+
+  syncElectronFallbackShortcuts();
 }
 
 async function ensureKeyspyListener(): Promise<boolean> {
@@ -5039,6 +5144,7 @@ function stopKeyspyListener(): void {
   keyspyActiveShortcutIds.clear();
   keyspyHyperPressed = false;
   keyspyHyperUsedAsModifier = false;
+  clearElectronFallbackShortcuts();
 }
 
 function stopWhisperHoldWatcher(): void {
