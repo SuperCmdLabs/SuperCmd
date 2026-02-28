@@ -60,29 +60,7 @@ export interface AppSettings {
   uiStyle: AppUiStyle;
   baseColor: string;
   appUpdaterLastCheckedAt: number;
-  hyperKeySource:
-    | 'none'
-    | 'caps-lock'
-    | 'left-command'
-    | 'right-command'
-    | 'left-control'
-    | 'right-control'
-    | 'left-shift'
-    | 'right-shift'
-    | 'left-option'
-    | 'right-option'
-    | 'f1'
-    | 'f2'
-    | 'f3'
-    | 'f4'
-    | 'f5'
-    | 'f6'
-    | 'f7'
-    | 'f8'
-    | 'f9'
-    | 'f10'
-    | 'f11'
-    | 'f12';
+  hyperKeySource: number | null;
   hyperKeyIncludeShift: boolean;
   hyperKeyQuickPressAction: 'toggle-caps-lock' | 'escape' | 'none';
   hyperReplaceModifierGlyphsWithHyper: boolean;
@@ -158,7 +136,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   uiStyle: 'glassy',
   baseColor: '#101113',
   appUpdaterLastCheckedAt: 0,
-  hyperKeySource: 'none',
+  hyperKeySource: null,
   hyperKeyIncludeShift: true,
   hyperKeyQuickPressAction: 'toggle-caps-lock',
   hyperReplaceModifierGlyphsWithHyper: true,
@@ -198,42 +176,75 @@ function normalizeBaseColor(value: any): string {
   return DEFAULT_SETTINGS.baseColor;
 }
 
+const HYPER_KEY_ALLOWED_KEY_CODES = new Set<number>([
+  57, // Caps Lock
+  59, // Left Control
+  56, // Left Shift
+  58, // Left Option
+  55, // Left Command
+  62, // Right Control
+  60, // Right Shift
+  61, // Right Option
+  54, // Right Command
+  122, // F1
+  120, // F2
+  99, // F3
+  118, // F4
+  96, // F5
+  97, // F6
+  98, // F7
+  100, // F8
+  101, // F9
+  109, // F10
+  103, // F11
+  111, // F12
+  90, // F20
+]);
+
 function normalizeHyperKeySource(value: any): AppSettings['hyperKeySource'] {
+  if (value === null || value === undefined || value === '') return null;
+
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue)) {
+    const keyCode = Math.round(numericValue);
+    if (HYPER_KEY_ALLOWED_KEY_CODES.has(keyCode)) return keyCode;
+  }
+
   const raw = String(value || '').trim().toLowerCase();
-  const map: Record<string, AppSettings['hyperKeySource']> = {
-    'none': 'none',
-    'caps-lock': 'caps-lock',
-    'caps_lock': 'caps-lock',
-    'capslock': 'caps-lock',
-    'left-command': 'left-command',
-    'left-command-key': 'left-command',
-    'right-command': 'right-command',
-    'right-command-key': 'right-command',
-    'left-control': 'left-control',
-    'left-ctrl': 'left-control',
-    'right-control': 'right-control',
-    'right-ctrl': 'right-control',
-    'left-shift': 'left-shift',
-    'right-shift': 'right-shift',
-    'left-option': 'left-option',
-    'left-alt': 'left-option',
-    'right-option': 'right-option',
-    'right-alt': 'right-option',
-    'f1': 'f1',
-    'f2': 'f2',
-    'f3': 'f3',
-    'f4': 'f4',
-    'f5': 'f5',
-    'f6': 'f6',
-    'f7': 'f7',
-    'f8': 'f8',
-    'f9': 'f9',
-    'f10': 'f10',
-    'f11': 'f11',
-    'f12': 'f12',
+  const legacyMap: Record<string, number | null> = {
+    'none': null,
+    'caps-lock': 57,
+    'caps_lock': 57,
+    'capslock': 57,
+    'left-command': 55,
+    'left-command-key': 55,
+    'right-command': 54,
+    'right-command-key': 54,
+    'left-control': 59,
+    'left-ctrl': 59,
+    'right-control': 62,
+    'right-ctrl': 62,
+    'left-shift': 56,
+    'right-shift': 60,
+    'left-option': 58,
+    'left-alt': 58,
+    'right-option': 61,
+    'right-alt': 61,
+    'f1': 122,
+    'f2': 120,
+    'f3': 99,
+    'f4': 118,
+    'f5': 96,
+    'f6': 97,
+    'f7': 98,
+    'f8': 100,
+    'f9': 101,
+    'f10': 109,
+    'f11': 103,
+    'f12': 111,
+    'f20': 90,
   };
-  if (map[raw]) return map[raw];
-  return 'none';
+  return legacyMap[raw] ?? null;
 }
 
 function normalizeHyperKeyQuickPressAction(value: any): 'toggle-caps-lock' | 'escape' | 'none' {

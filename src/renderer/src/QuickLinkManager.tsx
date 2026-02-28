@@ -22,6 +22,7 @@ import type { QuickLink, QuickLinkDynamicField, QuickLinkIcon } from '../types/e
 import ExtensionActionFooter from './components/ExtensionActionFooter';
 import { useInlineArgumentAnchor } from './hooks/useInlineArgumentAnchor';
 import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowBadge } from './components/InlineArgumentField';
+import SearchableDropdown, { type SearchableDropdownOption } from './components/SearchableDropdown';
 import {
   getQuickLinkIconLabel,
   getQuickLinkIconOption,
@@ -286,12 +287,9 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [showPlaceholderMenu, setShowPlaceholderMenu] = useState(false);
-  const [showApplicationMenu, setShowApplicationMenu] = useState(false);
   const [showIconMenu, setShowIconMenu] = useState(false);
   const [selectedPlaceholderIndex, setSelectedPlaceholderIndex] = useState(-1);
-  const [selectedApplicationIndex, setSelectedApplicationIndex] = useState(-1);
   const [selectedIconIndex, setSelectedIconIndex] = useState(-1);
-  const [applicationQuery, setApplicationQuery] = useState('');
   const [iconQuery, setIconQuery] = useState('');
   const [applicationIcons, setApplicationIcons] = useState<Record<string, string>>({});
   const [shouldAutoSelectAppFromPaste, setShouldAutoSelectAppFromPaste] = useState(false);
@@ -301,12 +299,6 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
     left: 0,
     width: 280,
     maxHeight: 260,
-  });
-  const [applicationMenuPos, setApplicationMenuPos] = useState<{ top: number; left: number; width: number; maxHeight: number }>({
-    top: 0,
-    left: 0,
-    width: 340,
-    maxHeight: 280,
   });
   const [iconMenuPos, setIconMenuPos] = useState<{ top: number; left: number; width: number; maxHeight: number }>({
     top: 0,
@@ -319,9 +311,6 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
   const urlRef = useRef<HTMLInputElement>(null);
   const placeholderButtonRef = useRef<HTMLButtonElement>(null);
   const placeholderItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const applicationButtonRef = useRef<HTMLButtonElement>(null);
-  const applicationSearchRef = useRef<HTMLInputElement>(null);
-  const applicationItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const iconButtonRef = useRef<HTMLButtonElement>(null);
   const iconSearchRef = useRef<HTMLInputElement>(null);
   const iconItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -471,31 +460,6 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
     });
   }, []);
 
-  const refreshApplicationMenuPos = useCallback(() => {
-    const rect = applicationButtonRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const viewportPadding = 10;
-    const desiredWidth = Math.max(300, rect.width);
-    const estimatedMenuHeight = 280;
-    const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
-    const spaceAbove = rect.top - viewportPadding;
-    const openAbove = spaceBelow < 240 && spaceAbove > 160;
-    const top = openAbove ? Math.max(viewportPadding, rect.top - estimatedMenuHeight - 8) : rect.bottom + 8;
-    const maxHeight = Math.max(140, Math.floor((openAbove ? spaceAbove : spaceBelow) - 12));
-    const left = Math.min(
-      Math.max(viewportPadding, rect.left),
-      Math.max(viewportPadding, window.innerWidth - desiredWidth - viewportPadding)
-    );
-
-    setApplicationMenuPos({
-      top,
-      left,
-      width: desiredWidth,
-      maxHeight,
-    });
-  }, []);
-
   const refreshIconMenuPos = useCallback((anchorRect?: DOMRect) => {
     const rect = anchorRect || iconButtonRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -536,19 +500,6 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
   }, [refreshPlaceholderMenuPos, showPlaceholderMenu]);
 
   useEffect(() => {
-    if (!showApplicationMenu) return;
-    refreshApplicationMenuPos();
-    const onResize = () => refreshApplicationMenuPos();
-    const onScroll = () => refreshApplicationMenuPos();
-    window.addEventListener('resize', onResize);
-    window.addEventListener('scroll', onScroll, true);
-    return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('scroll', onScroll, true);
-    };
-  }, [refreshApplicationMenuPos, showApplicationMenu]);
-
-  useEffect(() => {
     if (!showIconMenu) return;
     refreshIconMenuPos();
     const onResize = () => refreshIconMenuPos();
@@ -575,20 +526,6 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
     document.addEventListener('mousedown', onPointerDown, true);
     return () => document.removeEventListener('mousedown', onPointerDown, true);
   }, [showPlaceholderMenu]);
-
-  useEffect(() => {
-    if (!showApplicationMenu) return;
-    const onPointerDown = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      const menu = document.getElementById('quicklink-application-menu');
-      if (menu?.contains(target)) return;
-      if (applicationButtonRef.current?.contains(target)) return;
-      setShowApplicationMenu(false);
-    };
-    document.addEventListener('mousedown', onPointerDown, true);
-    return () => document.removeEventListener('mousedown', onPointerDown, true);
-  }, [showApplicationMenu]);
 
   useEffect(() => {
     if (!showIconMenu) return;
@@ -621,22 +558,31 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
     () => applications.find((app) => app.path === selectedAppPath) || null,
     [applications, selectedAppPath]
   );
-  const selectedAppName = selectedApp?.name || 'Default Browser';
   const selectedAppResolvedIconDataUrl =
     (selectedAppPath
       ? applicationIcons[selectedAppPath] || selectedApp?.iconDataUrl || appIconDataUrl
       : undefined) || undefined;
-  const selectedIconOption = getQuickLinkIconOption(icon) || QUICK_LINK_ICON_OPTIONS[0];
-  const filteredApplications = useMemo(() => {
-    const query = applicationQuery.trim().toLowerCase();
-    if (!query) return applications;
-    return applications.filter((app) => {
-      const name = String(app.name || '').toLowerCase();
-      const bundleId = String(app.bundleId || '').toLowerCase();
-      const appPath = String(app.path || '').toLowerCase();
-      return name.includes(query) || bundleId.includes(query) || appPath.includes(query);
+  const applicationDropdownOptions = useMemo<SearchableDropdownOption[]>(() => {
+    const defaultBrowserOption: SearchableDropdownOption = {
+      value: '__default_browser__',
+      label: 'Default Browser',
+      searchText: 'default browser browser',
+      icon: <Globe className="w-3.5 h-3.5 text-white/65" />,
+    };
+    const appOptions = applications.map((app) => {
+      const iconDataUrl = applicationIcons[app.path] || app.iconDataUrl;
+      return {
+        value: app.path,
+        label: app.name,
+        searchText: `${app.name} ${app.bundleId || ''} ${app.path}`,
+        icon: iconDataUrl
+          ? <img src={iconDataUrl} alt="" className="w-4 h-4 object-contain" draggable={false} />
+          : <Globe className="w-3.5 h-3.5 text-white/65" />,
+      } satisfies SearchableDropdownOption;
     });
-  }, [applicationQuery, applications]);
+    return [defaultBrowserOption, ...appOptions];
+  }, [applicationIcons, applications]);
+  const selectedIconOption = getQuickLinkIconOption(icon) || QUICK_LINK_ICON_OPTIONS[0];
   const filteredIconOptions = useMemo(() => {
     const query = iconQuery.trim().toLowerCase();
     if (!query) return QUICK_LINK_ICON_OPTIONS;
@@ -663,43 +609,10 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
     }
     return list;
   }, [filteredIconOptions, iconQuery, selectedIconOption]);
-  const applicationMenuItems = useMemo(() => {
-    const normalizedQuery = applicationQuery.trim().toLowerCase();
-    const includeDefaultBrowser =
-      normalizedQuery.length === 0 ||
-      'default browser'.includes(normalizedQuery) ||
-      'browser'.includes(normalizedQuery);
-
-    const items = filteredApplications.map((app) => ({ type: 'app' as const, app }));
-    if (includeDefaultBrowser) {
-      items.unshift({ type: 'default' as const, app: null });
-    }
-    return items;
-  }, [applicationQuery, filteredApplications]);
-
-  useEffect(() => {
-    applicationItemRefs.current = applicationItemRefs.current.slice(0, applicationMenuItems.length);
-  }, [applicationMenuItems.length]);
 
   useEffect(() => {
     iconItemRefs.current = iconItemRefs.current.slice(0, visibleIconOptions.length);
   }, [visibleIconOptions.length]);
-
-  useEffect(() => {
-    if (!showApplicationMenu) {
-      setSelectedApplicationIndex(-1);
-      return;
-    }
-    if (applicationMenuItems.length === 0) {
-      setSelectedApplicationIndex(-1);
-      return;
-    }
-
-    const boundedIndex = Math.min(Math.max(selectedApplicationIndex, 0), applicationMenuItems.length - 1);
-    if (boundedIndex !== selectedApplicationIndex) {
-      setSelectedApplicationIndex(boundedIndex);
-    }
-  }, [applicationMenuItems.length, selectedApplicationIndex, showApplicationMenu]);
 
   useEffect(() => {
     if (!showIconMenu) {
@@ -874,79 +787,6 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
     }
   }, [handlePlaceholderSelection, placeholderMenuItems, selectedPlaceholderIndex, showPlaceholderMenu]);
 
-  const commitApplicationSelection = useCallback((index: number) => {
-    if (applicationMenuItems.length === 0) return;
-    const bounded = Math.min(Math.max(index, 0), Math.max(0, applicationMenuItems.length - 1));
-    const selectedEntry = applicationMenuItems[bounded];
-    if (!selectedEntry) return;
-    if (selectedEntry?.type === 'app' && selectedEntry.app?.path) {
-      setSelectedAppPath(selectedEntry.app.path);
-    } else {
-      setSelectedAppPath('');
-    }
-    setShowApplicationMenu(false);
-    requestAnimationFrame(() => {
-      applicationButtonRef.current?.focus();
-    });
-  }, [applicationMenuItems]);
-
-  const focusApplicationItem = useCallback((index: number) => {
-    requestAnimationFrame(() => {
-      const target = applicationItemRefs.current[index];
-      if (!target) return;
-      target.focus();
-      target.scrollIntoView({ block: 'nearest' });
-    });
-  }, []);
-
-  const handleApplicationMenuKeyDown = useCallback((event: React.KeyboardEvent<HTMLElement>) => {
-    if (!showApplicationMenu) return;
-    if (applicationMenuItems.length === 0) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        setShowApplicationMenu(false);
-        requestAnimationFrame(() => {
-          applicationButtonRef.current?.focus();
-        });
-      }
-      return;
-    }
-    const maxIndex = Math.max(0, applicationMenuItems.length - 1);
-    const currentIndex = Math.min(Math.max(selectedApplicationIndex >= 0 ? selectedApplicationIndex : 0, 0), maxIndex);
-
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      event.stopPropagation();
-      const nextIndex = Math.min(currentIndex + 1, maxIndex);
-      setSelectedApplicationIndex(nextIndex);
-      focusApplicationItem(nextIndex);
-      return;
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      event.stopPropagation();
-      const nextIndex = Math.max(currentIndex - 1, 0);
-      setSelectedApplicationIndex(nextIndex);
-      focusApplicationItem(nextIndex);
-      return;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      event.stopPropagation();
-      commitApplicationSelection(currentIndex);
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      setShowApplicationMenu(false);
-      requestAnimationFrame(() => {
-        applicationButtonRef.current?.focus();
-      });
-    }
-  }, [applicationMenuItems.length, commitApplicationSelection, focusApplicationItem, selectedApplicationIndex, showApplicationMenu]);
-
   const commitIconSelection = useCallback((index: number) => {
     if (visibleIconOptions.length === 0) return;
     const bounded = Math.min(Math.max(index, 0), Math.max(0, visibleIconOptions.length - 1));
@@ -1083,10 +923,6 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
         setSelectedPlaceholderIndex(-1);
         return;
       }
-      if (showApplicationMenu) {
-        setShowApplicationMenu(false);
-        return;
-      }
       if (showIconMenu) {
         setShowIconMenu(false);
         return;
@@ -1194,48 +1030,39 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
               <div className="w-8 h-8 rounded-md border border-[var(--snippet-divider)] bg-white/[0.04] flex items-center justify-center overflow-hidden">
                 <QuickLinkIconPreview icon="default" appIconDataUrl={selectedAppResolvedIconDataUrl} />
               </div>
-              <button
-                ref={applicationButtonRef}
-                type="button"
-                onClick={() => {
-                  refreshApplicationMenuPos();
-                  setApplicationQuery('');
-                  setShowApplicationMenu((prev) => {
-                    const next = !prev;
-                    if (next) {
-                      setSelectedApplicationIndex(0);
-                    }
-                    return next;
-                  });
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
-                    event.preventDefault();
-                    refreshApplicationMenuPos();
-                    setApplicationQuery('');
-                    setSelectedApplicationIndex(0);
-                    setShowApplicationMenu(true);
-                    return;
-                  }
-                  if (event.key === 'Escape' && showApplicationMenu) {
-                    event.preventDefault();
-                    setShowApplicationMenu(false);
-                  }
-                }}
-                className="flex-1 bg-white/[0.06] border border-[var(--snippet-divider)] rounded-lg px-2.5 py-1.5 text-white/90 text-[13px] outline-none hover:border-[var(--snippet-divider-strong)] transition-colors text-left flex items-center justify-between gap-2"
-              >
-                <span className="min-w-0 flex items-center gap-2">
-                  <span className="w-4 h-4 flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {selectedAppPath && selectedAppResolvedIconDataUrl ? (
-                      <img src={selectedAppResolvedIconDataUrl} alt="" className="w-4 h-4 object-contain" draggable={false} />
-                    ) : (
-                      <Globe className="w-3.5 h-3.5 text-white/65" />
-                    )}
-                  </span>
-                  <span className="truncate">{selectedAppName}</span>
-                </span>
-                <ChevronDown className="w-3.5 h-3.5 text-white/55 flex-shrink-0" />
-              </button>
+              <div className="flex-1">
+                <SearchableDropdown
+                  value={selectedAppPath || '__default_browser__'}
+                  options={applicationDropdownOptions}
+                  onChange={(nextValue) => {
+                    setSelectedAppPath(nextValue === '__default_browser__' ? '' : nextValue);
+                  }}
+                  searchPlaceholder="Search applications..."
+                  noResultsText="No applications found"
+                  listMaxHeight={180}
+                  minMenuWidth={300}
+                  renderTriggerContent={(selectedOption) => (
+                    <span className="min-w-0 flex items-center gap-2">
+                      <span className="w-4 h-4 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {selectedAppPath && selectedAppResolvedIconDataUrl ? (
+                          <img src={selectedAppResolvedIconDataUrl} alt="" className="w-4 h-4 object-contain" draggable={false} />
+                        ) : (
+                          <Globe className="w-3.5 h-3.5 text-white/65" />
+                        )}
+                      </span>
+                      <span className="truncate">{selectedOption?.label || 'Default Browser'}</span>
+                    </span>
+                  )}
+                  renderOptionContent={(option) => (
+                    <>
+                      <span className="w-4 h-4 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {option.icon || <Globe className="w-3.5 h-3.5 text-white/65" />}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    </>
+                  )}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -1303,70 +1130,6 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
           <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-muted)] font-medium">↩</kbd>
         </button>
       </div>
-
-      {showApplicationMenu && createPortal(
-        <div
-          id="quicklink-application-menu"
-          className="fixed z-[120] rounded-lg overflow-hidden sc-dropdown-surface"
-          onKeyDown={handleApplicationMenuKeyDown}
-          style={{
-            top: applicationMenuPos.top,
-            left: applicationMenuPos.left,
-            width: applicationMenuPos.width,
-          }}
-        >
-          <div className="px-2 py-1.5 border-b sc-dropdown-divider">
-            <input
-              ref={applicationSearchRef}
-              type="text"
-              value={applicationQuery}
-              onChange={(event) => setApplicationQuery(event.target.value)}
-              onKeyDown={handleApplicationMenuKeyDown}
-              placeholder="Search applications..."
-              className="w-full px-1.5 py-1 bg-transparent text-[13px] text-white/75 placeholder:text-[color:var(--text-subtle)] outline-none"
-              autoFocus
-            />
-          </div>
-          <div className="overflow-y-auto py-1" style={{ maxHeight: Math.min(applicationMenuPos.maxHeight, 180) }}>
-            {applicationMenuItems.map((entry, index) => {
-              const app = entry.type === 'app' ? entry.app : null;
-              const iconDataUrl = app ? (applicationIcons[app.path] || app.iconDataUrl) : null;
-              const isSelectedChoice = app ? selectedAppPath === app.path : !selectedAppPath;
-              const isHighlighted = selectedApplicationIndex === index;
-              return (
-                <button
-                  key={app?.path || '__default_browser__'}
-                  type="button"
-                  ref={(el) => {
-                    applicationItemRefs.current[index] = el;
-                  }}
-                  tabIndex={isHighlighted ? 0 : -1}
-                  onFocus={() => setSelectedApplicationIndex(index)}
-                  onMouseMove={() => setSelectedApplicationIndex(index)}
-                  onKeyDown={handleApplicationMenuKeyDown}
-                  onClick={() => commitApplicationSelection(index)}
-                  className="sc-dropdown-item w-full text-left px-2.5 py-1.5 text-[13px] text-white/85 flex items-center gap-2 outline-none focus-visible:outline-none"
-                  aria-selected={isHighlighted}
-                >
-                  <span className="w-4 h-4 flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {iconDataUrl ? (
-                      <img src={iconDataUrl} alt="" className="w-4 h-4 object-contain" draggable={false} />
-                    ) : (
-                      <Globe className="w-3.5 h-3.5 text-white/65" />
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{app?.name || 'Default Browser'}</span>
-                  {isSelectedChoice ? <Check className="w-3.5 h-3.5 text-white/65 flex-shrink-0" /> : null}
-                </button>
-              );
-            })}
-            {applicationMenuItems.length === 0 ? (
-              <div className="px-2.5 py-2 text-xs text-white/35">No applications found</div>
-            ) : null}
-          </div>
-        </div>,
-        document.body
-      )}
 
       {showIconMenu && createPortal(
         <div
