@@ -1401,7 +1401,6 @@ let keyspyHyperUsedAsModifier = false;
 let keyspyLastServerPath = '';
 let keyspyLastRuntimeInfo = '';
 let keyspyPermissionRecoveryInFlight = false;
-let keyspyAccessibilityPromptRequested = false;
 let keyspyInputMonitoringPromptRequested = false;
 let keyspyRetryTimer: NodeJS.Timeout | null = null;
 let keyspyHyperConfig: KeyspyHyperConfig = {
@@ -3016,13 +3015,6 @@ async function requestOnboardingPermissionAccess(target: OnboardingPermissionTar
       };
     }
 
-    const homeDir = app.getPath('home');
-    const deniedSummary = after.deniedPaths
-      .slice(0, 3)
-      .map((candidate) => formatHomeScopedPath(candidate, homeDir))
-      .join(', ');
-    const deniedMessage = deniedSummary ? `Blocked folders: ${deniedSummary}. ` : '';
-
     return {
       granted: false,
       requested: promptResult.requested,
@@ -3031,7 +3023,7 @@ async function requestOnboardingPermissionAccess(target: OnboardingPermissionTar
       canPrompt: true,
       error:
         promptResult.error ||
-        `${deniedMessage}Allow SuperCmd in System Settings -> Privacy & Security -> Files and Folders, then request again.`,
+        'Allow SuperCmd in System Settings -> Privacy & Security -> Files and Folders, then request again.',
     };
   }
 
@@ -4506,25 +4498,11 @@ async function recoverKeyspyMacPermissions(_reason: string): Promise<void> {
 
   keyspyPermissionRecoveryInFlight = true;
   try {
-    let accessibilityGranted = true;
-    try {
-      accessibilityGranted = systemPreferences.isTrustedAccessibilityClient(false);
-    } catch {
-      accessibilityGranted = false;
-    }
-
     let inputMonitoringGranted = true;
     try {
       inputMonitoringGranted = await checkInputMonitoringAccess();
     } catch {
       inputMonitoringGranted = false;
-    }
-
-    if (!accessibilityGranted && !keyspyAccessibilityPromptRequested) {
-      keyspyAccessibilityPromptRequested = true;
-      try {
-        systemPreferences.isTrustedAccessibilityClient(true);
-      } catch {}
     }
 
     if (!inputMonitoringGranted && !keyspyInputMonitoringPromptRequested) {

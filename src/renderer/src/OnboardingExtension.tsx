@@ -60,7 +60,7 @@ const permissionTargets: Array<{
   {
     id: 'home-folder',
     title: 'Home Folder (File Search)',
-    description: 'Required to index files in Documents, Desktop, Downloads, and Pictures.',
+    description: 'Required for file search.',
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders',
     icon: FolderOpen,
     iconTone: 'text-blue-100',
@@ -500,29 +500,22 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
         } else if (!requested || mode === 'manual' || status === 'not-determined') {
           setPermissionNotes((prev) => ({
             ...prev,
-            [id]: 'Select your Home folder when prompted, then enable SuperCmd under Files and Folders if needed.',
+            [id]: 'Select your Home folder when prompted.',
           }));
         }
       }
       if (id === 'microphone') {
         await new Promise((resolve) => setTimeout(resolve, 350));
       }
-      const candidateUrls = id === 'microphone'
-        ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone']
-        : id === 'speech-recognition'
-          ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_SpeechRecognition']
-          : id === 'input-monitoring'
-            ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent']
-            : id === 'home-folder'
-              ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_FilesAndFolders']
-          : [url];
-      let ok = false;
-      for (const candidate of candidateUrls) {
-        if (ok) break;
-        ok = await window.electron.openUrl(candidate);
-      }
-      if (ok) {
-        if (id === 'input-monitoring') {
+      const shouldAutoOpenSettings = id === 'input-monitoring';
+      if (shouldAutoOpenSettings) {
+        const candidateUrls = [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent'];
+        let ok = false;
+        for (const candidate of candidateUrls) {
+          if (ok) break;
+          ok = await window.electron.openUrl(candidate);
+        }
+        if (ok) {
           // macOS 13+ does not auto-add apps to Input Monitoring via CGEventTap.
           // The user must click "+" in System Settings and manually select SuperCmd.
           setPermissionNotes((prev) => ({
@@ -808,8 +801,12 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                             disabled={Boolean(permissionLoading[target.id])}
                             className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-md border border-white/[0.12] bg-white/[0.10] hover:bg-white/[0.18] text-white text-xs font-medium transition-colors disabled:opacity-60 md:min-w-[190px]"
                           >
-                            {permissionLoading[target.id] ? 'Requesting...' : 'Request + Open Settings'}
-                            <ExternalLink className="w-3 h-3" />
+                            {permissionLoading[target.id]
+                              ? 'Requesting...'
+                              : target.id === 'input-monitoring'
+                                ? 'Request + Open Settings'
+                                : 'Request Access'}
+                            {target.id === 'input-monitoring' ? <ExternalLink className="w-3 h-3" /> : null}
                           </button>
                         </div>
                         {!isDone && isRequested ? (
@@ -829,7 +826,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                         ) : null}
                         {target.id === 'home-folder' ? (
                           <p className="mt-1 text-[11px] text-white/52">
-                            Pick your Home folder when prompted. This powers Search Files and launcher file results.
+                            Pick your Home folder when prompted.
                           </p>
                         ) : null}
                         {!isDone && note ? (
