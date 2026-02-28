@@ -84,9 +84,14 @@ import {
   startFileSearchIndexing,
   stopFileSearchIndexing,
 } from './file-search-index';
+import {
+  GlobalKeyboardListener,
+  type IGlobalKeyDownMap,
+  type IGlobalKeyEvent,
+} from 'keyspy';
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
+const { app, BrowserWindow, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
 try {
   app.setName('SuperCmd');
 } catch {}
@@ -1250,9 +1255,53 @@ type FrontmostAppContext = { name: string; path: string; bundleId?: string };
 let lastFrontmostApp: FrontmostAppContext | null = null;
 let launcherEntryFrontmostApp: FrontmostAppContext | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
+type NormalizedShortcutModifiers = {
+  command: boolean;
+  control: boolean;
+  alt: boolean;
+  shift: boolean;
+  fn: boolean;
+};
+type KeyspyPrimaryMatcher =
+  | { kind: 'key'; name: string; vKey?: number }
+  | { kind: 'modifier'; modifier: keyof NormalizedShortcutModifiers };
+type KeyspyShortcutHandler = 'launcher' | 'command' | 'devtools';
+type KeyspyShortcutSpec = {
+  id: string;
+  shortcut: string;
+  modifiers: NormalizedShortcutModifiers;
+  primary: KeyspyPrimaryMatcher;
+  handler: KeyspyShortcutHandler;
+  commandId?: string;
+};
+type KeyspyHyperConfig = {
+  sourceKeyCode: number | null;
+  includeShift: boolean;
+  quickPressAction: 'toggle-caps-lock' | 'escape' | 'none';
+};
+type HotkeyCaptureModifier = 'Command' | 'Control' | 'Alt' | 'Shift' | 'Fn';
+type KeyspyHotkeyCaptureSession = {
+  resolve: (shortcut: string) => void;
+  reject: (reason?: any) => void;
+  activeModifiers: Set<HotkeyCaptureModifier>;
+  modifierHistory: Set<HotkeyCaptureModifier>;
+  hyperSourceActive: boolean;
+  timeoutTimer: NodeJS.Timeout | null;
+};
+let keyspyListener: GlobalKeyboardListener | null = null;
+let keyspyListenerCallback: ((event: IGlobalKeyEvent, down: IGlobalKeyDownMap) => boolean) | null = null;
+const keyspyShortcutSpecs = new Map<string, KeyspyShortcutSpec>();
+const keyspyActiveShortcutIds = new Set<string>();
+let keyspyHyperPressed = false;
+let keyspyHyperUsedAsModifier = false;
+let keyspyHyperConfig: KeyspyHyperConfig = {
+  sourceKeyCode: null,
+  includeShift: true,
+  quickPressAction: 'toggle-caps-lock',
+};
+let keyspyHotkeyCaptureSession: KeyspyHotkeyCaptureSession | null = null;
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
 const pendingOAuthCallbackUrls: string[] = [];
-const AUTO_OPEN_DEVTOOLS_ON_START = process.env.SC_OPEN_DEVTOOLS_ON_START !== '0';
 let snippetExpanderProcess: any = null;
 let snippetExpanderStdoutBuffer = '';
 let nativeSpeechProcess: any = null;
@@ -2973,24 +3022,10 @@ let whisperChildWindow: InstanceType<typeof BrowserWindow> | null = null;
 const LAUNCHER_SELECTION_SNAPSHOT_TTL_MS = 15_000;
 
 function registerWhisperEscapeShortcut(): void {
-  if (whisperEscapeRegistered) return;
-  try {
-    const success = globalShortcut.register('Escape', () => {
-      if (isVisible && launcherMode === 'whisper') {
-        mainWindow?.webContents.send('whisper-stop-and-close');
-      }
-    });
-    whisperEscapeRegistered = success;
-  } catch {
-    whisperEscapeRegistered = false;
-  }
+  whisperEscapeRegistered = true;
 }
 
 function unregisterWhisperEscapeShortcut(): void {
-  if (!whisperEscapeRegistered) return;
-  try {
-    globalShortcut.unregister('Escape');
-  } catch {}
   whisperEscapeRegistered = false;
 }
 
@@ -4071,15 +4106,7 @@ function shouldSuppressOpeningShortcutInput(input: any): boolean {
   return true;
 }
 
-function unregisterShortcutVariants(shortcut: string): void {
-  const raw = String(shortcut || '').trim();
-  if (!raw) return;
-  const normalized = normalizeAccelerator(raw);
-  try { globalShortcut.unregister(raw); } catch {}
-  if (normalized !== raw) {
-    try { globalShortcut.unregister(normalized); } catch {}
-  }
-}
+function unregisterShortcutVariants(_shortcut: string): void {}
 
 function isFnOnlyShortcut(shortcut: string): boolean {
   const normalized = normalizeAccelerator(shortcut).trim().toLowerCase();
@@ -4126,6 +4153,839 @@ function parseHoldShortcutConfig(shortcut: string): {
     shift: mods.has('shift'),
     fn: fnAsModifier || keyToken === 'fn' || keyToken === 'function',
   };
+}
+
+const MAC_ACCELERATOR_VKEY_MAP: Record<string, number> = {
+  a: 0, s: 1, d: 2, f: 3, h: 4, g: 5, z: 6, x: 7, c: 8, v: 9,
+  b: 11, q: 12, w: 13, e: 14, r: 15, y: 16, t: 17, '1': 18, '2': 19,
+  '3': 20, '4': 21, '6': 22, '5': 23, '=': 24, '9': 25, '7': 26, '-': 27,
+  '8': 28, '0': 29, ']': 30, o: 31, u: 32, '[': 33, i: 34, p: 35,
+  l: 37, j: 38, "'": 39, k: 40, ';': 41, '\\': 42, ',': 43, '/': 44,
+  n: 45, m: 46, '.': 47, '`': 50,
+  backspace: 51, tab: 48, space: 49, return: 36, enter: 36, escape: 53,
+  left: 123, right: 124, down: 125, up: 126, delete: 117,
+  capslock: 57, fn: 63, function: 63,
+  f1: 122, f2: 120, f3: 99, f4: 118, f5: 96, f6: 97, f7: 98, f8: 100, f9: 101,
+  f10: 109, f11: 103, f12: 111, f13: 105, f14: 107, f15: 113, f16: 106, f17: 64,
+  f18: 79, f19: 80, f20: 90,
+};
+
+const KEYSPY_MODIFIER_NAMES: Record<keyof NormalizedShortcutModifiers, string[]> = {
+  command: ['LEFT META', 'RIGHT META'],
+  control: ['LEFT CTRL', 'RIGHT CTRL'],
+  alt: ['LEFT ALT', 'RIGHT ALT'],
+  shift: ['LEFT SHIFT', 'RIGHT SHIFT'],
+  fn: ['FN'],
+};
+
+function parseShortcutModifiersAndKey(shortcut: string): {
+  modifiers: NormalizedShortcutModifiers;
+  keyToken: string;
+} | null {
+  const normalizedShortcut = normalizeAccelerator(shortcut);
+  if (!normalizedShortcut) return null;
+  const parts = normalizedShortcut.split('+').map((part) => String(part || '').trim()).filter(Boolean);
+  if (parts.length === 0) return null;
+  const keyToken = parts[parts.length - 1];
+  const modifierTokens = parts.slice(0, -1).map((part) => part.toLowerCase());
+  const modifiers: NormalizedShortcutModifiers = {
+    command: false,
+    control: false,
+    alt: false,
+    shift: false,
+    fn: false,
+  };
+
+  for (const token of modifierTokens) {
+    if (token === 'hyper' || token === '✦') {
+      modifiers.command = true;
+      modifiers.control = true;
+      modifiers.alt = true;
+      modifiers.shift = true;
+      continue;
+    }
+    if (token === 'commandorcontrol' || token === 'cmdorctrl') {
+      if (process.platform === 'darwin') modifiers.command = true;
+      else modifiers.control = true;
+      continue;
+    }
+    if (token === 'cmd' || token === 'command' || token === 'meta' || token === 'super') {
+      modifiers.command = true;
+      continue;
+    }
+    if (token === 'ctrl' || token === 'control') {
+      modifiers.control = true;
+      continue;
+    }
+    if (token === 'alt' || token === 'option') {
+      modifiers.alt = true;
+      continue;
+    }
+    if (token === 'shift') {
+      modifiers.shift = true;
+      continue;
+    }
+    if (token === 'fn' || token === 'function') {
+      modifiers.fn = true;
+      continue;
+    }
+  }
+
+  return { modifiers, keyToken };
+}
+
+function mapAcceleratorKeyTokenToKeyspyName(token: string): string | null {
+  const normalized = String(token || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (/^[a-z]$/.test(normalized)) return normalized.toUpperCase();
+  if (/^\d$/.test(normalized)) return normalized;
+  if (/^f\d{1,2}$/.test(normalized)) return normalized.toUpperCase();
+
+  const map: Record<string, string> = {
+    up: 'UP ARROW',
+    down: 'DOWN ARROW',
+    left: 'LEFT ARROW',
+    right: 'RIGHT ARROW',
+    arrowup: 'UP ARROW',
+    arrowdown: 'DOWN ARROW',
+    arrowleft: 'LEFT ARROW',
+    arrowright: 'RIGHT ARROW',
+    space: 'SPACE',
+    return: 'RETURN',
+    enter: 'RETURN',
+    tab: 'TAB',
+    escape: 'ESCAPE',
+    esc: 'ESCAPE',
+    backspace: 'BACKSPACE',
+    delete: 'DELETE',
+    capslock: 'CAPS LOCK',
+    '.': 'DOT',
+    period: 'DOT',
+    ',': 'COMMA',
+    comma: 'COMMA',
+    '/': 'FORWARD SLASH',
+    slash: 'FORWARD SLASH',
+    ';': 'SEMICOLON',
+    semicolon: 'SEMICOLON',
+    "'": 'QUOTE',
+    quote: 'QUOTE',
+    '\\': 'BACKSLASH',
+    backslash: 'BACKSLASH',
+    '[': 'SQUARE BRACKET OPEN',
+    bracketleft: 'SQUARE BRACKET OPEN',
+    ']': 'SQUARE BRACKET CLOSE',
+    bracketright: 'SQUARE BRACKET CLOSE',
+    '`': 'BACKTICK',
+    backtick: 'BACKTICK',
+    '-': 'MINUS',
+    minus: 'MINUS',
+    '=': 'EQUALS',
+    equals: 'EQUALS',
+    numpad0: 'NUMPAD 0',
+    numpad1: 'NUMPAD 1',
+    numpad2: 'NUMPAD 2',
+    numpad3: 'NUMPAD 3',
+    numpad4: 'NUMPAD 4',
+    numpad5: 'NUMPAD 5',
+    numpad6: 'NUMPAD 6',
+    numpad7: 'NUMPAD 7',
+    numpad8: 'NUMPAD 8',
+    numpad9: 'NUMPAD 9',
+    numpaddot: 'NUMPAD DOT',
+    numpaddecimal: 'NUMPAD DOT',
+    numpaddivide: 'NUMPAD DIVIDE',
+    numpadmultiply: 'NUMPAD MULTIPLY',
+    numpadminus: 'NUMPAD MINUS',
+    numpadplus: 'NUMPAD PLUS',
+    numpadenter: 'NUMPAD RETURN',
+    numpadreturn: 'NUMPAD RETURN',
+    numpadequals: 'NUMPAD EQUALS',
+  };
+  return map[normalized] || null;
+}
+
+function mapTokenToModifierKey(token: string): keyof NormalizedShortcutModifiers | null {
+  const normalized = String(token || '').trim().toLowerCase();
+  if (normalized === 'cmd' || normalized === 'command' || normalized === 'meta' || normalized === 'super') return 'command';
+  if (normalized === 'ctrl' || normalized === 'control') return 'control';
+  if (normalized === 'alt' || normalized === 'option') return 'alt';
+  if (normalized === 'shift') return 'shift';
+  if (normalized === 'fn' || normalized === 'function') return 'fn';
+  return null;
+}
+
+function parseKeyspyShortcutSpec(
+  id: string,
+  shortcut: string,
+  handler: KeyspyShortcutHandler,
+  commandId?: string
+): KeyspyShortcutSpec | null {
+  const normalizedShortcut = normalizeAccelerator(shortcut);
+  const parsed = parseShortcutModifiersAndKey(normalizedShortcut);
+  if (!parsed) return null;
+
+  const modifierPrimary = mapTokenToModifierKey(parsed.keyToken);
+  if (modifierPrimary) {
+    return {
+      id,
+      shortcut: normalizedShortcut,
+      modifiers: parsed.modifiers,
+      primary: { kind: 'modifier', modifier: modifierPrimary },
+      handler,
+      commandId,
+    };
+  }
+
+  const name = mapAcceleratorKeyTokenToKeyspyName(parsed.keyToken);
+  if (!name) return null;
+
+  const keyTokenLookup = String(parsed.keyToken || '').trim().toLowerCase();
+  const vKey = process.platform === 'darwin'
+    ? (
+      MAC_ACCELERATOR_VKEY_MAP[keyTokenLookup] ??
+      MAC_ACCELERATOR_VKEY_MAP[name.toLowerCase()] ??
+      undefined
+    )
+    : undefined;
+
+  return {
+    id,
+    shortcut: normalizedShortcut,
+    modifiers: parsed.modifiers,
+    primary: { kind: 'key', name, vKey },
+    handler,
+    commandId,
+  };
+}
+
+function getPhysicalModifierStateFromDownMap(down: IGlobalKeyDownMap): NormalizedShortcutModifiers {
+  const isFnDown = (() => {
+    if (!down || typeof down !== 'object') return false;
+    if (Boolean((down as any)['FN'] || (down as any)['FUNCTION'])) return true;
+    for (const [rawName, pressed] of Object.entries(down)) {
+      if (!pressed) continue;
+      const name = String(rawName || '').trim().toUpperCase();
+      if (!name) continue;
+      if (name === 'FN' || name === 'FUNCTION') return true;
+      // Some keyboards emit Fn as UNKNOWN_0x3F while still providing vKey 63.
+      if (name.startsWith('UNKNOWN_0X3F')) return true;
+    }
+    return false;
+  })();
+
+  return {
+    command: Boolean(down['LEFT META'] || down['RIGHT META']),
+    control: Boolean(down['LEFT CTRL'] || down['RIGHT CTRL']),
+    alt: Boolean(down['LEFT ALT'] || down['RIGHT ALT']),
+    shift: Boolean(down['LEFT SHIFT'] || down['RIGHT SHIFT']),
+    fn: isFnDown,
+  };
+}
+
+function getModifierStateFromDownMap(down: IGlobalKeyDownMap): NormalizedShortcutModifiers {
+  const state = getPhysicalModifierStateFromDownMap(down);
+  if (keyspyHyperPressed && keyspyHyperConfig.sourceKeyCode !== null) {
+    // If hyper source is itself a physical modifier (eg right shift), suppress
+    // that physical modifier and replace it with the synthetic Hyper set.
+    const sourceModifier = (() => {
+      switch (Number(keyspyHyperConfig.sourceKeyCode)) {
+        case 54:
+        case 55:
+          return 'command' as const;
+        case 59:
+        case 62:
+          return 'control' as const;
+        case 58:
+        case 61:
+          return 'alt' as const;
+        case 56:
+        case 60:
+          return 'shift' as const;
+        case 63:
+          return 'fn' as const;
+        default:
+          return null;
+      }
+    })();
+    if (sourceModifier) {
+      state[sourceModifier] = false;
+    }
+    state.command = true;
+    state.control = true;
+    state.alt = true;
+    if (keyspyHyperConfig.includeShift) {
+      state.shift = true;
+    }
+  }
+
+  return state;
+}
+
+const MAC_VKEY_ACCELERATOR_CAPTURE_MAP: Record<number, string> = {
+  54: 'Command',
+  55: 'Command',
+  56: 'Shift',
+  60: 'Shift',
+  58: 'Alt',
+  61: 'Alt',
+  59: 'Control',
+  62: 'Control',
+  57: 'CapsLock',
+  63: 'Fn',
+  122: 'F1',
+  120: 'F2',
+  99: 'F3',
+  118: 'F4',
+  96: 'F5',
+  97: 'F6',
+  98: 'F7',
+  100: 'F8',
+  101: 'F9',
+  109: 'F10',
+  103: 'F11',
+  111: 'F12',
+  90: 'F20',
+};
+
+function keyspyEventToAcceleratorToken(event: IGlobalKeyEvent): string | null {
+  const name = String(event?.name || '').toUpperCase();
+  const vKey = Number(event?.vKey);
+  if (process.platform === 'darwin' && Number.isFinite(vKey)) {
+    const byVKey = MAC_VKEY_ACCELERATOR_CAPTURE_MAP[vKey];
+    if (byVKey) return byVKey;
+  }
+  if (!name || name.startsWith('UNKNOWN') || name.startsWith('MOUSE ')) return null;
+  if (/^[A-Z]$/.test(name)) return name;
+  if (/^\d$/.test(name)) return name;
+  if (/^F\d{1,2}$/.test(name)) return name;
+
+  const map: Record<string, string> = {
+    'UP ARROW': 'Up',
+    'DOWN ARROW': 'Down',
+    'LEFT ARROW': 'Left',
+    'RIGHT ARROW': 'Right',
+    'SPACE': 'Space',
+    'RETURN': 'Return',
+    'TAB': 'Tab',
+    'ESCAPE': 'Escape',
+    'BACKSPACE': 'Backspace',
+    'DELETE': 'Delete',
+    'CAPS LOCK': 'CapsLock',
+    'LEFT META': 'Command',
+    'RIGHT META': 'Command',
+    'LEFT CTRL': 'Control',
+    'RIGHT CTRL': 'Control',
+    'LEFT ALT': 'Alt',
+    'RIGHT ALT': 'Alt',
+    'LEFT SHIFT': 'Shift',
+    'RIGHT SHIFT': 'Shift',
+    'FUNCTION': 'Fn',
+    'FN': 'Fn',
+    'DOT': '.',
+    'COMMA': ',',
+    'FORWARD SLASH': '/',
+    'SEMICOLON': ';',
+    'QUOTE': "'",
+    'BACKSLASH': '\\',
+    'SQUARE BRACKET OPEN': '[',
+    'SQUARE BRACKET CLOSE': ']',
+    'BACKTICK': '`',
+    'MINUS': '-',
+    'EQUALS': '=',
+    'NUMPAD 0': 'Numpad0',
+    'NUMPAD 1': 'Numpad1',
+    'NUMPAD 2': 'Numpad2',
+    'NUMPAD 3': 'Numpad3',
+    'NUMPAD 4': 'Numpad4',
+    'NUMPAD 5': 'Numpad5',
+    'NUMPAD 6': 'Numpad6',
+    'NUMPAD 7': 'Numpad7',
+    'NUMPAD 8': 'Numpad8',
+    'NUMPAD 9': 'Numpad9',
+    'NUMPAD DOT': 'NumpadDecimal',
+    'NUMPAD DIVIDE': 'NumpadDivide',
+    'NUMPAD MULTIPLY': 'NumpadMultiply',
+    'NUMPAD MINUS': 'NumpadMinus',
+    'NUMPAD PLUS': 'NumpadPlus',
+    'NUMPAD RETURN': 'NumpadEnter',
+    'NUMPAD EQUALS': 'NumpadEquals',
+  };
+  return map[name] || null;
+}
+
+function isAcceleratorModifierToken(token: string): token is HotkeyCaptureModifier {
+  return token === 'Command' || token === 'Control' || token === 'Alt' || token === 'Shift' || token === 'Fn';
+}
+
+function keyspyEventToCaptureModifier(event: IGlobalKeyEvent): HotkeyCaptureModifier | null {
+  const token = keyspyEventToAcceleratorToken(event);
+  if (!token || !isAcceleratorModifierToken(token)) return null;
+  return token;
+}
+
+function getCaptureHyperModifiers(): HotkeyCaptureModifier[] {
+  const out: HotkeyCaptureModifier[] = ['Command', 'Control', 'Alt'];
+  if (keyspyHyperConfig.includeShift) out.push('Shift');
+  return out;
+}
+
+function buildShortcutFromKeyTokenAndModifiers(
+  keyToken: string,
+  modifiers: Iterable<HotkeyCaptureModifier>
+): string {
+  const parts: string[] = [];
+  const set = new Set<HotkeyCaptureModifier>(modifiers);
+  if (set.has('Fn') && keyToken !== 'Fn') parts.push('Fn');
+  if (set.has('Command') && keyToken !== 'Command') parts.push('Command');
+  if (set.has('Control') && keyToken !== 'Control') parts.push('Control');
+  if (set.has('Alt') && keyToken !== 'Alt') parts.push('Alt');
+  if (set.has('Shift') && keyToken !== 'Shift') parts.push('Shift');
+  parts.push(keyToken);
+  return parts.join('+');
+}
+
+function hasAnyNonModifierDown(down: IGlobalKeyDownMap): boolean {
+  for (const [name, value] of Object.entries(down || {})) {
+    if (!value) continue;
+    const upper = String(name || '').toUpperCase();
+    if (!upper || upper.startsWith('UNKNOWN') || upper.startsWith('MOUSE ')) continue;
+    if (
+      upper === 'LEFT META' ||
+      upper === 'RIGHT META' ||
+      upper === 'LEFT CTRL' ||
+      upper === 'RIGHT CTRL' ||
+      upper === 'LEFT ALT' ||
+      upper === 'RIGHT ALT' ||
+      upper === 'LEFT SHIFT' ||
+      upper === 'RIGHT SHIFT' ||
+      upper === 'FUNCTION' ||
+      upper === 'FN'
+    ) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+function buildModifierOnlyShortcut(modifiers: Set<HotkeyCaptureModifier>): string {
+  const ordered: HotkeyCaptureModifier[] = ['Fn', 'Command', 'Control', 'Alt', 'Shift'];
+  return ordered.filter((modifier) => modifiers.has(modifier)).join('+');
+}
+
+function clearKeyspyHotkeyCaptureSession(): KeyspyHotkeyCaptureSession | null {
+  const session = keyspyHotkeyCaptureSession;
+  if (!session) return null;
+  if (session.timeoutTimer) {
+    clearTimeout(session.timeoutTimer);
+  }
+  keyspyHotkeyCaptureSession = null;
+  return session;
+}
+
+function resolveKeyspyHotkeyCapture(shortcut: string): void {
+  const session = clearKeyspyHotkeyCaptureSession();
+  if (!session) return;
+  session.resolve(shortcut);
+}
+
+function rejectKeyspyHotkeyCapture(reason: any): void {
+  const session = clearKeyspyHotkeyCaptureSession();
+  if (!session) return;
+  session.reject(reason);
+}
+
+function cancelKeyspyHotkeyCapture(reason: string = 'cancelled'): void {
+  rejectKeyspyHotkeyCapture(new Error(reason));
+}
+
+async function beginKeyspyHotkeyCapture(timeoutMs?: number): Promise<string> {
+  const listenerReady = await ensureKeyspyListener();
+  if (!listenerReady) {
+    throw new Error('unavailable');
+  }
+
+  cancelKeyspyHotkeyCapture('replaced');
+
+  return await new Promise<string>((resolve, reject) => {
+    const safeTimeoutMs = Math.max(1200, Math.min(60_000, Math.floor(Number(timeoutMs) || 20_000)));
+    const session: KeyspyHotkeyCaptureSession = {
+      resolve,
+      reject,
+      activeModifiers: new Set<HotkeyCaptureModifier>(),
+      modifierHistory: new Set<HotkeyCaptureModifier>(),
+      hyperSourceActive: false,
+      timeoutTimer: null,
+    };
+    session.timeoutTimer = setTimeout(() => {
+      if (keyspyHotkeyCaptureSession !== session) return;
+      rejectKeyspyHotkeyCapture(new Error('timeout'));
+    }, safeTimeoutMs);
+    keyspyHotkeyCaptureSession = session;
+  });
+}
+
+function processKeyspyHotkeyCaptureEvent(event: IGlobalKeyEvent, down: IGlobalKeyDownMap): boolean {
+  const session = keyspyHotkeyCaptureSession;
+  if (!session) return false;
+  const hyperSourceKeyCode = Number(keyspyHyperConfig.sourceKeyCode);
+  const isHyperSourceEvent =
+    Number.isFinite(hyperSourceKeyCode) &&
+    Number(event.vKey) === hyperSourceKeyCode;
+
+  const modifier = keyspyEventToCaptureModifier(event);
+  if (event.state === 'DOWN') {
+    if (isHyperSourceEvent) {
+      session.hyperSourceActive = true;
+      for (const hyperModifier of getCaptureHyperModifiers()) {
+        session.modifierHistory.add(hyperModifier);
+      }
+      return true;
+    }
+    if (modifier) {
+      session.activeModifiers.add(modifier);
+      session.modifierHistory.add(modifier);
+      return true;
+    }
+    const keyToken = keyspyEventToAcceleratorToken(event);
+    if (keyToken) {
+      const effectiveModifiers = new Set<HotkeyCaptureModifier>(session.activeModifiers);
+      if (session.hyperSourceActive) {
+        for (const hyperModifier of getCaptureHyperModifiers()) {
+          effectiveModifiers.add(hyperModifier);
+        }
+      }
+      const shortcut = buildShortcutFromKeyTokenAndModifiers(keyToken, effectiveModifiers);
+      resolveKeyspyHotkeyCapture(shortcut);
+      return true;
+    }
+    return false;
+  }
+
+  if (event.state === 'UP' && isHyperSourceEvent) {
+    session.hyperSourceActive = false;
+    if (
+      session.activeModifiers.size === 0 &&
+      session.modifierHistory.size > 0 &&
+      !hasAnyNonModifierDown(down)
+    ) {
+      const shortcut = buildModifierOnlyShortcut(session.modifierHistory);
+      if (shortcut) {
+        resolveKeyspyHotkeyCapture(shortcut);
+      }
+    }
+    return true;
+  }
+
+  if (event.state === 'UP' && modifier) {
+    session.activeModifiers.delete(modifier);
+    if (
+      session.activeModifiers.size === 0 &&
+      session.modifierHistory.size > 0 &&
+      !hasAnyNonModifierDown(down)
+    ) {
+      const shortcut = buildModifierOnlyShortcut(session.modifierHistory);
+      if (shortcut) {
+        resolveKeyspyHotkeyCapture(shortcut);
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function isPrimaryModifierEventMatch(
+  modifier: keyof NormalizedShortcutModifiers,
+  event: IGlobalKeyEvent
+): boolean {
+  const expectedNames = KEYSPY_MODIFIER_NAMES[modifier];
+  const eventName = String(event?.name || '').toUpperCase();
+  return expectedNames.includes(eventName);
+}
+
+function isPrimaryModifierDown(
+  modifier: keyof NormalizedShortcutModifiers,
+  down: IGlobalKeyDownMap
+): boolean {
+  const expectedNames = KEYSPY_MODIFIER_NAMES[modifier];
+  return expectedNames.some((name) => Boolean(down[name as keyof IGlobalKeyDownMap]));
+}
+
+function isShortcutMatchForEvent(
+  spec: KeyspyShortcutSpec,
+  event: IGlobalKeyEvent,
+  down: IGlobalKeyDownMap
+): boolean {
+  if (event.state !== 'DOWN') return false;
+
+  const eventName = String(event?.name || '').toUpperCase();
+  if (spec.primary.kind === 'modifier') {
+    if (!isPrimaryModifierEventMatch(spec.primary.modifier, event)) return false;
+  } else {
+    const vKeyMatches = Number.isFinite(Number(spec.primary.vKey)) && Number(spec.primary.vKey) === Number(event.vKey);
+    if (!vKeyMatches && eventName !== spec.primary.name) return false;
+  }
+
+  const actual = getModifierStateFromDownMap(down);
+  const expected: NormalizedShortcutModifiers = { ...spec.modifiers };
+  if (spec.primary.kind === 'modifier') {
+    expected[spec.primary.modifier] = true;
+  }
+
+  return (
+    actual.command === expected.command &&
+    actual.control === expected.control &&
+    actual.alt === expected.alt &&
+    actual.shift === expected.shift &&
+    actual.fn === expected.fn
+  );
+}
+
+function isShortcutStillPressed(spec: KeyspyShortcutSpec, down: IGlobalKeyDownMap): boolean {
+  const actual = getModifierStateFromDownMap(down);
+  const expected: NormalizedShortcutModifiers = { ...spec.modifiers };
+  if (spec.primary.kind === 'modifier') {
+    expected[spec.primary.modifier] = true;
+    if (!isPrimaryModifierDown(spec.primary.modifier, down)) return false;
+  } else {
+    if (!down[spec.primary.name as keyof IGlobalKeyDownMap]) return false;
+  }
+
+  return (
+    actual.command === expected.command &&
+    actual.control === expected.control &&
+    actual.alt === expected.alt &&
+    actual.shift === expected.shift &&
+    actual.fn === expected.fn
+  );
+}
+
+function refreshKeyspyHyperConfigFromSettings(settings?: AppSettings): void {
+  const currentSettings = settings || loadSettings();
+  keyspyHyperConfig = {
+    sourceKeyCode: Number.isFinite(Number(currentSettings.hyperKeySource))
+      ? Number(currentSettings.hyperKeySource)
+      : null,
+    includeShift: Boolean(currentSettings.hyperKeyIncludeShift),
+    quickPressAction: currentSettings.hyperKeyQuickPressAction || 'toggle-caps-lock',
+  };
+}
+
+function triggerHyperQuickPressAction(): void {
+  if (keyspyHyperConfig.sourceKeyCode !== 57) return;
+  if (keyspyHyperUsedAsModifier) return;
+  if (keyspyHyperConfig.quickPressAction !== 'escape') return;
+  if (process.platform !== 'darwin') return;
+  try {
+    const { execFile } = require('child_process') as typeof import('child_process');
+    execFile('/usr/bin/osascript', ['-e', 'tell application "System Events" to key code 53'], () => {});
+  } catch {}
+}
+
+async function handleWhisperSpeakToggleHotkeyPress(): Promise<void> {
+  const currentSettings = loadSettings();
+  if (isAIDisabledInSettings(currentSettings) || currentSettings.ai?.whisperEnabled === false) {
+    return;
+  }
+  const now = Date.now();
+  if (now - fnSpeakToggleLastPressedAt < 180) return;
+  fnSpeakToggleLastPressedAt = now;
+  fnSpeakToggleIsPressed = true;
+
+  if (whisperOverlayVisible) {
+    captureFrontmostAppContext();
+    if (whisperChildWindow && !whisperChildWindow.isDestroyed()) {
+      const bounds = whisperChildWindow.getBounds();
+      const pos = computeDetachedPopupPosition(DETACHED_WHISPER_WINDOW_NAME, bounds.width, bounds.height);
+      whisperChildWindow.setPosition(pos.x, pos.y);
+    }
+    mainWindow?.webContents.send('whisper-start-listening');
+    return;
+  }
+
+  await openLauncherAndRunSystemCommand('system-supercmd-whisper', {
+    showWindow: false,
+    mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
+    preserveFocusWhenHidden: launcherMode !== 'onboarding',
+  });
+  lastWhisperShownAt = Date.now();
+  const startDelays = [180, 340, 520];
+  startDelays.forEach((delayMs) => {
+    setTimeout(() => {
+      if (!fnSpeakToggleIsPressed) return;
+      mainWindow?.webContents.send('whisper-start-listening');
+    }, delayMs);
+  });
+}
+
+function handleWhisperSpeakToggleHotkeyRelease(): void {
+  fnSpeakToggleIsPressed = false;
+  mainWindow?.webContents.send('whisper-stop-listening');
+}
+
+function handleKeyspyShortcutPressed(spec: KeyspyShortcutSpec): void {
+  if (spec.handler === 'launcher') {
+    markOpeningShortcutForSuppression(spec.shortcut);
+    toggleWindow();
+    return;
+  }
+
+  if (spec.handler === 'devtools') {
+    const opened = openPreferredDevTools();
+    if (!opened) {
+      console.warn('[DevTools] No window available to open developer tools.');
+    }
+    return;
+  }
+
+  const commandId = String(spec.commandId || '').trim();
+  if (!commandId) return;
+  if (commandId === 'system-supercmd-whisper-speak-toggle') {
+    void handleWhisperSpeakToggleHotkeyPress();
+    return;
+  }
+  void runCommandById(commandId, 'hotkey');
+}
+
+function handleKeyspyShortcutReleased(spec: KeyspyShortcutSpec): void {
+  if (spec.handler !== 'command') return;
+  const commandId = String(spec.commandId || '').trim();
+  if (commandId === 'system-supercmd-whisper-speak-toggle') {
+    handleWhisperSpeakToggleHotkeyRelease();
+  }
+}
+
+function rebuildKeyspyShortcutSpecs(): void {
+  keyspyShortcutSpecs.clear();
+  keyspyActiveShortcutIds.clear();
+  refreshKeyspyHyperConfigFromSettings();
+
+  const launcherShortcut = String(currentShortcut || '').trim();
+  if (launcherShortcut) {
+    const launcherSpec = parseKeyspyShortcutSpec('launcher', launcherShortcut, 'launcher');
+    if (launcherSpec) {
+      keyspyShortcutSpecs.set(launcherSpec.id, launcherSpec);
+    }
+  }
+
+  for (const [shortcut, commandId] of registeredHotkeys.entries()) {
+    const normalizedShortcut = String(shortcut || '').trim();
+    const normalizedCommandId = String(commandId || '').trim();
+    if (!normalizedShortcut || !normalizedCommandId) continue;
+    const spec = parseKeyspyShortcutSpec(`command:${normalizedCommandId}`, normalizedShortcut, 'command', normalizedCommandId);
+    if (!spec) continue;
+    keyspyShortcutSpecs.set(spec.id, spec);
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    const devtoolsSpec = parseKeyspyShortcutSpec('devtools', DEVTOOLS_SHORTCUT, 'devtools');
+    if (devtoolsSpec) {
+      keyspyShortcutSpecs.set(devtoolsSpec.id, devtoolsSpec);
+    }
+  }
+}
+
+async function ensureKeyspyListener(): Promise<boolean> {
+  if (keyspyListener && keyspyListenerCallback) {
+    return true;
+  }
+  let listener: GlobalKeyboardListener | null = null;
+  try {
+    listener = new GlobalKeyboardListener({
+      appName: 'SuperCmd',
+      mac: { appName: 'SuperCmd' },
+      disposeDelay: -1,
+    });
+    const callback = (event: IGlobalKeyEvent, down: IGlobalKeyDownMap): boolean => {
+      let stopPropagation = false;
+      const captureSessionActive = Boolean(keyspyHotkeyCaptureSession);
+      if (captureSessionActive) {
+        const captured = processKeyspyHotkeyCaptureEvent(event, down);
+        if (captured) {
+          stopPropagation = true;
+        }
+        return stopPropagation;
+      }
+      const hyperSourceKeyCode = keyspyHyperConfig.sourceKeyCode;
+      const isHyperSourceEvent =
+        Number.isFinite(Number(hyperSourceKeyCode)) &&
+        Number(event.vKey) === Number(hyperSourceKeyCode);
+      const wasHyperUsedAsModifier = keyspyHyperUsedAsModifier;
+
+      if (isHyperSourceEvent && event.state === 'DOWN') {
+        keyspyHyperPressed = true;
+        keyspyHyperUsedAsModifier = false;
+      }
+      if (keyspyHyperPressed && !isHyperSourceEvent && event.state === 'DOWN') {
+        keyspyHyperUsedAsModifier = true;
+      }
+
+      for (const specId of Array.from(keyspyActiveShortcutIds)) {
+        const spec = keyspyShortcutSpecs.get(specId);
+        if (!spec || isShortcutStillPressed(spec, down)) continue;
+        keyspyActiveShortcutIds.delete(specId);
+        handleKeyspyShortcutReleased(spec);
+      }
+
+      for (const spec of keyspyShortcutSpecs.values()) {
+        if (keyspyActiveShortcutIds.has(spec.id)) continue;
+        if (!isShortcutMatchForEvent(spec, event, down)) continue;
+        keyspyActiveShortcutIds.add(spec.id);
+        handleKeyspyShortcutPressed(spec);
+      }
+
+      if (isHyperSourceEvent && event.state === 'UP') {
+        triggerHyperQuickPressAction();
+        keyspyHyperPressed = false;
+        keyspyHyperUsedAsModifier = false;
+      }
+
+      if (isHyperSourceEvent && Number(hyperSourceKeyCode) === 57) {
+        const quickPressAction = keyspyHyperConfig.quickPressAction;
+        if (quickPressAction === 'none' || quickPressAction === 'escape') {
+          stopPropagation = true;
+        } else if (quickPressAction === 'toggle-caps-lock' && wasHyperUsedAsModifier) {
+          stopPropagation = true;
+        }
+      }
+
+      if (event.state === 'DOWN' && event.name === 'ESCAPE' && isVisible && launcherMode === 'whisper') {
+        mainWindow?.webContents.send('whisper-stop-and-close');
+      }
+
+      return stopPropagation;
+    };
+    await listener.addListener(callback);
+    keyspyListener = listener;
+    keyspyListenerCallback = callback;
+    rebuildKeyspyShortcutSpecs();
+    return true;
+  } catch (error) {
+    try { listener?.kill(); } catch {}
+    console.error('[Hotkey][keyspy] Failed to initialize global listener:', error);
+    keyspyListener = null;
+    keyspyListenerCallback = null;
+    return false;
+  }
+}
+
+function stopKeyspyListener(): void {
+  cancelKeyspyHotkeyCapture('listener-stopped');
+  try {
+    if (keyspyListener && keyspyListenerCallback) {
+      keyspyListener.removeListener(keyspyListenerCallback);
+    }
+  } catch {}
+  try {
+    keyspyListener?.kill();
+  } catch {}
+  keyspyListener = null;
+  keyspyListenerCallback = null;
+  keyspyShortcutSpecs.clear();
+  keyspyActiveShortcutIds.clear();
+  keyspyHyperPressed = false;
+  keyspyHyperUsedAsModifier = false;
 }
 
 function stopWhisperHoldWatcher(): void {
@@ -4343,59 +5203,11 @@ function startFnSpeakToggleWatcher(): void {
 }
 
 function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
-  // Do not start the CGEventTap-based Fn watcher during onboarding.
-  // The tap requires Input Monitoring (and sometimes Accessibility) permission,
-  // which would trigger system dialogs before the user reaches the Grant Access step.
-  // Exception: fnWatcherOnboardingOverride is set when the user reaches the Dictation
-  // test step (step 4) so they can actually test the Fn key during setup.
-  if (!loadSettings().hasSeenOnboarding && !fnWatcherOnboardingOverride) {
-    stopFnSpeakToggleWatcher();
-    return;
-  }
-  const currentSettings = loadSettings();
-  if (isAIDisabledInSettings(currentSettings) || currentSettings.ai?.whisperEnabled === false) {
-    stopFnSpeakToggleWatcher();
-    return;
-  }
-  const speakToggle = String(hotkeys?.['system-supercmd-whisper-speak-toggle'] || '').trim();
-  const shouldEnable = isFnOnlyShortcut(speakToggle);
-  if (!shouldEnable) {
-    stopFnSpeakToggleWatcher();
-    return;
-  }
-  fnSpeakToggleWatcherEnabled = true;
-  startFnSpeakToggleWatcher();
+  void hotkeys;
 }
 
 function syncFnCommandWatchers(hotkeys: Record<string, string>): void {
-  const desired = new Map<string, string>();
-  for (const [commandId, shortcutRaw] of Object.entries(hotkeys || {})) {
-    const shortcut = String(shortcutRaw || '').trim();
-    if (!shortcut) continue;
-    const normalized = normalizeAccelerator(shortcut);
-    const isFnSpeakToggle = commandId === 'system-supercmd-whisper-speak-toggle' && isFnOnlyShortcut(normalized);
-    if (isFnSpeakToggle) continue;
-    if (!isFnShortcut(normalized)) continue;
-    desired.set(commandId, normalized);
-  }
-
-  for (const existingCommandId of Array.from(fnCommandWatcherConfigs.keys())) {
-    const nextShortcut = desired.get(existingCommandId);
-    const currentShortcut = fnCommandWatcherConfigs.get(existingCommandId);
-    if (!nextShortcut || nextShortcut !== currentShortcut) {
-      fnCommandWatcherConfigs.delete(existingCommandId);
-      stopFnCommandWatcher(existingCommandId);
-    }
-  }
-
-  for (const [commandId, shortcut] of desired.entries()) {
-    const current = fnCommandWatcherConfigs.get(commandId);
-    if (current !== shortcut) {
-      fnCommandWatcherConfigs.set(commandId, shortcut);
-      stopFnCommandWatcher(commandId);
-    }
-    startFnCommandWatcher(commandId, shortcut);
-  }
+  void hotkeys;
 }
 
 function ensureWhisperHoldWatcherBinary(): string | null {
@@ -4633,14 +5445,6 @@ function loadWindowUrl(
       hash,
     });
   }
-}
-
-function shouldAutoOpenDevToolsOnStartup(): boolean {
-  const raw = String(process.env.SUPERCMD_OPEN_DEVTOOLS_ON_STARTUP || '').trim().toLowerCase();
-  if (raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on') {
-    return true;
-  }
-  return false;
 }
 
 function parseJsonObjectParam(raw: string | null): Record<string, any> {
@@ -5121,30 +5925,11 @@ function createWindow(): void {
   loadWindowUrl(mainWindow, '/');
 
   mainWindow.webContents.once('did-finish-load', () => {
-    if (shouldAutoOpenDevToolsOnStartup()) {
-      try {
-        mainWindow?.webContents.openDevTools({ mode: 'detach', activate: true });
-      } catch (error) {
-        console.warn('[DevTools] Failed auto-opening startup devtools:', error);
-      }
-    }
-
     if (pendingOAuthCallbackUrls.length > 0) {
       const urls = pendingOAuthCallbackUrls.splice(0, pendingOAuthCallbackUrls.length);
       for (const url of urls) {
         mainWindow?.webContents.send('oauth-callback', url);
       }
-    }
-    if (AUTO_OPEN_DEVTOOLS_ON_START) {
-      setTimeout(() => {
-        try {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.openDevTools({ mode: 'detach', activate: true });
-          }
-        } catch (error) {
-          console.warn('[DevTools] Failed opening startup devtools:', error);
-        }
-      }, 120);
     }
   });
 
@@ -6454,36 +7239,25 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
   }
 
   if (isWhisperSpeakToggleCommand) {
-    const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn');
-    const holdSeq = ++whisperHoldRequestSeq;
-    if (whisperOverlayVisible) {
-      captureFrontmostAppContext();
-      // Reposition whisper window to the current cursor's screen
-      if (whisperChildWindow && !whisperChildWindow.isDestroyed()) {
-        const bounds = whisperChildWindow.getBounds();
-        const pos = computeDetachedPopupPosition(DETACHED_WHISPER_WINDOW_NAME, bounds.width, bounds.height);
-        whisperChildWindow.setPosition(pos.x, pos.y);
-      }
-      startWhisperHoldWatcher(speakToggleHotkey, holdSeq);
-      mainWindow?.webContents.send('whisper-start-listening');
+    if (source === 'hotkey') {
+      await handleWhisperSpeakToggleHotkeyPress();
       return true;
     }
-    startWhisperHoldWatcher(speakToggleHotkey, holdSeq);
+    if (whisperOverlayVisible) {
+      mainWindow?.webContents.send('whisper-toggle-listening');
+      return true;
+    }
     await openLauncherAndRunSystemCommand('system-supercmd-whisper', {
       showWindow: false,
       mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
       preserveFocusWhenHidden: launcherMode !== 'onboarding',
     });
     lastWhisperShownAt = Date.now();
-    // Opening detached whisper can race with renderer listener binding;
-    // send explicit "start listening" with short retries.
     const startDelays = [180, 340, 520];
-    startDelays.forEach((delay) => {
+    startDelays.forEach((delayMs) => {
       setTimeout(() => {
-        if (holdSeq !== whisperHoldRequestSeq) return;
-        if (whisperHoldReleasedSeq >= holdSeq) return;
         mainWindow?.webContents.send('whisper-start-listening');
-      }, delay);
+      }, delayMs);
     });
     return true;
   }
@@ -6513,8 +7287,6 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       return true;
     }
     mainWindow?.webContents.send('whisper-stop-and-close');
-    whisperHoldRequestSeq += 1;
-    stopWhisperHoldWatcher();
     return true;
   }
   if (isCursorPromptCommand) {
@@ -6625,8 +7397,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
   }
   if (isWhisperOpenCommand) {
     lastWhisperShownAt = Date.now();
-    whisperHoldRequestSeq += 1;
-    stopWhisperHoldWatcher();
+    fnSpeakToggleIsPressed = false;
     return await openLauncherAndRunSystemCommand('system-supercmd-whisper', {
       showWindow: source === 'launcher',
       mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
@@ -8249,100 +9020,44 @@ async function replaceSpotlightWithSuperCmdShortcut(): Promise<boolean> {
 function registerGlobalShortcut(shortcut: string): boolean {
   const normalizedShortcut = normalizeAccelerator(shortcut);
   globalShortcutRegistrationState.requestedShortcut = normalizedShortcut;
-  // Unregister the previous global shortcut
-  if (currentShortcut) {
-    try {
-      unregisterShortcutVariants(currentShortcut);
-    } catch {}
-  }
-
-  try {
-    const success = globalShortcut.register(normalizedShortcut, () => {
-      markOpeningShortcutForSuppression(normalizedShortcut);
-      toggleWindow();
-    });
-    if (success) {
-      currentShortcut = normalizedShortcut;
-      globalShortcutRegistrationState.activeShortcut = normalizedShortcut;
-      globalShortcutRegistrationState.ok = true;
-      console.log(`Global shortcut registered: ${normalizedShortcut}`);
-      return true;
-    } else {
-      console.error(`Failed to register shortcut: ${normalizedShortcut}`);
-      // Re-register old one
-      if (currentShortcut && currentShortcut !== normalizedShortcut) {
-        try {
-          const restoredShortcut = currentShortcut;
-          globalShortcut.register(restoredShortcut, () => {
-            markOpeningShortcutForSuppression(restoredShortcut);
-            toggleWindow();
-          });
-        } catch {}
-      }
-      globalShortcutRegistrationState.ok = false;
-      return false;
-    }
-  } catch (e) {
-    console.error(`Error registering shortcut: ${e}`);
+  if (!normalizedShortcut) {
+    globalShortcutRegistrationState.activeShortcut = '';
     globalShortcutRegistrationState.ok = false;
     return false;
   }
+
+  const launcherSpec = parseKeyspyShortcutSpec('launcher', normalizedShortcut, 'launcher');
+  if (!launcherSpec) {
+    globalShortcutRegistrationState.activeShortcut = '';
+    globalShortcutRegistrationState.ok = false;
+    return false;
+  }
+
+  currentShortcut = normalizedShortcut;
+  globalShortcutRegistrationState.activeShortcut = normalizedShortcut;
+  globalShortcutRegistrationState.ok = Boolean(keyspyListener);
+  rebuildKeyspyShortcutSpecs();
+  console.log(`Launcher shortcut configured: ${normalizedShortcut}`);
+  return globalShortcutRegistrationState.ok;
 }
 
 function registerCommandHotkeys(hotkeys: Record<string, string>): void {
-  // Unregister all existing command hotkeys
-  for (const [shortcut] of registeredHotkeys) {
-    try {
-      unregisterShortcutVariants(shortcut);
-    } catch {}
-  }
   registeredHotkeys.clear();
 
-  for (const [commandId, shortcut] of Object.entries(hotkeys)) {
+  for (const [commandId, shortcutRaw] of Object.entries(hotkeys || {})) {
+    const shortcut = String(shortcutRaw || '').trim();
     if (!shortcut) continue;
     const normalizedShortcut = normalizeAccelerator(shortcut);
-    if (commandId === 'system-supercmd-whisper-speak-toggle' && isFnOnlyShortcut(normalizedShortcut)) {
-      continue;
-    }
-    if (isFnShortcut(normalizedShortcut)) {
-      continue;
-    }
-    try {
-      const success = globalShortcut.register(normalizedShortcut, async () => {
-        await runCommandById(commandId, 'hotkey');
-      });
-      if (success) {
-        registeredHotkeys.set(normalizedShortcut, commandId);
-      }
-    } catch {}
+    const spec = parseKeyspyShortcutSpec(`command:${commandId}`, normalizedShortcut, 'command', commandId);
+    if (!spec) continue;
+    registeredHotkeys.set(spec.shortcut, commandId);
   }
 
-  syncFnSpeakToggleWatcher(hotkeys);
-  syncFnCommandWatchers(hotkeys);
+  rebuildKeyspyShortcutSpecs();
 }
 
 function registerDevToolsShortcut(): void {
-  try {
-    unregisterShortcutVariants(DEVTOOLS_SHORTCUT);
-  } catch {}
-
-  if (process.env.NODE_ENV !== 'development') {
-    return;
-  }
-
-  try {
-    const success = globalShortcut.register(DEVTOOLS_SHORTCUT, () => {
-      const opened = openPreferredDevTools();
-      if (!opened) {
-        console.warn('[DevTools] No window available to open developer tools.');
-      }
-    });
-    if (!success) {
-      console.warn(`[DevTools] Failed to register shortcut: ${DEVTOOLS_SHORTCUT}`);
-    }
-  } catch (error) {
-    console.warn(`[DevTools] Error registering shortcut: ${DEVTOOLS_SHORTCUT}`, error);
-  }
+  rebuildKeyspyShortcutSpecs();
 }
 
 // ─── App Initialization ─────────────────────────────────────────────
@@ -8455,6 +9170,10 @@ app.whenReady().then(async () => {
     homeDir: app.getPath('home'),
     includeProtectedHomeRoots: Boolean(settings.fileSearchProtectedRootsEnabled),
   });
+  const keyspyReady = await ensureKeyspyListener();
+  if (!keyspyReady) {
+    globalShortcutRegistrationState.ok = false;
+  }
   // Daily background update check (once every 24h).
   void runBackgroundAppUpdaterCheck();
 
@@ -8545,8 +9264,7 @@ app.whenReady().then(async () => {
       if (visible) {
         lastWhisperShownAt = Date.now();
       } else {
-        whisperHoldRequestSeq += 1;
-        stopWhisperHoldWatcher();
+        handleWhisperSpeakToggleHotkeyRelease();
       }
       return;
     }
@@ -8862,15 +9580,13 @@ app.whenReady().then(async () => {
       if (patch.openAtLogin !== undefined) {
         applyOpenAtLogin(Boolean(patch.openAtLogin));
       }
-      // Hyper runtime wiring is temporarily disabled.
-      // if (patch.hyperKeyIncludeShift !== undefined) {
-      //   try {
-      //     registerGlobalShortcut(result.globalShortcut);
-      //   } catch {}
-      //   try {
-      //     registerCommandHotkeys(result.commandHotkeys);
-      //   } catch {}
-      // }
+      if (
+        patch.hyperKeySource !== undefined ||
+        patch.hyperKeyIncludeShift !== undefined ||
+        patch.hyperKeyQuickPressAction !== undefined
+      ) {
+        rebuildKeyspyShortcutSpecs();
+      }
       // When onboarding completes: hide dock, then start services that were
       // deferred to avoid triggering permission dialogs during onboarding.
       if (patch.hasSeenOnboarding === true) {
@@ -8879,16 +9595,13 @@ app.whenReady().then(async () => {
           app.dock.hide();
         }
         startClipboardMonitor();
-        syncFnSpeakToggleWatcher(loadSettings().commandHotkeys);
-        syncFnCommandWatchers(loadSettings().commandHotkeys);
       }
       const aiEnabledPatch = patch.ai?.enabled;
       if (aiEnabledPatch === false) {
         stopSpeakSession({ resetStatus: true, cleanupWindow: true });
         mainWindow?.webContents.send('whisper-stop-listening');
         mainWindow?.webContents.send('whisper-stop-and-close');
-        whisperHoldRequestSeq += 1;
-        stopWhisperHoldWatcher();
+        handleWhisperSpeakToggleHotkeyRelease();
         stopFnSpeakToggleWatcher();
         if (nativeSpeechProcess) {
           try { nativeSpeechProcess.kill('SIGTERM'); } catch {}
@@ -8896,8 +9609,7 @@ app.whenReady().then(async () => {
           nativeSpeechStdoutBuffer = '';
         }
       } else if (aiEnabledPatch === true) {
-        syncFnSpeakToggleWatcher(loadSettings().commandHotkeys);
-        syncFnCommandWatchers(loadSettings().commandHotkeys);
+        rebuildKeyspyShortcutSpecs();
       }
       return result;
     }
@@ -8909,8 +9621,23 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle(
+    'capture-global-hotkey',
+    async (_event: any, options?: { timeoutMs?: number }) => {
+      return await beginKeyspyHotkeyCapture(options?.timeoutMs);
+    }
+  );
+
+  ipcMain.handle('cancel-global-hotkey-capture', () => {
+    cancelKeyspyHotkeyCapture('cancelled');
+  });
+
+  ipcMain.handle(
     'update-global-shortcut',
-    (_event: any, newShortcut: string) => {
+    async (_event: any, newShortcut: string) => {
+      const listenerReady = await ensureKeyspyListener();
+      if (!listenerReady) {
+        return false;
+      }
       const success = registerGlobalShortcut(newShortcut);
       if (success) {
         saveSettings({ globalShortcut: newShortcut });
@@ -8987,74 +9714,35 @@ app.whenReady().then(async () => {
     async (_event: any, commandId: string, hotkey: string) => {
       const s = loadSettings();
       const hotkeys = { ...s.commandHotkeys };
-      const normalizedHotkey = hotkey ? normalizeAccelerator(hotkey) : '';
+      const trimmedHotkey = String(hotkey || '').trim();
+      const normalizedHotkey = trimmedHotkey ? normalizeAccelerator(trimmedHotkey) : '';
 
-      // Unregister old hotkey for this command
-      const oldHotkey = hotkeys[commandId];
-      if (oldHotkey) {
-        try {
-          unregisterShortcutVariants(oldHotkey);
-          registeredHotkeys.delete(normalizeAccelerator(oldHotkey));
-        } catch {}
-      }
-
-      if (hotkey) {
+      if (trimmedHotkey) {
         // Prevent two commands from sharing the same accelerator.
         for (const [otherCommandId, otherHotkey] of Object.entries(hotkeys)) {
           if (otherCommandId === commandId) continue;
+          if (!String(otherHotkey || '').trim()) continue;
           if (normalizeAccelerator(otherHotkey) === normalizedHotkey) {
             return { success: false, error: 'duplicate' as const, conflictCommandId: otherCommandId };
           }
         }
 
-        const isFnSpeakToggle =
-          commandId === 'system-supercmd-whisper-speak-toggle' &&
-          isFnOnlyShortcut(normalizedHotkey);
-        const isFnHotkey = isFnShortcut(normalizedHotkey);
-
-        // Register the new one
-        try {
-          let success = false;
-          if (isFnSpeakToggle) {
-            success = true;
-          } else if (isFnHotkey) {
-            const fnConfig = parseHoldShortcutConfig(normalizedHotkey);
-            const binaryPath = ensureWhisperHoldWatcherBinary();
-            success = Boolean(fnConfig && fnConfig.fn && binaryPath);
-          } else {
-            success = globalShortcut.register(normalizedHotkey, async () => {
-              await runCommandById(commandId, 'hotkey');
-            });
-          }
-          if (!success) {
-            // Attempt to restore old mapping if the new one failed.
-            if (oldHotkey && !isFnHotkey) {
-              const normalizedOldHotkey = normalizeAccelerator(oldHotkey);
-              try {
-                const restored = globalShortcut.register(normalizedOldHotkey, async () => {
-                  await runCommandById(commandId, 'hotkey');
-                });
-                if (restored) {
-                  registeredHotkeys.set(normalizedOldHotkey, commandId);
-                }
-              } catch {}
-            }
-            return { success: false, error: 'unavailable' as const };
-          }
-          hotkeys[commandId] = hotkey;
-          if (!isFnSpeakToggle && !isFnHotkey) {
-            registeredHotkeys.set(normalizedHotkey, commandId);
-          }
-        } catch {
+        const parsed = parseKeyspyShortcutSpec(`command:${commandId}`, normalizedHotkey, 'command', commandId);
+        if (!parsed) {
           return { success: false, error: 'unavailable' as const };
         }
+        const listenerReady = await ensureKeyspyListener();
+        if (!listenerReady) {
+          return { success: false, error: 'unavailable' as const };
+        }
+        hotkeys[commandId] = trimmedHotkey;
       } else {
-        delete hotkeys[commandId];
+        // Persist empty string so defaults don't get re-applied on load.
+        hotkeys[commandId] = '';
       }
 
       saveSettings({ commandHotkeys: hotkeys });
-      syncFnSpeakToggleWatcher(hotkeys);
-      syncFnCommandWatchers(hotkeys);
+      registerCommandHotkeys(hotkeys);
       return { success: true as const };
     }
   );
@@ -11941,7 +12629,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   stopInstalledAppsWatchers();
-  globalShortcut.unregisterAll();
+  stopKeyspyListener();
   if (windowManagerWorkerRestartTimer) {
     clearTimeout(windowManagerWorkerRestartTimer);
     windowManagerWorkerRestartTimer = null;

@@ -365,7 +365,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       const settings = await window.electron.getSettings();
       const language = settings.ai.speechLanguage || 'en-US';
       setSpeechLanguage(language);
-      const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn';
+      const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? 'Fn';
       speakToggleShortcutRef.current = speakToggleHotkey;
       setSpeakToggleShortcutLabel(formatShortcutLabel(speakToggleHotkey));
 

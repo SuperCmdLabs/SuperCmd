@@ -417,7 +417,7 @@ const AITab: React.FC = () => {
       if (hotkey) {
         nextHotkeys[commandId] = hotkey;
       } else {
-        delete nextHotkeys[commandId];
+        nextHotkeys[commandId] = '';
       }
       return { ...prev, commandHotkeys: nextHotkeys };
     });
@@ -1062,7 +1062,7 @@ const AITab: React.FC = () => {
                 <div>
                   <p className="text-[0.75rem] text-[var(--text-muted)] mb-1.5">Start/Stop Speaking</p>
                   <HotkeyRecorder
-                    value={(settings.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] || 'Fn'}
+                    value={(settings.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] ?? 'Fn'}
                     onChange={(hotkey) => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey); }}
                     compact
                     variant="whisper"

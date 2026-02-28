@@ -228,6 +228,10 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('save-settings', patch),
   getAllCommands: (): Promise<any[]> =>
     ipcRenderer.invoke('get-all-commands'),
+  captureGlobalHotkey: (options?: { timeoutMs?: number }): Promise<string> =>
+    ipcRenderer.invoke('capture-global-hotkey', options),
+  cancelGlobalHotkeyCapture: (): Promise<void> =>
+    ipcRenderer.invoke('cancel-global-hotkey-capture'),
   updateGlobalShortcut: (shortcut: string): Promise<boolean> =>
     ipcRenderer.invoke('update-global-shortcut', shortcut),
   setOpenAtLogin: (enabled: boolean): Promise<boolean> =>

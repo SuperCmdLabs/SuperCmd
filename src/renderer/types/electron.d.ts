@@ -197,29 +197,7 @@ export interface AppSettings {
   uiStyle: 'default' | 'glassy';
   baseColor: string;
   appUpdaterLastCheckedAt: number;
-  hyperKeySource:
-    | 'none'
-    | 'caps-lock'
-    | 'left-command'
-    | 'right-command'
-    | 'left-control'
-    | 'right-control'
-    | 'left-shift'
-    | 'right-shift'
-    | 'left-option'
-    | 'right-option'
-    | 'f1'
-    | 'f2'
-    | 'f3'
-    | 'f4'
-    | 'f5'
-    | 'f6'
-    | 'f7'
-    | 'f8'
-    | 'f9'
-    | 'f10'
-    | 'f11'
-    | 'f12';
+  hyperKeySource: number | null;
   hyperKeyIncludeShift: boolean;
   hyperKeyQuickPressAction: 'toggle-caps-lock' | 'escape' | 'none';
   hyperReplaceModifierGlyphsWithHyper: boolean;
@@ -379,6 +357,8 @@ export interface ElectronAPI {
   onAppUpdaterStatus: (callback: (status: AppUpdaterStatus) => void) => (() => void);
   saveSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
   getAllCommands: () => Promise<CommandInfo[]>;
+  captureGlobalHotkey: (options?: { timeoutMs?: number }) => Promise<string>;
+  cancelGlobalHotkeyCapture: () => Promise<void>;
   updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
   setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
   replaceSpotlightWithSuperCmdShortcut: () => Promise<boolean>;

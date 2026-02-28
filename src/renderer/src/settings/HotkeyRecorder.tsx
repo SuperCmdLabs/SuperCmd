@@ -23,6 +23,7 @@ type KeyboardLikeEvent = Pick<
   KeyboardEvent,
   'key' | 'code' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'getModifierState'
 >;
+type PrimaryModifier = 'Fn' | 'Command' | 'Control' | 'Alt' | 'Shift';
 
 function isFnModifierPressed(e: KeyboardLikeEvent): boolean {
   return Boolean(e.getModifierState?.('Fn') || e.getModifierState?.('Function'));
@@ -163,6 +164,25 @@ function mapKeyboardEventToAcceleratorToken(e: KeyboardLikeEvent): string | null
   return mapKeyToAcceleratorToken(e.key);
 }
 
+function mapKeyboardEventToPrimaryModifier(e: KeyboardLikeEvent): PrimaryModifier | null {
+  const key = String(e.key || '');
+  if (key === 'Fn' || key === 'Function') return 'Fn';
+  if (key === 'Meta') return 'Command';
+  if (key === 'Control') return 'Control';
+  if (key === 'Alt') return 'Alt';
+  if (key === 'Shift') return 'Shift';
+  return null;
+}
+
+function hasOtherModifierPressed(e: KeyboardLikeEvent, primary: PrimaryModifier): boolean {
+  const hasMeta = e.metaKey && primary !== 'Command';
+  const hasCtrl = e.ctrlKey && primary !== 'Control';
+  const hasAlt = e.altKey && primary !== 'Alt';
+  const hasShift = e.shiftKey && primary !== 'Shift';
+  const hasFn = isFnModifierPressed(e) && primary !== 'Fn';
+  return hasMeta || hasCtrl || hasAlt || hasShift || hasFn;
+}
+
 function formatShortcut(shortcut: string): string {
   return formatShortcutForDisplay(shortcut);
 }
@@ -177,11 +197,16 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const pendingPrimaryModifierRef = useRef<'Fn' | null>(null);
+  const pendingPrimaryModifierRef = useRef<PrimaryModifier | null>(null);
   const isRecordingRef = useRef(false);
+  const allowLocalShortcutCaptureRef = useRef(false);
 
   const clearPendingPrimary = () => {
     pendingPrimaryModifierRef.current = null;
+  };
+
+  const cancelGlobalCapture = () => {
+    void window.electron.cancelGlobalHotkeyCapture().catch(() => {});
   };
 
   useEffect(() => {
@@ -189,6 +214,9 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
       ref.current.focus();
     }
     isRecordingRef.current = isRecording;
+    if (isRecording) {
+      allowLocalShortcutCaptureRef.current = false;
+    }
   }, [isRecording]);
 
   useEffect(() => {
@@ -201,6 +229,7 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
     preventDefault?.();
 
     if (e.key === 'Escape') {
+      cancelGlobalCapture();
       clearPendingPrimary();
       setIsRecording(false);
       return;
@@ -215,16 +244,21 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
       !e.shiftKey
     ) {
       onChange('');
+      cancelGlobalCapture();
       clearPendingPrimary();
       setIsRecording(false);
       return;
     }
 
-    // Fn is handled as a pending primary and committed on keyup if no combo key arrives.
-    if (e.key === 'Fn' || e.key === 'Function') {
-      const primary = 'Fn';
-      clearPendingPrimary();
-      pendingPrimaryModifierRef.current = primary;
+    // Standalone modifier keys are committed on keyup unless a combo key arrives.
+    const modifierPrimary = mapKeyboardEventToPrimaryModifier(e);
+    if (modifierPrimary) {
+      if (hasOtherModifierPressed(e, modifierPrimary)) {
+        clearPendingPrimary();
+      } else {
+        clearPendingPrimary();
+        pendingPrimaryModifierRef.current = modifierPrimary;
+      }
       return;
     }
 
@@ -232,7 +266,8 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
     if (pendingPrimary) {
       const keyToken = mapKeyboardEventToAcceleratorToken(e);
       if (keyToken && keyToken !== pendingPrimary) {
-        onChange(`Fn+${keyToken}`);
+        onChange(`${pendingPrimary}+${keyToken}`);
+        cancelGlobalCapture();
         clearPendingPrimary();
         setIsRecording(false);
         return;
@@ -242,6 +277,7 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
     const accelerator = keyEventToAccelerator(e);
     if (accelerator) {
       onChange(accelerator);
+      cancelGlobalCapture();
       clearPendingPrimary();
       setIsRecording(false);
     }
@@ -253,19 +289,54 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
     const pendingPrimary = pendingPrimaryModifierRef.current;
     if (!pendingPrimary) return;
 
-    const releasedPrimary = (e.key === 'Fn' || e.key === 'Function' ? 'Fn' : null);
+    const releasedPrimary = mapKeyboardEventToPrimaryModifier(e);
     if (!releasedPrimary || releasedPrimary !== pendingPrimary) return;
 
     onChange(pendingPrimary);
+    cancelGlobalCapture();
     clearPendingPrimary();
     setIsRecording(false);
   };
 
   useEffect(() => {
     if (!isRecording) return;
+    let disposed = false;
+
+    void window.electron
+      .captureGlobalHotkey({ timeoutMs: 30_000 })
+      .then((captured) => {
+        if (disposed || !isRecordingRef.current) return;
+        const shortcut = String(captured || '').trim();
+        if (!shortcut) return;
+        onChange(shortcut);
+        clearPendingPrimary();
+        setIsRecording(false);
+      })
+      .catch((error) => {
+        if (disposed || !isRecordingRef.current) return;
+        const message = String((error as any)?.message || error || '').toLowerCase();
+        // Fall back to renderer-only capture only when main/global capture is unavailable.
+        if (message.includes('unavailable')) {
+          allowLocalShortcutCaptureRef.current = true;
+        }
+      });
 
     const onWindowKeyDown = (e: KeyboardEvent) => {
       if (!isRecordingRef.current) return;
+      const isControlKey =
+        e.key === 'Escape' ||
+        (
+          (e.key === 'Backspace' || e.key === 'Delete') &&
+          !e.metaKey &&
+          !e.ctrlKey &&
+          !e.altKey &&
+          !e.shiftKey
+        );
+      if (!allowLocalShortcutCaptureRef.current && !isControlKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       handleKeyDown(e, () => {
         e.preventDefault();
         e.stopPropagation();
@@ -274,6 +345,11 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
 
     const onWindowKeyUp = (e: KeyboardEvent) => {
       if (!isRecordingRef.current) return;
+      if (!allowLocalShortcutCaptureRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       handleKeyUp(e, () => {
         e.preventDefault();
         e.stopPropagation();
@@ -283,10 +359,12 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
     window.addEventListener('keydown', onWindowKeyDown, true);
     window.addEventListener('keyup', onWindowKeyUp, true);
     return () => {
+      disposed = true;
+      cancelGlobalCapture();
       window.removeEventListener('keydown', onWindowKeyDown, true);
       window.removeEventListener('keyup', onWindowKeyUp, true);
     };
-  }, [isRecording]);
+  }, [isRecording, onChange]);
 
   if (compact) {
     const isWhisper = variant === 'whisper';
