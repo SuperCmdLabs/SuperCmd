@@ -1403,7 +1403,6 @@ let keyspyLastRuntimeInfo = '';
 let keyspyPermissionRecoveryInFlight = false;
 let keyspyAccessibilityPromptRequested = false;
 let keyspyInputMonitoringPromptRequested = false;
-let keyspyPermissionDialogShown = false;
 let keyspyRetryTimer: NodeJS.Timeout | null = null;
 let keyspyHyperConfig: KeyspyHyperConfig = {
   sourceKeyCode: null,
@@ -4482,30 +4481,6 @@ function hasAnyConfiguredKeyspyShortcut(): boolean {
   return false;
 }
 
-function openMacPrivacySettingsPane(target: 'accessibility' | 'input-monitoring'): void {
-  if (process.platform !== 'darwin') return;
-  const urls = target === 'accessibility'
-    ? [
-        'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
-        'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility',
-      ]
-    : [
-        'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
-        'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent',
-      ];
-  (async () => {
-    for (const url of urls) {
-      try {
-        await shell.openExternal(url);
-        return;
-      } catch {}
-    }
-    try {
-      await shell.openExternal('x-apple.systempreferences:com.apple.preference.security');
-    } catch {}
-  })();
-}
-
 function scheduleKeyspyListenerRetry(delayMs: number = 1800): void {
   if (keyspyRetryTimer) {
     clearTimeout(keyspyRetryTimer);
@@ -4524,7 +4499,7 @@ function scheduleKeyspyListenerRetry(delayMs: number = 1800): void {
   }, Math.max(500, delayMs));
 }
 
-async function recoverKeyspyMacPermissions(reason: string): Promise<void> {
+async function recoverKeyspyMacPermissions(_reason: string): Promise<void> {
   if (process.platform !== 'darwin') return;
   if (keyspyPermissionRecoveryInFlight) return;
   if (!hasAnyConfiguredKeyspyShortcut() && !keyspyHotkeyCaptureSession) return;
@@ -4561,31 +4536,6 @@ async function recoverKeyspyMacPermissions(reason: string): Promise<void> {
           spawn(binaryPath, [], { stdio: ['ignore', 'ignore', 'ignore'], detached: true }).unref();
         } catch {}
       }
-    }
-
-    if ((!accessibilityGranted || !inputMonitoringGranted) && !keyspyPermissionDialogShown) {
-      keyspyPermissionDialogShown = true;
-      try {
-        const result = await dialog.showMessageBox({
-          type: 'info',
-          buttons: ['Open Privacy Settings', 'Later'],
-          defaultId: 0,
-          cancelId: 1,
-          noLink: true,
-          title: 'Enable Permissions for Hyper/Fn Hotkeys',
-          message: 'SuperCmd needs Accessibility and Input Monitoring permissions for Hyper/Fn shortcuts.',
-          detail: [
-            '1. Enable SuperCmd in Privacy & Security > Accessibility.',
-            '2. Enable SuperCmd in Privacy & Security > Input Monitoring.',
-            '',
-            `Reason: ${reason}`,
-          ].join('\n'),
-        });
-        if (result.response === 0) {
-          openMacPrivacySettingsPane('accessibility');
-          setTimeout(() => openMacPrivacySettingsPane('input-monitoring'), 700);
-        }
-      } catch {}
     }
 
     // Re-check soon after the system prompts/settings navigation.

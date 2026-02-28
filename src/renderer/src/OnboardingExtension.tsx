@@ -32,8 +32,8 @@ type PermissionTargetId = 'accessibility' | 'input-monitoring' | 'speech-recogni
 const STEPS = [
   'Welcome',
   'Core Features',
-  'Hotkey Setup',
   'Permissions',
+  'Hotkey Setup',
   'Dictation Mode',
   'Read Mode',
   'Final Check',
@@ -219,7 +219,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
   // Fix 4: Auto-refresh permission statuses when user returns from System Settings.
   useEffect(() => {
-    if (step !== 3) return;
+    if (step !== 2) return;
     const checkPermissions = async () => {
       try {
         const statuses = await window.electron.checkOnboardingPermissions();
@@ -539,7 +539,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   };
 
   const canCompleteOnboarding = hasValidShortcut;
-  const canContinue = step !== 2 || canCompleteOnboarding;
+  const canContinue = step !== 3 || canCompleteOnboarding;
   const canFinish = canCompleteOnboarding;
   const contentBackground = step === 0
     ? 'var(--onboarding-content-bg-step0)'
@@ -661,7 +661,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
             </div>
           )}
 
-          {step === 2 && (
+          {step === 3 && (
             <div className="min-h-full flex items-center justify-center">
               <div className="w-full max-w-3xl">
                 <div
@@ -735,7 +735,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
             </div>
           )}
 
-          {step === 3 && (
+          {step === 2 && (
             <div className="min-h-full flex items-center justify-center">
               <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
                 <div
