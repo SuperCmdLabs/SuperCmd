@@ -199,6 +199,7 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
   const ref = useRef<HTMLDivElement>(null);
   const pendingPrimaryModifierRef = useRef<PrimaryModifier | null>(null);
   const isRecordingRef = useRef(false);
+  const allowLocalShortcutCaptureRef = useRef(false);
 
   const clearPendingPrimary = () => {
     pendingPrimaryModifierRef.current = null;
@@ -213,6 +214,9 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
       ref.current.focus();
     }
     isRecordingRef.current = isRecording;
+    if (isRecording) {
+      allowLocalShortcutCaptureRef.current = false;
+    }
   }, [isRecording]);
 
   useEffect(() => {
@@ -308,12 +312,31 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
         clearPendingPrimary();
         setIsRecording(false);
       })
-      .catch(() => {
+      .catch((error) => {
         if (disposed || !isRecordingRef.current) return;
+        const message = String((error as any)?.message || error || '').toLowerCase();
+        // Fall back to renderer-only capture only when main/global capture is unavailable.
+        if (message.includes('unavailable')) {
+          allowLocalShortcutCaptureRef.current = true;
+        }
       });
 
     const onWindowKeyDown = (e: KeyboardEvent) => {
       if (!isRecordingRef.current) return;
+      const isControlKey =
+        e.key === 'Escape' ||
+        (
+          (e.key === 'Backspace' || e.key === 'Delete') &&
+          !e.metaKey &&
+          !e.ctrlKey &&
+          !e.altKey &&
+          !e.shiftKey
+        );
+      if (!allowLocalShortcutCaptureRef.current && !isControlKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       handleKeyDown(e, () => {
         e.preventDefault();
         e.stopPropagation();
@@ -322,6 +345,11 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
 
     const onWindowKeyUp = (e: KeyboardEvent) => {
       if (!isRecordingRef.current) return;
+      if (!allowLocalShortcutCaptureRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       handleKeyUp(e, () => {
         e.preventDefault();
         e.stopPropagation();

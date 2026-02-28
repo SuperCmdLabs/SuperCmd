@@ -183,7 +183,7 @@ const AdvancedTab: React.FC = () => {
                   </div>
                 ) : null}
 
-                <p className="text-[12px] text-white/58">Hyper Key shortcuts will be shown in Raycast with ✦</p>
+                <p className="text-[12px] text-white/58">Hyper Key shortcuts will be shown in SuperCmd with ✦</p>
               </>
             ) : null}
           </div>

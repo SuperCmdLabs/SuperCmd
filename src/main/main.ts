@@ -1285,6 +1285,7 @@ type KeyspyHotkeyCaptureSession = {
   reject: (reason?: any) => void;
   activeModifiers: Set<HotkeyCaptureModifier>;
   modifierHistory: Set<HotkeyCaptureModifier>;
+  hyperSourceActive: boolean;
   timeoutTimer: NodeJS.Timeout | null;
 };
 let keyspyListener: GlobalKeyboardListener | null = null;
@@ -4385,6 +4386,31 @@ function getPhysicalModifierStateFromDownMap(down: IGlobalKeyDownMap): Normalize
 function getModifierStateFromDownMap(down: IGlobalKeyDownMap): NormalizedShortcutModifiers {
   const state = getPhysicalModifierStateFromDownMap(down);
   if (keyspyHyperPressed && keyspyHyperConfig.sourceKeyCode !== null) {
+    // If hyper source is itself a physical modifier (eg right shift), suppress
+    // that physical modifier and replace it with the synthetic Hyper set.
+    const sourceModifier = (() => {
+      switch (Number(keyspyHyperConfig.sourceKeyCode)) {
+        case 54:
+        case 55:
+          return 'command' as const;
+        case 59:
+        case 62:
+          return 'control' as const;
+        case 58:
+        case 61:
+          return 'alt' as const;
+        case 56:
+        case 60:
+          return 'shift' as const;
+        case 63:
+          return 'fn' as const;
+        default:
+          return null;
+      }
+    })();
+    if (sourceModifier) {
+      state[sourceModifier] = false;
+    }
     state.command = true;
     state.control = true;
     state.alt = true;
@@ -4396,10 +4422,39 @@ function getModifierStateFromDownMap(down: IGlobalKeyDownMap): NormalizedShortcu
   return state;
 }
 
+const MAC_VKEY_ACCELERATOR_CAPTURE_MAP: Record<number, string> = {
+  54: 'Command',
+  55: 'Command',
+  56: 'Shift',
+  60: 'Shift',
+  58: 'Alt',
+  61: 'Alt',
+  59: 'Control',
+  62: 'Control',
+  57: 'CapsLock',
+  63: 'Fn',
+  122: 'F1',
+  120: 'F2',
+  99: 'F3',
+  118: 'F4',
+  96: 'F5',
+  97: 'F6',
+  98: 'F7',
+  100: 'F8',
+  101: 'F9',
+  109: 'F10',
+  103: 'F11',
+  111: 'F12',
+  90: 'F20',
+};
+
 function keyspyEventToAcceleratorToken(event: IGlobalKeyEvent): string | null {
   const name = String(event?.name || '').toUpperCase();
   const vKey = Number(event?.vKey);
-  if (vKey === 63) return 'Fn';
+  if (process.platform === 'darwin' && Number.isFinite(vKey)) {
+    const byVKey = MAC_VKEY_ACCELERATOR_CAPTURE_MAP[vKey];
+    if (byVKey) return byVKey;
+  }
   if (!name || name.startsWith('UNKNOWN') || name.startsWith('MOUSE ')) return null;
   if (/^[A-Z]$/.test(name)) return name;
   if (/^\d$/.test(name)) return name;
@@ -4469,17 +4524,23 @@ function keyspyEventToCaptureModifier(event: IGlobalKeyEvent): HotkeyCaptureModi
   return token;
 }
 
-function buildShortcutFromKeyspyEvent(event: IGlobalKeyEvent, down: IGlobalKeyDownMap): string | null {
-  const keyToken = keyspyEventToAcceleratorToken(event);
-  if (!keyToken) return null;
+function getCaptureHyperModifiers(): HotkeyCaptureModifier[] {
+  const out: HotkeyCaptureModifier[] = ['Command', 'Control', 'Alt'];
+  if (keyspyHyperConfig.includeShift) out.push('Shift');
+  return out;
+}
 
-  const modifiers = getPhysicalModifierStateFromDownMap(down);
+function buildShortcutFromKeyTokenAndModifiers(
+  keyToken: string,
+  modifiers: Iterable<HotkeyCaptureModifier>
+): string {
   const parts: string[] = [];
-  if (modifiers.fn && keyToken !== 'Fn') parts.push('Fn');
-  if (modifiers.command && keyToken !== 'Command') parts.push('Command');
-  if (modifiers.control && keyToken !== 'Control') parts.push('Control');
-  if (modifiers.alt && keyToken !== 'Alt') parts.push('Alt');
-  if (modifiers.shift && keyToken !== 'Shift') parts.push('Shift');
+  const set = new Set<HotkeyCaptureModifier>(modifiers);
+  if (set.has('Fn') && keyToken !== 'Fn') parts.push('Fn');
+  if (set.has('Command') && keyToken !== 'Command') parts.push('Command');
+  if (set.has('Control') && keyToken !== 'Control') parts.push('Control');
+  if (set.has('Alt') && keyToken !== 'Alt') parts.push('Alt');
+  if (set.has('Shift') && keyToken !== 'Shift') parts.push('Shift');
   parts.push(keyToken);
   return parts.join('+');
 }
@@ -4554,6 +4615,7 @@ async function beginKeyspyHotkeyCapture(timeoutMs?: number): Promise<string> {
       reject,
       activeModifiers: new Set<HotkeyCaptureModifier>(),
       modifierHistory: new Set<HotkeyCaptureModifier>(),
+      hyperSourceActive: false,
       timeoutTimer: null,
     };
     session.timeoutTimer = setTimeout(() => {
@@ -4567,20 +4629,53 @@ async function beginKeyspyHotkeyCapture(timeoutMs?: number): Promise<string> {
 function processKeyspyHotkeyCaptureEvent(event: IGlobalKeyEvent, down: IGlobalKeyDownMap): boolean {
   const session = keyspyHotkeyCaptureSession;
   if (!session) return false;
+  const hyperSourceKeyCode = Number(keyspyHyperConfig.sourceKeyCode);
+  const isHyperSourceEvent =
+    Number.isFinite(hyperSourceKeyCode) &&
+    Number(event.vKey) === hyperSourceKeyCode;
 
   const modifier = keyspyEventToCaptureModifier(event);
   if (event.state === 'DOWN') {
+    if (isHyperSourceEvent) {
+      session.hyperSourceActive = true;
+      for (const hyperModifier of getCaptureHyperModifiers()) {
+        session.modifierHistory.add(hyperModifier);
+      }
+      return true;
+    }
     if (modifier) {
       session.activeModifiers.add(modifier);
       session.modifierHistory.add(modifier);
       return true;
     }
-    const shortcut = buildShortcutFromKeyspyEvent(event, down);
-    if (shortcut) {
+    const keyToken = keyspyEventToAcceleratorToken(event);
+    if (keyToken) {
+      const effectiveModifiers = new Set<HotkeyCaptureModifier>(session.activeModifiers);
+      if (session.hyperSourceActive) {
+        for (const hyperModifier of getCaptureHyperModifiers()) {
+          effectiveModifiers.add(hyperModifier);
+        }
+      }
+      const shortcut = buildShortcutFromKeyTokenAndModifiers(keyToken, effectiveModifiers);
       resolveKeyspyHotkeyCapture(shortcut);
       return true;
     }
     return false;
+  }
+
+  if (event.state === 'UP' && isHyperSourceEvent) {
+    session.hyperSourceActive = false;
+    if (
+      session.activeModifiers.size === 0 &&
+      session.modifierHistory.size > 0 &&
+      !hasAnyNonModifierDown(down)
+    ) {
+      const shortcut = buildModifierOnlyShortcut(session.modifierHistory);
+      if (shortcut) {
+        resolveKeyspyHotkeyCapture(shortcut);
+      }
+    }
+    return true;
   }
 
   if (event.state === 'UP' && modifier) {
