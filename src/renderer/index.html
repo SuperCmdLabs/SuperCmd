@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      (function () {
+        var themeMediaQuery = '(prefers-color-scheme: dark)';
+        var prefersDarkFromSystem = !!(
+          window.matchMedia && window.matchMedia(themeMediaQuery).matches
+        );
+        try {
+          var key = 'sc-theme-preference';
+          var stored = localStorage.getItem(key);
+          var preference = stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+          if (stored !== preference) {
+            localStorage.setItem(key, preference);
+          }
+          var prefersDark =
+            preference === 'dark' ||
+            (preference === 'system' && prefersDarkFromSystem);
+          document.documentElement.classList.toggle('dark', prefersDark);
+          document.documentElement.style.colorScheme = prefersDark ? 'dark' : 'light';
+        } catch {
+          document.documentElement.classList.toggle('dark', prefersDarkFromSystem);
+          document.documentElement.style.colorScheme = prefersDarkFromSystem ? 'dark' : 'light';
+        }
+      })();
+    </script>
+    <title>SuperCmd</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

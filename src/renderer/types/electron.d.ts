@@ -1,0 +1,639 @@
+/**
+ * Type definitions for the Electron API exposed via preload
+ */
+
+export interface CommandInfo {
+  id: string;
+  title: string;
+  subtitle?: string;
+  keywords?: string[];
+  iconDataUrl?: string;
+  iconEmoji?: string;
+  iconName?: string;
+  category: 'app' | 'settings' | 'system' | 'extension' | 'script';
+  path?: string;
+  mode?: string;
+  interval?: string;
+  disabledByDefault?: boolean;
+  needsConfirmation?: boolean;
+  commandArgumentDefinitions?: Array<{
+    name: string;
+    required?: boolean;
+    type?: string;
+    placeholder?: string;
+    title?: string;
+    data?: Array<{ title?: string; value?: string }>;
+  }>;
+}
+
+export interface IndexedFileSearchResult {
+  path: string;
+  name: string;
+  parentPath: string;
+  displayPath: string;
+  isDirectory: boolean;
+}
+
+export interface FileSearchIndexStatus {
+  indexing: boolean;
+  ready: boolean;
+  indexedEntryCount: number;
+  lastIndexedAt: number | null;
+  homeDirectory: string;
+  includeRoots: string[];
+  excludedDirectoryNames: string[];
+  excludedTopLevelDirectories: string[];
+  protectedTopLevelDirectories: string[];
+  includeProtectedHomeRoots: boolean;
+  lastError: string | null;
+}
+
+export interface ExtensionPreferenceSchema {
+  scope: 'extension' | 'command';
+  name: string;
+  title?: string;
+  label?: string;
+  description?: string;
+  placeholder?: string;
+  required?: boolean;
+  type?: string;
+  default?: any;
+  data?: Array<{ title?: string; value?: string }>;
+}
+
+export interface ExtensionCommandSettingsSchema {
+  name: string;
+  title: string;
+  description: string;
+  mode: string;
+  interval?: string;
+  disabledByDefault?: boolean;
+  preferences: ExtensionPreferenceSchema[];
+}
+
+export interface InstalledExtensionSettingsSchema {
+  extName: string;
+  title: string;
+  description: string;
+  owner: string;
+  iconDataUrl?: string;
+  preferences: ExtensionPreferenceSchema[];
+  commands: ExtensionCommandSettingsSchema[];
+}
+
+export interface ExtensionBundle {
+  code: string;
+  title: string;
+  mode: string; // 'view' | 'no-view' | 'menu-bar'
+  extName: string;
+  cmdName: string;
+  // Extended metadata for Raycast API compatibility
+  extensionName?: string;
+  commandName?: string;
+  assetsPath?: string;
+  supportPath?: string;
+  owner?: string;
+  preferences?: Record<string, any>;
+  launchArguments?: Record<string, any>;
+  preferenceDefinitions?: Array<{
+    scope: 'extension' | 'command';
+    name: string;
+    title?: string;
+    description?: string;
+    placeholder?: string;
+    required?: boolean;
+    type?: string;
+    default?: any;
+    data?: Array<{ title?: string; value?: string }>;
+  }>;
+  commandArgumentDefinitions?: Array<{
+    name: string;
+    required?: boolean;
+    type?: string;
+    placeholder?: string;
+    title?: string;
+    data?: Array<{ title?: string; value?: string }>;
+  }>;
+  error?: string;
+}
+
+export interface AISettings {
+  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible';
+  openaiApiKey: string;
+  anthropicApiKey: string;
+  geminiApiKey: string;
+  elevenlabsApiKey: string;
+  supermemoryApiKey: string;
+  supermemoryClient: string;
+  supermemoryBaseUrl: string;
+  supermemoryLocalMode: boolean;
+  ollamaBaseUrl: string;
+  defaultModel: string;
+  speechCorrectionModel: string;
+  speechToTextModel: string;
+  speechLanguage: string;
+  textToSpeechModel: string;
+  edgeTtsVoice: string;
+  speechCorrectionEnabled: boolean;
+  enabled: boolean;
+  llmEnabled: boolean;
+  whisperEnabled: boolean;
+  readEnabled: boolean;
+  openaiCompatibleBaseUrl: string;
+  openaiCompatibleApiKey: string;
+  openaiCompatibleModel: string;
+}
+
+export interface EdgeTtsVoice {
+  id: string;
+  label: string;
+  languageCode: string;
+  languageLabel: string;
+  gender: 'female' | 'male';
+  style?: string;
+}
+
+export interface ElevenLabsVoice {
+  id: string;
+  name: string;
+  category: 'premade' | 'cloned' | 'generated' | 'professional';
+  description?: string;
+  labels?: Record<string, string>;
+  previewUrl?: string;
+}
+
+export interface AppUpdaterStatus {
+  state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+  supported: boolean;
+  currentVersion: string;
+  latestVersion?: string;
+  releaseName?: string;
+  releaseDate?: string;
+  progressPercent?: number;
+  transferredBytes?: number;
+  totalBytes?: number;
+  bytesPerSecond?: number;
+  message?: string;
+}
+
+export interface AppSettings {
+  globalShortcut: string;
+  openAtLogin: boolean;
+  disabledCommands: string[];
+  enabledCommands: string[];
+  customExtensionFolders: string[];
+  commandHotkeys: Record<string, string>;
+  commandAliases: Record<string, string>;
+  pinnedCommands: string[];
+  recentCommands: string[];
+  recentCommandLaunchCounts: Record<string, number>;
+  hasSeenOnboarding: boolean;
+  hasSeenWhisperOnboarding: boolean;
+  fileSearchProtectedRootsEnabled: boolean;
+  ai: AISettings;
+  commandMetadata?: Record<string, { subtitle?: string }>;
+  debugMode: boolean;
+  fontSize: 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
+  uiStyle: 'default' | 'glassy';
+  baseColor: string;
+  appUpdaterLastCheckedAt: number;
+  hyperKeySource:
+    | 'none'
+    | 'caps-lock'
+    | 'left-command'
+    | 'right-command'
+    | 'left-control'
+    | 'right-control'
+    | 'left-shift'
+    | 'right-shift'
+    | 'left-option'
+    | 'right-option'
+    | 'f1'
+    | 'f2'
+    | 'f3'
+    | 'f4'
+    | 'f5'
+    | 'f6'
+    | 'f7'
+    | 'f8'
+    | 'f9'
+    | 'f10'
+    | 'f11'
+    | 'f12';
+  hyperKeyIncludeShift: boolean;
+  hyperKeyQuickPressAction: 'toggle-caps-lock' | 'escape' | 'none';
+  hyperReplaceModifierGlyphsWithHyper: boolean;
+}
+
+export interface CatalogEntry {
+  name: string;
+  title: string;
+  description: string;
+  author: string;
+  contributors: string[];
+  icon: string;
+  iconUrl: string;
+  screenshotUrls: string[];
+  categories: string[];
+  platforms: string[];
+  commands: { name: string; title: string; description: string }[];
+}
+
+export interface ClipboardItem {
+  id: string;
+  type: 'text' | 'image' | 'url' | 'file';
+  content: string;
+  preview?: string;
+  timestamp: number;
+  source?: string;
+  metadata?: {
+    width?: number;
+    height?: number;
+    size?: number;
+    format?: string;
+    filename?: string;
+  };
+}
+
+export interface Snippet {
+  id: string;
+  name: string;
+  content: string;
+  keyword?: string;
+  pinned?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SnippetDynamicField {
+  key: string;
+  name: string;
+  defaultValue?: string;
+}
+
+export type QuickLinkIcon = string;
+
+export interface QuickLink {
+  id: string;
+  name: string;
+  urlTemplate: string;
+  applicationName?: string;
+  applicationPath?: string;
+  applicationBundleId?: string;
+  appIconDataUrl?: string;
+  icon: QuickLinkIcon;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface QuickLinkDynamicField {
+  key: string;
+  name: string;
+  defaultValue?: string;
+}
+
+export interface OllamaLocalModel {
+  name: string;
+  size: number;
+  parameterSize: string;
+  quantization: string;
+  modifiedAt: string;
+}
+
+export interface ElectronAPI {
+  // Launcher
+  getCommands: () => Promise<CommandInfo[]>;
+  executeCommand: (commandId: string) => Promise<boolean>;
+  executeCommandAsHotkey: (commandId: string) => Promise<boolean>;
+  executeCommandFromWidget: (commandId: string) => Promise<boolean>;
+  hideWindow: () => Promise<void>;
+  openDevTools: () => Promise<boolean>;
+  closePromptWindow: () => Promise<void>;
+  setLauncherMode: (mode: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt') => Promise<void>;
+  getLastFrontmostApp: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
+  restoreLastFrontmostApp: () => Promise<boolean>;
+  onWindowShown: (callback: (payload?: { mode?: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt'; systemCommandId?: string; selectedTextSnapshot?: string }) => void) => (() => void);
+  onSelectionSnapshotUpdated: (callback: (payload?: { selectedTextSnapshot?: string }) => void) => (() => void);
+  onWindowHidden: (callback: () => void) => (() => void);
+  onCommandsUpdated: (callback: () => void) => (() => void);
+  onRunSystemCommand: (callback: (commandId: string) => void) => (() => void);
+  onOnboardingHotkeyPressed: (callback: () => void) => (() => void);
+  setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean) => void;
+  setWhisperIgnoreMouseEvents: (ignore: boolean) => void;
+  onWhisperStopAndClose: (callback: () => void) => (() => void);
+  onWhisperStartListening: (callback: () => void) => (() => void);
+  onWhisperStopListening: (callback: () => void) => (() => void);
+  onWhisperToggleListening: (callback: () => void) => (() => void);
+  onOAuthCallback: (callback: (url: string) => void) => (() => void);
+  oauthGetToken: (provider: string) => Promise<{ accessToken: string; tokenType?: string; scope?: string; expiresIn?: number; obtainedAt: string } | null>;
+  oauthSetToken: (provider: string, token: { accessToken: string; tokenType?: string; scope?: string; expiresIn?: number; obtainedAt: string }) => Promise<void>;
+  oauthRemoveToken: (provider: string) => Promise<void>;
+  oauthLogout: (provider: string) => Promise<void>;
+  oauthSetFlowActive: (active: boolean) => Promise<void>;
+  onOAuthLogout: (callback: (provider: string) => void) => (() => void);
+  onSpeakStatus: (callback: (payload: {
+    state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+    text: string;
+    index: number;
+    total: number;
+    message?: string;
+    wordIndex?: number;
+  }) => void) => (() => void);
+  speakStop: () => Promise<boolean>;
+  speakGetStatus: () => Promise<{
+    state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+    text: string;
+    index: number;
+    total: number;
+    message?: string;
+    wordIndex?: number;
+  }>;
+  speakGetOptions: () => Promise<{ voice: string; rate: string }>;
+  speakUpdateOptions: (patch: { voice?: string; rate?: string; restartCurrent?: boolean }) => Promise<{ voice: string; rate: string }>;
+  speakPreviewVoice: (payload: { voice: string; text?: string; rate?: string; provider?: 'edge-tts' | 'elevenlabs'; model?: string }) => Promise<boolean>;
+  edgeTtsListVoices: () => Promise<EdgeTtsVoice[]>;
+  elevenLabsListVoices: () => Promise<{ voices: ElevenLabsVoice[]; error?: string }>;
+
+  // Window Management
+  getActiveWindow: () => Promise<any>;
+  getWindowManagementTargetWindow: () => Promise<any>;
+  getWindowManagementContext: () => Promise<any>;
+  getWindowsOnActiveDesktop: () => Promise<any[]>;
+  getDesktops: () => Promise<any[]>;
+  setWindowBounds: (options: any) => Promise<boolean>;
+  setWindowLayout: (items: any[]) => Promise<boolean>;
+  getWindowManagementSnapshot: () => Promise<any>;
+
+  // Settings
+  getSettings: () => Promise<AppSettings>;
+  getGlobalShortcutStatus: () => Promise<{
+    requestedShortcut: string;
+    activeShortcut: string;
+    ok: boolean;
+  }>;
+  appUpdaterGetStatus: () => Promise<AppUpdaterStatus>;
+  appUpdaterCheckForUpdates: () => Promise<AppUpdaterStatus>;
+  appUpdaterDownloadUpdate: () => Promise<AppUpdaterStatus>;
+  appUpdaterQuitAndInstall: () => Promise<boolean>;
+  appUpdaterCheckAndInstall: () => Promise<{ success: boolean; error?: string; message?: string; state?: string }>;
+  onAppUpdaterStatus: (callback: (status: AppUpdaterStatus) => void) => (() => void);
+  saveSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+  getAllCommands: () => Promise<CommandInfo[]>;
+  updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
+  setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
+  replaceSpotlightWithSuperCmdShortcut: () => Promise<boolean>;
+  checkOnboardingPermissions: () => Promise<Record<string, boolean>>;
+  enableFnWatcherForOnboarding: () => Promise<void>;
+  disableFnWatcherForOnboarding: () => Promise<void>;
+  onboardingRequestPermission: (
+    target: 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition' | 'home-folder'
+  ) => Promise<{
+    granted: boolean;
+    requested: boolean;
+    mode: 'prompted' | 'already-granted' | 'manual';
+    status?: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    canPrompt?: boolean;
+    error?: string;
+  }>;
+  updateCommandHotkey: (
+    commandId: string,
+    hotkey: string
+  ) => Promise<{ success: boolean; error?: 'duplicate' | 'unavailable'; conflictCommandId?: string }>;
+  toggleCommandEnabled: (
+    commandId: string,
+    enabled: boolean
+  ) => Promise<boolean>;
+  openSettings: () => Promise<void>;
+  openSettingsTab: (
+    tab: 'general' | 'ai' | 'extensions' | 'advanced',
+    target?: { extensionName?: string; commandName?: string }
+  ) => Promise<void>;
+  openExtensionStoreWindow: () => Promise<void>;
+  openCustomScriptsFolder: () => Promise<{ success: boolean; folderPath: string; createdSample: boolean }>;
+  onSettingsTabChanged: (
+    callback: (payload:
+      | 'general'
+      | 'ai'
+      | 'extensions'
+      | 'advanced'
+      | {
+          tab: 'general' | 'ai' | 'extensions' | 'advanced';
+          target?: { extensionName?: string; commandName?: string };
+        }
+    ) => void
+  ) => void;
+  onSettingsUpdated: (callback: (settings: AppSettings) => void) => (() => void);
+
+  // Extension Runner
+  runExtension: (extName: string, cmdName: string) => Promise<ExtensionBundle | null>;
+  runScriptCommand: (payload: {
+    commandId: string;
+    arguments?: Record<string, any>;
+    background?: boolean;
+  }) => Promise<any>;
+  getInstalledExtensionsSettingsSchema: () => Promise<InstalledExtensionSettingsSchema[]>;
+
+  // Open URL
+  openUrl: (url: string, application?: string) => Promise<boolean>;
+
+  // Store
+  getCatalog: (forceRefresh?: boolean) => Promise<CatalogEntry[]>;
+  getExtensionScreenshots: (extensionName: string) => Promise<string[]>;
+  getInstalledExtensionNames: () => Promise<string[]>;
+  installExtension: (name: string) => Promise<boolean>;
+  uninstallExtension: (name: string) => Promise<boolean>;
+  onExtensionsChanged: (callback: () => void) => (() => void);
+
+  // Extension APIs (for @raycast/api compatibility)
+  httpRequest: (options: {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  }) => Promise<{
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+    bodyText: string;
+    url: string;
+  }>;
+  httpDownloadBinary: (url: string) => Promise<Uint8Array>;
+  fsWriteBinaryFile: (filePath: string, data: Uint8Array) => Promise<void>;
+  execCommand: (
+    command: string,
+    args: string[],
+    options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
+  ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+  execCommandSync: (
+    command: string,
+    args: string[],
+    options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
+  ) => { stdout: string; stderr: string; exitCode: number };
+  spawnProcess: (file: string, args: string[], options?: { shell?: boolean | string; env?: Record<string, string>; cwd?: string }) => Promise<{ pid: number }>;
+  killSpawnProcess: (pid: number) => Promise<void>;
+  onSpawnStdout: (callback: (pid: number, data: Uint8Array) => void) => (() => void);
+  onSpawnStderr: (callback: (pid: number, data: Uint8Array) => void) => (() => void);
+  onSpawnExit: (callback: (pid: number, code: number) => void) => (() => void);
+  onSpawnError: (callback: (pid: number, message: string) => void) => (() => void);
+  onSpawnEvent: (
+    callback: (event: { pid: number; seq: number; type: 'stdout' | 'stderr' | 'exit' | 'error'; data?: Uint8Array; code?: number; message?: string }) => void
+  ) => (() => void);
+  getApplications: (path?: string) => Promise<Array<{ name: string; path: string; bundleId?: string; iconDataUrl?: string }>>;
+  getDefaultApplication: (filePath: string) => Promise<{ name: string; path: string; bundleId?: string }>;
+  getFrontmostApplication: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
+  runAppleScript: (script: string) => Promise<string>;
+  moveToTrash: (paths: string[]) => Promise<void>;
+  readFile: (filePath: string) => Promise<string>;
+  writeFile: (filePath: string, content: string) => Promise<void>;
+  fileExists: (filePath: string) => Promise<boolean>;
+  readDir: (dirPath: string) => Promise<string[]>;
+  getFileIconDataUrl: (filePath: string, size?: number) => Promise<string | null>;
+  searchIndexedFiles: (query: string, options?: { limit?: number }) => Promise<IndexedFileSearchResult[]>;
+  getFileSearchIndexStatus: () => Promise<FileSearchIndexStatus>;
+  refreshFileSearchIndex: (reason?: string) => Promise<FileSearchIndexStatus>;
+  getAppearance: () => Promise<'dark' | 'light'>;
+
+  // SQLite query execution
+  runSqliteQuery: (dbPath: string, query: string) => Promise<{ data: any; error: string | null }>;
+
+  // Synchronous file operations (for extensions using readFileSync etc.)
+  readFileSync: (filePath: string) => { data: string | null; error: string | null };
+  fileExistsSync: (filePath: string) => boolean;
+  statSync: (filePath: string) => { exists: boolean; isDirectory: boolean; isFile: boolean; size: number };
+
+  // Clipboard Manager
+  clipboardGetHistory: () => Promise<ClipboardItem[]>;
+  clipboardSearch: (query: string) => Promise<ClipboardItem[]>;
+  clipboardClearHistory: () => Promise<void>;
+  clipboardDeleteItem: (id: string) => Promise<boolean>;
+  clipboardCopyItem: (id: string) => Promise<boolean>;
+  clipboardPasteItem: (id: string) => Promise<boolean>;
+  clipboardSetEnabled: (enabled: boolean) => Promise<void>;
+  clipboardWrite: (payload: { text?: string; html?: string; file?: string }) => Promise<boolean>;
+  clipboardReadText: () => Promise<string>;
+  getSelectedText: () => Promise<string>;
+  getSelectedTextStrict: () => Promise<string>;
+  memoryAdd: (payload: { text: string; userId?: string; source?: string; metadata?: Record<string, any> }) => Promise<{ success: boolean; memoryId?: string; error?: string }>;
+
+  // Snippet Manager
+  snippetGetAll: () => Promise<Snippet[]>;
+  snippetSearch: (query: string) => Promise<Snippet[]>;
+  snippetCreate: (data: { name: string; content: string; keyword?: string }) => Promise<Snippet>;
+  snippetUpdate: (id: string, data: { name?: string; content?: string; keyword?: string; pinned?: boolean }) => Promise<Snippet | null>;
+  snippetDelete: (id: string) => Promise<boolean>;
+  snippetDeleteAll: () => Promise<number>;
+  snippetDuplicate: (id: string) => Promise<Snippet | null>;
+  snippetTogglePin: (id: string) => Promise<Snippet | null>;
+  snippetGetByKeyword: (keyword: string) => Promise<Snippet | null>;
+  snippetGetDynamicFields: (id: string) => Promise<SnippetDynamicField[]>;
+  snippetRender: (id: string, dynamicValues?: Record<string, string>) => Promise<string | null>;
+  snippetCopyToClipboard: (id: string) => Promise<boolean>;
+  snippetCopyToClipboardResolved: (id: string, dynamicValues?: Record<string, string>) => Promise<boolean>;
+  snippetPaste: (id: string) => Promise<boolean>;
+  snippetPasteResolved: (id: string, dynamicValues?: Record<string, string>) => Promise<boolean>;
+  snippetImport: () => Promise<{ imported: number; skipped: number }>;
+  snippetExport: () => Promise<boolean>;
+  quickLinkGetAll: () => Promise<QuickLink[]>;
+  quickLinkSearch: (query: string) => Promise<QuickLink[]>;
+  quickLinkGetDynamicFields: (id: string) => Promise<QuickLinkDynamicField[]>;
+  quickLinkCreate: (data: {
+    name: string;
+    urlTemplate: string;
+    applicationName?: string;
+    applicationPath?: string;
+    applicationBundleId?: string;
+    appIconDataUrl?: string;
+    icon?: QuickLinkIcon;
+  }) => Promise<QuickLink>;
+  quickLinkUpdate: (id: string, data: {
+    name?: string;
+    urlTemplate?: string;
+    applicationName?: string;
+    applicationPath?: string;
+    applicationBundleId?: string;
+    appIconDataUrl?: string;
+    icon?: QuickLinkIcon;
+  }) => Promise<QuickLink | null>;
+  quickLinkDelete: (id: string) => Promise<boolean>;
+  quickLinkDuplicate: (id: string) => Promise<QuickLink | null>;
+  quickLinkOpen: (id: string, dynamicValues?: Record<string, string>) => Promise<boolean>;
+  pasteText: (text: string) => Promise<boolean>;
+  pasteFile: (filePath: string) => Promise<boolean>;
+  typeTextLive: (text: string) => Promise<boolean>;
+  whisperTypeTextLive: (
+    text: string
+  ) => Promise<{ typed: boolean; fallbackClipboard: boolean; message?: string }>;
+  replaceLiveText: (previousText: string, nextText: string) => Promise<boolean>;
+  promptApplyGeneratedText: (payload: { previousText?: string; nextText: string }) => Promise<boolean>;
+
+  // Native helpers
+  nativePickColor: () => Promise<{ red: number; green: number; blue: number; alpha: number; colorSpace: string } | null>;
+  pickFiles: (options?: {
+    allowMultipleSelection?: boolean;
+    canChooseDirectories?: boolean;
+    canChooseFiles?: boolean;
+    showHiddenFiles?: boolean;
+  }) => Promise<string[]>;
+  getMenuBarExtensions: () => Promise<any[]>;
+  updateMenuBar: (data: any) => void;
+  removeMenuBar: (extId: string) => void;
+  onMenuBarItemClick: (callback: (data: { extId: string; itemId: string }) => void) => void;
+
+  // AI
+  aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }) => Promise<void>;
+  aiCancel: (requestId: string) => Promise<void>;
+  aiIsAvailable: () => Promise<boolean>;
+  onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => void;
+  onAIStreamDone: (callback: (data: { requestId: string }) => void) => void;
+  onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => void;
+  whisperRefineTranscript: (
+    transcript: string
+  ) => Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }>;
+  whisperDebugLog: (tag: string, message: string, data?: any) => void;
+  whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }) => Promise<string>;
+  whisperEnsureMicrophoneAccess: (
+    options?: { prompt?: boolean }
+  ) => Promise<{
+    granted: boolean;
+    requested: boolean;
+    status: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    canPrompt: boolean;
+    error?: string;
+  }>;
+  whisperEnsureSpeechRecognitionAccess: (
+    options?: { prompt?: boolean }
+  ) => Promise<{
+    granted: boolean;
+    requested: boolean;
+    speechStatus: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    microphoneStatus: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+    error?: string;
+  }>;
+  whisperStartNative: (
+    language?: string,
+    options?: { singleUtterance?: boolean }
+  ) => Promise<void>;
+  whisperStopNative: () => Promise<void>;
+  onWhisperNativeChunk: (callback: (data: {
+    transcript?: string;
+    isFinal?: boolean;
+    error?: string;
+    ready?: boolean;
+    ended?: boolean;
+  }) => void) => (() => void);
+
+  // Ollama Model Management
+  ollamaStatus: () => Promise<{ running: boolean; models: OllamaLocalModel[] }>;
+  ollamaPull: (requestId: string, modelName: string) => Promise<void>;
+  ollamaDelete: (modelName: string) => Promise<{ success: boolean; error: string | null }>;
+  ollamaOpenDownload: () => Promise<boolean>;
+  onOllamaPullProgress: (callback: (data: { requestId: string; status: string; digest: string; total: number; completed: number }) => void) => void;
+  onOllamaPullDone: (callback: (data: { requestId: string }) => void) => void;
+  onOllamaPullError: (callback: (data: { requestId: string; error: string }) => void) => void;
+}
+
+declare global {
+  interface Window {
+    electron: ElectronAPI;
+  }
+}
