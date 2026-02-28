@@ -1324,6 +1324,12 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-camera',
+      title: 'Open Camera',
+      keywords: ['open', 'camera', 'photo', 'webcam', 'capture', 'picture'],
+      category: 'system',
+    },
+    {
       id: 'system-create-script-command',
       title: 'Create Script Command',
       keywords: ['script', 'command', 'create', 'custom', 'raycast', 'shell'],

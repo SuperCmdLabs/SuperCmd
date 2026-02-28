@@ -19,6 +19,7 @@ import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
 import QuickLinkManager from './QuickLinkManager';
+import CameraExtension from './CameraExtension';
 import OnboardingExtension from './OnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
 import SuperCmdWhisper from './SuperCmdWhisper';
@@ -236,12 +237,12 @@ const App: React.FC = () => {
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
     showClipboardManager, showSnippetManager, showQuickLinkManager, showFileSearch, showCursorPrompt,
-    showWhisper, showSpeak, showWindowManager, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
+    showWhisper, showSpeak, showCamera, showWindowManager, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
     openOnboarding, openWhisper, openClipboardManager,
-    openSnippetManager, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openWindowManager,
+    openSnippetManager, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openWindowManager,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
     setShowClipboardManager, setShowSnippetManager, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
-    setShowWhisper, setShowSpeak, setShowWindowManager, setShowWhisperOnboarding, setShowWhisperHint,
+    setShowWhisper, setShowSpeak, setShowCamera, setShowWindowManager, setShowWhisperOnboarding, setShowWhisperHint,
     setShowOnboarding, setAiMode,
   } = useAppViewManager();
   const {
@@ -575,6 +576,7 @@ const App: React.FC = () => {
         whisperSessionRef.current = false;
         setShowCursorPrompt(false);
         setShowWhisperHint(false);
+        setShowCamera(false);
         setShowWindowManager(false);
         setShowQuickLinkManager(null);
         setMemoryFeedback(null);
@@ -623,6 +625,14 @@ const App: React.FC = () => {
           openFileSearch();
           return;
         }
+        if (routedSystemCommandId === 'system-camera') {
+          setShowClipboardManager(false);
+          setShowSnippetManager(null);
+          setShowQuickLinkManager(null);
+          setShowFileSearch(false);
+          openCamera();
+          return;
+        }
         if (routedSystemCommandId === 'system-open-onboarding') {
           openOnboarding();
           return;
@@ -636,6 +646,7 @@ const App: React.FC = () => {
       whisperSessionRef.current = false;
       setShowCursorPrompt(false);
       setShowWhisperHint(false);
+      setShowCamera(false);
       setShowWindowManager(false);
       setMemoryFeedback(null);
       setMemoryActionLoading(false);
@@ -658,6 +669,7 @@ const App: React.FC = () => {
         setShowCursorPrompt(false);
         setShowWhisper(false);
         setShowSpeak(false);
+        setShowCamera(false);
         setShowWindowManager(false);
         setShowWhisperOnboarding(false);
       }
@@ -679,7 +691,7 @@ const App: React.FC = () => {
       inputRef.current?.focus();
     });
     return cleanupWindowShown;
-  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openOnboarding, setShowWindowManager]);
+  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openOnboarding, setShowCamera, setShowWindowManager]);
 
   useEffect(() => {
     const cleanupSelectionSnapshotUpdated = window.electron.onSelectionSnapshotUpdated((payload) => {
@@ -993,10 +1005,10 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showWindowManager && !showOnboarding) {
+    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showWindowManager && !showOnboarding) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, quickLinkDynamicPrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showWindowManager, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
+  }, [showActions, contextMenu, quickLinkDynamicPrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showWindowManager, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
 
   const isLauncherModeActive =
     !showActions &&
@@ -1011,6 +1023,7 @@ const App: React.FC = () => {
     !showCursorPrompt &&
     !showWhisper &&
     !showSpeak &&
+    !showCamera &&
     !showWindowManager &&
     !showOnboarding &&
     !showWhisperOnboarding;
@@ -1871,6 +1884,11 @@ const App: React.FC = () => {
       openFileSearch();
       return true;
     }
+    if (commandId === 'system-camera') {
+      whisperSessionRef.current = false;
+      openCamera();
+      return true;
+    }
     if (isWindowManagementPresetCommandId(commandId)) {
       whisperSessionRef.current = false;
       // For launcher-initiated execution, route through main first so it can
@@ -1980,7 +1998,7 @@ const App: React.FC = () => {
       return true;
     }
     return false;
-  }, [memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager]);
+  }, [memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager]);
 
   useEffect(() => {
     const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {
@@ -2787,6 +2805,27 @@ const App: React.FC = () => {
             <ClipboardManager
               onClose={() => {
                 setShowClipboardManager(false);
+                setSearchQuery('');
+                setSelectedIndex(0);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ─── Camera mode ──────────────────────────────────────────────────
+  if (showCamera) {
+    return (
+      <>
+        {alwaysMountedRunners}
+        <div className="w-full h-full">
+          <div className="overflow-hidden h-full flex flex-col">
+            <CameraExtension
+              onClose={() => {
+                setShowCamera(false);
                 setSearchQuery('');
                 setSelectedIndex(0);
                 setTimeout(() => inputRef.current?.focus(), 50);

@@ -89,6 +89,7 @@
       "entitlements": "./entitlements.mac.plist",
       "entitlementsInherit": "./entitlements.mac.plist",
       "extendInfo": {
+        "NSCameraUsageDescription": "SuperCmd needs camera access to show and capture camera previews.",
         "NSMicrophoneUsageDescription": "SuperCmd needs microphone access for Whisper dictation.",
         "NSSpeechRecognitionUsageDescription": "SuperCmd uses speech recognition for native Whisper dictation."
       }

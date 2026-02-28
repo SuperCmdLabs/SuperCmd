@@ -18,6 +18,9 @@
     <!-- Microphone access: required for Whisper dictation (getUserMedia + AVFoundation) -->
     <key>com.apple.security.device.audio-input</key>
     <true/>
+    <!-- Camera access: required for the built-in Camera command preview/capture -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
 
     <!-- AppleScript / Automation: required for osascript (keystroke, getSelectedText, etc.) -->
     <key>com.apple.security.automation.apple-events</key>

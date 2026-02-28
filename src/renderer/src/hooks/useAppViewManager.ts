@@ -4,7 +4,7 @@
  * Central view-state machine for the launcher. Owns every boolean/object flag
  * that determines which screen is shown (extension, preference setup, script
  * command setup/output, clipboard, snippets, quick links, file search, cursor prompt,
- * whisper, speak, onboarding, AI mode).
+ * whisper, speak, camera, onboarding, AI mode).
  *
  * Key exports:
  * - resetAllViews(): sets all view flags back to their default (hidden) state
@@ -49,6 +49,7 @@ export interface AppViewManager {
   showCursorPrompt: boolean;
   showWhisper: boolean;
   showSpeak: boolean;
+  showCamera: boolean;
   showWindowManager: boolean;
   showWhisperOnboarding: boolean;
   showWhisperHint: boolean;
@@ -70,6 +71,7 @@ export interface AppViewManager {
   openCursorPrompt: () => void;
   openWhisper: () => void;
   openSpeak: () => void;
+  openCamera: () => void;
   openWindowManager: () => void;
   openWhisperOnboarding: () => void;
   openOnboarding: () => void;
@@ -88,6 +90,7 @@ export interface AppViewManager {
   setShowCursorPrompt: React.Dispatch<React.SetStateAction<boolean>>;
   setShowWhisper: React.Dispatch<React.SetStateAction<boolean>>;
   setShowSpeak: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowCamera: React.Dispatch<React.SetStateAction<boolean>>;
   setShowWindowManager: React.Dispatch<React.SetStateAction<boolean>>;
   setShowWhisperOnboarding: React.Dispatch<React.SetStateAction<boolean>>;
   setShowWhisperHint: React.Dispatch<React.SetStateAction<boolean>>;
@@ -107,6 +110,7 @@ export function useAppViewManager(): AppViewManager {
   const [showCursorPrompt, setShowCursorPrompt] = useState(false);
   const [showWhisper, setShowWhisper] = useState(false);
   const [showSpeak, setShowSpeak] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
   const [showWindowManager, setShowWindowManager] = useState(false);
   const [showWhisperOnboarding, setShowWhisperOnboarding] = useState(false);
   const [showWhisperHint, setShowWhisperHint] = useState(false);
@@ -125,6 +129,7 @@ export function useAppViewManager(): AppViewManager {
     setShowCursorPrompt(false);
     setShowWhisper(false);
     setShowSpeak(false);
+    setShowCamera(false);
     setShowWindowManager(false);
     setShowWhisperOnboarding(false);
     setShowWhisperHint(false);
@@ -188,6 +193,11 @@ export function useAppViewManager(): AppViewManager {
     setShowSpeak(true);
   }, [resetAllViews]);
 
+  const openCamera = useCallback(() => {
+    resetAllViews();
+    setShowCamera(true);
+  }, [resetAllViews]);
+
   const openWindowManager = useCallback(() => {
     resetAllViews();
     setShowWindowManager(true);
@@ -224,6 +234,7 @@ export function useAppViewManager(): AppViewManager {
     showCursorPrompt,
     showWhisper,
     showSpeak,
+    showCamera,
     showWindowManager,
     showWhisperOnboarding,
     showWhisperHint,
@@ -243,6 +254,7 @@ export function useAppViewManager(): AppViewManager {
     openCursorPrompt,
     openWhisper,
     openSpeak,
+    openCamera,
     openWindowManager,
     openWhisperOnboarding,
     openOnboarding,
@@ -260,6 +272,7 @@ export function useAppViewManager(): AppViewManager {
     setShowCursorPrompt,
     setShowWhisper,
     setShowSpeak,
+    setShowCamera,
     setShowWindowManager,
     setShowWhisperOnboarding,
     setShowWhisperHint,
