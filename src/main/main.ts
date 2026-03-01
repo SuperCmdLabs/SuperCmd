@@ -933,6 +933,29 @@ let oauthBlurHideSuppressionDepth = 0; // Keep launcher alive while OAuth browse
 let oauthBlurHideSuppressionTimer: NodeJS.Timeout | null = null;
 const OAUTH_BLUR_SUPPRESSION_TIMEOUT_MS = 3 * 60 * 1000;
 let currentShortcut = '';
+type NormalizedShortcutModifiers = {
+  command: boolean;
+  control: boolean;
+  alt: boolean;
+  shift: boolean;
+  fn: boolean;
+};
+type KeyspyLauncherPrimary =
+  | { kind: 'key'; keyCode: number }
+  | { kind: 'modifier'; modifier: keyof NormalizedShortcutModifiers };
+type KeyspyLauncherShortcutSpec = {
+  shortcut: string;
+  modifiers: NormalizedShortcutModifiers;
+  primary: KeyspyLauncherPrimary;
+  suppressEvent: boolean;
+};
+let keyspyLauncherProcess: ChildProcess | null = null;
+let keyspyLauncherStdoutBuffer = '';
+let keyspyLauncherRestartTimer: NodeJS.Timeout | null = null;
+let keyspyLauncherLastShortcut = '';
+let keyspyLauncherShortcutActive = false;
+let keyspyLauncherStopRequested = false;
+const keyspyLauncherDownKeyCodes = new Set<number>();
 const DEVTOOLS_SHORTCUT = normalizeAccelerator('CommandOrControl+Option+I');
 let globalShortcutRegistrationState: {
   requestedShortcut: string;
@@ -2796,6 +2819,216 @@ async function checkInputMonitoringAccess(): Promise<boolean> {
   });
 }
 
+function ensureKeyspyLauncherBinary(): string | null {
+  const fsMod = require('fs') as typeof import('fs');
+  const binaryPath = getNativeBinaryPath('keyspy-mac-server');
+  if (fsMod.existsSync(binaryPath)) return binaryPath;
+  try {
+    const { execFileSync } = require('child_process') as typeof import('child_process');
+    const sourceCandidates = [
+      path.join(app.getAppPath(), 'src', 'native', 'keyspy-mac-server.swift'),
+      path.join(process.cwd(), 'src', 'native', 'keyspy-mac-server.swift'),
+      path.join(__dirname, '..', '..', 'src', 'native', 'keyspy-mac-server.swift'),
+    ];
+    const sourcePath = sourceCandidates.find((candidate) => fsMod.existsSync(candidate));
+    if (!sourcePath) return null;
+    fsMod.mkdirSync(path.dirname(binaryPath), { recursive: true });
+    execFileSync('swiftc', [
+      '-O',
+      '-o',
+      binaryPath,
+      sourcePath,
+      '-framework',
+      'CoreGraphics',
+    ]);
+    return binaryPath;
+  } catch {
+    return null;
+  }
+}
+
+async function canStartKeyspyWithoutPrompt(): Promise<boolean> {
+  if (process.platform !== 'darwin') return false;
+  let accessibilityGranted = false;
+  let inputMonitoringGranted = false;
+  try {
+    accessibilityGranted = Boolean(systemPreferences.isTrustedAccessibilityClient(false));
+  } catch {
+    accessibilityGranted = false;
+  }
+  try {
+    inputMonitoringGranted = await checkInputMonitoringAccess();
+  } catch {
+    inputMonitoringGranted = false;
+  }
+  return accessibilityGranted && inputMonitoringGranted;
+}
+
+function clearKeyspyLauncherRestartTimer(): void {
+  if (keyspyLauncherRestartTimer) {
+    clearTimeout(keyspyLauncherRestartTimer);
+    keyspyLauncherRestartTimer = null;
+  }
+}
+
+function shouldStartKeyspyLauncherWatcher(): boolean {
+  if (process.platform !== 'darwin') return false;
+  return Boolean(parseKeyspyLauncherShortcutSpec(currentShortcut));
+}
+
+function stopKeyspyLauncherWatcher(): void {
+  clearKeyspyLauncherRestartTimer();
+  keyspyLauncherShortcutActive = false;
+  keyspyLauncherLastShortcut = '';
+  keyspyLauncherDownKeyCodes.clear();
+  keyspyLauncherStdoutBuffer = '';
+  keyspyLauncherStopRequested = true;
+  if (!keyspyLauncherProcess) {
+    keyspyLauncherStopRequested = false;
+    return;
+  }
+  try {
+    keyspyLauncherProcess.kill('SIGTERM');
+  } catch {}
+  keyspyLauncherProcess = null;
+}
+
+function scheduleKeyspyLauncherRestart(delayMs: number = 240): void {
+  if (!shouldStartKeyspyLauncherWatcher()) return;
+  clearKeyspyLauncherRestartTimer();
+  keyspyLauncherRestartTimer = setTimeout(() => {
+    keyspyLauncherRestartTimer = null;
+    void syncKeyspyLauncherWatcher();
+  }, Math.max(120, delayMs));
+}
+
+async function syncKeyspyLauncherWatcher(): Promise<void> {
+  if (!shouldStartKeyspyLauncherWatcher()) {
+    stopKeyspyLauncherWatcher();
+    return;
+  }
+
+  const canStart = await canStartKeyspyWithoutPrompt();
+  if (!canStart) {
+    stopKeyspyLauncherWatcher();
+    globalShortcutRegistrationState.ok = false;
+    return;
+  }
+
+  if (keyspyLauncherProcess) return;
+  const spec = parseKeyspyLauncherShortcutSpec(currentShortcut);
+  if (!spec) {
+    stopKeyspyLauncherWatcher();
+    return;
+  }
+
+  const binaryPath = ensureKeyspyLauncherBinary();
+  if (!binaryPath) {
+    globalShortcutRegistrationState.ok = false;
+    return;
+  }
+
+  const { spawn } = require('child_process') as typeof import('child_process');
+  const proc = spawn(binaryPath, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+  keyspyLauncherProcess = proc;
+  keyspyLauncherStdoutBuffer = '';
+  keyspyLauncherShortcutActive = false;
+  keyspyLauncherLastShortcut = spec.shortcut;
+  keyspyLauncherDownKeyCodes.clear();
+  globalShortcutRegistrationState.activeShortcut = spec.shortcut;
+  globalShortcutRegistrationState.ok = true;
+
+  const respond = (responseId: string, suppress: boolean) => {
+    const stdin = proc.stdin;
+    if (!stdin || stdin.destroyed || !responseId) return;
+    try {
+      stdin.write(`${suppress ? '1' : '0'},${responseId}\n`);
+    } catch {}
+  };
+
+  proc.stdout.on('data', (chunk: Buffer | string) => {
+    keyspyLauncherStdoutBuffer += chunk.toString();
+    const lines = keyspyLauncherStdoutBuffer.split('\n');
+    keyspyLauncherStdoutBuffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      const [deviceType, stateRaw, keyCodeRaw, , , responseIdRaw] = trimmed.split(',');
+      const responseId = String(responseIdRaw || '').trim();
+      let suppressEvent = false;
+
+      try {
+        if (String(deviceType || '').trim() === 'KEYBOARD') {
+          const currentSpec = parseKeyspyLauncherShortcutSpec(currentShortcut);
+          const state = String(stateRaw || '').trim().toUpperCase();
+          const keyCode = Math.round(Number(keyCodeRaw));
+          if (Number.isFinite(keyCode)) {
+            if (state === 'DOWN') {
+              keyspyLauncherDownKeyCodes.add(keyCode);
+            } else if (state === 'UP') {
+              keyspyLauncherDownKeyCodes.delete(keyCode);
+            }
+          }
+
+          if (currentSpec && Number.isFinite(keyCode)) {
+            const shortcutPressed = isKeyspyLauncherShortcutPressed(currentSpec, keyspyLauncherDownKeyCodes);
+            if (state === 'DOWN' && shortcutPressed && !keyspyLauncherShortcutActive) {
+              keyspyLauncherShortcutActive = true;
+              keyspyLauncherLastShortcut = currentSpec.shortcut;
+              markOpeningShortcutForSuppression(currentSpec.shortcut);
+              toggleWindow();
+            } else if (!shortcutPressed) {
+              keyspyLauncherShortcutActive = false;
+            }
+
+            if (currentSpec.suppressEvent) {
+              if (currentSpec.primary.kind === 'key') {
+                suppressEvent =
+                  keyCode === currentSpec.primary.keyCode ||
+                  (keyspyLauncherShortcutActive && keyspyLauncherLastShortcut === currentSpec.shortcut);
+              }
+            }
+          } else {
+            keyspyLauncherShortcutActive = false;
+          }
+        }
+      } catch {}
+
+      respond(responseId, suppressEvent);
+    }
+  });
+
+  proc.stderr.on('data', (chunk: Buffer | string) => {
+    const text = String(chunk || '').trim();
+    if (text) {
+      console.warn('[Hotkey][keyspy]', text);
+    }
+  });
+
+  const handleStop = () => {
+    const intentionalStop = keyspyLauncherStopRequested;
+    keyspyLauncherStopRequested = false;
+    if (keyspyLauncherProcess === proc) {
+      keyspyLauncherProcess = null;
+      keyspyLauncherStdoutBuffer = '';
+      keyspyLauncherShortcutActive = false;
+      keyspyLauncherLastShortcut = '';
+      keyspyLauncherDownKeyCodes.clear();
+      if (shortcutRequiresLauncherKeyspy(currentShortcut)) {
+        globalShortcutRegistrationState.ok = false;
+      }
+    }
+    if (!intentionalStop && shouldStartKeyspyLauncherWatcher()) {
+      scheduleKeyspyLauncherRestart();
+    }
+  };
+
+  proc.on('error', handleStop);
+  proc.on('exit', handleStop);
+}
+
 async function requestOnboardingPermissionAccess(target: OnboardingPermissionTarget): Promise<OnboardingPermissionResult> {
   if (process.platform !== 'darwin') {
     if (target === 'home-folder') {
@@ -4037,6 +4270,167 @@ function normalizeInputKeyToken(input: any): string {
   const rawCode = String(input?.code || '').toLowerCase();
   if (rawCode === 'space') return 'space';
   return '';
+}
+
+function parseShortcutModifiersAndKey(shortcut: string): {
+  modifiers: NormalizedShortcutModifiers;
+  keyToken: string;
+} | null {
+  const normalizedShortcut = normalizeAccelerator(shortcut);
+  if (!normalizedShortcut) return null;
+  const parts = normalizedShortcut.split('+').map((part) => String(part || '').trim()).filter(Boolean);
+  if (parts.length === 0) return null;
+  const keyToken = parts[parts.length - 1];
+  const modifierTokens = parts.slice(0, -1).map((part) => part.toLowerCase());
+  const modifiers: NormalizedShortcutModifiers = {
+    command: false,
+    control: false,
+    alt: false,
+    shift: false,
+    fn: false,
+  };
+
+  for (const token of modifierTokens) {
+    if (token === 'commandorcontrol' || token === 'cmdorctrl') {
+      if (process.platform === 'darwin') modifiers.command = true;
+      else modifiers.control = true;
+      continue;
+    }
+    if (token === 'cmd' || token === 'command' || token === 'meta' || token === 'super') {
+      modifiers.command = true;
+      continue;
+    }
+    if (token === 'ctrl' || token === 'control') {
+      modifiers.control = true;
+      continue;
+    }
+    if (token === 'alt' || token === 'option') {
+      modifiers.alt = true;
+      continue;
+    }
+    if (token === 'shift') {
+      modifiers.shift = true;
+      continue;
+    }
+    if (token === 'fn' || token === 'function') {
+      modifiers.fn = true;
+      continue;
+    }
+  }
+
+  return { modifiers, keyToken };
+}
+
+function mapTokenToModifierKey(token: string): keyof NormalizedShortcutModifiers | null {
+  const normalized = String(token || '').trim().toLowerCase();
+  if (normalized === 'cmd' || normalized === 'command' || normalized === 'meta' || normalized === 'super') return 'command';
+  if (normalized === 'ctrl' || normalized === 'control') return 'control';
+  if (normalized === 'alt' || normalized === 'option') return 'alt';
+  if (normalized === 'shift') return 'shift';
+  if (normalized === 'fn' || normalized === 'function') return 'fn';
+  return null;
+}
+
+const KEYSPY_LAUNCHER_MODIFIER_KEY_CODES: Record<keyof NormalizedShortcutModifiers, number[]> = {
+  command: [54, 55],
+  control: [59, 62],
+  alt: [58, 61],
+  shift: [56, 60],
+  fn: [63],
+};
+
+const KEYSPY_MAC_ACCELERATOR_KEYCODE_MAP: Record<string, number> = {
+  a: 0, s: 1, d: 2, f: 3, h: 4, g: 5, z: 6, x: 7, c: 8, v: 9,
+  b: 11, q: 12, w: 13, e: 14, r: 15, y: 16, t: 17, '1': 18, '2': 19,
+  '3': 20, '4': 21, '6': 22, '5': 23, '=': 24, '9': 25, '7': 26, '-': 27,
+  '8': 28, '0': 29, ']': 30, o: 31, u: 32, '[': 33, i: 34, p: 35,
+  l: 37, j: 38, "'": 39, k: 40, ';': 41, '\\': 42, ',': 43, '/': 44,
+  n: 45, m: 46, '.': 47, '`': 50,
+  backspace: 51, tab: 48, space: 49, return: 36, enter: 36, escape: 53,
+  left: 123, right: 124, down: 125, up: 126, delete: 117,
+  capslock: 57, fn: 63, function: 63,
+  f1: 122, f2: 120, f3: 99, f4: 118, f5: 96, f6: 97, f7: 98, f8: 100, f9: 101,
+  f10: 109, f11: 103, f12: 111, f13: 105, f14: 107, f15: 113, f16: 106, f17: 64,
+  f18: 79, f19: 80, f20: 90,
+};
+
+function mapAcceleratorTokenToMacKeyCode(token: string): number | null {
+  const normalized = String(token || '').trim().toLowerCase();
+  if (!normalized) return null;
+  const keyCode = KEYSPY_MAC_ACCELERATOR_KEYCODE_MAP[normalized];
+  return Number.isFinite(keyCode) ? keyCode : null;
+}
+
+function shortcutRequiresLauncherKeyspy(shortcut: string): boolean {
+  if (process.platform !== 'darwin') return false;
+  const parsed = parseShortcutModifiersAndKey(shortcut);
+  if (!parsed) return false;
+  const keyToken = String(parsed.keyToken || '').trim().toLowerCase();
+  if (!keyToken) return false;
+  if (parsed.modifiers.fn) return true;
+  if (keyToken === 'fn' || keyToken === 'function') return true;
+  return Boolean(mapTokenToModifierKey(keyToken));
+}
+
+function parseKeyspyLauncherShortcutSpec(shortcut: string): KeyspyLauncherShortcutSpec | null {
+  if (!shortcutRequiresLauncherKeyspy(shortcut)) return null;
+  const normalizedShortcut = normalizeAccelerator(shortcut);
+  const parsed = parseShortcutModifiersAndKey(normalizedShortcut);
+  if (!parsed) return null;
+
+  const modifierPrimary = mapTokenToModifierKey(parsed.keyToken);
+  if (modifierPrimary) {
+    return {
+      shortcut: normalizedShortcut,
+      modifiers: parsed.modifiers,
+      primary: { kind: 'modifier', modifier: modifierPrimary },
+      suppressEvent: false,
+    };
+  }
+
+  const keyCode = mapAcceleratorTokenToMacKeyCode(parsed.keyToken);
+  if (!Number.isFinite(keyCode)) return null;
+  return {
+    shortcut: normalizedShortcut,
+    modifiers: parsed.modifiers,
+    primary: { kind: 'key', keyCode: Number(keyCode) },
+    suppressEvent: false,
+  };
+}
+
+function getModifierStateFromKeyspyDownKeyCodes(downKeyCodes: Set<number>): NormalizedShortcutModifiers {
+  const hasAny = (codes: number[]) => codes.some((code) => downKeyCodes.has(code));
+  return {
+    command: hasAny(KEYSPY_LAUNCHER_MODIFIER_KEY_CODES.command),
+    control: hasAny(KEYSPY_LAUNCHER_MODIFIER_KEY_CODES.control),
+    alt: hasAny(KEYSPY_LAUNCHER_MODIFIER_KEY_CODES.alt),
+    shift: hasAny(KEYSPY_LAUNCHER_MODIFIER_KEY_CODES.shift),
+    fn: hasAny(KEYSPY_LAUNCHER_MODIFIER_KEY_CODES.fn),
+  };
+}
+
+function isKeyspyLauncherShortcutPressed(
+  spec: KeyspyLauncherShortcutSpec,
+  downKeyCodes: Set<number>
+): boolean {
+  const actual = getModifierStateFromKeyspyDownKeyCodes(downKeyCodes);
+  const expected: NormalizedShortcutModifiers = { ...spec.modifiers };
+  if (spec.primary.kind === 'modifier') {
+    expected[spec.primary.modifier] = true;
+    if (!KEYSPY_LAUNCHER_MODIFIER_KEY_CODES[spec.primary.modifier].some((code) => downKeyCodes.has(code))) {
+      return false;
+    }
+  } else if (!downKeyCodes.has(spec.primary.keyCode)) {
+    return false;
+  }
+
+  return (
+    actual.command === expected.command &&
+    actual.control === expected.control &&
+    actual.alt === expected.alt &&
+    actual.shift === expected.shift &&
+    actual.fn === expected.fn
+  );
 }
 
 function markOpeningShortcutForSuppression(shortcut: string): void {
@@ -6155,6 +6549,16 @@ function stopSnippetExpander(): void {
 
 function refreshSnippetExpander(): void {
   if (process.platform !== 'darwin') return;
+  if (!loadSettings().hasSeenOnboarding) return;
+  try {
+    if (!systemPreferences.isTrustedAccessibilityClient(false)) {
+      stopSnippetExpander();
+      return;
+    }
+  } catch {
+    stopSnippetExpander();
+    return;
+  }
   stopSnippetExpander();
 
   const keywords = getAllSnippets()
@@ -8195,7 +8599,7 @@ async function replaceSpotlightWithSuperCmdShortcut(): Promise<boolean> {
     if (delay > 0) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
-    registered = registerGlobalShortcut(targetShortcut);
+    registered = await registerGlobalShortcut(targetShortcut);
     if (registered) break;
   }
 
@@ -8204,7 +8608,7 @@ async function replaceSpotlightWithSuperCmdShortcut(): Promise<boolean> {
       // Symbolic hotkey changes can take a moment to propagate. Persist now and retry soon.
       saveSettings({ globalShortcut: targetShortcut });
       setTimeout(() => {
-        try { registerGlobalShortcut(targetShortcut); } catch {}
+        void registerGlobalShortcut(targetShortcut).catch(() => {});
       }, 1000);
       return true;
     }
@@ -8218,14 +8622,66 @@ async function replaceSpotlightWithSuperCmdShortcut(): Promise<boolean> {
   return true;
 }
 
-function registerGlobalShortcut(shortcut: string): boolean {
+async function registerGlobalShortcut(shortcut: string): Promise<boolean> {
   const normalizedShortcut = normalizeAccelerator(shortcut);
   globalShortcutRegistrationState.requestedShortcut = normalizedShortcut;
-  // Unregister the previous global shortcut
-  if (currentShortcut) {
+  const previousShortcut = currentShortcut;
+  const previousUsedKeyspy = shortcutRequiresLauncherKeyspy(previousShortcut);
+  const hasDifferentPreviousShortcut = Boolean(previousShortcut && previousShortcut !== normalizedShortcut);
+
+  if (previousShortcut && !previousUsedKeyspy) {
     try {
-      unregisterShortcutVariants(currentShortcut);
+      unregisterShortcutVariants(previousShortcut);
     } catch {}
+  }
+  stopKeyspyLauncherWatcher();
+  currentShortcut = '';
+
+  const restorePreviousShortcut = async (): Promise<boolean> => {
+    if (!hasDifferentPreviousShortcut) {
+      currentShortcut = normalizedShortcut;
+      globalShortcutRegistrationState.activeShortcut = normalizedShortcut;
+      globalShortcutRegistrationState.ok = false;
+      return false;
+    }
+    currentShortcut = previousShortcut;
+    globalShortcutRegistrationState.activeShortcut = previousShortcut;
+    if (previousUsedKeyspy) {
+      await syncKeyspyLauncherWatcher();
+      globalShortcutRegistrationState.ok = Boolean(keyspyLauncherProcess);
+      return globalShortcutRegistrationState.ok;
+    }
+    try {
+      const restored = globalShortcut.register(previousShortcut, () => {
+        markOpeningShortcutForSuppression(previousShortcut);
+        toggleWindow();
+      });
+      globalShortcutRegistrationState.ok = restored;
+      return restored;
+    } catch {
+      globalShortcutRegistrationState.ok = false;
+      return false;
+    }
+  };
+
+  if (!normalizedShortcut) {
+    globalShortcutRegistrationState.activeShortcut = '';
+    globalShortcutRegistrationState.ok = false;
+    return false;
+  }
+
+  if (shortcutRequiresLauncherKeyspy(normalizedShortcut)) {
+    currentShortcut = normalizedShortcut;
+    globalShortcutRegistrationState.activeShortcut = normalizedShortcut;
+    await syncKeyspyLauncherWatcher();
+    const success = Boolean(keyspyLauncherProcess);
+    globalShortcutRegistrationState.ok = success;
+    if (!success) {
+      await restorePreviousShortcut();
+      return false;
+    }
+    console.log(`Global shortcut registered via keyspy: ${normalizedShortcut}`);
+    return true;
   }
 
   try {
@@ -8239,24 +8695,13 @@ function registerGlobalShortcut(shortcut: string): boolean {
       globalShortcutRegistrationState.ok = true;
       console.log(`Global shortcut registered: ${normalizedShortcut}`);
       return true;
-    } else {
-      console.error(`Failed to register shortcut: ${normalizedShortcut}`);
-      // Re-register old one
-      if (currentShortcut && currentShortcut !== normalizedShortcut) {
-        try {
-          const restoredShortcut = currentShortcut;
-          globalShortcut.register(restoredShortcut, () => {
-            markOpeningShortcutForSuppression(restoredShortcut);
-            toggleWindow();
-          });
-        } catch {}
-      }
-      globalShortcutRegistrationState.ok = false;
-      return false;
     }
+    console.error(`Failed to register shortcut: ${normalizedShortcut}`);
+    await restorePreviousShortcut();
+    return false;
   } catch (e) {
     console.error(`Error registering shortcut: ${e}`);
-    globalShortcutRegistrationState.ok = false;
+    await restorePreviousShortcut();
     return false;
   }
 }
@@ -8851,8 +9296,12 @@ app.whenReady().then(async () => {
           app.dock.hide();
         }
         startClipboardMonitor();
+        try { refreshSnippetExpander(); } catch (e) {
+          console.warn('[SnippetExpander] Failed to start after onboarding:', e);
+        }
         syncFnSpeakToggleWatcher(loadSettings().commandHotkeys);
         syncFnCommandWatchers(loadSettings().commandHotkeys);
+        void syncKeyspyLauncherWatcher();
       }
       const aiEnabledPatch = patch.ai?.enabled;
       if (aiEnabledPatch === false) {
@@ -8882,8 +9331,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     'update-global-shortcut',
-    (_event: any, newShortcut: string) => {
-      const success = registerGlobalShortcut(newShortcut);
+    async (_event: any, newShortcut: string) => {
+      const success = await registerGlobalShortcut(newShortcut);
       if (success) {
         saveSettings({ globalShortcut: newShortcut });
       }
@@ -8936,6 +9385,12 @@ app.whenReady().then(async () => {
         const srResult = await ensureSpeechRecognitionAccess(false);
         statuses['speech-recognition'] = Boolean(srResult.granted);
       } catch {}
+      if (statuses['accessibility'] && statuses['input-monitoring']) {
+        await syncKeyspyLauncherWatcher();
+      } else if (shortcutRequiresLauncherKeyspy(currentShortcut)) {
+        stopKeyspyLauncherWatcher();
+        globalShortcutRegistrationState.ok = false;
+      }
     }
     return statuses;
   });
@@ -11839,7 +12294,7 @@ if let tiff = image?.tiffRepresentation {
   createWindow();
   startInstalledAppsWatchers();
   schedulePromptWindowPrewarm();
-  registerGlobalShortcut(settings.globalShortcut);
+  await registerGlobalShortcut(settings.globalShortcut);
   registerCommandHotkeys(settings.commandHotkeys);
   registerDevToolsShortcut();
 
@@ -11865,6 +12320,10 @@ if let tiff = image?.tiffRepresentation {
   }
 
   app.on('activate', () => {
+    if (!keyspyLauncherProcess && shortcutRequiresLauncherKeyspy(currentShortcut)) {
+      void syncKeyspyLauncherWatcher();
+    }
+
     // During onboarding the window is shown but may lose visual focus to a system
     // permission dialog (e.g. "SuperCmd wants access to control System Events").
     // When the user dismisses the dialog, macOS activates SuperCmd and we get this
@@ -11914,6 +12373,7 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   stopInstalledAppsWatchers();
   globalShortcut.unregisterAll();
+  stopKeyspyLauncherWatcher();
   if (windowManagerWorkerRestartTimer) {
     clearTimeout(windowManagerWorkerRestartTimer);
     windowManagerWorkerRestartTimer = null;
