@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bug, Command, Info } from 'lucide-react';
+import { Bug, Command, Info, Power } from 'lucide-react';
 import type { AppSettings } from '../../types/electron';
 import SearchableDropdown, { type SearchableDropdownOption } from '../components/SearchableDropdown';
 
@@ -104,6 +104,22 @@ const AdvancedTab: React.FC = () => {
     }
   }, []);
 
+  const handleOpenAtLoginChange = useCallback(async (enabled: boolean) => {
+    setSettings((prev) => (prev ? { ...prev, openAtLogin: enabled } : prev));
+    try {
+      const ok = await window.electron.setOpenAtLogin(enabled);
+      if (!ok) {
+        const next = await window.electron.getSettings();
+        setSettings(next);
+      }
+    } catch {
+      try {
+        const next = await window.electron.getSettings();
+        setSettings(next);
+      } catch {}
+    }
+  }, []);
+
   if (!settings) {
     return <div className="p-6 text-[var(--text-muted)] text-[12px]">Loading advanced settings...</div>;
   }
@@ -187,6 +203,24 @@ const AdvancedTab: React.FC = () => {
               </>
             ) : null}
           </div>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<Power className="w-4 h-4" />}
+          title="Start at Login"
+          description="Launch SuperCmd automatically when you sign in."
+        >
+          <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={Boolean(settings.openAtLogin)}
+              onChange={(event) => {
+                void handleOpenAtLoginChange(event.target.checked);
+              }}
+              className="settings-checkbox"
+            />
+            Start SuperCmd at login
+          </label>
         </SettingsRow>
 
         <SettingsRow

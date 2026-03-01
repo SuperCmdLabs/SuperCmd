@@ -5,7 +5,6 @@ import {
   Calculator,
   Check,
   Clipboard,
-  ExternalLink,
   FileText,
   FolderOpen,
   Keyboard,
@@ -160,6 +159,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [whisperKeyStatus, setWhisperKeyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isHoldKeyActive, setIsHoldKeyActive] = useState(false);
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
+  const [openAtLogin, setOpenAtLogin] = useState(false);
+  const [openAtLoginLoading, setOpenAtLoginLoading] = useState(false);
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
   const openedPermissionsRef = useRef<Record<string, boolean>>({});
   const requestedPermissionsRef = useRef<Record<string, boolean>>({});
@@ -183,6 +184,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       setWhisperHoldKey(saved || 'Fn');
       const savedLanguage = String(settings.ai?.speechLanguage || 'en-US').trim();
       setSpeechLanguage(savedLanguage || 'en-US');
+      setOpenAtLogin(Boolean(settings.openAtLogin));
     }).catch(() => {});
   }, []);
 
@@ -398,6 +400,21 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     }
     setWhisperKeyStatus('error');
     setTimeout(() => setWhisperKeyStatus('idle'), 2200);
+  };
+
+  const handleOpenAtLoginChange = async (nextValue: boolean) => {
+    setOpenAtLogin(nextValue);
+    setOpenAtLoginLoading(true);
+    try {
+      const ok = await window.electron.setOpenAtLogin(nextValue);
+      if (!ok) {
+        setOpenAtLogin(!nextValue);
+      }
+    } catch {
+      setOpenAtLogin(!nextValue);
+    } finally {
+      setOpenAtLoginLoading(false);
+    }
   };
 
   const openPermissionTarget = async (id: PermissionTargetId, url: string) => {
@@ -693,6 +710,17 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   </div>
 
                   <p className="text-white/52 text-xs mb-4">Click the hotkey field above to update your launcher shortcut.</p>
+
+                  <label className="inline-flex items-center gap-2.5 text-xs text-white/78 cursor-pointer mb-4">
+                    <input
+                      type="checkbox"
+                      checked={openAtLogin}
+                      disabled={openAtLoginLoading}
+                      onChange={(event) => { void handleOpenAtLoginChange(event.target.checked); }}
+                      className="settings-checkbox"
+                    />
+                    Start SuperCmd at login
+                  </label>
 
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.05] p-3.5">
                     <div className="flex items-center justify-between gap-3 mb-1.5">
