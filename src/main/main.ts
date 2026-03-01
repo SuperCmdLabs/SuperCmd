@@ -4384,8 +4384,16 @@ function markOpeningShortcutForSuppression(shortcut: string): void {
   openingShortcutSuppressionUntil = Date.now() + OPENING_SHORTCUT_SUPPRESSION_MS;
 }
 
+function clearOpeningShortcutSuppression(): void {
+  openingShortcutToSuppress = '';
+  openingShortcutSuppressionUntil = 0;
+}
+
 function shouldSuppressOpeningShortcutInput(input: any): boolean {
-  if (Date.now() > openingShortcutSuppressionUntil) return false;
+  if (Date.now() > openingShortcutSuppressionUntil) {
+    clearOpeningShortcutSuppression();
+    return false;
+  }
   const shortcut = String(openingShortcutToSuppress || '').trim();
   if (!shortcut) return false;
   const parts = shortcut.split('+').map((part) => String(part || '').trim()).filter(Boolean);
@@ -4393,6 +4401,13 @@ function shouldSuppressOpeningShortcutInput(input: any): boolean {
   const keyToken = normalizeShortcutKeyToken(parts[parts.length - 1]);
   if (!keyToken) return false;
   const mods = new Set(parts.slice(0, -1).map((part) => String(part || '').trim().toLowerCase()));
+  // Electron's before-input-event does not reliably expose Fn on normal key
+  // events, so suppressing Fn-based launcher shortcuts can eat the first typed
+  // character (for example, Fn+R opening the launcher then dropping "r").
+  if (mods.has('fn') || mods.has('function')) {
+    clearOpeningShortcutSuppression();
+    return false;
+  }
   const expectMeta = mods.has('command') || mods.has('cmd') || mods.has('meta') || mods.has('super') || mods.has('commandorcontrol') || mods.has('cmdorctrl');
   const expectCtrl = mods.has('control') || mods.has('ctrl') || (process.platform !== 'darwin' && (mods.has('commandorcontrol') || mods.has('cmdorctrl')));
   const expectAlt = mods.has('alt') || mods.has('option');
@@ -4407,6 +4422,7 @@ function shouldSuppressOpeningShortcutInput(input: any): boolean {
   if (actualCtrl !== expectCtrl) return false;
   if (actualAlt !== expectAlt) return false;
   if (actualShift !== expectShift) return false;
+  clearOpeningShortcutSuppression();
   return true;
 }
 
@@ -4676,6 +4692,16 @@ function shouldSuppressDuplicateHotkeyInvocation(actionId: string): boolean {
   return false;
 }
 
+function isAnySuperCmdWindowFocused(): boolean {
+  try {
+    return BrowserWindow.getAllWindows().some((win: InstanceType<typeof BrowserWindow>) =>
+      Boolean(win && !win.isDestroyed() && win.isFocused())
+    );
+  } catch {
+    return false;
+  }
+}
+
 function isElectronShortcutSupported(shortcut: string): boolean {
   const parsed = parseShortcutModifiersAndKey(shortcut);
   if (!parsed) return false;
@@ -4803,6 +4829,7 @@ function registerElectronFallbackShortcut(
   if (electronFallbackRegisteredShortcuts.has(normalized)) return;
   try {
     const ok = globalShortcut.register(normalized, () => {
+      if (actionId.startsWith('command:') && isAnySuperCmdWindowFocused()) return;
       if (shouldSuppressDuplicateHotkeyInvocation(actionId)) return;
       handler();
     });
@@ -5304,6 +5331,10 @@ function refreshKeyspyHyperConfigFromSettings(settings?: AppSettings): void {
     includeShift: Boolean(currentSettings.hyperKeyIncludeShift),
     quickPressAction: currentSettings.hyperKeyQuickPressAction || 'toggle-caps-lock',
   };
+  if (keyspyHyperConfig.sourceKeyCode === null) {
+    keyspyHyperPressed = false;
+    keyspyHyperUsedAsModifier = false;
+  }
 }
 
 function triggerHyperQuickPressAction(): void {
@@ -5377,6 +5408,7 @@ function handleKeyspyShortcutPressed(spec: KeyspyShortcutSpec): void {
 
   const commandId = String(spec.commandId || '').trim();
   if (!commandId) return;
+  if (isAnySuperCmdWindowFocused()) return;
   if (shouldSuppressDuplicateHotkeyInvocation(`command:${commandId}`)) return;
   if (commandId === 'system-supercmd-whisper-speak-toggle') {
     void handleWhisperSpeakToggleHotkeyPress();
@@ -5501,6 +5533,7 @@ async function ensureKeyspyListener(): Promise<boolean> {
     callback = (event: IGlobalKeyEvent, down: IGlobalKeyDownMap): boolean => {
       let stopPropagation = false;
       const captureSessionActive = Boolean(keyspyHotkeyCaptureSession);
+      const ignoreCommandHotkeys = isAnySuperCmdWindowFocused();
       if (captureSessionActive) {
         const captured = processKeyspyHotkeyCaptureEvent(event, down);
         if (captured) {
@@ -5535,6 +5568,7 @@ async function ensureKeyspyListener(): Promise<boolean> {
       }
 
       for (const spec of keyspyShortcutSpecs.values()) {
+        if (ignoreCommandHotkeys && spec.handler === 'command') continue;
         if (!isShortcutMatchForEvent(spec, event, down)) continue;
         stopPropagation = true;
         if (keyspyActiveShortcutIds.has(spec.id)) continue;
