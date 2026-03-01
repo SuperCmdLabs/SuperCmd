@@ -59,7 +59,7 @@ const permissionTargets: Array<{
   {
     id: 'home-folder',
     title: 'Folder Access',
-    description: 'Required for Desktop, Documents, Downloads, Movies, and iCloud Drive search.',
+    description: 'Required for file search.',
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders',
     icon: FolderOpen,
     iconTone: 'text-blue-100',
@@ -995,8 +995,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     ))}
                   </div>
                   <p className="text-white/46 text-xs leading-relaxed">
-                    Tip: use <span className="text-white/62">Cmd + Shift + K</span> for Global AI Prompt and{' '}
-                    <span className="text-white/62">Cmd + Shift + O</span> to add selected text to Memory.
+                    Tip: use <span className="text-white/62">Fn + K</span> for Global AI Prompt and{' '}
+                    <span className="text-white/62">Fn + M</span> to add selected text to Memory.
                   </p>
                 </div>
               </div>
