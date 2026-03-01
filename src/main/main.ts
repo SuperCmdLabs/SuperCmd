@@ -3539,13 +3539,22 @@ type SpeechRecognitionPermissionResult = {
   error?: string;
 };
 
-async function readSpeechRecognitionAccess(prompt: boolean): Promise<SpeechRecognitionPermissionResult> {
+async function ensureSpeechRecognitionAccess(prompt = true): Promise<SpeechRecognitionPermissionResult> {
   if (process.platform !== 'darwin') {
     return {
       granted: true,
       requested: false,
       speechStatus: 'granted',
       microphoneStatus: 'granted',
+    };
+  }
+
+  if (!prompt) {
+    return {
+      granted: false,
+      requested: false,
+      speechStatus: 'unknown',
+      microphoneStatus: readMicrophoneAccessStatus(),
     };
   }
 
@@ -3563,11 +3572,10 @@ async function readSpeechRecognitionAccess(prompt: boolean): Promise<SpeechRecog
 
   const settings = loadSettings();
   const language = String(settings.ai?.speechLanguage || 'en-US').trim() || 'en-US';
-  const helperArgs = prompt ? [language, '--auth-only'] : [language, '--check-auth-only'];
 
   return await new Promise<SpeechRecognitionPermissionResult>((resolve) => {
     const { spawn } = require('child_process');
-    const proc = spawn(binaryPath, helperArgs, {
+    const proc = spawn(binaryPath, [language, '--auth-only'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let settled = false;
@@ -3624,7 +3632,7 @@ async function readSpeechRecognitionAccess(prompt: boolean): Promise<SpeechRecog
     proc.on('error', (error: Error) => {
       finalize({
         granted: false,
-        requested: prompt,
+        requested: false,
         speechStatus,
         microphoneStatus,
         error: error.message || 'Failed to request speech recognition access.',
@@ -3646,15 +3654,13 @@ async function readSpeechRecognitionAccess(prompt: boolean): Promise<SpeechRecog
           error = stderr;
         } else if (code && code !== 0) {
           error = `Speech recognition permission check exited with code ${code}.`;
-        } else if (speechStatus === 'not-determined') {
-          error = 'Speech recognition permission did not appear. Press request again.';
         } else {
           error = 'Speech recognition permission is required for Whisper.';
         }
       }
       finalize({
         granted,
-        requested: prompt,
+        requested: true,
         speechStatus,
         microphoneStatus: finalMicStatus,
         error: error || undefined,
@@ -3665,38 +3671,13 @@ async function readSpeechRecognitionAccess(prompt: boolean): Promise<SpeechRecog
       try { proc.kill('SIGTERM'); } catch {}
       finalize({
         granted: speechStatus === 'granted',
-        requested: prompt,
+        requested: true,
         speechStatus,
         microphoneStatus: readMicrophoneAccessStatus(),
         error: helperError || 'Speech permission prompt timed out. Please allow access and retry.',
       });
-    }, prompt ? 15000 : 4000);
+    }, 15000);
   });
-}
-
-async function ensureSpeechRecognitionAccess(prompt = true): Promise<SpeechRecognitionPermissionResult> {
-  if (process.platform !== 'darwin') {
-    return {
-      granted: true,
-      requested: false,
-      speechStatus: 'granted',
-      microphoneStatus: 'granted',
-    };
-  }
-
-  if (prompt) {
-    try { app.focus({ steal: true }); } catch {}
-    try {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        if (!mainWindow.isVisible()) {
-          mainWindow.show();
-        }
-        mainWindow.focus();
-      }
-    } catch {}
-  }
-
-  return await readSpeechRecognitionAccess(prompt);
 }
 
 function resolveEdgeVoice(language?: string): string {

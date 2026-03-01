@@ -11,7 +11,6 @@ import AVFoundation
 
 let rawArgs = Array(CommandLine.arguments.dropFirst())
 let authOnly = rawArgs.contains("--auth-only")
-let checkAuthOnly = rawArgs.contains("--check-auth-only")
 let singleUtterance = rawArgs.contains("--single-utterance")
 let lang = rawArgs.first(where: { !$0.hasPrefix("--") }) ?? "en-US"
 
@@ -34,15 +33,14 @@ guard recognizer.isAvailable else {
 
 // ─── Request authorization ───────────────────────────────────────────
 
-var authStatus = SFSpeechRecognizer.authorizationStatus()
-if !checkAuthOnly && authStatus == .notDetermined {
-    let authSemaphore = DispatchSemaphore(value: 0)
-    SFSpeechRecognizer.requestAuthorization { status in
-        authStatus = status
-        authSemaphore.signal()
-    }
-    authSemaphore.wait()
+let authSemaphore = DispatchSemaphore(value: 0)
+var authStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
+
+SFSpeechRecognizer.requestAuthorization { status in
+    authStatus = status
+    authSemaphore.signal()
 }
+authSemaphore.wait()
 
 switch authStatus {
 case .authorized:
@@ -93,7 +91,7 @@ func microphoneStatusString(_ status: AVAuthorizationStatus) -> String {
 let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
 let micStatusValue = microphoneStatusString(micStatus)
 
-if authOnly || checkAuthOnly {
+if authOnly {
     var payload: [String: Any] = [
         "authorized": true,
         "speechStatus": "granted",

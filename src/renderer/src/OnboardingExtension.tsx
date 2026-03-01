@@ -460,6 +460,17 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
           } catch {}
         }
       }
+      if (id === 'speech-recognition' && !granted) {
+        try {
+          const verify = await window.electron.whisperEnsureSpeechRecognitionAccess({ prompt: true });
+          granted = Boolean(verify?.granted);
+          requested = requested || Boolean(verify?.requested);
+          status = String(verify?.speechStatus || status);
+          if (verify?.error) {
+            latestError = String(verify.error || '').trim();
+          }
+        } catch {}
+      }
       if (requested) {
         setRequestedPermissions((prev) => ({ ...prev, [id]: true }));
       }
@@ -476,14 +487,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       } else if (id === 'microphone' || id === 'speech-recognition') {
         const targetLabel = id === 'microphone' ? 'Microphone' : 'Speech Recognition';
         if (status === 'denied' || status === 'restricted') {
-          if (id === 'speech-recognition') {
-            void window.electron.openUrl(target.url);
-          }
           setPermissionNotes((prev) => ({
             ...prev,
-            [id]: id === 'speech-recognition'
-              ? 'Open Speech Recognition settings, enable SuperCmd, then press request again.'
-              : `${targetLabel} access is blocked. Enable SuperCmd in System Settings, then return.`,
+            [id]: `${targetLabel} access is blocked. Enable SuperCmd in System Settings, then return.`,
           }));
         } else if (latestError) {
           if (/failed to request microphone access/i.test(latestError)) {
@@ -513,15 +519,22 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       if (id === 'microphone') {
         await new Promise((resolve) => setTimeout(resolve, 350));
       }
-      const shouldAutoOpenSettings = id === 'input-monitoring';
-      if (shouldAutoOpenSettings) {
-        const candidateUrls = [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent'];
-        let ok = false;
-        for (const candidate of candidateUrls) {
-          if (ok) break;
-          ok = await window.electron.openUrl(candidate);
-        }
-        if (ok) {
+      const candidateUrls = id === 'microphone'
+        ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone']
+        : id === 'speech-recognition'
+          ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_SpeechRecognition']
+          : id === 'input-monitoring'
+            ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent']
+            : id === 'home-folder'
+              ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_FilesAndFolders']
+              : [url];
+      let ok = false;
+      for (const candidate of candidateUrls) {
+        if (ok) break;
+        ok = await window.electron.openUrl(candidate);
+      }
+      if (ok) {
+        if (id === 'input-monitoring') {
           // macOS 13+ does not auto-add apps to Input Monitoring via CGEventTap.
           // The user must click "+" in System Settings and manually select SuperCmd.
           setPermissionNotes((prev) => ({
