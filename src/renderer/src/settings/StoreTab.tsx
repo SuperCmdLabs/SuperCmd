@@ -336,106 +336,112 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
             </button>
           </div>
 
-          {isLoading && catalog.length === 0 && (
-            <div className="text-center py-20">
-              <RefreshCw className="w-6 h-6 text-[var(--text-subtle)] animate-spin mx-auto mb-3" />
-              <p className="text-sm text-[var(--text-subtle)]">Loading extension catalog...</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="mx-4 mt-4 bg-red-500/10 border border-red-500/20 rounded-xl p-4">
-              <p className="text-sm text-red-400">{error}</p>
-              <button
-                onClick={() => loadCatalog(true)}
-                className="text-xs text-red-400/70 hover:text-red-400 underline mt-2"
-              >
-                Try again
-              </button>
-            </div>
-          )}
-
-          {!isLoading && sortedCatalog.length === 0 && !error && (
-            <div className="text-center py-20 text-[var(--text-subtle)]">
-              <Package className="w-8 h-8 mx-auto mb-3 opacity-40" />
-              <p className="text-sm">
-                {searchQuery.trim() ? 'No extensions match your search' : 'No extensions available'}
-              </p>
-            </div>
-          )}
-
-          {sortedCatalog.length > 0 && (
-            <div className="grid grid-cols-12 flex-1 min-h-0">
-              <div className="col-span-5 border-r border-[var(--ui-divider)] min-h-0">
-                <div ref={listRef} className="space-y-1 h-full overflow-y-auto custom-scrollbar px-2 py-2">
-                  {sortedCatalog.map((ext) => {
-                    const selected = selectedName === ext.name;
-                    const installed = installedNames.has(ext.name);
-                    return (
-                      <button
-                        key={ext.name}
-                        data-ext-name={ext.name}
-                        type="button"
-                        onClick={() => {
-                          setSelectedName(ext.name);
-                          setDetailTab('overview');
-                        }}
-                        className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                          selected ? 'bg-[var(--ui-segment-active-bg)]' : 'hover:bg-[var(--ui-segment-bg)]'
-                        }`}
-                      >
-                        <div className="w-9 h-9 rounded-lg bg-[var(--ui-segment-bg)] flex items-center justify-center overflow-hidden flex-shrink-0">
-                          <img
-                            src={ext.iconUrl}
-                            alt=""
-                            className="w-9 h-9 object-contain"
-                            draggable={false}
-                            onError={(e) => {
-                              const target = e.currentTarget;
-                              target.style.display = 'none';
-                            }}
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-[var(--text-secondary)] truncate">
-                              {ext.title}
-                            </span>
-                            {installed && (
-                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded border border-[color:var(--status-success)] bg-[color:var(--status-success-soft)] text-[color:var(--status-success)]">
-                                Installed
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-[var(--text-subtle)] truncate">{ext.description || ext.name}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
+          <div className="flex-1 min-h-0 flex flex-col">
+            {isLoading && catalog.length === 0 && (
+              <div className="flex-1 min-h-0 flex items-center justify-center text-center px-4">
+                <div>
+                  <RefreshCw className="w-6 h-6 text-[var(--text-subtle)] animate-spin mx-auto mb-3" />
+                  <p className="text-sm text-[var(--text-subtle)]">Loading extension catalog...</p>
                 </div>
               </div>
+            )}
 
-              <div className="col-span-7 flex flex-col min-h-0 p-4">
-                {selectedExtension ? (
-                  <CommunityDetails
-                    ext={selectedExtension}
-                    screenshots={
-                      screenshotsByName[selectedExtension.name] ?? selectedExtension.screenshotUrls ?? []
-                    }
-                    screenshotsLoading={loadingScreenshotsFor === selectedExtension.name}
-                    detailTab={detailTab}
-                    onTabChange={setDetailTab}
-                    installed={installedNames.has(selectedExtension.name)}
-                    busy={busyName === selectedExtension.name}
-                  />
-                ) : (
-                  <div className="h-full flex items-center justify-center text-sm text-[var(--text-subtle)]">
-                    Select an extension to view details
-                  </div>
-                )}
+            {error && (
+              <div className="mx-4 mt-4 bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+                <p className="text-sm text-red-400">{error}</p>
+                <button
+                  onClick={() => loadCatalog(true)}
+                  className="text-xs text-red-400/70 hover:text-red-400 underline mt-2"
+                >
+                  Try again
+                </button>
               </div>
-            </div>
-          )}
+            )}
+
+            {!isLoading && sortedCatalog.length === 0 && !error && (
+              <div className="flex-1 min-h-0 flex items-center justify-center text-center text-[var(--text-subtle)] px-4">
+                <div>
+                  <Package className="w-8 h-8 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm">
+                    {searchQuery.trim() ? 'No extensions match your search' : 'No extensions available'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {sortedCatalog.length > 0 && (
+              <div className="grid grid-cols-12 flex-1 min-h-0">
+                <div className="col-span-5 border-r border-[var(--ui-divider)] min-h-0">
+                  <div ref={listRef} className="space-y-1 h-full overflow-y-auto custom-scrollbar px-2 py-2">
+                    {sortedCatalog.map((ext) => {
+                      const selected = selectedName === ext.name;
+                      const installed = installedNames.has(ext.name);
+                      return (
+                        <button
+                          key={ext.name}
+                          data-ext-name={ext.name}
+                          type="button"
+                          onClick={() => {
+                            setSelectedName(ext.name);
+                            setDetailTab('overview');
+                          }}
+                          className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                            selected ? 'bg-[var(--ui-segment-active-bg)]' : 'hover:bg-[var(--ui-segment-bg)]'
+                          }`}
+                        >
+                          <div className="w-9 h-9 rounded-lg bg-[var(--ui-segment-bg)] flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <img
+                              src={ext.iconUrl}
+                              alt=""
+                              className="w-9 h-9 object-contain"
+                              draggable={false}
+                              onError={(e) => {
+                                const target = e.currentTarget;
+                                target.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-[var(--text-secondary)] truncate">
+                                {ext.title}
+                              </span>
+                              {installed && (
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded border border-[color:var(--status-success)] bg-[color:var(--status-success-soft)] text-[color:var(--status-success)]">
+                                  Installed
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-[var(--text-subtle)] truncate">{ext.description || ext.name}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="col-span-7 flex flex-col min-h-0 p-4">
+                  {selectedExtension ? (
+                    <CommunityDetails
+                      ext={selectedExtension}
+                      screenshots={
+                        screenshotsByName[selectedExtension.name] ?? selectedExtension.screenshotUrls ?? []
+                      }
+                      screenshotsLoading={loadingScreenshotsFor === selectedExtension.name}
+                      detailTab={detailTab}
+                      onTabChange={setDetailTab}
+                      installed={installedNames.has(selectedExtension.name)}
+                      busy={busyName === selectedExtension.name}
+                    />
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-sm text-[var(--text-subtle)]">
+                      Select an extension to view details
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {!isLoading && (
             <div
