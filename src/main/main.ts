@@ -4323,6 +4323,11 @@ function isKeyspyHyperSourceEvent(event: IGlobalKeyEvent, sourceKeyCode: number 
   return expectedNames.includes(eventName);
 }
 
+function isKeyspyMouseEvent(event: IGlobalKeyEvent): boolean {
+  const eventName = String(event?.name || '').trim().toUpperCase();
+  return eventName.startsWith('MOUSE ');
+}
+
 function parseShortcutModifiersAndKey(shortcut: string): {
   modifiers: NormalizedShortcutModifiers;
   keyToken: string;
@@ -5327,10 +5332,15 @@ async function ensureKeyspyListener(): Promise<boolean> {
       }
 
       for (const spec of keyspyShortcutSpecs.values()) {
-        if (keyspyActiveShortcutIds.has(spec.id)) continue;
         if (!isShortcutMatchForEvent(spec, event, down)) continue;
+        stopPropagation = true;
+        if (keyspyActiveShortcutIds.has(spec.id)) continue;
         keyspyActiveShortcutIds.add(spec.id);
         handleKeyspyShortcutPressed(spec);
+      }
+
+      if (keyspyHyperPressed && !isHyperSourceEvent && !isKeyspyMouseEvent(event)) {
+        stopPropagation = true;
       }
 
       if (hyperSourceReleased) {
