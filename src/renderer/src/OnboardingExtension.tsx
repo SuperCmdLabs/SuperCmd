@@ -347,14 +347,14 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
   useEffect(() => {
     if (step !== STEPS.length - 1) return;
-    if (onboardingHotkeyPresses <= finalStepHotkeyBaselineRef.current) return;
-    onComplete();
-  }, [onboardingHotkeyPresses, step, onComplete]);
+    finalStepHotkeyBaselineRef.current = onboardingHotkeyPresses;
+  }, [step, onboardingHotkeyPresses]);
 
   useEffect(() => {
     if (step !== STEPS.length - 1) return;
-    finalStepHotkeyBaselineRef.current = onboardingHotkeyPresses;
-  }, [onboardingHotkeyPresses, step]);
+    if (onboardingHotkeyPresses <= finalStepHotkeyBaselineRef.current) return;
+    onComplete();
+  }, [onboardingHotkeyPresses, step, onComplete]);
 
   // Clear any lingering text selection when the user navigates between steps.
   // Without this, text selected on the Read Mode step (step 5) stays highlighted
