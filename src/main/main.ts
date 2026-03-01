@@ -4958,7 +4958,7 @@ async function beginKeyspyHotkeyCapture(timeoutMs?: number): Promise<string> {
 function processKeyspyHotkeyCaptureEvent(event: IGlobalKeyEvent, down: IGlobalKeyDownMap): boolean {
   const session = keyspyHotkeyCaptureSession;
   if (!session) return false;
-  const hyperSourceKeyCode = Number(keyspyHyperConfig.sourceKeyCode);
+  const hyperSourceKeyCode = keyspyHyperConfig.sourceKeyCode;
   const isHyperSourceEvent = isKeyspyHyperSourceEvent(event, hyperSourceKeyCode);
 
   if (isHyperSourceEvent) {
@@ -5094,10 +5094,14 @@ function isShortcutStillPressed(spec: KeyspyShortcutSpec, down: IGlobalKeyDownMa
 
 function refreshKeyspyHyperConfigFromSettings(settings?: AppSettings): void {
   const currentSettings = settings || loadSettings();
+  const rawSourceKeyCode = currentSettings.hyperKeySource;
   keyspyHyperConfig = {
-    sourceKeyCode: Number.isFinite(Number(currentSettings.hyperKeySource))
-      ? Number(currentSettings.hyperKeySource)
-      : null,
+    sourceKeyCode:
+      rawSourceKeyCode === null || rawSourceKeyCode === undefined
+        ? null
+        : Number.isFinite(Number(rawSourceKeyCode))
+          ? Number(rawSourceKeyCode)
+          : null,
     includeShift: Boolean(currentSettings.hyperKeyIncludeShift),
     quickPressAction: currentSettings.hyperKeyQuickPressAction || 'toggle-caps-lock',
   };
