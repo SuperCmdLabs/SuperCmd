@@ -4955,14 +4955,9 @@ function processKeyspyHotkeyCaptureEvent(event: IGlobalKeyEvent, down: IGlobalKe
   if (!session) return false;
   const hyperSourceKeyCode = Number(keyspyHyperConfig.sourceKeyCode);
   const isHyperSourceEvent = isKeyspyHyperSourceEvent(event, hyperSourceKeyCode);
-  const isCapsLockHyperSource = Number(hyperSourceKeyCode) === 57;
 
   if (isHyperSourceEvent) {
-    if (isCapsLockHyperSource) {
-      // Caps Lock emits flag-changed transitions that can report as DOWN on both
-      // key press and key release. Toggle capture state per source event.
-      session.hyperSourceActive = !session.hyperSourceActive;
-    } else if (event.state === 'DOWN') {
+    if (event.state === 'DOWN') {
       session.hyperSourceActive = true;
     } else if (event.state === 'UP') {
       session.hyperSourceActive = false;
@@ -5312,17 +5307,7 @@ async function ensureKeyspyListener(): Promise<boolean> {
       let hyperSourceReleased = false;
 
       if (isHyperSourceEvent) {
-        if (isCapsLockHyperSource) {
-          // Caps Lock can report flag changes as DOWN on both press/release.
-          // Treat each source event as a transition.
-          if (keyspyHyperPressed) {
-            keyspyHyperPressed = false;
-            hyperSourceReleased = true;
-          } else {
-            keyspyHyperPressed = true;
-            keyspyHyperUsedAsModifier = false;
-          }
-        } else if (event.state === 'DOWN') {
+        if (event.state === 'DOWN') {
           keyspyHyperPressed = true;
           keyspyHyperUsedAsModifier = false;
         } else if (event.state === 'UP') {
