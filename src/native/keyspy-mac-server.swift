@@ -97,6 +97,8 @@ func currentCapsLockState() -> Bool {
     return CGEventSource.flagsState(.combinedSessionState).contains(.maskAlphaShift)
 }
 
+var lastKnownCapsLockLockedState = currentCapsLockState()
+
 func currentCapsLockPhysicalDownState() -> Bool {
     if CGEventSource.keyState(.hidSystemState, key: CGKeyCode(VK_CAPSLOCK)) {
         return true
@@ -190,10 +192,12 @@ func myCGEventTapCallback(
         )
         if shouldBlock {
             if keyCode == VK_CAPSLOCK {
-                let expectedLocked = !event.flags.contains(.maskAlphaShift)
-                restoreCapsLockState(expectedLocked: expectedLocked)
+                restoreCapsLockState(expectedLocked: lastKnownCapsLockLockedState)
             }
             return nil
+        }
+        if keyCode == VK_CAPSLOCK && isDown {
+            lastKnownCapsLockLockedState.toggle()
         }
         return Unmanaged.passUnretained(event)
     }
@@ -241,14 +245,14 @@ let mouseEventMask =
 let eventMask = keyEventMask | mouseEventMask
 
 guard let eventTap = CGEvent.tapCreate(
-    tap: .cgSessionEventTap,
+    tap: .cghidEventTap,
     place: .headInsertEventTap,
     options: .defaultTap,
     eventsOfInterest: CGEventMask(eventMask),
     callback: myCGEventTapCallback,
     userInfo: nil
 ) else {
-    logErr("Failed to create event tap. This may be because the application this is embedded within hasn't received permission. Please go to System Preferences > Security > Accesibility to add this application to the trusted applications.")
+    logErr("Failed to create event tap. Enable Input Monitoring/Accessibility permissions for SuperCmd.")
     exit(1)
 }
 
