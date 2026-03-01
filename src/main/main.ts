@@ -1252,7 +1252,6 @@ let launcherEntryFrontmostApp: FrontmostAppContext | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
 const pendingOAuthCallbackUrls: string[] = [];
-const AUTO_OPEN_DEVTOOLS_ON_START = process.env.SC_OPEN_DEVTOOLS_ON_START !== '0';
 let snippetExpanderProcess: any = null;
 let snippetExpanderStdoutBuffer = '';
 let nativeSpeechProcess: any = null;
@@ -4635,14 +4634,6 @@ function loadWindowUrl(
   }
 }
 
-function shouldAutoOpenDevToolsOnStartup(): boolean {
-  const raw = String(process.env.SUPERCMD_OPEN_DEVTOOLS_ON_STARTUP || '').trim().toLowerCase();
-  if (raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on') {
-    return true;
-  }
-  return false;
-}
-
 function parseJsonObjectParam(raw: string | null): Record<string, any> {
   if (!raw) return {};
   try {
@@ -5121,30 +5112,11 @@ function createWindow(): void {
   loadWindowUrl(mainWindow, '/');
 
   mainWindow.webContents.once('did-finish-load', () => {
-    if (shouldAutoOpenDevToolsOnStartup()) {
-      try {
-        mainWindow?.webContents.openDevTools({ mode: 'detach', activate: true });
-      } catch (error) {
-        console.warn('[DevTools] Failed auto-opening startup devtools:', error);
-      }
-    }
-
     if (pendingOAuthCallbackUrls.length > 0) {
       const urls = pendingOAuthCallbackUrls.splice(0, pendingOAuthCallbackUrls.length);
       for (const url of urls) {
         mainWindow?.webContents.send('oauth-callback', url);
       }
-    }
-    if (AUTO_OPEN_DEVTOOLS_ON_START) {
-      setTimeout(() => {
-        try {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.openDevTools({ mode: 'detach', activate: true });
-          }
-        } catch (error) {
-          console.warn('[DevTools] Failed opening startup devtools:', error);
-        }
-      }, 120);
     }
   });
 
