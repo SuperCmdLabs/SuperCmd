@@ -460,18 +460,6 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
           } catch {}
         }
       }
-      if (id === 'speech-recognition' && !granted) {
-        try {
-          const verify = await window.electron.whisperEnsureSpeechRecognitionAccess({ prompt: true });
-          granted = Boolean(verify?.granted);
-          requested = requested || Boolean(verify?.requested);
-          status = String(verify?.speechStatus || status);
-          if (verify?.error) {
-            latestError = String(verify.error || '').trim();
-          }
-        } catch {}
-      }
-
       if (requested) {
         setRequestedPermissions((prev) => ({ ...prev, [id]: true }));
       }
@@ -488,9 +476,14 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       } else if (id === 'microphone' || id === 'speech-recognition') {
         const targetLabel = id === 'microphone' ? 'Microphone' : 'Speech Recognition';
         if (status === 'denied' || status === 'restricted') {
+          if (id === 'speech-recognition') {
+            void window.electron.openUrl(target.url);
+          }
           setPermissionNotes((prev) => ({
             ...prev,
-            [id]: `${targetLabel} access is blocked. Enable SuperCmd in System Settings, then return.`,
+            [id]: id === 'speech-recognition'
+              ? 'Open Speech Recognition settings, enable SuperCmd, then press request again.'
+              : `${targetLabel} access is blocked. Enable SuperCmd in System Settings, then return.`,
           }));
         } else if (latestError) {
           if (/failed to request microphone access/i.test(latestError)) {
@@ -832,7 +825,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                                 : 'Request Access'}
                           </button>
                         </div>
-                        {!isDone && isRequested ? (
+        {!isDone && isRequested && target.id !== 'microphone' && target.id !== 'speech-recognition' ? (
                           <p className="mt-2 text-[11px] text-amber-100/85">
                             Permission request sent. Enable SuperCmd in System Settings, then return.
                           </p>
