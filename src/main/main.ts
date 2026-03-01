@@ -4525,6 +4525,7 @@ const KEYSPY_HYPER_SOURCE_EVENT_NAMES_BY_KEYCODE: Record<number, string[]> = {
 };
 
 function isKeyspyHyperSourceEvent(event: IGlobalKeyEvent, sourceKeyCode: number | null | undefined): boolean {
+  if (sourceKeyCode === null || sourceKeyCode === undefined) return false;
   const normalizedSource = Number(sourceKeyCode);
   if (!Number.isFinite(normalizedSource)) return false;
   const source = Math.round(normalizedSource);
