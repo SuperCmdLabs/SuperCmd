@@ -548,6 +548,13 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const contentBackground = step === 0
     ? 'var(--onboarding-content-bg-step0)'
     : 'var(--onboarding-content-bg-default)';
+  const handleBack = () => {
+    if (step === 0) {
+      onClose();
+      return;
+    }
+    setStep((prev) => Math.max(prev - 1, 0));
+  };
 
   return (
     <div className="w-full h-full onboarding-flow">
@@ -561,7 +568,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       >
         <div className="flex items-center gap-3 px-6 py-4 border-b border-white/[0.05]">
           <button
-            onClick={onClose}
+            onClick={handleBack}
             className="text-white/30 hover:text-white/75 transition-colors p-0.5"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -1013,7 +1020,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                 if (canCompleteOnboarding) onComplete();
                 return;
               }
-              setStep((prev) => Math.max(prev - 1, 0));
+              handleBack();
             }}
             disabled={step === 0 && !canCompleteOnboarding}
             className="px-3 py-1.5 rounded-md text-xs text-white/62 hover:text-white/90 hover:bg-white/[0.10] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"

@@ -209,6 +209,38 @@ const GeneralTab: React.FC = () => {
         return 'Check for and install packaged-app updates.';
     }
   }, [updaterStatus]);
+  const updaterAction = useMemo(() => {
+    if (updaterState === 'downloaded') {
+      return {
+        label: 'Restart to Install',
+        icon: <RotateCcw className="w-3.5 h-3.5" />,
+        onClick: handleRestartToInstall,
+        disabled: !updaterSupported,
+        className:
+          'border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:border-emerald-700',
+      };
+    }
+
+    if (updaterState === 'available' || updaterState === 'downloading') {
+      return {
+        label: updaterState === 'downloading' ? 'Downloading...' : 'Download Update',
+        icon: <Download className={`w-3.5 h-3.5 ${updaterState === 'downloading' ? 'animate-pulse' : ''}`} />,
+        onClick: handleDownloadUpdate,
+        disabled: !updaterSupported || updaterState === 'downloading',
+        className:
+          'border border-cyan-600 bg-cyan-600 text-white hover:bg-cyan-700 hover:border-cyan-700',
+      };
+    }
+
+    return {
+      label: updaterState === 'checking' ? 'Checking...' : 'Check for Updates',
+      icon: <RefreshCw className={`w-3.5 h-3.5 ${updaterState === 'checking' ? 'animate-spin' : ''}`} />,
+      onClick: handleCheckForUpdates,
+      disabled: !updaterSupported || updaterState === 'checking',
+      className:
+        'border border-[var(--text-primary)] bg-[var(--text-primary)] text-[var(--settings-panel-bg)] hover:opacity-90',
+    };
+  }, [handleCheckForUpdates, handleDownloadUpdate, handleRestartToInstall, updaterState, updaterSupported]);
 
   const handleThemePreferenceChange = (nextTheme: ThemePreference) => {
     setThemePreference(nextTheme);
@@ -381,32 +413,12 @@ const GeneralTab: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={handleCheckForUpdates}
-                disabled={!updaterSupported || updaterState === 'checking' || updaterState === 'downloading'}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.75rem] border border-[var(--ui-divider)] text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                onClick={updaterAction.onClick}
+                disabled={updaterAction.disabled}
+                className={`inline-flex min-w-[190px] items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[0.75rem] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-100 disabled:border-[var(--ui-divider)] disabled:bg-[var(--ui-segment-bg)] disabled:text-[var(--text-muted)] ${updaterAction.className}`}
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${updaterState === 'checking' ? 'animate-spin' : ''}`} />
-                Check for Updates
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDownloadUpdate}
-                disabled={!updaterSupported || (updaterState !== 'available' && updaterState !== 'downloading')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.75rem] border border-cyan-400/40 text-cyan-200 hover:bg-cyan-400/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <Download className={`w-3.5 h-3.5 ${updaterState === 'downloading' ? 'animate-pulse' : ''}`} />
-                {updaterState === 'downloading' ? 'Downloading...' : 'Download Update'}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleRestartToInstall}
-                disabled={!updaterSupported || updaterState !== 'downloaded'}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.75rem] border border-emerald-400/40 text-emerald-200 hover:bg-emerald-400/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Restart to Install
+                {updaterAction.icon}
+                {updaterAction.label}
               </button>
             </div>
           </div>
