@@ -3168,6 +3168,7 @@ async function requestOnboardingPermissionAccess(target: OnboardingPermissionTar
     try {
       const before = systemPreferences.isTrustedAccessibilityClient(false);
       if (before) {
+        try { refreshSnippetExpander(); } catch {}
         return {
           granted: true,
           requested: true,
@@ -3178,6 +3179,9 @@ async function requestOnboardingPermissionAccess(target: OnboardingPermissionTar
         };
       }
       const after = systemPreferences.isTrustedAccessibilityClient(true);
+      if (after) {
+        try { refreshSnippetExpander(); } catch {}
+      }
       return {
         granted: Boolean(after),
         requested: true,
@@ -7677,6 +7681,14 @@ function refreshSnippetExpander(): void {
   if (process.platform !== 'darwin') return;
   stopSnippetExpander();
 
+  const settings = loadSettings();
+  if (!settings.hasSeenOnboarding) return;
+  try {
+    if (!systemPreferences.isTrustedAccessibilityClient(false)) return;
+  } catch {
+    return;
+  }
+
   const keywords = getAllSnippets()
     .map((s) => (s.keyword || '').trim().toLowerCase())
     .filter((s) => Boolean(s));
@@ -9817,8 +9829,6 @@ protocol.registerSchemesAsPrivileged([
 app.whenReady().then(async () => {
   app.setAsDefaultProtocolClient('supercmd');
   scrubInternalClipboardProbe('app startup');
-  // Warm the worker so the first window-management action does not race spawn.
-  setTimeout(() => { ensureWindowManagerWorker(); }, 0);
 
   // Register the sc-asset:// protocol handler to serve extension asset files
   protocol.handle('sc-asset', (request: any) => {

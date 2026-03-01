@@ -95,8 +95,10 @@ func extractTypedCharacters(from event: CGEvent) -> String {
   return String(utf16CodeUnits: buffer, count: length)
 }
 
-let accessibilityOpts: CFDictionary = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true] as CFDictionary
-_ = AXIsProcessTrustedWithOptions(accessibilityOpts)
+guard AXIsProcessTrusted() else {
+  fputs("Accessibility permission not granted.\n", stderr)
+  exit(0)
+}
 
 var eventTapRef: CFMachPort?
 
