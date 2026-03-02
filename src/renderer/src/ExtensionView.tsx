@@ -1713,17 +1713,36 @@ async function streamPipelineCompat(...args: any[]) {
 }
 
 // ── child_process stub ──────────────────────────────────────────
-const fakeChildProcess: any = new EventEmitterStub();
-fakeChildProcess.stdin = new WritableStub();
-fakeChildProcess.stdout = new ReadableStub();
-fakeChildProcess.stderr = new ReadableStub();
-fakeChildProcess.pid = 0;
-fakeChildProcess.exitCode = null;
-fakeChildProcess.kill = noop;
-fakeChildProcess.ref = noop;
-fakeChildProcess.unref = noop;
-fakeChildProcess.disconnect = noop;
-fakeChildProcess.connected = false;
+function createStubChildProcess(): any {
+  const cp: any = new EventEmitterStub();
+  cp.stdin = new WritableStub();
+  cp.stdout = new ReadableStub();
+  cp.stderr = new ReadableStub();
+  cp.pid = 0;
+  cp.exitCode = null;
+  cp.signalCode = null;
+  cp.killed = false;
+  cp.kill = noop;
+  cp.ref = noop;
+  cp.unref = noop;
+  cp.disconnect = noop;
+  cp.connected = false;
+  return cp;
+}
+
+function resolveExecShellLaunch(command: string, shellOption?: boolean | string): { file: string; args: string[] } {
+  if (process.platform === 'win32') {
+    const shellPath = typeof shellOption === 'string' && shellOption.trim()
+      ? shellOption.trim()
+      : (process.env.ComSpec || 'cmd.exe');
+    return { file: shellPath, args: ['/d', '/s', '/c', command] };
+  }
+
+  const shellPath = typeof shellOption === 'string' && shellOption.trim()
+    ? shellOption.trim()
+    : '/bin/sh';
+  return { file: shellPath, args: ['-c', command] };
+}
 
 const childProcessStub = {
   // Some git flows probe paths that can legitimately disappear (deleted/moved files).
@@ -1752,38 +1771,68 @@ const childProcessStub = {
     else if (typeof args[1] === 'object') { options = args[1]; cb = typeof args[2] === 'function' ? args[2] : null; }
     else if (typeof args[2] === 'function') { cb = args[2]; }
 
-    // Actually execute via IPC bridge
-    const cp: any = { ...fakeChildProcess };
-    if (typeof command === 'string' && (window as any).electron?.execCommand) {
+    const cp = createStubChildProcess();
+    if (typeof command === 'string' && (window as any).electron?.spawnProcess) {
       const normalizedCommand = rewriteShellCommandForMissingBinary(command);
-      (window as any).electron.execCommand(
-        '/bin/zsh', ['-lc', normalizedCommand],
-        { shell: false, env: options?.env, cwd: options?.cwd }
-      ).then((result: any) => {
+      const { file, args: execArgs } = resolveExecShellLaunch(normalizedCommand, options?.shell);
+      let stdout = '';
+      let stderr = '';
+      const spawned = childProcessStub.spawn(file, execArgs, {
+        shell: false,
+        env: options?.env,
+        cwd: options?.cwd,
+      });
+      cp.stdin = spawned.stdin;
+      cp.stdout = spawned.stdout;
+      cp.stderr = spawned.stderr;
+      cp.kill = (signal?: string | number) => {
+        cp.killed = true;
+        return spawned.kill(signal);
+      };
+      spawned.stdout?.on('data', (chunk: any) => {
+        stdout += BufferPolyfill.from(toUint8Array(chunk)).toString();
+      });
+      spawned.stderr?.on('data', (chunk: any) => {
+        stderr += BufferPolyfill.from(toUint8Array(chunk)).toString();
+      });
+      spawned.on('close', (code: number | null, signal: string | null) => {
+        cp.exitCode = code ?? 0;
+        cp.signalCode = signal ?? null;
         if (cb) {
-          const stderrOrMsg = String(result?.stderr || '');
+          const stderrOrMsg = String(stderr || '');
           if (childProcessStub._shouldSuppressMissingPathError(normalizedCommand, stderrOrMsg)) {
             cb(null, '', '');
-            return;
-          }
-          if (result.exitCode !== 0 && !result.stdout) {
-            const err: any = new Error(result.stderr || `Command failed with exit code ${result.exitCode}`);
-            err.code = result.exitCode;
-            err.stderr = result.stderr;
-            cb(err, result.stdout || '', result.stderr || '');
+          } else if ((code ?? 0) !== 0 && !stdout) {
+            const err: any = new Error(stderr || `Command failed with exit code ${code ?? 0}`);
+            err.code = code ?? 0;
+            err.stderr = stderr;
+            err.stdout = stdout;
+            err.signal = signal ?? null;
+            cb(err, stdout, stderr);
           } else {
-            cb(null, result.stdout || '', result.stderr || '');
+            cb(null, stdout, stderr);
           }
         }
-      }).catch((e: any) => {
-        if (cb && childProcessStub._shouldSuppressMissingPathError(normalizedCommand, String(e?.message || e || ''))) {
-          cb(null, '', '');
-          return;
+        cp.emit('exit', code ?? 0, signal ?? null);
+        cp.emit('close', code ?? 0, signal ?? null);
+      });
+      spawned.on('error', (err: Error) => {
+        if (cb) {
+          if (childProcessStub._shouldSuppressMissingPathError(normalizedCommand, String(err?.message || err || ''))) {
+            cb(null, '', '');
+          } else {
+            cb(err, stdout, stderr);
+          }
         }
-        if (cb) cb(e, '', '');
+        cp.emit('error', err);
       });
     } else {
       if (cb) setTimeout(() => cb(null, '', ''), 0);
+      setTimeout(() => {
+        cp.exitCode = 0;
+        cp.emit('exit', 0, null);
+        cp.emit('close', 0, null);
+      }, 0);
     }
     return cp;
   },
@@ -1826,33 +1875,62 @@ const childProcessStub = {
       options = args[1];
     }
 
-    const cp: any = { ...fakeChildProcess };
-    if ((window as any).electron?.execCommand) {
-      (window as any).electron.execCommand(file, execArgs, { shell: false, env: options?.env, cwd: options?.cwd })
-        .then((result: any) => {
-          if (cb) {
-            const stderrOrMsg = String(result?.stderr || '');
-            if (childProcessStub._shouldSuppressMissingPathError(file, stderrOrMsg, execArgs)) {
-              cb(null, '', '');
-              return;
-            }
-            if (result.exitCode !== 0 && !result.stdout) {
-              const err: any = new Error(result.stderr || `Command failed with exit code ${result.exitCode}`);
-              err.code = result.exitCode;
-              cb(err, result.stdout || '', result.stderr || '');
-            } else {
-              cb(null, result.stdout || '', result.stderr || '');
-            }
-          }
-        }).catch((e: any) => {
-          if (cb && childProcessStub._shouldSuppressMissingPathError(file, String(e?.message || e || ''), execArgs)) {
+    const cp = createStubChildProcess();
+    if ((window as any).electron?.spawnProcess) {
+      let stdout = '';
+      let stderr = '';
+      const spawned = childProcessStub.spawn(file, execArgs, { shell: false, env: options?.env, cwd: options?.cwd });
+      cp.stdin = spawned.stdin;
+      cp.stdout = spawned.stdout;
+      cp.stderr = spawned.stderr;
+      cp.kill = (signal?: string | number) => {
+        cp.killed = true;
+        return spawned.kill(signal);
+      };
+      spawned.stdout?.on('data', (chunk: any) => {
+        stdout += BufferPolyfill.from(toUint8Array(chunk)).toString();
+      });
+      spawned.stderr?.on('data', (chunk: any) => {
+        stderr += BufferPolyfill.from(toUint8Array(chunk)).toString();
+      });
+      spawned.on('close', (code: number | null, signal: string | null) => {
+        cp.exitCode = code ?? 0;
+        cp.signalCode = signal ?? null;
+        if (cb) {
+          const stderrOrMsg = String(stderr || '');
+          if (childProcessStub._shouldSuppressMissingPathError(file, stderrOrMsg, execArgs)) {
             cb(null, '', '');
-            return;
+          } else if ((code ?? 0) !== 0 && !stdout) {
+            const err: any = new Error(stderr || `Command failed with exit code ${code ?? 0}`);
+            err.code = code ?? 0;
+            err.stderr = stderr;
+            err.stdout = stdout;
+            err.signal = signal ?? null;
+            cb(err, stdout, stderr);
+          } else {
+            cb(null, stdout, stderr);
           }
-          if (cb) cb(e, '', '');
-        });
+        }
+        cp.emit('exit', code ?? 0, signal ?? null);
+        cp.emit('close', code ?? 0, signal ?? null);
+      });
+      spawned.on('error', (err: Error) => {
+        if (cb) {
+          if (childProcessStub._shouldSuppressMissingPathError(file, String(err?.message || err || ''), execArgs)) {
+            cb(null, '', '');
+          } else {
+            cb(err, stdout, stderr);
+          }
+        }
+        cp.emit('error', err);
+      });
     } else {
       if (cb) setTimeout(() => cb(null, '', ''), 0);
+      setTimeout(() => {
+        cp.exitCode = 0;
+        cp.emit('exit', 0, null);
+        cp.emit('close', 0, null);
+      }, 0);
     }
     return cp;
   },
@@ -1893,16 +1971,7 @@ const childProcessStub = {
     const file = resolveExecutablePath(args[0]);
     const spawnArgs = Array.isArray(args[1]) ? args[1] : [];
     const options = (typeof args[2] === 'object' && args[2]) ? args[2] : {};
-    const cp: any = new EventEmitterStub();
-    cp.stdin = new WritableStub();
-    cp.stdout = new ReadableStub();
-    cp.stderr = new ReadableStub();
-    cp.pid = 0;
-    cp.exitCode = null;
-    cp.kill = noop;
-    cp.ref = noop;
-    cp.unref = noop;
-    cp.disconnect = noop;
+    const cp = createStubChildProcess();
     const electron = (window as any).electron;
     if (electron?.spawnProcess) {
       // Streaming spawn: main process runs the binary and forwards stdout/stderr chunks in real-time.
@@ -1941,6 +2010,7 @@ const childProcessStub = {
           endChildStreams();
           cleanup();
           cp.exitCode = event.code;
+          cp.signalCode = null;
           cp.emit('close', event.code, null);
           cp.emit('exit', event.code, null);
           return;
@@ -2005,7 +2075,11 @@ const childProcessStub = {
         }));
       }
 
-      cp.kill = () => { if (pid !== null) electron.killSpawnProcess?.(pid); };
+      cp.kill = (signal?: string | number) => {
+        cp.killed = true;
+        if (pid !== null) electron.killSpawnProcess?.(pid, signal);
+        return pid !== null;
+      };
 
       electron.spawnProcess(file, spawnArgs, {
         shell: options?.shell ?? false,
@@ -2090,7 +2164,7 @@ const childProcessStub = {
       error: undefined,
     };
   },
-  fork: () => ({ ...fakeChildProcess }),
+  fork: () => createStubChildProcess(),
 };
 
 // ── timers stubs ────────────────────────────────────────────────

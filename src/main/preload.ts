@@ -366,8 +366,8 @@ contextBridge.exposeInMainWorld('electron', {
   // Streaming spawn — real-time stdout/stderr for long-running processes (generic, works for all extensions)
   spawnProcess: (file: string, args: string[], options?: { shell?: boolean | string; env?: Record<string, string>; cwd?: string }): Promise<{ pid: number }> =>
     ipcRenderer.invoke('spawn-process', file, args, options),
-  killSpawnProcess: (pid: number): Promise<void> =>
-    ipcRenderer.invoke('spawn-kill', pid),
+  killSpawnProcess: (pid: number, signal?: string | number): Promise<void> =>
+    ipcRenderer.invoke('spawn-kill', pid, signal),
   onSpawnStdout: (callback: (pid: number, data: Uint8Array) => void): (() => void) => {
     const handler = (_e: any, pid: number, data: Uint8Array) => callback(pid, data);
     ipcRenderer.on('spawn-stdout', handler);

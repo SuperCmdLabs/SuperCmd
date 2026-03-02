@@ -92,14 +92,21 @@ function renderInlineMarkdown(text: string, resolveImageSrc: ResolveImageSrc): R
 
     const codeMatch = remaining.match(/^`([^`]+)`/);
     if (codeMatch) {
-      parts.push(<code key={key++} className="bg-white/[0.08] px-1 py-0.5 rounded text-xs font-mono text-white/70">{codeMatch[1]}</code>);
+      parts.push(
+        <code
+          key={key++}
+          className="bg-[var(--kbd-bg)] px-1.5 py-0.5 rounded text-[11px] font-mono text-[var(--text-secondary)]"
+        >
+          {codeMatch[1]}
+        </code>
+      );
       remaining = remaining.slice(codeMatch[0].length);
       continue;
     }
 
     const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
     if (boldMatch) {
-      parts.push(<strong key={key++} className="text-white/90 font-semibold">{boldMatch[1]}</strong>);
+      parts.push(<strong key={key++} className="text-[var(--text-primary)] font-semibold">{boldMatch[1]}</strong>);
       remaining = remaining.slice(boldMatch[0].length);
       continue;
     }
@@ -141,8 +148,8 @@ export function renderSimpleMarkdown(md: string, resolveImageSrc: ResolveImageSr
       }
       i += 1;
       elements.push(
-        <pre key={elements.length} className="bg-white/[0.06] rounded-lg p-3 my-2 overflow-x-auto">
-          <code className="text-xs text-white/70 font-mono">{codeLines.join('\n')}</code>
+        <pre key={elements.length} className="my-0 overflow-x-auto whitespace-pre-wrap break-words">
+          <code className="block text-[13px] leading-[1.65] font-mono text-[var(--text-primary)]">{codeLines.join('\n')}</code>
         </pre>
       );
       continue;
@@ -153,7 +160,7 @@ export function renderSimpleMarkdown(md: string, resolveImageSrc: ResolveImageSr
       const level = headingMatch[1].length;
       const sizes = ['text-xl', 'text-lg', 'text-base', 'text-sm', 'text-sm', 'text-xs'];
       elements.push(
-        <div key={elements.length} className={`${sizes[level - 1]} font-bold text-white/90 mt-3 mb-1`}>
+        <div key={elements.length} className={`${sizes[level - 1]} font-bold text-[var(--text-primary)] mt-3 mb-1`}>
           {renderInlineMarkdown(headingMatch[2], resolveImageSrc)}
         </div>
       );
@@ -192,8 +199,8 @@ export function renderSimpleMarkdown(md: string, resolveImageSrc: ResolveImageSr
     if (/^[-*]\s+/.test(line)) {
       const text = line.replace(/^[-*]\s+/, '');
       elements.push(
-        <div key={elements.length} className="flex items-start gap-2 text-sm text-white/80 ml-2">
-          <span className="text-white/40 mt-0.5">•</span>
+        <div key={elements.length} className="flex items-start gap-2 text-sm text-[var(--text-secondary)] ml-2">
+          <span className="text-[var(--text-subtle)] mt-0.5">•</span>
           <span>{renderInlineMarkdown(text, resolveImageSrc)}</span>
         </div>
       );
@@ -201,16 +208,16 @@ export function renderSimpleMarkdown(md: string, resolveImageSrc: ResolveImageSr
       continue;
     }
 
-    const olMatch = line.match(/^(\d+)\.\s+(.*)$/);
-    if (olMatch) {
-      elements.push(
-        <div key={elements.length} className="flex items-start gap-2 text-sm text-white/80 ml-2">
-          <span className="text-white/40 mt-0.5">{olMatch[1]}.</span>
-          <span>{renderInlineMarkdown(olMatch[2], resolveImageSrc)}</span>
-        </div>
-      );
-      i += 1;
-      continue;
+      const olMatch = line.match(/^(\d+)\.\s+(.*)$/);
+      if (olMatch) {
+        elements.push(
+          <div key={elements.length} className="flex items-start gap-2 text-sm text-[var(--text-secondary)] ml-2">
+            <span className="text-[var(--text-subtle)] mt-0.5">{olMatch[1]}.</span>
+            <span>{renderInlineMarkdown(olMatch[2], resolveImageSrc)}</span>
+          </div>
+        );
+        i += 1;
+        continue;
     }
 
     if (/^---+$/.test(line.trim())) {
@@ -226,7 +233,7 @@ export function renderSimpleMarkdown(md: string, resolveImageSrc: ResolveImageSr
     }
 
     elements.push(
-      <p key={elements.length} className="text-sm text-white/80 leading-relaxed">
+      <p key={elements.length} className="text-sm text-[var(--text-secondary)] leading-relaxed">
         {renderInlineMarkdown(line, resolveImageSrc)}
       </p>
     );

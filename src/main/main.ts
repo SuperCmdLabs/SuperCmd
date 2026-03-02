@@ -9648,6 +9648,7 @@ app.whenReady().then(async () => {
           shell: options?.shell ?? false,
           env: { ...process.env, ...options?.env, PATH: augmentedPath },
           cwd: options?.cwd || process.cwd(),
+          detached: process.platform !== 'win32',
         };
 
         const proc = options?.shell
@@ -9710,10 +9711,19 @@ app.whenReady().then(async () => {
       }
     );
 
-    ipcMain.handle('spawn-kill', (_event: any, pid: number) => {
+    ipcMain.handle('spawn-kill', (_event: any, pid: number, signal?: string | number) => {
       const proc = spawnedProcesses.get(pid);
       if (proc) {
-        try { proc.kill(); } catch {}
+        const killSignal = signal ?? 'SIGTERM';
+        try {
+          if (process.platform !== 'win32' && typeof proc.pid === 'number' && proc.pid > 0) {
+            process.kill(-proc.pid, killSignal as NodeJS.Signals | number);
+          } else {
+            proc.kill(killSignal);
+          }
+        } catch {
+          try { proc.kill(killSignal); } catch {}
+        }
         spawnedProcesses.delete(pid);
       }
     });

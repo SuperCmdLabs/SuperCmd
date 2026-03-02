@@ -444,7 +444,7 @@ export interface ElectronAPI {
     options?: { shell?: boolean | string; input?: string; env?: Record<string, string>; cwd?: string }
   ) => { stdout: string; stderr: string; exitCode: number };
   spawnProcess: (file: string, args: string[], options?: { shell?: boolean | string; env?: Record<string, string>; cwd?: string }) => Promise<{ pid: number }>;
-  killSpawnProcess: (pid: number) => Promise<void>;
+  killSpawnProcess: (pid: number, signal?: string | number) => Promise<void>;
   onSpawnStdout: (callback: (pid: number, data: Uint8Array) => void) => (() => void);
   onSpawnStderr: (callback: (pid: number, data: Uint8Array) => void) => (() => void);
   onSpawnExit: (callback: (pid: number, code: number) => void) => (() => void);
