@@ -843,6 +843,22 @@ html {
   outline: none;
 }
 
+.sc-back-button {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border: none;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.sc-back-button:focus,
+.sc-back-button:focus-visible,
+.sc-back-button:active {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .sc-native-liquid-glass .launcher-search-input::placeholder {
   color: rgba(41, 50, 67, 0.56) !important;
 }
