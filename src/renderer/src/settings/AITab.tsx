@@ -432,6 +432,8 @@ const AITab: React.FC = () => {
   }
 
   const ai = settings.ai;
+  const whisperSpeakToggleHotkey = (settings.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] ?? '';
+  const isWhisperSpeakToggleFn = String(whisperSpeakToggleHotkey).trim().toLowerCase() === 'fn';
   const genericModels = ai.provider === 'ollama' && ollamaRunning
     ? Array.from(localModels).map((name) => ({
         id: `ollama-${name}`,
@@ -1061,12 +1063,28 @@ const AITab: React.FC = () => {
                 <p className="text-[0.75rem] text-[var(--text-muted)]">Whisper Hotkeys</p>
                 <div>
                   <p className="text-[0.75rem] text-[var(--text-muted)] mb-1.5">Start/Stop Speaking</p>
-                  <HotkeyRecorder
-                    value={(settings.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] ?? ''}
-                    onChange={(hotkey) => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey); }}
-                    compact
-                    variant="whisper"
-                  />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <HotkeyRecorder
+                      value={whisperSpeakToggleHotkey}
+                      onChange={(hotkey) => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey); }}
+                      compact
+                      variant="whisper"
+                    />
+                    {!isWhisperSpeakToggleFn ? (
+                      <button
+                        type="button"
+                        onClick={() => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, 'Fn'); }}
+                        className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] hover:border-[var(--ui-segment-border)]"
+                      >
+                        Set to Fn
+                      </button>
+                    ) : null}
+                  </div>
+                  {!isWhisperSpeakToggleFn ? (
+                    <p className="mt-1.5 text-[0.6875rem] text-[var(--text-muted)]">
+                      Use <span className="text-[var(--text-primary)]">Set to Fn</span> to restore the default hold-to-talk key.
+                    </p>
+                  ) : null}
                 </div>
                 {hotkeyStatus.type !== 'idle' ? (
                   <p
