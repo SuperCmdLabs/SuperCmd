@@ -8,6 +8,17 @@
 import React from 'react';
 import type { ActionShortcut } from './action-runtime-types';
 
+const shortcutBadgeClassName =
+  'inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-subtle)] font-medium';
+
+export function renderShortcutKeycap(label: string, key?: React.Key): React.ReactNode {
+  return (
+    <kbd key={key} className={shortcutBadgeClassName}>
+      {label}
+    </kbd>
+  );
+}
+
 export function matchesShortcut(e: React.KeyboardEvent | KeyboardEvent, shortcut?: ActionShortcut): boolean {
   if (!shortcut?.key) return false;
   const shortcutKey = shortcut.key.toLowerCase();
@@ -45,18 +56,11 @@ export function renderShortcut(shortcut?: ActionShortcut): React.ReactNode {
   }
 
   return (
-    <span className="flex items-center gap-0.5 ml-auto">
+    <span className="flex items-center gap-1 ml-auto">
       {parts.map((symbol, index) => (
-        <kbd
-          key={index}
-          className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/40 font-medium"
-        >
-          {symbol}
-        </kbd>
+        renderShortcutKeycap(symbol, index)
       ))}
-      <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] text-[10px] text-white/40 font-medium">
-        {shortcut.key.toUpperCase()}
-      </kbd>
+      {renderShortcutKeycap(shortcut.key.toUpperCase(), 'key')}
     </span>
   );
 }

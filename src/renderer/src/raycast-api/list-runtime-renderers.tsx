@@ -17,11 +17,12 @@ import {
 interface ListRendererDeps {
   renderIcon: (icon: any, className?: string, assetsPath?: string) => React.ReactNode;
   resolveTintColor: (tintColor?: string) => string | undefined;
+  resolveReadableTintColor: (tintColor?: string, options?: { minContrast?: number }) => string | undefined;
   addHexAlpha: (hex: string, alphaHex?: string) => string | null;
 }
 
 export function createListRenderers(deps: ListRendererDeps) {
-  const { renderIcon, resolveTintColor, addHexAlpha } = deps;
+  const { renderIcon, resolveTintColor, resolveReadableTintColor, addHexAlpha } = deps;
   let itemOrderCounter = 0;
 
   function normalizeIconToken(value: unknown): string {
@@ -94,9 +95,10 @@ export function createListRenderers(deps: ListRendererDeps) {
             const tagText = typeof accessory?.tag === 'string' ? accessory.tag : typeof accessory?.tag === 'object' ? accessory.tag?.value || '' : '';
             const tagColorRaw = typeof accessory?.tag === 'object' ? accessory.tag?.color : undefined;
             const accessoryTextColor = resolveTintColor(accessoryTextColorRaw);
-            const tagColor = resolveTintColor(tagColorRaw);
+            const rawTagColor = resolveTintColor(tagColorRaw);
+            const tagColor = resolveReadableTintColor(tagColorRaw, { minContrast: 4.25 }) || rawTagColor;
             const dateString = accessory?.date ? new Date(accessory.date).toLocaleDateString() : '';
-            const tagBackground = tagColor ? addHexAlpha(tagColor, '2E') || 'rgba(var(--on-surface-rgb), 0.12)' : 'rgba(var(--on-surface-rgb), 0.12)';
+            const tagBackground = rawTagColor ? addHexAlpha(rawTagColor, '2E') || 'rgba(var(--on-surface-rgb), 0.12)' : 'rgba(var(--on-surface-rgb), 0.12)';
 
             return (
               <span key={index} className="text-[12px] leading-5 flex-shrink-0 flex items-center gap-1.5" style={{ color: accessoryTextColor || tagColor || 'var(--text-muted)' }}>

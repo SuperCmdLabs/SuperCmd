@@ -63,7 +63,7 @@ export function createActionComponentRuntime(deps: ComponentDeps) {
     SubmitForm: createActionKindComponent('submitForm'),
     Paste: createActionKindComponent('paste'),
     ShowInFinder: ActionComponent,
-    OpenWith: ActionComponent,
+    OpenWith: createActionKindComponent('openWith'),
     Trash: createActionKindComponent('trash'),
     PickDate: ActionPickDateWithType,
     ToggleQuickLook: createActionKindComponent('toggleQuickLook'),

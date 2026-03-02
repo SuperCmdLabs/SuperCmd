@@ -30,6 +30,7 @@ interface ListRuntimeDeps {
   isEmojiOrSymbol: (value: string) => boolean;
   renderIcon: (icon: any, className?: string, assetsPath?: string) => React.ReactNode;
   resolveTintColor: (value?: string) => string | undefined;
+  resolveReadableTintColor: (value?: string, options?: { minContrast?: number }) => string | undefined;
   addHexAlpha: (hex: string, alphaHex?: string) => string | null;
   getExtensionContext: () => {
     assetsPath: string;
@@ -54,6 +55,7 @@ export function createListRuntime(deps: ListRuntimeDeps) {
     isEmojiOrSymbol,
     renderIcon,
     resolveTintColor,
+    resolveReadableTintColor,
     addHexAlpha,
     getExtensionContext,
     normalizeScAssetUrl,
@@ -61,7 +63,7 @@ export function createListRuntime(deps: ListRuntimeDeps) {
     setClearSearchBarCallback,
   } = deps;
 
-  const renderers = createListRenderers({ renderIcon, resolveTintColor, addHexAlpha });
+  const renderers = createListRenderers({ renderIcon, resolveTintColor, resolveReadableTintColor, addHexAlpha });
   const { ListItemComponent, ListItemRenderer, ListEmojiGridItemRenderer, ListSectionComponent, ListEmptyView, ListDropdown } = renderers;
   const { ListItemDetail } = createListDetailRuntime({ getExtensionContext, normalizeScAssetUrl, toScAssetUrl });
 

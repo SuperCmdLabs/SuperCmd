@@ -468,6 +468,10 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
         return;
       }
 
+      if (showActions) {
+        return;
+      }
+
       if (!event.metaKey && !event.ctrlKey && !event.altKey) {
         if (event.key === 'ArrowDown') {
           event.preventDefault();

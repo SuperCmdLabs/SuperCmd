@@ -33,7 +33,7 @@ import React, {
   useContext,
 } from 'react';
 import { configureIconRuntime, Icon, Color, Image, Keyboard, renderIcon, resolveIconSrc } from './icon-runtime';
-import { addHexAlpha, isEmojiOrSymbol, normalizeScAssetUrl, resolveTintColor, toScAssetUrl } from './icon-runtime-assets';
+import { addHexAlpha, isEmojiOrSymbol, normalizeScAssetUrl, resolveReadableTintColor, resolveTintColor, toScAssetUrl } from './icon-runtime-assets';
 import { configureOAuthRuntime, OAuth, OAuthService, withAccessToken, getAccessToken, resetAccessToken } from './oauth';
 import {
   preferences,
@@ -163,6 +163,44 @@ let _extensionContext: ExtensionContextType = {
 
 type RuntimePreferenceDefinition = NonNullable<ExtensionContextType['preferenceDefinitions']>[number];
 
+function deriveApplicationName(input: string): string {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  const lastSegment = raw.split('/').pop() || raw;
+  const withoutExtension = lastSegment.replace(/\.app$/i, '');
+  const bundleToken = withoutExtension.split('.').pop() || withoutExtension;
+  const normalized = bundleToken.replace(/[-_]+/g, ' ').trim();
+  return normalized || withoutExtension;
+}
+
+function normalizeAppPickerValue(value: any): any {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const path = typeof value.path === 'string' ? value.path.trim() : '';
+    const bundleId = typeof value.bundleId === 'string' ? value.bundleId.trim() : '';
+    const name =
+      typeof value.name === 'string' && value.name.trim()
+        ? value.name.trim()
+        : deriveApplicationName(path || bundleId);
+    if (!name && !path && !bundleId) return '';
+    return {
+      ...value,
+      name,
+      path,
+      ...(bundleId ? { bundleId } : {}),
+    };
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return '';
+  const isPathLike = raw.startsWith('/') || raw.endsWith('.app');
+  return {
+    name: deriveApplicationName(raw),
+    path: isPathLike ? raw : '',
+    ...(isPathLike ? {} : { bundleId: raw }),
+  };
+}
+
 function getDefaultPreferenceValue(def: RuntimePreferenceDefinition): any {
   if (def.default !== undefined) return def.default;
   if (def.type === 'checkbox') return false;
@@ -200,6 +238,10 @@ function normalizePreferenceValue(def: RuntimePreferenceDefinition, value: any):
       option.title.toLowerCase() === normalized.toLowerCase()
     );
     return match?.value || getDefaultPreferenceValue(def);
+  }
+
+  if (def.type === 'appPicker') {
+    return normalizeAppPickerValue(value);
   }
 
   return value;
@@ -1934,6 +1976,7 @@ const {
   matchesShortcut,
   isMetaK,
   renderShortcut,
+  renderShortcutKeycap,
 } = actionRuntime;
 
 export const Action = actionRuntime.Action;
@@ -1954,6 +1997,7 @@ const listRuntime = createListRuntime({
   isEmojiOrSymbol,
   renderIcon,
   resolveTintColor,
+  resolveReadableTintColor,
   addHexAlpha,
   getExtensionContext,
   normalizeScAssetUrl,

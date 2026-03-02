@@ -139,7 +139,9 @@ export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?
 
     if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(icon)) {
       const resolved = resolveIconSrc(icon, assetsPathOverride);
-      return <img src={resolved} className={className + ' rounded'} alt="" />;
+      if (resolved) {
+        return <img src={resolved} className={className + ' rounded'} alt="" />;
+      }
     }
 
     const absolutePath = normalizeFileIconPath(icon);

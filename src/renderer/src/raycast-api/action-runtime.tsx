@@ -8,7 +8,7 @@
 import { createActionComponentRuntime } from './action-runtime-components';
 import { createActionOverlayRuntime } from './action-runtime-overlay';
 import { createActionRegistryRuntime } from './action-runtime-registry';
-import { isMetaK, matchesShortcut, renderShortcut } from './action-runtime-shortcuts';
+import { isMetaK, matchesShortcut, renderShortcut, renderShortcutKeycap } from './action-runtime-shortcuts';
 import type React from 'react';
 
 interface ActionRuntimeDeps {
@@ -56,6 +56,7 @@ export function createActionRuntime(deps: ActionRuntimeDeps) {
     matchesShortcut,
     isMetaK,
     renderShortcut,
+    renderShortcutKeycap,
   });
 
   return {
@@ -65,6 +66,7 @@ export function createActionRuntime(deps: ActionRuntimeDeps) {
     matchesShortcut,
     isMetaK,
     renderShortcut,
+    renderShortcutKeycap,
   };
 }
 

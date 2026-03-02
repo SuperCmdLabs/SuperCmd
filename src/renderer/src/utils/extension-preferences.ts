@@ -68,6 +68,44 @@ export function getDefaultPreferenceValue(def: PreferenceDefinition): any {
   return '';
 }
 
+function deriveApplicationName(input: string): string {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  const lastSegment = raw.split('/').pop() || raw;
+  const withoutExtension = lastSegment.replace(/\.app$/i, '');
+  const bundleToken = withoutExtension.split('.').pop() || withoutExtension;
+  const normalized = bundleToken.replace(/[-_]+/g, ' ').trim();
+  return normalized || withoutExtension;
+}
+
+function normalizeAppPickerValue(value: any): any {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const path = typeof value.path === 'string' ? value.path.trim() : '';
+    const bundleId = typeof value.bundleId === 'string' ? value.bundleId.trim() : '';
+    const name =
+      typeof value.name === 'string' && value.name.trim()
+        ? value.name.trim()
+        : deriveApplicationName(path || bundleId);
+    if (!name && !path && !bundleId) return '';
+    return {
+      ...value,
+      name,
+      path,
+      ...(bundleId ? { bundleId } : {}),
+    };
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return '';
+  const isPathLike = raw.startsWith('/') || raw.endsWith('.app');
+  return {
+    name: deriveApplicationName(raw),
+    path: isPathLike ? raw : '',
+    ...(isPathLike ? {} : { bundleId: raw }),
+  };
+}
+
 export function normalizePreferenceValue(def: PreferenceDefinition, value: any): any {
   const type = String(def.type || 'textfield');
   if (value === undefined || value === null) return getDefaultPreferenceValue(def);
@@ -109,7 +147,11 @@ export function normalizePreferenceValue(def: PreferenceDefinition, value: any):
     return getDefaultPreferenceValue(def);
   }
 
-  if (type === 'textfield' || type === 'password' || type === 'file' || type === 'directory' || type === 'appPicker') {
+  if (type === 'appPicker') {
+    return normalizeAppPickerValue(value);
+  }
+
+  if (type === 'textfield' || type === 'password' || type === 'file' || type === 'directory') {
     return typeof value === 'string' ? value : String(value);
   }
 

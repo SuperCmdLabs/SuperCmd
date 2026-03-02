@@ -225,6 +225,16 @@ export function createActionRegistryRuntime(deps: RegistryDeps) {
           props.onOpen?.();
           return;
         }
+        if (props.__actionKind === 'openWith' && props.path) {
+          const appName =
+            typeof props.application === 'string'
+              ? props.application
+              : typeof props.application?.name === 'string'
+                ? props.application.name
+                : undefined;
+          (window as any).electron?.openUrl?.(props.path, appName);
+          return;
+        }
         if (props.target && React.isValidElement(props.target)) {
           getGlobalNavigation().push(props.target);
           props.onPush?.();
@@ -259,6 +269,15 @@ export function createActionRegistryRuntime(deps: RegistryDeps) {
         return 'Pick Date';
       case 'open':
         return 'Open';
+      case 'openWith': {
+        const appName =
+          typeof props?.application === 'string'
+            ? props.application
+            : typeof props?.application?.name === 'string'
+              ? props.application.name
+              : '';
+        return appName ? `Open with ${appName}` : 'Open With...';
+      }
       case 'toggleQuickLook':
         return 'Toggle Quick Look';
       case 'createSnippet':
