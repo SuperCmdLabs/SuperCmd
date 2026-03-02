@@ -1039,24 +1039,49 @@ async function inferClipboardFilePath(rawValue: string, electron: any): Promise<
   return '';
 }
 
+function parseClipboardPayload(
+  content: string | number | Clipboard.Content | ArrayBuffer | ArrayBufferView
+): { text: string; html: string; file: string } {
+  if (typeof content === 'string' || typeof content === 'number') {
+    return { text: String(content), html: '', file: '' };
+  }
+
+  if (content instanceof ArrayBuffer) {
+    return { text: new TextDecoder().decode(new Uint8Array(content)), html: '', file: '' };
+  }
+
+  if (ArrayBuffer.isView(content)) {
+    return {
+      text: new TextDecoder().decode(new Uint8Array(content.buffer, content.byteOffset, content.byteLength)),
+      html: '',
+      file: '',
+    };
+  }
+
+  if (content && typeof content === 'object') {
+    const maybeContent = content as { text?: unknown; file?: unknown; html?: unknown };
+    const hasStructuredClipboardFields =
+      maybeContent.text !== undefined || maybeContent.file !== undefined || maybeContent.html !== undefined;
+
+    if (hasStructuredClipboardFields) {
+      return {
+        text: typeof maybeContent.text === 'string' ? maybeContent.text : String(maybeContent.file || ''),
+        file: typeof maybeContent.file === 'string' ? maybeContent.file : '',
+        html: typeof maybeContent.html === 'string' ? maybeContent.html : '',
+      };
+    }
+  }
+
+  return { text: String(content || ''), html: '', file: '' };
+}
+
 export const Clipboard = {
   async copy(
     content: string | number | Clipboard.Content,
     options?: Clipboard.CopyOptions
   ): Promise<void> {
     const electron = (window as any).electron;
-    let text = '';
-    let html = '';
-    let file = '';
-
-    // Parse content
-    if (typeof content === 'string' || typeof content === 'number') {
-      text = String(content);
-    } else if (typeof content === 'object') {
-      text = content.text || content.file || '';
-      file = content.file || '';
-      html = content.html || '';
-    }
+    let { text, html, file } = parseClipboardPayload(content as any);
 
     if (!file && !html && text) {
       const inferredFile = await inferClipboardFilePath(text, electron);
@@ -1066,14 +1091,11 @@ export const Clipboard = {
     let copied = false;
 
     try {
-      // File payloads should stay as file content (not plain text paths).
-      if (file) {
-        if (electron?.clipboardWrite) {
-          copied = await electron.clipboardWrite({ text, html, file }) || false;
-        } else {
-          await navigator.clipboard.writeText(file);
-          copied = true;
-        }
+      if (electron?.clipboardWrite) {
+        copied = await electron.clipboardWrite({ text, html, file }) || false;
+      } else if (file) {
+        await navigator.clipboard.writeText(file);
+        copied = true;
       } else if (html) {
         // For HTML content, we need to use ClipboardItem
         const blob = new Blob([html], { type: 'text/html' });
@@ -1109,17 +1131,7 @@ export const Clipboard = {
   async paste(content: string | Clipboard.Content): Promise<void> {
     try {
       const electron = (window as any).electron;
-      let text = '';
-      let html = '';
-      let file = '';
-
-      if (typeof content === 'string' || typeof content === 'number') {
-        text = String(content);
-      } else if (content && typeof content === 'object') {
-        text = content.text || content.file || '';
-        file = content.file || '';
-        html = content.html || '';
-      }
+      let { text, html, file } = parseClipboardPayload(content as any);
 
       if (!file && !html && text) {
         const inferredFile = await inferClipboardFilePath(text, electron);
