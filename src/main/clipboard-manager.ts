@@ -1,0 +1,460 @@
+/**
+ * Clipboard Manager
+ *
+ * Monitors macOS clipboard and stores history of text, images, and URLs.
+ * - Polls clipboard every 1 second
+ * - Stores up to 1000 items
+ * - Persists to disk (JSON for metadata, separate files for images)
+ * - Supports text, images (png/jpg/gif/webp), URLs, and file paths
+ */
+
+import { app, clipboard, nativeImage } from 'electron';
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
+
+/**
+ * Write a GIF file to macOS pasteboard with file URL + GIF data + TIFF
+ * fallback via NSPasteboard so apps like Twitter/Slack treat it as a GIF
+ * file upload and other apps get a static fallback.
+ */
+function writeGifToClipboard(filePath: string): boolean {
+  try {
+    const swift = `
+import Cocoa
+let filePath = CommandLine.arguments[1]
+let fileUrl = URL(fileURLWithPath: filePath)
+guard let gifData = try? Data(contentsOf: fileUrl) else { exit(1) }
+let image = NSImage(data: gifData)
+let pb = NSPasteboard.general
+pb.clearContents()
+pb.writeObjects([fileUrl as NSURL])
+pb.addTypes([NSPasteboard.PasteboardType("com.compuserve.gif"), .tiff], owner: nil)
+pb.setData(gifData, forType: NSPasteboard.PasteboardType("com.compuserve.gif"))
+if let tiff = image?.tiffRepresentation {
+    pb.setData(tiff, forType: .tiff)
+}
+`;
+    execFileSync('swift', ['-e', swift, filePath], { stdio: 'ignore', timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface ClipboardItem {
+  id: string;
+  type: 'text' | 'image' | 'url' | 'file';
+  content: string; // For text/url/file: the actual content. For images: file path
+  preview?: string; // Short preview for display
+  timestamp: number;
+  source?: string; // Application name that copied
+  metadata?: {
+    // For images
+    width?: number;
+    height?: number;
+    size?: number; // bytes
+    format?: string;
+    // For files
+    filename?: string;
+  };
+}
+
+const MAX_ITEMS = 1000;
+const POLL_INTERVAL = 1000; // 1 second
+const MAX_TEXT_LENGTH = 100_000; // Don't store huge text items
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB max per image
+const INTERNAL_CLIPBOARD_PROBE_REGEX = /^__supercmd_[a-z0-9_]+_probe__\d+_[a-z0-9]+$/i;
+
+let clipboardHistory: ClipboardItem[] = [];
+let lastClipboardText = '';
+let lastClipboardImage: Buffer | null = null;
+let pollInterval: NodeJS.Timeout | null = null;
+let isEnabled = true;
+
+// ─── Paths ──────────────────────────────────────────────────────────
+
+function getClipboardDir(): string {
+  const dir = path.join(app.getPath('userData'), 'clipboard-history');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+function getImagesDir(): string {
+  const dir = path.join(getClipboardDir(), 'images');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+function getHistoryFilePath(): string {
+  return path.join(getClipboardDir(), 'history.json');
+}
+
+// ─── Persistence ────────────────────────────────────────────────────
+
+function loadHistory(): void {
+  try {
+    const historyPath = getHistoryFilePath();
+    if (fs.existsSync(historyPath)) {
+      const data = fs.readFileSync(historyPath, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) {
+        // Verify image files still exist and drop internal probe artifacts.
+        const filtered = parsed.filter((item) => {
+          if (item.type === 'image') {
+            return fs.existsSync(item.content);
+          }
+          if (item.type === 'text' || item.type === 'url' || item.type === 'file') {
+            const normalized = normalizeTextForComparison(item.content);
+            if (!normalized) return false;
+            if (INTERNAL_CLIPBOARD_PROBE_REGEX.test(normalized)) return false;
+          }
+          return true;
+        });
+        // Dedupe text-like entries on load while preserving newest-first ordering.
+        const dedupeKeys = new Set<string>();
+        clipboardHistory = filtered.filter((item) => {
+          if (item.type !== 'text' && item.type !== 'url' && item.type !== 'file') return true;
+          const key = `${item.type}:${normalizeTextForComparison(item.content).toLowerCase()}`;
+          if (dedupeKeys.has(key)) return false;
+          dedupeKeys.add(key);
+          return true;
+        });
+        console.log(`Loaded ${clipboardHistory.length} clipboard items from disk`);
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load clipboard history:', e);
+    clipboardHistory = [];
+  }
+}
+
+function saveHistory(): void {
+  try {
+    const historyPath = getHistoryFilePath();
+    fs.writeFileSync(historyPath, JSON.stringify(clipboardHistory, null, 2));
+  } catch (e) {
+    console.error('Failed to save clipboard history:', e);
+  }
+}
+
+// ─── Clipboard Monitoring ───────────────────────────────────────────
+
+function hashBuffer(buf: Buffer): string {
+  return crypto.createHash('md5').update(buf).digest('hex');
+}
+
+function detectType(text: string): 'url' | 'file' | 'text' {
+  const trimmed = text.trim();
+  
+  // URL detection
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return 'url';
+    }
+  } catch {}
+  
+  // File path detection (macOS paths)
+  if (trimmed.startsWith('/') || trimmed.startsWith('~')) {
+    // Check if it looks like a valid path
+    const expanded = trimmed.replace('~', process.env.HOME || '');
+    if (fs.existsSync(expanded)) {
+      return 'file';
+    }
+  }
+  
+  return 'text';
+}
+
+function normalizeTextForComparison(text: string): string {
+  return String(text || '').replace(/\r\n/g, '\n').trim();
+}
+
+function findComparableTextItemIndex(type: ClipboardItem['type'], normalizedContent: string): number {
+  if (!normalizedContent) return -1;
+  // Text-like dedupe: text/url/file entries with same normalized content.
+  return clipboardHistory.findIndex((item) => {
+    if (item.type !== 'text' && item.type !== 'url' && item.type !== 'file') return false;
+    if (item.type !== type) return false;
+    return normalizeTextForComparison(item.content) === normalizedContent;
+  });
+}
+
+function addTextItem(text: string): void {
+  const normalized = normalizeTextForComparison(text);
+  if (!normalized || normalized.length > MAX_TEXT_LENGTH) return;
+  if (INTERNAL_CLIPBOARD_PROBE_REGEX.test(normalized)) return;
+
+  const type = detectType(normalized);
+  const preview = normalized.length > 200 ? normalized.substring(0, 200) + '...' : normalized;
+
+  const existingIndex = findComparableTextItemIndex(type, normalized);
+  if (existingIndex >= 0) {
+    const existing = clipboardHistory[existingIndex];
+    existing.timestamp = Date.now();
+    existing.preview = preview;
+    existing.content = normalized;
+    if (type === 'file') {
+      const filename = path.basename(normalized);
+      existing.metadata = { ...(existing.metadata || {}), filename };
+    }
+    if (existingIndex > 0) {
+      clipboardHistory.splice(existingIndex, 1);
+      clipboardHistory.unshift(existing);
+    }
+    saveHistory();
+    return;
+  }
+
+  const item: ClipboardItem = {
+    id: crypto.randomUUID(),
+    type,
+    content: normalized,
+    preview,
+    timestamp: Date.now(),
+  };
+
+  if (type === 'file') {
+    const filename = path.basename(normalized);
+    item.metadata = { filename };
+  }
+
+  clipboardHistory.unshift(item);
+  if (clipboardHistory.length > MAX_ITEMS) {
+    clipboardHistory.pop();
+  }
+
+  saveHistory();
+}
+
+function addImageItem(image: ReturnType<typeof nativeImage.createFromDataURL>, rawGifData?: Buffer): void {
+  try {
+    const size = image.getSize();
+    if (size.width === 0 || size.height === 0) return;
+
+    const isGif = !!rawGifData;
+    const dataToSave = rawGifData || image.toPNG();
+    if (dataToSave.length === 0 || dataToSave.length > MAX_IMAGE_SIZE) return;
+
+    const ext = isGif ? 'gif' : 'png';
+
+    // Save image to disk
+    const imageId = crypto.randomUUID();
+    const imagePath = path.join(getImagesDir(), `${imageId}.${ext}`);
+    fs.writeFileSync(imagePath, dataToSave);
+
+    const item: ClipboardItem = {
+      id: imageId,
+      type: 'image',
+      content: imagePath,
+      timestamp: Date.now(),
+      metadata: {
+        width: size.width,
+        height: size.height,
+        size: dataToSave.length,
+        format: ext,
+      },
+    };
+
+    clipboardHistory.unshift(item);
+    if (clipboardHistory.length > MAX_ITEMS) {
+      const removed = clipboardHistory.pop();
+      // Delete old image file
+      if (removed && removed.type === 'image' && fs.existsSync(removed.content)) {
+        try {
+          fs.unlinkSync(removed.content);
+        } catch {}
+      }
+    }
+
+    saveHistory();
+  } catch (e) {
+    console.error('Failed to save clipboard image:', e);
+  }
+}
+
+function pollClipboard(): void {
+  if (!isEnabled) return;
+
+  try {
+    // Check for GIF data first (clipboard.readImage loses animation)
+    let rawGifData: Buffer | undefined;
+    try {
+      const gifBuf = clipboard.readBuffer('com.compuserve.gif');
+      if (gifBuf && gifBuf.length > 4) {
+        // Verify GIF magic bytes (GIF87a or GIF89a)
+        if (gifBuf[0] === 0x47 && gifBuf[1] === 0x49 && gifBuf[2] === 0x46) {
+          rawGifData = gifBuf;
+        }
+      }
+    } catch {}
+
+    // Check for images (higher priority than text)
+    const image = clipboard.readImage();
+    if (!image.isEmpty()) {
+      const hashSource = rawGifData || image.toPNG();
+      const hash = hashBuffer(hashSource);
+
+      if (!lastClipboardImage || hashBuffer(lastClipboardImage) !== hash) {
+        lastClipboardImage = hashSource;
+        addImageItem(image, rawGifData);
+        return;
+      }
+    }
+
+    // Check for text
+    const text = clipboard.readText();
+    if (text && text !== lastClipboardText) {
+      lastClipboardText = text;
+      addTextItem(text);
+    }
+  } catch (e) {
+    console.error('Clipboard poll error:', e);
+  }
+}
+
+// ─── Public API ─────────────────────────────────────────────────────
+
+export function startClipboardMonitor(): void {
+  loadHistory();
+  
+  // Initial read
+  try {
+    lastClipboardText = clipboard.readText();
+    const image = clipboard.readImage();
+    if (!image.isEmpty()) {
+      lastClipboardImage = image.toPNG();
+    }
+  } catch {}
+  
+  // Start polling
+  if (pollInterval) {
+    clearInterval(pollInterval);
+  }
+  // Run one poll immediately so changes right after startup are captured.
+  pollClipboard();
+  pollInterval = setInterval(pollClipboard, POLL_INTERVAL);
+  
+  console.log('Clipboard monitor started');
+}
+
+export function stopClipboardMonitor(): void {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+  console.log('Clipboard monitor stopped');
+}
+
+export function getClipboardHistory(): ClipboardItem[] {
+  return clipboardHistory;
+}
+
+export function clearClipboardHistory(): void {
+  // Delete all image files
+  for (const item of clipboardHistory) {
+    if (item.type === 'image' && fs.existsSync(item.content)) {
+      try {
+        fs.unlinkSync(item.content);
+      } catch {}
+    }
+  }
+  
+  clipboardHistory = [];
+  saveHistory();
+  console.log('Clipboard history cleared');
+}
+
+export function deleteClipboardItem(id: string): boolean {
+  const index = clipboardHistory.findIndex((item) => item.id === id);
+  if (index === -1) return false;
+  
+  const item = clipboardHistory[index];
+  
+  // Delete image file if it exists
+  if (item.type === 'image' && fs.existsSync(item.content)) {
+    try {
+      fs.unlinkSync(item.content);
+    } catch {}
+  }
+  
+  clipboardHistory.splice(index, 1);
+  saveHistory();
+  
+  return true;
+}
+
+export function copyItemToClipboard(id: string): boolean {
+  const item = clipboardHistory.find((i) => i.id === id);
+  if (!item) return false;
+
+  try {
+    // Temporarily disable monitoring to avoid re-adding this item
+    isEnabled = false;
+
+    if (item.type === 'image') {
+      const ext = path.extname(item.content).toLowerCase();
+      if (ext === '.gif' && fs.existsSync(item.content)) {
+        // Write GIF via NSPasteboard with both com.compuserve.gif (animated)
+        // and public.tiff (static fallback) so GIF-aware apps get animation.
+        if (!writeGifToClipboard(item.content)) {
+          // Fallback: write raw GIF buffer only
+          const gifData = fs.readFileSync(item.content);
+          clipboard.clear();
+          clipboard.writeBuffer('com.compuserve.gif', gifData);
+        }
+      } else {
+        const image = nativeImage.createFromPath(item.content);
+        clipboard.writeImage(image);
+      }
+    } else {
+      clipboard.writeText(item.content);
+    }
+    
+    // Move this item to the front of history
+    const index = clipboardHistory.indexOf(item);
+    if (index > 0) {
+      clipboardHistory.splice(index, 1);
+      clipboardHistory.unshift(item);
+      saveHistory();
+    }
+    
+    // Re-enable monitoring after a short delay
+    setTimeout(() => {
+      isEnabled = true;
+    }, 500);
+    
+    return true;
+  } catch (e) {
+    isEnabled = true;
+    console.error('Failed to copy item to clipboard:', e);
+    return false;
+  }
+}
+
+export function setClipboardMonitorEnabled(enabled: boolean): void {
+  isEnabled = enabled;
+  if (enabled && !pollInterval) {
+    startClipboardMonitor();
+  } else if (!enabled && pollInterval) {
+    stopClipboardMonitor();
+  }
+}
+
+export function searchClipboardHistory(query: string): ClipboardItem[] {
+  if (!query) return clipboardHistory;
+  
+  const lowerQuery = query.toLowerCase();
+  return clipboardHistory.filter((item) => {
+    if (item.type === 'text' || item.type === 'url' || item.type === 'file') {
+      return item.content.toLowerCase().includes(lowerQuery);
+    }
+    return false;
+  });
+}
