@@ -282,6 +282,14 @@ export function persistCommandArguments(extName: string, cmdName: string, values
   writeJsonObject(getCmdArgsKey(extName, cmdName), values);
 }
 
+export function clearCommandArguments(extName: string, cmdName: string) {
+  try {
+    localStorage.removeItem(getCmdArgsKey(extName, cmdName));
+  } catch {
+    // ignore storage failures
+  }
+}
+
 export function getMissingRequiredScriptArguments(
   command: CommandInfo,
   values?: Record<string, any>
