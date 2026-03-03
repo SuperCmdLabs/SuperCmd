@@ -5,6 +5,7 @@
 
 import { useCallback, useState } from 'react';
 import { emitExtensionStorageChanged } from '../storage-events';
+import { getScopedLocalStorageKeys, readScopedJsonState } from './storage-scope';
 
 export function useLocalStorage<T>(
   key: string,
@@ -15,35 +16,34 @@ export function useLocalStorage<T>(
   removeValue: () => Promise<void>;
   isLoading: boolean;
 } {
+  const { scopedKey, legacyKeys } = getScopedLocalStorageKeys(key);
   const [value, setValueState] = useState<T | undefined>(() => {
-    try {
-      const stored = localStorage.getItem(`raycast-${key}`);
-      return stored ? JSON.parse(stored) : initialValue;
-    } catch {
-      return initialValue;
-    }
+    return readScopedJsonState(scopedKey, legacyKeys, initialValue);
   });
   const [isLoading] = useState(false);
 
   const setValue = useCallback(async (newValue: T) => {
     setValueState(newValue);
     try {
-      localStorage.setItem(`raycast-${key}`, JSON.stringify(newValue));
+      localStorage.setItem(scopedKey, JSON.stringify(newValue));
     } catch {
       // best-effort
     }
     emitExtensionStorageChanged();
-  }, [key]);
+  }, [scopedKey]);
 
   const removeValue = useCallback(async () => {
     setValueState(undefined);
     try {
-      localStorage.removeItem(`raycast-${key}`);
+      localStorage.removeItem(scopedKey);
+      for (const legacyKey of legacyKeys) {
+        localStorage.removeItem(legacyKey);
+      }
     } catch {
       // best-effort
     }
     emitExtensionStorageChanged();
-  }, [key]);
+  }, [legacyKeys, scopedKey]);
 
   return { value, setValue, removeValue, isLoading };
 }
