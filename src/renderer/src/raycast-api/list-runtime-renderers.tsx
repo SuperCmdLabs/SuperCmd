@@ -52,13 +52,12 @@ export function createListRenderers(deps: ListRendererDeps) {
     const registry = useContext(ListRegistryContext);
     const sectionTitle = useContext(ListSectionTitleContext);
     const stableId = useRef(props.id || `__li_${++itemOrderCounter}`).current;
-    const orderRef = useRef<number | null>(null);
-    if (orderRef.current === null) orderRef.current = ++itemOrderCounter;
+    const renderOrder = ++itemOrderCounter;
 
     useLayoutEffect(() => {
-      registry.set(stableId, { props, sectionTitle, order: orderRef.current! });
+      registry.set(stableId, { props, sectionTitle, order: renderOrder });
       return () => registry.delete(stableId);
-    }, [props, registry, sectionTitle, stableId]);
+    }, [props, registry, renderOrder, sectionTitle, stableId]);
 
     return null;
   }
