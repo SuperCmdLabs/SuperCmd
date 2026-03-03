@@ -157,7 +157,11 @@ export function createListRenderers(deps: ListRendererDeps) {
 
     return (
       <div className="flex flex-col items-center justify-center h-full text-[var(--text-muted)] py-12">
-        {icon && <div className="text-2xl mb-2 opacity-40">{typeof icon === 'string' ? icon : '○'}</div>}
+        {icon && (
+          <div className="mb-2 opacity-40 text-[var(--text-muted)]">
+            {renderIcon(icon, 'w-8 h-8')}
+          </div>
+        )}
         {title && <p className="text-sm font-medium">{title}</p>}
         {description && <p className="text-xs text-[var(--text-subtle)] mt-1 max-w-xs text-center">{description}</p>}
       </div>
