@@ -7,6 +7,41 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import type { ItemRegistration, ListRegistryAPI } from './list-runtime-types';
 
+function getReactTypeName(type: any): string {
+  return String(type?.displayName || type?.name || type || '');
+}
+
+function buildSnapshotSignature(value: unknown, seen = new WeakSet<object>()): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+  if (typeof value === 'function') return `fn:${value.name || 'anonymous'}`;
+  if (typeof value === 'symbol') return value.toString();
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => buildSnapshotSignature(item, seen)).join(',')}]`;
+  }
+
+  if (React.isValidElement(value)) {
+    return `element:${getReactTypeName(value.type)}:${buildSnapshotSignature((value as any).props, seen)}`;
+  }
+
+  if (typeof value === 'object') {
+    if (seen.has(value as object)) return '[circular]';
+    seen.add(value as object);
+
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== '_owner' && key !== '_store' && key !== 'ref' && key !== 'key')
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entryValue]) => `${key}:${buildSnapshotSignature(entryValue, seen)}`);
+
+    return `{${entries.join(',')}}`;
+  }
+
+  return String(value);
+}
+
 export function useListRegistry() {
   const registryRef = useRef(new Map<string, ItemRegistration>());
   const [registryVersion, setRegistryVersion] = useState(0);
@@ -19,15 +54,20 @@ export function useListRegistry() {
     queueMicrotask(() => {
       pendingRef.current = false;
       const snapshot = Array.from(registryRef.current.values()).map((item) => {
-        const title = typeof item.props.title === 'string' ? item.props.title : (item.props.title as any)?.value || '';
-        const subtitle = typeof item.props.subtitle === 'string' ? item.props.subtitle : (item.props.subtitle as any)?.value || '';
-        const detail = item.props.detail;
-        const detailSignature = React.isValidElement(detail)
-          ? `${String((detail.type as any)?.name || (detail.type as any)?.displayName || detail.type)}:${typeof (detail.props as any)?.markdown === 'string' ? (detail.props as any).markdown : ''}:${Boolean((detail.props as any)?.isLoading)}`
-          : '';
         const actionType = item.props.actions?.type as any;
         const actionName = actionType?.name || actionType?.displayName || typeof actionType || '';
-        return `${item.id}:${title}:${subtitle}:${item.sectionTitle || ''}:${actionName}:${detailSignature}`;
+        return buildSnapshotSignature({
+          actionName,
+          accessories: item.props.accessories,
+          detail: item.props.detail,
+          icon: item.props.icon,
+          id: item.id,
+          keywords: item.props.keywords,
+          order: item.order,
+          sectionTitle: item.sectionTitle || '',
+          subtitle: item.props.subtitle,
+          title: item.props.title,
+        });
       }).join('|');
       if (snapshot !== lastSnapshotRef.current) {
         lastSnapshotRef.current = snapshot;

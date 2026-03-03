@@ -30,6 +30,7 @@ interface ListRuntimeDeps {
   isEmojiOrSymbol: (value: string) => boolean;
   renderIcon: (icon: any, className?: string, assetsPath?: string) => React.ReactNode;
   resolveTintColor: (value?: string) => string | undefined;
+  resolveReadableTintColor: (value?: string, options?: { minContrast?: number }) => string | undefined;
   addHexAlpha: (hex: string, alphaHex?: string) => string | null;
   getExtensionContext: () => {
     assetsPath: string;
@@ -54,6 +55,7 @@ export function createListRuntime(deps: ListRuntimeDeps) {
     isEmojiOrSymbol,
     renderIcon,
     resolveTintColor,
+    resolveReadableTintColor,
     addHexAlpha,
     getExtensionContext,
     normalizeScAssetUrl,
@@ -61,7 +63,7 @@ export function createListRuntime(deps: ListRuntimeDeps) {
     setClearSearchBarCallback,
   } = deps;
 
-  const renderers = createListRenderers({ renderIcon, resolveTintColor, addHexAlpha });
+  const renderers = createListRenderers({ renderIcon, resolveTintColor, resolveReadableTintColor, addHexAlpha });
   const { ListItemComponent, ListItemRenderer, ListEmojiGridItemRenderer, ListSectionComponent, ListEmptyView, ListDropdown } = renderers;
   const { ListItemDetail } = createListDetailRuntime({ getExtensionContext, normalizeScAssetUrl, toScAssetUrl });
 
@@ -307,7 +309,7 @@ export function createListRuntime(deps: ListRuntimeDeps) {
 
         <div className="flex flex-col h-full" onKeyDown={handleKeyDown}>
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--ui-divider)]">
-            <button onClick={pop} className="text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors flex-shrink-0 p-0.5"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg></button>
+            <button onClick={pop} className="sc-back-button text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors flex-shrink-0 p-0.5"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg></button>
             <input ref={inputRef} data-supercmd-search-input="true" type="text" placeholder={searchBarPlaceholder || 'Search…'} value={searchText} onChange={(event) => handleSearchChange(event.target.value)} className="flex-1 bg-transparent border-none outline-none text-[var(--text-primary)] placeholder:text-[color:var(--text-subtle)] text-[14px] font-light" autoFocus />
             {searchBarAccessory && <div className="flex-shrink-0">{searchBarAccessory}</div>}
           </div>

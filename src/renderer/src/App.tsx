@@ -53,6 +53,7 @@ import {
   readJsonObject, writeJsonObject,
   getCmdArgsKey,
   getScriptCmdArgsKey,
+  clearCommandArguments,
   hydrateExtensionBundlePreferences,
   shouldOpenCommandSetup,
   getMissingRequiredScriptArguments, toScriptArgumentMapFromArray,
@@ -431,7 +432,7 @@ const App: React.FC = () => {
         }, {} as Record<string, string>)
       );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
-      const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn';
+      const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
       setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
@@ -1434,7 +1435,13 @@ const App: React.FC = () => {
 
     setInlineExtensionArgumentValues((prev) => {
       if (prev[selectedCommand.id]) return prev;
-      const storedValues = readJsonObject(getCmdArgsKey(extensionIdentity.extName, extensionIdentity.cmdName));
+      const shouldRestoreStoredArgs = selectedCommand.mode === 'no-view';
+      const storedValues = shouldRestoreStoredArgs
+        ? readJsonObject(getCmdArgsKey(extensionIdentity.extName, extensionIdentity.cmdName))
+        : {};
+      if (!shouldRestoreStoredArgs) {
+        clearCommandArguments(extensionIdentity.extName, extensionIdentity.cmdName);
+      }
       const initialValues = selectedExtensionArgumentDefinitions.reduce((acc, definition) => {
         acc[definition.name] = String(storedValues[definition.name] ?? '');
         return acc;
@@ -1489,7 +1496,7 @@ const App: React.FC = () => {
           ...(prev[command.id] || {}),
           [argumentName]: value,
         };
-        if (extensionIdentity) {
+        if (extensionIdentity && command.mode === 'no-view') {
           writeJsonObject(getCmdArgsKey(extensionIdentity.extName, extensionIdentity.cmdName), nextCommandValues);
         }
         return {
@@ -1500,6 +1507,19 @@ const App: React.FC = () => {
     },
     []
   );
+
+  const clearInlineExtensionArgumentsForCommand = useCallback((command: CommandInfo) => {
+    const extensionIdentity = getExtensionIdentityFromCommand(command);
+    setInlineExtensionArgumentValues((prev) => {
+      if (!prev[command.id]) return prev;
+      const next = { ...prev };
+      delete next[command.id];
+      return next;
+    });
+    if (extensionIdentity && command.mode !== 'no-view') {
+      clearCommandArguments(extensionIdentity.extName, extensionIdentity.cmdName);
+    }
+  }, []);
 
   const updateInlineQuickLinkDynamicValue = useCallback(
     (quickLinkId: string, key: string, value: string) => {
@@ -2237,7 +2257,7 @@ const App: React.FC = () => {
             } as any,
           };
 
-          if (Object.keys(inlineArguments).length > 0) {
+          if (Object.keys(inlineArguments).length > 0 && command.mode === 'no-view') {
             writeJsonObject(
               getCmdArgsKey(extName, cmdName),
               { ...((hydratedWithInlineArguments as any).launchArguments || {}) }
@@ -2257,6 +2277,7 @@ const App: React.FC = () => {
           // Menu-bar commands run in the hidden tray runners, not in the overlay.
           // Toggle behavior matches Raycast: running the same menu-bar command again hides it.
           if (hydratedWithInlineArguments.mode === 'menu-bar') {
+            clearInlineExtensionArgumentsForCommand(command);
             if (isMenuBarExtensionMounted(hydratedWithInlineArguments)) {
               hideMenuBarExtension(hydratedWithInlineArguments);
             } else {
@@ -2271,11 +2292,13 @@ const App: React.FC = () => {
           if (hydratedWithInlineArguments.mode === 'no-view') {
             queueNoViewBundleRun(hydratedWithInlineArguments, 'userInitiated');
             localStorage.removeItem(LAST_EXT_KEY);
+            clearInlineExtensionArgumentsForCommand(command);
             await updateRecentCommands(command.id);
             return;
           }
           setShowFileSearch(false);
           setExtensionView(hydratedWithInlineArguments);
+          clearInlineExtensionArgumentsForCommand(command);
           if (hydratedWithInlineArguments.mode === 'view') {
             localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
           } else {
@@ -2555,6 +2578,7 @@ const App: React.FC = () => {
           supportPath={(entry.bundle as any).supportPath}
           owner={(entry.bundle as any).owner}
           preferences={(entry.bundle as any).preferences}
+          preferenceDefinitions={(entry.bundle as any).preferenceDefinitions}
           launchArguments={(entry.bundle as any).launchArguments}
           launchContext={(entry.bundle as any).launchContext}
           fallbackText={(entry.bundle as any).fallbackText}
@@ -2581,6 +2605,7 @@ const App: React.FC = () => {
           supportPath={(run.bundle as any).supportPath}
           owner={(run.bundle as any).owner}
           preferences={(run.bundle as any).preferences}
+          preferenceDefinitions={(run.bundle as any).preferenceDefinitions}
           launchArguments={(run.bundle as any).launchArguments}
           launchContext={(run.bundle as any).launchContext}
           fallbackText={(run.bundle as any).fallbackText}
@@ -2608,7 +2633,7 @@ const App: React.FC = () => {
           onboardingCaptureMode={showWhisperOnboarding}
           onOnboardingTranscriptAppend={appendWhisperOnboardingPracticeText}
           coachmarkText={
-            showWhisperHint
+            showWhisperHint && whisperSpeakToggleLabel
               ? `Whisper sits here. Hold ${whisperSpeakToggleLabel} to talk, release to type.`
               : undefined
           }
@@ -2777,6 +2802,7 @@ const App: React.FC = () => {
               supportPath={(extensionView as any).supportPath}
               owner={(extensionView as any).owner}
               preferences={(extensionView as any).preferences}
+              preferenceDefinitions={(extensionView as any).preferenceDefinitions}
               launchArguments={(extensionView as any).launchArguments}
               launchContext={(extensionView as any).launchContext}
               fallbackText={(extensionView as any).fallbackText}

@@ -187,6 +187,36 @@ const GeneralTab: React.FC = () => {
   const updaterState = updaterStatus?.state || 'idle';
   const updaterSupported = updaterStatus?.supported !== false;
   const currentVersion = updaterStatus?.currentVersion || '1.0.0';
+  const updaterAction = useMemo(() => {
+    if (updaterState === 'downloaded') {
+      return {
+        label: 'Restart to Update',
+        onClick: handleRestartToInstall,
+        icon: RotateCcw,
+        disabled: !updaterSupported,
+        className:
+          'border border-emerald-400/30 bg-[var(--ui-segment-bg)] text-emerald-200 hover:border-emerald-400/45 hover:bg-[var(--ui-segment-hover-bg)]',
+      };
+    }
+    if (updaterState === 'available' || updaterState === 'downloading') {
+      return {
+        label: updaterState === 'downloading' ? 'Downloading Update...' : 'Download Update',
+        onClick: handleDownloadUpdate,
+        icon: Download,
+        disabled: !updaterSupported || updaterState === 'downloading',
+        className:
+          'border border-cyan-400/30 bg-[var(--ui-segment-bg)] text-cyan-200 hover:border-cyan-400/45 hover:bg-[var(--ui-segment-hover-bg)]',
+      };
+    }
+    return {
+      label: 'Check for Updates',
+      onClick: handleCheckForUpdates,
+      icon: RefreshCw,
+      disabled: !updaterSupported || updaterState === 'checking',
+      className:
+        'border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] text-[var(--text-primary)] hover:border-[var(--ui-segment-border)] hover:bg-[var(--ui-segment-hover-bg)]',
+    };
+  }, [handleCheckForUpdates, handleDownloadUpdate, handleRestartToInstall, updaterState, updaterSupported]);
   const updaterPrimaryMessage = useMemo(() => {
     if (!updaterStatus) return 'Check for and install packaged-app updates.';
     if (updaterStatus.message) return updaterStatus.message;
@@ -209,6 +239,7 @@ const GeneralTab: React.FC = () => {
         return 'Check for and install packaged-app updates.';
     }
   }, [updaterStatus]);
+  const UpdaterActionIcon = updaterAction.icon;
 
   const handleThemePreferenceChange = (nextTheme: ThemePreference) => {
     setThemePreference(nextTheme);
@@ -381,32 +412,20 @@ const GeneralTab: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={handleCheckForUpdates}
-                disabled={!updaterSupported || updaterState === 'checking' || updaterState === 'downloading'}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.75rem] border border-[var(--ui-divider)] text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                onClick={updaterAction.onClick}
+                disabled={updaterAction.disabled}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.75rem] disabled:opacity-60 disabled:cursor-not-allowed disabled:border-[var(--ui-divider)] disabled:bg-[var(--ui-segment-bg)] transition-colors ${updaterAction.className}`}
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${updaterState === 'checking' ? 'animate-spin' : ''}`} />
-                Check for Updates
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDownloadUpdate}
-                disabled={!updaterSupported || (updaterState !== 'available' && updaterState !== 'downloading')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.75rem] border border-cyan-400/40 text-cyan-200 hover:bg-cyan-400/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <Download className={`w-3.5 h-3.5 ${updaterState === 'downloading' ? 'animate-pulse' : ''}`} />
-                {updaterState === 'downloading' ? 'Downloading...' : 'Download Update'}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleRestartToInstall}
-                disabled={!updaterSupported || updaterState !== 'downloaded'}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.75rem] border border-emerald-400/40 text-emerald-200 hover:bg-emerald-400/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Restart to Install
+                <UpdaterActionIcon
+                  className={`w-3.5 h-3.5 ${
+                    updaterState === 'checking'
+                      ? 'animate-spin'
+                      : updaterState === 'downloading'
+                        ? 'animate-pulse'
+                        : ''
+                  }`}
+                />
+                {updaterAction.label}
               </button>
             </div>
           </div>

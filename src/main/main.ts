@@ -2512,7 +2512,7 @@ async function probeHomeFolderAccess(): Promise<HomeFolderAccessProbeResult> {
 
   const homeDir = app.getPath('home');
   const targets = [homeDir];
-  for (const name of ['Desktop', 'Documents', 'Downloads', 'Pictures']) {
+  for (const name of ['Desktop', 'Documents', 'Downloads']) {
     const targetPath = path.join(homeDir, name);
     if (fs.existsSync(targetPath)) {
       targets.push(targetPath);
@@ -3971,8 +3971,8 @@ function normalizeAccelerator(shortcut: string): string {
     fn: false,
   };
 
-  // Hyper support temporarily disabled. Keep raw accelerator to avoid
-  // accidentally downgrading "Hyper+X" to plain "X".
+  // Preserve legacy shortcuts with an unsupported "Hyper" modifier instead
+  // of accidentally downgrading them to plain keys.
   const hasHyper = modifierTokens.some((token) => token === 'hyper' || token === '✦');
   if (hasHyper) {
     return raw;
@@ -6426,7 +6426,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
   }
 
   if (isWhisperSpeakToggleCommand) {
-    const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn');
+    const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '').trim();
     const holdSeq = ++whisperHoldRequestSeq;
     if (whisperOverlayVisible) {
       captureFrontmostAppContext();
@@ -6436,11 +6436,15 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
         const pos = computeDetachedPopupPosition(DETACHED_WHISPER_WINDOW_NAME, bounds.width, bounds.height);
         whisperChildWindow.setPosition(pos.x, pos.y);
       }
-      startWhisperHoldWatcher(speakToggleHotkey, holdSeq);
+      if (speakToggleHotkey) {
+        startWhisperHoldWatcher(speakToggleHotkey, holdSeq);
+      }
       mainWindow?.webContents.send('whisper-start-listening');
       return true;
     }
-    startWhisperHoldWatcher(speakToggleHotkey, holdSeq);
+    if (speakToggleHotkey) {
+      startWhisperHoldWatcher(speakToggleHotkey, holdSeq);
+    }
     await openLauncherAndRunSystemCommand('system-supercmd-whisper', {
       showWindow: false,
       mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
@@ -8834,15 +8838,6 @@ app.whenReady().then(async () => {
       if (patch.openAtLogin !== undefined) {
         applyOpenAtLogin(Boolean(patch.openAtLogin));
       }
-      // Hyper runtime wiring is temporarily disabled.
-      // if (patch.hyperKeyIncludeShift !== undefined) {
-      //   try {
-      //     registerGlobalShortcut(result.globalShortcut);
-      //   } catch {}
-      //   try {
-      //     registerCommandHotkeys(result.commandHotkeys);
-      //   } catch {}
-      // }
       // When onboarding completes: hide dock, then start services that were
       // deferred to avoid triggering permission dialogs during onboarding.
       if (patch.hasSeenOnboarding === true) {
@@ -9021,7 +9016,7 @@ app.whenReady().then(async () => {
           return { success: false, error: 'unavailable' as const };
         }
       } else {
-        delete hotkeys[commandId];
+        hotkeys[commandId] = '';
       }
 
       saveSettings({ commandHotkeys: hotkeys });
@@ -9653,6 +9648,7 @@ app.whenReady().then(async () => {
           shell: options?.shell ?? false,
           env: { ...process.env, ...options?.env, PATH: augmentedPath },
           cwd: options?.cwd || process.cwd(),
+          detached: process.platform !== 'win32',
         };
 
         const proc = options?.shell
@@ -9715,10 +9711,19 @@ app.whenReady().then(async () => {
       }
     );
 
-    ipcMain.handle('spawn-kill', (_event: any, pid: number) => {
+    ipcMain.handle('spawn-kill', (_event: any, pid: number, signal?: string | number) => {
       const proc = spawnedProcesses.get(pid);
       if (proc) {
-        try { proc.kill(); } catch {}
+        const killSignal = signal ?? 'SIGTERM';
+        try {
+          if (process.platform !== 'win32' && typeof proc.pid === 'number' && proc.pid > 0) {
+            process.kill(-proc.pid, killSignal as NodeJS.Signals | number);
+          } else {
+            proc.kill(killSignal);
+          }
+        } catch {
+          try { proc.kill(killSignal); } catch {}
+        }
         spawnedProcesses.delete(pid);
       }
     });

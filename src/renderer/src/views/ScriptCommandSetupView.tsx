@@ -60,7 +60,7 @@ export default function ScriptCommandSetupView({
           <div className="flex h-[56px] items-center gap-2 px-4 border-b border-[var(--ui-divider)]">
             <button
               onClick={onBack}
-              className="text-[var(--text-subtle)] hover:text-[var(--text-secondary)] transition-colors flex-shrink-0 p-0.5"
+              className="sc-back-button text-[var(--text-subtle)] hover:text-[var(--text-secondary)] transition-colors flex-shrink-0 p-0.5"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M19 12H5M12 19l-7-7 7-7" />

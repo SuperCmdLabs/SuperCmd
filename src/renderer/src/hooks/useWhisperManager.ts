@@ -50,7 +50,7 @@ export function useWhisperManager({
   setShowWhisperHint,
 }: UseWhisperManagerOptions): UseWhisperManagerReturn {
   const [whisperOnboardingPracticeText, setWhisperOnboardingPracticeText] = useState('');
-  const [whisperSpeakToggleLabel, setWhisperSpeakToggleLabel] = useState('fn');
+  const [whisperSpeakToggleLabel, setWhisperSpeakToggleLabel] = useState('');
 
   const whisperSessionRef = useRef(false);
 

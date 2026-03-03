@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { Search, Power, Settings, Puzzle, Sparkles, Clipboard, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Link2 } from 'lucide-react';
+import { Search, Power, Settings, Puzzle, Sparkles, Clipboard, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Link2, Camera } from 'lucide-react';
 import type { CommandInfo, EdgeTtsVoice } from '../../types/electron';
 import supercmdLogo from '../../../../supercmd.svg';
 import { formatShortcutForDisplay } from './hyper-key';
@@ -977,6 +977,14 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     return (
       <div className="w-5 h-5 rounded bg-indigo-500/20 flex items-center justify-center">
         <Volume2 className="w-3 h-3 text-indigo-200" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-camera') {
+    return (
+      <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
+        <Camera className="w-3 h-3 text-cyan-200" />
       </div>
     );
   }

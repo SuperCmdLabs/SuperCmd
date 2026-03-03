@@ -365,7 +365,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       const settings = await window.electron.getSettings();
       const language = settings.ai.speechLanguage || 'en-US';
       setSpeechLanguage(language);
-      const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn';
+      const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '';
       speakToggleShortcutRef.current = speakToggleHotkey;
       setSpeakToggleShortcutLabel(formatShortcutLabel(speakToggleHotkey));
 
@@ -1391,7 +1391,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           className={`whisper-wave whisper-wave-standalone ${listening ? 'is-listening' : ''} ${processing ? 'is-processing' : ''}`}
           aria-hidden="true"
         >
-          <span className="whisper-shortcut-hint">{speakToggleShortcutLabel}</span>
+          {speakToggleShortcutLabel ? (
+            <span className="whisper-shortcut-hint">{speakToggleShortcutLabel}</span>
+          ) : null}
           {processing ? (
             <span className="whisper-processing-loader" />
           ) : (

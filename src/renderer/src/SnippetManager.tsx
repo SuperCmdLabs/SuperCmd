@@ -967,6 +967,8 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         <button
           onClick={onClose}
           className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"
+          tabIndex={-1}
+          title="Back"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>

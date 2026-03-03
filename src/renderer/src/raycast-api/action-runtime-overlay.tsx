@@ -7,6 +7,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import type { ExtractedAction } from './action-runtime-types';
+import { resolveIconSrc } from './icon-runtime-assets';
 
 interface OverlayDeps {
   snapshotExtensionContext: () => any;
@@ -16,6 +17,7 @@ interface OverlayDeps {
   matchesShortcut: (e: React.KeyboardEvent | KeyboardEvent, shortcut?: { modifiers?: string[]; key?: string }) => boolean;
   isMetaK: (e: React.KeyboardEvent | KeyboardEvent) => boolean;
   renderShortcut: (shortcut?: { modifiers?: string[]; key?: string }) => React.ReactNode;
+  renderShortcutKeycap: (label: string, key?: React.Key) => React.ReactNode;
 }
 
 export function createActionOverlayRuntime(deps: OverlayDeps) {
@@ -27,6 +29,7 @@ export function createActionOverlayRuntime(deps: OverlayDeps) {
     matchesShortcut,
     isMetaK,
     renderShortcut,
+    renderShortcutKeycap,
   } = deps;
 
   function extractActionsFromElement(element: React.ReactElement | undefined | null): ExtractedAction[] {
@@ -83,10 +86,45 @@ export function createActionOverlayRuntime(deps: OverlayDeps) {
     const [filter, setFilter] = useState('');
     const filterRef = useRef<HTMLInputElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
+    const runtimeCtx = snapshotExtensionContext();
+    const assetsPath = String(runtimeCtx?.assetsPath || '').trim();
 
     const filteredActions = filter
       ? actions.filter((action) => action.title.toLowerCase().includes(filter.toLowerCase()))
       : actions;
+
+    const hasImageExtension = (value: string): boolean => /\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(value);
+
+    const hasRenderableActionIcon = (icon: ExtractedAction['icon']): boolean => {
+      if (!icon) return false;
+      if (typeof icon === 'string') {
+        return hasImageExtension(icon) ? Boolean(resolveIconSrc(icon, assetsPath)) : true;
+      }
+      if (typeof icon !== 'object') return true;
+
+      const source = (icon as Record<string, unknown>).source;
+      const fallback = (icon as Record<string, unknown>).fallback;
+      const fileIcon = (icon as Record<string, unknown>).fileIcon;
+      if (typeof fileIcon === 'string' && fileIcon.trim()) return true;
+
+      if (typeof source === 'string') {
+        return hasImageExtension(source) ? Boolean(resolveIconSrc(source, assetsPath)) : true;
+      }
+
+      if (source && typeof source === 'object') {
+        const variants = [source.light, source.dark].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+        if (variants.length > 0) {
+          const assetLikeVariants = variants.filter((value) => hasImageExtension(value));
+          if (assetLikeVariants.length === 0) return true;
+          if (assetLikeVariants.some((value) => Boolean(resolveIconSrc(value, assetsPath)))) return true;
+        }
+      }
+
+      if (typeof fallback === 'string' && fallback.trim()) return true;
+      return false;
+    };
+
+    const hasAnyIcons = filteredActions.some((action) => hasRenderableActionIcon(action.icon));
 
     useEffect(() => {
       filterRef.current?.focus();
@@ -106,6 +144,7 @@ export function createActionOverlayRuntime(deps: OverlayDeps) {
       if ((event.metaKey || event.altKey || event.ctrlKey) && !event.repeat) {
         if (isMetaK(event)) {
           event.preventDefault();
+          event.stopPropagation();
           onClose();
           return;
         }
@@ -113,6 +152,7 @@ export function createActionOverlayRuntime(deps: OverlayDeps) {
         for (const action of actions) {
           if (!action.shortcut || !matchesShortcut(event, action.shortcut)) continue;
           event.preventDefault();
+          event.stopPropagation();
           onExecute(action);
           return;
         }
@@ -121,18 +161,22 @@ export function createActionOverlayRuntime(deps: OverlayDeps) {
       switch (event.key) {
         case 'ArrowDown':
           event.preventDefault();
+          event.stopPropagation();
           setSelectedIdx((value) => Math.min(value + 1, filteredActions.length - 1));
           break;
         case 'ArrowUp':
           event.preventDefault();
+          event.stopPropagation();
           setSelectedIdx((value) => Math.max(value - 1, 0));
           break;
         case 'Enter':
           event.preventDefault();
+          event.stopPropagation();
           if (!event.repeat && filteredActions[selectedIdx]) onExecute(filteredActions[selectedIdx]);
           break;
         case 'Escape':
           event.preventDefault();
+          event.stopPropagation();
           onClose();
           break;
       }
@@ -221,7 +265,9 @@ export function createActionOverlayRuntime(deps: OverlayDeps) {
                       {group.title}
                     </div>
                   )}
-                  {group.items.map(({ action, idx }) => (
+                  {group.items.map(({ action, idx }) => {
+                    const hasActionIcon = hasRenderableActionIcon(action.icon);
+                    return (
                     <div
                       key={idx}
                       data-action-idx={idx}
@@ -242,7 +288,7 @@ export function createActionOverlayRuntime(deps: OverlayDeps) {
                       onClick={() => onExecute(action)}
                       onMouseMove={() => setSelectedIdx(idx)}
                     >
-                      {action.icon && (
+                      {hasAnyIcons ? (
                         <span
                           className={`w-4 h-4 flex-shrink-0 flex items-center justify-center text-xs ${
                             idx === selectedIdx ? 'text-white' : 'text-white/50'
@@ -253,9 +299,9 @@ export function createActionOverlayRuntime(deps: OverlayDeps) {
                               : undefined
                           }
                         >
-                          {renderIcon(action.icon, 'w-4 h-4')}
+                          {hasActionIcon ? renderIcon(action.icon, 'w-4 h-4', assetsPath) : null}
                         </span>
-                      )}
+                      ) : null}
                       <span
                         className={`flex-1 text-[13px] truncate ${
                           action.style === 'destructive'
@@ -276,15 +322,14 @@ export function createActionOverlayRuntime(deps: OverlayDeps) {
                       </span>
                       <span className={`flex items-center gap-0.5 ${idx === selectedIdx ? 'text-white/70' : 'text-white/25'}`}>
                         {idx === 0 ? (
-                          <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.08] text-[10px] font-medium">
-                            ↩
-                          </kbd>
+                          renderShortcutKeycap('↩', 'enter')
                         ) : (
                           renderShortcut(action.shortcut)
                         )}
                       </span>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ))
             )}

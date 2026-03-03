@@ -89,14 +89,14 @@ export const FILE_SEARCH_INDEX_EXCLUDED_DIRECTORY_NAMES = [
 export const FILE_SEARCH_INDEX_EXCLUDED_HOME_TOP_LEVEL_DIRECTORIES = [
   '.Trash',
   'Library',
+  'Music',
+  'Pictures',
 ] as const;
 export const FILE_SEARCH_INDEX_PROTECTED_HOME_TOP_LEVEL_DIRECTORIES = [
   'Desktop',
   'Documents',
   'Downloads',
   'Movies',
-  'Music',
-  'Pictures',
 ] as const;
 
 const EXCLUDED_DIRECTORY_NAME_SET = new Set(

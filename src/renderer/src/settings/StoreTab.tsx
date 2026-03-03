@@ -3,6 +3,7 @@ import {
   Search,
   RefreshCw,
   Package,
+  Sparkles,
   Users,
   List,
   Info,
@@ -25,6 +26,192 @@ interface CatalogEntry {
 }
 
 type DetailTab = 'overview' | 'commands' | 'screenshots' | 'team';
+
+const SEARCH_TOKEN_SPLIT_REGEX = /[^a-z0-9]+/g;
+
+function normalizeSearchText(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(SEARCH_TOKEN_SPLIT_REGEX, ' ')
+    .trim();
+}
+
+function tokenizeSearchText(value: string): string[] {
+  const normalized = normalizeSearchText(value);
+  return normalized ? normalized.split(/\s+/).filter(Boolean) : [];
+}
+
+function isSubsequenceMatch(needle: string, haystack: string): boolean {
+  if (!needle) return true;
+  if (!haystack) return false;
+
+  let needleIndex = 0;
+  for (let i = 0; i < haystack.length && needleIndex < needle.length; i += 1) {
+    if (haystack[i] === needle[needleIndex]) {
+      needleIndex += 1;
+    }
+  }
+  return needleIndex === needle.length;
+}
+
+function maxAllowedTypoDistance(termLength: number): number {
+  if (termLength <= 3) return 0;
+  if (termLength <= 5) return 1;
+  if (termLength <= 8) return 2;
+  return 3;
+}
+
+function damerauLevenshteinDistance(a: string, b: string, maxDistance: number): number {
+  const aLen = a.length;
+  const bLen = b.length;
+
+  if (!aLen) return bLen;
+  if (!bLen) return aLen;
+  if (Math.abs(aLen - bLen) > maxDistance) {
+    return maxDistance + 1;
+  }
+
+  const dp: number[][] = Array.from({ length: aLen + 1 }, () => Array<number>(bLen + 1).fill(0));
+  for (let i = 0; i <= aLen; i += 1) dp[i][0] = i;
+  for (let j = 0; j <= bLen; j += 1) dp[0][j] = j;
+
+  for (let i = 1; i <= aLen; i += 1) {
+    for (let j = 1; j <= bLen; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let distance = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        distance = Math.min(distance, dp[i - 2][j - 2] + 1);
+      }
+
+      dp[i][j] = distance;
+    }
+  }
+
+  return dp[aLen][bLen];
+}
+
+function scoreTokenMatch(term: string, candidate: string): number {
+  if (!term || !candidate) return 0;
+  if (candidate === term) return 120;
+  if (candidate.startsWith(term)) return 106;
+  if (candidate.includes(term)) return 94;
+
+  if (term.length >= 3 && isSubsequenceMatch(term, candidate)) {
+    return 78;
+  }
+
+  const maxDistance = maxAllowedTypoDistance(term.length);
+  if (maxDistance > 0 && Math.abs(candidate.length - term.length) <= maxDistance) {
+    const distance = damerauLevenshteinDistance(term, candidate, maxDistance);
+    if (distance <= maxDistance) {
+      const similarity = 1 - distance / Math.max(term.length, candidate.length);
+      if (similarity >= 0.65) {
+        return Math.round(50 + similarity * 30 - distance * 8);
+      }
+    }
+  }
+
+  return 0;
+}
+
+type SearchCandidate = {
+  token: string;
+  weight: number;
+};
+
+function bestTermScore(term: string, candidates: SearchCandidate[]): number {
+  let best = 0;
+  for (const candidate of candidates) {
+    const baseScore = scoreTokenMatch(term, candidate.token);
+    if (baseScore <= 0) continue;
+    const weighted = Math.round(baseScore * candidate.weight);
+    if (weighted > best) {
+      best = weighted;
+    }
+  }
+  return best;
+}
+
+function scoreCatalogEntry(entry: CatalogEntry, query: string): number {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return 0;
+
+  const queryTerms = tokenizeSearchText(normalizedQuery);
+  const title = normalizeSearchText(entry.title);
+  const name = normalizeSearchText(entry.name);
+  const description = normalizeSearchText(entry.description);
+  const author = normalizeSearchText(entry.author);
+  const categoryTokens = entry.categories.flatMap((category) => tokenizeSearchText(category));
+  const contributorTokens = entry.contributors.flatMap((contributor) => tokenizeSearchText(contributor));
+  const commandTitleTokens = entry.commands.flatMap((command) => tokenizeSearchText(command.title || command.name));
+  const commandDescriptionTokens = entry.commands.flatMap((command) => tokenizeSearchText(command.description || ''));
+
+  const candidates: SearchCandidate[] = [
+    ...tokenizeSearchText(entry.title).map((token) => ({ token, weight: 1 })),
+    ...tokenizeSearchText(entry.name).map((token) => ({ token, weight: 0.98 })),
+    ...categoryTokens.map((token) => ({ token, weight: 0.9 })),
+    ...tokenizeSearchText(entry.author).map((token) => ({ token, weight: 0.88 })),
+    ...contributorTokens.map((token) => ({ token, weight: 0.84 })),
+    ...commandTitleTokens.map((token) => ({ token, weight: 0.82 })),
+    ...commandDescriptionTokens.map((token) => ({ token, weight: 0.74 })),
+    ...tokenizeSearchText(entry.description).map((token) => ({ token, weight: 0.72 })),
+  ];
+
+  if (candidates.length === 0) {
+    return 0;
+  }
+
+  let score = 0;
+
+  if (title === normalizedQuery) {
+    score += 440;
+  } else if (name === normalizedQuery) {
+    score += 420;
+  } else if (title.startsWith(normalizedQuery)) {
+    score += 320;
+  } else if (name.startsWith(normalizedQuery)) {
+    score += 305;
+  } else if (title.includes(normalizedQuery)) {
+    score += 255;
+  } else if (name.includes(normalizedQuery)) {
+    score += 240;
+  } else if (categoryTokens.includes(normalizedQuery)) {
+    score += 190;
+  } else if (author.includes(normalizedQuery)) {
+    score += 165;
+  } else if (description.includes(normalizedQuery)) {
+    score += 145;
+  }
+
+  let termScoreSum = 0;
+  for (const term of queryTerms) {
+    const termScore = bestTermScore(term, candidates);
+    if (termScore <= 0) {
+      return 0;
+    }
+    termScoreSum += termScore;
+  }
+
+  score += termScoreSum;
+
+  if (normalizedQuery.length >= 3) {
+    const compactQuery = normalizedQuery.replace(/\s+/g, '');
+    const compactTitle = title.replace(/\s+/g, '');
+    const compactName = name.replace(/\s+/g, '');
+    if ((compactTitle && isSubsequenceMatch(compactQuery, compactTitle)) || (compactName && isSubsequenceMatch(compactQuery, compactName))) {
+      score += 18;
+    }
+  }
+
+  score += Math.max(0, 12 - Math.max(0, title.length - normalizedQuery.length));
+
+  return score;
+}
 
 const avatarUrlFor = (name: string) =>
   `https://github.com/${encodeURIComponent(name)}.png?size=64`;
@@ -79,26 +266,24 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   }, []);
 
   const filteredCatalog = useMemo(() => {
-    if (!searchQuery.trim()) return catalog;
-    const q = searchQuery.toLowerCase();
-    return catalog.filter((ext) => {
-      return (
-        ext.title.toLowerCase().includes(q) ||
-        ext.description.toLowerCase().includes(q) ||
-        ext.author.toLowerCase().includes(q) ||
-        ext.name.toLowerCase().includes(q) ||
-        ext.categories.some((c) => c.toLowerCase().includes(q))
-      );
-    });
+    const query = searchQuery.trim();
+    if (!query) {
+      return catalog.map((entry) => ({ entry, score: 0 }));
+    }
+
+    return catalog
+      .map((entry) => ({ entry, score: scoreCatalogEntry(entry, query) }))
+      .filter((entry) => entry.score > 0);
   }, [catalog, searchQuery]);
 
   const sortedCatalog = useMemo(() => {
     return [...filteredCatalog].sort((a, b) => {
-      const aInstalled = installedNames.has(a.name) ? 1 : 0;
-      const bInstalled = installedNames.has(b.name) ? 1 : 0;
+      const aInstalled = installedNames.has(a.entry.name) ? 1 : 0;
+      const bInstalled = installedNames.has(b.entry.name) ? 1 : 0;
       if (aInstalled !== bInstalled) return bInstalled - aInstalled;
-      return a.title.localeCompare(b.title);
-    });
+      if (b.score !== a.score) return b.score - a.score;
+      return a.entry.title.localeCompare(b.entry.title);
+    }).map(({ entry }) => entry);
   }, [filteredCatalog, installedNames]);
 
   useEffect(() => {
@@ -283,6 +468,10 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
         return;
       }
 
+      if (showActions) {
+        return;
+      }
+
       if (!event.metaKey && !event.ctrlKey && !event.altKey) {
         if (event.key === 'ArrowDown') {
           event.preventDefault();
@@ -356,11 +545,39 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
           )}
 
           {!isLoading && sortedCatalog.length === 0 && !error && (
-            <div className="text-center py-20 text-[var(--text-subtle)]">
-              <Package className="w-8 h-8 mx-auto mb-3 opacity-40" />
-              <p className="text-sm">
-                {searchQuery.trim() ? 'No extensions match your search' : 'No extensions available'}
-              </p>
+            <div className="flex-1 min-h-0 flex items-center justify-center px-6 py-8">
+              <div className="w-full max-w-[520px] rounded-2xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)]/70 px-6 py-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--ui-segment-border)] bg-[var(--ui-segment-hover-bg)] text-[var(--text-subtle)]">
+                  {searchQuery.trim() ? <Sparkles className="w-6 h-6" /> : <Package className="w-6 h-6" />}
+                </div>
+                <p className="text-base font-semibold text-[var(--text-primary)]">
+                  {searchQuery.trim() ? 'No extensions match your search' : 'No extensions available'}
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-[var(--text-subtle)]">
+                  {searchQuery.trim()
+                    ? 'Try a shorter query, another keyword, or a fuzzy match like part of the extension name.'
+                    : 'Refresh the catalog or try again in a moment.'}
+                </p>
+                <div className="mt-5 flex items-center justify-center gap-2">
+                  {searchQuery.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-hover-bg)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:border-[var(--ui-segment-border)] hover:bg-[var(--ui-segment-active-bg)] transition-colors"
+                    >
+                      Clear Search
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => loadCatalog(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-hover-bg)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:border-[var(--ui-segment-border)] hover:bg-[var(--ui-segment-active-bg)] transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Refresh Catalog
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

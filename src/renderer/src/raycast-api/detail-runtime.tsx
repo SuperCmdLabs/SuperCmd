@@ -4,7 +4,7 @@
  */
 
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { normalizeScAssetUrl, resolveTintColor, toScAssetUrl } from './icon-runtime-assets';
+import { normalizeScAssetUrl, resolveReadableTintColor, resolveTintColor, toScAssetUrl } from './icon-runtime-assets';
 import { renderSimpleMarkdown } from './detail-markdown';
 
 type ExtractedActionLike = {
@@ -149,7 +149,7 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
         )}
 
         <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--ui-divider)]">
-          <button onClick={pop} className="text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors flex-shrink-0 p-0.5">
+          <button onClick={pop} className="sc-back-button text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors flex-shrink-0 p-0.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
           </button>
         </div>
@@ -255,8 +255,10 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
 
   const MetadataTagListItem = ({ text, color, icon }: { text: unknown; color?: unknown; icon?: any }) => {
     const normalized = resolveMetadataText(text);
-    const tint = resolveTintColor(color) || normalized.color;
-    const tagBg = tint ? (deps.addHexAlpha(tint, '22') || 'rgba(var(--on-surface-rgb), 0.1)') : 'rgba(var(--on-surface-rgb), 0.1)';
+    const tintSource = color ?? normalized.color;
+    const rawTint = resolveTintColor(tintSource) || normalized.color;
+    const tint = resolveReadableTintColor(tintSource, { minContrast: 4.25 }) || rawTint;
+    const tagBg = rawTint ? (deps.addHexAlpha(rawTint, '22') || 'rgba(var(--on-surface-rgb), 0.1)') : 'rgba(var(--on-surface-rgb), 0.1)';
     const extInfo = useContext(deps.ExtensionInfoReactContext);
     const extensionContext = deps.getExtensionContext();
     const assetsPath = extInfo?.assetsPath || extensionContext?.assetsPath || '';

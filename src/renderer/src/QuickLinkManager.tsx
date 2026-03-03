@@ -1391,7 +1391,7 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
     );
   }, [hasInlineDynamicFields, selectedQuickLink]);
   const inlineArgumentStartPx = useInlineArgumentAnchor({
-    enabled: hasInlineDynamicFields,
+    enabled: view === 'search' && hasInlineDynamicFields,
     query: searchQuery,
     searchInputRef: inputRef,
     laneRef: inlineArgumentLaneRef,
@@ -1745,7 +1745,7 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
   }
 
   return (
-    <div className="snippet-view w-full h-full flex flex-col" onKeyDown={handleKeyDown} tabIndex={-1}>
+    <div className="snippet-view snippet-search-view w-full h-full flex flex-col" onKeyDown={handleKeyDown} tabIndex={-1}>
       <div className="snippet-header flex h-16 items-center gap-2 px-4">
         <button
           onClick={onClose}

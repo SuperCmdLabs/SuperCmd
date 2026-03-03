@@ -12,6 +12,17 @@ export type ExtensionContextSnapshot = {
   supportPath: string;
   owner: string;
   preferences: Record<string, any>;
+  preferenceDefinitions?: Array<{
+    scope: 'extension' | 'command';
+    name: string;
+    title?: string;
+    description?: string;
+    placeholder?: string;
+    required?: boolean;
+    type?: string;
+    default?: any;
+    data?: Array<{ title?: string; value?: string }>;
+  }>;
   commandMode: 'view' | 'no-view' | 'menu-bar';
 };
 
@@ -30,6 +41,7 @@ let deps: ContextDeps = {
     supportPath: '/tmp/supercmd',
     owner: '',
     preferences: {},
+    preferenceDefinitions: [],
     commandMode: 'view',
   }),
   setExtensionContext: () => {},
@@ -46,6 +58,7 @@ export function snapshotExtensionContext(): ExtensionContextSnapshot {
   return {
     ...ctx,
     preferences: { ...(ctx.preferences || {}) },
+    preferenceDefinitions: Array.isArray(ctx.preferenceDefinitions) ? [...ctx.preferenceDefinitions] : [],
   };
 }
 
@@ -61,6 +74,7 @@ export function withExtensionContext<T>(ctx: ExtensionContextSnapshot | undefine
   const next = {
     ...ctx,
     preferences: { ...(ctx.preferences || {}) },
+    preferenceDefinitions: Array.isArray(ctx.preferenceDefinitions) ? [...ctx.preferenceDefinitions] : [],
   };
   contextStack.push(next);
   deps.setExtensionContext(next);

@@ -5,7 +5,6 @@ import {
   Calculator,
   Check,
   Clipboard,
-  ExternalLink,
   FileText,
   FolderOpen,
   Keyboard,
@@ -59,8 +58,8 @@ const permissionTargets: Array<{
 }> = [
   {
     id: 'home-folder',
-    title: 'Home Folder (File Search)',
-    description: 'Required to index files in Documents, Desktop, Downloads, and Pictures.',
+    title: 'Home Folder',
+    description: 'Required for file search.',
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders',
     icon: FolderOpen,
     iconTone: 'text-blue-100',
@@ -87,7 +86,7 @@ const permissionTargets: Array<{
   {
     id: 'speech-recognition',
     title: 'Speech Recognition',
-    description: 'Required for native speech recognition used by default in Whisper.',
+    description: 'Required for native speech recognition.',
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition',
     icon: Volume2,
     iconTone: 'text-emerald-100',
@@ -96,7 +95,7 @@ const permissionTargets: Array<{
   {
     id: 'microphone',
     title: 'Microphone',
-    description: 'Required for SuperCmd Whisper dictation.',
+    description: 'Required for SuperCmd Whisper Dictation.',
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
     icon: Mic,
     iconTone: 'text-cyan-100',
@@ -160,10 +159,10 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [whisperKeyStatus, setWhisperKeyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isHoldKeyActive, setIsHoldKeyActive] = useState(false);
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
-  const [spotlightReplaceStatus, setSpotlightReplaceStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
   const openedPermissionsRef = useRef<Record<string, boolean>>({});
   const requestedPermissionsRef = useRef<Record<string, boolean>>({});
+  const finalStepHotkeyBaselineRef = useRef(0);
 
   useEffect(() => {
     openedPermissionsRef.current = openedPermissions;
@@ -179,8 +178,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
   useEffect(() => {
     window.electron.getSettings().then((settings) => {
-      const saved = String(settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] || 'Fn').trim();
-      setWhisperHoldKey(saved || 'Fn');
+      const saved = String(settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '').trim();
+      setWhisperHoldKey(saved);
       const savedLanguage = String(settings.ai?.speechLanguage || 'en-US').trim();
       setSpeechLanguage(savedLanguage || 'en-US');
     }).catch(() => {});
@@ -198,23 +197,6 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
         },
       } as any);
     } catch {}
-  };
-
-  const handleReplaceSpotlight = async () => {
-    setSpotlightReplaceStatus('loading');
-    try {
-      const ok = await window.electron.replaceSpotlightWithSuperCmdShortcut();
-      if (ok) {
-        setSpotlightReplaceStatus('success');
-        setShortcut('Command+Space');
-        setShortcutStatus('success');
-        setTimeout(() => setShortcutStatus('idle'), 1600);
-      } else {
-        setSpotlightReplaceStatus('error');
-      }
-    } catch {
-      setSpotlightReplaceStatus('error');
-    }
   };
 
   // Fix 4: Auto-refresh permission statuses when user returns from System Settings.
@@ -364,8 +346,13 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!onboardingHotkeyPresses) return;
     if (step !== STEPS.length - 1) return;
+    finalStepHotkeyBaselineRef.current = onboardingHotkeyPresses;
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== STEPS.length - 1) return;
+    if (onboardingHotkeyPresses <= finalStepHotkeyBaselineRef.current) return;
     onComplete();
   }, [onboardingHotkeyPresses, step, onComplete]);
 
@@ -380,7 +367,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
 
   const stepTitle = useMemo(() => STEPS[step] || STEPS[0], [step]);
   const hotkeyCaps = useMemo(() => toHotkeyCaps(shortcut || 'Alt+Space'), [shortcut]);
-  const whisperKeyCaps = useMemo(() => toHotkeyCaps(whisperHoldKey || 'Fn'), [whisperHoldKey]);
+  const whisperKeyCaps = useMemo(() => toHotkeyCaps(whisperHoldKey), [whisperHoldKey]);
 
   const handleShortcutChange = async (nextShortcut: string) => {
     setShortcutStatus('idle');
@@ -402,7 +389,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   };
 
   const handleWhisperKeyChange = async (nextShortcut: string) => {
-    const target = nextShortcut || 'Fn';
+    const target = nextShortcut;
     setWhisperKeyStatus('idle');
     setWhisperHoldKey(target);
     const result = await window.electron.updateCommandHotkey('system-supercmd-whisper-speak-toggle', target);
@@ -614,7 +601,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   <div className="rounded-2xl border border-white/[0.07] bg-black/24 px-4 py-3">
                     <p className="text-white/88 text-sm mb-2">What gets configured now:</p>
                     <div className="text-white/72 text-sm space-y-1">
-                      <p>1. Launcher hotkey and inline prompt defaults</p>
+                      <p>1. Launcher hotkey</p>
                       <p>2. Accessibility, Input Monitoring, Speech Recognition, Microphone</p>
                       <p>3. Whisper dictation and Read mode practice</p>
                     </div>
@@ -676,7 +663,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     <p className="text-white/90 text-sm font-medium">Current Launcher Hotkey</p>
                   </div>
                   <p className="text-white/62 text-xs mb-5">
-                    Inline prompt default is now Cmd + Shift + K. Configure launcher key below.
+                    Configure your launcher key below. You can add AI Prompt and Memory hotkeys later from Settings.
                   </p>
 
                   <div className="flex flex-wrap items-center gap-2 mb-5">
@@ -701,24 +688,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.05] p-3.5">
                     <div className="flex items-center justify-between gap-3 mb-1.5">
                       <p className="text-white/86 text-xs font-medium">Replace Spotlight (Cmd + Space)</p>
-                      <button
-                        onClick={() => { void handleReplaceSpotlight(); }}
-                        disabled={spotlightReplaceStatus === 'loading' || spotlightReplaceStatus === 'success'}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors disabled:opacity-60 ${
-                          spotlightReplaceStatus === 'success'
-                            ? 'border-emerald-200/35 bg-emerald-500/22 text-emerald-100'
-                            : 'border-white/[0.12] bg-white/[0.10] hover:bg-white/[0.18] text-white'
-                        }`}
-                      >
-                        {spotlightReplaceStatus === 'success' ? <Check className="w-3 h-3" /> : null}
-                        {spotlightReplaceStatus === 'loading' ? 'Replacing…' : spotlightReplaceStatus === 'success' ? 'Replaced' : 'Auto Replace'}
-                      </button>
                     </div>
-                    {spotlightReplaceStatus === 'success' ? (
-                      <p className="text-emerald-200/85 text-xs mb-1.5">Spotlight shortcut disabled. SuperCmd is now Cmd + Space.</p>
-                    ) : spotlightReplaceStatus === 'error' ? (
-                      <p className="text-rose-200/85 text-xs mb-1.5">Auto-replace failed. Use the manual steps below.</p>
-                    ) : null}
                     <div className="text-white/55 text-xs space-y-1">
                       <p>Manual: System Settings → Keyboard → Keyboard Shortcuts → Spotlight → disable.</p>
                       <p>Then set the launcher hotkey above to Cmd + Space.</p>
@@ -762,6 +732,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     const isDone = Boolean(openedPermissions[target.id]);
                     const isRequested = Boolean(requestedPermissions[target.id]);
                     const note = permissionNotes[target.id];
+                    const permissionNoteClass = 'mt-1 pl-[60px] text-[11px]';
                     return (
                       <div
                         key={target.id}
@@ -808,32 +779,26 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                             disabled={Boolean(permissionLoading[target.id])}
                             className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-md border border-white/[0.12] bg-white/[0.10] hover:bg-white/[0.18] text-white text-xs font-medium transition-colors disabled:opacity-60 md:min-w-[190px]"
                           >
-                            {permissionLoading[target.id] ? 'Requesting...' : 'Request + Open Settings'}
-                            <ExternalLink className="w-3 h-3" />
+                            {permissionLoading[target.id] ? 'Requesting...' : 'Request Access'}
                           </button>
                         </div>
                         {!isDone && isRequested ? (
-                          <p className="mt-2 text-[11px] text-amber-100/85">
+                          <p className={`${permissionNoteClass} text-amber-100/85`}>
                             Permission request sent. Enable SuperCmd in System Settings, then return.
                           </p>
                         ) : null}
-                        {!isDone && (target.id === 'microphone' || target.id === 'speech-recognition') ? (
-                          <p className="mt-1 text-[11px] text-white/52">
-                            If this opens Privacy & Security, select the matching access row and press request again.
-                          </p>
-                        ) : null}
                         {target.id === 'input-monitoring' ? (
-                          <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-100/85">
+                          <p className={`${permissionNoteClass} text-amber-700 dark:text-amber-100/85`}>
                             If SuperCmd is not visible here, click + and manually add SuperCmd from the Applications folder.
                           </p>
                         ) : null}
                         {target.id === 'home-folder' ? (
-                          <p className="mt-1 text-[11px] text-white/52">
+                          <p className={`${permissionNoteClass} text-white/52`}>
                             Pick your Home folder when prompted. This powers Search Files and launcher file results.
                           </p>
                         ) : null}
                         {!isDone && note ? (
-                          <p className="mt-1 text-[11px] text-rose-100/85">
+                          <p className={`${permissionNoteClass} text-rose-100/85`}>
                             {note}
                           </p>
                         ) : null}
@@ -990,8 +955,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     ))}
                   </div>
                   <p className="text-white/46 text-xs leading-relaxed">
-                    Tip: use <span className="text-white/62">Cmd + Shift + K</span> for Global AI Prompt and{' '}
-                    <span className="text-white/62">Cmd + Shift + O</span> to add selected text to Memory.
+                    Next step: Setup Hotkeys for AI Prompt and Memory from SuperCmd Settings {'->'} Extensions to start using AI anywhere.
                   </p>
                 </div>
               </div>

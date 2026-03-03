@@ -60,10 +60,6 @@ export interface AppSettings {
   uiStyle: AppUiStyle;
   baseColor: string;
   appUpdaterLastCheckedAt: number;
-  hyperKeySource: number | null;
-  hyperKeyIncludeShift: boolean;
-  hyperKeyQuickPressAction: 'toggle-caps-lock' | 'escape' | 'none';
-  hyperReplaceModifierGlyphsWithHyper: boolean;
 }
 
 const DEFAULT_AI_SETTINGS: AISettings = {
@@ -100,7 +96,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   enabledCommands: [],
   customExtensionFolders: [],
   commandHotkeys: {
-    'system-cursor-prompt': 'Command+Shift+K',
     'system-supercmd-whisper': 'Command+Shift+W',
     'system-supercmd-whisper-speak-toggle': 'Fn',
     'system-supercmd-speak': 'Command+Shift+S',
@@ -136,10 +131,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   uiStyle: 'glassy',
   baseColor: '#101113',
   appUpdaterLastCheckedAt: 0,
-  hyperKeySource: null,
-  hyperKeyIncludeShift: true,
-  hyperKeyQuickPressAction: 'toggle-caps-lock',
-  hyperReplaceModifierGlyphsWithHyper: true,
 };
 
 let settingsCache: AppSettings | null = null;
@@ -176,84 +167,6 @@ function normalizeBaseColor(value: any): string {
   return DEFAULT_SETTINGS.baseColor;
 }
 
-const HYPER_KEY_ALLOWED_KEY_CODES = new Set<number>([
-  57, // Caps Lock
-  59, // Left Control
-  56, // Left Shift
-  58, // Left Option
-  55, // Left Command
-  62, // Right Control
-  60, // Right Shift
-  61, // Right Option
-  54, // Right Command
-  122, // F1
-  120, // F2
-  99, // F3
-  118, // F4
-  96, // F5
-  97, // F6
-  98, // F7
-  100, // F8
-  101, // F9
-  109, // F10
-  103, // F11
-  111, // F12
-  90, // F20
-]);
-
-function normalizeHyperKeySource(value: any): AppSettings['hyperKeySource'] {
-  if (value === null || value === undefined || value === '') return null;
-
-  const numericValue = Number(value);
-  if (Number.isFinite(numericValue)) {
-    const keyCode = Math.round(numericValue);
-    if (HYPER_KEY_ALLOWED_KEY_CODES.has(keyCode)) return keyCode;
-  }
-
-  const raw = String(value || '').trim().toLowerCase();
-  const legacyMap: Record<string, number | null> = {
-    'none': null,
-    'caps-lock': 57,
-    'caps_lock': 57,
-    'capslock': 57,
-    'left-command': 55,
-    'left-command-key': 55,
-    'right-command': 54,
-    'right-command-key': 54,
-    'left-control': 59,
-    'left-ctrl': 59,
-    'right-control': 62,
-    'right-ctrl': 62,
-    'left-shift': 56,
-    'right-shift': 60,
-    'left-option': 58,
-    'left-alt': 58,
-    'right-option': 61,
-    'right-alt': 61,
-    'f1': 122,
-    'f2': 120,
-    'f3': 99,
-    'f4': 118,
-    'f5': 96,
-    'f6': 97,
-    'f7': 98,
-    'f8': 100,
-    'f9': 101,
-    'f10': 109,
-    'f11': 103,
-    'f12': 111,
-    'f20': 90,
-  };
-  return legacyMap[raw] ?? null;
-}
-
-function normalizeHyperKeyQuickPressAction(value: any): 'toggle-caps-lock' | 'escape' | 'none' {
-  const raw = String(value || '').trim().toLowerCase();
-  if (raw === 'escape' || raw === 'esc' || raw === 'trigger-esc' || raw === 'triggers-esc') return 'escape';
-  if (raw === 'none' || raw === 'does-nothing') return 'none';
-  return 'toggle-caps-lock';
-}
-
 function normalizeRecentCommandLaunchCounts(value: any): Record<string, number> {
   if (!value || typeof value !== 'object') return {};
   const normalized: Record<string, number> = {};
@@ -279,18 +192,19 @@ export function loadSettings(): AppSettings {
     const parsed = JSON.parse(raw);
     const parsedHotkeys = { ...(parsed.commandHotkeys || {}) };
     const parsedAliases = { ...(parsed.commandAliases || {}) } as Record<string, any>;
-    if (!parsedHotkeys['system-supercmd-whisper-speak-toggle']) {
+    const hasParsedHotkey = (key: string) => Object.prototype.hasOwnProperty.call(parsedHotkeys, key);
+    if (!hasParsedHotkey('system-supercmd-whisper-speak-toggle')) {
       if (parsedHotkeys['system-supercmd-whisper-start']) {
         parsedHotkeys['system-supercmd-whisper-speak-toggle'] = parsedHotkeys['system-supercmd-whisper-start'];
       } else if (parsedHotkeys['system-supercmd-whisper-stop']) {
         parsedHotkeys['system-supercmd-whisper-speak-toggle'] = parsedHotkeys['system-supercmd-whisper-stop'];
       }
     }
-    if (parsedHotkeys['system-supercmd-whisper-toggle']) {
-      if (!parsedHotkeys['system-supercmd-whisper-start']) {
+    if (hasParsedHotkey('system-supercmd-whisper-toggle')) {
+      if (!hasParsedHotkey('system-supercmd-whisper-start')) {
         parsedHotkeys['system-supercmd-whisper-start'] = parsedHotkeys['system-supercmd-whisper-toggle'];
       }
-      if (!parsedHotkeys['system-supercmd-whisper']) {
+      if (!hasParsedHotkey('system-supercmd-whisper')) {
         parsedHotkeys['system-supercmd-whisper'] = parsedHotkeys['system-supercmd-whisper-toggle'];
       }
     }
@@ -341,11 +255,6 @@ export function loadSettings(): AppSettings {
       appUpdaterLastCheckedAt: Number.isFinite(Number(parsed.appUpdaterLastCheckedAt))
         ? Math.max(0, Number(parsed.appUpdaterLastCheckedAt))
         : DEFAULT_SETTINGS.appUpdaterLastCheckedAt,
-      hyperKeySource: normalizeHyperKeySource(parsed.hyperKeySource),
-      hyperKeyIncludeShift: parsed.hyperKeyIncludeShift ?? DEFAULT_SETTINGS.hyperKeyIncludeShift,
-      hyperKeyQuickPressAction: normalizeHyperKeyQuickPressAction(parsed.hyperKeyQuickPressAction),
-      hyperReplaceModifierGlyphsWithHyper:
-        parsed.hyperReplaceModifierGlyphsWithHyper ?? DEFAULT_SETTINGS.hyperReplaceModifierGlyphsWithHyper,
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };

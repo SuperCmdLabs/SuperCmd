@@ -23,6 +23,86 @@ export interface Preference {
   data?: unknown[];
 }
 
+function deriveApplicationName(input: string): string {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  const lastSegment = raw.split('/').pop() || raw;
+  const withoutExtension = lastSegment.replace(/\.app$/i, '');
+  const bundleToken = withoutExtension.split('.').pop() || withoutExtension;
+  const normalized = bundleToken.replace(/[-_]+/g, ' ').trim();
+  return normalized || withoutExtension;
+}
+
+function normalizeAppPickerValue(value: any): any {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const path = typeof value.path === 'string' ? value.path.trim() : '';
+    const bundleId = typeof value.bundleId === 'string' ? value.bundleId.trim() : '';
+    const name =
+      typeof value.name === 'string' && value.name.trim()
+        ? value.name.trim()
+        : deriveApplicationName(path || bundleId);
+    if (!name && !path && !bundleId) return '';
+    return {
+      ...value,
+      name,
+      path,
+      ...(bundleId ? { bundleId } : {}),
+    };
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return '';
+  const isPathLike = raw.startsWith('/') || raw.endsWith('.app');
+  return {
+    name: deriveApplicationName(raw),
+    path: isPathLike ? raw : '',
+    ...(isPathLike ? {} : { bundleId: raw }),
+  };
+}
+
+function getDefaultPreferenceValue(def: any): any {
+  if (def?.default !== undefined) return def.default;
+  if (def?.type === 'checkbox') return false;
+  if (def?.type === 'dropdown') return Array.isArray(def?.data) ? def.data?.[0]?.value ?? '' : '';
+  return '';
+}
+
+function normalizePreferenceValue(def: any, value: any): any {
+  if (value === undefined || value === null) return getDefaultPreferenceValue(def);
+  if (def?.type === 'checkbox') {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true') return true;
+      if (normalized === 'false') return false;
+    }
+    return getDefaultPreferenceValue(def);
+  }
+  if (def?.type === 'dropdown') {
+    const normalized = typeof value === 'string' ? value.trim() : String(value).trim();
+    const options = Array.isArray(def?.data)
+      ? def.data
+          .map((option: any) => ({
+            value: String(option?.value ?? '').trim(),
+            title: String(option?.title ?? '').trim(),
+          }))
+          .filter((option: any) => option.value || option.title)
+      : [];
+    if (options.length === 0) return normalized;
+    const match = options.find((option: any) =>
+      option.value === normalized ||
+      option.title === normalized ||
+      option.title.toLowerCase() === normalized.toLowerCase()
+    );
+    return match?.value || getDefaultPreferenceValue(def);
+  }
+  if (def?.type === 'appPicker') {
+    return normalizeAppPickerValue(value);
+  }
+  return value;
+}
+
 /** @deprecated Use getPreferenceValues instead. */
 export type Preferences = { [name: string]: Preference };
 
@@ -31,6 +111,7 @@ export const preferences: Preferences = new Proxy({} as Preferences, {
   get(_target, prop: string) {
     const ctx = getCurrentScopedExtensionContext();
     const contextPrefs = (ctx.preferences || {}) as Record<string, any>;
+    const preferenceDefinitions = Array.isArray((ctx as any).preferenceDefinitions) ? (ctx as any).preferenceDefinitions : [];
     const extName = String(ctx.extensionName || '').trim();
     const cmdName = String(ctx.commandName || '').trim();
 
@@ -49,12 +130,24 @@ export const preferences: Preferences = new Proxy({} as Preferences, {
     const extStored = extName ? readStoredPrefs(`sc-ext-prefs:${extName}`) : {};
     const cmdStored = extName && cmdName ? readStoredPrefs(`sc-ext-cmd-prefs:${extName}/${cmdName}`) : {};
     const stored = { ...extStored, ...cmdStored };
+    const def = preferenceDefinitions.find((entry: any) => entry?.name === prop);
+    const defaultValue = def ? getDefaultPreferenceValue(def) : undefined;
     const contextValue = contextPrefs[prop];
-    const val = contextValue === undefined || contextValue === null || (typeof contextValue === 'string' && contextValue.trim() === '')
-      ? stored[prop]
+    const mergedValue = contextValue === undefined || contextValue === null || (typeof contextValue === 'string' && contextValue.trim() === '')
+      ? (stored[prop] !== undefined ? stored[prop] : defaultValue)
       : contextValue;
+    const val = def ? normalizePreferenceValue(def, mergedValue) : mergedValue;
 
-    return { name: prop, type: 'textfield', required: false, title: prop, description: '', value: val } as Preference;
+    return {
+      name: prop,
+      type: def?.type || 'textfield',
+      required: Boolean(def?.required),
+      title: def?.title || prop,
+      description: def?.description || '',
+      default: defaultValue,
+      data: def?.data,
+      value: val,
+    } as Preference;
   },
 });
 
