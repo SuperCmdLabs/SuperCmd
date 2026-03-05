@@ -4674,6 +4674,45 @@ app.on('open-url', (event: any, url: string) => {
 const menuBarTrays = new Map<string, InstanceType<typeof Tray>>();
 let appTray: InstanceType<typeof Tray> | null = null;
 
+function buildDefaultMacTrayTemplateIcon(): any | null {
+  if (process.platform !== 'darwin') return null;
+  try {
+    // Keep a deterministic monochrome glyph so the menu bar icon stays visible
+    // even when packaged bitmap resources are missing or unsuitable for template mode.
+    const svg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">',
+      '<rect x="2.4" y="2.4" width="13.2" height="13.2" rx="3.1" fill="none" stroke="#000" stroke-width="1.8"/>',
+      '<path d="M5.6 9.2l2.25 2.25L12.7 6.8" fill="none" stroke="#000" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+      '</svg>',
+    ].join('');
+    const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+    const icon = nativeImage.createFromDataURL(dataUrl);
+    if (!icon || icon.isEmpty()) return null;
+    try { icon.setTemplateImage(true); } catch {}
+    return icon;
+  } catch {
+    return null;
+  }
+}
+
+function isInvisibleTrayIcon(icon: any): boolean {
+  try {
+    if (!icon || icon.isEmpty?.()) return true;
+    const bitmap: Buffer | undefined = icon.getBitmap?.();
+    if (!bitmap || bitmap.length < 4) return false;
+    let visiblePixels = 0;
+    for (let i = 3; i < bitmap.length; i += 4) {
+      if (bitmap[i] > 8) {
+        visiblePixels += 1;
+        if (visiblePixels > 24) return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function loadAppTrayIcon(): any {
   const fs = require('fs');
   const candidates = [
@@ -4681,19 +4720,43 @@ function loadAppTrayIcon(): any {
     path.join(app.getAppPath(), 'supercmd.png'),
     path.join(process.resourcesPath || '', 'supercmd.png'),
     path.join(process.resourcesPath || '', 'supercmd.icns'),
+    path.join(process.resourcesPath || '', 'icon.png'),
+    path.join(process.resourcesPath || '', 'icon.icns'),
   ].filter(Boolean);
 
-  for (const candidate of candidates) {
+  const tryBuildTrayImage = (icon: any): any | null => {
     try {
-      if (!candidate || !fs.existsSync(candidate)) continue;
-      const icon = nativeImage.createFromPath(candidate);
-      if (!icon || icon.isEmpty()) continue;
+      if (!icon || icon.isEmpty()) return null;
       const resized = icon.resize({ width: 18, height: 18 });
+      if (!resized || resized.isEmpty()) return null;
       // Use template rendering on macOS so the icon adapts to light/dark menu bar.
       if (process.platform === 'darwin') {
         try { resized.setTemplateImage(true); } catch {}
       }
       return resized;
+    } catch {
+      return null;
+    }
+  };
+
+  const defaultTemplateIcon = buildDefaultMacTrayTemplateIcon();
+  if (defaultTemplateIcon) {
+    return defaultTemplateIcon;
+  }
+
+  for (const candidate of candidates) {
+    try {
+      if (!candidate || !fs.existsSync(candidate)) continue;
+      const trayImage = tryBuildTrayImage(nativeImage.createFromPath(candidate));
+      if (trayImage) return trayImage;
+    } catch {}
+  }
+
+  if (process.platform === 'darwin') {
+    try {
+      const dockIcon = app.dock?.getIcon?.();
+      const trayImage = tryBuildTrayImage(dockIcon);
+      if (trayImage) return trayImage;
     } catch {}
   }
 
@@ -4705,7 +4768,11 @@ function ensureAppTray(): void {
 
   try {
     const icon = loadAppTrayIcon();
-    appTray = new Tray(icon);
+    const iconInvisible = isInvisibleTrayIcon(icon);
+    appTray = new Tray(iconInvisible ? nativeImage.createEmpty() : icon);
+    if (process.platform === 'darwin' && iconInvisible) {
+      appTray.setTitle('⌘');
+    }
     appTray.setToolTip('SuperCmd');
     appTray.setContextMenu(
       Menu.buildFromTemplate([
