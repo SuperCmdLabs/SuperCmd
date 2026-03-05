@@ -1867,6 +1867,10 @@ export async function launchCommand(options: LaunchOptions): Promise<void> {
 
 export async function getSelectedText(): Promise<string> {
   try {
+    const electron = (window as any).electron;
+    if (electron?.getSelectedText) {
+      return String(await electron.getSelectedText() || '');
+    }
     return await navigator.clipboard.readText();
   } catch {
     throw new Error('Could not get selected text');

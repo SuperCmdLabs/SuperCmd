@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, Trash2, Copy, Clipboard, Image as ImageIcon, Link, FileText, ArrowLeft } from 'lucide-react';
+import { Search, X, Trash2, Copy, Clipboard, Image as ImageIcon, Link, FileText, ArrowLeft, Pin, Save, FileDown } from 'lucide-react';
 import type { ClipboardItem } from '../types/electron';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
 
@@ -24,6 +24,11 @@ interface Action {
   style?: 'default' | 'destructive';
 }
 
+type ClipboardStatus = {
+  kind: 'success' | 'neutral';
+  text: string;
+};
+
 const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   const [items, setItems] = useState<ClipboardItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<ClipboardItem[]>([]);
@@ -34,10 +39,12 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   const [showActions, setShowActions] = useState(false);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [frontmostAppName, setFrontmostAppName] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<ClipboardStatus | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const actionsOverlayRef = useRef<HTMLDivElement>(null);
+  const statusTimerRef = useRef<number | null>(null);
   const isGlassyTheme =
     document.documentElement.classList.contains('sc-glassy') ||
     document.body.classList.contains('sc-glassy');
@@ -52,6 +59,17 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     });
   }, []);
 
+  const showStatusMessage = useCallback((status: ClipboardStatus, durationMs = 3000) => {
+    setStatusMessage(status);
+    if (statusTimerRef.current != null) {
+      window.clearTimeout(statusTimerRef.current);
+    }
+    statusTimerRef.current = window.setTimeout(() => {
+      setStatusMessage(null);
+      statusTimerRef.current = null;
+    }, durationMs);
+  }, []);
+
   const loadHistory = useCallback(async (withLoading = false) => {
     if (withLoading) setIsLoading(true);
     try {
@@ -59,7 +77,11 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
       setItems((prev) => {
         if (
           prev.length === history.length &&
-          prev.every((item, idx) => item.id === history[idx]?.id && item.timestamp === history[idx]?.timestamp)
+          prev.every((item, idx) =>
+            item.id === history[idx]?.id &&
+            item.timestamp === history[idx]?.timestamp &&
+            Boolean(item.pinned) === Boolean(history[idx]?.pinned)
+          )
         ) {
           return prev;
         }
@@ -84,6 +106,15 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
       window.clearTimeout(focusTimer);
     };
   }, [loadHistory, focusSearchInput]);
+
+  useEffect(() => {
+    return () => {
+      if (statusTimerRef.current != null) {
+        window.clearTimeout(statusTimerRef.current);
+        statusTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -191,6 +222,46 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     }
   };
 
+  const handleTogglePinItem = async (item?: ClipboardItem) => {
+    const itemToPin = item || filteredItems[selectedIndex];
+    if (!itemToPin) return;
+
+    try {
+      await window.electron.clipboardTogglePin(itemToPin.id);
+      await loadHistory();
+    } catch (e) {
+      console.error('Failed to toggle pin on clipboard item:', e);
+    }
+  };
+
+  const handleSaveAsSnippet = async (item?: ClipboardItem) => {
+    const itemToSave = item || filteredItems[selectedIndex];
+    if (!itemToSave || (itemToSave.type !== 'text' && itemToSave.type !== 'url')) return;
+
+    try {
+      const snippet = await window.electron.clipboardSaveAsSnippet(itemToSave.id);
+      if (snippet) {
+        showStatusMessage({ kind: 'success', text: 'Snippet saved successfully.' });
+      } else {
+        showStatusMessage({ kind: 'neutral', text: 'Failed to save snippet.' });
+      }
+    } catch (e) {
+      console.error('Failed to save clipboard item as snippet:', e);
+      showStatusMessage({ kind: 'neutral', text: 'Failed to save snippet.' });
+    }
+  };
+
+  const handleSaveAsFile = async (item?: ClipboardItem) => {
+    const itemToSave = item || filteredItems[selectedIndex];
+    if (!itemToSave) return;
+
+    try {
+      await window.electron.clipboardSaveAsFile(itemToSave.id);
+    } catch (e) {
+      console.error('Failed to save clipboard item as file:', e);
+    }
+  };
+
   const handleClearAll = async () => {
     if (confirm('Are you sure you want to clear all clipboard history?')) {
       try {
@@ -203,37 +274,57 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   };
 
   const selectedItem = filteredItems[selectedIndex];
+  const canSaveAsSnippet = selectedItem?.type === 'text' || selectedItem?.type === 'url';
 
   const pasteLabel = frontmostAppName ? `Paste in ${frontmostAppName}` : 'Paste';
 
-  const actions: Action[] = [
-    {
-      title: pasteLabel,
-      icon: <Clipboard className="w-4 h-4" />,
-      shortcut: ['↩'],
-      execute: () => handlePasteItem(),
-    },
-    {
-      title: 'Copy to Clipboard',
-      icon: <Copy className="w-4 h-4" />,
-      shortcut: ['⌘', '↩'],
-      execute: handleCopyToClipboard,
-    },
-    {
-      title: 'Delete',
-      icon: <Trash2 className="w-4 h-4" />,
-      shortcut: ['⌃', 'X'],
-      execute: () => handleDeleteItem(),
-      style: 'destructive',
-    },
-    {
-      title: 'Delete All Entries',
-      icon: <Trash2 className="w-4 h-4" />,
-      shortcut: ['⌃', '⇧', 'X'],
-      execute: handleClearAll,
-      style: 'destructive',
-    },
-  ];
+  const actions: Action[] = [];
+  actions.push({
+    title: pasteLabel,
+    icon: <Clipboard className="w-4 h-4" />,
+    shortcut: ['↩'],
+    execute: () => handlePasteItem(),
+  });
+  actions.push({
+    title: 'Copy to Clipboard',
+    icon: <Copy className="w-4 h-4" />,
+    shortcut: ['⌘', '↩'],
+    execute: handleCopyToClipboard,
+  });
+  actions.push({
+    title: selectedItem?.pinned ? 'Unpin Clipboard Entry' : 'Pin Clipboard Entry',
+    icon: <Pin className="w-4 h-4" />,
+    shortcut: ['⌃', 'P'],
+    execute: handleTogglePinItem,
+  });
+  if (canSaveAsSnippet) {
+    actions.push({
+      title: 'Save as Snippet',
+      icon: <Save className="w-4 h-4" />,
+      shortcut: ['⌃', 'S'],
+      execute: handleSaveAsSnippet,
+    });
+  }
+  actions.push({
+    title: 'Save as File',
+    icon: <FileDown className="w-4 h-4" />,
+    shortcut: ['⌃', '⇧', 'S'],
+    execute: handleSaveAsFile,
+  });
+  actions.push({
+    title: 'Delete',
+    icon: <Trash2 className="w-4 h-4" />,
+    shortcut: ['⌃', 'X'],
+    execute: () => handleDeleteItem(),
+    style: 'destructive',
+  });
+  actions.push({
+    title: 'Delete All Entries',
+    icon: <Trash2 className="w-4 h-4" />,
+    shortcut: ['⌃', '⇧', 'X'],
+    execute: handleClearAll,
+    style: 'destructive',
+  });
 
   const isMetaEnter = (e: React.KeyboardEvent) =>
     e.metaKey &&
@@ -257,6 +348,26 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         if (e.key.toLowerCase() === 'x' && e.ctrlKey && e.shiftKey) {
           e.preventDefault();
           void handleClearAll();
+          setShowActions(false);
+          return;
+        }
+        if (e.key.toLowerCase() === 's' && e.ctrlKey && e.shiftKey) {
+          e.preventDefault();
+          void handleSaveAsFile();
+          setShowActions(false);
+          return;
+        }
+        if (e.key.toLowerCase() === 's' && e.ctrlKey) {
+          e.preventDefault();
+          if (canSaveAsSnippet) {
+            void handleSaveAsSnippet();
+            setShowActions(false);
+          }
+          return;
+        }
+        if (e.key.toLowerCase() === 'p' && e.ctrlKey) {
+          e.preventDefault();
+          void handleTogglePinItem();
           setShowActions(false);
           return;
         }
@@ -345,7 +456,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
           break;
       }
     },
-    [filteredItems, selectedIndex, onClose, showActions, actions, selectedActionIndex]
+    [filteredItems, selectedIndex, onClose, showActions, actions, selectedActionIndex, canSaveAsSnippet]
   );
 
   const formatDate = (timestamp: number): string =>
@@ -463,6 +574,9 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                             {item.metadata?.width} × {item.metadata?.height}
                           </div>
                         </div>
+                        {item.pinned ? (
+                          <Pin className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0" />
+                        ) : null}
                       </>
                     ) : (
                       <>
@@ -474,6 +588,9 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                             {item.preview || item.content}
                           </div>
                         </div>
+                        {item.pinned ? (
+                          <Pin className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0" />
+                        ) : null}
                       </>
                     )}
                   </div>
@@ -520,7 +637,18 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
       </div>
 
       <ExtensionActionFooter
-        leftContent={<span className="truncate">{filteredItems.length} items</span>}
+        leftContent={
+          statusMessage ? (
+            <span className="inline-flex items-center gap-2 min-w-0">
+              {statusMessage.kind === 'success' ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/90 shadow-[0_0_0_3px_rgba(52,211,153,0.18)] flex-shrink-0" />
+              ) : null}
+              <span className="truncate text-[var(--text-secondary)]">{statusMessage.text}</span>
+            </span>
+          ) : (
+            <span className="truncate">{filteredItems.length} items</span>
+          )
+        }
         primaryAction={
           selectedItem
             ? {

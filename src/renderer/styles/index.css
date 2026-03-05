@@ -1557,11 +1557,53 @@ body.sc-detached-window .speak-widget-shell {
   margin-bottom: 4px;
 }
 
+body.sc-detached-window .speak-header-row {
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+
+body.sc-detached-window .speak-header-row:active {
+  cursor: grabbing;
+}
+
+body.sc-detached-window .speak-controls,
+body.sc-detached-window .speak-controls *,
+body.sc-detached-window .speak-close-button {
+  -webkit-app-region: no-drag;
+}
+
 .speak-controls {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin-left: auto;
+  min-width: 0;
+}
+
+.speak-action-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  border: 1px solid rgba(var(--on-surface-rgb), 0.22);
+  background: rgba(7, 10, 16, 0.52);
+  color: rgba(236, 243, 255, 0.9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.speak-action-button:hover:not(:disabled) {
+  background: rgba(15, 20, 28, 0.88);
+  border-color: rgba(var(--on-surface-rgb), 0.42);
+  transform: translateY(-1px);
+}
+
+.speak-action-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .speak-select {
@@ -1573,6 +1615,12 @@ body.sc-detached-window .speak-widget-shell {
   font-size: 11px;
   padding: 0 8px;
   outline: none;
+}
+
+.speak-voice-select {
+  width: 132px;
+  min-width: 132px;
+  max-width: 132px;
 }
 
 .speak-select:focus {
@@ -1588,6 +1636,7 @@ body.sc-detached-window .speak-widget-shell {
   align-items: center;
   gap: 7px;
   flex-shrink: 0;
+  min-width: 74px;
 }
 
 .sc-glassy:not(.dark) .extensions-hotkey-status-success,
@@ -1640,9 +1689,9 @@ body.sc-detached-window .speak-widget-shell {
 }
 
 .speak-close-button {
-  border: 1px solid rgba(var(--on-surface-rgb), 0.22);
-  background: rgba(7, 10, 16, 0.52);
-  color: rgba(var(--on-surface-rgb), 0.86);
+  border: 1px solid rgba(236, 244, 255, 0.46);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(174, 210, 255, 0.12));
+  color: rgba(248, 252, 255, 0.98);
   font-size: 17px;
   line-height: 1;
   width: 26px;
@@ -1653,11 +1702,14 @@ body.sc-detached-window .speak-widget-shell {
   transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
   flex-shrink: 0;
   margin-top: -1px;
+  box-shadow:
+    0 0 0 1px rgba(8, 12, 18, 0.26) inset,
+    0 6px 14px rgba(8, 16, 28, 0.28);
 }
 
 .speak-close-button:hover {
-  background: rgba(15, 20, 28, 0.88);
-  border-color: rgba(var(--on-surface-rgb), 0.42);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(189, 220, 255, 0.2));
+  border-color: rgba(248, 252, 255, 0.7);
   transform: translateY(-1px);
 }
 
@@ -1665,9 +1717,10 @@ body.sc-detached-window .speak-widget-shell {
   width: 100%;
   text-align: left;
   min-width: 0;
-  max-height: none;
-  overflow: visible;
-  padding-right: 2px;
+  max-height: 56px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
 .speak-caption {
@@ -1678,6 +1731,7 @@ body.sc-detached-window .speak-widget-shell {
   margin-bottom: 0;
   text-shadow: 0 1px 0 rgba(var(--backdrop-rgb), 0.35);
   white-space: nowrap;
+  min-width: 56px;
 }
 
 .speak-main-text {

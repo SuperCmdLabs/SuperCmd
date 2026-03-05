@@ -219,6 +219,7 @@ export interface ClipboardItem {
   content: string;
   preview?: string;
   timestamp: number;
+  pinned?: boolean;
   source?: string;
   metadata?: {
     width?: number;
@@ -306,7 +307,7 @@ export interface ElectronAPI {
   oauthSetFlowActive: (active: boolean) => Promise<void>;
   onOAuthLogout: (callback: (provider: string) => void) => (() => void);
   onSpeakStatus: (callback: (payload: {
-    state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+    state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error';
     text: string;
     index: number;
     total: number;
@@ -314,8 +315,21 @@ export interface ElectronAPI {
     wordIndex?: number;
   }) => void) => (() => void);
   speakStop: () => Promise<boolean>;
+  speakTogglePause: () => Promise<{
+    ok: boolean;
+    status: {
+      state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error';
+      text: string;
+      index: number;
+      total: number;
+      message?: string;
+      wordIndex?: number;
+    };
+  }>;
+  speakPreviousParagraph: () => Promise<boolean>;
+  speakNextParagraph: () => Promise<boolean>;
   speakGetStatus: () => Promise<{
-    state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+    state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error';
     text: string;
     index: number;
     total: number;
@@ -482,6 +496,9 @@ export interface ElectronAPI {
   clipboardDeleteItem: (id: string) => Promise<boolean>;
   clipboardCopyItem: (id: string) => Promise<boolean>;
   clipboardPasteItem: (id: string) => Promise<boolean>;
+  clipboardTogglePin: (id: string) => Promise<ClipboardItem | null>;
+  clipboardSaveAsSnippet: (id: string) => Promise<Snippet | null>;
+  clipboardSaveAsFile: (id: string) => Promise<boolean>;
   clipboardSetEnabled: (enabled: boolean) => Promise<void>;
   clipboardWrite: (payload: { text?: string; html?: string; file?: string }) => Promise<boolean>;
   clipboardReadText: () => Promise<string>;

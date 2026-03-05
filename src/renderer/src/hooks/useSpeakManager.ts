@@ -56,7 +56,7 @@ function buildElevenLabsSpeakModel(model: string, voiceId: string): string {
 // ─── Types ───────────────────────────────────────────────────────────
 
 export interface SpeakStatus {
-  state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+  state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error';
   text: string;
   index: number;
   total: number;
@@ -80,6 +80,9 @@ export interface UseSpeakManagerReturn {
   readVoiceOptions: ReadVoiceOption[];
   handleSpeakVoiceChange: (voice: string) => Promise<void>;
   handleSpeakRateChange: (rate: string) => Promise<void>;
+  handleSpeakTogglePause: () => Promise<void>;
+  handleSpeakPreviousParagraph: () => Promise<void>;
+  handleSpeakNextParagraph: () => Promise<void>;
   speakPortalTarget: HTMLElement | null;
 }
 
@@ -105,6 +108,7 @@ export function useSpeakManager({
   const [configuredTtsModel, setConfiguredTtsModel] = useState('edge-tts');
 
   const speakSessionShownRef = useRef(false);
+  const pauseToggleInFlightRef = useRef(false);
 
   // ── Portal ─────────────────────────────────────────────────────────
 
@@ -341,6 +345,41 @@ export function useSpeakManager({
     setSpeakOptions(next);
   }, []);
 
+  const handleSpeakTogglePause = useCallback(async () => {
+    if (pauseToggleInFlightRef.current) return;
+    pauseToggleInFlightRef.current = true;
+    try {
+      setSpeakStatus((prev) => {
+        if (prev.state === 'speaking') {
+          return { ...prev, state: 'paused', message: 'Paused' };
+        }
+        if (prev.state === 'paused') {
+          return { ...prev, state: 'speaking', message: '' };
+        }
+        return prev;
+      });
+      const next = await window.electron.speakTogglePause();
+      if (next?.status) {
+        setSpeakStatus(next.status);
+      }
+    } catch {}
+    finally {
+      pauseToggleInFlightRef.current = false;
+    }
+  }, []);
+
+  const handleSpeakPreviousParagraph = useCallback(async () => {
+    try {
+      await window.electron.speakPreviousParagraph();
+    } catch {}
+  }, []);
+
+  const handleSpeakNextParagraph = useCallback(async () => {
+    try {
+      await window.electron.speakNextParagraph();
+    } catch {}
+  }, []);
+
   return {
     speakStatus,
     speakOptions,
@@ -352,6 +391,9 @@ export function useSpeakManager({
     readVoiceOptions,
     handleSpeakVoiceChange,
     handleSpeakRateChange,
+    handleSpeakTogglePause,
+    handleSpeakPreviousParagraph,
+    handleSpeakNextParagraph,
     speakPortalTarget,
   };
 }

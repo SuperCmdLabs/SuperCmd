@@ -49,6 +49,7 @@ export interface ClipboardItem {
   content: string; // For text/url/file: the actual content. For images: file path
   preview?: string; // Short preview for display
   timestamp: number;
+  pinned?: boolean;
   source?: string; // Application name that copied
   metadata?: {
     // For images
@@ -95,6 +96,15 @@ function getHistoryFilePath(): string {
   return path.join(getClipboardDir(), 'history.json');
 }
 
+function sortClipboardHistory(): void {
+  clipboardHistory.sort((a, b) => {
+    if (Boolean(a.pinned) !== Boolean(b.pinned)) {
+      return a.pinned ? -1 : 1;
+    }
+    return b.timestamp - a.timestamp;
+  });
+}
+
 // ─── Persistence ────────────────────────────────────────────────────
 
 function loadHistory(): void {
@@ -124,7 +134,11 @@ function loadHistory(): void {
           if (dedupeKeys.has(key)) return false;
           dedupeKeys.add(key);
           return true;
-        });
+        }).map((item) => ({
+          ...item,
+          pinned: Boolean(item?.pinned),
+        }));
+        sortClipboardHistory();
         console.log(`Loaded ${clipboardHistory.length} clipboard items from disk`);
       }
     }
@@ -204,10 +218,7 @@ function addTextItem(text: string): void {
       const filename = path.basename(normalized);
       existing.metadata = { ...(existing.metadata || {}), filename };
     }
-    if (existingIndex > 0) {
-      clipboardHistory.splice(existingIndex, 1);
-      clipboardHistory.unshift(existing);
-    }
+    sortClipboardHistory();
     saveHistory();
     return;
   }
@@ -226,6 +237,7 @@ function addTextItem(text: string): void {
   }
 
   clipboardHistory.unshift(item);
+  sortClipboardHistory();
   if (clipboardHistory.length > MAX_ITEMS) {
     clipboardHistory.pop();
   }
@@ -263,6 +275,7 @@ function addImageItem(image: ReturnType<typeof nativeImage.createFromDataURL>, r
     };
 
     clipboardHistory.unshift(item);
+    sortClipboardHistory();
     if (clipboardHistory.length > MAX_ITEMS) {
       const removed = clipboardHistory.pop();
       // Delete old image file
@@ -390,6 +403,21 @@ export function deleteClipboardItem(id: string): boolean {
   return true;
 }
 
+export function getClipboardItemById(id: string): ClipboardItem | null {
+  const item = clipboardHistory.find((i) => i.id === id);
+  return item ? { ...item } : null;
+}
+
+export function togglePinClipboardItem(id: string): ClipboardItem | null {
+  const item = clipboardHistory.find((i) => i.id === id);
+  if (!item) return null;
+
+  item.pinned = !Boolean(item.pinned);
+  sortClipboardHistory();
+  saveHistory();
+  return { ...item };
+}
+
 export function copyItemToClipboard(id: string): boolean {
   const item = clipboardHistory.find((i) => i.id === id);
   if (!item) return false;
@@ -417,13 +445,10 @@ export function copyItemToClipboard(id: string): boolean {
       clipboard.writeText(item.content);
     }
     
-    // Move this item to the front of history
-    const index = clipboardHistory.indexOf(item);
-    if (index > 0) {
-      clipboardHistory.splice(index, 1);
-      clipboardHistory.unshift(item);
-      saveHistory();
-    }
+    // Bump recency for sorting; pinned items still stay grouped above non-pinned.
+    item.timestamp = Date.now();
+    sortClipboardHistory();
+    saveHistory();
     
     // Re-enable monitoring after a short delay
     setTimeout(() => {

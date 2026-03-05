@@ -40,6 +40,7 @@
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
     "@raycast/api": "^1.104.5",
+    "@supercmd/calculator": "^1.0.3",
     "electron-builder-notarize": "^1.5.2",
     "electron-liquid-glass": "^1.1.1",
     "electron-updater": "^6.7.3",

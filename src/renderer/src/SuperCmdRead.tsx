@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 
 interface SpeakStatus {
-  state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+  state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error';
   text: string;
   index: number;
   total: number;
@@ -17,6 +18,9 @@ interface SuperCmdReadProps {
   rate: string;
   onVoiceChange: (voice: string) => void;
   onRateChange: (rate: string) => void;
+  onPauseToggle: () => void;
+  onPreviousParagraph: () => void;
+  onNextParagraph: () => void;
   onClose: () => void;
   portalTarget?: HTMLElement | null;
 }
@@ -35,6 +39,9 @@ const SuperCmdRead: React.FC<SuperCmdReadProps> = ({
   rate,
   onVoiceChange,
   onRateChange,
+  onPauseToggle,
+  onPreviousParagraph,
+  onNextParagraph,
   onClose,
   portalTarget,
 }) => {
@@ -44,7 +51,7 @@ const SuperCmdRead: React.FC<SuperCmdReadProps> = ({
   const textScrollRef = useRef<HTMLDivElement | null>(null);
 
   const caption =
-    status.state === 'speaking'
+    status.state === 'speaking' || status.state === 'paused'
       ? `${status.index}/${status.total}`
       : status.state === 'loading'
         ? 'Preparing'
@@ -55,13 +62,21 @@ const SuperCmdRead: React.FC<SuperCmdReadProps> = ({
             : '';
 
   const mainText =
-    status.state === 'speaking'
+    status.state === 'speaking' || status.state === 'paused'
       ? status.text
       : status.message || (status.state === 'done' ? 'Finished reading selected text.' : 'Ready');
 
+  const isPaused = status.state === 'paused';
+  const isSessionActive =
+    status.state === 'speaking' ||
+    status.state === 'paused' ||
+    status.state === 'loading';
+  const canGoPrevious = isSessionActive && status.index > 1;
+  const canGoNext = isSessionActive && status.index > 0 && status.index < status.total;
+
   const renderedText = useMemo(() => {
     const text = mainText;
-    const wordIndex = status.state === 'speaking' ? status.wordIndex : undefined;
+    const wordIndex = status.state === 'speaking' || status.state === 'paused' ? status.wordIndex : undefined;
     if (typeof wordIndex !== 'number' || wordIndex < 0) {
       return text;
     }
@@ -108,8 +123,50 @@ const SuperCmdRead: React.FC<SuperCmdReadProps> = ({
             <div className="speak-caption">{caption ? `Speak ${caption}` : 'Speak'}</div>
           </div>
           <div className="speak-controls">
+            <button
+              type="button"
+              className="speak-action-button"
+              onClick={onPreviousParagraph}
+              disabled={!canGoPrevious}
+              aria-label="Previous paragraph"
+              title="Previous paragraph"
+            >
+              <SkipBack className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              className="speak-action-button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                void onPauseToggle();
+              }}
+              onClick={(e) => {
+                // Mouse path is handled on mousedown for faster response.
+                // Keep keyboard activation (detail===0) working here.
+                if (e.detail === 0) {
+                  void onPauseToggle();
+                } else {
+                  e.preventDefault();
+                }
+              }}
+              disabled={!isSessionActive}
+              aria-label={isPaused ? 'Play' : 'Pause'}
+              title={isPaused ? 'Play' : 'Pause'}
+            >
+              {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              type="button"
+              className="speak-action-button"
+              onClick={onNextParagraph}
+              disabled={!canGoNext}
+              aria-label="Next paragraph"
+              title="Next paragraph"
+            >
+              <SkipForward className="w-3.5 h-3.5" />
+            </button>
             <select
-              className="speak-select"
+              className="speak-select speak-voice-select"
               value={voice}
               onChange={(e) => onVoiceChange(e.target.value)}
               aria-label="Voice"

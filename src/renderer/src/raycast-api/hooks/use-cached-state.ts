@@ -4,34 +4,29 @@
  */
 
 import { useCallback, useState } from 'react';
+import { getScopedCachedStateKeys, readScopedJsonState } from './storage-scope';
 
 export function useCachedState<T>(
   key: string,
   initialValue?: T,
   config?: { cacheNamespace?: string }
 ): [T, (value: T | ((prev: T) => T)) => void] {
-  const ns = config?.cacheNamespace ? `${config.cacheNamespace}-` : '';
-  const storageKey = `sc-cache-${ns}${key}`;
+  const { scopedKey, legacyKeys } = getScopedCachedStateKeys(key, config?.cacheNamespace);
   const [value, setValue] = useState<T>(() => {
-    try {
-      const stored = localStorage.getItem(storageKey);
-      return stored ? JSON.parse(stored) : (initialValue as T);
-    } catch {
-      return initialValue as T;
-    }
+    return readScopedJsonState(scopedKey, legacyKeys, initialValue) as T;
   });
 
   const setter = useCallback((newValue: T | ((prev: T) => T)) => {
     setValue((prev) => {
       const resolved = typeof newValue === 'function' ? (newValue as (prev: T) => T)(prev) : newValue;
       try {
-        localStorage.setItem(storageKey, JSON.stringify(resolved));
+        localStorage.setItem(scopedKey, JSON.stringify(resolved));
       } catch {
         // best-effort
       }
       return resolved;
     });
-  }, [storageKey]);
+  }, [scopedKey]);
 
   return [value, setter];
 }
