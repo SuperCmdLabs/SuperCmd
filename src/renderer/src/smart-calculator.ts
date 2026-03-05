@@ -1,3 +1,9 @@
+import {
+  calculate,
+  type CalculateOutput,
+  type CalculateResult as SuperCalculatorResult,
+} from '@supercmd/calculator';
+
 /**
  * Smart Calculator & Unit Converter
  *
@@ -6,6 +12,7 @@
  */
 
 export interface CalcResult {
+  kind: 'math' | 'unit' | 'currency' | 'crypto' | 'time' | 'date';
   input: string;
   inputLabel: string;
   result: string;
@@ -867,23 +874,161 @@ function numberToWords(n: number): string {
 
 // ─── Main exports ───────────────────────────────────────────────
 
+const SUPERCALC_LABELS: Record<
+  SuperCalculatorResult['type'],
+  { inputLabel: string; resultLabel: string }
+> = {
+  math: { inputLabel: 'Expression', resultLabel: 'Result' },
+  unit: { inputLabel: 'Conversion', resultLabel: 'Converted value' },
+  currency: { inputLabel: 'Conversion', resultLabel: 'Currency result' },
+  crypto: { inputLabel: 'Conversion', resultLabel: 'Crypto result' },
+  time: { inputLabel: 'Time query', resultLabel: 'Time' },
+  date: { inputLabel: 'Date query', resultLabel: 'Date' },
+};
+
+const SUPERCALC_ALIAS_CONVERSION_QUERY_RE = new RegExp(
+  `^([\\w°µμ²³/\\s$€£¥₹₿.,-]+?)\\s+(?:to|in|as|=)\\s+([\\w°µμ²³/\\s$€£¥₹₿.,-]+)$`,
+  'i'
+);
+const SUPERCALC_TIME_QUERY_RE =
+  /\btime\b|\btimezone\b|\bclock\b|(?:\bfrom\b.+\bto\b.+\btime\b)/i;
+const SUPERCALC_DATE_QUERY_RE =
+  /^(?:today|tomorrow|yesterday|now|next\b.+|last\b.+|this\b.+|in\s+\d+\s+(?:days?|weeks?|months?|years?|hours?|minutes?|seconds?)|\d+\s+(?:days?|weeks?|months?|years?|hours?|minutes?|seconds?)\s+(?:from now|ago|from today|from tomorrow)|(?:days?\s+)?(?:between|from)\b.+|(?:unix\s+)?(?:timestamp\s+)?\d{10,13}|\d{4}-\d{2}-\d{2}.*|.+\s+(?:to|in)\s+(?:unix|timestamp|epoch))$/i;
+
+function isSupportedConversionQuery(query: string): boolean {
+  if (parseConversionQuery(query)) return true;
+
+  const trimmed = query.trim().replace(/\?+$/, '').trim();
+  const match = trimmed.match(SUPERCALC_ALIAS_CONVERSION_QUERY_RE);
+  if (!match) return false;
+
+  const fromRaw = match[1].trim();
+  const toRaw = match[2].trim();
+
+  if (!fromRaw || !toRaw) return false;
+
+  if (resolveTempUnit(fromRaw) && resolveTempUnit(toRaw)) return true;
+
+  const fromUnit = findUnit(fromRaw);
+  const toUnit = findUnit(toRaw);
+  if (fromUnit && toUnit && fromUnit.category.name === toUnit.category.name) return true;
+
+  return Boolean(resolveMonetaryAsset(fromRaw) && resolveMonetaryAsset(toRaw));
+}
+
+function shouldTrySuperCalculator(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return false;
+
+  if (
+    (/\d/.test(trimmed) && /[+\-*/%^()!=]/.test(trimmed)) ||
+    /^0x[0-9a-f]+$/i.test(trimmed) ||
+    /\b(?:sqrt|sin|cos|tan|asin|acos|atan|log|ln|abs|round|floor|ceil|min|max)\s*\(/i.test(trimmed)
+  ) {
+    return true;
+  }
+
+  if (isSupportedConversionQuery(trimmed)) return true;
+  if (SUPERCALC_TIME_QUERY_RE.test(trimmed)) return true;
+  if (SUPERCALC_DATE_QUERY_RE.test(trimmed)) return true;
+
+  return false;
+}
+
+function mapSuperCalculatorResult(output: CalculateOutput): CalcResult | null {
+  if (output.type === 'error') return null;
+
+  let result = output.formatted.trim();
+  if (!result) return null;
+
+  const labels = SUPERCALC_LABELS[output.type];
+  const metadata = (output.metadata ?? {}) as Record<string, unknown>;
+  let input = output.input.trim();
+  let inputLabel = labels.inputLabel;
+  let resultLabel = labels.resultLabel;
+
+  if (output.type === 'unit') {
+    const amount = metadata.amount;
+    const fromUnit = typeof metadata.fromUnit === 'string' ? metadata.fromUnit : null;
+    const toUnit = typeof metadata.toUnit === 'string' ? metadata.toUnit : null;
+
+    if (typeof amount === 'number' && Number.isFinite(amount) && fromUnit) {
+      input = `${formatNumber(amount)} ${fromUnit}`;
+    }
+    if (fromUnit) inputLabel = fromUnit;
+    if (toUnit) resultLabel = toUnit;
+  }
+
+  if (output.type === 'currency' || output.type === 'crypto') {
+    const amount = metadata.amount;
+    const from = metadata.from as { code?: unknown; name?: unknown } | undefined;
+    const to = metadata.to as { code?: unknown; name?: unknown } | undefined;
+
+    const fromCode = typeof from?.code === 'string' ? from.code : null;
+    const fromName = typeof from?.name === 'string' ? from.name : null;
+    const toCode = typeof to?.code === 'string' ? to.code : null;
+    const toName = typeof to?.name === 'string' ? to.name : null;
+
+    if (typeof amount === 'number' && Number.isFinite(amount) && fromCode) {
+      input = `${formatNumber(amount)} ${fromCode}`;
+    }
+    if (fromName || fromCode) inputLabel = fromName || fromCode || labels.inputLabel;
+    if (toName || toCode) resultLabel = toName || toCode || labels.resultLabel;
+  }
+
+  if (output.type === 'time') {
+    const timezone = typeof metadata.timezone === 'string' ? metadata.timezone : null;
+    input = output.input.trim() || 'Current time';
+    inputLabel = timezone || labels.inputLabel;
+    resultLabel = 'Local time';
+  }
+
+  if (output.type === 'date') {
+    const dayOfWeek = typeof metadata.dayOfWeek === 'string' ? metadata.dayOfWeek : null;
+    const iso = typeof metadata.iso === 'string' ? metadata.iso : null;
+    if (iso) {
+      const parsedDate = new Date(iso);
+      if (!Number.isNaN(parsedDate.getTime())) {
+        result = parsedDate.toLocaleString(globalThis.navigator?.language || 'en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+      }
+    }
+    inputLabel = dayOfWeek ? `${dayOfWeek[0].toUpperCase()}${dayOfWeek.slice(1)}` : labels.inputLabel;
+    resultLabel = 'Resolved date';
+  }
+
+  return {
+    kind: output.type,
+    input,
+    inputLabel,
+    result,
+    resultLabel,
+  };
+}
+
 export function tryCalculate(query: string): CalcResult | null {
-  if (!query || query.trim().length < 2) return null;
-
-  const conversion = tryConversion(query);
-  if (conversion) return conversion;
-
-  const math = tryMathExpression(query);
-  if (math) return math;
-
+  if (!query || query.trim().length === 0) return null;
   return null;
 }
 
 export async function tryCalculateAsync(query: string): Promise<CalcResult | null> {
-  if (!query || query.trim().length < 2) return null;
+  if (!query || query.trim().length === 0) return null;
+  if (!shouldTrySuperCalculator(query)) return null;
 
-  const local = tryCalculate(query);
-  if (local) return local;
+  try {
+    const output = await calculate(query, {
+      locale: globalThis.navigator?.language || 'en-US',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      precision: 10,
+    });
 
-  return tryMonetaryConversion(query);
+    return mapSuperCalculatorResult(output);
+  } catch {
+    return null;
+  }
 }
