@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowRight } from 'lucide-react';
+import { X, Sparkles, ArrowRight, CornerDownLeft } from 'lucide-react';
 import type {
   CommandInfo,
   ExtensionBundle,
@@ -94,6 +94,23 @@ function asTildePath(filePath: string, homeDir: string): string {
     return `~${filePath.slice(homeDir.length) || '/'}`;
   }
   return filePath;
+}
+
+function formatCalcKindLabel(kind: 'math' | 'unit' | 'currency' | 'crypto' | 'time' | 'date'): string {
+  switch (kind) {
+    case 'math':
+      return 'Math';
+    case 'unit':
+      return 'Unit';
+    case 'currency':
+      return 'Currency';
+    case 'crypto':
+      return 'Crypto';
+    case 'time':
+      return 'Time';
+    case 'date':
+      return 'Date';
+  }
 }
 
 function buildFileResultCommandId(filePath: string): string {
@@ -3167,9 +3184,9 @@ const App: React.FC = () => {
               {calcResult && (
                 <div
                   ref={(el) => (itemRefs.current[0] = el)}
-                  className={`mx-1 mt-0.5 mb-2 px-6 py-4 rounded-xl cursor-pointer transition-colors border ${
+                  className={`mx-1 mt-0.5 mb-2 px-3 py-3 rounded-xl cursor-pointer transition-colors border ${
                     selectedIndex === 0
-                      ? 'bg-[var(--launcher-card-selected-bg)] border-transparent'
+                      ? 'bg-[var(--launcher-card-selected-bg)] border-[var(--launcher-card-selected-border)]'
                       : 'bg-[var(--launcher-card-bg)] border-[var(--launcher-card-border)] hover:bg-[var(--launcher-card-hover-bg)]'
                   }`}
                   onClick={() => {
@@ -3177,15 +3194,65 @@ const App: React.FC = () => {
                     window.electron.hideWindow();
                   }}
                 >
-                  <div className="flex items-center justify-center gap-6">
-                    <div className="text-center">
-                      <div className="text-white/80 text-xl font-medium">{calcResult.input}</div>
-                      <div className="text-white/35 text-xs mt-1">{calcResult.inputLabel}</div>
+                  <div className="relative">
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="inline-flex items-center h-5 rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[0.625rem] font-medium uppercase tracking-[0.12em] text-[var(--text-subtle)] leading-none">
+                          {formatCalcKindLabel(calcResult.kind)}
+                        </div>
+                        <div className="text-[0.6875rem] text-[var(--text-muted)] leading-none">
+                          {selectedIndex === 0 ? 'Press Enter to copy' : 'Click to copy'}
+                        </div>
+                      </div>
+
+                      <div className="hidden sm:flex items-center gap-1 text-[0.6875rem] text-[var(--text-subtle)] flex-shrink-0 pl-2">
+                        <CornerDownLeft className="w-3.5 h-3.5" />
+                        <span>Copy</span>
+                      </div>
                     </div>
-                    <ArrowRight className="w-5 h-5 text-white/25 flex-shrink-0" />
-                    <div className="text-center">
-                      <div className="text-white text-xl font-medium">{calcResult.result}</div>
-                      <div className="text-white/35 text-xs mt-1">{calcResult.resultLabel}</div>
+
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-8 w-8 rounded-full border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] flex items-center justify-center pointer-events-none">
+                      <ArrowRight className="w-4 h-4 text-[var(--text-muted)]" />
+                    </div>
+
+                    <div className="flex justify-center">
+                      <div className="inline-grid grid-cols-[minmax(0,240px)_auto_minmax(0,240px)] items-center gap-x-7">
+                        <div className="min-w-0 text-center">
+                          <div className="text-[0.6875rem] uppercase tracking-[0.12em] text-[var(--text-subtle)] truncate">
+                            {calcResult.inputLabel}
+                          </div>
+                          <div
+                            className="mt-1 text-[1.15rem] leading-7 font-semibold text-[var(--text-primary)] text-center whitespace-normal break-words"
+                            style={{
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {calcResult.input}
+                          </div>
+                        </div>
+
+                        <div />
+
+                        <div className="min-w-0 text-center">
+                          <div className="text-[0.6875rem] uppercase tracking-[0.12em] text-[var(--text-subtle)] truncate">
+                            {calcResult.resultLabel}
+                          </div>
+                          <div
+                            className="mt-1 text-[1.15rem] leading-7 font-semibold text-[var(--text-primary)] text-center whitespace-normal break-words"
+                            style={{
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {calcResult.result}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
