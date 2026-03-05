@@ -63,8 +63,7 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
     actions: gridActions,
   }: any) {
     const extInfo = useContext(ExtensionInfoReactContext);
-    const [internalSearch, setInternalSearch] = useState('');
-    const searchText = controlledSearch ?? internalSearch;
+    const [internalSearch, setInternalSearch] = useState(() => controlledSearch ?? '');
     const [selectedIdx, setSelectedIdx] = useState(0);
     const [showActions, setShowActions] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -74,15 +73,20 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
     const cols = columns || 5;
     const { registryAPI, allItems } = useGridRegistry();
 
+    useEffect(() => {
+      if (controlledSearch === undefined) return;
+      setInternalSearch(controlledSearch);
+    }, [controlledSearch]);
+
     const filteredItems = useMemo(() => {
-      if (onSearchTextChange || filtering === false || !searchText.trim()) return allItems;
-      const query = searchText.toLowerCase();
+      if (onSearchTextChange || filtering === false || !internalSearch.trim()) return allItems;
+      const query = internalSearch.toLowerCase();
       return allItems.filter((item) => {
         const title = (item.props.title || '').toLowerCase();
         const subtitle = (item.props.subtitle || '').toLowerCase();
         return title.includes(query) || subtitle.includes(query) || item.props.keywords?.some((keyword: string) => keyword.toLowerCase().includes(query));
       });
-    }, [allItems, filtering, onSearchTextChange, searchText]);
+    }, [allItems, filtering, internalSearch, onSearchTextChange]);
 
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const handleSearchChange = useCallback(
@@ -201,7 +205,7 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
             <button onClick={pop} className="sc-back-button text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors flex-shrink-0 p-0.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
             </button>
-            <input ref={inputRef} data-supercmd-search-input="true" type="text" placeholder={searchBarPlaceholder || 'Search…'} value={searchText} onChange={(event) => handleSearchChange(event.target.value)} className="flex-1 bg-transparent border-none outline-none text-[var(--text-primary)] placeholder:text-[color:var(--text-subtle)] text-[14px] font-light" autoFocus />
+            <input ref={inputRef} data-supercmd-search-input="true" type="text" placeholder={searchBarPlaceholder || 'Search…'} value={internalSearch} onChange={(event) => handleSearchChange(event.target.value)} className="flex-1 bg-transparent border-none outline-none text-[var(--text-primary)] placeholder:text-[color:var(--text-subtle)] text-[14px] font-light" autoFocus />
             {searchBarAccessory && <div className="flex-shrink-0">{searchBarAccessory}</div>}
           </div>
 
