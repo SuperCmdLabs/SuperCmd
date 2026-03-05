@@ -4014,25 +4014,39 @@ function setSpeakSessionPaused(paused: boolean): boolean {
 function jumpSpeakParagraph(offset: -1 | 1): boolean {
   const session = activeSpeakSession;
   if (!session || session.stopRequested) return false;
-  if (!Array.isArray(session.paragraphStartIndexes) || session.paragraphStartIndexes.length === 0) {
-    return false;
-  }
 
   const maxChunkIndex = Math.max(0, session.chunks.length - 1);
+  if (maxChunkIndex < 0) return false;
   const currentChunkIndex = Math.max(0, Math.min(maxChunkIndex, Number(session.currentIndex || 0)));
-  const currentParagraph = Math.max(
-    0,
-    Math.min(
-      session.paragraphStartIndexes.length - 1,
-      Number(session.chunkParagraphIndexes[currentChunkIndex] ?? 0)
-    )
-  );
-  const targetParagraph = currentParagraph + offset;
-  if (targetParagraph < 0 || targetParagraph >= session.paragraphStartIndexes.length) {
-    return false;
+
+  let targetChunkIndex: number | null = null;
+
+  if (Array.isArray(session.paragraphStartIndexes) && session.paragraphStartIndexes.length > 1) {
+    const currentParagraph = Math.max(
+      0,
+      Math.min(
+        session.paragraphStartIndexes.length - 1,
+        Number(session.chunkParagraphIndexes[currentChunkIndex] ?? 0)
+      )
+    );
+    const targetParagraph = currentParagraph + offset;
+    if (targetParagraph >= 0 && targetParagraph < session.paragraphStartIndexes.length) {
+      const maybeTarget = Number(session.paragraphStartIndexes[targetParagraph]);
+      if (Number.isFinite(maybeTarget)) {
+        targetChunkIndex = Math.max(0, Math.min(maxChunkIndex, Math.round(maybeTarget)));
+      }
+    }
   }
-  const targetChunkIndex = Number(session.paragraphStartIndexes[targetParagraph]);
-  if (!Number.isFinite(targetChunkIndex)) return false;
+
+  // Fallback: when paragraph boundaries are unavailable (or out of range),
+  // step by chunk so prev/next still works for long single-paragraph text.
+  if (targetChunkIndex === null) {
+    const fallbackTarget = currentChunkIndex + offset;
+    if (fallbackTarget < 0 || fallbackTarget > maxChunkIndex) {
+      return false;
+    }
+    targetChunkIndex = fallbackTarget;
+  }
 
   session.resumeWordOffset = 0;
   session.restartFrom(Math.max(0, Math.min(maxChunkIndex, Math.round(targetChunkIndex))));
