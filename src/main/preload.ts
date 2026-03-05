@@ -418,6 +418,10 @@ contextBridge.exposeInMainWorld('electron', {
   runAppleScript: (script: string): Promise<string> =>
     ipcRenderer.invoke('run-applescript', script),
 
+  // Calendar
+  getCalendarEvents: (payload: { start: string; end: string }): Promise<any> =>
+    ipcRenderer.invoke('calendar-get-events', payload),
+
   // Move to trash
   moveToTrash: (paths: string[]): Promise<void> =>
     ipcRenderer.invoke('move-to-trash', paths),

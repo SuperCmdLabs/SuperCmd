@@ -48,6 +48,35 @@ export interface FileSearchIndexStatus {
   lastError: string | null;
 }
 
+export type CalendarAccessStatus =
+  | 'granted'
+  | 'write-only'
+  | 'denied'
+  | 'restricted'
+  | 'not-determined'
+  | 'unknown';
+
+export interface CalendarAgendaEvent {
+  id: string;
+  calendarId: string;
+  calendarName: string;
+  calendarColor: string;
+  title: string;
+  location: string;
+  notes: string;
+  url: string;
+  start: string;
+  end: string;
+  isAllDay: boolean;
+}
+
+export interface CalendarEventsResult {
+  granted: boolean;
+  accessStatus: CalendarAccessStatus;
+  events: CalendarAgendaEvent[];
+  error?: string;
+}
+
 export interface ExtensionPreferenceSchema {
   scope: 'extension' | 'command';
   name: string;
@@ -470,6 +499,7 @@ export interface ElectronAPI {
   getDefaultApplication: (filePath: string) => Promise<{ name: string; path: string; bundleId?: string }>;
   getFrontmostApplication: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   runAppleScript: (script: string) => Promise<string>;
+  getCalendarEvents: (payload: { start: string; end: string }) => Promise<CalendarEventsResult>;
   moveToTrash: (paths: string[]) => Promise<void>;
   readFile: (filePath: string) => Promise<string>;
   writeFile: (filePath: string, content: string) => Promise<void>;

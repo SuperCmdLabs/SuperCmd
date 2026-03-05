@@ -1324,6 +1324,12 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-my-schedule',
+      title: 'My Schedule',
+      keywords: ['calendar', 'schedule', 'agenda', 'events', 'today', 'upcoming'],
+      category: 'system',
+    },
+    {
       id: 'system-camera',
       title: 'Open Camera',
       keywords: ['open', 'camera', 'photo', 'webcam', 'capture', 'picture'],
