@@ -495,6 +495,12 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('clipboard-copy-item', id),
   clipboardPasteItem: (id: string): Promise<boolean> =>
     ipcRenderer.invoke('clipboard-paste-item', id),
+  clipboardTogglePin: (id: string): Promise<any | null> =>
+    ipcRenderer.invoke('clipboard-toggle-pin', id),
+  clipboardSaveAsSnippet: (id: string): Promise<any | null> =>
+    ipcRenderer.invoke('clipboard-save-as-snippet', id),
+  clipboardSaveAsFile: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('clipboard-save-as-file', id),
   clipboardSetEnabled: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke('clipboard-set-enabled', enabled),
   clipboardWrite: (payload: { text?: string; html?: string; file?: string }): Promise<boolean> =>

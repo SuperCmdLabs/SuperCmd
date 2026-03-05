@@ -42,8 +42,10 @@ import {
   clearClipboardHistory,
   deleteClipboardItem,
   copyItemToClipboard,
+  getClipboardItemById,
   searchClipboardHistory,
   setClipboardMonitorEnabled,
+  togglePinClipboardItem,
 } from './clipboard-manager';
 import {
   initSnippetStore,
@@ -10282,6 +10284,83 @@ return appURL's |path|() as text`,
     if (!success) return false;
 
     return await hideAndPaste();
+  });
+
+  ipcMain.handle('clipboard-toggle-pin', (_event: any, id: string) => {
+    return togglePinClipboardItem(id);
+  });
+
+  ipcMain.handle('clipboard-save-as-snippet', (_event: any, id: string) => {
+    const item = getClipboardItemById(id);
+    if (!item) return null;
+    if (item.type !== 'text' && item.type !== 'url') return null;
+
+    const firstLine = String(item.preview || item.content || '')
+      .split(/\r?\n/g)[0]
+      .trim();
+    const fallbackName =
+      item.type === 'url'
+        ? 'Saved URL'
+        : 'Saved Clipboard Text';
+    const snippetName = (firstLine || fallbackName).slice(0, 80);
+
+    const created = createSnippet({
+      name: snippetName,
+      content: item.content,
+    });
+    refreshSnippetExpander();
+    return created;
+  });
+
+  ipcMain.handle('clipboard-save-as-file', async (event: any, id: string) => {
+    const item = getClipboardItemById(id);
+    if (!item) return false;
+
+    suppressBlurHide = true;
+    try {
+      const timestamp = new Date(item.timestamp || Date.now())
+        .toISOString()
+        .replace(/[:.]/g, '-');
+      const downloadsDir = app.getPath('downloads');
+      const format = String(item.metadata?.format || '').replace(/^\./, '').toLowerCase();
+      const ext =
+        item.type === 'image'
+          ? (format || path.extname(item.content).replace(/^\./, '').toLowerCase() || 'png')
+          : 'txt';
+      const defaultName =
+        item.type === 'image'
+          ? `clipboard-image-${timestamp}.${ext}`
+          : `clipboard-entry-${timestamp}.${ext}`;
+
+      const dialogOptions = {
+        title: 'Save Clipboard Entry',
+        defaultPath: path.join(downloadsDir, defaultName),
+        filters:
+          item.type === 'image'
+            ? [{ name: 'Image', extensions: [ext] }]
+            : [{ name: 'Text', extensions: ['txt'] }],
+      };
+
+      const parentWindow = getDialogParentWindow(event);
+      const result = parentWindow
+        ? await dialog.showSaveDialog(parentWindow, dialogOptions)
+        : await dialog.showSaveDialog(dialogOptions);
+
+      if (result.canceled || !result.filePath) return false;
+
+      if (item.type === 'image') {
+        fs.copyFileSync(item.content, result.filePath);
+      } else {
+        fs.writeFileSync(result.filePath, item.content, 'utf-8');
+      }
+
+      return true;
+    } catch (error) {
+      console.error('clipboard-save-as-file failed:', error);
+      return false;
+    } finally {
+      suppressBlurHide = false;
+    }
   });
 
   ipcMain.handle('clipboard-set-enabled', (_event: any, enabled: boolean) => {
