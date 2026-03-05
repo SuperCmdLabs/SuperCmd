@@ -86,6 +86,7 @@ import {
   startFileSearchIndexing,
   stopFileSearchIndexing,
 } from './file-search-index';
+import { getCalendarEvents } from './calendar-events';
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
@@ -2434,6 +2435,7 @@ function isWindowShownRoutedSystemCommand(commandId: string): boolean {
     commandId === 'system-search-quicklinks' ||
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
+    commandId === 'system-my-schedule' ||
     commandId === 'system-camera' ||
     commandId === 'system-open-onboarding'
   );
@@ -6759,6 +6761,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     commandId === 'system-search-quicklinks' ||
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
+    commandId === 'system-my-schedule' ||
     commandId === 'system-camera'
   ) {
     return await openLauncherAndRunSystemCommand(commandId, {
@@ -10326,6 +10329,23 @@ return appURL's |path|() as text`,
       throw new Error(e?.message || 'AppleScript execution failed');
     }
   });
+
+  ipcMain.handle(
+    'calendar-get-events',
+    async (_event: any, payload: { start?: string; end?: string }) => {
+      const start = String(payload?.start || '').trim();
+      const end = String(payload?.end || '').trim();
+      if (!start || !end) {
+        return {
+          granted: false,
+          accessStatus: 'unknown',
+          events: [],
+          error: 'Calendar request requires both start and end timestamps.',
+        };
+      }
+      return await getCalendarEvents(start, end);
+    }
+  );
 
   // Move to trash
   ipcMain.handle('move-to-trash', async (_event: any, paths: string[]) => {

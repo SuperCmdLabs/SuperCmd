@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { Search, Power, Settings, Puzzle, Sparkles, Clipboard, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Link2, Camera } from 'lucide-react';
+import { Search, Power, Settings, Puzzle, Sparkles, Clipboard, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Link2, Camera, CalendarDays } from 'lucide-react';
 import type { CommandInfo, EdgeTtsVoice } from '../../types/electron';
 import supercmdLogo from '../../../../supercmd.svg';
 import { formatShortcutForDisplay } from './hyper-key';
@@ -953,6 +953,14 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
         style={{ background: 'var(--icon-search-bg)', color: 'var(--icon-search-fg)' }}
       >
         <Search className="w-3 h-3" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-my-schedule') {
+    return (
+      <div className="w-5 h-5 rounded bg-rose-500/20 flex items-center justify-center">
+        <CalendarDays className="w-3 h-3 text-rose-200" />
       </div>
     );
   }

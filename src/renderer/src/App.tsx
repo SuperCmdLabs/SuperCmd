@@ -20,6 +20,7 @@ import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
 import QuickLinkManager from './QuickLinkManager';
 import CameraExtension from './CameraExtension';
+import ScheduleExtension from './ScheduleExtension';
 import OnboardingExtension from './OnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
 import SuperCmdWhisper from './SuperCmdWhisper';
@@ -255,12 +256,12 @@ const App: React.FC = () => {
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
     showClipboardManager, showSnippetManager, showQuickLinkManager, showFileSearch, showCursorPrompt,
-    showWhisper, showSpeak, showCamera, showWindowManager, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
+    showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
     openOnboarding, openWhisper, openClipboardManager,
-    openSnippetManager, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openWindowManager,
+    openSnippetManager, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openSchedule, openWindowManager,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
     setShowClipboardManager, setShowSnippetManager, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
-    setShowWhisper, setShowSpeak, setShowCamera, setShowWindowManager, setShowWhisperOnboarding, setShowWhisperHint,
+    setShowWhisper, setShowSpeak, setShowCamera, setShowSchedule, setShowWindowManager, setShowWhisperOnboarding, setShowWhisperHint,
     setShowOnboarding, setAiMode,
   } = useAppViewManager();
   const {
@@ -643,6 +644,14 @@ const App: React.FC = () => {
           openFileSearch();
           return;
         }
+        if (routedSystemCommandId === 'system-my-schedule') {
+          setShowClipboardManager(false);
+          setShowSnippetManager(null);
+          setShowQuickLinkManager(null);
+          setShowFileSearch(false);
+          openSchedule();
+          return;
+        }
         if (routedSystemCommandId === 'system-camera') {
           setShowClipboardManager(false);
           setShowSnippetManager(null);
@@ -665,6 +674,7 @@ const App: React.FC = () => {
       setShowCursorPrompt(false);
       setShowWhisperHint(false);
       setShowCamera(false);
+      setShowSchedule(false);
       setShowWindowManager(false);
       setMemoryFeedback(null);
       setMemoryActionLoading(false);
@@ -688,6 +698,7 @@ const App: React.FC = () => {
         setShowWhisper(false);
         setShowSpeak(false);
         setShowCamera(false);
+        setShowSchedule(false);
         setShowWindowManager(false);
         setShowWhisperOnboarding(false);
       }
@@ -709,7 +720,7 @@ const App: React.FC = () => {
       inputRef.current?.focus();
     });
     return cleanupWindowShown;
-  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openOnboarding, setShowCamera, setShowWindowManager]);
+  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openSchedule, openCamera, openOnboarding, setShowCamera, setShowSchedule, setShowWindowManager]);
 
   useEffect(() => {
     const cleanupSelectionSnapshotUpdated = window.electron.onSelectionSnapshotUpdated((payload) => {
@@ -1023,10 +1034,10 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showWindowManager && !showOnboarding) {
+    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showSchedule && !showWindowManager && !showOnboarding) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, quickLinkDynamicPrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showWindowManager, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
+  }, [showActions, contextMenu, quickLinkDynamicPrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
 
   const isLauncherModeActive =
     !showActions &&
@@ -1042,6 +1053,7 @@ const App: React.FC = () => {
     !showWhisper &&
     !showSpeak &&
     !showCamera &&
+    !showSchedule &&
     !showWindowManager &&
     !showOnboarding &&
     !showWhisperOnboarding;
@@ -1919,6 +1931,11 @@ const App: React.FC = () => {
     if (commandId === 'system-search-files') {
       whisperSessionRef.current = false;
       openFileSearch();
+      return true;
+    }
+    if (commandId === 'system-my-schedule') {
+      whisperSessionRef.current = false;
+      openSchedule();
       return true;
     }
     if (commandId === 'system-camera') {
@@ -2872,6 +2889,27 @@ const App: React.FC = () => {
             <CameraExtension
               onClose={() => {
                 setShowCamera(false);
+                setSearchQuery('');
+                setSelectedIndex(0);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ─── Schedule mode ───────────────────────────────────────────────
+  if (showSchedule) {
+    return (
+      <>
+        {alwaysMountedRunners}
+        <div className="w-full h-full">
+          <div className="glass-effect overflow-hidden h-full flex flex-col">
+            <ScheduleExtension
+              onClose={() => {
+                setShowSchedule(false);
                 setSearchQuery('');
                 setSelectedIndex(0);
                 setTimeout(() => inputRef.current?.focus(), 50);

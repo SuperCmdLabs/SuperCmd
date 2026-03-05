@@ -4,7 +4,7 @@
  * Central view-state machine for the launcher. Owns every boolean/object flag
  * that determines which screen is shown (extension, preference setup, script
  * command setup/output, clipboard, snippets, quick links, file search, cursor prompt,
- * whisper, speak, camera, onboarding, AI mode).
+ * whisper, speak, camera, schedule, onboarding, AI mode).
  *
  * Key exports:
  * - resetAllViews(): sets all view flags back to their default (hidden) state
@@ -50,6 +50,7 @@ export interface AppViewManager {
   showWhisper: boolean;
   showSpeak: boolean;
   showCamera: boolean;
+  showSchedule: boolean;
   showWindowManager: boolean;
   showWhisperOnboarding: boolean;
   showWhisperHint: boolean;
@@ -72,6 +73,7 @@ export interface AppViewManager {
   openWhisper: () => void;
   openSpeak: () => void;
   openCamera: () => void;
+  openSchedule: () => void;
   openWindowManager: () => void;
   openWhisperOnboarding: () => void;
   openOnboarding: () => void;
@@ -91,6 +93,7 @@ export interface AppViewManager {
   setShowWhisper: React.Dispatch<React.SetStateAction<boolean>>;
   setShowSpeak: React.Dispatch<React.SetStateAction<boolean>>;
   setShowCamera: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowSchedule: React.Dispatch<React.SetStateAction<boolean>>;
   setShowWindowManager: React.Dispatch<React.SetStateAction<boolean>>;
   setShowWhisperOnboarding: React.Dispatch<React.SetStateAction<boolean>>;
   setShowWhisperHint: React.Dispatch<React.SetStateAction<boolean>>;
@@ -111,6 +114,7 @@ export function useAppViewManager(): AppViewManager {
   const [showWhisper, setShowWhisper] = useState(false);
   const [showSpeak, setShowSpeak] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
   const [showWindowManager, setShowWindowManager] = useState(false);
   const [showWhisperOnboarding, setShowWhisperOnboarding] = useState(false);
   const [showWhisperHint, setShowWhisperHint] = useState(false);
@@ -130,6 +134,7 @@ export function useAppViewManager(): AppViewManager {
     setShowWhisper(false);
     setShowSpeak(false);
     setShowCamera(false);
+    setShowSchedule(false);
     setShowWindowManager(false);
     setShowWhisperOnboarding(false);
     setShowWhisperHint(false);
@@ -198,6 +203,11 @@ export function useAppViewManager(): AppViewManager {
     setShowCamera(true);
   }, [resetAllViews]);
 
+  const openSchedule = useCallback(() => {
+    resetAllViews();
+    setShowSchedule(true);
+  }, [resetAllViews]);
+
   const openWindowManager = useCallback(() => {
     resetAllViews();
     setShowWindowManager(true);
@@ -235,6 +245,7 @@ export function useAppViewManager(): AppViewManager {
     showWhisper,
     showSpeak,
     showCamera,
+    showSchedule,
     showWindowManager,
     showWhisperOnboarding,
     showWhisperHint,
@@ -255,6 +266,7 @@ export function useAppViewManager(): AppViewManager {
     openWhisper,
     openSpeak,
     openCamera,
+    openSchedule,
     openWindowManager,
     openWhisperOnboarding,
     openOnboarding,
@@ -273,6 +285,7 @@ export function useAppViewManager(): AppViewManager {
     setShowWhisper,
     setShowSpeak,
     setShowCamera,
+    setShowSchedule,
     setShowWindowManager,
     setShowWhisperOnboarding,
     setShowWhisperHint,
