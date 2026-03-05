@@ -1557,6 +1557,21 @@ body.sc-detached-window .speak-widget-shell {
   margin-bottom: 4px;
 }
 
+body.sc-detached-window .speak-header-row {
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+
+body.sc-detached-window .speak-header-row:active {
+  cursor: grabbing;
+}
+
+body.sc-detached-window .speak-controls,
+body.sc-detached-window .speak-controls *,
+body.sc-detached-window .speak-close-button {
+  -webkit-app-region: no-drag;
+}
+
 .speak-controls {
   display: inline-flex;
   align-items: center;
@@ -1674,9 +1689,9 @@ body.sc-detached-window .speak-widget-shell {
 }
 
 .speak-close-button {
-  border: 1px solid rgba(var(--on-surface-rgb), 0.22);
-  background: rgba(7, 10, 16, 0.52);
-  color: rgba(var(--on-surface-rgb), 0.86);
+  border: 1px solid rgba(236, 244, 255, 0.46);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(174, 210, 255, 0.12));
+  color: rgba(248, 252, 255, 0.98);
   font-size: 17px;
   line-height: 1;
   width: 26px;
@@ -1687,11 +1702,14 @@ body.sc-detached-window .speak-widget-shell {
   transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
   flex-shrink: 0;
   margin-top: -1px;
+  box-shadow:
+    0 0 0 1px rgba(8, 12, 18, 0.26) inset,
+    0 6px 14px rgba(8, 16, 28, 0.28);
 }
 
 .speak-close-button:hover {
-  background: rgba(15, 20, 28, 0.88);
-  border-color: rgba(var(--on-surface-rgb), 0.42);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(189, 220, 255, 0.2));
+  border-color: rgba(248, 252, 255, 0.7);
   transform: translateY(-1px);
 }
 
