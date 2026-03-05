@@ -1286,6 +1286,8 @@ type SpeakChunkPrepared = {
   audioPath: string;
   wordCues: Array<{ start: number; end: number; wordIndex: number }>;
   durationMs?: number;
+  wordOffset?: number;
+  spokenWordCount?: number;
 };
 type SpeakRuntimeOptions = {
   voice: string;
@@ -1300,7 +1302,7 @@ type EdgeTtsVoiceCatalogEntry = {
   style?: string;
 };
 let speakStatusSnapshot: {
-  state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+  state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error';
   text: string;
   index: number;
   total: number;
@@ -1367,9 +1369,13 @@ let speakSessionCounter = 0;
 let activeSpeakSession: {
   id: number;
   stopRequested: boolean;
+  paused: boolean;
   playbackGeneration: number;
   currentIndex: number;
   chunks: string[];
+  paragraphStartIndexes: number[];
+  chunkParagraphIndexes: number[];
+  resumeWordOffset: number | null;
   tmpDir: string;
   chunkPromises: Map<string, Promise<SpeakChunkPrepared>>;
   afplayProc: any | null;
@@ -3002,7 +3008,7 @@ function emitWindowHidden(): void {
 }
 
 function setSpeakStatus(status: {
-  state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+  state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error';
   text: string;
   index: number;
   total: number;
@@ -3016,19 +3022,30 @@ function setSpeakStatus(status: {
 }
 
 function splitTextIntoSpeakChunks(input: string): string[] {
-  const normalized = String(input || '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!normalized) return [];
+  return buildSpeakChunkPlan(input).chunks;
+}
 
-  // Keep chunks sentence-aligned. We do NOT split a sentence mid-way.
+function buildSpeakChunkPlan(input: string): {
+  chunks: string[];
+  chunkParagraphIndexes: number[];
+  paragraphStartIndexes: number[];
+} {
+  const raw = String(input || '').replace(/\r\n/g, '\n').trim();
+  if (!raw) {
+    return { chunks: [], chunkParagraphIndexes: [], paragraphStartIndexes: [] };
+  }
+
+  const normalizedParagraphs = raw
+    .split(/\n\s*\n+/g)
+    .map((paragraph) => paragraph.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  if (normalizedParagraphs.length === 0) {
+    return { chunks: [], chunkParagraphIndexes: [], paragraphStartIndexes: [] };
+  }
+
   const maxChunkWords = 50;
   const sentenceRegex = /[^.!?]+[.!?]+(?:["')\]]+)?|[^.!?]+$/g;
-  const baseSentences = (normalized.match(sentenceRegex) || [])
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => (/[.!?]["')\]]*$/.test(s) ? s : `${s}.`));
-
   const countWords = (text: string): number => {
     const t = text.trim();
     if (!t) return 0;
@@ -3036,21 +3053,39 @@ function splitTextIntoSpeakChunks(input: string): string[] {
   };
 
   const chunks: string[] = [];
-  for (let i = 0; i < baseSentences.length; i += 1) {
-    const first = baseSentences[i];
-    const second = baseSentences[i + 1];
-    if (second) {
-      const pair = `${first} ${second}`;
-      if (countWords(pair) <= maxChunkWords) {
-        chunks.push(pair);
-        i += 1;
-        continue;
-      }
-    }
-    chunks.push(first);
-  }
+  const chunkParagraphIndexes: number[] = [];
+  const paragraphStartIndexes: number[] = [];
 
-  return chunks;
+  normalizedParagraphs.forEach((paragraph, paragraphIndex) => {
+    const baseSentences = (paragraph.match(sentenceRegex) || [])
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => (/[.!?]["')\]]*$/.test(s) ? s : `${s}.`));
+    if (baseSentences.length === 0) return;
+
+    paragraphStartIndexes.push(chunks.length);
+    for (let i = 0; i < baseSentences.length; i += 1) {
+      const first = baseSentences[i];
+      const second = baseSentences[i + 1];
+      if (second) {
+        const pair = `${first} ${second}`;
+        if (countWords(pair) <= maxChunkWords) {
+          chunks.push(pair);
+          chunkParagraphIndexes.push(paragraphIndex);
+          i += 1;
+          continue;
+        }
+      }
+      chunks.push(first);
+      chunkParagraphIndexes.push(paragraphIndex);
+    }
+  });
+
+  return {
+    chunks,
+    chunkParagraphIndexes,
+    paragraphStartIndexes,
+  };
 }
 
 function parseCueTimeMs(value: any): number {
@@ -3941,6 +3976,67 @@ function stopSpeakSession(options?: { resetStatus?: boolean; cleanupWindow?: boo
       mainWindow?.webContents.send('run-system-command', 'system-supercmd-speak-close');
     } catch {}
   }
+}
+
+function setSpeakSessionPaused(paused: boolean): boolean {
+  const session = activeSpeakSession;
+  if (!session || session.stopRequested) return false;
+  const nextPaused = Boolean(paused);
+  if (session.paused === nextPaused) return true;
+
+  session.paused = nextPaused;
+  const current = { ...speakStatusSnapshot };
+
+  if (nextPaused) {
+    const currentWordIndex = Number(current.wordIndex);
+    session.resumeWordOffset =
+      Number.isFinite(currentWordIndex) && currentWordIndex >= 0
+        ? Math.round(currentWordIndex)
+        : 0;
+    if (session.afplayProc) {
+      try { session.afplayProc.kill('SIGTERM'); } catch {}
+      session.afplayProc = null;
+    }
+    setSpeakStatus({
+      ...current,
+      state: 'paused',
+      message: current.message || 'Paused',
+    });
+    return true;
+  }
+
+  // Resume by restarting the current chunk with saved word offset.
+  const resumeIndex = Math.max(0, Math.min(session.chunks.length - 1, Number(session.currentIndex || 0)));
+  session.restartFrom(resumeIndex);
+  return true;
+}
+
+function jumpSpeakParagraph(offset: -1 | 1): boolean {
+  const session = activeSpeakSession;
+  if (!session || session.stopRequested) return false;
+  if (!Array.isArray(session.paragraphStartIndexes) || session.paragraphStartIndexes.length === 0) {
+    return false;
+  }
+
+  const maxChunkIndex = Math.max(0, session.chunks.length - 1);
+  const currentChunkIndex = Math.max(0, Math.min(maxChunkIndex, Number(session.currentIndex || 0)));
+  const currentParagraph = Math.max(
+    0,
+    Math.min(
+      session.paragraphStartIndexes.length - 1,
+      Number(session.chunkParagraphIndexes[currentChunkIndex] ?? 0)
+    )
+  );
+  const targetParagraph = currentParagraph + offset;
+  if (targetParagraph < 0 || targetParagraph >= session.paragraphStartIndexes.length) {
+    return false;
+  }
+  const targetChunkIndex = Number(session.paragraphStartIndexes[targetParagraph]);
+  if (!Number.isFinite(targetChunkIndex)) return false;
+
+  session.resumeWordOffset = 0;
+  session.restartFrom(Math.max(0, Math.min(maxChunkIndex, Math.round(targetChunkIndex))));
+  return true;
 }
 
 function parseSpeakRateInput(input: any): string {
@@ -6883,7 +6979,8 @@ async function startSpeakFromSelection(): Promise<boolean> {
   setSpeakStatus({ state: 'loading', text: '', index: 0, total: 0, message: 'Getting selected text...' });
 
   const selectedText = await getSelectedTextForSpeak();
-  const chunks = splitTextIntoSpeakChunks(selectedText);
+  const chunkPlan = buildSpeakChunkPlan(selectedText);
+  const chunks = chunkPlan.chunks;
   if (chunks.length === 0) {
     setSpeakStatus({
       state: 'error',
@@ -6937,9 +7034,13 @@ async function startSpeakFromSelection(): Promise<boolean> {
   const session = {
     id: sessionId,
     stopRequested: false,
+    paused: false,
     playbackGeneration: 0,
     currentIndex: 0,
     chunks,
+    paragraphStartIndexes: chunkPlan.paragraphStartIndexes,
+    chunkParagraphIndexes: chunkPlan.chunkParagraphIndexes,
+    resumeWordOffset: null,
     tmpDir,
     chunkPromises: new Map<string, Promise<SpeakChunkPrepared>>(),
     afplayProc: null as any,
@@ -6956,11 +7057,29 @@ async function startSpeakFromSelection(): Promise<boolean> {
     speakRuntimeOptions.voice = resolveEdgeVoice(settings.ai?.speechLanguage || 'en-US');
   }
 
-  const ensureChunkPrepared = (index: number, generation: number): Promise<SpeakChunkPrepared> => {
+  const ensureChunkPrepared = (
+    index: number,
+    generation: number,
+    wordOffset: number = 0
+  ): Promise<SpeakChunkPrepared> => {
     if (index < 0 || index >= chunks.length) {
       return Promise.reject(new Error('Chunk index out of range'));
     }
-    const cacheKey = `${generation}:${index}`;
+    const originalText = session.chunks[index];
+    const originalWords = originalText.split(/\s+/g).filter(Boolean);
+    const normalizedWordOffset = Math.max(
+      0,
+      Math.min(
+        Math.round(Number(wordOffset || 0)),
+        Math.max(0, originalWords.length - 1)
+      )
+    );
+    const spokenText =
+      normalizedWordOffset > 0
+        ? originalWords.slice(normalizedWordOffset).join(' ')
+        : originalText;
+    const spokenWordCount = spokenText.split(/\s+/g).filter(Boolean).length;
+    const cacheKey = `${generation}:${index}:${normalizedWordOffset}`;
     const existing = session.chunkPromises.get(cacheKey);
     if (existing) return existing;
 
@@ -6992,7 +7111,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
               const runtimeVoiceId = String(speakRuntimeOptions.voice || '').trim();
               const voiceId = runtimeVoiceId || elevenLabsTts.voiceId;
               synthesizeElevenLabsToFile({
-                text: session.chunks[index],
+                text: spokenText,
                 audioPath,
                 apiKey: elevenLabsApiKey,
                 modelId: elevenLabsTts.modelId,
@@ -7011,7 +7130,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
             }
             const synthPromise = localSpeakBackend === 'edge-tts'
               ? synthesizeWithEdgeTts({
-                  text: session.chunks[index],
+                  text: spokenText,
                   audioPath,
                   voice: speakRuntimeOptions.voice,
                   lang,
@@ -7020,7 +7139,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
                   timeoutMs: 45000,
                 })
               : synthesizeWithSystemSay({
-                  text: session.chunks[index],
+                  text: spokenText,
                   audioPath,
                   lang,
                   rate: speakRuntimeOptions.rate,
@@ -7068,7 +7187,7 @@ async function startSpeakFromSelection(): Promise<boolean> {
               const raw = fs.readFileSync(subtitlePath, 'utf-8');
               const parsed = JSON.parse(raw);
               if (!Array.isArray(parsed)) continue;
-              let wordIndex = 0;
+              let wordIndex = normalizedWordOffset;
               for (const entry of parsed) {
                 const part = String(entry?.part || '').trim();
                 const start = parseCueTimeMs(entry?.start);
@@ -7096,7 +7215,15 @@ async function startSpeakFromSelection(): Promise<boolean> {
             ? Math.max(...wordCues.map((cue) => cue.end))
             : null;
         const durationMs = durationMsFromCues || probeAudioDurationMs(audioPath) || undefined;
-        resolve({ index, text: session.chunks[index], audioPath, wordCues, durationMs });
+        resolve({
+          index,
+          text: originalText,
+          audioPath,
+          wordCues,
+          durationMs,
+          wordOffset: normalizedWordOffset,
+          spokenWordCount,
+        });
       }).catch((err: any) => {
         const message = String(err?.message || err || 'Speech synthesis failed');
         if (/timed out|timeout/i.test(message)) {
@@ -7121,11 +7248,31 @@ async function startSpeakFromSelection(): Promise<boolean> {
       const proc = spawn('/usr/bin/afplay', [prepared.audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
       session.afplayProc = proc;
       let stderr = '';
-      const startedAt = Date.now();
+      let elapsedMs = 0;
+      let lastTickAt = Date.now();
       let lastWordIndex = -1;
+      let pauseStartedAt: number | null = null;
       const wordsInText = prepared.text.split(/\s+/g).filter(Boolean).length;
+      const wordOffset = Math.max(
+        0,
+        Math.min(
+          Math.max(0, wordsInText - 1),
+          Math.round(Number(prepared.wordOffset || 0))
+        )
+      );
+      const spokenWordCount = Math.max(
+        0,
+        Math.min(
+          wordsInText,
+          Math.round(
+            Number.isFinite(Number(prepared.spokenWordCount))
+              ? Number(prepared.spokenWordCount)
+              : Math.max(0, wordsInText - wordOffset)
+          )
+        )
+      );
       const fallbackWpm = Number(parseSayRateWordsPerMinute(speakRuntimeOptions.rate || '+0%')) || 175;
-      const fallbackMsPerWord = wordsInText > 0
+      const fallbackMsPerWord = spokenWordCount > 0
         ? Math.max(
             120,
             Math.min(
@@ -7133,16 +7280,38 @@ async function startSpeakFromSelection(): Promise<boolean> {
               Math.round(
                 (
                   (typeof prepared.durationMs === 'number' && Number.isFinite(prepared.durationMs) && prepared.durationMs > 0)
-                    ? prepared.durationMs / wordsInText
+                    ? prepared.durationMs / spokenWordCount
                     : (60000 / Math.max(90, fallbackWpm))
                 )
               )
             )
           )
         : 0;
+
+      if (session.paused) {
+        pauseStartedAt = Date.now();
+        try { proc.kill('SIGSTOP'); } catch {}
+      }
+
       const cueTimer = setInterval(() => {
         if (session.stopRequested || activeSpeakSession?.id !== sessionId) return;
-        const elapsed = Date.now() - startedAt;
+        const now = Date.now();
+        const delta = Math.max(0, now - lastTickAt);
+        lastTickAt = now;
+
+        if (session.paused) {
+          if (pauseStartedAt === null) {
+            pauseStartedAt = now;
+          }
+          return;
+        }
+        if (pauseStartedAt !== null) {
+          // Clear pause marker once resumed; elapsedMs intentionally does not include paused time.
+          pauseStartedAt = null;
+        }
+
+        elapsedMs += delta;
+        const elapsed = elapsedMs;
         let nextWordIndex = -1;
         if (prepared.wordCues.length > 0) {
           for (const cue of prepared.wordCues) {
@@ -7154,8 +7323,8 @@ async function startSpeakFromSelection(): Promise<boolean> {
               nextWordIndex = cue.wordIndex;
             }
           }
-        } else if (wordsInText > 0) {
-          nextWordIndex = Math.min(wordsInText - 1, Math.floor(elapsed / fallbackMsPerWord));
+        } else if (spokenWordCount > 0) {
+          nextWordIndex = wordOffset + Math.min(spokenWordCount - 1, Math.floor(elapsed / fallbackMsPerWord));
         }
         if (nextWordIndex !== lastWordIndex && nextWordIndex >= 0) {
           lastWordIndex = nextWordIndex;
@@ -7184,6 +7353,10 @@ async function startSpeakFromSelection(): Promise<boolean> {
           resolve();
           return;
         }
+        if (session.paused) {
+          resolve();
+          return;
+        }
         if (code && code !== 0) {
           reject(new Error(stderr.trim() || `afplay exited with ${code}`));
           return;
@@ -7197,6 +7370,13 @@ async function startSpeakFromSelection(): Promise<boolean> {
   const runPlayback = (startIndex: number) => {
     const generation = ++session.playbackGeneration;
     const safeStart = Math.max(0, Math.min(startIndex, session.chunks.length - 1));
+    const initialResumeWordOffset = Math.max(0, Math.round(Number(session.resumeWordOffset || 0)));
+    const priorStatus = { ...speakStatusSnapshot };
+    const shouldPreserveVisibleParagraph =
+      initialResumeWordOffset > 0 &&
+      String(priorStatus.text || '').trim().length > 0 &&
+      Number(priorStatus.index || 0) === safeStart + 1;
+    session.resumeWordOffset = null;
     session.currentIndex = safeStart;
     session.chunkPromises.clear();
     if (session.afplayProc) {
@@ -7207,17 +7387,28 @@ async function startSpeakFromSelection(): Promise<boolean> {
       try { proc.kill('SIGTERM'); } catch {}
     }
     session.ttsProcesses.clear();
-    setSpeakStatus({
-      state: 'loading',
-      text: '',
-      index: safeStart + 1,
-      total: session.chunks.length,
-      message: 'Preparing speech...',
-      wordIndex: undefined,
-    });
+    if (shouldPreserveVisibleParagraph) {
+      setSpeakStatus({
+        state: session.paused ? 'paused' : 'speaking',
+        text: priorStatus.text,
+        index: safeStart + 1,
+        total: session.chunks.length,
+        message: session.paused ? 'Paused' : '',
+        wordIndex: initialResumeWordOffset,
+      });
+    } else {
+      setSpeakStatus({
+        state: session.paused ? 'paused' : 'loading',
+        text: '',
+        index: safeStart + 1,
+        total: session.chunks.length,
+        message: session.paused ? 'Paused' : 'Preparing speech...',
+        wordIndex: initialResumeWordOffset > 0 ? initialResumeWordOffset : undefined,
+      });
+    }
 
     // Prime first and second chunks for lower startup latency.
-    void ensureChunkPrepared(safeStart, generation).catch(() => {});
+    void ensureChunkPrepared(safeStart, generation, initialResumeWordOffset).catch(() => {});
     if (safeStart + 1 < session.chunks.length) {
       void ensureChunkPrepared(safeStart + 1, generation).catch(() => {});
     }
@@ -7230,13 +7421,16 @@ async function startSpeakFromSelection(): Promise<boolean> {
           session.stopRequested ||
           activeSpeakSession?.id !== sessionId
         ) return;
+        if (session.paused) return;
         session.currentIndex = index;
-        const prepared = await ensureChunkPrepared(index, generation);
+        const resumeOffsetForChunk = index === safeStart ? initialResumeWordOffset : 0;
+        const prepared = await ensureChunkPrepared(index, generation, resumeOffsetForChunk);
         if (
           generation !== session.playbackGeneration ||
           session.stopRequested ||
           activeSpeakSession?.id !== sessionId
         ) return;
+        if (session.paused) return;
 
         const nextIndex = index + 1;
         if (nextIndex < session.chunks.length) {
@@ -7245,14 +7439,15 @@ async function startSpeakFromSelection(): Promise<boolean> {
         }
 
         setSpeakStatus({
-          state: 'speaking',
+          state: session.paused ? 'paused' : 'speaking',
           text: prepared.text,
           index: index + 1,
           total: session.chunks.length,
-          message: '',
-          wordIndex: 0,
+          message: session.paused ? 'Paused' : '',
+          wordIndex: session.paused ? undefined : Math.max(0, Math.round(Number(prepared.wordOffset || 0))),
         });
         await playAudioFile(prepared);
+        if (session.paused) return;
       }
 
       if (
@@ -8551,6 +8746,23 @@ app.whenReady().then(async () => {
   ipcMain.handle('speak-stop', () => {
     stopSpeakSession({ resetStatus: true, cleanupWindow: true });
     return true;
+  });
+
+  ipcMain.handle('speak-toggle-pause', () => {
+    if (!activeSpeakSession) {
+      return { ok: false, status: speakStatusSnapshot };
+    }
+    const shouldPause = speakStatusSnapshot.state !== 'paused';
+    const ok = setSpeakSessionPaused(shouldPause);
+    return { ok, status: speakStatusSnapshot };
+  });
+
+  ipcMain.handle('speak-previous-paragraph', () => {
+    return jumpSpeakParagraph(-1);
+  });
+
+  ipcMain.handle('speak-next-paragraph', () => {
+    return jumpSpeakParagraph(1);
   });
 
   ipcMain.handle('speak-get-status', () => {

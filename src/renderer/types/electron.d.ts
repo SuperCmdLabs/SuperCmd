@@ -307,7 +307,7 @@ export interface ElectronAPI {
   oauthSetFlowActive: (active: boolean) => Promise<void>;
   onOAuthLogout: (callback: (provider: string) => void) => (() => void);
   onSpeakStatus: (callback: (payload: {
-    state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+    state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error';
     text: string;
     index: number;
     total: number;
@@ -315,8 +315,21 @@ export interface ElectronAPI {
     wordIndex?: number;
   }) => void) => (() => void);
   speakStop: () => Promise<boolean>;
+  speakTogglePause: () => Promise<{
+    ok: boolean;
+    status: {
+      state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error';
+      text: string;
+      index: number;
+      total: number;
+      message?: string;
+      wordIndex?: number;
+    };
+  }>;
+  speakPreviousParagraph: () => Promise<boolean>;
+  speakNextParagraph: () => Promise<boolean>;
   speakGetStatus: () => Promise<{
-    state: 'idle' | 'loading' | 'speaking' | 'done' | 'error';
+    state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error';
     text: string;
     index: number;
     total: number;

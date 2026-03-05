@@ -1562,6 +1562,33 @@ body.sc-detached-window .speak-widget-shell {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+  min-width: 0;
+}
+
+.speak-action-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  border: 1px solid rgba(var(--on-surface-rgb), 0.22);
+  background: rgba(7, 10, 16, 0.52);
+  color: rgba(236, 243, 255, 0.9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.speak-action-button:hover:not(:disabled) {
+  background: rgba(15, 20, 28, 0.88);
+  border-color: rgba(var(--on-surface-rgb), 0.42);
+  transform: translateY(-1px);
+}
+
+.speak-action-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .speak-select {
@@ -1573,6 +1600,12 @@ body.sc-detached-window .speak-widget-shell {
   font-size: 11px;
   padding: 0 8px;
   outline: none;
+}
+
+.speak-voice-select {
+  width: 132px;
+  min-width: 132px;
+  max-width: 132px;
 }
 
 .speak-select:focus {
@@ -1588,6 +1621,7 @@ body.sc-detached-window .speak-widget-shell {
   align-items: center;
   gap: 7px;
   flex-shrink: 0;
+  min-width: 74px;
 }
 
 .sc-glassy:not(.dark) .extensions-hotkey-status-success,
@@ -1665,9 +1699,10 @@ body.sc-detached-window .speak-widget-shell {
   width: 100%;
   text-align: left;
   min-width: 0;
-  max-height: none;
-  overflow: visible;
-  padding-right: 2px;
+  max-height: 56px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
 .speak-caption {
@@ -1678,6 +1713,7 @@ body.sc-detached-window .speak-widget-shell {
   margin-bottom: 0;
   text-shadow: 0 1px 0 rgba(var(--backdrop-rgb), 0.35);
   white-space: nowrap;
+  min-width: 56px;
 }
 
 .speak-main-text {

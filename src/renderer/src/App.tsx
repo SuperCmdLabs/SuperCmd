@@ -278,7 +278,7 @@ const App: React.FC = () => {
     speakStatus, speakOptions,
     setConfiguredEdgeTtsVoice, setConfiguredTtsModel,
     readVoiceOptions,
-    handleSpeakVoiceChange, handleSpeakRateChange,
+    handleSpeakVoiceChange, handleSpeakRateChange, handleSpeakTogglePause, handleSpeakPreviousParagraph, handleSpeakNextParagraph,
     speakPortalTarget,
   } = useSpeakManager({ showSpeak, setShowSpeak });
   const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
@@ -2671,6 +2671,9 @@ const App: React.FC = () => {
           portalTarget={speakPortalTarget}
           onVoiceChange={handleSpeakVoiceChange}
           onRateChange={handleSpeakRateChange}
+          onPauseToggle={handleSpeakTogglePause}
+          onPreviousParagraph={handleSpeakPreviousParagraph}
+          onNextParagraph={handleSpeakNextParagraph}
           onClose={() => {
             setShowSpeak(false);
             void window.electron.speakStop();

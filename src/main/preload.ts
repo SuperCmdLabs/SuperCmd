@@ -134,7 +134,7 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeListener('oauth-logout', listener);
     };
   },
-  onSpeakStatus: (callback: (payload: { state: 'idle' | 'loading' | 'speaking' | 'done' | 'error'; text: string; index: number; total: number; message?: string; wordIndex?: number }) => void) => {
+  onSpeakStatus: (callback: (payload: { state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error'; text: string; index: number; total: number; message?: string; wordIndex?: number }) => void) => {
     const listener = (_event: any, payload: any) => callback(payload);
     ipcRenderer.on('speak-status', listener);
     return () => {
@@ -142,7 +142,13 @@ contextBridge.exposeInMainWorld('electron', {
     };
   },
   speakStop: (): Promise<boolean> => ipcRenderer.invoke('speak-stop'),
-  speakGetStatus: (): Promise<{ state: 'idle' | 'loading' | 'speaking' | 'done' | 'error'; text: string; index: number; total: number; message?: string; wordIndex?: number }> =>
+  speakTogglePause: (): Promise<{ ok: boolean; status: { state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error'; text: string; index: number; total: number; message?: string; wordIndex?: number } }> =>
+    ipcRenderer.invoke('speak-toggle-pause'),
+  speakPreviousParagraph: (): Promise<boolean> =>
+    ipcRenderer.invoke('speak-previous-paragraph'),
+  speakNextParagraph: (): Promise<boolean> =>
+    ipcRenderer.invoke('speak-next-paragraph'),
+  speakGetStatus: (): Promise<{ state: 'idle' | 'loading' | 'speaking' | 'paused' | 'done' | 'error'; text: string; index: number; total: number; message?: string; wordIndex?: number }> =>
     ipcRenderer.invoke('speak-get-status'),
   speakGetOptions: (): Promise<{ voice: string; rate: string }> =>
     ipcRenderer.invoke('speak-get-options'),
