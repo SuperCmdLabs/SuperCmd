@@ -26,6 +26,10 @@ interface CatalogEntry {
 }
 
 type DetailTab = 'overview' | 'commands' | 'screenshots' | 'team';
+type InstallStatus =
+  | { kind: 'installing'; name: string; title: string }
+  | { kind: 'success'; name: string; title: string; message: string }
+  | { kind: 'failure'; name: string; title: string; message: string };
 
 const SEARCH_TOKEN_SPLIT_REGEX = /[^a-z0-9]+/g;
 
@@ -230,6 +234,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [screenshotsByName, setScreenshotsByName] = useState<Record<string, string[]>>({});
   const [loadingScreenshotsFor, setLoadingScreenshotsFor] = useState<string | null>(null);
   const [showActions, setShowActions] = useState(false);
+  const [installStatus, setInstallStatus] = useState<InstallStatus | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const loadCatalog = useCallback(async (force = false) => {
@@ -264,6 +269,18 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
       dispose?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (!installStatus || installStatus.kind === 'installing') return;
+    const timer = window.setTimeout(() => {
+      setInstallStatus((current) => {
+        if (!current || current.kind === 'installing') return current;
+        if (current.name !== installStatus.name || current.kind !== installStatus.kind) return current;
+        return null;
+      });
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [installStatus]);
 
   const filteredCatalog = useMemo(() => {
     const query = searchQuery.trim();
@@ -305,10 +322,6 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   );
   const selectedInstalled = selectedExtension ? installedNames.has(selectedExtension.name) : false;
   const isSelectedBusy = selectedExtension ? busyName === selectedExtension.name : false;
-  const busyExtension = useMemo(
-    () => (busyName ? catalog.find((entry) => entry.name === busyName) || null : null),
-    [busyName, catalog]
-  );
 
   useEffect(() => {
     if (!selectedExtension?.name) return;
@@ -340,17 +353,30 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   }, [selectedExtension, screenshotsByName]);
 
   const handleInstall = async (name: string) => {
+    const extension = catalog.find((entry) => entry.name === name);
+    const title = extension?.title || name;
     setBusyName(name);
+    setInstallStatus({ kind: 'installing', name, title });
     try {
       setError(null);
       const success = await window.electron.installExtension(name);
       if (success) {
         setInstalledNames((prev) => new Set([...prev, name]));
+        setInstallStatus({
+          kind: 'success',
+          name,
+          title,
+          message: `${title} installed successfully.`,
+        });
       } else {
-        setError(`Failed to install "${name}".`);
+        const message = `Failed to install "${title}".`;
+        setError(message);
+        setInstallStatus({ kind: 'failure', name, title, message });
       }
     } catch (e: any) {
-      setError(e?.message || `Failed to install "${name}".`);
+      const message = e?.message || `Failed to install "${title}".`;
+      setError(message);
+      setInstallStatus({ kind: 'failure', name, title, message });
     } finally {
       setBusyName(null);
     }
@@ -494,6 +520,42 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
     const row = listRef.current?.querySelector<HTMLButtonElement>(`button[data-ext-name="${selectedName}"]`);
     row?.scrollIntoView({ block: 'nearest' });
   }, [selectedName]);
+
+  const footerStatus = installStatus ? (
+    <div className="inline-flex items-center gap-2 min-w-0 max-w-full">
+      <span
+        className={`w-2 h-2 rounded-full flex-shrink-0 ${
+          installStatus.kind === 'installing'
+            ? 'bg-[#5a8bff]'
+            : installStatus.kind === 'failure'
+              ? 'bg-[var(--status-danger)]'
+              : 'bg-[var(--status-success)]'
+        }`}
+        style={{
+          boxShadow:
+            installStatus.kind === 'installing'
+              ? '0 0 0 4px rgba(90, 139, 255, 0.18), 0 0 14px rgba(90, 139, 255, 0.22)'
+              : installStatus.kind === 'failure'
+                ? '0 0 0 4px rgba(217, 75, 75, 0.16)'
+                : '0 0 0 4px rgba(47, 154, 100, 0.18)',
+        }}
+      />
+      <span className="inline-flex items-baseline gap-1.5 min-w-0 max-w-full">
+        <span className="text-[0.8125rem] font-semibold text-[var(--text-primary)] whitespace-nowrap">
+          {installStatus.kind === 'installing'
+            ? 'Installing Extension'
+            : installStatus.kind === 'success'
+              ? 'Extension Installed'
+              : 'Install Failed'}
+        </span>
+        <span className="text-[0.8125rem] font-medium text-[var(--text-primary)]/90 truncate">
+          {installStatus.kind === 'installing'
+            ? `• ${installStatus.title}`
+            : `• ${installStatus.message}`}
+        </span>
+      </span>
+    </div>
+  ) : null;
 
   return (
     <div className={embedded ? '' : 'h-full flex flex-col'}>
@@ -665,11 +727,8 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
               }}
             >
               <div className="flex items-center gap-2 text-[var(--text-subtle)] text-xs flex-1 min-w-0 font-medium truncate">
-                {busyExtension ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0 text-[var(--text-muted)]" />
-                    <span className="truncate text-[var(--text-muted)]">Installing {busyExtension.title}...</span>
-                  </>
+                {footerStatus ? (
+                  footerStatus
                 ) : selectedExtension ? (
                   <>
                     <img
@@ -685,7 +744,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                 )}
               </div>
 
-              {selectedExtension && (
+              {selectedExtension && !busyName ? (
                 <div className="flex items-center gap-2 mr-3">
                   <button
                     onClick={() => void handlePrimaryAction()}
@@ -701,7 +760,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                     ↩
                   </kbd>
                 </div>
-              )}
+              ) : null}
 
               <button
                 onClick={() => setShowActions(true)}
