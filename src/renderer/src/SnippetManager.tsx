@@ -443,6 +443,15 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
     document.documentElement.classList.contains('sc-native-liquid-glass') ||
     document.body.classList.contains('sc-native-liquid-glass');
 
+  const refreshFrontmostAppName = useCallback(async () => {
+    try {
+      const app = await window.electron.getLastFrontmostApp();
+      setFrontmostAppName(app?.name || null);
+    } catch (e) {
+      console.error('Failed to load frontmost app name:', e);
+    }
+  }, []);
+
   const loadSnippets = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -457,10 +466,16 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
   useEffect(() => {
     loadSnippets();
     if (view === 'search') inputRef.current?.focus();
-    window.electron.getLastFrontmostApp().then((app) => {
-      if (app) setFrontmostAppName(app.name);
+    void refreshFrontmostAppName();
+  }, [loadSnippets, refreshFrontmostAppName, view]);
+
+  useEffect(() => {
+    const cleanupWindowShown = window.electron.onWindowShown(() => {
+      if (view === 'search') inputRef.current?.focus();
+      void refreshFrontmostAppName();
     });
-  }, [loadSnippets, view]);
+    return cleanupWindowShown;
+  }, [refreshFrontmostAppName, view]);
 
   useEffect(() => {
     let filtered = snippets;

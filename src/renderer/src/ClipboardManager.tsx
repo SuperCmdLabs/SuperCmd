@@ -59,6 +59,15 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     });
   }, []);
 
+  const refreshFrontmostAppName = useCallback(async () => {
+    try {
+      const app = await window.electron.getLastFrontmostApp();
+      setFrontmostAppName(app?.name || null);
+    } catch (e) {
+      console.error('Failed to load frontmost app name:', e);
+    }
+  }, []);
+
   const showStatusMessage = useCallback((status: ClipboardStatus, durationMs = 3000) => {
     setStatusMessage(status);
     if (statusTimerRef.current != null) {
@@ -99,13 +108,19 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     const focusTimer = window.setTimeout(() => {
       focusSearchInput();
     }, 40);
-    window.electron.getLastFrontmostApp().then((app) => {
-      if (app) setFrontmostAppName(app.name);
-    });
+    void refreshFrontmostAppName();
     return () => {
       window.clearTimeout(focusTimer);
     };
-  }, [loadHistory, focusSearchInput]);
+  }, [loadHistory, focusSearchInput, refreshFrontmostAppName]);
+
+  useEffect(() => {
+    const cleanupWindowShown = window.electron.onWindowShown(() => {
+      focusSearchInput();
+      void refreshFrontmostAppName();
+    });
+    return cleanupWindowShown;
+  }, [focusSearchInput, refreshFrontmostAppName]);
 
   useEffect(() => {
     return () => {
