@@ -89,9 +89,9 @@
   --soft-pill-hover-bg: rgba(118, 130, 149, 0.12);
   --overlay-item-active-bg: rgba(118, 130, 149, 0.14);
   --overlay-item-hover-bg: rgba(118, 130, 149, 0.09);
-  --action-menu-selected-bg: rgba(255, 255, 255, 0.13);
-  --action-menu-selected-border: transparent;
-  --action-menu-selected-shadow: inset 0 1px 0 rgba(255,255,255,0.10);
+  --action-menu-selected-bg: rgba(118, 130, 149, 0.18);
+  --action-menu-selected-border: rgba(118, 130, 149, 0.28);
+  --action-menu-selected-shadow: inset 0 1px 0 rgba(255,255,255,0.32), 0 1px 3px rgba(var(--backdrop-rgb), 0.06);
   --footer-border: rgba(156, 164, 178, 0.22);
   --scrollbar-track: rgba(118, 130, 149, 0.12);
   --scrollbar-thumb: rgba(118, 130, 149, 0.26);
