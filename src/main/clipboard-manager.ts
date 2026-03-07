@@ -438,8 +438,33 @@ export function copyItemToClipboard(id: string): boolean {
           clipboard.writeBuffer('com.compuserve.gif', gifData);
         }
       } else {
-        const image = nativeImage.createFromPath(item.content);
-        clipboard.writeImage(image);
+        const imageUtis: Record<string, string> = {
+          '.png': 'public.png',
+          '.jpg': 'public.jpeg',
+          '.jpeg': 'public.jpeg',
+          '.webp': 'org.webmproject.webp',
+          '.bmp': 'com.microsoft.bmp',
+          '.tiff': 'public.tiff',
+          '.tif': 'public.tiff',
+          '.heic': 'public.heic',
+        };
+        const imageUti = imageUtis[ext];
+
+        if (imageUti && process.platform === 'darwin' && fs.existsSync(item.content)) {
+          const rawData = fs.readFileSync(item.content);
+          clipboard.clear();
+          clipboard.writeBuffer(imageUti, rawData);
+
+          // Keep a PNG fallback for apps that ignore the source UTI but can
+          // still accept a standard raster image payload on paste.
+          const fallbackImage = nativeImage.createFromPath(item.content);
+          if (!fallbackImage.isEmpty()) {
+            clipboard.writeBuffer('public.png', fallbackImage.toPNG());
+          }
+        } else {
+          const image = nativeImage.createFromPath(item.content);
+          clipboard.writeImage(image);
+        }
       }
     } else {
       clipboard.writeText(item.content);
