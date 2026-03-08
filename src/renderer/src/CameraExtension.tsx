@@ -82,7 +82,7 @@ const CameraExtension: React.FC<CameraExtensionProps> = ({ onClose }) => {
   const [capturePreviewVisible, setCapturePreviewVisible] = useState(false);
   const [captureStatus, setCaptureStatus] = useState<CaptureStatus | null>(null);
   const [flashVisible, setFlashVisible] = useState(false);
-  const [isHorizontallyFlipped, setIsHorizontallyFlipped] = useState(false);
+  const [isHorizontallyFlipped, setIsHorizontallyFlipped] = useState(true);
   const [lastCapturedPath, setLastCapturedPath] = useState('');
 
   const rootRef = useRef<HTMLDivElement>(null);
