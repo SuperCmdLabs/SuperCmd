@@ -49,6 +49,7 @@ export function useWhisperManager({
   showWhisperHint,
   setShowWhisperHint,
 }: UseWhisperManagerOptions): UseWhisperManagerReturn {
+  const whisperWindowWidth = showWhisperHint ? 360 : 160;
   const [whisperOnboardingPracticeText, setWhisperOnboardingPracticeText] = useState('');
   const [whisperSpeakToggleLabel, setWhisperSpeakToggleLabel] = useState('');
 
@@ -59,7 +60,7 @@ export function useWhisperManager({
   const whisperPortalTarget = useDetachedPortalWindow(showWhisper, {
     name: 'supercmd-whisper-window',
     title: 'SuperCmd Whisper',
-    width: 620, // Wide enough for hint
+    width: whisperWindowWidth,
     height: 88, // Keep constant height; only hide/show the coachmark, don't resize window
     anchor: 'center-bottom',
     onClosed: () => {

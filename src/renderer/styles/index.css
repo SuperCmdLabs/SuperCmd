@@ -1271,7 +1271,8 @@ body.sc-detached-window .whisper-widget-host {
 }
 
 body.sc-detached-window .whisper-widget-shell {
-  width: 100%;
+  width: auto;
+  max-width: 100%;
   justify-content: center;
 }
 
