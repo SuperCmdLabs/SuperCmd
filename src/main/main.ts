@@ -5991,10 +5991,22 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     });
   }
 
+  // Avoid force-activating the whole app for normal launcher opens on macOS.
+  // When the window is already visible on every Space, app.focus({ steal: true })
+  // can make Mission Control jump back to the app's "home" desktop instead of
+  // presenting the launcher in the user's current Space.
+  if (launcherMode === 'onboarding') {
+    try { app.focus({ steal: true }); } catch {}
+  }
   try {
-    app.focus({ steal: true });
-  } catch {}
-  mainWindow.show();
+    if (!mainWindow.isVisible() && typeof (mainWindow as any).showInactive === 'function') {
+      (mainWindow as any).showInactive();
+    } else {
+      mainWindow.show();
+    }
+  } catch {
+    mainWindow.show();
+  }
   mainWindow.focus();
   mainWindow.moveTop();
   isVisible = true;
@@ -6004,7 +6016,11 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (mainWindow.isVisible()) return;
     try {
-      mainWindow.show();
+      if (typeof (mainWindow as any).showInactive === 'function') {
+        (mainWindow as any).showInactive();
+      } else {
+        mainWindow.show();
+      }
       mainWindow.focus();
       mainWindow.moveTop();
       isVisible = true;
