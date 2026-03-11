@@ -45,6 +45,7 @@
     "electron-liquid-glass": "^1.1.1",
     "electron-updater": "^6.7.3",
     "esbuild": "^0.19.12",
+    "katex": "^0.16.38",
     "lucide-react": "^0.312.0",
     "node-edge-tts": "^1.2.10",
     "node-window-manager": "^2.2.4",

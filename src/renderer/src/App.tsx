@@ -392,6 +392,17 @@ const App: React.FC = () => {
     },
   });
 
+  const notesPortalTarget = useDetachedPortalWindow(!!showNotesManager, {
+    name: 'supercmd-notes-window',
+    title: 'SuperCmd Notes',
+    width: 420,
+    height: 560,
+    anchor: 'center',
+    onClosed: () => {
+      setShowNotesManager(null);
+    },
+  });
+
   const windowManagerPortalTarget = useDetachedPortalWindow(showWindowManager, {
     name: 'supercmd-window-manager-window',
     title: 'SuperCmd Window Manager',
@@ -616,10 +627,12 @@ const App: React.FC = () => {
         }
         if (routedSystemCommandId === 'system-search-notes') {
           openNotesManager('search');
+          window.electron.hideWindow();
           return;
         }
         if (routedSystemCommandId === 'system-create-note') {
           openNotesManager('create');
+          window.electron.hideWindow();
           return;
         }
         if (routedSystemCommandId === 'system-search-snippets') {
@@ -1921,11 +1934,13 @@ const App: React.FC = () => {
     if (commandId === 'system-search-notes') {
       whisperSessionRef.current = false;
       openNotesManager('search');
+      window.electron.hideWindow();
       return true;
     }
     if (commandId === 'system-create-note') {
       whisperSessionRef.current = false;
       openNotesManager('create');
+      window.electron.hideWindow();
       return true;
     }
     if (commandId === 'system-search-snippets') {
@@ -2752,6 +2767,24 @@ const App: React.FC = () => {
             cursorPromptPortalTarget
           )
         : null}
+      {showNotesManager && notesPortalTarget
+        ? createPortal(
+            <div className="w-full h-full" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+              <div className="glass-effect overflow-hidden h-full flex flex-col">
+                <NotesManager
+                  initialView={showNotesManager}
+                  onClose={() => {
+                    setShowNotesManager(null);
+                    setSearchQuery('');
+                    setSelectedIndex(0);
+                    setTimeout(() => inputRef.current?.focus(), 50);
+                  }}
+                />
+              </div>
+            </div>,
+            notesPortalTarget
+          )
+        : null}
     </>
   );
 
@@ -2969,27 +3002,7 @@ const App: React.FC = () => {
     );
   }
 
-  // ─── Notes Manager mode ──────────────────────────────────────────
-  if (showNotesManager) {
-    return (
-      <>
-        {alwaysMountedRunners}
-        <div className="w-full h-full">
-          <div className="glass-effect overflow-hidden h-full flex flex-col">
-            <NotesManager
-              initialView={showNotesManager}
-              onClose={() => {
-                setShowNotesManager(null);
-                setSearchQuery('');
-                setSelectedIndex(0);
-                setTimeout(() => inputRef.current?.focus(), 50);
-              }}
-            />
-          </div>
-        </div>
-      </>
-    );
-  }
+  // ─── Notes Manager — rendered in detached floating window ────────
 
   // ─── Snippet Manager mode ─────────────────────────────────────────
   if (showSnippetManager) {

@@ -775,6 +775,7 @@ const DETACHED_SPEAK_WINDOW_NAME = 'supercmd-speak-window';
 const DETACHED_WINDOW_MANAGER_WINDOW_NAME = 'supercmd-window-manager-window';
 const DETACHED_PROMPT_WINDOW_NAME = 'supercmd-prompt-window';
 const DETACHED_MEMORY_STATUS_WINDOW_NAME = 'supercmd-memory-status-window';
+const DETACHED_NOTES_WINDOW_NAME = 'supercmd-notes-window';
 const DETACHED_WINDOW_QUERY_KEY = 'sc_detached';
 const MEMORY_STATUS_WINDOW_WIDTH = 340;
 const MEMORY_STATUS_WINDOW_HEIGHT = 60;
@@ -812,12 +813,14 @@ function resolveDetachedPopupName(details: any): string | null {
     byFrameName === DETACHED_WINDOW_MANAGER_WINDOW_NAME ||
     byFrameName === DETACHED_PROMPT_WINDOW_NAME ||
     byFrameName === DETACHED_MEMORY_STATUS_WINDOW_NAME ||
+    byFrameName === DETACHED_NOTES_WINDOW_NAME ||
     byFrameName.startsWith(`${DETACHED_WHISPER_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_WHISPER_ONBOARDING_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_SPEAK_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_WINDOW_MANAGER_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_PROMPT_WINDOW_NAME}-`) ||
-    byFrameName.startsWith(`${DETACHED_MEMORY_STATUS_WINDOW_NAME}-`)
+    byFrameName.startsWith(`${DETACHED_MEMORY_STATUS_WINDOW_NAME}-`) ||
+    byFrameName.startsWith(`${DETACHED_NOTES_WINDOW_NAME}-`)
   ) {
     if (byFrameName.startsWith(DETACHED_WHISPER_WINDOW_NAME)) return DETACHED_WHISPER_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_WHISPER_ONBOARDING_WINDOW_NAME)) return DETACHED_WHISPER_ONBOARDING_WINDOW_NAME;
@@ -825,6 +828,7 @@ function resolveDetachedPopupName(details: any): string | null {
     if (byFrameName.startsWith(DETACHED_WINDOW_MANAGER_WINDOW_NAME)) return DETACHED_WINDOW_MANAGER_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_PROMPT_WINDOW_NAME)) return DETACHED_PROMPT_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_MEMORY_STATUS_WINDOW_NAME)) return DETACHED_MEMORY_STATUS_WINDOW_NAME;
+    if (byFrameName.startsWith(DETACHED_NOTES_WINDOW_NAME)) return DETACHED_NOTES_WINDOW_NAME;
     return byFrameName;
   }
   const rawUrl = String(details?.url || '').trim();
@@ -838,7 +842,8 @@ function resolveDetachedPopupName(details: any): string | null {
       byQuery === DETACHED_SPEAK_WINDOW_NAME ||
       byQuery === DETACHED_WINDOW_MANAGER_WINDOW_NAME ||
       byQuery === DETACHED_PROMPT_WINDOW_NAME ||
-      byQuery === DETACHED_MEMORY_STATUS_WINDOW_NAME
+      byQuery === DETACHED_MEMORY_STATUS_WINDOW_NAME ||
+      byQuery === DETACHED_NOTES_WINDOW_NAME
     ) {
       return byQuery;
     }
@@ -5180,6 +5185,8 @@ function createWindow(): void {
         ? CURSOR_PROMPT_WINDOW_WIDTH
       : detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME
         ? 340
+      : detachedPopupName === DETACHED_NOTES_WINDOW_NAME
+        ? 420
         : 520;
     const defaultHeight = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME
       ? 52
@@ -5191,6 +5198,8 @@ function createWindow(): void {
         ? CURSOR_PROMPT_WINDOW_HEIGHT
       : detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME
         ? 60
+      : detachedPopupName === DETACHED_NOTES_WINDOW_NAME
+        ? 560
         : 112;
     const finalWidth = typeof popupBounds.width === 'number' ? popupBounds.width : defaultWidth;
     const finalHeight = typeof popupBounds.height === 'number' ? popupBounds.height : defaultHeight;
@@ -5215,6 +5224,8 @@ function createWindow(): void {
                 ? 'SuperCmd Window Manager'
               : detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME
                 ? 'SuperCmd Status'
+              : detachedPopupName === DETACHED_NOTES_WINDOW_NAME
+                ? 'SuperCmd Notes'
               : 'SuperCmd Read',
         frame: false,
         titleBarStyle: 'hidden',
@@ -5230,8 +5241,8 @@ function createWindow(): void {
           detachedPopupName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME || useNativeVibrancyForWindowManager
             ? 'active'
             : undefined,
-        hasShadow: false,
-        resizable: false,
+        hasShadow: detachedPopupName === DETACHED_NOTES_WINDOW_NAME,
+        resizable: detachedPopupName === DETACHED_NOTES_WINDOW_NAME,
         minimizable: false,
         maximizable: false,
         fullscreenable: false,

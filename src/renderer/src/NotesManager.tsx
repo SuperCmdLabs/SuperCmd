@@ -1,25 +1,32 @@
 /**
- * Notes Manager UI — Raycast Notes clone (exact parity)
+ * Notes Manager — Notion-like block editor with SuperCmd native UI
  *
- * Editor: WYSIWYG inline markdown rendering via contentEditable
- * Action Panel: drops down from title bar, exact Raycast items/order
- * All shortcuts match Raycast exactly
+ * Features:
+ * - Block-based contentEditable editor with live rendering
+ * - Markdown shortcuts auto-convert (# → heading, - → bullet, - [ ] → checkbox, etc.)
+ * - Notion-like slash command menu (/heading, /bullet, /todo, etc.)
+ * - Drag-and-drop block reordering
+ * - Clickable checkboxes
+ * - Native SuperCmd styling (CSS variables, glass footer, back button)
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, ArrowLeft, Plus, FileText, Pin, PinOff,
+  ArrowLeft, Plus, FileText, Pin, PinOff,
   Copy, Trash2, Files, Download, Upload,
   Bold, Italic, Strikethrough, Underline, Code,
   Link, Quote, ListOrdered, List, ListChecks,
   SquareCode, Command, LayoutList, Search,
   Type, ArrowUp, ArrowDown, Link2, Info,
+  GripVertical, Minus, X, Sigma,
 } from 'lucide-react';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import type { Note, NoteTheme } from '../types/electron';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
 
-// ─── Props ──────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────
 
 interface NotesManagerProps {
   onClose: () => void;
@@ -36,19 +43,21 @@ interface Action {
   disabled?: boolean;
 }
 
-// ─── Theme Accent Colors ────────────────────────────────────────────
+type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'bullet' | 'ordered' | 'checkbox' | 'code' | 'blockquote' | 'divider' | 'math';
+
+interface Block {
+  id: string;
+  type: BlockType;
+  content: string;
+  checked?: boolean;
+}
+
+// ─── Theme ───────────────────────────────────────────────────────────
 
 const THEME_ACCENT: Record<NoteTheme, string> = {
-  default: '#a0a0a0',
-  rose: '#fb7185',
-  orange: '#fb923c',
-  amber: '#fbbf24',
-  emerald: '#34d399',
-  cyan: '#22d3ee',
-  blue: '#60a5fa',
-  violet: '#a78bfa',
-  fuchsia: '#e879f9',
-  slate: '#94a3b8',
+  default: '#a0a0a0', rose: '#fb7185', orange: '#fb923c', amber: '#fbbf24',
+  emerald: '#34d399', cyan: '#22d3ee', blue: '#60a5fa', violet: '#a78bfa',
+  fuchsia: '#e879f9', slate: '#94a3b8',
 };
 
 const THEME_DOTS: Array<{ id: NoteTheme; label: string; color: string }> = [
@@ -64,7 +73,7 @@ const THEME_DOTS: Array<{ id: NoteTheme; label: string; color: string }> = [
   { id: 'slate', label: 'Slate', color: '#94a3b8' },
 ];
 
-// ─── Helpers ────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────
 
 function charCount(s: string) { return s.length; }
 function wordCount(s: string) { return s.trim() ? s.trim().split(/\s+/).length : 0; }
@@ -89,10 +98,9 @@ function formatRelativeTime(ts: number): string {
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(minutes / 60);
   if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
-  if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
-  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' at ' +
-    new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function groupNotesByDate(notes: Note[]): Array<{ label: string; notes: Note[] }> {
@@ -111,116 +119,969 @@ function groupNotesByDate(notes: Note[]): Array<{ label: string; notes: Note[] }
 }
 
 function extractTitleFromContent(content: string): string {
-  const lines = content.split('\n');
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed) return trimmed.replace(/^#{1,6}\s+/, '') || 'Untitled';
+  for (const line of content.split('\n')) {
+    const t = line.trim();
+    if (t) return t.replace(/^#{1,6}\s+/, '').replace(/^[-*+]\s+/, '').replace(/^- \[[ x]\]\s+/, '').replace(/^>\s+/, '').replace(/^\d+\.\s+/, '') || 'Untitled';
   }
   return 'Untitled';
 }
 
-// ─── Markdown → HTML for WYSIWYG preview ────────────────────────────
+// ─── KaTeX Helpers ───────────────────────────────────────────────────
 
-function markdownToHtml(md: string, accentColor: string): string {
-  if (!md.trim()) return '<span style="color:rgba(255,255,255,0.2);font-style:italic">Start writing...</span>';
+function renderKatex(latex: string, displayMode: boolean = false): string {
+  try {
+    return katex.renderToString(latex, { displayMode, throwOnError: false, strict: false });
+  } catch {
+    return `<span style="color:#f87171">${latex}</span>`;
+  }
+}
 
-  const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function renderInlineMath(text: string): string {
+  // Replace $...$ (not $$) with rendered KaTeX inline spans
+  return text.replace(/\$([^\$]+?)\$/g, (_match, latex) => renderKatex(latex.trim(), false));
+}
 
-  const inlineFormat = (text: string): string => {
-    let s = escapeHtml(text);
-    // inline code (before bold/italic to avoid conflicts)
-    s = s.replace(/`([^`]+)`/g, `<code style="background:rgba(255,255,255,0.08);padding:1px 6px;border-radius:4px;font-size:12px;font-family:monospace;color:${accentColor}">$1</code>`);
-    // bold
-    s = s.replace(/\*\*(.+?)\*\*/g, '<strong style="color:rgba(255,255,255,0.9);font-weight:700">$1</strong>');
-    // italic
-    s = s.replace(/\*(.+?)\*/g, '<em style="color:rgba(255,255,255,0.7);font-style:italic">$1</em>');
-    // strikethrough
-    s = s.replace(/~~(.+?)~~/g, '<del style="color:rgba(255,255,255,0.4)">$1</del>');
-    // links
-    s = s.replace(/\[(.+?)\]\((.+?)\)/g, `<span style="color:${accentColor};text-decoration:underline;text-underline-offset:2px;cursor:pointer">$1</span>`);
-    return s;
-  };
+// ─── Block System ────────────────────────────────────────────────────
 
+let _blockIdCounter = 0;
+const genBlockId = () => `blk-${++_blockIdCounter}-${Date.now().toString(36)}`;
+
+function parseMarkdownToBlocks(md: string): Block[] {
+  if (!md.trim()) return [{ id: genBlockId(), type: 'paragraph', content: '' }];
   const lines = md.split('\n');
-  const parts: string[] = [];
+  const blocks: Block[] = [];
   let i = 0;
-
   while (i < lines.length) {
     const line = lines[i];
-
-    // Code block
+    // Math block ($$...$$)
+    if (line.trimStart() === '$$') {
+      const mathLines: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trimStart() !== '$$') { mathLines.push(lines[j]); j++; }
+      blocks.push({ id: genBlockId(), type: 'math', content: mathLines.join('\n') });
+      i = j + 1; continue;
+    }
+    // Code fence
     if (line.startsWith('```') || line.startsWith('~~~')) {
       const fence = line.startsWith('```') ? '```' : '~~~';
       const codeLines: string[] = [];
       let j = i + 1;
-      while (j < lines.length && !lines[j].startsWith(fence)) { codeLines.push(escapeHtml(lines[j])); j++; }
-      parts.push(`<pre style="background:rgba(255,255,255,0.04);border-radius:8px;padding:12px;margin:8px 0;font-size:12px;font-family:monospace;color:rgba(255,255,255,0.7);overflow-x:auto;white-space:pre">${codeLines.join('\n')}</pre>`);
+      while (j < lines.length && !lines[j].startsWith(fence)) { codeLines.push(lines[j]); j++; }
+      blocks.push({ id: genBlockId(), type: 'code', content: codeLines.join('\n') });
       i = j + 1; continue;
     }
-
+    // Divider
+    if (/^(---+|___+|\*\*\*+)$/.test(line.trim())) { blocks.push({ id: genBlockId(), type: 'divider', content: '' }); i++; continue; }
     // Headings
     const h3 = line.match(/^### (.+)/);
-    if (h3) { parts.push(`<h3 style="font-size:15px;font-weight:600;color:rgba(255,255,255,0.9);margin:16px 0 4px">${inlineFormat(h3[1])}</h3>`); i++; continue; }
+    if (h3) { blocks.push({ id: genBlockId(), type: 'h3', content: h3[1] }); i++; continue; }
     const h2 = line.match(/^## (.+)/);
-    if (h2) { parts.push(`<h2 style="font-size:17px;font-weight:700;color:rgba(255,255,255,0.9);margin:16px 0 4px">${inlineFormat(h2[1])}</h2>`); i++; continue; }
+    if (h2) { blocks.push({ id: genBlockId(), type: 'h2', content: h2[1] }); i++; continue; }
     const h1 = line.match(/^# (.+)/);
-    if (h1) { parts.push(`<h1 style="font-size:22px;font-weight:700;color:white;margin:12px 0 8px">${inlineFormat(h1[1])}</h1>`); i++; continue; }
-
-    // Horizontal rule
-    if (/^(---+|___+|\*\*\*+)$/.test(line.trim())) { parts.push('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:12px 0" />'); i++; continue; }
-
-    // Checklist
+    if (h1) { blocks.push({ id: genBlockId(), type: 'h1', content: h1[1] }); i++; continue; }
+    // Checkbox
     const check = line.match(/^- \[([ x])\]\s*(.*)/);
-    if (check) {
-      const done = check[1] === 'x';
-      const checkStyle = done
-        ? 'border:2px solid #fb7185;background:rgba(251,113,133,0.2);color:#fda4af;border-radius:4px;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;margin-top:2px'
-        : 'border:2px solid rgba(251,113,133,0.4);border-radius:4px;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px';
-      const textStyle = done ? 'color:rgba(255,255,255,0.4);text-decoration:line-through' : 'color:rgba(255,255,255,0.8)';
-      parts.push(`<div style="display:flex;align-items:flex-start;gap:10px;padding:4px 0"><span style="${checkStyle}">${done ? '✓' : ''}</span><span style="font-size:14px;${textStyle}">${inlineFormat(check[2])}</span></div>`);
-      i++; continue;
-    }
-
-    // Bullet list
-    const ul = line.match(/^[-*+]\s+(.+)/);
-    if (ul) {
-      parts.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:2px 0 2px 4px"><span style="margin-top:7px;width:5px;height:5px;border-radius:50%;background:${accentColor};flex-shrink:0"></span><span style="font-size:14px;color:rgba(255,255,255,0.8)">${inlineFormat(ul[1])}</span></div>`);
-      i++; continue;
-    }
-
-    // Ordered list
-    const ol = line.match(/^(\d+)\.\s+(.+)/);
-    if (ol) {
-      parts.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:2px 0 2px 4px"><span style="color:rgba(255,255,255,0.4);font-size:13px;min-width:18px;text-align:right">${ol[1]}.</span><span style="font-size:14px;color:rgba(255,255,255,0.8)">${inlineFormat(ol[2])}</span></div>`);
-      i++; continue;
-    }
-
+    if (check) { blocks.push({ id: genBlockId(), type: 'checkbox', content: check[2], checked: check[1] === 'x' }); i++; continue; }
+    // Bullet
+    const bullet = line.match(/^[-*+]\s+(.*)/);
+    if (bullet) { blocks.push({ id: genBlockId(), type: 'bullet', content: bullet[1] }); i++; continue; }
+    // Ordered
+    const ordered = line.match(/^(\d+)\.\s+(.*)/);
+    if (ordered) { blocks.push({ id: genBlockId(), type: 'ordered', content: ordered[2] }); i++; continue; }
     // Blockquote
     const bq = line.match(/^>\s*(.*)/);
-    if (bq) {
-      parts.push(`<div style="border-left:2px solid rgba(255,255,255,0.2);padding-left:12px;padding:2px 0 2px 12px;margin:4px 0"><span style="font-size:14px;color:rgba(255,255,255,0.5);font-style:italic">${inlineFormat(bq[1])}</span></div>`);
-      i++; continue;
-    }
-
-    // Empty line
-    if (!line.trim()) { parts.push('<div style="height:12px"></div>'); i++; continue; }
-
+    if (bq) { blocks.push({ id: genBlockId(), type: 'blockquote', content: bq[1] }); i++; continue; }
+    // Empty line → empty paragraph
+    if (!line.trim()) { blocks.push({ id: genBlockId(), type: 'paragraph', content: '' }); i++; continue; }
     // Paragraph
-    parts.push(`<p style="font-size:14px;color:rgba(255,255,255,0.8);line-height:1.6;margin:0">${inlineFormat(line)}</p>`);
+    blocks.push({ id: genBlockId(), type: 'paragraph', content: line });
     i++;
   }
-
-  return parts.join('');
+  if (blocks.length === 0) blocks.push({ id: genBlockId(), type: 'paragraph', content: '' });
+  return blocks;
 }
 
-// Also keep the React version for search preview
-function renderMarkdownPreview(md: string, accentColor: string): React.ReactNode {
-  if (!md.trim()) return <span className="text-white/25 italic">Start writing...</span>;
-  // Use dangerouslySetInnerHTML for the HTML version
-  return <div dangerouslySetInnerHTML={{ __html: markdownToHtml(md, accentColor) }} />;
+function serializeBlocksToMarkdown(blocks: Block[]): string {
+  return blocks.map((b, i) => {
+    switch (b.type) {
+      case 'h1': return `# ${b.content}`;
+      case 'h2': return `## ${b.content}`;
+      case 'h3': return `### ${b.content}`;
+      case 'bullet': return `- ${b.content}`;
+      case 'ordered': {
+        // Count preceding ordered blocks for numbering
+        let num = 1;
+        for (let j = i - 1; j >= 0 && blocks[j].type === 'ordered'; j--) num++;
+        return `${num}. ${b.content}`;
+      }
+      case 'checkbox': return `- [${b.checked ? 'x' : ' '}] ${b.content}`;
+      case 'blockquote': return `> ${b.content}`;
+      case 'code': return '```\n' + b.content + '\n```';
+      case 'math': return '$$\n' + b.content + '\n$$';
+      case 'divider': return '---';
+      default: return b.content;
+    }
+  }).join('\n');
 }
 
-// ─── Editor View ────────────────────────────────────────────────────
+// Detect markdown prefix typed at start of paragraph
+function detectMarkdownPrefix(text: string): { type: BlockType; content: string; checked?: boolean } | null {
+  if (text.startsWith('### ')) return { type: 'h3', content: text.slice(4) };
+  if (text.startsWith('## ')) return { type: 'h2', content: text.slice(3) };
+  if (text.startsWith('# ')) return { type: 'h1', content: text.slice(2) };
+  if (text.startsWith('- [x] ')) return { type: 'checkbox', content: text.slice(6), checked: true };
+  if (text.startsWith('- [ ] ')) return { type: 'checkbox', content: text.slice(6), checked: false };
+  if (text.startsWith('[] ')) return { type: 'checkbox', content: text.slice(3), checked: false };
+  if (/^[-*+] /.test(text)) return { type: 'bullet', content: text.slice(2) };
+  if (/^\d+\. /.test(text)) { const m = text.match(/^\d+\. /); return m ? { type: 'ordered', content: text.slice(m[0].length) } : null; }
+  if (text.startsWith('> ')) return { type: 'blockquote', content: text.slice(2) };
+  if (text === '---' || text === '***' || text === '___') return { type: 'divider', content: '' };
+  if (text === '$$') return { type: 'math', content: '' };
+  return null;
+}
+
+function getCursorOffset(el: HTMLElement | null | undefined): number {
+  if (!el) return 0;
+  const sel = window.getSelection();
+  if (!sel || !sel.isCollapsed || sel.rangeCount === 0) return 0;
+  const range = sel.getRangeAt(0);
+  if (!el.contains(range.startContainer)) return 0;
+  if (range.startContainer === el) return range.startOffset;
+  // Text node child
+  return range.startOffset;
+}
+
+function setCursorPosition(el: HTMLElement, offset: number) {
+  requestAnimationFrame(() => {
+    el.focus();
+    const textNode = el.firstChild;
+    if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+      const range = document.createRange();
+      const safe = Math.min(offset, textNode.textContent?.length || 0);
+      range.setStart(textNode, safe);
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    } else {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(offset > 0 ? false : true);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
+  });
+}
+
+// ─── Slash Command Menu ──────────────────────────────────────────────
+
+const SLASH_COMMANDS: Array<{ type: BlockType; label: string; description: string; icon: React.ReactNode; keywords: string[] }> = [
+  { type: 'paragraph', label: 'Text', description: 'Plain text block', icon: <Type size={14} />, keywords: ['text', 'paragraph', 'plain'] },
+  { type: 'h1', label: 'Heading 1', description: 'Large heading', icon: <span className="text-xs font-bold">H1</span>, keywords: ['heading', 'h1', 'title'] },
+  { type: 'h2', label: 'Heading 2', description: 'Medium heading', icon: <span className="text-xs font-bold">H2</span>, keywords: ['heading', 'h2'] },
+  { type: 'h3', label: 'Heading 3', description: 'Small heading', icon: <span className="text-xs font-bold">H3</span>, keywords: ['heading', 'h3'] },
+  { type: 'bullet', label: 'Bullet List', description: 'Unordered list item', icon: <List size={14} />, keywords: ['bullet', 'list', 'unordered'] },
+  { type: 'ordered', label: 'Numbered List', description: 'Ordered list item', icon: <ListOrdered size={14} />, keywords: ['numbered', 'ordered', 'list'] },
+  { type: 'checkbox', label: 'To-Do', description: 'Checkbox item', icon: <ListChecks size={14} />, keywords: ['todo', 'checkbox', 'task', 'check'] },
+  { type: 'blockquote', label: 'Quote', description: 'Block quote', icon: <Quote size={14} />, keywords: ['quote', 'blockquote'] },
+  { type: 'code', label: 'Code', description: 'Code block', icon: <SquareCode size={14} />, keywords: ['code', 'snippet'] },
+  { type: 'math', label: 'Math Block', description: 'LaTeX math equation', icon: <Sigma size={14} />, keywords: ['math', 'latex', 'equation', 'formula', 'katex'] },
+  { type: 'divider', label: 'Divider', description: 'Horizontal line', icon: <Minus size={14} />, keywords: ['divider', 'line', 'separator', 'hr'] },
+];
+
+interface SlashMenuProps {
+  query: string;
+  position: { top: number; left: number };
+  onSelect: (type: BlockType) => void;
+  onClose: () => void;
+}
+
+const SlashMenu: React.FC<SlashMenuProps> = ({ query, position, onSelect, onClose }) => {
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const filtered = useMemo(() => {
+    if (!query) return SLASH_COMMANDS;
+    const q = query.toLowerCase();
+    return SLASH_COMMANDS.filter(c => c.label.toLowerCase().includes(q) || c.keywords.some(k => k.includes(q)));
+  }, [query]);
+
+  useEffect(() => { setSelectedIdx(0); }, [query]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setSelectedIdx(i => Math.min(i + 1, filtered.length - 1)); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setSelectedIdx(i => Math.max(0, i - 1)); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        if (filtered[selectedIdx]) { e.preventDefault(); e.stopPropagation(); onSelect(filtered[selectedIdx].type); }
+        return;
+      }
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [filtered, selectedIdx, onSelect, onClose]);
+
+  useEffect(() => {
+    const items = listRef.current?.querySelectorAll('[data-slash-item]');
+    const item = items?.[selectedIdx] as HTMLElement;
+    item?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIdx]);
+
+  if (filtered.length === 0) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9998]" onClick={onClose}>
+      <div
+        className="absolute z-[9999] w-[220px] bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-lg shadow-2xl overflow-hidden"
+        style={{ top: position.top, left: position.left }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-2.5 py-1.5 border-b border-[var(--ui-divider)]">
+          <span className="text-[10px] font-semibold text-[var(--text-subtle)] uppercase tracking-wider">Blocks</span>
+        </div>
+        <div ref={listRef} className="max-h-[260px] overflow-y-auto py-1">
+          {filtered.map((cmd, idx) => (
+            <div
+              key={cmd.type}
+              data-slash-item
+              onClick={() => onSelect(cmd.type)}
+              onMouseEnter={() => setSelectedIdx(idx)}
+              className={`flex items-center gap-2.5 px-2.5 py-1.5 cursor-pointer transition-colors ${idx === selectedIdx ? 'bg-[var(--accent)]/10' : ''}`}
+            >
+              <span className="w-5 h-5 flex items-center justify-center text-[var(--text-muted)] flex-shrink-0">{cmd.icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px] text-[var(--text-primary)] font-medium">{cmd.label}</div>
+                <div className="text-[10px] text-[var(--text-subtle)] truncate">{cmd.description}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+// ─── Block Editor ────────────────────────────────────────────────────
+
+interface BlockEditorProps {
+  initialContent: string;
+  onContentChange: (content: string) => void;
+  accentColor: string;
+}
+
+const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChange, accentColor }) => {
+  const [blocks, setBlocks] = useState<Block[]>(() => parseMarkdownToBlocks(initialContent));
+  const blocksRef = useRef(blocks);
+  useEffect(() => { blocksRef.current = blocks; }, [blocks]);
+
+  const [slashMenu, setSlashMenu] = useState<{ blockId: string; query: string; position: { top: number; left: number } } | null>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dropIdx, setDropIdx] = useState<number | null>(null);
+
+  const blockElsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const pendingFocusRef = useRef<{ id: string; offset: number } | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
+
+  // ─── Undo / Redo History ───────────────────────────────────
+  const historyRef = useRef<Block[][]>([]);
+  const historyIdxRef = useRef(-1);
+  const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isUndoRedoRef = useRef(false);
+
+  // Snapshot current DOM content into blocks for accurate history
+  const snapshotBlocks = useCallback((): Block[] => {
+    return blocksRef.current.map(b => {
+      const el = blockElsRef.current.get(b.id);
+      return { ...b, content: el?.textContent ?? b.content };
+    });
+  }, []);
+
+  // Push a snapshot to history (debounced for typing, immediate for structural changes)
+  const pushHistory = useCallback((immediate?: boolean) => {
+    if (isUndoRedoRef.current) return;
+    const push = () => {
+      const snapshot = snapshotBlocks().map(b => ({ ...b }));
+      const stack = historyRef.current.slice(0, historyIdxRef.current + 1);
+      stack.push(snapshot);
+      // Cap at 100 entries
+      if (stack.length > 100) stack.shift();
+      historyRef.current = stack;
+      historyIdxRef.current = stack.length - 1;
+    };
+    if (immediate) {
+      if (historyTimerRef.current) { clearTimeout(historyTimerRef.current); historyTimerRef.current = null; }
+      push();
+    } else {
+      if (historyTimerRef.current) clearTimeout(historyTimerRef.current);
+      historyTimerRef.current = setTimeout(push, 500);
+    }
+  }, [snapshotBlocks]);
+
+  // Initialize history with initial state
+  useEffect(() => {
+    const initial = blocksRef.current.map(b => ({ ...b }));
+    historyRef.current = [initial];
+    historyIdxRef.current = 0;
+  }, []);
+
+  const undo = useCallback(() => {
+    if (historyIdxRef.current <= 0) return;
+    // Before undoing, make sure current state is saved
+    if (historyTimerRef.current) { clearTimeout(historyTimerRef.current); historyTimerRef.current = null; }
+    // Save current as top if we haven't already
+    const currentSnapshot = snapshotBlocks().map(b => ({ ...b }));
+    const stack = historyRef.current;
+    // Replace current position with latest DOM state
+    stack[historyIdxRef.current] = currentSnapshot;
+
+    historyIdxRef.current--;
+    const prev = stack[historyIdxRef.current];
+    isUndoRedoRef.current = true;
+    setBlocks(prev.map(b => ({ ...b })));
+    // Sync DOM
+    requestAnimationFrame(() => {
+      for (const b of prev) {
+        const el = blockElsRef.current.get(b.id);
+        if (el && el.textContent !== b.content) el.textContent = b.content;
+      }
+      isUndoRedoRef.current = false;
+    });
+  }, [snapshotBlocks]);
+
+  const redo = useCallback(() => {
+    if (historyIdxRef.current >= historyRef.current.length - 1) return;
+    historyIdxRef.current++;
+    const next = historyRef.current[historyIdxRef.current];
+    isUndoRedoRef.current = true;
+    setBlocks(next.map(b => ({ ...b })));
+    requestAnimationFrame(() => {
+      for (const b of next) {
+        const el = blockElsRef.current.get(b.id);
+        if (el && el.textContent !== b.content) el.textContent = b.content;
+      }
+      isUndoRedoRef.current = false;
+    });
+  }, []);
+
+  // Debounced save
+  useEffect(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      onContentChange(serializeBlocksToMarkdown(blocks));
+    }, 300);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [blocks]);
+
+  // Pending focus after render
+  useEffect(() => {
+    const pending = pendingFocusRef.current;
+    if (!pending) return;
+    pendingFocusRef.current = null;
+    setTimeout(() => {
+      const el = blockElsRef.current.get(pending.id);
+      if (el) setCursorPosition(el, pending.offset);
+    }, 0);
+  });
+
+  const focusBlock = useCallback((id: string, offset: number) => {
+    pendingFocusRef.current = { id, offset };
+  }, []);
+
+  // ─── Block Input Handler ─────────────────────────────────────
+  const handleBlockInput = useCallback((blockId: string) => {
+    const el = blockElsRef.current.get(blockId);
+    if (!el) return;
+    const text = el.textContent || '';
+    const block = blocksRef.current.find(b => b.id === blockId);
+    if (!block) return;
+
+    // Markdown prefix detection (only for paragraph blocks)
+    if (block.type === 'paragraph') {
+      const prefix = detectMarkdownPrefix(text);
+      if (prefix) {
+        el.textContent = prefix.content;
+        setCursorPosition(el, prefix.content.length);
+        setBlocks(prev => prev.map(b =>
+          b.id === blockId ? { ...b, type: prefix.type, content: prefix.content, checked: prefix.checked } : b
+        ));
+        setSlashMenu(null);
+        return;
+      }
+    }
+
+    // Slash command detection
+    if (text === '/') {
+      const rect = el.getBoundingClientRect();
+      setSlashMenu({ blockId, query: '', position: { top: rect.bottom + 4, left: rect.left } });
+    } else if (text.startsWith('/') && !text.includes(' ')) {
+      const rect = el.getBoundingClientRect();
+      setSlashMenu({ blockId, query: text.slice(1), position: { top: rect.bottom + 4, left: rect.left } });
+    } else if (slashMenu?.blockId === blockId) {
+      setSlashMenu(null);
+    }
+
+    // Normal content update
+    setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, content: text } : b));
+    pushHistory(); // debounced
+  }, [slashMenu, pushHistory]);
+
+  // ─── Slash Command Selection ─────────────────────────────────
+  const handleSlashSelect = useCallback((type: BlockType) => {
+    if (!slashMenu) return;
+    const { blockId } = slashMenu;
+    const el = blockElsRef.current.get(blockId);
+    setSlashMenu(null);
+
+    if (type === 'divider') {
+      // Replace current block with divider + new paragraph
+      const newPara: Block = { id: genBlockId(), type: 'paragraph', content: '' };
+      setBlocks(prev => {
+        const idx = prev.findIndex(b => b.id === blockId);
+        const updated = [...prev];
+        updated[idx] = { ...prev[idx], type: 'divider', content: '' };
+        updated.splice(idx + 1, 0, newPara);
+        return updated;
+      });
+      focusBlock(newPara.id, 0);
+    } else {
+      if (el) el.textContent = '';
+      setBlocks(prev => prev.map(b =>
+        b.id === blockId ? { ...b, type, content: '', checked: type === 'checkbox' ? false : undefined } : b
+      ));
+      focusBlock(blockId, 0);
+    }
+  }, [slashMenu, focusBlock]);
+
+  // ─── Key Down Handler ────────────────────────────────────────
+  const handleKeyDown = useCallback((e: React.KeyboardEvent, blockId: string) => {
+    const block = blocksRef.current.find(b => b.id === blockId);
+    if (!block) return;
+    const el = blockElsRef.current.get(blockId);
+    const meta = e.metaKey || e.ctrlKey;
+
+    // If slash menu is open, let it handle navigation keys
+    if (slashMenu?.blockId === blockId && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key)) return;
+
+    // ─── Undo: ⌘Z ───────────────────────────────────────
+    if (meta && !e.shiftKey && e.key === 'z') {
+      e.preventDefault();
+      undo();
+      return;
+    }
+
+    // ─── Redo: ⌘⇧Z ──────────────────────────────────────
+    if (meta && e.shiftKey && e.key === 'z') {
+      e.preventDefault();
+      redo();
+      return;
+    }
+
+    // ─── Enter: split block ──────────────────────────────
+    if (e.key === 'Enter' && !e.shiftKey && !meta) {
+      e.preventDefault();
+      pushHistory(true); // save state before split
+      const offset = getCursorOffset(el);
+      const text = el?.textContent || '';
+      const before = text.slice(0, offset);
+      const after = text.slice(offset);
+
+      // Empty list/checkbox → convert to paragraph
+      if (['bullet', 'ordered', 'checkbox'].includes(block.type) && !before && !after) {
+        setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, type: 'paragraph' } : b));
+        pushHistory(true);
+        return;
+      }
+
+      // Continue same type for lists
+      const newType = ['bullet', 'ordered', 'checkbox'].includes(block.type) ? block.type : 'paragraph';
+      const newBlock: Block = {
+        id: genBlockId(),
+        type: newType as BlockType,
+        content: after,
+        checked: newType === 'checkbox' ? false : undefined,
+      };
+
+      // Update current block content + insert new block
+      if (el) el.textContent = before;
+      setBlocks(prev => {
+        const idx = prev.findIndex(b => b.id === blockId);
+        const updated = [...prev];
+        updated[idx] = { ...block, content: before };
+        updated.splice(idx + 1, 0, newBlock);
+        return updated;
+      });
+      focusBlock(newBlock.id, 0);
+      pushHistory(true);
+      return;
+    }
+
+    // ─── Backspace at start ──────────────────────────────
+    if (e.key === 'Backspace' && !meta) {
+      const offset = getCursorOffset(el);
+      const sel = window.getSelection();
+      if (offset === 0 && sel?.isCollapsed) {
+        e.preventDefault();
+        pushHistory(true); // save state before merge/convert
+        if (block.type !== 'paragraph') {
+          // Convert to paragraph
+          setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, type: 'paragraph', checked: undefined } : b));
+        } else {
+          // Merge with previous block
+          const idx = blocksRef.current.findIndex(b => b.id === blockId);
+          if (idx > 0) {
+            const prev = blocksRef.current[idx - 1];
+            if (prev.type === 'divider') {
+              setBlocks(p => p.filter((_, i) => i !== idx - 1));
+              focusBlock(blockId, 0);
+            } else {
+              const mergeOffset = prev.content.length;
+              const mergedContent = prev.content + block.content;
+              const prevEl = blockElsRef.current.get(prev.id);
+              if (prevEl) prevEl.textContent = mergedContent;
+              setBlocks(p => {
+                const u = [...p];
+                u[idx - 1] = { ...prev, content: mergedContent };
+                u.splice(idx, 1);
+                return u;
+              });
+              focusBlock(prev.id, mergeOffset);
+            }
+          }
+        }
+        pushHistory(true);
+        return;
+      }
+    }
+
+    // ─── Arrow navigation between blocks ─────────────────
+
+    // ArrowDown at end of block → start of next block
+    if (e.key === 'ArrowDown' && !meta && !e.shiftKey) {
+      const offset = getCursorOffset(el);
+      const textLen = el?.textContent?.length || 0;
+      if (offset >= textLen) {
+        const idx = blocksRef.current.findIndex(b => b.id === blockId);
+        if (idx < blocksRef.current.length - 1) {
+          e.preventDefault();
+          const next = blocksRef.current[idx + 1];
+          focusBlock(next.id, 0);
+        }
+      }
+    }
+
+    // ArrowUp at start of block → end of previous block
+    if (e.key === 'ArrowUp' && !meta && !e.shiftKey) {
+      const offset = getCursorOffset(el);
+      if (offset === 0) {
+        const idx = blocksRef.current.findIndex(b => b.id === blockId);
+        if (idx > 0) {
+          e.preventDefault();
+          const prev = blocksRef.current[idx - 1];
+          focusBlock(prev.id, prev.content.length);
+        }
+      }
+    }
+
+    // ArrowLeft at start of block → end of previous block
+    if (e.key === 'ArrowLeft' && !meta && !e.shiftKey && !e.altKey) {
+      const offset = getCursorOffset(el);
+      const sel = window.getSelection();
+      if (offset === 0 && sel?.isCollapsed) {
+        const idx = blocksRef.current.findIndex(b => b.id === blockId);
+        if (idx > 0) {
+          e.preventDefault();
+          const prev = blocksRef.current[idx - 1];
+          focusBlock(prev.id, prev.content.length);
+        }
+      }
+    }
+
+    // ArrowRight at end of block → start of next block
+    if (e.key === 'ArrowRight' && !meta && !e.shiftKey && !e.altKey) {
+      const offset = getCursorOffset(el);
+      const textLen = el?.textContent?.length || 0;
+      const sel = window.getSelection();
+      if (offset >= textLen && sel?.isCollapsed) {
+        const idx = blocksRef.current.findIndex(b => b.id === blockId);
+        if (idx < blocksRef.current.length - 1) {
+          e.preventDefault();
+          const next = blocksRef.current[idx + 1];
+          focusBlock(next.id, 0);
+        }
+      }
+    }
+
+    // ─── Formatting shortcuts ────────────────────────────
+    if (meta && !e.shiftKey && !e.altKey && e.key === 'b') { e.preventDefault(); pushHistory(true); wrapSelection('**', '**'); pushHistory(true); return; }
+    if (meta && !e.shiftKey && !e.altKey && e.key === 'i') { e.preventDefault(); pushHistory(true); wrapSelection('*', '*'); pushHistory(true); return; }
+    if (meta && e.shiftKey && e.key === 's') { e.preventDefault(); pushHistory(true); wrapSelection('~~', '~~'); pushHistory(true); return; }
+    if (meta && !e.shiftKey && !e.altKey && e.key === 'e') { e.preventDefault(); pushHistory(true); wrapSelection('`', '`'); pushHistory(true); return; }
+    if (meta && !e.shiftKey && !e.altKey && e.key === 'u') { e.preventDefault(); pushHistory(true); wrapSelection('<u>', '</u>'); pushHistory(true); return; }
+    if (meta && e.shiftKey && (e.key === 'm' || e.key === 'M')) { e.preventDefault(); pushHistory(true); wrapSelection('$', '$'); pushHistory(true); return; }
+
+    // ─── ⌘+Enter: toggle checkbox ───────────────────────
+    if (meta && e.key === 'Enter') {
+      if (block.type === 'checkbox') {
+        e.preventDefault();
+        pushHistory(true);
+        setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, checked: !b.checked } : b));
+        pushHistory(true);
+        return;
+      }
+    }
+  }, [slashMenu, focusBlock, undo, redo, pushHistory]);
+
+  // Wrap selection with prefix/suffix
+  const wrapSelection = useCallback((prefix: string, suffix: string) => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const selected = range.toString();
+    if (!selected) return;
+    const text = prefix + selected + suffix;
+    range.deleteContents();
+    range.insertNode(document.createTextNode(text));
+    // Update block content
+    const el = range.startContainer.parentElement?.closest('[data-block-id]') as HTMLElement;
+    if (el) {
+      const blockId = el.dataset.blockId;
+      if (blockId) {
+        setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, content: el.textContent || '' } : b));
+      }
+    }
+  }, []);
+
+  // ─── Drag & Drop ─────────────────────────────────────────────
+  const handleDragStart = useCallback((e: React.DragEvent, idx: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(idx));
+    setDragIdx(idx);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropIdx(idx);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, toIdx: number) => {
+    e.preventDefault();
+    const fromIdx = dragIdx;
+    setDragIdx(null);
+    setDropIdx(null);
+    if (fromIdx === null || fromIdx === toIdx) return;
+    setBlocks(prev => {
+      const updated = [...prev];
+      const [moved] = updated.splice(fromIdx, 1);
+      updated.splice(toIdx > fromIdx ? toIdx - 1 : toIdx, 0, moved);
+      return updated;
+    });
+  }, [dragIdx]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragIdx(null);
+    setDropIdx(null);
+  }, []);
+
+  // ─── Render ──────────────────────────────────────────────────
+  return (
+    <div className="flex-1 overflow-y-auto custom-scrollbar px-3 py-3">
+      {blocks.map((block, idx) => (
+        <div key={block.id} className="relative group">
+          {/* Drop indicator */}
+          {dropIdx === idx && dragIdx !== null && dragIdx !== idx && (
+            <div className="absolute top-0 left-6 right-2 h-[2px] rounded-full" style={{ background: accentColor }} />
+          )}
+          <div
+            className={`flex items-start gap-1 rounded-md transition-all ${dragIdx === idx ? 'opacity-40' : ''} ${focusedBlockId === block.id ? 'bg-[var(--accent)]/[0.06] ring-1 ring-[var(--accent)]/20' : ''}`}
+            onDragOver={(e) => handleDragOver(e, idx)}
+            onDrop={(e) => handleDrop(e, idx)}
+          >
+            {/* Drag handle */}
+            <div
+              draggable
+              onDragStart={(e) => handleDragStart(e, idx)}
+              onDragEnd={handleDragEnd}
+              className="flex-shrink-0 w-5 h-6 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-30 hover:!opacity-60 transition-opacity mt-0.5"
+            >
+              <GripVertical size={12} />
+            </div>
+
+            {/* Block content */}
+            {block.type === 'divider' ? (
+              <div className="flex-1 py-3 px-1">
+                <div className="border-t border-[var(--ui-divider)]" />
+              </div>
+            ) : block.type === 'math' ? (
+              /* ─── Math Block ─── */
+              <div className="flex-1 min-w-0" data-block-id={block.id}>
+                {focusedBlockId === block.id ? (
+                  /* Editing: raw LaTeX input */
+                  <div
+                    ref={(el) => {
+                      if (el) {
+                        blockElsRef.current.set(block.id, el);
+                        if (!el.dataset.init) { el.textContent = block.content; el.dataset.init = '1'; }
+                      } else { blockElsRef.current.delete(block.id); }
+                    }}
+                    contentEditable={"plaintext-only" as any}
+                    suppressContentEditableWarning
+                    onInput={() => handleBlockInput(block.id)}
+                    onKeyDown={(e) => handleKeyDown(e, block.id)}
+                    onFocus={() => { setFocusedBlockId(block.id); if (slashMenu && slashMenu.blockId !== block.id) setSlashMenu(null); }}
+                    onBlur={() => { if (focusedBlockId === block.id) setFocusedBlockId(null); }}
+                    className="flex-1 outline-none min-h-[24px] leading-[1.65] text-[12px] font-mono text-[var(--text-secondary)] bg-[var(--input-bg)] rounded px-2 py-1 whitespace-pre"
+                    data-placeholder="LaTeX equation (e.g. E = mc^2)"
+                    style={{ '--placeholder-color': 'var(--text-disabled)' } as any}
+                  />
+                ) : (
+                  /* Preview: rendered KaTeX */
+                  <div
+                    onClick={() => {
+                      setFocusedBlockId(block.id);
+                      setTimeout(() => {
+                        const el = blockElsRef.current.get(block.id);
+                        if (el) { el.focus(); setCursorPosition(el, block.content.length); }
+                      }, 0);
+                    }}
+                    className="flex-1 min-h-[24px] py-1 px-1 cursor-text rounded hover:bg-[var(--bg-secondary)]/30 transition-colors"
+                  >
+                    {block.content.trim() ? (
+                      <div
+                        className="katex-display-block text-[var(--text-primary)] overflow-x-auto"
+                        dangerouslySetInnerHTML={{ __html: renderKatex(block.content, true) }}
+                      />
+                    ) : (
+                      <span className="text-[12px] text-[var(--text-disabled)] italic">Empty equation — click to edit</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex-1 flex items-start gap-1.5 min-w-0" data-block-id={block.id}>
+                {/* Block type indicator */}
+                {block.type === 'checkbox' && (
+                  <button
+                    onClick={() => setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, checked: !b.checked } : b))}
+                    className="flex-shrink-0 mt-[3px] w-4 h-4 rounded border-2 flex items-center justify-center transition-colors"
+                    style={{
+                      borderColor: block.checked ? accentColor : `${accentColor}60`,
+                      background: block.checked ? `${accentColor}30` : 'transparent',
+                      color: accentColor,
+                    }}
+                  >
+                    {block.checked && <span className="text-[9px] font-bold">✓</span>}
+                  </button>
+                )}
+                {block.type === 'bullet' && (
+                  <span className="flex-shrink-0 mt-[9px] w-[5px] h-[5px] rounded-full" style={{ background: accentColor }} />
+                )}
+                {block.type === 'ordered' && (
+                  <span className="flex-shrink-0 mt-[2px] text-[12px] text-[var(--text-subtle)] min-w-[16px] text-right font-medium">
+                    {(() => { let n = 1; for (let j = idx - 1; j >= 0 && blocks[j].type === 'ordered'; j--) n++; return `${n}.`; })()}
+                  </span>
+                )}
+                {block.type === 'blockquote' && (
+                  <div className="flex-shrink-0 w-[3px] self-stretch rounded-full mr-1" style={{ background: `${accentColor}50` }} />
+                )}
+
+                {/* Editable content — with inline math overlay when not focused */}
+                <div className="flex-1 relative min-w-0">
+                  <div
+                    ref={(el) => {
+                      if (el) {
+                        blockElsRef.current.set(block.id, el);
+                        if (!el.dataset.init) { el.textContent = block.content; el.dataset.init = '1'; }
+                      } else { blockElsRef.current.delete(block.id); }
+                    }}
+                    contentEditable={"plaintext-only" as any}
+                    suppressContentEditableWarning
+                    onInput={() => handleBlockInput(block.id)}
+                    onKeyDown={(e) => handleKeyDown(e, block.id)}
+                    onFocus={() => { setFocusedBlockId(block.id); if (slashMenu && slashMenu.blockId !== block.id) setSlashMenu(null); }}
+                    onBlur={() => { if (focusedBlockId === block.id) setFocusedBlockId(null); }}
+                    className={[
+                      'outline-none min-h-[24px] leading-[1.65]',
+                      block.type === 'h1' && 'text-[22px] font-bold text-[var(--text-primary)]',
+                      block.type === 'h2' && 'text-[17px] font-semibold text-[var(--text-primary)]',
+                      block.type === 'h3' && 'text-[14px] font-semibold text-[var(--text-primary)]',
+                      block.type === 'paragraph' && 'text-[13px] text-[var(--text-secondary)]',
+                      block.type === 'bullet' && 'text-[13px] text-[var(--text-secondary)]',
+                      block.type === 'ordered' && 'text-[13px] text-[var(--text-secondary)]',
+                      block.type === 'checkbox' && block.checked && 'text-[13px] text-[var(--text-subtle)] line-through',
+                      block.type === 'checkbox' && !block.checked && 'text-[13px] text-[var(--text-secondary)]',
+                      block.type === 'blockquote' && 'text-[13px] text-[var(--text-muted)] italic',
+                      block.type === 'code' && 'text-[12px] font-mono text-[var(--text-secondary)] bg-[var(--input-bg)] rounded px-2 py-1 whitespace-pre',
+                      // Hide raw text when showing inline math overlay
+                      focusedBlockId !== block.id && block.content.includes('$') && block.type !== 'code' && 'invisible',
+                    ].filter(Boolean).join(' ')}
+                    data-placeholder={focusedBlockId === block.id ? (block.type === 'h1' ? 'Heading 1' : block.type === 'h2' ? 'Heading 2' : block.type === 'h3' ? 'Heading 3' : block.type === 'paragraph' ? "Type '/' for commands..." : '') : ''}
+                    style={{ '--placeholder-color': 'var(--text-disabled)' } as any}
+                  />
+                  {/* Inline math rendered overlay — shown when block is not focused and has $ */}
+                  {focusedBlockId !== block.id && block.content.includes('$') && block.type !== 'code' && (
+                    <div
+                      onClick={() => {
+                        setFocusedBlockId(block.id);
+                        const el = blockElsRef.current.get(block.id);
+                        if (el) el.focus();
+                      }}
+                      className={[
+                        'absolute inset-0 cursor-text min-h-[24px] leading-[1.65]',
+                        block.type === 'h1' && 'text-[22px] font-bold text-[var(--text-primary)]',
+                        block.type === 'h2' && 'text-[17px] font-semibold text-[var(--text-primary)]',
+                        block.type === 'h3' && 'text-[14px] font-semibold text-[var(--text-primary)]',
+                        block.type === 'paragraph' && 'text-[13px] text-[var(--text-secondary)]',
+                        block.type === 'bullet' && 'text-[13px] text-[var(--text-secondary)]',
+                        block.type === 'ordered' && 'text-[13px] text-[var(--text-secondary)]',
+                        block.type === 'checkbox' && block.checked && 'text-[13px] text-[var(--text-subtle)] line-through',
+                        block.type === 'checkbox' && !block.checked && 'text-[13px] text-[var(--text-secondary)]',
+                        block.type === 'blockquote' && 'text-[13px] text-[var(--text-muted)] italic',
+                      ].filter(Boolean).join(' ')}
+                      dangerouslySetInnerHTML={{ __html: renderInlineMath(block.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')) }}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {/* Slash menu */}
+      {slashMenu && (
+        <SlashMenu
+          query={slashMenu.query}
+          position={slashMenu.position}
+          onSelect={handleSlashSelect}
+          onClose={() => setSlashMenu(null)}
+        />
+      )}
+
+      {/* CSS for placeholder */}
+      <style>{`
+        [data-placeholder]:empty::before {
+          content: attr(data-placeholder);
+          color: var(--text-disabled, rgba(255,255,255,0.25));
+          pointer-events: none;
+          position: absolute;
+        }
+        [data-placeholder]:empty { position: relative; }
+      `}</style>
+    </div>
+  );
+};
+
+// ─── Tooltip ─────────────────────────────────────────────────────────
+
+const ShortcutTooltip: React.FC<{
+  label: string;
+  shortcut?: string[];
+  visible: boolean;
+  position?: 'top' | 'bottom';
+}> = ({ label, shortcut, visible, position = 'top' }) => {
+  if (!visible) return null;
+  const posClass = position === 'top'
+    ? 'absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5'
+    : 'absolute top-full left-1/2 -translate-x-1/2 mt-1.5';
+  return (
+    <div className={`${posClass} pointer-events-none z-50`}>
+      <div className="flex items-center gap-1.5 px-2 py-1 bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-md shadow-xl whitespace-nowrap">
+        <span className="text-[11px] text-[var(--text-muted)]">{label}</span>
+        {shortcut?.map((k, i) => (
+          <kbd key={i} className="inline-flex items-center justify-center min-w-[18px] h-[16px] px-1 rounded bg-[var(--kbd-bg)] text-[10px] text-[var(--text-subtle)] font-medium">
+            {k}
+          </kbd>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ─── Toolbar Button ──────────────────────────────────────────────────
+
+interface ToolbarBtnProps {
+  icon: React.FC<any>;
+  label: string;
+  shortcut?: string[];
+  onClick: () => void;
+  iconSize?: number;
+  className?: string;
+  tooltipPosition?: 'top' | 'bottom';
+}
+
+const ToolbarBtn: React.FC<ToolbarBtnProps> = ({ icon: Icon, label, shortcut, onClick, iconSize = 15, className, tooltipPosition = 'top' }) => {
+  const [hover, setHover] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={onClick}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        className={className || "p-1.5 rounded text-[var(--text-subtle)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-colors"}
+      >
+        <Icon size={iconSize} />
+      </button>
+      <ShortcutTooltip label={label} shortcut={shortcut} visible={hover} position={tooltipPosition} />
+    </div>
+  );
+};
+
+// ─── Heading Dropdown Button ─────────────────────────────────────────
+
+const HEADING_OPTIONS = [
+  { label: 'Heading 1', prefix: '# ', keys: ['⌥', '⌘', '1'], size: 'text-[16px]' },
+  { label: 'Heading 2', prefix: '## ', keys: ['⌥', '⌘', '2'], size: 'text-[14px]' },
+  { label: 'Heading 3', prefix: '### ', keys: ['⌥', '⌘', '3'], size: 'text-[13px]' },
+];
+
+const HeadingDropdownBtn: React.FC<{
+  showMenu: boolean;
+  onToggle: () => void;
+  onSelect: (prefix: string) => void;
+}> = ({ showMenu, onToggle, onSelect }) => {
+  const [hover, setHover] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={onToggle}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        className="flex items-center gap-0.5 px-1.5 py-1 rounded text-[var(--text-subtle)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-colors"
+      >
+        <span className="text-[14px] font-bold">H</span>
+        <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" className="opacity-50"><path d="M1 3l3 3 3-3z" /></svg>
+      </button>
+      {!showMenu && <ShortcutTooltip label="Headings" visible={hover} position="top" />}
+      {showMenu && (
+        <div className="absolute bottom-full left-0 mb-1 bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-lg shadow-xl overflow-hidden z-50 min-w-[220px]">
+          {HEADING_OPTIONS.map((h) => (
+            <button
+              key={h.label}
+              onClick={() => onSelect(h.prefix)}
+              className="w-full flex items-center justify-between gap-3 px-3 py-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
+            >
+              <span className={`font-bold ${h.size}`}>{h.label}</span>
+              <span className="flex items-center gap-0.5">
+                {h.keys.map((k, i) => (
+                  <kbd key={i} className="inline-flex items-center justify-center min-w-[18px] h-[16px] px-1 rounded bg-[var(--kbd-bg)] text-[10px] text-[var(--text-subtle)] font-medium">
+                    {k}
+                  </kbd>
+                ))}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Editor View ─────────────────────────────────────────────────────
 
 interface EditorViewProps {
   note: Note | null;
@@ -247,32 +1108,24 @@ const EditorView: React.FC<EditorViewProps> = ({
   const [theme, setTheme] = useState<NoteTheme>(note?.theme || 'default');
   const [showToolbar, setShowToolbar] = useState(false);
   const [findQuery, setFindQuery] = useState('');
+  const [showHeadingMenu, setShowHeadingMenu] = useState(false);
   const [manualResize, setManualResize] = useState(false);
   const [showAutoSizeBtn, setShowAutoSizeBtn] = useState(false);
-  const contentRef = useRef<HTMLTextAreaElement>(null);
-  const measureRef = useRef<HTMLDivElement>(null);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoSizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
-  // Derive title from content (Raycast behavior: first line = title)
-  const title = useMemo(() => extractTitleFromContent(content), [content]);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const autoSizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sync state when note prop changes
+  const title = useMemo(() => extractTitleFromContent(content), [content]);
+  const accentColor = THEME_ACCENT[theme];
+
+  // Sync state when note changes
   useEffect(() => {
     setIcon(note?.icon || '');
     setContent(note?.content || '');
     setTheme(note?.theme || 'default');
   }, [note?.id]);
 
-  // Focus content area on mount
-  useEffect(() => {
-    setTimeout(() => {
-      const el = contentRef.current;
-      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
-    }, 50);
-  }, [note?.id]);
-
-  // Focus find input when opened
   useEffect(() => {
     if (showFind) setTimeout(() => findInputRef.current?.focus(), 50);
   }, [showFind]);
@@ -287,12 +1140,8 @@ const EditorView: React.FC<EditorViewProps> = ({
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [title, icon, content, theme, note]);
 
-  // ─── Dynamic window auto-sizing ──────────────────────────────
-  // Measures content via a hidden div and resizes the Electron window.
-  // Skipped when user has manually resized (manualResize).
-
+  // Dynamic window auto-sizing
   useEffect(() => {
-    // Check manual resize state from main process
     window.electron.noteGetManualResize().then(setManualResize);
   }, []);
 
@@ -302,10 +1151,9 @@ const EditorView: React.FC<EditorViewProps> = ({
     autoSizeTimeoutRef.current = setTimeout(() => {
       const measure = measureRef.current;
       if (!measure) return;
-      // Title bar ~40px, find bar ~36px if shown, toolbar ~40px if shown, bottom bar ~32px, padding 32px
-      const chrome = 40 + (showFind ? 36 : 0) + (showToolbar ? 40 : 0) + 32 + 32;
+      const chrome = 40 + (showFind ? 36 : 0) + (showToolbar ? 40 : 0) + 36 + 32;
       const contentHeight = measure.scrollHeight;
-      const desiredHeight = Math.max(420, chrome + contentHeight); // min 420px for vertical feel
+      const desiredHeight = Math.max(420, chrome + contentHeight);
       window.electron.noteSetWindowHeight(desiredHeight);
     }, 150);
     return () => { if (autoSizeTimeoutRef.current) clearTimeout(autoSizeTimeoutRef.current); };
@@ -317,36 +1165,6 @@ const EditorView: React.FC<EditorViewProps> = ({
     setShowAutoSizeBtn(false);
   }, []);
 
-  // Markdown insertion helpers
-  const insertMarkdown = useCallback((prefix: string, suffix: string = '') => {
-    const el = contentRef.current;
-    if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const selected = content.slice(start, end);
-    const replacement = `${prefix}${selected || 'text'}${suffix}`;
-    const newContent = content.slice(0, start) + replacement + content.slice(end);
-    setContent(newContent);
-    requestAnimationFrame(() => {
-      el.focus();
-      const cursorPos = start + prefix.length;
-      el.setSelectionRange(cursorPos, cursorPos + (selected || 'text').length);
-    });
-  }, [content]);
-
-  const insertLinePrefix = useCallback((prefix: string) => {
-    const el = contentRef.current;
-    if (!el) return;
-    const start = el.selectionStart;
-    const lineStart = content.lastIndexOf('\n', start - 1) + 1;
-    const newContent = content.slice(0, lineStart) + prefix + content.slice(lineStart);
-    setContent(newContent);
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(start + prefix.length, start + prefix.length);
-    });
-  }, [content]);
-
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -355,12 +1173,11 @@ const EditorView: React.FC<EditorViewProps> = ({
       const alt = e.altKey;
 
       if (e.key === 'Escape') {
-        if (showFind) { setShowFind(false); e.preventDefault(); contentRef.current?.focus(); return; }
+        if (showFind) { setShowFind(false); e.preventDefault(); return; }
         if (showToolbar) { setShowToolbar(false); e.preventDefault(); return; }
         if (!note && content.trim()) onSave({ title: title || 'Untitled', icon, content, theme });
         e.preventDefault(); onClose(); return;
       }
-
       if (meta && !shift && !alt && e.key === 'n') { e.preventDefault(); onNewNote(); return; }
       if (meta && !shift && !alt && e.key === 'k') { e.preventDefault(); onShowActions(); return; }
       if (meta && !shift && !alt && e.key === 'p') { e.preventDefault(); onBrowse(); return; }
@@ -370,259 +1187,114 @@ const EditorView: React.FC<EditorViewProps> = ({
       if (meta && !shift && !alt && e.key === '[') { e.preventDefault(); onNavigateBack(); return; }
       if (meta && !shift && !alt && e.key === ']') { e.preventDefault(); onNavigateForward(); return; }
       if (meta && alt && e.key === ',') { e.preventDefault(); setShowToolbar(p => !p); return; }
-      // ⇧⌘, — Format submenu (show format bar as well)
       if (meta && shift && !alt && e.key === ',') { e.preventDefault(); setShowToolbar(p => !p); return; }
-
-      // Paragraph formatting
-      if (meta && alt && e.key === '1') { e.preventDefault(); insertLinePrefix('# '); return; }
-      if (meta && alt && e.key === '2') { e.preventDefault(); insertLinePrefix('## '); return; }
-      if (meta && alt && e.key === '3') { e.preventDefault(); insertLinePrefix('### '); return; }
-      if (meta && alt && e.key === 'c') { e.preventDefault(); insertMarkdown('\n```\n', '\n```\n'); return; }
-      if (meta && shift && e.key === 'b') { e.preventDefault(); insertLinePrefix('> '); return; }
-      if (meta && shift && e.key === '7') { e.preventDefault(); insertLinePrefix('1. '); return; }
-      if (meta && shift && e.key === '8') { e.preventDefault(); insertLinePrefix('- '); return; }
-      if (meta && shift && e.key === '9') { e.preventDefault(); insertLinePrefix('- [ ] '); return; }
-
-      // Inline formatting
-      if (meta && !shift && !alt && e.key === 'b') { e.preventDefault(); insertMarkdown('**', '**'); return; }
-      if (meta && !shift && !alt && e.key === 'i') { e.preventDefault(); insertMarkdown('*', '*'); return; }
-      if (meta && shift && e.key === 's') { e.preventDefault(); insertMarkdown('~~', '~~'); return; }
-      if (meta && !shift && !alt && e.key === 'u') { e.preventDefault(); insertMarkdown('<u>', '</u>'); return; }
-      if (meta && !shift && !alt && e.key === 'e') { e.preventDefault(); insertMarkdown('`', '`'); return; }
-      if (meta && !shift && !alt && e.key === 'l') { e.preventDefault(); insertMarkdown('[', '](url)'); return; }
-
-      // ⌘+Enter — toggle checkbox on current line
-      if (meta && !shift && !alt && e.key === 'Enter') {
-        const el = contentRef.current;
-        if (el) {
-          const pos = el.selectionStart;
-          const lineStart = content.lastIndexOf('\n', pos - 1) + 1;
-          const lineEnd = content.indexOf('\n', pos);
-          const line = content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
-          if (line.match(/^(\s*)- \[ \]/)) {
-            e.preventDefault();
-            const newLine = line.replace('- [ ]', '- [x]');
-            const newContent = content.slice(0, lineStart) + newLine + (lineEnd === -1 ? '' : content.slice(lineEnd));
-            setContent(newContent);
-            requestAnimationFrame(() => { el.focus(); el.setSelectionRange(pos, pos); });
-            return;
-          }
-          if (line.match(/^(\s*)- \[x\]/)) {
-            e.preventDefault();
-            const newLine = line.replace('- [x]', '- [ ]');
-            const newContent = content.slice(0, lineStart) + newLine + (lineEnd === -1 ? '' : content.slice(lineEnd));
-            setContent(newContent);
-            requestAnimationFrame(() => { el.focus(); el.setSelectionRange(pos, pos); });
-            return;
-          }
-        }
-      }
-
-      // ⇧⌘E — Export
-      // handled in main component
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [showToolbar, showFind, note, title, icon, content, theme, onClose, onNewNote, onBrowse, onShowActions, onNavigateBack, onNavigateForward, onDuplicate, onTogglePin, insertMarkdown, insertLinePrefix, setShowFind]);
+  }, [showToolbar, showFind, note, title, icon, content, theme, onClose, onNewNote, onBrowse, onShowActions, onNavigateBack, onNavigateForward, onDuplicate, onTogglePin, setShowFind]);
 
-  // Heading dropdown state
-  const [showHeadingMenu, setShowHeadingMenu] = useState(false);
+  // Markdown insertion helpers (for format toolbar)
+  const insertMarkdownIntoContent = useCallback((prefix: string, suffix: string = '') => {
+    // These work by appending to content - used by format bar buttons
+    setContent(prev => prev + prefix + 'text' + suffix);
+  }, []);
+
+  const insertLinePrefixIntoContent = useCallback((prefix: string) => {
+    setContent(prev => prev + '\n' + prefix);
+  }, []);
 
   return (
     <div className="flex flex-col h-full relative">
-      {/* Title bar — glass-effect with subtle tint */}
-      <div className="flex items-center px-3 py-2.5 border-b border-white/[0.06] bg-white/[0.02] backdrop-blur-sm" style={{ WebkitAppRegion: 'drag' } as any}>
-        <div className="flex-1 flex items-center justify-center gap-1.5 truncate">
-          {icon && <span className="text-[14px]">{icon}</span>}
-          <span className="text-white/45 text-[13px] font-medium truncate">{title}</span>
+      {/* Title bar */}
+      <div className="flex items-center px-3 py-2 border-b border-[var(--ui-divider)]" style={{ WebkitAppRegion: 'drag' } as any}>
+        <button
+          onClick={onClose}
+          className="sc-back-button flex-shrink-0 p-0.5 text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors"
+          style={{ WebkitAppRegion: 'no-drag' } as any}
+        >
+          <ArrowLeft size={16} />
+        </button>
+        <div className="flex-1 flex items-center justify-center gap-1.5 truncate mx-2">
+          {icon && <span className="text-[13px]">{icon}</span>}
+          <span className="text-[var(--text-muted)] text-[13px] font-medium truncate">{title}</span>
         </div>
         <div className="flex items-center gap-0.5 flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
-          <ToolbarBtn
-            icon={Command}
-            label="Actions"
-            shortcut={['⌘', 'K']}
-            onClick={onShowActions}
-            iconSize={14}
-            className="p-1.5 rounded-md text-white/25 hover:text-white/60 hover:bg-white/[0.08] transition-all duration-150"
-            tooltipPosition="bottom"
-          />
-          <ToolbarBtn
-            icon={LayoutList}
-            label="Browse Notes"
-            shortcut={['⌘', 'P']}
-            onClick={onBrowse}
-            iconSize={14}
-            className="p-1.5 rounded-md text-white/25 hover:text-white/60 hover:bg-white/[0.08] transition-all duration-150"
-            tooltipPosition="bottom"
-          />
-          <ToolbarBtn
-            icon={Plus}
-            label="New Note"
-            shortcut={['⌘', 'N']}
-            onClick={onNewNote}
-            iconSize={14}
-            className="p-1.5 rounded-md text-white/25 hover:text-white/60 hover:bg-white/[0.08] transition-all duration-150"
-            tooltipPosition="bottom"
-          />
+          <ToolbarBtn icon={LayoutList} label="Browse Notes" shortcut={['⌘', 'P']} onClick={onBrowse}
+            iconSize={14} tooltipPosition="bottom"
+            className="p-1.5 rounded-md text-[var(--text-disabled)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-all duration-150" />
+          <ToolbarBtn icon={Plus} label="New Note" shortcut={['⌘', 'N']} onClick={onNewNote}
+            iconSize={14} tooltipPosition="bottom"
+            className="p-1.5 rounded-md text-[var(--text-disabled)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-all duration-150" />
         </div>
       </div>
 
       {/* Find bar */}
       {showFind && (
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-white/[0.06] bg-white/[0.015]">
-          <Search size={13} className="text-white/25 flex-shrink-0" />
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--ui-divider)]">
+          <Search size={13} className="text-[var(--text-disabled)] flex-shrink-0" />
           <input
             ref={findInputRef}
             value={findQuery}
             onChange={(e) => setFindQuery(e.target.value)}
             placeholder="Find in note..."
-            className="flex-1 bg-transparent text-white/80 text-[13px] placeholder-white/25 outline-none"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') { setShowFind(false); contentRef.current?.focus(); e.stopPropagation(); }
-            }}
+            className="flex-1 bg-transparent text-[var(--text-primary)] text-[13px] placeholder:text-[var(--text-disabled)] outline-none"
+            onKeyDown={(e) => { if (e.key === 'Escape') { setShowFind(false); e.stopPropagation(); } }}
           />
-          <button onClick={() => { setShowFind(false); setFindQuery(''); }} className="p-0.5 rounded hover:bg-white/10 text-white/30">
+          <button onClick={() => { setShowFind(false); setFindQuery(''); }} className="p-0.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-subtle)]">
             <X size={12} />
           </button>
         </div>
       )}
 
       {/* Hidden measure div for auto-sizing */}
-      <div
-        ref={measureRef}
-        aria-hidden
-        className="absolute pointer-events-none opacity-0 w-full px-5 py-4 text-[14px] leading-relaxed whitespace-pre-wrap break-words"
-        style={{ top: -9999, left: 0 }}
-      >
+      <div ref={measureRef} aria-hidden className="absolute pointer-events-none opacity-0 w-full px-5 py-4 text-[14px] leading-relaxed whitespace-pre-wrap break-words" style={{ top: -9999, left: 0 }}>
         {content || 'X'}
       </div>
 
-      {/* Content area — always textarea */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar bg-transparent">
-        <textarea
-          ref={contentRef}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          onKeyDown={(e) => {
-            // Auto-continue lists & task lists on Enter
-            if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-              const el = contentRef.current;
-              if (!el) return;
-              const pos = el.selectionStart;
-              const lineStart = content.lastIndexOf('\n', pos - 1) + 1;
-              const currentLine = content.slice(lineStart, pos);
+      {/* Block Editor */}
+      <BlockEditor
+        key={note?.id || '__new'}
+        initialContent={content}
+        onContentChange={setContent}
+        accentColor={accentColor}
+      />
 
-              // Task list: - [ ] or - [x]
-              const taskMatch = currentLine.match(/^(\s*)- \[[ x]\]\s*/);
-              if (taskMatch) {
-                // If line is just the prefix with no content, clear it instead
-                if (currentLine.trim() === '- [ ]' || currentLine.trim() === '- [x]') {
-                  e.preventDefault();
-                  const newContent = content.slice(0, lineStart) + '\n' + content.slice(pos);
-                  setContent(newContent);
-                  requestAnimationFrame(() => { el.focus(); el.setSelectionRange(lineStart + 1, lineStart + 1); });
-                  return;
-                }
-                e.preventDefault();
-                const indent = taskMatch[1];
-                const prefix = `\n${indent}- [ ] `;
-                const newContent = content.slice(0, pos) + prefix + content.slice(pos);
-                setContent(newContent);
-                const newPos = pos + prefix.length;
-                requestAnimationFrame(() => { el.focus(); el.setSelectionRange(newPos, newPos); });
-                return;
-              }
+      {/* Bottom bar */}
+      <div className="border-t border-[var(--ui-divider)]">
+        {showToolbar && (
+          <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-[var(--ui-divider)]">
+            <HeadingDropdownBtn showMenu={showHeadingMenu} onToggle={() => setShowHeadingMenu(p => !p)} onSelect={(prefix: string) => { insertLinePrefixIntoContent(prefix); setShowHeadingMenu(false); }} />
+            <ToolbarBtn icon={Bold} label="Bold" shortcut={['⌘', 'B']} onClick={() => insertMarkdownIntoContent('**', '**')} />
+            <ToolbarBtn icon={Italic} label="Italic" shortcut={['⌘', 'I']} onClick={() => insertMarkdownIntoContent('*', '*')} />
+            <ToolbarBtn icon={Strikethrough} label="Strikethrough" shortcut={['⇧', '⌘', 'S']} onClick={() => insertMarkdownIntoContent('~~', '~~')} />
+            <ToolbarBtn icon={Underline} label="Underline" shortcut={['⌘', 'U']} onClick={() => insertMarkdownIntoContent('<u>', '</u>')} />
+            <ToolbarBtn icon={Code} label="Inline code" shortcut={['⌘', 'E']} onClick={() => insertMarkdownIntoContent('`', '`')} />
+            <ToolbarBtn icon={Link} label="Link" shortcut={['⌘', 'L']} onClick={() => insertMarkdownIntoContent('[', '](url)')} />
+            <ToolbarBtn icon={SquareCode} label="Code block" shortcut={['⌥', '⌘', 'C']} onClick={() => insertMarkdownIntoContent('\n```\n', '\n```\n')} />
+            <ToolbarBtn icon={Quote} label="Blockquote" shortcut={['⇧', '⌘', 'B']} onClick={() => insertLinePrefixIntoContent('> ')} />
+            <ToolbarBtn icon={ListOrdered} label="Ordered list" shortcut={['⇧', '⌘', '7']} onClick={() => insertLinePrefixIntoContent('1. ')} />
+            <ToolbarBtn icon={List} label="Bullet list" shortcut={['⇧', '⌘', '8']} onClick={() => insertLinePrefixIntoContent('- ')} />
+            <ToolbarBtn icon={ListChecks} label="Task list" shortcut={['⇧', '⌘', '9']} onClick={() => insertLinePrefixIntoContent('- [ ] ')} />
+            <ToolbarBtn icon={Sigma} label="Inline math" shortcut={['⇧', '⌘', 'M']} onClick={() => insertMarkdownIntoContent('$', '$')} />
+            <div className="flex-1" />
+            <ToolbarBtn icon={X} label="Close" onClick={() => setShowToolbar(false)} iconSize={13}
+              className="p-1 rounded text-[var(--text-subtle)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-colors" />
+          </div>
+        )}
 
-              // Bullet list: - or * or +
-              const bulletMatch = currentLine.match(/^(\s*)[-*+]\s+/);
-              if (bulletMatch) {
-                if (currentLine.trim() === '-' || currentLine.trim() === '*' || currentLine.trim() === '+') {
-                  e.preventDefault();
-                  const newContent = content.slice(0, lineStart) + '\n' + content.slice(pos);
-                  setContent(newContent);
-                  requestAnimationFrame(() => { el.focus(); el.setSelectionRange(lineStart + 1, lineStart + 1); });
-                  return;
-                }
-                e.preventDefault();
-                const prefix = `\n${bulletMatch[0]}`;
-                const newContent = content.slice(0, pos) + prefix + content.slice(pos);
-                setContent(newContent);
-                const newPos = pos + prefix.length;
-                requestAnimationFrame(() => { el.focus(); el.setSelectionRange(newPos, newPos); });
-                return;
-              }
-
-              // Ordered list: 1. 2. etc.
-              const olMatch = currentLine.match(/^(\s*)(\d+)\.\s+/);
-              if (olMatch) {
-                if (currentLine.trim().match(/^\d+\.$/)) {
-                  e.preventDefault();
-                  const newContent = content.slice(0, lineStart) + '\n' + content.slice(pos);
-                  setContent(newContent);
-                  requestAnimationFrame(() => { el.focus(); el.setSelectionRange(lineStart + 1, lineStart + 1); });
-                  return;
-                }
-                e.preventDefault();
-                const nextNum = parseInt(olMatch[2]) + 1;
-                const prefix = `\n${olMatch[1]}${nextNum}. `;
-                const newContent = content.slice(0, pos) + prefix + content.slice(pos);
-                setContent(newContent);
-                const newPos = pos + prefix.length;
-                requestAnimationFrame(() => { el.focus(); el.setSelectionRange(newPos, newPos); });
-                return;
-              }
-            }
-          }}
-          placeholder="Start writing..."
-          className="w-full h-full bg-transparent text-white/[0.82] text-[14px] leading-[1.75] placeholder-white/20 outline-none resize-none px-5 py-4 selection:bg-white/[0.12]"
-          spellCheck
+        {/* Footer */}
+        <ExtensionActionFooter
+          leftContent={
+            <span className="flex items-center gap-2">
+              {icon && <span className="text-[11px]">{icon}</span>}
+              <span className="truncate text-xs">{charCount(content)} chars</span>
+            </span>
+          }
+          actionsButton={{ label: 'Actions', onClick: onShowActions, shortcut: ['⌘', 'K'] }}
         />
       </div>
 
-      {/* Bottom bar — format toolbar + character count */}
-      <div className="border-t border-white/[0.06] bg-white/[0.015]">
-        {showToolbar && (
-          <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-white/[0.06]">
-            {/* H↓ dropdown for headings — with tooltip + dropdown */}
-            <HeadingDropdownBtn
-              showMenu={showHeadingMenu}
-              onToggle={() => setShowHeadingMenu(p => !p)}
-              onSelect={(prefix: string) => { insertLinePrefix(prefix); setShowHeadingMenu(false); }}
-            />
-            <ToolbarBtn icon={Bold} label="Bold" shortcut={['⌘', 'B']} onClick={() => insertMarkdown('**', '**')} />
-            <ToolbarBtn icon={Italic} label="Italic" shortcut={['⌘', 'I']} onClick={() => insertMarkdown('*', '*')} />
-            <ToolbarBtn icon={Strikethrough} label="Strikethrough" shortcut={['⇧', '⌘', 'S']} onClick={() => insertMarkdown('~~', '~~')} />
-            <ToolbarBtn icon={Underline} label="Underline" shortcut={['⌘', 'U']} onClick={() => insertMarkdown('<u>', '</u>')} />
-            <ToolbarBtn icon={Code} label="Inline code" shortcut={['⌘', 'E']} onClick={() => insertMarkdown('`', '`')} />
-            <ToolbarBtn icon={Link} label="Link" shortcut={['⌘', 'L']} onClick={() => insertMarkdown('[', '](url)')} />
-            <ToolbarBtn icon={SquareCode} label="Code block" shortcut={['⌥', '⌘', 'C']} onClick={() => insertMarkdown('\n```\n', '\n```\n')} />
-            <ToolbarBtn icon={Quote} label="Blockquote" shortcut={['⇧', '⌘', 'B']} onClick={() => insertLinePrefix('> ')} />
-            <ToolbarBtn icon={ListOrdered} label="Ordered list" shortcut={['⇧', '⌘', '7']} onClick={() => insertLinePrefix('1. ')} />
-            <ToolbarBtn icon={List} label="Bullet list" shortcut={['⇧', '⌘', '8']} onClick={() => insertLinePrefix('- ')} />
-            <ToolbarBtn icon={ListChecks} label="Task list" shortcut={['⇧', '⌘', '9']} onClick={() => insertLinePrefix('- [ ] ')} />
-            <div className="flex-1" />
-            <ToolbarBtn
-              icon={X}
-              label="Close Toolbar"
-              onClick={() => setShowToolbar(false)}
-              iconSize={14}
-              className="p-1 rounded text-white/30 hover:text-white/60 hover:bg-white/10 transition-colors"
-            />
-          </div>
-        )}
-        <div className="flex items-center justify-between px-4 py-1.5">
-          <span className="text-[11px] text-white/20 tabular-nums">{charCount(content)} characters</span>
-          <ToolbarBtn
-            icon={Type}
-            label="Format"
-            onClick={() => setShowToolbar(p => !p)}
-            iconSize={14}
-            className={`p-1 rounded-md transition-all duration-150 ${showToolbar ? 'text-white/60 bg-white/[0.08]' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.06]'}`}
-          />
-        </div>
-      </div>
-
-      {/* Bottom edge hover zone — shows auto-size button when user has manually resized */}
+      {/* Auto-size hover zone */}
       <div
         className="absolute bottom-0 left-0 right-0 h-6 z-30"
         onMouseEnter={() => { if (manualResize) setShowAutoSizeBtn(true); }}
@@ -630,10 +1302,8 @@ const EditorView: React.FC<EditorViewProps> = ({
       >
         {showAutoSizeBtn && (
           <div className="flex justify-center">
-            <button
-              onClick={handleResetAutoSize}
-              className="px-3 py-0.5 bg-[#2a2a3e]/95 backdrop-blur-xl border border-white/10 rounded-t-md text-[11px] text-white/50 hover:text-white/80 transition-colors shadow-lg"
-            >
+            <button onClick={handleResetAutoSize}
+              className="px-3 py-0.5 bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-t-md text-[11px] text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors shadow-lg">
               Auto-size
             </button>
           </div>
@@ -643,116 +1313,67 @@ const EditorView: React.FC<EditorViewProps> = ({
   );
 };
 
-// ─── Raycast-style Tooltip ───────────────────────────────────────────
+// ─── Markdown Preview for Search View ────────────────────────────────
 
-const ShortcutTooltip: React.FC<{
-  label: string;
-  shortcut?: string[];
-  visible: boolean;
-  position?: 'top' | 'bottom';
-}> = ({ label, shortcut, visible, position = 'top' }) => {
-  if (!visible) return null;
-  const posClass = position === 'top'
-    ? 'absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5'
-    : 'absolute top-full left-1/2 -translate-x-1/2 mt-1.5';
-  return (
-    <div className={`${posClass} pointer-events-none z-50`}>
-      <div className="flex items-center gap-1.5 px-2 py-1 bg-[#2a2a3e]/95 backdrop-blur-xl border border-white/10 rounded-md shadow-xl whitespace-nowrap">
-        <span className="text-[11px] text-white/70">{label}</span>
-        {shortcut && shortcut.map((k, i) => (
-          <kbd key={i} className="text-[10px] min-w-[18px] h-[16px] flex items-center justify-center px-1 bg-white/[0.08] border border-white/[0.1] rounded text-white/40 font-medium">
-            {k}
-          </kbd>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// ─── Toolbar Button with Raycast-style tooltip ──────────────────────
-
-interface ToolbarBtnProps {
-  icon: React.FC<any>;
-  label: string;
-  shortcut?: string[];
-  onClick: () => void;
-  iconSize?: number;
-  className?: string;
-  tooltipPosition?: 'top' | 'bottom';
+function markdownToHtml(md: string, accentColor: string): string {
+  if (!md.trim()) return '<span style="color:var(--text-disabled);font-style:italic">No content</span>';
+  const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const inlineFormat = (text: string): string => {
+    let s = escapeHtml(text);
+    s = s.replace(/`([^`]+)`/g, `<code style="background:var(--input-bg);padding:1px 5px;border-radius:3px;font-size:11px;font-family:monospace;color:${accentColor}">$1</code>`);
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text-primary);font-weight:600">$1</strong>');
+    s = s.replace(/\*(.+?)\*/g, '<em style="color:var(--text-secondary);font-style:italic">$1</em>');
+    s = s.replace(/~~(.+?)~~/g, '<del style="color:var(--text-subtle)">$1</del>');
+    s = s.replace(/\[(.+?)\]\((.+?)\)/g, `<span style="color:${accentColor};text-decoration:underline">$1</span>`);
+    // Inline math $...$
+    s = s.replace(/\$([^\$]+?)\$/g, (_m, latex) => renderKatex(latex.trim(), false));
+    return s;
+  };
+  const lines = md.split('\n');
+  const parts: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // Math block $$...$$
+    if (line.trimStart() === '$$') {
+      const mathLines: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trimStart() !== '$$') { mathLines.push(lines[j]); j++; }
+      const latex = mathLines.join('\n');
+      parts.push(`<div style="padding:8px 0;overflow-x:auto">${renderKatex(latex, true)}</div>`);
+      i = j + 1; continue;
+    }
+    if (line.startsWith('```') || line.startsWith('~~~')) {
+      const fence = line.startsWith('```') ? '```' : '~~~';
+      const cl: string[] = []; let j = i + 1;
+      while (j < lines.length && !lines[j].startsWith(fence)) { cl.push(escapeHtml(lines[j])); j++; }
+      parts.push(`<pre style="background:var(--input-bg);border-radius:6px;padding:8px;margin:4px 0;font-size:11px;font-family:monospace;color:var(--text-secondary);white-space:pre">${cl.join('\n')}</pre>`);
+      i = j + 1; continue;
+    }
+    if (/^(---+|___+|\*\*\*+)$/.test(line.trim())) { parts.push('<hr style="border:none;border-top:1px solid var(--ui-divider);margin:8px 0" />'); i++; continue; }
+    const h3 = line.match(/^### (.+)/); if (h3) { parts.push(`<h3 style="font-size:13px;font-weight:600;color:var(--text-primary);margin:8px 0 2px">${inlineFormat(h3[1])}</h3>`); i++; continue; }
+    const h2 = line.match(/^## (.+)/); if (h2) { parts.push(`<h2 style="font-size:15px;font-weight:600;color:var(--text-primary);margin:8px 0 2px">${inlineFormat(h2[1])}</h2>`); i++; continue; }
+    const h1 = line.match(/^# (.+)/); if (h1) { parts.push(`<h1 style="font-size:18px;font-weight:700;color:var(--text-primary);margin:6px 0 4px">${inlineFormat(h1[1])}</h1>`); i++; continue; }
+    const ck = line.match(/^- \[([ x])\]\s*(.*)/);
+    if (ck) {
+      const done = ck[1] === 'x';
+      parts.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:2px 0"><span data-checkbox-line="${i}" data-checked="${done}" style="border:2px solid ${done ? accentColor : accentColor + '60'};${done ? 'background:' + accentColor + '30;' : ''}border-radius:3px;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;margin-top:2px;cursor:pointer;color:${accentColor}">${done ? '✓' : ''}</span><span style="font-size:12px;${done ? 'color:var(--text-subtle);text-decoration:line-through' : 'color:var(--text-secondary)'}">${inlineFormat(ck[2])}</span></div>`);
+      i++; continue;
+    }
+    const ul = line.match(/^[-*+]\s+(.+)/);
+    if (ul) { parts.push(`<div style="display:flex;align-items:flex-start;gap:6px;padding:1px 0 1px 3px"><span style="margin-top:6px;width:4px;height:4px;border-radius:50%;background:${accentColor};flex-shrink:0"></span><span style="font-size:12px;color:var(--text-secondary)">${inlineFormat(ul[1])}</span></div>`); i++; continue; }
+    const ol = line.match(/^(\d+)\.\s+(.+)/);
+    if (ol) { parts.push(`<div style="display:flex;align-items:flex-start;gap:6px;padding:1px 0 1px 2px"><span style="color:var(--text-subtle);font-size:11px;min-width:14px;text-align:right">${ol[1]}.</span><span style="font-size:12px;color:var(--text-secondary)">${inlineFormat(ol[2])}</span></div>`); i++; continue; }
+    const bq = line.match(/^>\s*(.*)/);
+    if (bq) { parts.push(`<div style="border-left:2px solid var(--ui-divider);padding-left:10px;padding:1px 0 1px 10px;margin:2px 0"><span style="font-size:12px;color:var(--text-muted);font-style:italic">${inlineFormat(bq[1])}</span></div>`); i++; continue; }
+    if (!line.trim()) { parts.push('<div style="height:8px"></div>'); i++; continue; }
+    parts.push(`<p style="font-size:12px;color:var(--text-secondary);line-height:1.5;margin:0">${inlineFormat(line)}</p>`);
+    i++;
+  }
+  return parts.join('');
 }
 
-const ToolbarBtn: React.FC<ToolbarBtnProps> = ({ icon: Icon, label, shortcut, onClick, iconSize = 15, className, tooltipPosition = 'top' }) => {
-  const [hover, setHover] = useState(false);
-
-  return (
-    <div className="relative">
-      <button
-        onClick={onClick}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-        className={className || "p-1.5 rounded text-white/40 hover:text-white/70 hover:bg-white/10 transition-colors"}
-      >
-        <Icon size={iconSize} />
-      </button>
-      <ShortcutTooltip label={label} shortcut={shortcut} visible={hover} position={tooltipPosition} />
-    </div>
-  );
-};
-
-// ─── Heading Dropdown Button with tooltip ────────────────────────────
-
-const HEADING_OPTIONS = [
-  { label: 'Heading 1', prefix: '# ', keys: ['⌥', '⌘', '1'], size: 'text-[16px]' },
-  { label: 'Heading 2', prefix: '## ', keys: ['⌥', '⌘', '2'], size: 'text-[14px]' },
-  { label: 'Heading 3', prefix: '### ', keys: ['⌥', '⌘', '3'], size: 'text-[13px]' },
-];
-
-const HeadingDropdownBtn: React.FC<{
-  showMenu: boolean;
-  onToggle: () => void;
-  onSelect: (prefix: string) => void;
-}> = ({ showMenu, onToggle, onSelect }) => {
-  const [hover, setHover] = useState(false);
-
-  return (
-    <div className="relative">
-      <button
-        onClick={onToggle}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-        className="flex items-center gap-0.5 px-1.5 py-1 rounded text-white/40 hover:text-white/70 hover:bg-white/10 transition-colors"
-      >
-        <span className="text-[14px] font-bold">H</span>
-        <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" className="opacity-50"><path d="M1 3l3 3 3-3z" /></svg>
-      </button>
-      {/* Tooltip — only when menu is closed */}
-      {!showMenu && <ShortcutTooltip label="Headings" visible={hover} position="top" />}
-      {/* Dropdown menu */}
-      {showMenu && (
-        <div className="absolute bottom-full left-0 mb-1 bg-[#2a2a3e]/95 backdrop-blur-xl border border-white/10 rounded-lg shadow-xl overflow-hidden z-50 min-w-[220px]">
-          {HEADING_OPTIONS.map((h) => (
-            <button
-              key={h.label}
-              onClick={() => onSelect(h.prefix)}
-              className="w-full flex items-center justify-between gap-3 px-3 py-1.5 text-white/70 hover:bg-white/10"
-            >
-              <span className={`font-bold ${h.size}`}>{h.label}</span>
-              <span className="flex items-center gap-0.5">
-                {h.keys.map((k, i) => (
-                  <kbd key={i} className="text-[10px] min-w-[18px] h-[16px] flex items-center justify-center px-1 bg-white/[0.08] border border-white/[0.1] rounded text-white/40 font-medium">
-                    {k}
-                  </kbd>
-                ))}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ─── Search / Browse View ───────────────────────────────────────────
+// ─── Search View ─────────────────────────────────────────────────────
 
 interface SearchViewProps {
   searchQuery: string;
@@ -763,11 +1384,12 @@ interface SearchViewProps {
   onClose: () => void;
   onShowActions: () => void;
   flatNotes: Note[];
+  onUpdateNoteContent: (noteId: string, content: string) => void;
 }
 
 const SearchView: React.FC<SearchViewProps> = ({
   searchQuery, setSearchQuery, selectedIndex, setSelectedIndex,
-  onOpenNote, onClose, onShowActions, flatNotes,
+  onOpenNote, onClose, onShowActions, flatNotes, onUpdateNoteContent,
 }) => {
   const listRef = useRef<HTMLDivElement>(null);
   const selectedNote = flatNotes[selectedIndex] || null;
@@ -783,8 +1405,9 @@ const SearchView: React.FC<SearchViewProps> = ({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06] bg-white/[0.02]">
-        <button onClick={onClose} className="p-0.5 rounded-md hover:bg-white/[0.08] text-white/25 hover:text-white/60 transition-all duration-150">
+      {/* Search header */}
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--ui-divider)]">
+        <button onClick={onClose} className="sc-back-button flex-shrink-0 p-0.5 text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors">
           <ArrowLeft size={16} />
         </button>
         <input
@@ -792,10 +1415,10 @@ const SearchView: React.FC<SearchViewProps> = ({
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search Notes..."
           autoFocus
-          className="flex-1 bg-transparent text-white/80 text-[13px] placeholder-white/25 outline-none"
+          className="flex-1 bg-transparent text-[var(--text-primary)] text-[13px] placeholder:text-[var(--text-subtle)] outline-none font-light"
         />
         {searchQuery && (
-          <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-white/10 text-white/30">
+          <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-subtle)]">
             <X size={12} />
           </button>
         )}
@@ -803,37 +1426,36 @@ const SearchView: React.FC<SearchViewProps> = ({
 
       {flatNotes.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-3">
-          <FileText size={32} className="text-white/15" />
-          <p className="text-[13px] text-white/30">{searchQuery ? 'No notes found' : 'No notes yet'}</p>
+          <FileText size={32} className="text-[var(--text-disabled)]" />
+          <p className="text-[13px] text-[var(--text-subtle)]">{searchQuery ? 'No notes found' : 'No notes yet'}</p>
         </div>
       ) : (
         <div className="flex-1 flex overflow-hidden">
-          <div ref={listRef} className="w-[38%] border-r border-white/[0.06] overflow-y-auto custom-scrollbar bg-white/[0.01]">
+          <div ref={listRef} className="w-[38%] border-r border-[var(--ui-divider)] overflow-y-auto custom-scrollbar">
             {grouped.map((group) => (
               <div key={group.label}>
                 <div className="px-3 pt-3 pb-1">
-                  <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">{group.label}</span>
+                  <span className="text-[10px] font-semibold text-[var(--text-subtle)] uppercase tracking-wider">{group.label}</span>
                 </div>
                 {group.notes.map((note) => {
                   const flatIdx = flatNotes.indexOf(note);
                   const isSelected = flatIdx === selectedIndex;
                   return (
                     <div
-                      key={note.id}
-                      data-note-item
+                      key={note.id} data-note-item
                       onClick={() => setSelectedIndex(flatIdx)}
                       onDoubleClick={() => onOpenNote(note)}
-                      className={`px-3 py-2 cursor-pointer transition-colors ${isSelected ? 'bg-white/[0.08]' : 'hover:bg-white/[0.04]'}`}
+                      className={`px-3 py-2 cursor-pointer transition-colors ${isSelected ? 'bg-[var(--accent)]/8' : 'hover:bg-[var(--bg-secondary)]/50'}`}
                     >
                       <div className="flex items-center gap-2">
-                        {note.pinned && <Pin size={11} className="text-white/30 flex-shrink-0" />}
-                        {note.icon && <span className="text-[13px] flex-shrink-0">{note.icon}</span>}
-                        <span className="text-[13px] text-white/80 font-medium truncate">{note.title || 'Untitled'}</span>
+                        {note.pinned && <Pin size={10} className="text-[var(--text-subtle)] flex-shrink-0" />}
+                        {note.icon && <span className="text-[12px] flex-shrink-0">{note.icon}</span>}
+                        <span className="text-[12px] text-[var(--text-primary)] font-medium truncate">{note.title || 'Untitled'}</span>
                       </div>
-                      <div className="flex items-center gap-1.5 mt-0.5 pl-[calc(1.3rem)]">
-                        <span className="text-[11px] text-white/25">Opened {formatRelativeTime(note.updatedAt)}</span>
-                        <span className="text-[11px] text-white/20">&middot;</span>
-                        <span className="text-[11px] text-white/25">{charCount(note.content)} Characters</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-[var(--text-disabled)]">{formatRelativeTime(note.updatedAt)}</span>
+                        <span className="text-[10px] text-[var(--text-disabled)]">&middot;</span>
+                        <span className="text-[10px] text-[var(--text-disabled)]">{charCount(note.content)} chars</span>
                       </div>
                     </div>
                   );
@@ -845,21 +1467,31 @@ const SearchView: React.FC<SearchViewProps> = ({
           <div className="w-[62%] flex flex-col overflow-hidden">
             {selectedNote ? (
               <>
-                <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-4">
-                  <div className="flex items-start gap-2 mb-3">
-                    {selectedNote.icon && <span className="text-[22px] mt-0.5">{selectedNote.icon}</span>}
-                    <h1 className="text-[20px] font-bold text-white leading-tight">{selectedNote.title || 'Untitled'}</h1>
+                <div
+                  className="flex-1 overflow-y-auto custom-scrollbar px-4 py-3"
+                  onClick={(e) => {
+                    const target = e.target as HTMLElement;
+                    const cbox = target.closest('[data-checkbox-line]') as HTMLElement;
+                    if (!cbox || !selectedNote) return;
+                    const lineIdx = parseInt(cbox.dataset.checkboxLine || '', 10);
+                    if (isNaN(lineIdx)) return;
+                    const lines = selectedNote.content.split('\n');
+                    if (lineIdx < 0 || lineIdx >= lines.length) return;
+                    const line = lines[lineIdx];
+                    if (line.match(/^- \[ \]/)) lines[lineIdx] = line.replace('- [ ]', '- [x]');
+                    else if (line.match(/^- \[x\]/)) lines[lineIdx] = line.replace('- [x]', '- [ ]');
+                    else return;
+                    onUpdateNoteContent(selectedNote.id, lines.join('\n'));
+                  }}
+                >
+                  <div className="flex items-start gap-2 mb-2">
+                    {selectedNote.icon && <span className="text-[18px] mt-0.5">{selectedNote.icon}</span>}
+                    <h1 className="text-[17px] font-bold text-[var(--text-primary)] leading-tight">{selectedNote.title || 'Untitled'}</h1>
                   </div>
-                  {renderMarkdownPreview(selectedNote.content, THEME_ACCENT[selectedNote.theme])}
+                  <div dangerouslySetInnerHTML={{ __html: markdownToHtml(selectedNote.content, THEME_ACCENT[selectedNote.theme]) }} />
                 </div>
-                <div className="border-t border-white/[0.06] px-5 py-3 space-y-1.5 flex-shrink-0 bg-white/[0.015]">
-                  <div className="text-[11px] text-white/35 font-semibold uppercase tracking-wider mb-2">Information</div>
-                  <MetaRow label="Title" value={
-                    <span className="flex items-center gap-1.5">
-                      {selectedNote.icon && <span className="text-[12px]">{selectedNote.icon}</span>}
-                      {selectedNote.title || 'Untitled'}
-                    </span>
-                  } />
+                <div className="border-t border-[var(--ui-divider)] px-4 py-2.5 space-y-1 flex-shrink-0">
+                  <div className="text-[10px] text-[var(--text-subtle)] font-semibold uppercase tracking-wider mb-1.5">Info</div>
                   <MetaRow label="Characters" value={charCount(selectedNote.content).toLocaleString()} />
                   <MetaRow label="Words" value={wordCount(selectedNote.content).toLocaleString()} />
                   <MetaRow label="Created" value={formatRelativeTime(selectedNote.createdAt)} />
@@ -867,7 +1499,7 @@ const SearchView: React.FC<SearchViewProps> = ({
               </>
             ) : (
               <div className="flex-1 flex items-center justify-center">
-                <span className="text-[12px] text-white/20">Select a note</span>
+                <span className="text-[12px] text-[var(--text-disabled)]">Select a note</span>
               </div>
             )}
           </div>
@@ -876,17 +1508,13 @@ const SearchView: React.FC<SearchViewProps> = ({
 
       <ExtensionActionFooter
         leftContent={
-          <span className="flex items-center gap-2 text-white/40">
+          <span className="flex items-center gap-2">
             <Search className="w-3.5 h-3.5" />
             <span className="truncate">Search Notes</span>
           </span>
         }
-        primaryAction={
-          selectedNote
-            ? { label: 'Open Note', onClick: () => onOpenNote(selectedNote), shortcut: ['↩'] }
-            : undefined
-        }
-        actionsButton={{ label: 'Actions', onClick: () => onShowActions(), shortcut: ['⌘', 'K'] }}
+        primaryAction={selectedNote ? { label: 'Open Note', onClick: () => onOpenNote(selectedNote), shortcut: ['↩'] } : undefined}
+        actionsButton={{ label: 'Actions', onClick: onShowActions, shortcut: ['⌘', 'K'] }}
       />
     </div>
   );
@@ -894,12 +1522,12 @@ const SearchView: React.FC<SearchViewProps> = ({
 
 const MetaRow: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <div className="flex items-center justify-between">
-    <span className="text-[12px] text-white/40">{label}</span>
-    <span className="text-[12px] text-white/60 text-right">{value}</span>
+    <span className="text-[11px] text-[var(--text-subtle)]">{label}</span>
+    <span className="text-[11px] text-[var(--text-muted)] text-right">{value}</span>
   </div>
 );
 
-// ─── Browse Overlay ─────────────────────────────────────────────────
+// ─── Browse Overlay ──────────────────────────────────────────────────
 
 interface BrowseOverlayProps {
   notes: Note[];
@@ -929,11 +1557,9 @@ const BrowseOverlay: React.FC<BrowseOverlayProps> = ({ notes, currentNoteId, onS
   useEffect(() => { setSelectedIdx(0); }, [query]);
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-    const items = list.querySelectorAll('[data-browse-item]');
-    const item = items[selectedIdx] as HTMLElement;
-    if (item) item.scrollIntoView({ block: 'nearest' });
+    const items = listRef.current?.querySelectorAll('[data-browse-item]');
+    const item = items?.[selectedIdx] as HTMLElement;
+    item?.scrollIntoView({ block: 'nearest' });
   }, [selectedIdx]);
 
   useEffect(() => {
@@ -947,87 +1573,57 @@ const BrowseOverlay: React.FC<BrowseOverlayProps> = ({ notes, currentNoteId, onS
     return () => window.removeEventListener('keydown', handler, true);
   }, [filtered, selectedIdx, onSelect, onClose]);
 
-  // Current note index for "X/Y Notes" display
-  const currentIdx = filtered.findIndex(n => n.id === currentNoteId);
-  const displayIdx = currentIdx >= 0 ? currentIdx + 1 : selectedIdx + 1;
-
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-12">
       <div className="absolute inset-0" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-[360px] mx-4 bg-[#1a1a2e]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
-        {/* Search input */}
-        <div className="px-3 py-2.5 border-b border-white/[0.06]">
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+      <div className="relative z-10 w-full max-w-[360px] mx-4 bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-xl shadow-2xl overflow-hidden">
+        <div className="px-3 py-2.5 border-b border-[var(--ui-divider)]">
+          <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)}
             placeholder="Search for notes..."
-            className="w-full bg-transparent text-white/80 text-[13px] placeholder-white/25 outline-none"
-          />
+            className="w-full bg-transparent text-[var(--text-primary)] text-[13px] placeholder:text-[var(--text-subtle)] outline-none" />
         </div>
-
-        {/* Header: "Notes" label + "X/Y Notes (i)" */}
         <div className="flex items-center justify-between px-3 pt-2 pb-1">
-          <span className="text-[11px] font-semibold text-white/40">Notes</span>
-          <span className="flex items-center gap-1 text-[11px] text-white/30">
-            {filtered.length > 0 && <>{displayIdx}/{filtered.length} Notes</>}
-            <Info size={11} className="text-white/20 ml-0.5" />
-          </span>
+          <span className="text-[10px] font-semibold text-[var(--text-subtle)] uppercase tracking-wider">Notes</span>
+          <span className="text-[10px] text-[var(--text-disabled)]">{filtered.length} notes</span>
         </div>
-
-        {/* Notes list */}
         <div ref={listRef} className="max-h-[280px] overflow-y-auto custom-scrollbar">
           {filtered.map((note, idx) => {
             const isCurrent = note.id === currentNoteId;
             const isSelected = idx === selectedIdx;
             return (
-              <div
-                key={note.id}
-                data-browse-item
-                onClick={() => onSelect(note)}
-                onMouseEnter={() => setSelectedIdx(idx)}
-                className={`group px-3 py-2 cursor-pointer transition-colors ${isSelected ? 'bg-white/[0.08]' : 'hover:bg-white/[0.04]'}`}
-              >
+              <div key={note.id} data-browse-item onClick={() => onSelect(note)} onMouseEnter={() => setSelectedIdx(idx)}
+                className={`group px-3 py-2 cursor-pointer transition-colors ${isSelected ? 'bg-[var(--accent)]/8' : 'hover:bg-[var(--bg-secondary)]/50'}`}>
                 <div className="flex items-center gap-2">
-                  {note.icon && <span className="text-[13px] flex-shrink-0">{note.icon}</span>}
-                  {note.pinned && <Pin size={11} className="text-white/30 flex-shrink-0" />}
-                  <span className="text-[13px] text-white/80 font-medium truncate flex-1">{note.title || 'Untitled'}</span>
-                  {/* Inline pin/delete buttons — visible on hover/selected */}
+                  {note.icon && <span className="text-[12px] flex-shrink-0">{note.icon}</span>}
+                  {note.pinned && <Pin size={10} className="text-[var(--text-subtle)] flex-shrink-0" />}
+                  <span className="text-[12px] text-[var(--text-primary)] font-medium truncate flex-1">{note.title || 'Untitled'}</span>
                   <div className={`flex items-center gap-0.5 flex-shrink-0 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
-                    <button
-                      title={note.pinned ? 'Unpin' : 'Pin'}
-                      onClick={(e) => { e.stopPropagation(); onTogglePin(note.id); }}
-                      className="p-1 rounded text-white/30 hover:text-white/60 hover:bg-white/10 transition-colors"
-                    >
-                      {note.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                    <button title={note.pinned ? 'Unpin' : 'Pin'} onClick={(e) => { e.stopPropagation(); onTogglePin(note.id); }}
+                      className="p-1 rounded text-[var(--text-subtle)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-colors">
+                      {note.pinned ? <PinOff size={11} /> : <Pin size={11} />}
                     </button>
-                    <button
-                      title="Delete"
-                      onClick={(e) => { e.stopPropagation(); onDelete(note.id); }}
-                      className="p-1 rounded text-white/30 hover:text-red-400 hover:bg-white/10 transition-colors"
-                    >
-                      <Trash2 size={12} />
+                    <button title="Delete" onClick={(e) => { e.stopPropagation(); onDelete(note.id); }}
+                      className="p-1 rounded text-[var(--text-subtle)] hover:text-red-400 hover:bg-[var(--bg-secondary)] transition-colors">
+                      <Trash2 size={11} />
                     </button>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   {isCurrent ? (
                     <>
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400 flex-shrink-0" />
-                      <span className="text-[11px] text-white/40">Current</span>
+                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--accent)' }} />
+                      <span className="text-[10px] text-[var(--text-muted)]">Current</span>
                     </>
                   ) : (
-                    <span className="text-[11px] text-white/25">Opened {formatRelativeTime(note.updatedAt)}</span>
+                    <span className="text-[10px] text-[var(--text-disabled)]">{formatRelativeTime(note.updatedAt)}</span>
                   )}
-                  <span className="text-[11px] text-white/20">&middot;</span>
-                  <span className="text-[11px] text-white/25">{charCount(note.content)} Characters</span>
+                  <span className="text-[10px] text-[var(--text-disabled)]">&middot;</span>
+                  <span className="text-[10px] text-[var(--text-disabled)]">{charCount(note.content)} chars</span>
                 </div>
               </div>
             );
           })}
-          {filtered.length === 0 && (
-            <div className="px-3 py-4 text-center text-[12px] text-white/25">No notes found</div>
-          )}
+          {filtered.length === 0 && <div className="px-3 py-4 text-center text-[11px] text-[var(--text-disabled)]">No notes found</div>}
         </div>
       </div>
     </div>,
@@ -1035,7 +1631,7 @@ const BrowseOverlay: React.FC<BrowseOverlayProps> = ({ notes, currentNoteId, onS
   );
 };
 
-// ─── Actions Overlay (dropdown from title bar) ──────────────────────
+// ─── Actions Overlay ─────────────────────────────────────────────────
 
 interface ActionsOverlayProps {
   actions: Action[];
@@ -1057,34 +1653,18 @@ const ActionsOverlay: React.FC<ActionsOverlayProps> = ({ actions, onClose }) => 
   useEffect(() => { setSelectedIdx(0); }, [query]);
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-    const items = list.querySelectorAll('[data-action-item]');
-    const item = items[selectedIdx] as HTMLElement;
-    if (item) item.scrollIntoView({ block: 'nearest' });
+    const items = listRef.current?.querySelectorAll('[data-action-item]');
+    const item = items?.[selectedIdx] as HTMLElement;
+    item?.scrollIntoView({ block: 'nearest' });
   }, [selectedIdx]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return; }
-      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, filtered.length - 1)); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(0, i - 1)); return; }
-      if (e.key === 'Enter' && filtered[selectedIdx] && !filtered[selectedIdx].disabled) { e.preventDefault(); filtered[selectedIdx].execute(); return; }
-    };
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [filtered, selectedIdx, onClose]);
 
-  // Group by section with separators
   const groupedActions = useMemo(() => {
     const groups: Array<{ section: string; actions: Action[] }> = [];
     let currentSection = '';
     for (const action of filtered) {
       const section = action.section || '';
-      if (section !== currentSection) {
-        groups.push({ section, actions: [] });
-        currentSection = section;
-      }
+      if (section !== currentSection) { groups.push({ section, actions: [] }); currentSection = section; }
       groups[groups.length - 1].actions.push(action);
     }
     return groups;
@@ -1092,43 +1672,43 @@ const ActionsOverlay: React.FC<ActionsOverlayProps> = ({ actions, onClose }) => 
 
   let flatIdx = 0;
 
-  return createPortal(
+  return (
     <div className="fixed inset-0 z-[9999]">
       <div className="absolute inset-0" onClick={onClose} />
-      {/* Dropdown positioned from top-right area, like Raycast */}
-      <div className="absolute top-[44px] left-1/2 -translate-x-1/2 w-full max-w-[420px] px-4">
-        <div className="bg-[#1a1a2e]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
-          <div className="px-3 py-2.5 border-b border-white/[0.06]">
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+      <div className="absolute bottom-[44px] left-0 w-full max-w-[420px] px-4">
+        <div className="bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-xl shadow-2xl overflow-hidden">
+          <div className="px-3 py-2.5 border-b border-[var(--ui-divider)]">
+            <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)}
               placeholder="Search for actions..."
-              className="w-full bg-transparent text-white/80 text-[13px] placeholder-white/25 outline-none"
+              className="w-full bg-transparent text-[var(--text-primary)] text-[13px] placeholder:text-[var(--text-subtle)] outline-none"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return; }
+                if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, filtered.length - 1)); return; }
+                if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(0, i - 1)); return; }
+                if (e.key === 'Enter' && filtered[selectedIdx] && !filtered[selectedIdx].disabled) { e.preventDefault(); filtered[selectedIdx].execute(); return; }
+              }}
             />
           </div>
           <div ref={listRef} className="max-h-[420px] overflow-y-auto custom-scrollbar py-1">
             {groupedActions.map((group, gi) => (
               <div key={group.section || `__${gi}`}>
-                {gi > 0 && <div className="mx-3 my-1 border-t border-white/[0.06]" />}
+                {gi > 0 && <div className="mx-3 my-1 border-t border-[var(--ui-divider)]" />}
                 {group.actions.map((action) => {
                   const idx = flatIdx++;
                   return (
-                    <div
-                      key={idx}
-                      data-action-item
+                    <div key={idx} data-action-item
                       onClick={() => { if (!action.disabled) action.execute(); }}
                       onMouseEnter={() => setSelectedIdx(idx)}
                       className={`flex items-center gap-3 px-3 py-[7px] cursor-pointer transition-colors ${
-                        idx === selectedIdx ? 'bg-white/[0.08]' : 'hover:bg-white/[0.04]'
-                      } ${action.style === 'destructive' ? 'text-red-400' : action.disabled ? 'text-white/30' : 'text-white/70'}`}
+                        idx === selectedIdx ? 'bg-[var(--accent)]/8' : 'hover:bg-[var(--bg-secondary)]/50'
+                      } ${action.style === 'destructive' ? 'text-red-400' : action.disabled ? 'text-[var(--text-disabled)]' : 'text-[var(--text-secondary)]'}`}
                     >
                       <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-60">{action.icon}</span>
-                      <span className="flex-1 text-[13px]">{action.title}</span>
+                      <span className="flex-1 text-[12px]">{action.title}</span>
                       {action.shortcut && (
                         <span className="flex items-center gap-0.5 flex-shrink-0">
                           {action.shortcut.map((k, ki) => (
-                            <kbd key={ki} className="text-[10px] min-w-[22px] h-[20px] flex items-center justify-center px-1 bg-white/[0.06] border border-white/[0.08] rounded text-white/30 font-medium">
+                            <kbd key={ki} className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded bg-[var(--kbd-bg)] text-[10px] text-[var(--text-subtle)] font-medium">
                               {k}
                             </kbd>
                           ))}
@@ -1139,18 +1719,15 @@ const ActionsOverlay: React.FC<ActionsOverlayProps> = ({ actions, onClose }) => 
                 })}
               </div>
             ))}
-            {filtered.length === 0 && (
-              <div className="px-3 py-4 text-center text-[12px] text-white/25">No actions found</div>
-            )}
+            {filtered.length === 0 && <div className="px-3 py-4 text-center text-[11px] text-[var(--text-disabled)]">No actions found</div>}
           </div>
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 };
 
-// ─── Main Component ─────────────────────────────────────────────────
+// ─── Main Component ──────────────────────────────────────────────────
 
 const NotesManager: React.FC<NotesManagerProps> = ({ onClose, initialView }) => {
   const [notes, setNotes] = useState<Note[]>([]);
@@ -1162,7 +1739,6 @@ const NotesManager: React.FC<NotesManagerProps> = ({ onClose, initialView }) => 
   const [showActions, setShowActions] = useState(false);
   const [showFind, setShowFind] = useState(false);
 
-  // Navigation history
   const [navHistory, setNavHistory] = useState<string[]>([]);
   const [navIndex, setNavIndex] = useState(-1);
   const isNavigatingRef = useRef(false);
@@ -1186,7 +1762,6 @@ const NotesManager: React.FC<NotesManagerProps> = ({ onClose, initialView }) => 
   const selectedNote = notes[selectedIndex] || null;
   const targetNote = viewMode === 'editor' ? currentNote : selectedNote;
 
-  // Navigation history
   const pushToHistory = useCallback((noteId: string) => {
     if (isNavigatingRef.current) return;
     setNavHistory(prev => {
@@ -1194,10 +1769,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ onClose, initialView }) => 
       if (trimmed[trimmed.length - 1] === noteId) return trimmed;
       return [...trimmed, noteId];
     });
-    setNavIndex(prev => {
-      const trimmedLen = navHistory.slice(0, prev + 1).length;
-      return trimmedLen;
-    });
+    setNavIndex(prev => navHistory.slice(0, prev + 1).length);
   }, [navIndex, navHistory]);
 
   const navigateBack = useCallback(() => {
@@ -1226,7 +1798,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ onClose, initialView }) => 
 
   const pinnedNotes = useMemo(() => notes.filter(n => n.pinned).sort((a, b) => b.updatedAt - a.updatedAt), [notes]);
 
-  // ─── Handlers ───────────────────────────────────────────────────
+  // ─── Handlers ────────────────────────────────────────────────────
 
   const handleNewNote = useCallback(async () => {
     const newNote = await window.electron.noteCreate({ title: 'Untitled' });
@@ -1281,192 +1853,37 @@ const NotesManager: React.FC<NotesManagerProps> = ({ onClose, initialView }) => 
     setShowActions(false);
   }, [targetNote]);
 
-  // ─── Actions (exact Raycast order from screenshots) ────────────
+  // ─── Actions ─────────────────────────────────────────────────────
 
   const actions: Action[] = useMemo(() => {
     const a: Action[] = [];
-
-    // ─── Section 1: Note management ─────────────────────────
-    a.push(
-      {
-        title: 'New Note',
-        icon: <Plus size={14} />,
-        shortcut: ['⌘', 'N'],
-        section: 'actions',
-        execute: () => { handleNewNote(); setShowActions(false); },
-      },
-    );
-
+    a.push({ title: 'New Note', icon: <Plus size={14} />, shortcut: ['⌘', 'N'], section: 'actions', execute: () => { handleNewNote(); setShowActions(false); } });
+    if (targetNote) a.push({ title: 'Duplicate Note', icon: <Files size={14} />, shortcut: ['⌘', 'D'], section: 'actions', execute: () => handleDuplicate() });
+    if (viewMode === 'editor') a.push({ title: 'Browse Notes', icon: <LayoutList size={14} />, shortcut: ['⌘', 'P'], section: 'actions', execute: () => { setShowBrowse(true); setShowActions(false); } });
+    if (viewMode === 'editor') a.push({ title: 'Find in Note', icon: <Search size={14} />, shortcut: ['⌘', 'F'], section: 'find', execute: () => { setShowFind(true); setShowActions(false); } });
     if (targetNote) {
-      a.push(
-        {
-          title: 'Duplicate Note',
-          icon: <Files size={14} />,
-          shortcut: ['⌘', 'D'],
-          section: 'actions',
-          execute: () => handleDuplicate(),
-        },
-      );
+      a.push({ title: 'Copy Note As...', icon: <Copy size={14} />, shortcut: ['⇧', '⌘', 'C'], section: 'find', execute: async () => { await window.electron.noteCopyToClipboard(targetNote.id, 'markdown'); setShowActions(false); } });
+      a.push({ title: 'Copy Deeplink', icon: <Link2 size={14} />, shortcut: ['⇧', '⌘', 'D'], section: 'find', execute: async () => { await navigator.clipboard.writeText(`supercmd://notes/${targetNote.id}`); setShowActions(false); } });
+      a.push({ title: 'Export...', icon: <Upload size={14} />, shortcut: ['⇧', '⌘', 'E'], section: 'find', execute: () => handleExport() });
     }
-
     if (viewMode === 'editor') {
-      a.push(
-        {
-          title: 'Browse Notes',
-          icon: <LayoutList size={14} />,
-          shortcut: ['⌘', 'P'],
-          section: 'actions',
-          execute: () => { setShowBrowse(true); setShowActions(false); },
-        },
-      );
+      a.push({ title: 'Show Format Bar', icon: <Type size={14} />, shortcut: ['⌥', '⌘', ','], section: 'format', execute: () => { setShowActions(false); } });
     }
-
-    // ─── Section 2: Find / Copy / Export ────────────────────
-    if (viewMode === 'editor') {
-      a.push(
-        {
-          title: 'Find in Note',
-          icon: <Search size={14} />,
-          shortcut: ['⌘', 'F'],
-          section: 'find',
-          execute: () => { setShowFind(true); setShowActions(false); },
-        },
-      );
-    }
-
-    if (targetNote) {
-      a.push(
-        {
-          title: 'Copy Note As...',
-          icon: <Copy size={14} />,
-          shortcut: ['⇧', '⌘', 'C'],
-          section: 'find',
-          execute: async () => { await window.electron.noteCopyToClipboard(targetNote.id, 'markdown'); setShowActions(false); },
-        },
-        {
-          title: 'Copy Deeplink',
-          icon: <Link2 size={14} />,
-          shortcut: ['⇧', '⌘', 'D'],
-          section: 'find',
-          execute: async () => {
-            // Copy a deeplink to the note
-            const deeplink = `supercmd://notes/${targetNote.id}`;
-            await navigator.clipboard.writeText(deeplink);
-            setShowActions(false);
-          },
-        },
-        {
-          title: 'Export...',
-          icon: <Upload size={14} />,
-          shortcut: ['⇧', '⌘', 'E'],
-          section: 'find',
-          execute: () => handleExport(),
-        },
-      );
-    }
-
-    // ─── Section 3: Move / Format ───────────────────────────
-    if (viewMode === 'editor') {
-      a.push(
-        {
-          title: 'Move List Item Up',
-          icon: <ArrowUp size={14} />,
-          shortcut: ['^', '⌘', '↑'],
-          section: 'format',
-          disabled: true,
-          execute: () => { setShowActions(false); },
-        },
-        {
-          title: 'Move List Item Down',
-          icon: <ArrowDown size={14} />,
-          shortcut: ['^', '⌘', '↓'],
-          section: 'format',
-          disabled: true,
-          execute: () => { setShowActions(false); },
-        },
-        {
-          title: 'Format...',
-          icon: <Type size={14} />,
-          shortcut: ['⇧', '⌘', ','],
-          section: 'format',
-          execute: () => { setShowActions(false); /* Will toggle format bar via shortcut */ },
-        },
-        {
-          title: 'Show Format Bar',
-          icon: <SquareCode size={14} />,
-          shortcut: ['⌥', '⌘', ','],
-          section: 'format',
-          execute: () => { setShowActions(false); },
-        },
-      );
-    }
-
-    // ─── Section 4: Settings / Delete ───────────────────────
-    if (targetNote) {
-      a.push(
-        {
-          title: targetNote.pinned ? 'Unpin Note' : 'Pin Note',
-          icon: targetNote.pinned ? <PinOff size={14} /> : <Pin size={14} />,
-          shortcut: ['⇧', '⌘', 'P'],
-          section: 'settings',
-          execute: () => handleTogglePin(),
-        },
-      );
-    }
-
-    a.push(
-      {
-        title: 'Import Notes',
-        icon: <Download size={14} />,
-        section: 'settings',
-        execute: async () => { await window.electron.noteImport(); loadNotes(); setShowActions(false); },
-      },
-      {
-        title: 'Export All Notes',
-        icon: <Upload size={14} />,
-        section: 'settings',
-        execute: async () => { await window.electron.noteExport(); setShowActions(false); },
-      },
-    );
-
-    // Theme submenu items
+    if (targetNote) a.push({ title: targetNote.pinned ? 'Unpin Note' : 'Pin Note', icon: targetNote.pinned ? <PinOff size={14} /> : <Pin size={14} />, shortcut: ['⇧', '⌘', 'P'], section: 'settings', execute: () => handleTogglePin() });
+    a.push({ title: 'Import Notes', icon: <Download size={14} />, section: 'settings', execute: async () => { await window.electron.noteImport(); loadNotes(); setShowActions(false); } });
+    a.push({ title: 'Export All Notes', icon: <Upload size={14} />, section: 'settings', execute: async () => { await window.electron.noteExport(); setShowActions(false); } });
     if (targetNote) {
       for (const dot of THEME_DOTS) {
-        a.push({
-          title: `${dot.label} Theme`,
-          icon: <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: dot.color }} />,
-          section: 'theme',
-          execute: async () => {
-            await window.electron.noteUpdate(targetNote.id, { theme: dot.id });
-            if (viewMode === 'editor') setCurrentNote(prev => prev ? { ...prev, theme: dot.id } : null);
-            loadNotes();
-            setShowActions(false);
-          },
-        });
+        a.push({ title: `${dot.label} Theme`, icon: <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: dot.color }} />, section: 'theme',
+          execute: async () => { await window.electron.noteUpdate(targetNote.id, { theme: dot.id }); if (viewMode === 'editor') setCurrentNote(prev => prev ? { ...prev, theme: dot.id } : null); loadNotes(); setShowActions(false); } });
       }
+      a.push({ title: 'Delete Note', icon: <Trash2 size={14} />, shortcut: ['^', 'X'], style: 'destructive', section: 'danger',
+        execute: async () => { await window.electron.noteDelete(targetNote.id); if (viewMode === 'editor') { setCurrentNote(null); setViewMode('search'); } else setSelectedIndex(i => Math.max(0, i - 1)); loadNotes(); setShowActions(false); } });
     }
-
-    if (targetNote) {
-      a.push({
-        title: 'Delete Note',
-        icon: <Trash2 size={14} />,
-        shortcut: ['^', 'X'],
-        style: 'destructive',
-        section: 'danger',
-        execute: async () => {
-          await window.electron.noteDelete(targetNote.id);
-          if (viewMode === 'editor') { setCurrentNote(null); setViewMode('search'); }
-          else setSelectedIndex(i => Math.max(0, i - 1));
-          loadNotes();
-          setShowActions(false);
-        },
-      });
-    }
-
     return a;
   }, [targetNote, viewMode, loadNotes, handleNewNote, handleDuplicate, handleTogglePin, handleExport, notes]);
 
-  // ─── Keyboard: search view ────────────────────────────────────
+  // ─── Keyboard: search view ──────────────────────────────────────
 
   useEffect(() => {
     if (viewMode !== 'search') return;
@@ -1483,21 +1900,15 @@ const NotesManager: React.FC<NotesManagerProps> = ({ onClose, initialView }) => 
     return () => window.removeEventListener('keydown', handler);
   }, [viewMode, showActions, showBrowse, notes, selectedIndex, selectedNote, onClose, handleNewNote, handleOpenNote]);
 
-  // ─── Keyboard: global (⇧⌘P pin, ⌘0-9, ⇧⌘E export) ──────────
+  // ─── Keyboard: global shortcuts ──────────────────────────────────
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (showActions || showBrowse) return;
       const meta = e.metaKey || e.ctrlKey;
-
       if (meta && e.shiftKey && e.key === 'p') { e.preventDefault(); handleTogglePin(); return; }
       if (meta && e.shiftKey && e.key === 'e') { e.preventDefault(); handleExport(); return; }
-      if (meta && e.shiftKey && e.key === 'c' && targetNote) {
-        e.preventDefault();
-        window.electron.noteCopyToClipboard(targetNote.id, 'markdown');
-        return;
-      }
-
+      if (meta && e.shiftKey && e.key === 'c' && targetNote) { e.preventDefault(); window.electron.noteCopyToClipboard(targetNote.id, 'markdown'); return; }
       if (meta && !e.shiftKey && !e.altKey && e.key >= '0' && e.key <= '9') {
         const idx = e.key === '0' ? 0 : parseInt(e.key) - 1;
         if (pinnedNotes[idx]) { e.preventDefault(); handleOpenNote(pinnedNotes[idx]); }
@@ -1508,19 +1919,21 @@ const NotesManager: React.FC<NotesManagerProps> = ({ onClose, initialView }) => 
     return () => window.removeEventListener('keydown', handler);
   }, [showActions, showBrowse, targetNote, pinnedNotes, handleTogglePin, handleExport, handleOpenNote]);
 
-  // ─── Window resizing: enable when notes opens, restore on close ──
+  // ─── Window resizing ────────────────────────────────────────────
+
   useEffect(() => {
     window.electron.noteSetResizable(true);
     return () => { window.electron.noteSetResizable(false); };
   }, []);
 
-  // Initialize
   useEffect(() => {
     if (initialView === 'create') handleNewNote();
   }, []);
 
+  // ─── Render ──────────────────────────────────────────────────────
+
   return (
-    <div className="flex flex-col h-full bg-transparent backdrop-blur-none">
+    <div className="flex flex-col h-full">
       {viewMode === 'editor' ? (
         <EditorView
           note={currentNote}
@@ -1546,6 +1959,11 @@ const NotesManager: React.FC<NotesManagerProps> = ({ onClose, initialView }) => 
           onClose={onClose}
           onShowActions={() => setShowActions(true)}
           flatNotes={notes}
+          onUpdateNoteContent={async (noteId, content) => {
+            const noteTitle = notes.find(n => n.id === noteId)?.title || 'Untitled';
+            await window.electron.noteUpdate(noteId, { content, title: noteTitle });
+            loadNotes();
+          }}
         />
       )}
 
@@ -1556,20 +1974,11 @@ const NotesManager: React.FC<NotesManagerProps> = ({ onClose, initialView }) => 
           onSelect={handleOpenNote}
           onClose={() => setShowBrowse(false)}
           onTogglePin={async (id) => { await window.electron.noteTogglePin(id); loadNotes(); }}
-          onDelete={async (id) => {
-            await window.electron.noteDelete(id);
-            if (currentNote?.id === id) { setCurrentNote(null); setViewMode('search'); }
-            loadNotes();
-          }}
+          onDelete={async (id) => { await window.electron.noteDelete(id); if (currentNote?.id === id) { setCurrentNote(null); setViewMode('search'); } loadNotes(); }}
         />
       )}
 
-      {showActions && (
-        <ActionsOverlay
-          actions={actions}
-          onClose={() => setShowActions(false)}
-        />
-      )}
+      {showActions && <ActionsOverlay actions={actions} onClose={() => setShowActions(false)} />}
     </div>
   );
 };
