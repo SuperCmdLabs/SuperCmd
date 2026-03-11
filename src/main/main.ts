@@ -124,6 +124,15 @@ const WHISPERCPP_MODEL_NAME = 'base';
 const WHISPERCPP_MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${WHISPERCPP_MODEL_NAME}.bin`;
 
 let whisperCppModelEnsurePromise: Promise<string> | null = null;
+type WhisperCppModelStatus = {
+  state: 'not-downloaded' | 'downloading' | 'downloaded' | 'error';
+  modelName: string;
+  path: string;
+  bytesDownloaded: number;
+  totalBytes: number | null;
+  error?: string;
+};
+let whisperCppModelStatus: WhisperCppModelStatus | null = null;
 
 function getWhisperCppRuntimeDir(): string {
   const base = path.join(__dirname, '..', 'native', 'whisper-runtime');
@@ -142,6 +151,48 @@ function getWhisperCppModelPath(): string {
   return path.join(app.getPath('userData'), 'whispercpp', 'models', `ggml-${WHISPERCPP_MODEL_NAME}.bin`);
 }
 
+function getWhisperCppModelStatus(): WhisperCppModelStatus {
+  const modelPath = getWhisperCppModelPath();
+  try {
+    if (fs.existsSync(modelPath)) {
+      const stats = fs.statSync(modelPath);
+      whisperCppModelStatus = {
+        state: 'downloaded',
+        modelName: WHISPERCPP_MODEL_NAME,
+        path: modelPath,
+        bytesDownloaded: Math.max(0, Number(stats.size) || 0),
+        totalBytes: Math.max(0, Number(stats.size) || 0),
+      };
+      return whisperCppModelStatus;
+    }
+  } catch {}
+
+  if (whisperCppModelStatus?.state === 'downloading') {
+    return {
+      ...whisperCppModelStatus,
+      modelName: WHISPERCPP_MODEL_NAME,
+      path: modelPath,
+    };
+  }
+
+  if (whisperCppModelStatus?.state === 'error') {
+    return {
+      ...whisperCppModelStatus,
+      modelName: WHISPERCPP_MODEL_NAME,
+      path: modelPath,
+    };
+  }
+
+  whisperCppModelStatus = {
+    state: 'not-downloaded',
+    modelName: WHISPERCPP_MODEL_NAME,
+    path: modelPath,
+    bytesDownloaded: 0,
+    totalBytes: null,
+  };
+  return whisperCppModelStatus;
+}
+
 function findFirstExistingPath(candidates: string[]): string | null {
   for (const candidate of candidates) {
     try {
@@ -153,7 +204,12 @@ function findFirstExistingPath(candidates: string[]): string | null {
   return null;
 }
 
-async function downloadFileWithRedirects(url: string, destinationPath: string, redirectsRemaining: number = 5): Promise<void> {
+async function downloadFileWithRedirects(
+  url: string,
+  destinationPath: string,
+  redirectsRemaining: number = 5,
+  onProgress?: (bytesDownloaded: number, totalBytes: number | null) => void,
+): Promise<void> {
   if (redirectsRemaining < 0) {
     throw new Error(`Too many redirects while downloading ${url}`);
   }
@@ -177,7 +233,7 @@ async function downloadFileWithRedirects(url: string, destinationPath: string, r
         if (statusCode >= 300 && statusCode < 400 && location) {
           response.resume();
           const nextUrl = new URL(location, parsedUrl).toString();
-          void downloadFileWithRedirects(nextUrl, destinationPath, redirectsRemaining - 1)
+          void downloadFileWithRedirects(nextUrl, destinationPath, redirectsRemaining - 1, onProgress)
             .then(() => {
               if (settled) return;
               settled = true;
@@ -201,6 +257,15 @@ async function downloadFileWithRedirects(url: string, destinationPath: string, r
         }
 
         const fileStream = fs.createWriteStream(destinationPath);
+        const totalBytesHeader = Number.parseInt(String(response?.headers?.['content-length'] || ''), 10);
+        const totalBytes = Number.isFinite(totalBytesHeader) && totalBytesHeader > 0 ? totalBytesHeader : null;
+        let bytesDownloaded = 0;
+
+        response.on('data', (chunk: Buffer) => {
+          bytesDownloaded += chunk.length;
+          onProgress?.(bytesDownloaded, totalBytes);
+        });
+
         response.pipe(fileStream);
 
         fileStream.on('finish', () => {
@@ -238,10 +303,17 @@ async function downloadFileWithRedirects(url: string, destinationPath: string, r
   });
 }
 
-async function ensureWhisperCppModel(): Promise<string> {
+async function ensureWhisperCppModelDownloaded(): Promise<string> {
   const modelPath = getWhisperCppModelPath();
   try {
     if (fs.existsSync(modelPath)) {
+      whisperCppModelStatus = {
+        state: 'downloaded',
+        modelName: WHISPERCPP_MODEL_NAME,
+        path: modelPath,
+        bytesDownloaded: Math.max(0, Number(fs.statSync(modelPath).size) || 0),
+        totalBytes: Math.max(0, Number(fs.statSync(modelPath).size) || 0),
+      };
       return modelPath;
     }
   } catch {}
@@ -254,15 +326,46 @@ async function ensureWhisperCppModel(): Promise<string> {
     const modelDir = path.dirname(modelPath);
     const tempPath = `${modelPath}.download`;
     fs.mkdirSync(modelDir, { recursive: true });
+    whisperCppModelStatus = {
+      state: 'downloading',
+      modelName: WHISPERCPP_MODEL_NAME,
+      path: modelPath,
+      bytesDownloaded: 0,
+      totalBytes: null,
+    };
 
     try {
       console.log(`[Whisper][whisper.cpp] Downloading ${WHISPERCPP_MODEL_NAME} model`);
-      await downloadFileWithRedirects(WHISPERCPP_MODEL_URL, tempPath);
+      await downloadFileWithRedirects(WHISPERCPP_MODEL_URL, tempPath, 5, (bytesDownloaded, totalBytes) => {
+        whisperCppModelStatus = {
+          state: 'downloading',
+          modelName: WHISPERCPP_MODEL_NAME,
+          path: modelPath,
+          bytesDownloaded,
+          totalBytes,
+        };
+      });
       fs.renameSync(tempPath, modelPath);
+      const finalSize = Math.max(0, Number(fs.statSync(modelPath).size) || 0);
+      whisperCppModelStatus = {
+        state: 'downloaded',
+        modelName: WHISPERCPP_MODEL_NAME,
+        path: modelPath,
+        bytesDownloaded: finalSize,
+        totalBytes: finalSize,
+      };
       console.log(`[Whisper][whisper.cpp] Model ready at ${modelPath}`);
       return modelPath;
     } catch (error) {
       try { fs.unlinkSync(tempPath); } catch {}
+      whisperCppModelStatus = {
+        state: 'error',
+        modelName: WHISPERCPP_MODEL_NAME,
+        path: modelPath,
+        bytesDownloaded: 0,
+        totalBytes: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
       throw error;
     } finally {
       whisperCppModelEnsurePromise = null;
@@ -332,7 +435,14 @@ async function transcribeAudioWithWhisperCpp(opts: {
   }
 
   const binaryPath = ensureWhisperCppTranscriberBinary();
-  const modelPath = await ensureWhisperCppModel();
+  const status = getWhisperCppModelStatus();
+  if (status.state === 'downloading') {
+    throw new Error('The local whisper.cpp model is still downloading. Finish setup from onboarding or Settings -> AI -> SuperCmd Whisper.');
+  }
+  if (status.state !== 'downloaded') {
+    throw new Error('The local whisper.cpp model has not been downloaded yet. Download it from onboarding or Settings -> AI -> SuperCmd Whisper.');
+  }
+  const modelPath = status.path;
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'supercmd-whispercpp-'));
   const audioPath = path.join(tempDir, 'input.wav');
 
@@ -11529,6 +11639,15 @@ if let tiff = image?.tiffRepresentation {
       return { correctedText: String(transcript || ''), source: 'raw' as const };
     }
     return await refineWhisperTranscript(transcript);
+  });
+
+  ipcMain.handle('whispercpp-model-status', async () => {
+    return getWhisperCppModelStatus();
+  });
+
+  ipcMain.handle('whispercpp-download-model', async () => {
+    await ensureWhisperCppModelDownloaded();
+    return getWhisperCppModelStatus();
   });
 
   ipcMain.handle(
