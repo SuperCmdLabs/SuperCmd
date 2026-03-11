@@ -1320,11 +1320,25 @@ function setLauncherOverlayTopmost(enabled: boolean): void {
   try {
     mainWindow.setAlwaysOnTop(Boolean(enabled));
   } catch {}
+  const launcherShouldSpanAllWorkspaces =
+    Boolean(enabled) &&
+    (
+      process.platform !== 'darwin' ||
+      launcherMode === 'onboarding'
+    );
   try {
-    if (enabled) {
-      mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    if (launcherShouldSpanAllWorkspaces) {
+      mainWindow.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+        skipTransformProcessType: process.platform === 'darwin',
+      });
     } else {
-      mainWindow.setVisibleOnAllWorkspaces(false);
+      // Avoid the dock/process-type transform for the launcher panel so
+      // Mission Control keeps it on the active Space.
+      mainWindow.setVisibleOnAllWorkspaces(false, {
+        visibleOnFullScreen: true,
+        skipTransformProcessType: process.platform === 'darwin',
+      } as any);
     }
   } catch {}
 }
@@ -5097,6 +5111,7 @@ function createWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } =
     primaryDisplay.workAreaSize;
+  const useDarwinLauncherPanel = process.platform === 'darwin';
 
   mainWindow = new BrowserWindow({
     width: DEFAULT_WINDOW_WIDTH,
@@ -5112,6 +5127,14 @@ function createWindow(): void {
     vibrancy: false,
     transparent: true,
     backgroundColor: '#00000000',
+    ...(useDarwinLauncherPanel
+      ? {
+          // Use AppKit's panel-backed window on macOS for launcher semantics.
+          type: 'panel' as const,
+          hiddenInMissionControl: true,
+          fullscreenable: false,
+        }
+      : {}),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -5282,7 +5305,7 @@ function createWindow(): void {
     mainWindow.setWindowButtonVisibility(false);
   }
 
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  setLauncherOverlayTopmost(true);
 
   // NOTE: Do NOT call app.dock.hide() here. Hiding the dock before the window
   // is loaded and shown prevents macOS from granting the app foreground status,
@@ -5828,10 +5851,13 @@ function setLauncherMode(mode: LauncherMode): void {
       }
       if (mode === 'onboarding') {
         mainWindow.setAlwaysOnTop(false);
-        mainWindow.setVisibleOnAllWorkspaces(false);
+        mainWindow.setVisibleOnAllWorkspaces(false, {
+          visibleOnFullScreen: true,
+          skipTransformProcessType: process.platform === 'darwin',
+        } as any);
       } else {
         mainWindow.setAlwaysOnTop(true);
-        mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        setLauncherOverlayTopmost(true);
       }
     } catch {}
     const onboardingTintChanged = (prevMode === 'onboarding') !== (mode === 'onboarding');
@@ -5949,6 +5975,7 @@ function captureFrontmostAppContext(): void {
 async function showWindow(options?: { systemCommandId?: string }): Promise<void> {
   if (!mainWindow) return;
   setLauncherOverlayTopmost(true);
+  const shouldActivateLauncherWindow = process.platform !== 'darwin' || launcherMode === 'onboarding';
   let selectionSnapshotPromise: Promise<string> | null = null;
 
   // Capture the frontmost app BEFORE showing our window.
@@ -5991,11 +6018,18 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     });
   }
 
-  try {
-    app.focus({ steal: true });
-  } catch {}
+  if (shouldActivateLauncherWindow) {
+    try {
+      app.focus({ steal: true });
+    } catch {}
+  }
   mainWindow.show();
-  mainWindow.focus();
+  if (shouldActivateLauncherWindow) {
+    mainWindow.focus();
+  } else {
+    try { (mainWindow as any).focusOnWebView?.(); } catch {}
+    try { mainWindow.webContents.focus(); } catch {}
+  }
   mainWindow.moveTop();
   isVisible = true;
 
@@ -6005,7 +6039,12 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     if (mainWindow.isVisible()) return;
     try {
       mainWindow.show();
-      mainWindow.focus();
+      if (shouldActivateLauncherWindow) {
+        mainWindow.focus();
+      } else {
+        try { (mainWindow as any).focusOnWebView?.(); } catch {}
+        try { mainWindow.webContents.focus(); } catch {}
+      }
       mainWindow.moveTop();
       isVisible = true;
     } catch {}
