@@ -86,7 +86,7 @@ const permissionTargets: Array<{
   {
     id: 'speech-recognition',
     title: 'Speech Recognition',
-    description: 'Required for native speech recognition.',
+    description: 'Optional. Needed only if you switch Whisper to the Apple Speech Recognition fallback.',
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition',
     icon: Volume2,
     iconTone: 'text-emerald-100',

@@ -129,7 +129,7 @@ The `dev` script does **not** compile the Swift native helpers — you need to b
 npm run build:native
 ```
 
-This compiles the Swift binaries (color picker, hotkey monitor, speech recognizer, window manager, etc.) into `dist/native/`.
+This compiles the Swift binaries and prepares bundled native assets in `dist/native/` (including the local `whisper.cpp` runtime used by SuperCmd Whisper).
 
 ### 4. Run in development mode
 ```bash
@@ -244,7 +244,7 @@ Important fields inside `settings.json`:
     "supermemoryLocalMode": false,
     "ollamaBaseUrl": "http://localhost:11434",
     "defaultModel": "openai-gpt-4o-mini",
-    "speechToTextModel": "native",
+    "speechToTextModel": "whispercpp",
     "textToSpeechModel": "edge-tts"
   }
 }

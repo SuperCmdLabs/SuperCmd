@@ -69,7 +69,8 @@ const CURATED_OLLAMA_MODELS = [
 ];
 
 const WHISPER_STT_OPTIONS = [
-  { id: 'native', label: 'Native (Default)' },
+  { id: 'whispercpp', label: 'GGML Whisper.cpp (Default)' },
+  { id: 'native', label: 'Apple Speech Recognition' },
   { id: 'openai-gpt-4o-transcribe', label: 'OpenAI GPT-4o Transcribe' },
   { id: 'openai-whisper-1', label: 'OpenAI Whisper-1' },
   { id: 'elevenlabs-scribe-v1', label: 'ElevenLabs Scribe v1' },
@@ -447,7 +448,7 @@ const AITab: React.FC = () => {
       : MODELS_BY_PROVIDER[ai.provider] || [];
 
   const whisperModelValue = (!ai.speechToTextModel || ai.speechToTextModel === 'default')
-    ? 'native'
+    ? 'whispercpp'
     : ai.speechToTextModel;
 
   const parsedElevenLabsSpeak = parseElevenLabsSpeakModel(ai.textToSpeechModel);
@@ -1055,6 +1056,22 @@ const AITab: React.FC = () => {
                     {ai.elevenlabsApiKey
                       ? 'ElevenLabs STT selected. Cloud transcription will use your ElevenLabs key.'
                       : 'ElevenLabs STT selected. Add ElevenLabs API key in API Keys.'}
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'whispercpp' && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2.5 py-2">
+                  <p className="text-[0.6875rem] text-emerald-300">
+                    Offline on-device transcription via `whisper.cpp`. SuperCmd downloads the default ggml base model on first use.
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'native' && (
+                <div className="bg-sky-500/10 border border-sky-500/20 rounded-md px-2.5 py-2">
+                  <p className="text-[0.6875rem] text-sky-300">
+                    Uses Apple Speech Recognition instead of the local ggml Whisper model.
                   </p>
                 </div>
               )}
