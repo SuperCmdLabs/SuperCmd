@@ -86,7 +86,7 @@ import {
   startFileSearchIndexing,
   stopFileSearchIndexing,
 } from './file-search-index';
-import { getCalendarEvents } from './calendar-events';
+import { ensureCalendarAccess, getCalendarEvents } from './calendar-events';
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
@@ -10329,6 +10329,14 @@ return appURL's |path|() as text`,
       throw new Error(e?.message || 'AppleScript execution failed');
     }
   });
+
+  ipcMain.handle(
+    'calendar-ensure-access',
+    async (_event: any, options?: { prompt?: boolean }) => {
+      const prompt = options?.prompt !== false;
+      return await ensureCalendarAccess(prompt);
+    }
+  );
 
   ipcMain.handle(
     'calendar-get-events',

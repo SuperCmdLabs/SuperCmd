@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronRight, ExternalLink, ShieldAlert } from 'lucide-react';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
-import type { CalendarAccessStatus, CalendarAgendaEvent, CalendarEventsResult } from '../types/electron';
+import type {
+  CalendarAccessStatus,
+  CalendarAgendaEvent,
+  CalendarEventsResult,
+  CalendarPermissionResult,
+} from '../types/electron';
 
 interface ScheduleExtensionProps {
   onClose: () => void;
@@ -164,9 +169,22 @@ const ScheduleExtension: React.FC<ScheduleExtensionProps> = ({ onClose }) => {
     });
   }, []);
 
+  const ensureAccess = useCallback(async (): Promise<CalendarPermissionResult> => {
+    return await window.electron.ensureCalendarAccess({ prompt: true });
+  }, []);
+
   const loadInitial = useCallback(async () => {
     setIsLoading(true);
     try {
+      const permission = await ensureAccess();
+      setAccessStatus(permission.accessStatus);
+      setErrorText(permission.error || '');
+      if (!permission.granted) {
+        setEvents([]);
+        setLoadedUntil(initialEnd);
+        return;
+      }
+
       const result = await fetchRange(today, initialEnd);
       setAccessStatus(result.accessStatus);
       setErrorText(result.error || '');
@@ -177,7 +195,7 @@ const ScheduleExtension: React.FC<ScheduleExtensionProps> = ({ onClose }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [fetchRange, initialEnd, today]);
+  }, [ensureAccess, fetchRange, initialEnd, today]);
 
   const loadMore = useCallback(async () => {
     if (isLoading || isLoadingMore || loadedUntil >= horizonEnd) return;
@@ -279,6 +297,7 @@ const ScheduleExtension: React.FC<ScheduleExtensionProps> = ({ onClose }) => {
   );
 
   const permissionError =
+    accessStatus === 'not-determined' ||
     accessStatus === 'denied' ||
     accessStatus === 'restricted' ||
     accessStatus === 'write-only';

@@ -32,6 +32,14 @@ export interface CalendarEventsResult {
   error?: string;
 }
 
+export interface CalendarPermissionResult {
+  granted: boolean;
+  accessStatus: CalendarAccessStatus;
+  requested: boolean;
+  canPrompt: boolean;
+  error?: string;
+}
+
 function resolvePackagedUnpackedPath(candidatePath: string): string {
   if (!app.isPackaged) return candidatePath;
   if (!candidatePath.includes('app.asar')) return candidatePath;
@@ -76,8 +84,12 @@ function ensureCalendarEventsBinary(): string | null {
   }
 }
 
+function normalizeCalendarAccessStatus(payload: any): CalendarAccessStatus {
+  return String(payload?.accessStatus || 'unknown') as CalendarAccessStatus;
+}
+
 function normalizeCalendarResult(payload: any): CalendarEventsResult {
-  const accessStatus = String(payload?.accessStatus || 'unknown') as CalendarAccessStatus;
+  const accessStatus = normalizeCalendarAccessStatus(payload);
   return {
     granted: Boolean(payload?.granted),
     accessStatus,
@@ -102,28 +114,25 @@ function normalizeCalendarResult(payload: any): CalendarEventsResult {
   };
 }
 
-export async function getCalendarEvents(start: string, end: string): Promise<CalendarEventsResult> {
-  if (process.platform !== 'darwin') {
-    return {
-      granted: false,
-      accessStatus: 'unknown',
-      events: [],
-      error: 'Calendar is currently supported on macOS only.',
-    };
-  }
+function normalizeCalendarPermissionResult(payload: any): CalendarPermissionResult {
+  const accessStatus = normalizeCalendarAccessStatus(payload);
+  return {
+    granted: Boolean(payload?.granted),
+    accessStatus,
+    requested: Boolean(payload?.requested),
+    canPrompt: typeof payload?.canPrompt === 'boolean'
+      ? Boolean(payload.canPrompt)
+      : accessStatus === 'not-determined' || accessStatus === 'unknown',
+    error: typeof payload?.error === 'string' && payload.error.trim() ? payload.error.trim() : undefined,
+  };
+}
 
+async function runCalendarHelper(args: string[]): Promise<any> {
   const binaryPath = ensureCalendarEventsBinary();
-  if (!binaryPath) {
-    return {
-      granted: false,
-      accessStatus: 'unknown',
-      events: [],
-      error: 'Calendar helper is unavailable. Reinstall SuperCmd or install Xcode Command Line Tools.',
-    };
-  }
+  if (!binaryPath) throw new Error('Calendar helper is unavailable. Reinstall SuperCmd or install Xcode Command Line Tools.');
 
-  return await new Promise<CalendarEventsResult>((resolve) => {
-    const proc = spawn(binaryPath, ['--start', start, '--end', end], {
+  return await new Promise<any>((resolve, reject) => {
+    const proc = spawn(binaryPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -131,7 +140,7 @@ export async function getCalendarEvents(start: string, end: string): Promise<Cal
     let stderr = '';
     let settled = false;
 
-    const finalize = (result: CalendarEventsResult) => {
+    const finalize = (result: any) => {
       if (settled) return;
       settled = true;
       resolve(result);
@@ -139,12 +148,7 @@ export async function getCalendarEvents(start: string, end: string): Promise<Cal
 
     const timeout = setTimeout(() => {
       try { proc.kill('SIGTERM'); } catch {}
-      finalize({
-        granted: false,
-        accessStatus: 'unknown',
-        events: [],
-        error: 'Calendar request timed out.',
-      });
+      reject(new Error('Calendar request timed out.'));
     }, 15000);
 
     proc.stdout.on('data', (chunk: Buffer | string) => {
@@ -157,12 +161,7 @@ export async function getCalendarEvents(start: string, end: string): Promise<Cal
 
     proc.on('error', (error) => {
       clearTimeout(timeout);
-      finalize({
-        granted: false,
-        accessStatus: 'unknown',
-        events: [],
-        error: error.message || 'Failed to start calendar helper.',
-      });
+      reject(new Error(error.message || 'Failed to start calendar helper.'));
     });
 
     proc.on('close', () => {
@@ -174,27 +173,66 @@ export async function getCalendarEvents(start: string, end: string): Promise<Cal
       const lastLine = lines[lines.length - 1] || '';
 
       if (!lastLine) {
-        finalize({
-          granted: false,
-          accessStatus: 'unknown',
-          events: [],
-          error: stderr.trim() || 'Calendar helper returned no data.',
-        });
+        reject(new Error(stderr.trim() || 'Calendar helper returned no data.'));
         return;
       }
 
       try {
-        finalize(normalizeCalendarResult(JSON.parse(lastLine)));
+        finalize(JSON.parse(lastLine));
       } catch (error) {
-        finalize({
-          granted: false,
-          accessStatus: 'unknown',
-          events: [],
-          error:
-            stderr.trim() ||
-            (error instanceof Error ? error.message : 'Failed to parse calendar helper output.'),
-        });
+        reject(new Error(
+          stderr.trim() ||
+          (error instanceof Error ? error.message : 'Failed to parse calendar helper output.')
+        ));
       }
     });
   });
+}
+
+export async function ensureCalendarAccess(prompt = true): Promise<CalendarPermissionResult> {
+  if (process.platform !== 'darwin') {
+    return {
+      granted: false,
+      accessStatus: 'unknown',
+      requested: false,
+      canPrompt: false,
+      error: 'Calendar is currently supported on macOS only.',
+    };
+  }
+
+  try {
+    const payload = await runCalendarHelper(prompt ? ['--prompt-only', '--prompt'] : ['--prompt-only']);
+    return normalizeCalendarPermissionResult(payload);
+  } catch (error) {
+    return {
+      granted: false,
+      accessStatus: 'unknown',
+      requested: false,
+      canPrompt: false,
+      error: error instanceof Error ? error.message : 'Failed to check calendar access.',
+    };
+  }
+}
+
+export async function getCalendarEvents(start: string, end: string): Promise<CalendarEventsResult> {
+  if (process.platform !== 'darwin') {
+    return {
+      granted: false,
+      accessStatus: 'unknown',
+      events: [],
+      error: 'Calendar is currently supported on macOS only.',
+    };
+  }
+
+  try {
+    const payload = await runCalendarHelper(['--start', start, '--end', end, '--prompt']);
+    return normalizeCalendarResult(payload);
+  } catch (error) {
+    return {
+      granted: false,
+      accessStatus: 'unknown',
+      events: [],
+      error: error instanceof Error ? error.message : 'Failed to load calendar events.',
+    };
+  }
 }
