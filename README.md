@@ -36,6 +36,7 @@ SuperCmd is an Electron + React launcher that focuses on Raycast extension compa
 - **Memory-aware AI** support (Supermemory integration)
 - AI integrations (Ollama / OpenAI / Anthropic / ElevenLabs for speech)
 - Native macOS helpers (hotkeys, color picker, speech, snippet expansion)
+- macOS launcher panel behavior that stays on the active Space for normal hotkey opens
 
 ## Tech Stack
 
