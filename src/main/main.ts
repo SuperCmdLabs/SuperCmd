@@ -139,8 +139,17 @@ function getWhisperCppRuntimeDir(): string {
   return resolvePackagedUnpackedPath(base);
 }
 
-function getWhisperCppFrameworkPath(): string {
-  return path.join(getWhisperCppRuntimeDir(), 'whisper.framework');
+function getWhisperCppRuntimeLibraryPath(): string {
+  return path.join(getWhisperCppRuntimeDir(), 'libwhisper.dylib');
+}
+
+function getWhisperCppBuildFrameworkPath(): string {
+  const candidates = [
+    path.join(process.cwd(), '.cache', 'whispercpp', 'whisper.framework'),
+    path.join(app.getAppPath(), '.cache', 'whispercpp', 'whisper.framework'),
+    path.join(getWhisperCppRuntimeDir(), 'whisper.framework'),
+  ];
+  return findFirstExistingPath(candidates) || candidates[0];
 }
 
 function getWhisperCppTranscriberBinaryPath(): string {
@@ -383,11 +392,17 @@ function ensureWhisperCppTranscriberBinary(): string {
     }
   } catch {}
 
-  const frameworkPath = getWhisperCppFrameworkPath();
   const runtimeDir = getWhisperCppRuntimeDir();
-  if (!fs.existsSync(frameworkPath)) {
+  const runtimeLibraryPath = getWhisperCppRuntimeLibraryPath();
+  const buildFrameworkPath = getWhisperCppBuildFrameworkPath();
+  if (!fs.existsSync(runtimeLibraryPath)) {
     throw new Error(
-      `SuperCmd Whisper runtime is missing. Rebuild native helpers to download the official ${WHISPERCPP_FRAMEWORK_VERSION} macOS framework.`
+      `SuperCmd Whisper runtime is missing. Rebuild native helpers to restore libwhisper from the official ${WHISPERCPP_FRAMEWORK_VERSION} macOS release.`
+    );
+  }
+  if (!fs.existsSync(buildFrameworkPath)) {
+    throw new Error(
+      `SuperCmd Whisper build framework is missing. Rebuild native helpers to download the official ${WHISPERCPP_FRAMEWORK_VERSION} macOS framework.`
     );
   }
 
@@ -408,12 +423,18 @@ function ensureWhisperCppTranscriberBinary(): string {
     execFileSync('swiftc', [
       '-O',
       '-module-cache-path', path.join(os.tmpdir(), 'supercmd-swift-module-cache'),
-      '-F', runtimeDir,
+      '-F', path.dirname(buildFrameworkPath),
       '-framework', 'whisper',
       '-Xlinker', '-rpath',
       '-Xlinker', '@executable_path/whisper-runtime',
       '-o', binaryPath,
       sourcePath,
+    ]);
+    execFileSync('install_name_tool', [
+      '-change',
+      '@rpath/whisper.framework/Versions/Current/whisper',
+      '@rpath/libwhisper.dylib',
+      binaryPath,
     ]);
     console.log('[Whisper][whisper.cpp] Compiled whisper-transcriber binary');
   } catch (error) {

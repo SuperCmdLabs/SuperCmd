@@ -14,10 +14,14 @@ const whisperVersion = 'v1.8.3';
 const frameworkUrl = `https://github.com/ggml-org/whisper.cpp/releases/download/${whisperVersion}/whisper-${whisperVersion}-xcframework.zip`;
 
 const distNativeDir = path.join(repoRoot, 'dist', 'native');
+const cacheDir = path.join(repoRoot, '.cache', 'whispercpp');
 const runtimeDir = path.join(distNativeDir, 'whisper-runtime');
-const frameworkDir = path.join(runtimeDir, 'whisper.framework');
+const frameworkDir = path.join(cacheDir, 'whisper.framework');
+const runtimeLibraryPath = path.join(runtimeDir, 'libwhisper.dylib');
 const transcriberSource = path.join(repoRoot, 'src', 'native', 'whisper-transcriber.swift');
 const transcriberBinary = path.join(distNativeDir, 'whisper-transcriber');
+const frameworkInstallName = '@rpath/whisper.framework/Versions/Current/whisper';
+const runtimeInstallName = '@rpath/libwhisper.dylib';
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -34,7 +38,7 @@ function prepareFramework() {
   const archivePath = path.join(tempRoot, 'whisper-xcframework.zip');
   const extractDir = path.join(tempRoot, 'extract');
 
-  mkdirSync(distNativeDir, { recursive: true });
+  mkdirSync(cacheDir, { recursive: true });
   mkdirSync(extractDir, { recursive: true });
 
   console.log(`[whisper.cpp] Downloading macOS framework (${whisperVersion})`);
@@ -54,9 +58,20 @@ function prepareFramework() {
     throw new Error('Downloaded whisper.cpp archive did not contain the macOS framework slice');
   }
 
+  rmSync(frameworkDir, { recursive: true, force: true });
+  cpSync(sourceFrameworkDir, frameworkDir, { recursive: true });
+}
+
+function prepareRuntimeLibrary() {
+  const sourceLibraryPath = path.join(frameworkDir, 'Versions', 'A', 'whisper');
+  if (!existsSync(sourceLibraryPath)) {
+    throw new Error('whisper.cpp framework did not contain the runtime library');
+  }
+
   rmSync(runtimeDir, { recursive: true, force: true });
   mkdirSync(runtimeDir, { recursive: true });
-  cpSync(sourceFrameworkDir, frameworkDir, { recursive: true });
+  cpSync(sourceLibraryPath, runtimeLibraryPath);
+  run('install_name_tool', ['-id', runtimeInstallName, runtimeLibraryPath]);
 }
 
 function buildTranscriber() {
@@ -67,13 +82,14 @@ function buildTranscriber() {
   run('swiftc', [
     '-O',
     '-module-cache-path', moduleCacheDir,
-    '-F', runtimeDir,
+    '-F', cacheDir,
     '-framework', 'whisper',
     '-Xlinker', '-rpath',
     '-Xlinker', '@executable_path/whisper-runtime',
     '-o', transcriberBinary,
     transcriberSource,
   ]);
+  run('install_name_tool', ['-change', frameworkInstallName, runtimeInstallName, transcriberBinary]);
 }
 
 try {
@@ -82,6 +98,7 @@ try {
   } else {
     console.log('[whisper.cpp] Using existing macOS framework');
   }
+  prepareRuntimeLibrary();
   buildTranscriber();
   console.log('[whisper.cpp] Ready');
 } catch (error) {
