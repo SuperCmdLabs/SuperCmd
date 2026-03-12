@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Brain,
   Download,
+  CheckCircle2,
   ExternalLink,
   Eye,
   EyeOff,
@@ -22,7 +23,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
-import type { AppSettings, AISettings, EdgeTtsVoice, ElevenLabsVoice } from '../../types/electron';
+import type { AppSettings, AISettings, EdgeTtsVoice, ElevenLabsVoice, WhisperCppModelStatus } from '../../types/electron';
 import {
   clearElevenLabsVoiceCache,
   getCachedElevenLabsVoices,
@@ -69,11 +70,30 @@ const CURATED_OLLAMA_MODELS = [
 ];
 
 const WHISPER_STT_OPTIONS = [
-  { id: 'native', label: 'Native (Default)' },
+  { id: 'whispercpp', label: 'SuperCmd Whisper (Default)' },
+  { id: 'native', label: 'Apple Speech Recognition' },
   { id: 'openai-gpt-4o-transcribe', label: 'OpenAI GPT-4o Transcribe' },
   { id: 'openai-whisper-1', label: 'OpenAI Whisper-1' },
   { id: 'elevenlabs-scribe-v1', label: 'ElevenLabs Scribe v1' },
   { id: 'elevenlabs-scribe-v2', label: 'ElevenLabs Scribe v2' },
+];
+
+const WHISPER_LANGUAGE_OPTIONS = [
+  { value: 'ar-EG', label: 'Arabic' },
+  { value: 'zh-CN', label: 'Chinese (Mandarin)' },
+  { value: 'en-US', label: 'English (US)' },
+  { value: 'en-GB', label: 'English (UK)' },
+  { value: 'fr-CA', label: 'French (Canada)' },
+  { value: 'fr-FR', label: 'French (France)' },
+  { value: 'de-DE', label: 'German' },
+  { value: 'hi-IN', label: 'Hindi' },
+  { value: 'it-IT', label: 'Italian' },
+  { value: 'ja-JP', label: 'Japanese' },
+  { value: 'ko-KR', label: 'Korean' },
+  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
+  { value: 'ru-RU', label: 'Russian' },
+  { value: 'es-MX', label: 'Spanish (Mexico)' },
+  { value: 'es-ES', label: 'Spanish (Spain)' },
 ];
 
 const SPEAK_TTS_OPTIONS = [
@@ -199,6 +219,8 @@ const AITab: React.FC = () => {
   const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
   const [elevenLabsVoicesLoading, setElevenLabsVoicesLoading] = useState(false);
   const [elevenLabsVoicesError, setElevenLabsVoicesError] = useState<string | null>(null);
+  const [whisperCppModelStatus, setWhisperCppModelStatus] = useState<WhisperCppModelStatus | null>(null);
+  const [whisperCppModelLoading, setWhisperCppModelLoading] = useState(false);
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
   const selectingOllamaDefaultRef = useRef(false);
@@ -296,6 +318,48 @@ const AITab: React.FC = () => {
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 1600);
   };
+
+  const refreshWhisperCppModelStatus = useCallback(async () => {
+    try {
+      const status = await window.electron.whisperCppModelStatus();
+      setWhisperCppModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'whisper') return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const tick = async () => {
+      const status = await refreshWhisperCppModelStatus();
+      if (cancelled) return;
+      if (status?.state === 'downloading') {
+        timer = window.setTimeout(() => { void tick(); }, 900);
+      }
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [activeTab, refreshWhisperCppModelStatus]);
+
+  const handleWhisperCppDownload = useCallback(async () => {
+    setWhisperCppModelLoading(true);
+    try {
+      const status = await window.electron.whisperCppDownloadModel();
+      setWhisperCppModelStatus(status);
+    } catch {
+      void refreshWhisperCppModelStatus();
+    } finally {
+      setWhisperCppModelLoading(false);
+    }
+  }, [refreshWhisperCppModelStatus]);
 
   const maybeSelectOllamaDefaultModel = useCallback((availableNames: string[], preferredName?: string) => {
     const currentSettings = settingsRef.current;
@@ -447,8 +511,11 @@ const AITab: React.FC = () => {
       : MODELS_BY_PROVIDER[ai.provider] || [];
 
   const whisperModelValue = (!ai.speechToTextModel || ai.speechToTextModel === 'default')
-    ? 'native'
+    ? 'whispercpp'
     : ai.speechToTextModel;
+  const whisperCppPercent = whisperCppModelStatus?.state === 'downloading' && whisperCppModelStatus.totalBytes
+    ? Math.max(0, Math.min(100, Math.round((whisperCppModelStatus.bytesDownloaded / whisperCppModelStatus.totalBytes) * 100)))
+    : 0;
 
   const parsedElevenLabsSpeak = parseElevenLabsSpeakModel(ai.textToSpeechModel);
   const speakModelValue = (!ai.textToSpeechModel || ai.textToSpeechModel === 'default' || ai.textToSpeechModel.startsWith('openai-'))
@@ -1059,6 +1126,40 @@ const AITab: React.FC = () => {
                 </div>
               )}
 
+              {whisperModelValue === 'whispercpp' && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2.5 py-2">
+                  <p className="text-[0.6875rem] text-emerald-300">
+                    Offline on-device transcription via SuperCmd Whisper. Download the default ggml base model below before using dictation.
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'whispercpp' && (
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Recognition Language</label>
+                  <select
+                    value={ai.speechLanguage || 'en-US'}
+                    onChange={(e) => updateAI({ speechLanguage: e.target.value })}
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                  >
+                    {WHISPER_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-[0.6875rem] text-[var(--text-muted)]">
+                    SuperCmd passes the matching language code to the local `whisper.cpp` runtime automatically.
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'native' && (
+                <div className="bg-sky-500/10 border border-sky-500/20 rounded-md px-2.5 py-2">
+                  <p className="text-[0.6875rem] text-sky-300">
+                    Uses Apple Speech Recognition instead of SuperCmd Whisper.
+                  </p>
+                </div>
+              )}
+
               <div className="pt-3 border-t border-[var(--ui-divider)] space-y-2">
                 <p className="text-[0.75rem] text-[var(--text-muted)]">Whisper Hotkeys</p>
                 <div>
@@ -1099,6 +1200,69 @@ const AITab: React.FC = () => {
             </div>
 
             <div className="px-4 py-3.5 md:px-5 space-y-3">
+              {whisperModelValue === 'whispercpp' && (
+                <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">SuperCmd Whisper</h3>
+                      <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
+                        Download the ggml base model once to enable local dictation.
+                      </p>
+                    </div>
+                    {whisperCppModelStatus?.state === 'downloaded' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-300 shrink-0 mt-0.5" />
+                    ) : (
+                      <Download className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-0.5" />
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-[0.75rem]">
+                    {whisperCppModelStatus?.state === 'downloaded' ? (
+                      <p className="text-emerald-300">Downloaded. SuperCmd Whisper is ready to use offline.</p>
+                    ) : whisperCppModelStatus?.state === 'downloading' ? (
+                      <div className="space-y-2">
+                        <p className="text-[var(--text-secondary)]">
+                          Downloading SuperCmd Whisper
+                          {whisperCppModelStatus.totalBytes ? ` (${whisperCppPercent}%)` : '...'}
+                        </p>
+                        <div className="h-2 rounded-full bg-black/20 overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-400/80 transition-[width] duration-300"
+                            style={{ width: `${whisperCppPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : whisperCppModelStatus?.state === 'error' ? (
+                      <p className="text-rose-300">{whisperCppModelStatus.error || 'Model download failed.'}</p>
+                    ) : (
+                      <p className="text-amber-300">Model not downloaded yet. Download it now to use SuperCmd Whisper dictation.</p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => { void handleWhisperCppDownload(); }}
+                      disabled={whisperCppModelLoading || whisperCppModelStatus?.state === 'downloading' || whisperCppModelStatus?.state === 'downloaded'}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      {whisperCppModelStatus?.state === 'downloaded'
+                        ? 'Model Downloaded'
+                        : whisperCppModelStatus?.state === 'downloading'
+                          ? 'Downloading...'
+                          : 'Download Model'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { void refreshWhisperCppModelStatus(); }}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Smooth Output</h3>
@@ -1382,7 +1546,7 @@ const AITab: React.FC = () => {
             <div className="px-4 py-3.5 md:px-5">
               <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Notes</h3>
               <div className="mt-2 space-y-1.5 text-[0.75rem] text-[var(--text-muted)] leading-relaxed">
-                <p>Whisper default is Native for fast local dictation.</p>
+                <p>Whisper default is SuperCmd Whisper with a local ggml base model.</p>
                 <p>Speak default is Edge TTS with per-language male/female voice selection.</p>
                 <p>English voice options are intentionally limited to US and UK variants.</p>
                 <p>ElevenLabs custom voices (cloned/generated) will appear automatically when your API key is configured.</p>

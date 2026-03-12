@@ -119,6 +119,387 @@ function getNativeBinaryPath(name: string): string {
   return resolvePackagedUnpackedPath(base);
 }
 
+const WHISPERCPP_FRAMEWORK_VERSION = 'v1.8.3';
+const WHISPERCPP_MODEL_NAME = 'base';
+const WHISPERCPP_MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${WHISPERCPP_MODEL_NAME}.bin`;
+
+let whisperCppModelEnsurePromise: Promise<string> | null = null;
+type WhisperCppModelStatus = {
+  state: 'not-downloaded' | 'downloading' | 'downloaded' | 'error';
+  modelName: string;
+  path: string;
+  bytesDownloaded: number;
+  totalBytes: number | null;
+  error?: string;
+};
+let whisperCppModelStatus: WhisperCppModelStatus | null = null;
+
+function getWhisperCppRuntimeDir(): string {
+  const base = path.join(__dirname, '..', 'native', 'whisper-runtime');
+  return resolvePackagedUnpackedPath(base);
+}
+
+function getWhisperCppFrameworkPath(): string {
+  return path.join(getWhisperCppRuntimeDir(), 'whisper.framework');
+}
+
+function getWhisperCppTranscriberBinaryPath(): string {
+  return getNativeBinaryPath('whisper-transcriber');
+}
+
+function getWhisperCppModelPath(): string {
+  return path.join(app.getPath('userData'), 'whispercpp', 'models', `ggml-${WHISPERCPP_MODEL_NAME}.bin`);
+}
+
+function getWhisperCppModelStatus(): WhisperCppModelStatus {
+  const modelPath = getWhisperCppModelPath();
+  try {
+    if (fs.existsSync(modelPath)) {
+      const stats = fs.statSync(modelPath);
+      whisperCppModelStatus = {
+        state: 'downloaded',
+        modelName: WHISPERCPP_MODEL_NAME,
+        path: modelPath,
+        bytesDownloaded: Math.max(0, Number(stats.size) || 0),
+        totalBytes: Math.max(0, Number(stats.size) || 0),
+      };
+      return whisperCppModelStatus;
+    }
+  } catch {}
+
+  if (whisperCppModelStatus?.state === 'downloading') {
+    return {
+      ...whisperCppModelStatus,
+      modelName: WHISPERCPP_MODEL_NAME,
+      path: modelPath,
+    };
+  }
+
+  if (whisperCppModelStatus?.state === 'error') {
+    return {
+      ...whisperCppModelStatus,
+      modelName: WHISPERCPP_MODEL_NAME,
+      path: modelPath,
+    };
+  }
+
+  whisperCppModelStatus = {
+    state: 'not-downloaded',
+    modelName: WHISPERCPP_MODEL_NAME,
+    path: modelPath,
+    bytesDownloaded: 0,
+    totalBytes: null,
+  };
+  return whisperCppModelStatus;
+}
+
+function findFirstExistingPath(candidates: string[]): string | null {
+  for (const candidate of candidates) {
+    try {
+      if (candidate && fs.existsSync(candidate)) {
+        return candidate;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+async function downloadFileWithRedirects(
+  url: string,
+  destinationPath: string,
+  redirectsRemaining: number = 5,
+  onProgress?: (bytesDownloaded: number, totalBytes: number | null) => void,
+): Promise<void> {
+  if (redirectsRemaining < 0) {
+    throw new Error(`Too many redirects while downloading ${url}`);
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const parsedUrl = new URL(url);
+    const transport = parsedUrl.protocol === 'https:' ? require('https') : require('http');
+    const request = transport.get(
+      parsedUrl.toString(),
+      {
+        headers: {
+          'User-Agent': 'SuperCmd/1.0 whisper.cpp bootstrap',
+          'Accept': '*/*',
+        },
+      },
+      (response: any) => {
+        const statusCode = Number(response?.statusCode || 0);
+        const location = String(response?.headers?.location || '');
+
+        if (statusCode >= 300 && statusCode < 400 && location) {
+          response.resume();
+          const nextUrl = new URL(location, parsedUrl).toString();
+          void downloadFileWithRedirects(nextUrl, destinationPath, redirectsRemaining - 1, onProgress)
+            .then(() => {
+              if (settled) return;
+              settled = true;
+              resolve();
+            })
+            .catch((error) => {
+              if (settled) return;
+              settled = true;
+              reject(error);
+            });
+          return;
+        }
+
+        if (statusCode >= 400) {
+          response.resume();
+          if (!settled) {
+            settled = true;
+            reject(new Error(`HTTP ${statusCode} while downloading ${url}`));
+          }
+          return;
+        }
+
+        const fileStream = fs.createWriteStream(destinationPath);
+        const totalBytesHeader = Number.parseInt(String(response?.headers?.['content-length'] || ''), 10);
+        const totalBytes = Number.isFinite(totalBytesHeader) && totalBytesHeader > 0 ? totalBytesHeader : null;
+        let bytesDownloaded = 0;
+
+        response.on('data', (chunk: Buffer) => {
+          bytesDownloaded += chunk.length;
+          onProgress?.(bytesDownloaded, totalBytes);
+        });
+
+        response.pipe(fileStream);
+
+        fileStream.on('finish', () => {
+          fileStream.close(() => {
+            if (settled) return;
+            settled = true;
+            resolve();
+          });
+        });
+
+        fileStream.on('error', (error) => {
+          try { fileStream.close(); } catch {}
+          try { fs.unlinkSync(destinationPath); } catch {}
+          if (settled) return;
+          settled = true;
+          reject(error);
+        });
+
+        response.on('error', (error: Error) => {
+          try { fileStream.close(); } catch {}
+          try { fs.unlinkSync(destinationPath); } catch {}
+          if (settled) return;
+          settled = true;
+          reject(error);
+        });
+      }
+    );
+
+    request.on('error', (error: Error) => {
+      try { fs.unlinkSync(destinationPath); } catch {}
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
+  });
+}
+
+async function ensureWhisperCppModelDownloaded(): Promise<string> {
+  const modelPath = getWhisperCppModelPath();
+  try {
+    if (fs.existsSync(modelPath)) {
+      whisperCppModelStatus = {
+        state: 'downloaded',
+        modelName: WHISPERCPP_MODEL_NAME,
+        path: modelPath,
+        bytesDownloaded: Math.max(0, Number(fs.statSync(modelPath).size) || 0),
+        totalBytes: Math.max(0, Number(fs.statSync(modelPath).size) || 0),
+      };
+      return modelPath;
+    }
+  } catch {}
+
+  if (whisperCppModelEnsurePromise) {
+    return await whisperCppModelEnsurePromise;
+  }
+
+  whisperCppModelEnsurePromise = (async () => {
+    const modelDir = path.dirname(modelPath);
+    const tempPath = `${modelPath}.download`;
+    fs.mkdirSync(modelDir, { recursive: true });
+    whisperCppModelStatus = {
+      state: 'downloading',
+      modelName: WHISPERCPP_MODEL_NAME,
+      path: modelPath,
+      bytesDownloaded: 0,
+      totalBytes: null,
+    };
+
+    try {
+      console.log(`[Whisper][whisper.cpp] Downloading ${WHISPERCPP_MODEL_NAME} model`);
+      await downloadFileWithRedirects(WHISPERCPP_MODEL_URL, tempPath, 5, (bytesDownloaded, totalBytes) => {
+        whisperCppModelStatus = {
+          state: 'downloading',
+          modelName: WHISPERCPP_MODEL_NAME,
+          path: modelPath,
+          bytesDownloaded,
+          totalBytes,
+        };
+      });
+      fs.renameSync(tempPath, modelPath);
+      const finalSize = Math.max(0, Number(fs.statSync(modelPath).size) || 0);
+      whisperCppModelStatus = {
+        state: 'downloaded',
+        modelName: WHISPERCPP_MODEL_NAME,
+        path: modelPath,
+        bytesDownloaded: finalSize,
+        totalBytes: finalSize,
+      };
+      console.log(`[Whisper][whisper.cpp] Model ready at ${modelPath}`);
+      return modelPath;
+    } catch (error) {
+      try { fs.unlinkSync(tempPath); } catch {}
+      whisperCppModelStatus = {
+        state: 'error',
+        modelName: WHISPERCPP_MODEL_NAME,
+        path: modelPath,
+        bytesDownloaded: 0,
+        totalBytes: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+      throw error;
+    } finally {
+      whisperCppModelEnsurePromise = null;
+    }
+  })();
+
+  return await whisperCppModelEnsurePromise;
+}
+
+function ensureWhisperCppTranscriberBinary(): string {
+  const binaryPath = getWhisperCppTranscriberBinaryPath();
+  try {
+    if (fs.existsSync(binaryPath)) {
+      return binaryPath;
+    }
+  } catch {}
+
+  const frameworkPath = getWhisperCppFrameworkPath();
+  const runtimeDir = getWhisperCppRuntimeDir();
+  if (!fs.existsSync(frameworkPath)) {
+    throw new Error(
+      `SuperCmd Whisper runtime is missing. Rebuild native helpers to download the official ${WHISPERCPP_FRAMEWORK_VERSION} macOS framework.`
+    );
+  }
+
+  const sourcePath = findFirstExistingPath([
+    path.join(app.getAppPath(), 'src', 'native', 'whisper-transcriber.swift'),
+    path.join(process.cwd(), 'src', 'native', 'whisper-transcriber.swift'),
+    path.join(__dirname, '..', '..', 'src', 'native', 'whisper-transcriber.swift'),
+  ]);
+
+  if (!sourcePath) {
+    throw new Error('SuperCmd Whisper transcriber source is missing. Run npm run build:native to regenerate the binary.');
+  }
+
+  fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
+
+  try {
+    const { execFileSync } = require('child_process');
+    execFileSync('swiftc', [
+      '-O',
+      '-module-cache-path', path.join(os.tmpdir(), 'supercmd-swift-module-cache'),
+      '-F', runtimeDir,
+      '-framework', 'whisper',
+      '-Xlinker', '-rpath',
+      '-Xlinker', '@executable_path/whisper-runtime',
+      '-o', binaryPath,
+      sourcePath,
+    ]);
+    console.log('[Whisper][whisper.cpp] Compiled whisper-transcriber binary');
+  } catch (error) {
+    console.error('[Whisper][whisper.cpp] Compile failed:', error);
+    throw new Error('Failed to compile SuperCmd Whisper transcriber. Ensure Xcode Command Line Tools are installed.');
+  }
+
+  return binaryPath;
+}
+
+async function transcribeAudioWithWhisperCpp(opts: {
+  audioBuffer: Buffer;
+  language?: string;
+  mimeType?: string;
+}): Promise<string> {
+  const mimeType = String(opts.mimeType || 'audio/wav').toLowerCase();
+  if (mimeType && !mimeType.includes('wav')) {
+    throw new Error(`SuperCmd Whisper transcription expects WAV audio, received ${mimeType}.`);
+  }
+
+  const binaryPath = ensureWhisperCppTranscriberBinary();
+  const status = getWhisperCppModelStatus();
+  if (status.state === 'downloading') {
+    throw new Error('The SuperCmd Whisper model is still downloading. Finish setup from onboarding or Settings -> AI -> SuperCmd Whisper.');
+  }
+  if (status.state !== 'downloaded') {
+    throw new Error('The SuperCmd Whisper model has not been downloaded yet. Download it from onboarding or Settings -> AI -> SuperCmd Whisper.');
+  }
+  const modelPath = status.path;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'supercmd-whispercpp-'));
+  const audioPath = path.join(tempDir, 'input.wav');
+
+  try {
+    fs.writeFileSync(audioPath, opts.audioBuffer);
+
+    const language = normalizeWhisperLanguageCode(opts.language);
+    const { spawn } = require('child_process');
+
+    const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      const child = spawn(binaryPath, [
+        '--model', modelPath,
+        '--file', audioPath,
+        '--language', language,
+      ], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (chunk: Buffer | string) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on('data', (chunk: Buffer | string) => {
+        stderr += chunk.toString();
+      });
+      child.on('error', (error: Error) => reject(error));
+      child.on('exit', (code: number | null) => {
+        if (code === 0) {
+          resolve({ stdout, stderr });
+          return;
+        }
+        reject(new Error(stderr.trim() || `SuperCmd Whisper exited with code ${code}`));
+      });
+    });
+
+    const transcriptMarker = '__TRANSCRIPT__:';
+    const markerIndex = result.stdout.lastIndexOf(transcriptMarker);
+    if (markerIndex >= 0) {
+      return result.stdout.slice(markerIndex + transcriptMarker.length).trim();
+    }
+
+    return result.stdout.trim();
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+function normalizeWhisperLanguageCode(rawLanguage?: string): string {
+  const normalized = String(rawLanguage || '').trim().toLowerCase();
+  if (!normalized) return 'en';
+
+  // whisper.cpp expects a language token like "en", "de", or "pt".
+  const shortCode = normalized.split(/[-_]/)[0];
+  return shortCode || 'en';
+}
 type WindowManagementLayoutItem = {
   id: string;
   bounds?: {
@@ -11379,6 +11760,15 @@ if let tiff = image?.tiffRepresentation {
     return await refineWhisperTranscript(transcript);
   });
 
+  ipcMain.handle('whispercpp-model-status', async () => {
+    return getWhisperCppModelStatus();
+  });
+
+  ipcMain.handle('whispercpp-download-model', async () => {
+    await ensureWhisperCppModelDownloaded();
+    return getWhisperCppModelStatus();
+  });
+
   ipcMain.handle(
     'whisper-transcribe',
     async (_event: any, audioArrayBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }) => {
@@ -11390,13 +11780,13 @@ if let tiff = image?.tiffRepresentation {
         throw new Error('SuperCmd Whisper is disabled in Settings -> AI.');
       }
 
-      // Parse speechToTextModel to a concrete provider model.
-      let provider: 'openai' | 'elevenlabs' = 'openai';
-      let model = 'gpt-4o-transcribe';
+      // Parse speechToTextModel to a concrete provider/model pair.
+      let provider: 'whispercpp' | 'openai' | 'elevenlabs' = 'whispercpp';
+      let model = `ggml-${WHISPERCPP_MODEL_NAME}`;
       const sttModel = s.ai.speechToTextModel || '';
-      if (!sttModel || sttModel === 'default') {
-        provider = 'openai';
-        model = 'gpt-4o-transcribe';
+      if (!sttModel || sttModel === 'default' || sttModel === 'whispercpp') {
+        provider = 'whispercpp';
+        model = `ggml-${WHISPERCPP_MODEL_NAME}`;
       } else if (sttModel === 'native') {
         // Renderer should not call cloud transcription in native mode.
         // Return empty transcript instead of surfacing an IPC error.
@@ -11419,30 +11809,35 @@ if let tiff = image?.tiffRepresentation {
         throw new Error('ElevenLabs API key not configured. Set it in Settings -> AI (or ELEVENLABS_API_KEY env var).');
       }
 
-      // Convert BCP-47 (e.g. 'en-US') to ISO-639-1 (e.g. 'en')
       const rawLang = options?.language || s.ai.speechLanguage || 'en-US';
-      const language = rawLang.split('-')[0].toLowerCase() || 'en';
+      const language = normalizeWhisperLanguageCode(rawLang);
       const mimeType = options?.mimeType;
 
       const audioBuffer = Buffer.from(audioArrayBuffer);
 
       console.log(`[Whisper] Transcribing ${audioBuffer.length} bytes, provider=${provider}, model=${model}, lang=${language}, mime=${mimeType || 'unknown'}`);
 
-      const text = provider === 'elevenlabs'
-        ? await transcribeAudioWithElevenLabs({
+      const text = provider === 'whispercpp'
+        ? await transcribeAudioWithWhisperCpp({
             audioBuffer,
-            apiKey: elevenLabsApiKey,
-            model,
             language,
             mimeType,
           })
-        : await transcribeAudio({
-            audioBuffer,
-            apiKey: s.ai.openaiApiKey,
-            model,
-            language,
-            mimeType,
-          });
+        : provider === 'elevenlabs'
+          ? await transcribeAudioWithElevenLabs({
+              audioBuffer,
+              apiKey: elevenLabsApiKey,
+              model,
+              language,
+              mimeType,
+            })
+          : await transcribeAudio({
+              audioBuffer,
+              apiKey: s.ai.openaiApiKey,
+              model,
+              language,
+              mimeType,
+            });
 
       console.log(`[Whisper] Transcription result: "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`);
       return text;

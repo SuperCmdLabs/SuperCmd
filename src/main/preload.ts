@@ -629,6 +629,24 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('ai-is-available'),
   whisperRefineTranscript: (transcript: string): Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }> =>
     ipcRenderer.invoke('whisper-refine-transcript', transcript),
+  whisperCppModelStatus: (): Promise<{
+    state: 'not-downloaded' | 'downloading' | 'downloaded' | 'error';
+    modelName: string;
+    path: string;
+    bytesDownloaded: number;
+    totalBytes: number | null;
+    error?: string;
+  }> =>
+    ipcRenderer.invoke('whispercpp-model-status'),
+  whisperCppDownloadModel: (): Promise<{
+    state: 'not-downloaded' | 'downloading' | 'downloaded' | 'error';
+    modelName: string;
+    path: string;
+    bytesDownloaded: number;
+    totalBytes: number | null;
+    error?: string;
+  }> =>
+    ipcRenderer.invoke('whispercpp-download-model'),
   whisperDebugLog: (tag: string, message: string, data?: any): void =>
     ipcRenderer.send('whisper-debug-log', { tag, message, data }),
   whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }): Promise<string> =>
