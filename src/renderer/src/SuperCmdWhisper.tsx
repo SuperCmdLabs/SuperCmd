@@ -898,7 +898,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         setState('error');
         setStatusText(
           transcriptionEngineRef.current === 'whispercpp'
-            ? 'Local whisper.cpp transcription failed.'
+            ? 'SuperCmd Whisper transcription failed.'
             : 'Whisper transcription failed.'
         );
         setErrorText(message);

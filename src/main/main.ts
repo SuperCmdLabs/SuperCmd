@@ -387,7 +387,7 @@ function ensureWhisperCppTranscriberBinary(): string {
   const runtimeDir = getWhisperCppRuntimeDir();
   if (!fs.existsSync(frameworkPath)) {
     throw new Error(
-      `whisper.cpp runtime is missing. Rebuild native helpers to download the official ${WHISPERCPP_FRAMEWORK_VERSION} macOS framework.`
+      `SuperCmd Whisper runtime is missing. Rebuild native helpers to download the official ${WHISPERCPP_FRAMEWORK_VERSION} macOS framework.`
     );
   }
 
@@ -398,7 +398,7 @@ function ensureWhisperCppTranscriberBinary(): string {
   ]);
 
   if (!sourcePath) {
-    throw new Error('whisper.cpp transcriber source is missing. Run npm run build:native to regenerate the binary.');
+    throw new Error('SuperCmd Whisper transcriber source is missing. Run npm run build:native to regenerate the binary.');
   }
 
   fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
@@ -418,7 +418,7 @@ function ensureWhisperCppTranscriberBinary(): string {
     console.log('[Whisper][whisper.cpp] Compiled whisper-transcriber binary');
   } catch (error) {
     console.error('[Whisper][whisper.cpp] Compile failed:', error);
-    throw new Error('Failed to compile whisper.cpp transcriber. Ensure Xcode Command Line Tools are installed.');
+    throw new Error('Failed to compile SuperCmd Whisper transcriber. Ensure Xcode Command Line Tools are installed.');
   }
 
   return binaryPath;
@@ -431,16 +431,16 @@ async function transcribeAudioWithWhisperCpp(opts: {
 }): Promise<string> {
   const mimeType = String(opts.mimeType || 'audio/wav').toLowerCase();
   if (mimeType && !mimeType.includes('wav')) {
-    throw new Error(`Local whisper.cpp transcription expects WAV audio, received ${mimeType}.`);
+    throw new Error(`SuperCmd Whisper transcription expects WAV audio, received ${mimeType}.`);
   }
 
   const binaryPath = ensureWhisperCppTranscriberBinary();
   const status = getWhisperCppModelStatus();
   if (status.state === 'downloading') {
-    throw new Error('The local whisper.cpp model is still downloading. Finish setup from onboarding or Settings -> AI -> SuperCmd Whisper.');
+    throw new Error('The SuperCmd Whisper model is still downloading. Finish setup from onboarding or Settings -> AI -> SuperCmd Whisper.');
   }
   if (status.state !== 'downloaded') {
-    throw new Error('The local whisper.cpp model has not been downloaded yet. Download it from onboarding or Settings -> AI -> SuperCmd Whisper.');
+    throw new Error('The SuperCmd Whisper model has not been downloaded yet. Download it from onboarding or Settings -> AI -> SuperCmd Whisper.');
   }
   const modelPath = status.path;
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'supercmd-whispercpp-'));
@@ -449,7 +449,7 @@ async function transcribeAudioWithWhisperCpp(opts: {
   try {
     fs.writeFileSync(audioPath, opts.audioBuffer);
 
-    const language = String(opts.language || 'en').trim() || 'en';
+    const language = normalizeWhisperLanguageCode(opts.language);
     const { spawn } = require('child_process');
 
     const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
@@ -476,7 +476,7 @@ async function transcribeAudioWithWhisperCpp(opts: {
           resolve({ stdout, stderr });
           return;
         }
-        reject(new Error(stderr.trim() || `whisper.cpp exited with code ${code}`));
+        reject(new Error(stderr.trim() || `SuperCmd Whisper exited with code ${code}`));
       });
     });
 
@@ -490,6 +490,15 @@ async function transcribeAudioWithWhisperCpp(opts: {
   } finally {
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
+}
+
+function normalizeWhisperLanguageCode(rawLanguage?: string): string {
+  const normalized = String(rawLanguage || '').trim().toLowerCase();
+  if (!normalized) return 'en';
+
+  // whisper.cpp expects a language token like "en", "de", or "pt".
+  const shortCode = normalized.split(/[-_]/)[0];
+  return shortCode || 'en';
 }
 
 type WindowManagementLayoutItem = {
@@ -11690,9 +11699,8 @@ if let tiff = image?.tiffRepresentation {
         throw new Error('ElevenLabs API key not configured. Set it in Settings -> AI (or ELEVENLABS_API_KEY env var).');
       }
 
-      // Convert BCP-47 (e.g. 'en-US') to ISO-639-1 (e.g. 'en')
       const rawLang = options?.language || s.ai.speechLanguage || 'en-US';
-      const language = rawLang.split('-')[0].toLowerCase() || 'en';
+      const language = normalizeWhisperLanguageCode(rawLang);
       const mimeType = options?.mimeType;
 
       const audioBuffer = Buffer.from(audioArrayBuffer);

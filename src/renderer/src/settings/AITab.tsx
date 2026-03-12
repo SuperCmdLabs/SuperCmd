@@ -70,12 +70,30 @@ const CURATED_OLLAMA_MODELS = [
 ];
 
 const WHISPER_STT_OPTIONS = [
-  { id: 'whispercpp', label: 'GGML Whisper.cpp (Default)' },
+  { id: 'whispercpp', label: 'SuperCmd Whisper (Default)' },
   { id: 'native', label: 'Apple Speech Recognition' },
   { id: 'openai-gpt-4o-transcribe', label: 'OpenAI GPT-4o Transcribe' },
   { id: 'openai-whisper-1', label: 'OpenAI Whisper-1' },
   { id: 'elevenlabs-scribe-v1', label: 'ElevenLabs Scribe v1' },
   { id: 'elevenlabs-scribe-v2', label: 'ElevenLabs Scribe v2' },
+];
+
+const WHISPER_LANGUAGE_OPTIONS = [
+  { value: 'ar-EG', label: 'Arabic' },
+  { value: 'zh-CN', label: 'Chinese (Mandarin)' },
+  { value: 'en-US', label: 'English (US)' },
+  { value: 'en-GB', label: 'English (UK)' },
+  { value: 'fr-CA', label: 'French (Canada)' },
+  { value: 'fr-FR', label: 'French (France)' },
+  { value: 'de-DE', label: 'German' },
+  { value: 'hi-IN', label: 'Hindi' },
+  { value: 'it-IT', label: 'Italian' },
+  { value: 'ja-JP', label: 'Japanese' },
+  { value: 'ko-KR', label: 'Korean' },
+  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
+  { value: 'ru-RU', label: 'Russian' },
+  { value: 'es-MX', label: 'Spanish (Mexico)' },
+  { value: 'es-ES', label: 'Spanish (Spain)' },
 ];
 
 const SPEAK_TTS_OPTIONS = [
@@ -1111,7 +1129,25 @@ const AITab: React.FC = () => {
               {whisperModelValue === 'whispercpp' && (
                 <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2.5 py-2">
                   <p className="text-[0.6875rem] text-emerald-300">
-                    Offline on-device transcription via `whisper.cpp`. Download the default ggml base model below before using dictation.
+                    Offline on-device transcription via SuperCmd Whisper. Download the default ggml base model below before using dictation.
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'whispercpp' && (
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Recognition Language</label>
+                  <select
+                    value={ai.speechLanguage || 'en-US'}
+                    onChange={(e) => updateAI({ speechLanguage: e.target.value })}
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                  >
+                    {WHISPER_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-[0.6875rem] text-[var(--text-muted)]">
+                    SuperCmd passes the matching language code to the local `whisper.cpp` runtime automatically.
                   </p>
                 </div>
               )}
@@ -1119,7 +1155,7 @@ const AITab: React.FC = () => {
               {whisperModelValue === 'native' && (
                 <div className="bg-sky-500/10 border border-sky-500/20 rounded-md px-2.5 py-2">
                   <p className="text-[0.6875rem] text-sky-300">
-                    Uses Apple Speech Recognition instead of the local ggml Whisper model.
+                    Uses Apple Speech Recognition instead of SuperCmd Whisper.
                   </p>
                 </div>
               )}
@@ -1168,7 +1204,7 @@ const AITab: React.FC = () => {
                 <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Local Model</h3>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">SuperCmd Whisper</h3>
                       <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
                         Download the ggml base model once to enable local dictation.
                       </p>
@@ -1186,7 +1222,7 @@ const AITab: React.FC = () => {
                     ) : whisperCppModelStatus?.state === 'downloading' ? (
                       <div className="space-y-2">
                         <p className="text-[var(--text-secondary)]">
-                          Downloading {whisperCppModelStatus.modelName} model
+                          Downloading SuperCmd Whisper
                           {whisperCppModelStatus.totalBytes ? ` (${whisperCppPercent}%)` : '...'}
                         </p>
                         <div className="h-2 rounded-full bg-black/20 overflow-hidden">
@@ -1199,7 +1235,7 @@ const AITab: React.FC = () => {
                     ) : whisperCppModelStatus?.state === 'error' ? (
                       <p className="text-rose-300">{whisperCppModelStatus.error || 'Model download failed.'}</p>
                     ) : (
-                      <p className="text-amber-300">Model not downloaded yet. Download it now to use local whisper.cpp dictation.</p>
+                      <p className="text-amber-300">Model not downloaded yet. Download it now to use SuperCmd Whisper dictation.</p>
                     )}
                   </div>
 
@@ -1510,7 +1546,7 @@ const AITab: React.FC = () => {
             <div className="px-4 py-3.5 md:px-5">
               <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Notes</h3>
               <div className="mt-2 space-y-1.5 text-[0.75rem] text-[var(--text-muted)] leading-relaxed">
-                <p>Whisper default is the local ggml whisper.cpp model.</p>
+                <p>Whisper default is SuperCmd Whisper with a local ggml base model.</p>
                 <p>Speak default is Edge TTS with per-language male/female voice selection.</p>
                 <p>English voice options are intentionally limited to US and UK variants.</p>
                 <p>ElevenLabs custom voices (cloned/generated) will appear automatically when your API key is configured.</p>
