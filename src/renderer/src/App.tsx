@@ -1224,8 +1224,8 @@ const App: React.FC = () => {
   const calcOffset = calcResult ? 1 : 0;
   const contextualCommands = commands;
   const filteredCommands = useMemo(
-    () => filterCommands(contextualCommands, searchQuery),
-    [contextualCommands, searchQuery]
+    () => filterCommands(contextualCommands, searchQuery, commandAliases),
+    [contextualCommands, searchQuery, commandAliases]
   );
 
   // When calculator is showing but no commands match, show unfiltered list below
