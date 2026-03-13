@@ -6,6 +6,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { snapshotExtensionContext, withExtensionContext, type ExtensionContextSnapshot } from '../context-scope-runtime';
 
+function useStableArgs(args: any[]): any[] {
+  const ref = useRef(args);
+  const prevKey = useRef('');
+
+  let key: string;
+  try {
+    key = JSON.stringify(args);
+  } catch {
+    key = String(args);
+  }
+
+  if (prevKey.current !== key) {
+    prevKey.current = key;
+    ref.current = args;
+  }
+
+  return ref.current;
+}
+
 export function usePromise<T>(
   fn: (...args: any[]) => Promise<T>,
   args?: any[],
@@ -37,11 +56,13 @@ export function usePromise<T>(
     };
   }, []);
 
+  const stableArgs = useStableArgs(args || []);
+
   const fnRef = useRef(fn);
-  const argsRef = useRef(args || []);
+  const argsRef = useRef(stableArgs);
   const runtimeCtxRef = useRef<ExtensionContextSnapshot>(snapshotExtensionContext());
   fnRef.current = fn;
-  argsRef.current = args || [];
+  argsRef.current = stableArgs;
   runtimeCtxRef.current = snapshotExtensionContext();
 
   const execute = useCallback(() => {
@@ -76,7 +97,7 @@ export function usePromise<T>(
 
   useEffect(() => {
     execute();
-  }, [execute, ...(args || [])]);
+  }, [execute, stableArgs]);
 
   const revalidate = useCallback(() => {
     execute();
