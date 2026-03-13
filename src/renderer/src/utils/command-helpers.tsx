@@ -152,7 +152,11 @@ function bestTermScore(term: string, candidates: SearchCandidate[]): number {
 /**
  * Filter and sort commands based on search query
  */
-export function filterCommands(commands: CommandInfo[], query: string): CommandInfo[] {
+export function filterCommands(
+  commands: CommandInfo[],
+  query: string,
+  aliasLookup: Record<string, string> = {}
+): CommandInfo[] {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) {
     return commands;
@@ -164,11 +168,15 @@ export function filterCommands(commands: CommandInfo[], query: string): CommandI
     .map((cmd) => {
       const title = normalizeSearchText(cmd.title);
       const subtitle = normalizeSearchText(String(cmd.subtitle || ''));
+      const normalizedAlias = normalizeSearchText(aliasLookup[cmd.id] || '');
+      const aliasTokens = normalizedAlias ? tokenizeSearchText(normalizedAlias) : [];
       const keywordTokens = (cmd.keywords || []).flatMap((keyword) => tokenizeSearchText(keyword));
       const titleTokens = tokenizeSearchText(cmd.title);
       const subtitleTokens = tokenizeSearchText(String(cmd.subtitle || ''));
+      const hasExactAliasMatch = Boolean(normalizedAlias) && normalizedAlias === normalizedQuery;
 
       const candidates: SearchCandidate[] = [
+        ...aliasTokens.map((token) => ({ token, weight: 1.08 })),
         ...titleTokens.map((token) => ({ token, weight: 1 })),
         ...keywordTokens.map((token) => ({ token, weight: 0.92 })),
         ...subtitleTokens.map((token) => ({ token, weight: 0.76 })),
@@ -180,12 +188,18 @@ export function filterCommands(commands: CommandInfo[], query: string): CommandI
 
       let score = 0;
 
-      if (title === normalizedQuery) {
+      if (hasExactAliasMatch) {
+        score += 1200;
+      } else if (title === normalizedQuery) {
         score += 420;
       } else if (title.startsWith(normalizedQuery)) {
         score += 320;
       } else if (title.includes(normalizedQuery)) {
         score += 260;
+      } else if (normalizedAlias && normalizedAlias.startsWith(normalizedQuery)) {
+        score += 240;
+      } else if (normalizedAlias && normalizedAlias.includes(normalizedQuery)) {
+        score += 200;
       } else if (keywordTokens.includes(normalizedQuery)) {
         score += 225;
       } else if (keywordTokens.some((keyword) => keyword.includes(normalizedQuery))) {
@@ -216,10 +230,16 @@ export function filterCommands(commands: CommandInfo[], query: string): CommandI
       // Favor concise titles when scores are close.
       score += Math.max(0, 12 - Math.max(0, title.length - normalizedQuery.length));
 
-      return { cmd, score, title };
+      return { cmd, score, title, hasExactAliasMatch };
     })
-    .filter((entry): entry is { cmd: CommandInfo; score: number; title: string } => Boolean(entry) && entry.score > 0)
+    .filter(
+      (entry): entry is { cmd: CommandInfo; score: number; title: string; hasExactAliasMatch: boolean } =>
+        Boolean(entry) && entry.score > 0
+    )
     .sort((a, b) => {
+      if (a.hasExactAliasMatch !== b.hasExactAliasMatch) {
+        return Number(b.hasExactAliasMatch) - Number(a.hasExactAliasMatch);
+      }
       if (b.score !== a.score) return b.score - a.score;
       return a.title.localeCompare(b.title);
     });
