@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles } from 'lucide-react';
+import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2 } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AppUpdaterStatus } from '../../types/electron';
 import { applyAppFontSize, getDefaultAppFontSize } from '../utils/font-size';
@@ -26,6 +26,13 @@ const FONT_SIZE_OPTIONS: Array<{ id: FontSizeOption; label: string }> = [
   { id: 'large', label: 'Large' },
   { id: 'extra-large', label: 'Extra Large' },
 ];
+
+function getFileName(filePath: string): string {
+  const normalizedPath = String(filePath || '').trim().replace(/\/+$/, '');
+  if (!normalizedPath) return '';
+  const segments = normalizedPath.split('/');
+  return segments[segments.length - 1] || normalizedPath;
+}
 
 function formatBytes(bytes?: number): string {
   const value = Number(bytes || 0);
@@ -75,6 +82,7 @@ const GeneralTab: React.FC = () => {
   const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [themePreference, setThemePreference] = useState<ThemePreference>(() => getThemePreference());
   const [uiStyle, setUiStyle] = useState<UiStylePreference>('default');
+  const [launcherBackgroundBusy, setLauncherBackgroundBusy] = useState(false);
 
   useEffect(() => {
     window.electron.getSettings().then((nextSettings) => {
@@ -90,6 +98,11 @@ const GeneralTab: React.FC = () => {
 
   useEffect(() => {
     const cleanup = window.electron.onSettingsUpdated?.((nextSettings) => {
+      const normalizedFontSize = nextSettings.fontSize || getDefaultAppFontSize();
+      setSettings({
+        ...nextSettings,
+        fontSize: normalizedFontSize,
+      });
       setUiStyle(normalizeUiStyle(nextSettings.uiStyle));
     });
     return cleanup;
@@ -262,11 +275,48 @@ const GeneralTab: React.FC = () => {
     }
   };
 
+  const handleSelectLauncherBackgroundImage = async () => {
+    if (!settings || launcherBackgroundBusy) return;
+    setLauncherBackgroundBusy(true);
+    try {
+      const selectedPath = await window.electron.pickLauncherBackgroundImage();
+      if (!selectedPath) return;
+      const nextSettings = await window.electron.saveSettings({ launcherBackgroundImagePath: selectedPath });
+      setSettings(nextSettings);
+    } finally {
+      setLauncherBackgroundBusy(false);
+    }
+  };
+
+  const handleClearLauncherBackgroundImage = async () => {
+    if (!settings || launcherBackgroundBusy || !settings.launcherBackgroundImagePath) return;
+    setLauncherBackgroundBusy(true);
+    try {
+      const nextSettings = await window.electron.saveSettings({ launcherBackgroundImagePath: '' });
+      setSettings(nextSettings);
+    } finally {
+      setLauncherBackgroundBusy(false);
+    }
+  };
+
+  const handleLauncherBackgroundEverywhereChange = async (enabled: boolean) => {
+    if (!settings) return;
+    setSettings((prev) => (prev ? { ...prev, launcherBackgroundImageEverywhere: enabled } : prev));
+    try {
+      await window.electron.saveSettings({ launcherBackgroundImageEverywhere: enabled });
+    } catch {
+      setSettings((prev) => (
+        prev ? { ...prev, launcherBackgroundImageEverywhere: !enabled } : prev
+      ));
+    }
+  };
+
   if (!settings) {
     return <div className="p-6 text-[var(--text-muted)] text-[0.75rem]">Loading settings...</div>;
   }
 
   const selectedFontSize = settings.fontSize || getDefaultAppFontSize();
+  const launcherBackgroundFileName = getFileName(settings.launcherBackgroundImagePath);
 
   return (
     <div className="w-full max-w-[980px] mx-auto space-y-3">
@@ -370,6 +420,63 @@ const GeneralTab: React.FC = () => {
                 </button>
               );
             })}
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<Image className="w-4 h-4" />}
+          title="Launcher Background Image"
+          description="Show a softly blurred, low-opacity image behind the launcher so it reads like a hint, not a full wallpaper."
+        >
+          <div className="w-full flex flex-col items-start gap-3">
+            {!launcherBackgroundFileName ? (
+              <p className="text-[0.75rem] text-[var(--text-subtle)]">
+                No image selected. The launcher will keep using its current background.
+              </p>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSelectLauncherBackgroundImage()}
+                disabled={launcherBackgroundBusy}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] text-[0.75rem] font-semibold text-[var(--text-primary)] hover:border-[var(--ui-segment-border)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+              >
+                <Image className="w-3.5 h-3.5" />
+                {launcherBackgroundFileName ? 'Change Image' : 'Choose Image'}
+              </button>
+
+              {launcherBackgroundFileName ? (
+                <button
+                  type="button"
+                  onClick={() => void handleClearLauncherBackgroundImage()}
+                  disabled={launcherBackgroundBusy}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-[var(--ui-divider)] bg-transparent text-[0.75rem] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Remove
+                </button>
+              ) : null}
+            </div>
+
+            {launcherBackgroundFileName ? (
+              <p className="max-w-full truncate text-[0.75rem] font-semibold text-[var(--text-muted)]">
+                {launcherBackgroundFileName}
+              </p>
+            ) : null}
+
+            <label className="inline-flex items-center gap-2.5 text-[0.75rem] text-[var(--text-secondary)] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.launcherBackgroundImageEverywhere ?? false}
+                onChange={(event) => {
+                  void handleLauncherBackgroundEverywhereChange(event.target.checked);
+                }}
+                className="settings-checkbox"
+                disabled={!launcherBackgroundFileName}
+              />
+              Use this image in extension and core launcher views too
+            </label>
           </div>
         </SettingsRow>
 

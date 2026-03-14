@@ -600,6 +600,8 @@ contextBridge.exposeInMainWorld('electron', {
     showHiddenFiles?: boolean;
   }): Promise<string[]> =>
     ipcRenderer.invoke('pick-files', options),
+  pickLauncherBackgroundImage: (): Promise<string | null> =>
+    ipcRenderer.invoke('pick-launcher-background-image'),
 
   // ─── Menu Bar (Tray) Extensions ────────────────────────────────
   getMenuBarExtensions: (): Promise<any[]> =>
