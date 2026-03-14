@@ -19,6 +19,8 @@ struct Payload: Codable {
     let granted: Bool
     let accessStatus: String
     let events: [AgendaEvent]
+    let requested: Bool?
+    let canPrompt: Bool?
     let error: String?
 }
 
@@ -106,21 +108,11 @@ func hexString(for color: CGColor?) -> String {
     )
 }
 
+let shouldPrompt = CommandLine.arguments.contains("--prompt")
+let promptOnly = CommandLine.arguments.contains("--prompt-only")
+
 let formatter = ISO8601DateFormatter()
 formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-guard let startRaw = parseArgument("--start"),
-      let endRaw = parseArgument("--end"),
-      let startDate = formatter.date(from: startRaw),
-      let endDate = formatter.date(from: endRaw) else {
-    emit(Payload(
-        granted: false,
-        accessStatus: "unknown",
-        events: [],
-        error: "Missing or invalid --start / --end arguments."
-    ))
-    exit(1)
-}
 
 let eventStore = EKEventStore()
 let initialStatus = EKEventStore.authorizationStatus(for: .event)
@@ -145,12 +137,18 @@ func requestAccess() -> Bool {
     return allowed
 }
 
+var didRequest = false
 let hasAccess: Bool
 switch initialStatus {
 case .fullAccess, .authorized:
     hasAccess = true
 case .notDetermined:
-    hasAccess = requestAccess()
+    if shouldPrompt {
+        didRequest = true
+        hasAccess = requestAccess()
+    } else {
+        hasAccess = false
+    }
 default:
     hasAccess = false
 }
@@ -163,12 +161,44 @@ if #available(macOS 14.0, *) {
 } else {
     hasReadableAccess = finalStatus == .authorized
 }
+let canPrompt = finalStatus == .notDetermined
+
+if promptOnly {
+    emit(Payload(
+        granted: hasAccess || hasReadableAccess,
+        accessStatus: statusString,
+        events: [],
+        requested: didRequest,
+        canPrompt: canPrompt,
+        error: (hasAccess || hasReadableAccess)
+            ? nil
+            : "Calendar access is required. Allow SuperCmd in System Settings > Privacy & Security > Calendars."
+    ))
+    exit((hasAccess || hasReadableAccess) ? 0 : 1)
+}
+
+guard let startRaw = parseArgument("--start"),
+      let endRaw = parseArgument("--end"),
+      let startDate = formatter.date(from: startRaw),
+      let endDate = formatter.date(from: endRaw) else {
+    emit(Payload(
+        granted: false,
+        accessStatus: statusString,
+        events: [],
+        requested: didRequest,
+        canPrompt: canPrompt,
+        error: "Missing or invalid --start / --end arguments."
+    ))
+    exit(1)
+}
 
 guard hasAccess || hasReadableAccess else {
     emit(Payload(
         granted: false,
         accessStatus: statusString,
         events: [],
+        requested: didRequest,
+        canPrompt: canPrompt,
         error: "Calendar access is required. Allow SuperCmd in System Settings > Privacy & Security > Calendars."
     ))
     exit(1)
@@ -197,5 +227,7 @@ emit(Payload(
     granted: true,
     accessStatus: statusString,
     events: events,
+    requested: didRequest,
+    canPrompt: canPrompt,
     error: nil
 ))

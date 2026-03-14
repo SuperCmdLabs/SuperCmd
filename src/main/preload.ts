@@ -419,6 +419,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('run-applescript', script),
 
   // Calendar
+  ensureCalendarAccess: (options?: { prompt?: boolean }): Promise<any> =>
+    ipcRenderer.invoke('calendar-ensure-access', options),
   getCalendarEvents: (payload: { start: string; end: string }): Promise<any> =>
     ipcRenderer.invoke('calendar-get-events', payload),
 

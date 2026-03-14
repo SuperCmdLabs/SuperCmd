@@ -77,6 +77,14 @@ export interface CalendarEventsResult {
   error?: string;
 }
 
+export interface CalendarPermissionResult {
+  granted: boolean;
+  accessStatus: CalendarAccessStatus;
+  requested: boolean;
+  canPrompt: boolean;
+  error?: string;
+}
+
 export interface ExtensionPreferenceSchema {
   scope: 'extension' | 'command';
   name: string;
@@ -499,6 +507,7 @@ export interface ElectronAPI {
   getDefaultApplication: (filePath: string) => Promise<{ name: string; path: string; bundleId?: string }>;
   getFrontmostApplication: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   runAppleScript: (script: string) => Promise<string>;
+  ensureCalendarAccess: (options?: { prompt?: boolean }) => Promise<CalendarPermissionResult>;
   getCalendarEvents: (payload: { start: string; end: string }) => Promise<CalendarEventsResult>;
   moveToTrash: (paths: string[]) => Promise<void>;
   readFile: (filePath: string) => Promise<string>;
