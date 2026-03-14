@@ -18,6 +18,7 @@ import type {
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
+import NotesManager from './NotesManager';
 import QuickLinkManager from './QuickLinkManager';
 import CameraExtension from './CameraExtension';
 import ScheduleExtension from './ScheduleExtension';
@@ -255,12 +256,12 @@ const App: React.FC = () => {
   const homeDir = String((window.electron as any).homeDir || '');
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
-    showClipboardManager, showSnippetManager, showQuickLinkManager, showFileSearch, showCursorPrompt,
+    showClipboardManager, showNotesManager, showSnippetManager, showQuickLinkManager, showFileSearch, showCursorPrompt,
     showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
-    openOnboarding, openWhisper, openClipboardManager,
+    openOnboarding, openWhisper, openClipboardManager, openNotesManager,
     openSnippetManager, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openSchedule, openWindowManager,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
-    setShowClipboardManager, setShowSnippetManager, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
+    setShowClipboardManager, setShowNotesManager, setShowSnippetManager, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
     setShowWhisper, setShowSpeak, setShowCamera, setShowSchedule, setShowWindowManager, setShowWhisperOnboarding, setShowWhisperHint,
     setShowOnboarding, setAiMode,
   } = useAppViewManager();
@@ -611,6 +612,14 @@ const App: React.FC = () => {
           setShowSnippetManager(null);
           setShowFileSearch(false);
           openClipboardManager();
+          return;
+        }
+        if (routedSystemCommandId === 'system-search-notes') {
+          openNotesManager('search');
+          return;
+        }
+        if (routedSystemCommandId === 'system-create-note') {
+          openNotesManager('create');
           return;
         }
         if (routedSystemCommandId === 'system-search-snippets') {
@@ -1034,10 +1043,10 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showSchedule && !showWindowManager && !showOnboarding) {
+    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !aiMode && !extensionView && !showClipboardManager && !showNotesManager && !showSnippetManager && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showSchedule && !showWindowManager && !showOnboarding) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, quickLinkDynamicPrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
+  }, [showActions, contextMenu, quickLinkDynamicPrompt, aiMode, extensionView, showClipboardManager, showNotesManager, showSnippetManager, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
 
   const isLauncherModeActive =
     !showActions &&
@@ -1046,6 +1055,7 @@ const App: React.FC = () => {
     !aiMode &&
     !extensionView &&
     !showClipboardManager &&
+    !showNotesManager &&
     !showSnippetManager &&
     !showQuickLinkManager &&
     !showFileSearch &&
@@ -1908,6 +1918,16 @@ const App: React.FC = () => {
       openClipboardManager();
       return true;
     }
+    if (commandId === 'system-search-notes') {
+      whisperSessionRef.current = false;
+      openNotesManager('search');
+      return true;
+    }
+    if (commandId === 'system-create-note') {
+      whisperSessionRef.current = false;
+      openNotesManager('create');
+      return true;
+    }
     if (commandId === 'system-search-snippets') {
       whisperSessionRef.current = false;
       openSnippetManager('search');
@@ -2037,6 +2057,14 @@ const App: React.FC = () => {
     }
     if (commandId === 'system-supercmd-speak-close') {
       setShowSpeak(false);
+      return true;
+    }
+    if (commandId === 'system-import-notes') {
+      await window.electron.noteImport();
+      return true;
+    }
+    if (commandId === 'system-export-notes') {
+      await window.electron.noteExport();
       return true;
     }
     if (commandId === 'system-import-snippets') {
@@ -2938,6 +2966,28 @@ const App: React.FC = () => {
         acceptCursorPrompt={acceptCursorPrompt}
         alwaysMountedRunners={alwaysMountedRunners}
       />
+    );
+  }
+
+  // ─── Notes Manager mode ──────────────────────────────────────────
+  if (showNotesManager) {
+    return (
+      <>
+        {alwaysMountedRunners}
+        <div className="w-full h-full">
+          <div className="glass-effect overflow-hidden h-full flex flex-col">
+            <NotesManager
+              initialView={showNotesManager}
+              onClose={() => {
+                setShowNotesManager(null);
+                setSearchQuery('');
+                setSelectedIndex(0);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+            />
+          </div>
+        </div>
+      </>
     );
   }
 

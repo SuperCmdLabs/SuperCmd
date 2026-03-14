@@ -66,6 +66,21 @@ import {
   exportSnippetsToFile,
 } from './snippet-store';
 import {
+  initNoteStore,
+  getAllNotes,
+  searchNotes,
+  createNote,
+  updateNote,
+  deleteNote,
+  deleteAllNotes,
+  duplicateNote,
+  togglePinNote,
+  copyNoteToClipboard,
+  exportNoteToFile,
+  importNotesFromFile,
+  exportNotesToFile,
+} from './notes-store';
+import {
   initQuickLinkStore,
   getAllQuickLinks,
   searchQuickLinks,
@@ -8725,6 +8740,9 @@ app.whenReady().then(async () => {
 
   // Initialize snippet store
   initSnippetStore();
+
+  // Initialize notes store
+  initNoteStore();
   try { refreshSnippetExpander(); } catch (e) {
     console.warn('[SnippetExpander] Failed to start:', e);
   }
@@ -10966,6 +10984,129 @@ if let tiff = image?.tiffRepresentation {
     } finally {
       suppressBlurHide = false;
     }
+  });
+
+  // ─── IPC: Notes Manager ────────────────────────────────────────
+
+  ipcMain.handle('note-get-all', () => {
+    return getAllNotes();
+  });
+
+  ipcMain.handle('note-search', (_event: any, query: string) => {
+    return searchNotes(query);
+  });
+
+  ipcMain.handle('note-create', (_event: any, data: { title: string; icon?: string; content?: string; theme?: string }) => {
+    return createNote(data as any);
+  });
+
+  ipcMain.handle('note-update', (_event: any, id: string, data: { title?: string; icon?: string; content?: string; theme?: string; pinned?: boolean }) => {
+    return updateNote(id, data as any);
+  });
+
+  ipcMain.handle('note-delete', (_event: any, id: string) => {
+    return deleteNote(id);
+  });
+
+  ipcMain.handle('note-delete-all', () => {
+    return deleteAllNotes();
+  });
+
+  ipcMain.handle('note-duplicate', (_event: any, id: string) => {
+    return duplicateNote(id);
+  });
+
+  ipcMain.handle('note-toggle-pin', (_event: any, id: string) => {
+    return togglePinNote(id);
+  });
+
+  ipcMain.handle('note-copy-to-clipboard', (_event: any, id: string, format?: string) => {
+    return copyNoteToClipboard(id, (format as any) || 'markdown');
+  });
+
+  ipcMain.handle('note-export-to-file', async (event: any, id: string, format: string) => {
+    suppressBlurHide = true;
+    try {
+      return await exportNoteToFile(id, format as any, getDialogParentWindow(event));
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('note-import', async (event: any) => {
+    suppressBlurHide = true;
+    try {
+      return await importNotesFromFile(getDialogParentWindow(event));
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('note-export', async (event: any) => {
+    suppressBlurHide = true;
+    try {
+      return await exportNotesToFile(getDialogParentWindow(event));
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  // ─── IPC: Notes Window Resizing ─────────────────────────────────
+
+  let notesOriginalHeight: number | null = null;
+  let notesManualResize = false;
+  let notesProgrammaticResize = false; // suppress manual-resize detection during programmatic setSize
+
+  ipcMain.handle('note-set-window-height', (_event: any, height: number) => {
+    if (!mainWindow) return;
+    const [w, h] = mainWindow.getSize();
+    const clampedHeight = Math.max(420, Math.min(Math.round(height), 900));
+    if (notesOriginalHeight === null) notesOriginalHeight = h;
+    if (notesManualResize) return; // user overrode auto-sizing
+    notesProgrammaticResize = true;
+    mainWindow.setSize(w, clampedHeight);
+    setTimeout(() => { notesProgrammaticResize = false; }, 100);
+  });
+
+  ipcMain.handle('note-set-resizable', (_event: any, resizable: boolean) => {
+    if (!mainWindow) return;
+    if (resizable) {
+      const [, h] = mainWindow.getSize();
+      if (notesOriginalHeight === null) notesOriginalHeight = h;
+      mainWindow.setResizable(true);
+      // Listen for manual resize (only when not programmatic)
+      const onResize = () => {
+        if (!notesProgrammaticResize) notesManualResize = true;
+      };
+      mainWindow.on('resize', onResize);
+      (mainWindow as any).__notesResizeCleanup = () => {
+        mainWindow?.removeListener('resize', onResize);
+      };
+    } else {
+      // Cleanup
+      if ((mainWindow as any).__notesResizeCleanup) {
+        (mainWindow as any).__notesResizeCleanup();
+        delete (mainWindow as any).__notesResizeCleanup;
+      }
+      notesProgrammaticResize = true;
+      mainWindow.setResizable(false);
+      // Restore original height
+      if (notesOriginalHeight !== null) {
+        const [w] = mainWindow.getSize();
+        mainWindow.setSize(w, notesOriginalHeight);
+        notesOriginalHeight = null;
+      }
+      notesManualResize = false;
+      setTimeout(() => { notesProgrammaticResize = false; }, 100);
+    }
+  });
+
+  ipcMain.handle('note-reset-auto-size', () => {
+    notesManualResize = false;
+  });
+
+  ipcMain.handle('note-get-manual-resize', () => {
+    return notesManualResize;
   });
 
   // ─── IPC: Quick Link Manager ───────────────────────────────────

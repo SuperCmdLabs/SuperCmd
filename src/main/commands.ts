@@ -1348,6 +1348,30 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-create-note',
+      title: 'Create Note',
+      keywords: ['note', 'notes', 'create', 'new', 'markdown', 'write'],
+      category: 'system',
+    },
+    {
+      id: 'system-search-notes',
+      title: 'Search Notes',
+      keywords: ['note', 'notes', 'search', 'find', 'markdown'],
+      category: 'system',
+    },
+    {
+      id: 'system-import-notes',
+      title: 'Import Notes',
+      keywords: ['note', 'notes', 'import', 'load', 'file'],
+      category: 'system',
+    },
+    {
+      id: 'system-export-notes',
+      title: 'Export Notes',
+      keywords: ['note', 'notes', 'export', 'save', 'backup', 'file'],
+      category: 'system',
+    },
+    {
       id: 'system-import-snippets',
       title: 'Import Snippets',
       keywords: ['snippet', 'import', 'load', 'file'],

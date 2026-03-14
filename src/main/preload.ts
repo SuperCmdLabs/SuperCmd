@@ -524,6 +524,40 @@ contextBridge.exposeInMainWorld('electron', {
   memoryAdd: (payload: { text: string; userId?: string; source?: string; metadata?: Record<string, any> }): Promise<{ success: boolean; memoryId?: string; error?: string }> =>
     ipcRenderer.invoke('memory-add', payload),
 
+  // ─── Notes Manager ─────────────────────────────────────────────
+  noteGetAll: (): Promise<any[]> =>
+    ipcRenderer.invoke('note-get-all'),
+  noteSearch: (query: string): Promise<any[]> =>
+    ipcRenderer.invoke('note-search', query),
+  noteCreate: (data: any): Promise<any> =>
+    ipcRenderer.invoke('note-create', data),
+  noteUpdate: (id: string, data: any): Promise<any> =>
+    ipcRenderer.invoke('note-update', id, data),
+  noteDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('note-delete', id),
+  noteDeleteAll: (): Promise<number> =>
+    ipcRenderer.invoke('note-delete-all'),
+  noteDuplicate: (id: string): Promise<any> =>
+    ipcRenderer.invoke('note-duplicate', id),
+  noteTogglePin: (id: string): Promise<any> =>
+    ipcRenderer.invoke('note-toggle-pin', id),
+  noteCopyToClipboard: (id: string, format?: string): Promise<boolean> =>
+    ipcRenderer.invoke('note-copy-to-clipboard', id, format),
+  noteExportToFile: (id: string, format: string): Promise<boolean> =>
+    ipcRenderer.invoke('note-export-to-file', id, format),
+  noteImport: (): Promise<{ imported: number; skipped: number }> =>
+    ipcRenderer.invoke('note-import'),
+  noteExport: (): Promise<boolean> =>
+    ipcRenderer.invoke('note-export'),
+  noteSetWindowHeight: (height: number): Promise<void> =>
+    ipcRenderer.invoke('note-set-window-height', height),
+  noteSetResizable: (resizable: boolean): Promise<void> =>
+    ipcRenderer.invoke('note-set-resizable', resizable),
+  noteResetAutoSize: (): Promise<void> =>
+    ipcRenderer.invoke('note-reset-auto-size'),
+  noteGetManualResize: (): Promise<boolean> =>
+    ipcRenderer.invoke('note-get-manual-resize'),
+
   // ─── Snippet Manager ────────────────────────────────────────────
   snippetGetAll: (): Promise<any[]> =>
     ipcRenderer.invoke('snippet-get-all'),

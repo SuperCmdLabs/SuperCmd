@@ -296,6 +296,31 @@ export interface QuickLinkDynamicField {
   defaultValue?: string;
 }
 
+export type NoteTheme =
+  | 'default'
+  | 'rose'
+  | 'orange'
+  | 'amber'
+  | 'emerald'
+  | 'cyan'
+  | 'blue'
+  | 'violet'
+  | 'fuchsia'
+  | 'slate';
+
+export type NoteExportFormat = 'markdown' | 'plaintext' | 'html';
+
+export interface Note {
+  id: string;
+  title: string;
+  icon: string;
+  content: string;
+  theme: NoteTheme;
+  pinned: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface OllamaLocalModel {
   name: string;
   size: number;
@@ -599,6 +624,24 @@ export interface ElectronAPI {
   updateMenuBar: (data: any) => void;
   removeMenuBar: (extId: string) => void;
   onMenuBarItemClick: (callback: (data: { extId: string; itemId: string }) => void) => void;
+
+  // Notes Manager
+  noteGetAll: () => Promise<Note[]>;
+  noteSearch: (query: string) => Promise<Note[]>;
+  noteCreate: (data: { title: string; icon?: string; content?: string; theme?: NoteTheme }) => Promise<Note>;
+  noteUpdate: (id: string, data: { title?: string; icon?: string; content?: string; theme?: NoteTheme; pinned?: boolean }) => Promise<Note | null>;
+  noteDelete: (id: string) => Promise<boolean>;
+  noteDeleteAll: () => Promise<number>;
+  noteDuplicate: (id: string) => Promise<Note | null>;
+  noteTogglePin: (id: string) => Promise<Note | null>;
+  noteCopyToClipboard: (id: string, format?: NoteExportFormat) => Promise<boolean>;
+  noteExportToFile: (id: string, format: NoteExportFormat) => Promise<boolean>;
+  noteImport: () => Promise<{ imported: number; skipped: number }>;
+  noteExport: () => Promise<boolean>;
+  noteSetWindowHeight: (height: number) => Promise<void>;
+  noteSetResizable: (resizable: boolean) => Promise<void>;
+  noteResetAutoSize: () => Promise<void>;
+  noteGetManualResize: () => Promise<boolean>;
 
   // AI
   aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }) => Promise<void>;
