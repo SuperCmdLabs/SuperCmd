@@ -2115,6 +2115,13 @@ const App: React.FC = () => {
     return cleanup;
   }, []);
 
+  // Signal main process that the renderer is mounted and IPC listeners are
+  // registered.  Main waits for this before dispatching the initial
+  // window-shown / run-system-command messages so they are never lost.
+  useEffect(() => {
+    window.electron.rendererReady();
+  }, []);
+
   const runScriptCommand = useCallback(
     async (
       command: CommandInfo,

@@ -3859,10 +3859,6 @@ function fetchEdgeTtsVoiceCatalog(timeoutMs = 12000): Promise<EdgeTtsVoiceCatalo
 }
 
 async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: boolean; clipboardWaitMs?: number }): Promise<string> {
-  // Skip System Events calls entirely when permission hasn't been confirmed yet
-  // to avoid triggering the macOS Automation permission dialog unexpectedly.
-  if (!systemEventsPermissionConfirmed) return '';
-
   const allowClipboardFallback = options?.allowClipboardFallback !== false;
   const clipboardWaitMs = Math.max(0, Number(options?.clipboardWaitMs ?? 380) || 380);
   const fromAccessibility = await (async () => {
@@ -3948,6 +3944,12 @@ function getRecentSelectionSnapshot(): string {
 
 async function captureSelectionSnapshotBeforeShow(options?: { allowClipboardFallback?: boolean }): Promise<string> {
   if (launcherMode !== 'default') {
+    rememberSelectionSnapshot('');
+    return '';
+  }
+  // Skip System Events during window-show if permission hasn't been confirmed
+  // yet, to avoid triggering the macOS Automation dialog unexpectedly.
+  if (!systemEventsPermissionConfirmed) {
     rememberSelectionSnapshot('');
     return '';
   }
@@ -12403,15 +12405,21 @@ if let tiff = image?.tiffRepresentation {
     hideWindow();
   });
 
-  // Wait for the renderer to finish loading before showing the window.
-  // Showing before load completes results in a blank/transparent frame.
-  if (mainWindow && mainWindow.webContents.isLoadingMainFrame()) {
-    mainWindow.webContents.once('did-finish-load', () => {
-      void openLauncherFromUserEntry();
-    });
-  } else {
+  // Wait for the renderer React app to mount before dispatching the initial
+  // window-shown / run-system-command.  `did-finish-load` only means the HTML
+  // document loaded — React useEffect listeners register asynchronously after
+  // that, so messages sent too early are silently lost.
+  let launcherEntryDispatched = false;
+  const dispatchLauncherEntry = () => {
+    if (launcherEntryDispatched) return;
+    launcherEntryDispatched = true;
     void openLauncherFromUserEntry();
-  }
+  };
+  ipcMain.once('renderer-ready', dispatchLauncherEntry);
+  // Safety fallback: if the renderer-ready signal never arrives (e.g. the
+  // renderer crashes or loads a different route), open the launcher anyway
+  // so first launch never silently hangs.
+  setTimeout(dispatchLauncherEntry, 5000);
 
   app.on('activate', () => {
     // During onboarding the window is shown but may lose visual focus to a system
@@ -12442,13 +12450,11 @@ if let tiff = image?.tiffRepresentation {
 
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
-      // New window — wait for content to load before showing.
-      if (mainWindow && mainWindow.webContents.isLoadingMainFrame()) {
-        mainWindow.webContents.once('did-finish-load', () => {
-          void openLauncherFromUserEntry();
-        });
-        return;
-      }
+      // New window — wait for the renderer React app to mount.
+      ipcMain.once('renderer-ready', () => {
+        void openLauncherFromUserEntry();
+      });
+      return;
     }
     void openLauncherFromUserEntry();
   });
