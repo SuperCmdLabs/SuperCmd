@@ -111,15 +111,21 @@ const READ_SAMPLE =
   'Voice-first interfaces are having a moment. After years of being dismissed as gimmicks, a new wave of tools is making it genuinely faster to speak than type — with transcription that keeps up, smart corrections, and shortcut keys that slot into existing workflows without disruption.';
 
 const SPEECH_LANGUAGE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'ar-EG', label: 'Arabic' },
+  { value: 'zh-CN', label: 'Chinese (Mandarin)' },
   { value: 'en-US', label: 'English (US)' },
   { value: 'en-GB', label: 'English (UK)' },
-  { value: 'es-ES', label: 'Spanish' },
+  { value: 'fr-CA', label: 'French (Canada)' },
   { value: 'fr-FR', label: 'French' },
   { value: 'de-DE', label: 'German' },
   { value: 'it-IT', label: 'Italian' },
-  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
   { value: 'hi-IN', label: 'Hindi' },
   { value: 'ja-JP', label: 'Japanese' },
+  { value: 'ko-KR', label: 'Korean' },
+  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
+  { value: 'ru-RU', label: 'Russian' },
+  { value: 'es-MX', label: 'Spanish (Mexico)' },
+  { value: 'es-ES', label: 'Spanish (Spain)' },
 ];
 
 function toHotkeyCaps(shortcut: string): string[] {
@@ -162,7 +168,6 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
   const [whisperCppModelStatus, setWhisperCppModelStatus] = useState<WhisperCppModelStatus | null>(null);
   const [whisperCppModelBusy, setWhisperCppModelBusy] = useState(false);
-  const [whisperCppSetupLater, setWhisperCppSetupLater] = useState(false);
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
   const openedPermissionsRef = useRef<Record<string, boolean>>({});
   const requestedPermissionsRef = useRef<Record<string, boolean>>({});
@@ -216,7 +221,6 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const startWhisperCppModelDownload = async () => {
     if (whisperCppModelBusy || whisperCppModelStatus?.state === 'downloaded') return;
     setWhisperCppModelBusy(true);
-    setWhisperCppSetupLater(false);
     setWhisperCppModelStatus((current) => ({
       state: 'downloading',
       modelName: current?.modelName || 'base',
@@ -248,7 +252,6 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       if (cancelled) return;
 
       if (
-        !whisperCppSetupLater &&
         !whisperCppModelBusy &&
         status &&
         (status.state === 'not-downloaded' || status.state === 'error')
@@ -268,7 +271,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [step, whisperCppModelBusy, whisperCppSetupLater]);
+  }, [step, whisperCppModelBusy]);
 
   const whisperCppDownloadPercent = useMemo(() => {
     if (!whisperCppModelStatus || whisperCppModelStatus.state !== 'downloading' || !whisperCppModelStatus.totalBytes) {
@@ -960,11 +963,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                       </div>
                     ) : whisperCppModelStatus?.state === 'error' ? (
                       <p className="text-rose-200 text-[11px] leading-relaxed">
-                        {whisperCppModelStatus.error || 'Model download failed. Retry now or set it up later from Settings.'}
-                      </p>
-                    ) : whisperCppSetupLater ? (
-                      <p className="text-white/62 text-[11px] leading-relaxed">
-                        Model download skipped for now. You can download it later from Settings → AI → SuperCmd Whisper.
+                        {whisperCppModelStatus.error || 'Model download failed. Retry now or use Settings → AI → SuperCmd Whisper.'}
                       </p>
                     ) : (
                       <p className="text-white/72 text-[11px] leading-relaxed">
@@ -984,14 +983,6 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                           : whisperCppModelStatus?.state === 'downloading'
                             ? 'Downloading...'
                             : 'Download Model'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setWhisperCppSetupLater(true)}
-                        disabled={whisperCppModelBusy || whisperCppModelStatus?.state === 'downloading' || whisperCppModelStatus?.state === 'downloaded'}
-                        className="inline-flex min-h-[32px] items-center justify-center rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors border border-white/[0.08] bg-transparent text-white/65 hover:text-white/90 hover:bg-white/[0.05] disabled:opacity-45 disabled:cursor-not-allowed"
-                      >
-                        Set Up Later
                       </button>
                     </div>
                   </div>

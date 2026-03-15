@@ -1127,8 +1127,8 @@ const AITab: React.FC = () => {
               )}
 
               {whisperModelValue === 'whispercpp' && (
-                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2.5 py-2">
-                  <p className="text-[0.6875rem] text-emerald-300">
+                <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
+                  <p className="text-[0.6875rem] text-[color:var(--status-success)]">
                     Offline on-device transcription via SuperCmd Whisper. Download the default ggml base model below before using dictation.
                   </p>
                 </div>
@@ -1210,7 +1210,7 @@ const AITab: React.FC = () => {
                       </p>
                     </div>
                     {whisperCppModelStatus?.state === 'downloaded' ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-300 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[color:var(--status-success)]" />
                     ) : (
                       <Download className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-0.5" />
                     )}
@@ -1218,7 +1218,7 @@ const AITab: React.FC = () => {
 
                   <div className="mt-3 text-[0.75rem]">
                     {whisperCppModelStatus?.state === 'downloaded' ? (
-                      <p className="text-emerald-300">Downloaded. SuperCmd Whisper is ready to use offline.</p>
+                      <p className="text-[color:var(--status-success)]">Downloaded. SuperCmd Whisper is ready to use offline.</p>
                     ) : whisperCppModelStatus?.state === 'downloading' ? (
                       <div className="space-y-2">
                         <p className="text-[var(--text-secondary)]">
