@@ -10373,7 +10373,13 @@ return appURL's |path|() as text`,
     'calendar-ensure-access',
     async (_event: any, options?: { prompt?: boolean }) => {
       const prompt = options?.prompt !== false;
-      return await ensureCalendarAccess(prompt);
+      const result = await ensureCalendarAccess(prompt);
+      // After the macOS permission dialog closes, the main window may have
+      // lost focus.  Re-focus it so the blur-to-hide mechanism works again.
+      if (prompt && mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+        try { mainWindow.focus(); } catch {}
+      }
+      return result;
     }
   );
 
