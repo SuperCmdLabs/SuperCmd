@@ -690,9 +690,9 @@ html {
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
-  opacity: 0.4;
+  opacity: var(--launcher-background-opacity, 0.46);
   transform: scale(1.015);
-  filter: blur(8px) saturate(1.24) brightness(1.02);
+  filter: blur(var(--launcher-background-blur, 9px)) saturate(1.24) brightness(1.02);
 }
 
 .launcher-background-tint {
@@ -704,14 +704,14 @@ html {
 }
 
 .dark .launcher-background-image {
-  opacity: 0.54;
-  filter: blur(9px) saturate(1.45) brightness(0.98);
+  opacity: var(--launcher-background-opacity, 0.46);
+  filter: blur(var(--launcher-background-blur, 9px)) saturate(1.45) brightness(0.98);
 }
 
 .sc-glassy .launcher-background-image,
 .sc-native-liquid-glass .launcher-background-image {
-  opacity: 0.46;
-  filter: blur(10px) saturate(1.32) brightness(1);
+  opacity: var(--launcher-background-opacity, 0.46);
+  filter: blur(var(--launcher-background-blur, 9px)) saturate(1.32) brightness(1);
 }
 
 .sc-dropdown-divider {

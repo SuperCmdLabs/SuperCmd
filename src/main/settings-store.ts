@@ -61,6 +61,8 @@ export interface AppSettings {
   baseColor: string;
   launcherBackgroundImagePath: string;
   launcherBackgroundImageEverywhere: boolean;
+  launcherBackgroundImageBlurPercent: number;
+  launcherBackgroundImageOpacityPercent: number;
   appUpdaterLastCheckedAt: number;
 }
 
@@ -134,6 +136,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   baseColor: '#101113',
   launcherBackgroundImagePath: '',
   launcherBackgroundImageEverywhere: false,
+  launcherBackgroundImageBlurPercent: 25,
+  launcherBackgroundImageOpacityPercent: 45,
   appUpdaterLastCheckedAt: 0,
 };
 
@@ -173,6 +177,12 @@ function normalizeBaseColor(value: any): string {
 
 function normalizeLauncherBackgroundImagePath(value: any): string {
   return String(value || '').trim();
+}
+
+function normalizePercentage(value: any, fallback: number): number {
+  const parsedValue = Number(value);
+  if (!Number.isFinite(parsedValue)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(parsedValue)));
 }
 
 function normalizeBoolean(value: any, fallback: boolean): boolean {
@@ -272,6 +282,14 @@ export function loadSettings(): AppSettings {
         parsed.launcherBackgroundImageEverywhere,
         DEFAULT_SETTINGS.launcherBackgroundImageEverywhere
       ),
+      launcherBackgroundImageBlurPercent: normalizePercentage(
+        parsed.launcherBackgroundImageBlurPercent,
+        DEFAULT_SETTINGS.launcherBackgroundImageBlurPercent
+      ),
+      launcherBackgroundImageOpacityPercent: normalizePercentage(
+        parsed.launcherBackgroundImageOpacityPercent,
+        DEFAULT_SETTINGS.launcherBackgroundImageOpacityPercent
+      ),
       appUpdaterLastCheckedAt: Number.isFinite(Number(parsed.appUpdaterLastCheckedAt))
         ? Math.max(0, Number(parsed.appUpdaterLastCheckedAt))
         : DEFAULT_SETTINGS.appUpdaterLastCheckedAt,
@@ -294,6 +312,14 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
     launcherBackgroundImageEverywhere: normalizeBoolean(
       patch.launcherBackgroundImageEverywhere ?? current.launcherBackgroundImageEverywhere,
       current.launcherBackgroundImageEverywhere
+    ),
+    launcherBackgroundImageBlurPercent: normalizePercentage(
+      patch.launcherBackgroundImageBlurPercent ?? current.launcherBackgroundImageBlurPercent,
+      current.launcherBackgroundImageBlurPercent
+    ),
+    launcherBackgroundImageOpacityPercent: normalizePercentage(
+      patch.launcherBackgroundImageOpacityPercent ?? current.launcherBackgroundImageOpacityPercent,
+      current.launcherBackgroundImageOpacityPercent
     ),
   };
 

@@ -235,6 +235,8 @@ export interface AppSettings {
   baseColor: string;
   launcherBackgroundImagePath: string;
   launcherBackgroundImageEverywhere: boolean;
+  launcherBackgroundImageBlurPercent: number;
+  launcherBackgroundImageOpacityPercent: number;
   appUpdaterLastCheckedAt: number;
 }
 

@@ -72,6 +72,9 @@ import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowB
 const STALE_OVERLAY_RESET_MS = 60_000;
 const MAX_RECENT_SECTION_ITEMS = 5;
 const QUICK_LINK_COMMAND_PREFIX = 'quicklink-';
+const DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT = 25;
+const DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT = 45;
+const MAX_LAUNCHER_BACKGROUND_BLUR_PX = 20;
 
 function getQuickLinkIdFromCommandId(commandId: string): string | null {
   const normalized = String(commandId || '').trim();
@@ -221,9 +224,25 @@ function toFileUrl(filePath: string): string {
   return `file://${encodeURI(normalizedPath)}`;
 }
 
+function clampLauncherBackgroundPercent(value: number, fallback: number): number {
+  const parsedValue = Number(value);
+  if (!Number.isFinite(parsedValue)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(parsedValue)));
+}
+
+function launcherBackgroundBlurPercentToPx(value: number): number {
+  const clampedPercent = clampLauncherBackgroundPercent(
+    value,
+    DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT
+  );
+  return Number(((clampedPercent / 100) * MAX_LAUNCHER_BACKGROUND_BLUR_PX).toFixed(2));
+}
+
 type LauncherSurfaceProps = {
   backgroundImageUrl: string;
   showBackground: boolean;
+  backgroundBlurPercent: number;
+  backgroundOpacityPercent: number;
   className?: string;
   children: React.ReactNode;
 };
@@ -231,24 +250,40 @@ type LauncherSurfaceProps = {
 const LauncherSurface: React.FC<LauncherSurfaceProps> = ({
   backgroundImageUrl,
   showBackground,
+  backgroundBlurPercent,
+  backgroundOpacityPercent,
   className = '',
   children,
-}) => (
-  <div className="w-full h-full">
-    <div className={`glass-effect overflow-hidden h-full flex flex-col relative ${className}`.trim()}>
-      {showBackground && backgroundImageUrl ? (
-        <div className="launcher-background-media" aria-hidden="true">
-          <div
-            className="launcher-background-image"
-            style={{ backgroundImage: `url("${backgroundImageUrl}")` }}
-          />
-          <div className="launcher-background-tint" />
-        </div>
-      ) : null}
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col">{children}</div>
+}) => {
+  const backgroundOpacity = clampLauncherBackgroundPercent(
+    backgroundOpacityPercent,
+    DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
+  ) / 100;
+  const backgroundBlurPx = launcherBackgroundBlurPercentToPx(backgroundBlurPercent);
+
+  return (
+    <div className="w-full h-full">
+      <div className={`glass-effect overflow-hidden h-full flex flex-col relative ${className}`.trim()}>
+        {showBackground && backgroundImageUrl ? (
+          <div className="launcher-background-media" aria-hidden="true">
+            <div
+              className="launcher-background-image"
+              style={
+                {
+                  backgroundImage: `url("${backgroundImageUrl}")`,
+                  ['--launcher-background-opacity' as any]: String(backgroundOpacity),
+                  ['--launcher-background-blur' as any]: `${backgroundBlurPx}px`,
+                } as React.CSSProperties
+              }
+            />
+            <div className="launcher-background-tint" />
+          </div>
+        ) : null}
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">{children}</div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 function normalizeQuickLinkDynamicFields(fields: QuickLinkDynamicField[]): QuickLinkDynamicField[] {
   const map = new Map<string, QuickLinkDynamicField>();
@@ -274,6 +309,12 @@ const App: React.FC = () => {
   const [recentCommandLaunchCounts, setRecentCommandLaunchCounts] = useState<Record<string, number>>({});
   const [launcherBackgroundImagePath, setLauncherBackgroundImagePath] = useState('');
   const [launcherBackgroundImageEverywhere, setLauncherBackgroundImageEverywhere] = useState(false);
+  const [launcherBackgroundImageBlurPercent, setLauncherBackgroundImageBlurPercent] = useState(
+    DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT
+  );
+  const [launcherBackgroundImageOpacityPercent, setLauncherBackgroundImageOpacityPercent] = useState(
+    DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [inlineExtensionArgumentValues, setInlineExtensionArgumentValues] = useState<
     Record<string, Record<string, string>>
@@ -493,6 +534,18 @@ const App: React.FC = () => {
       setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
       setLauncherBackgroundImagePath(String(settings.launcherBackgroundImagePath || ''));
       setLauncherBackgroundImageEverywhere(Boolean(settings.launcherBackgroundImageEverywhere));
+      setLauncherBackgroundImageBlurPercent(
+        clampLauncherBackgroundPercent(
+          settings.launcherBackgroundImageBlurPercent,
+          DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT
+        )
+      );
+      setLauncherBackgroundImageOpacityPercent(
+        clampLauncherBackgroundPercent(
+          settings.launcherBackgroundImageOpacityPercent,
+          DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
+        )
+      );
       applyAppFontSize(settings.fontSize);
       applyUiStyle(settings.uiStyle || 'default');
       applyBaseColor(settings.baseColor || '#101113');
@@ -510,6 +563,8 @@ const App: React.FC = () => {
       setConfiguredTtsModel('edge-tts');
       setLauncherBackgroundImagePath('');
       setLauncherBackgroundImageEverywhere(false);
+      setLauncherBackgroundImageBlurPercent(DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT);
+      setLauncherBackgroundImageOpacityPercent(DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT);
       applyAppFontSize(getDefaultAppFontSize());
       applyUiStyle('default');
       applyBaseColor('#101113');
@@ -777,6 +832,18 @@ const App: React.FC = () => {
       applyBaseColor(settings.baseColor || '#101113');
       setLauncherBackgroundImagePath(String(settings.launcherBackgroundImagePath || ''));
       setLauncherBackgroundImageEverywhere(Boolean(settings.launcherBackgroundImageEverywhere));
+      setLauncherBackgroundImageBlurPercent(
+        clampLauncherBackgroundPercent(
+          settings.launcherBackgroundImageBlurPercent,
+          DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT
+        )
+      );
+      setLauncherBackgroundImageOpacityPercent(
+        clampLauncherBackgroundPercent(
+          settings.launcherBackgroundImageOpacityPercent,
+          DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
+        )
+      );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
     });
     return cleanup;
@@ -2872,6 +2939,8 @@ const App: React.FC = () => {
         <LauncherSurface
           backgroundImageUrl={launcherBackgroundImageUrl}
           showBackground={shouldUseBackgroundEverywhere}
+          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
           className="extension-runtime-shell"
         >
           <ExtensionView
@@ -2913,6 +2982,8 @@ const App: React.FC = () => {
         <LauncherSurface
           backgroundImageUrl={launcherBackgroundImageUrl}
           showBackground={shouldUseBackgroundEverywhere}
+          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
         >
           <ClipboardManager
             onClose={() => {
@@ -2956,6 +3027,8 @@ const App: React.FC = () => {
         <LauncherSurface
           backgroundImageUrl={launcherBackgroundImageUrl}
           showBackground={shouldUseBackgroundEverywhere}
+          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
         >
           <ScheduleExtension
             onClose={() => {
@@ -2998,6 +3071,8 @@ const App: React.FC = () => {
         <LauncherSurface
           backgroundImageUrl={launcherBackgroundImageUrl}
           showBackground={shouldUseBackgroundEverywhere}
+          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
         >
           <SnippetManager
             initialView={showSnippetManager}
@@ -3021,6 +3096,8 @@ const App: React.FC = () => {
         <LauncherSurface
           backgroundImageUrl={launcherBackgroundImageUrl}
           showBackground={shouldUseBackgroundEverywhere}
+          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
         >
           <QuickLinkManager
             initialView={showQuickLinkManager}
@@ -3044,6 +3121,8 @@ const App: React.FC = () => {
         <LauncherSurface
           backgroundImageUrl={launcherBackgroundImageUrl}
           showBackground={shouldUseBackgroundEverywhere}
+          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
         >
           <FileSearchExtension
             initialDetailPath={fileSearchInitialDetailPath}
@@ -3120,6 +3199,8 @@ const App: React.FC = () => {
     <LauncherSurface
       backgroundImageUrl={launcherBackgroundImageUrl}
       showBackground={Boolean(launcherBackgroundImageUrl)}
+      backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+      backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
       className="launcher-main-surface"
     >
         {/* Search header - transparent background */}
