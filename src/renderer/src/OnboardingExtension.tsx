@@ -16,6 +16,15 @@ import HotkeyRecorder from './settings/HotkeyRecorder';
 import supercmdLogo from '../../../supercmd.png';
 import onboardingIconVideo from '../../../assets/icon.mp4';
 import type { WhisperCppModelStatus } from '../types/electron';
+import {
+  DEFAULT_WHISPER_CPP_MODEL,
+  getWhisperCppModelDefinition,
+  getWhisperCppModelOptionLabel,
+  isEnglishOnlyWhisperCppModel,
+  normalizeWhisperCppModel,
+  WHISPER_CPP_MODELS,
+  WHISPER_LANGUAGE_OPTIONS,
+} from '../../shared/whispercpp';
 
 interface OnboardingExtensionProps {
   initialShortcut: string;
@@ -110,18 +119,6 @@ const DICTATION_SAMPLE =
 const READ_SAMPLE =
   'Voice-first interfaces are having a moment. After years of being dismissed as gimmicks, a new wave of tools is making it genuinely faster to speak than type — with transcription that keeps up, smart corrections, and shortcut keys that slot into existing workflows without disruption.';
 
-const SPEECH_LANGUAGE_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'en-US', label: 'English (US)' },
-  { value: 'en-GB', label: 'English (UK)' },
-  { value: 'es-ES', label: 'Spanish' },
-  { value: 'fr-FR', label: 'French' },
-  { value: 'de-DE', label: 'German' },
-  { value: 'it-IT', label: 'Italian' },
-  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
-  { value: 'hi-IN', label: 'Hindi' },
-  { value: 'ja-JP', label: 'Japanese' },
-];
-
 function toHotkeyCaps(shortcut: string): string[] {
   const map: Record<string, string> = {
     Command: '\u2318',
@@ -160,9 +157,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [whisperKeyStatus, setWhisperKeyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isHoldKeyActive, setIsHoldKeyActive] = useState(false);
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
+  const [whisperCppModel, setWhisperCppModel] = useState<string>(DEFAULT_WHISPER_CPP_MODEL);
   const [whisperCppModelStatus, setWhisperCppModelStatus] = useState<WhisperCppModelStatus | null>(null);
   const [whisperCppModelBusy, setWhisperCppModelBusy] = useState(false);
-  const [whisperCppSetupLater, setWhisperCppSetupLater] = useState(false);
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
   const openedPermissionsRef = useRef<Record<string, boolean>>({});
   const requestedPermissionsRef = useRef<Record<string, boolean>>({});
@@ -186,6 +183,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       setWhisperHoldKey(saved);
       const savedLanguage = String(settings.ai?.speechLanguage || 'en-US').trim();
       setSpeechLanguage(savedLanguage || 'en-US');
+      setWhisperCppModel(normalizeWhisperCppModel(settings.ai?.whisperCppModel || DEFAULT_WHISPER_CPP_MODEL));
     }).catch(() => {});
   }, []);
 
@@ -203,9 +201,10 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     } catch {}
   };
 
-  const refreshWhisperCppModelStatus = async (): Promise<WhisperCppModelStatus | null> => {
+  const refreshWhisperCppModelStatus = async (modelName?: string): Promise<WhisperCppModelStatus | null> => {
+    const selectedModel = normalizeWhisperCppModel(modelName || whisperCppModel || DEFAULT_WHISPER_CPP_MODEL);
     try {
-      const status = await window.electron.whisperCppModelStatus();
+      const status = await window.electron.whisperCppModelStatus(selectedModel);
       setWhisperCppModelStatus(status);
       return status;
     } catch {
@@ -213,24 +212,46 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     }
   };
 
-  const startWhisperCppModelDownload = async () => {
-    if (whisperCppModelBusy || whisperCppModelStatus?.state === 'downloaded') return;
+  const startWhisperCppModelDownload = async (modelName?: string) => {
+    const selectedModel = normalizeWhisperCppModel(modelName || whisperCppModel || DEFAULT_WHISPER_CPP_MODEL);
+    const isAlreadyDownloaded =
+      selectedWhisperCppModelStatus?.state === 'downloaded' &&
+      normalizeWhisperCppModel(selectedWhisperCppModelStatus.modelName) === selectedModel;
+    if (whisperCppModelBusy || isAlreadyDownloaded) return;
     setWhisperCppModelBusy(true);
-    setWhisperCppSetupLater(false);
     setWhisperCppModelStatus((current) => ({
       state: 'downloading',
-      modelName: current?.modelName || 'base',
+      modelName: selectedModel,
       path: current?.path || '',
       bytesDownloaded: current?.bytesDownloaded || 0,
       totalBytes: current?.totalBytes ?? null,
     }));
     try {
-      const status = await window.electron.whisperCppDownloadModel();
+      const status = await window.electron.whisperCppDownloadModel(selectedModel);
       setWhisperCppModelStatus(status);
     } catch {
-      await refreshWhisperCppModelStatus();
+      await refreshWhisperCppModelStatus(selectedModel);
     } finally {
       setWhisperCppModelBusy(false);
+    }
+  };
+
+  const handleWhisperCppModelChange = async (nextModel: string) => {
+    const selectedModel = normalizeWhisperCppModel(nextModel);
+    setWhisperCppModel(selectedModel);
+    try {
+      const settings = await window.electron.getSettings();
+      await window.electron.saveSettings({
+        ai: {
+          ...(settings?.ai || {}),
+          whisperCppModel: selectedModel,
+        },
+      } as any);
+    } catch {}
+    setWhisperCppModelStatus(null);
+    const status = await refreshWhisperCppModelStatus(selectedModel);
+    if (step === 4 && status && status.state !== 'downloaded') {
+      void startWhisperCppModelDownload(selectedModel);
     }
   };
 
@@ -244,16 +265,15 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     };
 
     const tick = async () => {
-      const status = await refreshWhisperCppModelStatus();
+      const status = await refreshWhisperCppModelStatus(whisperCppModel);
       if (cancelled) return;
 
       if (
-        !whisperCppSetupLater &&
         !whisperCppModelBusy &&
         status &&
         (status.state === 'not-downloaded' || status.state === 'error')
       ) {
-        void startWhisperCppModelDownload();
+        void startWhisperCppModelDownload(whisperCppModel);
         scheduleNextTick(400);
         return;
       }
@@ -268,14 +288,24 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [step, whisperCppModelBusy, whisperCppSetupLater]);
+  }, [step, whisperCppModel, whisperCppModelBusy]);
 
+  const selectedWhisperCppModelStatus = useMemo(() => {
+    if (!whisperCppModelStatus) return null;
+    return normalizeWhisperCppModel(whisperCppModelStatus.modelName) === normalizeWhisperCppModel(whisperCppModel)
+      ? whisperCppModelStatus
+      : null;
+  }, [whisperCppModel, whisperCppModelStatus]);
   const whisperCppDownloadPercent = useMemo(() => {
-    if (!whisperCppModelStatus || whisperCppModelStatus.state !== 'downloading' || !whisperCppModelStatus.totalBytes) {
+    if (!selectedWhisperCppModelStatus || selectedWhisperCppModelStatus.state !== 'downloading' || !selectedWhisperCppModelStatus.totalBytes) {
       return 0;
     }
-    return Math.max(0, Math.min(100, Math.round((whisperCppModelStatus.bytesDownloaded / whisperCppModelStatus.totalBytes) * 100)));
-  }, [whisperCppModelStatus]);
+    return Math.max(0, Math.min(100, Math.round((selectedWhisperCppModelStatus.bytesDownloaded / selectedWhisperCppModelStatus.totalBytes) * 100)));
+  }, [selectedWhisperCppModelStatus]);
+  const selectedWhisperCppModelDef = useMemo(
+    () => getWhisperCppModelDefinition(whisperCppModel),
+    [whisperCppModel],
+  );
 
   // Fix 4: Auto-refresh permission statuses when user returns from System Settings.
   useEffect(() => {
@@ -286,6 +316,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
         setOpenedPermissions((prev) => {
           const next = { ...prev };
           for (const [id, granted] of Object.entries(statuses)) {
+            if (!granted) continue;
             // Avoid auto-marking Input Monitoring unless the user has already
             // initiated that row in onboarding.
             if (
@@ -295,7 +326,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
             ) {
               continue;
             }
-            next[id] = Boolean(granted);
+            next[id] = true;
           }
           return next;
         });
@@ -492,6 +523,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       if (requested) {
         setRequestedPermissions((prev) => ({ ...prev, [id]: true }));
       }
+      if (granted) {
+        setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
+      }
 
       if (id === 'microphone') {
         // For microphone, always trigger request from renderer capture path.
@@ -531,8 +565,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       if (requested) {
         setRequestedPermissions((prev) => ({ ...prev, [id]: true }));
       }
-      setOpenedPermissions((prev) => ({ ...prev, [id]: granted }));
       if (granted) {
+        setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
         setPermissionNotes((prev) => ({ ...prev, [id]: '' }));
       } else if (id === 'microphone' || id === 'speech-recognition') {
         const targetLabel = id === 'microphone' ? 'Microphone' : 'Speech Recognition';
@@ -578,6 +612,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
             : id === 'home-folder'
               ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_FilesAndFolders']
           : [url];
+      try {
+        await window.electron.setLauncherMode('onboarding');
+      } catch {}
       let ok = false;
       for (const candidate of candidateUrls) {
         if (ok) break;
@@ -909,26 +946,49 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                       onChange={(e) => { void handleSpeechLanguageChange(e.target.value); }}
                       className="w-full max-w-[200px] bg-white/[0.06] border border-white/[0.10] rounded-md px-2 py-1.5 text-xs text-white/92 focus:outline-none focus:border-cyan-300/70"
                     >
-                      {SPEECH_LANGUAGE_OPTIONS.map((item) => (
+                      {WHISPER_LANGUAGE_OPTIONS.map((item) => (
                         <option key={item.value} value={item.value}>{item.label}</option>
                       ))}
                     </select>
                   </div>
+                  <div className="space-y-1">
+                    <p className="text-white/82 text-xs">Local whisper.cpp model</p>
+                    <select
+                      value={whisperCppModel}
+                      onChange={(e) => { void handleWhisperCppModelChange(e.target.value); }}
+                      disabled={whisperCppModelBusy || selectedWhisperCppModelStatus?.state === 'downloading'}
+                      className="w-full max-w-[260px] bg-white/[0.06] border border-white/[0.10] rounded-md px-2 py-1.5 text-xs text-white/92 focus:outline-none focus:border-cyan-300/70 disabled:opacity-60"
+                    >
+                      {WHISPER_CPP_MODELS.map((item) => (
+                        <option key={item.id} value={item.id}>{getWhisperCppModelOptionLabel(item.id)}</option>
+                      ))}
+                    </select>
+                    <p className="text-white/48 text-[11px] leading-relaxed">
+                      {selectedWhisperCppModelDef.description} {selectedWhisperCppModelDef.sizeLabel}.
+                    </p>
+                  </div>
+                  {isEnglishOnlyWhisperCppModel(whisperCppModel) && !speechLanguage.toLowerCase().startsWith('en') ? (
+                    <p className="text-amber-200 text-[11px] leading-relaxed">
+                      This model is English-only. SuperCmd will transcribe in English regardless of the selected language.
+                    </p>
+                  ) : null}
                   <div className="mt-2 rounded-[28px] border border-white/[0.08] bg-white/[0.05] p-4">
-                    <p className="text-white/88 text-xs font-medium mb-1.5">SuperCmd Whisper</p>
-                    {whisperCppModelStatus?.state === 'downloaded' ? (
+                    <p className="text-white/88 text-xs font-medium mb-1.5">
+                      {selectedWhisperCppModelDef.label} ({selectedWhisperCppModelDef.badge})
+                    </p>
+                    {selectedWhisperCppModelStatus?.state === 'downloaded' ? (
                       <p className="text-emerald-200 text-[11px] leading-relaxed">
-                        Download complete. SuperCmd Whisper dictation is ready.
+                        Download complete. {selectedWhisperCppModelDef.label} is ready for SuperCmd Whisper dictation.
                       </p>
-                    ) : whisperCppModelStatus?.state === 'downloading' ? (
+                    ) : selectedWhisperCppModelStatus?.state === 'downloading' ? (
                       <div className="space-y-2.5">
                         <div className="space-y-1">
                           <p className="text-white/90 text-[11px] font-medium leading-relaxed">
                             Downloading model, just a moment.
                           </p>
                           <p className="text-white/62 text-[11px] leading-relaxed">
-                            Downloading the ~300 MB ggml base model
-                            {whisperCppModelStatus.totalBytes ? ` (${whisperCppDownloadPercent}%)` : '...'}
+                            Downloading {selectedWhisperCppModelDef.label} {selectedWhisperCppModelDef.sizeLabel}
+                            {selectedWhisperCppModelStatus.totalBytes ? ` (${whisperCppDownloadPercent}%)` : '...'}
                           </p>
                         </div>
                         <div
@@ -936,55 +996,43 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                           role="progressbar"
                           aria-valuemin={0}
                           aria-valuemax={100}
-                          aria-valuenow={whisperCppModelStatus.totalBytes ? whisperCppDownloadPercent : undefined}
+                          aria-valuenow={selectedWhisperCppModelStatus.totalBytes ? whisperCppDownloadPercent : undefined}
                           aria-label="Whisper model download progress"
                         >
                           <div
-                            className={whisperCppModelStatus.totalBytes
+                            className={selectedWhisperCppModelStatus.totalBytes
                               ? 'h-full bg-cyan-300/80 transition-[width] duration-300'
                               : 'h-full w-[34%] bg-cyan-300/70 animate-pulse'
                             }
-                            style={whisperCppModelStatus.totalBytes
+                            style={selectedWhisperCppModelStatus.totalBytes
                               ? { width: `${Math.max(6, whisperCppDownloadPercent)}%` }
                               : undefined
                             }
                           />
                         </div>
                       </div>
-                    ) : whisperCppModelStatus?.state === 'error' ? (
+                    ) : selectedWhisperCppModelStatus?.state === 'error' ? (
                       <p className="text-rose-200 text-[11px] leading-relaxed">
-                        {whisperCppModelStatus.error || 'Model download failed. Retry now or set it up later from Settings.'}
-                      </p>
-                    ) : whisperCppSetupLater ? (
-                      <p className="text-white/62 text-[11px] leading-relaxed">
-                        Model download skipped for now. You can download it later from Settings → AI → SuperCmd Whisper.
+                        {selectedWhisperCppModelStatus.error || 'Model download failed. Retry from onboarding or Settings.'}
                       </p>
                     ) : (
                       <p className="text-white/72 text-[11px] leading-relaxed">
-                        SuperCmd starts downloading the SuperCmd Whisper model on this step so dictation is ready before first use.
+                        SuperCmd starts downloading the selected whisper.cpp model on this step so dictation is ready before first use.
                       </p>
                     )}
 
                     <div className="mt-3 flex items-center gap-2 flex-wrap">
                       <button
                         type="button"
-                        onClick={() => { void startWhisperCppModelDownload(); }}
-                        disabled={whisperCppModelBusy || whisperCppModelStatus?.state === 'downloading' || whisperCppModelStatus?.state === 'downloaded'}
+                        onClick={() => { void startWhisperCppModelDownload(whisperCppModel); }}
+                        disabled={whisperCppModelBusy || selectedWhisperCppModelStatus?.state === 'downloading' || selectedWhisperCppModelStatus?.state === 'downloaded'}
                         className="inline-flex min-h-[32px] items-center justify-center rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors border border-white/[0.12] bg-white/[0.10] text-white/90 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {whisperCppModelStatus?.state === 'downloaded'
+                        {selectedWhisperCppModelStatus?.state === 'downloaded'
                           ? 'Downloaded'
-                          : whisperCppModelStatus?.state === 'downloading'
+                          : selectedWhisperCppModelStatus?.state === 'downloading'
                             ? 'Downloading...'
                             : 'Download Model'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setWhisperCppSetupLater(true)}
-                        disabled={whisperCppModelBusy || whisperCppModelStatus?.state === 'downloading' || whisperCppModelStatus?.state === 'downloaded'}
-                        className="inline-flex min-h-[32px] items-center justify-center rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors border border-white/[0.08] bg-transparent text-white/65 hover:text-white/90 hover:bg-white/[0.05] disabled:opacity-45 disabled:cursor-not-allowed"
-                      >
-                        Set Up Later
                       </button>
                     </div>
                   </div>
@@ -1006,7 +1054,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     className="w-full h-[250px] resize-none rounded-xl border border-cyan-300/55 bg-white/[0.05] px-4 py-3 text-white/90 placeholder:text-white/40 text-base leading-relaxed outline-none shadow-[0_0_0_3px_rgba(34,211,238,0.15)]"
                   />
                   <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
-                    SuperCmd Whisper uses a local ggml base model by default. Apple Speech Recognition remains available as a fallback in Settings.
+                    SuperCmd Whisper uses a selectable local whisper.cpp model by default. Apple Speech Recognition remains available as a fallback in Settings.
                   </p>
                 </div>
               </div>

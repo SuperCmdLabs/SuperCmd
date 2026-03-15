@@ -23,6 +23,7 @@ export interface AISettings {
   defaultModel: string;
   speechCorrectionModel: string;
   speechToTextModel: string;
+  whisperCppModel: string;
   speechLanguage: string;
   textToSpeechModel: string;
   edgeTtsVoice: string;
@@ -80,6 +81,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   defaultModel: '',
   speechCorrectionModel: '',
   speechToTextModel: 'whispercpp',
+  whisperCppModel: 'base',
   speechLanguage: 'en-US',
   textToSpeechModel: 'edge-tts',
   edgeTtsVoice: 'en-US-EricNeural',
