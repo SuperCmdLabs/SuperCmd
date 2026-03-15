@@ -80,6 +80,16 @@ export function withAccessToken(options: any) {
         return true;
       }, [options]);
 
+      // Clear OAuth blur-hide suppression when the component unmounts.
+      // beginAuthorization() sets oauthSetFlowActive(true) and awaits the
+      // callback — if the user navigates away before the callback arrives,
+      // the suppression would otherwise persist until the 3-minute timeout.
+      useEffect(() => {
+        return () => {
+          (window as any).electron?.oauthSetFlowActive?.(false)?.catch?.(() => {});
+        };
+      }, []);
+
       useEffect(() => {
         let cancelled = false;
 
