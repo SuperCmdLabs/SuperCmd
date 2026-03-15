@@ -59,6 +59,8 @@ export interface AppSettings {
   fontSize: AppFontSize;
   uiStyle: AppUiStyle;
   baseColor: string;
+  launcherBackgroundImagePath: string;
+  launcherBackgroundImageEverywhere: boolean;
   appUpdaterLastCheckedAt: number;
 }
 
@@ -130,6 +132,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   fontSize: 'medium',
   uiStyle: 'glassy',
   baseColor: '#101113',
+  launcherBackgroundImagePath: '',
+  launcherBackgroundImageEverywhere: false,
   appUpdaterLastCheckedAt: 0,
 };
 
@@ -165,6 +169,17 @@ function normalizeBaseColor(value: any): string {
     return `#${short}`.toLowerCase();
   }
   return DEFAULT_SETTINGS.baseColor;
+}
+
+function normalizeLauncherBackgroundImagePath(value: any): string {
+  return String(value || '').trim();
+}
+
+function normalizeBoolean(value: any, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return fallback;
 }
 
 function normalizeRecentCommandLaunchCounts(value: any): Record<string, number> {
@@ -252,6 +267,11 @@ export function loadSettings(): AppSettings {
       fontSize: normalizeFontSize(parsed.fontSize),
       uiStyle: normalizeUiStyle(parsed.uiStyle),
       baseColor: normalizeBaseColor(parsed.baseColor),
+      launcherBackgroundImagePath: normalizeLauncherBackgroundImagePath(parsed.launcherBackgroundImagePath),
+      launcherBackgroundImageEverywhere: normalizeBoolean(
+        parsed.launcherBackgroundImageEverywhere,
+        DEFAULT_SETTINGS.launcherBackgroundImageEverywhere
+      ),
       appUpdaterLastCheckedAt: Number.isFinite(Number(parsed.appUpdaterLastCheckedAt))
         ? Math.max(0, Number(parsed.appUpdaterLastCheckedAt))
         : DEFAULT_SETTINGS.appUpdaterLastCheckedAt,
@@ -265,7 +285,17 @@ export function loadSettings(): AppSettings {
 
 export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   const current = loadSettings();
-  const updated = { ...current, ...patch };
+  const updated = {
+    ...current,
+    ...patch,
+    launcherBackgroundImagePath: normalizeLauncherBackgroundImagePath(
+      patch.launcherBackgroundImagePath ?? current.launcherBackgroundImagePath
+    ),
+    launcherBackgroundImageEverywhere: normalizeBoolean(
+      patch.launcherBackgroundImageEverywhere ?? current.launcherBackgroundImageEverywhere,
+      current.launcherBackgroundImageEverywhere
+    ),
+  };
 
   try {
     fs.writeFileSync(getSettingsPath(), JSON.stringify(updated, null, 2));

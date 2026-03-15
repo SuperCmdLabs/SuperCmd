@@ -12025,6 +12025,29 @@ if let tiff = image?.tiffRepresentation {
     }
   );
 
+  ipcMain.handle('pick-launcher-background-image', async (event: any) => {
+    suppressBlurHide = true;
+    try {
+      const result = await dialog.showOpenDialog(getDialogParentWindow(event), {
+        properties: ['openFile'],
+        filters: [
+          {
+            name: 'Images',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff', 'heic', 'heif', 'avif'],
+          },
+        ],
+      });
+      if (result.canceled) return null;
+      const selectedPath = String(result.filePaths?.[0] || '').trim();
+      return selectedPath || null;
+    } catch (error: any) {
+      console.error('pick-launcher-background-image failed:', error);
+      return null;
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
   // ─── IPC: Menu Bar (Tray) Extensions ────────────────────────────
 
   // Get all menu-bar extension bundles so the renderer can run them

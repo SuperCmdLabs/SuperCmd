@@ -233,6 +233,8 @@ export interface AppSettings {
   fontSize: 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
   uiStyle: 'default' | 'glassy';
   baseColor: string;
+  launcherBackgroundImagePath: string;
+  launcherBackgroundImageEverywhere: boolean;
   appUpdaterLastCheckedAt: number;
 }
 
@@ -604,6 +606,7 @@ export interface ElectronAPI {
     canChooseFiles?: boolean;
     showHiddenFiles?: boolean;
   }) => Promise<string[]>;
+  pickLauncherBackgroundImage: () => Promise<string | null>;
   getMenuBarExtensions: () => Promise<any[]>;
   updateMenuBar: (data: any) => void;
   removeMenuBar: (extId: string) => void;
