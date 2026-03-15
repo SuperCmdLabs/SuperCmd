@@ -140,6 +140,18 @@ let cachedElectronLiquidGlassApi: any | null | undefined = undefined;
 let hasLoggedLiquidGlassRuntimeIncompatibility = false;
 const liquidGlassAppliedWindowIds = new Set<number>();
 let windowManagerAccessRequested = false;
+
+// Tracks whether macOS Automation permission for "System Events" has been
+// granted.  Starts `false`; flipped to `true` after the first *successful*
+// osascript call that uses System Events.  While `false`, non-essential
+// System-Events AppleScript is skipped so we never surprise the user with the
+// permission dialog (e.g. during the first window show).
+let systemEventsPermissionConfirmed = false;
+
+/** Call after a successful System Events osascript to record that permission is granted. */
+function markSystemEventsPermissionGranted(): void {
+  systemEventsPermissionConfirmed = true;
+}
 let windowManagementTargetWindowId: string | null = null;
 let windowManagementTargetWorkArea: { x: number; y: number; width: number; height: number } | null = null;
 let launcherEntryWindowManagementTargetWindowId: string | null = null;
@@ -3847,6 +3859,10 @@ function fetchEdgeTtsVoiceCatalog(timeoutMs = 12000): Promise<EdgeTtsVoiceCatalo
 }
 
 async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: boolean; clipboardWaitMs?: number }): Promise<string> {
+  // Skip System Events calls entirely when permission hasn't been confirmed yet
+  // to avoid triggering the macOS Automation permission dialog unexpectedly.
+  if (!systemEventsPermissionConfirmed) return '';
+
   const allowClipboardFallback = options?.allowClipboardFallback !== false;
   const clipboardWaitMs = Math.max(0, Number(options?.clipboardWaitMs ?? 380) || 380);
   const fromAccessibility = await (async () => {
@@ -3868,6 +3884,7 @@ async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: bool
         end tell
       `;
       const { stdout } = await execFileAsync('/usr/bin/osascript', ['-e', script]);
+      markSystemEventsPermissionGranted();
       return String(stdout || '').trim();
     } catch {
       return '';
@@ -5350,6 +5367,7 @@ function computePromptWindowBounds(
   const rawFocusedInputRect = preCapturedInputRect !== undefined ? preCapturedInputRect : getFocusedInputRect();
 
   const frontWindowRect = (() => {
+    if (!systemEventsPermissionConfirmed) return null;
     try {
       const { execFileSync } = require('child_process');
       const script = `
@@ -5713,6 +5731,7 @@ function getTypingCaretRect():
 function getFocusedInputRect():
   | { x: number; y: number; width: number; height: number }
   | null {
+  if (!systemEventsPermissionConfirmed) return null;
   try {
     const { execFileSync } = require('child_process');
     const script = `
@@ -5946,10 +5965,16 @@ function captureFrontmostAppContext(): void {
           return;
         }
       }
+      // lsappinfo succeeded but returned our own app — skip AppleScript fallback
+      return;
     }
   } catch {
     // Fallback below.
   }
+
+  // Only fall back to System Events if permission has already been confirmed,
+  // to avoid triggering the macOS Automation permission dialog unexpectedly.
+  if (!systemEventsPermissionConfirmed) return;
 
   try {
     const { execSync } = require('child_process');
@@ -5963,6 +5988,7 @@ function captureFrontmostAppContext(): void {
       end tell
     `;
     const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
+    markSystemEventsPermissionGranted();
     const [name, appPath, bundleId] = result.split('|||');
     if (bundleId !== 'com.supercmd' && name !== 'SuperCmd' && name !== 'Electron') {
       lastFrontmostApp = { name, path: appPath, bundleId };
@@ -10326,8 +10352,37 @@ return appURL's |path|() as text`,
     }
   });
 
-  // Get frontmost application
+  // Get frontmost application — prefer lsappinfo (no permissions needed),
+  // fall back to System Events only when permission is already confirmed.
   ipcMain.handle('get-frontmost-application', async () => {
+    try {
+      const { execFileSync } = require('child_process');
+      const asn = String(execFileSync('/usr/bin/lsappinfo', ['front'], { encoding: 'utf-8' }) || '').trim();
+      if (asn) {
+        const info = String(
+          execFileSync('/usr/bin/lsappinfo', ['info', '-only', 'bundleid,name,path', asn], { encoding: 'utf-8' }) || ''
+        );
+        const bundleId =
+          info.match(/"CFBundleIdentifier"\s*=\s*"([^"]*)"/)?.[1]?.trim() ||
+          info.match(/"bundleid"\s*=\s*"([^"]*)"/i)?.[1]?.trim() ||
+          '';
+        const name =
+          info.match(/"LSDisplayName"\s*=\s*"([^"]*)"/)?.[1]?.trim() ||
+          info.match(/"name"\s*=\s*"([^"]*)"/i)?.[1]?.trim() ||
+          '';
+        const appPath = info.match(/"path"\s*=\s*"([^"]*)"/)?.[1]?.trim() || '';
+        if (bundleId || name || appPath) {
+          return { name: name || bundleId || 'Unknown', path: appPath, bundleId: bundleId || undefined };
+        }
+      }
+    } catch {
+      // lsappinfo failed — try System Events below.
+    }
+
+    if (!systemEventsPermissionConfirmed) {
+      return { name: 'SuperCmd', path: '', bundleId: 'com.supercmd' };
+    }
+
     try {
       const { execSync } = require('child_process');
       const script = `
@@ -10340,6 +10395,7 @@ return appURL's |path|() as text`,
         end tell
       `;
       const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
+      markSystemEventsPermissionGranted();
       const [name, appPath, bundleId] = result.split('|||');
       return { name, path: appPath, bundleId };
     } catch (e) {
@@ -12305,6 +12361,26 @@ if let tiff = image?.tiffRepresentation {
       }
     }
     return template;
+  }
+
+  // ─── System Events permission probe ────────────────────────────
+  // For returning users (onboarding already complete), do a deferred
+  // background check to see if System Events permission was granted in a
+  // previous session.  On macOS the Automation prompt only appears the
+  // *very first time*; once the TCC entry exists (granted OR denied) the
+  // call returns instantly without a dialog.
+  if (settings.hasSeenOnboarding) {
+    setTimeout(() => {
+      try {
+        const { execFileSync } = require('child_process');
+        execFileSync('/usr/bin/osascript', [
+          '-e', 'tell application "System Events" to return 1',
+        ], { encoding: 'utf-8', timeout: 2000 });
+        markSystemEventsPermissionGranted();
+      } catch {
+        // Permission not granted — System Events calls remain guarded.
+      }
+    }, 3000);
   }
 
   // ─── Window + Shortcuts ─────────────────────────────────────────
