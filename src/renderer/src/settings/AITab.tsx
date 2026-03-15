@@ -1146,9 +1146,6 @@ const AITab: React.FC = () => {
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
-                  <p className="mt-1.5 text-[0.6875rem] text-[var(--text-muted)]">
-                    SuperCmd passes the matching language code to the local `whisper.cpp` runtime automatically.
-                  </p>
                 </div>
               )}
 

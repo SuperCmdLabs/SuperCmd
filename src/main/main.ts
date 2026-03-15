@@ -492,13 +492,62 @@ async function transcribeAudioWithWhisperCpp(opts: {
   }
 }
 
+const WHISPER_LANGUAGE_CODE_MAP: Record<string, string> = {
+  ar: 'ar',
+  'ar-eg': 'ar',
+  arabic: 'ar',
+  zh: 'zh',
+  'zh-cn': 'zh',
+  chinese: 'zh',
+  mandarin: 'zh',
+  'chinese (mandarin)': 'zh',
+  en: 'en',
+  'en-us': 'en',
+  'en-gb': 'en',
+  english: 'en',
+  fr: 'fr',
+  'fr-ca': 'fr',
+  'fr-fr': 'fr',
+  french: 'fr',
+  de: 'de',
+  'de-de': 'de',
+  german: 'de',
+  hi: 'hi',
+  'hi-in': 'hi',
+  hindi: 'hi',
+  it: 'it',
+  'it-it': 'it',
+  italian: 'it',
+  ja: 'ja',
+  'ja-jp': 'ja',
+  japanese: 'ja',
+  ko: 'ko',
+  'ko-kr': 'ko',
+  korean: 'ko',
+  pt: 'pt',
+  'pt-br': 'pt',
+  portuguese: 'pt',
+  'portuguese (brazil)': 'pt',
+  ru: 'ru',
+  'ru-ru': 'ru',
+  russian: 'ru',
+  es: 'es',
+  'es-mx': 'es',
+  'es-es': 'es',
+  spanish: 'es',
+  'spanish (mexico)': 'es',
+  'spanish (spain)': 'es',
+};
+
 function normalizeWhisperLanguageCode(rawLanguage?: string): string {
-  const normalized = String(rawLanguage || '').trim().toLowerCase();
+  const normalized = String(rawLanguage || '').trim().toLowerCase().replace(/_/g, '-');
   if (!normalized) return 'en';
 
-  // whisper.cpp expects a language token like "en", "de", or "pt".
-  const shortCode = normalized.split(/[-_]/)[0];
-  return shortCode || 'en';
+  const directMatch = WHISPER_LANGUAGE_CODE_MAP[normalized];
+  if (directMatch) return directMatch;
+
+  const shortCode = normalized.split('-')[0];
+  return WHISPER_LANGUAGE_CODE_MAP[shortCode] || shortCode || 'en';
 }
 type WindowManagementLayoutItem = {
   id: string;

@@ -852,7 +852,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         mimeType = recorderMimeTypeRef.current || 'audio/webm';
       }
 
-      const language = (speechLanguage || 'en-US').split('-')[0];
+      const language = speechLanguage || 'en-US';
 
       console.log(`[Whisper] Sending ${arrayBuffer.byteLength} bytes for transcription (final=${isFinal})`);
       window.electron.whisperDebugLog('transcribe', `Sending ${arrayBuffer.byteLength} bytes`, { isFinal });
