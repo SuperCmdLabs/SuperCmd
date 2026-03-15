@@ -168,7 +168,6 @@ export interface AISettings {
   defaultModel: string;
   speechCorrectionModel: string;
   speechToTextModel: string;
-  whisperCppModel: string;
   speechLanguage: string;
   textToSpeechModel: string;
   edgeTtsVoice: string;
@@ -636,8 +635,8 @@ export interface ElectronAPI {
   whisperRefineTranscript: (
     transcript: string
   ) => Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }>;
-  whisperCppModelStatus: (modelName?: string) => Promise<WhisperCppModelStatus>;
-  whisperCppDownloadModel: (modelName?: string) => Promise<WhisperCppModelStatus>;
+  whisperCppModelStatus: () => Promise<WhisperCppModelStatus>;
+  whisperCppDownloadModel: () => Promise<WhisperCppModelStatus>;
   whisperDebugLog: (tag: string, message: string, data?: any) => void;
   whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }) => Promise<string>;
   whisperEnsureMicrophoneAccess: (

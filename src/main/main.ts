@@ -48,13 +48,6 @@ import {
   togglePinClipboardItem,
 } from './clipboard-manager';
 import {
-  DEFAULT_WHISPER_CPP_MODEL,
-  getWhisperCppModelDefinition,
-  isEnglishOnlyWhisperCppModel,
-  normalizeWhisperCppModel,
-  type WhisperCppModelId,
-} from '../shared/whispercpp';
-import {
   initSnippetStore,
   getAllSnippets,
   searchSnippets,
@@ -127,8 +120,10 @@ function getNativeBinaryPath(name: string): string {
 }
 
 const WHISPERCPP_FRAMEWORK_VERSION = 'v1.8.3';
+const WHISPERCPP_MODEL_NAME = 'base';
+const WHISPERCPP_MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${WHISPERCPP_MODEL_NAME}.bin`;
+
 let whisperCppModelEnsurePromise: Promise<string> | null = null;
-let whisperCppModelEnsureName: WhisperCppModelId | null = null;
 type WhisperCppModelStatus = {
   state: 'not-downloaded' | 'downloading' | 'downloaded' | 'error';
   modelName: string;
@@ -152,36 +147,18 @@ function getWhisperCppTranscriberBinaryPath(): string {
   return getNativeBinaryPath('whisper-transcriber');
 }
 
-function getConfiguredWhisperCppModel(modelName?: string): WhisperCppModelId {
-  if (modelName) {
-    return normalizeWhisperCppModel(modelName);
-  }
-  try {
-    return normalizeWhisperCppModel(loadSettings().ai?.whisperCppModel);
-  } catch {
-    return DEFAULT_WHISPER_CPP_MODEL;
-  }
+function getWhisperCppModelPath(): string {
+  return path.join(app.getPath('userData'), 'whispercpp', 'models', `ggml-${WHISPERCPP_MODEL_NAME}.bin`);
 }
 
-function getWhisperCppModelUrl(modelName?: string): string {
-  const normalizedModel = getConfiguredWhisperCppModel(modelName);
-  return `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${normalizedModel}.bin`;
-}
-
-function getWhisperCppModelPath(modelName?: string): string {
-  const normalizedModel = getConfiguredWhisperCppModel(modelName);
-  return path.join(app.getPath('userData'), 'whispercpp', 'models', `ggml-${normalizedModel}.bin`);
-}
-
-function getWhisperCppModelStatus(modelName?: string): WhisperCppModelStatus {
-  const normalizedModel = getConfiguredWhisperCppModel(modelName);
-  const modelPath = getWhisperCppModelPath(normalizedModel);
+function getWhisperCppModelStatus(): WhisperCppModelStatus {
+  const modelPath = getWhisperCppModelPath();
   try {
     if (fs.existsSync(modelPath)) {
       const stats = fs.statSync(modelPath);
       whisperCppModelStatus = {
         state: 'downloaded',
-        modelName: normalizedModel,
+        modelName: WHISPERCPP_MODEL_NAME,
         path: modelPath,
         bytesDownloaded: Math.max(0, Number(stats.size) || 0),
         totalBytes: Math.max(0, Number(stats.size) || 0),
@@ -190,25 +167,25 @@ function getWhisperCppModelStatus(modelName?: string): WhisperCppModelStatus {
     }
   } catch {}
 
-  if (whisperCppModelStatus?.state === 'downloading' && whisperCppModelStatus.modelName === normalizedModel) {
+  if (whisperCppModelStatus?.state === 'downloading') {
     return {
       ...whisperCppModelStatus,
-      modelName: normalizedModel,
+      modelName: WHISPERCPP_MODEL_NAME,
       path: modelPath,
     };
   }
 
-  if (whisperCppModelStatus?.state === 'error' && whisperCppModelStatus.modelName === normalizedModel) {
+  if (whisperCppModelStatus?.state === 'error') {
     return {
       ...whisperCppModelStatus,
-      modelName: normalizedModel,
+      modelName: WHISPERCPP_MODEL_NAME,
       path: modelPath,
     };
   }
 
   whisperCppModelStatus = {
     state: 'not-downloaded',
-    modelName: normalizedModel,
+    modelName: WHISPERCPP_MODEL_NAME,
     path: modelPath,
     bytesDownloaded: 0,
     totalBytes: null,
@@ -326,14 +303,13 @@ async function downloadFileWithRedirects(
   });
 }
 
-async function ensureWhisperCppModelDownloaded(modelName?: string): Promise<string> {
-  const normalizedModel = getConfiguredWhisperCppModel(modelName);
-  const modelPath = getWhisperCppModelPath(normalizedModel);
+async function ensureWhisperCppModelDownloaded(): Promise<string> {
+  const modelPath = getWhisperCppModelPath();
   try {
     if (fs.existsSync(modelPath)) {
       whisperCppModelStatus = {
         state: 'downloaded',
-        modelName: normalizedModel,
+        modelName: WHISPERCPP_MODEL_NAME,
         path: modelPath,
         bytesDownloaded: Math.max(0, Number(fs.statSync(modelPath).size) || 0),
         totalBytes: Math.max(0, Number(fs.statSync(modelPath).size) || 0),
@@ -343,33 +319,27 @@ async function ensureWhisperCppModelDownloaded(modelName?: string): Promise<stri
   } catch {}
 
   if (whisperCppModelEnsurePromise) {
-    if (whisperCppModelEnsureName && whisperCppModelEnsureName !== normalizedModel) {
-      const activeModel = getWhisperCppModelDefinition(whisperCppModelEnsureName);
-      throw new Error(`Another whisper.cpp model download is already in progress (${activeModel.label}).`);
-    }
     return await whisperCppModelEnsurePromise;
   }
 
-  const modelUrl = getWhisperCppModelUrl(normalizedModel);
   whisperCppModelEnsurePromise = (async () => {
-    whisperCppModelEnsureName = normalizedModel;
     const modelDir = path.dirname(modelPath);
     const tempPath = `${modelPath}.download`;
     fs.mkdirSync(modelDir, { recursive: true });
     whisperCppModelStatus = {
       state: 'downloading',
-      modelName: normalizedModel,
+      modelName: WHISPERCPP_MODEL_NAME,
       path: modelPath,
       bytesDownloaded: 0,
       totalBytes: null,
     };
 
     try {
-      console.log(`[Whisper][whisper.cpp] Downloading ${normalizedModel} model`);
-      await downloadFileWithRedirects(modelUrl, tempPath, 5, (bytesDownloaded, totalBytes) => {
+      console.log(`[Whisper][whisper.cpp] Downloading ${WHISPERCPP_MODEL_NAME} model`);
+      await downloadFileWithRedirects(WHISPERCPP_MODEL_URL, tempPath, 5, (bytesDownloaded, totalBytes) => {
         whisperCppModelStatus = {
           state: 'downloading',
-          modelName: normalizedModel,
+          modelName: WHISPERCPP_MODEL_NAME,
           path: modelPath,
           bytesDownloaded,
           totalBytes,
@@ -379,7 +349,7 @@ async function ensureWhisperCppModelDownloaded(modelName?: string): Promise<stri
       const finalSize = Math.max(0, Number(fs.statSync(modelPath).size) || 0);
       whisperCppModelStatus = {
         state: 'downloaded',
-        modelName: normalizedModel,
+        modelName: WHISPERCPP_MODEL_NAME,
         path: modelPath,
         bytesDownloaded: finalSize,
         totalBytes: finalSize,
@@ -390,7 +360,7 @@ async function ensureWhisperCppModelDownloaded(modelName?: string): Promise<stri
       try { fs.unlinkSync(tempPath); } catch {}
       whisperCppModelStatus = {
         state: 'error',
-        modelName: normalizedModel,
+        modelName: WHISPERCPP_MODEL_NAME,
         path: modelPath,
         bytesDownloaded: 0,
         totalBytes: null,
@@ -399,7 +369,6 @@ async function ensureWhisperCppModelDownloaded(modelName?: string): Promise<stri
       throw error;
     } finally {
       whisperCppModelEnsurePromise = null;
-      whisperCppModelEnsureName = null;
     }
   })();
 
@@ -457,7 +426,6 @@ function ensureWhisperCppTranscriberBinary(): string {
 
 async function transcribeAudioWithWhisperCpp(opts: {
   audioBuffer: Buffer;
-  modelName?: string;
   language?: string;
   mimeType?: string;
 }): Promise<string> {
@@ -467,8 +435,7 @@ async function transcribeAudioWithWhisperCpp(opts: {
   }
 
   const binaryPath = ensureWhisperCppTranscriberBinary();
-  const normalizedModel = getConfiguredWhisperCppModel(opts.modelName);
-  const status = getWhisperCppModelStatus(normalizedModel);
+  const status = getWhisperCppModelStatus();
   if (status.state === 'downloading') {
     throw new Error('The SuperCmd Whisper model is still downloading. Finish setup from onboarding or Settings -> AI -> SuperCmd Whisper.');
   }
@@ -482,9 +449,7 @@ async function transcribeAudioWithWhisperCpp(opts: {
   try {
     fs.writeFileSync(audioPath, opts.audioBuffer);
 
-    const language = isEnglishOnlyWhisperCppModel(normalizedModel)
-      ? 'en'
-      : normalizeWhisperLanguageCode(opts.language);
+    const language = normalizeWhisperLanguageCode(opts.language);
     const { spawn } = require('child_process');
 
     const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
@@ -11812,13 +11777,13 @@ if let tiff = image?.tiffRepresentation {
     return await refineWhisperTranscript(transcript);
   });
 
-  ipcMain.handle('whispercpp-model-status', async (_event: any, modelName?: string) => {
-    return getWhisperCppModelStatus(modelName);
+  ipcMain.handle('whispercpp-model-status', async () => {
+    return getWhisperCppModelStatus();
   });
 
-  ipcMain.handle('whispercpp-download-model', async (_event: any, modelName?: string) => {
-    await ensureWhisperCppModelDownloaded(modelName);
-    return getWhisperCppModelStatus(modelName);
+  ipcMain.handle('whispercpp-download-model', async () => {
+    await ensureWhisperCppModelDownloaded();
+    return getWhisperCppModelStatus();
   });
 
   ipcMain.handle(
@@ -11832,15 +11797,13 @@ if let tiff = image?.tiffRepresentation {
         throw new Error('SuperCmd Whisper is disabled in Settings -> AI.');
       }
 
-      const configuredWhisperCppModel = getConfiguredWhisperCppModel(s.ai?.whisperCppModel);
-
       // Parse speechToTextModel to a concrete provider/model pair.
       let provider: 'whispercpp' | 'openai' | 'elevenlabs' = 'whispercpp';
-      let model = `ggml-${configuredWhisperCppModel}`;
+      let model = `ggml-${WHISPERCPP_MODEL_NAME}`;
       const sttModel = s.ai.speechToTextModel || '';
       if (!sttModel || sttModel === 'default' || sttModel === 'whispercpp') {
         provider = 'whispercpp';
-        model = `ggml-${configuredWhisperCppModel}`;
+        model = `ggml-${WHISPERCPP_MODEL_NAME}`;
       } else if (sttModel === 'native') {
         // Renderer should not call cloud transcription in native mode.
         // Return empty transcript instead of surfacing an IPC error.
@@ -11874,7 +11837,6 @@ if let tiff = image?.tiffRepresentation {
       const text = provider === 'whispercpp'
         ? await transcribeAudioWithWhisperCpp({
             audioBuffer,
-            modelName: configuredWhisperCppModel,
             language,
             mimeType,
           })
