@@ -405,6 +405,18 @@ html {
   z-index: 9999;
 }
 
+.launcher-main-surface {
+  background:
+    linear-gradient(180deg, rgba(var(--on-surface-rgb), 0.035), rgba(var(--on-surface-rgb), 0.015)),
+    rgba(var(--surface-base-rgb), 0.84);
+}
+
+.dark .launcher-main-surface {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
+    rgba(var(--surface-base-rgb), 0.68);
+}
+
 .sc-command-setup-shell::after {
   border-color: rgba(var(--on-surface-rgb), 0.1);
 }
@@ -428,6 +440,18 @@ html {
   background:
     linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)),
     rgba(var(--surface-base-rgb), 0.5);
+}
+
+.sc-glassy .launcher-main-surface {
+  background:
+    linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.04), rgba(var(--on-surface-rgb), 0.01)),
+    rgba(var(--surface-base-rgb), 0.44);
+}
+
+.dark.sc-glassy .launcher-main-surface {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.018)),
+    rgba(var(--surface-base-rgb), 0.3);
 }
 
 .sc-glassy .glass-effect::after {
@@ -650,6 +674,44 @@ html {
   box-shadow:
     0 12px 28px rgba(var(--backdrop-rgb), 0.36),
     inset 0 0 0 1px rgba(var(--on-surface-rgb), 0.12);
+}
+
+.launcher-background-media {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.launcher-background-image {
+  position: absolute;
+  inset: -8%;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: 0.4;
+  transform: scale(1.015);
+  filter: blur(8px) saturate(1.24) brightness(1.02);
+}
+
+.launcher-background-tint {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top, rgba(var(--surface-base-rgb), 0.035), transparent 58%),
+    linear-gradient(180deg, rgba(var(--surface-base-rgb), 0.015), rgba(var(--surface-base-rgb), 0.08));
+}
+
+.dark .launcher-background-image {
+  opacity: 0.54;
+  filter: blur(9px) saturate(1.45) brightness(0.98);
+}
+
+.sc-glassy .launcher-background-image,
+.sc-native-liquid-glass .launcher-background-image {
+  opacity: 0.46;
+  filter: blur(10px) saturate(1.32) brightness(1);
 }
 
 .sc-dropdown-divider {

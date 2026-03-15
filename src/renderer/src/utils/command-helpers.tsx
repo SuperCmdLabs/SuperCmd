@@ -13,9 +13,15 @@
  */
 
 import React from 'react';
-import { Search, Power, Settings, Puzzle, Sparkles, Clipboard, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Link2, Camera, CalendarDays } from 'lucide-react';
+import { Search, Power, Settings, Puzzle, Sparkles, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid } from 'lucide-react';
 import type { CommandInfo, EdgeTtsVoice } from '../../types/electron';
 import supercmdLogo from '../../../../supercmd.svg';
+import IconCalendar from '../icons/Calendar';
+import IconCamera from '../icons/Camera';
+import IconClipboard from '../icons/Clipboard';
+import IconMagnifier from '../icons/FileSearch';
+import IconLink from '../icons/QuickLinks';
+import IconCodeEditor from '../icons/Snippet';
 import { formatShortcutForDisplay } from './hyper-key';
 import { renderQuickLinkIconGlyph } from './quicklink-icons';
 
@@ -37,6 +43,20 @@ export type ReadVoiceOption = {
   value: string;
   label: string;
 };
+
+function buildCoreIconStyle(
+  gradient1Top: string,
+  gradient1Bottom: string,
+  gradient2Top: string,
+  gradient2Bottom: string
+): React.CSSProperties {
+  return {
+    '--nc-gradient-1-color-1': gradient1Top,
+    '--nc-gradient-1-color-2': gradient1Bottom,
+    '--nc-gradient-2-color-1': gradient2Top,
+    '--nc-gradient-2-color-2': gradient2Bottom,
+  } as React.CSSProperties;
+}
 
 const SEARCH_TOKEN_SPLIT_REGEX = /[^a-z0-9]+/g;
 
@@ -912,11 +932,12 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
 
   if (commandId === 'system-clipboard-manager') {
     return (
-      <div
-        className="w-5 h-5 rounded flex items-center justify-center"
-        style={{ background: 'var(--icon-clipboard-bg)', color: 'var(--icon-clipboard-fg)' }}
-      >
-        <Clipboard className="w-3 h-3" />
+      <div className="w-5 h-5 flex items-center justify-center">
+        <IconClipboard
+          size="16px"
+          aria-hidden="true"
+          style={buildCoreIconStyle('#fda4af', '#be123c', '#fff1f2cc', '#fecdd399')}
+        />
       </div>
     );
   }
@@ -928,11 +949,12 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     commandId === 'system-export-snippets'
   ) {
     return (
-      <div
-        className="w-5 h-5 rounded flex items-center justify-center"
-        style={{ background: 'var(--icon-snippet-bg)', color: 'var(--icon-snippet-fg)' }}
-      >
-        <FileText className="w-3 h-3" />
+      <div className="w-5 h-5 flex items-center justify-center">
+        <IconCodeEditor
+          size="16px"
+          aria-hidden="true"
+          style={buildCoreIconStyle('#fcd34d', '#d97706', '#fef3c7b8', '#fcd34d90')}
+        />
       </div>
     );
   }
@@ -943,11 +965,12 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     commandId.startsWith('quicklink-')
   ) {
     return (
-      <div
-        className="w-5 h-5 rounded flex items-center justify-center"
-        style={{ background: 'var(--icon-search-bg)', color: 'var(--icon-search-fg)' }}
-      >
-        <Link2 className="w-3 h-3" />
+      <div className="w-5 h-5 flex items-center justify-center">
+        <IconLink
+          size="16px"
+          aria-hidden="true"
+          style={buildCoreIconStyle('#86efac', '#16a34a', '#dcfce7b8', '#86efac90')}
+        />
       </div>
     );
   }
@@ -968,19 +991,31 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
 
   if (commandId === 'system-search-files') {
     return (
-      <div
-        className="w-5 h-5 rounded flex items-center justify-center"
-        style={{ background: 'var(--icon-search-bg)', color: 'var(--icon-search-fg)' }}
-      >
-        <Search className="w-3 h-3" />
+      <div className="w-5 h-5 flex items-center justify-center">
+        <IconMagnifier
+          size="16px"
+          aria-hidden="true"
+          style={buildCoreIconStyle('#86efac', '#16a34a', '#dcfce7b8', '#86efac90')}
+        />
       </div>
     );
   }
 
   if (commandId === 'system-my-schedule') {
     return (
-      <div className="w-5 h-5 rounded bg-rose-500/20 flex items-center justify-center">
-        <CalendarDays className="w-3 h-3 text-rose-200" />
+      <div className="w-5 h-5 flex items-center justify-center">
+        <IconCalendar
+          size="16px"
+          aria-hidden="true"
+          style={
+            {
+              '--nc-gradient-1-color-1': '#fecdd3',
+              '--nc-gradient-1-color-2': '#e11d48',
+              '--nc-gradient-2-color-1': '#fff1f2b8',
+              '--nc-gradient-2-color-2': '#fecdd390',
+            } as React.CSSProperties
+          }
+        />
       </div>
     );
   }
@@ -1011,8 +1046,12 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
 
   if (commandId === 'system-camera') {
     return (
-      <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
-        <Camera className="w-3 h-3 text-cyan-200" />
+      <div className="w-5 h-5 flex items-center justify-center">
+        <IconCamera
+          size="16px"
+          aria-hidden="true"
+          style={buildCoreIconStyle('#a5f3fc', '#0891b2', '#cffafecc', '#a5f3fc99')}
+        />
       </div>
     );
   }

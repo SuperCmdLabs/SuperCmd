@@ -86,7 +86,7 @@ import {
   startFileSearchIndexing,
   stopFileSearchIndexing,
 } from './file-search-index';
-import { getCalendarEvents } from './calendar-events';
+import { ensureCalendarAccess, getCalendarEvents } from './calendar-events';
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
@@ -10370,6 +10370,14 @@ return appURL's |path|() as text`,
   });
 
   ipcMain.handle(
+    'calendar-ensure-access',
+    async (_event: any, options?: { prompt?: boolean }) => {
+      const prompt = options?.prompt !== false;
+      return await ensureCalendarAccess(prompt);
+    }
+  );
+
+  ipcMain.handle(
     'calendar-get-events',
     async (_event: any, payload: { start?: string; end?: string }) => {
       const start = String(payload?.start || '').trim();
@@ -12055,6 +12063,29 @@ if let tiff = image?.tiffRepresentation {
       }
     }
   );
+
+  ipcMain.handle('pick-launcher-background-image', async (event: any) => {
+    suppressBlurHide = true;
+    try {
+      const result = await dialog.showOpenDialog(getDialogParentWindow(event), {
+        properties: ['openFile'],
+        filters: [
+          {
+            name: 'Images',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff', 'heic', 'heif', 'avif'],
+          },
+        ],
+      });
+      if (result.canceled) return null;
+      const selectedPath = String(result.filePaths?.[0] || '').trim();
+      return selectedPath || null;
+    } catch (error: any) {
+      console.error('pick-launcher-background-image failed:', error);
+      return null;
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
 
   // ─── IPC: Menu Bar (Tray) Extensions ────────────────────────────
 
