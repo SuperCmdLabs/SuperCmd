@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2 } from 'lucide-react';
+import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2, SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AppUpdaterStatus } from '../../types/electron';
 import { applyAppFontSize, getDefaultAppFontSize } from '../utils/font-size';
@@ -18,6 +18,12 @@ import {
 import { applyUiStyle, normalizeUiStyle, type UiStylePreference } from '../utils/ui-style';
 
 type FontSizeOption = NonNullable<AppSettings['fontSize']>;
+type LauncherBackgroundPercentField =
+  | 'launcherBackgroundImageBlurPercent'
+  | 'launcherBackgroundImageOpacityPercent';
+
+const DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT = 25;
+const DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT = 45;
 
 const FONT_SIZE_OPTIONS: Array<{ id: FontSizeOption; label: string }> = [
   { id: 'extra-small', label: 'Extra Small' },
@@ -32,6 +38,12 @@ function getFileName(filePath: string): string {
   if (!normalizedPath) return '';
   const segments = normalizedPath.split('/');
   return segments[segments.length - 1] || normalizedPath;
+}
+
+function clampPercentage(value: number, fallback: number): number {
+  const parsedValue = Number(value);
+  if (!Number.isFinite(parsedValue)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(parsedValue)));
 }
 
 function formatBytes(bytes?: number): string {
@@ -83,6 +95,7 @@ const GeneralTab: React.FC = () => {
   const [themePreference, setThemePreference] = useState<ThemePreference>(() => getThemePreference());
   const [uiStyle, setUiStyle] = useState<UiStylePreference>('default');
   const [launcherBackgroundBusy, setLauncherBackgroundBusy] = useState(false);
+  const [launcherBackgroundControlsExpanded, setLauncherBackgroundControlsExpanded] = useState(false);
 
   useEffect(() => {
     window.electron.getSettings().then((nextSettings) => {
@@ -294,6 +307,7 @@ const GeneralTab: React.FC = () => {
     try {
       const nextSettings = await window.electron.saveSettings({ launcherBackgroundImagePath: '' });
       setSettings(nextSettings);
+      setLauncherBackgroundControlsExpanded(false);
     } finally {
       setLauncherBackgroundBusy(false);
     }
@@ -311,12 +325,43 @@ const GeneralTab: React.FC = () => {
     }
   };
 
+  const handleLauncherBackgroundPercentChange = async (
+    field: LauncherBackgroundPercentField,
+    value: number
+  ) => {
+    if (!settings) return;
+    const fallback =
+      field === 'launcherBackgroundImageBlurPercent'
+        ? DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT
+        : DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT;
+    const previousValue = clampPercentage(settings[field], fallback);
+    const nextValue = clampPercentage(value, fallback);
+    if (nextValue === previousValue) return;
+
+    setSettings((prev) => (prev ? { ...prev, [field]: nextValue } : prev));
+
+    try {
+      const nextSettings = await window.electron.saveSettings({ [field]: nextValue } as Partial<AppSettings>);
+      setSettings(nextSettings);
+    } catch {
+      setSettings((prev) => (prev ? { ...prev, [field]: previousValue } : prev));
+    }
+  };
+
   if (!settings) {
     return <div className="p-6 text-[var(--text-muted)] text-[0.75rem]">Loading settings...</div>;
   }
 
   const selectedFontSize = settings.fontSize || getDefaultAppFontSize();
   const launcherBackgroundFileName = getFileName(settings.launcherBackgroundImagePath);
+  const launcherBackgroundBlurPercent = clampPercentage(
+    settings.launcherBackgroundImageBlurPercent,
+    DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT
+  );
+  const launcherBackgroundOpacityPercent = clampPercentage(
+    settings.launcherBackgroundImageOpacityPercent,
+    DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
+  );
 
   return (
     <div className="w-full max-w-[980px] mx-auto space-y-3">
@@ -463,6 +508,75 @@ const GeneralTab: React.FC = () => {
               <p className="max-w-full truncate text-[0.75rem] font-semibold text-[var(--text-muted)]">
                 {launcherBackgroundFileName}
               </p>
+            ) : null}
+
+            {launcherBackgroundFileName ? (
+              <div className="w-full max-w-[420px]">
+                <button
+                  type="button"
+                  onClick={() => setLauncherBackgroundControlsExpanded((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 text-[0.75rem] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  Appearance
+                  <span className="text-[var(--text-subtle)]">
+                    Blur {launcherBackgroundBlurPercent}% · Opacity {launcherBackgroundOpacityPercent}%
+                  </span>
+                  {launcherBackgroundControlsExpanded ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </button>
+
+                {launcherBackgroundControlsExpanded ? (
+                  <div className="mt-2 space-y-2 rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-2.5">
+                    <div className="grid grid-cols-[56px_minmax(0,1fr)_42px] items-center gap-2">
+                      <span className="text-[0.72rem] font-medium text-[var(--text-secondary)]">Blur</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={launcherBackgroundBlurPercent}
+                        onChange={(event) => {
+                          void handleLauncherBackgroundPercentChange(
+                            'launcherBackgroundImageBlurPercent',
+                            Number(event.target.value)
+                          );
+                        }}
+                        className="w-full"
+                        style={{ accentColor: 'var(--accent-color)' }}
+                      />
+                      <span className="text-right text-[0.72rem] font-semibold text-[var(--text-muted)]">
+                        {launcherBackgroundBlurPercent}%
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-[56px_minmax(0,1fr)_42px] items-center gap-2">
+                      <span className="text-[0.72rem] font-medium text-[var(--text-secondary)]">Opacity</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={launcherBackgroundOpacityPercent}
+                        onChange={(event) => {
+                          void handleLauncherBackgroundPercentChange(
+                            'launcherBackgroundImageOpacityPercent',
+                            Number(event.target.value)
+                          );
+                        }}
+                        className="w-full"
+                        style={{ accentColor: 'var(--accent-color)' }}
+                      />
+                      <span className="text-right text-[0.72rem] font-semibold text-[var(--text-muted)]">
+                        {launcherBackgroundOpacityPercent}%
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
 
             <label className="inline-flex items-center gap-2.5 text-[0.75rem] text-[var(--text-secondary)] cursor-pointer">
