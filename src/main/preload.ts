@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('electron', {
   homeDir: _homeDir,
   platform: _platform,
 
+  // ─── Lifecycle ──────────────────────────────────────────────────
+  /** Signal main process that the renderer React app has mounted. */
+  rendererReady: (): void => { ipcRenderer.send('renderer-ready'); },
+
   // ─── Launcher ───────────────────────────────────────────────────
   getCommands: (): Promise<any[]> => ipcRenderer.invoke('get-commands'),
   executeCommand: (commandId: string): Promise<boolean> =>

@@ -317,6 +317,8 @@ export interface OllamaLocalModel {
 }
 
 export interface ElectronAPI {
+  // Lifecycle
+  rendererReady: () => void;
   // Launcher
   getCommands: () => Promise<CommandInfo[]>;
   executeCommand: (commandId: string) => Promise<boolean>;

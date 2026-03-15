@@ -25,5 +25,9 @@
     <!-- AppleScript / Automation: required for osascript (keystroke, getSelectedText, etc.) -->
     <key>com.apple.security.automation.apple-events</key>
     <true/>
+
+    <!-- Calendar access: required for EventKit (My Schedule) -->
+    <key>com.apple.security.personal-information.calendars</key>
+    <true/>
   </dict>
 </plist>

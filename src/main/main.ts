@@ -140,6 +140,18 @@ let cachedElectronLiquidGlassApi: any | null | undefined = undefined;
 let hasLoggedLiquidGlassRuntimeIncompatibility = false;
 const liquidGlassAppliedWindowIds = new Set<number>();
 let windowManagerAccessRequested = false;
+
+// Tracks whether macOS Automation permission for "System Events" has been
+// granted.  Starts `false`; flipped to `true` after the first *successful*
+// osascript call that uses System Events.  While `false`, non-essential
+// System-Events AppleScript is skipped so we never surprise the user with the
+// permission dialog (e.g. during the first window show).
+let systemEventsPermissionConfirmed = false;
+
+/** Call after a successful System Events osascript to record that permission is granted. */
+function markSystemEventsPermissionGranted(): void {
+  systemEventsPermissionConfirmed = true;
+}
 let windowManagementTargetWindowId: string | null = null;
 let windowManagementTargetWorkArea: { x: number; y: number; width: number; height: number } | null = null;
 let launcherEntryWindowManagementTargetWindowId: string | null = null;
@@ -3868,6 +3880,7 @@ async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: bool
         end tell
       `;
       const { stdout } = await execFileAsync('/usr/bin/osascript', ['-e', script]);
+      markSystemEventsPermissionGranted();
       return String(stdout || '').trim();
     } catch {
       return '';
@@ -3931,6 +3944,12 @@ function getRecentSelectionSnapshot(): string {
 
 async function captureSelectionSnapshotBeforeShow(options?: { allowClipboardFallback?: boolean }): Promise<string> {
   if (launcherMode !== 'default') {
+    rememberSelectionSnapshot('');
+    return '';
+  }
+  // Skip System Events during window-show if permission hasn't been confirmed
+  // yet, to avoid triggering the macOS Automation dialog unexpectedly.
+  if (!systemEventsPermissionConfirmed) {
     rememberSelectionSnapshot('');
     return '';
   }
@@ -5350,6 +5369,7 @@ function computePromptWindowBounds(
   const rawFocusedInputRect = preCapturedInputRect !== undefined ? preCapturedInputRect : getFocusedInputRect();
 
   const frontWindowRect = (() => {
+    if (!systemEventsPermissionConfirmed) return null;
     try {
       const { execFileSync } = require('child_process');
       const script = `
@@ -5713,6 +5733,7 @@ function getTypingCaretRect():
 function getFocusedInputRect():
   | { x: number; y: number; width: number; height: number }
   | null {
+  if (!systemEventsPermissionConfirmed) return null;
   try {
     const { execFileSync } = require('child_process');
     const script = `
@@ -5946,10 +5967,16 @@ function captureFrontmostAppContext(): void {
           return;
         }
       }
+      // lsappinfo succeeded but returned our own app — skip AppleScript fallback
+      return;
     }
   } catch {
     // Fallback below.
   }
+
+  // Only fall back to System Events if permission has already been confirmed,
+  // to avoid triggering the macOS Automation permission dialog unexpectedly.
+  if (!systemEventsPermissionConfirmed) return;
 
   try {
     const { execSync } = require('child_process');
@@ -5963,6 +5990,7 @@ function captureFrontmostAppContext(): void {
       end tell
     `;
     const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
+    markSystemEventsPermissionGranted();
     const [name, appPath, bundleId] = result.split('|||');
     if (bundleId !== 'com.supercmd' && name !== 'SuperCmd' && name !== 'Electron') {
       lastFrontmostApp = { name, path: appPath, bundleId };
@@ -10326,8 +10354,37 @@ return appURL's |path|() as text`,
     }
   });
 
-  // Get frontmost application
+  // Get frontmost application — prefer lsappinfo (no permissions needed),
+  // fall back to System Events only when permission is already confirmed.
   ipcMain.handle('get-frontmost-application', async () => {
+    try {
+      const { execFileSync } = require('child_process');
+      const asn = String(execFileSync('/usr/bin/lsappinfo', ['front'], { encoding: 'utf-8' }) || '').trim();
+      if (asn) {
+        const info = String(
+          execFileSync('/usr/bin/lsappinfo', ['info', '-only', 'bundleid,name,path', asn], { encoding: 'utf-8' }) || ''
+        );
+        const bundleId =
+          info.match(/"CFBundleIdentifier"\s*=\s*"([^"]*)"/)?.[1]?.trim() ||
+          info.match(/"bundleid"\s*=\s*"([^"]*)"/i)?.[1]?.trim() ||
+          '';
+        const name =
+          info.match(/"LSDisplayName"\s*=\s*"([^"]*)"/)?.[1]?.trim() ||
+          info.match(/"name"\s*=\s*"([^"]*)"/i)?.[1]?.trim() ||
+          '';
+        const appPath = info.match(/"path"\s*=\s*"([^"]*)"/)?.[1]?.trim() || '';
+        if (bundleId || name || appPath) {
+          return { name: name || bundleId || 'Unknown', path: appPath, bundleId: bundleId || undefined };
+        }
+      }
+    } catch {
+      // lsappinfo failed — try System Events below.
+    }
+
+    if (!systemEventsPermissionConfirmed) {
+      return { name: 'SuperCmd', path: '', bundleId: 'com.supercmd' };
+    }
+
     try {
       const { execSync } = require('child_process');
       const script = `
@@ -10340,6 +10397,7 @@ return appURL's |path|() as text`,
         end tell
       `;
       const result = execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, { encoding: 'utf-8' }).trim();
+      markSystemEventsPermissionGranted();
       const [name, appPath, bundleId] = result.split('|||');
       return { name, path: appPath, bundleId };
     } catch (e) {
@@ -10373,7 +10431,13 @@ return appURL's |path|() as text`,
     'calendar-ensure-access',
     async (_event: any, options?: { prompt?: boolean }) => {
       const prompt = options?.prompt !== false;
-      return await ensureCalendarAccess(prompt);
+      const result = await ensureCalendarAccess(prompt);
+      // After the macOS permission dialog closes, the main window may have
+      // lost focus.  Re-focus it so the blur-to-hide mechanism works again.
+      if (prompt && mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+        try { mainWindow.focus(); } catch {}
+      }
+      return result;
     }
   );
 
@@ -12301,6 +12365,26 @@ if let tiff = image?.tiffRepresentation {
     return template;
   }
 
+  // ─── System Events permission probe ────────────────────────────
+  // For returning users (onboarding already complete), do a deferred
+  // background check to see if System Events permission was granted in a
+  // previous session.  On macOS the Automation prompt only appears the
+  // *very first time*; once the TCC entry exists (granted OR denied) the
+  // call returns instantly without a dialog.
+  if (settings.hasSeenOnboarding) {
+    setTimeout(() => {
+      try {
+        const { execFileSync } = require('child_process');
+        execFileSync('/usr/bin/osascript', [
+          '-e', 'tell application "System Events" to return 1',
+        ], { encoding: 'utf-8', timeout: 2000 });
+        markSystemEventsPermissionGranted();
+      } catch {
+        // Permission not granted — System Events calls remain guarded.
+      }
+    }, 3000);
+  }
+
   // ─── Window + Shortcuts ─────────────────────────────────────────
 
   createWindow();
@@ -12321,15 +12405,21 @@ if let tiff = image?.tiffRepresentation {
     hideWindow();
   });
 
-  // Wait for the renderer to finish loading before showing the window.
-  // Showing before load completes results in a blank/transparent frame.
-  if (mainWindow && mainWindow.webContents.isLoadingMainFrame()) {
-    mainWindow.webContents.once('did-finish-load', () => {
-      void openLauncherFromUserEntry();
-    });
-  } else {
+  // Wait for the renderer React app to mount before dispatching the initial
+  // window-shown / run-system-command.  `did-finish-load` only means the HTML
+  // document loaded — React useEffect listeners register asynchronously after
+  // that, so messages sent too early are silently lost.
+  let launcherEntryDispatched = false;
+  const dispatchLauncherEntry = () => {
+    if (launcherEntryDispatched) return;
+    launcherEntryDispatched = true;
     void openLauncherFromUserEntry();
-  }
+  };
+  ipcMain.once('renderer-ready', dispatchLauncherEntry);
+  // Safety fallback: if the renderer-ready signal never arrives (e.g. the
+  // renderer crashes or loads a different route), open the launcher anyway
+  // so first launch never silently hangs.
+  setTimeout(dispatchLauncherEntry, 5000);
 
   app.on('activate', () => {
     // During onboarding the window is shown but may lose visual focus to a system
@@ -12360,13 +12450,11 @@ if let tiff = image?.tiffRepresentation {
 
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
-      // New window — wait for content to load before showing.
-      if (mainWindow && mainWindow.webContents.isLoadingMainFrame()) {
-        mainWindow.webContents.once('did-finish-load', () => {
-          void openLauncherFromUserEntry();
-        });
-        return;
-      }
+      // New window — wait for the renderer React app to mount.
+      ipcMain.once('renderer-ready', () => {
+        void openLauncherFromUserEntry();
+      });
+      return;
     }
     void openLauncherFromUserEntry();
   });
