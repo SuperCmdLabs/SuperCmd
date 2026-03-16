@@ -155,6 +155,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [requestedPermissions, setRequestedPermissions] = useState<Record<string, boolean>>({});
   const [permissionLoading, setPermissionLoading] = useState<Record<string, boolean>>({});
   const [permissionNotes, setPermissionNotes] = useState<Record<string, string>>({});
+  const [openAtLogin, setOpenAtLogin] = useState(true);
   const [whisperHoldKey, setWhisperHoldKey] = useState('Fn');
   const [whisperKeyStatus, setWhisperKeyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isHoldKeyActive, setIsHoldKeyActive] = useState(false);
@@ -198,6 +199,12 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       } as any);
     } catch {}
   };
+
+  // Apply the default openAtLogin preference when the user first reaches the hotkey step.
+  useEffect(() => {
+    if (step !== 2) return;
+    void window.electron.setOpenAtLogin(openAtLogin);
+  }, [step === 2]);
 
   // Fix 4: Auto-refresh permission statuses when user returns from System Settings.
   useEffect(() => {
@@ -684,6 +691,20 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   </div>
 
                   <p className="text-white/52 text-xs mb-4">Click the hotkey field above to update your launcher shortcut.</p>
+
+                  <label className="flex items-center gap-2.5 mb-4 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={openAtLogin}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setOpenAtLogin(enabled);
+                        void window.electron.setOpenAtLogin(enabled);
+                      }}
+                      className="settings-checkbox"
+                    />
+                    <span className="text-white/86 text-xs font-medium">Start SuperCmd at login</span>
+                  </label>
 
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.05] p-3.5">
                     <div className="flex items-center justify-between gap-3 mb-1.5">
