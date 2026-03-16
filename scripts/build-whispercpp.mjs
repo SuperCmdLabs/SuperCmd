@@ -56,7 +56,9 @@ function prepareFramework() {
 
   rmSync(runtimeDir, { recursive: true, force: true });
   mkdirSync(runtimeDir, { recursive: true });
-  cpSync(sourceFrameworkDir, frameworkDir, { recursive: true });
+  // Use cp -a instead of cpSync to preserve relative symlinks in the framework bundle.
+  // Node's cpSync converts relative symlinks to absolute paths, which breaks codesign.
+  run('cp', ['-a', sourceFrameworkDir, frameworkDir]);
 }
 
 function buildTranscriber() {
