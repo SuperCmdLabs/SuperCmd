@@ -257,6 +257,19 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
   const [speakToggleShortcutLabel, setSpeakToggleShortcutLabel] = useState('\u2318 .');
   const speakToggleShortcutRef = useRef('Fn');
+  const [parakeetWarmingUp, setParakeetWarmingUp] = useState(false);
+  const [hintText, setHintText] = useState('');
+  const hintTimerRef = useRef<number | null>(null);
+  const sttModelRef = useRef<string>('parakeet');
+
+  const showHint = useCallback((text: string, durationMs = 3000) => {
+    if (hintTimerRef.current !== null) window.clearTimeout(hintTimerRef.current);
+    setHintText(text);
+    hintTimerRef.current = window.setTimeout(() => {
+      setHintText('');
+      hintTimerRef.current = null;
+    }, durationMs);
+  }, []);
 
   // Which backend to use — determined on settings load
   const backendRef = useRef<WhisperBackend>('whisper');
@@ -491,9 +504,12 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       speakToggleShortcutRef.current = speakToggleHotkey;
       setSpeakToggleShortcutLabel(formatShortcutLabel(speakToggleHotkey));
 
-      const sttModel = String(settings.ai.speechToTextModel || 'whispercpp');
+      const sttModel = String(settings.ai.speechToTextModel || 'parakeet');
+      sttModelRef.current = sttModel;
       let engine: WhisperEngine = 'whispercpp';
-      if (sttModel === 'native') {
+      if (sttModel === 'parakeet' || sttModel === 'whispercpp') {
+        engine = 'whispercpp';
+      } else if (sttModel === 'native') {
         engine = 'native';
       } else if (sttModel.startsWith('openai-')) {
         engine = settings.ai.openaiApiKey ? 'cloud' : 'whispercpp';
@@ -1112,6 +1128,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           whisperStateRef.current = 'idle';
           setState('idle');
           finalizingRef.current = false;
+          showHint('Too short — hold for at least 1 second', 3000);
         }
         return;
       }
@@ -1277,6 +1294,27 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         stopNativeSilenceWatchdog();
         if (sessionConfig.engine === 'whispercpp') {
           if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) return;
+
+          // If parakeet, warm up the server (loads CoreML models on first use).
+          // Audio is already being captured in the background while we wait.
+          if (sttModelRef.current === 'parakeet') {
+            setParakeetWarmingUp(true);
+            setState('listening');
+            setStatusText('Loading Whisper models...');
+            console.log('[Whisper][parakeet] Warming up server (first use)...');
+            try {
+              await window.electron.parakeetWarmup();
+              console.log('[Whisper][parakeet] Server warm');
+            } catch (err) {
+              console.warn('[Whisper][parakeet] Warmup failed, will retry on transcribe:', err);
+            }
+            if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) {
+              setParakeetWarmingUp(false);
+              return;
+            }
+            setParakeetWarmingUp(false);
+          }
+
           setState('listening');
           playRecordingCue('start');
           setStatusText(
@@ -1555,8 +1593,11 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
   const listening = state === 'listening';
   const processing = state === 'processing';
-  const dotMode = !listening && !processing;
-  const bannerText = coachmarkText;
+  const warming = parakeetWarmingUp;
+  const dotMode = !listening && !processing && !warming;
+  const bannerText = warming
+    ? 'First-time setup — loading models...'
+    : hintText || coachmarkText;
 
   if (typeof document === 'undefined') return null;
   const target = portalTarget || document.body;
@@ -1573,13 +1614,13 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           <div className="whisper-coachmark-inline">{bannerText}</div>
         ) : null}
         <div
-          className={`whisper-wave whisper-wave-standalone ${listening ? 'is-listening' : ''} ${processing ? 'is-processing' : ''}`}
+          className={`whisper-wave whisper-wave-standalone ${listening && !warming ? 'is-listening' : ''} ${processing || warming ? 'is-processing' : ''}`}
           aria-hidden="true"
         >
-          {speakToggleShortcutLabel ? (
+          {speakToggleShortcutLabel && !warming ? (
             <span className="whisper-shortcut-hint">{speakToggleShortcutLabel}</span>
           ) : null}
-          {processing ? (
+          {processing || warming ? (
             <span className="whisper-processing-loader" />
           ) : (
             waveBars.map((value, index) => {

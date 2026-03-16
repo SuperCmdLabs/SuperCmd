@@ -15,7 +15,7 @@ import {
 import HotkeyRecorder from './settings/HotkeyRecorder';
 import supercmdLogo from '../../../supercmd.png';
 import onboardingIconVideo from '../../../assets/icon.mp4';
-import type { WhisperCppModelStatus } from '../types/electron';
+import type { WhisperCppModelStatus, ParakeetModelStatus } from '../types/electron';
 
 interface OnboardingExtensionProps {
   initialShortcut: string;
@@ -169,6 +169,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
   const [whisperCppModelStatus, setWhisperCppModelStatus] = useState<WhisperCppModelStatus | null>(null);
   const [whisperCppModelBusy, setWhisperCppModelBusy] = useState(false);
+  const [parakeetModelStatus, setParakeetModelStatus] = useState<ParakeetModelStatus | null>(null);
+  const [parakeetModelBusy, setParakeetModelBusy] = useState(false);
+  const [sttProvider, setSttProvider] = useState<string>('parakeet');
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
   const openedPermissionsRef = useRef<Record<string, boolean>>({});
   const requestedPermissionsRef = useRef<Record<string, boolean>>({});
@@ -192,6 +195,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       setWhisperHoldKey(saved);
       const savedLanguage = String(settings.ai?.speechLanguage || 'en-US').trim();
       setSpeechLanguage(savedLanguage || 'en-US');
+      const stt = String(settings.ai?.speechToTextModel || 'parakeet').trim();
+      setSttProvider(!stt || stt === 'default' ? 'parakeet' : stt);
     }).catch(() => {});
   }, []);
 
@@ -239,6 +244,36 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     }
   };
 
+  const refreshParakeetModelStatus = async (): Promise<ParakeetModelStatus | null> => {
+    try {
+      const status = await window.electron.parakeetModelStatus();
+      setParakeetModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  };
+
+  const startParakeetModelDownload = async () => {
+    if (parakeetModelBusy || parakeetModelStatus?.state === 'downloaded') return;
+    setParakeetModelBusy(true);
+    setParakeetModelStatus((current) => ({
+      state: 'downloading',
+      modelName: current?.modelName || 'parakeet-tdt-0.6b-v3',
+      path: current?.path || '',
+      progress: current?.progress || 0,
+    }));
+    try {
+      const status = await window.electron.parakeetDownloadModel();
+      setParakeetModelStatus(status);
+    } catch {
+      await refreshParakeetModelStatus();
+    } finally {
+      setParakeetModelBusy(false);
+    }
+  };
+
+  // Step 4: auto-download the appropriate model
   useEffect(() => {
     if (step !== 4) return;
     let cancelled = false;
@@ -249,21 +284,36 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     };
 
     const tick = async () => {
-      const status = await refreshWhisperCppModelStatus();
-      if (cancelled) return;
-
-      if (
-        !whisperCppModelBusy &&
-        status &&
-        (status.state === 'not-downloaded' || status.state === 'error')
-      ) {
-        void startWhisperCppModelDownload();
-        scheduleNextTick(400);
-        return;
-      }
-
-      if (whisperCppModelBusy || status?.state === 'downloading') {
-        scheduleNextTick(500);
+      if (sttProvider === 'parakeet') {
+        const status = await refreshParakeetModelStatus();
+        if (cancelled) return;
+        if (
+          !parakeetModelBusy &&
+          status &&
+          (status.state === 'not-downloaded' || status.state === 'error')
+        ) {
+          void startParakeetModelDownload();
+          scheduleNextTick(400);
+          return;
+        }
+        if (parakeetModelBusy || status?.state === 'downloading') {
+          scheduleNextTick(500);
+        }
+      } else if (sttProvider === 'whispercpp') {
+        const status = await refreshWhisperCppModelStatus();
+        if (cancelled) return;
+        if (
+          !whisperCppModelBusy &&
+          status &&
+          (status.state === 'not-downloaded' || status.state === 'error')
+        ) {
+          void startWhisperCppModelDownload();
+          scheduleNextTick(400);
+          return;
+        }
+        if (whisperCppModelBusy || status?.state === 'downloading') {
+          scheduleNextTick(500);
+        }
       }
     };
 
@@ -272,7 +322,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [step, whisperCppModelBusy]);
+  }, [step, sttProvider, whisperCppModelBusy, parakeetModelBusy]);
 
   const whisperCppDownloadPercent = useMemo(() => {
     if (!whisperCppModelStatus || whisperCppModelStatus.state !== 'downloading' || !whisperCppModelStatus.totalBytes) {
@@ -280,6 +330,12 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     }
     return Math.max(0, Math.min(100, Math.round((whisperCppModelStatus.bytesDownloaded / whisperCppModelStatus.totalBytes) * 100)));
   }, [whisperCppModelStatus]);
+
+  const parakeetDownloadPercent = useMemo(() => {
+    if (!parakeetModelStatus || parakeetModelStatus.state !== 'downloading') return 0;
+    return Math.max(0, Math.min(100, Math.round((parakeetModelStatus.progress || 0) * 100)));
+  }, [parakeetModelStatus]);
+
   // Apply the default openAtLogin preference when the user first reaches the hotkey step.
   useEffect(() => {
     if (step !== 2) return;
@@ -945,66 +1001,138 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     </select>
                   </div>
                   <div className="mt-2 rounded-[28px] border border-white/[0.08] bg-white/[0.05] p-4">
-                    <p className="text-white/88 text-xs font-medium mb-1.5">SuperCmd Whisper</p>
-                    {whisperCppModelStatus?.state === 'downloaded' ? (
-                      <p className="text-emerald-200 text-[11px] leading-relaxed">
-                        Download complete. SuperCmd Whisper dictation is ready.
-                      </p>
-                    ) : whisperCppModelStatus?.state === 'downloading' ? (
-                      <div className="space-y-2.5">
-                        <div className="space-y-1">
-                          <p className="text-white/90 text-[11px] font-medium leading-relaxed">
-                            Downloading model, just a moment.
+                    {sttProvider === 'parakeet' ? (
+                      <>
+                        <p className="text-white/88 text-xs font-medium mb-1.5">Parakeet TDT v3</p>
+                        {parakeetModelStatus?.state === 'downloaded' ? (
+                          <p className="text-emerald-200 text-[11px] leading-relaxed">
+                            Download complete. Parakeet v3 dictation is ready.
                           </p>
-                          <p className="text-white/62 text-[11px] leading-relaxed">
-                            Downloading the ~300 MB ggml base model
-                            {whisperCppModelStatus.totalBytes ? ` (${whisperCppDownloadPercent}%)` : '...'}
+                        ) : parakeetModelStatus?.state === 'downloading' ? (
+                          <div className="space-y-2.5">
+                            <div className="space-y-1">
+                              <p className="text-white/90 text-[11px] font-medium leading-relaxed">
+                                Downloading models, just a moment.
+                              </p>
+                              <p className="text-white/62 text-[11px] leading-relaxed">
+                                Downloading Parakeet v3 CoreML models
+                                {parakeetDownloadPercent > 0 ? ` (${parakeetDownloadPercent}%)` : '...'}
+                              </p>
+                            </div>
+                            <div
+                              className="h-2.5 rounded-full bg-black/25 overflow-hidden ring-1 ring-inset ring-white/[0.06]"
+                              role="progressbar"
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={parakeetDownloadPercent > 0 ? parakeetDownloadPercent : undefined}
+                              aria-label="Parakeet model download progress"
+                            >
+                              <div
+                                className={parakeetDownloadPercent > 0
+                                  ? 'h-full bg-cyan-300/80 transition-[width] duration-300'
+                                  : 'h-full w-[34%] bg-cyan-300/70 animate-pulse'
+                                }
+                                style={parakeetDownloadPercent > 0
+                                  ? { width: `${Math.max(6, parakeetDownloadPercent)}%` }
+                                  : undefined
+                                }
+                              />
+                            </div>
+                          </div>
+                        ) : parakeetModelStatus?.state === 'error' ? (
+                          <p className="text-rose-200 text-[11px] leading-relaxed">
+                            {parakeetModelStatus.error || 'Model download failed. Retry now or use Settings → AI → SuperCmd Whisper.'}
                           </p>
+                        ) : (
+                          <p className="text-white/72 text-[11px] leading-relaxed">
+                            SuperCmd starts downloading Parakeet v3 models on this step so dictation is ready before first use.
+                          </p>
+                        )}
+                        <div className="mt-3 flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => { void startParakeetModelDownload(); }}
+                            disabled={parakeetModelBusy || parakeetModelStatus?.state === 'downloading' || parakeetModelStatus?.state === 'downloaded'}
+                            className="inline-flex min-h-[32px] items-center justify-center rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors border border-white/[0.12] bg-white/[0.10] text-white/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {parakeetModelStatus?.state === 'downloaded'
+                              ? 'Downloaded'
+                              : parakeetModelStatus?.state === 'downloading'
+                                ? 'Downloading...'
+                                : 'Download Model'}
+                          </button>
                         </div>
-                        <div
-                          className="h-2.5 rounded-full bg-black/25 overflow-hidden ring-1 ring-inset ring-white/[0.06]"
-                          role="progressbar"
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={whisperCppModelStatus.totalBytes ? whisperCppDownloadPercent : undefined}
-                          aria-label="Whisper model download progress"
-                        >
-                          <div
-                            className={whisperCppModelStatus.totalBytes
-                              ? 'h-full bg-cyan-300/80 transition-[width] duration-300'
-                              : 'h-full w-[34%] bg-cyan-300/70 animate-pulse'
-                            }
-                            style={whisperCppModelStatus.totalBytes
-                              ? { width: `${Math.max(6, whisperCppDownloadPercent)}%` }
-                              : undefined
-                            }
-                          />
+                      </>
+                    ) : sttProvider === 'whispercpp' ? (
+                      <>
+                        <p className="text-white/88 text-xs font-medium mb-1.5">SuperCmd Whisper</p>
+                        {whisperCppModelStatus?.state === 'downloaded' ? (
+                          <p className="text-emerald-200 text-[11px] leading-relaxed">
+                            Download complete. SuperCmd Whisper dictation is ready.
+                          </p>
+                        ) : whisperCppModelStatus?.state === 'downloading' ? (
+                          <div className="space-y-2.5">
+                            <div className="space-y-1">
+                              <p className="text-white/90 text-[11px] font-medium leading-relaxed">
+                                Downloading model, just a moment.
+                              </p>
+                              <p className="text-white/62 text-[11px] leading-relaxed">
+                                Downloading the ~300 MB ggml base model
+                                {whisperCppModelStatus.totalBytes ? ` (${whisperCppDownloadPercent}%)` : '...'}
+                              </p>
+                            </div>
+                            <div
+                              className="h-2.5 rounded-full bg-black/25 overflow-hidden ring-1 ring-inset ring-white/[0.06]"
+                              role="progressbar"
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={whisperCppModelStatus.totalBytes ? whisperCppDownloadPercent : undefined}
+                              aria-label="Whisper model download progress"
+                            >
+                              <div
+                                className={whisperCppModelStatus.totalBytes
+                                  ? 'h-full bg-cyan-300/80 transition-[width] duration-300'
+                                  : 'h-full w-[34%] bg-cyan-300/70 animate-pulse'
+                                }
+                                style={whisperCppModelStatus.totalBytes
+                                  ? { width: `${Math.max(6, whisperCppDownloadPercent)}%` }
+                                  : undefined
+                                }
+                              />
+                            </div>
+                          </div>
+                        ) : whisperCppModelStatus?.state === 'error' ? (
+                          <p className="text-rose-200 text-[11px] leading-relaxed">
+                            {whisperCppModelStatus.error || 'Model download failed. Retry now or use Settings → AI → SuperCmd Whisper.'}
+                          </p>
+                        ) : (
+                          <p className="text-white/72 text-[11px] leading-relaxed">
+                            SuperCmd starts downloading the SuperCmd Whisper model on this step so dictation is ready before first use.
+                          </p>
+                        )}
+                        <div className="mt-3 flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => { void startWhisperCppModelDownload(); }}
+                            disabled={whisperCppModelBusy || whisperCppModelStatus?.state === 'downloading' || whisperCppModelStatus?.state === 'downloaded'}
+                            className="inline-flex min-h-[32px] items-center justify-center rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors border border-white/[0.12] bg-white/[0.10] text-white/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {whisperCppModelStatus?.state === 'downloaded'
+                              ? 'Downloaded'
+                              : whisperCppModelStatus?.state === 'downloading'
+                                ? 'Downloading...'
+                                : 'Download Model'}
+                          </button>
                         </div>
-                      </div>
-                    ) : whisperCppModelStatus?.state === 'error' ? (
-                      <p className="text-rose-200 text-[11px] leading-relaxed">
-                        {whisperCppModelStatus.error || 'Model download failed. Retry now or use Settings → AI → SuperCmd Whisper.'}
-                      </p>
+                      </>
                     ) : (
-                      <p className="text-white/72 text-[11px] leading-relaxed">
-                        SuperCmd starts downloading the SuperCmd Whisper model on this step so dictation is ready before first use.
-                      </p>
+                      <>
+                        <p className="text-white/88 text-xs font-medium mb-1.5">Cloud Transcription</p>
+                        <p className="text-emerald-200 text-[11px] leading-relaxed">
+                          Using cloud-based transcription. No model download needed.
+                        </p>
+                      </>
                     )}
-
-                    <div className="mt-3 flex items-center gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => { void startWhisperCppModelDownload(); }}
-                        disabled={whisperCppModelBusy || whisperCppModelStatus?.state === 'downloading' || whisperCppModelStatus?.state === 'downloaded'}
-                        className="inline-flex min-h-[32px] items-center justify-center rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors border border-white/[0.12] bg-white/[0.10] text-white/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {whisperCppModelStatus?.state === 'downloaded'
-                          ? 'Downloaded'
-                          : whisperCppModelStatus?.state === 'downloading'
-                            ? 'Downloading...'
-                            : 'Download Model'}
-                      </button>
-                    </div>
                   </div>
                 </div>
 

@@ -23,7 +23,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
-import type { AppSettings, AISettings, EdgeTtsVoice, ElevenLabsVoice, WhisperCppModelStatus } from '../../types/electron';
+import type { AppSettings, AISettings, EdgeTtsVoice, ElevenLabsVoice, WhisperCppModelStatus, ParakeetModelStatus } from '../../types/electron';
 import {
   clearElevenLabsVoiceCache,
   getCachedElevenLabsVoices,
@@ -70,7 +70,8 @@ const CURATED_OLLAMA_MODELS = [
 ];
 
 const WHISPER_STT_OPTIONS = [
-  { id: 'whispercpp', label: 'SuperCmd Whisper (Default)' },
+  { id: 'parakeet', label: 'Parakeet v3 (Default — Recommended)' },
+  { id: 'whispercpp', label: 'SuperCmd Whisper (Legacy)' },
   { id: 'native', label: 'Apple Speech Recognition' },
   { id: 'openai-gpt-4o-transcribe', label: 'OpenAI GPT-4o Transcribe' },
   { id: 'openai-whisper-1', label: 'OpenAI Whisper-1' },
@@ -221,6 +222,8 @@ const AITab: React.FC = () => {
   const [elevenLabsVoicesError, setElevenLabsVoicesError] = useState<string | null>(null);
   const [whisperCppModelStatus, setWhisperCppModelStatus] = useState<WhisperCppModelStatus | null>(null);
   const [whisperCppModelLoading, setWhisperCppModelLoading] = useState(false);
+  const [parakeetModelStatus, setParakeetModelStatus] = useState<ParakeetModelStatus | null>(null);
+  const [parakeetModelLoading, setParakeetModelLoading] = useState(false);
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
   const selectingOllamaDefaultRef = useRef(false);
@@ -360,6 +363,48 @@ const AITab: React.FC = () => {
       setWhisperCppModelLoading(false);
     }
   }, [refreshWhisperCppModelStatus]);
+
+  const refreshParakeetModelStatus = useCallback(async () => {
+    try {
+      const status = await window.electron.parakeetModelStatus();
+      setParakeetModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'whisper') return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const tick = async () => {
+      const status = await refreshParakeetModelStatus();
+      if (cancelled) return;
+      if (status?.state === 'downloading') {
+        timer = window.setTimeout(() => { void tick(); }, 900);
+      }
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [activeTab, refreshParakeetModelStatus]);
+
+  const handleParakeetDownload = useCallback(async () => {
+    setParakeetModelLoading(true);
+    try {
+      const status = await window.electron.parakeetDownloadModel();
+      setParakeetModelStatus(status);
+    } catch {
+      void refreshParakeetModelStatus();
+    } finally {
+      setParakeetModelLoading(false);
+    }
+  }, [refreshParakeetModelStatus]);
 
   const maybeSelectOllamaDefaultModel = useCallback((availableNames: string[], preferredName?: string) => {
     const currentSettings = settingsRef.current;
@@ -511,10 +556,13 @@ const AITab: React.FC = () => {
       : MODELS_BY_PROVIDER[ai.provider] || [];
 
   const whisperModelValue = (!ai.speechToTextModel || ai.speechToTextModel === 'default')
-    ? 'whispercpp'
+    ? 'parakeet'
     : ai.speechToTextModel;
   const whisperCppPercent = whisperCppModelStatus?.state === 'downloading' && whisperCppModelStatus.totalBytes
     ? Math.max(0, Math.min(100, Math.round((whisperCppModelStatus.bytesDownloaded / whisperCppModelStatus.totalBytes) * 100)))
+    : 0;
+  const parakeetPercent = parakeetModelStatus?.state === 'downloading'
+    ? Math.max(0, Math.min(100, Math.round((parakeetModelStatus.progress || 0) * 100)))
     : 0;
 
   const parsedElevenLabsSpeak = parseElevenLabsSpeakModel(ai.textToSpeechModel);
@@ -1126,6 +1174,29 @@ const AITab: React.FC = () => {
                 </div>
               )}
 
+              {whisperModelValue === 'parakeet' && (
+                <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
+                  <p className="text-[0.6875rem] text-[color:var(--status-success)]">
+                    Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Download the model below before using dictation.
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'parakeet' && (
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Recognition Language</label>
+                  <select
+                    value={ai.speechLanguage || 'en-US'}
+                    onChange={(e) => updateAI({ speechLanguage: e.target.value })}
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                  >
+                    {WHISPER_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {whisperModelValue === 'whispercpp' && (
                 <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
                   <p className="text-[0.6875rem] text-[color:var(--status-success)]">
@@ -1197,6 +1268,69 @@ const AITab: React.FC = () => {
             </div>
 
             <div className="px-4 py-3.5 md:px-5 space-y-3">
+              {whisperModelValue === 'parakeet' && (
+                <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Parakeet TDT v3</h3>
+                      <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
+                        Multilingual on-device transcription. Runs on Apple Neural Engine.
+                      </p>
+                    </div>
+                    {parakeetModelStatus?.state === 'downloaded' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[color:var(--status-success)]" />
+                    ) : (
+                      <Download className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-0.5" />
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-[0.75rem]">
+                    {parakeetModelStatus?.state === 'downloaded' ? (
+                      <p className="text-[color:var(--status-success)]">Downloaded. Parakeet v3 is ready to use offline.</p>
+                    ) : parakeetModelStatus?.state === 'downloading' ? (
+                      <div className="space-y-2">
+                        <p className="text-[var(--text-secondary)]">
+                          Downloading Parakeet v3 models
+                          {parakeetPercent > 0 ? ` (${parakeetPercent}%)` : '...'}
+                        </p>
+                        <div className="h-2 rounded-full bg-black/20 overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-400/80 transition-[width] duration-300"
+                            style={{ width: `${Math.max(3, parakeetPercent)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : parakeetModelStatus?.state === 'error' ? (
+                      <p className="text-rose-300">{parakeetModelStatus.error || 'Model download failed.'}</p>
+                    ) : (
+                      <p className="text-amber-300">Model not downloaded yet. Download it now to use Parakeet dictation.</p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => { void handleParakeetDownload(); }}
+                      disabled={parakeetModelLoading || parakeetModelStatus?.state === 'downloading' || parakeetModelStatus?.state === 'downloaded'}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      {parakeetModelStatus?.state === 'downloaded'
+                        ? 'Model Downloaded'
+                        : parakeetModelStatus?.state === 'downloading'
+                          ? 'Downloading...'
+                          : 'Download Model'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { void refreshParakeetModelStatus(); }}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {whisperModelValue === 'whispercpp' && (
                 <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
                   <div className="flex items-start justify-between gap-3">

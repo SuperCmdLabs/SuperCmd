@@ -134,6 +134,349 @@ type WhisperCppModelStatus = {
 };
 let whisperCppModelStatus: WhisperCppModelStatus | null = null;
 
+// ─── Parakeet TDT v3 (FluidAudio) ─────────────────────────────────
+type ParakeetModelStatus = {
+  state: 'not-downloaded' | 'downloading' | 'downloaded' | 'error';
+  modelName: string;
+  path: string;
+  progress: number; // 0-1 fraction
+  error?: string;
+};
+let parakeetModelStatus: ParakeetModelStatus | null = null;
+let parakeetModelEnsurePromise: Promise<string> | null = null;
+
+// Persistent serve-mode process for fast transcription (models stay loaded in memory)
+let parakeetServerProcess: any = null; // ChildProcess
+let parakeetServerReady = false;
+let parakeetServerStarting: Promise<void> | null = null;
+let parakeetServerBuffer = '';
+type PendingParakeetRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
+let parakeetPendingRequest: PendingParakeetRequest | null = null;
+
+function killParakeetServer(): void {
+  if (parakeetServerProcess) {
+    try {
+      parakeetServerProcess.stdin?.write('{"command":"exit"}\n');
+      parakeetServerProcess.kill();
+    } catch {}
+    parakeetServerProcess = null;
+  }
+  parakeetServerReady = false;
+  parakeetServerStarting = null;
+  parakeetServerBuffer = '';
+  if (parakeetPendingRequest) {
+    parakeetPendingRequest.reject(new Error('Parakeet server killed'));
+    parakeetPendingRequest = null;
+  }
+}
+
+function ensureParakeetServer(): Promise<void> {
+  if (parakeetServerReady && parakeetServerProcess && !parakeetServerProcess.killed) {
+    return Promise.resolve();
+  }
+  if (parakeetServerStarting) return parakeetServerStarting;
+
+  parakeetServerStarting = (async () => {
+    killParakeetServer();
+    const binaryPath = getParakeetTranscriberBinaryPath();
+    if (!fs.existsSync(binaryPath)) {
+      throw new Error('parakeet-transcriber binary not found');
+    }
+
+    const { spawn } = require('child_process');
+    const child = spawn(binaryPath, ['serve'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    parakeetServerProcess = child;
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      console.log(`[Parakeet][server stderr] ${chunk.toString().trim()}`);
+    });
+
+    child.on('exit', (code: number | null) => {
+      console.log(`[Parakeet] Server process exited with code ${code}`);
+      parakeetServerReady = false;
+      parakeetServerProcess = null;
+      parakeetServerStarting = null;
+      if (parakeetPendingRequest) {
+        parakeetPendingRequest.reject(new Error(`Parakeet server exited with code ${code}`));
+        parakeetPendingRequest = null;
+      }
+    });
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      parakeetServerBuffer += chunk.toString();
+      const lines = parakeetServerBuffer.split('\n');
+      parakeetServerBuffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const json = JSON.parse(trimmed);
+          if (json.ready) {
+            parakeetServerReady = true;
+            console.log('[Parakeet] Server ready (models loaded)');
+            continue;
+          }
+          if (parakeetPendingRequest) {
+            const req = parakeetPendingRequest;
+            parakeetPendingRequest = null;
+            if (json.error) {
+              req.reject(new Error(json.error));
+            } else {
+              req.resolve(json);
+            }
+          }
+        } catch {}
+      }
+    });
+
+    // Wait for "ready" signal
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Parakeet server startup timed out (120s)'));
+        killParakeetServer();
+      }, 120_000);
+
+      const checkReady = setInterval(() => {
+        if (parakeetServerReady) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          resolve();
+        }
+        if (!parakeetServerProcess || parakeetServerProcess.killed) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          reject(new Error('Parakeet server process died during startup'));
+        }
+      }, 50);
+    });
+
+    parakeetServerStarting = null;
+  })();
+
+  return parakeetServerStarting;
+}
+
+function sendParakeetRequest(request: Record<string, any>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!parakeetServerProcess || parakeetServerProcess.killed || !parakeetServerReady) {
+      reject(new Error('Parakeet server not running'));
+      return;
+    }
+    if (parakeetPendingRequest) {
+      reject(new Error('Another Parakeet request is already in flight'));
+      return;
+    }
+    parakeetPendingRequest = { resolve, reject };
+    try {
+      parakeetServerProcess.stdin.write(JSON.stringify(request) + '\n');
+    } catch (err: any) {
+      parakeetPendingRequest = null;
+      reject(err);
+    }
+  });
+}
+
+function getParakeetTranscriberBinaryPath(): string {
+  return getNativeBinaryPath('parakeet-transcriber');
+}
+
+function getParakeetModelStatus(): ParakeetModelStatus {
+  if (parakeetModelStatus?.state === 'downloading') {
+    return { ...parakeetModelStatus };
+  }
+  if (parakeetModelStatus?.state === 'error') {
+    return { ...parakeetModelStatus };
+  }
+
+  // Ask the binary for the real status
+  const binaryPath = getParakeetTranscriberBinaryPath();
+  try {
+    if (!fs.existsSync(binaryPath)) {
+      parakeetModelStatus = {
+        state: 'error',
+        modelName: 'parakeet-tdt-0.6b-v3',
+        path: '',
+        progress: 0,
+        error: 'parakeet-transcriber binary not found. Rebuild with: node scripts/build-parakeet.mjs',
+      };
+      return parakeetModelStatus;
+    }
+    const { spawnSync } = require('child_process');
+    const result = spawnSync(binaryPath, ['status'], { timeout: 10_000 });
+    if (result.status === 0 && result.stdout) {
+      const json = JSON.parse(result.stdout.toString().trim());
+      if (json.state === 'downloaded') {
+        parakeetModelStatus = {
+          state: 'downloaded',
+          modelName: json.modelName || 'parakeet-tdt-0.6b-v3',
+          path: json.path || '',
+          progress: 1,
+        };
+      } else {
+        parakeetModelStatus = {
+          state: 'not-downloaded',
+          modelName: json.modelName || 'parakeet-tdt-0.6b-v3',
+          path: '',
+          progress: 0,
+        };
+      }
+      return parakeetModelStatus;
+    }
+  } catch {}
+
+  parakeetModelStatus = {
+    state: 'not-downloaded',
+    modelName: 'parakeet-tdt-0.6b-v3',
+    path: '',
+    progress: 0,
+  };
+  return parakeetModelStatus;
+}
+
+async function ensureParakeetModelDownloaded(): Promise<string> {
+  // Check if already downloaded
+  const status = getParakeetModelStatus();
+  if (status.state === 'downloaded' && status.path) {
+    return status.path;
+  }
+
+  if (parakeetModelEnsurePromise) {
+    return await parakeetModelEnsurePromise;
+  }
+
+  parakeetModelEnsurePromise = (async () => {
+    const binaryPath = getParakeetTranscriberBinaryPath();
+    if (!fs.existsSync(binaryPath)) {
+      throw new Error('parakeet-transcriber binary not found');
+    }
+
+    parakeetModelStatus = {
+      state: 'downloading',
+      modelName: 'parakeet-tdt-0.6b-v3',
+      path: '',
+      progress: 0,
+    };
+
+    try {
+      console.log('[Parakeet] Downloading Parakeet TDT v3 models');
+      const { spawn } = require('child_process');
+      const modelPath = await new Promise<string>((resolve, reject) => {
+        const child = spawn(binaryPath, ['download'], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        let lastLine = '';
+        let stderr = '';
+
+        child.stdout.on('data', (chunk: Buffer) => {
+          const lines = chunk.toString().split('\n').filter(Boolean);
+          for (const line of lines) {
+            try {
+              const json = JSON.parse(line);
+              if (json.state === 'downloading') {
+                parakeetModelStatus = {
+                  state: 'downloading',
+                  modelName: 'parakeet-tdt-0.6b-v3',
+                  path: '',
+                  progress: typeof json.progress === 'number' ? json.progress : 0,
+                };
+              }
+              lastLine = line;
+            } catch {}
+          }
+        });
+
+        child.stderr.on('data', (chunk: Buffer) => {
+          stderr += chunk.toString();
+        });
+
+        child.on('error', (error: Error) => reject(error));
+        child.on('exit', (code: number | null) => {
+          if (code === 0 && lastLine) {
+            try {
+              const json = JSON.parse(lastLine);
+              if (json.state === 'downloaded') {
+                resolve(json.path || '');
+                return;
+              }
+              if (json.error) {
+                reject(new Error(json.error));
+                return;
+              }
+            } catch {}
+          }
+          reject(new Error(stderr.trim() || `parakeet-transcriber download exited with code ${code}`));
+        });
+      });
+
+      parakeetModelStatus = {
+        state: 'downloaded',
+        modelName: 'parakeet-tdt-0.6b-v3',
+        path: modelPath,
+        progress: 1,
+      };
+      console.log(`[Parakeet] Models ready at ${modelPath}`);
+      return modelPath;
+    } catch (error) {
+      parakeetModelStatus = {
+        state: 'error',
+        modelName: 'parakeet-tdt-0.6b-v3',
+        path: '',
+        progress: 0,
+        error: error instanceof Error ? error.message : String(error),
+      };
+      throw error;
+    } finally {
+      parakeetModelEnsurePromise = null;
+    }
+  })();
+
+  return await parakeetModelEnsurePromise;
+}
+
+async function transcribeAudioWithParakeet(opts: {
+  audioBuffer: Buffer;
+  language?: string;
+  mimeType?: string;
+}): Promise<string> {
+  // FluidAudio requires at least 1 second of 16kHz audio (~32KB PCM + WAV header).
+  // Return empty string for too-short clips instead of erroring.
+  const MIN_WAV_BYTES = 32_100;
+  if (opts.audioBuffer.length < MIN_WAV_BYTES) {
+    console.log(`[Parakeet] Audio too short (${opts.audioBuffer.length} bytes < ${MIN_WAV_BYTES}), skipping`);
+    return '';
+  }
+
+  const status = getParakeetModelStatus();
+  if (status.state === 'downloading') {
+    throw new Error('Parakeet models are still downloading. Finish setup from onboarding or Settings -> AI -> SuperCmd Whisper.');
+  }
+  if (status.state !== 'downloaded') {
+    throw new Error('Parakeet models have not been downloaded yet. Download them from onboarding or Settings -> AI -> SuperCmd Whisper.');
+  }
+
+  // Ensure the persistent server process is running (models loaded in memory)
+  await ensureParakeetServer();
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'supercmd-parakeet-'));
+  const audioPath = path.join(tempDir, 'input.wav');
+
+  try {
+    fs.writeFileSync(audioPath, opts.audioBuffer);
+
+    const result = await sendParakeetRequest({
+      command: 'transcribe',
+      file: audioPath,
+    });
+
+    return result.text || '';
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
 function getWhisperCppRuntimeDir(): string {
   const base = path.join(__dirname, '..', 'native', 'whisper-runtime');
   return resolvePackagedUnpackedPath(base);
@@ -11835,6 +12178,31 @@ if let tiff = image?.tiffRepresentation {
     return getWhisperCppModelStatus();
   });
 
+  ipcMain.handle('parakeet-model-status', async () => {
+    return getParakeetModelStatus();
+  });
+
+  ipcMain.handle('parakeet-download-model', async () => {
+    await ensureParakeetModelDownloaded();
+    return getParakeetModelStatus();
+  });
+
+  ipcMain.handle('parakeet-warmup', async () => {
+    const status = getParakeetModelStatus();
+    if (status.state !== 'downloaded') {
+      return { ready: false, error: 'Models not downloaded' };
+    }
+    if (parakeetServerReady && parakeetServerProcess && !parakeetServerProcess.killed) {
+      return { ready: true };
+    }
+    try {
+      await ensureParakeetServer();
+      return { ready: true };
+    } catch (err: any) {
+      return { ready: false, error: err?.message || 'Warmup failed' };
+    }
+  });
+
   ipcMain.handle(
     'whisper-transcribe',
     async (_event: any, audioArrayBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }) => {
@@ -11847,10 +12215,13 @@ if let tiff = image?.tiffRepresentation {
       }
 
       // Parse speechToTextModel to a concrete provider/model pair.
-      let provider: 'whispercpp' | 'openai' | 'elevenlabs' = 'whispercpp';
+      let provider: 'parakeet' | 'whispercpp' | 'openai' | 'elevenlabs' = 'whispercpp';
       let model = `ggml-${WHISPERCPP_MODEL_NAME}`;
       const sttModel = s.ai.speechToTextModel || '';
-      if (!sttModel || sttModel === 'default' || sttModel === 'whispercpp') {
+      if (sttModel === 'parakeet') {
+        provider = 'parakeet';
+        model = 'parakeet-tdt-0.6b-v3';
+      } else if (!sttModel || sttModel === 'default' || sttModel === 'whispercpp') {
         provider = 'whispercpp';
         model = `ggml-${WHISPERCPP_MODEL_NAME}`;
       } else if (sttModel === 'native') {
@@ -11883,27 +12254,33 @@ if let tiff = image?.tiffRepresentation {
 
       console.log(`[Whisper] Transcribing ${audioBuffer.length} bytes, provider=${provider}, model=${model}, lang=${language}, mime=${mimeType || 'unknown'}`);
 
-      const text = provider === 'whispercpp'
-        ? await transcribeAudioWithWhisperCpp({
+      const text = provider === 'parakeet'
+        ? await transcribeAudioWithParakeet({
             audioBuffer,
             language,
             mimeType,
           })
-        : provider === 'elevenlabs'
-          ? await transcribeAudioWithElevenLabs({
+        : provider === 'whispercpp'
+          ? await transcribeAudioWithWhisperCpp({
               audioBuffer,
-              apiKey: elevenLabsApiKey,
-              model,
               language,
               mimeType,
             })
-          : await transcribeAudio({
-              audioBuffer,
-              apiKey: s.ai.openaiApiKey,
-              model,
-              language,
-              mimeType,
-            });
+          : provider === 'elevenlabs'
+            ? await transcribeAudioWithElevenLabs({
+                audioBuffer,
+                apiKey: elevenLabsApiKey,
+                model,
+                language,
+                mimeType,
+              })
+            : await transcribeAudio({
+                audioBuffer,
+                apiKey: s.ai.openaiApiKey,
+                model,
+                language,
+                mimeType,
+              });
 
       console.log(`[Whisper] Transcription result: "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`);
       return text;

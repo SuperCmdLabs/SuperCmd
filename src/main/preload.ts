@@ -647,6 +647,12 @@ contextBridge.exposeInMainWorld('electron', {
     error?: string;
   }> =>
     ipcRenderer.invoke('whispercpp-download-model'),
+  parakeetModelStatus: (): Promise<any> =>
+    ipcRenderer.invoke('parakeet-model-status'),
+  parakeetDownloadModel: (): Promise<any> =>
+    ipcRenderer.invoke('parakeet-download-model'),
+  parakeetWarmup: (): Promise<{ ready: boolean; error?: string }> =>
+    ipcRenderer.invoke('parakeet-warmup'),
   whisperDebugLog: (tag: string, message: string, data?: any): void =>
     ipcRenderer.send('whisper-debug-log', { tag, message, data }),
   whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }): Promise<string> =>
