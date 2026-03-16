@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2, SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react';
+import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2, SlidersHorizontal, ChevronDown, ChevronUp, Power } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AppUpdaterStatus } from '../../types/electron';
 import { applyAppFontSize, getDefaultAppFontSize } from '../utils/font-size';
@@ -158,6 +158,21 @@ const GeneralTab: React.FC = () => {
     } else {
       setShortcutStatus('error');
       setTimeout(() => setShortcutStatus('idle'), 3000);
+    }
+  };
+
+  const handleOpenAtLoginChange = async (enabled: boolean) => {
+    if (!settings) return;
+    const previous = settings.openAtLogin ?? false;
+    if (previous === enabled) return;
+    setSettings((prev) => (prev ? { ...prev, openAtLogin: enabled } : prev));
+    try {
+      const ok = await window.electron.setOpenAtLogin(enabled);
+      if (!ok) {
+        setSettings((prev) => (prev ? { ...prev, openAtLogin: previous } : prev));
+      }
+    } catch {
+      setSettings((prev) => (prev ? { ...prev, openAtLogin: previous } : prev));
     }
   };
 
@@ -380,6 +395,26 @@ const GeneralTab: React.FC = () => {
               <span className="text-[0.75rem] text-red-400">Failed. Shortcut may be used by another app.</span>
             )}
           </div>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<Power className="w-4 h-4" />}
+          title="Start at Login"
+          description="Automatically launch SuperCmd when you log in."
+        >
+          <label className="inline-flex items-center gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.openAtLogin ?? false}
+              onChange={(event) => {
+                void handleOpenAtLoginChange(event.target.checked);
+              }}
+              className="settings-checkbox"
+            />
+            <span className="text-[0.75rem] text-[var(--text-secondary)]">
+              {settings.openAtLogin ? 'Enabled' : 'Disabled'}
+            </span>
+          </label>
         </SettingsRow>
 
         <SettingsRow
