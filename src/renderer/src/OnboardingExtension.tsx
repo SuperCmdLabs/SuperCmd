@@ -638,33 +638,28 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       if (id === 'microphone') {
         await new Promise((resolve) => setTimeout(resolve, 350));
       }
-      const candidateUrls = id === 'microphone'
-        ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone']
-        : id === 'speech-recognition'
-          ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_SpeechRecognition']
-          : id === 'input-monitoring'
-            ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent']
-            : id === 'home-folder'
-              ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_FilesAndFolders']
-          : [url];
-      try {
-        await window.electron.setLauncherMode('onboarding');
-      } catch {}
-      let ok = false;
-      for (const candidate of candidateUrls) {
-        if (ok) break;
-        ok = await window.electron.openUrl(candidate);
-      }
-      if (ok) {
-        if (id === 'input-monitoring') {
+      // Only open Privacy & Security for input-monitoring (requires manual "+" to add app).
+      // All other permissions show a native dialog and don't need the system settings panel.
+      if (id === 'input-monitoring') {
+        const candidateUrls = [
+          url,
+          'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent',
+        ];
+        try {
+          await window.electron.setLauncherMode('onboarding');
+        } catch {}
+        let ok = false;
+        for (const candidate of candidateUrls) {
+          if (ok) break;
+          ok = await window.electron.openUrl(candidate);
+        }
+        if (ok) {
           // macOS 13+ does not auto-add apps to Input Monitoring via CGEventTap.
           // The user must click "+" in System Settings and manually select SuperCmd.
           setPermissionNotes((prev) => ({
             ...prev,
             [id]: 'In Input Monitoring, click "+" at the bottom left and add SuperCmd from your Applications folder.',
           }));
-        } else if (mode === 'manual' && !requested) {
-          setRequestedPermissions((prev) => ({ ...prev, [id]: false }));
         }
       }
     } finally {

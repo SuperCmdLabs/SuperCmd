@@ -3175,18 +3175,18 @@ const App: React.FC = () => {
           onDictationPracticeTextChange={setWhisperOnboardingPracticeText}
           onboardingHotkeyPresses={onboardingHotkeyPresses}
           onClose={async () => {
-            await window.electron.setLauncherMode('onboarding');
-            setShowOnboarding(true);
-          }}
-          onComplete={async () => {
-            await window.electron.setLauncherMode('default');
             await window.electron.saveSettings({ hasSeenOnboarding: true, hasSeenWhisperOnboarding: true });
             setShowOnboarding(false);
             setShowWhisperOnboarding(false);
             setOnboardingRequiresShortcutFix(false);
-            setSearchQuery('');
-            setSelectedIndex(0);
-            setTimeout(() => inputRef.current?.focus(), 50);
+            await window.electron.hideWindow();
+          }}
+          onComplete={async () => {
+            await window.electron.saveSettings({ hasSeenOnboarding: true, hasSeenWhisperOnboarding: true });
+            setShowOnboarding(false);
+            setShowWhisperOnboarding(false);
+            setOnboardingRequiresShortcutFix(false);
+            await window.electron.hideWindow();
           }}
         />
       </>
