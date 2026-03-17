@@ -71,8 +71,8 @@ const CURATED_OLLAMA_MODELS = [
 
 const WHISPER_STT_OPTIONS = [
   { id: 'whispercpp', label: 'SuperCmd Whisper (Default)' },
-  { id: 'parakeet', label: 'Parakeet v3 (Experimental)' },
-  { id: 'qwen3', label: 'Qwen3 ASR (macOS 15+, 30 languages)' },
+  { id: 'parakeet', label: 'Parakeet v3 (Best & Fastest, 25+ European languages)' },
+  { id: 'qwen3', label: 'Qwen3 ASR (52+ languages including Chinese, Japanese, Korean, Thai, Vietnamese, Hindi)' },
   { id: 'native', label: 'Apple Speech Recognition' },
   { id: 'openai-gpt-4o-transcribe', label: 'OpenAI GPT-4o Transcribe' },
   { id: 'openai-whisper-1', label: 'OpenAI Whisper-1' },

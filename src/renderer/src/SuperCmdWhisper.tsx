@@ -1626,7 +1626,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const warming = parakeetWarmingUp;
   const dotMode = !listening && !processing && !warming;
   const bannerText = warming
-    ? 'First-time setup — loading models...'
+    ? 'First-time setup — Warming up models...'
     : hintText || coachmarkText;
 
   if (typeof document === 'undefined') return null;
