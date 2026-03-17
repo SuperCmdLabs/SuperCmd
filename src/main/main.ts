@@ -6911,13 +6911,25 @@ function setLauncherMode(mode: LauncherMode): void {
         }
       }
       if (mode === 'onboarding') {
+        // Make onboarding behave like a normal app window — visible in dock and
+        // Mission Control, doesn't drop behind other windows.
         mainWindow.setAlwaysOnTop(false);
+        mainWindow.setSkipTaskbar(false);
+        try { mainWindow.setHiddenInMissionControl(false); } catch {}
+        if (process.platform === 'darwin') {
+          try { app.dock.show(); } catch {}
+        }
         mainWindow.setVisibleOnAllWorkspaces(false, {
           visibleOnFullScreen: true,
           skipTransformProcessType: process.platform === 'darwin',
         } as any);
       } else {
         mainWindow.setAlwaysOnTop(true);
+        mainWindow.setSkipTaskbar(true);
+        try { mainWindow.setHiddenInMissionControl(true); } catch {}
+        if (process.platform === 'darwin' && prevMode === 'onboarding') {
+          try { app.dock.hide(); } catch {}
+        }
         setLauncherOverlayTopmost(true);
       }
     } catch {}
