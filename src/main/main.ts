@@ -1987,8 +1987,6 @@ let suppressBlurHide = false; // When true, blur won't hide the window (used dur
 let oauthBlurHideSuppressionDepth = 0; // Keep launcher alive while OAuth browser flow is in progress
 let oauthBlurHideSuppressionTimer: NodeJS.Timeout | null = null;
 const OAUTH_BLUR_SUPPRESSION_TIMEOUT_MS = 3 * 60 * 1000;
-let onboardingPermissionBlurHideSuppressedUntil = 0;
-const ONBOARDING_PERMISSION_BLUR_SUPPRESSION_MS = 60 * 1000;
 let currentShortcut = '';
 const DEVTOOLS_SHORTCUT = normalizeAccelerator('CommandOrControl+Option+I');
 let globalShortcutRegistrationState: {
@@ -2432,19 +2430,6 @@ function setOAuthBlurHideSuppression(active: boolean): void {
     oauthBlurHideSuppressionTimer = null;
   }
   setLauncherOverlayTopmost(true);
-}
-
-function suppressBlurHideForOnboardingPermissionFlow(
-  durationMs: number = ONBOARDING_PERMISSION_BLUR_SUPPRESSION_MS,
-): void {
-  onboardingPermissionBlurHideSuppressedUntil = Math.max(
-    onboardingPermissionBlurHideSuppressedUntil,
-    Date.now() + Math.max(1000, durationMs),
-  );
-}
-
-function isOnboardingPermissionFlowActive(): boolean {
-  return onboardingPermissionBlurHideSuppressedUntil > Date.now();
 }
 let edgeVoiceCatalogCache: { expiresAt: number; voices: EdgeTtsVoiceCatalogEntry[] } | null = null;
 let speakSessionCounter = 0;
@@ -3887,16 +3872,7 @@ async function checkInputMonitoringAccess(): Promise<boolean> {
   });
 }
 
-function raiseOnboardingWindowIfNeeded(): void {
-  if (launcherMode !== 'onboarding' || !mainWindow || mainWindow.isDestroyed() || !isVisible) return;
-  try { app.focus({ steal: true }); } catch {}
-  try { mainWindow.show(); } catch {}
-  try { mainWindow.focus(); } catch {}
-  try { mainWindow.moveTop(); } catch {}
-}
-
 async function requestOnboardingPermissionAccess(target: OnboardingPermissionTarget): Promise<OnboardingPermissionResult> {
-  suppressBlurHideForOnboardingPermissionFlow();
   if (process.platform !== 'darwin') {
     if (target === 'home-folder') {
       saveSettings({ fileSearchProtectedRootsEnabled: true });
@@ -6412,7 +6388,6 @@ function createWindow(): void {
       isVisible &&
       !suppressBlurHide &&
       oauthBlurHideSuppressionDepth === 0 &&
-      !isOnboardingPermissionFlowActive() &&
       launcherMode !== 'whisper' &&
       launcherMode !== 'speak' &&
       launcherMode !== 'onboarding'
@@ -9936,8 +9911,6 @@ app.whenReady().then(async () => {
       } else {
         whisperHoldRequestSeq += 1;
         stopWhisperHoldWatcher();
-        // Re-raise onboarding window after whisper overlay closes
-        setTimeout(() => raiseOnboardingWindowIfNeeded(), 150);
       }
       return;
     }
@@ -10331,16 +10304,7 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('onboarding-request-permission', async (_event: any, target: OnboardingPermissionTarget) => {
-    try {
-      return await requestOnboardingPermissionAccess(target);
-    } finally {
-      // After any permission dialog closes, bring the onboarding window back to front.
-      // macOS can push our window behind the dialog or other apps.
-      // Multiple retries at staggered intervals to handle various macOS animation timings.
-      [100, 300, 600, 1200].forEach((delay) => {
-        setTimeout(() => raiseOnboardingWindowIfNeeded(), delay);
-      });
-    }
+    return await requestOnboardingPermissionAccess(target);
   });
   ipcMain.handle('whisper-ensure-microphone-access', async (_event: any, options?: { prompt?: boolean }) => {
     const prompt = options?.prompt !== false;
@@ -13559,7 +13523,6 @@ if let tiff = image?.tiffRepresentation {
     if (focusedWindow === mainWindow) return;
     if (suppressBlurHide) return;
     if (oauthBlurHideSuppressionDepth > 0) return;
-    if (isOnboardingPermissionFlowActive()) return;
     if (launcherMode !== 'default') return;
     hideWindow();
   });
@@ -13585,7 +13548,7 @@ if let tiff = image?.tiffRepresentation {
     // permission dialog (e.g. "SuperCmd wants access to control System Events").
     // When the user dismisses the dialog, macOS activates SuperCmd and we get this
     // event. Bring the onboarding window back to the front so setup can continue.
-    if (isVisible && (launcherMode === 'onboarding' || isOnboardingPermissionFlowActive()) && mainWindow && !mainWindow.isDestroyed()) {
+    if (isVisible && launcherMode === 'onboarding' && mainWindow && !mainWindow.isDestroyed()) {
       try { app.focus({ steal: true }); } catch {}
       try { mainWindow.show(); } catch {}
       try { mainWindow.focus(); } catch {}
