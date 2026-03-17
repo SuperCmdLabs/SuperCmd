@@ -3887,6 +3887,14 @@ async function checkInputMonitoringAccess(): Promise<boolean> {
   });
 }
 
+function raiseOnboardingWindowIfNeeded(): void {
+  if (launcherMode !== 'onboarding' || !mainWindow || mainWindow.isDestroyed() || !isVisible) return;
+  try { app.focus({ steal: true }); } catch {}
+  try { mainWindow.show(); } catch {}
+  try { mainWindow.focus(); } catch {}
+  try { mainWindow.moveTop(); } catch {}
+}
+
 async function requestOnboardingPermissionAccess(target: OnboardingPermissionTarget): Promise<OnboardingPermissionResult> {
   suppressBlurHideForOnboardingPermissionFlow();
   if (process.platform !== 'darwin') {
@@ -9928,6 +9936,8 @@ app.whenReady().then(async () => {
       } else {
         whisperHoldRequestSeq += 1;
         stopWhisperHoldWatcher();
+        // Re-raise onboarding window after whisper overlay closes
+        setTimeout(() => raiseOnboardingWindowIfNeeded(), 150);
       }
       return;
     }
@@ -10321,7 +10331,16 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('onboarding-request-permission', async (_event: any, target: OnboardingPermissionTarget) => {
-    return await requestOnboardingPermissionAccess(target);
+    try {
+      return await requestOnboardingPermissionAccess(target);
+    } finally {
+      // After any permission dialog closes, bring the onboarding window back to front.
+      // macOS can push our window behind the dialog or other apps.
+      // Multiple retries at staggered intervals to handle various macOS animation timings.
+      [100, 300, 600, 1200].forEach((delay) => {
+        setTimeout(() => raiseOnboardingWindowIfNeeded(), delay);
+      });
+    }
   });
   ipcMain.handle('whisper-ensure-microphone-access', async (_event: any, options?: { prompt?: boolean }) => {
     const prompt = options?.prompt !== false;

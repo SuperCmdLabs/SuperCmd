@@ -892,6 +892,9 @@ const SUPERCALC_ALIAS_CONVERSION_QUERY_RE = new RegExp(
 );
 const SUPERCALC_TIME_QUERY_RE =
   /\btime\b|\btimezone\b|\bclock\b|(?:\bfrom\b.+\bto\b.+\btime\b)/i;
+// Matches timezone conversion queries like "12:00 am pst to ist", "3pm EST to GMT", "14:30 UTC to PST"
+const SUPERCALC_TIMEZONE_CONVERSION_RE =
+  /\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s+[a-z]{2,5}\s+(?:to|in)\s+[a-z]{2,5}$/i;
 const SUPERCALC_DATE_QUERY_RE =
   /^(?:today|tomorrow|yesterday|now|next\b.+|last\b.+|this\b.+|in\s+\d+\s+(?:days?|weeks?|months?|years?|hours?|minutes?|seconds?)|\d+\s+(?:days?|weeks?|months?|years?|hours?|minutes?|seconds?)\s+(?:from now|ago|from today|from tomorrow)|(?:days?\s+)?(?:between|from)\b.+|(?:unix\s+)?(?:timestamp\s+)?\d{10,13}|\d{4}-\d{2}-\d{2}.*|.+\s+(?:to|in)\s+(?:unix|timestamp|epoch))$/i;
 
@@ -930,6 +933,7 @@ function shouldTrySuperCalculator(query: string): boolean {
 
   if (isSupportedConversionQuery(trimmed)) return true;
   if (SUPERCALC_TIME_QUERY_RE.test(trimmed)) return true;
+  if (SUPERCALC_TIMEZONE_CONVERSION_RE.test(trimmed)) return true;
   if (SUPERCALC_DATE_QUERY_RE.test(trimmed)) return true;
 
   return false;

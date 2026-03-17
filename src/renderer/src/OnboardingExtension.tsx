@@ -549,6 +549,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     setPermissionLoading((prev) => ({ ...prev, [id]: true }));
     setPermissionNotes((prev) => ({ ...prev, [id]: '' }));
     try {
+      // Re-assert onboarding mode before requesting permission so the window
+      // doesn't hide when macOS permission dialogs steal focus.
+      try { await window.electron.setLauncherMode('onboarding'); } catch {}
       const result = await window.electron.onboardingRequestPermission(id);
       let granted = Boolean(result?.granted);
       let requested = Boolean(result?.requested);
@@ -664,6 +667,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       }
     } finally {
       setPermissionLoading((prev) => ({ ...prev, [id]: false }));
+      // Re-assert onboarding mode after permission dialog closes so the window
+      // comes back to front if macOS pushed it behind during the dialog.
+      try { await window.electron.setLauncherMode('onboarding'); } catch {}
     }
   };
 

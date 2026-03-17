@@ -3175,6 +3175,7 @@ const App: React.FC = () => {
           onDictationPracticeTextChange={setWhisperOnboardingPracticeText}
           onboardingHotkeyPresses={onboardingHotkeyPresses}
           onClose={async () => {
+            await window.electron.setLauncherMode('default');
             await window.electron.saveSettings({ hasSeenOnboarding: true, hasSeenWhisperOnboarding: true });
             setShowOnboarding(false);
             setShowWhisperOnboarding(false);
@@ -3182,6 +3183,7 @@ const App: React.FC = () => {
             await window.electron.hideWindow();
           }}
           onComplete={async () => {
+            await window.electron.setLauncherMode('default');
             await window.electron.saveSettings({ hasSeenOnboarding: true, hasSeenWhisperOnboarding: true });
             setShowOnboarding(false);
             setShowWhisperOnboarding(false);
