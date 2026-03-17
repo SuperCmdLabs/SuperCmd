@@ -1324,7 +1324,7 @@ const App: React.FC = () => {
           if (calcRequestSeqRef.current !== requestSeq) return;
           setAsyncCalcResult(null);
         });
-    }, 120);
+    }, 200);
 
     return () => {
       window.clearTimeout(timer);
