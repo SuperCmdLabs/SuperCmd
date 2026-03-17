@@ -72,7 +72,7 @@ const CURATED_OLLAMA_MODELS = [
 const WHISPER_STT_OPTIONS = [
   { id: 'whispercpp', label: 'SuperCmd Whisper (Default)' },
   { id: 'parakeet', label: 'Parakeet v3 (Best & Fastest, 25+ European languages)' },
-  { id: 'qwen3', label: 'Qwen3 ASR (52+ languages including Chinese, Japanese, Korean, Thai, Vietnamese, Hindi)' },
+  { id: 'qwen3', label: 'Qwen3 ASR (30+ languages including Chinese, Japanese, Korean, Thai, Vietnamese, Hindi)' },
   { id: 'native', label: 'Apple Speech Recognition' },
   { id: 'openai-gpt-4o-transcribe', label: 'OpenAI GPT-4o Transcribe' },
   { id: 'openai-whisper-1', label: 'OpenAI Whisper-1' },
@@ -1219,7 +1219,7 @@ const AITab: React.FC = () => {
               {whisperModelValue === 'parakeet' && (
                 <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
                   <p className="text-[0.6875rem] text-[color:var(--status-success)]">
-                    Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Download the model below before using dictation.
+                    Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Requires model warmup on first use. Download the model below before using dictation.
                   </p>
                 </div>
               )}
@@ -1227,7 +1227,7 @@ const AITab: React.FC = () => {
               {whisperModelValue === 'qwen3' && (
                 <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
                   <p className="text-[0.6875rem] text-[color:var(--status-success)]">
-                    Offline on-device transcription via Qwen3 ASR. Supports 30 languages. Requires macOS 15+.
+                    Offline on-device transcription via Qwen3 ASR. Supports 30+ languages, Requires macOS 15+ & Requires model warmup on first use.
                   </p>
                 </div>
               )}
@@ -1250,7 +1250,7 @@ const AITab: React.FC = () => {
               {whisperModelValue === 'whispercpp' && (
                 <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
                   <p className="text-[0.6875rem] text-[color:var(--status-success)]">
-                    Offline on-device transcription via SuperCmd Whisper. Download the default ggml base model below before using dictation.
+                    Offline on-device transcription via Whisper.cpp. Download the default ggml base model below before using dictation.
                   </p>
                 </div>
               )}
