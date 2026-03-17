@@ -507,7 +507,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       const sttModel = String(settings.ai.speechToTextModel || 'whispercpp');
       sttModelRef.current = sttModel;
       let engine: WhisperEngine = 'whispercpp';
-      if (sttModel === 'parakeet' || sttModel === 'whispercpp') {
+      if (sttModel === 'parakeet' || sttModel === 'qwen3' || sttModel === 'whispercpp') {
         engine = 'whispercpp';
       } else if (sttModel === 'native') {
         engine = 'native';
@@ -1295,24 +1295,42 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         if (sessionConfig.engine === 'whispercpp') {
           if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) return;
 
-          // If parakeet, warm up the server (loads CoreML models on first use).
+          // If parakeet or qwen3, warm up the server (loads CoreML models on first use).
           // Audio is already being captured in the background while we wait.
-          if (sttModelRef.current === 'parakeet') {
+          // The hint stays visible until warmup fully completes — even if the user
+          // releases the hold key early and triggers finalize, we keep the banner
+          // so the next session starts instantly.
+          const needsWarmup = sttModelRef.current === 'parakeet' || sttModelRef.current === 'qwen3';
+          if (needsWarmup) {
+            const warmupFn = sttModelRef.current === 'qwen3'
+              ? window.electron.qwen3Warmup
+              : window.electron.parakeetWarmup;
             setParakeetWarmingUp(true);
             setState('listening');
             setStatusText('Loading Whisper models...');
-            console.log('[Whisper][parakeet] Warming up server (first use)...');
+            console.log(`[Whisper][${sttModelRef.current}] Warming up server (first use)...`);
+            let warmupOk = false;
             try {
-              await window.electron.parakeetWarmup();
-              console.log('[Whisper][parakeet] Server warm');
+              const result = await warmupFn();
+              warmupOk = !!result?.ready;
+              if (!warmupOk) {
+                console.warn(`[Whisper][${sttModelRef.current}] Warmup not ready:`, result?.error);
+              } else {
+                console.log(`[Whisper][${sttModelRef.current}] Server warm`);
+              }
             } catch (err) {
-              console.warn('[Whisper][parakeet] Warmup failed, will retry on transcribe:', err);
+              console.warn(`[Whisper][${sttModelRef.current}] Warmup failed:`, err);
             }
+            // Always clear the warming banner once the warmup call returns.
+            setParakeetWarmingUp(false);
             if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) {
-              setParakeetWarmingUp(false);
               return;
             }
-            setParakeetWarmingUp(false);
+            if (!warmupOk) {
+              // Models not downloaded or warmup failed — show error hint and continue
+              // with normal listening. Transcription will fail with a clear error.
+              showHint('Model not ready — download from Settings → AI', 4000);
+            }
           }
 
           setState('listening');

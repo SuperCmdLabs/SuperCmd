@@ -23,7 +23,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
-import type { AppSettings, AISettings, EdgeTtsVoice, ElevenLabsVoice, WhisperCppModelStatus, ParakeetModelStatus } from '../../types/electron';
+import type { AppSettings, AISettings, EdgeTtsVoice, ElevenLabsVoice, WhisperCppModelStatus, ParakeetModelStatus, Qwen3ModelStatus } from '../../types/electron';
 import {
   clearElevenLabsVoiceCache,
   getCachedElevenLabsVoices,
@@ -71,7 +71,8 @@ const CURATED_OLLAMA_MODELS = [
 
 const WHISPER_STT_OPTIONS = [
   { id: 'whispercpp', label: 'SuperCmd Whisper (Default)' },
-  { id: 'parakeet', label: 'Parakeet v3' },
+  { id: 'parakeet', label: 'Parakeet v3 (Experimental)' },
+  { id: 'qwen3', label: 'Qwen3 ASR (macOS 15+, 30 languages)' },
   { id: 'native', label: 'Apple Speech Recognition' },
   { id: 'openai-gpt-4o-transcribe', label: 'OpenAI GPT-4o Transcribe' },
   { id: 'openai-whisper-1', label: 'OpenAI Whisper-1' },
@@ -224,6 +225,8 @@ const AITab: React.FC = () => {
   const [whisperCppModelLoading, setWhisperCppModelLoading] = useState(false);
   const [parakeetModelStatus, setParakeetModelStatus] = useState<ParakeetModelStatus | null>(null);
   const [parakeetModelLoading, setParakeetModelLoading] = useState(false);
+  const [qwen3ModelStatus, setQwen3ModelStatus] = useState<Qwen3ModelStatus | null>(null);
+  const [qwen3ModelLoading, setQwen3ModelLoading] = useState(false);
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
   const selectingOllamaDefaultRef = useRef(false);
@@ -338,11 +341,9 @@ const AITab: React.FC = () => {
     let timer: number | null = null;
 
     const tick = async () => {
-      const status = await refreshWhisperCppModelStatus();
+      await refreshWhisperCppModelStatus();
       if (cancelled) return;
-      if (status?.state === 'downloading') {
-        timer = window.setTimeout(() => { void tick(); }, 900);
-      }
+      timer = window.setTimeout(() => { void tick(); }, 1000);
     };
 
     void tick();
@@ -380,11 +381,9 @@ const AITab: React.FC = () => {
     let timer: number | null = null;
 
     const tick = async () => {
-      const status = await refreshParakeetModelStatus();
+      await refreshParakeetModelStatus();
       if (cancelled) return;
-      if (status?.state === 'downloading') {
-        timer = window.setTimeout(() => { void tick(); }, 900);
-      }
+      timer = window.setTimeout(() => { void tick(); }, 1000);
     };
 
     void tick();
@@ -405,6 +404,46 @@ const AITab: React.FC = () => {
       setParakeetModelLoading(false);
     }
   }, [refreshParakeetModelStatus]);
+
+  const refreshQwen3ModelStatus = useCallback(async () => {
+    try {
+      const status = await window.electron.qwen3ModelStatus();
+      setQwen3ModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'whisper') return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const tick = async () => {
+      await refreshQwen3ModelStatus();
+      if (cancelled) return;
+      timer = window.setTimeout(() => { void tick(); }, 1000);
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [activeTab, refreshQwen3ModelStatus]);
+
+  const handleQwen3Download = useCallback(async () => {
+    setQwen3ModelLoading(true);
+    try {
+      const status = await window.electron.qwen3DownloadModel();
+      setQwen3ModelStatus(status);
+    } catch {
+      void refreshQwen3ModelStatus();
+    } finally {
+      setQwen3ModelLoading(false);
+    }
+  }, [refreshQwen3ModelStatus]);
 
   const maybeSelectOllamaDefaultModel = useCallback((availableNames: string[], preferredName?: string) => {
     const currentSettings = settingsRef.current;
@@ -563,6 +602,9 @@ const AITab: React.FC = () => {
     : 0;
   const parakeetPercent = parakeetModelStatus?.state === 'downloading'
     ? Math.max(0, Math.min(100, Math.round((parakeetModelStatus.progress || 0) * 100)))
+    : 0;
+  const qwen3Percent = qwen3ModelStatus?.state === 'downloading'
+    ? Math.max(0, Math.min(100, Math.round((qwen3ModelStatus.progress || 0) * 100)))
     : 0;
 
   const parsedElevenLabsSpeak = parseElevenLabsSpeakModel(ai.textToSpeechModel);
@@ -1197,6 +1239,29 @@ const AITab: React.FC = () => {
                 </div>
               )}
 
+              {whisperModelValue === 'qwen3' && (
+                <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
+                  <p className="text-[0.6875rem] text-[color:var(--status-success)]">
+                    Offline on-device transcription via Qwen3 ASR. Supports 30 languages. Requires macOS 15+.
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'qwen3' && (
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Recognition Language</label>
+                  <select
+                    value={ai.speechLanguage || 'en-US'}
+                    onChange={(e) => updateAI({ speechLanguage: e.target.value })}
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                  >
+                    {WHISPER_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {whisperModelValue === 'whispercpp' && (
                 <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
                   <p className="text-[0.6875rem] text-[color:var(--status-success)]">
@@ -1323,6 +1388,69 @@ const AITab: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => { void refreshParakeetModelStatus(); }}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {whisperModelValue === 'qwen3' && (
+                <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Qwen3 ASR</h3>
+                      <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
+                        30-language on-device transcription. Requires macOS 15+.
+                      </p>
+                    </div>
+                    {qwen3ModelStatus?.state === 'downloaded' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[color:var(--status-success)]" />
+                    ) : (
+                      <Download className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-0.5" />
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-[0.75rem]">
+                    {qwen3ModelStatus?.state === 'downloaded' ? (
+                      <p className="text-[color:var(--status-success)]">Downloaded. Qwen3 ASR is ready to use offline.</p>
+                    ) : qwen3ModelStatus?.state === 'downloading' ? (
+                      <div className="space-y-2">
+                        <p className="text-[var(--text-secondary)]">
+                          Downloading Qwen3 ASR models
+                          {qwen3Percent > 0 ? ` (${qwen3Percent}%)` : '...'}
+                        </p>
+                        <div className="h-2 rounded-full bg-black/20 overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-400/80 transition-[width] duration-300"
+                            style={{ width: `${Math.max(3, qwen3Percent)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : qwen3ModelStatus?.state === 'error' ? (
+                      <p className="text-rose-300">{qwen3ModelStatus.error || 'Model download failed.'}</p>
+                    ) : (
+                      <p className="text-amber-300">Model not downloaded yet. Download the ~900 MB int8 model to use Qwen3 dictation.</p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => { void handleQwen3Download(); }}
+                      disabled={qwen3ModelLoading || qwen3ModelStatus?.state === 'downloading' || qwen3ModelStatus?.state === 'downloaded'}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      {qwen3ModelStatus?.state === 'downloaded'
+                        ? 'Model Downloaded'
+                        : qwen3ModelStatus?.state === 'downloading'
+                          ? 'Downloading...'
+                          : 'Download Model'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { void refreshQwen3ModelStatus(); }}
                       className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
                     >
                       Refresh

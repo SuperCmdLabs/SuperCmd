@@ -477,6 +477,266 @@ async function transcribeAudioWithParakeet(opts: {
   }
 }
 
+// ─── Qwen3 ASR (FluidAudio) — macOS 15+ ──────────────────────────
+type Qwen3ModelStatus = {
+  state: 'not-downloaded' | 'downloading' | 'downloaded' | 'error';
+  modelName: string;
+  path: string;
+  progress: number;
+  error?: string;
+};
+let qwen3ModelStatus: Qwen3ModelStatus | null = null;
+let qwen3ModelEnsurePromise: Promise<string> | null = null;
+
+let qwen3ServerProcess: any = null;
+let qwen3ServerReady = false;
+let qwen3ServerStarting: Promise<void> | null = null;
+let qwen3ServerBuffer = '';
+type PendingQwen3Request = { resolve: (json: any) => void; reject: (err: Error) => void };
+let qwen3PendingRequest: PendingQwen3Request | null = null;
+
+function killQwen3Server(): void {
+  if (qwen3ServerProcess) {
+    try {
+      qwen3ServerProcess.stdin?.write('{"command":"exit"}\n');
+      qwen3ServerProcess.kill();
+    } catch {}
+    qwen3ServerProcess = null;
+  }
+  qwen3ServerReady = false;
+  qwen3ServerStarting = null;
+  qwen3ServerBuffer = '';
+  if (qwen3PendingRequest) {
+    qwen3PendingRequest.reject(new Error('Qwen3 server killed'));
+    qwen3PendingRequest = null;
+  }
+}
+
+function ensureQwen3Server(): Promise<void> {
+  if (qwen3ServerReady && qwen3ServerProcess && !qwen3ServerProcess.killed) {
+    return Promise.resolve();
+  }
+  if (qwen3ServerStarting) return qwen3ServerStarting;
+
+  qwen3ServerStarting = (async () => {
+    killQwen3Server();
+    const binaryPath = getParakeetTranscriberBinaryPath();
+    if (!fs.existsSync(binaryPath)) {
+      throw new Error('parakeet-transcriber binary not found');
+    }
+
+    const { spawn } = require('child_process');
+    const child = spawn(binaryPath, ['serve', '--model', 'qwen3'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    qwen3ServerProcess = child;
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      console.log(`[Qwen3][server stderr] ${chunk.toString().trim()}`);
+    });
+
+    child.on('exit', (code: number | null) => {
+      console.log(`[Qwen3] Server process exited with code ${code}`);
+      qwen3ServerReady = false;
+      qwen3ServerProcess = null;
+      qwen3ServerStarting = null;
+      if (qwen3PendingRequest) {
+        qwen3PendingRequest.reject(new Error(`Qwen3 server exited with code ${code}`));
+        qwen3PendingRequest = null;
+      }
+    });
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      qwen3ServerBuffer += chunk.toString();
+      const lines = qwen3ServerBuffer.split('\n');
+      qwen3ServerBuffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const json = JSON.parse(trimmed);
+          if (json.ready) {
+            qwen3ServerReady = true;
+            console.log('[Qwen3] Server ready (models loaded)');
+            continue;
+          }
+          if (qwen3PendingRequest) {
+            const req = qwen3PendingRequest;
+            qwen3PendingRequest = null;
+            if (json.error) {
+              req.reject(new Error(json.error));
+            } else {
+              req.resolve(json);
+            }
+          }
+        } catch {}
+      }
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Qwen3 server startup timed out (120s)'));
+        killQwen3Server();
+      }, 120_000);
+
+      const checkReady = setInterval(() => {
+        if (qwen3ServerReady) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          resolve();
+        }
+        if (!qwen3ServerProcess || qwen3ServerProcess.killed) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          reject(new Error('Qwen3 server process died during startup'));
+        }
+      }, 50);
+    });
+
+    qwen3ServerStarting = null;
+  })();
+
+  return qwen3ServerStarting;
+}
+
+function sendQwen3Request(request: Record<string, any>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!qwen3ServerProcess || qwen3ServerProcess.killed || !qwen3ServerReady) {
+      reject(new Error('Qwen3 server not running'));
+      return;
+    }
+    if (qwen3PendingRequest) {
+      reject(new Error('Another Qwen3 request is already in flight'));
+      return;
+    }
+    qwen3PendingRequest = { resolve, reject };
+    try {
+      qwen3ServerProcess.stdin.write(JSON.stringify(request) + '\n');
+    } catch (err: any) {
+      qwen3PendingRequest = null;
+      reject(err);
+    }
+  });
+}
+
+function getQwen3ModelStatus(): Qwen3ModelStatus {
+  if (qwen3ModelStatus?.state === 'downloading') return { ...qwen3ModelStatus };
+  if (qwen3ModelStatus?.state === 'error') return { ...qwen3ModelStatus };
+
+  const binaryPath = getParakeetTranscriberBinaryPath();
+  try {
+    if (!fs.existsSync(binaryPath)) {
+      qwen3ModelStatus = { state: 'error', modelName: 'qwen3-asr-0.6b', path: '', progress: 0, error: 'Binary not found' };
+      return qwen3ModelStatus;
+    }
+    const { spawnSync } = require('child_process');
+    const result = spawnSync(binaryPath, ['status', '--model', 'qwen3'], { timeout: 10_000 });
+    if (result.status === 0 && result.stdout) {
+      const json = JSON.parse(result.stdout.toString().trim());
+      qwen3ModelStatus = {
+        state: json.state === 'downloaded' ? 'downloaded' : 'not-downloaded',
+        modelName: json.modelName || 'qwen3-asr-0.6b',
+        path: json.path || '',
+        progress: json.state === 'downloaded' ? 1 : 0,
+      };
+      return qwen3ModelStatus;
+    }
+  } catch {}
+
+  qwen3ModelStatus = { state: 'not-downloaded', modelName: 'qwen3-asr-0.6b', path: '', progress: 0 };
+  return qwen3ModelStatus;
+}
+
+async function ensureQwen3ModelDownloaded(): Promise<string> {
+  const status = getQwen3ModelStatus();
+  if (status.state === 'downloaded' && status.path) return status.path;
+  if (qwen3ModelEnsurePromise) return await qwen3ModelEnsurePromise;
+
+  qwen3ModelEnsurePromise = (async () => {
+    const binaryPath = getParakeetTranscriberBinaryPath();
+    if (!fs.existsSync(binaryPath)) throw new Error('parakeet-transcriber binary not found');
+
+    qwen3ModelStatus = { state: 'downloading', modelName: 'qwen3-asr-0.6b', path: '', progress: 0 };
+
+    try {
+      console.log('[Qwen3] Downloading Qwen3 ASR models (int8)');
+      const { spawn } = require('child_process');
+      const modelPath = await new Promise<string>((resolve, reject) => {
+        const child = spawn(binaryPath, ['download', '--model', 'qwen3'], { stdio: ['ignore', 'pipe', 'pipe'] });
+        let lastLine = '';
+        let stderr = '';
+
+        child.stdout.on('data', (chunk: Buffer) => {
+          for (const line of chunk.toString().split('\n').filter(Boolean)) {
+            try {
+              const json = JSON.parse(line);
+              if (json.state === 'downloading') {
+                qwen3ModelStatus = { state: 'downloading', modelName: 'qwen3-asr-0.6b', path: '', progress: typeof json.progress === 'number' ? json.progress : 0 };
+              }
+              lastLine = line;
+            } catch {}
+          }
+        });
+
+        child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+        child.on('error', (error: Error) => reject(error));
+        child.on('exit', (code: number | null) => {
+          if (code === 0 && lastLine) {
+            try {
+              const json = JSON.parse(lastLine);
+              if (json.state === 'downloaded') { resolve(json.path || ''); return; }
+              if (json.error) { reject(new Error(json.error)); return; }
+            } catch {}
+          }
+          reject(new Error(stderr.trim() || `download exited with code ${code}`));
+        });
+      });
+
+      qwen3ModelStatus = { state: 'downloaded', modelName: 'qwen3-asr-0.6b', path: modelPath, progress: 1 };
+      console.log(`[Qwen3] Models ready at ${modelPath}`);
+      return modelPath;
+    } catch (error) {
+      qwen3ModelStatus = { state: 'error', modelName: 'qwen3-asr-0.6b', path: '', progress: 0, error: error instanceof Error ? error.message : String(error) };
+      throw error;
+    } finally {
+      qwen3ModelEnsurePromise = null;
+    }
+  })();
+
+  return await qwen3ModelEnsurePromise;
+}
+
+async function transcribeAudioWithQwen3(opts: {
+  audioBuffer: Buffer;
+  language?: string;
+  mimeType?: string;
+}): Promise<string> {
+  const MIN_WAV_BYTES = 32_100;
+  if (opts.audioBuffer.length < MIN_WAV_BYTES) {
+    console.log(`[Qwen3] Audio too short (${opts.audioBuffer.length} bytes), skipping`);
+    return '';
+  }
+
+  const status = getQwen3ModelStatus();
+  if (status.state === 'downloading') throw new Error('Qwen3 models are still downloading.');
+  if (status.state !== 'downloaded') throw new Error('Qwen3 models have not been downloaded yet. Download them from Settings -> AI -> SuperCmd Whisper.');
+
+  await ensureQwen3Server();
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'supercmd-qwen3-'));
+  const audioPath = path.join(tempDir, 'input.wav');
+
+  try {
+    fs.writeFileSync(audioPath, opts.audioBuffer);
+    const request: Record<string, any> = { command: 'transcribe', file: audioPath };
+    if (opts.language) request.language = opts.language;
+    const result = await sendQwen3Request(request);
+    return result.text || '';
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
 function getWhisperCppRuntimeDir(): string {
   const base = path.join(__dirname, '..', 'native', 'whisper-runtime');
   return resolvePackagedUnpackedPath(base);
@@ -12203,6 +12463,31 @@ if let tiff = image?.tiffRepresentation {
     }
   });
 
+  ipcMain.handle('qwen3-model-status', async () => {
+    return getQwen3ModelStatus();
+  });
+
+  ipcMain.handle('qwen3-download-model', async () => {
+    await ensureQwen3ModelDownloaded();
+    return getQwen3ModelStatus();
+  });
+
+  ipcMain.handle('qwen3-warmup', async () => {
+    const status = getQwen3ModelStatus();
+    if (status.state !== 'downloaded') {
+      return { ready: false, error: 'Models not downloaded' };
+    }
+    if (qwen3ServerReady && qwen3ServerProcess && !qwen3ServerProcess.killed) {
+      return { ready: true };
+    }
+    try {
+      await ensureQwen3Server();
+      return { ready: true };
+    } catch (err: any) {
+      return { ready: false, error: err?.message || 'Warmup failed' };
+    }
+  });
+
   ipcMain.handle(
     'whisper-transcribe',
     async (_event: any, audioArrayBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }) => {
@@ -12215,12 +12500,15 @@ if let tiff = image?.tiffRepresentation {
       }
 
       // Parse speechToTextModel to a concrete provider/model pair.
-      let provider: 'parakeet' | 'whispercpp' | 'openai' | 'elevenlabs' = 'whispercpp';
+      let provider: 'parakeet' | 'qwen3' | 'whispercpp' | 'openai' | 'elevenlabs' = 'whispercpp';
       let model = `ggml-${WHISPERCPP_MODEL_NAME}`;
       const sttModel = s.ai.speechToTextModel || '';
       if (sttModel === 'parakeet') {
         provider = 'parakeet';
         model = 'parakeet-tdt-0.6b-v3';
+      } else if (sttModel === 'qwen3') {
+        provider = 'qwen3';
+        model = 'qwen3-asr-0.6b';
       } else if (!sttModel || sttModel === 'default' || sttModel === 'whispercpp') {
         provider = 'whispercpp';
         model = `ggml-${WHISPERCPP_MODEL_NAME}`;
@@ -12260,8 +12548,14 @@ if let tiff = image?.tiffRepresentation {
             language,
             mimeType,
           })
-        : provider === 'whispercpp'
-          ? await transcribeAudioWithWhisperCpp({
+        : provider === 'qwen3'
+          ? await transcribeAudioWithQwen3({
+              audioBuffer,
+              language,
+              mimeType,
+            })
+          : provider === 'whispercpp'
+            ? await transcribeAudioWithWhisperCpp({
               audioBuffer,
               language,
               mimeType,
