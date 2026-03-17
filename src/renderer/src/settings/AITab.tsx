@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Brain,
   Download,
+  CheckCircle2,
   ExternalLink,
   Eye,
   EyeOff,
@@ -22,7 +23,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
-import type { AppSettings, AISettings, EdgeTtsVoice, ElevenLabsVoice } from '../../types/electron';
+import type { AppSettings, AISettings, EdgeTtsVoice, ElevenLabsVoice, WhisperCppModelStatus, ParakeetModelStatus, Qwen3ModelStatus } from '../../types/electron';
 import {
   clearElevenLabsVoiceCache,
   getCachedElevenLabsVoices,
@@ -69,11 +70,32 @@ const CURATED_OLLAMA_MODELS = [
 ];
 
 const WHISPER_STT_OPTIONS = [
-  { id: 'native', label: 'Native (Default)' },
+  { id: 'whispercpp', label: 'SuperCmd Whisper (Default)' },
+  { id: 'parakeet', label: 'Parakeet v3 (Best & Fastest, 25+ European languages)' },
+  { id: 'qwen3', label: 'Qwen3 ASR (30+ languages including Chinese, Japanese, Korean, Thai, Vietnamese, Hindi)' },
+  { id: 'native', label: 'Apple Speech Recognition' },
   { id: 'openai-gpt-4o-transcribe', label: 'OpenAI GPT-4o Transcribe' },
   { id: 'openai-whisper-1', label: 'OpenAI Whisper-1' },
   { id: 'elevenlabs-scribe-v1', label: 'ElevenLabs Scribe v1' },
   { id: 'elevenlabs-scribe-v2', label: 'ElevenLabs Scribe v2' },
+];
+
+const WHISPER_LANGUAGE_OPTIONS = [
+  { value: 'ar-EG', label: 'Arabic' },
+  { value: 'zh-CN', label: 'Chinese (Mandarin)' },
+  { value: 'en-US', label: 'English (US)' },
+  { value: 'en-GB', label: 'English (UK)' },
+  { value: 'fr-CA', label: 'French (Canada)' },
+  { value: 'fr-FR', label: 'French (France)' },
+  { value: 'de-DE', label: 'German' },
+  { value: 'hi-IN', label: 'Hindi' },
+  { value: 'it-IT', label: 'Italian' },
+  { value: 'ja-JP', label: 'Japanese' },
+  { value: 'ko-KR', label: 'Korean' },
+  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
+  { value: 'ru-RU', label: 'Russian' },
+  { value: 'es-MX', label: 'Spanish (Mexico)' },
+  { value: 'es-ES', label: 'Spanish (Spain)' },
 ];
 
 const SPEAK_TTS_OPTIONS = [
@@ -199,6 +221,12 @@ const AITab: React.FC = () => {
   const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
   const [elevenLabsVoicesLoading, setElevenLabsVoicesLoading] = useState(false);
   const [elevenLabsVoicesError, setElevenLabsVoicesError] = useState<string | null>(null);
+  const [whisperCppModelStatus, setWhisperCppModelStatus] = useState<WhisperCppModelStatus | null>(null);
+  const [whisperCppModelLoading, setWhisperCppModelLoading] = useState(false);
+  const [parakeetModelStatus, setParakeetModelStatus] = useState<ParakeetModelStatus | null>(null);
+  const [parakeetModelLoading, setParakeetModelLoading] = useState(false);
+  const [qwen3ModelStatus, setQwen3ModelStatus] = useState<Qwen3ModelStatus | null>(null);
+  const [qwen3ModelLoading, setQwen3ModelLoading] = useState(false);
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
   const selectingOllamaDefaultRef = useRef(false);
@@ -296,6 +324,126 @@ const AITab: React.FC = () => {
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 1600);
   };
+
+  const refreshWhisperCppModelStatus = useCallback(async () => {
+    try {
+      const status = await window.electron.whisperCppModelStatus();
+      setWhisperCppModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'whisper') return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const tick = async () => {
+      await refreshWhisperCppModelStatus();
+      if (cancelled) return;
+      timer = window.setTimeout(() => { void tick(); }, 1000);
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [activeTab, refreshWhisperCppModelStatus]);
+
+  const handleWhisperCppDownload = useCallback(async () => {
+    setWhisperCppModelLoading(true);
+    try {
+      const status = await window.electron.whisperCppDownloadModel();
+      setWhisperCppModelStatus(status);
+    } catch {
+      void refreshWhisperCppModelStatus();
+    } finally {
+      setWhisperCppModelLoading(false);
+    }
+  }, [refreshWhisperCppModelStatus]);
+
+  const refreshParakeetModelStatus = useCallback(async () => {
+    try {
+      const status = await window.electron.parakeetModelStatus();
+      setParakeetModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'whisper') return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const tick = async () => {
+      await refreshParakeetModelStatus();
+      if (cancelled) return;
+      timer = window.setTimeout(() => { void tick(); }, 1000);
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [activeTab, refreshParakeetModelStatus]);
+
+  const handleParakeetDownload = useCallback(async () => {
+    setParakeetModelLoading(true);
+    try {
+      const status = await window.electron.parakeetDownloadModel();
+      setParakeetModelStatus(status);
+    } catch {
+      void refreshParakeetModelStatus();
+    } finally {
+      setParakeetModelLoading(false);
+    }
+  }, [refreshParakeetModelStatus]);
+
+  const refreshQwen3ModelStatus = useCallback(async () => {
+    try {
+      const status = await window.electron.qwen3ModelStatus();
+      setQwen3ModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'whisper') return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const tick = async () => {
+      await refreshQwen3ModelStatus();
+      if (cancelled) return;
+      timer = window.setTimeout(() => { void tick(); }, 1000);
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [activeTab, refreshQwen3ModelStatus]);
+
+  const handleQwen3Download = useCallback(async () => {
+    setQwen3ModelLoading(true);
+    try {
+      const status = await window.electron.qwen3DownloadModel();
+      setQwen3ModelStatus(status);
+    } catch {
+      void refreshQwen3ModelStatus();
+    } finally {
+      setQwen3ModelLoading(false);
+    }
+  }, [refreshQwen3ModelStatus]);
 
   const maybeSelectOllamaDefaultModel = useCallback((availableNames: string[], preferredName?: string) => {
     const currentSettings = settingsRef.current;
@@ -447,8 +595,17 @@ const AITab: React.FC = () => {
       : MODELS_BY_PROVIDER[ai.provider] || [];
 
   const whisperModelValue = (!ai.speechToTextModel || ai.speechToTextModel === 'default')
-    ? 'native'
+    ? 'whispercpp'
     : ai.speechToTextModel;
+  const whisperCppPercent = whisperCppModelStatus?.state === 'downloading' && whisperCppModelStatus.totalBytes
+    ? Math.max(0, Math.min(100, Math.round((whisperCppModelStatus.bytesDownloaded / whisperCppModelStatus.totalBytes) * 100)))
+    : 0;
+  const parakeetPercent = parakeetModelStatus?.state === 'downloading'
+    ? Math.max(0, Math.min(100, Math.round((parakeetModelStatus.progress || 0) * 100)))
+    : 0;
+  const qwen3Percent = qwen3ModelStatus?.state === 'downloading'
+    ? Math.max(0, Math.min(100, Math.round((qwen3ModelStatus.progress || 0) * 100)))
+    : 0;
 
   const parsedElevenLabsSpeak = parseElevenLabsSpeakModel(ai.textToSpeechModel);
   const speakModelValue = (!ai.textToSpeechModel || ai.textToSpeechModel === 'default' || ai.textToSpeechModel.startsWith('openai-'))
@@ -1059,6 +1216,68 @@ const AITab: React.FC = () => {
                 </div>
               )}
 
+              {whisperModelValue === 'parakeet' && (
+                <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
+                  <p className="text-[0.6875rem] text-[color:var(--status-success)]">
+                    Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Requires model warmup on first use. Download the model below before using dictation.
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'qwen3' && (
+                <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
+                  <p className="text-[0.6875rem] text-[color:var(--status-success)]">
+                    Offline on-device transcription via Qwen3 ASR. Supports 30+ languages, Requires macOS 15+ & Requires model warmup on first use.
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'qwen3' && (
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Recognition Language</label>
+                  <select
+                    value={ai.speechLanguage || 'en-US'}
+                    onChange={(e) => updateAI({ speechLanguage: e.target.value })}
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                  >
+                    {WHISPER_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {whisperModelValue === 'whispercpp' && (
+                <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
+                  <p className="text-[0.6875rem] text-[color:var(--status-success)]">
+                    Offline on-device transcription via Whisper.cpp. Download the default ggml base model below before using dictation.
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'whispercpp' && (
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Recognition Language</label>
+                  <select
+                    value={ai.speechLanguage || 'en-US'}
+                    onChange={(e) => updateAI({ speechLanguage: e.target.value })}
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                  >
+                    {WHISPER_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {whisperModelValue === 'native' && (
+                <div className="bg-sky-500/10 border border-sky-500/20 rounded-md px-2.5 py-2">
+                  <p className="text-[0.6875rem] text-sky-300">
+                    Uses Apple Speech Recognition instead of SuperCmd Whisper.
+                  </p>
+                </div>
+              )}
+
               <div className="pt-3 border-t border-[var(--ui-divider)] space-y-2">
                 <p className="text-[0.75rem] text-[var(--text-muted)]">Whisper Hotkeys</p>
                 <div>
@@ -1099,6 +1318,195 @@ const AITab: React.FC = () => {
             </div>
 
             <div className="px-4 py-3.5 md:px-5 space-y-3">
+              {whisperModelValue === 'parakeet' && (
+                <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Parakeet TDT v3</h3>
+                      <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
+                        Multilingual on-device transcription. Runs on Apple Neural Engine.
+                      </p>
+                    </div>
+                    {parakeetModelStatus?.state === 'downloaded' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[color:var(--status-success)]" />
+                    ) : (
+                      <Download className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-0.5" />
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-[0.75rem]">
+                    {parakeetModelStatus?.state === 'downloaded' ? (
+                      <p className="text-[color:var(--status-success)]">Downloaded. Parakeet v3 is ready to use offline.</p>
+                    ) : parakeetModelStatus?.state === 'downloading' ? (
+                      <div className="space-y-2">
+                        <p className="text-[var(--text-secondary)]">
+                          Downloading Parakeet v3 models
+                          {parakeetPercent > 0 ? ` (${parakeetPercent}%)` : '...'}
+                        </p>
+                        <div className="h-2 rounded-full bg-black/20 overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-400/80 transition-[width] duration-300"
+                            style={{ width: `${Math.max(3, parakeetPercent)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : parakeetModelStatus?.state === 'error' ? (
+                      <p className="text-rose-300">{parakeetModelStatus.error || 'Model download failed.'}</p>
+                    ) : (
+                      <p className="text-amber-300">Model not downloaded yet. Download it now to use Parakeet dictation.</p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => { void handleParakeetDownload(); }}
+                      disabled={parakeetModelLoading || parakeetModelStatus?.state === 'downloading' || parakeetModelStatus?.state === 'downloaded'}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      {parakeetModelStatus?.state === 'downloaded'
+                        ? 'Model Downloaded'
+                        : parakeetModelStatus?.state === 'downloading'
+                          ? 'Downloading...'
+                          : 'Download Model'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { void refreshParakeetModelStatus(); }}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {whisperModelValue === 'qwen3' && (
+                <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Qwen3 ASR</h3>
+                      <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
+                        30-language on-device transcription. Requires macOS 15+.
+                      </p>
+                    </div>
+                    {qwen3ModelStatus?.state === 'downloaded' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[color:var(--status-success)]" />
+                    ) : (
+                      <Download className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-0.5" />
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-[0.75rem]">
+                    {qwen3ModelStatus?.state === 'downloaded' ? (
+                      <p className="text-[color:var(--status-success)]">Downloaded. Qwen3 ASR is ready to use offline.</p>
+                    ) : qwen3ModelStatus?.state === 'downloading' ? (
+                      <div className="space-y-2">
+                        <p className="text-[var(--text-secondary)]">
+                          Downloading Qwen3 ASR models
+                          {qwen3Percent > 0 ? ` (${qwen3Percent}%)` : '...'}
+                        </p>
+                        <div className="h-2 rounded-full bg-black/20 overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-400/80 transition-[width] duration-300"
+                            style={{ width: `${Math.max(3, qwen3Percent)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : qwen3ModelStatus?.state === 'error' ? (
+                      <p className="text-rose-300">{qwen3ModelStatus.error || 'Model download failed.'}</p>
+                    ) : (
+                      <p className="text-amber-300">Model not downloaded yet. Download the ~900 MB int8 model to use Qwen3 dictation.</p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => { void handleQwen3Download(); }}
+                      disabled={qwen3ModelLoading || qwen3ModelStatus?.state === 'downloading' || qwen3ModelStatus?.state === 'downloaded'}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      {qwen3ModelStatus?.state === 'downloaded'
+                        ? 'Model Downloaded'
+                        : qwen3ModelStatus?.state === 'downloading'
+                          ? 'Downloading...'
+                          : 'Download Model'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { void refreshQwen3ModelStatus(); }}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {whisperModelValue === 'whispercpp' && (
+                <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">SuperCmd Whisper</h3>
+                      <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
+                        Download the ggml base model once to enable local dictation.
+                      </p>
+                    </div>
+                    {whisperCppModelStatus?.state === 'downloaded' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[color:var(--status-success)]" />
+                    ) : (
+                      <Download className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-0.5" />
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-[0.75rem]">
+                    {whisperCppModelStatus?.state === 'downloaded' ? (
+                      <p className="text-[color:var(--status-success)]">Downloaded. SuperCmd Whisper is ready to use offline.</p>
+                    ) : whisperCppModelStatus?.state === 'downloading' ? (
+                      <div className="space-y-2">
+                        <p className="text-[var(--text-secondary)]">
+                          Downloading SuperCmd Whisper
+                          {whisperCppModelStatus.totalBytes ? ` (${whisperCppPercent}%)` : '...'}
+                        </p>
+                        <div className="h-2 rounded-full bg-black/20 overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-400/80 transition-[width] duration-300"
+                            style={{ width: `${whisperCppPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : whisperCppModelStatus?.state === 'error' ? (
+                      <p className="text-rose-300">{whisperCppModelStatus.error || 'Model download failed.'}</p>
+                    ) : (
+                      <p className="text-amber-300">Model not downloaded yet. Download it now to use SuperCmd Whisper dictation.</p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => { void handleWhisperCppDownload(); }}
+                      disabled={whisperCppModelLoading || whisperCppModelStatus?.state === 'downloading' || whisperCppModelStatus?.state === 'downloaded'}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      {whisperCppModelStatus?.state === 'downloaded'
+                        ? 'Model Downloaded'
+                        : whisperCppModelStatus?.state === 'downloading'
+                          ? 'Downloading...'
+                          : 'Download Model'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { void refreshWhisperCppModelStatus(); }}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Smooth Output</h3>
@@ -1382,7 +1790,7 @@ const AITab: React.FC = () => {
             <div className="px-4 py-3.5 md:px-5">
               <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Notes</h3>
               <div className="mt-2 space-y-1.5 text-[0.75rem] text-[var(--text-muted)] leading-relaxed">
-                <p>Whisper default is Native for fast local dictation.</p>
+                <p>Whisper default is SuperCmd Whisper with a local ggml base model.</p>
                 <p>Speak default is Edge TTS with per-language male/female voice selection.</p>
                 <p>English voice options are intentionally limited to US and UK variants.</p>
                 <p>ElevenLabs custom voices (cloned/generated) will appear automatically when your API key is configured.</p>

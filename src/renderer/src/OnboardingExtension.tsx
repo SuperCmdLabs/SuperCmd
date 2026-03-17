@@ -15,6 +15,7 @@ import {
 import HotkeyRecorder from './settings/HotkeyRecorder';
 import supercmdLogo from '../../../supercmd.png';
 import onboardingIconVideo from '../../../assets/icon.mp4';
+import type { WhisperCppModelStatus, ParakeetModelStatus } from '../types/electron';
 
 interface OnboardingExtensionProps {
   initialShortcut: string;
@@ -86,7 +87,7 @@ const permissionTargets: Array<{
   {
     id: 'speech-recognition',
     title: 'Speech Recognition',
-    description: 'Required for native speech recognition.',
+    description: 'Optional. Needed only if you switch Whisper to the Apple Speech Recognition fallback.',
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition',
     icon: Volume2,
     iconTone: 'text-emerald-100',
@@ -110,15 +111,21 @@ const READ_SAMPLE =
   'Voice-first interfaces are having a moment. After years of being dismissed as gimmicks, a new wave of tools is making it genuinely faster to speak than type — with transcription that keeps up, smart corrections, and shortcut keys that slot into existing workflows without disruption.';
 
 const SPEECH_LANGUAGE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'ar-EG', label: 'Arabic' },
+  { value: 'zh-CN', label: 'Chinese (Mandarin)' },
   { value: 'en-US', label: 'English (US)' },
   { value: 'en-GB', label: 'English (UK)' },
-  { value: 'es-ES', label: 'Spanish' },
+  { value: 'fr-CA', label: 'French (Canada)' },
   { value: 'fr-FR', label: 'French' },
   { value: 'de-DE', label: 'German' },
   { value: 'it-IT', label: 'Italian' },
-  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
   { value: 'hi-IN', label: 'Hindi' },
   { value: 'ja-JP', label: 'Japanese' },
+  { value: 'ko-KR', label: 'Korean' },
+  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
+  { value: 'ru-RU', label: 'Russian' },
+  { value: 'es-MX', label: 'Spanish (Mexico)' },
+  { value: 'es-ES', label: 'Spanish (Spain)' },
 ];
 
 function toHotkeyCaps(shortcut: string): string[] {
@@ -160,6 +167,11 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [whisperKeyStatus, setWhisperKeyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isHoldKeyActive, setIsHoldKeyActive] = useState(false);
   const [speechLanguage, setSpeechLanguage] = useState('en-US');
+  const [whisperCppModelStatus, setWhisperCppModelStatus] = useState<WhisperCppModelStatus | null>(null);
+  const [whisperCppModelBusy, setWhisperCppModelBusy] = useState(false);
+  const [parakeetModelStatus, setParakeetModelStatus] = useState<ParakeetModelStatus | null>(null);
+  const [parakeetModelBusy, setParakeetModelBusy] = useState(false);
+  const [sttProvider, setSttProvider] = useState<string>('whispercpp');
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
   const openedPermissionsRef = useRef<Record<string, boolean>>({});
   const requestedPermissionsRef = useRef<Record<string, boolean>>({});
@@ -183,6 +195,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       setWhisperHoldKey(saved);
       const savedLanguage = String(settings.ai?.speechLanguage || 'en-US').trim();
       setSpeechLanguage(savedLanguage || 'en-US');
+      const stt = String(settings.ai?.speechToTextModel || 'whispercpp').trim();
+      setSttProvider(!stt || stt === 'default' ? 'whispercpp' : stt);
     }).catch(() => {});
   }, []);
 
@@ -199,6 +213,128 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       } as any);
     } catch {}
   };
+
+  const refreshWhisperCppModelStatus = async (): Promise<WhisperCppModelStatus | null> => {
+    try {
+      const status = await window.electron.whisperCppModelStatus();
+      setWhisperCppModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  };
+
+  const startWhisperCppModelDownload = async () => {
+    if (whisperCppModelBusy || whisperCppModelStatus?.state === 'downloaded') return;
+    setWhisperCppModelBusy(true);
+    setWhisperCppModelStatus((current) => ({
+      state: 'downloading',
+      modelName: current?.modelName || 'base',
+      path: current?.path || '',
+      bytesDownloaded: current?.bytesDownloaded || 0,
+      totalBytes: current?.totalBytes ?? null,
+    }));
+    try {
+      const status = await window.electron.whisperCppDownloadModel();
+      setWhisperCppModelStatus(status);
+    } catch {
+      await refreshWhisperCppModelStatus();
+    } finally {
+      setWhisperCppModelBusy(false);
+    }
+  };
+
+  const refreshParakeetModelStatus = async (): Promise<ParakeetModelStatus | null> => {
+    try {
+      const status = await window.electron.parakeetModelStatus();
+      setParakeetModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  };
+
+  const startParakeetModelDownload = async () => {
+    if (parakeetModelBusy || parakeetModelStatus?.state === 'downloaded') return;
+    setParakeetModelBusy(true);
+    setParakeetModelStatus((current) => ({
+      state: 'downloading',
+      modelName: current?.modelName || 'parakeet-tdt-0.6b-v3',
+      path: current?.path || '',
+      progress: current?.progress || 0,
+    }));
+    try {
+      const status = await window.electron.parakeetDownloadModel();
+      setParakeetModelStatus(status);
+    } catch {
+      await refreshParakeetModelStatus();
+    } finally {
+      setParakeetModelBusy(false);
+    }
+  };
+
+  // Step 4: auto-download the appropriate model
+  useEffect(() => {
+    if (step !== 4) return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const scheduleNextTick = (delay: number) => {
+      timer = window.setTimeout(() => { void tick(); }, delay);
+    };
+
+    const tick = async () => {
+      if (sttProvider === 'parakeet') {
+        const status = await refreshParakeetModelStatus();
+        if (cancelled) return;
+        if (
+          !parakeetModelBusy &&
+          status &&
+          (status.state === 'not-downloaded' || status.state === 'error')
+        ) {
+          void startParakeetModelDownload();
+          scheduleNextTick(400);
+          return;
+        }
+        if (parakeetModelBusy || status?.state === 'downloading') {
+          scheduleNextTick(500);
+        }
+      } else if (sttProvider === 'whispercpp') {
+        const status = await refreshWhisperCppModelStatus();
+        if (cancelled) return;
+        if (
+          !whisperCppModelBusy &&
+          status &&
+          (status.state === 'not-downloaded' || status.state === 'error')
+        ) {
+          void startWhisperCppModelDownload();
+          scheduleNextTick(400);
+          return;
+        }
+        if (whisperCppModelBusy || status?.state === 'downloading') {
+          scheduleNextTick(500);
+        }
+      }
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [step, sttProvider, whisperCppModelBusy, parakeetModelBusy]);
+
+  const whisperCppDownloadPercent = useMemo(() => {
+    if (!whisperCppModelStatus || whisperCppModelStatus.state !== 'downloading' || !whisperCppModelStatus.totalBytes) {
+      return 0;
+    }
+    return Math.max(0, Math.min(100, Math.round((whisperCppModelStatus.bytesDownloaded / whisperCppModelStatus.totalBytes) * 100)));
+  }, [whisperCppModelStatus]);
+
+  const parakeetDownloadPercent = useMemo(() => {
+    if (!parakeetModelStatus || parakeetModelStatus.state !== 'downloading') return 0;
+    return Math.max(0, Math.min(100, Math.round((parakeetModelStatus.progress || 0) * 100)));
+  }, [parakeetModelStatus]);
 
   // Apply the default openAtLogin preference when the user first reaches the hotkey step.
   useEffect(() => {
@@ -413,6 +549,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     setPermissionLoading((prev) => ({ ...prev, [id]: true }));
     setPermissionNotes((prev) => ({ ...prev, [id]: '' }));
     try {
+      // Re-assert onboarding mode before requesting permission so the window
+      // doesn't hide when macOS permission dialogs steal focus.
+      try { await window.electron.setLauncherMode('onboarding'); } catch {}
       const result = await window.electron.onboardingRequestPermission(id);
       let granted = Boolean(result?.granted);
       let requested = Boolean(result?.requested);
@@ -466,6 +605,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       }
       if (granted) {
         setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
+        setPermissionNotes((prev) => ({ ...prev, [id]: '' }));
       } else if (id === 'microphone' || id === 'speech-recognition') {
         const targetLabel = id === 'microphone' ? 'Microphone' : 'Speech Recognition';
         if (status === 'denied' || status === 'restricted') {
@@ -501,34 +641,35 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       if (id === 'microphone') {
         await new Promise((resolve) => setTimeout(resolve, 350));
       }
-      const candidateUrls = id === 'microphone'
-        ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone']
-        : id === 'speech-recognition'
-          ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_SpeechRecognition']
-          : id === 'input-monitoring'
-            ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent']
-            : id === 'home-folder'
-              ? [url, 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_FilesAndFolders']
-          : [url];
-      let ok = false;
-      for (const candidate of candidateUrls) {
-        if (ok) break;
-        ok = await window.electron.openUrl(candidate);
-      }
-      if (ok) {
-        if (id === 'input-monitoring') {
+      // Only open Privacy & Security for input-monitoring (requires manual "+" to add app).
+      // All other permissions show a native dialog and don't need the system settings panel.
+      if (id === 'input-monitoring') {
+        const candidateUrls = [
+          url,
+          'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent',
+        ];
+        try {
+          await window.electron.setLauncherMode('onboarding');
+        } catch {}
+        let ok = false;
+        for (const candidate of candidateUrls) {
+          if (ok) break;
+          ok = await window.electron.openUrl(candidate);
+        }
+        if (ok) {
           // macOS 13+ does not auto-add apps to Input Monitoring via CGEventTap.
           // The user must click "+" in System Settings and manually select SuperCmd.
           setPermissionNotes((prev) => ({
             ...prev,
             [id]: 'In Input Monitoring, click "+" at the bottom left and add SuperCmd from your Applications folder.',
           }));
-        } else if (mode === 'manual' && !requested) {
-          setRequestedPermissions((prev) => ({ ...prev, [id]: false }));
         }
       }
     } finally {
       setPermissionLoading((prev) => ({ ...prev, [id]: false }));
+      // Re-assert onboarding mode after permission dialog closes so the window
+      // comes back to front if macOS pushed it behind during the dialog.
+      try { await window.electron.setLauncherMode('onboarding'); } catch {}
     }
   };
 
@@ -832,9 +973,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
           )}
 
           {step === 4 && (
-            <div className="max-w-5xl mx-auto min-h-full flex flex-col items-center justify-center">
-              <div className="grid grid-cols-1 lg:grid-cols-[290px_minmax(0,1fr)] gap-3 w-full items-center">
-                <div className="flex flex-col gap-2">
+            <div className="max-w-5xl mx-auto min-h-full flex flex-col justify-center">
+              <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-6 w-full items-start">
+                <div className="flex flex-col gap-3 lg:pt-3">
                   <div className="w-8 h-8 rounded-lg border border-cyan-200/25 bg-cyan-500/15 flex items-center justify-center">
                     <Mic className="w-4 h-4 text-cyan-100" />
                   </div>
@@ -860,9 +1001,143 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                       ))}
                     </select>
                   </div>
+                  <div className="mt-2 rounded-[28px] border border-white/[0.08] bg-white/[0.05] p-4">
+                    {sttProvider === 'parakeet' ? (
+                      <>
+                        <p className="text-white/88 text-xs font-medium mb-1.5">Parakeet TDT v3</p>
+                        {parakeetModelStatus?.state === 'downloaded' ? (
+                          <p className="text-emerald-200 text-[11px] leading-relaxed">
+                            Download complete. Parakeet v3 dictation is ready.
+                          </p>
+                        ) : parakeetModelStatus?.state === 'downloading' ? (
+                          <div className="space-y-2.5">
+                            <div className="space-y-1">
+                              <p className="text-white/90 text-[11px] font-medium leading-relaxed">
+                                Downloading models, just a moment.
+                              </p>
+                              <p className="text-white/62 text-[11px] leading-relaxed">
+                                Downloading Parakeet v3 CoreML models
+                                {parakeetDownloadPercent > 0 ? ` (${parakeetDownloadPercent}%)` : '...'}
+                              </p>
+                            </div>
+                            <div
+                              className="h-2.5 rounded-full bg-black/25 overflow-hidden ring-1 ring-inset ring-white/[0.06]"
+                              role="progressbar"
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={parakeetDownloadPercent > 0 ? parakeetDownloadPercent : undefined}
+                              aria-label="Parakeet model download progress"
+                            >
+                              <div
+                                className={parakeetDownloadPercent > 0
+                                  ? 'h-full bg-cyan-300/80 transition-[width] duration-300'
+                                  : 'h-full w-[34%] bg-cyan-300/70 animate-pulse'
+                                }
+                                style={parakeetDownloadPercent > 0
+                                  ? { width: `${Math.max(6, parakeetDownloadPercent)}%` }
+                                  : undefined
+                                }
+                              />
+                            </div>
+                          </div>
+                        ) : parakeetModelStatus?.state === 'error' ? (
+                          <p className="text-rose-200 text-[11px] leading-relaxed">
+                            {parakeetModelStatus.error || 'Model download failed. Retry now or use Settings → AI → SuperCmd Whisper.'}
+                          </p>
+                        ) : (
+                          <p className="text-white/72 text-[11px] leading-relaxed">
+                            SuperCmd starts downloading Parakeet v3 models on this step so dictation is ready before first use.
+                          </p>
+                        )}
+                        <div className="mt-3 flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => { void startParakeetModelDownload(); }}
+                            disabled={parakeetModelBusy || parakeetModelStatus?.state === 'downloading' || parakeetModelStatus?.state === 'downloaded'}
+                            className="inline-flex min-h-[32px] items-center justify-center rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors border border-white/[0.12] bg-white/[0.10] text-white/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {parakeetModelStatus?.state === 'downloaded'
+                              ? 'Downloaded'
+                              : parakeetModelStatus?.state === 'downloading'
+                                ? 'Downloading...'
+                                : 'Download Model'}
+                          </button>
+                        </div>
+                      </>
+                    ) : sttProvider === 'whispercpp' ? (
+                      <>
+                        <p className="text-white/88 text-xs font-medium mb-1.5">SuperCmd Whisper</p>
+                        {whisperCppModelStatus?.state === 'downloaded' ? (
+                          <p className="text-emerald-200 text-[11px] leading-relaxed">
+                            Download complete. SuperCmd Whisper dictation is ready.
+                          </p>
+                        ) : whisperCppModelStatus?.state === 'downloading' ? (
+                          <div className="space-y-2.5">
+                            <div className="space-y-1">
+                              <p className="text-white/90 text-[11px] font-medium leading-relaxed">
+                                Downloading model, just a moment.
+                              </p>
+                              <p className="text-white/62 text-[11px] leading-relaxed">
+                                Downloading the ~300 MB ggml base model
+                                {whisperCppModelStatus.totalBytes ? ` (${whisperCppDownloadPercent}%)` : '...'}
+                              </p>
+                            </div>
+                            <div
+                              className="h-2.5 rounded-full bg-black/25 overflow-hidden ring-1 ring-inset ring-white/[0.06]"
+                              role="progressbar"
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={whisperCppModelStatus.totalBytes ? whisperCppDownloadPercent : undefined}
+                              aria-label="Whisper model download progress"
+                            >
+                              <div
+                                className={whisperCppModelStatus.totalBytes
+                                  ? 'h-full bg-cyan-300/80 transition-[width] duration-300'
+                                  : 'h-full w-[34%] bg-cyan-300/70 animate-pulse'
+                                }
+                                style={whisperCppModelStatus.totalBytes
+                                  ? { width: `${Math.max(6, whisperCppDownloadPercent)}%` }
+                                  : undefined
+                                }
+                              />
+                            </div>
+                          </div>
+                        ) : whisperCppModelStatus?.state === 'error' ? (
+                          <p className="text-rose-200 text-[11px] leading-relaxed">
+                            {whisperCppModelStatus.error || 'Model download failed. Retry now or use Settings → AI → SuperCmd Whisper.'}
+                          </p>
+                        ) : (
+                          <p className="text-white/72 text-[11px] leading-relaxed">
+                            SuperCmd starts downloading the SuperCmd Whisper model on this step so dictation is ready before first use.
+                          </p>
+                        )}
+                        <div className="mt-3 flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => { void startWhisperCppModelDownload(); }}
+                            disabled={whisperCppModelBusy || whisperCppModelStatus?.state === 'downloading' || whisperCppModelStatus?.state === 'downloaded'}
+                            className="inline-flex min-h-[32px] items-center justify-center rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors border border-white/[0.12] bg-white/[0.10] text-white/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {whisperCppModelStatus?.state === 'downloaded'
+                              ? 'Downloaded'
+                              : whisperCppModelStatus?.state === 'downloading'
+                                ? 'Downloading...'
+                                : 'Download Model'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-white/88 text-xs font-medium mb-1.5">Cloud Transcription</p>
+                        <p className="text-emerald-200 text-[11px] leading-relaxed">
+                          Using cloud-based transcription. No model download needed.
+                        </p>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                <div className="rounded-3xl border border-white/[0.09] p-3 bg-white/[0.04]">
+                <div className="self-start rounded-3xl border border-white/[0.09] p-3 bg-white/[0.04]">
                   <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/[0.12] text-white/85 text-xs mb-2">
                     <Mic className="w-3.5 h-3.5" />
                     Messages sample
@@ -878,7 +1153,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     className="w-full h-[250px] resize-none rounded-xl border border-cyan-300/55 bg-white/[0.05] px-4 py-3 text-white/90 placeholder:text-white/40 text-base leading-relaxed outline-none shadow-[0_0_0_3px_rgba(34,211,238,0.15)]"
                   />
                   <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
-                    Native speech recognition is used by default. For the best experience, use ElevenLabs.
+                    SuperCmd Whisper uses a local ggml base model by default. Apple Speech Recognition remains available as a fallback in Settings.
                   </p>
                 </div>
               </div>

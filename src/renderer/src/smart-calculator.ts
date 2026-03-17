@@ -1018,7 +1018,6 @@ export function tryCalculate(query: string): CalcResult | null {
 
 export async function tryCalculateAsync(query: string): Promise<CalcResult | null> {
   if (!query || query.trim().length === 0) return null;
-  if (!shouldTrySuperCalculator(query)) return null;
 
   try {
     const output = await calculate(query, {

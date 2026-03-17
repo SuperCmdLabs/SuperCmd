@@ -1305,6 +1305,7 @@ kbd {
   left: 50%;
   bottom: calc(100% + 8px);
   transform: translateX(-50%);
+  max-width: min(420px, calc(100vw - 32px));
   padding: 7px 10px;
   border-radius: 10px;
   border: 1px solid rgba(196, 201, 206, 0.3);
@@ -1315,6 +1316,8 @@ kbd {
   letter-spacing: 0.01em;
   pointer-events: none;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(14px) saturate(120%);
   -webkit-backdrop-filter: blur(14px) saturate(120%);

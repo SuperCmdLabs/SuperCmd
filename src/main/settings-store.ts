@@ -79,7 +79,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   ollamaBaseUrl: 'http://localhost:11434',
   defaultModel: '',
   speechCorrectionModel: '',
-  speechToTextModel: 'native',
+  speechToTextModel: 'whispercpp',
   speechLanguage: 'en-US',
   textToSpeechModel: 'edge-tts',
   edgeTtsVoice: 'en-US-EricNeural',
