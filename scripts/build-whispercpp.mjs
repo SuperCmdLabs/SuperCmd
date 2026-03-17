@@ -79,7 +79,9 @@ function buildTranscriber() {
 }
 
 try {
-  if (!existsSync(frameworkDir)) {
+  // Verify the framework actually has the whisper module, not just an empty directory
+  const moduleMapPath = path.join(frameworkDir, 'Modules', 'module.modulemap');
+  if (!existsSync(frameworkDir) || !existsSync(moduleMapPath)) {
     prepareFramework();
   } else {
     console.log('[whisper.cpp] Using existing macOS framework');
