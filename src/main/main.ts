@@ -436,19 +436,32 @@ async function ensureParakeetModelDownloaded(): Promise<string> {
   return await parakeetModelEnsurePromise;
 }
 
+/** Pad a 16kHz 16-bit mono WAV to at least 1 second by appending silence. */
+function padWavToMinDuration(wavBuffer: Buffer, minSamples = 16000): Buffer {
+  // WAV header is 44 bytes; data follows as 16-bit PCM samples (2 bytes each)
+  if (wavBuffer.length < 44) return wavBuffer;
+  const dataBytesPresent = wavBuffer.length - 44;
+  const samplesPresent = Math.floor(dataBytesPresent / 2);
+  if (samplesPresent >= minSamples) return wavBuffer;
+
+  const samplesToAdd = minSamples - samplesPresent;
+  const silenceBytes = Buffer.alloc(samplesToAdd * 2, 0);
+  const newDataSize = dataBytesPresent + silenceBytes.length;
+  const padded = Buffer.concat([wavBuffer, silenceBytes]);
+
+  // Patch RIFF chunk size (bytes 4-7) = file size - 8
+  padded.writeUInt32LE(padded.length - 8, 4);
+  // Patch data sub-chunk size (bytes 40-43)
+  padded.writeUInt32LE(newDataSize, 40);
+
+  return padded;
+}
+
 async function transcribeAudioWithParakeet(opts: {
   audioBuffer: Buffer;
   language?: string;
   mimeType?: string;
 }): Promise<string> {
-  // FluidAudio requires at least 1 second of 16kHz audio (~32KB PCM + WAV header).
-  // Return empty string for too-short clips instead of erroring.
-  const MIN_WAV_BYTES = 32_100;
-  if (opts.audioBuffer.length < MIN_WAV_BYTES) {
-    console.log(`[Parakeet] Audio too short (${opts.audioBuffer.length} bytes < ${MIN_WAV_BYTES}), skipping`);
-    return '';
-  }
-
   const status = getParakeetModelStatus();
   if (status.state === 'downloading') {
     throw new Error('Parakeet models are still downloading. Finish setup from onboarding or Settings -> AI -> SuperCmd Whisper.');
@@ -464,7 +477,7 @@ async function transcribeAudioWithParakeet(opts: {
   const audioPath = path.join(tempDir, 'input.wav');
 
   try {
-    fs.writeFileSync(audioPath, opts.audioBuffer);
+    fs.writeFileSync(audioPath, padWavToMinDuration(opts.audioBuffer));
 
     const result = await sendParakeetRequest({
       command: 'transcribe',
@@ -711,12 +724,6 @@ async function transcribeAudioWithQwen3(opts: {
   language?: string;
   mimeType?: string;
 }): Promise<string> {
-  const MIN_WAV_BYTES = 32_100;
-  if (opts.audioBuffer.length < MIN_WAV_BYTES) {
-    console.log(`[Qwen3] Audio too short (${opts.audioBuffer.length} bytes), skipping`);
-    return '';
-  }
-
   const status = getQwen3ModelStatus();
   if (status.state === 'downloading') throw new Error('Qwen3 models are still downloading.');
   if (status.state !== 'downloaded') throw new Error('Qwen3 models have not been downloaded yet. Download them from Settings -> AI -> SuperCmd Whisper.');
@@ -727,7 +734,7 @@ async function transcribeAudioWithQwen3(opts: {
   const audioPath = path.join(tempDir, 'input.wav');
 
   try {
-    fs.writeFileSync(audioPath, opts.audioBuffer);
+    fs.writeFileSync(audioPath, padWavToMinDuration(opts.audioBuffer));
     const request: Record<string, any> = { command: 'transcribe', file: audioPath };
     if (opts.language) request.language = opts.language;
     const result = await sendQwen3Request(request);

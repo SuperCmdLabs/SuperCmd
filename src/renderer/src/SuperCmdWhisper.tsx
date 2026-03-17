@@ -258,6 +258,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const [speakToggleShortcutLabel, setSpeakToggleShortcutLabel] = useState('\u2318 .');
   const speakToggleShortcutRef = useRef('Fn');
   const [parakeetWarmingUp, setParakeetWarmingUp] = useState(false);
+  const parakeetWarmingUpRef = useRef(false);
   const [hintText, setHintText] = useState('');
   const hintTimerRef = useRef<number | null>(null);
   const sttModelRef = useRef<string>('whispercpp');
@@ -981,6 +982,15 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       playRecordingCue('end');
     }
     finalizingRef.current = true;
+
+    // If models are still loading (first-time warmup), wait for it to finish
+    // so the user sees the "loading models" hint until it completes.
+    if (parakeetWarmingUpRef.current) {
+      while (parakeetWarmingUpRef.current) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+
     // Invalidate any in-flight startListening async work.
     startRequestSeqRef.current += 1;
     if (editorFocusRestoreTimerRef.current !== null) {
@@ -1128,7 +1138,6 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           whisperStateRef.current = 'idle';
           setState('idle');
           finalizingRef.current = false;
-          showHint('Too short — hold for at least 1 second', 3000);
         }
         return;
       }
@@ -1305,6 +1314,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
             const warmupFn = sttModelRef.current === 'qwen3'
               ? window.electron.qwen3Warmup
               : window.electron.parakeetWarmup;
+            parakeetWarmingUpRef.current = true;
             setParakeetWarmingUp(true);
             setState('listening');
             setStatusText('Loading Whisper models...');
@@ -1322,6 +1332,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
               console.warn(`[Whisper][${sttModelRef.current}] Warmup failed:`, err);
             }
             // Always clear the warming banner once the warmup call returns.
+            parakeetWarmingUpRef.current = false;
             setParakeetWarmingUp(false);
             if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) {
               return;

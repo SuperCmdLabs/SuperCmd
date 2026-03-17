@@ -1224,21 +1224,6 @@ const AITab: React.FC = () => {
                 </div>
               )}
 
-              {whisperModelValue === 'parakeet' && (
-                <div>
-                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Recognition Language</label>
-                  <select
-                    value={ai.speechLanguage || 'en-US'}
-                    onChange={(e) => updateAI({ speechLanguage: e.target.value })}
-                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
-                  >
-                    {WHISPER_LANGUAGE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
               {whisperModelValue === 'qwen3' && (
                 <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
                   <p className="text-[0.6875rem] text-[color:var(--status-success)]">
