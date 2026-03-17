@@ -1193,19 +1193,22 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     const currentState = whisperStateRef.current;
     if (currentState === 'listening' || currentState === 'processing') return;
     startInFlightRef.current = true;
+
+    // Request mic stream immediately — don't wait for IPC permission checks.
+    // This minimizes the delay between hotkey press and audio capture start.
     let preflightStream: MediaStream | null = null;
+    const micAudioOpts = {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    };
     try {
-      const micAccess = await window.electron.whisperEnsureMicrophoneAccess();
-      if (!micAccess?.granted) {
-        try {
-          preflightStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            },
-          });
-        } catch {
+      preflightStream = await navigator.mediaDevices.getUserMedia({ audio: micAudioOpts });
+    } catch {
+      // getUserMedia failed — fall back to the IPC permission check path
+      try {
+        const micAccess = await window.electron.whisperEnsureMicrophoneAccess();
+        if (!micAccess?.granted) {
           setState('error');
           setStatusText('Microphone permission required.');
           const status = String(micAccess?.status || '');
@@ -1217,17 +1220,17 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           stopVisualizer();
           return;
         }
-      }
-    } catch (error: any) {
-      try {
-        preflightStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
-      } catch {
+        // Permission was granted via IPC but getUserMedia still failed
+        try {
+          preflightStream = await navigator.mediaDevices.getUserMedia({ audio: micAudioOpts });
+        } catch {
+          setState('error');
+          setStatusText('Microphone permission required.');
+          setErrorText('Could not access microphone. Check System Settings -> Privacy & Security -> Microphone.');
+          stopVisualizer();
+          return;
+        }
+      } catch (error: any) {
         setState('error');
         setStatusText('Microphone permission check failed.');
         setErrorText(error?.message || 'Allow microphone permission to use SuperCmd Whisper.');
@@ -1237,6 +1240,20 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     }
 
     const requestSeq = ++startRequestSeqRef.current;
+
+    // Start PCM capture immediately so no audio is lost while we resolve config.
+    // All local models (whispercpp, parakeet, qwen3) use PCM; cloud/native don't but
+    // capturing a few extra chunks is harmless.
+    pcmCaptureChunksRef.current = [];
+    captureSampleRateRef.current = 16000;
+    startVisualizer(preflightStream!, true);
+
+    // Optimistically flip to active state so the button toggles immediately.
+    whisperStateRef.current = 'listening';
+    setState('listening');
+    setErrorText('');
+    setStatusText('Starting microphone...');
+
     const sessionConfig = await resolveSessionConfig();
 
     // Reset shared state
@@ -1259,8 +1276,6 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     nativeFlushQueueRef.current = [];
     nativeFlushInFlightRef.current = false;
     nativeProcessEndedRef.current = false;
-    pcmCaptureChunksRef.current = [];
-    captureSampleRateRef.current = 16000;
     stopNativeSilenceWatchdog();
     stopNativeProcessTimer();
     if (editorFocusRestoreTimerRef.current !== null) {
@@ -1275,29 +1290,15 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       nativeChunkDisposerRef.current();
       nativeChunkDisposerRef.current = null;
     }
-    setErrorText('');
-    setStatusText('Starting microphone...');
-    // Optimistically flip to active state so the button toggles immediately.
-    whisperStateRef.current = 'listening';
-    setState('listening');
 
     const backend = sessionConfig.backend;
+    const stream = preflightStream!;
 
     try {
-      // Get microphone stream for the audio visualizer
-      const stream = preflightStream || await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
       if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
-
-      startVisualizer(stream, sessionConfig.engine === 'whispercpp');
 
       if (backend === 'whisper') {
         stopNativeSilenceWatchdog();
