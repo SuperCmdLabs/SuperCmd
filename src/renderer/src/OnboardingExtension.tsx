@@ -171,7 +171,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const [whisperCppModelBusy, setWhisperCppModelBusy] = useState(false);
   const [parakeetModelStatus, setParakeetModelStatus] = useState<ParakeetModelStatus | null>(null);
   const [parakeetModelBusy, setParakeetModelBusy] = useState(false);
-  const [sttProvider, setSttProvider] = useState<string>('parakeet');
+  const [sttProvider, setSttProvider] = useState<string>('whispercpp');
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
   const openedPermissionsRef = useRef<Record<string, boolean>>({});
   const requestedPermissionsRef = useRef<Record<string, boolean>>({});
@@ -195,8 +195,8 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       setWhisperHoldKey(saved);
       const savedLanguage = String(settings.ai?.speechLanguage || 'en-US').trim();
       setSpeechLanguage(savedLanguage || 'en-US');
-      const stt = String(settings.ai?.speechToTextModel || 'parakeet').trim();
-      setSttProvider(!stt || stt === 'default' ? 'parakeet' : stt);
+      const stt = String(settings.ai?.speechToTextModel || 'whispercpp').trim();
+      setSttProvider(!stt || stt === 'default' ? 'whispercpp' : stt);
     }).catch(() => {});
   }, []);
 

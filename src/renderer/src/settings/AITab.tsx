@@ -70,8 +70,8 @@ const CURATED_OLLAMA_MODELS = [
 ];
 
 const WHISPER_STT_OPTIONS = [
-  { id: 'parakeet', label: 'Parakeet v3 (Default — Recommended)' },
-  { id: 'whispercpp', label: 'SuperCmd Whisper (Legacy)' },
+  { id: 'whispercpp', label: 'SuperCmd Whisper (Default)' },
+  { id: 'parakeet', label: 'Parakeet v3' },
   { id: 'native', label: 'Apple Speech Recognition' },
   { id: 'openai-gpt-4o-transcribe', label: 'OpenAI GPT-4o Transcribe' },
   { id: 'openai-whisper-1', label: 'OpenAI Whisper-1' },
@@ -556,7 +556,7 @@ const AITab: React.FC = () => {
       : MODELS_BY_PROVIDER[ai.provider] || [];
 
   const whisperModelValue = (!ai.speechToTextModel || ai.speechToTextModel === 'default')
-    ? 'parakeet'
+    ? 'whispercpp'
     : ai.speechToTextModel;
   const whisperCppPercent = whisperCppModelStatus?.state === 'downloading' && whisperCppModelStatus.totalBytes
     ? Math.max(0, Math.min(100, Math.round((whisperCppModelStatus.bytesDownloaded / whisperCppModelStatus.totalBytes) * 100)))

@@ -260,7 +260,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const [parakeetWarmingUp, setParakeetWarmingUp] = useState(false);
   const [hintText, setHintText] = useState('');
   const hintTimerRef = useRef<number | null>(null);
-  const sttModelRef = useRef<string>('parakeet');
+  const sttModelRef = useRef<string>('whispercpp');
 
   const showHint = useCallback((text: string, durationMs = 3000) => {
     if (hintTimerRef.current !== null) window.clearTimeout(hintTimerRef.current);
@@ -504,7 +504,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       speakToggleShortcutRef.current = speakToggleHotkey;
       setSpeakToggleShortcutLabel(formatShortcutLabel(speakToggleHotkey));
 
-      const sttModel = String(settings.ai.speechToTextModel || 'parakeet');
+      const sttModel = String(settings.ai.speechToTextModel || 'whispercpp');
       sttModelRef.current = sttModel;
       let engine: WhisperEngine = 'whispercpp';
       if (sttModel === 'parakeet' || sttModel === 'whispercpp') {
