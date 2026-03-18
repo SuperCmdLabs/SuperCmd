@@ -5487,6 +5487,7 @@ function stopHyperKeyMonitor(): void {
 }
 
 function handleHyperKeyCombo(key: string): void {
+  console.log(`[HotkeyDebug] handleHyperKeyCombo called with key="${key}"`);
   const comboShortcut = `Hyper+${key.length === 1 ? key.toUpperCase() : key}`;
 
   // Always forward to renderer windows (for HotkeyRecorder capture)
@@ -5541,20 +5542,23 @@ function startHyperKeyMonitor(): void {
     return;
   }
 
-  // For CapsLock: remap to F18 via hidutil first, then monitor F18 keyDown/keyUp.
-  // This is the standard approach (used by Karabiner, Hyperkey, etc.) because
-  // CapsLock toggles at the IOKit level before CGEvent taps can intercept it.
+  // For CapsLock with "escape" or "nothing" behavior: remap to F18 via hidutil
+  // so CapsLock doesn't toggle. For "toggle" behavior: DON'T use hidutil —
+  // let CapsLock events pass through so CapsLock toggles naturally on tap.
   const isCapsLock = sourceKey === 'caps-lock';
-  if (isCapsLock) {
+  const capsLockTapBehavior = settings.hyperKey.capsLockTapBehavior || 'escape';
+  const useCapsLockPassthrough = isCapsLock && capsLockTapBehavior === 'toggle';
+
+  if (isCapsLock && !useCapsLockPassthrough) {
     applyCapsLockHidutilRemap();
     sourceKeyCode = F18_KEYCODE;
   }
 
   const spawnArgs = [
     String(sourceKeyCode),
-    settings.hyperKey.capsLockTapBehavior || 'escape',
+    capsLockTapBehavior,
   ];
-  if (isCapsLock) {
+  if (isCapsLock && !useCapsLockPassthrough) {
     spawnArgs.push('remapped');
   }
 
@@ -7967,6 +7971,9 @@ function isAISectionDisabledForCommand(commandId: string, settings?: AppSettings
 }
 
 async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' | 'widget' = 'launcher'): Promise<boolean> {
+  if (source === 'hotkey') {
+    console.log(`[HotkeyDebug] runCommandById called: commandId=${commandId}, source=${source}`, new Error().stack?.split('\n').slice(1, 4).join(' | '));
+  }
   if (isAIDependentSystemCommand(commandId) && isAIDisabledInSettings()) {
     return false;
   }
