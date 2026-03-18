@@ -38,12 +38,14 @@ const selectClassName =
 
 const SOURCE_KEY_OPTIONS: { value: HyperKeySourceKey; label: string }[] = [
   { value: 'caps-lock', label: 'Caps Lock (⇪)' },
-  { value: 'left-shift', label: 'Left Shift' },
-  { value: 'right-shift', label: 'Right Shift' },
-  { value: 'left-option', label: 'Left Option (⌥)' },
-  { value: 'right-option', label: 'Right Option (⌥)' },
   { value: 'left-control', label: 'Left Control (⌃)' },
+  { value: 'left-shift', label: 'Left Shift (⇧)' },
+  { value: 'left-option', label: 'Left Option (⌥)' },
+  { value: 'left-command', label: 'Left Command (⌘)' },
   { value: 'right-control', label: 'Right Control (⌃)' },
+  { value: 'right-shift', label: 'Right Shift (⇧)' },
+  { value: 'right-option', label: 'Right Option (⌥)' },
+  { value: 'right-command', label: 'Right Command (⌘)' },
 ];
 
 const CAPS_LOCK_TAP_OPTIONS: { value: HyperKeyCapsLockTapBehavior; label: string }[] = [

@@ -5369,12 +5369,14 @@ function isHyperShortcut(shortcut: string): boolean {
 
 const HYPER_KEY_SOURCE_TO_KEYCODE: Record<string, number> = {
   'caps-lock': 57,
-  'left-shift': 56,
-  'right-shift': 60,
-  'left-option': 58,
-  'right-option': 61,
   'left-control': 59,
+  'left-shift': 56,
+  'left-option': 58,
+  'left-command': 55,
   'right-control': 62,
+  'right-shift': 60,
+  'right-option': 61,
+  'right-command': 54,
 };
 
 // CapsLock cannot be reliably intercepted via CGEvent taps because macOS

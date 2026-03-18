@@ -31,6 +31,8 @@ let kLOption:   CGKeyCode = 58
 let kROption:   CGKeyCode = 61
 let kLControl:  CGKeyCode = 59
 let kRControl:  CGKeyCode = 62
+let kLCommand:  CGKeyCode = 55
+let kRCommand:  CGKeyCode = 54
 
 let kSyntheticMarker: Int64 = 0x534348594B
 
@@ -84,9 +86,10 @@ func emit(_ payload: [String: Any]) {
 
 func isModifierDown(keyCode: CGKeyCode, flags: CGEventFlags) -> Bool {
     switch keyCode {
-    case kLShift, kRShift:   return flags.contains(.maskShift)
-    case kLOption, kROption: return flags.contains(.maskAlternate)
+    case kLShift, kRShift:     return flags.contains(.maskShift)
+    case kLOption, kROption:   return flags.contains(.maskAlternate)
     case kLControl, kRControl: return flags.contains(.maskControl)
+    case kLCommand, kRCommand: return flags.contains(.maskCommand)
     default: return false
     }
 }

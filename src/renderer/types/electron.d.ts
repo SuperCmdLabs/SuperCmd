@@ -240,12 +240,14 @@ export interface AppUpdaterStatus {
 
 export type HyperKeySourceKey =
   | 'caps-lock'
-  | 'left-shift'
-  | 'right-shift'
-  | 'left-option'
-  | 'right-option'
   | 'left-control'
-  | 'right-control';
+  | 'left-shift'
+  | 'left-option'
+  | 'left-command'
+  | 'right-control'
+  | 'right-shift'
+  | 'right-option'
+  | 'right-command';
 
 export type HyperKeyCapsLockTapBehavior = 'escape' | 'nothing' | 'toggle';
 
