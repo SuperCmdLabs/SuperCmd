@@ -1,0 +1,610 @@
+{
+  "language": {
+    "name": "Español"
+  },
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "continue": "Continuar",
+    "back": "Atrás",
+    "remove": "Eliminar",
+    "add": "Añadir",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "enable": "Habilitar",
+    "disable": "Deshabilitar",
+    "enabled": "Habilitado",
+    "disabled": "Deshabilitado",
+    "loading": "Cargando...",
+    "error": "Error",
+    "success": "Éxito",
+    "warning": "Advertencia",
+    "info": "Información",
+    "confirm": "Confirmar",
+    "apply": "Aplicar",
+    "reset": "Restablecer",
+    "search": "Buscar",
+    "clear": "Limpiar",
+    "refresh": "Actualizar",
+    "copy": "Copiar",
+    "paste": "Pegar",
+    "cut": "Cortar",
+    "selectAll": "Seleccionar todo",
+    "undo": "Deshacer",
+    "redo": "Rehacer",
+    "done": "Hecho",
+    "skip": "Omitir",
+    "next": "Siguiente",
+    "previous": "Anterior",
+    "finish": "Finalizar",
+    "open": "Abrir",
+    "install": "Instalar",
+    "uninstall": "Desinstalar",
+    "update": "Actualizar",
+    "restart": "Reiniciar",
+    "learnMore": "Más información",
+    "documentation": "Documentación",
+    "settings": "Configuración",
+    "preferences": "Preferencias",
+    "about": "Acerca de",
+    "version": "Versión",
+    "unknown": "Desconocido",
+    "none": "Ninguno",
+    "default": "Predeterminado",
+    "custom": "Personalizado",
+    "advanced": "Avanzado",
+    "general": "General",
+    "appearance": "Apariencia",
+    "behavior": "Comportamiento",
+    "shortcuts": "Atajos",
+    "extensions": "Extensiones",
+    "security": "Seguridad",
+    "privacy": "Privacidad",
+    "notifications": "Notificaciones",
+    "language": "Idioma",
+    "theme": "Tema",
+    "light": "Claro",
+    "dark": "Oscuro",
+    "system": "Sistema",
+    "auto": "Automático",
+    "manual": "Manual",
+    "on": "Activado",
+    "off": "Desactivado",
+    "yes": "Sí",
+    "no": "No",
+    "ok": "OK",
+    "gotIt": "Entendido",
+    "comingSoon": "Próximamente",
+    "new": "Nuevo",
+    "beta": "Beta",
+    "recommended": "Recomendado",
+    "required": "Requerido",
+    "optional": "Opcional"
+  },
+  "settings": {
+    "title": "Configuración",
+    "tabs": {
+      "general": "General",
+      "ai": "IA",
+      "extensions": "Extensiones",
+      "advanced": "Avanzado",
+      "store": "Tienda"
+    },
+    "general": {
+      "language": {
+        "title": "Idioma",
+        "description": "Selecciona el idioma de visualización de SuperCmd",
+        "system": "Seguir sistema",
+        "en": "English",
+        "zh-Hans": "简体中文",
+        "zh-Hant": "繁體中文",
+        "ja": "日本語",
+        "ko": "한국어",
+        "fr": "Français",
+        "de": "Deutsch",
+        "es": "Español"
+      },
+      "theme": {
+        "label": "Tema",
+        "description": "Personaliza la apariencia de la aplicación",
+        "light": "Claro",
+        "dark": "Oscuro",
+        "system": "Sistema"
+      },
+      "hotkey": {
+        "label": "Atajo global",
+        "description": "Atajo para abrir SuperCmd desde cualquier lugar",
+        "placeholder": "Grabar atajo...",
+        "conflict": "Conflicto de atajo",
+        "conflictDescription": "Este atajo ya está siendo usado por otra aplicación"
+      },
+      "launchAtLogin": {
+        "label": "Iniciar al iniciar sesión",
+        "description": "Iniciar SuperCmd automáticamente al arrancar el sistema"
+      },
+      "showInMenuBar": {
+        "label": "Mostrar en la barra de menú",
+        "description": "Mostrar el icono de SuperCmd en la barra de menú"
+      },
+      "checkUpdates": {
+        "label": "Buscar actualizaciones automáticamente",
+        "description": "Verificar si hay una nueva versión disponible"
+      }
+    },
+    "ai": {
+      "tabs": {
+        "apiKeys": "Claves API",
+        "llm": "LLM",
+        "whisper": "Whisper",
+        "speak": "Síntesis de voz"
+      },
+      "apiKeys": {
+        "title": "Configuración de claves API",
+        "openai": {
+          "label": "Clave API de OpenAI",
+          "placeholder": "sk-...",
+          "description": "Clave API de OpenAI para modelos GPT",
+          "required": "Se requiere clave API para usar funciones de OpenAI",
+          "invalid": "Formato de clave API inválido"
+        },
+        "anthropic": {
+          "label": "Clave API de Anthropic",
+          "placeholder": "sk-ant-...",
+          "description": "Clave API de Anthropic para modelos Claude",
+          "required": "Se requiere clave API para usar funciones de Claude",
+          "invalid": "Formato de clave API inválido"
+        },
+        "ollama": {
+          "label": "URL de Ollama",
+          "placeholder": "http://localhost:11434",
+          "description": "URL del servidor Ollama local",
+          "required": "Se requiere URL para la conexión Ollama",
+          "invalid": "Formato de URL inválido"
+        },
+        "testConnection": "Probar conexión",
+        "testing": "Probando...",
+        "connectionSuccess": "Conexión exitosa",
+        "connectionFailed": "Conexión fallida"
+      },
+      "llm": {
+        "title": "Configuración de modelo de lenguaje grande",
+        "provider": {
+          "label": "Proveedor",
+          "description": "Selecciona el proveedor del modelo de IA",
+          "openai": "OpenAI",
+          "anthropic": "Anthropic",
+          "ollama": "Ollama (local)"
+        },
+        "model": {
+          "label": "Modelo",
+          "description": "Selecciona el modelo de IA a usar",
+          "placeholder": "Seleccionar modelo...",
+          "custom": "Modelo personalizado"
+        },
+        "temperature": {
+          "label": "Temperatura",
+          "description": "Controla la aleatoriedad de las respuestas (0=determinista, 2=creativo)"
+        },
+        "maxTokens": {
+          "label": "Tokens máximos",
+          "description": "Longitud máxima de la respuesta"
+        },
+        "systemPrompt": {
+          "label": "Prompt del sistema",
+          "description": "Define el comportamiento del asistente de IA",
+          "placeholder": "Eres un asistente útil..."
+        },
+        "streaming": {
+          "label": "Respuestas en streaming",
+          "description": "Mostrar respuestas en tiempo real durante la generación"
+        }
+      },
+      "whisper": {
+        "title": "Configuración de reconocimiento de voz Whisper",
+        "enabled": {
+          "label": "Habilitar entrada de voz",
+          "description": "Habilitar reconocimiento de voz Whisper para comandos de voz"
+        },
+        "provider": {
+          "label": "Proveedor",
+          "description": "Selecciona el proveedor de reconocimiento de voz",
+          "openai": "OpenAI Whisper",
+          "local": "Whisper local"
+        },
+        "model": {
+          "label": "Modelo",
+          "description": "Selecciona el modelo de reconocimiento de voz",
+          "tiny": "Tiny (más rápido)",
+          "base": "Base",
+          "small": "Small",
+          "medium": "Medium",
+          "large": "Large (más preciso)"
+        },
+        "language": {
+          "label": "Idioma",
+          "description": "Idioma principal para el reconocimiento de voz",
+          "auto": "Detección automática"
+        },
+        "hotkey": {
+          "label": "Atajo de entrada de voz",
+          "description": "Atajo para activar la entrada de voz",
+          "placeholder": "Grabar atajo..."
+        }
+      },
+      "speak": {
+        "title": "Configuración de síntesis de voz",
+        "enabled": {
+          "label": "Habilitar síntesis de voz",
+          "description": "Habilitar texto a voz para respuestas de IA"
+        },
+        "provider": {
+          "label": "Proveedor",
+          "description": "Selecciona el proveedor de síntesis de voz",
+          "system": "TTS del sistema",
+          "openai": "OpenAI TTS",
+          "elevenlabs": "ElevenLabs"
+        },
+        "voice": {
+          "label": "Voz",
+          "description": "Selecciona la voz para la síntesis de voz",
+          "placeholder": "Seleccionar voz..."
+        },
+        "speed": {
+          "label": "Velocidad",
+          "description": "Ajustar la velocidad de la voz"
+        },
+        "testVoice": "Probar voz",
+        "testing": "Probando..."
+      }
+    },
+    "extensions": {
+      "title": "Configuración de extensiones",
+      "builtIn": {
+        "superCmd": {
+          "title": "SuperCmd",
+          "description": "Comandos integrados de SuperCmd"
+        },
+        "scriptCommands": {
+          "title": "Comandos de script",
+          "description": "Comandos de script personalizados y compatibles con Raycast"
+        },
+        "applications": {
+          "title": "Aplicaciones",
+          "description": "Aplicaciones macOS instaladas con soporte de lanzamiento y atajos"
+        },
+        "systemSettings": {
+          "title": "Configuración del sistema",
+          "description": "Paneles de configuración de macOS con soporte de lanzamiento y atajos",
+          "pane": "Panel de configuración del sistema"
+        }
+      },
+      "installed": {
+        "title": "Extensiones instaladas",
+        "description": "Gestiona tus extensiones compatibles con Raycast instaladas",
+        "empty": "No hay extensiones instaladas",
+        "browseStore": "Explorar tienda"
+      },
+      "customFolders": {
+        "title": "Carpetas de scripts personalizadas",
+        "description": "Añade carpetas adicionales para comandos de script",
+        "addFolder": "Añadir carpeta",
+        "removeFolder": "Eliminar",
+        "folderPath": "Ruta de carpeta",
+        "placeholder": "/ruta/a/scripts"
+      },
+      "columns": {
+        "name": "Nombre",
+        "type": "Tipo",
+        "version": "Versión",
+        "author": "Autor",
+        "status": "Estado",
+        "actions": "Acciones"
+      },
+      "types": {
+        "extension": "Extensión",
+        "scriptCommand": "Comando de script",
+        "builtin": "Integrado"
+      },
+      "alias": {
+        "label": "Alias",
+        "placeholder": "Alias personalizado..."
+      },
+      "hotkey": {
+        "label": "Atajo",
+        "placeholder": "Grabar atajo..."
+      },
+      "uninstall": {
+        "title": "Desinstalar extensión",
+        "confirm": "¿Estás seguro de que quieres desinstalar esta extensión?",
+        "description": "Esta acción no se puede deshacer.",
+        "button": "Desinstalar"
+      }
+    },
+    "advanced": {
+      "title": "Configuración avanzada",
+      "developerMode": {
+        "label": "Modo desarrollador",
+        "description": "Habilitar funciones de depuración para el desarrollo de extensiones"
+      },
+      "verboseLogging": {
+        "label": "Registro detallado",
+        "description": "Habilitar registros detallados para solución de problemas"
+      },
+      "resetSettings": {
+        "label": "Restablecer configuración",
+        "description": "Restablecer todas las configuraciones a los valores predeterminados",
+        "button": "Restablecer",
+        "confirm": "¿Estás seguro de que quieres restablecer todas las configuraciones?",
+        "warning": "Esta acción no se puede deshacer."
+      },
+      "clearCache": {
+        "label": "Limpiar caché",
+        "description": "Limpiar caché de extensiones e iconos",
+        "button": "Limpiar caché",
+        "confirm": "¿Estás seguro de que quieres limpiar el caché?",
+        "success": "Caché limpiado exitosamente"
+      },
+      "exportSettings": {
+        "label": "Exportar configuración",
+        "description": "Exportar configuración a un archivo",
+        "button": "Exportar"
+      },
+      "importSettings": {
+        "label": "Importar configuración",
+        "description": "Importar configuración desde un archivo",
+        "button": "Importar"
+      }
+    },
+    "store": {
+      "title": "Tienda de extensiones",
+      "search": {
+        "placeholder": "Buscar extensiones..."
+      },
+      "tabs": {
+        "featured": "Destacados",
+        "popular": "Populares",
+        "recent": "Recientes",
+        "installed": "Instalados"
+      },
+      "categories": {
+        "all": "Todo",
+        "productivity": "Productividad",
+        "developer": "Herramientas de desarrollo",
+        "system": "Sistema",
+        "media": "Medios",
+        "communication": "Comunicación",
+        "utilities": "Utilidades"
+      },
+      "actions": {
+        "install": "Instalar",
+        "installing": "Instalando...",
+        "installed": "Instalado",
+        "update": "Actualizar",
+        "updating": "Actualizando...",
+        "uninstall": "Desinstalar",
+        "details": "Detalles"
+      },
+      "empty": {
+        "title": "No se encontraron extensiones",
+        "description": "Ninguna extensión coincide con tu búsqueda"
+      },
+      "error": {
+        "title": "No se pudo cargar la tienda",
+        "description": "No se puede conectar a la tienda de extensiones. Por favor verifica tu conexión a Internet."
+      }
+    }
+  },
+  "launcher": {
+    "searchPlaceholder": "Buscar comandos...",
+    "searchPlaceholderWithAI": "Buscar comandos o preguntar a la IA...",
+    "aiMode": {
+      "enabled": "Modo IA habilitado",
+      "disabled": "Modo IA deshabilitado",
+      "toggle": "Alternar modo IA"
+    },
+    "categories": {
+      "all": "Todo",
+      "applications": "Aplicaciones",
+      "extensions": "Extensiones",
+      "scripts": "Scripts",
+      "system": "Sistema",
+      "files": "Archivos",
+      "bookmarks": "Marcadores",
+      "clipboard": "Portapapeles",
+      "calculator": "Calculadora",
+      "dictionary": "Diccionario",
+      "ai": "Asistente de IA"
+    },
+    "actions": {
+      "open": "Abrir",
+      "reveal": "Mostrar en Finder",
+      "copy": "Copiar",
+      "paste": "Pegar",
+      "delete": "Eliminar",
+      "preferences": "Preferencias",
+      "quit": "Salir"
+    },
+    "empty": {
+      "title": "Sin resultados",
+      "description": "No se encontraron elementos que coincidan con tu búsqueda"
+    },
+    "footer": {
+      "preferences": "Preferencias",
+      "refresh": "Actualizar",
+      "help": "Ayuda"
+    }
+  },
+  "scriptCommand": {
+    "setup": {
+      "title": "Configurar comando de script",
+      "description": "Por favor ingresa los argumentos requeridos antes de ejecutar este comando de script.",
+      "arguments": "Argumentos",
+      "optional": "Opcional",
+      "required": "Requerido",
+      "run": "Ejecutar",
+      "cancel": "Cancelar"
+    },
+    "output": {
+      "title": "Salida del script",
+      "stdout": "Salida estándar",
+      "stderr": "Error estándar",
+      "exitCode": "Código de salida",
+      "success": "Éxito",
+      "failed": "Fallido",
+      "running": "Ejecutando...",
+      "copyOutput": "Copiar salida",
+      "close": "Cerrar",
+      "rerun": "Volver a ejecutar"
+    }
+  },
+  "extension": {
+    "setup": {
+      "title": "Configurar {name}",
+      "description": "Por favor configura las preferencias antes de usar esta extensión.",
+      "preferences": "Preferencias",
+      "save": "Guardar preferencias",
+      "cancel": "Cancelar",
+      "skip": "Omitir"
+    }
+  },
+  "cursorPrompt": {
+    "placeholder": "Pregunta cualquier cosa a la IA...",
+    "placeholderWithContext": "Haz una pregunta sobre el texto seleccionado...",
+    "send": "Enviar",
+    "cancel": "Cancelar",
+    "thinking": "Pensando...",
+    "error": "Ocurrió un error. Por favor intenta de nuevo."
+  },
+  "clipboard": {
+    "title": "Historial del portapapeles",
+    "empty": "El historial del portapapeles está vacío",
+    "clear": "Limpiar historial",
+    "pin": "Fijar",
+    "unpin": "Desfijar",
+    "delete": "Eliminar",
+    "copy": "Copiar",
+    "paste": "Pegar",
+    "text": "Texto",
+    "image": "Imagen",
+    "file": "Archivo",
+    "link": "Enlace",
+    "code": "Código"
+  },
+  "snippets": {
+    "title": "Fragmentos",
+    "empty": "No hay fragmentos",
+    "create": "Crear fragmento",
+    "edit": "Editar fragmento",
+    "delete": "Eliminar fragmento",
+    "name": "Nombre",
+    "keyword": "Palabra clave",
+    "content": "Contenido",
+    "placeholder": {
+      "name": "Nombre del fragmento...",
+      "keyword": "Palabra clave de activación...",
+      "content": "Contenido del fragmento..."
+    }
+  },
+  "quickLinks": {
+    "title": "Enlaces rápidos",
+    "empty": "No hay enlaces rápidos",
+    "add": "Añadir enlace",
+    "edit": "Editar enlace",
+    "delete": "Eliminar enlace",
+    "name": "Nombre",
+    "url": "URL",
+    "icon": "Icono",
+    "openIn": "Abrir en",
+    "browser": "Navegador",
+    "app": "Aplicación"
+  },
+  "fileSearch": {
+    "placeholder": "Buscar archivos...",
+    "filters": {
+      "all": "Todo",
+      "documents": "Documentos",
+      "images": "Imágenes",
+      "videos": "Videos",
+      "audio": "Audio",
+      "code": "Código",
+      "archives": "Archivos comprimidos"
+    },
+    "noResults": "No se encontraron archivos",
+    "openFolder": "Abrir carpeta"
+  },
+  "windowManager": {
+    "title": "Gestor de ventanas",
+    "switchTo": "Cambiar a",
+    "close": "Cerrar",
+    "minimize": "Minimizar",
+    "maximize": "Maximizar",
+    "fullscreen": "Pantalla completa",
+    "center": "Centrar",
+    "leftHalf": "Mitad izquierda",
+    "rightHalf": "Mitad derecha",
+    "topHalf": "Mitad superior",
+    "bottomHalf": "Mitad inferior",
+    "corners": "Esquinas",
+    "nextDisplay": "Pantalla siguiente",
+    "previousDisplay": "Pantalla anterior",
+    "noWindows": "No hay ventanas abiertas"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Bienvenido a SuperCmd",
+      "description": "Un launcher de código abierto compatible con Raycast. Una herramienta poderosa para mejorar tu productividad."
+    },
+    "steps": {
+      "hotkey": {
+        "title": "Configurar atajo",
+        "description": "Elige un atajo global para abrir SuperCmd desde cualquier lugar"
+      },
+      "extensions": {
+        "title": "Explorar extensiones",
+        "description": "Explora e instala extensiones desde la tienda de extensiones"
+      },
+      "ai": {
+        "title": "Configurar IA (opcional)",
+        "description": "Añade claves API para habilitar funciones de IA"
+      }
+    },
+    "getStarted": "Comenzar",
+    "skip": "Omitir"
+  },
+  "whisper": {
+    "listening": "Escuchando...",
+    "processing": "Procesando...",
+    "speakNow": "Habla ahora",
+    "tapToStop": "Toca para detener",
+    "error": "Ocurrió un error. Por favor intenta de nuevo."
+  },
+  "read": {
+    "title": "Leer texto",
+    "play": "Reproducir",
+    "pause": "Pausa",
+    "stop": "Detener",
+    "speed": "Velocidad",
+    "voice": "Voz"
+  },
+  "camera": {
+    "title": "Cámara",
+    "capture": "Capturar",
+    "retake": "Volver a tomar",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "mirror": "Espejo",
+    "flash": "Flash"
+  },
+  "schedule": {
+    "title": "Calendario",
+    "today": "Hoy",
+    "tomorrow": "Mañana",
+    "week": "Esta semana",
+    "month": "Este mes",
+    "noEvents": "No hay eventos programados",
+    "addEvent": "Añadir evento",
+    "editEvent": "Editar evento",
+    "deleteEvent": "Eliminar evento"
+  }
+}

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Bug } from 'lucide-react';
 import type { AppSettings } from '../../types/electron';
+import { useI18n } from '../i18n';
 
 type SettingsRowProps = {
   icon: React.ReactNode;
@@ -34,6 +35,7 @@ const SettingsRow: React.FC<SettingsRowProps> = ({
 );
 
 const AdvancedTab: React.FC = () => {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
   useEffect(() => {
@@ -65,21 +67,21 @@ const AdvancedTab: React.FC = () => {
       <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
         <SettingsRow
           icon={<Bug className="w-4 h-4" />}
-          title="Debug Mode"
-          description="Show detailed logs when extensions fail to load or build."
+          title={t('settings.advanced.debugMode.title')}
+          description={t('settings.advanced.debugMode.description')}
           withBorder={false}
         >
           <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
             <input
               type="checkbox"
-              checked={settings.debugMode ?? false}
-              onChange={(event) => {
-                const debugMode = event.target.checked;
-                void applySettingsPatch({ debugMode });
+              checked={settings?.developerMode ?? false}
+              onChange={async (e) => {
+                await window.electron.updateSettings({ developerMode: e.target.checked });
+                setSettings((prev) => (prev ? { ...prev, developerMode: e.target.checked } : null));
               }}
               className="settings-checkbox"
             />
-            Enable debug mode
+            {t('settings.advanced.debugMode.label')}
           </label>
         </SettingsRow>
       </div>

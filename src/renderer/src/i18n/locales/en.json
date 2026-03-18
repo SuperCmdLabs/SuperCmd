@@ -1,0 +1,734 @@
+{
+  "common": {
+    "actions": "Actions",
+    "loading": "Loading...",
+    "noResults": "No results",
+    "search": "Search...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "continue": "Continue",
+    "back": "Back",
+    "remove": "Remove",
+    "add": "Add",
+    "edit": "Edit",
+    "delete": "Delete",
+    "enable": "Enable",
+    "disable": "Disable",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "success": "Success",
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Info",
+    "copy": "Copy",
+    "paste": "Paste",
+    "cut": "Cut",
+    "selectAll": "Select All",
+    "undo": "Undo",
+    "redo": "Redo",
+    "refresh": "Refresh",
+    "reload": "Reload",
+    "apply": "Apply",
+    "reset": "Reset",
+    "clear": "Clear",
+    "done": "Done",
+    "ok": "OK",
+    "yes": "Yes",
+    "no": "No",
+    "submit": "Submit",
+    "browse": "Browse",
+    "choose": "Choose",
+    "change": "Change",
+    "update": "Update",
+    "install": "Install",
+    "uninstall": "Uninstall",
+    "download": "Download",
+    "upload": "Upload",
+    "import": "Import",
+    "export": "Export",
+    "open": "Open",
+    "create": "Create",
+    "new": "New",
+    "unknown": "Unknown",
+    "none": "None",
+    "default": "Default",
+    "custom": "Custom",
+    "other": "Other",
+    "all": "All",
+    "required": "Required",
+    "optional": "Optional",
+    "preferences": "Preferences",
+    "settings": "Settings",
+    "general": "General",
+    "advanced": "Advanced",
+    "about": "About",
+    "version": "Version",
+    "language": "Language",
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "auto": "Auto"
+  },
+  "settings": {
+    "title": "SuperCmd Settings",
+    "tabs": {
+      "general": "General",
+      "ai": "AI",
+      "extensions": "Extensions",
+      "advanced": "Advanced"
+    },
+    "general": {
+      "title": "General",
+      "loading": "Loading settings...",
+      "launcherShortcut": {
+        "title": "Launcher Shortcut",
+        "description": "Set the global shortcut to open and close SuperCmd.",
+        "updated": "Shortcut updated",
+        "failed": "Failed. Shortcut may be used by another app."
+      },
+      "startAtLogin": {
+        "title": "Start at Login",
+        "description": "Automatically launch SuperCmd when you log in.",
+        "enabled": "Enabled",
+        "disabled": "Disabled"
+      },
+      "language": {
+        "title": "Language",
+        "description": "Choose the display language or follow the system locale.",
+        "system": "Follow System",
+        "en": "English",
+        "zh-Hans": "Simplified Chinese",
+        "zh-Hant": "Traditional Chinese",
+        "ja": "Japanese",
+        "ko": "Korean",
+        "fr": "French",
+        "de": "German",
+        "es": "Spanish"
+      },
+      "fontSize": {
+        "title": "Font Size",
+        "description": "Scale text size across the app.",
+        "extra-small": "Extra Small",
+        "small": "Small",
+        "medium": "Medium",
+        "large": "Large",
+        "extra-large": "Extra Large"
+      },
+      "appearance": {
+        "title": "Appearance",
+        "description": "Choose Light, Dark, or follow your system preference.",
+        "light": "Light",
+        "system": "System",
+        "dark": "Dark"
+      },
+      "visualStyle": {
+        "title": "Visual Style",
+        "description": "Use Default look or enable a glassy macOS Tahoe-inspired style.",
+        "default": "Default",
+        "glassy": "Glassy"
+      },
+      "background": {
+        "title": "Launcher Background Image",
+        "description": "Show a softly blurred, low-opacity image behind the launcher so it reads like a hint, not a full wallpaper.",
+        "empty": "No image selected. The launcher will keep using its current background.",
+        "choose": "Choose Image",
+        "change": "Change Image",
+        "remove": "Remove",
+        "appearance": "Appearance",
+        "summary": "Blur {blur}% · Opacity {opacity}%",
+        "blur": "Blur",
+        "opacity": "Opacity",
+        "useEverywhere": "Use this image in extension and core launcher views too"
+      },
+      "updates": {
+        "title": "App Updates",
+        "description": "Check for and install packaged-app updates.",
+        "defaultMessage": "Check for and install packaged-app updates.",
+        "unsupported": "Updates are only available in packaged builds.",
+        "checking": "Checking for updates...",
+        "available": "Update v{version} is available.",
+        "notAvailable": "You are already on the latest version.",
+        "downloading": "Downloading update...",
+        "downloaded": "Update downloaded. Restart to install.",
+        "error": "Could not complete the update action.",
+        "check": "Check for Updates",
+        "download": "Download Update",
+        "downloadingButton": "Downloading Update...",
+        "restart": "Restart to Update",
+        "currentVersion": "Current version: v{version}",
+        "latestVersion": "Latest: v{version}",
+        "progress": "{progress}% · {transferred} / {total}",
+        "failed": "Update failed."
+      },
+      "about": {
+        "title": "About",
+        "description": "Version information.",
+        "version": "SuperCmd v{version}"
+      }
+    },
+    "ai": {
+      "title": "AI Settings",
+      "loading": "Loading AI settings...",
+      "saved": "Saved",
+      "enableAI": {
+        "title": "Enable AI",
+        "description": "Master switch for AI features."
+      },
+      "tabs": {
+        "apiKeys": "API Keys",
+        "llm": "LLM",
+        "whisper": "SuperCmd Whisper",
+        "speak": "SuperCmd Read"
+      },
+      "apiKeys": {
+        "openai": {
+          "label": "ChatGPT (OpenAI) API Key",
+          "placeholder": "sk-..."
+        },
+        "anthropic": {
+          "label": "Claude (Anthropic) API Key",
+          "placeholder": "sk-ant-..."
+        },
+        "gemini": {
+          "label": "Gemini (Google) API Key",
+          "placeholder": "AIza..."
+        },
+        "elevenlabs": {
+          "label": "ElevenLabs API Key",
+          "placeholder": "xi-..."
+        },
+        "supermemory": {
+          "title": "Supermemory",
+          "description": "Memory backend for long-term context.",
+          "apiKey": {
+            "label": "Supermemory API Key",
+            "placeholder": "sm-..."
+          },
+          "client": {
+            "label": "Supermemory Client",
+            "placeholder": "client-123",
+            "hint": "Used to scope user memory retrieval."
+          },
+          "baseUrl": {
+            "label": "Supermemory Base URL",
+            "placeholder": "https://api.supermemory.ai"
+          },
+          "localMode": "Use local mode (saved locally)"
+        }
+      },
+      "llm": {
+        "enableLLM": {
+          "title": "Enable LLM",
+          "description": "Toggle model-based AI features."
+        },
+        "modelSelection": {
+          "title": "Generic Model Selection",
+          "description": "Used by extensions and model-agnostic AI actions."
+        },
+        "provider": {
+          "label": "Provider",
+          "openai": "OpenAI",
+          "anthropic": "Claude",
+          "gemini": "Gemini",
+          "ollama": "Ollama",
+          "openaiCompatible": "Custom (OpenAI-compatible)"
+        },
+        "ollama": {
+          "serverUrl": {
+            "label": "Ollama Server URL",
+            "placeholder": "http://localhost:11434"
+          },
+          "models": "Ollama Models",
+          "refresh": "Refresh",
+          "checking": "Checking Ollama status...",
+          "notRunning": {
+            "title": "Ollama is not running",
+            "description": "Install and run Ollama to use local models.",
+            "download": "Download Ollama"
+          },
+          "running": "Ollama is running",
+          "installed": "Installed",
+          "downloadModel": "Download",
+          "removeModel": "Remove",
+          "downloading": "Downloading...",
+          "removing": "Removing..."
+        },
+        "openaiCompatible": {
+          "baseUrl": {
+            "label": "Base URL",
+            "placeholder": "https://api.openrouter.ai/v1",
+            "hint": "Include /v1 if your provider uses it (e.g., https://api.openai.com/v1)"
+          },
+          "apiKey": {
+            "label": "API Key",
+            "placeholder": "sk-..."
+          },
+          "modelName": {
+            "label": "Model Name",
+            "placeholder": "anthropic/claude-3.5-sonnet",
+            "hint": "The exact model name your provider expects (e.g., gpt-4o, meta-llama/llama-3.1-70b-instruct)"
+          }
+        },
+        "defaultModel": {
+          "label": "Default Model",
+          "auto": "Auto (provider default)"
+        }
+      },
+      "whisper": {
+        "enableWhisper": {
+          "title": "Enable SuperCmd Whisper",
+          "description": "Toggle speech-to-text features."
+        },
+        "title": "SuperCmd Whisper",
+        "description": "Speech-to-text and transcript cleanup.",
+        "model": {
+          "label": "Transcription Model",
+          "native": "Native (Default)",
+          "openaiGpt4o": "OpenAI GPT-4o Transcribe",
+          "openaiWhisper": "OpenAI Whisper-1",
+          "elevenlabsScribeV1": "ElevenLabs Scribe v1",
+          "elevenlabsScribeV2": "ElevenLabs Scribe v2"
+        },
+        "openaiWarning": "OpenAI Whisper selected. Add OpenAI API key in API Keys.",
+        "elevenlabsWarning": "ElevenLabs STT selected. {action} ElevenLabs API key in API Keys.",
+        "elevenlabsReady": "ElevenLabs STT selected. Cloud transcription will use your ElevenLabs key.",
+        "hotkeys": {
+          "title": "Whisper Hotkeys",
+          "startStop": "Start/Stop Speaking",
+          "setToFn": "Set to Fn",
+          "fnHint": "Use Set to Fn to restore the default hold-to-talk key."
+        },
+        "smoothOutput": {
+          "title": "Smooth Output",
+          "description": "Clean up filler words and self-corrections."
+        },
+        "smoothingModel": {
+          "label": "Smoothing Model",
+          "useDefault": "Use Generic Default Model",
+          "hint": "Uses your current provider models."
+        }
+      },
+      "speak": {
+        "enableRead": {
+          "title": "Enable SuperCmd Read",
+          "description": "Toggle text-to-speech features."
+        },
+        "title": "SuperCmd Read",
+        "description": "Read selected text aloud.",
+        "provider": {
+          "label": "Speech Provider",
+          "edgeTTS": "Edge TTS (Default)",
+          "elevenlabsMultilingual": "ElevenLabs Multilingual v2",
+          "elevenlabsFlash": "ElevenLabs Flash v2.5",
+          "elevenlabsTurbo": "ElevenLabs Turbo v2.5",
+          "elevenlabsV3": "ElevenLabs v3 (Alpha)"
+        },
+        "edgeTTS": {
+          "voice": "Edge TTS Voice",
+          "fetching": "Fetching full voice list...",
+          "language": {
+            "label": "Language"
+          },
+          "gender": {
+            "label": "Voice Gender",
+            "female": "Female",
+            "male": "Male"
+          },
+          "voiceLabel": {
+            "label": "Voice"
+          },
+          "playSample": {
+            "idle": "Play Sample Voice",
+            "playing": "Playing sample..."
+          }
+        },
+        "elevenlabs": {
+          "model": {
+            "label": "ElevenLabs Model"
+          },
+          "voice": {
+            "label": "ElevenLabs Voice",
+            "fetching": "Fetching your voices...",
+            "builtIn": "Built-in Voices",
+            "premade": "Additional Premade Voices",
+            "custom": "Your Custom Voices (Cloned/Generated)",
+            "professional": "Professional Voice Clones",
+            "available": "{count} custom voice{plural} available from your ElevenLabs account"
+          },
+          "playSample": {
+            "idle": "Play Sample Voice",
+            "playing": "Playing sample..."
+          },
+          "storageHint": "SuperCmd stores this as {value}.",
+          "apiKeyWarning": "Add ElevenLabs API key in API Keys."
+        },
+        "notes": {
+          "title": "Notes",
+          "whisperDefault": "Whisper default is Native for fast local dictation.",
+          "speakDefault": "Speak default is Edge TTS with per-language male/female voice selection.",
+          "englishVoice": "English voice options are intentionally limited to US and UK variants.",
+          "elevenlabsVoices": "ElevenLabs custom voices (cloned/generated) will appear automatically when your API key is configured."
+        }
+      },
+      "hotkeyUpdated": "Hotkey updated.",
+      "hotkeyRemoved": "Hotkey removed.",
+      "hotkeyDuplicate": "Hotkey already used by another SuperCmd command.",
+      "hotkeyUnavailable": "Hotkey unavailable. It may be used by macOS or another app."
+    },
+    "extensions": {
+      "title": "Extensions",
+      "loading": "Loading extension settings...",
+      "builtIn": {
+        "superCmd": {
+          "title": "SuperCmd",
+          "description": "Built-in SuperCmd commands"
+        },
+        "scriptCommands": {
+          "title": "Script Commands",
+          "description": "Custom and Raycast-compatible script commands"
+        },
+        "applications": {
+          "title": "Applications",
+          "description": "Installed macOS applications with launch and hotkey support"
+        },
+        "systemSettings": {
+          "title": "System Settings",
+          "description": "macOS settings panes with launch and hotkey support",
+          "pane": "System Settings pane"
+        }
+      },
+      "search": {
+        "placeholder": "Search...",
+        "all": "All",
+        "commands": "Commands"
+      },
+      "install": {
+        "button": "Install Extension",
+        "fromStore": "Install from Store",
+        "addFolder": "Add Folder",
+        "customScript": "Custom Script"
+      },
+      "customFolders": {
+        "title": "Custom Folders",
+        "empty": "Add Folder from Install Extension",
+        "remove": "Remove"
+      },
+      "installExtension": "Install Extension",
+      "installFromStore": "Install from Store",
+      "addFolder": "Add Folder",
+      "customScript": "Custom Script",
+      "columns": {
+        "name": "Name",
+        "type": "Type",
+        "alias": "Alias",
+        "hotkey": "Hotkey",
+        "enabled": "Enabled"
+      },
+      "types": {
+        "builtIn": "Built-in",
+        "apps": "Apps",
+        "settings": "Settings",
+        "scripts": "Scripts",
+        "extension": "Extension",
+        "application": "Application"
+      },
+      "alias": {
+        "add": "Add Alias",
+        "placeholder": "Add Alias",
+        "edit": "Edit alias"
+      },
+      "hotkey": {
+        "record": "Record Hotkey"
+      },
+      "noResults": "No matching extensions",
+      "selectExtension": "Select an extension",
+      "extensionPreferences": "Extension Preferences",
+      "commandPreferences": "Command Preferences",
+      "noPreferences": "No preferences",
+      "enabled": "Enabled",
+      "logout": "Logout",
+      "loggedIn": "Logged into {name}",
+      "uninstall": {
+        "title": "Uninstall \"{name}\"?",
+        "description": "This extension and its commands will be removed from SuperCmd.",
+        "cancel": "Cancel",
+        "confirm": "Uninstall",
+        "uninstalling": "Uninstalling...",
+        "success": "Uninstalled \"{name}\".",
+        "failed": "Failed to uninstall \"{name}\"."
+      },
+      "folder": {
+        "added": "Extension folder added.",
+        "removed": "Extension folder removed.",
+        "failed": "Failed to {action} extension folder.",
+        "duplicate": "Folder already added."
+      },
+      "scripts": {
+        "opened": "Opened custom scripts folder with sample script.",
+        "openedExisting": "Opened custom scripts folder.",
+        "failed": "Failed to open custom scripts folder."
+      }
+    },
+    "advanced": {
+      "title": "Advanced",
+      "loading": "Loading advanced settings...",
+      "debugMode": {
+        "title": "Debug Mode",
+        "description": "Show detailed logs when extensions fail to load or build.",
+        "label": "Enable debug mode"
+      }
+    }
+  },
+  "launcher": {
+    "searchPlaceholder": "Search for apps, commands, or ask AI...",
+    "aiMode": {
+      "placeholder": "Ask AI anything...",
+      "ask": "Ask",
+      "thinking": "Thinking...",
+      "streaming": "Streaming...",
+      "response": "AI Response",
+      "enterToAsk": "Ask",
+      "escToBack": "Back"
+    },
+    "categories": {
+      "recent": "Recent",
+      "applications": "Applications",
+      "commands": "Commands",
+      "extensions": "Extensions",
+      "scripts": "Scripts",
+      "settings": "Settings",
+      "files": "Files",
+      "calculator": "Calculator",
+      "quickLinks": "Quick Links"
+    },
+    "actions": {
+      "open": "Open",
+      "execute": "Execute",
+      "run": "Run",
+      "copy": "Copy",
+      "copyToClipboard": "Copy to Clipboard",
+      "paste": "Paste",
+      "showInFinder": "Show in Finder",
+      "revealInFinder": "Reveal in Finder",
+      "getInfo": "Get Info",
+      "quit": "Quit",
+      "forceQuit": "Force Quit",
+      "hide": "Hide",
+      "show": "Show",
+      "preferences": "Preferences",
+      "actions": "Actions"
+    },
+    "empty": {
+      "noResults": "No results found",
+      "startTyping": "Start typing to search...",
+      "allCommands": "All your commands will appear here"
+    },
+    "footer": {
+      "actions": "Actions",
+      "select": "Select",
+      "back": "Back"
+    }
+  },
+  "scriptCommand": {
+    "setup": {
+      "title": "Configure Script Command",
+      "description": "Provide required arguments before running.",
+      "continue": "Continue"
+    },
+    "output": {
+      "success": "Success",
+      "exitCode": "Exit {code}",
+      "noOutput": "(No output)"
+    }
+  },
+  "extension": {
+    "setup": {
+      "title": "Configure {name}",
+      "description": "Add required settings before running this command.",
+      "arguments": "Arguments",
+      "preferences": "Preferences",
+      "continue": "Continue",
+      "selectOption": "Select an option"
+    }
+  },
+  "cursorPrompt": {
+    "placeholder": "Tell AI what to do with selected text...",
+    "processing": "Processing...",
+    "ready": "Ready to apply",
+    "applied": "Applied in editor",
+    "close": "Close",
+    "accept": "Accept",
+    "submit": "Submit",
+    "enterToSubmit": "Enter"
+  },
+  "store": {
+    "title": "Store",
+    "community": "Community",
+    "searchPlaceholder": "Search extensions...",
+    "installedFirst": "Installed extensions appear first.",
+    "refresh": "Refresh",
+    "loading": "Loading extension catalog...",
+    "noResults": "No extensions match your search",
+    "noExtensions": "No extensions available",
+    "tryAgain": "Try a shorter query, another keyword, or a fuzzy match like part of the extension name.",
+    "refreshCatalog": "Refresh the catalog or try again in a moment.",
+    "clearSearch": "Clear Search",
+    "refreshButton": "Refresh Catalog",
+    "installed": "Installed",
+    "install": "Install Extension",
+    "update": "Update Extension",
+    "uninstall": "Uninstall Extension",
+    "openReadme": "Open README",
+    "viewSource": "View Source",
+    "installing": "Installing Extension",
+    "installedSuccess": "Extension Installed",
+    "installFailed": "Install Failed",
+    "tabs": {
+      "overview": "Overview",
+      "commands": "Commands",
+      "screenshots": "Screenshots",
+      "team": "Team"
+    },
+    "sections": {
+      "description": "Description",
+      "screenshots": "Screenshots",
+      "topCommands": "Top Commands",
+      "categories": "Categories",
+      "noDescription": "No description provided.",
+      "noScreenshots": "No screenshots declared.",
+      "noScreenshotsAvailable": "No screenshots available for this extension.",
+      "noCommands": "No commands declared.",
+      "moreCommands": "+{count} more commands",
+      "noContributors": "No contributors declared."
+    },
+    "actions": {
+      "title": "Actions"
+    }
+  },
+  "clipboard": {
+    "title": "Clipboard History",
+    "empty": "Clipboard is empty",
+    "clear": "Clear History",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "delete": "Delete",
+    "copy": "Copy",
+    "paste": "Paste",
+    "searchPlaceholder": "Search clipboard history..."
+  },
+  "snippets": {
+    "title": "Snippets",
+    "empty": "No snippets yet",
+    "create": "Create Snippet",
+    "edit": "Edit Snippet",
+    "delete": "Delete Snippet",
+    "searchPlaceholder": "Search snippets...",
+    "name": "Name",
+    "content": "Content",
+    "keyword": "Keyword",
+    "save": "Save Snippet"
+  },
+  "quickLinks": {
+    "title": "Quick Links",
+    "empty": "No quick links yet",
+    "create": "Create Quick Link",
+    "edit": "Edit Quick Link",
+    "delete": "Delete Quick Link",
+    "searchPlaceholder": "Search quick links...",
+    "name": "Name",
+    "url": "URL",
+    "icon": "Icon",
+    "save": "Save Quick Link"
+  },
+  "fileSearch": {
+    "placeholder": "Search files...",
+    "noResults": "No files found",
+    "searching": "Searching...",
+    "filters": "Filters",
+    "type": "Type",
+    "date": "Date",
+    "size": "Size"
+  },
+  "windowManager": {
+    "title": "Window Management",
+    "arrange": "Arrange Windows",
+    "resize": "Resize",
+    "move": "Move",
+    "focus": "Focus",
+    "close": "Close Window",
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "fullscreen": "Fullscreen",
+    "center": "Center",
+    "leftHalf": "Left Half",
+    "rightHalf": "Right Half",
+    "topHalf": "Top Half",
+    "bottomHalf": "Bottom Half",
+    "corners": "Corners",
+    "displays": "Displays",
+    "nextDisplay": "Next Display",
+    "previousDisplay": "Previous Display"
+  },
+  "onboarding": {
+    "welcome": "Welcome to SuperCmd",
+    "description": "Your productivity launcher for macOS",
+    "getStarted": "Get Started",
+    "skip": "Skip",
+    "next": "Next",
+    "previous": "Previous",
+    "finish": "Finish",
+    "features": {
+      "launcher": {
+        "title": "Quick Launcher",
+        "description": "Launch apps, run commands, and search files with a single shortcut."
+      },
+      "extensions": {
+        "title": "Extensions",
+        "description": "Install and use Raycast-compatible extensions to supercharge your workflow."
+      },
+      "ai": {
+        "title": "AI Integration",
+        "description": "Chat with AI, use speech-to-text, and let AI help you write and edit."
+      }
+    }
+  },
+  "whisper": {
+    "title": "SuperCmd Whisper",
+    "description": "Speech-to-text made simple",
+    "start": "Start Speaking",
+    "stop": "Stop Speaking",
+    "listening": "Listening...",
+    "processing": "Processing...",
+    "placeholder": "Speak now..."
+  },
+  "read": {
+    "title": "SuperCmd Read",
+    "description": "Text-to-speech for any selected text",
+    "start": "Start Reading",
+    "stop": "Stop Reading",
+    "reading": "Reading...",
+    "noText": "No text selected"
+  },
+  "camera": {
+    "title": "Camera",
+    "capture": "Capture",
+    "flip": "Flip Camera",
+    "mirror": "Mirror",
+    "settings": "Camera Settings"
+  },
+  "schedule": {
+    "title": "Schedule",
+    "newEvent": "New Event",
+    "editEvent": "Edit Event",
+    "deleteEvent": "Delete Event",
+    "title": "Title",
+    "date": "Date",
+    "time": "Time",
+    "duration": "Duration",
+    "reminder": "Reminder",
+    "save": "Save Event"
+  }
+}

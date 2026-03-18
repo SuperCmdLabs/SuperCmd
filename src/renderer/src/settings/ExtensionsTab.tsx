@@ -30,6 +30,7 @@ import type {
   ExtensionPreferenceSchema,
   InstalledExtensionSettingsSchema,
 } from '../../types/electron';
+import { useI18n } from '../i18n';
 
 type SelectedTarget = { extName: string; cmdName?: string };
 type SettingsFocusTarget = { extensionName?: string; commandName?: string };
@@ -101,6 +102,7 @@ const ExtensionsTab: React.FC<{
   focusTarget = null,
   onFocusTargetHandled,
 }) => {
+  const { t } = useI18n();
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [schemas, setSchemas] = useState<InstalledExtensionSettingsSchema[]>([]);
@@ -273,8 +275,8 @@ const ExtensionsTab: React.FC<{
     if (systemCommands.length > 0) {
       byExt.set(SUPERCMD_EXTENSION_NAME, {
         extName: SUPERCMD_EXTENSION_NAME,
-        title: 'SuperCmd',
-        description: 'Built-in SuperCmd commands',
+        title: t('settings.extensions.builtIn.superCmd.title'),
+        description: t('settings.extensions.builtIn.superCmd.description'),
         owner: 'supercmd',
         iconDataUrl: undefined,
         preferences: [],
@@ -294,8 +296,8 @@ const ExtensionsTab: React.FC<{
     if (scriptCommands.length > 0) {
       byExt.set(SCRIPT_COMMANDS_EXTENSION_NAME, {
         extName: SCRIPT_COMMANDS_EXTENSION_NAME,
-        title: 'Script Commands',
-        description: 'Custom and Raycast-compatible script commands',
+        title: t('settings.extensions.builtIn.scriptCommands.title'),
+        description: t('settings.extensions.builtIn.scriptCommands.description'),
         owner: 'supercmd',
         iconDataUrl: undefined,
         preferences: [],
@@ -319,8 +321,8 @@ const ExtensionsTab: React.FC<{
       const fallbackIcon = installedApplications.find((cmd) => Boolean(cmd.iconDataUrl))?.iconDataUrl;
       byExt.set(INSTALLED_APPLICATIONS_NAME, {
         extName: INSTALLED_APPLICATIONS_NAME,
-        title: 'Applications',
-        description: 'Installed macOS applications with launch and hotkey support.',
+        title: t('settings.extensions.builtIn.applications.title'),
+        description: t('settings.extensions.builtIn.applications.description'),
         owner: 'supercmd',
         iconDataUrl: finderIcon || fallbackIcon,
         preferences: [],
@@ -342,15 +344,15 @@ const ExtensionsTab: React.FC<{
     if (systemSettingsCommands.length > 0) {
       byExt.set(SYSTEM_SETTINGS_NAME, {
         extName: SYSTEM_SETTINGS_NAME,
-        title: 'System Settings',
-        description: 'macOS settings panes with launch and hotkey support.',
+        title: t('settings.extensions.builtIn.systemSettings.title'),
+        description: t('settings.extensions.builtIn.systemSettings.description'),
         owner: 'supercmd',
         iconDataUrl: systemSettingsCommands.find((cmd) => Boolean(cmd.iconDataUrl))?.iconDataUrl,
         preferences: [],
         commands: systemSettingsCommands.map((cmd) => ({
           name: cmd.id,
           title: cmd.title,
-          description: cmd.subtitle || 'System Settings pane',
+          description: cmd.subtitle || t('settings.extensions.builtIn.systemSettings.pane'),
           mode: 'no-view',
           interval: cmd.interval,
           disabledByDefault: Boolean(cmd.disabledByDefault),
@@ -643,7 +645,7 @@ const ExtensionsTab: React.FC<{
     : undefined;
 
   const getSchemaTypeLabel = (extName: string): string => {
-    if (extName === SUPERCMD_EXTENSION_NAME) return 'Built-in';
+    if (extName === SUPERCMD_EXTENSION_NAME) return t('settings.extensions.types.builtIn');
     if (extName === INSTALLED_APPLICATIONS_NAME) return 'Apps';
     if (extName === SYSTEM_SETTINGS_NAME) return 'Settings';
     if (extName === SCRIPT_COMMANDS_EXTENSION_NAME) return 'Scripts';
@@ -845,7 +847,7 @@ const ExtensionsTab: React.FC<{
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search..."
+                  placeholder={t('common.search')}
                   className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-lg pl-9 pr-4 py-1.5 text-[13px] text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-[var(--ui-segment-border)] transition-colors"
                 />
               </div>
@@ -873,7 +875,7 @@ const ExtensionsTab: React.FC<{
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[var(--accent-soft)] border border-[var(--accent)] text-[var(--accent)] hover:brightness-95 transition-colors whitespace-nowrap"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Install Extension</span>
+                  <span>{t('settings.extensions.installExtension')}</span>
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
                 {showTopActionsMenu ? (
@@ -894,7 +896,7 @@ const ExtensionsTab: React.FC<{
                       }}
                       className="w-full px-2.5 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors"
                     >
-                      Install from Store
+                      {t('settings.extensions.installFromStore')}
                     </button>
                     <button
                       onClick={() => {
@@ -904,7 +906,7 @@ const ExtensionsTab: React.FC<{
                       disabled={folderBusy}
                       className="w-full px-2.5 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      Add Folder
+                      {t('settings.extensions.addFolder')}
                     </button>
                     <button
                       onClick={async () => {
@@ -934,7 +936,7 @@ const ExtensionsTab: React.FC<{
                       disabled={folderBusy}
                       className="w-full px-2.5 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      Custom Script
+                      {t('settings.extensions.customScript')}
                     </button>
                   </div>
                 ) : null}

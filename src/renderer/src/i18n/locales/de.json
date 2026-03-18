@@ -1,0 +1,610 @@
+{
+  "language": {
+    "name": "Deutsch"
+  },
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "close": "Schließen",
+    "continue": "Weiter",
+    "back": "Zurück",
+    "remove": "Entfernen",
+    "add": "Hinzufügen",
+    "edit": "Bearbeiten",
+    "delete": "Löschen",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "enabled": "Aktiviert",
+    "disabled": "Deaktiviert",
+    "loading": "Laden...",
+    "error": "Fehler",
+    "success": "Erfolg",
+    "warning": "Warnung",
+    "info": "Information",
+    "confirm": "Bestätigen",
+    "apply": "Anwenden",
+    "reset": "Zurücksetzen",
+    "search": "Suchen",
+    "clear": "Löschen",
+    "refresh": "Aktualisieren",
+    "copy": "Kopieren",
+    "paste": "Einfügen",
+    "cut": "Ausschneiden",
+    "selectAll": "Alles auswählen",
+    "undo": "Rückgängig",
+    "redo": "Wiederholen",
+    "done": "Fertig",
+    "skip": "Überspringen",
+    "next": "Weiter",
+    "previous": "Zurück",
+    "finish": "Beenden",
+    "open": "Öffnen",
+    "install": "Installieren",
+    "uninstall": "Deinstallieren",
+    "update": "Aktualisieren",
+    "restart": "Neustart",
+    "learnMore": "Mehr erfahren",
+    "documentation": "Dokumentation",
+    "settings": "Einstellungen",
+    "preferences": "Einstellungen",
+    "about": "Über",
+    "version": "Version",
+    "unknown": "Unbekannt",
+    "none": "Keine",
+    "default": "Standard",
+    "custom": "Benutzerdefiniert",
+    "advanced": "Erweitert",
+    "general": "Allgemein",
+    "appearance": "Erscheinungsbild",
+    "behavior": "Verhalten",
+    "shortcuts": "Tastenkürzel",
+    "extensions": "Erweiterungen",
+    "security": "Sicherheit",
+    "privacy": "Datenschutz",
+    "notifications": "Benachrichtigungen",
+    "language": "Sprache",
+    "theme": "Thema",
+    "light": "Hell",
+    "dark": "Dunkel",
+    "system": "System",
+    "auto": "Automatisch",
+    "manual": "Manuell",
+    "on": "An",
+    "off": "Aus",
+    "yes": "Ja",
+    "no": "Nein",
+    "ok": "OK",
+    "gotIt": "Verstanden",
+    "comingSoon": "Demnächst verfügbar",
+    "new": "Neu",
+    "beta": "Beta",
+    "recommended": "Empfohlen",
+    "required": "Erforderlich",
+    "optional": "Optional"
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "tabs": {
+      "general": "Allgemein",
+      "ai": "KI",
+      "extensions": "Erweiterungen",
+      "advanced": "Erweitert",
+      "store": "Store"
+    },
+    "general": {
+      "language": {
+        "title": "Sprache",
+        "description": "Wählen Sie die Anzeigesprache für SuperCmd",
+        "system": "System folgen",
+        "en": "English",
+        "zh-Hans": "简体中文",
+        "zh-Hant": "繁體中文",
+        "ja": "日本語",
+        "ko": "한국어",
+        "fr": "Français",
+        "de": "Deutsch",
+        "es": "Español"
+      },
+      "theme": {
+        "label": "Thema",
+        "description": "Passen Sie das Erscheinungsbild der App an",
+        "light": "Hell",
+        "dark": "Dunkel",
+        "system": "System"
+      },
+      "hotkey": {
+        "label": "Globales Tastenkürzel",
+        "description": "Tastenkürzel zum Öffnen von SuperCmd von überall",
+        "placeholder": "Tastenkürzel aufzeichnen...",
+        "conflict": "Tastenkürzel-Konflikt",
+        "conflictDescription": "Dieses Tastenkürzel wird bereits von einer anderen App verwendet"
+      },
+      "launchAtLogin": {
+        "label": "Bei Anmeldung starten",
+        "description": "SuperCmd automatisch beim Systemstart starten"
+      },
+      "showInMenuBar": {
+        "label": "In Menüleiste anzeigen",
+        "description": "SuperCmd-Symbol in der Menüleiste anzeigen"
+      },
+      "checkUpdates": {
+        "label": "Automatisch nach Updates suchen",
+        "description": "Prüfen, ob eine neue Version verfügbar ist"
+      }
+    },
+    "ai": {
+      "tabs": {
+        "apiKeys": "API-Schlüssel",
+        "llm": "LLM",
+        "whisper": "Whisper",
+        "speak": "Sprachausgabe"
+      },
+      "apiKeys": {
+        "title": "API-Schlüssel-Einstellungen",
+        "openai": {
+          "label": "OpenAI API-Schlüssel",
+          "placeholder": "sk-...",
+          "description": "OpenAI API-Schlüssel für GPT-Modelle",
+          "required": "API-Schlüssel erforderlich für OpenAI-Funktionen",
+          "invalid": "Ungültiges API-Schlüssel-Format"
+        },
+        "anthropic": {
+          "label": "Anthropic API-Schlüssel",
+          "placeholder": "sk-ant-...",
+          "description": "Anthropic API-Schlüssel für Claude-Modelle",
+          "required": "API-Schlüssel erforderlich für Claude-Funktionen",
+          "invalid": "Ungültiges API-Schlüssel-Format"
+        },
+        "ollama": {
+          "label": "Ollama URL",
+          "placeholder": "http://localhost:11434",
+          "description": "URL des lokalen Ollama-Servers",
+          "required": "URL erforderlich für Ollama-Verbindung",
+          "invalid": "Ungültiges URL-Format"
+        },
+        "testConnection": "Verbindung testen",
+        "testing": "Testen...",
+        "connectionSuccess": "Verbindung erfolgreich",
+        "connectionFailed": "Verbindung fehlgeschlagen"
+      },
+      "llm": {
+        "title": "Großes Sprachmodell-Einstellungen",
+        "provider": {
+          "label": "Anbieter",
+          "description": "Wählen Sie den KI-Modellanbieter",
+          "openai": "OpenAI",
+          "anthropic": "Anthropic",
+          "ollama": "Ollama (lokal)"
+        },
+        "model": {
+          "label": "Modell",
+          "description": "Wählen Sie das zu verwendende KI-Modell",
+          "placeholder": "Modell auswählen...",
+          "custom": "Benutzerdefiniertes Modell"
+        },
+        "temperature": {
+          "label": "Temperatur",
+          "description": "Steuert die Zufälligkeit der Antworten (0=deterministisch, 2=kreativ)"
+        },
+        "maxTokens": {
+          "label": "Maximale Token",
+          "description": "Maximale Länge der Antwort"
+        },
+        "systemPrompt": {
+          "label": "System-Prompt",
+          "description": "Definiert das Verhalten des KI-Assistenten",
+          "placeholder": "Sie sind ein hilfreicher Assistent..."
+        },
+        "streaming": {
+          "label": "Streaming-Antworten",
+          "description": "Antworten in Echtzeit während der Generierung anzeigen"
+        }
+      },
+      "whisper": {
+        "title": "Whisper Spracherkennungs-Einstellungen",
+        "enabled": {
+          "label": "Spracheingabe aktivieren",
+          "description": "Whisper-Spracherkennung für Sprachbefehle aktivieren"
+        },
+        "provider": {
+          "label": "Anbieter",
+          "description": "Wählen Sie den Spracherkennungsanbieter",
+          "openai": "OpenAI Whisper",
+          "local": "Lokales Whisper"
+        },
+        "model": {
+          "label": "Modell",
+          "description": "Wählen Sie das Spracherkennungsmodell",
+          "tiny": "Tiny (am schnellsten)",
+          "base": "Base",
+          "small": "Small",
+          "medium": "Medium",
+          "large": "Large (am genauesten)"
+        },
+        "language": {
+          "label": "Sprache",
+          "description": "Hauptsprache für die Spracherkennung",
+          "auto": "Automatische Erkennung"
+        },
+        "hotkey": {
+          "label": "Spracheingabe-Tastenkürzel",
+          "description": "Tastenkürzel zum Auslösen der Spracheingabe",
+          "placeholder": "Tastenkürzel aufzeichnen..."
+        }
+      },
+      "speak": {
+        "title": "Sprachausgabe-Einstellungen",
+        "enabled": {
+          "label": "Sprachausgabe aktivieren",
+          "description": "Text-to-Speech für KI-Antworten aktivieren"
+        },
+        "provider": {
+          "label": "Anbieter",
+          "description": "Wählen Sie den Sprachausgabeanbieter",
+          "system": "System-TTS",
+          "openai": "OpenAI TTS",
+          "elevenlabs": "ElevenLabs"
+        },
+        "voice": {
+          "label": "Stimme",
+          "description": "Wählen Sie die Stimme für die Sprachausgabe",
+          "placeholder": "Stimme auswählen..."
+        },
+        "speed": {
+          "label": "Geschwindigkeit",
+          "description": "Sprachgeschwindigkeit anpassen"
+        },
+        "testVoice": "Stimme testen",
+        "testing": "Testen..."
+      }
+    },
+    "extensions": {
+      "title": "Erweiterungs-Einstellungen",
+      "builtIn": {
+        "superCmd": {
+          "title": "SuperCmd",
+          "description": "Integrierte SuperCmd-Befehle"
+        },
+        "scriptCommands": {
+          "title": "Skriptbefehle",
+          "description": "Benutzerdefinierte und Raycast-kompatible Skriptbefehle"
+        },
+        "applications": {
+          "title": "Anwendungen",
+          "description": "Installierte macOS-Anwendungen mit Start- und Tastenkürzel-Unterstützung"
+        },
+        "systemSettings": {
+          "title": "Systemeinstellungen",
+          "description": "macOS-Einstellungsbereiche mit Start- und Tastenkürzel-Unterstützung",
+          "pane": "Systemeinstellungen-Bereich"
+        }
+      },
+      "installed": {
+        "title": "Installierte Erweiterungen",
+        "description": "Verwalten Sie Ihre installierten Raycast-kompatiblen Erweiterungen",
+        "empty": "Keine Erweiterungen installiert",
+        "browseStore": "Store durchsuchen"
+      },
+      "customFolders": {
+        "title": "Benutzerdefinierte Skript-Ordner",
+        "description": "Zusätzliche Ordner für Skriptbefehle hinzufügen",
+        "addFolder": "Ordner hinzufügen",
+        "removeFolder": "Entfernen",
+        "folderPath": "Ordnerpfad",
+        "placeholder": "/pfad/zu/skripten"
+      },
+      "columns": {
+        "name": "Name",
+        "type": "Typ",
+        "version": "Version",
+        "author": "Autor",
+        "status": "Status",
+        "actions": "Aktionen"
+      },
+      "types": {
+        "extension": "Erweiterung",
+        "scriptCommand": "Skriptbefehl",
+        "builtin": "Integriert"
+      },
+      "alias": {
+        "label": "Alias",
+        "placeholder": "Benutzerdefinierter Alias..."
+      },
+      "hotkey": {
+        "label": "Tastenkürzel",
+        "placeholder": "Tastenkürzel aufzeichnen..."
+      },
+      "uninstall": {
+        "title": "Erweiterung deinstallieren",
+        "confirm": "Sind Sie sicher, dass Sie diese Erweiterung deinstallieren möchten?",
+        "description": "Diese Aktion kann nicht rückgängig gemacht werden.",
+        "button": "Deinstallieren"
+      }
+    },
+    "advanced": {
+      "title": "Erweiterte Einstellungen",
+      "developerMode": {
+        "label": "Entwicklermodus",
+        "description": "Debug-Funktionen für die Erweiterungsentwicklung aktivieren"
+      },
+      "verboseLogging": {
+        "label": "Ausführliche Protokollierung",
+        "description": "Ausführliche Protokolle zur Fehlerbehebung aktivieren"
+      },
+      "resetSettings": {
+        "label": "Einstellungen zurücksetzen",
+        "description": "Alle Einstellungen auf Standardwerte zurücksetzen",
+        "button": "Zurücksetzen",
+        "confirm": "Sind Sie sicher, dass Sie alle Einstellungen zurücksetzen möchten?",
+        "warning": "Diese Aktion kann nicht rückgängig gemacht werden."
+      },
+      "clearCache": {
+        "label": "Cache löschen",
+        "description": "Cache für Erweiterungen und Symbole löschen",
+        "button": "Cache löschen",
+        "confirm": "Sind Sie sicher, dass Sie den Cache löschen möchten?",
+        "success": "Cache erfolgreich gelöscht"
+      },
+      "exportSettings": {
+        "label": "Einstellungen exportieren",
+        "description": "Einstellungen in eine Datei exportieren",
+        "button": "Exportieren"
+      },
+      "importSettings": {
+        "label": "Einstellungen importieren",
+        "description": "Einstellungen aus einer Datei importieren",
+        "button": "Importieren"
+      }
+    },
+    "store": {
+      "title": "Erweiterungs-Store",
+      "search": {
+        "placeholder": "Erweiterungen suchen..."
+      },
+      "tabs": {
+        "featured": "Empfohlen",
+        "popular": "Beliebt",
+        "recent": "Neu",
+        "installed": "Installiert"
+      },
+      "categories": {
+        "all": "Alle",
+        "productivity": "Produktivität",
+        "developer": "Entwickler-Tools",
+        "system": "System",
+        "media": "Medien",
+        "communication": "Kommunikation",
+        "utilities": "Dienstprogramme"
+      },
+      "actions": {
+        "install": "Installieren",
+        "installing": "Installation...",
+        "installed": "Installiert",
+        "update": "Aktualisieren",
+        "updating": "Aktualisierung...",
+        "uninstall": "Deinstallieren",
+        "details": "Details"
+      },
+      "empty": {
+        "title": "Keine Erweiterungen gefunden",
+        "description": "Keine Erweiterungen entsprechen Ihrer Suche"
+      },
+      "error": {
+        "title": "Store konnte nicht geladen werden",
+        "description": "Verbindung zum Erweiterungs-Store nicht möglich. Bitte überprüfen Sie Ihre Internetverbindung."
+      }
+    }
+  },
+  "launcher": {
+    "searchPlaceholder": "Befehle suchen...",
+    "searchPlaceholderWithAI": "Befehle suchen oder KI fragen...",
+    "aiMode": {
+      "enabled": "KI-Modus aktiviert",
+      "disabled": "KI-Modus deaktiviert",
+      "toggle": "KI-Modus umschalten"
+    },
+    "categories": {
+      "all": "Alle",
+      "applications": "Anwendungen",
+      "extensions": "Erweiterungen",
+      "scripts": "Skripte",
+      "system": "System",
+      "files": "Dateien",
+      "bookmarks": "Lesezeichen",
+      "clipboard": "Zwischenablage",
+      "calculator": "Rechner",
+      "dictionary": "Wörterbuch",
+      "ai": "KI-Assistent"
+    },
+    "actions": {
+      "open": "Öffnen",
+      "reveal": "Im Finder anzeigen",
+      "copy": "Kopieren",
+      "paste": "Einfügen",
+      "delete": "Löschen",
+      "preferences": "Einstellungen",
+      "quit": "Beenden"
+    },
+    "empty": {
+      "title": "Keine Ergebnisse",
+      "description": "Keine Elemente entsprechen Ihrer Suche"
+    },
+    "footer": {
+      "preferences": "Einstellungen",
+      "refresh": "Aktualisieren",
+      "help": "Hilfe"
+    }
+  },
+  "scriptCommand": {
+    "setup": {
+      "title": "Skriptbefehl konfigurieren",
+      "description": "Bitte geben Sie die erforderlichen Argumente ein, bevor Sie diesen Skriptbefehl ausführen.",
+      "arguments": "Argumente",
+      "optional": "Optional",
+      "required": "Erforderlich",
+      "run": "Ausführen",
+      "cancel": "Abbrechen"
+    },
+    "output": {
+      "title": "Skript-Ausgabe",
+      "stdout": "Standardausgabe",
+      "stderr": "Standardfehler",
+      "exitCode": "Exit-Code",
+      "success": "Erfolg",
+      "failed": "Fehlgeschlagen",
+      "running": "Wird ausgeführt...",
+      "copyOutput": "Ausgabe kopieren",
+      "close": "Schließen",
+      "rerun": "Neu ausführen"
+    }
+  },
+  "extension": {
+    "setup": {
+      "title": "{name} konfigurieren",
+      "description": "Bitte konfigurieren Sie die Einstellungen, bevor Sie diese Erweiterung verwenden.",
+      "preferences": "Einstellungen",
+      "save": "Einstellungen speichern",
+      "cancel": "Abbrechen",
+      "skip": "Überspringen"
+    }
+  },
+  "cursorPrompt": {
+    "placeholder": "Fragen Sie die KI irgendetwas...",
+    "placeholderWithContext": "Fragen Sie zum ausgewählten Text...",
+    "send": "Senden",
+    "cancel": "Abbrechen",
+    "thinking": "Denkt nach...",
+    "error": "Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut."
+  },
+  "clipboard": {
+    "title": "Zwischenablage-Verlauf",
+    "empty": "Zwischenablage-Verlauf ist leer",
+    "clear": "Verlauf löschen",
+    "pin": "Anheften",
+    "unpin": "Lösen",
+    "delete": "Löschen",
+    "copy": "Kopieren",
+    "paste": "Einfügen",
+    "text": "Text",
+    "image": "Bild",
+    "file": "Datei",
+    "link": "Link",
+    "code": "Code"
+  },
+  "snippets": {
+    "title": "Snippets",
+    "empty": "Keine Snippets",
+    "create": "Snippet erstellen",
+    "edit": "Snippet bearbeiten",
+    "delete": "Snippet löschen",
+    "name": "Name",
+    "keyword": "Schlüsselwort",
+    "content": "Inhalt",
+    "placeholder": {
+      "name": "Snippet-Name...",
+      "keyword": "Auslöse-Schlüsselwort...",
+      "content": "Snippet-Inhalt..."
+    }
+  },
+  "quickLinks": {
+    "title": "Schnelllinks",
+    "empty": "Keine Schnelllinks",
+    "add": "Link hinzufügen",
+    "edit": "Link bearbeiten",
+    "delete": "Link löschen",
+    "name": "Name",
+    "url": "URL",
+    "icon": "Symbol",
+    "openIn": "Öffnen in",
+    "browser": "Browser",
+    "app": "App"
+  },
+  "fileSearch": {
+    "placeholder": "Dateien suchen...",
+    "filters": {
+      "all": "Alle",
+      "documents": "Dokumente",
+      "images": "Bilder",
+      "videos": "Videos",
+      "audio": "Audio",
+      "code": "Code",
+      "archives": "Archive"
+    },
+    "noResults": "Keine Dateien gefunden",
+    "openFolder": "Ordner öffnen"
+  },
+  "windowManager": {
+    "title": "Fensterverwaltung",
+    "switchTo": "Wechseln zu",
+    "close": "Schließen",
+    "minimize": "Minimieren",
+    "maximize": "Maximieren",
+    "fullscreen": "Vollbild",
+    "center": "Zentrieren",
+    "leftHalf": "Linke Hälfte",
+    "rightHalf": "Rechte Hälfte",
+    "topHalf": "Obere Hälfte",
+    "bottomHalf": "Untere Hälfte",
+    "corners": "Ecken",
+    "nextDisplay": "Nächster Bildschirm",
+    "previousDisplay": "Vorheriger Bildschirm",
+    "noWindows": "Keine geöffneten Fenster"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Willkommen bei SuperCmd",
+      "description": "Ein Raycast-kompatibler Open-Source-Launcher. Ein leistungsstarkes Tool zur Steigerung Ihrer Produktivität."
+    },
+    "steps": {
+      "hotkey": {
+        "title": "Tastenkürzel einrichten",
+        "description": "Wählen Sie ein globales Tastenkürzel zum Öffnen von SuperCmd von überall"
+      },
+      "extensions": {
+        "title": "Erweiterungen erkunden",
+        "description": "Durchsuchen und installieren Sie Erweiterungen aus dem Erweiterungs-Store"
+      },
+      "ai": {
+        "title": "KI einrichten (optional)",
+        "description": "Fügen Sie API-Schlüssel hinzu, um KI-Funktionen zu aktivieren"
+      }
+    },
+    "getStarted": "Loslegen",
+    "skip": "Überspringen"
+  },
+  "whisper": {
+    "listening": "Hören...",
+    "processing": "Verarbeitung...",
+    "speakNow": "Sprechen Sie jetzt",
+    "tapToStop": "Tippen zum Stoppen",
+    "error": "Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut."
+  },
+  "read": {
+    "title": "Text vorlesen",
+    "play": "Wiedergabe",
+    "pause": "Pause",
+    "stop": "Stopp",
+    "speed": "Geschwindigkeit",
+    "voice": "Stimme"
+  },
+  "camera": {
+    "title": "Kamera",
+    "capture": "Aufnehmen",
+    "retake": "Neu aufnehmen",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "mirror": "Spiegeln",
+    "flash": "Blitz"
+  },
+  "schedule": {
+    "title": "Kalender",
+    "today": "Heute",
+    "tomorrow": "Morgen",
+    "week": "Diese Woche",
+    "month": "Dieser Monat",
+    "noEvents": "Keine anstehenden Ereignisse",
+    "addEvent": "Ereignis hinzufügen",
+    "editEvent": "Ereignis bearbeiten",
+    "deleteEvent": "Ereignis löschen"
+  }
+}
