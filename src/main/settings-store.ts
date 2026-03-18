@@ -36,6 +36,23 @@ export interface AISettings {
   openaiCompatibleModel: string;
 }
 
+export type HyperKeySourceKey =
+  | 'caps-lock'
+  | 'left-shift'
+  | 'right-shift'
+  | 'left-option'
+  | 'right-option'
+  | 'left-control'
+  | 'right-control';
+
+export type HyperKeyCapsLockTapBehavior = 'escape' | 'nothing' | 'toggle';
+
+export interface HyperKeySettings {
+  enabled: boolean;
+  sourceKey: HyperKeySourceKey;
+  capsLockTapBehavior: HyperKeyCapsLockTapBehavior;
+}
+
 export type AppFontSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
 export type AppUiStyle = 'default' | 'glassy';
 
@@ -64,7 +81,14 @@ export interface AppSettings {
   launcherBackgroundImageBlurPercent: number;
   launcherBackgroundImageOpacityPercent: number;
   appUpdaterLastCheckedAt: number;
+  hyperKey: HyperKeySettings;
 }
+
+const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
+  enabled: false,
+  sourceKey: 'caps-lock',
+  capsLockTapBehavior: 'escape',
+};
 
 const DEFAULT_AI_SETTINGS: AISettings = {
   provider: 'openai',
@@ -139,6 +163,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   launcherBackgroundImageBlurPercent: 25,
   launcherBackgroundImageOpacityPercent: 45,
   appUpdaterLastCheckedAt: 0,
+  hyperKey: { ...DEFAULT_HYPER_KEY_SETTINGS },
 };
 
 let settingsCache: AppSettings | null = null;
@@ -272,6 +297,7 @@ export function loadSettings(): AppSettings {
       fileSearchProtectedRootsEnabled:
         parsed.fileSearchProtectedRootsEnabled ?? DEFAULT_SETTINGS.fileSearchProtectedRootsEnabled,
       ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
+      hyperKey: { ...DEFAULT_HYPER_KEY_SETTINGS, ...parsed.hyperKey },
       commandMetadata: parsed.commandMetadata ?? {},
       debugMode: parsed.debugMode ?? DEFAULT_SETTINGS.debugMode,
       fontSize: normalizeFontSize(parsed.fontSize),

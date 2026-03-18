@@ -261,6 +261,19 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
     setIsRecording(false);
   };
 
+  // Listen for Hyper Key combos from the native monitor
+  useEffect(() => {
+    if (!isRecording) return;
+    if (!window.electron?.onHyperKeyCombo) return;
+    const cleanup = window.electron.onHyperKeyCombo((comboShortcut: string) => {
+      if (!isRecordingRef.current) return;
+      onChange(comboShortcut);
+      clearPendingPrimary();
+      setIsRecording(false);
+    });
+    return cleanup;
+  }, [isRecording]);
+
   useEffect(() => {
     if (!isRecording) return;
 

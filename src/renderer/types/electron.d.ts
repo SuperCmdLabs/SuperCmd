@@ -238,6 +238,23 @@ export interface AppUpdaterStatus {
   message?: string;
 }
 
+export type HyperKeySourceKey =
+  | 'caps-lock'
+  | 'left-shift'
+  | 'right-shift'
+  | 'left-option'
+  | 'right-option'
+  | 'left-control'
+  | 'right-control';
+
+export type HyperKeyCapsLockTapBehavior = 'escape' | 'nothing' | 'toggle';
+
+export interface HyperKeySettings {
+  enabled: boolean;
+  sourceKey: HyperKeySourceKey;
+  capsLockTapBehavior: HyperKeyCapsLockTapBehavior;
+}
+
 export interface AppSettings {
   globalShortcut: string;
   openAtLogin: boolean;
@@ -263,6 +280,7 @@ export interface AppSettings {
   launcherBackgroundImageBlurPercent: number;
   launcherBackgroundImageOpacityPercent: number;
   appUpdaterLastCheckedAt: number;
+  hyperKey: HyperKeySettings;
 }
 
 export interface CatalogEntry {
@@ -700,6 +718,9 @@ export interface ElectronAPI {
   onOllamaPullProgress: (callback: (data: { requestId: string; status: string; digest: string; total: number; completed: number }) => void) => void;
   onOllamaPullDone: (callback: (data: { requestId: string }) => void) => void;
   onOllamaPullError: (callback: (data: { requestId: string; error: string }) => void) => void;
+
+  // Hyper Key
+  onHyperKeyCombo: (callback: (key: string) => void) => (() => void);
 }
 
 declare global {
