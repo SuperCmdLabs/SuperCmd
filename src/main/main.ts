@@ -5479,6 +5479,12 @@ function stopHyperKeyMonitor(): void {
     hyperKeyMonitorRestartTimer = null;
   }
   if (hyperKeyMonitorProcess) {
+    // Remove all listeners BEFORE killing to prevent the old process's
+    // exit handler from nullifying hyperKeyMonitorProcess (losing the
+    // reference to a newly spawned process) and scheduling stale restarts.
+    try { hyperKeyMonitorProcess.removeAllListeners(); } catch {}
+    try { hyperKeyMonitorProcess.stdout?.removeAllListeners(); } catch {}
+    try { hyperKeyMonitorProcess.stderr?.removeAllListeners(); } catch {}
     try { hyperKeyMonitorProcess.kill('SIGTERM'); } catch {}
     hyperKeyMonitorProcess = null;
     hyperKeyMonitorStdoutBuffer = '';
