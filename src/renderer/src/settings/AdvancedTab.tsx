@@ -33,20 +33,23 @@ const SettingsRow: React.FC<SettingsRowProps> = ({
   </div>
 );
 
+const selectClassName =
+  'w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50';
+
 const SOURCE_KEY_OPTIONS: { value: HyperKeySourceKey; label: string }[] = [
-  { value: 'caps-lock', label: 'Caps Lock' },
+  { value: 'caps-lock', label: 'Caps Lock (⇪)' },
   { value: 'left-shift', label: 'Left Shift' },
   { value: 'right-shift', label: 'Right Shift' },
-  { value: 'left-option', label: 'Left Option' },
-  { value: 'right-option', label: 'Right Option' },
-  { value: 'left-control', label: 'Left Control' },
-  { value: 'right-control', label: 'Right Control' },
+  { value: 'left-option', label: 'Left Option (⌥)' },
+  { value: 'right-option', label: 'Right Option (⌥)' },
+  { value: 'left-control', label: 'Left Control (⌃)' },
+  { value: 'right-control', label: 'Right Control (⌃)' },
 ];
 
 const CAPS_LOCK_TAP_OPTIONS: { value: HyperKeyCapsLockTapBehavior; label: string }[] = [
   { value: 'escape', label: 'Simulate Escape' },
   { value: 'nothing', label: 'Do Nothing' },
-  { value: 'toggle', label: 'Toggle Caps Lock' },
+  { value: 'toggle', label: 'Toggles Caps Lock' },
 ];
 
 const AdvancedTab: React.FC = () => {
@@ -82,82 +85,88 @@ const AdvancedTab: React.FC = () => {
     <div className="w-full max-w-[980px] mx-auto space-y-3">
       <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Advanced</h2>
 
-      {/* Hyper Key */}
       <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
-        <SettingsRow
-          icon={<Sparkles className="w-4 h-4" />}
-          title="Hyper Key"
-          description="Remap a key to act as a Hyper modifier for custom shortcuts."
-          withBorder={hyperEnabled}
-        >
-          <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={hyperEnabled}
-              onChange={(event) => {
-                void applySettingsPatch({
-                  hyperKey: { ...hyperKey, enabled: event.target.checked },
-                });
-              }}
-              className="settings-checkbox"
-            />
-            Enable Hyper Key
-          </label>
-        </SettingsRow>
+        {/* Hyper Key */}
+        <div className={`grid gap-3 px-4 py-3.5 md:px-5 md:grid-cols-[220px_minmax(0,1fr)] border-b border-[var(--ui-divider)]`}>
+          <div className="flex items-start gap-2.5">
+            <div className="mt-0.5 text-[var(--text-muted)] shrink-0">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">Hyper Key</h3>
+              <p className="mt-0.5 text-[12px] text-[var(--text-muted)] leading-snug">
+                Choose which key should act as Hyper in your remapper setup.
+              </p>
+            </div>
+          </div>
 
-        {hyperEnabled && (
-          <SettingsRow
-            icon={<div className="w-4 h-4" />}
-            title="Source Key"
-            description="The physical key that becomes the Hyper modifier."
-            withBorder={showCapsLockTap}
-          >
-            <select
-              value={hyperKey.sourceKey}
-              onChange={(event) => {
-                void applySettingsPatch({
-                  hyperKey: { ...hyperKey, sourceKey: event.target.value as HyperKeySourceKey },
-                });
-              }}
-              className="settings-select"
-            >
-              {SOURCE_KEY_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </SettingsRow>
-        )}
+          <div className={`flex flex-col gap-3 ${!hyperEnabled ? 'justify-center min-h-[48px]' : ''}`}>
+            <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hyperEnabled}
+                onChange={(event) => {
+                  void applySettingsPatch({
+                    hyperKey: { ...hyperKey, enabled: event.target.checked },
+                  });
+                }}
+                className="settings-checkbox"
+              />
+              Enable Hyper Key
+            </label>
 
-        {showCapsLockTap && (
-          <SettingsRow
-            icon={<div className="w-4 h-4" />}
-            title="Caps Lock Tap"
-            description="What happens when Caps Lock is pressed and released alone."
-            withBorder={false}
-          >
-            <select
-              value={hyperKey.capsLockTapBehavior}
-              onChange={(event) => {
-                void applySettingsPatch({
-                  hyperKey: { ...hyperKey, capsLockTapBehavior: event.target.value as HyperKeyCapsLockTapBehavior },
-                });
-              }}
-              className="settings-select"
-            >
-              {CAPS_LOCK_TAP_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </SettingsRow>
-        )}
-      </div>
+            {hyperEnabled && (
+              <>
+                <div>
+                  <select
+                    value={hyperKey.sourceKey}
+                    onChange={(event) => {
+                      void applySettingsPatch({
+                        hyperKey: { ...hyperKey, sourceKey: event.target.value as HyperKeySourceKey },
+                      });
+                    }}
+                    className={selectClassName}
+                  >
+                    {SOURCE_KEY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-      {/* Debug Mode */}
-      <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
+                {showCapsLockTap && (
+                  <div>
+                    <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">
+                      Quick Press
+                    </label>
+                    <select
+                      value={hyperKey.capsLockTapBehavior}
+                      onChange={(event) => {
+                        void applySettingsPatch({
+                          hyperKey: { ...hyperKey, capsLockTapBehavior: event.target.value as HyperKeyCapsLockTapBehavior },
+                        });
+                      }}
+                      className={selectClassName}
+                    >
+                      {CAPS_LOCK_TAP_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-[var(--text-muted)] leading-snug">
+                  Hyper Key shortcuts will be shown in SuperCmd with ✦
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Debug Mode */}
         <SettingsRow
           icon={<Bug className="w-4 h-4" />}
           title="Debug Mode"
