@@ -10674,6 +10674,7 @@ app.whenReady().then(async () => {
           commandId === 'system-supercmd-whisper-speak-toggle' &&
           isFnOnlyShortcut(normalizedHotkey);
         const isFnHotkey = isFnShortcut(normalizedHotkey);
+        const isHyperHotkey = isHyperShortcut(normalizedHotkey);
 
         // Register the new one
         try {
@@ -10684,6 +10685,11 @@ app.whenReady().then(async () => {
             const fnConfig = parseHoldShortcutConfig(normalizedHotkey);
             const binaryPath = ensureWhisperHoldWatcherBinary();
             success = Boolean(fnConfig && fnConfig.fn && binaryPath);
+          } else if (isHyperHotkey) {
+            // Hyper shortcuts are handled by the native hyper key monitor,
+            // NOT by Electron's globalShortcut (which would ignore "Hyper"
+            // and register just the bare key).
+            success = true;
           } else {
             success = globalShortcut.register(normalizedHotkey, async () => {
               await runCommandById(commandId, 'hotkey');
@@ -10705,7 +10711,7 @@ app.whenReady().then(async () => {
             return { success: false, error: 'unavailable' as const };
           }
           hotkeys[commandId] = hotkey;
-          if (!isFnSpeakToggle && !isFnHotkey) {
+          if (!isFnSpeakToggle && !isFnHotkey && !isHyperHotkey) {
             registeredHotkeys.set(normalizedHotkey, commandId);
           }
         } catch {

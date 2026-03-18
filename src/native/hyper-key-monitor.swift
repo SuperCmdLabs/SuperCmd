@@ -10,8 +10,10 @@
  *                  For CapsLock: pass 79 (F18) with "remapped" flag
  *                  For modifiers: pass the modifier keyCode directly
  *   tapBehavior:   "escape" | "nothing" | "toggle"
- *   remapped:      If present, source key uses keyDown/keyUp (not flagsChanged).
- *                  Used when CapsLock has been remapped to F18 via hidutil.
+ *   remapped:      If present, source key was remapped via hidutil (CapsLock→F18).
+ *                  The binary monitors BOTH the remapped keyCode AND the original
+ *                  CapsLock keyCode (57) via ALL event types to handle macOS
+ *                  variations in event delivery.
  *
  * Output (JSON lines on stdout):
  *   {"ready":true}
@@ -25,6 +27,7 @@ import CoreGraphics
 
 // ─── Key Code Constants ──────────────────────────────────────────────
 
+let kCapsLockKeyCode: CGKeyCode = 57
 let kEscape:    CGKeyCode = 53
 let kLShift:    CGKeyCode = 56
 let kRShift:    CGKeyCode = 60
@@ -59,7 +62,7 @@ let keyCodeToName: [CGKeyCode: String] = [
 final class HyperKeyState {
     let sourceKeyCode: CGKeyCode
     let tapBehavior: String           // "escape" | "nothing" | "toggle"
-    let sourceIsRemapped: Bool        // true = keyDown/keyUp mode (CapsLock→F18)
+    let sourceIsRemapped: Bool        // true = CapsLock remapped to F18 via hidutil
     var sourceKeyDown: Bool = false
     var comboFired: Bool = false
     var eventTap: CFMachPort?
@@ -68,6 +71,16 @@ final class HyperKeyState {
         self.sourceKeyCode = sourceKeyCode
         self.tapBehavior = tapBehavior
         self.sourceIsRemapped = sourceIsRemapped
+    }
+
+    /// Check if a keyCode belongs to the source key.
+    /// In remapped mode, both the remapped keyCode (F18=79) and the original
+    /// CapsLock keyCode (57) are considered source keys, because macOS may
+    /// report events with either keyCode depending on the version/hardware.
+    func isSourceKeyCode(_ kc: CGKeyCode) -> Bool {
+        if kc == sourceKeyCode { return true }
+        if sourceIsRemapped && kc == kCapsLockKeyCode { return true }
+        return false
     }
 }
 
@@ -83,7 +96,7 @@ func emit(_ payload: [String: Any]) {
 }
 
 /// For modifier source keys (Shift/Option/Control), check the flag to detect
-/// physical press vs release.  NOT used for CapsLock (use remapped mode instead).
+/// physical press vs release.
 func isModifierDown(keyCode: CGKeyCode, flags: CGEventFlags) -> Bool {
     switch keyCode {
     case kLShift, kRShift:
@@ -117,13 +130,29 @@ func handleTap(_ state: HyperKeyState) {
     case "escape":
         postSyntheticKey(kEscape)
     case "toggle":
-        // For remapped CapsLock: toggle CapsLock state via synthetic event.
-        // For modifier source keys: no-op (toggle doesn't apply).
         if state.sourceIsRemapped {
-            postSyntheticKey(57) // CapsLock keyCode
+            postSyntheticKey(kCapsLockKeyCode)
         }
     default: // "nothing"
         break
+    }
+}
+
+/// Mark source key as pressed.
+func sourcePress(_ state: HyperKeyState) {
+    if !state.sourceKeyDown {
+        state.sourceKeyDown = true
+        state.comboFired = false
+    }
+}
+
+/// Mark source key as released, fire tap if no combo happened.
+func sourceRelease(_ state: HyperKeyState) {
+    if state.sourceKeyDown {
+        state.sourceKeyDown = false
+        if !state.comboFired {
+            handleTap(state)
+        }
     }
 }
 
@@ -175,54 +204,75 @@ let callback: CGEventTapCallBack = { _, type, event, userInfo in
     }
 
     let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+    let isSource = state.isSourceKeyCode(keyCode)
 
-    // ─── Source key via keyDown/keyUp (remapped CapsLock → F18) ─────
-    if state.sourceIsRemapped && keyCode == state.sourceKeyCode {
+    // ═══════════════════════════════════════════════════════════════
+    // REMAPPED MODE (CapsLock → F18 via hidutil)
+    //
+    // After hidutil remapping, macOS may deliver the source key as:
+    //   • keyDown/keyUp with the remapped keyCode (F18 = 79)
+    //   • keyDown/keyUp with the original keyCode (CapsLock = 57)
+    //   • flagsChanged with either keyCode
+    // We handle ALL of these so the feature works regardless of the
+    // macOS version or hardware quirks.
+    // ═══════════════════════════════════════════════════════════════
+
+    if state.sourceIsRemapped && isSource {
         if type == .keyDown {
-            if !state.sourceKeyDown {
-                state.sourceKeyDown = true
-                state.comboFired = false
-            }
-            return nil  // suppress F18
+            sourcePress(state)
+            return nil
         }
         if type == .keyUp {
-            let wasDown = state.sourceKeyDown
-            state.sourceKeyDown = false
-            if wasDown && !state.comboFired {
-                handleTap(state)
+            sourceRelease(state)
+            return nil
+        }
+        if type == .flagsChanged {
+            // flagsChanged for CapsLock/F18: alternate press/release.
+            // We can't use maskAlphaShift (reflects toggle state, not
+            // physical key state), so we just toggle our internal flag.
+            if !state.sourceKeyDown {
+                sourcePress(state)
+            } else {
+                sourceRelease(state)
             }
-            return nil  // suppress F18
+            return nil
         }
     }
 
-    // ─── Source key via flagsChanged (modifier keys: Shift/Opt/Ctrl) ─
-    if !state.sourceIsRemapped && type == .flagsChanged && keyCode == state.sourceKeyCode {
+    // ═══════════════════════════════════════════════════════════════
+    // MODIFIER MODE (Shift / Option / Control)
+    //
+    // Standard modifier keys have reliable flag-based press/release
+    // detection via flagsChanged events.
+    // ═══════════════════════════════════════════════════════════════
+
+    if !state.sourceIsRemapped && type == .flagsChanged && isSource {
         let down = isModifierDown(keyCode: keyCode, flags: event.flags)
 
         if down && !state.sourceKeyDown {
-            state.sourceKeyDown = true
-            state.comboFired = false
+            sourcePress(state)
             return nil
         } else if !down && state.sourceKeyDown {
-            state.sourceKeyDown = false
-            if !state.comboFired {
-                handleTap(state)
-            }
+            sourceRelease(state)
             return nil
         }
         return nil
     }
 
-    // ─── Combo key while source held ────────────────────────────────
-    if type == .keyDown && state.sourceKeyDown {
-        state.comboFired = true
-        let keyName = keyCodeToName[keyCode] ?? "unknown-\(keyCode)"
-        emit(["combo": keyName])
-        return nil  // suppress so the character isn't typed
-    }
+    // ═══════════════════════════════════════════════════════════════
+    // COMBO KEY while source is held
+    // ═══════════════════════════════════════════════════════════════
 
-    if type == .keyUp && state.sourceKeyDown {
-        return nil  // suppress key-up too
+    if state.sourceKeyDown && !isSource {
+        if type == .keyDown {
+            state.comboFired = true
+            let keyName = keyCodeToName[keyCode] ?? "unknown-\(keyCode)"
+            emit(["combo": keyName])
+            return nil
+        }
+        if type == .keyUp {
+            return nil
+        }
     }
 
     // Pass everything else through unchanged
