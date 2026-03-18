@@ -5487,7 +5487,6 @@ function stopHyperKeyMonitor(): void {
 }
 
 function handleHyperKeyCombo(key: string): void {
-  console.log(`[HotkeyDebug] handleHyperKeyCombo called with key="${key}"`);
   const comboShortcut = `Hyper+${key.length === 1 ? key.toUpperCase() : key}`;
 
   // Always forward to renderer windows (for HotkeyRecorder capture)
@@ -5542,14 +5541,14 @@ function startHyperKeyMonitor(): void {
     return;
   }
 
-  // For CapsLock with "escape" or "nothing" behavior: remap to F18 via hidutil
-  // so CapsLock doesn't toggle. For "toggle" behavior: DON'T use hidutil —
-  // let CapsLock events pass through so CapsLock toggles naturally on tap.
+  // For CapsLock with "escape" or "nothing": remap to F18 via hidutil
+  // to prevent CapsLock toggle. For "toggle": DON'T use hidutil — let
+  // CapsLock pass through so it toggles naturally on tap.
   const isCapsLock = sourceKey === 'caps-lock';
   const capsLockTapBehavior = settings.hyperKey.capsLockTapBehavior || 'escape';
-  const useCapsLockPassthrough = isCapsLock && capsLockTapBehavior === 'toggle';
+  const useHidutil = isCapsLock && capsLockTapBehavior !== 'toggle';
 
-  if (isCapsLock && !useCapsLockPassthrough) {
+  if (useHidutil) {
     applyCapsLockHidutilRemap();
     sourceKeyCode = F18_KEYCODE;
   }
@@ -5558,7 +5557,7 @@ function startHyperKeyMonitor(): void {
     String(sourceKeyCode),
     capsLockTapBehavior,
   ];
-  if (isCapsLock && !useCapsLockPassthrough) {
+  if (useHidutil) {
     spawnArgs.push('remapped');
   }
 
@@ -7971,9 +7970,6 @@ function isAISectionDisabledForCommand(commandId: string, settings?: AppSettings
 }
 
 async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' | 'widget' = 'launcher'): Promise<boolean> {
-  if (source === 'hotkey') {
-    console.log(`[HotkeyDebug] runCommandById called: commandId=${commandId}, source=${source}`, new Error().stack?.split('\n').slice(1, 4).join(' | '));
-  }
   if (isAIDependentSystemCommand(commandId) && isAIDisabledInSettings()) {
     return false;
   }

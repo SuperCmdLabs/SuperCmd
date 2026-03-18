@@ -4,23 +4,24 @@
  * Usage: hyper-key-monitor <sourceKeyCode> <tapBehavior> [remapped]
  *
  * Modes:
- *   CAPSLOCK-TOGGLE (sourceKeyCode=57, tapBehavior="toggle", no "remapped"):
- *     No hidutil. CapsLock events pass through — CapsLock toggles normally
- *     on tap. Only combo keys are suppressed. Simple alternating press/release.
+ *   CAPSLOCK-TOGGLE (keyCode=57, tapBehavior="toggle", no "remapped"):
+ *     No hidutil. CapsLock events pass through to macOS — CapsLock toggles
+ *     naturally on every press (LED + typing). A 400ms timer tracks the
+ *     "held" window: any keyDown within 400ms of CapsLock press is treated
+ *     as a Hyper combo (key suppressed, combo emitted). After 400ms, state
+ *     resets. No release detection needed.
  *
- *   REMAPPED (sourceKeyCode=79/F18, "remapped" flag, for escape/nothing):
- *     hidutil maps CapsLock→F18. All source key events suppressed.
+ *   REMAPPED (CapsLock→F18 via hidutil, for escape/nothing):
+ *     Source key events suppressed. Tap behavior handled synthetically.
  *
- *   MODIFIER (Shift/Option/Control, no "remapped"):
- *     Flag-based press/release detection via flagsChanged.
+ *   MODIFIER (Shift/Option/Control):
+ *     Flag-based press/release via flagsChanged.
  *
  * Output: {"ready":true}  {"combo":"a"}  {"tap":true}  {"error":"..."}
  */
 
 import Foundation
 import CoreGraphics
-
-// ─── Key Code Constants ──────────────────────────────────────────────
 
 let kCapsLockKeyCode: CGKeyCode = 57
 let kEscape:    CGKeyCode = 53
@@ -32,8 +33,6 @@ let kLControl:  CGKeyCode = 59
 let kRControl:  CGKeyCode = 62
 
 let kSyntheticMarker: Int64 = 0x534348594B
-
-// ─── Reverse Key Code Map ────────────────────────────────────────────
 
 let keyCodeToName: [CGKeyCode: String] = [
     0: "a", 1: "s", 2: "d", 3: "f", 4: "h", 5: "g", 6: "z", 7: "x",
@@ -49,25 +48,23 @@ let keyCodeToName: [CGKeyCode: String] = [
     98: "f7", 100: "f8", 101: "f9", 109: "f10", 103: "f11", 111: "f12",
 ]
 
-// ─── State ───────────────────────────────────────────────────────────
-
 final class HyperKeyState {
     let sourceKeyCode: CGKeyCode
     let tapBehavior: String
     let sourceIsRemapped: Bool
-    /// CapsLock passthrough: no hidutil, CapsLock events pass through to macOS.
-    let isCapsLockPassthrough: Bool
+    let isCapsLockToggle: Bool
     var sourceKeyDown: Bool = false
     var comboFired: Bool = false
+    var pressSeq: Int = 0
     var eventTap: CFMachPort?
 
     init(sourceKeyCode: CGKeyCode, tapBehavior: String, sourceIsRemapped: Bool) {
         self.sourceKeyCode = sourceKeyCode
         self.tapBehavior = tapBehavior
         self.sourceIsRemapped = sourceIsRemapped
-        self.isCapsLockPassthrough = !sourceIsRemapped
-                                     && sourceKeyCode == kCapsLockKeyCode
-                                     && tapBehavior == "toggle"
+        self.isCapsLockToggle = !sourceIsRemapped
+                                && sourceKeyCode == kCapsLockKeyCode
+                                && tapBehavior == "toggle"
     }
 
     func isSourceKeyCode(_ kc: CGKeyCode) -> Bool {
@@ -76,8 +73,6 @@ final class HyperKeyState {
         return false
     }
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────
 
 func emit(_ payload: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
@@ -112,24 +107,8 @@ func handleTap(_ state: HyperKeyState) {
     if state.tapBehavior == "escape" {
         postSyntheticKey(kEscape)
     }
-    // "toggle": CapsLock already toggled naturally (passthrough mode)
+    // "toggle": CapsLock already toggled naturally (passthrough)
     // "nothing": do nothing
-}
-
-func sourcePress(_ state: HyperKeyState) {
-    if !state.sourceKeyDown {
-        state.sourceKeyDown = true
-        state.comboFired = false
-    }
-}
-
-func sourceRelease(_ state: HyperKeyState) {
-    if state.sourceKeyDown {
-        state.sourceKeyDown = false
-        if !state.comboFired {
-            handleTap(state)
-        }
-    }
 }
 
 // ─── Argument Parsing ────────────────────────────────────────────────
@@ -143,13 +122,10 @@ guard let rawCode = Int(CommandLine.arguments[1]), rawCode >= 0 else {
     exit(1)
 }
 
-let tapBehavior = CommandLine.arguments[2]
-let isRemapped = CommandLine.arguments.count >= 4 && CommandLine.arguments[3] == "remapped"
-
 let state = HyperKeyState(
     sourceKeyCode: CGKeyCode(rawCode),
-    tapBehavior: tapBehavior,
-    sourceIsRemapped: isRemapped
+    tapBehavior: CommandLine.arguments[2],
+    sourceIsRemapped: CommandLine.arguments.count >= 4 && CommandLine.arguments[3] == "remapped"
 )
 
 // ─── Event Tap Callback ─────────────────────────────────────────────
@@ -180,23 +156,29 @@ let callback: CGEventTapCallBack = { _, type, event, userInfo in
     let isSource = state.isSourceKeyCode(keyCode)
 
     // ═══════════════════════════════════════════════════════════════
-    // CAPSLOCK PASSTHROUGH (toggle mode, no hidutil)
+    // CAPSLOCK TOGGLE MODE (no hidutil, passthrough)
     //
-    // CapsLock events pass through to macOS — CapsLock toggles
-    // naturally. On flagsChanged we mark sourceKeyDown = true.
-    //
-    // We DON'T rely on a release event (macOS may send only ONE
-    // flagsChanged per press/release cycle for CapsLock). Instead,
-    // on every keyDown we verify CapsLock is physically held using
-    // CGEventSource.keyState. If not held, we reset sourceKeyDown.
+    // CapsLock events pass through → macOS toggles CapsLock naturally.
+    // We set sourceKeyDown = true and start a 400ms timer. Any keyDown
+    // within that window is a Hyper combo. After 400ms, state resets.
+    // No release detection needed — the timer handles it.
     // ═══════════════════════════════════════════════════════════════
 
-    if state.isCapsLockPassthrough && isSource && type == .flagsChanged {
-        // Every CapsLock flagsChanged = a new press.
-        // Reset comboFired for this new press cycle.
+    if state.isCapsLockToggle && isSource && type == .flagsChanged {
         state.sourceKeyDown = true
         state.comboFired = false
-        // Let CapsLock through — macOS handles the toggle
+        state.pressSeq &+= 1
+        let seq = state.pressSeq
+
+        // Auto-reset after 400ms — no release detection needed
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            if state.sourceKeyDown && state.pressSeq == seq {
+                state.sourceKeyDown = false
+                // Don't call handleTap — CapsLock already toggled naturally
+            }
+        }
+
+        // Let CapsLock through — macOS toggles it
         return Unmanaged.passUnretained(event)
     }
 
@@ -206,18 +188,36 @@ let callback: CGEventTapCallBack = { _, type, event, userInfo in
 
     if state.sourceIsRemapped && isSource {
         if type == .keyDown {
-            sourcePress(state)
+            if !state.sourceKeyDown {
+                state.sourceKeyDown = true
+                state.comboFired = false
+                state.pressSeq &+= 1
+            }
             return nil
         }
         if type == .keyUp {
-            sourceRelease(state)
+            if state.sourceKeyDown {
+                state.sourceKeyDown = false
+                if !state.comboFired { handleTap(state) }
+            }
             return nil
         }
         if type == .flagsChanged {
             if !state.sourceKeyDown {
-                sourcePress(state)
+                state.sourceKeyDown = true
+                state.comboFired = false
+                state.pressSeq &+= 1
+                // Timer fallback for missing release events
+                let seq = state.pressSeq
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    if state.sourceKeyDown && !state.comboFired && state.pressSeq == seq {
+                        state.sourceKeyDown = false
+                        handleTap(state)
+                    }
+                }
             } else {
-                sourceRelease(state)
+                state.sourceKeyDown = false
+                if !state.comboFired { handleTap(state) }
             }
             return nil
         }
@@ -227,14 +227,17 @@ let callback: CGEventTapCallBack = { _, type, event, userInfo in
     // MODIFIER MODE (Shift / Option / Control)
     // ═══════════════════════════════════════════════════════════════
 
-    if !state.sourceIsRemapped && !state.isCapsLockPassthrough
+    if !state.sourceIsRemapped && !state.isCapsLockToggle
        && type == .flagsChanged && isSource {
         let down = isModifierDown(keyCode: keyCode, flags: event.flags)
         if down && !state.sourceKeyDown {
-            sourcePress(state)
+            state.sourceKeyDown = true
+            state.comboFired = false
+            state.pressSeq &+= 1
             return nil
         } else if !down && state.sourceKeyDown {
-            sourceRelease(state)
+            state.sourceKeyDown = false
+            if !state.comboFired { handleTap(state) }
             return nil
         }
         return nil
@@ -245,18 +248,6 @@ let callback: CGEventTapCallBack = { _, type, event, userInfo in
     // ═══════════════════════════════════════════════════════════════
 
     if state.sourceKeyDown && !isSource {
-        // In CapsLock passthrough mode, verify CapsLock is PHYSICALLY
-        // held right now. If not, the key was released without an event
-        // (macOS only sends one flagsChanged for CapsLock). Reset state
-        // and let the event through normally.
-        if state.isCapsLockPassthrough {
-            if !CGEventSource.keyState(.hidSystemState, key: kCapsLockKeyCode) {
-                state.sourceKeyDown = false
-                // Don't call handleTap — CapsLock already toggled naturally
-                return Unmanaged.passUnretained(event)
-            }
-        }
-
         if type == .keyDown {
             state.comboFired = true
             let keyName = keyCodeToName[keyCode] ?? "unknown-\(keyCode)"
