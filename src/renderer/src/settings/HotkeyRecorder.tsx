@@ -45,7 +45,6 @@ function mapCodeToAcceleratorToken(code: string): string | null {
     ArrowDown: 'Down',
     ArrowLeft: 'Left',
     ArrowRight: 'Right',
-    CapsLock: 'CapsLock',
     Minus: '-',
     Equal: '=',
     BracketLeft: '[',
@@ -79,9 +78,10 @@ function keyEventToAccelerator(e: KeyboardLikeEvent): string | null {
   // Support fn/function as a standalone hold key for whisper dictation.
   if (e.key === 'Fn' || e.key === 'Function') return 'Fn';
 
-  // Ignore standalone modifier keys
+  // Ignore standalone modifier keys (CapsLock is handled by the native
+  // hyper key monitor via IPC when enabled, so treat it as a modifier too)
   const key = e.key;
-  if (['Meta', 'Control', 'Alt', 'Shift'].includes(key)) return null;
+  if (['Meta', 'Control', 'Alt', 'Shift', 'CapsLock'].includes(key)) return null;
 
   // Map special keys to Electron accelerator names
   const keyMap: Record<string, string> = {
@@ -95,7 +95,6 @@ function keyEventToAccelerator(e: KeyboardLikeEvent): string | null {
     Delete: 'Delete',
     Tab: 'Tab',
     Escape: 'Escape',
-    CapsLock: 'CapsLock',
     F1: 'F1',
     F2: 'F2',
     F3: 'F3',
@@ -116,7 +115,7 @@ function keyEventToAccelerator(e: KeyboardLikeEvent): string | null {
     (key.length === 1 && key !== ' ' && key !== '\u00A0' ? key.toUpperCase() : null) ||
     key;
 
-  const allowWithoutModifier = /^F\d{1,2}$/i.test(mappedKey) || mappedKey === 'CapsLock' || mappedKey === 'Fn';
+  const allowWithoutModifier = /^F\d{1,2}$/i.test(mappedKey) || mappedKey === 'Fn';
   if (parts.length === 0 && !allowWithoutModifier) return null;
 
   parts.push(mappedKey);
@@ -260,6 +259,19 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
     clearPendingPrimary();
     setIsRecording(false);
   };
+
+  // Listen for Hyper Key combos from the native monitor
+  useEffect(() => {
+    if (!isRecording) return;
+    if (!window.electron?.onHyperKeyCombo) return;
+    const cleanup = window.electron.onHyperKeyCombo((comboShortcut: string) => {
+      if (!isRecordingRef.current) return;
+      onChange(comboShortcut);
+      clearPendingPrimary();
+      setIsRecording(false);
+    });
+    return cleanup;
+  }, [isRecording]);
 
   useEffect(() => {
     if (!isRecording) return;

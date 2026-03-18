@@ -2327,6 +2327,10 @@ const fnCommandWatcherRestartTimers = new Map<string, NodeJS.Timeout>();
 const fnCommandWatcherConfigs = new Map<string, string>();
 // When true, the Fn watcher is allowed to start even during onboarding (step 4 — Dictation test).
 let fnWatcherOnboardingOverride = false;
+let hyperKeyMonitorProcess: any = null;
+let hyperKeyMonitorStdoutBuffer = '';
+let hyperKeyMonitorRestartTimer: NodeJS.Timeout | null = null;
+let hyperKeyMonitorEnabled = false;
 let fnSpeakToggleLastPressedAt = 0;
 let fnSpeakToggleIsPressed = false;
 type LocalSpeakBackend = 'edge-tts' | 'system-say';
@@ -5354,6 +5358,285 @@ function stopAllFnCommandWatchers(): void {
     stopFnCommandWatcher(commandId);
   }
   fnCommandWatcherConfigs.clear();
+}
+
+// ─── Hyper Key Monitor ────────────────────────────────────────────────
+
+function isHyperShortcut(shortcut: string): boolean {
+  const parts = String(shortcut || '').split('+').map((p) => p.trim().toLowerCase());
+  return parts.some((p) => p === 'hyper' || p === '✦');
+}
+
+const HYPER_KEY_SOURCE_TO_KEYCODE: Record<string, number> = {
+  'caps-lock': 57,
+  'left-control': 59,
+  'left-shift': 56,
+  'left-option': 58,
+  'left-command': 55,
+  'right-control': 62,
+  'right-shift': 60,
+  'right-option': 61,
+  'right-command': 54,
+};
+
+// CapsLock cannot be reliably intercepted via CGEvent taps because macOS
+// toggles CapsLock state at the IOKit level before events reach the tap.
+// The proven solution (used by Karabiner, Hyperkey, etc.) is to remap
+// CapsLock to F18 via hidutil, then intercept F18's clean keyDown/keyUp.
+const CAPSLOCK_HID_SRC = 0x700000039; // CapsLock HID usage
+const F18_HID_DST = 0x70000006D;     // F18 HID usage
+const F18_KEYCODE = 79;              // F18 CGKeyCode (kVK_F18)
+let hyperKeyCapsLockRemapped = false;
+
+function applyCapsLockHidutilRemap(): void {
+  try {
+    const { execSync } = require('child_process');
+    // Read existing mappings, preserve non-CapsLock ones, add ours
+    let existing: Array<{ HIDKeyboardModifierMappingSrc: number; HIDKeyboardModifierMappingDst: number }> = [];
+    try {
+      const raw = execSync('hidutil property --get UserKeyMapping 2>/dev/null', { encoding: 'utf-8' });
+      // Parse old-style plist: extract Src/Dst pairs
+      const entryRe = /HIDKeyboardModifierMappingSrc\s*=\s*(\d+)[^}]*HIDKeyboardModifierMappingDst\s*=\s*(\d+)/g;
+      let m;
+      while ((m = entryRe.exec(raw)) !== null) {
+        existing.push({
+          HIDKeyboardModifierMappingSrc: parseInt(m[1], 10),
+          HIDKeyboardModifierMappingDst: parseInt(m[2], 10),
+        });
+      }
+    } catch {}
+    const filtered = existing.filter((e) => e.HIDKeyboardModifierMappingSrc !== CAPSLOCK_HID_SRC);
+    filtered.push({ HIDKeyboardModifierMappingSrc: CAPSLOCK_HID_SRC, HIDKeyboardModifierMappingDst: F18_HID_DST });
+    const json = JSON.stringify({ UserKeyMapping: filtered });
+    execSync(`hidutil property --set '${json}'`);
+    hyperKeyCapsLockRemapped = true;
+    console.log('[HyperKey] CapsLock remapped to F18 via hidutil');
+  } catch (error) {
+    console.warn('[HyperKey] Failed to remap CapsLock via hidutil:', error);
+  }
+}
+
+function restoreCapsLockHidutilRemap(): void {
+  if (!hyperKeyCapsLockRemapped) return;
+  try {
+    const { execSync } = require('child_process');
+    let existing: Array<{ HIDKeyboardModifierMappingSrc: number; HIDKeyboardModifierMappingDst: number }> = [];
+    try {
+      const raw = execSync('hidutil property --get UserKeyMapping 2>/dev/null', { encoding: 'utf-8' });
+      const entryRe = /HIDKeyboardModifierMappingSrc\s*=\s*(\d+)[^}]*HIDKeyboardModifierMappingDst\s*=\s*(\d+)/g;
+      let m;
+      while ((m = entryRe.exec(raw)) !== null) {
+        existing.push({
+          HIDKeyboardModifierMappingSrc: parseInt(m[1], 10),
+          HIDKeyboardModifierMappingDst: parseInt(m[2], 10),
+        });
+      }
+    } catch {}
+    const filtered = existing.filter((e) => e.HIDKeyboardModifierMappingSrc !== CAPSLOCK_HID_SRC);
+    const json = JSON.stringify({ UserKeyMapping: filtered });
+    execSync(`hidutil property --set '${json}'`);
+    hyperKeyCapsLockRemapped = false;
+    console.log('[HyperKey] CapsLock mapping restored via hidutil');
+  } catch (error) {
+    console.warn('[HyperKey] Failed to restore CapsLock via hidutil:', error);
+  }
+}
+
+function ensureHyperKeyMonitorBinary(): string | null {
+  const fs = require('fs');
+  const binaryPath = getNativeBinaryPath('hyper-key-monitor');
+  if (fs.existsSync(binaryPath)) return binaryPath;
+  try {
+    const { execFileSync } = require('child_process');
+    const sourceCandidates = [
+      path.join(app.getAppPath(), 'src', 'native', 'hyper-key-monitor.swift'),
+      path.join(process.cwd(), 'src', 'native', 'hyper-key-monitor.swift'),
+      path.join(__dirname, '..', '..', 'src', 'native', 'hyper-key-monitor.swift'),
+    ];
+    const sourcePath = sourceCandidates.find((candidate) => fs.existsSync(candidate));
+    if (!sourcePath) {
+      console.warn('[HyperKey] Source file not found for hyper-key-monitor.swift');
+      return null;
+    }
+    fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
+    execFileSync('swiftc', [
+      '-O',
+      '-o', binaryPath,
+      sourcePath,
+      '-framework', 'CoreGraphics',
+      '-framework', 'AppKit',
+      '-framework', 'Carbon',
+    ]);
+    return binaryPath;
+  } catch (error) {
+    console.warn('[HyperKey] Failed to compile hyper key monitor:', error);
+    return null;
+  }
+}
+
+function stopHyperKeyMonitor(): void {
+  hyperKeyMonitorEnabled = false;
+  if (hyperKeyMonitorRestartTimer) {
+    clearTimeout(hyperKeyMonitorRestartTimer);
+    hyperKeyMonitorRestartTimer = null;
+  }
+  if (hyperKeyMonitorProcess) {
+    // Remove all listeners BEFORE killing to prevent the old process's
+    // exit handler from nullifying hyperKeyMonitorProcess (losing the
+    // reference to a newly spawned process) and scheduling stale restarts.
+    try { hyperKeyMonitorProcess.removeAllListeners(); } catch {}
+    try { hyperKeyMonitorProcess.stdout?.removeAllListeners(); } catch {}
+    try { hyperKeyMonitorProcess.stderr?.removeAllListeners(); } catch {}
+    try { hyperKeyMonitorProcess.kill('SIGTERM'); } catch {}
+    hyperKeyMonitorProcess = null;
+    hyperKeyMonitorStdoutBuffer = '';
+  }
+  restoreCapsLockHidutilRemap();
+}
+
+function handleHyperKeyCombo(key: string): void {
+  const comboShortcut = `Hyper+${key.length === 1 ? key.toUpperCase() : key}`;
+
+  // Always forward to renderer windows (for HotkeyRecorder capture)
+  const windows = [mainWindow, settingsWindow].filter(Boolean) as Array<InstanceType<typeof BrowserWindow>>;
+  for (const win of windows) {
+    if (win.isDestroyed()) continue;
+    try {
+      win.webContents.send('hyper-key-combo', comboShortcut);
+    } catch {}
+  }
+
+  const settings = loadSettings();
+
+  // Check if the global shortcut matches (e.g. Hyper+Space toggles launcher)
+  const globalNorm = normalizeAccelerator(settings.globalShortcut);
+  if (isHyperShortcut(globalNorm)) {
+    const globalKey = globalNorm.split('+').pop()?.trim().toLowerCase() || '';
+    if (globalKey === key.toLowerCase()) {
+      toggleWindow();
+      return;
+    }
+  }
+
+  // Check command hotkeys
+  for (const [commandId, hotkeyValue] of Object.entries(settings.commandHotkeys)) {
+    if (!hotkeyValue) continue;
+    const normalized = normalizeAccelerator(hotkeyValue);
+    if (!isHyperShortcut(normalized)) continue;
+    const hotkeyKey = normalized.split('+').pop()?.trim().toLowerCase() || '';
+    if (hotkeyKey === key.toLowerCase()) {
+      void runCommandById(commandId, 'hotkey');
+      return;
+    }
+  }
+}
+
+function startHyperKeyMonitor(): void {
+  if (hyperKeyMonitorProcess) return;
+  const settings = loadSettings();
+  if (!settings.hyperKey.enabled) return;
+
+  const sourceKey = settings.hyperKey.sourceKey;
+  let sourceKeyCode = HYPER_KEY_SOURCE_TO_KEYCODE[sourceKey];
+  if (sourceKeyCode === undefined) {
+    console.warn('[HyperKey] Unknown source key:', sourceKey);
+    return;
+  }
+
+  const binaryPath = ensureHyperKeyMonitorBinary();
+  if (!binaryPath) {
+    console.warn('[HyperKey] Monitor binary unavailable');
+    return;
+  }
+
+  // For CapsLock with "escape" or "nothing": remap to F18 via hidutil
+  // to prevent CapsLock toggle. For "toggle": DON'T use hidutil — let
+  // CapsLock pass through so it toggles naturally on tap.
+  const isCapsLock = sourceKey === 'caps-lock';
+  const capsLockTapBehavior = settings.hyperKey.capsLockTapBehavior || 'escape';
+  const useHidutil = isCapsLock && capsLockTapBehavior !== 'toggle';
+
+  if (useHidutil) {
+    applyCapsLockHidutilRemap();
+    sourceKeyCode = F18_KEYCODE;
+  }
+
+  const spawnArgs = [
+    String(sourceKeyCode),
+    capsLockTapBehavior,
+  ];
+  if (useHidutil) {
+    spawnArgs.push('remapped');
+  }
+
+  const { spawn } = require('child_process');
+  hyperKeyMonitorProcess = spawn(
+    binaryPath,
+    spawnArgs,
+    { stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  hyperKeyMonitorEnabled = true;
+  hyperKeyMonitorStdoutBuffer = '';
+
+  hyperKeyMonitorProcess.stdout.on('data', (chunk: Buffer | string) => {
+    hyperKeyMonitorStdoutBuffer += chunk.toString();
+    const lines = hyperKeyMonitorStdoutBuffer.split('\n');
+    hyperKeyMonitorStdoutBuffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const payload = JSON.parse(trimmed);
+        if (payload?.combo) {
+          handleHyperKeyCombo(payload.combo);
+        }
+        if (payload?.ready) {
+          console.log('[HyperKey] Monitor ready');
+        }
+        if (payload?.error) {
+          console.warn('[HyperKey] Monitor error:', payload.error);
+        }
+      } catch {}
+    }
+  });
+
+  hyperKeyMonitorProcess.stderr.on('data', (chunk: Buffer | string) => {
+    const text = chunk.toString().trim();
+    if (text) console.warn('[HyperKey]', text);
+  });
+
+  const scheduleRestart = () => {
+    if (!hyperKeyMonitorEnabled) return;
+    hyperKeyMonitorRestartTimer = setTimeout(() => {
+      hyperKeyMonitorRestartTimer = null;
+      if (!hyperKeyMonitorEnabled) return;
+      startHyperKeyMonitor();
+    }, 250);
+  };
+
+  hyperKeyMonitorProcess.on('error', () => {
+    hyperKeyMonitorProcess = null;
+    hyperKeyMonitorStdoutBuffer = '';
+    scheduleRestart();
+  });
+
+  hyperKeyMonitorProcess.on('exit', () => {
+    hyperKeyMonitorProcess = null;
+    hyperKeyMonitorStdoutBuffer = '';
+    scheduleRestart();
+  });
+}
+
+function syncHyperKeyMonitor(): void {
+  const settings = loadSettings();
+  if (!settings.hyperKey.enabled) {
+    stopHyperKeyMonitor();
+    return;
+  }
+  // Restart to pick up any config changes
+  stopHyperKeyMonitor();
+  hyperKeyMonitorEnabled = true;
+  startHyperKeyMonitor();
 }
 
 function startFnCommandWatcher(commandId: string, shortcut: string): void {
@@ -9683,6 +9966,9 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
     if (isFnShortcut(normalizedShortcut)) {
       continue;
     }
+    if (isHyperShortcut(normalizedShortcut)) {
+      continue;
+    }
     try {
       const success = globalShortcut.register(normalizedShortcut, async () => {
         await runCommandById(commandId, 'hotkey');
@@ -9695,6 +9981,7 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
 
   syncFnSpeakToggleWatcher(hotkeys);
   syncFnCommandWatchers(hotkeys);
+  syncHyperKeyMonitor();
 }
 
 function registerDevToolsShortcut(): void {
@@ -10283,6 +10570,9 @@ app.whenReady().then(async () => {
         syncFnSpeakToggleWatcher(loadSettings().commandHotkeys);
         syncFnCommandWatchers(loadSettings().commandHotkeys);
       }
+      if (patch.hyperKey !== undefined) {
+        syncHyperKeyMonitor();
+      }
       return result;
     }
   );
@@ -10395,6 +10685,7 @@ app.whenReady().then(async () => {
           commandId === 'system-supercmd-whisper-speak-toggle' &&
           isFnOnlyShortcut(normalizedHotkey);
         const isFnHotkey = isFnShortcut(normalizedHotkey);
+        const isHyperHotkey = isHyperShortcut(normalizedHotkey);
 
         // Register the new one
         try {
@@ -10405,6 +10696,11 @@ app.whenReady().then(async () => {
             const fnConfig = parseHoldShortcutConfig(normalizedHotkey);
             const binaryPath = ensureWhisperHoldWatcherBinary();
             success = Boolean(fnConfig && fnConfig.fn && binaryPath);
+          } else if (isHyperHotkey) {
+            // Hyper shortcuts are handled by the native hyper key monitor,
+            // NOT by Electron's globalShortcut (which would ignore "Hyper"
+            // and register just the bare key).
+            success = true;
           } else {
             success = globalShortcut.register(normalizedHotkey, async () => {
               await runCommandById(commandId, 'hotkey');
@@ -10426,7 +10722,7 @@ app.whenReady().then(async () => {
             return { success: false, error: 'unavailable' as const };
           }
           hotkeys[commandId] = hotkey;
-          if (!isFnSpeakToggle && !isFnHotkey) {
+          if (!isFnSpeakToggle && !isFnHotkey && !isHyperHotkey) {
             registeredHotkeys.set(normalizedHotkey, commandId);
           }
         } catch {
@@ -13616,6 +13912,7 @@ app.on('will-quit', () => {
   stopWhisperHoldWatcher();
   stopFnSpeakToggleWatcher();
   stopAllFnCommandWatchers();
+  stopHyperKeyMonitor();
   stopSpeakSession({ resetStatus: false });
   stopClipboardMonitor();
   stopSnippetExpander();

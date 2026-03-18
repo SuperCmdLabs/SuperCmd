@@ -724,6 +724,15 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('ollama-pull-error', (_event: any, data: any) => callback(data));
   },
 
+  // ─── Hyper Key ──────────────────────────────────────────────────
+  onHyperKeyCombo: (callback: (key: string) => void) => {
+    const listener = (_event: any, key: string) => callback(key);
+    ipcRenderer.on('hyper-key-combo', listener);
+    return () => {
+      ipcRenderer.removeListener('hyper-key-combo', listener);
+    };
+  },
+
   // ─── WindowManagement ────────────────────────────────────────────
   getActiveWindow: (): Promise<any> =>
     ipcRenderer.invoke('window-management-get-active-window'),
