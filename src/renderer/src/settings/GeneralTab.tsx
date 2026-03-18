@@ -272,7 +272,6 @@ const GeneralTab: React.FC = () => {
   }, [handleCheckForUpdates, handleDownloadUpdate, handleRestartToInstall, t, updaterState, updaterSupported]);
   const updaterPrimaryMessage = useMemo(() => {
     if (!updaterStatus) return t('settings.general.updates.defaultMessage');
-    if (updaterStatus.message) return updaterStatus.message;
     switch (updaterStatus.state) {
       case 'unsupported':
         return t('settings.general.updates.unsupported');
@@ -291,7 +290,7 @@ const GeneralTab: React.FC = () => {
       case 'error':
         return t('settings.general.updates.error');
       default:
-        return t('settings.general.updates.defaultMessage');
+        return updaterStatus.message || t('settings.general.updates.defaultMessage');
     }
   }, [t, updaterStatus]);
   const UpdaterActionIcon = updaterAction.icon;

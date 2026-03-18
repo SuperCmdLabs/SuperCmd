@@ -136,8 +136,8 @@
       "tabs": {
         "apiKeys": "Claves API",
         "llm": "LLM",
-        "whisper": "Whisper",
-        "speak": "Síntesis de voz"
+        "whisper": "SuperCmd Whisper",
+        "speak": "SuperCmd Read"
       },
       "apiKeys": {
         "title": "Configuración de claves API",
@@ -165,7 +165,33 @@
         "testConnection": "Probar conexión",
         "testing": "Probando...",
         "connectionSuccess": "Conexión exitosa",
-        "connectionFailed": "Conexión fallida"
+        "connectionFailed": "Conexión fallida",
+        "gemini": {
+          "label": "Clave API de Gemini (Google)",
+          "placeholder": "AIza..."
+        },
+        "elevenlabs": {
+          "label": "Clave API de ElevenLabs",
+          "placeholder": "xi-..."
+        },
+        "supermemory": {
+          "title": "Supermemory",
+          "description": "Backend de memoria para contexto a largo plazo.",
+          "apiKey": {
+            "label": "Clave API de Supermemory",
+            "placeholder": "sm-..."
+          },
+          "client": {
+            "label": "Cliente de Supermemory",
+            "placeholder": "client-123",
+            "hint": "Se usa para delimitar la recuperacion de memoria del usuario."
+          },
+          "baseUrl": {
+            "label": "URL base de Supermemory",
+            "placeholder": "https://api.supermemory.ai"
+          },
+          "localMode": "Usar modo local (guardado localmente)"
+        }
       },
       "llm": {
         "title": "Configuración de modelo de lenguaje grande",
@@ -174,7 +200,9 @@
           "description": "Selecciona el proveedor del modelo de IA",
           "openai": "OpenAI",
           "anthropic": "Anthropic",
-          "ollama": "Ollama (local)"
+          "ollama": "Ollama (local)",
+          "gemini": "Gemini",
+          "openaiCompatible": "Personalizado (compatible con OpenAI)"
         },
         "model": {
           "label": "Modelo",
@@ -198,10 +226,58 @@
         "streaming": {
           "label": "Respuestas en streaming",
           "description": "Mostrar respuestas en tiempo real durante la generación"
+        },
+        "enableLLM": {
+          "title": "Activar LLM",
+          "description": "Activar o desactivar las funciones de IA basadas en modelos."
+        },
+        "modelSelection": {
+          "title": "Seleccion generica de modelos",
+          "description": "La usan las extensiones y las acciones de IA agnosticas al modelo."
+        },
+        "ollama": {
+          "serverUrl": {
+            "label": "URL del servidor Ollama",
+            "placeholder": "http://localhost:11434"
+          },
+          "models": "Modelos de Ollama",
+          "refresh": "Actualizar",
+          "checking": "Comprobando el estado de Ollama...",
+          "notRunning": {
+            "title": "Ollama no esta en ejecucion",
+            "description": "Instala y ejecuta Ollama para usar modelos locales.",
+            "download": "Descargar Ollama"
+          },
+          "running": "Ollama esta en ejecucion",
+          "installed": "Instalado",
+          "downloadModel": "Descargar",
+          "removeModel": "Eliminar",
+          "downloading": "Descargando...",
+          "removing": "Eliminando..."
+        },
+        "openaiCompatible": {
+          "baseUrl": {
+            "label": "URL base",
+            "placeholder": "https://api.openrouter.ai/v1",
+            "hint": "Incluye /v1 si tu proveedor lo requiere (p. ej. https://api.openai.com/v1)."
+          },
+          "apiKey": {
+            "label": "Clave API",
+            "placeholder": "sk-..."
+          },
+          "modelName": {
+            "label": "Nombre del modelo",
+            "placeholder": "anthropic/claude-3.5-sonnet",
+            "hint": "El nombre exacto del modelo que espera tu proveedor (p. ej. gpt-4o o meta-llama/llama-3.1-70b-instruct)."
+          }
+        },
+        "defaultModel": {
+          "label": "Modelo predeterminado",
+          "auto": "Auto (predeterminado del proveedor)"
         }
       },
       "whisper": {
-        "title": "Configuración de reconocimiento de voz Whisper",
+        "title": "SuperCmd Whisper",
         "enabled": {
           "label": "Habilitar entrada de voz",
           "description": "Habilitar reconocimiento de voz Whisper para comandos de voz"
@@ -219,7 +295,12 @@
           "base": "Base",
           "small": "Small",
           "medium": "Medium",
-          "large": "Large (más preciso)"
+          "large": "Large (más preciso)",
+          "native": "Nativo (predeterminado)",
+          "openaiGpt4o": "OpenAI GPT-4o Transcribe",
+          "openaiWhisper": "OpenAI Whisper-1",
+          "elevenlabsScribeV1": "ElevenLabs Scribe v1",
+          "elevenlabsScribeV2": "ElevenLabs Scribe v2"
         },
         "language": {
           "label": "Idioma",
@@ -230,20 +311,96 @@
           "label": "Atajo de entrada de voz",
           "description": "Atajo para activar la entrada de voz",
           "placeholder": "Grabar atajo..."
+        },
+        "enableWhisper": {
+          "title": "Activar SuperCmd Whisper",
+          "description": "Activar o desactivar las funciones de voz a texto."
+        },
+        "description": "Voz a texto y limpieza de transcripciones.",
+        "openaiWarning": "Se ha seleccionado OpenAI Whisper. Anade la clave API de OpenAI en API Keys.",
+        "elevenlabsWarning": "Se ha seleccionado ElevenLabs STT. {action} la clave API de ElevenLabs en API Keys.",
+        "elevenlabsReady": "Se ha seleccionado ElevenLabs STT. La transcripcion en la nube usara tu clave de ElevenLabs.",
+        "hotkeys": {
+          "title": "Atajos de Whisper",
+          "startStop": "Iniciar/detener dictado",
+          "setToFn": "Asignar a Fn",
+          "fnHint": "Usa Asignar a Fn para restaurar la tecla predeterminada de pulsar para hablar.",
+          "fnHintBefore": "Use",
+          "fnHintAfter": "to restore the default hold-to-talk key."
+        },
+        "smoothOutput": {
+          "title": "Suavizar salida",
+          "description": "Limpia muletillas y autocorrecciones."
+        },
+        "smoothingModel": {
+          "label": "Modelo de suavizado",
+          "useDefault": "Usar modelo generico predeterminado",
+          "hint": "Usa los modelos de tu proveedor actual."
+        },
+        "modelOptions": {
+          "whispercpp": "SuperCmd Whisper (Default)",
+          "parakeet": "Parakeet v3 (Best and fastest, 25+ European languages)",
+          "qwen3": "Qwen3 ASR (30+ languages including Chinese, Japanese, Korean, Thai, Vietnamese, Hindi)",
+          "native": "Apple Speech Recognition",
+          "openaiGpt4o": "OpenAI GPT-4o Transcribe",
+          "openaiWhisper": "OpenAI Whisper-1",
+          "elevenlabsScribeV1": "ElevenLabs Scribe v1",
+          "elevenlabsScribeV2": "ElevenLabs Scribe v2"
+        },
+        "providerInfo": {
+          "parakeet": "Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Requires model warmup on first use. Download the model below before using dictation.",
+          "qwen3": "Offline on-device transcription via Qwen3 ASR. Supports 30+ languages, requires macOS 15+, and warms up on first use.",
+          "whispercpp": "Offline on-device transcription via Whisper.cpp. Download the default ggml base model below before using dictation.",
+          "native": "Uses Apple Speech Recognition instead of SuperCmd Whisper."
+        },
+        "recognitionLanguage": "Recognition Language",
+        "downloadCards": {
+          "modelDownloadFailed": "Model download failed.",
+          "actions": {
+            "downloaded": "Model Downloaded",
+            "downloading": "Downloading...",
+            "download": "Download Model"
+          },
+          "parakeet": {
+            "title": "Parakeet TDT v3",
+            "description": "Multilingual on-device transcription. Runs on Apple Neural Engine.",
+            "ready": "Downloaded. Parakeet v3 is ready to use offline.",
+            "downloading": "Downloading Parakeet v3 models",
+            "notDownloaded": "Model not downloaded yet. Download it now to use Parakeet dictation."
+          },
+          "qwen3": {
+            "title": "Qwen3 ASR",
+            "description": "30-language on-device transcription. Requires macOS 15+.",
+            "ready": "Downloaded. Qwen3 ASR is ready to use offline.",
+            "downloading": "Downloading Qwen3 ASR models",
+            "notDownloaded": "Model not downloaded yet. Download the ~900 MB int8 model to use Qwen3 dictation."
+          },
+          "whispercpp": {
+            "title": "SuperCmd Whisper",
+            "description": "Download the ggml base model once to enable local dictation.",
+            "ready": "Downloaded. SuperCmd Whisper is ready to use offline.",
+            "downloading": "Downloading SuperCmd Whisper",
+            "notDownloaded": "Model not downloaded yet. Download it now to use SuperCmd Whisper dictation."
+          }
         }
       },
       "speak": {
-        "title": "Configuración de síntesis de voz",
+        "title": "SuperCmd Read",
         "enabled": {
           "label": "Habilitar síntesis de voz",
           "description": "Habilitar texto a voz para respuestas de IA"
         },
         "provider": {
-          "label": "Proveedor",
+          "label": "Proveedor de voz",
           "description": "Selecciona el proveedor de síntesis de voz",
           "system": "TTS del sistema",
           "openai": "OpenAI TTS",
-          "elevenlabs": "ElevenLabs"
+          "elevenlabs": "ElevenLabs",
+          "edgeTTS": "Edge TTS (predeterminado)",
+          "elevenlabsMultilingual": "ElevenLabs Multilingual v2",
+          "elevenlabsFlash": "ElevenLabs Flash v2.5",
+          "elevenlabsTurbo": "ElevenLabs Turbo v2.5",
+          "elevenlabsV3": "ElevenLabs v3 (Alpha)"
         },
         "voice": {
           "label": "Voz",
@@ -255,8 +412,70 @@
           "description": "Ajustar la velocidad de la voz"
         },
         "testVoice": "Probar voz",
-        "testing": "Probando..."
-      }
+        "testing": "Probando...",
+        "enableRead": {
+          "title": "Activar SuperCmd Read",
+          "description": "Activar o desactivar las funciones de texto a voz."
+        },
+        "description": "Leer en voz alta el texto seleccionado.",
+        "edgeTTS": {
+          "voice": "Voz de Edge TTS",
+          "fetching": "Obteniendo la lista completa de voces...",
+          "language": {
+            "label": "Idioma"
+          },
+          "gender": {
+            "label": "Genero de voz",
+            "female": "Femenino",
+            "male": "Masculino"
+          },
+          "voiceLabel": {
+            "label": "Voz"
+          },
+          "playSample": {
+            "idle": "Reproducir voz de muestra",
+            "playing": "Reproduciendo muestra..."
+          }
+        },
+        "elevenlabs": {
+          "model": {
+            "label": "Modelo de ElevenLabs"
+          },
+          "voice": {
+            "label": "Voz de ElevenLabs",
+            "fetching": "Obteniendo tus voces...",
+            "builtIn": "Voces integradas",
+            "premade": "Voces predefinidas adicionales",
+            "custom": "Tus voces personalizadas (clonadas/generadas)",
+            "professional": "Clones de voz profesionales",
+            "available": "{count} resultado{plural} de voz personalizada en tu cuenta de ElevenLabs"
+          },
+          "playSample": {
+            "idle": "Reproducir voz de muestra",
+            "playing": "Reproduciendo muestra..."
+          },
+          "storageHint": "SuperCmd guarda esto como {value}.",
+          "apiKeyWarning": "Anade la clave API de ElevenLabs en API Keys."
+        },
+        "notes": {
+          "title": "Notas",
+          "whisperDefault": "Whisper usa por defecto SuperCmd Whisper con un modelo local ggml base.",
+          "speakDefault": "La salida de voz predeterminada es Edge TTS con seleccion de voz masculina/femenina por idioma.",
+          "englishVoice": "Las voces en ingles se limitan intencionadamente a las variantes de EE. UU. y Reino Unido.",
+          "elevenlabsVoices": "Las voces personalizadas de ElevenLabs (clonadas/generadas) apareceran automaticamente cuando tu clave API este configurada."
+        }
+      },
+      "title": "Configuracion de IA",
+      "loading": "Cargando configuracion de IA...",
+      "saved": "Guardado",
+      "enableAI": {
+        "title": "Activar IA",
+        "description": "Interruptor principal para las funciones de IA."
+      },
+      "hotkeyUpdated": "Atajo actualizado.",
+      "hotkeyRemoved": "Atajo eliminado.",
+      "hotkeyDuplicate": "Ese atajo ya esta siendo usado por otro comando de SuperCmd.",
+      "hotkeyUnavailable": "Atajo no disponible. Puede que lo este usando macOS u otra aplicacion."
     },
     "extensions": {
       "title": "Configuración de extensiones",
@@ -570,14 +789,158 @@
       }
     },
     "getStarted": "Comenzar",
-    "skip": "Omitir"
+    "skip": "Omitir",
+    "whisper": {
+      "quick": {
+        "title": "Whisper Quick Onboarding",
+        "subtitle": "Hold to record, release to type",
+        "instructions": {
+          "before": "Press and hold ",
+          "after": " while speaking. Release it to process and type at your current cursor."
+        },
+        "practiceTitle": "Practice paragraph",
+        "practicePlaceholder": "Today I reviewed the roadmap and prioritized the top three tasks for this week. Please draft a short summary and share it with the team before lunch.",
+        "practiceHint": "Practice in this editor: hold hotkey, speak these two sentences, release, and verify the output.",
+        "footerHint": "Whisper stays near the bottom when active."
+      }
+    },
+    "voice": {
+      "steps": {
+        "welcome": "Welcome",
+        "coreFeatures": "Core Features",
+        "hotkeySetup": "Hotkey Setup",
+        "permissions": "Permissions",
+        "dictationMode": "Dictation Mode",
+        "readMode": "Read Mode",
+        "finalCheck": "Final Check"
+      },
+      "featureCards": {
+        "whisper": {
+          "title": "Whisper",
+          "description": "Hold to speak and release to type."
+        },
+        "read": {
+          "title": "Read",
+          "description": "Read selected text with natural voice."
+        }
+      },
+      "permissions": {
+        "inputMonitoringTitle": "Input Monitoring",
+        "inputMonitoringDescription": "Required for Fn hold-to-talk detection and other global key monitoring in Whisper mode.",
+        "speechRecognitionTitle": "Speech Recognition",
+        "speechRecognitionDescription": "Optional. Needed only if you switch Whisper to the Apple Speech Recognition fallback.",
+        "microphoneTitle": "Microphone",
+        "microphoneDescription": "Required for SuperCmd Whisper Dictation."
+      },
+      "permissionNotes": {
+        "blocked": "{target} access is blocked. Enable SuperCmd in System Settings, then return.",
+        "promptFailed": "Could not trigger the permission prompt. Open System Settings -> Privacy & Security, enable SuperCmd, then press request again.",
+        "notShown": "Permission prompt did not appear. Open Whisper once and press this again.",
+        "homeFolder": "Select your Home folder when prompted, then enable SuperCmd under Files and Folders if needed.",
+        "inputMonitoring": "In Input Monitoring, click \"+\" at the bottom left and add SuperCmd from your Applications folder."
+      },
+      "dictation": {
+        "title": "Dictation Mode",
+        "howToTest": "How to test",
+        "howToTestHint": "Hold key, read sample, release to insert.",
+        "holdKeyUpdated": "Hold key updated",
+        "language": "Dictation language",
+        "sampleTitle": "Messages sample",
+        "sampleHint": "Hold your key and read the message above:",
+        "placeholder": "Dictated text appears here...",
+        "footerHint": "SuperCmd Whisper uses a local ggml base model by default. Apple Speech Recognition remains available as a fallback in Settings.",
+        "models": {
+          "downloadFailed": "Model download failed. Retry now or use Settings -> AI -> SuperCmd Whisper.",
+          "actions": {
+            "downloaded": "Downloaded",
+            "downloading": "Downloading...",
+            "download": "Download Model"
+          },
+          "parakeet": {
+            "title": "Parakeet TDT v3",
+            "ready": "Download complete. Parakeet v3 dictation is ready.",
+            "downloadingLead": "Downloading models, just a moment.",
+            "downloading": "Downloading Parakeet v3 CoreML models",
+            "notDownloaded": "SuperCmd starts downloading Parakeet v3 models on this step so dictation is ready before first use."
+          },
+          "whispercpp": {
+            "title": "SuperCmd Whisper",
+            "ready": "Download complete. SuperCmd Whisper dictation is ready.",
+            "downloadingLead": "Downloading model, just a moment.",
+            "downloading": "Downloading the ~300 MB ggml base model",
+            "notDownloaded": "SuperCmd starts downloading the SuperCmd Whisper model on this step so dictation is ready before first use."
+          },
+          "cloud": {
+            "title": "Cloud Transcription",
+            "description": "Using cloud-based transcription. No model download needed."
+          }
+        },
+        "sampleText": "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness."
+      },
+      "read": {
+        "badge": "Classic Literature",
+        "readTime": "1 min read",
+        "articleTitle": "Pride and Prejudice",
+        "instructions": {
+          "before": "Select the text above then press",
+          "after": "to hear it read aloud."
+        },
+        "sampleText": "Voice-first interfaces are having a moment. After years of being dismissed as gimmicks, a new wave of tools is making it genuinely faster to speak than type - with transcription that keeps up, smart corrections, and shortcut keys that slot into existing workflows without disruption."
+      },
+      "final": {
+        "title": "Final step: start SuperCmd from anywhere",
+        "description": "Press your global shortcut now to start SuperCmd from any app.",
+        "nextStep": "Next step: Setup Hotkeys for AI Prompt and Memory from SuperCmd Settings -> Extensions to start using AI anywhere."
+      },
+      "setupDescription": "We will configure launcher hotkeys, privacy permissions, and whisper mode in one pass.",
+      "setupSummary": "Whisper dictation and Read mode practice",
+      "summary": {
+        "title": "What gets configured now:",
+        "hotkey": "1. Launcher hotkey",
+        "permissions": "2. Accessibility, Input Monitoring, Speech Recognition, Microphone"
+      },
+      "setupTitle": "One command surface for launch, ask, dictate, and read."
+    }
   },
   "whisper": {
     "listening": "Escuchando...",
     "processing": "Procesando...",
     "speakNow": "Habla ahora",
     "tapToStop": "Toca para detener",
-    "error": "Ocurrió un error. Por favor intenta de nuevo."
+    "error": "Ocurrió un error. Por favor intenta de nuevo.",
+    "close": "Close whisper",
+    "coachmark": {
+      "holdToTalk": "Whisper sits here. Hold {shortcut} to talk, release to type.",
+      "warmingUp": "First-time setup - Warming up models..."
+    },
+    "status": {
+      "idle": "Press start to begin speaking.",
+      "apiError": "Whisper API error.",
+      "nativeFallback": "Whisper model is Apple Speech Recognition. Press start to use the Apple fallback.",
+      "transcriptionFailedLocal": "SuperCmd Whisper transcription failed.",
+      "transcriptionFailed": "Whisper transcription failed.",
+      "microphonePermissionRequired": "Microphone permission required.",
+      "microphonePermissionCheckFailed": "Microphone permission check failed.",
+      "microphoneAccessDenied": "Microphone access denied.",
+      "startingMicrophone": "Starting microphone...",
+      "loadingModels": "Loading Whisper models...",
+      "nativeRecognizerStartFailed": "Speech recognition failed to start.",
+      "finishing": "Finishing transcription...",
+      "listeningReleaseToProcess": "Listening. Release to process.",
+      "listeningPressAgainToFinish": "Listening. Press again to finish.",
+      "recordingFailed": "Recording failed.",
+      "speechRecognitionError": "Speech recognition error."
+    },
+    "errors": {
+      "typeIntoActiveApp": "Could not type into the active app.",
+      "enableMicrophonePermission": "Enable SuperCmd in System Settings -> Privacy & Security -> Microphone, then retry.",
+      "allowMicrophonePermission": "Allow microphone permission to use SuperCmd Whisper.",
+      "microphoneUnavailable": "Could not access microphone. Check System Settings -> Privacy & Security -> Microphone.",
+      "nativeRecognizerStartFailed": "Failed to start native speech recognizer.",
+      "liveTypingRetry": "Live typing fell behind. Try again.",
+      "modelNotReady": "Model is still warming up. Try again in a moment.",
+      "recordingFailed": "Could not start audio recording."
+    }
   },
   "read": {
     "title": "Leer texto",

@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Brain,
   Download,
+  CheckCircle2,
   ExternalLink,
   Eye,
   EyeOff,
@@ -22,7 +23,15 @@ import {
   Volume2,
 } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
-import type { AppSettings, AISettings, EdgeTtsVoice, ElevenLabsVoice } from '../../types/electron';
+import type {
+  AppSettings,
+  AISettings,
+  EdgeTtsVoice,
+  ElevenLabsVoice,
+  WhisperCppModelStatus,
+  ParakeetModelStatus,
+  Qwen3ModelStatus,
+} from '../../types/electron';
 import { useI18n } from '../i18n';
 import {
   clearElevenLabsVoiceCache,
@@ -31,11 +40,22 @@ import {
 } from '../utils/voice-cache';
 
 const getProviderOptions = (t: (key: string) => string) => [
-  { id: 'openai' as const, label: t('settings.ai.llm.provider.openai'), description: 'GPT family models' },
-  { id: 'anthropic' as const, label: t('settings.ai.llm.provider.anthropic'), description: 'Anthropic Claude models' },
-  { id: 'gemini' as const, label: t('settings.ai.llm.provider.gemini'), description: 'Google Gemini models' },
-  { id: 'ollama' as const, label: t('settings.ai.llm.provider.ollama'), description: 'Local models' },
-  { id: 'openai-compatible' as const, label: t('settings.ai.llm.provider.openaiCompatible'), description: 'Any OpenAI-compatible API (OpenRouter, Together, etc.)' },
+  { id: 'openai' as const, label: t('settings.ai.llm.provider.openai'), description: t('settings.ai.llm.providerDescriptions.openai') },
+  { id: 'anthropic' as const, label: t('settings.ai.llm.provider.anthropic'), description: t('settings.ai.llm.providerDescriptions.anthropic') },
+  { id: 'gemini' as const, label: t('settings.ai.llm.provider.gemini'), description: t('settings.ai.llm.providerDescriptions.gemini') },
+  { id: 'ollama' as const, label: t('settings.ai.llm.provider.ollama'), description: t('settings.ai.llm.providerDescriptions.ollama') },
+  { id: 'openai-compatible' as const, label: t('settings.ai.llm.provider.openaiCompatible'), description: t('settings.ai.llm.providerDescriptions.openaiCompatible') },
+];
+
+const getWhisperSttOptions = (t: (key: string) => string) => [
+  { id: 'whispercpp', label: t('settings.ai.whisper.modelOptions.whispercpp') },
+  { id: 'parakeet', label: t('settings.ai.whisper.modelOptions.parakeet') },
+  { id: 'qwen3', label: t('settings.ai.whisper.modelOptions.qwen3') },
+  { id: 'native', label: t('settings.ai.whisper.modelOptions.native') },
+  { id: 'openai-gpt-4o-transcribe', label: t('settings.ai.whisper.modelOptions.openaiGpt4o') },
+  { id: 'openai-whisper-1', label: t('settings.ai.whisper.modelOptions.openaiWhisper') },
+  { id: 'elevenlabs-scribe-v1', label: t('settings.ai.whisper.modelOptions.elevenlabsScribeV1') },
+  { id: 'elevenlabs-scribe-v2', label: t('settings.ai.whisper.modelOptions.elevenlabsScribeV2') },
 ];
 
 const MODELS_BY_PROVIDER: Record<string, { id: string; label: string }[]> = {
@@ -58,31 +78,70 @@ const MODELS_BY_PROVIDER: Record<string, { id: string; label: string }[]> = {
   ],
 };
 
-const CURATED_OLLAMA_MODELS = [
-  { name: 'llama3.2', label: 'Llama 3.2', size: '2.0 GB', description: 'Meta general-purpose (3B)' },
-  { name: 'llama3.2:1b', label: 'Llama 3.2 (1B)', size: '1.3 GB', description: 'Small and fast' },
-  { name: 'mistral', label: 'Mistral 7B', size: '4.1 GB', description: 'Efficient general-purpose' },
-  { name: 'codellama', label: 'Code Llama', size: '3.8 GB', description: 'Code generation & completion' },
-  { name: 'phi3', label: 'Phi-3', size: '2.3 GB', description: 'Microsoft small language model' },
-  { name: 'gemma2', label: 'Gemma 2', size: '5.4 GB', description: 'Google open model (9B)' },
-  { name: 'qwen2.5', label: 'Qwen 2.5', size: '4.7 GB', description: 'Alibaba multilingual model (7B)' },
-  { name: 'deepseek-r1', label: 'DeepSeek R1', size: '4.7 GB', description: 'Reasoning-focused model (7B)' },
+const getCuratedOllamaModels = (t: (key: string) => string) => [
+  { name: 'llama3.2', label: 'Llama 3.2', size: '2.0 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.llama32') },
+  { name: 'llama3.2:1b', label: 'Llama 3.2 (1B)', size: '1.3 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.llama32_1b') },
+  { name: 'mistral', label: 'Mistral 7B', size: '4.1 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.mistral') },
+  { name: 'codellama', label: 'Code Llama', size: '3.8 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.codellama') },
+  { name: 'phi3', label: 'Phi-3', size: '2.3 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.phi3') },
+  { name: 'gemma2', label: 'Gemma 2', size: '5.4 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.gemma2') },
+  { name: 'qwen2.5', label: 'Qwen 2.5', size: '4.7 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.qwen25') },
+  { name: 'deepseek-r1', label: 'DeepSeek R1', size: '4.7 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.deepseekR1') },
 ];
 
-const WHISPER_STT_OPTIONS = [
-  { id: 'native', label: 'Native (Default)' },
-  { id: 'openai-gpt-4o-transcribe', label: 'OpenAI GPT-4o Transcribe' },
-  { id: 'openai-whisper-1', label: 'OpenAI Whisper-1' },
-  { id: 'elevenlabs-scribe-v1', label: 'ElevenLabs Scribe v1' },
-  { id: 'elevenlabs-scribe-v2', label: 'ElevenLabs Scribe v2' },
-];
+const WHISPER_LANGUAGE_CODES = [
+  'ar-EG',
+  'zh-CN',
+  'en-US',
+  'en-GB',
+  'fr-CA',
+  'fr-FR',
+  'de-DE',
+  'hi-IN',
+  'it-IT',
+  'ja-JP',
+  'ko-KR',
+  'pt-BR',
+  'ru-RU',
+  'es-MX',
+  'es-ES',
+] as const;
 
-const SPEAK_TTS_OPTIONS = [
-  { id: 'edge-tts', label: 'Edge TTS (Default)' },
-  { id: 'elevenlabs-multilingual-v2', label: 'ElevenLabs Multilingual v2' },
-  { id: 'elevenlabs-flash-v2-5', label: 'ElevenLabs Flash v2.5' },
-  { id: 'elevenlabs-turbo-v2-5', label: 'ElevenLabs Turbo v2.5' },
-  { id: 'elevenlabs-v3', label: 'ElevenLabs v3 (Alpha)' },
+const AI_LANGUAGE_LABEL_KEYS: Record<string, string> = {
+  'ar-EG': 'settings.ai.languages.arabic',
+  'zh-CN': 'settings.ai.languages.chineseMandarin',
+  'en-US': 'settings.ai.languages.englishUs',
+  'en-GB': 'settings.ai.languages.englishUk',
+  'fr-CA': 'settings.ai.languages.frenchCanada',
+  'fr-FR': 'settings.ai.languages.frenchFrance',
+  'de-DE': 'settings.ai.languages.german',
+  'hi-IN': 'settings.ai.languages.hindi',
+  'it-IT': 'settings.ai.languages.italian',
+  'ja-JP': 'settings.ai.languages.japanese',
+  'ko-KR': 'settings.ai.languages.korean',
+  'pt-BR': 'settings.ai.languages.portugueseBrazil',
+  'ru-RU': 'settings.ai.languages.russian',
+  'es-MX': 'settings.ai.languages.spanishMexico',
+  'es-ES': 'settings.ai.languages.spanishSpain',
+};
+
+function getAiLanguageLabel(t: (key: string) => string, languageCode: string): string {
+  const key = AI_LANGUAGE_LABEL_KEYS[languageCode];
+  return key ? t(key) : languageCode;
+}
+
+const getWhisperLanguageOptions = (t: (key: string) => string) =>
+  WHISPER_LANGUAGE_CODES.map((value) => ({
+    value,
+    label: getAiLanguageLabel(t, value),
+  }));
+
+const getSpeakTtsOptions = (t: (key: string) => string) => [
+  { id: 'edge-tts', label: t('settings.ai.speak.provider.edgeTTS') },
+  { id: 'elevenlabs-multilingual-v2', label: t('settings.ai.speak.provider.elevenlabsMultilingual') },
+  { id: 'elevenlabs-flash-v2-5', label: t('settings.ai.speak.provider.elevenlabsFlash') },
+  { id: 'elevenlabs-turbo-v2-5', label: t('settings.ai.speak.provider.elevenlabsTurbo') },
+  { id: 'elevenlabs-v3', label: t('settings.ai.speak.provider.elevenlabsV3') },
 ];
 
 type EdgeVoiceGender = 'female' | 'male';
@@ -201,6 +260,12 @@ const AITab: React.FC = () => {
   const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
   const [elevenLabsVoicesLoading, setElevenLabsVoicesLoading] = useState(false);
   const [elevenLabsVoicesError, setElevenLabsVoicesError] = useState<string | null>(null);
+  const [whisperCppModelStatus, setWhisperCppModelStatus] = useState<WhisperCppModelStatus | null>(null);
+  const [whisperCppModelLoading, setWhisperCppModelLoading] = useState(false);
+  const [parakeetModelStatus, setParakeetModelStatus] = useState<ParakeetModelStatus | null>(null);
+  const [parakeetModelLoading, setParakeetModelLoading] = useState(false);
+  const [qwen3ModelStatus, setQwen3ModelStatus] = useState<Qwen3ModelStatus | null>(null);
+  const [qwen3ModelLoading, setQwen3ModelLoading] = useState(false);
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
   const selectingOllamaDefaultRef = useRef(false);
@@ -279,7 +344,7 @@ const AITab: React.FC = () => {
         }
       } catch {
         if (!cancelled) {
-          setElevenLabsVoicesError('Failed to fetch voices.');
+          setElevenLabsVoicesError(t('settings.ai.speak.elevenlabs.voice.fetchFailed'));
           setElevenLabsVoices([]);
         }
       } finally {
@@ -298,6 +363,126 @@ const AITab: React.FC = () => {
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 1600);
   };
+
+  const refreshWhisperCppModelStatus = useCallback(async () => {
+    try {
+      const status = await window.electron.whisperCppModelStatus();
+      setWhisperCppModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'whisper') return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const tick = async () => {
+      await refreshWhisperCppModelStatus();
+      if (cancelled) return;
+      timer = window.setTimeout(() => { void tick(); }, 1000);
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [activeTab, refreshWhisperCppModelStatus]);
+
+  const handleWhisperCppDownload = useCallback(async () => {
+    setWhisperCppModelLoading(true);
+    try {
+      const status = await window.electron.whisperCppDownloadModel();
+      setWhisperCppModelStatus(status);
+    } catch {
+      void refreshWhisperCppModelStatus();
+    } finally {
+      setWhisperCppModelLoading(false);
+    }
+  }, [refreshWhisperCppModelStatus]);
+
+  const refreshParakeetModelStatus = useCallback(async () => {
+    try {
+      const status = await window.electron.parakeetModelStatus();
+      setParakeetModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'whisper') return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const tick = async () => {
+      await refreshParakeetModelStatus();
+      if (cancelled) return;
+      timer = window.setTimeout(() => { void tick(); }, 1000);
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [activeTab, refreshParakeetModelStatus]);
+
+  const handleParakeetDownload = useCallback(async () => {
+    setParakeetModelLoading(true);
+    try {
+      const status = await window.electron.parakeetDownloadModel();
+      setParakeetModelStatus(status);
+    } catch {
+      void refreshParakeetModelStatus();
+    } finally {
+      setParakeetModelLoading(false);
+    }
+  }, [refreshParakeetModelStatus]);
+
+  const refreshQwen3ModelStatus = useCallback(async () => {
+    try {
+      const status = await window.electron.qwen3ModelStatus();
+      setQwen3ModelStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'whisper') return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const tick = async () => {
+      await refreshQwen3ModelStatus();
+      if (cancelled) return;
+      timer = window.setTimeout(() => { void tick(); }, 1000);
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [activeTab, refreshQwen3ModelStatus]);
+
+  const handleQwen3Download = useCallback(async () => {
+    setQwen3ModelLoading(true);
+    try {
+      const status = await window.electron.qwen3DownloadModel();
+      setQwen3ModelStatus(status);
+    } catch {
+      void refreshQwen3ModelStatus();
+    } finally {
+      setQwen3ModelLoading(false);
+    }
+  }, [refreshQwen3ModelStatus]);
 
   const maybeSelectOllamaDefaultModel = useCallback((availableNames: string[], preferredName?: string) => {
     const currentSettings = settingsRef.current;
@@ -381,7 +566,7 @@ const AITab: React.FC = () => {
     const requestId = `ollama-pull-${Date.now()}`;
     pullingModelRef.current = modelName;
     setPullingModel(modelName);
-    setPullProgress({ status: 'Starting download...', percent: 0 });
+    setPullProgress({ status: t('settings.ai.llm.ollama.startingDownload'), percent: 0 });
     setOllamaError(null);
     window.electron.ollamaPull(requestId, modelName);
   };
@@ -397,7 +582,7 @@ const AITab: React.FC = () => {
         return next;
       });
     } else {
-      setOllamaError(result.error || 'Failed to delete model');
+      setOllamaError(result.error || t('settings.ai.llm.ollama.deleteFailed'));
       setTimeout(() => setOllamaError(null), 5000);
     }
     setDeletingModel(null);
@@ -407,8 +592,8 @@ const AITab: React.FC = () => {
     const result = await window.electron.updateCommandHotkey(commandId, hotkey);
     if (!result.success) {
       const message = result.error === 'duplicate'
-        ? 'Hotkey already used by another SuperCmd command.'
-        : 'Hotkey unavailable. It may be used by macOS or another app.';
+        ? t('settings.ai.hotkeyDuplicate')
+        : t('settings.ai.hotkeyUnavailable');
       setHotkeyStatus({ type: 'error', text: message });
       setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 3200);
       return;
@@ -423,7 +608,7 @@ const AITab: React.FC = () => {
       }
       return { ...prev, commandHotkeys: nextHotkeys };
     });
-    setHotkeyStatus({ type: 'success', text: hotkey ? 'Hotkey updated.' : 'Hotkey removed.' });
+    setHotkeyStatus({ type: 'success', text: hotkey ? t('settings.ai.hotkeyUpdated') : t('settings.ai.hotkeyRemoved') });
     setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 1800);
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 1600);
@@ -439,7 +624,7 @@ const AITab: React.FC = () => {
   const genericModels = ai.provider === 'ollama' && ollamaRunning
     ? Array.from(localModels).map((name) => ({
         id: `ollama-${name}`,
-        label: CURATED_OLLAMA_MODELS.find((m) => m.name === name)?.label || name,
+        label: getCuratedOllamaModels(t).find((m) => m.name === name)?.label || name,
       }))
     : ai.provider === 'openai-compatible' && ai.openaiCompatibleModel
       ? [{
@@ -449,8 +634,17 @@ const AITab: React.FC = () => {
       : MODELS_BY_PROVIDER[ai.provider] || [];
 
   const whisperModelValue = (!ai.speechToTextModel || ai.speechToTextModel === 'default')
-    ? 'native'
+    ? 'whispercpp'
     : ai.speechToTextModel;
+  const whisperCppPercent = whisperCppModelStatus?.state === 'downloading' && whisperCppModelStatus.totalBytes
+    ? Math.max(0, Math.min(100, Math.round((whisperCppModelStatus.bytesDownloaded / whisperCppModelStatus.totalBytes) * 100)))
+    : 0;
+  const parakeetPercent = parakeetModelStatus?.state === 'downloading'
+    ? Math.max(0, Math.min(100, Math.round((parakeetModelStatus.progress || 0) * 100)))
+    : 0;
+  const qwen3Percent = qwen3ModelStatus?.state === 'downloading'
+    ? Math.max(0, Math.min(100, Math.round((qwen3ModelStatus.progress || 0) * 100)))
+    : 0;
 
   const parsedElevenLabsSpeak = parseElevenLabsSpeakModel(ai.textToSpeechModel);
   const speakModelValue = (!ai.textToSpeechModel || ai.textToSpeechModel === 'default' || ai.textToSpeechModel.startsWith('openai-'))
@@ -465,7 +659,10 @@ const AITab: React.FC = () => {
     : DEFAULT_ELEVENLABS_VOICE_ID;
 
   const correctionModelOptions = genericModels;
-  const allEdgeVoices = edgeVoices.length > 0 ? edgeVoices : EDGE_TTS_FALLBACK_VOICES;
+  const allEdgeVoices = (edgeVoices.length > 0 ? edgeVoices : EDGE_TTS_FALLBACK_VOICES).map((voice) => ({
+    ...voice,
+    languageLabel: getAiLanguageLabel(t, voice.languageCode),
+  }));
 
   const selectedEdgeVoice = allEdgeVoices.find((v) => v.id === ai.edgeTtsVoice)
     || allEdgeVoices.find((v) => v.id === 'en-US-EricNeural')
@@ -816,7 +1013,7 @@ const AITab: React.FC = () => {
                 {ai.provider === 'openai-compatible' && (
                   <div className="space-y-3">
                     <div>
-                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Base URL</label>
+                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.llm.openaiCompatible.baseUrl.label')}</label>
                       <input
                         type="text"
                         value={ai.openaiCompatibleBaseUrl}
@@ -824,11 +1021,11 @@ const AITab: React.FC = () => {
                         placeholder="https://api.openrouter.ai/v1"
                         className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] focus:outline-none focus:border-blue-500/50"
                       />
-                      <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">Include /v1 if your provider uses it (e.g., https://api.openai.com/v1)</p>
+                      <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">{t('settings.ai.llm.openaiCompatible.baseUrl.hint')}</p>
                     </div>
 
                     <div>
-                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">API Key</label>
+                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.llm.openaiCompatible.apiKey.label')}</label>
                       <div className="relative">
                         <input
                           type={showOpenAICompatibleKey ? 'text' : 'password'}
@@ -847,7 +1044,7 @@ const AITab: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Model Name</label>
+                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.llm.openaiCompatible.modelName.label')}</label>
                       <input
                         type="text"
                         value={ai.openaiCompatibleModel}
@@ -861,7 +1058,7 @@ const AITab: React.FC = () => {
                         placeholder="anthropic/claude-3.5-sonnet"
                         className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] focus:outline-none focus:border-blue-500/50"
                       />
-                      <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">The exact model name your provider expects (e.g., gpt-4o, meta-llama/llama-3.1-70b-instruct)</p>
+                      <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">{t('settings.ai.llm.openaiCompatible.modelName.hint')}</p>
                     </div>
                   </div>
                 )}
@@ -885,14 +1082,14 @@ const AITab: React.FC = () => {
               {ai.provider === 'ollama' && (
                 <div className="pt-3 border-t border-[var(--ui-divider)]">
                   <div className="flex items-center justify-between mb-2.5">
-                    <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Ollama Models</h3>
+                    <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.llm.ollama.models')}</h3>
                     {ollamaRunning && (
                       <button
                         onClick={refreshOllamaStatus}
                         className="flex items-center gap-1 px-2 py-1 text-[0.75rem] text-[var(--text-muted)] hover:text-[var(--text-secondary)] rounded-md transition-colors"
                       >
                         <RefreshCw className="w-3 h-3" />
-                        Refresh
+                        {t('common.refresh')}
                       </button>
                     )}
                   </div>
@@ -900,7 +1097,7 @@ const AITab: React.FC = () => {
                   {ollamaRunning === null && (
                     <div className="flex items-center gap-2 text-[var(--text-subtle)] text-xs py-2">
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      Checking Ollama status...
+                      {t('settings.ai.llm.ollama.checking')}
                     </div>
                   )}
 
@@ -909,14 +1106,14 @@ const AITab: React.FC = () => {
                       <div className="w-9 h-9 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-2.5">
                         <AlertCircle className="w-4 h-4 text-red-400/70" />
                       </div>
-                      <p className="text-xs text-[var(--text-muted)] mb-0.5">Ollama is not running</p>
-                      <p className="text-[0.75rem] text-[var(--text-subtle)] mb-3">Install and run Ollama to use local models.</p>
+                      <p className="text-xs text-[var(--text-muted)] mb-0.5">{t('settings.ai.llm.ollama.notRunning.title')}</p>
+                      <p className="text-[0.75rem] text-[var(--text-subtle)] mb-3">{t('settings.ai.llm.ollama.notRunning.description')}</p>
                       <button
                         onClick={() => window.electron.ollamaOpenDownload()}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-md transition-colors"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        Download Ollama
+                        {t('settings.ai.llm.ollama.notRunning.download')}
                         <ExternalLink className="w-3 h-3 text-blue-300/60" />
                       </button>
                     </div>
@@ -926,7 +1123,7 @@ const AITab: React.FC = () => {
                     <>
                       <div className="flex items-center gap-2 mb-2.5">
                         <div className="w-2 h-2 rounded-full bg-green-400" />
-                        <span className="text-[0.6875rem] text-green-400/70">Ollama is running</span>
+                        <span className="text-[0.6875rem] text-green-400/70">{t('settings.ai.llm.ollama.running')}</span>
                       </div>
 
                       {ollamaError && (
@@ -936,7 +1133,7 @@ const AITab: React.FC = () => {
                       )}
 
                       <div className="space-y-1 max-h-[min(46vh,360px)] overflow-y-auto pr-1">
-                        {CURATED_OLLAMA_MODELS.map((model) => {
+                        {getCuratedOllamaModels(t).map((model) => {
                           const installed = localModels.has(model.name);
                           const isPulling = pullingModel === model.name;
                           const isDeleting = deletingModel === model.name;
@@ -949,7 +1146,7 @@ const AITab: React.FC = () => {
                                     <span className="text-xs text-[var(--text-secondary)]">{model.label}</span>
                                     <span className="text-[0.625rem] text-[var(--text-subtle)]">{model.size}</span>
                                     {installed && (
-                                      <span className="text-[0.625rem] font-medium px-1.5 py-0.5 rounded border border-[color:var(--status-success)] bg-[color:var(--status-success-soft)] text-[color:var(--status-success)]">Installed</span>
+                                      <span className="text-[0.625rem] font-medium px-1.5 py-0.5 rounded border border-[color:var(--status-success)] bg-[color:var(--status-success-soft)] text-[color:var(--status-success)]">{t('settings.ai.llm.ollama.installed')}</span>
                                     )}
                                   </div>
                                   <p className="text-[0.75rem] text-[var(--text-subtle)] mt-0.5">{model.description}</p>
@@ -963,7 +1160,7 @@ const AITab: React.FC = () => {
                                 ) : isDeleting ? (
                                   <div className="flex items-center gap-1 text-[0.6875rem] text-[var(--text-muted)]">
                                     <RefreshCw className="w-3 h-3 animate-spin" />
-                                    Removing
+                                    {t('settings.ai.llm.ollama.removing')}
                                   </div>
                                 ) : installed ? (
                                   <button
@@ -972,7 +1169,7 @@ const AITab: React.FC = () => {
                                     className="flex items-center gap-1 px-2 py-1 text-[0.6875rem] text-red-300/80 hover:text-red-200 hover:bg-red-500/10 rounded-md transition-colors"
                                   >
                                     <Trash2 className="w-3 h-3" />
-                                    Remove
+                                    {t('settings.ai.llm.ollama.removeModel')}
                                   </button>
                                 ) : (
                                   <button
@@ -981,7 +1178,7 @@ const AITab: React.FC = () => {
                                     className="flex items-center gap-1 px-2 py-1 text-[0.6875rem] text-blue-300 hover:text-blue-200 bg-blue-500/10 hover:bg-blue-500/20 rounded-md transition-colors disabled:opacity-40"
                                   >
                                     <Download className="w-3 h-3" />
-                                    Download
+                                    {t('settings.ai.llm.ollama.downloadModel')}
                                   </button>
                                 )}
                               </div>
@@ -1039,7 +1236,7 @@ const AITab: React.FC = () => {
                   onChange={(e) => updateAI({ speechToTextModel: e.target.value })}
                   className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                 >
-                  {WHISPER_STT_OPTIONS.map((m) => (
+                  {getWhisperSttOptions(t).map((m) => (
                     <option key={m.id} value={m.id}>{m.label}</option>
                   ))}
                 </select>
@@ -1063,6 +1260,68 @@ const AITab: React.FC = () => {
                 </div>
               )}
 
+              {whisperModelValue === 'parakeet' && (
+                <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
+                  <p className="text-[0.6875rem] text-[color:var(--status-success)]">
+                    {t('settings.ai.whisper.providerInfo.parakeet')}
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'qwen3' && (
+                <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
+                  <p className="text-[0.6875rem] text-[color:var(--status-success)]">
+                    {t('settings.ai.whisper.providerInfo.qwen3')}
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'qwen3' && (
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.recognitionLanguage')}</label>
+                  <select
+                    value={ai.speechLanguage || 'en-US'}
+                    onChange={(e) => updateAI({ speechLanguage: e.target.value })}
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                  >
+                    {getWhisperLanguageOptions(t).map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {whisperModelValue === 'whispercpp' && (
+                <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
+                  <p className="text-[0.6875rem] text-[color:var(--status-success)]">
+                    {t('settings.ai.whisper.providerInfo.whispercpp')}
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue === 'whispercpp' && (
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.recognitionLanguage')}</label>
+                  <select
+                    value={ai.speechLanguage || 'en-US'}
+                    onChange={(e) => updateAI({ speechLanguage: e.target.value })}
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                  >
+                    {getWhisperLanguageOptions(t).map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {whisperModelValue === 'native' && (
+                <div className="bg-sky-500/10 border border-sky-500/20 rounded-md px-2.5 py-2">
+                  <p className="text-[0.6875rem] text-sky-300">
+                    {t('settings.ai.whisper.providerInfo.native')}
+                  </p>
+                </div>
+              )}
+
               <div className="pt-3 border-t border-[var(--ui-divider)] space-y-2">
                 <p className="text-[0.75rem] text-[var(--text-muted)]">{t('settings.ai.whisper.hotkeys.title')}</p>
                 <div>
@@ -1080,13 +1339,13 @@ const AITab: React.FC = () => {
                         onClick={() => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, 'Fn'); }}
                         className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] hover:border-[var(--ui-segment-border)]"
                       >
-                        Set to Fn
+                        {t('settings.ai.whisper.hotkeys.setToFn')}
                       </button>
                     ) : null}
                   </div>
                   {!isWhisperSpeakToggleFn ? (
                     <p className="mt-1.5 text-[0.6875rem] text-[var(--text-muted)]">
-                      Use <span className="text-[var(--text-primary)]">Set to Fn</span> to restore the default hold-to-talk key.
+                      {t('settings.ai.whisper.hotkeys.fnHint')}
                     </p>
                   ) : null}
                 </div>
@@ -1103,32 +1362,221 @@ const AITab: React.FC = () => {
             </div>
 
             <div className="px-4 py-3.5 md:px-5 space-y-3">
+              {whisperModelValue === 'parakeet' && (
+                <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.downloadCards.parakeet.title')}</h3>
+                      <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
+                        {t('settings.ai.whisper.downloadCards.parakeet.description')}
+                      </p>
+                    </div>
+                    {parakeetModelStatus?.state === 'downloaded' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[color:var(--status-success)]" />
+                    ) : (
+                      <Download className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-0.5" />
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-[0.75rem]">
+                    {parakeetModelStatus?.state === 'downloaded' ? (
+                      <p className="text-[color:var(--status-success)]">{t('settings.ai.whisper.downloadCards.parakeet.ready')}</p>
+                    ) : parakeetModelStatus?.state === 'downloading' ? (
+                      <div className="space-y-2">
+                        <p className="text-[var(--text-secondary)]">
+                          {t('settings.ai.whisper.downloadCards.parakeet.downloading')}
+                          {parakeetPercent > 0 ? ` (${parakeetPercent}%)` : '...'}
+                        </p>
+                        <div className="h-2 rounded-full bg-black/20 overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-400/80 transition-[width] duration-300"
+                            style={{ width: `${Math.max(3, parakeetPercent)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : parakeetModelStatus?.state === 'error' ? (
+                      <p className="text-rose-300">{parakeetModelStatus.error || t('settings.ai.whisper.downloadCards.modelDownloadFailed')}</p>
+                    ) : (
+                      <p className="text-amber-300">{t('settings.ai.whisper.downloadCards.parakeet.notDownloaded')}</p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => { void handleParakeetDownload(); }}
+                      disabled={parakeetModelLoading || parakeetModelStatus?.state === 'downloading' || parakeetModelStatus?.state === 'downloaded'}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      {parakeetModelStatus?.state === 'downloaded'
+                        ? t('settings.ai.whisper.downloadCards.actions.downloaded')
+                        : parakeetModelStatus?.state === 'downloading'
+                          ? t('settings.ai.whisper.downloadCards.actions.downloading')
+                          : t('settings.ai.whisper.downloadCards.actions.download')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { void refreshParakeetModelStatus(); }}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
+                    >
+                      {t('common.refresh')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {whisperModelValue === 'qwen3' && (
+                <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.downloadCards.qwen3.title')}</h3>
+                      <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
+                        {t('settings.ai.whisper.downloadCards.qwen3.description')}
+                      </p>
+                    </div>
+                    {qwen3ModelStatus?.state === 'downloaded' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[color:var(--status-success)]" />
+                    ) : (
+                      <Download className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-0.5" />
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-[0.75rem]">
+                    {qwen3ModelStatus?.state === 'downloaded' ? (
+                      <p className="text-[color:var(--status-success)]">{t('settings.ai.whisper.downloadCards.qwen3.ready')}</p>
+                    ) : qwen3ModelStatus?.state === 'downloading' ? (
+                      <div className="space-y-2">
+                        <p className="text-[var(--text-secondary)]">
+                          {t('settings.ai.whisper.downloadCards.qwen3.downloading')}
+                          {qwen3Percent > 0 ? ` (${qwen3Percent}%)` : '...'}
+                        </p>
+                        <div className="h-2 rounded-full bg-black/20 overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-400/80 transition-[width] duration-300"
+                            style={{ width: `${Math.max(3, qwen3Percent)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : qwen3ModelStatus?.state === 'error' ? (
+                      <p className="text-rose-300">{qwen3ModelStatus.error || t('settings.ai.whisper.downloadCards.modelDownloadFailed')}</p>
+                    ) : (
+                      <p className="text-amber-300">{t('settings.ai.whisper.downloadCards.qwen3.notDownloaded')}</p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => { void handleQwen3Download(); }}
+                      disabled={qwen3ModelLoading || qwen3ModelStatus?.state === 'downloading' || qwen3ModelStatus?.state === 'downloaded'}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      {qwen3ModelStatus?.state === 'downloaded'
+                        ? t('settings.ai.whisper.downloadCards.actions.downloaded')
+                        : qwen3ModelStatus?.state === 'downloading'
+                          ? t('settings.ai.whisper.downloadCards.actions.downloading')
+                          : t('settings.ai.whisper.downloadCards.actions.download')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { void refreshQwen3ModelStatus(); }}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
+                    >
+                      {t('common.refresh')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {whisperModelValue === 'whispercpp' && (
+                <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.downloadCards.whispercpp.title')}</h3>
+                      <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
+                        {t('settings.ai.whisper.downloadCards.whispercpp.description')}
+                      </p>
+                    </div>
+                    {whisperCppModelStatus?.state === 'downloaded' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[color:var(--status-success)]" />
+                    ) : (
+                      <Download className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-0.5" />
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-[0.75rem]">
+                    {whisperCppModelStatus?.state === 'downloaded' ? (
+                      <p className="text-[color:var(--status-success)]">{t('settings.ai.whisper.downloadCards.whispercpp.ready')}</p>
+                    ) : whisperCppModelStatus?.state === 'downloading' ? (
+                      <div className="space-y-2">
+                        <p className="text-[var(--text-secondary)]">
+                          {t('settings.ai.whisper.downloadCards.whispercpp.downloading')}
+                          {whisperCppModelStatus.totalBytes ? ` (${whisperCppPercent}%)` : '...'}
+                        </p>
+                        <div className="h-2 rounded-full bg-black/20 overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-400/80 transition-[width] duration-300"
+                            style={{ width: `${whisperCppPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : whisperCppModelStatus?.state === 'error' ? (
+                      <p className="text-rose-300">{whisperCppModelStatus.error || t('settings.ai.whisper.downloadCards.modelDownloadFailed')}</p>
+                    ) : (
+                      <p className="text-amber-300">{t('settings.ai.whisper.downloadCards.whispercpp.notDownloaded')}</p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => { void handleWhisperCppDownload(); }}
+                      disabled={whisperCppModelLoading || whisperCppModelStatus?.state === 'downloading' || whisperCppModelStatus?.state === 'downloaded'}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      {whisperCppModelStatus?.state === 'downloaded'
+                        ? t('settings.ai.whisper.downloadCards.actions.downloaded')
+                        : whisperCppModelStatus?.state === 'downloading'
+                          ? t('settings.ai.whisper.downloadCards.actions.downloading')
+                          : t('settings.ai.whisper.downloadCards.actions.download')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { void refreshWhisperCppModelStatus(); }}
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
+                    >
+                      {t('common.refresh')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Smooth Output</h3>
-                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">Clean up filler words and self-corrections.</p>
+                  <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.smoothOutput.title')}</h3>
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.whisper.smoothOutput.description')}</p>
                 </div>
                 <SectionToggle
                   enabled={Boolean(ai.speechCorrectionEnabled)}
                   onToggle={() => updateAI({ speechCorrectionEnabled: !ai.speechCorrectionEnabled })}
-                  label="Toggle whisper smoothing"
+                  label={t('settings.ai.whisper.smoothOutput.title')}
                 />
               </div>
 
               {ai.speechCorrectionEnabled && (
                 <div>
-                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Smoothing Model</label>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.smoothingModel.label')}</label>
                   <select
                     value={ai.speechCorrectionModel || ''}
                     onChange={(e) => updateAI({ speechCorrectionModel: e.target.value })}
                     className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                   >
-                    <option value="">Use Generic Default Model</option>
+                    <option value="">{t('settings.ai.whisper.smoothingModel.useDefault')}</option>
                     {correctionModelOptions.map((m) => (
                       <option key={m.id} value={m.id}>{m.label}</option>
                     ))}
                   </select>
-                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-1">Uses your current provider models.</p>
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-1">{t('settings.ai.whisper.smoothingModel.hint')}</p>
                 </div>
               )}
             </div>
@@ -1175,7 +1623,7 @@ const AITab: React.FC = () => {
                   }}
                   className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                 >
-                  {SPEAK_TTS_OPTIONS.map((m) => (
+                  {getSpeakTtsOptions(t).map((m) => (
                     <option key={m.id} value={m.id}>{m.label}</option>
                   ))}
                 </select>
@@ -1270,7 +1718,7 @@ const AITab: React.FC = () => {
                         })}
                       className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                     >
-                      {SPEAK_TTS_OPTIONS.filter((m) => m.id.startsWith('elevenlabs-')).map((m) => (
+                      {getSpeakTtsOptions(t).filter((m) => m.id.startsWith('elevenlabs-')).map((m) => (
                         <option key={m.id} value={m.id}>{m.label}</option>
                       ))}
                     </select>
@@ -1370,14 +1818,16 @@ const AITab: React.FC = () => {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[var(--accent)] bg-[var(--accent-soft)] border border-[var(--accent)] hover:brightness-95 disabled:opacity-65 disabled:cursor-not-allowed transition-colors"
                   >
                     {previewingVoice ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Volume2 className="w-3 h-3" />}
-                    {previewingVoice ? 'Playing sample...' : 'Play Sample Voice'}
+                    {previewingVoice ? t('settings.ai.speak.elevenlabs.playSample.playing') : t('settings.ai.speak.elevenlabs.playSample.idle')}
                   </button>
 
                   <p className="text-[0.625rem] text-[var(--text-subtle)]">
-                    SuperCmd stores this as <code className="text-[var(--text-subtle)]">{`${speakModelValue}@${selectedElevenLabsVoiceId}`}</code>.
+                    {t('settings.ai.speak.elevenlabs.storageHint', {
+                      value: `${speakModelValue}@${selectedElevenLabsVoiceId}`,
+                    })}
                   </p>
                   {!ai.elevenlabsApiKey && (
-                    <p className="text-[0.6875rem] text-amber-300 mt-1.5">Add ElevenLabs API key in API Keys.</p>
+                    <p className="text-[0.6875rem] text-amber-300 mt-1.5">{t('settings.ai.speak.elevenlabs.apiKeyWarning')}</p>
                   )}
                 </div>
               )}

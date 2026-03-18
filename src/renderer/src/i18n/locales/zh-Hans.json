@@ -173,6 +173,23 @@
       "title": "AI 设置",
       "loading": "正在加载 AI 设置...",
       "saved": "已保存",
+      "languages": {
+        "arabic": "阿拉伯语",
+        "chineseMandarin": "中文（普通话）",
+        "englishUs": "英语（美国）",
+        "englishUk": "英语（英国）",
+        "frenchCanada": "法语（加拿大）",
+        "frenchFrance": "法语（法国）",
+        "german": "德语",
+        "hindi": "印地语",
+        "italian": "意大利语",
+        "japanese": "日语",
+        "korean": "韩语",
+        "portugueseBrazil": "葡萄牙语（巴西）",
+        "russian": "俄语",
+        "spanishMexico": "西班牙语（墨西哥）",
+        "spanishSpain": "西班牙语（西班牙）"
+      },
       "enableAI": {
         "title": "启用 AI",
         "description": "AI 功能的总开关。"
@@ -236,6 +253,13 @@
           "ollama": "Ollama",
           "openaiCompatible": "自定义 (OpenAI 兼容)"
         },
+        "providerDescriptions": {
+          "openai": "GPT 系列模型",
+          "anthropic": "Anthropic Claude 模型",
+          "gemini": "Google Gemini 模型",
+          "ollama": "本地模型",
+          "openaiCompatible": "任意 OpenAI 兼容 API（OpenRouter、Together 等）"
+        },
         "ollama": {
           "serverUrl": {
             "label": "Ollama 服务器地址",
@@ -254,7 +278,19 @@
           "downloadModel": "下载",
           "removeModel": "移除",
           "downloading": "正在下载...",
-          "removing": "正在移除..."
+          "removing": "正在移除...",
+          "startingDownload": "开始下载...",
+          "deleteFailed": "删除模型失败。",
+          "curatedDescriptions": {
+            "llama32": "Meta 通用模型（3B）",
+            "llama32_1b": "体积小，速度快",
+            "mistral": "高效通用模型",
+            "codellama": "代码生成与补全",
+            "phi3": "微软小型语言模型",
+            "gemma2": "Google 开源模型（9B）",
+            "qwen25": "阿里巴巴多语言模型（7B）",
+            "deepseekR1": "偏推理能力的模型（7B）"
+          }
         },
         "openaiCompatible": {
           "baseUrl": {
@@ -292,14 +328,33 @@
           "elevenlabsScribeV1": "ElevenLabs Scribe v1",
           "elevenlabsScribeV2": "ElevenLabs Scribe v2"
         },
+        "modelOptions": {
+          "whispercpp": "SuperCmd Whisper（默认）",
+          "parakeet": "Parakeet v3（最佳且最快，支持 25+ 欧洲语言）",
+          "qwen3": "Qwen3 ASR（支持 30+ 种语言，包括中文、日语、韩语、泰语、越南语、印地语）",
+          "native": "Apple 语音识别",
+          "openaiGpt4o": "OpenAI GPT-4o 转录",
+          "openaiWhisper": "OpenAI Whisper-1",
+          "elevenlabsScribeV1": "ElevenLabs Scribe v1",
+          "elevenlabsScribeV2": "ElevenLabs Scribe v2"
+        },
         "openaiWarning": "已选择 OpenAI Whisper。请在 API 密钥中添加 OpenAI API 密钥。",
         "elevenlabsWarning": "已选择 ElevenLabs 语音转文字。请在 API 密钥中{action} ElevenLabs API 密钥。",
         "elevenlabsReady": "已选择 ElevenLabs 语音转文字。云端转录将使用你的 ElevenLabs 密钥。",
+        "recognitionLanguage": "识别语言",
+        "providerInfo": {
+          "parakeet": "通过 Parakeet TDT v3 在设备离线转录，运行于 Apple Neural Engine。首次使用前需要预热模型，请先下载后再开始听写。",
+          "qwen3": "通过 Qwen3 ASR 在设备离线转录，支持 30+ 种语言，需要 macOS 15+，首次使用前会预热模型。",
+          "whispercpp": "通过 Whisper.cpp 在设备离线转录。请先下载默认 ggml base 模型后再开始听写。",
+          "native": "改用 Apple 语音识别，而不是 SuperCmd Whisper。"
+        },
         "hotkeys": {
           "title": "语音输入快捷键",
           "startStop": "开始/停止说话",
           "setToFn": "设为 Fn 键",
-          "fnHint": "使用「设为 Fn 键」恢复默认的按住说话快捷键。"
+          "fnHint": "使用「设为 Fn 键」恢复默认的按住说话快捷键。",
+          "fnHintBefore": "使用",
+          "fnHintAfter": "可恢复默认的按住说话快捷键。"
         },
         "smoothOutput": {
           "title": "平滑输出",
@@ -309,6 +364,35 @@
           "label": "平滑模型",
           "useDefault": "使用通用默认模型",
           "hint": "使用你当前提供商的模型。"
+        },
+        "downloadCards": {
+          "modelDownloadFailed": "模型下载失败。",
+          "actions": {
+            "downloaded": "模型已下载",
+            "downloading": "下载中...",
+            "download": "下载模型"
+          },
+          "parakeet": {
+            "title": "Parakeet TDT v3",
+            "description": "多语言设备端转录，运行于 Apple Neural Engine。",
+            "ready": "已下载完成，Parakeet v3 已可离线使用。",
+            "downloading": "正在下载 Parakeet v3 模型",
+            "notDownloaded": "模型尚未下载。现在下载后即可使用 Parakeet 听写。"
+          },
+          "qwen3": {
+            "title": "Qwen3 ASR",
+            "description": "支持 30 种语言的设备端转录，需要 macOS 15+。",
+            "ready": "已下载完成，Qwen3 ASR 已可离线使用。",
+            "downloading": "正在下载 Qwen3 ASR 模型",
+            "notDownloaded": "模型尚未下载。请下载约 900 MB 的 int8 模型后再使用 Qwen3 听写。"
+          },
+          "whispercpp": {
+            "title": "SuperCmd Whisper",
+            "description": "下载一次 ggml base 模型即可启用本地听写。",
+            "ready": "已下载完成，SuperCmd Whisper 已可离线使用。",
+            "downloading": "正在下载 SuperCmd Whisper",
+            "notDownloaded": "模型尚未下载。现在下载后即可使用 SuperCmd Whisper 听写。"
+          }
         }
       },
       "speak": {
@@ -352,6 +436,7 @@
           "voice": {
             "label": "ElevenLabs 语音",
             "fetching": "正在获取你的语音...",
+            "fetchFailed": "获取语音列表失败。",
             "builtIn": "内置语音",
             "premade": "额外预制语音",
             "custom": "你的自定义语音（克隆/生成）",
@@ -367,7 +452,7 @@
         },
         "notes": {
           "title": "说明",
-          "whisperDefault": "语音输入默认使用原生模式，以实现快速的本地听写。",
+          "whisperDefault": "语音输入默认使用 SuperCmd Whisper 和本地 ggml base 模型。",
           "speakDefault": "语音朗读默认使用 Edge TTS，支持按语言选择男女声。",
           "englishVoice": "英语语音选项故意限制为美国和英国变体。",
           "elevenlabsVoices": "配置 API 密钥后，ElevenLabs 自定义语音（克隆/生成）将自动显示。"
@@ -433,7 +518,9 @@
         "settings": "设置",
         "scripts": "脚本",
         "extension": "扩展",
-        "application": "应用程序"
+        "application": "应用程序",
+        "command": "命令",
+        "menuBarCommand": "菜单栏命令"
       },
       "alias": {
         "add": "添加别名",
@@ -441,7 +528,11 @@
         "edit": "编辑别名"
       },
       "hotkey": {
-        "record": "录制快捷键"
+        "record": "录制快捷键",
+        "duplicateWithCommand": "快捷键已被“{name}”占用。"
+      },
+      "preferences": {
+        "selectOption": "选择一个选项"
       },
       "noResults": "没有匹配的扩展",
       "selectExtension": "选择一个扩展",
@@ -484,6 +575,11 @@
   },
   "launcher": {
     "searchPlaceholder": "搜索应用、命令，或向 AI 提问...",
+    "status": {
+      "discoveringApps": "正在发现应用...",
+      "noMatchingResults": "没有匹配的结果",
+      "results": "{count} 个结果"
+    },
     "aiMode": {
       "placeholder": "向 AI 提问...",
       "ask": "提问",
@@ -506,11 +602,15 @@
     },
     "actions": {
       "open": "打开",
+      "openCommand": "打开命令",
+      "openFile": "打开文件",
       "execute": "执行",
       "run": "运行",
       "copy": "复制",
+      "copyPath": "复制路径",
       "copyToClipboard": "复制到剪贴板",
       "paste": "粘贴",
+      "showDetails": "显示详情",
       "showInFinder": "在 Finder 中显示",
       "revealInFinder": "在 Finder 中定位",
       "getInfo": "显示简介",
@@ -519,7 +619,14 @@
       "hide": "隐藏",
       "show": "显示",
       "preferences": "偏好设置",
-      "actions": "操作"
+      "actions": "操作",
+      "pinCommand": "固定命令",
+      "unpinCommand": "取消固定命令",
+      "pinExtension": "固定扩展",
+      "unpinExtension": "取消固定扩展",
+      "disableCommand": "禁用命令",
+      "moveUp": "上移",
+      "moveDown": "下移"
     },
     "empty": {
       "noResults": "未找到结果",
@@ -530,6 +637,22 @@
       "actions": "操作",
       "select": "选择",
       "back": "返回"
+    },
+    "sections": {
+      "selectedText": "选中文本",
+      "pinned": "已固定"
+    },
+    "calculator": {
+      "pressEnterToCopy": "按回车复制",
+      "clickToCopy": "点击复制",
+      "copy": "复制"
+    },
+    "badges": {
+      "application": "应用程序",
+      "extension": "扩展",
+      "script": "脚本",
+      "settings": "设置",
+      "quickLink": "快速链接"
     }
   },
   "scriptCommand": {
@@ -696,6 +819,117 @@
         "title": "AI 集成",
         "description": "与 AI 对话、使用语音转文字，并让 AI 帮助你写作和编辑。"
       }
+    },
+    "whisper": {
+      "quick": {
+        "title": "Whisper 快速引导",
+        "subtitle": "按住录音，松开输入",
+        "instructions": {
+          "before": "按住 ",
+          "after": " 后开始说话。松开后会处理内容并在当前光标处输入。"
+        },
+        "practiceTitle": "练习段落",
+        "practicePlaceholder": "今天我梳理了路线图，并为本周排出了最重要的三项任务。请整理一段简短摘要，并在午饭前发给团队。",
+        "practiceHint": "就在这个编辑框里练习：按住热键，说出这两句话，松开，然后确认输出是否正确。",
+        "footerHint": "Whisper 激活时会停靠在靠近底部的位置。"
+      }
+    },
+    "voice": {
+      "steps": {
+        "welcome": "欢迎",
+        "coreFeatures": "核心功能",
+        "hotkeySetup": "快捷键设置",
+        "permissions": "权限",
+        "dictationMode": "听写模式",
+        "readMode": "朗读模式",
+        "finalCheck": "最终检查"
+      },
+      "featureCards": {
+        "whisper": {
+          "title": "Whisper",
+          "description": "按住说话，松开输入。"
+        },
+        "read": {
+          "title": "朗读",
+          "description": "用自然语音朗读选中文本。"
+        }
+      },
+      "permissions": {
+        "inputMonitoringTitle": "输入监控",
+        "inputMonitoringDescription": "用于检测 Fn 按住说话，以及 Whisper 模式下的其他全局按键监听。",
+        "speechRecognitionTitle": "语音识别",
+        "speechRecognitionDescription": "可选。仅当你把 Whisper 切换为 Apple 语音识别兜底方案时需要。",
+        "microphoneTitle": "麦克风",
+        "microphoneDescription": "SuperCmd Whisper 听写所必需。"
+      },
+      "permissionNotes": {
+        "blocked": "{target} 权限已被阻止。请在系统设置中启用 SuperCmd 后再回来。",
+        "promptFailed": "无法触发权限弹窗。请打开 系统设置 -> 隐私与安全性，启用 SuperCmd 后再重新请求。",
+        "notShown": "权限弹窗没有出现。先打开一次 Whisper，再回来点一次。",
+        "homeFolder": "出现提示时请选择你的 Home 文件夹；如果需要，再到“文件与文件夹”里启用 SuperCmd。",
+        "inputMonitoring": "在“输入监控”里点击左下角“+”，从 Applications 文件夹手动添加 SuperCmd。"
+      },
+      "dictation": {
+        "title": "听写模式",
+        "howToTest": "测试方式",
+        "howToTestHint": "按住热键，读出示例，松开即可插入。",
+        "holdKeyUpdated": "按住键已更新",
+        "language": "听写语言",
+        "sampleTitle": "消息示例",
+        "sampleHint": "按住你的按键，然后读出上面的内容：",
+        "placeholder": "听写结果会显示在这里...",
+        "footerHint": "SuperCmd Whisper 默认使用本地 ggml base 模型。你也可以在设置里切换回 Apple 语音识别兜底。",
+        "models": {
+          "downloadFailed": "模型下载失败。请立即重试，或前往 设置 -> AI -> SuperCmd Whisper 处理。",
+          "actions": {
+            "downloaded": "已下载",
+            "downloading": "下载中...",
+            "download": "下载模型"
+          },
+          "parakeet": {
+            "title": "Parakeet TDT v3",
+            "ready": "下载完成，Parakeet v3 听写已就绪。",
+            "downloadingLead": "模型正在下载，请稍候。",
+            "downloading": "正在下载 Parakeet v3 CoreML 模型",
+            "notDownloaded": "SuperCmd 会在这一步开始下载 Parakeet v3 模型，确保你首次使用前就已准备好听写。"
+          },
+          "whispercpp": {
+            "title": "SuperCmd Whisper",
+            "ready": "下载完成，SuperCmd Whisper 听写已就绪。",
+            "downloadingLead": "模型正在下载，请稍候。",
+            "downloading": "正在下载约 300 MB 的 ggml base 模型",
+            "notDownloaded": "SuperCmd 会在这一步开始下载 SuperCmd Whisper 模型，确保你首次使用前就已准备好听写。"
+          },
+          "cloud": {
+            "title": "云端转录",
+            "description": "正在使用云端转录，无需下载本地模型。"
+          }
+        },
+        "sampleText": "那是最好的时代，那是最坏的时代，那是智慧的年代，那是愚昧的年代。"
+      },
+      "read": {
+        "badge": "经典文学",
+        "readTime": "1 分钟阅读",
+        "articleTitle": "傲慢与偏见",
+        "instructions": {
+          "before": "先选中文本，再按下",
+          "after": "即可听到朗读。"
+        },
+        "sampleText": "语音优先的界面正在迎来新的机会。过去它们常被当成噱头，但新一代工具已经让“开口说”真的比“动手打”更快，转录跟得上，修正更聪明，快捷键也能自然融入现有工作流。"
+      },
+      "final": {
+        "title": "最后一步：从任何地方启动 SuperCmd",
+        "description": "现在按一次你的全局快捷键，从任何应用里启动 SuperCmd。",
+        "nextStep": "下一步：去 SuperCmd 设置 -> 扩展，为 AI Prompt 和 Memory 配置快捷键，开始在任何地方使用 AI。"
+      },
+      "setupDescription": "我们会一次性完成启动器快捷键、隐私权限和 Whisper 模式配置。",
+      "setupSummary": "Whisper 听写与朗读模式练习",
+      "summary": {
+        "title": "本次会配置这些内容：",
+        "hotkey": "1. 启动器快捷键",
+        "permissions": "2. 辅助功能、输入监控、语音识别、麦克风"
+      },
+      "setupTitle": "一个界面完成启动、提问、听写和朗读。"
     }
   },
   "whisper": {
@@ -705,7 +939,40 @@
     "stop": "停止说话",
     "listening": "正在收听...",
     "processing": "处理中...",
-    "placeholder": "请说话..."
+    "placeholder": "请说话...",
+    "close": "关闭 Whisper",
+    "coachmark": {
+      "holdToTalk": "Whisper 会显示在这里。按住 {shortcut} 说话，松开后输入。",
+      "warmingUp": "首次设置中，正在预热模型..."
+    },
+    "status": {
+      "idle": "点击开始后即可说话。",
+      "apiError": "Whisper API 出错。",
+      "nativeFallback": "当前 Whisper 模型为 Apple 语音识别。点击开始即可使用 Apple 兜底方案。",
+      "transcriptionFailedLocal": "SuperCmd Whisper 转录失败。",
+      "transcriptionFailed": "Whisper 转录失败。",
+      "microphonePermissionRequired": "需要麦克风权限。",
+      "microphonePermissionCheckFailed": "麦克风权限检查失败。",
+      "microphoneAccessDenied": "麦克风访问被拒绝。",
+      "startingMicrophone": "正在启动麦克风...",
+      "loadingModels": "正在加载 Whisper 模型...",
+      "nativeRecognizerStartFailed": "语音识别启动失败。",
+      "finishing": "正在完成转录...",
+      "listeningReleaseToProcess": "正在收听，松开后开始处理。",
+      "listeningPressAgainToFinish": "正在收听，再按一次即可结束。",
+      "recordingFailed": "录音失败。",
+      "speechRecognitionError": "语音识别出错。"
+    },
+    "errors": {
+      "typeIntoActiveApp": "无法把内容输入到当前应用。",
+      "enableMicrophonePermission": "请到 系统设置 -> 隐私与安全性 -> 麦克风 中启用 SuperCmd 后再试。",
+      "allowMicrophonePermission": "请允许 SuperCmd Whisper 使用麦克风权限。",
+      "microphoneUnavailable": "无法访问麦克风。请检查 系统设置 -> 隐私与安全性 -> 麦克风。",
+      "nativeRecognizerStartFailed": "无法启动原生语音识别。",
+      "liveTypingRetry": "实时输入没有跟上，请重试。",
+      "modelNotReady": "模型仍在预热中，请稍后再试。",
+      "recordingFailed": "无法启动音频录制。"
+    }
   },
   "read": {
     "title": "SuperCmd 语音朗读",
@@ -723,11 +990,10 @@
     "settings": "相机设置"
   },
   "schedule": {
-    "title": "日程",
+    "title": "标题",
     "newEvent": "新建事件",
     "editEvent": "编辑事件",
     "deleteEvent": "删除事件",
-    "title": "标题",
     "date": "日期",
     "time": "时间",
     "duration": "时长",
