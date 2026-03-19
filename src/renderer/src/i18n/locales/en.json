@@ -106,7 +106,8 @@
         "ko": "Korean",
         "fr": "French",
         "de": "German",
-        "es": "Spanish"
+        "es": "Spanish",
+        "ru": "Russian"
       },
       "fontSize": {
         "title": "Font Size",

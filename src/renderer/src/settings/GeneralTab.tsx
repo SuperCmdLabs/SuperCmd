@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2, SlidersHorizontal, ChevronDown, ChevronUp, Power, Languages } from 'lucide-react';
+import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2, SlidersHorizontal, ChevronDown, ChevronUp, Power } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AppUpdaterStatus } from '../../types/electron';
 import { applyAppFontSize, getDefaultAppFontSize } from '../utils/font-size';
@@ -16,7 +16,7 @@ import {
   type ThemePreference,
 } from '../utils/theme';
 import { applyUiStyle, normalizeUiStyle, type UiStylePreference } from '../utils/ui-style';
-import { APP_LANGUAGE_OPTIONS, DEFAULT_APP_LANGUAGE, type AppLanguageSetting, useI18n } from '../i18n';
+import { useI18n } from '../i18n';
 
 type FontSizeOption = NonNullable<AppSettings['fontSize']>;
 type LauncherBackgroundPercentField =
@@ -185,20 +185,6 @@ const GeneralTab: React.FC = () => {
     } catch {
       setSettings((prev) => (prev ? { ...prev, fontSize: previousFontSize } : prev));
       applyAppFontSize(previousFontSize);
-    }
-  };
-
-  const handleAppLanguageChange = async (nextLanguage: AppLanguageSetting) => {
-    if (!settings) return;
-    const previousLanguage = settings.appLanguage || DEFAULT_APP_LANGUAGE;
-    if (previousLanguage === nextLanguage) return;
-
-    setSettings((prev) => (prev ? { ...prev, appLanguage: nextLanguage } : prev));
-
-    try {
-      await window.electron.saveSettings({ appLanguage: nextLanguage });
-    } catch {
-      setSettings((prev) => (prev ? { ...prev, appLanguage: previousLanguage } : prev));
     }
   };
 
@@ -381,7 +367,6 @@ const GeneralTab: React.FC = () => {
   }
 
   const selectedFontSize = settings.fontSize || getDefaultAppFontSize();
-  const selectedAppLanguage = settings.appLanguage || DEFAULT_APP_LANGUAGE;
   const launcherBackgroundFileName = getFileName(settings.launcherBackgroundImagePath);
   const launcherBackgroundBlurPercent = clampPercentage(
     settings.launcherBackgroundImageBlurPercent,
@@ -431,32 +416,6 @@ const GeneralTab: React.FC = () => {
                 : t('settings.general.startAtLogin.disabled')}
             </span>
           </label>
-        </SettingsRow>
-
-        <SettingsRow
-          icon={<Languages className="w-4 h-4" />}
-          title={t('settings.general.language.title')}
-          description={t('settings.general.language.description')}
-        >
-          <div className="inline-flex items-center gap-0.5 rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] p-0.5">
-            {APP_LANGUAGE_OPTIONS.map((option) => {
-              const active = selectedAppLanguage === option;
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => void handleAppLanguageChange(option)}
-                  className={`px-3 py-1.5 rounded-md text-[0.75rem] font-semibold transition-colors ${
-                    active
-                      ? 'bg-[var(--ui-segment-active-bg)] text-[var(--text-primary)]'
-                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)]'
-                  }`}
-                >
-                  {t(`settings.general.language.${option}`)}
-                </button>
-              );
-            })}
-          </div>
         </SettingsRow>
 
         <SettingsRow

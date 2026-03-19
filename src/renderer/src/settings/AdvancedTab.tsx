@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bug } from 'lucide-react';
+import { Bug, Languages } from 'lucide-react';
 import type { AppSettings } from '../../types/electron';
-import { useI18n } from '../i18n';
+import { APP_LANGUAGE_OPTIONS, DEFAULT_APP_LANGUAGE, type AppLanguageSetting, useI18n } from '../i18n';
 
 type SettingsRowProps = {
   icon: React.ReactNode;
@@ -57,14 +57,36 @@ const AdvancedTab: React.FC = () => {
   }, []);
 
   if (!settings) {
-    return <div className="p-6 text-[var(--text-muted)] text-[12px]">Loading advanced settings...</div>;
+    return <div className="p-6 text-[var(--text-muted)] text-[12px]">{t('settings.advanced.loading')}</div>;
   }
 
   return (
     <div className="w-full max-w-[980px] mx-auto space-y-3">
-      <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Advanced</h2>
+      <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">{t('settings.advanced.title')}</h2>
 
       <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
+        <SettingsRow
+          icon={<Languages className="w-4 h-4" />}
+          title={t('settings.general.language.title')}
+          description={t('settings.general.language.description')}
+        >
+          <div className="w-full max-w-[320px]">
+            <select
+              value={settings.appLanguage || DEFAULT_APP_LANGUAGE}
+              onChange={(event) => {
+                void applySettingsPatch({ appLanguage: event.target.value as AppLanguageSetting });
+              }}
+              className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+            >
+              {APP_LANGUAGE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option === 'system' ? t('settings.general.language.system') : t(`settings.general.language.${option}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </SettingsRow>
+
         <SettingsRow
           icon={<Bug className="w-4 h-4" />}
           title={t('settings.advanced.debugMode.title')}

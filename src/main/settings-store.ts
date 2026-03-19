@@ -47,7 +47,8 @@ export type AppLanguage =
   | 'ko'
   | 'fr'
   | 'de'
-  | 'es';
+  | 'es'
+  | 'ru';
 
 export interface AppSettings {
   globalShortcut: string;
@@ -204,6 +205,7 @@ function normalizeAppLanguage(value: any): AppLanguage {
   if (normalized === 'fr' || normalized.startsWith('fr-')) return 'fr';
   if (normalized === 'de' || normalized.startsWith('de-')) return 'de';
   if (normalized === 'es' || normalized.startsWith('es-')) return 'es';
+  if (normalized === 'ru' || normalized.startsWith('ru-')) return 'ru';
   return DEFAULT_SETTINGS.appLanguage;
 }
 
