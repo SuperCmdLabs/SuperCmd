@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { Note, NoteTheme } from '../types/electron';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
+import IconNotes from './icons/Notes';
 
 interface Action {
   title: string;
@@ -18,6 +19,7 @@ interface Action {
   execute: () => void | Promise<void>;
   style?: 'default' | 'destructive';
   section?: string;
+  submenu?: Action[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -178,9 +180,13 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
     const a: Action[] = [];
     a.push({ title: 'New Note', icon: <Plus size={14} />, shortcut: ['⌘', 'N'], section: 'actions', execute: () => { handleNewNote(); setShowActions(false); } });
     if (selectedNote) {
-      a.push({ title: 'Open Note', icon: <FileText size={14} />, shortcut: ['↩'], section: 'actions', execute: () => { handleOpenNote(selectedNote); setShowActions(false); } });
+      a.push({ title: 'Open Note', icon: <IconNotes size="14px" />, shortcut: ['↩'], section: 'actions', execute: () => { handleOpenNote(selectedNote); setShowActions(false); } });
       a.push({ title: 'Duplicate Note', icon: <Files size={14} />, shortcut: ['⌘', 'D'], section: 'actions', execute: () => handleDuplicate() });
-      a.push({ title: 'Copy Note As...', icon: <Copy size={14} />, shortcut: ['⇧', '⌘', 'C'], section: 'copy', execute: async () => { await window.electron.noteCopyToClipboard(selectedNote.id, 'markdown'); setShowActions(false); } });
+      a.push({ title: 'Copy Note As...', icon: <Copy size={14} />, shortcut: ['⇧', '⌘', 'C'], section: 'copy', execute: () => {}, submenu: [
+        { title: 'Copy as Markdown', icon: <Copy size={14} />, execute: async () => { await window.electron.noteCopyToClipboard(selectedNote.id, 'markdown'); setShowActions(false); } },
+        { title: 'Copy as HTML', icon: <Copy size={14} />, execute: async () => { await window.electron.noteCopyToClipboard(selectedNote.id, 'html'); setShowActions(false); } },
+        { title: 'Copy as Plain Text', icon: <Copy size={14} />, execute: async () => { await window.electron.noteCopyToClipboard(selectedNote.id, 'plaintext'); setShowActions(false); } },
+      ] });
       a.push({ title: 'Copy Deeplink', icon: <Link2 size={14} />, shortcut: ['⇧', '⌘', 'D'], section: 'copy', execute: async () => { await navigator.clipboard.writeText(`supercmd://notes/${selectedNote.id}`); setShowActions(false); } });
       a.push({ title: 'Export...', icon: <Upload size={14} />, shortcut: ['⇧', '⌘', 'E'], section: 'copy', execute: () => handleExport() });
       a.push({ title: selectedNote.pinned ? 'Unpin Note' : 'Pin Note', icon: selectedNote.pinned ? <PinOff size={14} /> : <Pin size={14} />, shortcut: ['⇧', '⌘', 'P'], section: 'manage', execute: () => handleTogglePin() });
@@ -279,23 +285,14 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
                   onClick={() => setSelectedIndex(index)}
                   onDoubleClick={() => handleOpenNote(note)}
                 >
-                  <div className="flex items-start gap-2">
-                    <div className="text-white/40 flex-shrink-0 mt-0.5">
-                      <FileText className="w-3.5 h-3.5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-white/80 text-[13px] truncate font-medium leading-tight">
-                          {note.title || 'Untitled'}
-                        </span>
-                        {note.pinned && (
-                          <Pin className="w-3 h-3 text-amber-300/80 flex-shrink-0" />
-                        )}
-                      </div>
-                      <div className="text-white/30 text-[11px] truncate mt-0.5 leading-tight">
-                        {note.content.split('\n')[0] || 'No content'}
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
+                    <span className="text-white/80 text-[13px] truncate font-medium leading-tight">
+                      {note.title || 'Untitled'}
+                    </span>
+                    {note.pinned && (
+                      <Pin className="w-3 h-3 text-amber-300/80 flex-shrink-0" />
+                    )}
                   </div>
                 </div>
               ))}
@@ -382,6 +379,8 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
 const SearchActionsOverlay: React.FC<{ actions: Action[]; onClose: () => void }> = ({ actions, onClose }) => {
   const [query, setQuery] = useState('');
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [submenuActions, setSubmenuActions] = useState<Action[] | null>(null);
+  const [submenuSelectedIdx, setSubmenuSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -399,17 +398,58 @@ const SearchActionsOverlay: React.FC<{ actions: Action[]; onClose: () => void }>
     item?.scrollIntoView({ block: 'nearest' });
   }, [selectedIdx]);
 
+  const executeAction = useCallback((action: Action) => {
+    if (action.submenu && action.submenu.length > 0) {
+      setSubmenuActions(action.submenu);
+      setSubmenuSelectedIdx(0);
+    } else {
+      action.execute();
+    }
+  }, []);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Submenu is open
+      if (submenuActions) {
+        if (e.key === 'Escape' || e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); setSubmenuActions(null); inputRef.current?.focus(); return; }
+        if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setSubmenuSelectedIdx(i => Math.min(i + 1, submenuActions.length - 1)); return; }
+        if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setSubmenuSelectedIdx(i => Math.max(0, i - 1)); return; }
+        if (e.key === 'Enter' && submenuActions[submenuSelectedIdx]) { e.preventDefault(); e.stopPropagation(); submenuActions[submenuSelectedIdx].execute(); return; }
+        return;
+      }
+
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return; }
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); onClose(); return; }
       if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setSelectedIdx(i => Math.min(i + 1, filtered.length - 1)); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setSelectedIdx(i => Math.max(0, i - 1)); return; }
-      if (e.key === 'Enter' && filtered[selectedIdx]) { e.preventDefault(); e.stopPropagation(); filtered[selectedIdx].execute(); return; }
+      if (e.key === 'Enter' || e.key === 'ArrowRight') {
+        if (filtered[selectedIdx]) {
+          e.preventDefault(); e.stopPropagation();
+          executeAction(filtered[selectedIdx]);
+          return;
+        }
+      }
+
+      // Match action shortcuts
+      if (e.metaKey || e.ctrlKey) {
+        for (const action of actions) {
+          if (!action.shortcut) continue;
+          const keys = action.shortcut;
+          const needsShift = keys.includes('⇧');
+          const needsCtrl = keys.includes('^');
+          const lastKey = keys[keys.length - 1];
+          if (needsCtrl && e.ctrlKey && e.key.toLowerCase() === lastKey.toLowerCase()) {
+            e.preventDefault(); e.stopPropagation(); executeAction(action); return;
+          }
+          if (!needsCtrl && (e.metaKey || e.ctrlKey) && e.shiftKey === needsShift && e.key.toLowerCase() === lastKey.toLowerCase()) {
+            e.preventDefault(); e.stopPropagation(); executeAction(action); return;
+          }
+        }
+      }
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [filtered, selectedIdx, onClose]);
+  }, [filtered, selectedIdx, onClose, actions, submenuActions, submenuSelectedIdx, executeAction]);
 
   const groupedActions = useMemo(() => {
     const groups: Array<{ section: string; actions: Action[] }> = [];
@@ -441,42 +481,70 @@ const SearchActionsOverlay: React.FC<{ actions: Action[]; onClose: () => void }>
         style={panelStyle}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-3 py-2.5 border-b border-[var(--ui-divider)]">
-          <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search for actions..."
-            className="w-full bg-transparent text-[var(--text-primary)] text-[13px] placeholder:text-[var(--text-subtle)] outline-none" />
-        </div>
-        <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar py-1">
-          {groupedActions.map((group, gi) => (
-            <div key={group.section || `__${gi}`}>
-              {gi > 0 && <hr className="border-[var(--ui-divider)] my-0.5" />}
-              {group.actions.map((action) => {
-                const idx = flatIdx++;
-                return (
-                  <div key={idx} data-action-item
-                    onClick={() => action.execute()}
-                    onMouseEnter={() => setSelectedIdx(idx)}
-                    className={`flex items-center gap-3 px-3 py-[7px] cursor-pointer transition-colors ${action.style === 'destructive' ? 'text-red-400' : 'text-[var(--text-secondary)]'}`}
-                    style={idx === selectedIdx ? { background: 'rgba(255,255,255,0.08)' } : undefined}
-                  >
-                    <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-60">{action.icon}</span>
-                    <span className="flex-1 text-[12px]">{action.title}</span>
-                    {action.shortcut && (
-                      <span className="flex items-center gap-0.5 flex-shrink-0">
-                        {action.shortcut.map((k, ki) => (
-                          <kbd key={ki} className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded bg-[var(--kbd-bg)] text-[10px] text-[var(--text-subtle)] font-medium">
-                            {k}
-                          </kbd>
-                        ))}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+        {submenuActions ? (
+          /* ─── Submenu view ─── */
+          <>
+            <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--ui-divider)]">
+              <button onClick={() => setSubmenuActions(null)} className="text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors">
+                <ArrowLeft size={14} />
+              </button>
+              <span className="text-[13px] text-[var(--text-muted)]">{filtered[selectedIdx]?.title}</span>
             </div>
-          ))}
-          {filtered.length === 0 && <div className="px-3 py-4 text-center text-[11px] text-[var(--text-disabled)]">No actions found</div>}
-        </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar py-1">
+              {submenuActions.map((sub, si) => (
+                <div key={si} data-action-item
+                  onClick={() => sub.execute()}
+                  onMouseEnter={() => setSubmenuSelectedIdx(si)}
+                  className="flex items-center gap-3 px-3 py-[7px] cursor-pointer transition-colors text-[var(--text-secondary)]"
+                  style={si === submenuSelectedIdx ? { background: 'rgba(255,255,255,0.08)' } : undefined}
+                >
+                  <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-60">{sub.icon}</span>
+                  <span className="flex-1 text-[12px]">{sub.title}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          /* ─── Main actions view ─── */
+          <>
+            <div className="px-3 py-2.5 border-b border-[var(--ui-divider)]">
+              <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search for actions..."
+                className="w-full bg-transparent text-[var(--text-primary)] text-[13px] placeholder:text-[var(--text-subtle)] outline-none" />
+            </div>
+            <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar py-1">
+              {groupedActions.map((group, gi) => (
+                <div key={group.section || `__${gi}`}>
+                  {gi > 0 && <hr className="border-[var(--ui-divider)] my-0.5" />}
+                  {group.actions.map((action) => {
+                    const idx = flatIdx++;
+                    return (
+                      <div key={idx} data-action-item
+                        onClick={() => executeAction(action)}
+                        onMouseEnter={() => setSelectedIdx(idx)}
+                        className={`flex items-center gap-3 px-3 py-[7px] cursor-pointer transition-colors ${action.style === 'destructive' ? 'text-red-400' : 'text-[var(--text-secondary)]'}`}
+                        style={idx === selectedIdx ? { background: 'rgba(255,255,255,0.08)' } : undefined}
+                      >
+                        <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-60">{action.icon}</span>
+                        <span className="flex-1 text-[12px]">{action.title}</span>
+                        {action.shortcut && (
+                          <span className="flex items-center gap-0.5 flex-shrink-0">
+                            {action.shortcut.map((k, ki) => (
+                              <kbd key={ki} className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded bg-[var(--kbd-bg)] text-[10px] text-[var(--text-subtle)] font-medium">
+                                {k}
+                              </kbd>
+                            ))}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+              {filtered.length === 0 && <div className="px-3 py-4 text-center text-[11px] text-[var(--text-disabled)]">No actions found</div>}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
