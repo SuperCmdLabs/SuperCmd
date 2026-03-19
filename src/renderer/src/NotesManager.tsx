@@ -136,8 +136,29 @@ function renderKatex(latex: string, displayMode: boolean = false): string {
   }
 }
 
-function renderInlineMath(text: string): string {
-  return text.replace(/\$([^\$]+?)\$/g, (_match, latex) => renderKatex(latex.trim(), false));
+/** Render inline markdown formatting (bold, italic, strikethrough, underline, code, links, math) to HTML */
+function renderInlineFormatting(text: string): string {
+  let s = text;
+  // Inline code (must be first to avoid interfering with other patterns)
+  s = s.replace(/`([^`]+?)`/g, '<code style="background:var(--input-bg);padding:1px 4px;border-radius:3px;font-size:0.9em;font-family:monospace">$1</code>');
+  // Bold
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  s = s.replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, '<em>$1</em>');
+  // Strikethrough
+  s = s.replace(/~~(.+?)~~/g, '<del style="text-decoration:line-through">$1</del>');
+  // Underline
+  s = s.replace(/&lt;u&gt;(.+?)&lt;\/u&gt;/g, '<span style="text-decoration:underline">$1</span>');
+  // Links [text](url)
+  s = s.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" style="color:var(--accent, #60a5fa);text-decoration:underline;cursor:pointer" data-href="$2">$1</a>');
+  // Inline math
+  s = s.replace(/\$([^\$]+?)\$/g, (_match, latex) => renderKatex(latex.trim(), false));
+  return s;
+}
+
+/** Check if block content has any inline formatting markers */
+function hasInlineFormatting(text: string): boolean {
+  return /\*\*.+?\*\*|(?<!\*)\*[^*]+?\*(?!\*)|~~.+?~~|<u>.+?<\/u>|`.+?`|\$.+?\$|\[.+?\]\(.+?\)/.test(text);
 }
 
 // ─── Block System ────────────────────────────────────────────────────
@@ -432,13 +453,19 @@ const SlashMenu: React.FC<SlashMenuProps> = ({ position, onSelect, onClose }) =>
 
 // ─── Block Editor ────────────────────────────────────────────────────
 
+export interface BlockEditorHandle {
+  wrapSelection: (prefix: string, suffix: string) => void;
+  insertBlockType: (type: BlockType) => void;
+}
+
 interface BlockEditorProps {
   initialContent: string;
   onContentChange: (content: string) => void;
   accentColor: string;
+  editorRef?: React.Ref<BlockEditorHandle>;
 }
 
-const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChange, accentColor }) => {
+const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChange, accentColor, editorRef }) => {
   const [blocks, setBlocks] = useState<Block[]>(() => parseMarkdownToBlocks(initialContent));
   const blocksRef = useRef(blocks);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -798,7 +825,17 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
     const range = sel.getRangeAt(0);
     const selected = range.toString();
     if (!selected) return;
-    const text = prefix + selected + suffix;
+
+    // Smart link: if wrapping with []() and selected text is a URL, use it as the href
+    let text: string;
+    const isLinkWrap = prefix === '[' && suffix === '](url)';
+    const isUrl = /^https?:\/\/\S+$/i.test(selected.trim());
+    if (isLinkWrap && isUrl) {
+      text = `[${selected.trim()}](${selected.trim()})`;
+    } else {
+      text = prefix + selected + suffix;
+    }
+
     range.deleteContents();
     range.insertNode(document.createTextNode(text));
     const el = range.startContainer.parentElement?.closest('[data-block-id]') as HTMLElement;
@@ -809,6 +846,40 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
       }
     }
   }, []);
+
+  // Expose format actions to parent via ref
+  React.useImperativeHandle(editorRef, () => ({
+    wrapSelection: (prefix: string, suffix: string) => {
+      pushHistory(true);
+      // If there's a selection, wrap it. Otherwise insert at cursor in focused block.
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+        wrapSelection(prefix, suffix);
+      } else {
+        // Find focused block and insert wrapping at cursor
+        const focusedId = focusedBlockId || blocksRef.current[blocksRef.current.length - 1]?.id;
+        if (!focusedId) return;
+        const el = blockElsRef.current.get(focusedId);
+        if (!el) return;
+        el.focus();
+        const offset = getCursorOffset(el);
+        const text = el.textContent || '';
+        const placeholder = prefix + suffix;
+        const newText = text.slice(0, offset) + placeholder + text.slice(offset);
+        el.textContent = newText;
+        setCursorPosition(el, offset + prefix.length);
+        setBlocks(prev => prev.map(b => b.id === focusedId ? { ...b, content: newText } : b));
+      }
+      pushHistory(true);
+    },
+    insertBlockType: (type: BlockType) => {
+      pushHistory(true);
+      const newBlock: Block = { id: genBlockId(), type, content: '', checked: type === 'checkbox' ? false : undefined };
+      setBlocks(prev => [...prev, newBlock]);
+      pendingFocusRef.current = { id: newBlock.id, offset: 0 };
+      pushHistory(true);
+    },
+  }), [wrapSelection, focusedBlockId, pushHistory]);
 
   // ─── Drag & Drop ─────────────────────────────────────────────
   const handleDragStart = useCallback((e: React.DragEvent, idx: number) => {
@@ -985,14 +1056,24 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
                       block.type === 'checkbox' && !block.checked && 'text-[13px] text-[var(--text-secondary)]',
                       block.type === 'blockquote' && 'text-[13px] text-[var(--text-muted)] italic',
                       block.type === 'code' && 'text-[12px] font-mono text-[var(--text-secondary)] bg-[var(--input-bg)] rounded px-2 py-1 whitespace-pre',
-                      focusedBlockId !== block.id && block.content.includes('$') && block.type !== 'code' && 'invisible',
+                      focusedBlockId !== block.id && hasInlineFormatting(block.content) && block.type !== 'code' && 'invisible',
                     ].filter(Boolean).join(' ')}
                     data-placeholder={focusedBlockId === block.id ? (block.type === 'h1' ? 'Heading 1' : block.type === 'h2' ? 'Heading 2' : block.type === 'h3' ? 'Heading 3' : block.type === 'paragraph' ? "Type '/' for commands..." : '') : ''}
                     style={{ '--placeholder-color': 'var(--text-disabled)' } as any}
                   />
-                  {focusedBlockId !== block.id && block.content.includes('$') && block.type !== 'code' && (
+                  {focusedBlockId !== block.id && hasInlineFormatting(block.content) && block.type !== 'code' && (
                     <div
-                      onClick={() => {
+                      onClick={(e) => {
+                        // If clicking a link, open it instead of focusing the block
+                        const target = e.target as HTMLElement;
+                        const link = target.closest('a[data-href]') as HTMLElement;
+                        if (link) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const href = link.dataset.href;
+                          if (href) window.electron?.openUrl?.(href);
+                          return;
+                        }
                         setFocusedBlockId(block.id);
                         const el = blockElsRef.current.get(block.id);
                         if (el) el.focus();
@@ -1009,7 +1090,7 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
                         block.type === 'checkbox' && !block.checked && 'text-[13px] text-[var(--text-secondary)]',
                         block.type === 'blockquote' && 'text-[13px] text-[var(--text-muted)] italic',
                       ].filter(Boolean).join(' ')}
-                      dangerouslySetInnerHTML={{ __html: renderInlineMath(block.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')) }}
+                      dangerouslySetInnerHTML={{ __html: renderInlineFormatting(block.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')) }}
                     />
                   )}
                 </div>
@@ -1173,6 +1254,7 @@ const EditorView: React.FC<EditorViewProps> = ({
   const [showToolbar, setShowToolbar] = useState(false);
   const [findQuery, setFindQuery] = useState('');
   const [showHeadingMenu, setShowHeadingMenu] = useState(false);
+  const blockEditorRef = useRef<BlockEditorHandle>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1228,12 +1310,12 @@ const EditorView: React.FC<EditorViewProps> = ({
     return () => window.removeEventListener('keydown', handler);
   }, [showToolbar, showFind, note, title, icon, content, theme, onBack, onNewNote, onBrowse, onShowActions, onNavigateBack, onNavigateForward, onDuplicate, onTogglePin, setShowFind]);
 
-  const insertMarkdownIntoContent = useCallback((prefix: string, suffix: string = '') => {
-    setContent(prev => prev + prefix + 'text' + suffix);
+  const formatWrap = useCallback((prefix: string, suffix: string) => {
+    blockEditorRef.current?.wrapSelection(prefix, suffix);
   }, []);
 
-  const insertLinePrefixIntoContent = useCallback((prefix: string) => {
-    setContent(prev => prev + '\n' + prefix);
+  const formatInsertBlock = useCallback((type: BlockType) => {
+    blockEditorRef.current?.insertBlockType(type);
   }, []);
 
   return (
@@ -1279,25 +1361,26 @@ const EditorView: React.FC<EditorViewProps> = ({
         initialContent={content}
         onContentChange={setContent}
         accentColor={accentColor}
+        editorRef={blockEditorRef}
       />
 
       {/* Bottom bar */}
       <div className="border-t border-[var(--ui-divider)]">
         {showToolbar && (
           <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-[var(--ui-divider)]">
-            <HeadingDropdownBtn showMenu={showHeadingMenu} onToggle={() => setShowHeadingMenu(p => !p)} onSelect={(prefix: string) => { insertLinePrefixIntoContent(prefix); setShowHeadingMenu(false); }} />
-            <ToolbarBtn icon={Bold} label="Bold" shortcut={['⌘', 'B']} onClick={() => insertMarkdownIntoContent('**', '**')} />
-            <ToolbarBtn icon={Italic} label="Italic" shortcut={['⌘', 'I']} onClick={() => insertMarkdownIntoContent('*', '*')} />
-            <ToolbarBtn icon={Strikethrough} label="Strikethrough" shortcut={['⇧', '⌘', 'S']} onClick={() => insertMarkdownIntoContent('~~', '~~')} />
-            <ToolbarBtn icon={Underline} label="Underline" shortcut={['⌘', 'U']} onClick={() => insertMarkdownIntoContent('<u>', '</u>')} />
-            <ToolbarBtn icon={Code} label="Inline code" shortcut={['⌘', 'E']} onClick={() => insertMarkdownIntoContent('`', '`')} />
-            <ToolbarBtn icon={Link} label="Link" shortcut={['⌘', 'L']} onClick={() => insertMarkdownIntoContent('[', '](url)')} />
-            <ToolbarBtn icon={SquareCode} label="Code block" shortcut={['⌥', '⌘', 'C']} onClick={() => insertMarkdownIntoContent('\n```\n', '\n```\n')} />
-            <ToolbarBtn icon={Quote} label="Blockquote" shortcut={['⇧', '⌘', 'B']} onClick={() => insertLinePrefixIntoContent('> ')} />
-            <ToolbarBtn icon={ListOrdered} label="Ordered list" shortcut={['⇧', '⌘', '7']} onClick={() => insertLinePrefixIntoContent('1. ')} />
-            <ToolbarBtn icon={List} label="Bullet list" shortcut={['⇧', '⌘', '8']} onClick={() => insertLinePrefixIntoContent('- ')} />
-            <ToolbarBtn icon={ListChecks} label="Task list" shortcut={['⇧', '⌘', '9']} onClick={() => insertLinePrefixIntoContent('- [ ] ')} />
-            <ToolbarBtn icon={Sigma} label="Inline math" shortcut={['⇧', '⌘', 'M']} onClick={() => insertMarkdownIntoContent('$', '$')} />
+            <HeadingDropdownBtn showMenu={showHeadingMenu} onToggle={() => setShowHeadingMenu(p => !p)} onSelect={(prefix: string) => { formatInsertBlock(prefix === '# ' ? 'h1' : prefix === '## ' ? 'h2' : 'h3'); setShowHeadingMenu(false); }} />
+            <ToolbarBtn icon={Bold} label="Bold" shortcut={['⌘', 'B']} onClick={() => formatWrap('**', '**')} />
+            <ToolbarBtn icon={Italic} label="Italic" shortcut={['⌘', 'I']} onClick={() => formatWrap('*', '*')} />
+            <ToolbarBtn icon={Strikethrough} label="Strikethrough" shortcut={['⇧', '⌘', 'S']} onClick={() => formatWrap('~~', '~~')} />
+            <ToolbarBtn icon={Underline} label="Underline" shortcut={['⌘', 'U']} onClick={() => formatWrap('<u>', '</u>')} />
+            <ToolbarBtn icon={Code} label="Inline code" shortcut={['⌘', 'E']} onClick={() => formatWrap('`', '`')} />
+            <ToolbarBtn icon={Link} label="Link" shortcut={['⌘', 'L']} onClick={() => formatWrap('[', '](url)')} />
+            <ToolbarBtn icon={SquareCode} label="Code block" shortcut={['⌥', '⌘', 'C']} onClick={() => formatInsertBlock('code')} />
+            <ToolbarBtn icon={Quote} label="Blockquote" shortcut={['⇧', '⌘', 'B']} onClick={() => formatInsertBlock('blockquote')} />
+            <ToolbarBtn icon={ListOrdered} label="Ordered list" shortcut={['⇧', '⌘', '7']} onClick={() => formatInsertBlock('ordered')} />
+            <ToolbarBtn icon={List} label="Bullet list" shortcut={['⇧', '⌘', '8']} onClick={() => formatInsertBlock('bullet')} />
+            <ToolbarBtn icon={ListChecks} label="Task list" shortcut={['⇧', '⌘', '9']} onClick={() => formatInsertBlock('checkbox')} />
+            <ToolbarBtn icon={Sigma} label="Inline math" shortcut={['⇧', '⌘', 'M']} onClick={() => formatWrap('$', '$')} />
             <div className="flex-1" />
             <ToolbarBtn icon={X} label="Close" onClick={() => setShowToolbar(false)} iconSize={13}
               className="p-1 rounded text-[var(--text-subtle)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-colors" />
