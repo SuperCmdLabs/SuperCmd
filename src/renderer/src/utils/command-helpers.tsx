@@ -22,6 +22,7 @@ import IconClipboard from '../icons/Clipboard';
 import IconMagnifier from '../icons/FileSearch';
 import IconLink from '../icons/QuickLinks';
 import IconCodeEditor from '../icons/Snippet';
+import IconNotes from '../icons/Notes';
 import { formatShortcutForDisplay } from './hyper-key';
 import { renderQuickLinkIconGlyph } from './quicklink-icons';
 
@@ -954,6 +955,21 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
           size="16px"
           aria-hidden="true"
           style={buildCoreIconStyle('#fcd34d', '#d97706', '#fef3c7b8', '#fcd34d90')}
+        />
+      </div>
+    );
+  }
+
+  if (
+    commandId === 'system-search-notes' ||
+    commandId === 'system-create-note'
+  ) {
+    return (
+      <div className="w-5 h-5 flex items-center justify-center">
+        <IconNotes
+          size="16px"
+          aria-hidden="true"
+          style={buildCoreIconStyle('#c4b5fd', '#7c3aed', '#ede9feb8', '#c4b5fd90')}
         />
       </div>
     );

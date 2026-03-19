@@ -721,6 +721,14 @@ const App: React.FC = () => {
           openSnippetManager('create');
           return;
         }
+        if (routedSystemCommandId === 'system-search-notes') {
+          window.electron.openNotesWindow('search');
+          return;
+        }
+        if (routedSystemCommandId === 'system-create-note') {
+          window.electron.openNotesWindow('create');
+          return;
+        }
         if (routedSystemCommandId === 'system-search-quicklinks') {
           setShowClipboardManager(false);
           setShowFileSearch(false);
@@ -2026,6 +2034,16 @@ const App: React.FC = () => {
     if (commandId === 'system-create-snippet') {
       whisperSessionRef.current = false;
       openSnippetManager('create');
+      return true;
+    }
+    if (commandId === 'system-search-notes') {
+      whisperSessionRef.current = false;
+      window.electron.openNotesWindow('search');
+      return true;
+    }
+    if (commandId === 'system-create-note') {
+      whisperSessionRef.current = false;
+      window.electron.openNotesWindow('create');
       return true;
     }
     if (commandId === 'system-search-quicklinks') {
