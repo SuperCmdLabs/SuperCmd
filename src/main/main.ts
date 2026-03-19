@@ -3518,6 +3518,7 @@ function isWindowShownRoutedSystemCommand(commandId: string): boolean {
     commandId === 'system-clipboard-manager' ||
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
+    commandId === 'system-search-notes' ||
     commandId === 'system-search-quicklinks' ||
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
@@ -8172,11 +8173,6 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     if (source === 'launcher') hideWindow();
     return true;
   }
-  if (commandId === 'system-search-notes') {
-    openNotesWindow('search');
-    if (source === 'launcher') hideWindow();
-    return true;
-  }
   if (commandId === 'system-create-note') {
     openNotesWindow('create');
     if (source === 'launcher') hideWindow();
@@ -8186,6 +8182,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     commandId === 'system-clipboard-manager' ||
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
+    commandId === 'system-search-notes' ||
     commandId === 'system-search-quicklinks' ||
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||

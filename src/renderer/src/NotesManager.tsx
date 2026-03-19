@@ -1291,9 +1291,11 @@ const EditorView: React.FC<EditorViewProps> = ({
       if (e.key === 'Escape') {
         if (showFind) { setShowFind(false); e.preventDefault(); return; }
         if (showToolbar) { setShowToolbar(false); e.preventDefault(); return; }
-        // Go back to search view (don't close window)
-        if (!note && content.trim()) onSave({ title: title || 'Untitled', icon, content, theme });
-        e.preventDefault(); onBack(); return;
+        // Save and close the window
+        if (note) onSave({ title: title || 'Untitled', icon, content, theme });
+        e.preventDefault();
+        window.close();
+        return;
       }
       if (meta && !shift && !alt && e.key === 'n') { e.preventDefault(); onNewNote(); return; }
       if (meta && !shift && !alt && e.key === 'k') { e.preventDefault(); onShowActions(); return; }
