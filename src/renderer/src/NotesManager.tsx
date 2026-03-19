@@ -463,9 +463,12 @@ interface BlockEditorProps {
   onContentChange: (content: string) => void;
   accentColor: string;
   editorRef?: React.Ref<BlockEditorHandle>;
+  findQuery?: string;
+  findActiveIndex?: number;
+  onFindCountChange?: (count: number) => void;
 }
 
-const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChange, accentColor, editorRef }) => {
+const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChange, accentColor, editorRef, findQuery, findActiveIndex = 0, onFindCountChange }) => {
   const [blocks, setBlocks] = useState<Block[]>(() => parseMarkdownToBlocks(initialContent));
   const blocksRef = useRef(blocks);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -913,6 +916,76 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
     setDropIdx(null);
   }, []);
 
+  // ─── Find Highlighting ──────────────────────────────────────
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Clear previous highlights
+    container.querySelectorAll('mark[data-find-highlight]').forEach(mark => {
+      const parent = mark.parentNode;
+      if (parent) {
+        parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
+        parent.normalize();
+      }
+    });
+
+    if (!findQuery || !findQuery.trim()) {
+      onFindCountChange?.(0);
+      return;
+    }
+
+    const query = findQuery.toLowerCase();
+    let matchCount = 0;
+
+    // Walk all text nodes in block elements (not in contentEditable to avoid corrupting input)
+    // Instead, walk the overlay divs and the contentEditable divs
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+    const textNodes: { node: Text; start: number }[] = [];
+    let walkerNode: Node | null;
+    while ((walkerNode = walker.nextNode())) {
+      const textNode = walkerNode as Text;
+      // Skip nodes inside the slash menu or style tags
+      const parent = textNode.parentElement;
+      if (!parent || parent.tagName === 'STYLE') continue;
+      if (parent.closest('[data-slash-item]')) continue;
+      const text = textNode.textContent || '';
+      const lower = text.toLowerCase();
+      let searchFrom = 0;
+      while (searchFrom < lower.length) {
+        const idx = lower.indexOf(query, searchFrom);
+        if (idx === -1) break;
+        textNodes.push({ node: textNode, start: idx });
+        searchFrom = idx + query.length;
+      }
+    }
+
+    matchCount = textNodes.length;
+    onFindCountChange?.(matchCount);
+
+    // Apply highlights in reverse order to not invalidate positions
+    for (let i = textNodes.length - 1; i >= 0; i--) {
+      const { node: textNode, start } = textNodes[i];
+      const range = document.createRange();
+      range.setStart(textNode, start);
+      range.setEnd(textNode, start + query.length);
+
+      const mark = document.createElement('mark');
+      mark.setAttribute('data-find-highlight', '');
+      mark.style.borderRadius = '2px';
+      mark.style.padding = '0 1px';
+      mark.style.color = 'inherit';
+      if (i === findActiveIndex) {
+        mark.style.background = 'rgba(234, 179, 8, 0.6)';
+        mark.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } else {
+        mark.style.background = 'rgba(234, 179, 8, 0.25)';
+      }
+
+      range.surroundContents(mark);
+    }
+  }, [findQuery, findActiveIndex, blocks]);
+
   // ─── Render ──────────────────────────────────────────────────
   return (
     <div
@@ -1056,7 +1129,7 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
                       block.type === 'checkbox' && !block.checked && 'text-[13px] text-[var(--text-secondary)]',
                       block.type === 'blockquote' && 'text-[13px] text-[var(--text-muted)] italic',
                       block.type === 'code' && 'text-[12px] font-mono text-[var(--text-secondary)] bg-[var(--input-bg)] rounded px-2 py-1 whitespace-pre',
-                      focusedBlockId !== block.id && hasInlineFormatting(block.content) && block.type !== 'code' && 'invisible',
+                      focusedBlockId !== block.id && hasInlineFormatting(block.content) && block.type !== 'code' && 'opacity-0',
                     ].filter(Boolean).join(' ')}
                     data-placeholder={focusedBlockId === block.id ? (block.type === 'h1' ? 'Heading 1' : block.type === 'h2' ? 'Heading 2' : block.type === 'h3' ? 'Heading 3' : block.type === 'paragraph' ? "Type '/' for commands..." : '') : ''}
                     style={{ '--placeholder-color': 'var(--text-disabled)' } as any}
@@ -1253,6 +1326,8 @@ const EditorView: React.FC<EditorViewProps> = ({
   const [theme, setTheme] = useState<NoteTheme>(note?.theme || 'default');
   const [showToolbar, setShowToolbar] = useState(false);
   const [findQuery, setFindQuery] = useState('');
+  const [findActiveIndex, setFindActiveIndex] = useState(0);
+  const [findCount, setFindCount] = useState(0);
   const [showHeadingMenu, setShowHeadingMenu] = useState(false);
   const blockEditorRef = useRef<BlockEditorHandle>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
@@ -1302,11 +1377,18 @@ const EditorView: React.FC<EditorViewProps> = ({
       if (meta && !shift && !alt && e.key === 'p') { e.preventDefault(); onBrowse(); return; }
       if (meta && shift && e.key === 'p') { e.preventDefault(); onTogglePin(); return; }
       if (meta && !shift && !alt && e.key === 'd') { e.preventDefault(); onDuplicate(); return; }
-      if (meta && !shift && !alt && e.key === 'f') { e.preventDefault(); setShowFind(true); return; }
+      if (meta && !shift && !alt && e.key === 'f') {
+        e.preventDefault();
+        setShowFind(true);
+        // Re-focus the find input even if already open
+        setTimeout(() => findInputRef.current?.focus(), 50);
+        return;
+      }
       if (meta && !shift && !alt && e.key === '[') { e.preventDefault(); onNavigateBack(); return; }
       if (meta && !shift && !alt && e.key === ']') { e.preventDefault(); onNavigateForward(); return; }
-      if (meta && alt && e.key === ',') { e.preventDefault(); setShowToolbar(p => !p); return; }
-      if (meta && shift && !alt && e.key === ',') { e.preventDefault(); setShowToolbar(p => !p); return; }
+      // Format toolbar toggle: Cmd+Alt+, or Cmd+Shift+, (Shift+, = < on macOS)
+      if (meta && alt && (e.key === ',' || e.code === 'Comma')) { e.preventDefault(); setShowToolbar(p => !p); return; }
+      if (meta && shift && !alt && (e.key === ',' || e.key === '<' || e.code === 'Comma')) { e.preventDefault(); setShowToolbar(p => !p); return; }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -1346,12 +1428,44 @@ const EditorView: React.FC<EditorViewProps> = ({
           <input
             ref={findInputRef}
             value={findQuery}
-            onChange={(e) => setFindQuery(e.target.value)}
+            onChange={(e) => { setFindQuery(e.target.value); setFindActiveIndex(0); }}
             placeholder="Find in note..."
             className="flex-1 bg-transparent text-[var(--text-primary)] text-[13px] placeholder:text-[var(--text-disabled)] outline-none"
-            onKeyDown={(e) => { if (e.key === 'Escape') { setShowFind(false); e.stopPropagation(); } }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { setShowFind(false); setFindQuery(''); setFindCount(0); e.stopPropagation(); return; }
+              if (e.key === 'Enter' && findQuery && findCount > 0) {
+                e.preventDefault();
+                if (e.shiftKey) {
+                  setFindActiveIndex(i => (i - 1 + findCount) % findCount);
+                } else {
+                  setFindActiveIndex(i => (i + 1) % findCount);
+                }
+              }
+            }}
           />
-          <button onClick={() => { setShowFind(false); setFindQuery(''); }} className="p-0.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-subtle)]">
+          {findQuery && findCount > 0 && (
+            <span className="text-[11px] text-[var(--text-muted)] flex-shrink-0 tabular-nums">
+              {findActiveIndex + 1}/{findCount}
+            </span>
+          )}
+          {findQuery && findCount === 0 && (
+            <span className="text-[11px] text-[var(--text-disabled)] flex-shrink-0">
+              No results
+            </span>
+          )}
+          {findQuery && findCount > 0 && (
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <button onClick={() => setFindActiveIndex(i => (i - 1 + findCount) % findCount)}
+                className="p-0.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-subtle)]" title="Previous">
+                <ArrowUp size={12} />
+              </button>
+              <button onClick={() => setFindActiveIndex(i => (i + 1) % findCount)}
+                className="p-0.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-subtle)]" title="Next">
+                <ArrowDown size={12} />
+              </button>
+            </div>
+          )}
+          <button onClick={() => { setShowFind(false); setFindQuery(''); setFindCount(0); }} className="p-0.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-subtle)]">
             <X size={12} />
           </button>
         </div>
@@ -1364,6 +1478,9 @@ const EditorView: React.FC<EditorViewProps> = ({
         onContentChange={setContent}
         accentColor={accentColor}
         editorRef={blockEditorRef}
+        findQuery={showFind ? findQuery : undefined}
+        findActiveIndex={findActiveIndex}
+        onFindCountChange={setFindCount}
       />
 
       {/* Bottom bar */}
