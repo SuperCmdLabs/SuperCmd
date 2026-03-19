@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bug, Sparkles } from 'lucide-react';
+import { Bug, Languages, Sparkles } from 'lucide-react';
 import type { AppSettings, HyperKeySourceKey, HyperKeyCapsLockTapBehavior } from '../../types/electron';
+import { APP_LANGUAGE_OPTIONS, DEFAULT_APP_LANGUAGE, type AppLanguageSetting, useI18n } from '../i18n';
 
 type SettingsRowProps = {
   icon: React.ReactNode;
@@ -55,6 +56,7 @@ const CAPS_LOCK_TAP_OPTIONS: { value: HyperKeyCapsLockTapBehavior; label: string
 ];
 
 const AdvancedTab: React.FC = () => {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
   useEffect(() => {
@@ -76,7 +78,7 @@ const AdvancedTab: React.FC = () => {
   }, []);
 
   if (!settings) {
-    return <div className="p-6 text-[var(--text-muted)] text-[12px]">Loading advanced settings...</div>;
+    return <div className="p-6 text-[var(--text-muted)] text-[12px]">{t('settings.advanced.loading')}</div>;
   }
 
   const hyperKey = settings.hyperKey ?? { enabled: false, sourceKey: 'caps-lock' as const, capsLockTapBehavior: 'escape' as const };
@@ -85,7 +87,7 @@ const AdvancedTab: React.FC = () => {
 
   return (
     <div className="w-full max-w-[980px] mx-auto space-y-3">
-      <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Advanced</h2>
+      <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">{t('settings.advanced.title')}</h2>
 
       <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
         {/* Hyper Key */}
@@ -170,22 +172,44 @@ const AdvancedTab: React.FC = () => {
 
         {/* Debug Mode */}
         <SettingsRow
+          icon={<Languages className="w-4 h-4" />}
+          title={t('settings.general.language.title')}
+          description={t('settings.general.language.description')}
+        >
+          <div className="w-full max-w-[320px]">
+            <select
+              value={settings.appLanguage || DEFAULT_APP_LANGUAGE}
+              onChange={(event) => {
+                void applySettingsPatch({ appLanguage: event.target.value as AppLanguageSetting });
+              }}
+              className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+            >
+              {APP_LANGUAGE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option === 'system' ? t('settings.general.language.system') : t(`settings.general.language.${option}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
           icon={<Bug className="w-4 h-4" />}
-          title="Debug Mode"
-          description="Show detailed logs when extensions fail to load or build."
+          title={t('settings.advanced.debugMode.title')}
+          description={t('settings.advanced.debugMode.description')}
           withBorder={false}
         >
           <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
             <input
               type="checkbox"
-              checked={settings.debugMode ?? false}
-              onChange={(event) => {
-                const debugMode = event.target.checked;
-                void applySettingsPatch({ debugMode });
+              checked={settings?.developerMode ?? false}
+              onChange={async (e) => {
+                await window.electron.updateSettings({ developerMode: e.target.checked });
+                setSettings((prev) => (prev ? { ...prev, developerMode: e.target.checked } : null));
               }}
               className="settings-checkbox"
             />
-            Enable debug mode
+            {t('settings.advanced.debugMode.label')}
           </label>
         </SettingsRow>
       </div>

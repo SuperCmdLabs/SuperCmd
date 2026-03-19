@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { ArrowLeft, Check } from 'lucide-react';
+import { useI18n } from './i18n';
 
 interface WhisperOnboardingExtensionProps {
   speakToggleShortcutLabel: string;
@@ -9,10 +10,6 @@ interface WhisperOnboardingExtensionProps {
   onComplete: () => void;
 }
 
-const SAMPLE_PRACTICE_TEXT =
-  'Today I reviewed the roadmap and prioritized the top three tasks for this week. ' +
-  'Please draft a short summary and share it with the team before lunch.';
-
 const WhisperOnboardingExtension: React.FC<WhisperOnboardingExtensionProps> = ({
   speakToggleShortcutLabel,
   practiceText,
@@ -20,6 +17,7 @@ const WhisperOnboardingExtension: React.FC<WhisperOnboardingExtensionProps> = ({
   onClose,
   onComplete,
 }) => {
+  const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -49,8 +47,8 @@ const WhisperOnboardingExtension: React.FC<WhisperOnboardingExtensionProps> = ({
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="flex-1 min-w-0">
-            <div className="text-white/90 text-[15px] font-medium truncate">Whisper Quick Onboarding</div>
-            <div className="text-white/35 text-xs">Hold to record, release to type</div>
+            <div className="text-white/90 text-[15px] font-medium truncate">{t('onboarding.whisper.quick.title')}</div>
+            <div className="text-white/35 text-xs">{t('onboarding.whisper.quick.subtitle')}</div>
           </div>
         </div>
 
@@ -69,40 +67,40 @@ const WhisperOnboardingExtension: React.FC<WhisperOnboardingExtensionProps> = ({
                 }}
               />
               <div className="relative z-10">
-                <p className="text-white/90 text-base font-semibold mb-2">Hold to record, release to type</p>
+                <p className="text-white/90 text-base font-semibold mb-2">{t('onboarding.whisper.quick.subtitle')}</p>
                 <p className="text-white/75 text-sm leading-relaxed">
-                  Press and hold{' '}
+                  {t('onboarding.whisper.quick.instructions.before')}
                   <kbd className="px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/[0.16] text-white/95">
                     {speakToggleShortcutLabel}
-                  </kbd>{' '}
-                  while speaking. Release it to process and type at your current cursor.
+                  </kbd>
+                  {t('onboarding.whisper.quick.instructions.after')}
                 </p>
               </div>
             </div>
 
             <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-5">
-              <p className="text-white/85 text-sm font-medium mb-2">Practice paragraph</p>
+              <p className="text-white/85 text-sm font-medium mb-2">{t('onboarding.whisper.quick.practiceTitle')}</p>
               <textarea
                 ref={textareaRef}
                 value={practiceText}
                 onChange={(e) => onPracticeTextChange(e.target.value)}
-                placeholder={SAMPLE_PRACTICE_TEXT}
+                placeholder={t('onboarding.whisper.quick.practicePlaceholder')}
                 className="w-full h-64 resize-none rounded-lg border border-white/[0.10] bg-white/[0.03] px-4 py-3 text-white/90 placeholder:text-white/40 text-[20px] leading-relaxed outline-none"
               />
               <p className="text-white/45 text-xs mt-2">
-                Practice in this editor: hold hotkey, speak these two sentences, release, and verify the output.
+                {t('onboarding.whisper.quick.practiceHint')}
               </p>
             </div>
           </div>
         </div>
 
         <div className="sc-glass-footer px-4 py-3.5 flex items-center justify-between">
-          <span className="text-xs text-white/45">Whisper stays near the bottom when active.</span>
+          <span className="text-xs text-white/45">{t('onboarding.whisper.quick.footerHint')}</span>
           <button
             onClick={onComplete}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white/[0.16] hover:bg-white/[0.22] text-white text-xs font-medium transition-colors"
           >
-            Finish
+            {t('onboarding.finish')}
             <Check className="w-3.5 h-3.5" />
           </button>
         </div>

@@ -1,0 +1,958 @@
+{
+  "common": {
+    "actions": "操作",
+    "loading": "載入中...",
+    "noResults": "沒有結果",
+    "search": "搜尋...",
+    "save": "儲存",
+    "cancel": "取消",
+    "close": "關閉",
+    "continue": "繼續",
+    "back": "返回",
+    "remove": "移除",
+    "add": "新增",
+    "edit": "編輯",
+    "delete": "刪除",
+    "enable": "啟用",
+    "disable": "停用",
+    "enabled": "已啟用",
+    "disabled": "已停用",
+    "success": "成功",
+    "error": "錯誤",
+    "warning": "警告",
+    "info": "資訊",
+    "copy": "複製",
+    "paste": "貼上",
+    "cut": "剪下",
+    "selectAll": "全選",
+    "undo": "復原",
+    "redo": "重做",
+    "refresh": "重新整理",
+    "reload": "重新載入",
+    "apply": "套用",
+    "reset": "重設",
+    "clear": "清除",
+    "done": "完成",
+    "ok": "確定",
+    "yes": "是",
+    "no": "否",
+    "submit": "提交",
+    "browse": "瀏覽",
+    "choose": "選擇",
+    "change": "變更",
+    "update": "更新",
+    "install": "安裝",
+    "uninstall": "解除安裝",
+    "download": "下載",
+    "upload": "上傳",
+    "import": "匯入",
+    "export": "匯出",
+    "open": "開啟",
+    "create": "建立",
+    "new": "新增",
+    "unknown": "未知",
+    "none": "無",
+    "default": "預設",
+    "custom": "自訂",
+    "other": "其他",
+    "all": "全部",
+    "required": "必填",
+    "optional": "選填",
+    "preferences": "偏好設定",
+    "settings": "設定",
+    "general": "一般",
+    "advanced": "進階",
+    "about": "關於",
+    "version": "版本",
+    "language": "語言",
+    "appearance": "外觀",
+    "theme": "主題",
+    "light": "淺色",
+    "dark": "深色",
+    "system": "系統",
+    "auto": "自動"
+  },
+  "settings": {
+    "title": "SuperCmd 設定",
+    "tabs": {
+      "general": "一般",
+      "ai": "AI",
+      "extensions": "擴充功能",
+      "advanced": "進階"
+    },
+    "general": {
+      "title": "一般",
+      "loading": "正在載入設定...",
+      "launcherShortcut": {
+        "title": "啟動器快捷鍵",
+        "description": "設定開啟和關閉 SuperCmd 的全域快捷鍵。",
+        "updated": "快捷鍵已更新",
+        "failed": "設定失敗，快捷鍵可能已被其他應用程式占用。"
+      },
+      "startAtLogin": {
+        "title": "登入時啟動",
+        "description": "在您登入系統時自動啟動 SuperCmd。",
+        "enabled": "已開啟",
+        "disabled": "已關閉"
+      },
+      "language": {
+        "title": "語言",
+        "description": "選擇介面語言，或跟隨系統語言。",
+        "system": "跟隨系統",
+        "en": "English",
+        "zh-Hans": "簡體中文",
+        "zh-Hant": "繁體中文",
+        "ja": "日本語",
+        "ko": "한국어",
+        "fr": "Français",
+        "de": "Deutsch",
+        "es": "Español",
+        "ru": "俄語"
+      },
+      "fontSize": {
+        "title": "字體大小",
+        "description": "調整整個應用程式的文字大小。",
+        "extra-small": "特小",
+        "small": "小",
+        "medium": "中",
+        "large": "大",
+        "extra-large": "特大"
+      },
+      "appearance": {
+        "title": "外觀",
+        "description": "選擇淺色、深色，或跟隨系統外觀。",
+        "light": "淺色",
+        "system": "系統",
+        "dark": "深色"
+      },
+      "visualStyle": {
+        "title": "視覺風格",
+        "description": "使用預設風格，或啟用更接近 macOS Tahoe 風格的玻璃態介面。",
+        "default": "預設",
+        "glassy": "玻璃態"
+      },
+      "background": {
+        "title": "啟動器背景圖",
+        "description": "在啟動器後面顯示一張低透明度、輕微模糊的背景圖，讓它更像氛圍提示而不是完整桌布。",
+        "empty": "尚未選擇圖片，啟動器會繼續使用目前背景。",
+        "choose": "選擇圖片",
+        "change": "變更圖片",
+        "remove": "移除",
+        "appearance": "顯示效果",
+        "summary": "模糊 {blur}% · 不透明度 {opacity}%",
+        "blur": "模糊",
+        "opacity": "不透明度",
+        "useEverywhere": "在擴充功能檢視和核心啟動器檢視中也使用這張圖片"
+      },
+      "updates": {
+        "title": "應用程式更新",
+        "description": "檢查並安裝打包版本的應用程式更新。",
+        "defaultMessage": "檢查並安裝打包版本的應用程式更新。",
+        "unsupported": "只有打包後的應用程式版本才支援更新。",
+        "checking": "正在檢查更新...",
+        "available": "發現可用更新 v{version}。",
+        "notAvailable": "您已經是最新版本。",
+        "downloading": "正在下載更新...",
+        "downloaded": "更新已下載，重新啟動後即可安裝。",
+        "error": "無法完成更新操作。",
+        "check": "檢查更新",
+        "download": "下載更新",
+        "downloadingButton": "正在下載更新...",
+        "restart": "重新啟動並更新",
+        "currentVersion": "目前版本：v{version}",
+        "latestVersion": "最新版本：v{version}",
+        "progress": "{progress}% · {transferred} / {total}",
+        "failed": "更新失敗。"
+      },
+      "about": {
+        "title": "關於",
+        "description": "版本資訊。",
+        "version": "SuperCmd v{version}"
+      }
+    },
+    "ai": {
+      "title": "AI 設定",
+      "loading": "正在載入 AI 設定...",
+      "saved": "已儲存",
+      "enableAI": {
+        "title": "啟用 AI",
+        "description": "AI 功能的總開關。"
+      },
+      "tabs": {
+        "apiKeys": "API 金鑰",
+        "llm": "大型語言模型",
+        "whisper": "SuperCmd 語音輸入",
+        "speak": "SuperCmd 語音朗讀"
+      },
+      "apiKeys": {
+        "openai": {
+          "label": "ChatGPT (OpenAI) API 金鑰",
+          "placeholder": "sk-..."
+        },
+        "anthropic": {
+          "label": "Claude (Anthropic) API 金鑰",
+          "placeholder": "sk-ant-..."
+        },
+        "gemini": {
+          "label": "Gemini (Google) API 金鑰",
+          "placeholder": "AIza..."
+        },
+        "elevenlabs": {
+          "label": "ElevenLabs API 金鑰",
+          "placeholder": "xi-..."
+        },
+        "supermemory": {
+          "title": "Supermemory",
+          "description": "用於長期上下文記憶的儲存後端。",
+          "apiKey": {
+            "label": "Supermemory API 金鑰",
+            "placeholder": "sm-..."
+          },
+          "client": {
+            "label": "Supermemory 用戶端",
+            "placeholder": "client-123",
+            "hint": "用於限定使用者記憶檢索的範圍。"
+          },
+          "baseUrl": {
+            "label": "Supermemory 基礎 URL",
+            "placeholder": "https://api.supermemory.ai"
+          },
+          "localMode": "使用本機模式（儲存在本機）"
+        }
+      },
+      "llm": {
+        "enableLLM": {
+          "title": "啟用大型語言模型",
+          "description": "開啟基於模型的 AI 功能。"
+        },
+        "modelSelection": {
+          "title": "通用模型選擇",
+          "description": "供擴充功能和不依賴特定模型的 AI 操作使用。"
+        },
+        "provider": {
+          "label": "提供者",
+          "openai": "OpenAI",
+          "anthropic": "Claude",
+          "gemini": "Gemini",
+          "ollama": "Ollama",
+          "openaiCompatible": "自訂 (OpenAI 相容)"
+        },
+        "ollama": {
+          "serverUrl": {
+            "label": "Ollama 伺服器位址",
+            "placeholder": "http://localhost:11434"
+          },
+          "models": "Ollama 模型",
+          "refresh": "重新整理",
+          "checking": "正在檢查 Ollama 狀態...",
+          "notRunning": {
+            "title": "Ollama 未執行",
+            "description": "安裝並執行 Ollama 以使用本機模型。",
+            "download": "下載 Ollama"
+          },
+          "running": "Ollama 執行中",
+          "installed": "已安裝",
+          "downloadModel": "下載",
+          "removeModel": "移除",
+          "downloading": "正在下載...",
+          "removing": "正在移除..."
+        },
+        "openaiCompatible": {
+          "baseUrl": {
+            "label": "基礎 URL",
+            "placeholder": "https://api.openrouter.ai/v1",
+            "hint": "如果您的提供者使用 /v1，請包含它（例如 https://api.openai.com/v1）"
+          },
+          "apiKey": {
+            "label": "API 金鑰",
+            "placeholder": "sk-..."
+          },
+          "modelName": {
+            "label": "模型名稱",
+            "placeholder": "anthropic/claude-3.5-sonnet",
+            "hint": "您的提供者期望的確切模型名稱（例如 gpt-4o、meta-llama/llama-3.1-70b-instruct）"
+          }
+        },
+        "defaultModel": {
+          "label": "預設模型",
+          "auto": "自動（提供者預設）"
+        }
+      },
+      "whisper": {
+        "enableWhisper": {
+          "title": "啟用 SuperCmd 語音輸入",
+          "description": "開啟語音轉文字功能。"
+        },
+        "title": "SuperCmd 語音輸入",
+        "description": "語音轉文字和轉錄文字清理。",
+        "model": {
+          "label": "轉錄模型",
+          "native": "原生（預設）",
+          "openaiGpt4o": "OpenAI GPT-4o 轉錄",
+          "openaiWhisper": "OpenAI Whisper-1",
+          "elevenlabsScribeV1": "ElevenLabs Scribe v1",
+          "elevenlabsScribeV2": "ElevenLabs Scribe v2"
+        },
+        "openaiWarning": "已選擇 OpenAI Whisper。請在 API 金鑰中新增 OpenAI API 金鑰。",
+        "elevenlabsWarning": "已選擇 ElevenLabs 語音轉文字。請在 API 金鑰中{action} ElevenLabs API 金鑰。",
+        "elevenlabsReady": "已選擇 ElevenLabs 語音轉文字。雲端轉錄將使用您的 ElevenLabs 金鑰。",
+        "hotkeys": {
+          "title": "語音輸入快捷鍵",
+          "startStop": "開始/停止說話",
+          "setToFn": "設為 Fn 鍵",
+          "fnHint": "使用「設為 Fn 鍵」恢復預設的按住說話快捷鍵。",
+          "fnHintBefore": "使用",
+          "fnHintAfter": "可恢復預設的按住說話快捷鍵。"
+        },
+        "smoothOutput": {
+          "title": "平滑輸出",
+          "description": "清理填充詞和自我糾正。"
+        },
+        "smoothingModel": {
+          "label": "平滑模型",
+          "useDefault": "使用通用預設模型",
+          "hint": "使用您目前提供者的模型。"
+        },
+        "modelOptions": {
+          "whispercpp": "SuperCmd Whisper（預設）",
+          "parakeet": "Parakeet v3（最佳且最快，支援 25+ 歐洲語言）",
+          "qwen3": "Qwen3 ASR（支持 30+ 种语言，包括中文、日语、韩语、泰语、越南语、印地语）",
+          "native": "Apple 语音识别",
+          "openaiGpt4o": "OpenAI GPT-4o 转录",
+          "openaiWhisper": "OpenAI Whisper-1",
+          "elevenlabsScribeV1": "ElevenLabs Scribe v1",
+          "elevenlabsScribeV2": "ElevenLabs Scribe v2"
+        },
+        "providerInfo": {
+          "parakeet": "透過 Parakeet TDT v3 在裝置離線轉錄，運行於 Apple Neural Engine。首次使用前需要預熱模型，請先下載後再開始聽寫。",
+          "qwen3": "透過 Qwen3 ASR 在裝置離線轉錄，支援 30+ 種語言，需要 macOS 15+，首次使用前會預熱模型。",
+          "whispercpp": "透過 Whisper.cpp 在裝置離線轉錄。請先下載預設 ggml base 模型後再開始聽寫。",
+          "native": "改用 Apple 语音识别，而不是 SuperCmd Whisper。"
+        },
+        "recognitionLanguage": "辨識語言",
+        "downloadCards": {
+          "modelDownloadFailed": "模型下載失敗。",
+          "actions": {
+            "downloaded": "模型已下載",
+            "downloading": "下載中...",
+            "download": "下載模型"
+          },
+          "parakeet": {
+            "title": "Parakeet TDT v3",
+            "description": "多語言裝置端轉錄，運行於 Apple Neural Engine。",
+            "ready": "已下載完成，Parakeet v3 已可離線使用。",
+            "downloading": "正在下載 Parakeet v3 模型",
+            "notDownloaded": "模型尚未下載。現在下載後即可使用 Parakeet 聽寫。"
+          },
+          "qwen3": {
+            "title": "Qwen3 ASR",
+            "description": "支援 30 種語言的裝置端轉錄，需要 macOS 15+。",
+            "ready": "已下載完成，Qwen3 ASR 已可離線使用。",
+            "downloading": "正在下載 Qwen3 ASR 模型",
+            "notDownloaded": "模型尚未下載。請下載約 900 MB 的 int8 模型後再使用 Qwen3 聽寫。"
+          },
+          "whispercpp": {
+            "title": "SuperCmd Whisper",
+            "description": "下載一次 ggml base 模型即可啟用本地聽寫。",
+            "ready": "已下載完成，SuperCmd Whisper 已可離線使用。",
+            "downloading": "正在下載 SuperCmd Whisper",
+            "notDownloaded": "模型尚未下載。現在下載後即可使用 SuperCmd Whisper 聽寫。"
+          }
+        }
+      },
+      "speak": {
+        "enableRead": {
+          "title": "啟用 SuperCmd 語音朗讀",
+          "description": "開啟文字轉語音功能。"
+        },
+        "title": "SuperCmd 語音朗讀",
+        "description": "朗讀選取的文字。",
+        "provider": {
+          "label": "語音提供者",
+          "edgeTTS": "Edge TTS（預設）",
+          "elevenlabsMultilingual": "ElevenLabs 多語言 v2",
+          "elevenlabsFlash": "ElevenLabs Flash v2.5",
+          "elevenlabsTurbo": "ElevenLabs Turbo v2.5",
+          "elevenlabsV3": "ElevenLabs v3（Alpha）"
+        },
+        "edgeTTS": {
+          "voice": "Edge TTS 語音",
+          "fetching": "正在取得完整語音清單...",
+          "language": {
+            "label": "語言"
+          },
+          "gender": {
+            "label": "語音性別",
+            "female": "女聲",
+            "male": "男聲"
+          },
+          "voiceLabel": {
+            "label": "語音"
+          },
+          "playSample": {
+            "idle": "播放範例語音",
+            "playing": "正在播放範例..."
+          }
+        },
+        "elevenlabs": {
+          "model": {
+            "label": "ElevenLabs 模型"
+          },
+          "voice": {
+            "label": "ElevenLabs 語音",
+            "fetching": "正在取得您的語音...",
+            "builtIn": "內建語音",
+            "premade": "額外預製語音",
+            "custom": "您的自訂語音（複製/生成）",
+            "professional": "專業語音複製",
+            "available": "您的 ElevenLabs 帳戶中有 {count} 個自訂語音可用"
+          },
+          "playSample": {
+            "idle": "播放範例語音",
+            "playing": "正在播放範例..."
+          },
+          "storageHint": "SuperCmd 將其儲存為 {value}。",
+          "apiKeyWarning": "請在 API 金鑰中新增 ElevenLabs API 金鑰。"
+        },
+        "notes": {
+          "title": "說明",
+          "whisperDefault": "語音輸入預設使用 SuperCmd Whisper 和本機 ggml base 模型。",
+          "speakDefault": "語音朗讀預設使用 Edge TTS，支援按語言選擇男女聲。",
+          "englishVoice": "英語語音選項故意限制為美國和英國變體。",
+          "elevenlabsVoices": "設定 API 金鑰後，ElevenLabs 自訂語音（複製/生成）將自動顯示。"
+        }
+      },
+      "hotkeyUpdated": "快捷鍵已更新。",
+      "hotkeyRemoved": "快捷鍵已移除。",
+      "hotkeyDuplicate": "快捷鍵已被其他 SuperCmd 命令使用。",
+      "hotkeyUnavailable": "快捷鍵不可用。它可能已被 macOS 或其他應用程式占用。"
+    },
+    "extensions": {
+      "title": "擴充功能",
+      "loading": "正在載入擴充功能設定...",
+      "builtIn": {
+        "superCmd": {
+          "title": "SuperCmd",
+          "description": "SuperCmd 內建指令"
+        },
+        "scriptCommands": {
+          "title": "指令碼命令",
+          "description": "自訂和 Raycast 相容的指令碼命令"
+        },
+        "applications": {
+          "title": "應用程式",
+          "description": "已安裝的 macOS 應用程式，支援啟動和快捷鍵"
+        },
+        "systemSettings": {
+          "title": "系統設定",
+          "description": "macOS 設定面板，支援啟動和快捷鍵",
+          "pane": "系統設定面板"
+        }
+      },
+      "search": {
+        "placeholder": "搜尋...",
+        "all": "全部",
+        "commands": "命令"
+      },
+      "install": {
+        "button": "安裝擴充功能",
+        "fromStore": "從商店安裝",
+        "addFolder": "新增資料夾",
+        "customScript": "自訂指令碼"
+      },
+      "customFolders": {
+        "title": "自訂資料夾",
+        "empty": "從安裝擴充功能中新增資料夾",
+        "remove": "移除"
+      },
+      "installExtension": "安裝擴充功能",
+      "installFromStore": "從商店安裝",
+      "addFolder": "新增資料夾",
+      "customScript": "自訂指令碼",
+      "columns": {
+        "name": "名稱",
+        "type": "類型",
+        "alias": "別名",
+        "hotkey": "快捷鍵",
+        "enabled": "啟用"
+      },
+      "types": {
+        "builtIn": "內建",
+        "apps": "應用程式",
+        "settings": "設定",
+        "scripts": "指令碼",
+        "extension": "擴充功能",
+        "application": "應用程式"
+      },
+      "alias": {
+        "add": "新增別名",
+        "placeholder": "新增別名",
+        "edit": "編輯別名"
+      },
+      "hotkey": {
+        "record": "錄製快捷鍵"
+      },
+      "noResults": "沒有符合的擴充功能",
+      "selectExtension": "選擇一個擴充功能",
+      "extensionPreferences": "擴充功能偏好設定",
+      "commandPreferences": "命令偏好設定",
+      "noPreferences": "沒有偏好設定",
+      "enabled": "已啟用",
+      "logout": "登出",
+      "loggedIn": "已登入 {name}",
+      "uninstall": {
+        "title": "解除安裝 \"{name}\"？",
+        "description": "此擴充功能及其命令將從 SuperCmd 中移除。",
+        "cancel": "取消",
+        "confirm": "解除安裝",
+        "uninstalling": "正在解除安裝...",
+        "success": "已解除安裝 \"{name}\"。",
+        "failed": "解除安裝 \"{name}\" 失敗。"
+      },
+      "folder": {
+        "added": "已新增擴充功能資料夾。",
+        "removed": "已移除擴充功能資料夾。",
+        "failed": "{action}擴充功能資料夾失敗。",
+        "duplicate": "資料夾已新增。"
+      },
+      "scripts": {
+        "opened": "已開啟包含範例指令碼的自訂指令碼資料夾。",
+        "openedExisting": "已開啟自訂指令碼資料夾。",
+        "failed": "開啟自訂指令碼資料夾失敗。"
+      }
+    },
+    "advanced": {
+      "title": "進階",
+      "loading": "正在載入進階設定...",
+      "debugMode": {
+        "title": "偵錯模式",
+        "description": "當擴充功能載入或建置失敗時顯示詳細記錄。",
+        "label": "啟用偵錯模式"
+      }
+    }
+  },
+  "launcher": {
+    "searchPlaceholder": "搜尋應用程式、命令，或向 AI 提問...",
+    "status": {
+      "discoveringApps": "正在探索應用程式...",
+      "noMatchingResults": "沒有符合的結果",
+      "results": "{count} 個結果"
+    },
+    "aiMode": {
+      "placeholder": "向 AI 提問...",
+      "ask": "提問",
+      "thinking": "思考中...",
+      "streaming": "接收中...",
+      "response": "AI 回覆",
+      "enterToAsk": "提問",
+      "escToBack": "返回"
+    },
+    "categories": {
+      "recent": "最近使用",
+      "applications": "應用程式",
+      "commands": "命令",
+      "extensions": "擴充功能",
+      "scripts": "指令碼",
+      "settings": "設定",
+      "files": "檔案",
+      "calculator": "計算機",
+      "quickLinks": "快速連結"
+    },
+    "actions": {
+      "open": "開啟",
+      "openCommand": "開啟命令",
+      "openFile": "開啟檔案",
+      "execute": "執行",
+      "run": "執行",
+      "copy": "複製",
+      "copyPath": "複製路徑",
+      "copyToClipboard": "複製到剪貼簿",
+      "paste": "貼上",
+      "showDetails": "顯示詳情",
+      "showInFinder": "在 Finder 中顯示",
+      "revealInFinder": "在 Finder 中顯示",
+      "getInfo": "顯示簡介",
+      "quit": "結束",
+      "forceQuit": "強制結束",
+      "hide": "隱藏",
+      "show": "顯示",
+      "preferences": "偏好設定",
+      "actions": "操作",
+      "pinCommand": "固定命令",
+      "unpinCommand": "取消固定命令",
+      "pinExtension": "固定擴充功能",
+      "unpinExtension": "取消固定擴充功能",
+      "disableCommand": "停用命令",
+      "moveUp": "上移",
+      "moveDown": "下移"
+    },
+    "empty": {
+      "noResults": "找不到結果",
+      "startTyping": "開始輸入以搜尋...",
+      "allCommands": "您的所有命令將顯示在這裡"
+    },
+    "footer": {
+      "actions": "操作",
+      "select": "選取",
+      "back": "返回"
+    },
+    "sections": {
+      "selectedText": "已選文字",
+      "pinned": "已固定"
+    },
+    "calculator": {
+      "pressEnterToCopy": "按 Enter 複製",
+      "clickToCopy": "點擊複製",
+      "copy": "複製"
+    },
+    "badges": {
+      "application": "應用程式",
+      "extension": "擴充功能",
+      "script": "指令碼",
+      "settings": "設定",
+      "quickLink": "快速連結"
+    }
+  },
+  "scriptCommand": {
+    "setup": {
+      "title": "設定指令碼命令",
+      "description": "執行前請提供必要的參數。",
+      "continue": "繼續"
+    },
+    "output": {
+      "success": "成功",
+      "exitCode": "結束碼 {code}",
+      "noOutput": "（無輸出）"
+    }
+  },
+  "extension": {
+    "setup": {
+      "title": "設定 {name}",
+      "description": "執行此命令前請新增必要的設定。",
+      "arguments": "參數",
+      "preferences": "偏好設定",
+      "continue": "繼續",
+      "selectOption": "選擇一個選項"
+    }
+  },
+  "cursorPrompt": {
+    "placeholder": "告訴 AI 如何處理選取的文字...",
+    "processing": "處理中...",
+    "ready": "準備套用",
+    "applied": "已套用到編輯器",
+    "close": "關閉",
+    "accept": "接受",
+    "submit": "提交",
+    "enterToSubmit": "Enter"
+  },
+  "store": {
+    "title": "商店",
+    "community": "社群",
+    "searchPlaceholder": "搜尋擴充功能...",
+    "installedFirst": "已安裝的擴充功能優先顯示。",
+    "refresh": "重新整理",
+    "loading": "正在載入擴充功能目錄...",
+    "noResults": "沒有符合的擴充功能",
+    "noExtensions": "沒有可用的擴充功能",
+    "tryAgain": "嘗試更短的查詢、其他關鍵字，或使用擴充功能名稱的一部分進行模糊比對。",
+    "refreshCatalog": "重新整理目錄或稍後再試。",
+    "clearSearch": "清除搜尋",
+    "refreshButton": "重新整理目錄",
+    "installed": "已安裝",
+    "install": "安裝擴充功能",
+    "update": "更新擴充功能",
+    "uninstall": "解除安裝擴充功能",
+    "openReadme": "開啟 README",
+    "viewSource": "檢視原始碼",
+    "installing": "正在安裝擴充功能",
+    "installedSuccess": "擴充功能安裝成功",
+    "installFailed": "安裝失敗",
+    "tabs": {
+      "overview": "概覽",
+      "commands": "命令",
+      "screenshots": "截圖",
+      "team": "團隊"
+    },
+    "sections": {
+      "description": "描述",
+      "screenshots": "截圖",
+      "topCommands": "熱門命令",
+      "categories": "分類",
+      "noDescription": "沒有提供描述。",
+      "noScreenshots": "沒有宣告截圖。",
+      "noScreenshotsAvailable": "此擴充功能沒有可用的截圖。",
+      "noCommands": "沒有宣告命令。",
+      "moreCommands": "+{count} 個更多命令",
+      "noContributors": "沒有宣告貢獻者。"
+    },
+    "actions": {
+      "title": "操作"
+    }
+  },
+  "clipboard": {
+    "title": "剪貼簿記錄",
+    "empty": "剪貼簿為空",
+    "clear": "清除記錄",
+    "pin": "固定",
+    "unpin": "取消固定",
+    "delete": "刪除",
+    "copy": "複製",
+    "paste": "貼上",
+    "searchPlaceholder": "搜尋剪貼簿記錄..."
+  },
+  "snippets": {
+    "title": "程式碼片段",
+    "empty": "還沒有程式碼片段",
+    "create": "建立程式碼片段",
+    "edit": "編輯程式碼片段",
+    "delete": "刪除程式碼片段",
+    "searchPlaceholder": "搜尋程式碼片段...",
+    "name": "名稱",
+    "content": "內容",
+    "keyword": "關鍵字",
+    "save": "儲存程式碼片段"
+  },
+  "quickLinks": {
+    "title": "快速連結",
+    "empty": "還沒有快速連結",
+    "create": "建立快速連結",
+    "edit": "編輯快速連結",
+    "delete": "刪除快速連結",
+    "searchPlaceholder": "搜尋快速連結...",
+    "name": "名稱",
+    "url": "網址",
+    "icon": "圖示",
+    "save": "儲存快速連結"
+  },
+  "fileSearch": {
+    "placeholder": "搜尋檔案...",
+    "noResults": "找不到檔案",
+    "searching": "搜尋中...",
+    "filters": "篩選",
+    "type": "類型",
+    "date": "日期",
+    "size": "大小"
+  },
+  "windowManager": {
+    "title": "視窗管理",
+    "arrange": "排列視窗",
+    "resize": "調整大小",
+    "move": "移動",
+    "focus": "聚焦",
+    "close": "關閉視窗",
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "fullscreen": "全螢幕",
+    "center": "置中",
+    "leftHalf": "左半螢幕",
+    "rightHalf": "右半螢幕",
+    "topHalf": "上半螢幕",
+    "bottomHalf": "下半螢幕",
+    "corners": "角落",
+    "displays": "顯示器",
+    "nextDisplay": "下一個顯示器",
+    "previousDisplay": "上一個顯示器"
+  },
+  "onboarding": {
+    "welcome": "歡迎使用 SuperCmd",
+    "description": "您的 macOS 生產力啟動器",
+    "getStarted": "開始使用",
+    "skip": "略過",
+    "next": "下一步",
+    "previous": "上一步",
+    "finish": "完成",
+    "features": {
+      "launcher": {
+        "title": "快速啟動器",
+        "description": "使用單個快捷鍵啟動應用程式、執行命令和搜尋檔案。"
+      },
+      "extensions": {
+        "title": "擴充功能",
+        "description": "安裝並使用相容 Raycast 的擴充功能來增強您的工作流程。"
+      },
+      "ai": {
+        "title": "AI 整合",
+        "description": "與 AI 對話、使用語音轉文字，並讓 AI 協助您寫作和編輯。"
+      }
+    },
+    "whisper": {
+      "quick": {
+        "title": "Whisper 快速引導",
+        "subtitle": "按住錄音，鬆開輸入",
+        "instructions": {
+          "before": "按住 ",
+          "after": " 後開始說話。鬆開後會處理內容並在目前游標處輸入。"
+        },
+        "practiceTitle": "練習段落",
+        "practicePlaceholder": "今天我梳理了路線圖，並為本週排出了最重要的三項任務。請整理一段簡短摘要，並在午飯前發給團隊。",
+        "practiceHint": "就在這個編輯框裡練習：按住熱鍵，說出這兩句話，鬆開，然後確認輸出是否正確。",
+        "footerHint": "Whisper 啟用時會停靠在靠近底部的位置。"
+      }
+    },
+    "voice": {
+      "steps": {
+        "welcome": "歡迎",
+        "coreFeatures": "核心功能",
+        "hotkeySetup": "快捷鍵設定",
+        "permissions": "權限",
+        "dictationMode": "聽寫模式",
+        "readMode": "朗讀模式",
+        "finalCheck": "最終檢查"
+      },
+      "featureCards": {
+        "whisper": {
+          "title": "Whisper",
+          "description": "按住说话，松开输入。"
+        },
+        "read": {
+          "title": "朗讀",
+          "description": "用自然語音朗讀選中文字。"
+        }
+      },
+      "permissions": {
+        "inputMonitoringTitle": "輸入監控",
+        "inputMonitoringDescription": "用於檢測 Fn 按住說話，以及 Whisper 模式下的其他全域按鍵監聽。",
+        "speechRecognitionTitle": "語音辨識",
+        "speechRecognitionDescription": "可選。僅當你把 Whisper 切換為 Apple 語音辨識兜底方案時需要。",
+        "microphoneTitle": "麥克風",
+        "microphoneDescription": "SuperCmd Whisper 聽寫所必需。"
+      },
+      "permissionNotes": {
+        "blocked": "{target} 權限已被阻止。請在系統設定中啟用 SuperCmd 後再回來。",
+        "promptFailed": "無法觸發權限彈窗。請打開 系統設定 -> 隱私與安全性，啟用 SuperCmd 後再重新請求。",
+        "notShown": "權限彈窗沒有出現。先打開一次 Whisper，再回來點一次。",
+        "homeFolder": "出現提示時請選擇你的 Home 資料夾；如果需要，再到「檔案與資料夾」裡啟用 SuperCmd。",
+        "inputMonitoring": "在「輸入監控」裡點擊左下角「+」，從 Applications 資料夾手動加入 SuperCmd。"
+      },
+      "dictation": {
+        "title": "聽寫模式",
+        "howToTest": "測試方式",
+        "howToTestHint": "按住熱鍵，讀出示例，鬆開即可插入。",
+        "holdKeyUpdated": "按住鍵已更新",
+        "language": "聽寫語言",
+        "sampleTitle": "訊息示例",
+        "sampleHint": "按住你的按鍵，然後讀出上面的內容：",
+        "placeholder": "聽寫結果會顯示在這裡...",
+        "footerHint": "SuperCmd Whisper 預設使用本地 ggml base 模型。你也可以在設定裡切換回 Apple 語音辨識兜底。",
+        "models": {
+          "downloadFailed": "模型下載失敗。請立即重試，或前往 設定 -> AI -> SuperCmd Whisper 處理。",
+          "actions": {
+            "downloaded": "已下載",
+            "downloading": "下載中...",
+            "download": "下載模型"
+          },
+          "parakeet": {
+            "title": "Parakeet TDT v3",
+            "ready": "下載完成，Parakeet v3 聽寫已就緒。",
+            "downloadingLead": "模型正在下載，請稍候。",
+            "downloading": "正在下載 Parakeet v3 CoreML 模型",
+            "notDownloaded": "SuperCmd 會在這一步開始下載 Parakeet v3 模型，確保你首次使用前就已準備好聽寫。"
+          },
+          "whispercpp": {
+            "title": "SuperCmd Whisper",
+            "ready": "下載完成，SuperCmd Whisper 聽寫已就緒。",
+            "downloadingLead": "模型正在下載，請稍候。",
+            "downloading": "正在下載約 300 MB 的 ggml base 模型",
+            "notDownloaded": "SuperCmd 會在這一步開始下載 SuperCmd Whisper 模型，確保你首次使用前就已準備好聽寫。"
+          },
+          "cloud": {
+            "title": "雲端轉錄",
+            "description": "正在使用雲端轉錄，無需下載本地模型。"
+          }
+        },
+        "sampleText": "那是最好的時代，那是最壞的時代，那是智慧的年代，那是愚昧的年代。"
+      },
+      "read": {
+        "badge": "經典文學",
+        "readTime": "1 分鐘閱讀",
+        "articleTitle": "傲慢與偏見",
+        "instructions": {
+          "before": "先選中文字，再按下",
+          "after": "即可聽到朗讀。"
+        },
+        "sampleText": "語音優先的介面正在迎來新的機會。過去它們常被當成噱頭，但新一代工具已經讓「開口說」真的比「動手打」更快，轉錄跟得上，修正更聰明，快捷鍵也能自然融入現有工作流程。"
+      },
+      "final": {
+        "title": "最後一步：從任何地方啟動 SuperCmd",
+        "description": "現在按一次你的全域快捷鍵，從任何 App 裡啟動 SuperCmd。",
+        "nextStep": "下一步：去 SuperCmd 設定 -> 擴充功能，為 AI Prompt 和 Memory 配置快捷鍵，開始在任何地方使用 AI。"
+      },
+      "setupDescription": "我們會一次完成啟動器快捷鍵、隱私權限和 Whisper 模式設定。",
+      "setupSummary": "Whisper 聽寫與朗讀模式練習",
+      "summary": {
+        "title": "這次會設定這些內容：",
+        "hotkey": "1. 啟動器快捷鍵",
+        "permissions": "2. 輔助使用、輸入監控、語音辨識、麥克風"
+      },
+      "setupTitle": "一個介面完成啟動、提問、聽寫和朗讀。"
+    }
+  },
+  "whisper": {
+    "title": "SuperCmd 語音輸入",
+    "description": "簡單好用的語音轉文字",
+    "start": "開始說話",
+    "stop": "停止說話",
+    "listening": "正在收聽...",
+    "processing": "處理中...",
+    "placeholder": "請說話...",
+    "close": "關閉 Whisper",
+    "coachmark": {
+      "holdToTalk": "Whisper 會顯示在這裡。按住 {shortcut} 說話，鬆開後輸入。",
+      "warmingUp": "首次設定中，正在預熱模型..."
+    },
+    "status": {
+      "idle": "點擊開始後即可說話。",
+      "apiError": "Whisper API 出錯。",
+      "nativeFallback": "目前 Whisper 模型為 Apple 語音辨識。點擊開始即可使用 Apple 兜底方案。",
+      "transcriptionFailedLocal": "SuperCmd Whisper 轉錄失敗。",
+      "transcriptionFailed": "Whisper 轉錄失敗。",
+      "microphonePermissionRequired": "需要麥克風權限。",
+      "microphonePermissionCheckFailed": "麥克風權限檢查失敗。",
+      "microphoneAccessDenied": "麥克風存取被拒絕。",
+      "startingMicrophone": "正在啟動麥克風...",
+      "loadingModels": "正在載入 Whisper 模型...",
+      "nativeRecognizerStartFailed": "語音辨識啟動失敗。",
+      "finishing": "正在完成轉錄...",
+      "listeningReleaseToProcess": "正在收聽，鬆開後開始處理。",
+      "listeningPressAgainToFinish": "正在收聽，再按一次即可結束。",
+      "recordingFailed": "錄音失敗。",
+      "speechRecognitionError": "語音辨識出錯。"
+    },
+    "errors": {
+      "typeIntoActiveApp": "無法把內容輸入到目前應用。",
+      "enableMicrophonePermission": "請到 系統設定 -> 隱私與安全性 -> 麥克風 中啟用 SuperCmd 後再試。",
+      "allowMicrophonePermission": "請允許 SuperCmd Whisper 使用麥克風權限。",
+      "microphoneUnavailable": "無法存取麥克風。請檢查 系統設定 -> 隱私與安全性 -> 麥克風。",
+      "nativeRecognizerStartFailed": "無法啟動原生語音辨識。",
+      "liveTypingRetry": "即時輸入沒有跟上，請重試。",
+      "modelNotReady": "模型仍在預熱中，請稍後再試。",
+      "recordingFailed": "無法啟動音訊錄製。"
+    }
+  },
+  "read": {
+    "title": "SuperCmd 語音朗讀",
+    "description": "朗讀任何選取的文字",
+    "start": "開始朗讀",
+    "stop": "停止朗讀",
+    "reading": "朗讀中...",
+    "noText": "沒有選取文字"
+  },
+  "camera": {
+    "title": "相機",
+    "capture": "拍攝",
+    "flip": "翻轉相機",
+    "mirror": "鏡像",
+    "settings": "相機設定"
+  },
+  "schedule": {
+    "title": "標題",
+    "newEvent": "新增事件",
+    "editEvent": "編輯事件",
+    "deleteEvent": "刪除事件",
+    "date": "日期",
+    "time": "時間",
+    "duration": "持續時間",
+    "reminder": "提醒",
+    "save": "儲存事件"
+  }
+}

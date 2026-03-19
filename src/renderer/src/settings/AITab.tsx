@@ -23,19 +23,39 @@ import {
   Volume2,
 } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
-import type { AppSettings, AISettings, EdgeTtsVoice, ElevenLabsVoice, WhisperCppModelStatus, ParakeetModelStatus, Qwen3ModelStatus } from '../../types/electron';
+import type {
+  AppSettings,
+  AISettings,
+  EdgeTtsVoice,
+  ElevenLabsVoice,
+  WhisperCppModelStatus,
+  ParakeetModelStatus,
+  Qwen3ModelStatus,
+} from '../../types/electron';
+import { useI18n } from '../i18n';
 import {
   clearElevenLabsVoiceCache,
   getCachedElevenLabsVoices,
   setCachedElevenLabsVoices,
 } from '../utils/voice-cache';
 
-const PROVIDER_OPTIONS = [
-  { id: 'openai' as const, label: 'OpenAI', description: 'GPT family models' },
-  { id: 'anthropic' as const, label: 'Claude', description: 'Anthropic Claude models' },
-  { id: 'gemini' as const, label: 'Gemini', description: 'Google Gemini models' },
-  { id: 'ollama' as const, label: 'Ollama', description: 'Local models' },
-  { id: 'openai-compatible' as const, label: 'Custom (OpenAI-compatible)', description: 'Any OpenAI-compatible API (OpenRouter, Together, etc.)' },
+const getProviderOptions = (t: (key: string) => string) => [
+  { id: 'openai' as const, label: t('settings.ai.llm.provider.openai'), description: t('settings.ai.llm.providerDescriptions.openai') },
+  { id: 'anthropic' as const, label: t('settings.ai.llm.provider.anthropic'), description: t('settings.ai.llm.providerDescriptions.anthropic') },
+  { id: 'gemini' as const, label: t('settings.ai.llm.provider.gemini'), description: t('settings.ai.llm.providerDescriptions.gemini') },
+  { id: 'ollama' as const, label: t('settings.ai.llm.provider.ollama'), description: t('settings.ai.llm.providerDescriptions.ollama') },
+  { id: 'openai-compatible' as const, label: t('settings.ai.llm.provider.openaiCompatible'), description: t('settings.ai.llm.providerDescriptions.openaiCompatible') },
+];
+
+const getWhisperSttOptions = (t: (key: string) => string) => [
+  { id: 'whispercpp', label: t('settings.ai.whisper.modelOptions.whispercpp') },
+  { id: 'parakeet', label: t('settings.ai.whisper.modelOptions.parakeet') },
+  { id: 'qwen3', label: t('settings.ai.whisper.modelOptions.qwen3') },
+  { id: 'native', label: t('settings.ai.whisper.modelOptions.native') },
+  { id: 'openai-gpt-4o-transcribe', label: t('settings.ai.whisper.modelOptions.openaiGpt4o') },
+  { id: 'openai-whisper-1', label: t('settings.ai.whisper.modelOptions.openaiWhisper') },
+  { id: 'elevenlabs-scribe-v1', label: t('settings.ai.whisper.modelOptions.elevenlabsScribeV1') },
+  { id: 'elevenlabs-scribe-v2', label: t('settings.ai.whisper.modelOptions.elevenlabsScribeV2') },
 ];
 
 const MODELS_BY_PROVIDER: Record<string, { id: string; label: string }[]> = {
@@ -58,52 +78,70 @@ const MODELS_BY_PROVIDER: Record<string, { id: string; label: string }[]> = {
   ],
 };
 
-const CURATED_OLLAMA_MODELS = [
-  { name: 'llama3.2', label: 'Llama 3.2', size: '2.0 GB', description: 'Meta general-purpose (3B)' },
-  { name: 'llama3.2:1b', label: 'Llama 3.2 (1B)', size: '1.3 GB', description: 'Small and fast' },
-  { name: 'mistral', label: 'Mistral 7B', size: '4.1 GB', description: 'Efficient general-purpose' },
-  { name: 'codellama', label: 'Code Llama', size: '3.8 GB', description: 'Code generation & completion' },
-  { name: 'phi3', label: 'Phi-3', size: '2.3 GB', description: 'Microsoft small language model' },
-  { name: 'gemma2', label: 'Gemma 2', size: '5.4 GB', description: 'Google open model (9B)' },
-  { name: 'qwen2.5', label: 'Qwen 2.5', size: '4.7 GB', description: 'Alibaba multilingual model (7B)' },
-  { name: 'deepseek-r1', label: 'DeepSeek R1', size: '4.7 GB', description: 'Reasoning-focused model (7B)' },
+const getCuratedOllamaModels = (t: (key: string) => string) => [
+  { name: 'llama3.2', label: 'Llama 3.2', size: '2.0 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.llama32') },
+  { name: 'llama3.2:1b', label: 'Llama 3.2 (1B)', size: '1.3 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.llama32_1b') },
+  { name: 'mistral', label: 'Mistral 7B', size: '4.1 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.mistral') },
+  { name: 'codellama', label: 'Code Llama', size: '3.8 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.codellama') },
+  { name: 'phi3', label: 'Phi-3', size: '2.3 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.phi3') },
+  { name: 'gemma2', label: 'Gemma 2', size: '5.4 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.gemma2') },
+  { name: 'qwen2.5', label: 'Qwen 2.5', size: '4.7 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.qwen25') },
+  { name: 'deepseek-r1', label: 'DeepSeek R1', size: '4.7 GB', description: t('settings.ai.llm.ollama.curatedDescriptions.deepseekR1') },
 ];
 
-const WHISPER_STT_OPTIONS = [
-  { id: 'whispercpp', label: 'SuperCmd Whisper (Default)' },
-  { id: 'parakeet', label: 'Parakeet v3 (Best & Fastest, 25+ European languages)' },
-  { id: 'qwen3', label: 'Qwen3 ASR (30+ languages including Chinese, Japanese, Korean, Thai, Vietnamese, Hindi)' },
-  { id: 'native', label: 'Apple Speech Recognition' },
-  { id: 'openai-gpt-4o-transcribe', label: 'OpenAI GPT-4o Transcribe' },
-  { id: 'openai-whisper-1', label: 'OpenAI Whisper-1' },
-  { id: 'elevenlabs-scribe-v1', label: 'ElevenLabs Scribe v1' },
-  { id: 'elevenlabs-scribe-v2', label: 'ElevenLabs Scribe v2' },
-];
+const WHISPER_LANGUAGE_CODES = [
+  'ar-EG',
+  'zh-CN',
+  'en-US',
+  'en-GB',
+  'fr-CA',
+  'fr-FR',
+  'de-DE',
+  'hi-IN',
+  'it-IT',
+  'ja-JP',
+  'ko-KR',
+  'pt-BR',
+  'ru-RU',
+  'es-MX',
+  'es-ES',
+] as const;
 
-const WHISPER_LANGUAGE_OPTIONS = [
-  { value: 'ar-EG', label: 'Arabic' },
-  { value: 'zh-CN', label: 'Chinese (Mandarin)' },
-  { value: 'en-US', label: 'English (US)' },
-  { value: 'en-GB', label: 'English (UK)' },
-  { value: 'fr-CA', label: 'French (Canada)' },
-  { value: 'fr-FR', label: 'French (France)' },
-  { value: 'de-DE', label: 'German' },
-  { value: 'hi-IN', label: 'Hindi' },
-  { value: 'it-IT', label: 'Italian' },
-  { value: 'ja-JP', label: 'Japanese' },
-  { value: 'ko-KR', label: 'Korean' },
-  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
-  { value: 'ru-RU', label: 'Russian' },
-  { value: 'es-MX', label: 'Spanish (Mexico)' },
-  { value: 'es-ES', label: 'Spanish (Spain)' },
-];
+const AI_LANGUAGE_LABEL_KEYS: Record<string, string> = {
+  'ar-EG': 'settings.ai.languages.arabic',
+  'zh-CN': 'settings.ai.languages.chineseMandarin',
+  'en-US': 'settings.ai.languages.englishUs',
+  'en-GB': 'settings.ai.languages.englishUk',
+  'fr-CA': 'settings.ai.languages.frenchCanada',
+  'fr-FR': 'settings.ai.languages.frenchFrance',
+  'de-DE': 'settings.ai.languages.german',
+  'hi-IN': 'settings.ai.languages.hindi',
+  'it-IT': 'settings.ai.languages.italian',
+  'ja-JP': 'settings.ai.languages.japanese',
+  'ko-KR': 'settings.ai.languages.korean',
+  'pt-BR': 'settings.ai.languages.portugueseBrazil',
+  'ru-RU': 'settings.ai.languages.russian',
+  'es-MX': 'settings.ai.languages.spanishMexico',
+  'es-ES': 'settings.ai.languages.spanishSpain',
+};
 
-const SPEAK_TTS_OPTIONS = [
-  { id: 'edge-tts', label: 'Edge TTS (Default)' },
-  { id: 'elevenlabs-multilingual-v2', label: 'ElevenLabs Multilingual v2' },
-  { id: 'elevenlabs-flash-v2-5', label: 'ElevenLabs Flash v2.5' },
-  { id: 'elevenlabs-turbo-v2-5', label: 'ElevenLabs Turbo v2.5' },
-  { id: 'elevenlabs-v3', label: 'ElevenLabs v3 (Alpha)' },
+function getAiLanguageLabel(t: (key: string) => string, languageCode: string): string {
+  const key = AI_LANGUAGE_LABEL_KEYS[languageCode];
+  return key ? t(key) : languageCode;
+}
+
+const getWhisperLanguageOptions = (t: (key: string) => string) =>
+  WHISPER_LANGUAGE_CODES.map((value) => ({
+    value,
+    label: getAiLanguageLabel(t, value),
+  }));
+
+const getSpeakTtsOptions = (t: (key: string) => string) => [
+  { id: 'edge-tts', label: t('settings.ai.speak.provider.edgeTTS') },
+  { id: 'elevenlabs-multilingual-v2', label: t('settings.ai.speak.provider.elevenlabsMultilingual') },
+  { id: 'elevenlabs-flash-v2-5', label: t('settings.ai.speak.provider.elevenlabsFlash') },
+  { id: 'elevenlabs-turbo-v2-5', label: t('settings.ai.speak.provider.elevenlabsTurbo') },
+  { id: 'elevenlabs-v3', label: t('settings.ai.speak.provider.elevenlabsV3') },
 ];
 
 type EdgeVoiceGender = 'female' | 'male';
@@ -194,6 +232,7 @@ const WHISPER_SPEAK_TOGGLE_COMMAND_ID = 'system-supercmd-whisper-speak-toggle';
 type TabId = 'api-keys' | 'llm' | 'whisper' | 'speak';
 
 const AITab: React.FC = () => {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('api-keys');
 
@@ -305,7 +344,7 @@ const AITab: React.FC = () => {
         }
       } catch {
         if (!cancelled) {
-          setElevenLabsVoicesError('Failed to fetch voices.');
+          setElevenLabsVoicesError(t('settings.ai.speak.elevenlabs.voice.fetchFailed'));
           setElevenLabsVoices([]);
         }
       } finally {
@@ -527,7 +566,7 @@ const AITab: React.FC = () => {
     const requestId = `ollama-pull-${Date.now()}`;
     pullingModelRef.current = modelName;
     setPullingModel(modelName);
-    setPullProgress({ status: 'Starting download...', percent: 0 });
+    setPullProgress({ status: t('settings.ai.llm.ollama.startingDownload'), percent: 0 });
     setOllamaError(null);
     window.electron.ollamaPull(requestId, modelName);
   };
@@ -543,7 +582,7 @@ const AITab: React.FC = () => {
         return next;
       });
     } else {
-      setOllamaError(result.error || 'Failed to delete model');
+      setOllamaError(result.error || t('settings.ai.llm.ollama.deleteFailed'));
       setTimeout(() => setOllamaError(null), 5000);
     }
     setDeletingModel(null);
@@ -553,8 +592,8 @@ const AITab: React.FC = () => {
     const result = await window.electron.updateCommandHotkey(commandId, hotkey);
     if (!result.success) {
       const message = result.error === 'duplicate'
-        ? 'Hotkey already used by another SuperCmd command.'
-        : 'Hotkey unavailable. It may be used by macOS or another app.';
+        ? t('settings.ai.hotkeyDuplicate')
+        : t('settings.ai.hotkeyUnavailable');
       setHotkeyStatus({ type: 'error', text: message });
       setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 3200);
       return;
@@ -569,14 +608,14 @@ const AITab: React.FC = () => {
       }
       return { ...prev, commandHotkeys: nextHotkeys };
     });
-    setHotkeyStatus({ type: 'success', text: hotkey ? 'Hotkey updated.' : 'Hotkey removed.' });
+    setHotkeyStatus({ type: 'success', text: hotkey ? t('settings.ai.hotkeyUpdated') : t('settings.ai.hotkeyRemoved') });
     setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 1800);
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 1600);
   };
 
   if (!settings) {
-    return <div className="p-5 text-[var(--text-muted)] text-[0.75rem]">Loading settings...</div>;
+    return <div className="p-5 text-[var(--text-muted)] text-[0.75rem]">{t('common.loading')}</div>;
   }
 
   const ai = settings.ai;
@@ -585,7 +624,7 @@ const AITab: React.FC = () => {
   const genericModels = ai.provider === 'ollama' && ollamaRunning
     ? Array.from(localModels).map((name) => ({
         id: `ollama-${name}`,
-        label: CURATED_OLLAMA_MODELS.find((m) => m.name === name)?.label || name,
+        label: getCuratedOllamaModels(t).find((m) => m.name === name)?.label || name,
       }))
     : ai.provider === 'openai-compatible' && ai.openaiCompatibleModel
       ? [{
@@ -620,7 +659,10 @@ const AITab: React.FC = () => {
     : DEFAULT_ELEVENLABS_VOICE_ID;
 
   const correctionModelOptions = genericModels;
-  const allEdgeVoices = edgeVoices.length > 0 ? edgeVoices : EDGE_TTS_FALLBACK_VOICES;
+  const allEdgeVoices = (edgeVoices.length > 0 ? edgeVoices : EDGE_TTS_FALLBACK_VOICES).map((voice) => ({
+    ...voice,
+    languageLabel: getAiLanguageLabel(t, voice.languageCode),
+  }));
 
   const selectedEdgeVoice = allEdgeVoices.find((v) => v.id === ai.edgeTtsVoice)
     || allEdgeVoices.find((v) => v.id === 'en-US-EricNeural')
@@ -734,8 +776,8 @@ const AITab: React.FC = () => {
       <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
       <AIRow
         icon={<Brain className="w-4 h-4" />}
-        title="Enable AI"
-        description="Master switch for AI features."
+        title={t('settings.ai.enableAI.title')}
+        description={t('settings.ai.enableAI.description')}
       >
         <div className="flex items-center gap-2">
           <button
@@ -754,15 +796,15 @@ const AITab: React.FC = () => {
               }`}
             />
           </button>
-          {saveStatus === 'saved' && <span className="text-[0.75rem] text-green-400">Saved</span>}
+          {saveStatus === 'saved' && <span className="text-[0.75rem] text-green-400">{t('settings.ai.saved')}</span>}
         </div>
       </AIRow>
 
       <div className="flex items-center gap-1.5 px-4 py-3 border-b border-[var(--ui-divider)] md:px-5 overflow-x-auto">
-        <TabButton id="api-keys" label="API Keys" />
-        <TabButton id="llm" label="LLM" />
-        <TabButton id="whisper" label="SuperCmd Whisper" />
-        <TabButton id="speak" label="SuperCmd Read" />
+        <TabButton id="api-keys" label={t('settings.ai.tabs.apiKeys')} />
+        <TabButton id="llm" label={t('settings.ai.tabs.llm')} />
+        <TabButton id="whisper" label={t('settings.ai.tabs.whisper')} />
+        <TabButton id="speak" label={t('settings.ai.tabs.speak')} />
       </div>
 
       <div className={`${!ai.enabled ? 'opacity-65 pointer-events-none select-none' : ''}`}>
@@ -770,13 +812,13 @@ const AITab: React.FC = () => {
           <div className="grid grid-cols-1">
             <div className={`px-4 py-3.5 md:px-5 space-y-3 ${activeTab === 'llm' ? 'hidden' : ''}`}>
                 <div>
-                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">ChatGPT (OpenAI) API Key</label>
+                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">{t('settings.ai.apiKeys.openai.label')}</label>
                   <div className="relative">
                     <input
                       type={showOpenAIKey ? 'text' : 'password'}
                       value={ai.openaiApiKey}
                       onChange={(e) => updateAI({ openaiApiKey: e.target.value.trim() })}
-                      placeholder="sk-..."
+                      placeholder={t('settings.ai.apiKeys.openai.placeholder')}
                       className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
                     />
                     <button
@@ -789,13 +831,13 @@ const AITab: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">Claude (Anthropic) API Key</label>
+                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">{t('settings.ai.apiKeys.anthropic.label')}</label>
                   <div className="relative">
                     <input
                       type={showAnthropicKey ? 'text' : 'password'}
                       value={ai.anthropicApiKey}
                       onChange={(e) => updateAI({ anthropicApiKey: e.target.value.trim() })}
-                      placeholder="sk-ant-..."
+                      placeholder={t('settings.ai.apiKeys.anthropic.placeholder')}
                       className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
                     />
                     <button
@@ -808,13 +850,13 @@ const AITab: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">Gemini (Google) API Key</label>
+                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">{t('settings.ai.apiKeys.gemini.label')}</label>
                   <div className="relative">
                     <input
                       type={showGeminiKey ? 'text' : 'password'}
                       value={ai.geminiApiKey || ''}
                       onChange={(e) => updateAI({ geminiApiKey: e.target.value.trim() })}
-                      placeholder="AIza..."
+                      placeholder={t('settings.ai.apiKeys.gemini.placeholder')}
                       className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
                     />
                     <button
@@ -827,13 +869,13 @@ const AITab: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">ElevenLabs API Key</label>
+                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">{t('settings.ai.apiKeys.elevenlabs.label')}</label>
                   <div className="relative">
                     <input
                       type={showElevenLabsKey ? 'text' : 'password'}
                       value={ai.elevenlabsApiKey || ''}
                       onChange={(e) => updateAI({ elevenlabsApiKey: e.target.value.trim() })}
-                      placeholder="xi-..."
+                      placeholder={t('settings.ai.apiKeys.elevenlabs.placeholder')}
                       className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
                     />
                     <button
@@ -846,18 +888,18 @@ const AITab: React.FC = () => {
                 </div>
 
                 <div className="pt-1 border-t border-[var(--ui-divider)]">
-                  <p className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Supermemory</p>
-                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">Memory backend for long-term context.</p>
+                  <p className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.apiKeys.supermemory.title')}</p>
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.apiKeys.supermemory.description')}</p>
                 </div>
 
                 <div>
-                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">Supermemory API Key</label>
+                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">{t('settings.ai.apiKeys.supermemory.apiKey.label')}</label>
                   <div className="relative">
                     <input
                       type={showSupermemoryKey ? 'text' : 'password'}
                       value={ai.supermemoryApiKey || ''}
                       onChange={(e) => updateAI({ supermemoryApiKey: e.target.value.trim() })}
-                      placeholder="sm-..."
+                      placeholder={t('settings.ai.apiKeys.supermemory.apiKey.placeholder')}
                       className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
                     />
                     <button
@@ -870,19 +912,19 @@ const AITab: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">Supermemory Client</label>
+                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">{t('settings.ai.apiKeys.supermemory.client.label')}</label>
                   <input
                     type="text"
                     value={ai.supermemoryClient || ''}
                     onChange={(e) => updateAI({ supermemoryClient: e.target.value.trim() })}
-                    placeholder="client-123"
+                    placeholder={t('settings.ai.apiKeys.supermemory.client.placeholder')}
                     className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
                   />
-                  <p className="text-[0.625rem] text-[var(--text-muted)] mt-1">Used to scope user memory retrieval.</p>
+                  <p className="text-[0.625rem] text-[var(--text-muted)] mt-1">{t('settings.ai.apiKeys.supermemory.client.hint')}</p>
                 </div>
 
                 <div>
-                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">Supermemory Base URL</label>
+                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">{t('settings.ai.apiKeys.supermemory.baseUrl.label')}</label>
                   <input
                     type="text"
                     value={ai.supermemoryBaseUrl || 'https://api.supermemory.ai'}
@@ -899,33 +941,33 @@ const AITab: React.FC = () => {
                     onChange={(e) => updateAI({ supermemoryLocalMode: e.target.checked })}
                     className="settings-checkbox"
                   />
-                  <span>Use local mode (saved locally)</span>
+                  <span>{t('settings.ai.apiKeys.supermemory.localMode')}</span>
                 </label>
             </div>
 
             <div className={`px-4 py-3.5 md:px-5 space-y-3 self-start ${activeTab === 'llm' ? '' : 'hidden'}`}>
               <div className="flex items-center justify-between gap-3 pb-1">
                 <div>
-                  <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Enable LLM</h3>
-                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">Toggle model-based AI features.</p>
+                  <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.llm.enableLLM.title')}</h3>
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.llm.enableLLM.description')}</p>
                 </div>
                 <SectionToggle
                   enabled={ai.llmEnabled !== false}
                   onToggle={() => updateAI({ llmEnabled: ai.llmEnabled === false })}
-                  label="Toggle LLM section"
+                  label={t('settings.ai.llm.enableLLM.title')}
                 />
               </div>
 
               <div className={`${ai.llmEnabled === false ? 'opacity-65 pointer-events-none select-none' : ''}`}>
               <div>
-                <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Generic Model Selection</h3>
-                <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">Used by extensions and model-agnostic AI actions.</p>
+                <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.llm.modelSelection.title')}</h3>
+                <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.llm.modelSelection.description')}</p>
               </div>
 
               <div>
-                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">Provider</label>
+                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">{t('settings.ai.llm.provider.label')}</label>
                   <div className="grid grid-cols-2 gap-2">
-                    {PROVIDER_OPTIONS.map((p) => (
+                    {getProviderOptions(t).map((p) => (
                       <button
                         key={p.id}
                         onClick={() => {
@@ -957,7 +999,7 @@ const AITab: React.FC = () => {
 
                 {ai.provider === 'ollama' && (
                   <div>
-                    <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Ollama Server URL</label>
+                    <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.llm.ollama.serverUrl.label')}</label>
                     <input
                       type="text"
                       value={ai.ollamaBaseUrl}
@@ -971,7 +1013,7 @@ const AITab: React.FC = () => {
                 {ai.provider === 'openai-compatible' && (
                   <div className="space-y-3">
                     <div>
-                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Base URL</label>
+                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.llm.openaiCompatible.baseUrl.label')}</label>
                       <input
                         type="text"
                         value={ai.openaiCompatibleBaseUrl}
@@ -979,11 +1021,11 @@ const AITab: React.FC = () => {
                         placeholder="https://api.openrouter.ai/v1"
                         className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] focus:outline-none focus:border-blue-500/50"
                       />
-                      <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">Include /v1 if your provider uses it (e.g., https://api.openai.com/v1)</p>
+                      <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">{t('settings.ai.llm.openaiCompatible.baseUrl.hint')}</p>
                     </div>
 
                     <div>
-                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">API Key</label>
+                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.llm.openaiCompatible.apiKey.label')}</label>
                       <div className="relative">
                         <input
                           type={showOpenAICompatibleKey ? 'text' : 'password'}
@@ -1002,7 +1044,7 @@ const AITab: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Model Name</label>
+                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.llm.openaiCompatible.modelName.label')}</label>
                       <input
                         type="text"
                         value={ai.openaiCompatibleModel}
@@ -1016,19 +1058,19 @@ const AITab: React.FC = () => {
                         placeholder="anthropic/claude-3.5-sonnet"
                         className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] focus:outline-none focus:border-blue-500/50"
                       />
-                      <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">The exact model name your provider expects (e.g., gpt-4o, meta-llama/llama-3.1-70b-instruct)</p>
+                      <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">{t('settings.ai.llm.openaiCompatible.modelName.hint')}</p>
                     </div>
                   </div>
                 )}
 
                 <div className="mt-2">
-                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Default Model</label>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.llm.defaultModel.label')}</label>
                   <select
                     value={ai.defaultModel}
                     onChange={(e) => updateAI({ defaultModel: e.target.value })}
                     className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                   >
-                    <option value="">Auto (provider default)</option>
+                    <option value="">{t('settings.ai.llm.defaultModel.auto')}</option>
                     {genericModels.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.label}
@@ -1040,14 +1082,14 @@ const AITab: React.FC = () => {
               {ai.provider === 'ollama' && (
                 <div className="pt-3 border-t border-[var(--ui-divider)]">
                   <div className="flex items-center justify-between mb-2.5">
-                    <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Ollama Models</h3>
+                    <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.llm.ollama.models')}</h3>
                     {ollamaRunning && (
                       <button
                         onClick={refreshOllamaStatus}
                         className="flex items-center gap-1 px-2 py-1 text-[0.75rem] text-[var(--text-muted)] hover:text-[var(--text-secondary)] rounded-md transition-colors"
                       >
                         <RefreshCw className="w-3 h-3" />
-                        Refresh
+                        {t('common.refresh')}
                       </button>
                     )}
                   </div>
@@ -1055,7 +1097,7 @@ const AITab: React.FC = () => {
                   {ollamaRunning === null && (
                     <div className="flex items-center gap-2 text-[var(--text-subtle)] text-xs py-2">
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      Checking Ollama status...
+                      {t('settings.ai.llm.ollama.checking')}
                     </div>
                   )}
 
@@ -1064,14 +1106,14 @@ const AITab: React.FC = () => {
                       <div className="w-9 h-9 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-2.5">
                         <AlertCircle className="w-4 h-4 text-red-400/70" />
                       </div>
-                      <p className="text-xs text-[var(--text-muted)] mb-0.5">Ollama is not running</p>
-                      <p className="text-[0.75rem] text-[var(--text-subtle)] mb-3">Install and run Ollama to use local models.</p>
+                      <p className="text-xs text-[var(--text-muted)] mb-0.5">{t('settings.ai.llm.ollama.notRunning.title')}</p>
+                      <p className="text-[0.75rem] text-[var(--text-subtle)] mb-3">{t('settings.ai.llm.ollama.notRunning.description')}</p>
                       <button
                         onClick={() => window.electron.ollamaOpenDownload()}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-md transition-colors"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        Download Ollama
+                        {t('settings.ai.llm.ollama.notRunning.download')}
                         <ExternalLink className="w-3 h-3 text-blue-300/60" />
                       </button>
                     </div>
@@ -1081,7 +1123,7 @@ const AITab: React.FC = () => {
                     <>
                       <div className="flex items-center gap-2 mb-2.5">
                         <div className="w-2 h-2 rounded-full bg-green-400" />
-                        <span className="text-[0.6875rem] text-green-400/70">Ollama is running</span>
+                        <span className="text-[0.6875rem] text-green-400/70">{t('settings.ai.llm.ollama.running')}</span>
                       </div>
 
                       {ollamaError && (
@@ -1091,7 +1133,7 @@ const AITab: React.FC = () => {
                       )}
 
                       <div className="space-y-1 max-h-[min(46vh,360px)] overflow-y-auto pr-1">
-                        {CURATED_OLLAMA_MODELS.map((model) => {
+                        {getCuratedOllamaModels(t).map((model) => {
                           const installed = localModels.has(model.name);
                           const isPulling = pullingModel === model.name;
                           const isDeleting = deletingModel === model.name;
@@ -1104,7 +1146,7 @@ const AITab: React.FC = () => {
                                     <span className="text-xs text-[var(--text-secondary)]">{model.label}</span>
                                     <span className="text-[0.625rem] text-[var(--text-subtle)]">{model.size}</span>
                                     {installed && (
-                                      <span className="text-[0.625rem] font-medium px-1.5 py-0.5 rounded border border-[color:var(--status-success)] bg-[color:var(--status-success-soft)] text-[color:var(--status-success)]">Installed</span>
+                                      <span className="text-[0.625rem] font-medium px-1.5 py-0.5 rounded border border-[color:var(--status-success)] bg-[color:var(--status-success-soft)] text-[color:var(--status-success)]">{t('settings.ai.llm.ollama.installed')}</span>
                                     )}
                                   </div>
                                   <p className="text-[0.75rem] text-[var(--text-subtle)] mt-0.5">{model.description}</p>
@@ -1118,7 +1160,7 @@ const AITab: React.FC = () => {
                                 ) : isDeleting ? (
                                   <div className="flex items-center gap-1 text-[0.6875rem] text-[var(--text-muted)]">
                                     <RefreshCw className="w-3 h-3 animate-spin" />
-                                    Removing
+                                    {t('settings.ai.llm.ollama.removing')}
                                   </div>
                                 ) : installed ? (
                                   <button
@@ -1127,7 +1169,7 @@ const AITab: React.FC = () => {
                                     className="flex items-center gap-1 px-2 py-1 text-[0.6875rem] text-red-300/80 hover:text-red-200 hover:bg-red-500/10 rounded-md transition-colors"
                                   >
                                     <Trash2 className="w-3 h-3" />
-                                    Remove
+                                    {t('settings.ai.llm.ollama.removeModel')}
                                   </button>
                                 ) : (
                                   <button
@@ -1136,7 +1178,7 @@ const AITab: React.FC = () => {
                                     className="flex items-center gap-1 px-2 py-1 text-[0.6875rem] text-blue-300 hover:text-blue-200 bg-blue-500/10 hover:bg-blue-500/20 rounded-md transition-colors disabled:opacity-40"
                                   >
                                     <Download className="w-3 h-3" />
-                                    Download
+                                    {t('settings.ai.llm.ollama.downloadModel')}
                                   </button>
                                 )}
                               </div>
@@ -1168,13 +1210,13 @@ const AITab: React.FC = () => {
           <>
           <div className="px-4 py-3 md:px-5 border-b border-[var(--ui-divider)] flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Enable SuperCmd Whisper</h3>
-              <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">Toggle speech-to-text features.</p>
+              <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.enableWhisper.title')}</h3>
+              <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.whisper.enableWhisper.description')}</p>
             </div>
             <SectionToggle
               enabled={ai.whisperEnabled !== false}
               onToggle={() => updateAI({ whisperEnabled: ai.whisperEnabled === false })}
-              label="Toggle SuperCmd Whisper section"
+              label={t('settings.ai.whisper.title')}
             />
           </div>
           <div className={`grid grid-cols-1 xl:grid-cols-2 gap-0 ${ai.whisperEnabled === false ? 'opacity-65 pointer-events-none select-none' : ''}`}>
@@ -1182,19 +1224,19 @@ const AITab: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Mic className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
                 <div>
-                  <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">SuperCmd Whisper</h3>
-                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">Speech-to-text and transcript cleanup.</p>
+                  <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.title')}</h3>
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.whisper.description')}</p>
                 </div>
               </div>
 
               <div>
-                <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Transcription Model</label>
+                <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.model.label')}</label>
                 <select
                   value={whisperModelValue}
                   onChange={(e) => updateAI({ speechToTextModel: e.target.value })}
                   className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                 >
-                  {WHISPER_STT_OPTIONS.map((m) => (
+                  {getWhisperSttOptions(t).map((m) => (
                     <option key={m.id} value={m.id}>{m.label}</option>
                   ))}
                 </select>
@@ -1202,7 +1244,7 @@ const AITab: React.FC = () => {
 
               {whisperModelValue.startsWith('openai-') && !ai.openaiApiKey && (
                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-md px-2.5 py-2">
-                  <p className="text-[0.6875rem] text-amber-300">OpenAI Whisper selected. Add OpenAI API key in API Keys.</p>
+                  <p className="text-[0.6875rem] text-amber-300">{t('settings.ai.whisper.openaiWarning')}</p>
                 </div>
               )}
 
@@ -1210,8 +1252,10 @@ const AITab: React.FC = () => {
                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-md px-2.5 py-2">
                   <p className="text-[0.6875rem] text-amber-300">
                     {ai.elevenlabsApiKey
-                      ? 'ElevenLabs STT selected. Cloud transcription will use your ElevenLabs key.'
-                      : 'ElevenLabs STT selected. Add ElevenLabs API key in API Keys.'}
+                      ? t('settings.ai.whisper.elevenlabsReady')
+                      : t('settings.ai.whisper.elevenlabsWarning', {
+                          action: t('common.add').toLowerCase(),
+                        })}
                   </p>
                 </div>
               )}
@@ -1219,7 +1263,7 @@ const AITab: React.FC = () => {
               {whisperModelValue === 'parakeet' && (
                 <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
                   <p className="text-[0.6875rem] text-[color:var(--status-success)]">
-                    Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Requires model warmup on first use. Download the model below before using dictation.
+                    {t('settings.ai.whisper.providerInfo.parakeet')}
                   </p>
                 </div>
               )}
@@ -1227,20 +1271,20 @@ const AITab: React.FC = () => {
               {whisperModelValue === 'qwen3' && (
                 <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
                   <p className="text-[0.6875rem] text-[color:var(--status-success)]">
-                    Offline on-device transcription via Qwen3 ASR. Supports 30+ languages, Requires macOS 15+ & Requires model warmup on first use.
+                    {t('settings.ai.whisper.providerInfo.qwen3')}
                   </p>
                 </div>
               )}
 
               {whisperModelValue === 'qwen3' && (
                 <div>
-                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Recognition Language</label>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.recognitionLanguage')}</label>
                   <select
                     value={ai.speechLanguage || 'en-US'}
                     onChange={(e) => updateAI({ speechLanguage: e.target.value })}
                     className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                   >
-                    {WHISPER_LANGUAGE_OPTIONS.map((option) => (
+                    {getWhisperLanguageOptions(t).map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
@@ -1250,20 +1294,20 @@ const AITab: React.FC = () => {
               {whisperModelValue === 'whispercpp' && (
                 <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
                   <p className="text-[0.6875rem] text-[color:var(--status-success)]">
-                    Offline on-device transcription via Whisper.cpp. Download the default ggml base model below before using dictation.
+                    {t('settings.ai.whisper.providerInfo.whispercpp')}
                   </p>
                 </div>
               )}
 
               {whisperModelValue === 'whispercpp' && (
                 <div>
-                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Recognition Language</label>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.recognitionLanguage')}</label>
                   <select
                     value={ai.speechLanguage || 'en-US'}
                     onChange={(e) => updateAI({ speechLanguage: e.target.value })}
                     className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                   >
-                    {WHISPER_LANGUAGE_OPTIONS.map((option) => (
+                    {getWhisperLanguageOptions(t).map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
@@ -1273,15 +1317,15 @@ const AITab: React.FC = () => {
               {whisperModelValue === 'native' && (
                 <div className="bg-sky-500/10 border border-sky-500/20 rounded-md px-2.5 py-2">
                   <p className="text-[0.6875rem] text-sky-300">
-                    Uses Apple Speech Recognition instead of SuperCmd Whisper.
+                    {t('settings.ai.whisper.providerInfo.native')}
                   </p>
                 </div>
               )}
 
               <div className="pt-3 border-t border-[var(--ui-divider)] space-y-2">
-                <p className="text-[0.75rem] text-[var(--text-muted)]">Whisper Hotkeys</p>
+                <p className="text-[0.75rem] text-[var(--text-muted)]">{t('settings.ai.whisper.hotkeys.title')}</p>
                 <div>
-                  <p className="text-[0.75rem] text-[var(--text-muted)] mb-1.5">Start/Stop Speaking</p>
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mb-1.5">{t('settings.ai.whisper.hotkeys.startStop')}</p>
                   <div className="flex items-center gap-2 flex-wrap">
                     <HotkeyRecorder
                       value={whisperSpeakToggleHotkey}
@@ -1295,13 +1339,13 @@ const AITab: React.FC = () => {
                         onClick={() => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, 'Fn'); }}
                         className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] hover:border-[var(--ui-segment-border)]"
                       >
-                        Set to Fn
+                        {t('settings.ai.whisper.hotkeys.setToFn')}
                       </button>
                     ) : null}
                   </div>
                   {!isWhisperSpeakToggleFn ? (
                     <p className="mt-1.5 text-[0.6875rem] text-[var(--text-muted)]">
-                      Use <span className="text-[var(--text-primary)]">Set to Fn</span> to restore the default hold-to-talk key.
+                      {t('settings.ai.whisper.hotkeys.fnHint')}
                     </p>
                   ) : null}
                 </div>
@@ -1322,9 +1366,9 @@ const AITab: React.FC = () => {
                 <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Parakeet TDT v3</h3>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.downloadCards.parakeet.title')}</h3>
                       <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
-                        Multilingual on-device transcription. Runs on Apple Neural Engine.
+                        {t('settings.ai.whisper.downloadCards.parakeet.description')}
                       </p>
                     </div>
                     {parakeetModelStatus?.state === 'downloaded' ? (
@@ -1336,11 +1380,11 @@ const AITab: React.FC = () => {
 
                   <div className="mt-3 text-[0.75rem]">
                     {parakeetModelStatus?.state === 'downloaded' ? (
-                      <p className="text-[color:var(--status-success)]">Downloaded. Parakeet v3 is ready to use offline.</p>
+                      <p className="text-[color:var(--status-success)]">{t('settings.ai.whisper.downloadCards.parakeet.ready')}</p>
                     ) : parakeetModelStatus?.state === 'downloading' ? (
                       <div className="space-y-2">
                         <p className="text-[var(--text-secondary)]">
-                          Downloading Parakeet v3 models
+                          {t('settings.ai.whisper.downloadCards.parakeet.downloading')}
                           {parakeetPercent > 0 ? ` (${parakeetPercent}%)` : '...'}
                         </p>
                         <div className="h-2 rounded-full bg-black/20 overflow-hidden">
@@ -1351,9 +1395,9 @@ const AITab: React.FC = () => {
                         </div>
                       </div>
                     ) : parakeetModelStatus?.state === 'error' ? (
-                      <p className="text-rose-300">{parakeetModelStatus.error || 'Model download failed.'}</p>
+                      <p className="text-rose-300">{parakeetModelStatus.error || t('settings.ai.whisper.downloadCards.modelDownloadFailed')}</p>
                     ) : (
-                      <p className="text-amber-300">Model not downloaded yet. Download it now to use Parakeet dictation.</p>
+                      <p className="text-amber-300">{t('settings.ai.whisper.downloadCards.parakeet.notDownloaded')}</p>
                     )}
                   </div>
 
@@ -1365,17 +1409,17 @@ const AITab: React.FC = () => {
                       className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
                     >
                       {parakeetModelStatus?.state === 'downloaded'
-                        ? 'Model Downloaded'
+                        ? t('settings.ai.whisper.downloadCards.actions.downloaded')
                         : parakeetModelStatus?.state === 'downloading'
-                          ? 'Downloading...'
-                          : 'Download Model'}
+                          ? t('settings.ai.whisper.downloadCards.actions.downloading')
+                          : t('settings.ai.whisper.downloadCards.actions.download')}
                     </button>
                     <button
                       type="button"
                       onClick={() => { void refreshParakeetModelStatus(); }}
                       className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
                     >
-                      Refresh
+                      {t('common.refresh')}
                     </button>
                   </div>
                 </div>
@@ -1385,9 +1429,9 @@ const AITab: React.FC = () => {
                 <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Qwen3 ASR</h3>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.downloadCards.qwen3.title')}</h3>
                       <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
-                        30-language on-device transcription. Requires macOS 15+.
+                        {t('settings.ai.whisper.downloadCards.qwen3.description')}
                       </p>
                     </div>
                     {qwen3ModelStatus?.state === 'downloaded' ? (
@@ -1399,11 +1443,11 @@ const AITab: React.FC = () => {
 
                   <div className="mt-3 text-[0.75rem]">
                     {qwen3ModelStatus?.state === 'downloaded' ? (
-                      <p className="text-[color:var(--status-success)]">Downloaded. Qwen3 ASR is ready to use offline.</p>
+                      <p className="text-[color:var(--status-success)]">{t('settings.ai.whisper.downloadCards.qwen3.ready')}</p>
                     ) : qwen3ModelStatus?.state === 'downloading' ? (
                       <div className="space-y-2">
                         <p className="text-[var(--text-secondary)]">
-                          Downloading Qwen3 ASR models
+                          {t('settings.ai.whisper.downloadCards.qwen3.downloading')}
                           {qwen3Percent > 0 ? ` (${qwen3Percent}%)` : '...'}
                         </p>
                         <div className="h-2 rounded-full bg-black/20 overflow-hidden">
@@ -1414,9 +1458,9 @@ const AITab: React.FC = () => {
                         </div>
                       </div>
                     ) : qwen3ModelStatus?.state === 'error' ? (
-                      <p className="text-rose-300">{qwen3ModelStatus.error || 'Model download failed.'}</p>
+                      <p className="text-rose-300">{qwen3ModelStatus.error || t('settings.ai.whisper.downloadCards.modelDownloadFailed')}</p>
                     ) : (
-                      <p className="text-amber-300">Model not downloaded yet. Download the ~900 MB int8 model to use Qwen3 dictation.</p>
+                      <p className="text-amber-300">{t('settings.ai.whisper.downloadCards.qwen3.notDownloaded')}</p>
                     )}
                   </div>
 
@@ -1428,17 +1472,17 @@ const AITab: React.FC = () => {
                       className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
                     >
                       {qwen3ModelStatus?.state === 'downloaded'
-                        ? 'Model Downloaded'
+                        ? t('settings.ai.whisper.downloadCards.actions.downloaded')
                         : qwen3ModelStatus?.state === 'downloading'
-                          ? 'Downloading...'
-                          : 'Download Model'}
+                          ? t('settings.ai.whisper.downloadCards.actions.downloading')
+                          : t('settings.ai.whisper.downloadCards.actions.download')}
                     </button>
                     <button
                       type="button"
                       onClick={() => { void refreshQwen3ModelStatus(); }}
                       className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
                     >
-                      Refresh
+                      {t('common.refresh')}
                     </button>
                   </div>
                 </div>
@@ -1448,9 +1492,9 @@ const AITab: React.FC = () => {
                 <div className="rounded-xl border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">SuperCmd Whisper</h3>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.downloadCards.whispercpp.title')}</h3>
                       <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
-                        Download the ggml base model once to enable local dictation.
+                        {t('settings.ai.whisper.downloadCards.whispercpp.description')}
                       </p>
                     </div>
                     {whisperCppModelStatus?.state === 'downloaded' ? (
@@ -1462,11 +1506,11 @@ const AITab: React.FC = () => {
 
                   <div className="mt-3 text-[0.75rem]">
                     {whisperCppModelStatus?.state === 'downloaded' ? (
-                      <p className="text-[color:var(--status-success)]">Downloaded. SuperCmd Whisper is ready to use offline.</p>
+                      <p className="text-[color:var(--status-success)]">{t('settings.ai.whisper.downloadCards.whispercpp.ready')}</p>
                     ) : whisperCppModelStatus?.state === 'downloading' ? (
                       <div className="space-y-2">
                         <p className="text-[var(--text-secondary)]">
-                          Downloading SuperCmd Whisper
+                          {t('settings.ai.whisper.downloadCards.whispercpp.downloading')}
                           {whisperCppModelStatus.totalBytes ? ` (${whisperCppPercent}%)` : '...'}
                         </p>
                         <div className="h-2 rounded-full bg-black/20 overflow-hidden">
@@ -1477,9 +1521,9 @@ const AITab: React.FC = () => {
                         </div>
                       </div>
                     ) : whisperCppModelStatus?.state === 'error' ? (
-                      <p className="text-rose-300">{whisperCppModelStatus.error || 'Model download failed.'}</p>
+                      <p className="text-rose-300">{whisperCppModelStatus.error || t('settings.ai.whisper.downloadCards.modelDownloadFailed')}</p>
                     ) : (
-                      <p className="text-amber-300">Model not downloaded yet. Download it now to use SuperCmd Whisper dictation.</p>
+                      <p className="text-amber-300">{t('settings.ai.whisper.downloadCards.whispercpp.notDownloaded')}</p>
                     )}
                   </div>
 
@@ -1491,17 +1535,17 @@ const AITab: React.FC = () => {
                       className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-active-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] disabled:opacity-55 disabled:cursor-not-allowed"
                     >
                       {whisperCppModelStatus?.state === 'downloaded'
-                        ? 'Model Downloaded'
+                        ? t('settings.ai.whisper.downloadCards.actions.downloaded')
                         : whisperCppModelStatus?.state === 'downloading'
-                          ? 'Downloading...'
-                          : 'Download Model'}
+                          ? t('settings.ai.whisper.downloadCards.actions.downloading')
+                          : t('settings.ai.whisper.downloadCards.actions.download')}
                     </button>
                     <button
                       type="button"
                       onClick={() => { void refreshWhisperCppModelStatus(); }}
                       className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)]"
                     >
-                      Refresh
+                      {t('common.refresh')}
                     </button>
                   </div>
                 </div>
@@ -1509,30 +1553,30 @@ const AITab: React.FC = () => {
 
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Smooth Output</h3>
-                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">Clean up filler words and self-corrections.</p>
+                  <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.smoothOutput.title')}</h3>
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.whisper.smoothOutput.description')}</p>
                 </div>
                 <SectionToggle
                   enabled={Boolean(ai.speechCorrectionEnabled)}
                   onToggle={() => updateAI({ speechCorrectionEnabled: !ai.speechCorrectionEnabled })}
-                  label="Toggle whisper smoothing"
+                  label={t('settings.ai.whisper.smoothOutput.title')}
                 />
               </div>
 
               {ai.speechCorrectionEnabled && (
                 <div>
-                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Smoothing Model</label>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.smoothingModel.label')}</label>
                   <select
                     value={ai.speechCorrectionModel || ''}
                     onChange={(e) => updateAI({ speechCorrectionModel: e.target.value })}
                     className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                   >
-                    <option value="">Use Generic Default Model</option>
+                    <option value="">{t('settings.ai.whisper.smoothingModel.useDefault')}</option>
                     {correctionModelOptions.map((m) => (
                       <option key={m.id} value={m.id}>{m.label}</option>
                     ))}
                   </select>
-                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-1">Uses your current provider models.</p>
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-1">{t('settings.ai.whisper.smoothingModel.hint')}</p>
                 </div>
               )}
             </div>
@@ -1544,13 +1588,13 @@ const AITab: React.FC = () => {
           <>
           <div className="px-4 py-3 md:px-5 border-b border-[var(--ui-divider)] flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Enable SuperCmd Read</h3>
-              <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">Toggle text-to-speech features.</p>
+              <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.speak.enableRead.title')}</h3>
+              <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.speak.enableRead.description')}</p>
             </div>
             <SectionToggle
               enabled={ai.readEnabled !== false}
               onToggle={() => updateAI({ readEnabled: ai.readEnabled === false })}
-              label="Toggle SuperCmd Read section"
+              label={t('settings.ai.speak.title')}
             />
           </div>
           <div className={`grid grid-cols-1 xl:grid-cols-2 gap-0 ${ai.readEnabled === false ? 'opacity-65 pointer-events-none select-none' : ''}`}>
@@ -1558,13 +1602,13 @@ const AITab: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Volume2 className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
                 <div>
-                  <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">SuperCmd Read</h3>
-                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">Read selected text aloud.</p>
+                  <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.speak.title')}</h3>
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.speak.description')}</p>
                 </div>
               </div>
 
               <div>
-                <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Speech Provider</label>
+                <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.speak.provider.label')}</label>
                 <select
                   value={speakModelValue}
                   onChange={(e) => {
@@ -1579,7 +1623,7 @@ const AITab: React.FC = () => {
                   }}
                   className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                 >
-                  {SPEAK_TTS_OPTIONS.map((m) => (
+                  {getSpeakTtsOptions(t).map((m) => (
                     <option key={m.id} value={m.id}>{m.label}</option>
                   ))}
                 </select>
@@ -1588,17 +1632,17 @@ const AITab: React.FC = () => {
               {speakModelValue === 'edge-tts' && (
                 <div className="pt-2 border-t border-[var(--ui-divider)] space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-[0.75rem] text-[var(--text-muted)]">Edge TTS Voice</p>
+                    <p className="text-[0.75rem] text-[var(--text-muted)]">{t('settings.ai.speak.edgeTTS.voice')}</p>
                     {edgeVoicesLoading && (
                       <span className="inline-flex items-center gap-1 text-[0.625rem] text-[var(--text-subtle)]">
                         <RefreshCw className="w-3 h-3 animate-spin" />
-                        Fetching full voice list...
+                        {t('settings.ai.speak.edgeTTS.fetching')}
                       </span>
                     )}
                   </div>
 
                   <div>
-                    <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Language</label>
+                    <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.speak.edgeTTS.language.label')}</label>
                     <select
                       value={selectedEdgeLanguageCode}
                       onChange={(e) => handleEdgeLanguageChange(e.target.value)}
@@ -1611,19 +1655,19 @@ const AITab: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Voice Gender</label>
+                    <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.speak.edgeTTS.gender.label')}</label>
                     <select
                       value={selectedEdgeGender}
                       onChange={(e) => handleEdgeGenderChange(e.target.value as EdgeVoiceGender)}
                       className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                     >
-                      <option value="female">Female</option>
-                      <option value="male">Male</option>
+                      <option value="female">{t('settings.ai.speak.edgeTTS.gender.female')}</option>
+                      <option value="male">{t('settings.ai.speak.edgeTTS.gender.male')}</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">Voice</label>
+                    <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.speak.edgeTTS.voiceLabel.label')}</label>
                     <select
                       value={selectedEdgeVoice.id}
                       onChange={(e) => applyEdgeVoice(e.target.value)}
@@ -1657,7 +1701,7 @@ const AITab: React.FC = () => {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[var(--accent)] bg-[var(--accent-soft)] border border-[var(--accent)] hover:brightness-95 disabled:opacity-65 disabled:cursor-not-allowed transition-colors"
                   >
                     {previewingVoice ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Volume2 className="w-3 h-3" />}
-                    {previewingVoice ? 'Playing sample...' : 'Play Sample Voice'}
+                    {previewingVoice ? t('settings.ai.speak.edgeTTS.playSample.playing') : t('settings.ai.speak.edgeTTS.playSample.idle')}
                   </button>
                 </div>
               )}
@@ -1665,7 +1709,7 @@ const AITab: React.FC = () => {
               {speakModelValue.startsWith('elevenlabs-') && (
                 <div className="pt-2 border-t border-[var(--ui-divider)] space-y-2.5">
                   <div>
-                    <p className="text-[0.75rem] text-[var(--text-muted)] mb-1">ElevenLabs Model</p>
+                    <p className="text-[0.75rem] text-[var(--text-muted)] mb-1">{t('settings.ai.speak.elevenlabs.model.label')}</p>
                     <select
                       value={speakModelValue}
                       onChange={(e) =>
@@ -1674,7 +1718,7 @@ const AITab: React.FC = () => {
                         })}
                       className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                     >
-                      {SPEAK_TTS_OPTIONS.filter((m) => m.id.startsWith('elevenlabs-')).map((m) => (
+                      {getSpeakTtsOptions(t).filter((m) => m.id.startsWith('elevenlabs-')).map((m) => (
                         <option key={m.id} value={m.id}>{m.label}</option>
                       ))}
                     </select>
@@ -1682,11 +1726,11 @@ const AITab: React.FC = () => {
 
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <p className="text-[0.75rem] text-[var(--text-muted)]">ElevenLabs Voice</p>
+                      <p className="text-[0.75rem] text-[var(--text-muted)]">{t('settings.ai.speak.elevenlabs.voice.label')}</p>
                       {elevenLabsVoicesLoading && (
                         <span className="text-[0.625rem] text-[var(--text-subtle)] flex items-center gap-1">
                           <RefreshCw className="w-3 h-3 animate-spin" />
-                          Fetching your voices...
+                          {t('settings.ai.speak.elevenlabs.voice.fetching')}
                         </span>
                       )}
                     </div>
@@ -1702,7 +1746,7 @@ const AITab: React.FC = () => {
                       className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
                     >
                       {ELEVENLABS_VOICES.length > 0 && (
-                        <optgroup label="Built-in Voices">
+                        <optgroup label={t('settings.ai.speak.elevenlabs.voice.builtIn')}>
                           {ELEVENLABS_VOICES.map((voice) => (
                             <option key={voice.id} value={voice.id}>
                               {voice.label}
@@ -1711,7 +1755,7 @@ const AITab: React.FC = () => {
                         </optgroup>
                       )}
                       {elevenLabsVoices.filter(v => v.category === 'premade' && !ELEVENLABS_VOICES.some(bv => bv.id === v.id)).length > 0 && (
-                        <optgroup label="Additional Premade Voices">
+                        <optgroup label={t('settings.ai.speak.elevenlabs.voice.premade')}>
                           {elevenLabsVoices
                             .filter(v => v.category === 'premade' && !ELEVENLABS_VOICES.some(bv => bv.id === v.id))
                             .map((voice) => (
@@ -1722,7 +1766,7 @@ const AITab: React.FC = () => {
                         </optgroup>
                       )}
                       {elevenLabsVoices.filter(v => v.category === 'cloned' || v.category === 'generated').length > 0 && (
-                        <optgroup label="Your Custom Voices (Cloned/Generated)">
+                        <optgroup label={t('settings.ai.speak.elevenlabs.voice.custom')}>
                           {elevenLabsVoices
                             .filter(v => v.category === 'cloned' || v.category === 'generated')
                             .map((voice) => (
@@ -1733,7 +1777,7 @@ const AITab: React.FC = () => {
                         </optgroup>
                       )}
                       {elevenLabsVoices.filter(v => v.category === 'professional').length > 0 && (
-                        <optgroup label="Professional Voice Clones">
+                        <optgroup label={t('settings.ai.speak.elevenlabs.voice.professional')}>
                           {elevenLabsVoices
                             .filter(v => v.category === 'professional')
                             .map((voice) => (
@@ -1746,7 +1790,7 @@ const AITab: React.FC = () => {
                     </select>
                     {elevenLabsVoices.length > 0 && (
                       <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">
-                        {elevenLabsVoices.length} custom voice{elevenLabsVoices.length !== 1 ? 's' : ''} available from your ElevenLabs account
+                        {t('settings.ai.speak.elevenlabs.voice.available', { count: elevenLabsVoices.length })}
                       </p>
                     )}
                   </div>
@@ -1774,26 +1818,28 @@ const AITab: React.FC = () => {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[var(--accent)] bg-[var(--accent-soft)] border border-[var(--accent)] hover:brightness-95 disabled:opacity-65 disabled:cursor-not-allowed transition-colors"
                   >
                     {previewingVoice ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Volume2 className="w-3 h-3" />}
-                    {previewingVoice ? 'Playing sample...' : 'Play Sample Voice'}
+                    {previewingVoice ? t('settings.ai.speak.elevenlabs.playSample.playing') : t('settings.ai.speak.elevenlabs.playSample.idle')}
                   </button>
 
                   <p className="text-[0.625rem] text-[var(--text-subtle)]">
-                    SuperCmd stores this as <code className="text-[var(--text-subtle)]">{`${speakModelValue}@${selectedElevenLabsVoiceId}`}</code>.
+                    {t('settings.ai.speak.elevenlabs.storageHint', {
+                      value: `${speakModelValue}@${selectedElevenLabsVoiceId}`,
+                    })}
                   </p>
                   {!ai.elevenlabsApiKey && (
-                    <p className="text-[0.6875rem] text-amber-300 mt-1.5">Add ElevenLabs API key in API Keys.</p>
+                    <p className="text-[0.6875rem] text-amber-300 mt-1.5">{t('settings.ai.speak.elevenlabs.apiKeyWarning')}</p>
                   )}
                 </div>
               )}
             </div>
 
             <div className="px-4 py-3.5 md:px-5">
-              <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Notes</h3>
+              <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.speak.notes.title')}</h3>
               <div className="mt-2 space-y-1.5 text-[0.75rem] text-[var(--text-muted)] leading-relaxed">
-                <p>Whisper default is SuperCmd Whisper with a local ggml base model.</p>
-                <p>Speak default is Edge TTS with per-language male/female voice selection.</p>
-                <p>English voice options are intentionally limited to US and UK variants.</p>
-                <p>ElevenLabs custom voices (cloned/generated) will appear automatically when your API key is configured.</p>
+                <p>{t('settings.ai.speak.notes.whisperDefault')}</p>
+                <p>{t('settings.ai.speak.notes.speakDefault')}</p>
+                <p>{t('settings.ai.speak.notes.englishVoice')}</p>
+                <p>{t('settings.ai.speak.notes.elevenlabsVoices')}</p>
               </div>
             </div>
           </div>

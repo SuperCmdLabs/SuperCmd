@@ -13,6 +13,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import HotkeyRecorder from './settings/HotkeyRecorder';
+import { useI18n } from './i18n';
 import supercmdLogo from '../../../supercmd.png';
 import onboardingIconVideo from '../../../assets/icon.mp4';
 import type { WhisperCppModelStatus, ParakeetModelStatus } from '../types/electron';
@@ -39,16 +40,18 @@ const STEPS = [
   'Final Check',
 ];
 
-const featureCards = [
-  { id: 'clipboard', title: 'Clipboard', description: 'Search and paste history instantly.', icon: Clipboard },
-  { id: 'snippet', title: 'Snippet', description: 'Store reusable text with quick triggers.', icon: FileText },
-  { id: 'whisper', title: 'Whisper', description: 'Hold to speak and release to type.', icon: Mic },
-  { id: 'read', title: 'Read', description: 'Read selected text with natural voice.', icon: Volume2 },
-  { id: 'global-ai-prompt', title: 'Global AI Prompt', description: 'Transform text from anywhere.', icon: Bot },
-  { id: 'unit-conversion', title: 'Unit Conversion', description: 'Convert values directly in launcher.', icon: Calculator },
-];
+function getFeatureCards(t: (key: string) => string) {
+  return [
+    { id: 'clipboard', title: 'Clipboard', description: 'Search and paste history instantly.', icon: Clipboard },
+    { id: 'snippet', title: 'Snippet', description: 'Store reusable text with quick triggers.', icon: FileText },
+    { id: 'whisper', title: t('onboarding.voice.featureCards.whisper.title'), description: t('onboarding.voice.featureCards.whisper.description'), icon: Mic },
+    { id: 'read', title: t('onboarding.voice.featureCards.read.title'), description: t('onboarding.voice.featureCards.read.description'), icon: Volume2 },
+    { id: 'global-ai-prompt', title: 'Global AI Prompt', description: 'Transform text from anywhere.', icon: Bot },
+    { id: 'unit-conversion', title: 'Unit Conversion', description: 'Convert values directly in launcher.', icon: Calculator },
+  ];
+}
 
-const permissionTargets: Array<{
+function getPermissionTargets(t: (key: string) => string): Array<{
   id: PermissionTargetId;
   title: string;
   description: string;
@@ -56,7 +59,8 @@ const permissionTargets: Array<{
   icon: any;
   iconTone: string;
   iconBg: string;
-}> = [
+}> {
+  return [
   {
     id: 'home-folder',
     title: 'Home Folder',
@@ -77,8 +81,8 @@ const permissionTargets: Array<{
   },
   {
     id: 'input-monitoring',
-    title: 'Input Monitoring',
-    description: 'Required for Fn hold-to-talk detection and other global key monitoring in Whisper mode.',
+    title: t('onboarding.voice.permissions.inputMonitoringTitle'),
+    description: t('onboarding.voice.permissions.inputMonitoringDescription'),
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
     icon: Keyboard,
     iconTone: 'text-amber-100',
@@ -86,8 +90,8 @@ const permissionTargets: Array<{
   },
   {
     id: 'speech-recognition',
-    title: 'Speech Recognition',
-    description: 'Optional. Needed only if you switch Whisper to the Apple Speech Recognition fallback.',
+    title: t('onboarding.voice.permissions.speechRecognitionTitle'),
+    description: t('onboarding.voice.permissions.speechRecognitionDescription'),
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition',
     icon: Volume2,
     iconTone: 'text-emerald-100',
@@ -95,20 +99,15 @@ const permissionTargets: Array<{
   },
   {
     id: 'microphone',
-    title: 'Microphone',
-    description: 'Required for SuperCmd Whisper Dictation.',
+    title: t('onboarding.voice.permissions.microphoneTitle'),
+    description: t('onboarding.voice.permissions.microphoneDescription'),
     url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
     icon: Mic,
     iconTone: 'text-cyan-100',
     iconBg: 'bg-cyan-500/22 border-cyan-100/30',
   },
-];
-
-const DICTATION_SAMPLE =
-  'It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness.';
-
-const READ_SAMPLE =
-  'Voice-first interfaces are having a moment. After years of being dismissed as gimmicks, a new wave of tools is making it genuinely faster to speak than type — with transcription that keeps up, smart corrections, and shortcut keys that slot into existing workflows without disruption.';
+  ];
+}
 
 const SPEECH_LANGUAGE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'ar-EG', label: 'Arabic' },
@@ -154,6 +153,11 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   onComplete,
   onClose,
 }) => {
+  const { t } = useI18n();
+  const featureCards = useMemo(() => getFeatureCards(t), [t]);
+  const permissionTargets = useMemo(() => getPermissionTargets(t), [t]);
+  const dictationSample = t('onboarding.voice.dictation.sampleText');
+  const readSample = t('onboarding.voice.read.sampleText');
   const [step, setStep] = useState(0);
   const [shortcut, setShortcut] = useState(initialShortcut || 'Alt+Space');
   const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -508,7 +512,16 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
     } catch {}
   }, [step]);
 
-  const stepTitle = useMemo(() => STEPS[step] || STEPS[0], [step]);
+  const localizedSteps = useMemo(() => ([
+    t('onboarding.voice.steps.welcome'),
+    t('onboarding.voice.steps.coreFeatures'),
+    t('onboarding.voice.steps.hotkeySetup'),
+    t('onboarding.voice.steps.permissions'),
+    t('onboarding.voice.steps.dictationMode'),
+    t('onboarding.voice.steps.readMode'),
+    t('onboarding.voice.steps.finalCheck'),
+  ]), [t]);
+  const stepTitle = useMemo(() => localizedSteps[step] || localizedSteps[0], [localizedSteps, step]);
   const hotkeyCaps = useMemo(() => toHotkeyCaps(shortcut || 'Alt+Space'), [shortcut]);
   const whisperKeyCaps = useMemo(() => toHotkeyCaps(whisperHoldKey), [whisperHoldKey]);
 
@@ -607,17 +620,19 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
         setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
         setPermissionNotes((prev) => ({ ...prev, [id]: '' }));
       } else if (id === 'microphone' || id === 'speech-recognition') {
-        const targetLabel = id === 'microphone' ? 'Microphone' : 'Speech Recognition';
+        const targetLabel = id === 'microphone'
+          ? t('onboarding.voice.permissions.microphoneTitle')
+          : t('onboarding.voice.permissions.speechRecognitionTitle');
         if (status === 'denied' || status === 'restricted') {
           setPermissionNotes((prev) => ({
             ...prev,
-            [id]: `${targetLabel} access is blocked. Enable SuperCmd in System Settings, then return.`,
+            [id]: t('onboarding.voice.permissionNotes.blocked', { target: targetLabel }),
           }));
         } else if (latestError) {
           if (/failed to request microphone access/i.test(latestError)) {
             setPermissionNotes((prev) => ({
               ...prev,
-              [id]: 'Could not trigger the permission prompt. Open System Settings -> Privacy & Security, enable SuperCmd, then press request again.',
+              [id]: t('onboarding.voice.permissionNotes.promptFailed'),
             }));
           } else {
             setPermissionNotes((prev) => ({ ...prev, [id]: latestError }));
@@ -625,7 +640,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
         } else if (!requested || mode === 'manual' || status === 'not-determined') {
           setPermissionNotes((prev) => ({
             ...prev,
-            [id]: 'Permission prompt did not appear. Open Whisper once and press this again.',
+            [id]: t('onboarding.voice.permissionNotes.notShown'),
           }));
         }
       } else if (id === 'home-folder') {
@@ -634,7 +649,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
         } else if (!requested || mode === 'manual' || status === 'not-determined') {
           setPermissionNotes((prev) => ({
             ...prev,
-            [id]: 'Select your Home folder when prompted, then enable SuperCmd under Files and Folders if needed.',
+            [id]: t('onboarding.voice.permissionNotes.homeFolder'),
           }));
         }
       }
@@ -661,7 +676,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
           // The user must click "+" in System Settings and manually select SuperCmd.
           setPermissionNotes((prev) => ({
             ...prev,
-            [id]: 'In Input Monitoring, click "+" at the bottom left and add SuperCmd from your Applications folder.',
+            [id]: t('onboarding.voice.permissionNotes.inputMonitoring'),
           }));
         }
       }
@@ -741,17 +756,17 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     SuperCmd Setup
                   </span>
                   <h2 className="text-white text-[26px] lg:text-[30px] leading-[1.1] font-semibold max-w-xl">
-                    One command surface for launch, ask, dictate, and read.
+                    {t('onboarding.voice.setupTitle')}
                   </h2>
                   <p className="text-white/72 text-[15px] leading-relaxed max-w-xl">
-                    We will configure launcher hotkeys, privacy permissions, and whisper mode in one pass.
+                    {t('onboarding.voice.setupDescription')}
                   </p>
                   <div className="rounded-2xl border border-white/[0.07] bg-black/24 px-4 py-3">
-                    <p className="text-white/88 text-sm mb-2">What gets configured now:</p>
+                    <p className="text-white/88 text-sm mb-2">{t('onboarding.voice.summary.title')}</p>
                     <div className="text-white/72 text-sm space-y-1">
-                      <p>1. Launcher hotkey</p>
-                      <p>2. Accessibility, Input Monitoring, Speech Recognition, Microphone</p>
-                      <p>3. Whisper dictation and Read mode practice</p>
+                      <p>{t('onboarding.voice.summary.hotkey')}</p>
+                      <p>{t('onboarding.voice.summary.permissions')}</p>
+                      <p>3. {t('onboarding.voice.setupSummary')}</p>
                     </div>
                   </div>
                 </div>
@@ -786,8 +801,20 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                         <div className="w-8 h-8 rounded-lg border border-white/[0.14] bg-white/10 flex items-center justify-center mb-2.5">
                           <Icon className="w-4 h-4 text-white/92" />
                         </div>
-                        <p className="text-white/92 text-sm font-medium mb-1">{feature.title}</p>
-                        <p className="text-white/60 text-xs leading-relaxed">{feature.description}</p>
+                        <p className="text-white/92 text-sm font-medium mb-1">
+                          {feature.id === 'whisper'
+                            ? t('onboarding.voice.featureCards.whisper.title')
+                            : feature.id === 'read'
+                              ? t('onboarding.voice.featureCards.read.title')
+                              : feature.title}
+                        </p>
+                        <p className="text-white/60 text-xs leading-relaxed">
+                          {feature.id === 'whisper'
+                            ? t('onboarding.voice.featureCards.whisper.description')
+                            : feature.id === 'read'
+                              ? t('onboarding.voice.featureCards.read.description')
+                              : feature.description}
+                        </p>
                       </div>
                     );
                   })}
@@ -917,7 +944,15 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                             </div>
                             <div className="min-w-0">
                               <div className="flex items-center gap-2 flex-wrap mb-1">
-                                <p className="text-white/96 text-sm font-semibold">{target.title}</p>
+                              <p className="text-white/96 text-sm font-semibold">
+                                {target.id === 'microphone'
+                                  ? t('onboarding.voice.permissions.microphoneTitle')
+                                  : target.id === 'speech-recognition'
+                                    ? t('onboarding.voice.permissions.speechRecognitionTitle')
+                                    : target.id === 'input-monitoring'
+                                      ? t('onboarding.voice.permissions.inputMonitoringTitle')
+                                      : target.title}
+                              </p>
                                 {isDone ? (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-emerald-200/35 bg-emerald-500/22 text-emerald-100">
                                     <Check className="w-3 h-3" />
@@ -933,7 +968,15 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                                   </span>
                                 )}
                               </div>
-                              <p className="text-white/68 text-xs leading-relaxed">{target.description}</p>
+                              <p className="text-white/68 text-xs leading-relaxed">
+                                {target.id === 'microphone'
+                                  ? t('onboarding.voice.permissions.microphoneDescription')
+                                  : target.id === 'speech-recognition'
+                                    ? t('onboarding.voice.permissions.speechRecognitionDescription')
+                                    : target.id === 'input-monitoring'
+                                      ? t('onboarding.voice.permissions.inputMonitoringDescription')
+                                      : target.description}
+                              </p>
                             </div>
                           </div>
                           <button
@@ -979,18 +1022,18 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   <div className="w-8 h-8 rounded-lg border border-cyan-200/25 bg-cyan-500/15 flex items-center justify-center">
                     <Mic className="w-4 h-4 text-cyan-100" />
                   </div>
-                  <h3 className="text-white text-[26px] leading-[1.05] font-semibold">Dictation Mode</h3>
+                  <h3 className="text-white text-[26px] leading-[1.05] font-semibold">{t('onboarding.voice.dictation.title')}</h3>
                   <div>
-                    <p className="text-white/58 text-[9px] uppercase tracking-[0.08em] mb-1">How to test</p>
-                    <p className="text-white/72 text-[11px] leading-relaxed">Hold key, read sample, release to insert.</p>
+                    <p className="text-white/58 text-[9px] uppercase tracking-[0.08em] mb-1">{t('onboarding.voice.dictation.howToTest')}</p>
+                    <p className="text-white/72 text-[11px] leading-relaxed">{t('onboarding.voice.dictation.howToTestHint')}</p>
                   </div>
                   <div className="mt-2 flex items-center gap-3 flex-wrap">
                     <HotkeyRecorder value={whisperHoldKey} onChange={handleWhisperKeyChange} large active={isHoldKeyActive} />
-                    {whisperKeyStatus === 'success' ? <span className="text-xs text-emerald-300">Hold key updated</span> : null}
-                    {whisperKeyStatus === 'error' ? <span className="text-xs text-rose-300">Shortcut unavailable</span> : null}
+                    {whisperKeyStatus === 'success' ? <span className="text-xs text-emerald-300">{t('onboarding.voice.dictation.holdKeyUpdated')}</span> : null}
+                    {whisperKeyStatus === 'error' ? <span className="text-xs text-rose-300">{t('settings.ai.hotkeyUnavailable')}</span> : null}
                   </div>
                   <div className="space-y-1">
-                    <p className="text-white/82 text-xs">Dictation language</p>
+                    <p className="text-white/82 text-xs">{t('onboarding.voice.dictation.language')}</p>
                     <select
                       value={speechLanguage}
                       onChange={(e) => { void handleSpeechLanguageChange(e.target.value); }}
@@ -1004,19 +1047,19 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                   <div className="mt-2 rounded-[28px] border border-white/[0.08] bg-white/[0.05] p-4">
                     {sttProvider === 'parakeet' ? (
                       <>
-                        <p className="text-white/88 text-xs font-medium mb-1.5">Parakeet TDT v3</p>
+                        <p className="text-white/88 text-xs font-medium mb-1.5">{t('onboarding.voice.dictation.models.parakeet.title')}</p>
                         {parakeetModelStatus?.state === 'downloaded' ? (
                           <p className="text-emerald-200 text-[11px] leading-relaxed">
-                            Download complete. Parakeet v3 dictation is ready.
+                            {t('onboarding.voice.dictation.models.parakeet.ready')}
                           </p>
                         ) : parakeetModelStatus?.state === 'downloading' ? (
                           <div className="space-y-2.5">
                             <div className="space-y-1">
                               <p className="text-white/90 text-[11px] font-medium leading-relaxed">
-                                Downloading models, just a moment.
+                                {t('onboarding.voice.dictation.models.parakeet.downloadingLead')}
                               </p>
                               <p className="text-white/62 text-[11px] leading-relaxed">
-                                Downloading Parakeet v3 CoreML models
+                                {t('onboarding.voice.dictation.models.parakeet.downloading')}
                                 {parakeetDownloadPercent > 0 ? ` (${parakeetDownloadPercent}%)` : '...'}
                               </p>
                             </div>
@@ -1042,11 +1085,11 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                           </div>
                         ) : parakeetModelStatus?.state === 'error' ? (
                           <p className="text-rose-200 text-[11px] leading-relaxed">
-                            {parakeetModelStatus.error || 'Model download failed. Retry now or use Settings → AI → SuperCmd Whisper.'}
+                            {parakeetModelStatus.error || t('onboarding.voice.dictation.models.downloadFailed')}
                           </p>
                         ) : (
                           <p className="text-white/72 text-[11px] leading-relaxed">
-                            SuperCmd starts downloading Parakeet v3 models on this step so dictation is ready before first use.
+                            {t('onboarding.voice.dictation.models.parakeet.notDownloaded')}
                           </p>
                         )}
                         <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -1057,28 +1100,28 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                             className="inline-flex min-h-[32px] items-center justify-center rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors border border-white/[0.12] bg-white/[0.10] text-white/90 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {parakeetModelStatus?.state === 'downloaded'
-                              ? 'Downloaded'
+                              ? t('onboarding.voice.dictation.models.actions.downloaded')
                               : parakeetModelStatus?.state === 'downloading'
-                                ? 'Downloading...'
-                                : 'Download Model'}
+                                ? t('onboarding.voice.dictation.models.actions.downloading')
+                                : t('onboarding.voice.dictation.models.actions.download')}
                           </button>
                         </div>
                       </>
                     ) : sttProvider === 'whispercpp' ? (
                       <>
-                        <p className="text-white/88 text-xs font-medium mb-1.5">SuperCmd Whisper</p>
+                        <p className="text-white/88 text-xs font-medium mb-1.5">{t('onboarding.voice.dictation.models.whispercpp.title')}</p>
                         {whisperCppModelStatus?.state === 'downloaded' ? (
                           <p className="text-emerald-200 text-[11px] leading-relaxed">
-                            Download complete. SuperCmd Whisper dictation is ready.
+                            {t('onboarding.voice.dictation.models.whispercpp.ready')}
                           </p>
                         ) : whisperCppModelStatus?.state === 'downloading' ? (
                           <div className="space-y-2.5">
                             <div className="space-y-1">
                               <p className="text-white/90 text-[11px] font-medium leading-relaxed">
-                                Downloading model, just a moment.
+                                {t('onboarding.voice.dictation.models.whispercpp.downloadingLead')}
                               </p>
                               <p className="text-white/62 text-[11px] leading-relaxed">
-                                Downloading the ~300 MB ggml base model
+                                {t('onboarding.voice.dictation.models.whispercpp.downloading')}
                                 {whisperCppModelStatus.totalBytes ? ` (${whisperCppDownloadPercent}%)` : '...'}
                               </p>
                             </div>
@@ -1104,11 +1147,11 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                           </div>
                         ) : whisperCppModelStatus?.state === 'error' ? (
                           <p className="text-rose-200 text-[11px] leading-relaxed">
-                            {whisperCppModelStatus.error || 'Model download failed. Retry now or use Settings → AI → SuperCmd Whisper.'}
+                            {whisperCppModelStatus.error || t('onboarding.voice.dictation.models.downloadFailed')}
                           </p>
                         ) : (
                           <p className="text-white/72 text-[11px] leading-relaxed">
-                            SuperCmd starts downloading the SuperCmd Whisper model on this step so dictation is ready before first use.
+                            {t('onboarding.voice.dictation.models.whispercpp.notDownloaded')}
                           </p>
                         )}
                         <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -1119,18 +1162,18 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                             className="inline-flex min-h-[32px] items-center justify-center rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors border border-white/[0.12] bg-white/[0.10] text-white/90 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {whisperCppModelStatus?.state === 'downloaded'
-                              ? 'Downloaded'
+                              ? t('onboarding.voice.dictation.models.actions.downloaded')
                               : whisperCppModelStatus?.state === 'downloading'
-                                ? 'Downloading...'
-                                : 'Download Model'}
+                                ? t('onboarding.voice.dictation.models.actions.downloading')
+                                : t('onboarding.voice.dictation.models.actions.download')}
                           </button>
                         </div>
                       </>
                     ) : (
                       <>
-                        <p className="text-white/88 text-xs font-medium mb-1.5">Cloud Transcription</p>
+                        <p className="text-white/88 text-xs font-medium mb-1.5">{t('onboarding.voice.dictation.models.cloud.title')}</p>
                         <p className="text-emerald-200 text-[11px] leading-relaxed">
-                          Using cloud-based transcription. No model download needed.
+                          {t('onboarding.voice.dictation.models.cloud.description')}
                         </p>
                       </>
                     )}
@@ -1140,20 +1183,20 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                 <div className="self-start rounded-3xl border border-white/[0.09] p-3 bg-white/[0.04]">
                   <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/[0.12] text-white/85 text-xs mb-2">
                     <Mic className="w-3.5 h-3.5" />
-                    Messages sample
+                    {t('onboarding.voice.dictation.sampleTitle')}
                   </div>
                   <div className="rounded-2xl border border-white/[0.07] bg-white/[0.06] p-2.5 mb-2.5">
-                    <p className="text-white/92 text-[15px] leading-relaxed">“{DICTATION_SAMPLE}”</p>
+                    <p className="text-white/92 text-[15px] leading-relaxed">“{dictationSample}”</p>
                   </div>
-                  <p className="text-white/70 text-sm mb-2">Hold your key and read the message above:</p>
+                  <p className="text-white/70 text-sm mb-2">{t('onboarding.voice.dictation.sampleHint')}</p>
                   <textarea
                     value={dictationPracticeText}
                     onChange={(e) => onDictationPracticeTextChange(e.target.value)}
-                    placeholder="Dictated text appears here..."
+                    placeholder={t('onboarding.voice.dictation.placeholder')}
                     className="w-full h-[250px] resize-none rounded-xl border border-cyan-300/55 bg-white/[0.05] px-4 py-3 text-white/90 placeholder:text-white/40 text-base leading-relaxed outline-none shadow-[0_0_0_3px_rgba(34,211,238,0.15)]"
                   />
                   <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
-                    SuperCmd Whisper uses a local ggml base model by default. Apple Speech Recognition remains available as a fallback in Settings.
+                    {t('onboarding.voice.dictation.footerHint')}
                   </p>
                 </div>
               </div>
@@ -1191,21 +1234,21 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     <div className="flex items-center gap-2 mb-3">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-rose-200/25 bg-rose-500/15 text-[10px] text-rose-200/85 font-medium uppercase tracking-wider">
                         <Volume2 className="w-2.5 h-2.5" />
-                        Classic Literature
+                        {t('onboarding.voice.read.badge')}
                       </span>
                       <span className="text-white/28 text-[10px]">·</span>
-                      <span className="text-white/38 text-[10px]">1 min read</span>
+                      <span className="text-white/38 text-[10px]">{t('onboarding.voice.read.readTime')}</span>
                     </div>
 
-                    <h2 className="text-white/92 text-xl font-semibold mb-1 leading-snug">Pride and Prejudice</h2>
+                    <h2 className="text-white/92 text-xl font-semibold mb-1 leading-snug">{t('onboarding.voice.read.articleTitle')}</h2>
                     <p className="text-white/42 text-xs mb-4">Jane Austen · Chapter I · 1813</p>
 
                     <div className="w-10 h-px bg-white/[0.14] mb-4" />
 
-                    <p className="text-white/88 text-[15px] leading-[1.75] select-text font-light">{READ_SAMPLE}</p>
+                    <p className="text-white/88 text-[15px] leading-[1.75] select-text font-light">{readSample}</p>
 
                     <div className="mt-5 pt-4 border-t border-white/[0.05] flex items-center gap-2 flex-wrap">
-                      <p className="text-white/45 text-xs">Select the text above then press</p>
+                      <p className="text-white/45 text-xs">{t('onboarding.voice.read.instructions.before')}</p>
                       {([
                         { symbol: '⌘', label: 'Cmd' },
                         { symbol: '⇧', label: 'Shift' },
@@ -1223,7 +1266,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                           {i < 2 ? <span className="text-white/40 text-sm font-semibold">+</span> : null}
                         </React.Fragment>
                       ))}
-                      <p className="text-white/45 text-xs">to hear it read aloud.</p>
+                      <p className="text-white/45 text-xs">{t('onboarding.voice.read.instructions.after')}</p>
                     </div>
                   </div>
                 </div>
@@ -1235,9 +1278,9 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
             <div className="min-h-full flex items-center justify-center">
               <div className="w-full max-w-3xl space-y-4">
                 <div className="rounded-2xl border border-white/[0.10] bg-white/[0.06] p-6">
-                  <p className="text-white text-xl font-semibold mb-2">Final step: start SuperCmd from anywhere</p>
+                  <p className="text-white text-xl font-semibold mb-2">{t('onboarding.voice.final.title')}</p>
                   <p className="text-white/68 text-sm leading-relaxed mb-4">
-                    Press your global shortcut now to start SuperCmd from any app.
+                    {t('onboarding.voice.final.description')}
                   </p>
 
                   <div className="flex flex-wrap gap-2 mb-4">
@@ -1251,7 +1294,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                     ))}
                   </div>
                   <p className="text-white/46 text-xs leading-relaxed">
-                    Next step: Setup Hotkeys for AI Prompt and Memory from SuperCmd Settings {'->'} Extensions to start using AI anywhere.
+                    {t('onboarding.voice.final.nextStep')}
                   </p>
                 </div>
               </div>
@@ -1290,7 +1333,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
             disabled={step === STEPS.length - 1 ? !canFinish : !canContinue}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-white/[0.14] bg-gradient-to-r from-rose-500/70 to-red-500/70 hover:from-rose-500/85 hover:to-red-500/85 text-white text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {step === STEPS.length - 1 ? 'Finish' : `Continue → ${STEPS[step + 1]}`}
+            {step === STEPS.length - 1 ? t('onboarding.finish') : `${t('onboarding.next')} → ${localizedSteps[step + 1]}`}
             {step === STEPS.length - 1 ? <Check className="w-3.5 h-3.5" /> : null}
           </button>
         </div>

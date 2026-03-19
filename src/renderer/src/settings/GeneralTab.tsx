@@ -16,6 +16,7 @@ import {
   type ThemePreference,
 } from '../utils/theme';
 import { applyUiStyle, normalizeUiStyle, type UiStylePreference } from '../utils/ui-style';
+import { useI18n } from '../i18n';
 
 type FontSizeOption = NonNullable<AppSettings['fontSize']>;
 type LauncherBackgroundPercentField =
@@ -25,13 +26,7 @@ type LauncherBackgroundPercentField =
 const DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT = 25;
 const DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT = 45;
 
-const FONT_SIZE_OPTIONS: Array<{ id: FontSizeOption; label: string }> = [
-  { id: 'extra-small', label: 'Extra Small' },
-  { id: 'small', label: 'Small' },
-  { id: 'medium', label: 'Medium' },
-  { id: 'large', label: 'Large' },
-  { id: 'extra-large', label: 'Extra Large' },
-];
+const FONT_SIZE_OPTIONS: FontSizeOption[] = ['extra-small', 'small', 'medium', 'large', 'extra-large'];
 
 function getFileName(filePath: string): string {
   const normalizedPath = String(filePath || '').trim().replace(/\/+$/, '');
@@ -88,6 +83,7 @@ const SettingsRow: React.FC<SettingsRowProps> = ({
 );
 
 const GeneralTab: React.FC = () => {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [updaterStatus, setUpdaterStatus] = useState<AppUpdaterStatus | null>(null);
   const [updaterActionError, setUpdaterActionError] = useState('');
@@ -198,7 +194,7 @@ const GeneralTab: React.FC = () => {
       const status = await window.electron.appUpdaterCheckForUpdates();
       setUpdaterStatus(status);
     } catch (error: any) {
-      setUpdaterActionError(String(error?.message || error || 'Failed to check for updates.'));
+      setUpdaterActionError(String(error?.message || error || t('settings.general.updates.failed')));
     }
   };
 
@@ -208,7 +204,7 @@ const GeneralTab: React.FC = () => {
       const status = await window.electron.appUpdaterDownloadUpdate();
       setUpdaterStatus(status);
     } catch (error: any) {
-      setUpdaterActionError(String(error?.message || error || 'Failed to download update.'));
+      setUpdaterActionError(String(error?.message || error || t('settings.general.updates.failed')));
     }
   };
 
@@ -217,10 +213,10 @@ const GeneralTab: React.FC = () => {
     try {
       const ok = await window.electron.appUpdaterQuitAndInstall();
       if (!ok) {
-        setUpdaterActionError('Update is not ready to install yet.');
+        setUpdaterActionError(t('settings.general.updates.error'));
       }
     } catch (error: any) {
-      setUpdaterActionError(String(error?.message || error || 'Failed to restart for update.'));
+      setUpdaterActionError(String(error?.message || error || t('settings.general.updates.failed')));
     }
   };
 
@@ -231,7 +227,7 @@ const GeneralTab: React.FC = () => {
   const updaterAction = useMemo(() => {
     if (updaterState === 'downloaded') {
       return {
-        label: 'Restart to Update',
+        label: t('settings.general.updates.restart'),
         onClick: handleRestartToInstall,
         icon: RotateCcw,
         disabled: !updaterSupported,
@@ -241,7 +237,9 @@ const GeneralTab: React.FC = () => {
     }
     if (updaterState === 'available' || updaterState === 'downloading') {
       return {
-        label: updaterState === 'downloading' ? 'Downloading Update...' : 'Download Update',
+        label: updaterState === 'downloading'
+          ? t('settings.general.updates.downloadingButton')
+          : t('settings.general.updates.download'),
         onClick: handleDownloadUpdate,
         icon: Download,
         disabled: !updaterSupported || updaterState === 'downloading',
@@ -250,36 +248,37 @@ const GeneralTab: React.FC = () => {
       };
     }
     return {
-      label: 'Check for Updates',
+      label: t('settings.general.updates.check'),
       onClick: handleCheckForUpdates,
       icon: RefreshCw,
       disabled: !updaterSupported || updaterState === 'checking',
       className:
         'border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] text-[var(--text-primary)] hover:border-[var(--ui-segment-border)] hover:bg-[var(--ui-segment-hover-bg)]',
     };
-  }, [handleCheckForUpdates, handleDownloadUpdate, handleRestartToInstall, updaterState, updaterSupported]);
+  }, [handleCheckForUpdates, handleDownloadUpdate, handleRestartToInstall, t, updaterState, updaterSupported]);
   const updaterPrimaryMessage = useMemo(() => {
-    if (!updaterStatus) return 'Check for and install packaged-app updates.';
-    if (updaterStatus.message) return updaterStatus.message;
+    if (!updaterStatus) return t('settings.general.updates.defaultMessage');
     switch (updaterStatus.state) {
       case 'unsupported':
-        return 'Updates are only available in packaged builds.';
+        return t('settings.general.updates.unsupported');
       case 'checking':
-        return 'Checking for updates...';
+        return t('settings.general.updates.checking');
       case 'available':
-        return `Update v${updaterStatus.latestVersion || 'latest'} is available.`;
+        return t('settings.general.updates.available', {
+          version: updaterStatus.latestVersion || 'latest',
+        });
       case 'not-available':
-        return 'You are already on the latest version.';
+        return t('settings.general.updates.notAvailable');
       case 'downloading':
-        return 'Downloading update...';
+        return t('settings.general.updates.downloading');
       case 'downloaded':
-        return 'Update downloaded. Restart to install.';
+        return t('settings.general.updates.downloaded');
       case 'error':
-        return 'Could not complete the update action.';
+        return t('settings.general.updates.error');
       default:
-        return 'Check for and install packaged-app updates.';
+        return updaterStatus.message || t('settings.general.updates.defaultMessage');
     }
-  }, [updaterStatus]);
+  }, [t, updaterStatus]);
   const UpdaterActionIcon = updaterAction.icon;
 
   const handleThemePreferenceChange = (nextTheme: ThemePreference) => {
@@ -364,7 +363,7 @@ const GeneralTab: React.FC = () => {
   };
 
   if (!settings) {
-    return <div className="p-6 text-[var(--text-muted)] text-[0.75rem]">Loading settings...</div>;
+    return <div className="p-6 text-[var(--text-muted)] text-[0.75rem]">{t('settings.general.loading')}</div>;
   }
 
   const selectedFontSize = settings.fontSize || getDefaultAppFontSize();
@@ -380,27 +379,27 @@ const GeneralTab: React.FC = () => {
 
   return (
     <div className="w-full max-w-[980px] mx-auto space-y-3">
-      <h2 className="text-[0.9375rem] font-semibold text-[var(--text-primary)]">General</h2>
+      <h2 className="text-[0.9375rem] font-semibold text-[var(--text-primary)]">{t('settings.general.title')}</h2>
 
       <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
         <SettingsRow
           icon={<Keyboard className="w-4 h-4" />}
-          title="Launcher Shortcut"
-          description="Set the global shortcut to open and close SuperCmd."
+          title={t('settings.general.launcherShortcut.title')}
+          description={t('settings.general.launcherShortcut.description')}
         >
           <div className="flex flex-wrap items-center gap-4">
             <HotkeyRecorder value={settings.globalShortcut} onChange={handleShortcutChange} large />
-            {shortcutStatus === 'success' && <span className="text-[0.75rem] text-green-400">Shortcut updated</span>}
+            {shortcutStatus === 'success' && <span className="text-[0.75rem] text-green-400">{t('settings.general.launcherShortcut.updated')}</span>}
             {shortcutStatus === 'error' && (
-              <span className="text-[0.75rem] text-red-400">Failed. Shortcut may be used by another app.</span>
+              <span className="text-[0.75rem] text-red-400">{t('settings.general.launcherShortcut.failed')}</span>
             )}
           </div>
         </SettingsRow>
 
         <SettingsRow
           icon={<Power className="w-4 h-4" />}
-          title="Start at Login"
-          description="Automatically launch SuperCmd when you log in."
+          title={t('settings.general.startAtLogin.title')}
+          description={t('settings.general.startAtLogin.description')}
         >
           <label className="inline-flex items-center gap-2.5 cursor-pointer">
             <input
@@ -412,15 +411,17 @@ const GeneralTab: React.FC = () => {
               className="settings-checkbox"
             />
             <span className="text-[0.75rem] text-[var(--text-secondary)]">
-              {settings.openAtLogin ? 'Enabled' : 'Disabled'}
+              {settings.openAtLogin
+                ? t('settings.general.startAtLogin.enabled')
+                : t('settings.general.startAtLogin.disabled')}
             </span>
           </label>
         </SettingsRow>
 
         <SettingsRow
           icon={<Type className="w-4 h-4" />}
-          title="Font Size"
-          description="Scale text size across the app."
+          title={t('settings.general.fontSize.title')}
+          description={t('settings.general.fontSize.description')}
         >
           <div className="inline-flex items-center gap-0.5 rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] p-0.5">
             {FONT_SIZE_OPTIONS.map((option) => {
@@ -436,7 +437,7 @@ const GeneralTab: React.FC = () => {
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)]'
                   }`}
                 >
-                  {option.label}
+                  {t(`settings.general.fontSize.${option}`)}
                 </button>
               );
             })}
@@ -445,14 +446,14 @@ const GeneralTab: React.FC = () => {
 
         <SettingsRow
           icon={<SunMoon className="w-4 h-4" />}
-          title="Appearance"
-          description="Choose Light, Dark, or follow your system preference."
+          title={t('settings.general.appearance.title')}
+          description={t('settings.general.appearance.description')}
         >
           <div className="inline-flex items-center gap-0.5 rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] p-0.5">
             {([
-              { id: 'light', label: 'Light', icon: <Sun className="w-3.5 h-3.5" /> },
-              { id: 'system', label: 'System', icon: <SunMoon className="w-3.5 h-3.5" /> },
-              { id: 'dark', label: 'Dark', icon: <Moon className="w-3.5 h-3.5" /> },
+              { id: 'light', label: t('settings.general.appearance.light'), icon: <Sun className="w-3.5 h-3.5" /> },
+              { id: 'system', label: t('settings.general.appearance.system'), icon: <SunMoon className="w-3.5 h-3.5" /> },
+              { id: 'dark', label: t('settings.general.appearance.dark'), icon: <Moon className="w-3.5 h-3.5" /> },
             ] as Array<{ id: ThemePreference; label: string; icon: React.ReactNode }>).map((option) => {
               const active = themePreference === option.id;
               return (
@@ -476,13 +477,13 @@ const GeneralTab: React.FC = () => {
 
         <SettingsRow
           icon={<Sparkles className="w-4 h-4" />}
-          title="Visual Style"
-          description="Use Default look or enable a glassy macOS Tahoe-inspired style."
+          title={t('settings.general.visualStyle.title')}
+          description={t('settings.general.visualStyle.description')}
         >
           <div className="inline-flex items-center gap-0.5 rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] p-0.5">
             {([
-              { id: 'default', label: 'Default' },
-              { id: 'glassy', label: 'Glassy' },
+              { id: 'default', label: t('settings.general.visualStyle.default') },
+              { id: 'glassy', label: t('settings.general.visualStyle.glassy') },
             ] as Array<{ id: UiStylePreference; label: string }>).map((option) => {
               const active = uiStyle === option.id;
               return (
@@ -505,13 +506,13 @@ const GeneralTab: React.FC = () => {
 
         <SettingsRow
           icon={<Image className="w-4 h-4" />}
-          title="Launcher Background Image"
-          description="Show a softly blurred, low-opacity image behind the launcher so it reads like a hint, not a full wallpaper."
+          title={t('settings.general.background.title')}
+          description={t('settings.general.background.description')}
         >
           <div className="w-full flex flex-col items-start gap-3">
             {!launcherBackgroundFileName ? (
               <p className="text-[0.75rem] text-[var(--text-subtle)]">
-                No image selected. The launcher will keep using its current background.
+                {t('settings.general.background.empty')}
               </p>
             ) : null}
 
@@ -523,7 +524,9 @@ const GeneralTab: React.FC = () => {
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] text-[0.75rem] font-semibold text-[var(--text-primary)] hover:border-[var(--ui-segment-border)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
                 <Image className="w-3.5 h-3.5" />
-                {launcherBackgroundFileName ? 'Change Image' : 'Choose Image'}
+                {launcherBackgroundFileName
+                  ? t('settings.general.background.change')
+                  : t('settings.general.background.choose')}
               </button>
 
               {launcherBackgroundFileName ? (
@@ -534,7 +537,7 @@ const GeneralTab: React.FC = () => {
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-[var(--ui-divider)] bg-transparent text-[0.75rem] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  Remove
+                  {t('settings.general.background.remove')}
                 </button>
               ) : null}
             </div>
@@ -553,9 +556,12 @@ const GeneralTab: React.FC = () => {
                   className="inline-flex items-center gap-1.5 text-[0.75rem] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                 >
                   <SlidersHorizontal className="w-3.5 h-3.5" />
-                  Appearance
+                  {t('settings.general.background.appearance')}
                   <span className="text-[var(--text-subtle)]">
-                    Blur {launcherBackgroundBlurPercent}% · Opacity {launcherBackgroundOpacityPercent}%
+                    {t('settings.general.background.summary', {
+                      blur: launcherBackgroundBlurPercent,
+                      opacity: launcherBackgroundOpacityPercent,
+                    })}
                   </span>
                   {launcherBackgroundControlsExpanded ? (
                     <ChevronUp className="w-3.5 h-3.5" />
@@ -567,7 +573,7 @@ const GeneralTab: React.FC = () => {
                 {launcherBackgroundControlsExpanded ? (
                   <div className="mt-2 space-y-2 rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-2.5">
                     <div className="grid grid-cols-[56px_minmax(0,1fr)_42px] items-center gap-2">
-                      <span className="text-[0.72rem] font-medium text-[var(--text-secondary)]">Blur</span>
+                      <span className="text-[0.72rem] font-medium text-[var(--text-secondary)]">{t('settings.general.background.blur')}</span>
                       <input
                         type="range"
                         min="0"
@@ -589,7 +595,7 @@ const GeneralTab: React.FC = () => {
                     </div>
 
                     <div className="grid grid-cols-[56px_minmax(0,1fr)_42px] items-center gap-2">
-                      <span className="text-[0.72rem] font-medium text-[var(--text-secondary)]">Opacity</span>
+                      <span className="text-[0.72rem] font-medium text-[var(--text-secondary)]">{t('settings.general.background.opacity')}</span>
                       <input
                         type="range"
                         min="0"
@@ -624,15 +630,15 @@ const GeneralTab: React.FC = () => {
                 className="settings-checkbox"
                 disabled={!launcherBackgroundFileName}
               />
-              Use this image in extension and core launcher views too
+              {t('settings.general.background.useEverywhere')}
             </label>
           </div>
         </SettingsRow>
 
         <SettingsRow
           icon={<RefreshCw className={`w-4 h-4 ${updaterState === 'checking' ? 'animate-spin' : ''}`} />}
-          title="App Updates"
-          description="Check for and install packaged-app updates."
+          title={t('settings.general.updates.title')}
+          description={t('settings.general.updates.description')}
         >
           <div className="w-full space-y-2">
             <div>
@@ -640,8 +646,10 @@ const GeneralTab: React.FC = () => {
                 {updaterPrimaryMessage}
               </p>
               <p className="text-[0.75rem] text-[var(--text-subtle)] mt-0.5 leading-tight">
-                Current version: v{currentVersion}
-                {updaterStatus?.latestVersion ? ` · Latest: v${updaterStatus.latestVersion}` : ''}
+                {t('settings.general.updates.currentVersion', { version: currentVersion })}
+                {updaterStatus?.latestVersion
+                  ? ` · ${t('settings.general.updates.latestVersion', { version: updaterStatus.latestVersion })}`
+                  : ''}
               </p>
             </div>
 
@@ -654,14 +662,18 @@ const GeneralTab: React.FC = () => {
                   />
                 </div>
                 <p className="mt-0.5 text-[0.75rem] text-[var(--text-subtle)]">
-                  {updaterProgress.toFixed(0)}% · {formatBytes(updaterStatus?.transferredBytes)} / {formatBytes(updaterStatus?.totalBytes)}
+                  {t('settings.general.updates.progress', {
+                    progress: updaterProgress.toFixed(0),
+                    transferred: formatBytes(updaterStatus?.transferredBytes),
+                    total: formatBytes(updaterStatus?.totalBytes),
+                  })}
                 </p>
               </div>
             )}
 
             {(updaterActionError || updaterState === 'error') && (
               <p className="text-[0.75rem] text-red-400">
-                {updaterActionError || updaterStatus?.message || 'Update failed.'}
+                {updaterActionError || updaterStatus?.message || t('settings.general.updates.failed')}
               </p>
             )}
 
@@ -689,12 +701,12 @@ const GeneralTab: React.FC = () => {
 
         <SettingsRow
           icon={<Info className="w-4 h-4" />}
-          title="About"
-          description="Version information."
+          title={t('settings.general.about.title')}
+          description={t('settings.general.about.description')}
           withBorder={false}
         >
           <p className="text-[0.8125rem] font-semibold text-[var(--text-primary)] leading-snug">
-            SuperCmd v{currentVersion}
+            {t('settings.general.about.version', { version: currentVersion })}
           </p>
         </SettingsRow>
       </div>

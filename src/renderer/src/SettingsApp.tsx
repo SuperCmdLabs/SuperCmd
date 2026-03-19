@@ -14,30 +14,27 @@ import { applyAppFontSize, getDefaultAppFontSize } from './utils/font-size';
 import { applyBaseColor } from './utils/base-color';
 import { applyUiStyle } from './utils/ui-style';
 import AdvancedTab from './settings/AdvancedTab';
+import { useI18n } from './i18n';
 
 type Tab = 'general' | 'ai' | 'extensions' | 'advanced';
 type SettingsTarget = { extensionName?: string; commandName?: string };
 type SettingsNavigationPayload = { tab: Tab; target?: SettingsTarget };
 
-const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+const tabDefinitions: { id: Tab; icon: React.ReactNode }[] = [
   {
     id: 'general',
-    label: 'General',
     icon: <Settings className="w-4 h-4" />,
   },
   {
     id: 'ai',
-    label: 'AI',
     icon: <Brain className="w-4 h-4" />,
   },
   {
     id: 'extensions',
-    label: 'Extensions',
     icon: <Puzzle className="w-4 h-4" />,
   },
   {
     id: 'advanced',
-    label: 'Advanced',
     icon: <SlidersHorizontal className="w-4 h-4" />,
   },
 ];
@@ -90,11 +87,18 @@ function getInitialRoute(): SettingsNavigationPayload {
 }
 
 const SettingsApp: React.FC = () => {
+  const { t } = useI18n();
   const initialRoute = getInitialRoute();
   const [activeTab, setActiveTab] = useState<Tab>(initialRoute.tab);
   const [extensionFocusTarget, setExtensionFocusTarget] = useState<SettingsTarget | null>(
     initialRoute.target || null
   );
+  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'general', label: t('settings.tabs.general'), icon: tabDefinitions[0].icon },
+    { id: 'ai', label: t('settings.tabs.ai'), icon: tabDefinitions[1].icon },
+    { id: 'extensions', label: t('settings.tabs.extensions'), icon: tabDefinitions[2].icon },
+    { id: 'advanced', label: t('settings.tabs.advanced'), icon: tabDefinitions[3].icon },
+  ];
 
   useEffect(() => {
     (window as any).electron?.onSettingsTabChanged?.((rawPayload: any) => {
@@ -144,7 +148,7 @@ const SettingsApp: React.FC = () => {
         <div className="relative flex items-center justify-center">
           <div className="absolute left-0 text-[12px] font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
             <img src={supercmdLogo} alt="" className="w-3.5 h-3.5 object-contain" draggable={false} />
-            SuperCmd Settings
+            {t('settings.title')}
           </div>
           <div className="inline-flex items-stretch overflow-hidden rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)]">
             {tabs.map((tab) => (

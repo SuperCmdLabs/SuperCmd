@@ -30,6 +30,7 @@ import type {
   ExtensionPreferenceSchema,
   InstalledExtensionSettingsSchema,
 } from '../../types/electron';
+import { useI18n } from '../i18n';
 
 type SelectedTarget = { extName: string; cmdName?: string };
 type SettingsFocusTarget = { extensionName?: string; commandName?: string };
@@ -101,6 +102,7 @@ const ExtensionsTab: React.FC<{
   focusTarget = null,
   onFocusTargetHandled,
 }) => {
+  const { t } = useI18n();
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [schemas, setSchemas] = useState<InstalledExtensionSettingsSchema[]>([]);
@@ -273,8 +275,8 @@ const ExtensionsTab: React.FC<{
     if (systemCommands.length > 0) {
       byExt.set(SUPERCMD_EXTENSION_NAME, {
         extName: SUPERCMD_EXTENSION_NAME,
-        title: 'SuperCmd',
-        description: 'Built-in SuperCmd commands',
+        title: t('settings.extensions.builtIn.superCmd.title'),
+        description: t('settings.extensions.builtIn.superCmd.description'),
         owner: 'supercmd',
         iconDataUrl: undefined,
         preferences: [],
@@ -294,8 +296,8 @@ const ExtensionsTab: React.FC<{
     if (scriptCommands.length > 0) {
       byExt.set(SCRIPT_COMMANDS_EXTENSION_NAME, {
         extName: SCRIPT_COMMANDS_EXTENSION_NAME,
-        title: 'Script Commands',
-        description: 'Custom and Raycast-compatible script commands',
+        title: t('settings.extensions.builtIn.scriptCommands.title'),
+        description: t('settings.extensions.builtIn.scriptCommands.description'),
         owner: 'supercmd',
         iconDataUrl: undefined,
         preferences: [],
@@ -319,15 +321,15 @@ const ExtensionsTab: React.FC<{
       const fallbackIcon = installedApplications.find((cmd) => Boolean(cmd.iconDataUrl))?.iconDataUrl;
       byExt.set(INSTALLED_APPLICATIONS_NAME, {
         extName: INSTALLED_APPLICATIONS_NAME,
-        title: 'Applications',
-        description: 'Installed macOS applications with launch and hotkey support.',
+        title: t('settings.extensions.builtIn.applications.title'),
+        description: t('settings.extensions.builtIn.applications.description'),
         owner: 'supercmd',
         iconDataUrl: finderIcon || fallbackIcon,
         preferences: [],
         commands: installedApplications.map((cmd) => ({
           name: cmd.id,
           title: cmd.title,
-          description: cmd.subtitle || 'Application',
+          description: cmd.subtitle || t('settings.extensions.types.application'),
           mode: 'no-view',
           interval: cmd.interval,
           disabledByDefault: Boolean(cmd.disabledByDefault),
@@ -342,15 +344,15 @@ const ExtensionsTab: React.FC<{
     if (systemSettingsCommands.length > 0) {
       byExt.set(SYSTEM_SETTINGS_NAME, {
         extName: SYSTEM_SETTINGS_NAME,
-        title: 'System Settings',
-        description: 'macOS settings panes with launch and hotkey support.',
+        title: t('settings.extensions.builtIn.systemSettings.title'),
+        description: t('settings.extensions.builtIn.systemSettings.description'),
         owner: 'supercmd',
         iconDataUrl: systemSettingsCommands.find((cmd) => Boolean(cmd.iconDataUrl))?.iconDataUrl,
         preferences: [],
         commands: systemSettingsCommands.map((cmd) => ({
           name: cmd.id,
           title: cmd.title,
-          description: cmd.subtitle || 'System Settings pane',
+          description: cmd.subtitle || t('settings.extensions.builtIn.systemSettings.pane'),
           mode: 'no-view',
           interval: cmd.interval,
           disabledByDefault: Boolean(cmd.disabledByDefault),
@@ -541,9 +543,9 @@ const ExtensionsTab: React.FC<{
     if (!result.success) {
       const message = result.error === 'duplicate'
         ? result.conflictCommandId
-          ? `Hotkey already used by "${result.conflictCommandId}".`
-          : 'Hotkey already used by another SuperCmd command.'
-        : 'Hotkey unavailable. It may be used by macOS or another app.';
+          ? t('settings.extensions.hotkey.duplicateWithCommand', { name: result.conflictCommandId })
+          : t('settings.ai.hotkeyDuplicate')
+        : t('settings.ai.hotkeyUnavailable');
       setHotkeyStatus({ type: 'error', text: message });
       setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 3200);
       return;
@@ -555,7 +557,7 @@ const ExtensionsTab: React.FC<{
       else delete next[command.id];
       return { ...prev, commandHotkeys: next };
     });
-    setHotkeyStatus({ type: 'success', text: hotkey ? 'Hotkey updated.' : 'Hotkey removed.' });
+    setHotkeyStatus({ type: 'success', text: hotkey ? t('settings.ai.hotkeyUpdated') : t('settings.ai.hotkeyRemoved') });
     setTimeout(() => setHotkeyStatus({ type: 'idle', text: '' }), 1800);
   };
 
@@ -643,19 +645,18 @@ const ExtensionsTab: React.FC<{
     : undefined;
 
   const getSchemaTypeLabel = (extName: string): string => {
-    if (extName === SUPERCMD_EXTENSION_NAME) return 'Built-in';
-    if (extName === INSTALLED_APPLICATIONS_NAME) return 'Apps';
-    if (extName === SYSTEM_SETTINGS_NAME) return 'Settings';
-    if (extName === SCRIPT_COMMANDS_EXTENSION_NAME) return 'Scripts';
-    return 'Extension';
+    if (extName === SUPERCMD_EXTENSION_NAME) return t('settings.extensions.types.builtIn');
+    if (extName === INSTALLED_APPLICATIONS_NAME) return t('settings.extensions.types.apps');
+    if (extName === SYSTEM_SETTINGS_NAME) return t('settings.extensions.types.settings');
+    if (extName === SCRIPT_COMMANDS_EXTENSION_NAME) return t('settings.extensions.types.scripts');
+    return t('settings.extensions.types.extension');
   };
 
   const getModeTypeLabel = (mode: string, command?: CommandInfo): string => {
-    if (command?.category === 'app') return 'Application';
-    if (command?.category === 'settings') return 'Settings';
-    if (mode === 'menu-bar') return 'Menu Bar C...';
-    if (mode === 'no-view') return 'Command';
-    return 'Command';
+    if (command?.category === 'app') return t('settings.extensions.types.application');
+    if (command?.category === 'settings') return t('settings.extensions.types.settings');
+    if (mode === 'menu-bar') return t('settings.extensions.types.menuBarCommand');
+    return t('settings.extensions.types.command');
   };
 
   const toggleExtensionExpanded = (extName: string) => {
@@ -713,16 +714,25 @@ const ExtensionsTab: React.FC<{
       try {
         const success = await window.electron.uninstallExtension(extName);
         if (success) {
-          setExtensionActionStatus({ type: 'success', text: `Uninstalled "${extensionTitle}".` });
+          setExtensionActionStatus({
+            type: 'success',
+            text: t('settings.extensions.uninstall.success', { name: extensionTitle }),
+          });
           setTimeout(() => setExtensionActionStatus({ type: 'idle', text: '' }), 2200);
           await loadData();
         } else {
-          setExtensionActionStatus({ type: 'error', text: `Failed to uninstall "${extensionTitle}".` });
+          setExtensionActionStatus({
+            type: 'error',
+            text: t('settings.extensions.uninstall.failed', { name: extensionTitle }),
+          });
           setTimeout(() => setExtensionActionStatus({ type: 'idle', text: '' }), 3200);
         }
       } catch (error) {
         console.error('Failed to uninstall extension:', error);
-        setExtensionActionStatus({ type: 'error', text: `Failed to uninstall "${extensionTitle}".` });
+        setExtensionActionStatus({
+          type: 'error',
+          text: t('settings.extensions.uninstall.failed', { name: extensionTitle }),
+        });
         setTimeout(() => setExtensionActionStatus({ type: 'idle', text: '' }), 3200);
       } finally {
         setBusyUninstallExtName(null);
@@ -755,18 +765,21 @@ const ExtensionsTab: React.FC<{
       ? settings?.customExtensionFolders
       : [];
     if (existing.includes(pickedPath)) {
-      setFolderStatus({ type: 'error', text: 'Folder already added.' });
+      setFolderStatus({ type: 'error', text: t('settings.extensions.folder.duplicate') });
       setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2200);
       return;
     }
     setFolderBusy(true);
     try {
       await updateCustomExtensionFolders([...existing, pickedPath]);
-      setFolderStatus({ type: 'success', text: 'Extension folder added.' });
+      setFolderStatus({ type: 'success', text: t('settings.extensions.folder.added') });
       setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 1800);
     } catch (error) {
       console.error('Failed to add custom extension folder:', error);
-      setFolderStatus({ type: 'error', text: 'Failed to add extension folder.' });
+      setFolderStatus({
+        type: 'error',
+        text: t('settings.extensions.folder.failed', { action: t('common.add').toLowerCase() }),
+      });
       setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2800);
     } finally {
       setFolderBusy(false);
@@ -782,11 +795,14 @@ const ExtensionsTab: React.FC<{
       setFolderBusy(true);
       try {
         await updateCustomExtensionFolders(next);
-        setFolderStatus({ type: 'success', text: 'Extension folder removed.' });
+        setFolderStatus({ type: 'success', text: t('settings.extensions.folder.removed') });
         setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 1800);
       } catch (error) {
         console.error('Failed to remove custom extension folder:', error);
-        setFolderStatus({ type: 'error', text: 'Failed to remove extension folder.' });
+        setFolderStatus({
+          type: 'error',
+          text: t('settings.extensions.folder.failed', { action: t('common.remove').toLowerCase() }),
+        });
         setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2800);
       } finally {
         setFolderBusy(false);
@@ -822,7 +838,7 @@ const ExtensionsTab: React.FC<{
   }, [extensionContextMenu, uninstallDialog, busyUninstallExtName]);
 
   if (isLoading) {
-    return <div className="text-[var(--text-muted)] text-[13px]">Loading extension settings…</div>;
+    return <div className="text-[var(--text-muted)] text-[13px]">{t('settings.extensions.loading')}</div>;
   }
 
   const customExtensionFolders = Array.isArray(settings?.customExtensionFolders)
@@ -845,7 +861,7 @@ const ExtensionsTab: React.FC<{
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search..."
+                  placeholder={t('common.search')}
                   className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-lg pl-9 pr-4 py-1.5 text-[13px] text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-[var(--ui-segment-border)] transition-colors"
                 />
               </div>
@@ -856,7 +872,7 @@ const ExtensionsTab: React.FC<{
                     activeScope === 'all' ? 'bg-[var(--ui-segment-active-bg)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                   }`}
                 >
-                  All
+                  {t('settings.extensions.search.all')}
                 </button>
                 <button
                   onClick={() => setActiveScope('commands')}
@@ -864,7 +880,7 @@ const ExtensionsTab: React.FC<{
                     activeScope === 'commands' ? 'bg-[var(--ui-segment-active-bg)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                   }`}
                 >
-                  Commands
+                  {t('settings.extensions.search.commands')}
                 </button>
               </div>
               <div className="relative" ref={topActionsMenuRef}>
@@ -873,7 +889,7 @@ const ExtensionsTab: React.FC<{
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[var(--accent-soft)] border border-[var(--accent)] text-[var(--accent)] hover:brightness-95 transition-colors whitespace-nowrap"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Install Extension</span>
+                  <span>{t('settings.extensions.installExtension')}</span>
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
                 {showTopActionsMenu ? (
@@ -894,7 +910,7 @@ const ExtensionsTab: React.FC<{
                       }}
                       className="w-full px-2.5 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors"
                     >
-                      Install from Store
+                      {t('settings.extensions.installFromStore')}
                     </button>
                     <button
                       onClick={() => {
@@ -904,7 +920,7 @@ const ExtensionsTab: React.FC<{
                       disabled={folderBusy}
                       className="w-full px-2.5 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      Add Folder
+                      {t('settings.extensions.addFolder')}
                     </button>
                     <button
                       onClick={async () => {
@@ -916,16 +932,16 @@ const ExtensionsTab: React.FC<{
                             setFolderStatus({
                               type: 'success',
                               text: result.createdSample
-                                ? 'Opened custom scripts folder with sample script.'
-                                : 'Opened custom scripts folder.',
+                                ? t('settings.extensions.scripts.opened')
+                                : t('settings.extensions.scripts.openedExisting'),
                             });
                             setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2200);
                           } else {
-                            setFolderStatus({ type: 'error', text: 'Failed to open custom scripts folder.' });
+                            setFolderStatus({ type: 'error', text: t('settings.extensions.scripts.failed') });
                             setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2800);
                           }
                         } catch {
-                          setFolderStatus({ type: 'error', text: 'Failed to open custom scripts folder.' });
+                          setFolderStatus({ type: 'error', text: t('settings.extensions.scripts.failed') });
                           setTimeout(() => setFolderStatus({ type: 'idle', text: '' }), 2800);
                         } finally {
                           setFolderBusy(false);
@@ -934,7 +950,7 @@ const ExtensionsTab: React.FC<{
                       disabled={folderBusy}
                       className="w-full px-2.5 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      Custom Script
+                      {t('settings.extensions.customScript')}
                     </button>
                   </div>
                 ) : null}
@@ -963,16 +979,16 @@ const ExtensionsTab: React.FC<{
           </div>
 
           <div className="grid grid-cols-[1fr_120px_100px_130px_82px] px-4 py-2 text-[11px] uppercase tracking-wider text-[var(--text-subtle)] border-b border-[var(--ui-divider)]">
-            <div className="pr-2 border-r border-[var(--ui-divider)]">Name</div>
-            <div className="px-2 border-r border-[var(--ui-divider)]">Type</div>
-            <div className="px-2 border-r border-[var(--ui-divider)]">Alias</div>
-            <div className="px-2 border-r border-[var(--ui-divider)]">Hotkey</div>
-            <div className="pl-2">Enabled</div>
+            <div className="pr-2 border-r border-[var(--ui-divider)]">{t('settings.extensions.columns.name')}</div>
+            <div className="px-2 border-r border-[var(--ui-divider)]">{t('settings.extensions.columns.type')}</div>
+            <div className="px-2 border-r border-[var(--ui-divider)]">{t('settings.extensions.columns.alias')}</div>
+            <div className="px-2 border-r border-[var(--ui-divider)]">{t('settings.extensions.columns.hotkey')}</div>
+            <div className="pl-2">{t('settings.extensions.columns.enabled')}</div>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-scroll custom-scrollbar" style={{ scrollbarGutter: 'stable' }}>
             {filteredSchemas.length === 0 ? (
-              <div className="px-4 py-8 text-center text-xs text-[var(--text-subtle)]">No matching extensions</div>
+              <div className="px-4 py-8 text-center text-xs text-[var(--text-subtle)]">{t('settings.extensions.noResults')}</div>
             ) : (
               filteredSchemas.map((schema) => {
                 const uninstallable = canUninstallExtension(schema.extName);
@@ -1098,7 +1114,7 @@ const ExtensionsTab: React.FC<{
                                       (e.currentTarget as HTMLInputElement).blur();
                                     }
                                   }}
-                                  placeholder="Add Alias"
+                                  placeholder={t('settings.extensions.alias.placeholder')}
                                   className="h-6 w-full min-w-0 rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2 font-mono text-[11px] text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-[var(--ui-segment-border)]"
                                 />
                               ) : currentAlias ? (
@@ -1106,7 +1122,7 @@ const ExtensionsTab: React.FC<{
                                   type="button"
                                   onClick={() => startAliasEditing(commandInfo.id)}
                                   className="inline-flex h-6 max-w-full items-center rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2 font-mono text-[11px] text-[var(--text-secondary)] hover:border-[var(--ui-segment-border)] hover:text-[var(--text-primary)] transition-colors"
-                                  title="Edit alias"
+                                  title={t('settings.extensions.alias.edit')}
                                 >
                                   <span className="truncate">{currentAlias}</span>
                                 </button>
@@ -1116,7 +1132,7 @@ const ExtensionsTab: React.FC<{
                                   onClick={() => startAliasEditing(commandInfo.id)}
                                   className="text-xs text-[var(--text-subtle)] hover:text-[var(--text-secondary)] transition-colors"
                                 >
-                                  Add Alias
+                                  {t('settings.extensions.alias.add')}
                                 </button>
                               )}
                             </div>
@@ -1143,7 +1159,7 @@ const ExtensionsTab: React.FC<{
                             </>
                           ) : (
                             <>
-                              <span className="text-xs text-[var(--text-subtle)]">Record Hotkey</span>
+                              <span className="text-xs text-[var(--text-subtle)]">{t('settings.extensions.hotkey.record')}</span>
                               <span className="text-xs text-[var(--text-subtle)]">-</span>
                             </>
                           )}
@@ -1161,13 +1177,13 @@ const ExtensionsTab: React.FC<{
           <div className="px-4 py-2 border-b border-[var(--ui-divider)]">
             <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-[var(--text-subtle)]">
               <Folder className="w-3.5 h-3.5 text-[var(--text-subtle)]" />
-              <span>Custom Folders</span>
+              <span>{t('settings.extensions.customFolders.title')}</span>
               <span className="text-[var(--text-subtle)]">({customExtensionFolders.length})</span>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5">
               {customExtensionFolders.length === 0 ? (
                 <span className="text-[11px] text-[var(--text-subtle)]">
-                  Add Folder from Install Extension
+                  {t('settings.extensions.customFolders.empty')}
                 </span>
               ) : (
                 customExtensionFolders.map((folderPath) => (
@@ -1183,7 +1199,7 @@ const ExtensionsTab: React.FC<{
                       disabled={folderBusy}
                       className="text-[11px] text-red-300/90 hover:text-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Remove
+                      {t('settings.extensions.customFolders.remove')}
                     </button>
                   </div>
                 ))
@@ -1201,7 +1217,7 @@ const ExtensionsTab: React.FC<{
           </div>
           <div className="flex-1 min-h-0 overflow-hidden">
           {!selectedSchema ? (
-            <div className="h-full flex items-center justify-center text-[13px] text-[var(--text-subtle)]">Select an extension</div>
+            <div className="h-full flex items-center justify-center text-[13px] text-[var(--text-subtle)]">{t('settings.extensions.selectExtension')}</div>
           ) : (
             <div className="h-full min-h-0 flex flex-col">
               <div className="px-4 py-3 border-b border-[var(--ui-divider)]">
@@ -1238,7 +1254,7 @@ const ExtensionsTab: React.FC<{
                         onChange={(e) => setCommandEnabled(selectedCommandInfo, e.target.checked)}
                         className="settings-checkbox"
                       />
-                      Enabled
+                      {t('settings.extensions.enabled')}
                     </label>
                     <div className="justify-self-end">
                       <HotkeyRecorder
@@ -1254,7 +1270,7 @@ const ExtensionsTab: React.FC<{
                   <div className="space-y-2">
                     <div className="text-xs text-[var(--text-muted)] flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/80 inline-block" />
-                      Logged into {selectedSchema.title}
+                      {t('settings.extensions.loggedIn', { name: selectedSchema.title })}
                     </div>
                     <button
                       type="button"
@@ -1262,13 +1278,13 @@ const ExtensionsTab: React.FC<{
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--ui-segment-hover-bg)] hover:bg-[var(--ui-segment-active-bg)] text-[var(--text-secondary)] transition-colors"
                     >
                       <LogOut className="w-3 h-3" />
-                      Logout
+                      {t('settings.extensions.logout')}
                     </button>
                   </div>
                 ) : null}
 
                 <PreferenceSection
-                  title="Extension Preferences"
+                  title={t('settings.extensions.extensionPreferences')}
                   extName={selectedSchema.extName}
                   preferences={selectedSchema.preferences}
                   values={getPreferenceValues(selectedSchema.extName)}
@@ -1278,7 +1294,7 @@ const ExtensionsTab: React.FC<{
 
                 {selectedCommandSchema ? (
                   <PreferenceSection
-                    title="Command Preferences"
+                    title={t('settings.extensions.commandPreferences')}
                     extName={selectedSchema.extName}
                     cmdName={selectedCommandSchema.name}
                     preferences={selectedCommandSchema.preferences}
@@ -1318,10 +1334,10 @@ const ExtensionsTab: React.FC<{
             </div>
 
             <div className="text-center text-[18px] font-semibold leading-tight text-[var(--text-primary)]">
-              Uninstall "{uninstallDialog.title}"?
+              {t('settings.extensions.uninstall.title', { name: uninstallDialog.title })}
             </div>
             <p className="mt-1 text-center text-[11px] leading-snug text-[var(--text-subtle)]">
-              This extension and its commands will be removed from SuperCmd.
+              {t('settings.extensions.uninstall.description')}
             </p>
 
             <div className="mt-2.5 flex items-center gap-2">
@@ -1331,7 +1347,7 @@ const ExtensionsTab: React.FC<{
                 onClick={() => setUninstallDialog(null)}
                 className="flex-1 rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                Cancel
+                {t('settings.extensions.uninstall.cancel')}
               </button>
               <button
                 type="button"
@@ -1339,7 +1355,7 @@ const ExtensionsTab: React.FC<{
                 onClick={() => void handleUninstallExtension(uninstallDialog.extName, uninstallDialog.title)}
                 className="flex-1 rounded-md border border-red-400/25 bg-red-500/10 px-2.5 py-1.5 text-[12px] font-semibold text-red-200/90 hover:bg-red-500/18 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {busyUninstallExtName ? 'Uninstalling…' : 'Uninstall'}
+                {busyUninstallExtName ? t('settings.extensions.uninstall.uninstalling') : t('settings.extensions.uninstall.confirm')}
               </button>
             </div>
           </div>
@@ -1381,7 +1397,7 @@ const ExtensionsTab: React.FC<{
               }}
               className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-red-300/90 hover:text-red-200 hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {busyUninstallExtName === extensionContextMenu.extName ? 'Uninstalling…' : 'Uninstall'}
+              {busyUninstallExtName === extensionContextMenu.extName ? t('settings.extensions.uninstall.uninstalling') : t('settings.extensions.uninstall.confirm')}
             </button>
           </div>
         </div>
@@ -1399,11 +1415,13 @@ const PreferenceSection: React.FC<{
   setPreferenceValue: (extName: string, pref: ExtensionPreferenceSchema, value: any, cmdName?: string) => void;
   pickPathForPreference: (extName: string, pref: ExtensionPreferenceSchema, cmdName?: string) => Promise<void>;
 }> = ({ title, extName, cmdName, preferences, values, setPreferenceValue, pickPathForPreference }) => {
+  const { t } = useI18n();
+
   if (!preferences || preferences.length === 0) {
     return (
       <div className="space-y-2">
         <div className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">{title}</div>
-        <div className="text-xs text-[var(--text-subtle)]">No preferences</div>
+        <div className="text-xs text-[var(--text-subtle)]">{t('settings.extensions.noPreferences')}</div>
       </div>
     );
   }
@@ -1425,10 +1443,10 @@ const PreferenceSection: React.FC<{
                 <div className="text-xs text-[var(--text-secondary)] font-medium">
                   {titleText}
                   {pref.required ? <span className="text-red-400"> *</span> : null}
-                  {missing ? <span className="text-red-300/80 ml-2">(Required)</span> : null}
+                  {missing ? <span className="text-red-300/80 ml-2">({t('common.required')})</span> : null}
                 </div>
                 <label className="inline-flex items-center gap-2 text-xs text-[var(--text-secondary)] min-w-[140px] justify-end">
-                  <span>{pref.label || 'Enabled'}</span>
+                  <span>{pref.label || t('settings.extensions.enabled')}</span>
                   <input
                     type="checkbox"
                     checked={Boolean(value)}
@@ -1442,7 +1460,7 @@ const PreferenceSection: React.FC<{
                 <label className="text-xs text-[var(--text-secondary)] font-medium">
                   {titleText}
                   {pref.required ? <span className="text-red-400"> *</span> : null}
-                  {missing ? <span className="text-red-300/80 ml-2">(Required)</span> : null}
+                  {missing ? <span className="text-red-300/80 ml-2">({t('common.required')})</span> : null}
                 </label>
                 {type === 'dropdown' ? (
                   <select
@@ -1450,7 +1468,7 @@ const PreferenceSection: React.FC<{
                     onChange={(e) => setPreferenceValue(extName, pref, e.target.value, cmdName)}
                     className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs text-[var(--text-secondary)] outline-none"
                   >
-                    <option value="">Select an option</option>
+                    <option value="">{t('settings.extensions.preferences.selectOption')}</option>
                     {(pref.data || []).map((opt) => (
                       <option key={opt?.value || opt?.title} value={opt?.value || ''}>
                         {opt?.title || opt?.value || ''}
@@ -1472,7 +1490,7 @@ const PreferenceSection: React.FC<{
                         onClick={() => pickPathForPreference(extName, pref, cmdName)}
                         className="px-2 py-1.5 text-[11px] rounded-md border border-[var(--ui-segment-border)] text-[var(--text-muted)] hover:bg-[var(--ui-segment-bg)]"
                       >
-                        Browse
+                        {t('common.browse')}
                       </button>
                     )}
                   </div>

@@ -1,0 +1,193 @@
+{
+  "common": {
+    "actions": "Действия",
+    "loading": "Загрузка...",
+    "noResults": "Нет результатов",
+    "search": "Поиск...",
+    "save": "Сохранить",
+    "cancel": "Отмена",
+    "close": "Закрыть",
+    "continue": "Продолжить",
+    "back": "Назад",
+    "remove": "Удалить",
+    "add": "Добавить",
+    "edit": "Изменить",
+    "delete": "Удалить",
+    "enable": "Включить",
+    "disable": "Отключить",
+    "enabled": "Включено",
+    "disabled": "Отключено",
+    "success": "Успешно",
+    "error": "Ошибка",
+    "warning": "Предупреждение",
+    "info": "Информация",
+    "copy": "Копировать",
+    "paste": "Вставить",
+    "cut": "Вырезать",
+    "selectAll": "Выбрать всё",
+    "undo": "Отменить",
+    "redo": "Повторить",
+    "refresh": "Обновить",
+    "reload": "Перезагрузить",
+    "apply": "Применить",
+    "reset": "Сбросить",
+    "clear": "Очистить",
+    "done": "Готово",
+    "ok": "OK",
+    "yes": "Да",
+    "no": "Нет",
+    "submit": "Отправить",
+    "browse": "Обзор",
+    "choose": "Выбрать",
+    "change": "Изменить",
+    "update": "Обновить",
+    "install": "Установить",
+    "uninstall": "Удалить",
+    "download": "Скачать",
+    "upload": "Загрузить",
+    "import": "Импорт",
+    "export": "Экспорт",
+    "open": "Открыть",
+    "create": "Создать",
+    "new": "Новый",
+    "unknown": "Неизвестно",
+    "none": "Нет",
+    "default": "По умолчанию",
+    "custom": "Пользовательский",
+    "other": "Другое",
+    "all": "Все",
+    "required": "Обязательно",
+    "optional": "Необязательно",
+    "preferences": "Параметры",
+    "settings": "Настройки",
+    "general": "Общие",
+    "advanced": "Дополнительно",
+    "about": "О программе",
+    "version": "Версия",
+    "language": "Язык",
+    "appearance": "Внешний вид",
+    "theme": "Тема",
+    "light": "Светлая",
+    "dark": "Тёмная",
+    "system": "Системная",
+    "auto": "Авто"
+  },
+  "launcher": {
+    "searchPlaceholder": "Поиск приложений, команд или запрос к AI...",
+    "status": {
+      "discoveringApps": "Поиск приложений...",
+      "noMatchingResults": "Ничего не найдено",
+      "results": "{count} результатов"
+    },
+    "aiMode": {
+      "placeholder": "Спросите AI о чём угодно...",
+      "ask": "Спросить",
+      "thinking": "Думаю...",
+      "streaming": "Поток...",
+      "response": "Ответ AI",
+      "enterToAsk": "Спросить",
+      "escToBack": "Назад"
+    },
+    "categories": {
+      "recent": "Недавние",
+      "applications": "Приложения",
+      "commands": "Команды",
+      "extensions": "Расширения",
+      "scripts": "Скрипты",
+      "settings": "Настройки",
+      "files": "Файлы",
+      "calculator": "Калькулятор",
+      "quickLinks": "Быстрые ссылки"
+    },
+    "actions": {
+      "open": "Открыть",
+      "openCommand": "Открыть команду",
+      "openFile": "Открыть файл",
+      "execute": "Выполнить",
+      "run": "Запустить",
+      "copy": "Копировать",
+      "copyPath": "Копировать путь",
+      "copyToClipboard": "Копировать в буфер обмена",
+      "paste": "Вставить",
+      "showDetails": "Показать детали",
+      "showInFinder": "Показать в Finder",
+      "revealInFinder": "Открыть в Finder",
+      "getInfo": "Свойства",
+      "quit": "Выйти",
+      "forceQuit": "Завершить принудительно",
+      "hide": "Скрыть",
+      "show": "Показать",
+      "preferences": "Настройки",
+      "actions": "Действия",
+      "pinCommand": "Закрепить команду",
+      "unpinCommand": "Открепить команду",
+      "pinExtension": "Закрепить расширение",
+      "unpinExtension": "Открепить расширение",
+      "disableCommand": "Отключить команду",
+      "moveUp": "Переместить вверх",
+      "moveDown": "Переместить вниз"
+    },
+    "empty": {
+      "noResults": "Ничего не найдено",
+      "startTyping": "Начните вводить для поиска...",
+      "allCommands": "Здесь появятся все ваши команды"
+    },
+    "footer": {
+      "actions": "Действия",
+      "select": "Выбрать",
+      "back": "Назад"
+    },
+    "sections": {
+      "selectedText": "Выделенный текст",
+      "pinned": "Закреплённое"
+    },
+    "calculator": {
+      "pressEnterToCopy": "Нажмите Enter, чтобы скопировать",
+      "clickToCopy": "Нажмите, чтобы скопировать",
+      "copy": "Копировать"
+    },
+    "badges": {
+      "application": "Приложение",
+      "extension": "Расширение",
+      "script": "Скрипт",
+      "settings": "Настройки",
+      "quickLink": "Быстрая ссылка"
+    }
+  },
+  "settings": {
+    "title": "Настройки SuperCmd",
+    "tabs": {
+      "general": "Общие",
+      "ai": "AI",
+      "extensions": "Расширения",
+      "advanced": "Дополнительно"
+    },
+    "general": {
+      "title": "Общие",
+      "loading": "Загрузка общих настроек...",
+      "language": {
+        "title": "Язык",
+        "description": "Выберите язык интерфейса или используйте системную локаль.",
+        "system": "Как в системе",
+        "en": "English",
+        "zh-Hans": "Упрощённый китайский",
+        "zh-Hant": "Традиционный китайский",
+        "ja": "Японский",
+        "ko": "Корейский",
+        "fr": "Французский",
+        "de": "Немецкий",
+        "es": "Испанский",
+        "ru": "Русский"
+      }
+    },
+    "advanced": {
+      "title": "Дополнительно",
+      "loading": "Загрузка дополнительных настроек...",
+      "debugMode": {
+        "title": "Режим отладки",
+        "description": "Показывать подробные логи, если расширения не загружаются или не собираются.",
+        "label": "Включить режим отладки"
+      }
+    }
+  }
+}
