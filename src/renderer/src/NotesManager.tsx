@@ -14,7 +14,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ArrowLeft, Plus, FileText, Pin, PinOff,
+  Plus, FileText, Pin, PinOff,
   Copy, Trash2, Files, Download, Upload,
   Bold, Italic, Strikethrough, Underline, Code,
   Link, Quote, ListOrdered, List, ListChecks,
@@ -440,6 +440,35 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
     historyIdxRef.current = 0;
   }, []);
 
+  // Auto-focus on mount: empty note → focus first line; non-empty → add new line at end and focus it
+  useEffect(() => {
+    const hasContent = blocksRef.current.some(b => b.content.trim() !== '' || b.type === 'divider');
+    if (hasContent) {
+      // Add a new empty paragraph at the end and focus it
+      const newBlock: Block = { id: genBlockId(), type: 'paragraph', content: '' };
+      setBlocks(prev => [...prev, newBlock]);
+      setTimeout(() => {
+        const el = blockElsRef.current.get(newBlock.id);
+        if (el) {
+          el.focus();
+          setCursorPosition(el, 0);
+        }
+      }, 50);
+    } else {
+      // Empty note — focus the first block
+      const firstBlock = blocksRef.current[0];
+      if (firstBlock) {
+        setTimeout(() => {
+          const el = blockElsRef.current.get(firstBlock.id);
+          if (el) {
+            el.focus();
+            setCursorPosition(el, 0);
+          }
+        }, 50);
+      }
+    }
+  }, []);
+
   const undo = useCallback(() => {
     if (historyIdxRef.current <= 0) return;
     if (historyTimerRef.current) { clearTimeout(historyTimerRef.current); historyTimerRef.current = null; }
@@ -766,14 +795,34 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
 
   // ─── Render ──────────────────────────────────────────────────
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto custom-scrollbar px-3 py-3">
+    <div
+      ref={containerRef}
+      className="flex-1 overflow-y-auto custom-scrollbar px-3 py-3 cursor-text"
+      onClick={(e) => {
+        // Clicking empty space below blocks → focus last block or create one
+        const target = e.target as HTMLElement;
+        if (target === containerRef.current) {
+          const lastBlock = blocksRef.current[blocksRef.current.length - 1];
+          if (lastBlock && lastBlock.content === '' && lastBlock.type === 'paragraph') {
+            // Last block is already an empty paragraph — just focus it
+            const el = blockElsRef.current.get(lastBlock.id);
+            if (el) { el.focus(); setCursorPosition(el, 0); }
+          } else {
+            // Add a new empty paragraph and focus it
+            const newBlock: Block = { id: genBlockId(), type: 'paragraph', content: '' };
+            setBlocks(prev => [...prev, newBlock]);
+            pendingFocusRef.current = { id: newBlock.id, offset: 0 };
+          }
+        }
+      }}
+    >
       {blocks.map((block, idx) => (
         <div key={block.id} className="relative group">
           {dropIdx === idx && dragIdx !== null && dragIdx !== idx && (
             <div className="absolute top-0 left-6 right-2 h-[2px] rounded-full" style={{ background: accentColor }} />
           )}
           <div
-            className={`flex items-start gap-1 rounded-md transition-all ${dragIdx === idx ? 'opacity-40' : ''} ${focusedBlockId === block.id ? 'bg-[var(--accent)]/[0.06] ring-1 ring-[var(--accent)]/20' : ''}`}
+            className={`flex items-start gap-1 rounded-md transition-all ${dragIdx === idx ? 'opacity-40' : ''}`}
             onDragOver={(e) => handleDragOver(e, idx)}
             onDrop={(e) => handleDrop(e, idx)}
           >
@@ -781,7 +830,9 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
               draggable
               onDragStart={(e) => handleDragStart(e, idx)}
               onDragEnd={handleDragEnd}
-              className="flex-shrink-0 w-5 h-6 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-30 hover:!opacity-60 transition-opacity mt-0.5"
+              className={`flex-shrink-0 w-5 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-30 hover:!opacity-60 transition-opacity ${
+                block.type === 'h1' ? 'h-[36px]' : block.type === 'h2' ? 'h-[28px]' : block.type === 'h3' ? 'h-[23px]' : 'h-[21px]'
+              }`}
             >
               <GripVertical size={12} />
             </div>
@@ -887,7 +938,7 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
                       block.type === 'code' && 'text-[12px] font-mono text-[var(--text-secondary)] bg-[var(--input-bg)] rounded px-2 py-1 whitespace-pre',
                       focusedBlockId !== block.id && block.content.includes('$') && block.type !== 'code' && 'invisible',
                     ].filter(Boolean).join(' ')}
-                    data-placeholder={block.type === 'h1' ? 'Heading 1' : block.type === 'h2' ? 'Heading 2' : block.type === 'h3' ? 'Heading 3' : block.type === 'paragraph' ? "Type '/' for commands..." : ''}
+                    data-placeholder={focusedBlockId === block.id ? (block.type === 'h1' ? 'Heading 1' : block.type === 'h2' ? 'Heading 2' : block.type === 'h3' ? 'Heading 3' : block.type === 'paragraph' ? "Type '/' for commands..." : '') : ''}
                     style={{ '--placeholder-color': 'var(--text-disabled)' } as any}
                   />
                   {focusedBlockId !== block.id && block.content.includes('$') && block.type !== 'code' && (
@@ -1142,13 +1193,7 @@ const EditorView: React.FC<EditorViewProps> = ({
     <div className="flex flex-col h-full relative">
       {/* Title bar */}
       <div className="flex items-center px-3 py-2 border-b border-[var(--ui-divider)]" style={{ WebkitAppRegion: 'drag' } as any}>
-        <button
-          onClick={onBack}
-          className="sc-back-button flex-shrink-0 p-0.5 text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors"
-          style={{ WebkitAppRegion: 'no-drag' } as any}
-        >
-          <ArrowLeft size={16} />
-        </button>
+        <div className="flex-shrink-0 w-[68px]" />
         <div className="flex-1 flex items-center justify-center gap-1.5 truncate mx-2">
           {icon && <span className="text-[13px]">{icon}</span>}
           <span className="text-[var(--text-muted)] text-[13px] font-medium truncate">{title}</span>
