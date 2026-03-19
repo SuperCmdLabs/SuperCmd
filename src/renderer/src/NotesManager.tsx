@@ -1132,8 +1132,8 @@ const ShortcutTooltip: React.FC<{
 }> = ({ label, shortcut, visible, position = 'top' }) => {
   if (!visible) return null;
   const posClass = position === 'top'
-    ? 'absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5'
-    : 'absolute top-full left-1/2 -translate-x-1/2 mt-1.5';
+    ? 'absolute bottom-full right-0 mb-1.5'
+    : 'absolute top-full right-0 mt-1.5';
   return (
     <div className={`${posClass} pointer-events-none z-50`}>
       <div className="flex items-center gap-1.5 px-2 py-1 bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-md shadow-xl whitespace-nowrap">
@@ -1703,7 +1703,7 @@ const BrowseOverlay: React.FC<BrowseOverlayProps> = ({ notes, currentNoteId, onS
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
       <div className="absolute inset-0" onClick={onClose} />
-      <div className={`relative z-10 w-full max-w-[360px] mx-4 overflow-hidden ${getMenuPanelStyle().className}`}
+      <div className="relative z-10 w-full max-w-[360px] mx-4 overflow-hidden rounded-lg shadow-2xl"
         style={getMenuPanelStyle().style}>
         <div className="px-3 py-2.5 border-b border-[var(--ui-divider)]">
           <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)}
@@ -1720,7 +1720,8 @@ const BrowseOverlay: React.FC<BrowseOverlayProps> = ({ notes, currentNoteId, onS
             const isSelected = idx === selectedIdx;
             return (
               <div key={note.id} data-browse-item onClick={() => onSelect(note)} onMouseEnter={() => setSelectedIdx(idx)}
-                className={`group px-3 py-2 cursor-pointer transition-colors ${isSelected ? 'bg-[var(--accent)]/8' : 'hover:bg-[var(--bg-secondary)]/50'}`}>
+                className="group px-3 py-2 cursor-pointer transition-colors"
+                style={isSelected ? { background: 'rgba(255,255,255,0.08)' } : undefined}>
                 <div className="flex items-center gap-2">
                   {note.icon && <span className="text-[12px] flex-shrink-0">{note.icon}</span>}
                   {note.pinned && <Pin size={10} className="text-[var(--text-subtle)] flex-shrink-0" />}
