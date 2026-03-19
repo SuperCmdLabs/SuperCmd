@@ -18,8 +18,8 @@ import {
   Copy, Trash2, Files, Download, Upload,
   Bold, Italic, Strikethrough, Underline, Code,
   Link, Quote, ListOrdered, List, ListChecks,
-  SquareCode, Command, LayoutList, Search,
-  Type, ArrowUp, ArrowDown, Link2, Info,
+  SquareCode, LayoutList, Search,
+  Type, ArrowUp, ArrowDown, Link2,
   GripVertical, Minus, X, Sigma,
 } from 'lucide-react';
 import katex from 'katex';
@@ -60,18 +60,6 @@ const THEME_ACCENT: Record<NoteTheme, string> = {
   fuchsia: '#e879f9', slate: '#94a3b8',
 };
 
-const THEME_DOTS: Array<{ id: NoteTheme; label: string; color: string }> = [
-  { id: 'default', label: 'Default', color: '#737373' },
-  { id: 'rose', label: 'Rose', color: '#fb7185' },
-  { id: 'orange', label: 'Orange', color: '#fb923c' },
-  { id: 'amber', label: 'Amber', color: '#fbbf24' },
-  { id: 'emerald', label: 'Emerald', color: '#34d399' },
-  { id: 'cyan', label: 'Cyan', color: '#22d3ee' },
-  { id: 'blue', label: 'Blue', color: '#60a5fa' },
-  { id: 'violet', label: 'Violet', color: '#a78bfa' },
-  { id: 'fuchsia', label: 'Fuchsia', color: '#e879f9' },
-  { id: 'slate', label: 'Slate', color: '#94a3b8' },
-];
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -381,6 +369,7 @@ const SlashMenu: React.FC<SlashMenuProps> = ({ position, onSelect, onClose }) =>
 
   // Adjust position after first render using actual menu size
   const [adjustedPos, setAdjustedPos] = useState(position);
+  const [menuMaxH, setMenuMaxH] = useState(400);
   useEffect(() => {
     requestAnimationFrame(() => {
       const menuEl = menuRef.current;
@@ -388,32 +377,43 @@ const SlashMenu: React.FC<SlashMenuProps> = ({ position, onSelect, onClose }) =>
       const menuWidth = 260;
       const winH = window.innerHeight;
       const winW = window.innerWidth;
+      const pad = 8;
+      const titleBarH = 40; // Keep below traffic light buttons
 
       let top = position.top;
       let left = position.left;
 
-      // position.top = rect.bottom + 4 (below the cursor line)
-      // The cursor line top ≈ position.top - 4 - ~22 (line height)
-      if (top + menuHeight > winH) {
+      // Try below cursor first
+      if (top + menuHeight > winH - pad) {
+        // Flip above: position.top is rect.bottom + 4, so cursor top ≈ position.top - 4 - 22
         const cursorTop = position.top - 4 - 22;
-        top = Math.max(8, cursorTop - menuHeight);
+        top = cursorTop - menuHeight;
       }
-      if (left + menuWidth > winW) {
-        left = Math.max(8, winW - menuWidth - 8);
-      }
+
+      // Clamp to window bounds (never overlap title bar)
+      top = Math.max(titleBarH, Math.min(top, winH - menuHeight - pad));
+      left = Math.max(pad, Math.min(left, winW - menuWidth - pad));
+
+      // If menu still doesn't fit, constrain max height
+      const availH = winH - pad * 2;
+      setMenuMaxH(Math.min(400, availH));
 
       setAdjustedPos({ top, left });
     });
   }, [position]);
 
-  const panel = getMenuPanelStyle();
-
   return createPortal(
     <div className="fixed inset-0 z-[9998]" onClick={onClose}>
       <div
         ref={menuRef}
-        className={`fixed z-[9999] w-[260px] overflow-hidden ${panel.className}`}
-        style={{ ...panel.style, top: adjustedPos.top, left: adjustedPos.left }}
+        className="fixed z-[9999] w-[260px] overflow-hidden flex flex-col rounded-lg shadow-2xl"
+        style={{
+          top: adjustedPos.top, left: adjustedPos.left, maxHeight: menuMaxH,
+          background: 'rgba(30, 30, 30, 0.85)',
+          backdropFilter: 'blur(80px) saturate(150%)',
+          WebkitBackdropFilter: 'blur(80px) saturate(150%)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
@@ -428,7 +428,7 @@ const SlashMenu: React.FC<SlashMenuProps> = ({ position, onSelect, onClose }) =>
             className="flex-1 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-disabled)] outline-none"
           />
         </div>
-        <div ref={listRef} className="max-h-[300px] overflow-y-auto py-1">
+        <div ref={listRef} className="flex-1 overflow-y-auto py-1">
           {filtered.length === 0 ? (
             <div className="px-2.5 py-3 text-center text-[11px] text-[var(--text-disabled)]">No blocks found</div>
           ) : filtered.map((cmd, idx) => (
@@ -1953,6 +1953,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ initialView }) => {
   const [showBrowse, setShowBrowse] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [showFind, setShowFind] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const [navHistory, setNavHistory] = useState<string[]>([]);
   const [navIndex, setNavIndex] = useState(-1);
@@ -2086,7 +2087,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ initialView }) => {
     a.push({ title: 'Export All Notes', icon: <Upload size={14} />, section: 'settings', execute: async () => { await window.electron.noteExport(); setShowActions(false); } });
     if (targetNote) {
       a.push({ title: 'Delete Note', icon: <Trash2 size={14} />, shortcut: ['^', 'X'], style: 'destructive', section: 'danger',
-        execute: async () => { await window.electron.noteDelete(targetNote.id); if (viewMode === 'editor') { setCurrentNote(null); setViewMode('search'); } else setSelectedIndex(i => Math.max(0, i - 1)); loadNotes(); setShowActions(false); } });
+        execute: () => { setShowActions(false); setConfirmDelete(true); } });
     }
     return a;
   }, [targetNote, viewMode, loadNotes, handleNewNote, handleDuplicate, handleTogglePin, handleExport, notes]);
@@ -2218,6 +2219,36 @@ const NotesManager: React.FC<NotesManagerProps> = ({ initialView }) => {
       )}
 
       {showActions && <ActionsOverlay actions={actions} onClose={() => setShowActions(false)} />}
+
+      {confirmDelete && targetNote && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="w-[320px] rounded-xl shadow-2xl overflow-hidden"
+            style={{ background: 'var(--card-bg)', backdropFilter: 'blur(40px)', border: '1px solid var(--border-primary)' }}>
+            <div className="px-5 pt-5 pb-3">
+              <h3 className="text-[14px] font-semibold text-[var(--text-primary)] mb-1.5">Delete Note</h3>
+              <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">
+                Are you sure you want to delete "<span className="text-[var(--text-secondary)]">{targetNote.title || 'Untitled'}</span>"? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 pb-4 pt-2">
+              <button onClick={() => setConfirmDelete(false)}
+                className="px-3 py-1.5 rounded-md text-[12px] text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-colors">
+                Cancel
+              </button>
+              <button onClick={async () => {
+                await window.electron.noteDelete(targetNote.id);
+                setConfirmDelete(false);
+                if (viewMode === 'editor') { setCurrentNote(null); window.close(); }
+                else { setSelectedIndex(i => Math.max(0, i - 1)); loadNotes(); }
+              }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] text-white bg-red-400/70 hover:bg-red-400/90 transition-colors">
+                Delete
+                <kbd className="inline-flex items-center justify-center min-w-[18px] h-[16px] px-1 rounded bg-white/15 text-[10px] font-medium">↩</kbd>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

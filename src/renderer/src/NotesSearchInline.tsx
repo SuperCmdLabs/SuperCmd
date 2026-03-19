@@ -94,6 +94,7 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [showActions, setShowActions] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const loadNotes = useCallback(async () => {
     try {
@@ -158,12 +159,18 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
     setShowActions(false);
   }, [selectedNote]);
 
-  const handleDelete = useCallback(async () => {
+  const handleDelete = useCallback(() => {
+    if (!selectedNote) return;
+    setShowActions(false);
+    setConfirmDelete(true);
+  }, [selectedNote]);
+
+  const confirmDeleteNote = useCallback(async () => {
     if (!selectedNote) return;
     await window.electron.noteDelete(selectedNote.id);
     setSelectedIndex(i => Math.max(0, i - 1));
     loadNotes();
-    setShowActions(false);
+    setConfirmDelete(false);
   }, [selectedNote, loadNotes]);
 
   // ─── Actions ─────────────────────────────────────────────────────
@@ -189,17 +196,19 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
   // Keyboard
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (confirmDelete) return; // Let confirm modal handle keys
       if (showActions) return; // Let actions overlay handle keys
       if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setShowActions(true); return; }
       if (e.key === 'n' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleNewNote(); return; }
+      if (e.key === 'x' && e.ctrlKey && selectedNote) { e.preventDefault(); handleDelete(); return; }
       if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, notes.length - 1)); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(0, i - 1)); return; }
       if (e.key === 'Enter' && selectedNote) { e.preventDefault(); handleOpenNote(selectedNote); return; }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [notes, selectedIndex, selectedNote, showActions, onClose, handleNewNote, handleOpenNote]);
+  }, [notes, selectedIndex, selectedNote, showActions, confirmDelete, onClose, handleNewNote, handleOpenNote, handleDelete]);
 
   return (
     <div className="snippet-view flex flex-col h-full">
@@ -355,6 +364,15 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
 
       {/* ─── Actions Overlay ─── */}
       {showActions && <SearchActionsOverlay actions={actions} onClose={() => setShowActions(false)} />}
+
+      {/* ─── Confirm Delete Modal ─── */}
+      {confirmDelete && selectedNote && (
+        <ConfirmDeleteModal
+          noteTitle={selectedNote.title || 'Untitled'}
+          onConfirm={confirmDeleteNote}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
   );
 };
@@ -458,6 +476,52 @@ const SearchActionsOverlay: React.FC<{ actions: Action[]; onClose: () => void }>
             </div>
           ))}
           {filtered.length === 0 && <div className="px-3 py-4 text-center text-[11px] text-[var(--text-disabled)]">No actions found</div>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Confirm Delete Modal ────────────────────────────────────────────
+
+const ConfirmDeleteModal: React.FC<{
+  noteTitle: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ noteTitle, onConfirm, onCancel }) => {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancel(); return; }
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); onConfirm(); return; }
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [onConfirm, onCancel]);
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+      <div className="w-[320px] rounded-xl shadow-2xl overflow-hidden"
+        style={{ background: 'var(--card-bg)', backdropFilter: 'blur(40px)', border: '1px solid var(--border-primary)' }}>
+        <div className="px-5 pt-5 pb-3">
+          <h3 className="text-[14px] font-semibold text-[var(--text-primary)] mb-1.5">Delete Note</h3>
+          <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">
+            Are you sure you want to delete "<span className="text-[var(--text-secondary)]">{noteTitle}</span>"? This action cannot be undone.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 pb-4 pt-2">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 rounded-md text-[12px] text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] text-white bg-red-400/70 hover:bg-red-400/90 transition-colors"
+          >
+            Delete
+            <kbd className="inline-flex items-center justify-center min-w-[18px] h-[16px] px-1 rounded bg-white/15 text-[10px] font-medium">↩</kbd>
+          </button>
         </div>
       </div>
     </div>
