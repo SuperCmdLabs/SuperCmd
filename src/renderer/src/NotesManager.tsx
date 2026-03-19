@@ -20,10 +20,8 @@ import {
   Link, Quote, ListOrdered, List, ListChecks,
   SquareCode, LayoutList, Search,
   Type, ArrowUp, ArrowDown, Link2,
-  GripVertical, Minus, X, Sigma,
+  GripVertical, Minus, X,
 } from 'lucide-react';
-import katex from 'katex';
-import 'katex/dist/katex.min.css';
 import type { Note, NoteTheme } from '../types/electron';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
 
@@ -43,7 +41,7 @@ interface Action {
   disabled?: boolean;
 }
 
-type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'bullet' | 'ordered' | 'checkbox' | 'code' | 'blockquote' | 'divider' | 'math';
+type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'bullet' | 'ordered' | 'checkbox' | 'code' | 'blockquote' | 'divider';
 
 interface Block {
   id: string;
@@ -114,39 +112,21 @@ function extractTitleFromContent(content: string): string {
   return 'Untitled';
 }
 
-// ─── KaTeX Helpers ───────────────────────────────────────────────────
-
-function renderKatex(latex: string, displayMode: boolean = false): string {
-  try {
-    return katex.renderToString(latex, { displayMode, throwOnError: false, strict: false });
-  } catch {
-    return `<span style="color:#f87171">${latex}</span>`;
-  }
-}
-
-/** Render inline markdown formatting (bold, italic, strikethrough, underline, code, links, math) to HTML */
+/** Render inline markdown formatting (bold, italic, strikethrough, underline, code, links) to HTML */
 function renderInlineFormatting(text: string): string {
   let s = text;
-  // Inline code (must be first to avoid interfering with other patterns)
   s = s.replace(/`([^`]+?)`/g, '<code style="background:var(--input-bg);padding:1px 4px;border-radius:3px;font-size:0.9em;font-family:monospace">$1</code>');
-  // Bold
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // Italic
   s = s.replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, '<em>$1</em>');
-  // Strikethrough
   s = s.replace(/~~(.+?)~~/g, '<del style="text-decoration:line-through">$1</del>');
-  // Underline
   s = s.replace(/&lt;u&gt;(.+?)&lt;\/u&gt;/g, '<span style="text-decoration:underline">$1</span>');
-  // Links [text](url)
   s = s.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" style="color:var(--accent, #60a5fa);text-decoration:underline;cursor:pointer" data-href="$2">$1</a>');
-  // Inline math
-  s = s.replace(/\$([^\$]+?)\$/g, (_match, latex) => renderKatex(latex.trim(), false));
   return s;
 }
 
 /** Check if block content has any inline formatting markers */
 function hasInlineFormatting(text: string): boolean {
-  return /\*\*.+?\*\*|(?<!\*)\*[^*]+?\*(?!\*)|~~.+?~~|<u>.+?<\/u>|`.+?`|\$.+?\$|\[.+?\]\(.+?\)/.test(text);
+  return /\*\*.+?\*\*|(?<!\*)\*[^*]+?\*(?!\*)|~~.+?~~|<u>.+?<\/u>|`.+?`|\[.+?\]\(.+?\)/.test(text);
 }
 
 // ─── Block System ────────────────────────────────────────────────────
@@ -161,13 +141,6 @@ function parseMarkdownToBlocks(md: string): Block[] {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
-    if (line.trimStart() === '$$') {
-      const mathLines: string[] = [];
-      let j = i + 1;
-      while (j < lines.length && lines[j].trimStart() !== '$$') { mathLines.push(lines[j]); j++; }
-      blocks.push({ id: genBlockId(), type: 'math', content: mathLines.join('\n') });
-      i = j + 1; continue;
-    }
     if (line.startsWith('```') || line.startsWith('~~~')) {
       const fence = line.startsWith('```') ? '```' : '~~~';
       const codeLines: string[] = [];
@@ -214,7 +187,6 @@ function serializeBlocksToMarkdown(blocks: Block[]): string {
       case 'checkbox': return `- [${b.checked ? 'x' : ' '}] ${b.content}`;
       case 'blockquote': return `> ${b.content}`;
       case 'code': return '```\n' + b.content + '\n```';
-      case 'math': return '$$\n' + b.content + '\n$$';
       case 'divider': return '---';
       default: return b.content;
     }
@@ -232,7 +204,6 @@ function detectMarkdownPrefix(text: string): { type: BlockType; content: string;
   if (/^\d+\. /.test(text)) { const m = text.match(/^\d+\. /); return m ? { type: 'ordered', content: text.slice(m[0].length) } : null; }
   if (text.startsWith('> ')) return { type: 'blockquote', content: text.slice(2) };
   if (text === '---' || text === '***' || text === '___') return { type: 'divider', content: '' };
-  if (text === '$$') return { type: 'math', content: '' };
   return null;
 }
 
@@ -321,7 +292,6 @@ const SLASH_COMMANDS: Array<{ type: BlockType; label: string; description: strin
   { type: 'checkbox', label: 'To-Do', description: 'Checkbox item', icon: <ListChecks size={14} />, keywords: ['todo', 'checkbox', 'task', 'check'] },
   { type: 'blockquote', label: 'Quote', description: 'Block quote', icon: <Quote size={14} />, keywords: ['quote', 'blockquote'] },
   { type: 'code', label: 'Code', description: 'Code block', icon: <SquareCode size={14} />, keywords: ['code', 'snippet'] },
-  { type: 'math', label: 'Math Block', description: 'LaTeX math equation', icon: <Sigma size={14} />, keywords: ['math', 'latex', 'equation', 'formula', 'katex'] },
   { type: 'divider', label: 'Divider', description: 'Horizontal line', icon: <Minus size={14} />, keywords: ['divider', 'line', 'separator', 'hr'] },
 ];
 
@@ -809,7 +779,6 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
     if (meta && e.shiftKey && e.key === 's') { e.preventDefault(); pushHistory(true); wrapSelection('~~', '~~'); pushHistory(true); return; }
     if (meta && !e.shiftKey && !e.altKey && e.key === 'e') { e.preventDefault(); pushHistory(true); wrapSelection('`', '`'); pushHistory(true); return; }
     if (meta && !e.shiftKey && !e.altKey && e.key === 'u') { e.preventDefault(); pushHistory(true); wrapSelection('<u>', '</u>'); pushHistory(true); return; }
-    if (meta && e.shiftKey && (e.key === 'm' || e.key === 'M')) { e.preventDefault(); pushHistory(true); wrapSelection('$', '$'); pushHistory(true); return; }
 
     if (meta && e.key === 'Enter') {
       if (block.type === 'checkbox') {
@@ -1033,48 +1002,6 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
             {block.type === 'divider' ? (
               <div className="flex-1 py-3 px-1">
                 <div className="border-t border-[var(--ui-divider)]" />
-              </div>
-            ) : block.type === 'math' ? (
-              <div className="flex-1 min-w-0" data-block-id={block.id}>
-                {focusedBlockId === block.id ? (
-                  <div
-                    ref={(el) => {
-                      if (el) {
-                        blockElsRef.current.set(block.id, el);
-                        if (!el.dataset.init) { el.textContent = block.content; el.dataset.init = '1'; }
-                      } else { blockElsRef.current.delete(block.id); }
-                    }}
-                    contentEditable={"plaintext-only" as any}
-                    suppressContentEditableWarning
-                    onInput={() => handleBlockInput(block.id)}
-                    onKeyDown={(e) => handleKeyDown(e, block.id)}
-                    onFocus={() => { setFocusedBlockId(block.id); if (slashMenu && slashMenu.blockId !== block.id) setSlashMenu(null); }}
-                    onBlur={() => { if (focusedBlockId === block.id) setFocusedBlockId(null); }}
-                    className="flex-1 outline-none min-h-[24px] leading-[1.65] text-[12px] font-mono text-[var(--text-secondary)] bg-[var(--input-bg)] rounded px-2 py-1 whitespace-pre"
-                    data-placeholder="LaTeX equation (e.g. E = mc^2)"
-                    style={{ '--placeholder-color': 'var(--text-disabled)' } as any}
-                  />
-                ) : (
-                  <div
-                    onClick={() => {
-                      setFocusedBlockId(block.id);
-                      setTimeout(() => {
-                        const el = blockElsRef.current.get(block.id);
-                        if (el) { el.focus(); setCursorPosition(el, block.content.length); }
-                      }, 0);
-                    }}
-                    className="flex-1 min-h-[24px] py-1 px-1 cursor-text rounded hover:bg-[var(--bg-secondary)]/30 transition-colors"
-                  >
-                    {block.content.trim() ? (
-                      <div
-                        className="katex-display-block text-[var(--text-primary)] overflow-x-auto"
-                        dangerouslySetInnerHTML={{ __html: renderKatex(block.content, true) }}
-                      />
-                    ) : (
-                      <span className="text-[12px] text-[var(--text-disabled)] italic">Empty equation — click to edit</span>
-                    )}
-                  </div>
-                )}
               </div>
             ) : (
               <div className="flex-1 flex items-start gap-1.5 min-w-0" data-block-id={block.id}>
@@ -1499,7 +1426,6 @@ const EditorView: React.FC<EditorViewProps> = ({
             <ToolbarBtn icon={ListOrdered} label="Ordered list" shortcut={['⇧', '⌘', '7']} onClick={() => formatInsertBlock('ordered')} />
             <ToolbarBtn icon={List} label="Bullet list" shortcut={['⇧', '⌘', '8']} onClick={() => formatInsertBlock('bullet')} />
             <ToolbarBtn icon={ListChecks} label="Task list" shortcut={['⇧', '⌘', '9']} onClick={() => formatInsertBlock('checkbox')} />
-            <ToolbarBtn icon={Sigma} label="Inline math" shortcut={['⇧', '⌘', 'M']} onClick={() => formatWrap('$', '$')} />
             <div className="flex-1" />
             <ToolbarBtn icon={X} label="Close" onClick={() => setShowToolbar(false)} iconSize={13}
               className="p-1 rounded text-[var(--text-subtle)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-colors" />
@@ -1537,7 +1463,6 @@ function markdownToHtml(md: string, accentColor: string): string {
     s = s.replace(/\*(.+?)\*/g, '<em style="color:var(--text-secondary);font-style:italic">$1</em>');
     s = s.replace(/~~(.+?)~~/g, '<del style="color:var(--text-subtle)">$1</del>');
     s = s.replace(/\[(.+?)\]\((.+?)\)/g, `<span style="color:${accentColor};text-decoration:underline">$1</span>`);
-    s = s.replace(/\$([^\$]+?)\$/g, (_m, latex) => renderKatex(latex.trim(), false));
     return s;
   };
   const lines = md.split('\n');
@@ -1545,14 +1470,6 @@ function markdownToHtml(md: string, accentColor: string): string {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
-    if (line.trimStart() === '$$') {
-      const mathLines: string[] = [];
-      let j = i + 1;
-      while (j < lines.length && lines[j].trimStart() !== '$$') { mathLines.push(lines[j]); j++; }
-      const latex = mathLines.join('\n');
-      parts.push(`<div style="padding:8px 0;overflow-x:auto">${renderKatex(latex, true)}</div>`);
-      i = j + 1; continue;
-    }
     if (line.startsWith('```') || line.startsWith('~~~')) {
       const fence = line.startsWith('```') ? '```' : '~~~';
       const cl: string[] = []; let j = i + 1;
