@@ -175,7 +175,7 @@
   --border-primary: rgba(var(--on-surface-rgb), 0.08);
   --border-secondary: rgba(var(--on-surface-rgb), 0.18);
   --border-strong: rgba(var(--on-surface-rgb), 0.28);
-  --glass-outline: rgba(184, 190, 198, 0.11);
+  --glass-outline: rgba(184, 190, 198, 0.18);
   --ui-divider: rgba(255, 255, 255, 0.05);
   --ui-panel-border: rgba(255, 255, 255, 0.06);
   --ui-segment-border: rgba(255, 255, 255, 0.07);
@@ -393,7 +393,7 @@ html {
   border-radius: var(--glass-radius);
   border: none;
   background-clip: padding-box;
-  box-shadow: none;
+  box-shadow: 0 0 0 0.5px var(--glass-outline), 0 8px 32px rgba(0, 0, 0, 0.12);
   overflow: hidden;
 }
 
@@ -558,7 +558,7 @@ html {
 }
 
 .dark.sc-native-liquid-glass {
-  --glass-outline: rgba(255, 255, 255, 0.045);
+  --glass-outline: rgba(255, 255, 255, 0.1);
   --ui-divider: rgba(255, 255, 255, 0.05);
   --ui-panel-border: rgba(255, 255, 255, 0.07);
   --ui-segment-border: rgba(255, 255, 255, 0.08);
