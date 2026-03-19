@@ -1968,10 +1968,6 @@ const NotesManager: React.FC<NotesManagerProps> = ({ initialView }) => {
     a.push({ title: 'Import Notes', icon: <Download size={14} />, section: 'settings', execute: async () => { await window.electron.noteImport(); loadNotes(); setShowActions(false); } });
     a.push({ title: 'Export All Notes', icon: <Upload size={14} />, section: 'settings', execute: async () => { await window.electron.noteExport(); setShowActions(false); } });
     if (targetNote) {
-      for (const dot of THEME_DOTS) {
-        a.push({ title: `${dot.label} Theme`, icon: <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: dot.color }} />, section: 'theme',
-          execute: async () => { await window.electron.noteUpdate(targetNote.id, { theme: dot.id }); if (viewMode === 'editor') setCurrentNote(prev => prev ? { ...prev, theme: dot.id } : null); loadNotes(); setShowActions(false); } });
-      }
       a.push({ title: 'Delete Note', icon: <Trash2 size={14} />, shortcut: ['^', 'X'], style: 'destructive', section: 'danger',
         execute: async () => { await window.electron.noteDelete(targetNote.id); if (viewMode === 'editor') { setCurrentNote(null); setViewMode('search'); } else setSelectedIndex(i => Math.max(0, i - 1)); loadNotes(); setShowActions(false); } });
     }
