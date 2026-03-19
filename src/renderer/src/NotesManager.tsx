@@ -590,11 +590,24 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
     if (block.type === 'paragraph') {
       const prefix = detectMarkdownPrefix(text);
       if (prefix) {
-        el.textContent = prefix.content;
-        setCursorPosition(el, prefix.content.length);
-        setBlocks(prev => prev.map(b =>
-          b.id === blockId ? { ...b, type: prefix.type, content: prefix.content, checked: prefix.checked } : b
-        ));
+        if (prefix.type === 'divider') {
+          // Divider: convert block and add a new paragraph below, then focus it
+          const newPara: Block = { id: genBlockId(), type: 'paragraph', content: '' };
+          setBlocks(prev => {
+            const idx = prev.findIndex(b => b.id === blockId);
+            const updated = [...prev];
+            updated[idx] = { ...prev[idx], type: 'divider', content: '' };
+            updated.splice(idx + 1, 0, newPara);
+            return updated;
+          });
+          focusBlock(newPara.id, 0);
+        } else {
+          el.textContent = prefix.content;
+          setCursorPosition(el, prefix.content.length);
+          setBlocks(prev => prev.map(b =>
+            b.id === blockId ? { ...b, type: prefix.type, content: prefix.content, checked: prefix.checked } : b
+          ));
+        }
         setSlashMenu(null);
         return;
       }
@@ -1731,10 +1744,6 @@ const BrowseOverlay: React.FC<BrowseOverlayProps> = ({ notes, currentNoteId, onS
                       className="p-1 rounded text-[var(--text-subtle)] hover:text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-colors">
                       {note.pinned ? <PinOff size={11} /> : <Pin size={11} />}
                     </button>
-                    <button title="Delete" onClick={(e) => { e.stopPropagation(); onDelete(note.id); }}
-                      className="p-1 rounded text-[var(--text-subtle)] hover:text-red-400 hover:bg-[var(--bg-secondary)] transition-colors">
-                      <Trash2 size={11} />
-                    </button>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
@@ -2070,10 +2079,6 @@ const NotesManager: React.FC<NotesManagerProps> = ({ initialView }) => {
     if (targetNote) a.push({ title: targetNote.pinned ? 'Unpin Note' : 'Pin Note', icon: targetNote.pinned ? <PinOff size={14} /> : <Pin size={14} />, shortcut: ['⇧', '⌘', 'P'], section: 'settings', execute: () => handleTogglePin() });
     a.push({ title: 'Import Notes', icon: <Download size={14} />, section: 'settings', execute: async () => { await window.electron.noteImport(); loadNotes(); setShowActions(false); } });
     a.push({ title: 'Export All Notes', icon: <Upload size={14} />, section: 'settings', execute: async () => { await window.electron.noteExport(); setShowActions(false); } });
-    if (targetNote) {
-      a.push({ title: 'Delete Note', icon: <Trash2 size={14} />, shortcut: ['^', 'X'], style: 'destructive', section: 'danger',
-        execute: () => { setShowActions(false); setConfirmDelete(true); } });
-    }
     return a;
   }, [targetNote, viewMode, loadNotes, handleNewNote, handleDuplicate, handleTogglePin, handleExport, notes]);
 

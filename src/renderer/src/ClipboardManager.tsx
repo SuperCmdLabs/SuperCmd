@@ -616,7 +616,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         </div>
 
         {/* Right: Preview (60%) */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ background: 'var(--preview-pane-bg, rgba(0,0,0,0.25))', backdropFilter: 'blur(2px)' }}>
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
           {selectedItem ? (
             <div className={selectedItem.type === 'image' ? 'p-1' : 'p-5'}>
               {selectedItem.type === 'image' ? (

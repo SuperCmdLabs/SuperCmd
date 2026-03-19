@@ -301,7 +301,7 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
         </div>
 
         {/* Right: Preview (60%) */}
-        <div className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--preview-pane-bg, rgba(0,0,0,0.25))', backdropFilter: 'blur(2px)' }}>
+        <div className="flex-1 flex flex-col min-h-0">
           {selectedNote ? (
             <>
               <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
