@@ -653,8 +653,9 @@ export interface ElectronAPI {
   noteExportToFile: (id: string, format: NoteExportFormat) => Promise<boolean>;
   noteExport: () => Promise<boolean>;
   noteImport: () => Promise<{ imported: number; skipped: number }>;
-  openNotesWindow: (mode?: 'search' | 'create') => Promise<void>;
-  onNotesMode: (callback: (mode: string) => void) => (() => void);
+  openNotesWindow: (mode?: 'search' | 'create' | 'edit', noteJson?: string) => Promise<void>;
+  notesGetPending: () => Promise<string | null>;
+  onNotesMode: (callback: (payload: any) => void) => (() => void);
   quickLinkGetAll: () => Promise<QuickLink[]>;
   quickLinkSearch: (query: string) => Promise<QuickLink[]>;
   quickLinkGetDynamicFields: (id: string) => Promise<QuickLinkDynamicField[]>;

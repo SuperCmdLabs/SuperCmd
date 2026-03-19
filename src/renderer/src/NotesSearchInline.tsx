@@ -106,7 +106,12 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
   }, [selectedIndex]);
 
   const handleOpenNote = useCallback((note?: Note) => {
-    window.electron.openNotesWindow('search');
+    if (note) {
+      // Pass the full note as JSON so the notes window can open it directly
+      window.electron.openNotesWindow('edit', JSON.stringify(note));
+    } else {
+      window.electron.openNotesWindow('create');
+    }
     onClose();
   }, [onClose]);
 

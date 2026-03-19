@@ -1998,6 +1998,7 @@ let memoryStatusHideTimerSeq = 0;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
 let notesWindow: InstanceType<typeof BrowserWindow> | null = null;
+let pendingNoteJson: string | null = null;
 let isVisible = false;
 let suppressBlurHide = false; // When true, blur won't hide the window (used during file dialogs)
 let oauthBlurHideSuppressionDepth = 0; // Keep launcher alive while OAuth browser flow is in progress
@@ -9312,9 +9313,9 @@ function openSettingsWindow(payload?: SettingsNavigationPayload): void {
 
 function openNotesWindow(mode?: 'search' | 'create'): void {
   if (notesWindow) {
-    if (mode) {
-      notesWindow.webContents.send('notes-mode-changed', mode);
-    }
+    // Send mode + pending note JSON to the existing window
+    notesWindow.webContents.send('notes-mode-changed', { mode: mode || 'create', noteJson: pendingNoteJson });
+    pendingNoteJson = null;
     notesWindow.show();
     notesWindow.focus();
     return;
@@ -12594,8 +12595,16 @@ if let tiff = image?.tiffRepresentation {
     }
   });
 
-  ipcMain.handle('open-notes-window', (_event: any, mode?: string) => {
+  ipcMain.handle('open-notes-window', (_event: any, mode?: string, noteJson?: string) => {
+    if (noteJson) pendingNoteJson = noteJson;
     openNotesWindow(mode as 'search' | 'create' | undefined);
+  });
+
+  ipcMain.handle('notes-get-pending', () => {
+    const json = pendingNoteJson;
+    // Don't clear immediately — React StrictMode double-mounts in dev
+    if (json) setTimeout(() => { if (pendingNoteJson === json) pendingNoteJson = null; }, 3000);
+    return json;
   });
 
   // ─── IPC: Quick Link Manager ───────────────────────────────────

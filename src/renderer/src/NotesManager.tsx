@@ -2013,20 +2013,48 @@ const NotesManager: React.FC<NotesManagerProps> = ({ initialView }) => {
     return () => window.removeEventListener('keydown', handler);
   }, [showActions, showBrowse, targetNote, pinnedNotes, handleTogglePin, handleExport, handleOpenNote]);
 
-  // Listen for mode changes from main process
+  // Listen for mode changes from main process (when window is reused)
   useEffect(() => {
-    const listener = (_event: any, mode: string) => {
-      if (mode === 'create') handleNewNote();
-      else if (mode === 'search') {
-        setViewMode('search');
-        setCurrentNote(null);
+    const cleanup = (window as any).electron?.onNotesMode?.((payload: any) => {
+      // payload is { mode, noteJson } or a string
+      const noteJson = typeof payload === 'object' ? payload?.noteJson : undefined;
+      const mode = typeof payload === 'object' ? payload?.mode : payload;
+      if (noteJson) {
+        try {
+          const note = JSON.parse(noteJson);
+          if (note && note.id) {
+            setCurrentNote(note);
+            setViewMode('editor');
+            return;
+          }
+        } catch {}
       }
-    };
-    (window as any).electron?.onNotesMode?.(listener);
+      if (mode === 'create') handleNewNote();
+    });
+    return cleanup;
   }, [handleNewNote]);
 
   useEffect(() => {
-    if (initialView === 'create') handleNewNote();
+    let aborted = false;
+    // Check if there's a pending note to open (passed from inline search)
+    window.electron.notesGetPending?.().then((json: string | null) => {
+      if (aborted) return;
+      if (json) {
+        try {
+          const note = JSON.parse(json);
+          if (note && note.id) {
+            setCurrentNote(note);
+            setViewMode('editor');
+            return;
+          }
+        } catch {}
+      }
+      // No pending note — create new or show search based on initialView
+      if (initialView === 'create') handleNewNote();
+    }).catch(() => {
+      if (!aborted && initialView === 'create') handleNewNote();
+    });
+    return () => { aborted = true; };
   }, []);
 
   // ─── Render ──────────────────────────────────────────────────────

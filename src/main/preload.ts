@@ -591,10 +591,12 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('note-export'),
   noteImport: (): Promise<{ imported: number; skipped: number }> =>
     ipcRenderer.invoke('note-import'),
-  openNotesWindow: (mode?: string): Promise<void> =>
-    ipcRenderer.invoke('open-notes-window', mode),
-  onNotesMode: (callback: (mode: string) => void) => {
-    const listener = (_event: any, mode: string) => callback(mode);
+  openNotesWindow: (mode?: string, noteJson?: string): Promise<void> =>
+    ipcRenderer.invoke('open-notes-window', mode, noteJson),
+  notesGetPending: (): Promise<string | null> =>
+    ipcRenderer.invoke('notes-get-pending'),
+  onNotesMode: (callback: (payload: any) => void) => {
+    const listener = (_event: any, payload: any) => callback(payload);
     ipcRenderer.on('notes-mode-changed', listener);
     return () => {
       ipcRenderer.removeListener('notes-mode-changed', listener);
