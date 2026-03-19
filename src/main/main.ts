@@ -9338,8 +9338,8 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
     }
     return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   })();
-  const notesWidth = Math.max(720, Math.min(900, displayWidth - 200));
-  const notesHeight = Math.max(560, Math.min(760, displayHeight - 160));
+  const notesWidth = Math.max(520, Math.min(680, displayWidth - 300));
+  const notesHeight = Math.max(420, Math.min(560, displayHeight - 250));
   const notesX = displayX + Math.floor((displayWidth - notesWidth) / 2);
   const notesY = displayY + Math.floor((displayHeight - notesHeight) / 2);
   const useNativeLiquidGlass = shouldUseNativeLiquidGlass();
@@ -9349,8 +9349,8 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
     height: notesHeight,
     x: notesX,
     y: notesY,
-    minWidth: 520,
-    minHeight: 420,
+    minWidth: 420,
+    minHeight: 360,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     transparent: true,

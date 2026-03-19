@@ -277,43 +277,30 @@ const SLASH_COMMANDS: Array<{ type: BlockType; label: string; description: strin
 ];
 
 interface SlashMenuProps {
-  query: string;
   position: { top: number; left: number };
   onSelect: (type: BlockType) => void;
   onClose: () => void;
-  containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 /**
  * Slash command menu — renders as a fixed-position overlay that pops OUT of the
- * editor so all commands are visible even when the editor area is small.
+ * editor. Has its own search input so keyboard navigation works reliably.
  */
-const SlashMenu: React.FC<SlashMenuProps> = ({ query, position, onSelect, onClose, containerRef }) => {
+const SlashMenu: React.FC<SlashMenuProps> = ({ position, onSelect, onClose }) => {
+  const [filterQuery, setFilterQuery] = useState('');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const filtered = useMemo(() => {
-    if (!query) return SLASH_COMMANDS;
-    const q = query.toLowerCase();
+    if (!filterQuery) return SLASH_COMMANDS;
+    const q = filterQuery.toLowerCase();
     return SLASH_COMMANDS.filter(c => c.label.toLowerCase().includes(q) || c.keywords.some(k => k.includes(q)));
-  }, [query]);
+  }, [filterQuery]);
 
-  useEffect(() => { setSelectedIdx(0); }, [query]);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return; }
-      if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setSelectedIdx(i => Math.min(i + 1, filtered.length - 1)); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setSelectedIdx(i => Math.max(0, i - 1)); return; }
-      if (e.key === 'Enter' || e.key === 'Tab') {
-        if (filtered[selectedIdx]) { e.preventDefault(); e.stopPropagation(); onSelect(filtered[selectedIdx].type); }
-        return;
-      }
-    };
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [filtered, selectedIdx, onSelect, onClose]);
+  useEffect(() => { setSelectedIdx(0); }, [filterQuery]);
+  useEffect(() => { inputRef.current?.focus(); }, []);
 
   useEffect(() => {
     const items = listRef.current?.querySelectorAll('[data-slash-item]');
@@ -321,22 +308,30 @@ const SlashMenu: React.FC<SlashMenuProps> = ({ query, position, onSelect, onClos
     item?.scrollIntoView({ block: 'nearest' });
   }, [selectedIdx]);
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setSelectedIdx(i => Math.min(i + 1, filtered.length - 1)); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setSelectedIdx(i => Math.max(0, i - 1)); return; }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      if (filtered[selectedIdx]) { e.preventDefault(); e.stopPropagation(); onSelect(filtered[selectedIdx].type); }
+      return;
+    }
+  };
+
   // Adjust position so menu doesn't overflow the window
   const [adjustedPos, setAdjustedPos] = useState(position);
   useEffect(() => {
-    const menuHeight = 320; // approximate max height
-    const menuWidth = 240;
+    const menuHeight = 400;
+    const menuWidth = 260;
     const winH = window.innerHeight;
     const winW = window.innerWidth;
 
     let top = position.top;
     let left = position.left;
 
-    // If menu would go below window, show above the cursor instead
     if (top + menuHeight > winH) {
       top = Math.max(8, top - menuHeight - 30);
     }
-    // If menu would go off-screen right
     if (left + menuWidth > winW) {
       left = Math.max(8, winW - menuWidth - 8);
     }
@@ -344,33 +339,40 @@ const SlashMenu: React.FC<SlashMenuProps> = ({ query, position, onSelect, onClos
     setAdjustedPos({ top, left });
   }, [position]);
 
-  if (filtered.length === 0) return null;
-
   return (
     <div className="fixed inset-0 z-[9998]" onClick={onClose}>
       <div
         ref={menuRef}
-        className="absolute z-[9999] w-[240px] bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-lg shadow-2xl overflow-hidden"
+        className="absolute z-[9999] w-[260px] bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-lg shadow-2xl overflow-hidden"
         style={{ top: adjustedPos.top, left: adjustedPos.left }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-2.5 py-1.5 border-b border-[var(--ui-divider)]">
-          <span className="text-[10px] font-semibold text-[var(--text-subtle)] uppercase tracking-wider">Blocks</span>
+        {/* Search input */}
+        <div className="flex items-center gap-2 px-2.5 py-2 border-b border-[var(--ui-divider)]">
+          <Search size={13} className="text-[var(--text-disabled)] flex-shrink-0" />
+          <input
+            ref={inputRef}
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Filter..."
+            className="flex-1 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-disabled)] outline-none"
+          />
         </div>
         <div ref={listRef} className="max-h-[300px] overflow-y-auto py-1">
-          {filtered.map((cmd, idx) => (
+          {filtered.length === 0 ? (
+            <div className="px-2.5 py-3 text-center text-[11px] text-[var(--text-disabled)]">No blocks found</div>
+          ) : filtered.map((cmd, idx) => (
             <div
               key={cmd.type}
               data-slash-item
               onClick={() => onSelect(cmd.type)}
               onMouseEnter={() => setSelectedIdx(idx)}
-              className={`flex items-center gap-2.5 px-2.5 py-1.5 cursor-pointer transition-colors ${idx === selectedIdx ? 'bg-[var(--accent)]/10' : ''}`}
+              className="flex items-center gap-2.5 px-2.5 py-[7px] cursor-pointer transition-colors"
+              style={idx === selectedIdx ? { background: 'rgba(255,255,255,0.08)' } : undefined}
             >
               <span className="w-5 h-5 flex items-center justify-center text-[var(--text-muted)] flex-shrink-0">{cmd.icon}</span>
-              <div className="flex-1 min-w-0">
-                <div className="text-[12px] text-[var(--text-primary)] font-medium">{cmd.label}</div>
-                <div className="text-[10px] text-[var(--text-subtle)] truncate">{cmd.description}</div>
-              </div>
+              <span className="text-[12px] text-[var(--text-primary)] font-medium">{cmd.label}</span>
             </div>
           ))}
         </div>
@@ -393,7 +395,7 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
   const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => { blocksRef.current = blocks; }, [blocks]);
 
-  const [slashMenu, setSlashMenu] = useState<{ blockId: string; query: string; position: { top: number; left: number } } | null>(null);
+  const [slashMenu, setSlashMenu] = useState<{ blockId: string; position: { top: number; left: number } } | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
 
@@ -548,15 +550,13 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
       }
     }
 
-    // Slash command detection
+    // Slash command detection — open menu and clear the "/" from the block
     if (text === '/') {
       const rect = el.getBoundingClientRect();
-      setSlashMenu({ blockId, query: '', position: { top: rect.bottom + 4, left: rect.left } });
-    } else if (text.startsWith('/') && !text.includes(' ')) {
-      const rect = el.getBoundingClientRect();
-      setSlashMenu({ blockId, query: text.slice(1), position: { top: rect.bottom + 4, left: rect.left } });
-    } else if (slashMenu?.blockId === blockId) {
-      setSlashMenu(null);
+      el.textContent = '';
+      setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, content: '' } : b));
+      setSlashMenu({ blockId, position: { top: rect.bottom + 4, left: rect.left } });
+      return;
     }
 
     setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, content: text } : b));
@@ -972,11 +972,9 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
 
       {slashMenu && (
         <SlashMenu
-          query={slashMenu.query}
           position={slashMenu.position}
           onSelect={handleSlashSelect}
           onClose={() => setSlashMenu(null)}
-          containerRef={containerRef}
         />
       )}
 
@@ -1534,7 +1532,7 @@ const BrowseOverlay: React.FC<BrowseOverlayProps> = ({ notes, currentNoteId, onS
   }, [filtered, selectedIdx, onSelect, onClose]);
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-12">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
       <div className="absolute inset-0" onClick={onClose} />
       <div className="relative z-10 w-full max-w-[360px] mx-4 bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-xl shadow-2xl overflow-hidden">
         <div className="px-3 py-2.5 border-b border-[var(--ui-divider)]">
