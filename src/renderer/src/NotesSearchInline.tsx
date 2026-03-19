@@ -36,14 +36,14 @@ const THEME_ACCENT: Record<NoteTheme, string> = {
 
 /** Render markdown content to styled HTML for preview */
 function markdownToPreviewHtml(md: string, accentColor: string): string {
-  if (!md.trim()) return '<span style="color:rgba(255,255,255,0.3);font-style:italic">No content</span>';
+  if (!md.trim()) return '<span style="color:var(--text-disabled);font-style:italic">No content</span>';
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const inline = (text: string): string => {
     let s = esc(text);
-    s = s.replace(/`([^`]+)`/g, `<code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;font-size:11px;font-family:monospace;color:${accentColor}">$1</code>`);
-    s = s.replace(/\*\*(.+?)\*\*/g, '<strong style="color:rgba(255,255,255,0.9);font-weight:600">$1</strong>');
+    s = s.replace(/`([^`]+)`/g, `<code style="background:var(--input-bg);padding:1px 5px;border-radius:3px;font-size:11px;font-family:monospace;color:${accentColor}">$1</code>`);
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text-primary);font-weight:600">$1</strong>');
     s = s.replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, '<em>$1</em>');
-    s = s.replace(/~~(.+?)~~/g, '<del style="text-decoration:line-through;color:rgba(255,255,255,0.4)">$1</del>');
+    s = s.replace(/~~(.+?)~~/g, '<del style="text-decoration:line-through;color:var(--text-subtle)">$1</del>');
     s = s.replace(/\[(.+?)\]\((.+?)\)/g, `<span style="color:${accentColor};text-decoration:underline">$1</span>`);
     return s;
   };
@@ -56,27 +56,27 @@ function markdownToPreviewHtml(md: string, accentColor: string): string {
       const fence = line.startsWith('```') ? '```' : '~~~';
       const cl: string[] = []; let j = i + 1;
       while (j < lines.length && !lines[j].startsWith(fence)) { cl.push(esc(lines[j])); j++; }
-      parts.push(`<pre style="background:rgba(255,255,255,0.06);border-radius:6px;padding:8px;margin:4px 0;font-size:11px;font-family:monospace;color:rgba(255,255,255,0.7);white-space:pre;overflow-x:auto">${cl.join('\n')}</pre>`);
+      parts.push(`<pre style="background:var(--input-bg);border-radius:6px;padding:8px;margin:4px 0;font-size:11px;font-family:monospace;color:var(--text-secondary);white-space:pre;overflow-x:auto">${cl.join('\n')}</pre>`);
       i = j + 1; continue;
     }
-    if (/^(---+|___+|\*\*\*+)$/.test(line.trim())) { parts.push('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:8px 0" />'); i++; continue; }
-    const h3 = line.match(/^### (.+)/); if (h3) { parts.push(`<div style="font-size:14px;font-weight:600;color:rgba(255,255,255,0.9);margin:8px 0 2px">${inline(h3[1])}</div>`); i++; continue; }
-    const h2 = line.match(/^## (.+)/); if (h2) { parts.push(`<div style="font-size:17px;font-weight:600;color:rgba(255,255,255,0.9);margin:8px 0 2px">${inline(h2[1])}</div>`); i++; continue; }
-    const h1 = line.match(/^# (.+)/); if (h1) { parts.push(`<div style="font-size:22px;font-weight:700;color:rgba(255,255,255,0.95);margin:6px 0 4px">${inline(h1[1])}</div>`); i++; continue; }
+    if (/^(---+|___+|\*\*\*+)$/.test(line.trim())) { parts.push('<hr style="border:none;border-top:1px solid var(--ui-divider);margin:8px 0" />'); i++; continue; }
+    const h3 = line.match(/^### (.+)/); if (h3) { parts.push(`<div style="font-size:14px;font-weight:600;color:var(--text-primary);margin:8px 0 2px">${inline(h3[1])}</div>`); i++; continue; }
+    const h2 = line.match(/^## (.+)/); if (h2) { parts.push(`<div style="font-size:17px;font-weight:600;color:var(--text-primary);margin:8px 0 2px">${inline(h2[1])}</div>`); i++; continue; }
+    const h1 = line.match(/^# (.+)/); if (h1) { parts.push(`<div style="font-size:22px;font-weight:700;color:var(--text-primary);margin:6px 0 4px">${inline(h1[1])}</div>`); i++; continue; }
     const ck = line.match(/^- \[([ x])\]\s*(.*)/);
     if (ck) {
       const done = ck[1] === 'x';
-      parts.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:2px 0"><span style="border:2px solid ${done ? accentColor : accentColor + '60'};${done ? 'background:' + accentColor + '30;' : ''}border-radius:3px;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;margin-top:2px;color:${accentColor}">${done ? '✓' : ''}</span><span style="font-size:13px;${done ? 'color:rgba(255,255,255,0.35);text-decoration:line-through' : 'color:rgba(255,255,255,0.7)'}">${inline(ck[2])}</span></div>`);
+      parts.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:2px 0"><span style="border:2px solid ${done ? accentColor : accentColor + '60'};${done ? 'background:' + accentColor + '30;' : ''}border-radius:3px;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;margin-top:2px;color:${accentColor}">${done ? '✓' : ''}</span><span style="font-size:13px;${done ? 'color:var(--text-subtle);text-decoration:line-through' : 'color:var(--text-secondary)'}">${inline(ck[2])}</span></div>`);
       i++; continue;
     }
     const ul = line.match(/^[-*+]\s+(.+)/);
-    if (ul) { parts.push(`<div style="display:flex;align-items:flex-start;gap:6px;padding:1px 0 1px 3px"><span style="margin-top:7px;width:5px;height:5px;border-radius:50%;background:${accentColor};flex-shrink:0"></span><span style="font-size:13px;color:rgba(255,255,255,0.7)">${inline(ul[1])}</span></div>`); i++; continue; }
+    if (ul) { parts.push(`<div style="display:flex;align-items:flex-start;gap:6px;padding:1px 0 1px 3px"><span style="margin-top:7px;width:5px;height:5px;border-radius:50%;background:${accentColor};flex-shrink:0"></span><span style="font-size:13px;color:var(--text-secondary)">${inline(ul[1])}</span></div>`); i++; continue; }
     const ol = line.match(/^(\d+)\.\s+(.+)/);
-    if (ol) { parts.push(`<div style="display:flex;align-items:flex-start;gap:6px;padding:1px 0 1px 2px"><span style="color:rgba(255,255,255,0.4);font-size:13px;min-width:14px;text-align:right">${ol[1]}.</span><span style="font-size:13px;color:rgba(255,255,255,0.7)">${inline(ol[2])}</span></div>`); i++; continue; }
+    if (ol) { parts.push(`<div style="display:flex;align-items:flex-start;gap:6px;padding:1px 0 1px 2px"><span style="color:var(--text-subtle);font-size:13px;min-width:14px;text-align:right">${ol[1]}.</span><span style="font-size:13px;color:var(--text-secondary)">${inline(ol[2])}</span></div>`); i++; continue; }
     const bq = line.match(/^>\s*(.*)/);
-    if (bq) { parts.push(`<div style="border-left:3px solid ${accentColor}50;padding-left:10px;padding:2px 0 2px 10px;margin:2px 0"><span style="font-size:13px;color:rgba(255,255,255,0.5);font-style:italic">${inline(bq[1])}</span></div>`); i++; continue; }
+    if (bq) { parts.push(`<div style="border-left:3px solid ${accentColor}50;padding-left:10px;padding:2px 0 2px 10px;margin:2px 0"><span style="font-size:13px;color:var(--text-muted);font-style:italic">${inline(bq[1])}</span></div>`); i++; continue; }
     if (!line.trim()) { parts.push('<div style="height:8px"></div>'); i++; continue; }
-    parts.push(`<p style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.6;margin:0">${inline(line)}</p>`);
+    parts.push(`<p style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin:0">${inline(line)}</p>`);
     i++;
   }
   return parts.join('');
@@ -301,7 +301,7 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
         </div>
 
         {/* Right: Preview (60%) */}
-        <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--preview-pane-bg, rgba(0,0,0,0.25))', backdropFilter: 'blur(2px)' }}>
           {selectedNote ? (
             <>
               <div className="flex-1 overflow-y-auto custom-scrollbar p-5">

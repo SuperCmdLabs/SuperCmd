@@ -1178,7 +1178,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         </div>
 
         {/* Right: Preview (60%) */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ background: 'var(--preview-pane-bg, rgba(0,0,0,0.25))', backdropFilter: 'blur(2px)' }}>
           {selectedSnippet ? (
             <div className="p-5">
               <pre className="text-white/80 text-sm whitespace-pre-wrap break-words font-mono leading-relaxed">
