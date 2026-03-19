@@ -44,6 +44,7 @@ export interface AppViewManager {
   scriptCommandOutput: ScriptCommandOutput | null;
   showClipboardManager: boolean;
   showSnippetManager: 'search' | 'create' | null;
+  showNotesSearch: boolean;
   showQuickLinkManager: 'search' | 'create' | null;
   showFileSearch: boolean;
   showCursorPrompt: boolean;
@@ -67,6 +68,7 @@ export interface AppViewManager {
   openScriptCommandOutput: (output: ScriptCommandOutput) => void;
   openClipboardManager: () => void;
   openSnippetManager: (mode: 'search' | 'create') => void;
+  openNotesSearch: () => void;
   openQuickLinkManager: (mode: 'search' | 'create') => void;
   openFileSearch: () => void;
   openCursorPrompt: () => void;
@@ -87,6 +89,7 @@ export interface AppViewManager {
   setScriptCommandOutput: React.Dispatch<React.SetStateAction<ScriptCommandOutput | null>>;
   setShowClipboardManager: React.Dispatch<React.SetStateAction<boolean>>;
   setShowSnippetManager: React.Dispatch<React.SetStateAction<'search' | 'create' | null>>;
+  setShowNotesSearch: React.Dispatch<React.SetStateAction<boolean>>;
   setShowQuickLinkManager: React.Dispatch<React.SetStateAction<'search' | 'create' | null>>;
   setShowFileSearch: React.Dispatch<React.SetStateAction<boolean>>;
   setShowCursorPrompt: React.Dispatch<React.SetStateAction<boolean>>;
@@ -108,6 +111,7 @@ export function useAppViewManager(): AppViewManager {
   const [scriptCommandOutput, setScriptCommandOutput] = useState<ScriptCommandOutput | null>(null);
   const [showClipboardManager, setShowClipboardManager] = useState(false);
   const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
+  const [showNotesSearch, setShowNotesSearch] = useState(false);
   const [showQuickLinkManager, setShowQuickLinkManager] = useState<'search' | 'create' | null>(null);
   const [showFileSearch, setShowFileSearch] = useState(false);
   const [showCursorPrompt, setShowCursorPrompt] = useState(false);
@@ -128,6 +132,7 @@ export function useAppViewManager(): AppViewManager {
     setScriptCommandOutput(null);
     setShowClipboardManager(false);
     setShowSnippetManager(null);
+    setShowNotesSearch(false);
     setShowQuickLinkManager(null);
     setShowFileSearch(false);
     setShowCursorPrompt(false);
@@ -170,6 +175,11 @@ export function useAppViewManager(): AppViewManager {
   const openSnippetManager = useCallback((mode: 'search' | 'create') => {
     resetAllViews();
     setShowSnippetManager(mode);
+  }, [resetAllViews]);
+
+  const openNotesSearch = useCallback(() => {
+    resetAllViews();
+    setShowNotesSearch(true);
   }, [resetAllViews]);
 
   const openQuickLinkManager = useCallback((mode: 'search' | 'create') => {
@@ -239,6 +249,7 @@ export function useAppViewManager(): AppViewManager {
     scriptCommandOutput,
     showClipboardManager,
     showSnippetManager,
+    showNotesSearch,
     showQuickLinkManager,
     showFileSearch,
     showCursorPrompt,
@@ -260,6 +271,7 @@ export function useAppViewManager(): AppViewManager {
     openScriptCommandOutput,
     openClipboardManager,
     openSnippetManager,
+    openNotesSearch,
     openQuickLinkManager,
     openFileSearch,
     openCursorPrompt,
@@ -279,6 +291,7 @@ export function useAppViewManager(): AppViewManager {
     setScriptCommandOutput,
     setShowClipboardManager,
     setShowSnippetManager,
+    setShowNotesSearch,
     setShowQuickLinkManager,
     setShowFileSearch,
     setShowCursorPrompt,

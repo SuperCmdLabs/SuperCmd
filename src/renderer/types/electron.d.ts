@@ -333,6 +333,31 @@ export interface SnippetDynamicField {
   defaultValue?: string;
 }
 
+export type NoteTheme =
+  | 'default'
+  | 'rose'
+  | 'orange'
+  | 'amber'
+  | 'emerald'
+  | 'cyan'
+  | 'blue'
+  | 'violet'
+  | 'fuchsia'
+  | 'slate';
+
+export type NoteExportFormat = 'markdown' | 'plaintext' | 'html';
+
+export interface Note {
+  id: string;
+  title: string;
+  icon: string;
+  content: string;
+  theme: NoteTheme;
+  pinned: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export type QuickLinkIcon = string;
 
 export interface QuickLink {
@@ -615,6 +640,23 @@ export interface ElectronAPI {
   snippetPasteResolved: (id: string, dynamicValues?: Record<string, string>) => Promise<boolean>;
   snippetImport: () => Promise<{ imported: number; skipped: number }>;
   snippetExport: () => Promise<boolean>;
+
+  // Notes Manager
+  noteGetAll: () => Promise<Note[]>;
+  noteSearch: (query: string) => Promise<Note[]>;
+  noteCreate: (data: { title: string; icon?: string; content?: string; theme?: NoteTheme }) => Promise<Note>;
+  noteUpdate: (id: string, data: { title?: string; icon?: string; content?: string; theme?: NoteTheme; pinned?: boolean }) => Promise<Note | null>;
+  noteDelete: (id: string) => Promise<boolean>;
+  noteDeleteAll: () => Promise<number>;
+  noteDuplicate: (id: string) => Promise<Note | null>;
+  noteTogglePin: (id: string) => Promise<Note | null>;
+  noteCopyToClipboard: (id: string, format: NoteExportFormat) => Promise<boolean>;
+  noteExportToFile: (id: string, format: NoteExportFormat) => Promise<boolean>;
+  noteExport: () => Promise<boolean>;
+  noteImport: () => Promise<{ imported: number; skipped: number }>;
+  openNotesWindow: (mode?: 'search' | 'create' | 'edit', noteJson?: string) => Promise<void>;
+  notesGetPending: () => Promise<string | null>;
+  onNotesMode: (callback: (payload: any) => void) => (() => void);
   quickLinkGetAll: () => Promise<QuickLink[]>;
   quickLinkSearch: (query: string) => Promise<QuickLink[]>;
   quickLinkGetDynamicFields: (id: string) => Promise<QuickLinkDynamicField[]>;

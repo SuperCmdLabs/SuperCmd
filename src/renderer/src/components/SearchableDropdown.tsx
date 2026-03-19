@@ -313,7 +313,7 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
                   }`}
                 >
                   {renderOptionContent ? (
-                    <span className="min-w-0 flex-1">{renderOptionContent(option)}</span>
+                    <span className="min-w-0 flex-1 flex items-center gap-2">{renderOptionContent(option)}</span>
                   ) : (
                     <>
                       {option.icon ? <span className="w-4 h-4 flex-shrink-0 flex items-center justify-center">{option.icon}</span> : null}

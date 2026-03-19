@@ -565,6 +565,44 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('snippet-import'),
   snippetExport: (): Promise<boolean> =>
     ipcRenderer.invoke('snippet-export'),
+
+  // ─── Notes Manager ─────────────────────────────────────────────
+  noteGetAll: (): Promise<any[]> =>
+    ipcRenderer.invoke('note-get-all'),
+  noteSearch: (query: string): Promise<any[]> =>
+    ipcRenderer.invoke('note-search', query),
+  noteCreate: (data: any): Promise<any> =>
+    ipcRenderer.invoke('note-create', data),
+  noteUpdate: (id: string, data: any): Promise<any> =>
+    ipcRenderer.invoke('note-update', id, data),
+  noteDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('note-delete', id),
+  noteDeleteAll: (): Promise<number> =>
+    ipcRenderer.invoke('note-delete-all'),
+  noteDuplicate: (id: string): Promise<any> =>
+    ipcRenderer.invoke('note-duplicate', id),
+  noteTogglePin: (id: string): Promise<any> =>
+    ipcRenderer.invoke('note-toggle-pin', id),
+  noteCopyToClipboard: (id: string, format: string): Promise<boolean> =>
+    ipcRenderer.invoke('note-copy-to-clipboard', id, format),
+  noteExportToFile: (id: string, format: string): Promise<boolean> =>
+    ipcRenderer.invoke('note-export-to-file', id, format),
+  noteExport: (): Promise<boolean> =>
+    ipcRenderer.invoke('note-export'),
+  noteImport: (): Promise<{ imported: number; skipped: number }> =>
+    ipcRenderer.invoke('note-import'),
+  openNotesWindow: (mode?: string, noteJson?: string): Promise<void> =>
+    ipcRenderer.invoke('open-notes-window', mode, noteJson),
+  notesGetPending: (): Promise<string | null> =>
+    ipcRenderer.invoke('notes-get-pending'),
+  onNotesMode: (callback: (payload: any) => void) => {
+    const listener = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('notes-mode-changed', listener);
+    return () => {
+      ipcRenderer.removeListener('notes-mode-changed', listener);
+    };
+  },
+
   quickLinkGetAll: (): Promise<any[]> =>
     ipcRenderer.invoke('quicklink-get-all'),
   quickLinkSearch: (query: string): Promise<any[]> =>

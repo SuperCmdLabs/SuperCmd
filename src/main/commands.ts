@@ -1521,6 +1521,18 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-search-notes',
+      title: 'Search Notes',
+      keywords: ['notes', 'search', 'find', 'markdown', 'writing'],
+      category: 'system',
+    },
+    {
+      id: 'system-create-note',
+      title: 'Create Note',
+      keywords: ['notes', 'create', 'new', 'markdown', 'writing'],
+      category: 'system',
+    },
+    {
       id: 'system-create-quicklink',
       title: 'Create Quick Link',
       keywords: ['quick link', 'quicklink', 'create', 'new', 'url'],

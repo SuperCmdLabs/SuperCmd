@@ -87,6 +87,21 @@ import {
   stopFileSearchIndexing,
 } from './file-search-index';
 import { ensureCalendarAccess, getCalendarEvents } from './calendar-events';
+import {
+  initNoteStore,
+  getAllNotes,
+  searchNotes,
+  createNote,
+  updateNote,
+  deleteNote,
+  deleteAllNotes,
+  duplicateNote,
+  togglePinNote,
+  copyNoteToClipboard,
+  exportNoteToFile,
+  exportNotesToFile,
+  importNotesFromFile,
+} from './notes-store';
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
@@ -1982,6 +1997,8 @@ let memoryStatusRenderSeq = 0;
 let memoryStatusHideTimerSeq = 0;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
+let notesWindow: InstanceType<typeof BrowserWindow> | null = null;
+let pendingNoteJson: string | null = null;
 let isVisible = false;
 let suppressBlurHide = false; // When true, blur won't hide the window (used during file dialogs)
 let oauthBlurHideSuppressionDepth = 0; // Keep launcher alive while OAuth browser flow is in progress
@@ -3502,6 +3519,7 @@ function isWindowShownRoutedSystemCommand(commandId: string): boolean {
     commandId === 'system-clipboard-manager' ||
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
+    commandId === 'system-search-notes' ||
     commandId === 'system-search-quicklinks' ||
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
@@ -8156,10 +8174,16 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     if (source === 'launcher') hideWindow();
     return true;
   }
+  if (commandId === 'system-create-note') {
+    openNotesWindow('create');
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
   if (
     commandId === 'system-clipboard-manager' ||
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
+    commandId === 'system-search-notes' ||
     commandId === 'system-search-quicklinks' ||
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
@@ -9278,8 +9302,86 @@ function openSettingsWindow(payload?: SettingsNavigationPayload): void {
 
   settingsWindow.on('closed', () => {
     settingsWindow = null;
-    // Hide dock again when no settings/store windows are open
-    if (process.platform === 'darwin' && !extensionStoreWindow) {
+    // Hide dock again when no settings/store/notes windows are open
+    if (process.platform === 'darwin' && !extensionStoreWindow && !notesWindow) {
+      app.dock.hide();
+    }
+  });
+}
+
+// ─── Notes Window ─────────────────────────────────────────────────
+
+function openNotesWindow(mode?: 'search' | 'create'): void {
+  if (notesWindow) {
+    // Send mode + pending note JSON to the existing window
+    notesWindow.webContents.send('notes-mode-changed', { mode: mode || 'create', noteJson: pendingNoteJson });
+    pendingNoteJson = null;
+    notesWindow.show();
+    notesWindow.focus();
+    return;
+  }
+
+  if (process.platform === 'darwin') {
+    app.dock.show();
+  }
+
+  const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = (() => {
+    if (mainWindow) {
+      const b = mainWindow.getBounds();
+      const center = {
+        x: b.x + Math.floor(b.width / 2),
+        y: b.y + Math.floor(b.height / 2),
+      };
+      return screen.getDisplayNearestPoint(center).workArea;
+    }
+    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  })();
+  const notesWidth = Math.max(520, Math.min(680, displayWidth - 300));
+  const notesHeight = Math.max(420, Math.min(560, displayHeight - 250));
+  const notesX = displayX + Math.floor((displayWidth - notesWidth) / 2);
+  const notesY = displayY + Math.floor((displayHeight - notesHeight) / 2);
+  const useNativeLiquidGlass = shouldUseNativeLiquidGlass();
+
+  notesWindow = new BrowserWindow({
+    width: notesWidth,
+    height: notesHeight,
+    x: notesX,
+    y: notesY,
+    minWidth: 420,
+    minHeight: 360,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
+    transparent: true,
+    backgroundColor: '#00000000',
+    vibrancy: useNativeLiquidGlass ? false : 'hud',
+    visualEffectState: 'active',
+    hasShadow: false,
+    alwaysOnTop: true,
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  applyLiquidGlassToWindow(notesWindow, {
+    cornerRadius: 14,
+    fallbackVibrancy: 'hud',
+  });
+
+  // Only close on Cmd+W — NOT on Escape, NOT on blur/click outside
+  registerCloseWindowShortcut(notesWindow);
+
+  const hash = mode ? `/notes?mode=${mode}` : '/notes';
+  loadWindowUrl(notesWindow, hash);
+
+  notesWindow.once('ready-to-show', () => {
+    notesWindow?.show();
+  });
+
+  notesWindow.on('closed', () => {
+    notesWindow = null;
+    if (process.platform === 'darwin' && !settingsWindow && !extensionStoreWindow) {
       app.dock.hide();
     }
   });
@@ -9348,7 +9450,7 @@ function openExtensionStoreWindow(): void {
 
   extensionStoreWindow.on('closed', () => {
     extensionStoreWindow = null;
-    if (process.platform === 'darwin' && !settingsWindow) {
+    if (process.platform === 'darwin' && !settingsWindow && !notesWindow) {
       app.dock.hide();
     }
   });
@@ -10131,6 +10233,7 @@ app.whenReady().then(async () => {
 
   // Initialize snippet store
   initSnippetStore();
+  initNoteStore();
   try { refreshSnippetExpander(); } catch (e) {
     console.warn('[SnippetExpander] Failed to start:', e);
   }
@@ -12425,6 +12528,83 @@ if let tiff = image?.tiffRepresentation {
     } finally {
       suppressBlurHide = false;
     }
+  });
+
+  // ─── IPC: Notes Manager ──────────────────────────────────────────
+
+  ipcMain.handle('note-get-all', () => {
+    return getAllNotes();
+  });
+
+  ipcMain.handle('note-search', (_event: any, query: string) => {
+    return searchNotes(query);
+  });
+
+  ipcMain.handle('note-create', (_event: any, data: { title: string; icon?: string; content?: string; theme?: string }) => {
+    return createNote(data as any);
+  });
+
+  ipcMain.handle('note-update', (_event: any, id: string, data: any) => {
+    return updateNote(id, data);
+  });
+
+  ipcMain.handle('note-delete', (_event: any, id: string) => {
+    return deleteNote(id);
+  });
+
+  ipcMain.handle('note-delete-all', () => {
+    return deleteAllNotes();
+  });
+
+  ipcMain.handle('note-duplicate', (_event: any, id: string) => {
+    return duplicateNote(id);
+  });
+
+  ipcMain.handle('note-toggle-pin', (_event: any, id: string) => {
+    return togglePinNote(id);
+  });
+
+  ipcMain.handle('note-copy-to-clipboard', (_event: any, id: string, format: string) => {
+    return copyNoteToClipboard(id, format as any);
+  });
+
+  ipcMain.handle('note-export-to-file', async (event: any, id: string, format: string) => {
+    suppressBlurHide = true;
+    try {
+      return await exportNoteToFile(id, format as any, getDialogParentWindow(event));
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('note-export', async (event: any) => {
+    suppressBlurHide = true;
+    try {
+      return await exportNotesToFile(getDialogParentWindow(event));
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('note-import', async (event: any) => {
+    suppressBlurHide = true;
+    try {
+      return await importNotesFromFile(getDialogParentWindow(event));
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('open-notes-window', (_event: any, mode?: string, noteJson?: string) => {
+    if (noteJson) pendingNoteJson = noteJson;
+    openNotesWindow(mode as 'search' | 'create' | undefined);
+  });
+
+  ipcMain.handle('notes-get-pending', () => {
+    const json = pendingNoteJson;
+    // Don't clear immediately — React StrictMode double-mounts in dev
+    if (json) setTimeout(() => { if (pendingNoteJson === json) pendingNoteJson = null; }, 3000);
+    return json;
   });
 
   // ─── IPC: Quick Link Manager ───────────────────────────────────
