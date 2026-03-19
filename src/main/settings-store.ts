@@ -101,7 +101,7 @@ export interface AppSettings {
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
   enabled: false,
   sourceKey: 'caps-lock',
-  capsLockTapBehavior: 'escape',
+  capsLockTapBehavior: 'nothing',
 };
 
 const DEFAULT_AI_SETTINGS: AISettings = {

@@ -50,8 +50,8 @@ const SOURCE_KEY_OPTIONS: { value: HyperKeySourceKey; label: string }[] = [
 ];
 
 const CAPS_LOCK_TAP_OPTIONS: { value: HyperKeyCapsLockTapBehavior; label: string }[] = [
-  { value: 'escape', label: 'Simulate Escape' },
   { value: 'nothing', label: 'Do Nothing' },
+  { value: 'escape', label: 'Simulate Escape' },
   { value: 'toggle', label: 'Toggles Caps Lock' },
 ];
 
