@@ -69,6 +69,7 @@ import ExtensionPreferenceSetupView from './views/ExtensionPreferenceSetupView';
 import AiChatView from './views/AiChatView';
 import CursorPromptView from './views/CursorPromptView';
 import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowBadge } from './components/InlineArgumentField';
+import { useI18n } from './i18n';
 
 const STALE_OVERLAY_RESET_MS = 60_000;
 const MAX_RECENT_SECTION_ITEMS = 5;
@@ -303,6 +304,7 @@ function normalizeQuickLinkDynamicFields(fields: QuickLinkDynamicField[]): Quick
 }
 
 const App: React.FC = () => {
+  const { t } = useI18n();
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [commandAliases, setCommandAliases] = useState<Record<string, string>>({});
   const [pinnedCommands, setPinnedCommands] = useState<string[]>([]);
@@ -2566,25 +2568,25 @@ const App: React.FC = () => {
         return [
           {
             id: 'open-file',
-            title: 'Open File',
+            title: t('launcher.actions.openFile'),
             shortcut: 'Enter',
             execute: () => openFileResultByPath(filePath),
           },
           {
             id: 'show-file-details',
-            title: 'Show Details',
+            title: t('launcher.actions.showDetails'),
             shortcut: 'Cmd+D',
             execute: () => showFileResultDetailsByPath(filePath),
           },
           {
             id: 'reveal-file',
-            title: 'Reveal in Finder',
+            title: t('launcher.actions.revealInFinder'),
             shortcut: 'Cmd+Enter',
             execute: () => revealFileResultByPath(filePath),
           },
           {
             id: 'copy-file-path',
-            title: 'Copy Path',
+            title: t('launcher.actions.copyPath'),
             shortcut: 'Cmd+Shift+C',
             execute: () => copyFileResultPath(filePath),
           },
@@ -2596,23 +2598,23 @@ const App: React.FC = () => {
       return [
         {
           id: 'open',
-          title: 'Open Command',
+          title: t('launcher.actions.openCommand'),
           shortcut: 'Enter',
           execute: () => handleCommandExecute(command),
         },
         {
           id: 'pin',
           title: isPinned
-            ? 'Unpin Extension'
+            ? t(command.category === 'extension' ? 'launcher.actions.unpinExtension' : 'launcher.actions.unpinCommand')
             : command.category === 'extension'
-              ? 'Pin Extension'
-              : 'Pin Command',
+              ? t('launcher.actions.pinExtension')
+              : t('launcher.actions.pinCommand'),
           shortcut: 'Cmd+Shift+P',
           execute: () => pinToggleForCommand(command),
         },
         {
           id: 'disable',
-          title: 'Disable Command',
+          title: t('launcher.actions.disableCommand'),
           shortcut: 'Cmd+Shift+D',
           execute: () => disableCommand(command),
         },
@@ -2626,14 +2628,14 @@ const App: React.FC = () => {
         },
         {
           id: 'move-up',
-          title: 'Move Up',
+          title: t('launcher.actions.moveUp'),
           shortcut: 'Cmd+Alt+Up',
           enabled: isPinned && pinnedIndex > 0,
           execute: () => movePinnedCommand(command, 'up'),
         },
         {
           id: 'move-down',
-          title: 'Move Down',
+          title: t('launcher.actions.moveDown'),
           shortcut: 'Cmd+Alt+Down',
           enabled: isPinned && pinnedIndex >= 0 && pinnedIndex < pinnedCommands.length - 1,
           execute: () => movePinnedCommand(command, 'down'),
@@ -2651,6 +2653,7 @@ const App: React.FC = () => {
       showFileResultDetailsByPath,
       revealFileResultByPath,
       copyFileResultPath,
+      t,
     ]
   );
 
@@ -2808,7 +2811,7 @@ const App: React.FC = () => {
           onOnboardingTranscriptAppend={appendWhisperOnboardingPracticeText}
           coachmarkText={
             showWhisperHint && whisperSpeakToggleLabel
-              ? `Whisper sits here. Hold ${whisperSpeakToggleLabel} to talk, release to type.`
+              ? t('whisper.coachmark.holdToTalk', { shortcut: whisperSpeakToggleLabel })
               : undefined
           }
           onClose={() => {
@@ -3266,7 +3269,7 @@ const App: React.FC = () => {
               <input
                 ref={inputRef}
                 type="text"
-                placeholder="Search apps and settings..."
+                placeholder={aiMode ? t('launcher.aiMode.placeholder') : t('launcher.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onBlur={handleLauncherSearchBlur}
@@ -3405,11 +3408,11 @@ const App: React.FC = () => {
         >
           {isLoading ? (
             <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
-              <p className="text-sm">Discovering apps...</p>
+              <p className="text-sm">{t('launcher.status.discoveringApps')}</p>
             </div>
           ) : displayCommands.length === 0 && !calcResult ? (
             <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
-              <p className="text-sm">No matching results</p>
+              <p className="text-sm">{t('launcher.status.noMatchingResults')}</p>
             </div>
           ) : (
             <div className="space-y-0.5">
@@ -3434,13 +3437,13 @@ const App: React.FC = () => {
                           {formatCalcKindLabel(calcResult.kind)}
                         </div>
                         <div className="text-[0.6875rem] text-[var(--text-muted)] leading-none">
-                          {selectedIndex === 0 ? 'Press Enter to copy' : 'Click to copy'}
+                          {selectedIndex === 0 ? t('launcher.calculator.pressEnterToCopy') : t('launcher.calculator.clickToCopy')}
                         </div>
                       </div>
 
                       <div className="hidden sm:flex items-center gap-1 text-[0.6875rem] text-[var(--text-subtle)] flex-shrink-0 pl-2">
                         <CornerDownLeft className="w-3.5 h-3.5" />
-                        <span>Copy</span>
+                        <span>{t('launcher.calculator.copy')}</span>
                       </div>
                     </div>
 
@@ -3492,11 +3495,11 @@ const App: React.FC = () => {
               )}
 
               {[
-                { title: 'Selected Text', items: groupedCommands.contextual },
-                { title: 'Pinned', items: groupedCommands.pinned },
-                { title: 'Recent', items: groupedCommands.recent },
-                { title: 'Other', items: groupedCommands.other },
-                { title: 'Files', items: groupedCommands.files },
+                { title: t('launcher.sections.selectedText'), items: groupedCommands.contextual },
+                { title: t('launcher.sections.pinned'), items: groupedCommands.pinned },
+                { title: t('launcher.categories.recent'), items: groupedCommands.recent },
+                { title: t('common.other'), items: groupedCommands.other },
+                { title: t('launcher.categories.files'), items: groupedCommands.files },
               ]
                 .filter((section) => section.items.length > 0)
                 .map((section) => section)
@@ -3514,8 +3517,8 @@ const App: React.FC = () => {
                     section.items.forEach((command, i) => {
                       const flatIndex = startIndex + i;
                       const accessoryLabel = getCommandAccessoryLabel(command);
-                      const typeBadgeLabel = getCommandTypeBadgeLabel(command);
-                      const fallbackCategory = getCategoryLabel(command.category);
+                      const typeBadgeLabel = getCommandTypeBadgeLabel(command, t);
+                      const fallbackCategory = getCategoryLabel(command.category, t);
                       const commandAlias = String(commandAliases[command.id] || '').trim();
                       const aliasMatchesSearch =
                         Boolean(commandAlias) &&
@@ -3549,7 +3552,7 @@ const App: React.FC = () => {
 
                             <div className="min-w-0 flex-1 flex items-center gap-2">
                               <div className="text-[var(--text-primary)] text-[0.8125rem] font-medium truncate tracking-[0.004em]">
-                                {getCommandDisplayTitle(command)}
+                                {getCommandDisplayTitle(command, t)}
                               </div>
                               {accessoryLabel ? (
                                 <div className="text-[var(--text-muted)] text-[0.75rem] font-medium truncate">
@@ -3598,10 +3601,10 @@ const App: React.FC = () => {
                     <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
                       {renderCommandIcon(selectedCommand)}
                     </span>
-                    <span className="truncate">{getCommandDisplayTitle(selectedCommand)}</span>
+                    <span className="truncate">{getCommandDisplayTitle(selectedCommand, t)}</span>
                   </>
                 )
-                : `${displayCommands.length} results`}
+                : t('launcher.status.results', { count: displayCommands.length })}
             </div>
             {selectedActions[0] && (
               <div className="flex items-center gap-2 mr-3">
@@ -3628,7 +3631,7 @@ const App: React.FC = () => {
               }}
               className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
             >
-              <span className="text-xs font-normal">Actions</span>
+              <span className="text-xs font-normal">{t('common.actions')}</span>
               <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
               <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">K</kbd>
             </button>
@@ -3672,7 +3675,7 @@ const App: React.FC = () => {
             Fill Quick Link Arguments
           </div>
           <div className="px-4 pt-3 text-xs text-[var(--text-muted)]">
-            {getCommandDisplayTitle(quickLinkDynamicPrompt.command)}
+            {getCommandDisplayTitle(quickLinkDynamicPrompt.command, t)}
           </div>
           <div className="p-4 pt-3 space-y-3">
             {quickLinkDynamicPrompt.fields.map((field, idx) => (

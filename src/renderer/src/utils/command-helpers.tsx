@@ -45,6 +45,8 @@ export type ReadVoiceOption = {
   label: string;
 };
 
+type Translator = (key: string, params?: Record<string, string | number>) => string;
+
 function buildCoreIconStyle(
   gradient1Top: string,
   gradient1Bottom: string,
@@ -271,19 +273,19 @@ export function filterCommands(
 /**
  * Get category display label
  */
-export function getCategoryLabel(category: string): string {
+export function getCategoryLabel(category: string, t?: Translator): string {
   switch (category) {
     case 'settings':
-      return 'System Settings';
+      return t ? t('launcher.badges.settings') : 'System Settings';
     case 'system':
-      return 'System';
+      return t ? t('common.system') : 'System';
     case 'extension':
-      return 'Extension';
+      return t ? t('launcher.badges.extension') : 'Extension';
     case 'script':
-      return 'Script';
+      return t ? t('launcher.badges.script') : 'Script';
     case 'app':
     default:
-      return 'Application';
+      return t ? t('launcher.badges.application') : 'Application';
   }
 }
 
@@ -311,10 +313,10 @@ export function getCommandAccessoryLabel(command: CommandInfo): string {
   return '';
 }
 
-export function getCommandTypeBadgeLabel(command: CommandInfo): string {
+export function getCommandTypeBadgeLabel(command: CommandInfo, t?: Translator): string {
   const commandId = String(command.id || '').trim();
   if (commandId.startsWith('quicklink-')) {
-    return 'Quick Link';
+    return t ? t('launcher.badges.quickLink') : 'Quick Link';
   }
   return '';
 }
@@ -407,8 +409,20 @@ export function renderSuperCmdLogoIcon(): React.ReactNode {
   );
 }
 
-export function getCommandDisplayTitle(command: CommandInfo): string {
+export function getCommandDisplayTitle(command: CommandInfo, t?: Translator): string {
   if (command.category === 'app' && isSuperCmdAppTitle(command.title)) return 'SuperCmd';
+  if (t) {
+    switch (String(command.id || '').trim()) {
+      case 'system-open-settings':
+        return t('settings.title');
+      case 'system-supercmd-whisper':
+        return t('whisper.title');
+      case 'system-supercmd-speak':
+        return t('read.title');
+      default:
+        break;
+    }
+  }
   return command.title;
 }
 

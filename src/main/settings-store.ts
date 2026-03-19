@@ -57,6 +57,17 @@ export interface HyperKeySettings {
 
 export type AppFontSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
 export type AppUiStyle = 'default' | 'glassy';
+export type AppLanguage =
+  | 'system'
+  | 'en'
+  | 'zh-Hans'
+  | 'zh-Hant'
+  | 'ja'
+  | 'ko'
+  | 'fr'
+  | 'de'
+  | 'es'
+  | 'ru';
 
 export interface AppSettings {
   globalShortcut: string;
@@ -75,6 +86,7 @@ export interface AppSettings {
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
+  appLanguage: AppLanguage;
   fontSize: AppFontSize;
   uiStyle: AppUiStyle;
   baseColor: string;
@@ -157,6 +169,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   fileSearchProtectedRootsEnabled: false,
   ai: { ...DEFAULT_AI_SETTINGS },
   debugMode: false,
+  appLanguage: 'system',
   fontSize: 'medium',
   uiStyle: 'glassy',
   baseColor: '#101113',
@@ -190,6 +203,37 @@ function normalizeUiStyle(value: any): AppUiStyle {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'glassy') return 'glassy';
   return 'default';
+}
+
+function normalizeAppLanguage(value: any): AppLanguage {
+  const normalized = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  if (!normalized || normalized === 'system' || normalized === 'auto') return 'system';
+  if (normalized === 'en' || normalized.startsWith('en-')) return 'en';
+  if (
+    normalized === 'zh' ||
+    normalized === 'zh-cn' ||
+    normalized === 'zh-sg' ||
+    normalized === 'zh-hans' ||
+    normalized.startsWith('zh-hans-')
+  ) {
+    return 'zh-Hans';
+  }
+  if (
+    normalized === 'zh-tw' ||
+    normalized === 'zh-hk' ||
+    normalized === 'zh-mo' ||
+    normalized === 'zh-hant' ||
+    normalized.startsWith('zh-hant-')
+  ) {
+    return 'zh-Hant';
+  }
+  if (normalized === 'ja' || normalized === 'jp' || normalized.startsWith('ja-')) return 'ja';
+  if (normalized === 'ko' || normalized === 'kr' || normalized.startsWith('ko-')) return 'ko';
+  if (normalized === 'fr' || normalized.startsWith('fr-')) return 'fr';
+  if (normalized === 'de' || normalized.startsWith('de-')) return 'de';
+  if (normalized === 'es' || normalized.startsWith('es-')) return 'es';
+  if (normalized === 'ru' || normalized.startsWith('ru-')) return 'ru';
+  return DEFAULT_SETTINGS.appLanguage;
 }
 
 function normalizeBaseColor(value: any): string {
@@ -302,6 +346,7 @@ export function loadSettings(): AppSettings {
       hyperKey: { ...DEFAULT_HYPER_KEY_SETTINGS, ...parsed.hyperKey },
       commandMetadata: parsed.commandMetadata ?? {},
       debugMode: parsed.debugMode ?? DEFAULT_SETTINGS.debugMode,
+      appLanguage: normalizeAppLanguage(parsed.appLanguage),
       fontSize: normalizeFontSize(parsed.fontSize),
       uiStyle: normalizeUiStyle(parsed.uiStyle),
       baseColor: normalizeBaseColor(parsed.baseColor),
@@ -334,6 +379,7 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   const updated = {
     ...current,
     ...patch,
+    appLanguage: normalizeAppLanguage(patch.appLanguage ?? current.appLanguage),
     launcherBackgroundImagePath: normalizeLauncherBackgroundImagePath(
       patch.launcherBackgroundImagePath ?? current.launcherBackgroundImagePath
     ),

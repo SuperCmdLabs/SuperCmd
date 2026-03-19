@@ -11,7 +11,7 @@
  */
 
 import { app } from 'electron';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -22,6 +22,7 @@ import { getAllQuickLinks, getQuickLinkCommandId, type QuickLink, type QuickLink
 import { loadSettings } from './settings-store';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 let iconCounter = 0;
 
 export interface CommandInfo {
@@ -466,6 +467,42 @@ function splitSearchKeywords(value: string): string[] {
     .filter((term) => term.length >= 2);
 }
 
+function addLocaleCandidate(set: Set<string>, value: string | undefined | null): void {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/-/g, '_');
+  if (!normalized) return;
+
+  const add = (candidate: string) => {
+    const trimmed = String(candidate || '').trim();
+    if (trimmed) set.add(trimmed);
+  };
+
+  add(normalized);
+
+  const base = normalized.split('_')[0];
+  if (base) add(base);
+
+  const lower = normalized.toLowerCase();
+  if (lower === 'zh_hans' || lower === 'zh_cn' || lower === 'zh_sg') {
+    add('zh_Hans');
+    add('zh_CN');
+    add('zh');
+    return;
+  }
+  if (lower === 'zh_hant' || lower === 'zh_tw' || lower === 'zh_hk' || lower === 'zh_mo') {
+    add('zh_Hant');
+    add('zh_TW');
+    add('zh_HK');
+    add('zh');
+    return;
+  }
+  if (lower === 'en') {
+    add('en_US');
+    add('en_GB');
+  }
+}
+
 function resolveQuickLinkIconName(icon: QuickLinkIcon): string | undefined {
   const raw = String(icon || '').trim();
   if (!raw) return undefined;
@@ -510,6 +547,7 @@ function buildQuickLinkKeywords(quickLink: QuickLink): string[] {
 
 function getLocaleCandidates(): string[] {
   const set = new Set<string>();
+  const preferredAppLanguage = loadSettings().appLanguage;
   const locale = String(Intl.DateTimeFormat().resolvedOptions().locale || '')
     .replace('-', '_')
     .trim();
@@ -519,19 +557,14 @@ function getLocaleCandidates(): string[] {
     ?.replace('-', '_')
     .trim();
 
-  if (locale) {
-    set.add(locale);
-    const base = locale.split('_')[0];
-    if (base) set.add(base);
+  if (preferredAppLanguage && preferredAppLanguage !== 'system') {
+    addLocaleCandidate(set, preferredAppLanguage);
   }
-  if (envLang) {
-    set.add(envLang);
-    const base = envLang.split('_')[0];
-    if (base) set.add(base);
-  }
-  set.add('en_US');
-  set.add('en_GB');
-  set.add('en');
+  addLocaleCandidate(set, locale);
+  addLocaleCandidate(set, envLang);
+  addLocaleCandidate(set, 'en_US');
+  addLocaleCandidate(set, 'en_GB');
+  addLocaleCandidate(set, 'en');
   return Array.from(set);
 }
 
@@ -571,6 +604,177 @@ async function readPlistFileJson(plistPath: string): Promise<Record<string, any>
   } catch {
     return null;
   }
+}
+
+async function resolveBundleDisplayNameViaSystem(
+  bundlePath: string,
+  keys: string[]
+): Promise<string | undefined> {
+  if (!fs.existsSync(bundlePath) || keys.length === 0) return undefined;
+
+  const script = `
+ObjC.import("Foundation");
+
+const bundlePath = ${JSON.stringify(bundlePath)};
+const keys = ${JSON.stringify(keys)};
+
+function unwrapString(value) {
+  if (!value) return "";
+  try {
+    const unwrapped = ObjC.unwrap(value);
+    if (typeof unwrapped === "string") return unwrapped.trim();
+    if (unwrapped === null || unwrapped === undefined) return "";
+    return String(unwrapped).trim();
+  } catch (_error) {
+    return "";
+  }
+}
+
+let resolved = "";
+const bundle = $.NSBundle.bundleWithPath($(bundlePath));
+
+if (bundle) {
+  for (const key of keys) {
+    const localizedValue = unwrapString(bundle.objectForInfoDictionaryKey($(key)));
+    if (localizedValue) {
+      resolved = localizedValue;
+      break;
+    }
+  }
+
+  if (!resolved) {
+    const infoDictionary = bundle.infoDictionary;
+    for (const key of keys) {
+      const rawValue = infoDictionary ? unwrapString(infoDictionary.objectForKey($(key))) : "";
+      if (!rawValue) continue;
+
+      for (const tableName of ["InfoPlist", "Localizable"]) {
+        const localizedValue = unwrapString(
+          bundle.localizedStringForKeyValueTable($(rawValue), $(rawValue), $(tableName))
+        );
+        if (localizedValue && localizedValue !== rawValue) {
+          resolved = localizedValue;
+          break;
+        }
+      }
+
+      if (!resolved) {
+        resolved = rawValue;
+      }
+      break;
+    }
+  }
+}
+
+resolved;
+`;
+
+  try {
+    const { stdout } = await execFileAsync('/usr/bin/osascript', ['-l', 'JavaScript', '-e', script]);
+    const resolved = String(stdout || '').trim();
+    return resolved || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function getLocalizedStringFromRecord(
+  record: Record<string, any> | null | undefined,
+  keys: string[]
+): string | undefined {
+  if (!record || typeof record !== 'object') return undefined;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function resolveLocalizedValueFromTable(
+  table: Record<string, any> | null,
+  keys: string[],
+  localeCandidates: string[]
+): string | undefined {
+  const directValue = getLocalizedStringFromRecord(table, keys);
+  if (directValue) return directValue;
+
+  if (!table || typeof table !== 'object') return undefined;
+
+  for (const locale of localeCandidates) {
+    const value = table[locale];
+    const localizedValue =
+      value && typeof value === 'object'
+        ? getLocalizedStringFromRecord(value as Record<string, any>, keys)
+        : undefined;
+    if (localizedValue) return localizedValue;
+  }
+
+  return undefined;
+}
+
+async function resolveLocalizedBundleDisplayName(
+  bundlePath: string,
+  ...keys: string[]
+): Promise<string | undefined> {
+  const resourcesDir = path.join(bundlePath, 'Contents', 'Resources');
+  if (!fs.existsSync(resourcesDir)) return undefined;
+
+  const localeCandidates = getLocaleCandidates();
+  const normalizedKeys = keys.map((key) => String(key || '').trim()).filter(Boolean);
+  if (normalizedKeys.length === 0) return undefined;
+
+  const localizedFromSystem = await resolveBundleDisplayNameViaSystem(bundlePath, normalizedKeys);
+  if (localizedFromSystem) return localizedFromSystem;
+
+  const localizedFromLoctable = resolveLocalizedValueFromTable(
+    await readPlistFileJson(path.join(resourcesDir, 'InfoPlist.loctable')),
+    normalizedKeys,
+    localeCandidates
+  );
+  if (localizedFromLoctable) return localizedFromLoctable;
+
+  const localizedFromRootStrings = resolveLocalizedValueFromTable(
+    await readPlistFileJson(path.join(resourcesDir, 'InfoPlist.strings')),
+    normalizedKeys,
+    localeCandidates
+  );
+  if (localizedFromRootStrings) return localizedFromRootStrings;
+
+  for (const locale of localeCandidates) {
+    const localizedFromStrings = resolveLocalizedValueFromTable(
+      await readPlistFileJson(path.join(resourcesDir, `${locale}.lproj`, 'InfoPlist.strings')),
+      normalizedKeys,
+      localeCandidates
+    );
+    if (localizedFromStrings) return localizedFromStrings;
+  }
+
+  const localizedFromLocalizableLoctable = resolveLocalizedValueFromTable(
+    await readPlistFileJson(path.join(resourcesDir, 'Localizable.loctable')),
+    normalizedKeys,
+    localeCandidates
+  );
+  if (localizedFromLocalizableLoctable) return localizedFromLocalizableLoctable;
+
+  const localizedFromLocalizableStrings = resolveLocalizedValueFromTable(
+    await readPlistFileJson(path.join(resourcesDir, 'Localizable.strings')),
+    normalizedKeys,
+    localeCandidates
+  );
+  if (localizedFromLocalizableStrings) return localizedFromLocalizableStrings;
+
+  for (const locale of localeCandidates) {
+    const localizedFromLocalizablePerLocale = resolveLocalizedValueFromTable(
+      await readPlistFileJson(path.join(resourcesDir, `${locale}.lproj`, 'Localizable.strings')),
+      normalizedKeys,
+      localeCandidates
+    );
+    if (localizedFromLocalizablePerLocale) return localizedFromLocalizablePerLocale;
+  }
+
+  return undefined;
 }
 
 async function discoverSettingsSearchTermCommands(
@@ -787,8 +991,10 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
           }
 
           const settingsAttrs = exAttrs.SettingsExtensionAttributes || {};
+          const fallbackDisplayName = String(info.CFBundleDisplayName || info.CFBundleName || '').trim();
           let displayName =
-            info.CFBundleDisplayName || info.CFBundleName || '';
+            (await resolveLocalizedBundleDisplayName(extPath, 'CFBundleDisplayName', 'CFBundleName')) ||
+            fallbackDisplayName;
           const bundleId: string = info.CFBundleIdentifier || '';
           const legacyBundleId: string | undefined =
             typeof settingsAttrs.legacyBundleIdentifier === 'string'
@@ -826,7 +1032,7 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
           const paneCommand: CommandInfo = {
             id: `settings-${key.replace(/[^a-z0-9]+/g, '-')}`,
             title: displayName,
-            keywords: buildSettingsKeywords(displayName, bundleId, legacyBundleId),
+            keywords: buildSettingsKeywords(displayName, bundleId, legacyBundleId, [fallbackDisplayName]),
             iconDataUrl,
             category: 'settings' as const,
             path: openIdentifier,
@@ -878,7 +1084,16 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
             typeof paneInfo?.CFBundleIdentifier === 'string'
               ? paneInfo.CFBundleIdentifier
               : undefined;
-          const displayName = canonicalSettingsTitle(rawName, paneBundleId);
+          const localizedDisplayName = await resolveLocalizedBundleDisplayName(
+            panePath,
+            'CFBundleDisplayName',
+            'CFBundleName'
+          );
+          const fallbackDisplayName = rawName;
+          const displayName = canonicalSettingsTitle(
+            localizedDisplayName || fallbackDisplayName,
+            paneBundleId
+          );
           const key = displayName.toLowerCase();
           if (seen.has(key)) return null;
           seen.add(key);
@@ -888,7 +1103,7 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
           const paneCommand: CommandInfo = {
             id: `settings-${key.replace(/[^a-z0-9]+/g, '-')}`,
             title: displayName,
-            keywords: buildSettingsKeywords(displayName, paneBundleId),
+            keywords: buildSettingsKeywords(displayName, paneBundleId, undefined, [fallbackDisplayName]),
             iconDataUrl,
             category: 'settings' as const,
             path: paneBundleId || rawName,
