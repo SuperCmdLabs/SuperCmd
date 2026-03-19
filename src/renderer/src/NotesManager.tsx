@@ -260,6 +260,46 @@ function setCursorPosition(el: HTMLElement, offset: number) {
   });
 }
 
+// ─── Menu Panel Styles (matches clipboard/extension action panels) ───
+
+function getMenuPanelStyle(): { className: string; style: React.CSSProperties } {
+  const isGlassyTheme =
+    document.documentElement.classList.contains('sc-glassy') ||
+    document.body.classList.contains('sc-glassy');
+  const isNativeLiquidGlass =
+    document.documentElement.classList.contains('sc-native-liquid-glass') ||
+    document.body.classList.contains('sc-native-liquid-glass');
+
+  const className = (isNativeLiquidGlass || isGlassyTheme)
+    ? 'rounded-3xl p-1'
+    : 'rounded-xl shadow-2xl';
+
+  const style: React.CSSProperties = isNativeLiquidGlass
+    ? {
+        background: 'rgba(var(--surface-base-rgb), 0.72)',
+        backdropFilter: 'blur(44px) saturate(155%)',
+        WebkitBackdropFilter: 'blur(44px) saturate(155%)' as any,
+        border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
+        boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26), inset 0 -1px 0 0 rgba(var(--on-surface-rgb), 0.05)',
+      }
+    : isGlassyTheme
+    ? {
+        background: 'linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.035) 38%, rgba(255,255,255,0.07) 100%), rgba(var(--surface-base-rgb), 0.58)',
+        backdropFilter: 'blur(128px) saturate(195%) contrast(107%) brightness(1.03)',
+        WebkitBackdropFilter: 'blur(128px) saturate(195%) contrast(107%) brightness(1.03)' as any,
+        border: '1px solid rgba(255, 255, 255, 0.14)',
+        boxShadow: '0 28px 58px -14px rgba(0,0,0,0.42), inset 0 -1px 0 0 rgba(0,0,0,0.08)',
+      }
+    : {
+        background: 'var(--card-bg)',
+        backdropFilter: 'blur(40px)',
+        WebkitBackdropFilter: 'blur(40px)' as any,
+        border: '1px solid var(--border-primary)',
+      };
+
+  return { className, style };
+}
+
 // ─── Slash Command Menu ──────────────────────────────────────────────
 
 const SLASH_COMMANDS: Array<{ type: BlockType; label: string; description: string; icon: React.ReactNode; keywords: string[] }> = [
@@ -318,33 +358,41 @@ const SlashMenu: React.FC<SlashMenuProps> = ({ position, onSelect, onClose }) =>
     }
   };
 
-  // Adjust position so menu doesn't overflow the window
+  // Adjust position after first render using actual menu size
   const [adjustedPos, setAdjustedPos] = useState(position);
   useEffect(() => {
-    const menuHeight = 400;
-    const menuWidth = 260;
-    const winH = window.innerHeight;
-    const winW = window.innerWidth;
+    requestAnimationFrame(() => {
+      const menuEl = menuRef.current;
+      const menuHeight = menuEl?.offsetHeight || 380;
+      const menuWidth = 260;
+      const winH = window.innerHeight;
+      const winW = window.innerWidth;
 
-    let top = position.top;
-    let left = position.left;
+      let top = position.top;
+      let left = position.left;
 
-    if (top + menuHeight > winH) {
-      top = Math.max(8, top - menuHeight - 30);
-    }
-    if (left + menuWidth > winW) {
-      left = Math.max(8, winW - menuWidth - 8);
-    }
+      // position.top = rect.bottom + 4 (below the cursor line)
+      // The cursor line top ≈ position.top - 4 - ~22 (line height)
+      if (top + menuHeight > winH) {
+        const cursorTop = position.top - 4 - 22;
+        top = Math.max(8, cursorTop - menuHeight);
+      }
+      if (left + menuWidth > winW) {
+        left = Math.max(8, winW - menuWidth - 8);
+      }
 
-    setAdjustedPos({ top, left });
+      setAdjustedPos({ top, left });
+    });
   }, [position]);
 
-  return (
+  const panel = getMenuPanelStyle();
+
+  return createPortal(
     <div className="fixed inset-0 z-[9998]" onClick={onClose}>
       <div
         ref={menuRef}
-        className="absolute z-[9999] w-[260px] bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-lg shadow-2xl overflow-hidden"
-        style={{ top: adjustedPos.top, left: adjustedPos.left }}
+        className={`fixed z-[9999] w-[260px] overflow-hidden ${panel.className}`}
+        style={{ ...panel.style, top: adjustedPos.top, left: adjustedPos.left }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
@@ -377,7 +425,8 @@ const SlashMenu: React.FC<SlashMenuProps> = ({ position, onSelect, onClose }) =>
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -1534,7 +1583,8 @@ const BrowseOverlay: React.FC<BrowseOverlayProps> = ({ notes, currentNoteId, onS
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
       <div className="absolute inset-0" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-[360px] mx-4 bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-xl shadow-2xl overflow-hidden">
+      <div className={`relative z-10 w-full max-w-[360px] mx-4 overflow-hidden ${getMenuPanelStyle().className}`}
+        style={getMenuPanelStyle().style}>
         <div className="px-3 py-2.5 border-b border-[var(--ui-divider)]">
           <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)}
             placeholder="Search for notes..."
@@ -1639,48 +1689,51 @@ const ActionsOverlay: React.FC<ActionsOverlayProps> = ({ actions, onClose }) => 
 
   let flatIdx = 0;
 
+  const panel = getMenuPanelStyle();
+
   return (
-    <div className="fixed inset-0 z-[9999]">
+    <div className="fixed inset-0 z-[9999]" style={{ background: 'var(--bg-scrim)' }}>
       <div className="absolute inset-0" onClick={onClose} />
-      <div className="absolute bottom-[44px] left-0 w-full max-w-[420px] px-4">
-        <div className="bg-[var(--card-bg)] backdrop-blur-xl border border-[var(--ui-divider)] rounded-xl shadow-2xl overflow-hidden">
-          <div className="px-3 py-2.5 border-b border-[var(--ui-divider)]">
-            <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search for actions..."
-              className="w-full bg-transparent text-[var(--text-primary)] text-[13px] placeholder:text-[var(--text-subtle)] outline-none" />
-          </div>
-          <div ref={listRef} className="max-h-[420px] overflow-y-auto custom-scrollbar py-1">
-            {groupedActions.map((group, gi) => (
-              <div key={group.section || `__${gi}`}>
-                {gi > 0 && <div className="mx-3 my-1 border-t border-[var(--ui-divider)]" />}
-                {group.actions.map((action) => {
-                  const idx = flatIdx++;
-                  return (
-                    <div key={idx} data-action-item
-                      onClick={() => { if (!action.disabled) action.execute(); }}
-                      onMouseEnter={() => setSelectedIdx(idx)}
-                      className={`flex items-center gap-3 px-3 py-[7px] cursor-pointer transition-colors ${
-                        idx === selectedIdx ? 'bg-[var(--accent)]/8' : 'hover:bg-[var(--bg-secondary)]/50'
-                      } ${action.style === 'destructive' ? 'text-red-400' : action.disabled ? 'text-[var(--text-disabled)]' : 'text-[var(--text-secondary)]'}`}
-                    >
-                      <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-60">{action.icon}</span>
-                      <span className="flex-1 text-[12px]">{action.title}</span>
-                      {action.shortcut && (
-                        <span className="flex items-center gap-0.5 flex-shrink-0">
-                          {action.shortcut.map((k, ki) => (
-                            <kbd key={ki} className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded bg-[var(--kbd-bg)] text-[10px] text-[var(--text-subtle)] font-medium">
-                              {k}
-                            </kbd>
-                          ))}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-            {filtered.length === 0 && <div className="px-3 py-4 text-center text-[11px] text-[var(--text-disabled)]">No actions found</div>}
-          </div>
+      <div
+        className={`absolute bottom-12 right-3 w-80 max-h-[65vh] overflow-hidden flex flex-col ${panel.className}`}
+        style={panel.style}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-3 py-2.5 border-b border-[var(--ui-divider)]">
+          <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search for actions..."
+            className="w-full bg-transparent text-[var(--text-primary)] text-[13px] placeholder:text-[var(--text-subtle)] outline-none" />
+        </div>
+        <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar py-1">
+          {groupedActions.map((group, gi) => (
+            <div key={group.section || `__${gi}`}>
+              {gi > 0 && <hr className="border-[var(--ui-divider)] my-0.5" />}
+              {group.actions.map((action) => {
+                const idx = flatIdx++;
+                return (
+                  <div key={idx} data-action-item
+                    onClick={() => { if (!action.disabled) action.execute(); }}
+                    onMouseEnter={() => setSelectedIdx(idx)}
+                    className={`flex items-center gap-3 px-3 py-[7px] cursor-pointer transition-colors ${action.style === 'destructive' ? 'text-red-400' : action.disabled ? 'text-[var(--text-disabled)]' : 'text-[var(--text-secondary)]'}`}
+                    style={idx === selectedIdx ? { background: 'rgba(255,255,255,0.08)' } : undefined}
+                  >
+                    <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-60">{action.icon}</span>
+                    <span className="flex-1 text-[12px]">{action.title}</span>
+                    {action.shortcut && (
+                      <span className="flex items-center gap-0.5 flex-shrink-0">
+                        {action.shortcut.map((k, ki) => (
+                          <kbd key={ki} className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded bg-[var(--kbd-bg)] text-[10px] text-[var(--text-subtle)] font-medium">
+                            {k}
+                          </kbd>
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+          {filtered.length === 0 && <div className="px-3 py-4 text-center text-[11px] text-[var(--text-disabled)]">No actions found</div>}
         </div>
       </div>
     </div>
