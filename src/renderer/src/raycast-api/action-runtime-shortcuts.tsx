@@ -33,6 +33,8 @@ export function matchesShortcut(e: React.KeyboardEvent | KeyboardEvent, shortcut
   if (!keyMatch && !codeMatch) return false;
 
   const modifiers = shortcut.modifiers || [];
+  // Hyper shortcuts are handled by the native monitor, not DOM events
+  if (modifiers.includes('hyper')) return false;
   if (modifiers.includes('cmd') !== e.metaKey) return false;
   if ((modifiers.includes('opt') || modifiers.includes('option') || modifiers.includes('alt')) !== e.altKey) return false;
   if (modifiers.includes('shift') !== e.shiftKey) return false;
@@ -53,6 +55,7 @@ export function renderShortcut(shortcut?: ActionShortcut): React.ReactNode {
     else if (mod === 'opt' || mod === 'alt') parts.push('⌥');
     else if (mod === 'shift') parts.push('⇧');
     else if (mod === 'ctrl') parts.push('⌃');
+    else if (mod === 'hyper') parts.push('✦');
   }
 
   return (

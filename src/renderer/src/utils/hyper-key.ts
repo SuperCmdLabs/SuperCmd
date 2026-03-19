@@ -11,7 +11,7 @@ export function formatShortcutForDisplay(shortcut: string): string {
     .map((token) => {
       const value = String(token || '').trim();
       if (!value) return value;
-      if (/^hyper$/i.test(value) || value === '✦') return 'Hyper';
+      if (/^hyper$/i.test(value) || value === '✦') return '✦';
       if (/^(command|cmd)$/i.test(value)) return '⌘';
       if (/^(control|ctrl)$/i.test(value)) return '⌃';
       if (/^(alt|option)$/i.test(value)) return '⌥';
