@@ -32,10 +32,11 @@ type InstallStatus =
   | { kind: 'success'; name: string; title: string; message: string }
   | { kind: 'failure'; name: string; title: string; message: string };
 
-const SEARCH_TOKEN_SPLIT_REGEX = /[^a-z0-9]+/g;
+const SEARCH_TOKEN_SPLIT_REGEX = /[^\p{L}\p{N}]+/gu;
 
 function normalizeSearchText(value: string): string {
   return String(value || '')
+    .normalize('NFKD')
     .toLowerCase()
     .replace(SEARCH_TOKEN_SPLIT_REGEX, ' ')
     .trim();
