@@ -13,27 +13,28 @@ import * as http from 'http';
 import * as crypto from 'crypto';
 import { loadChatGPTTokens } from './chatgpt-auth';
 
-// ─── SSE line-by-line parser using data events ───────────────────
+// ─── Callback-based SSE stream consumer ──────────────────────────
 
 /**
- * Parse SSE events from an IncomingMessage using 'data' events
- * for real-time streaming (no buffering). Yields parsed event objects.
+ * Create an async generator from response 'data' events.
+ * Each SSE output_text.delta is yielded individually for real-time streaming.
  */
-function parseSSEEvents(
+async function* streamResponseSSE(
   response: http.IncomingMessage,
   signal?: AbortSignal
-): AsyncGenerator<any> {
-  let buffer = '';
-  let done = false;
-  const pending: any[] = [];
-  let resolve: (() => void) | null = null;
-  let rejectFn: ((err: Error) => void) | null = null;
+): AsyncGenerator<string> {
+  // Push-based async queue: data events push, generator pulls
+  const queue: Array<string | null | Error> = []; // null = done, Error = error
+  let waiting: ((value: void) => void) | null = null;
 
+  const notify = () => { if (waiting) { const w = waiting; waiting = null; w(); } };
+
+  let sseBuffer = '';
   response.on('data', (chunk: Buffer) => {
-    buffer += chunk.toString();
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
+    if (signal?.aborted) return;
+    sseBuffer += chunk.toString();
+    const lines = sseBuffer.split('\n');
+    sseBuffer = lines.pop() || '';
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed || !trimmed.startsWith('data: ')) continue;
@@ -41,36 +42,36 @@ function parseSSEEvents(
       if (!data || data === '[DONE]') continue;
       try {
         const evt = JSON.parse(data);
-        pending.push(evt);
-        if (resolve) { resolve(); resolve = null; }
+        const kind = evt.type;
+        if (kind === 'response.output_text.delta') {
+          const delta = evt.delta || '';
+          if (delta) { queue.push(delta); notify(); }
+        } else if (kind === 'response.failed') {
+          queue.push(new Error(evt?.response?.error?.message || evt?.error?.message || 'ChatGPT request failed'));
+          notify();
+          return;
+        } else if (kind === 'response.completed') {
+          queue.push(null);
+          notify();
+          return;
+        }
       } catch {}
     }
   });
 
-  response.on('end', () => {
-    done = true;
-    if (resolve) { resolve(); resolve = null; }
-  });
+  response.on('end', () => { queue.push(null); notify(); });
+  response.on('error', (err) => { queue.push(err); notify(); });
 
-  response.on('error', (err) => {
-    done = true;
-    if (rejectFn) { rejectFn(err); rejectFn = null; }
-    else if (resolve) { resolve(); resolve = null; }
-  });
-
-  async function* generate(): AsyncGenerator<any> {
-    while (true) {
-      if (signal?.aborted) return;
-      if (pending.length > 0) {
-        yield pending.shift();
-        continue;
-      }
-      if (done) return;
-      await new Promise<void>((res, rej) => { resolve = res; rejectFn = rej; });
+  while (true) {
+    if (signal?.aborted) return;
+    while (queue.length === 0) {
+      await new Promise<void>((r) => { waiting = r; });
     }
+    const item = queue.shift()!;
+    if (item === null || item === undefined) return;
+    if (item instanceof Error) throw item;
+    yield item as string;
   }
-
-  return generate();
 }
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -192,7 +193,7 @@ export async function* streamChatGPTAccount(
     model: upstreamModel,
     instructions: systemPrompt || 'You are a helpful assistant.',
     input,
-    tools: [],
+    tools: [{ type: 'web_search' }],
     tool_choice: 'auto',
     parallel_tool_calls: false,
     store: false,
@@ -260,21 +261,7 @@ export async function* streamChatGPTAccount(
     req.end();
   });
 
-  // Parse SSE events in real-time using data events (not async iterator which buffers)
-  const events = parseSSEEvents(response, signal);
-  for await (const evt of events) {
-    if (signal?.aborted) break;
-    const kind = evt.type;
-    if (kind === 'response.output_text.delta') {
-      const delta = evt.delta || '';
-      if (delta) yield delta;
-    } else if (kind === 'response.failed') {
-      throw new Error(evt?.response?.error?.message || evt?.error?.message || 'ChatGPT request failed');
-    } else if (kind === 'response.completed') {
-      break;
-    }
-    // Skip reasoning events silently
-  }
+  yield* streamResponseSSE(response, signal);
 }
 
 // ─── Multi-turn streaming ────────────────────────────────────────
@@ -307,7 +294,7 @@ export async function* streamChatGPTAccountMultiTurn(
     model: upstreamModel,
     instructions: systemPrompt || 'You are a helpful assistant.',
     input: inputItems,
-    tools: [],
+    tools: [{ type: 'web_search' }],
     tool_choice: 'auto',
     parallel_tool_calls: false,
     store: false,
@@ -375,19 +362,5 @@ export async function* streamChatGPTAccountMultiTurn(
     req.end();
   });
 
-  // Parse SSE events in real-time using data events (not async iterator which buffers)
-  const events = parseSSEEvents(response, signal);
-  for await (const evt of events) {
-    if (signal?.aborted) break;
-    const kind = evt.type;
-    if (kind === 'response.output_text.delta') {
-      const delta = evt.delta || '';
-      if (delta) yield delta;
-    } else if (kind === 'response.failed') {
-      throw new Error(evt?.response?.error?.message || evt?.error?.message || 'ChatGPT request failed');
-    } else if (kind === 'response.completed') {
-      break;
-    }
-    // Skip reasoning events silently
-  }
+  yield* streamResponseSSE(response, signal);
 }
