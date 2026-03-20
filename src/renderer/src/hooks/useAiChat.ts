@@ -72,9 +72,10 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
       }
     };
 
-    window.electron.onAIStreamChunk(handleChunk);
-    window.electron.onAIStreamDone(handleDone);
-    window.electron.onAIStreamError(handleError);
+    const cleanupChunk = window.electron.onAIStreamChunk(handleChunk);
+    const cleanupDone = window.electron.onAIStreamDone(handleDone);
+    const cleanupError = window.electron.onAIStreamError(handleError);
+    return () => { cleanupChunk(); cleanupDone(); cleanupError(); };
   }, []);
 
   // ── Auto-scroll AI response ─────────────────────────────────────

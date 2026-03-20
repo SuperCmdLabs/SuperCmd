@@ -762,9 +762,9 @@ export interface ElectronAPI {
   aiChatAddMessage: (conversationId: string, message: { role: 'user' | 'assistant'; content: string }) => Promise<ChatMessageData | null>;
   aiChatSend: (requestId: string, conversationId: string, message: string, modelOverride?: string, images?: string[]) => Promise<void>;
   aiChatCancel: (requestId: string) => Promise<void>;
-  onAiChatStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => void;
-  onAiChatStreamDone: (callback: (data: { requestId: string }) => void) => void;
-  onAiChatStreamError: (callback: (data: { requestId: string; error: string }) => void) => void;
+  onAiChatStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => () => void;
+  onAiChatStreamDone: (callback: (data: { requestId: string }) => void) => () => void;
+  onAiChatStreamError: (callback: (data: { requestId: string; error: string }) => void) => () => void;
   onAiChatOpenConversation: (callback: (conversationId: string) => void) => () => void;
 
   whisperRefineTranscript: (

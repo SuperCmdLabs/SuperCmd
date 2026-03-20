@@ -39,9 +39,11 @@ const AiChatView: React.FC<AiChatViewProps> = ({
 }) => {
   const continueInChat = React.useCallback(async () => {
     if (aiStreaming || !aiResponse) return;
-    const convo = await window.electron.aiChatCreate({ firstMessage: aiQuery });
-    await window.electron.aiChatAddMessage(convo.id, { role: 'assistant', content: aiResponse });
-    await window.electron.openAiChatWindow(convo.id);
+    // Fire-and-forget: create convo, add response, open window — don't block UI
+    window.electron.aiChatCreate({ firstMessage: aiQuery }).then((convo) => {
+      window.electron.aiChatAddMessage(convo.id, { role: 'assistant', content: aiResponse });
+      window.electron.openAiChatWindow(convo.id);
+    });
     window.electron.hideWindow();
     exitAiMode();
   }, [aiStreaming, aiResponse, aiQuery, exitAiMode]);

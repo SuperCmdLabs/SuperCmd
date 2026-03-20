@@ -9,8 +9,69 @@
  */
 
 import * as https from 'https';
+import * as http from 'http';
 import * as crypto from 'crypto';
 import { loadChatGPTTokens } from './chatgpt-auth';
+
+// ─── SSE line-by-line parser using data events ───────────────────
+
+/**
+ * Parse SSE events from an IncomingMessage using 'data' events
+ * for real-time streaming (no buffering). Yields parsed event objects.
+ */
+function parseSSEEvents(
+  response: http.IncomingMessage,
+  signal?: AbortSignal
+): AsyncGenerator<any> {
+  let buffer = '';
+  let done = false;
+  const pending: any[] = [];
+  let resolve: (() => void) | null = null;
+  let rejectFn: ((err: Error) => void) | null = null;
+
+  response.on('data', (chunk: Buffer) => {
+    buffer += chunk.toString();
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+      const data = trimmed.slice(6);
+      if (!data || data === '[DONE]') continue;
+      try {
+        const evt = JSON.parse(data);
+        pending.push(evt);
+        if (resolve) { resolve(); resolve = null; }
+      } catch {}
+    }
+  });
+
+  response.on('end', () => {
+    done = true;
+    if (resolve) { resolve(); resolve = null; }
+  });
+
+  response.on('error', (err) => {
+    done = true;
+    if (rejectFn) { rejectFn(err); rejectFn = null; }
+    else if (resolve) { resolve(); resolve = null; }
+  });
+
+  async function* generate(): AsyncGenerator<any> {
+    while (true) {
+      if (signal?.aborted) return;
+      if (pending.length > 0) {
+        yield pending.shift();
+        continue;
+      }
+      if (done) return;
+      await new Promise<void>((res, rej) => { resolve = res; rejectFn = rej; });
+    }
+  }
+
+  return generate();
+}
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -121,21 +182,26 @@ export async function* streamChatGPTAccount(
   const input = convertSinglePromptToInput(prompt);
   const sessionId = generateSessionId(systemPrompt, prompt);
 
+  const singleReasoningEffort = modelConfig.reasoning || 'medium';
+  const singleReasoningParam: any = { effort: singleReasoningEffort };
+  if (singleReasoningEffort !== 'none') {
+    singleReasoningParam.summary = 'auto';
+  }
+
   const payload: any = {
     model: upstreamModel,
     instructions: systemPrompt || 'You are a helpful assistant.',
     input,
+    tools: [],
+    tool_choice: 'auto',
+    parallel_tool_calls: false,
     store: false,
     stream: true,
     prompt_cache_key: sessionId,
+    reasoning: singleReasoningParam,
   };
 
-  // Add reasoning config for models that support it
-  if (modelConfig.reasoning !== 'none') {
-    payload.reasoning = {
-      effort: modelConfig.reasoning || 'medium',
-      summary: 'auto',
-    };
+  if (singleReasoningEffort !== 'none') {
     payload.include = ['reasoning.encrypted_content'];
   }
 
@@ -194,46 +260,20 @@ export async function* streamChatGPTAccount(
     req.end();
   });
 
-  // Parse SSE stream — single-turn mode: skip reasoning, only yield output text
-  let buffer = '';
-
-  for await (const rawChunk of response) {
+  // Parse SSE events in real-time using data events (not async iterator which buffers)
+  const events = parseSSEEvents(response, signal);
+  for await (const evt of events) {
     if (signal?.aborted) break;
-
-    buffer += rawChunk.toString();
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith('data: ')) continue;
-      const data = trimmed.slice(6);
-      if (!data || data === '[DONE]') continue;
-
-      let evt: any;
-      try {
-        evt = JSON.parse(data);
-      } catch {
-        continue;
-      }
-
-      const kind = evt.type;
-
-      if (kind === 'response.output_text.delta') {
-        const delta = evt.delta || '';
-        if (delta) yield delta;
-      } else if (kind === 'response.reasoning_summary_text.delta' || kind === 'response.reasoning_text.delta') {
-        // Skip reasoning in single-turn (inline AI) — no collapsible UI to display it
-      } else if (kind === 'response.failed') {
-        throw new Error(
-          evt?.response?.error?.message ||
-          evt?.error?.message ||
-          'ChatGPT request failed'
-        );
-      } else if (kind === 'response.completed') {
-        break;
-      }
+    const kind = evt.type;
+    if (kind === 'response.output_text.delta') {
+      const delta = evt.delta || '';
+      if (delta) yield delta;
+    } else if (kind === 'response.failed') {
+      throw new Error(evt?.response?.error?.message || evt?.error?.message || 'ChatGPT request failed');
+    } else if (kind === 'response.completed') {
+      break;
     }
+    // Skip reasoning events silently
   }
 }
 
@@ -256,20 +296,27 @@ export async function* streamChatGPTAccountMultiTurn(
   const inputItems = convertMessageHistoryToInput(messages);
   const effectiveSessionId = sessionId || generateSessionId(systemPrompt, messages[0]?.content || '');
 
+  // Build reasoning param — always send it (matching ChatMock behavior)
+  const reasoningEffort = modelConfig.reasoning || 'medium';
+  const reasoningParam: any = { effort: reasoningEffort };
+  if (reasoningEffort !== 'none') {
+    reasoningParam.summary = 'auto';
+  }
+
   const payload: any = {
     model: upstreamModel,
     instructions: systemPrompt || 'You are a helpful assistant.',
     input: inputItems,
+    tools: [],
+    tool_choice: 'auto',
+    parallel_tool_calls: false,
     store: false,
     stream: true,
     prompt_cache_key: effectiveSessionId,
+    reasoning: reasoningParam,
   };
 
-  if (modelConfig.reasoning !== 'none') {
-    payload.reasoning = {
-      effort: modelConfig.reasoning || 'medium',
-      summary: 'auto',
-    };
+  if (reasoningEffort !== 'none') {
     payload.include = ['reasoning.encrypted_content'];
   }
 
@@ -328,52 +375,19 @@ export async function* streamChatGPTAccountMultiTurn(
     req.end();
   });
 
-  let buffer = '';
-  let inThinking = false;
-  let thinkingClosed = false;
-
-  for await (const rawChunk of response) {
+  // Parse SSE events in real-time using data events (not async iterator which buffers)
+  const events = parseSSEEvents(response, signal);
+  for await (const evt of events) {
     if (signal?.aborted) break;
-    buffer += rawChunk.toString();
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith('data: ')) continue;
-      const data = trimmed.slice(6);
-      if (!data || data === '[DONE]') continue;
-      let evt: any;
-      try { evt = JSON.parse(data); } catch { continue; }
-      const kind = evt.type;
-
-      // Reasoning/thinking output — wrap in <think> tags
-      if (kind === 'response.reasoning_summary_text.delta' || kind === 'response.reasoning_text.delta') {
-        const delta = evt.delta || '';
-        if (delta) {
-          if (!inThinking && !thinkingClosed) {
-            yield '<think>\n';
-            inThinking = true;
-          }
-          if (inThinking) yield delta;
-        }
-      } else if (kind === 'response.output_text.delta') {
-        // Close thinking block before first output
-        if (inThinking && !thinkingClosed) {
-          yield '\n</think>\n\n';
-          inThinking = false;
-          thinkingClosed = true;
-        }
-        const delta = evt.delta || '';
-        if (delta) yield delta;
-      } else if (kind === 'response.failed') {
-        throw new Error(evt?.response?.error?.message || evt?.error?.message || 'ChatGPT request failed');
-      } else if (kind === 'response.completed') {
-        if (inThinking && !thinkingClosed) {
-          yield '\n</think>\n\n';
-        }
-        break;
-      }
+    const kind = evt.type;
+    if (kind === 'response.output_text.delta') {
+      const delta = evt.delta || '';
+      if (delta) yield delta;
+    } else if (kind === 'response.failed') {
+      throw new Error(evt?.response?.error?.message || evt?.error?.message || 'ChatGPT request failed');
+    } else if (kind === 'response.completed') {
+      break;
     }
+    // Skip reasoning events silently
   }
 }

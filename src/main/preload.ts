@@ -734,13 +734,19 @@ contextBridge.exposeInMainWorld('electron', {
     return () => { ipcRenderer.removeListener('whisper-native-chunk', listener); };
   },
   onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => {
-    ipcRenderer.on('ai-stream-chunk', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-stream-chunk', listener);
+    return () => { ipcRenderer.removeListener('ai-stream-chunk', listener); };
   },
   onAIStreamDone: (callback: (data: { requestId: string }) => void) => {
-    ipcRenderer.on('ai-stream-done', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-stream-done', listener);
+    return () => { ipcRenderer.removeListener('ai-stream-done', listener); };
   },
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => {
-    ipcRenderer.on('ai-stream-error', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-stream-error', listener);
+    return () => { ipcRenderer.removeListener('ai-stream-error', listener); };
   },
 
   // ─── ChatGPT Account Login ─────────────────────────────────────
@@ -782,13 +788,19 @@ contextBridge.exposeInMainWorld('electron', {
   aiChatCancel: (requestId: string): Promise<void> =>
     ipcRenderer.invoke('ai-chat-cancel', requestId),
   onAiChatStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => {
-    ipcRenderer.on('ai-chat-stream-chunk', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-chat-stream-chunk', listener);
+    return () => { ipcRenderer.removeListener('ai-chat-stream-chunk', listener); };
   },
   onAiChatStreamDone: (callback: (data: { requestId: string }) => void) => {
-    ipcRenderer.on('ai-chat-stream-done', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-chat-stream-done', listener);
+    return () => { ipcRenderer.removeListener('ai-chat-stream-done', listener); };
   },
   onAiChatStreamError: (callback: (data: { requestId: string; error: string }) => void) => {
-    ipcRenderer.on('ai-chat-stream-error', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-chat-stream-error', listener);
+    return () => { ipcRenderer.removeListener('ai-chat-stream-error', listener); };
   },
   onAiChatOpenConversation: (callback: (conversationId: string) => void) => {
     const listener = (_event: any, id: string) => callback(id);

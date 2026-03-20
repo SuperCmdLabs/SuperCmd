@@ -8,9 +8,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Plus, Search, Trash2, Pin, PinOff, Pencil, Sparkles, Send,
-  MessageSquare, Check, X, ChevronDown, ImagePlus, X as XIcon,
+  MessageSquare, Check, X, ImagePlus,
 } from 'lucide-react';
-import type { Conversation, ChatMessageData, AISettings } from '../../types/electron';
+import type { Conversation, ChatMessageData } from '../../types/electron';
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -96,8 +96,9 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
         models.push(...allModels[ai.provider]);
       }
       setAvailableModels(models);
-      // Set default chat model to current settings default
-      if (ai.defaultModel) setChatModel(ai.defaultModel);
+      // Set default chat model — prefer settings default, then first available
+      const defaultModel = ai.defaultModel || (models[0]?.id ?? '');
+      setChatModel(defaultModel);
     });
   }, []);
 
@@ -116,30 +117,37 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
     if (!streaming) inputRef.current?.focus();
   }, [streaming]);
 
-  // ── Streaming listeners ────────────────────────────────────────
+  // Focus input when conversation loads or changes
+  useEffect(() => {
+    if (activeConvo) inputRef.current?.focus();
+  }, [activeConvo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Streaming listeners (registered once) ────────────────────
+
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
 
   useEffect(() => {
-    const onChunk = (d: { requestId: string; chunk: string }) => {
+    const cleanupChunk = window.electron.onAiChatStreamChunk((d) => {
       if (d.requestId === requestIdRef.current) setStreamingText((p) => p + d.chunk);
-    };
-    const onDone = (d: { requestId: string }) => {
+    });
+    const cleanupDone = window.electron.onAiChatStreamDone((d) => {
       if (d.requestId === requestIdRef.current) {
         setStreaming(false);
         setStreamingText('');
-        if (activeId) window.electron.aiChatGet(activeId).then(setActiveConvo);
-        refreshList();
+        const curId = activeIdRef.current;
+        if (curId) window.electron.aiChatGet(curId).then(setActiveConvo);
+        window.electron.aiChatGetAll().then(setConversations);
       }
-    };
-    const onError = (d: { requestId: string; error: string }) => {
+    });
+    const cleanupError = window.electron.onAiChatStreamError((d) => {
       if (d.requestId === requestIdRef.current) {
         setStreaming(false);
         setStreamingText((p) => p + `\n\nError: ${d.error}`);
       }
-    };
-    window.electron.onAiChatStreamChunk(onChunk);
-    window.electron.onAiChatStreamDone(onDone);
-    window.electron.onAiChatStreamError(onError);
-  }, [activeId, refreshList]);
+    });
+    return () => { cleanupChunk(); cleanupDone(); cleanupError(); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── IPC: open-conversation event from main ─────────────────────
 
@@ -257,15 +265,8 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
           ))}
         </div>
       )}
+      {/* Textarea + send */}
       <div className="flex items-end gap-2 px-4 py-2.5">
-        <button
-          onClick={handleImageUpload}
-          disabled={streaming}
-          className="p-1 rounded-md text-[var(--text-subtle)] hover:text-[var(--text-muted)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors flex-shrink-0 disabled:opacity-30 mb-0.5"
-          title="Attach image"
-        >
-          <ImagePlus className="w-4 h-4" />
-        </button>
         <textarea
           ref={inputRef}
           value={inputValue}
@@ -287,20 +288,30 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
           <Send className="w-3.5 h-3.5" />
         </button>
       </div>
-      {availableModels.length > 0 && (
-        <div className="px-3 pb-2 pt-0">
-          <select
-            value={chatModel}
-            onChange={(e) => setChatModel(e.target.value)}
-            className="bg-transparent border-none outline-none text-[0.625rem] text-[var(--text-subtle)] cursor-pointer hover:text-[var(--text-muted)] transition-colors"
-          >
-            <option value="">Auto</option>
-            {availableModels.map((m) => (
+      {/* Bottom bar: model selector + image attach */}
+      <div className="flex items-center justify-between px-3 pb-2 pt-0">
+        <select
+          value={chatModel}
+          onChange={(e) => setChatModel(e.target.value)}
+          className="bg-transparent border-none outline-none text-[0.625rem] text-[var(--text-subtle)] cursor-pointer hover:text-[var(--text-muted)] transition-colors"
+        >
+          {availableModels.length > 0 ? (
+            availableModels.map((m) => (
               <option key={m.id} value={m.id}>{m.label}</option>
-            ))}
-          </select>
-        </div>
-      )}
+            ))
+          ) : (
+            <option value="">Default</option>
+          )}
+        </select>
+        <button
+          onClick={handleImageUpload}
+          disabled={streaming}
+          className="p-1 rounded-md text-[var(--text-subtle)] hover:text-[var(--text-muted)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors flex-shrink-0 disabled:opacity-30"
+          title="Attach image"
+        >
+          <ImagePlus className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 
@@ -435,7 +446,17 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
                 ))}
 
                 {streaming && streamingText && (
-                  <StreamingMessage text={streamingText} />
+                  <div className="flex gap-3">
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-1"
+                      style={{ background: 'rgba(var(--on-surface-rgb), 0.06)' }}
+                    >
+                      <Sparkles className="w-3 h-3 text-[var(--accent)]" />
+                    </div>
+                    <div className="flex-1 min-w-0 text-[0.8125rem] text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap pt-0.5 select-text">
+                      {streamingText}
+                    </div>
+                  </div>
                 )}
 
                 {streaming && !streamingText && (
@@ -489,112 +510,6 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
   );
 };
 
-// ─── Think block parser ──────────────────────────────────────────────
-
-function parseThinkBlocks(content: string): Array<{ type: 'think' | 'text'; content: string }> {
-  const blocks: Array<{ type: 'think' | 'text'; content: string }> = [];
-  const regex = /<think>\n?([\s\S]*?)\n?<\/think>/g;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = regex.exec(content)) !== null) {
-    // Text before this think block
-    if (match.index > lastIndex) {
-      const text = content.slice(lastIndex, match.index).trim();
-      if (text) blocks.push({ type: 'text', content: text });
-    }
-    // The think block itself
-    const thinkContent = match[1].trim();
-    if (thinkContent) blocks.push({ type: 'think', content: thinkContent });
-    lastIndex = regex.lastIndex;
-  }
-
-  // Remaining text after last think block
-  if (lastIndex < content.length) {
-    const text = content.slice(lastIndex).trim();
-    if (text) blocks.push({ type: 'text', content: text });
-  }
-
-  // No think tags found — return as single text block
-  if (blocks.length === 0 && content.trim()) {
-    blocks.push({ type: 'text', content: content.trim() });
-  }
-
-  return blocks;
-}
-
-// Detect partial thinking during streaming (has <think> but no </think>)
-function parseStreamingContent(content: string): { thinking: string | null; text: string } {
-  const thinkStart = content.indexOf('<think>');
-  if (thinkStart === -1) return { thinking: null, text: content };
-
-  const thinkEnd = content.indexOf('</think>');
-  if (thinkEnd === -1) {
-    // Still thinking — everything after <think> is the thinking content
-    const thinking = content.slice(thinkStart + 7).trim();
-    const textBefore = content.slice(0, thinkStart).trim();
-    return { thinking: thinking || '', text: textBefore };
-  }
-
-  // Think block is closed — parse normally and return remaining text
-  const blocks = parseThinkBlocks(content);
-  const thinkBlocks = blocks.filter(b => b.type === 'think').map(b => b.content).join('\n');
-  const textBlocks = blocks.filter(b => b.type === 'text').map(b => b.content).join('\n\n');
-  return { thinking: thinkBlocks || null, text: textBlocks };
-}
-
-// ─── Collapsible Thinking Component ──────────────────────────────────
-
-const ThinkingBlock: React.FC<{ content: string; isStreaming?: boolean }> = ({ content, isStreaming }) => {
-  const [expanded, setExpanded] = useState(false);
-
-  // Auto-expand while streaming
-  const isOpen = isStreaming || expanded;
-
-  // Get a short summary (first line or first ~60 chars)
-  const summary = (() => {
-    const firstLine = content.split('\n').find(l => l.trim()) || '';
-    const cleaned = firstLine.replace(/^\*\*|\*\*$/g, '').trim();
-    if (cleaned.length <= 60) return cleaned;
-    return cleaned.slice(0, 57) + '...';
-  })();
-
-  return (
-    <div
-      className="rounded-lg mb-2"
-      style={{ background: 'rgba(var(--on-surface-rgb), 0.04)' }}
-    >
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 w-full px-3 py-2 text-left"
-      >
-        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-          {isStreaming ? (
-            <div className="flex gap-0.5 flex-shrink-0">
-              <span className="w-1 h-1 rounded-full bg-[var(--accent)] animate-pulse" />
-              <span className="w-1 h-1 rounded-full bg-[var(--accent)] animate-pulse" style={{ animationDelay: '0.15s' }} />
-              <span className="w-1 h-1 rounded-full bg-[var(--accent)] animate-pulse" style={{ animationDelay: '0.3s' }} />
-            </div>
-          ) : (
-            <Sparkles className="w-3 h-3 text-[var(--accent)] opacity-60 flex-shrink-0" />
-          )}
-          <span className="text-[0.75rem] text-[var(--text-muted)] truncate">
-            {isStreaming ? 'Thinking...' : (summary || 'Thought process')}
-          </span>
-        </div>
-        <ChevronDown className={`w-3 h-3 text-[var(--text-subtle)] transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-      {isOpen && (
-        <div className="px-3 pb-2.5">
-          <div className="text-[0.75rem] text-[var(--text-muted)] leading-relaxed whitespace-pre-wrap select-text">
-            {content}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
 // ─── Message Bubble ──────────────────────────────────────────────────
 
 const MessageBubble: React.FC<{ message: ChatMessageData }> = ({ message }) => {
@@ -618,9 +533,6 @@ const MessageBubble: React.FC<{ message: ChatMessageData }> = ({ message }) => {
     );
   }
 
-  // Parse think blocks from assistant messages
-  const blocks = parseThinkBlocks(message.content);
-
   return (
     <div className="flex gap-3">
       <div
@@ -629,43 +541,8 @@ const MessageBubble: React.FC<{ message: ChatMessageData }> = ({ message }) => {
       >
         <Sparkles className="w-3 h-3 text-[var(--accent)]" />
       </div>
-      <div className="flex-1 min-w-0 pt-0.5">
-        {blocks.map((block, i) =>
-          block.type === 'think' ? (
-            <ThinkingBlock key={i} content={block.content} />
-          ) : (
-            <div key={i} className="text-[0.8125rem] text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap select-text">
-              {block.content}
-            </div>
-          )
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ─── Streaming Message ───────────────────────────────────────────────
-
-const StreamingMessage: React.FC<{ text: string }> = ({ text }) => {
-  const { thinking, text: displayText } = parseStreamingContent(text);
-
-  return (
-    <div className="flex gap-3">
-      <div
-        className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-1"
-        style={{ background: 'rgba(var(--on-surface-rgb), 0.06)' }}
-      >
-        <Sparkles className="w-3 h-3 text-[var(--accent)]" />
-      </div>
-      <div className="flex-1 min-w-0 pt-0.5">
-        {thinking !== null && (
-          <ThinkingBlock content={thinking} isStreaming={!text.includes('</think>')} />
-        )}
-        {displayText && (
-          <div className="text-[0.8125rem] text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap select-text">
-            {displayText}
-          </div>
-        )}
+      <div className="flex-1 min-w-0 text-[0.8125rem] text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap pt-0.5 select-text">
+        {message.content}
       </div>
     </div>
   );

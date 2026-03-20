@@ -13043,8 +13043,13 @@ if let tiff = image?.tiffRepresentation {
         return;
       }
 
-      // Add the user message (with optional images)
-      addMessageToConversation(conversationId, { role: 'user', content: message, images });
+      // Add the user message — skip if the conversation was just created
+      // (aiChatCreate already added the first message)
+      const lastMsg = convo.messages[convo.messages.length - 1];
+      const alreadyAdded = lastMsg && lastMsg.role === 'user' && lastMsg.content === message;
+      if (!alreadyAdded) {
+        addMessageToConversation(conversationId, { role: 'user', content: message, images });
+      }
 
       // Reload to get updated messages
       const updatedConvo = getConversation(conversationId)!;
