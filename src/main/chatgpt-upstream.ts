@@ -20,19 +20,19 @@ const RESPONSES_URL = 'https://chatgpt.com/backend-api/codex/responses';
 
 interface ChatGPTModelConfig {
   upstreamId: string;
-  reasoning?: string; // 'none' | 'low' | 'medium' | 'high'
+  reasoning: string; // 'none' | 'low' | 'medium' | 'high' | 'xhigh'
 }
 
 const CHATGPT_MODELS: Record<string, ChatGPTModelConfig> = {
-  'gpt-5.4': { upstreamId: 'gpt-5.4', reasoning: 'none' },
-  'gpt-5.2': { upstreamId: 'gpt-5.2' },
-  'gpt-5.1': { upstreamId: 'gpt-5.1' },
-  'gpt-5': { upstreamId: 'gpt-5' },
-  'gpt-5-codex': { upstreamId: 'gpt-5-codex' },
-  'gpt-5.2-codex': { upstreamId: 'gpt-5.2-codex' },
-  'gpt-5.1-codex': { upstreamId: 'gpt-5.1-codex' },
-  'codex-mini': { upstreamId: 'codex-mini' },
-  'gpt-4o': { upstreamId: 'gpt-4o', reasoning: 'none' },
+  'gpt-5':        { upstreamId: 'gpt-5',            reasoning: 'medium' },
+  'gpt-5.4':      { upstreamId: 'gpt-5.4',          reasoning: 'none' },
+  'gpt-5.2':      { upstreamId: 'gpt-5.2',          reasoning: 'medium' },
+  'gpt-5.1':      { upstreamId: 'gpt-5.1',          reasoning: 'medium' },
+  'gpt-5-codex':  { upstreamId: 'gpt-5-codex',      reasoning: 'medium' },
+  'gpt-5.2-codex':{ upstreamId: 'gpt-5.2-codex',    reasoning: 'medium' },
+  'gpt-5.1-codex':{ upstreamId: 'gpt-5.1-codex',    reasoning: 'medium' },
+  'codex-mini':   { upstreamId: 'codex-mini-latest', reasoning: 'medium' },
+  'gpt-4o':       { upstreamId: 'gpt-4o',            reasoning: 'none' },
 };
 
 export function getChatGPTModelList(): { id: string; label: string }[] {
@@ -65,18 +65,31 @@ function convertSinglePromptToInput(prompt: string): ResponsesInput[] {
 }
 
 export function convertMessageHistoryToInput(
-  messages: Array<{ role: string; content: string }>
+  messages: Array<{ role: string; content: string; images?: string[] }>
 ): ResponsesInput[] {
   return messages
     .filter((m) => m.role !== 'system')
-    .map((m) => ({
-      type: 'message',
-      role: m.role === 'assistant' ? 'assistant' : 'user',
-      content: [{
-        type: m.role === 'assistant' ? 'output_text' : 'input_text',
-        text: m.content,
-      }],
-    }));
+    .map((m) => {
+      const contentParts: Array<{ type: string; text?: string; image_url?: string }> = [];
+      // Text content
+      if (m.content) {
+        contentParts.push({
+          type: m.role === 'assistant' ? 'output_text' : 'input_text',
+          text: m.content,
+        });
+      }
+      // Image attachments (user messages only)
+      if (m.role === 'user' && m.images) {
+        for (const img of m.images) {
+          contentParts.push({ type: 'input_image', image_url: img });
+        }
+      }
+      return {
+        type: 'message',
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: contentParts,
+      };
+    });
 }
 
 // ─── Session ID for prompt caching ───────────────────────────────
@@ -181,7 +194,7 @@ export async function* streamChatGPTAccount(
     req.end();
   });
 
-  // Parse SSE stream from Responses API
+  // Parse SSE stream — single-turn mode: skip reasoning, only yield output text
   let buffer = '';
 
   for await (const rawChunk of response) {
@@ -209,34 +222,16 @@ export async function* streamChatGPTAccount(
       if (kind === 'response.output_text.delta') {
         const delta = evt.delta || '';
         if (delta) yield delta;
-      } else if (kind === 'response.reasoning_summary_text.delta') {
-        // Optionally yield reasoning as think-tags
-        // For now, skip reasoning output to keep responses clean
+      } else if (kind === 'response.reasoning_summary_text.delta' || kind === 'response.reasoning_text.delta') {
+        // Skip reasoning in single-turn (inline AI) — no collapsible UI to display it
       } else if (kind === 'response.failed') {
-        const errorMsg =
+        throw new Error(
           evt?.response?.error?.message ||
           evt?.error?.message ||
-          'ChatGPT request failed';
-        throw new Error(errorMsg);
+          'ChatGPT request failed'
+        );
       } else if (kind === 'response.completed') {
-        // Stream complete
         break;
-      }
-    }
-  }
-
-  // Process remaining buffer
-  if (buffer.trim()) {
-    const trimmed = buffer.trim();
-    if (trimmed.startsWith('data: ')) {
-      const data = trimmed.slice(6);
-      if (data && data !== '[DONE]') {
-        try {
-          const evt = JSON.parse(data);
-          if (evt.type === 'response.output_text.delta' && evt.delta) {
-            yield evt.delta;
-          }
-        } catch {}
       }
     }
   }
@@ -246,7 +241,7 @@ export async function* streamChatGPTAccount(
 
 export async function* streamChatGPTAccountMultiTurn(
   modelId: string,
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[] }>,
   systemPrompt?: string,
   sessionId?: string,
   signal?: AbortSignal
@@ -334,6 +329,9 @@ export async function* streamChatGPTAccountMultiTurn(
   });
 
   let buffer = '';
+  let inThinking = false;
+  let thinkingClosed = false;
+
   for await (const rawChunk of response) {
     if (signal?.aborted) break;
     buffer += rawChunk.toString();
@@ -348,12 +346,32 @@ export async function* streamChatGPTAccountMultiTurn(
       let evt: any;
       try { evt = JSON.parse(data); } catch { continue; }
       const kind = evt.type;
-      if (kind === 'response.output_text.delta') {
+
+      // Reasoning/thinking output — wrap in <think> tags
+      if (kind === 'response.reasoning_summary_text.delta' || kind === 'response.reasoning_text.delta') {
+        const delta = evt.delta || '';
+        if (delta) {
+          if (!inThinking && !thinkingClosed) {
+            yield '<think>\n';
+            inThinking = true;
+          }
+          if (inThinking) yield delta;
+        }
+      } else if (kind === 'response.output_text.delta') {
+        // Close thinking block before first output
+        if (inThinking && !thinkingClosed) {
+          yield '\n</think>\n\n';
+          inThinking = false;
+          thinkingClosed = true;
+        }
         const delta = evt.delta || '';
         if (delta) yield delta;
       } else if (kind === 'response.failed') {
         throw new Error(evt?.response?.error?.message || evt?.error?.message || 'ChatGPT request failed');
       } else if (kind === 'response.completed') {
+        if (inThinking && !thinkingClosed) {
+          yield '\n</think>\n\n';
+        }
         break;
       }
     }

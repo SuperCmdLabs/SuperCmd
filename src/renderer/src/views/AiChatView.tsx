@@ -37,6 +37,26 @@ const AiChatView: React.FC<AiChatViewProps> = ({
   submitAiQuery,
   exitAiMode,
 }) => {
+  const continueInChat = React.useCallback(async () => {
+    if (aiStreaming || !aiResponse) return;
+    const convo = await window.electron.aiChatCreate({ firstMessage: aiQuery });
+    await window.electron.aiChatAddMessage(convo.id, { role: 'assistant', content: aiResponse });
+    await window.electron.openAiChatWindow(convo.id);
+    window.electron.hideWindow();
+    exitAiMode();
+  }, [aiStreaming, aiResponse, aiQuery, exitAiMode]);
+
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'c' && !aiStreaming && aiResponse) {
+        e.preventDefault();
+        continueInChat();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [continueInChat, aiStreaming, aiResponse]);
+
   return (
     <>
       {alwaysMountedRunners}
@@ -110,13 +130,7 @@ const AiChatView: React.FC<AiChatViewProps> = ({
               {!aiStreaming && aiResponse && (
                 <>
                   <button
-                    onClick={async () => {
-                      const convo = await window.electron.aiChatCreate({ firstMessage: aiQuery });
-                      await window.electron.aiChatAddMessage(convo.id, { role: 'assistant', content: aiResponse });
-                      await window.electron.openAiChatWindow(convo.id);
-                      window.electron.hideWindow();
-                      exitAiMode();
-                    }}
+                    onClick={continueInChat}
                     className="flex items-center gap-1.5 text-[var(--text-primary)] hover:text-[var(--text-secondary)] transition-colors"
                   >
                     <span className="text-xs font-normal">Continue in Chat</span>

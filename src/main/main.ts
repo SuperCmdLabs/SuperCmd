@@ -13035,7 +13035,7 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle(
     'ai-chat-send',
-    async (event: any, requestId: string, conversationId: string, message: string) => {
+    async (event: any, requestId: string, conversationId: string, message: string, modelOverride?: string, images?: string[]) => {
       const s = loadSettings();
       const convo = getConversation(conversationId);
       if (!convo) {
@@ -13043,8 +13043,8 @@ if let tiff = image?.tiffRepresentation {
         return;
       }
 
-      // Add the user message
-      addMessageToConversation(conversationId, { role: 'user', content: message });
+      // Add the user message (with optional images)
+      addMessageToConversation(conversationId, { role: 'user', content: message, images });
 
       // Reload to get updated messages
       const updatedConvo = getConversation(conversationId)!;
@@ -13058,9 +13058,12 @@ if let tiff = image?.tiffRepresentation {
           .filter((part) => typeof part === 'string' && part.trim().length > 0)
           .join('\n\n');
 
+        // Use model override from chat window if provided, else conversation default
+        const effectiveModel = modelOverride || updatedConvo.model || undefined;
+
         const gen = streamAIMultiTurn(s.ai, {
-          messages: updatedConvo.messages.map((m) => ({ role: m.role, content: m.content })),
-          model: updatedConvo.model || undefined,
+          messages: updatedConvo.messages.map((m) => ({ role: m.role, content: m.content, images: (m as any).images })),
+          model: effectiveModel,
           systemPrompt: mergedSystemPrompt || undefined,
           sessionId: updatedConvo.sessionId,
           signal: controller.signal,

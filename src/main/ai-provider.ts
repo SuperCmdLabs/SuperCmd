@@ -195,7 +195,7 @@ export async function* streamAI(
 // ─── Multi-turn streaming ────────────────────────────────────────────
 
 export interface AIMultiTurnOptions {
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[] }>;
   model?: string;
   systemPrompt?: string;
   sessionId?: string;

@@ -158,6 +158,7 @@ export interface ChatMessageData {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  images?: string[];
   timestamp: number;
 }
 
@@ -759,7 +760,7 @@ export interface ElectronAPI {
   aiChatDeleteAll: () => Promise<number>;
   aiChatSearch: (query: string) => Promise<Conversation[]>;
   aiChatAddMessage: (conversationId: string, message: { role: 'user' | 'assistant'; content: string }) => Promise<ChatMessageData | null>;
-  aiChatSend: (requestId: string, conversationId: string, message: string) => Promise<void>;
+  aiChatSend: (requestId: string, conversationId: string, message: string, modelOverride?: string, images?: string[]) => Promise<void>;
   aiChatCancel: (requestId: string) => Promise<void>;
   onAiChatStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => void;
   onAiChatStreamDone: (callback: (data: { requestId: string }) => void) => void;

@@ -777,8 +777,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('ai-chat-search', query),
   aiChatAddMessage: (conversationId: string, message: { role: 'user' | 'assistant'; content: string }): Promise<any> =>
     ipcRenderer.invoke('ai-chat-add-message', conversationId, message),
-  aiChatSend: (requestId: string, conversationId: string, message: string): Promise<void> =>
-    ipcRenderer.invoke('ai-chat-send', requestId, conversationId, message),
+  aiChatSend: (requestId: string, conversationId: string, message: string, modelOverride?: string, images?: string[]): Promise<void> =>
+    ipcRenderer.invoke('ai-chat-send', requestId, conversationId, message, modelOverride, images),
   aiChatCancel: (requestId: string): Promise<void> =>
     ipcRenderer.invoke('ai-chat-cancel', requestId),
   onAiChatStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => {

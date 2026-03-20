@@ -8,9 +8,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Plus, Search, Trash2, Pin, PinOff, Pencil, Sparkles, Send,
-  MessageSquare, Check, X,
+  MessageSquare, Check, X, ChevronDown, ImagePlus, X as XIcon,
 } from 'lucide-react';
-import type { Conversation, ChatMessageData } from '../../types/electron';
+import type { Conversation, ChatMessageData, AISettings } from '../../types/electron';
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -43,6 +43,10 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
+  const [chatModel, setChatModel] = useState('');
+  const [availableModels, setAvailableModels] = useState<Array<{ id: string; label: string }>>([]);
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
+
   const requestIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -57,6 +61,45 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
   }, [searchQuery]);
 
   useEffect(() => { refreshList(); }, [refreshList]);
+
+  // Load available models based on current settings
+  useEffect(() => {
+    window.electron.getSettings().then((s) => {
+      const ai = s.ai;
+      const models: Array<{ id: string; label: string }> = [];
+      const allModels: Record<string, Array<{ id: string; label: string }>> = {
+        'chatgpt-account': [
+          { id: 'chatgpt-gpt-5', label: 'GPT-5' },
+          { id: 'chatgpt-gpt-5.4', label: 'GPT-5.4' },
+          { id: 'chatgpt-gpt-5.2', label: 'GPT-5.2' },
+          { id: 'chatgpt-gpt-5.1', label: 'GPT-5.1' },
+          { id: 'chatgpt-gpt-5-codex', label: 'GPT-5 Codex' },
+          { id: 'chatgpt-codex-mini', label: 'Codex Mini' },
+          { id: 'chatgpt-gpt-4o', label: 'GPT-4o' },
+        ],
+        openai: [
+          { id: 'openai-gpt-4o', label: 'GPT-4o' },
+          { id: 'openai-gpt-4o-mini', label: 'GPT-4o Mini' },
+          { id: 'openai-o3-mini', label: 'o3-mini' },
+        ],
+        anthropic: [
+          { id: 'anthropic-claude-opus', label: 'Claude Opus' },
+          { id: 'anthropic-claude-sonnet', label: 'Claude Sonnet' },
+          { id: 'anthropic-claude-haiku', label: 'Claude Haiku' },
+        ],
+        gemini: [
+          { id: 'gemini-gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+          { id: 'gemini-gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+        ],
+      };
+      if (allModels[ai.provider]) {
+        models.push(...allModels[ai.provider]);
+      }
+      setAvailableModels(models);
+      // Set default chat model to current settings default
+      if (ai.defaultModel) setChatModel(ai.defaultModel);
+    });
+  }, []);
 
   useEffect(() => {
     if (!activeId) { setActiveConvo(null); return; }
@@ -111,13 +154,35 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
     setActiveConvo(null);
     setInputValue('');
     setStreamingText('');
+    setPendingImages([]);
     setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const handleImageUpload = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.onchange = () => {
+      if (!input.files) return;
+      Array.from(input.files).forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          setPendingImages((prev) => [...prev, dataUrl]);
+        };
+        reader.readAsDataURL(file);
+      });
+    };
+    input.click();
   };
 
   const handleSend = async () => {
     const msg = inputValue.trim();
-    if (!msg || streaming) return;
+    if ((!msg && pendingImages.length === 0) || streaming) return;
+    const images = pendingImages.length > 0 ? [...pendingImages] : undefined;
     setInputValue('');
+    setPendingImages([]);
     setStreamingText('');
     setStreaming(true);
 
@@ -125,7 +190,7 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
 
     let convId = activeId;
     if (!convId) {
-      const convo = await window.electron.aiChatCreate({ firstMessage: msg });
+      const convo = await window.electron.aiChatCreate({ firstMessage: msg || 'Image' });
       convId = convo.id;
       setActiveId(convo.id);
       setActiveConvo(convo);
@@ -133,13 +198,13 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
     } else {
       setActiveConvo((prev) => prev ? {
         ...prev,
-        messages: [...prev.messages, { id: `t-${Date.now()}`, role: 'user', content: msg, timestamp: Date.now() }],
+        messages: [...prev.messages, { id: `t-${Date.now()}`, role: 'user', content: msg, images, timestamp: Date.now() }],
       } : prev);
     }
 
     const rid = `chat-${Date.now()}`;
     requestIdRef.current = rid;
-    window.electron.aiChatSend(rid, convId, msg);
+    window.electron.aiChatSend(rid, convId, msg || 'Describe this image.', chatModel || undefined, images);
   };
 
   const handleDelete = async (id: string) => {
@@ -175,27 +240,67 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
   // ── Input box (shared between active convo and empty state) ────
 
   const renderInput = (autoFocus?: boolean) => (
-    <div className="flex items-end gap-2 bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-xl px-4 py-2.5 focus-within:border-[var(--accent)]/30 transition-colors">
-      <textarea
-        ref={inputRef}
-        value={inputValue}
-        onChange={(e) => setInputValue(e.target.value)}
-        onKeyDown={onInputKeyDown}
-        onInput={autoGrow}
-        placeholder="Type a message..."
-        disabled={streaming}
-        rows={1}
-        autoFocus={autoFocus}
-        className="flex-1 bg-transparent border-none outline-none text-[0.8125rem] text-[var(--text-primary)] placeholder:text-[color:var(--text-subtle)] resize-none min-h-[20px] max-h-[120px] leading-snug disabled:opacity-40"
-        style={{ height: 'auto', overflow: 'hidden' }}
-      />
-      <button
-        onClick={handleSend}
-        disabled={!inputValue.trim() || streaming}
-        className="p-1.5 rounded-lg bg-[var(--accent)] text-white disabled:opacity-25 disabled:cursor-not-allowed hover:bg-[var(--accent-hover)] transition-colors flex-shrink-0"
-      >
-        <Send className="w-3.5 h-3.5" />
-      </button>
+    <div className="bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-xl focus-within:border-[var(--accent)]/30 transition-colors">
+      {/* Image previews */}
+      {pendingImages.length > 0 && (
+        <div className="flex gap-2 px-3 pt-2.5 pb-1 flex-wrap">
+          {pendingImages.map((img, i) => (
+            <div key={i} className="relative group">
+              <img src={img} alt="" className="w-14 h-14 rounded-lg object-cover border border-[var(--ui-divider)]" />
+              <button
+                onClick={() => setPendingImages((prev) => prev.filter((_, idx) => idx !== i))}
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[var(--text-muted)] text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-end gap-2 px-4 py-2.5">
+        <button
+          onClick={handleImageUpload}
+          disabled={streaming}
+          className="p-1 rounded-md text-[var(--text-subtle)] hover:text-[var(--text-muted)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors flex-shrink-0 disabled:opacity-30 mb-0.5"
+          title="Attach image"
+        >
+          <ImagePlus className="w-4 h-4" />
+        </button>
+        <textarea
+          ref={inputRef}
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={onInputKeyDown}
+          onInput={autoGrow}
+          placeholder="Type a message..."
+          disabled={streaming}
+          rows={1}
+          autoFocus={autoFocus}
+          className="flex-1 bg-transparent border-none outline-none text-[0.8125rem] text-[var(--text-primary)] placeholder:text-[color:var(--text-subtle)] resize-none min-h-[20px] max-h-[120px] leading-snug disabled:opacity-40"
+          style={{ height: 'auto', overflow: 'hidden' }}
+        />
+        <button
+          onClick={handleSend}
+          disabled={(!inputValue.trim() && pendingImages.length === 0) || streaming}
+          className="p-1.5 rounded-lg bg-[var(--accent)] text-white disabled:opacity-25 disabled:cursor-not-allowed hover:bg-[var(--accent-hover)] transition-colors flex-shrink-0"
+        >
+          <Send className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      {availableModels.length > 0 && (
+        <div className="px-3 pb-2 pt-0">
+          <select
+            value={chatModel}
+            onChange={(e) => setChatModel(e.target.value)}
+            className="bg-transparent border-none outline-none text-[0.625rem] text-[var(--text-subtle)] cursor-pointer hover:text-[var(--text-muted)] transition-colors"
+          >
+            <option value="">Auto</option>
+            {availableModels.map((m) => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
 
@@ -209,10 +314,10 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
         style={{ background: 'rgba(var(--on-surface-rgb), 0.04)' }}
       >
         {/* Traffic light safe zone + New Chat */}
-        <div className="flex-shrink-0 pt-[38px] px-3 pb-2 app-drag-region">
+        <div className="flex-shrink-0 pt-[38px] px-3 pb-2 drag-region">
           <button
             onClick={handleNewChat}
-            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[0.75rem] font-medium text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors border border-[var(--ui-divider)] app-no-drag"
+            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[0.75rem] font-medium text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors border border-[var(--ui-divider)]"
           >
             <Plus className="w-3.5 h-3.5" />
             New Chat
@@ -316,8 +421,8 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
         {activeConvo ? (
           <>
             {/* Title bar + convo title */}
-            <div className="h-[52px] flex-shrink-0 flex items-center justify-center px-5 border-b border-[var(--ui-divider)] app-drag-region">
-              <span className="text-[0.8125rem] font-medium text-[var(--text-secondary)] truncate app-no-drag">
+            <div className="h-[52px] flex-shrink-0 flex items-center justify-center px-5 border-b border-[var(--ui-divider)] drag-region">
+              <span className="text-[0.8125rem] font-medium text-[var(--text-secondary)] truncate">
                 {activeConvo.title}
               </span>
             </div>
@@ -330,17 +435,7 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
                 ))}
 
                 {streaming && streamingText && (
-                  <div className="flex gap-3">
-                    <div
-                      className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-1"
-                      style={{ background: 'rgba(var(--on-surface-rgb), 0.06)' }}
-                    >
-                      <Sparkles className="w-3 h-3 text-[var(--accent)]" />
-                    </div>
-                    <div className="flex-1 min-w-0 text-[0.8125rem] text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap pt-0.5 select-text">
-                      {streamingText}
-                    </div>
-                  </div>
+                  <StreamingMessage text={streamingText} />
                 )}
 
                 {streaming && !streamingText && (
@@ -374,7 +469,7 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
         ) : (
           /* ── Empty state ─────────────────────────────────────── */
           <>
-            <div className="h-[52px] flex-shrink-0 app-drag-region" />
+            <div className="h-[52px] flex-shrink-0 drag-region" />
             <div className="flex-1 flex flex-col items-center justify-center px-6">
               <div className="w-14 h-14 rounded-2xl bg-[var(--accent)]/10 flex items-center justify-center mb-5">
                 <Sparkles className="w-7 h-7 text-[var(--accent)] opacity-80" />
@@ -394,6 +489,112 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
   );
 };
 
+// ─── Think block parser ──────────────────────────────────────────────
+
+function parseThinkBlocks(content: string): Array<{ type: 'think' | 'text'; content: string }> {
+  const blocks: Array<{ type: 'think' | 'text'; content: string }> = [];
+  const regex = /<think>\n?([\s\S]*?)\n?<\/think>/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    // Text before this think block
+    if (match.index > lastIndex) {
+      const text = content.slice(lastIndex, match.index).trim();
+      if (text) blocks.push({ type: 'text', content: text });
+    }
+    // The think block itself
+    const thinkContent = match[1].trim();
+    if (thinkContent) blocks.push({ type: 'think', content: thinkContent });
+    lastIndex = regex.lastIndex;
+  }
+
+  // Remaining text after last think block
+  if (lastIndex < content.length) {
+    const text = content.slice(lastIndex).trim();
+    if (text) blocks.push({ type: 'text', content: text });
+  }
+
+  // No think tags found — return as single text block
+  if (blocks.length === 0 && content.trim()) {
+    blocks.push({ type: 'text', content: content.trim() });
+  }
+
+  return blocks;
+}
+
+// Detect partial thinking during streaming (has <think> but no </think>)
+function parseStreamingContent(content: string): { thinking: string | null; text: string } {
+  const thinkStart = content.indexOf('<think>');
+  if (thinkStart === -1) return { thinking: null, text: content };
+
+  const thinkEnd = content.indexOf('</think>');
+  if (thinkEnd === -1) {
+    // Still thinking — everything after <think> is the thinking content
+    const thinking = content.slice(thinkStart + 7).trim();
+    const textBefore = content.slice(0, thinkStart).trim();
+    return { thinking: thinking || '', text: textBefore };
+  }
+
+  // Think block is closed — parse normally and return remaining text
+  const blocks = parseThinkBlocks(content);
+  const thinkBlocks = blocks.filter(b => b.type === 'think').map(b => b.content).join('\n');
+  const textBlocks = blocks.filter(b => b.type === 'text').map(b => b.content).join('\n\n');
+  return { thinking: thinkBlocks || null, text: textBlocks };
+}
+
+// ─── Collapsible Thinking Component ──────────────────────────────────
+
+const ThinkingBlock: React.FC<{ content: string; isStreaming?: boolean }> = ({ content, isStreaming }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  // Auto-expand while streaming
+  const isOpen = isStreaming || expanded;
+
+  // Get a short summary (first line or first ~60 chars)
+  const summary = (() => {
+    const firstLine = content.split('\n').find(l => l.trim()) || '';
+    const cleaned = firstLine.replace(/^\*\*|\*\*$/g, '').trim();
+    if (cleaned.length <= 60) return cleaned;
+    return cleaned.slice(0, 57) + '...';
+  })();
+
+  return (
+    <div
+      className="rounded-lg mb-2"
+      style={{ background: 'rgba(var(--on-surface-rgb), 0.04)' }}
+    >
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 w-full px-3 py-2 text-left"
+      >
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          {isStreaming ? (
+            <div className="flex gap-0.5 flex-shrink-0">
+              <span className="w-1 h-1 rounded-full bg-[var(--accent)] animate-pulse" />
+              <span className="w-1 h-1 rounded-full bg-[var(--accent)] animate-pulse" style={{ animationDelay: '0.15s' }} />
+              <span className="w-1 h-1 rounded-full bg-[var(--accent)] animate-pulse" style={{ animationDelay: '0.3s' }} />
+            </div>
+          ) : (
+            <Sparkles className="w-3 h-3 text-[var(--accent)] opacity-60 flex-shrink-0" />
+          )}
+          <span className="text-[0.75rem] text-[var(--text-muted)] truncate">
+            {isStreaming ? 'Thinking...' : (summary || 'Thought process')}
+          </span>
+        </div>
+        <ChevronDown className={`w-3 h-3 text-[var(--text-subtle)] transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {isOpen && (
+        <div className="px-3 pb-2.5">
+          <div className="text-[0.75rem] text-[var(--text-muted)] leading-relaxed whitespace-pre-wrap select-text">
+            {content}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── Message Bubble ──────────────────────────────────────────────────
 
 const MessageBubble: React.FC<{ message: ChatMessageData }> = ({ message }) => {
@@ -404,11 +605,21 @@ const MessageBubble: React.FC<{ message: ChatMessageData }> = ({ message }) => {
           className="max-w-[80%] rounded-xl rounded-br-sm px-3.5 py-2"
           style={{ background: 'rgba(var(--on-surface-rgb), 0.1)' }}
         >
+          {message.images && message.images.length > 0 && (
+            <div className="flex gap-1.5 mb-2 flex-wrap">
+              {message.images.map((img, i) => (
+                <img key={i} src={img} alt="" className="max-w-[200px] max-h-[150px] rounded-lg object-cover" />
+              ))}
+            </div>
+          )}
           <p className="text-[0.8125rem] text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap select-text">{message.content}</p>
         </div>
       </div>
     );
   }
+
+  // Parse think blocks from assistant messages
+  const blocks = parseThinkBlocks(message.content);
 
   return (
     <div className="flex gap-3">
@@ -418,8 +629,43 @@ const MessageBubble: React.FC<{ message: ChatMessageData }> = ({ message }) => {
       >
         <Sparkles className="w-3 h-3 text-[var(--accent)]" />
       </div>
-      <div className="flex-1 min-w-0 text-[0.8125rem] text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap pt-0.5 select-text">
-        {message.content}
+      <div className="flex-1 min-w-0 pt-0.5">
+        {blocks.map((block, i) =>
+          block.type === 'think' ? (
+            <ThinkingBlock key={i} content={block.content} />
+          ) : (
+            <div key={i} className="text-[0.8125rem] text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap select-text">
+              {block.content}
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── Streaming Message ───────────────────────────────────────────────
+
+const StreamingMessage: React.FC<{ text: string }> = ({ text }) => {
+  const { thinking, text: displayText } = parseStreamingContent(text);
+
+  return (
+    <div className="flex gap-3">
+      <div
+        className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-1"
+        style={{ background: 'rgba(var(--on-surface-rgb), 0.06)' }}
+      >
+        <Sparkles className="w-3 h-3 text-[var(--accent)]" />
+      </div>
+      <div className="flex-1 min-w-0 pt-0.5">
+        {thinking !== null && (
+          <ThinkingBlock content={thinking} isStreaming={!text.includes('</think>')} />
+        )}
+        {displayText && (
+          <div className="text-[0.8125rem] text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap select-text">
+            {displayText}
+          </div>
+        )}
       </div>
     </div>
   );

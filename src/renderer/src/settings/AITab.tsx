@@ -1047,7 +1047,13 @@ const AITab: React.FC = () => {
                             return;
                           }
                           if (p.id === 'chatgpt-account') {
-                            updateAI({ provider: p.id, defaultModel: 'chatgpt-gpt-5' });
+                            if (!chatgptLoggedIn && !chatgptLoggingIn) {
+                              // Select provider and start login
+                              updateAI({ provider: p.id, defaultModel: 'chatgpt-gpt-5' });
+                              handleChatGPTLogin();
+                            } else {
+                              updateAI({ provider: p.id, defaultModel: 'chatgpt-gpt-5' });
+                            }
                             return;
                           }
                           updateAI({ provider: p.id, defaultModel: '' });
@@ -1058,60 +1064,39 @@ const AITab: React.FC = () => {
                             : 'bg-[var(--ui-segment-bg)] border-[var(--ui-divider)] text-[var(--text-muted)] hover:bg-[var(--ui-segment-bg)]'
                         }`}
                       >
-                        <div className="text-xs font-medium leading-tight">{p.label}</div>
-                        <div className="text-[0.625rem] text-[var(--text-subtle)] mt-0.5 leading-tight">{p.description}</div>
+                        <div className="text-xs font-medium leading-tight flex items-center gap-1.5">
+                          {p.id === 'chatgpt-account' && chatgptLoggedIn && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
+                          )}
+                          {p.id === 'chatgpt-account' && chatgptLoggingIn && (
+                            <RefreshCw className="w-3 h-3 animate-spin flex-shrink-0" />
+                          )}
+                          <span className="flex-1">{p.label}</span>
+                          {p.id === 'chatgpt-account' && chatgptLoggedIn && ai.provider === 'chatgpt-account' && (
+                            <span
+                              onClick={(e) => { e.stopPropagation(); handleChatGPTLogout(); }}
+                              className="text-[0.5625rem] text-red-400/70 hover:text-red-400 font-normal transition-colors"
+                            >
+                              Sign Out
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[0.625rem] text-[var(--text-subtle)] mt-0.5 leading-tight">
+                          {p.id === 'chatgpt-account' && chatgptLoggingIn
+                            ? (chatgptLoginProgress || 'Signing in...')
+                            : p.id === 'chatgpt-account' && chatgptLoggedIn
+                              ? 'Connected'
+                              : p.description}
+                        </div>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {ai.provider === 'chatgpt-account' && (
-                  <div className="rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-3 space-y-2.5">
-                    {chatgptLoggedIn ? (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-green-400" />
-                          <span className="text-[0.75rem] text-green-400/90 font-medium">Connected</span>
-                        </div>
-                        {chatgptAccountId && (
-                          <p className="text-[0.625rem] text-[var(--text-subtle)]">
-                            Account: {chatgptAccountId.slice(0, 20)}{chatgptAccountId.length > 20 ? '...' : ''}
-                          </p>
-                        )}
-                        <button
-                          onClick={handleChatGPTLogout}
-                          className="px-3 py-1.5 text-xs text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-md transition-colors"
-                        >
-                          Sign Out
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-[0.75rem] text-[var(--text-muted)] leading-snug">
-                          Sign in with your ChatGPT account to use GPT-5 models without an API key. Requires ChatGPT Plus, Pro, or Team.
-                        </p>
-                        <button
-                          onClick={handleChatGPTLogin}
-                          disabled={chatgptLoggingIn}
-                          className="flex items-center gap-2 px-3 py-1.5 text-xs bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-md transition-colors disabled:opacity-50"
-                        >
-                          {chatgptLoggingIn ? (
-                            <>
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                              {chatgptLoginProgress || 'Signing in...'}
-                            </>
-                          ) : (
-                            'Sign in with ChatGPT'
-                          )}
-                        </button>
-                        {chatgptLoginError && (
-                          <div className="flex items-start gap-1.5 text-[0.6875rem] text-red-400">
-                            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                            <span>{chatgptLoginError}</span>
-                          </div>
-                        )}
-                      </>
-                    )}
+                {ai.provider === 'chatgpt-account' && chatgptLoginError && (
+                  <div className="flex items-start gap-1.5 text-[0.6875rem] text-red-400 px-1">
+                    <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>{chatgptLoginError}</span>
                   </div>
                 )}
 

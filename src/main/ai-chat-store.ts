@@ -17,6 +17,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  images?: string[]; // base64 data URLs for image attachments
   timestamp: number;
 }
 
@@ -200,7 +201,7 @@ export function updateConversation(
 
 export function addMessageToConversation(
   conversationId: string,
-  message: { role: 'user' | 'assistant'; content: string }
+  message: { role: 'user' | 'assistant'; content: string; images?: string[] }
 ): ChatMessage | null {
   const convos = ensureLoaded();
   const convo = convos.find((c) => c.id === conversationId);
@@ -210,6 +211,7 @@ export function addMessageToConversation(
     id: crypto.randomUUID(),
     role: message.role,
     content: message.content,
+    images: message.images,
     timestamp: Date.now(),
   };
 
