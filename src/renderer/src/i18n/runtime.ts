@@ -121,7 +121,15 @@ export function translateMessage(
 ): string {
   const localeMessage =
     resolveMessage(MESSAGE_CATALOG[locale], key) ??
-    resolveMessage(MESSAGE_CATALOG[FALLBACK_APP_LOCALE], key) ??
-    key;
+    resolveMessage(MESSAGE_CATALOG[FALLBACK_APP_LOCALE], key);
+  if (localeMessage == null) {
+    if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
+      console.warn(`[i18n] Missing translation key: "${key}"`);
+    }
+    // Return last segment as readable fallback instead of the raw dotted key
+    const segments = key.split('.');
+    const last = segments[segments.length - 1] || key;
+    return last.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+  }
   return interpolateMessage(localeMessage, values);
 }

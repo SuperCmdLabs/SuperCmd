@@ -449,7 +449,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const storeActions = useMemo<ExtractedAction[]>(() => {
     const actions: ExtractedAction[] = [
       {
-        title: selectedInstalled ? t('settings.store.actions.update') : t('settings.store.actions.install'),
+        title: selectedInstalled ? t('store.update') : t('store.install'),
         shortcut: { modifiers: ['cmd'], key: 'enter' },
         execute: () => void handlePrimaryAction(),
       },
@@ -776,7 +776,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                     disabled={isSelectedBusy}
                     className="text-[var(--text-primary)] text-xs font-semibold hover:text-[var(--text-secondary)] disabled:text-[var(--text-subtle)] transition-colors"
                   >
-                    {selectedInstalled ? t('settings.store.actions.update') : t('settings.store.actions.install')}
+                    {selectedInstalled ? t('store.update') : t('store.install')}
                   </button>
                   <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--ui-segment-hover-bg)] text-[11px] text-[var(--text-subtle)] font-medium">
                     ⌘
@@ -891,7 +891,7 @@ const CommunityDetails: React.FC<{
           active={detailTab === 'commands'}
           onClick={() => onTabChange('commands')}
           icon={<List className="w-3 h-3" />}
-          label={t('settings.store.tabs.commands')}
+          label={t('store.tabs.commands')}
         />
         <DetailTabButton
           active={detailTab === 'screenshots'}
@@ -935,7 +935,7 @@ const CommunityDetails: React.FC<{
               )}
             </div>
             <div>
-              <div className="text-[var(--text-subtle)] uppercase tracking-wider text-xs mb-1">{t('settings.store.sections.topCommands')}</div>
+              <div className="text-[var(--text-subtle)] uppercase tracking-wider text-xs mb-1">{t('store.sections.topCommands')}</div>
               <div className="space-y-1.5">
                 {ext.commands.slice(0, 4).map((cmd) => (
                   <div key={cmd.name || cmd.title} className="flex items-start gap-2">
@@ -997,7 +997,7 @@ const CommunityDetails: React.FC<{
             )}
             {ext.commands.length > visibleCommands.length && (
               <div className="text-xs text-[var(--text-subtle)]">
-                +{ext.commands.length - visibleCommands.length} {t('settings.store.sections.moreCommands')}
+                +{ext.commands.length - visibleCommands.length} {t('store.sections.moreCommands')}
               </div>
             )}
           </div>
