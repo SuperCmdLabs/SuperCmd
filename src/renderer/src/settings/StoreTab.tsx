@@ -224,6 +224,8 @@ const avatarUrlFor = (name: string) =>
 
 const initialFor = (name: string) => (name.trim()[0] || '?').toUpperCase();
 
+const RENDER_PAGE_SIZE = 100;
+
 const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const { t } = useI18n();
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
@@ -238,6 +240,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [loadingScreenshotsFor, setLoadingScreenshotsFor] = useState<string | null>(null);
   const [showActions, setShowActions] = useState(false);
   const [installStatus, setInstallStatus] = useState<InstallStatus | null>(null);
+  const [renderLimit, setRenderLimit] = useState(RENDER_PAGE_SIZE);
   const listRef = useRef<HTMLDivElement>(null);
 
   const loadCatalog = useCallback(async (force = false) => {
@@ -284,6 +287,11 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
     }, 4000);
     return () => window.clearTimeout(timer);
   }, [installStatus]);
+
+  // Reset render limit when search changes
+  useEffect(() => {
+    setRenderLimit(RENDER_PAGE_SIZE);
+  }, [searchQuery]);
 
   const filteredCatalog = useMemo(() => {
     const query = searchQuery.trim();
@@ -429,9 +437,13 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
       const next = sortedCatalog[nextIndex];
       if (next && next.name !== selectedName) {
         setSelectedName(next.name);
+        // Expand render limit if navigating near the end of rendered items
+        if (nextIndex >= renderLimit - 5) {
+          setRenderLimit((prev) => Math.min(prev + RENDER_PAGE_SIZE, sortedCatalog.length));
+        }
       }
     },
-    [selectedName, sortedCatalog]
+    [selectedName, sortedCatalog, renderLimit]
   );
 
   const storeActions = useMemo<ExtractedAction[]>(() => {
@@ -649,8 +661,17 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
           {sortedCatalog.length > 0 && (
             <div className="grid grid-cols-12 flex-1 min-h-0">
               <div className="col-span-5 border-r border-[var(--ui-divider)] min-h-0">
-                <div ref={listRef} className="space-y-1 h-full overflow-y-auto custom-scrollbar px-2 py-2">
-                  {sortedCatalog.map((ext) => {
+                <div
+                  ref={listRef}
+                  className="space-y-1 h-full overflow-y-auto custom-scrollbar px-2 py-2"
+                  onScroll={(e) => {
+                    const el = e.currentTarget;
+                    if (renderLimit < sortedCatalog.length && el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+                      setRenderLimit((prev) => Math.min(prev + RENDER_PAGE_SIZE, sortedCatalog.length));
+                    }
+                  }}
+                >
+                  {sortedCatalog.slice(0, renderLimit).map((ext) => {
                     const selected = selectedName === ext.name;
                     const installed = installedNames.has(ext.name);
                     return (
@@ -671,6 +692,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                             src={ext.iconUrl}
                             alt=""
                             className="w-9 h-9 object-contain"
+                            loading="lazy"
                             draggable={false}
                             onError={(e) => {
                               const target = e.currentTarget;
@@ -842,6 +864,7 @@ const CommunityDetails: React.FC<{
   installed: boolean;
   busy: boolean;
 }> = ({ ext, screenshots, screenshotsLoading, detailTab, onTabChange, installed, busy }) => {
+  const { t } = useI18n();
   const team = ext.contributors?.length ? ext.contributors : ext.author ? [ext.author] : [];
   const visibleCommands = ext.commands.slice(0, 7);
 
