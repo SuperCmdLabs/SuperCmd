@@ -102,13 +102,46 @@ const AiChatView: React.FC<AiChatViewProps> = ({
           </div>
 
           {/* Footer */}
-          <div className="sc-glass-footer px-4 py-2.5 flex items-center justify-between text-xs text-[var(--text-subtle)] font-normal">
-            <span>{aiStreaming ? 'Streaming...' : 'AI Response'}</span>
+          <div className="sc-glass-footer px-4 py-2.5 flex items-center">
+            <div className="flex items-center gap-2 text-[var(--text-subtle)] text-xs flex-1 min-w-0 font-normal">
+              <span className="truncate">{aiStreaming ? 'Streaming...' : 'AI Response'}</span>
+            </div>
             <div className="flex items-center gap-2">
-              <kbd className="text-[10px] text-[var(--text-muted)] bg-[var(--kbd-bg)] px-1.5 py-0.5 rounded font-mono">Enter</kbd>
-              <span className="text-[10px] text-[var(--text-muted)]">Ask</span>
-              <kbd className="text-[10px] text-[var(--text-muted)] bg-[var(--kbd-bg)] px-1.5 py-0.5 rounded font-mono">Esc</kbd>
-              <span className="text-[10px] text-[var(--text-muted)]">Back</span>
+              {!aiStreaming && aiResponse && (
+                <>
+                  <button
+                    onClick={async () => {
+                      const convo = await window.electron.aiChatCreate({ firstMessage: aiQuery });
+                      await window.electron.aiChatAddMessage(convo.id, { role: 'assistant', content: aiResponse });
+                      await window.electron.openAiChatWindow(convo.id);
+                      window.electron.hideWindow();
+                      exitAiMode();
+                    }}
+                    className="flex items-center gap-1.5 text-[var(--text-primary)] hover:text-[var(--text-secondary)] transition-colors"
+                  >
+                    <span className="text-xs font-normal">Continue in Chat</span>
+                    <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-muted)] font-medium">⌘</kbd>
+                    <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-muted)] font-medium">⇧</kbd>
+                    <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-muted)] font-medium">C</kbd>
+                  </button>
+                  <span className="h-5 w-px bg-[var(--ui-divider)] mx-1" />
+                </>
+              )}
+              <button
+                onClick={() => { if (aiQuery.trim()) submitAiQuery(aiQuery); }}
+                className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+              >
+                <span className="text-xs font-normal">Ask</span>
+                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-muted)] font-medium">↩</kbd>
+              </button>
+              <span className="h-5 w-px bg-[var(--ui-divider)] mx-1" />
+              <button
+                onClick={exitAiMode}
+                className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+              >
+                <span className="text-xs font-normal">Back</span>
+                <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-muted)] font-medium">Esc</kbd>
+              </button>
             </div>
           </div>
         </div>

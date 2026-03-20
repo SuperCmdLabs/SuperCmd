@@ -154,6 +154,26 @@ export interface ExtensionBundle {
   error?: string;
 }
 
+export interface ChatMessageData {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  messages: ChatMessageData[];
+  model: string;
+  provider: string;
+  systemPrompt?: string;
+  sessionId: string;
+  createdAt: number;
+  updatedAt: number;
+  pinned: boolean;
+}
+
 export interface ChatGPTAccountTokens {
   accessToken: string;
   refreshToken: string;
@@ -728,6 +748,23 @@ export interface ElectronAPI {
   chatgptLoginStatus: () => Promise<{ loggedIn: boolean; accountId?: string }>;
   chatgptModels: () => Promise<Array<{ id: string; label: string }>>;
   onChatGPTLoginProgress: (callback: (status: string) => void) => () => void;
+
+  // AI Chat Window
+  openAiChatWindow: (conversationId?: string) => Promise<void>;
+  aiChatGetAll: () => Promise<Conversation[]>;
+  aiChatGet: (id: string) => Promise<Conversation | null>;
+  aiChatCreate: (data: { firstMessage: string; model?: string; provider?: string; systemPrompt?: string }) => Promise<Conversation>;
+  aiChatUpdate: (id: string, patch: Partial<Pick<Conversation, 'title' | 'pinned' | 'model' | 'provider'>>) => Promise<Conversation | null>;
+  aiChatDelete: (id: string) => Promise<boolean>;
+  aiChatDeleteAll: () => Promise<number>;
+  aiChatSearch: (query: string) => Promise<Conversation[]>;
+  aiChatAddMessage: (conversationId: string, message: { role: 'user' | 'assistant'; content: string }) => Promise<ChatMessageData | null>;
+  aiChatSend: (requestId: string, conversationId: string, message: string) => Promise<void>;
+  aiChatCancel: (requestId: string) => Promise<void>;
+  onAiChatStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => void;
+  onAiChatStreamDone: (callback: (data: { requestId: string }) => void) => void;
+  onAiChatStreamError: (callback: (data: { requestId: string; error: string }) => void) => void;
+  onAiChatOpenConversation: (callback: (conversationId: string) => void) => () => void;
 
   whisperRefineTranscript: (
     transcript: string

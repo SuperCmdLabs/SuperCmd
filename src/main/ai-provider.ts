@@ -7,7 +7,7 @@
 import * as https from 'https';
 import * as http from 'http';
 import type { AISettings } from './settings-store';
-import { streamChatGPTAccount } from './chatgpt-upstream';
+import { streamChatGPTAccount, streamChatGPTAccountMultiTurn } from './chatgpt-upstream';
 import { isChatGPTLoggedIn } from './chatgpt-auth';
 
 export interface AIRequestOptions {
@@ -188,6 +188,60 @@ export async function* streamAI(
         options.systemPrompt,
         options.signal
       );
+      break;
+  }
+}
+
+// ─── Multi-turn streaming ────────────────────────────────────────────
+
+export interface AIMultiTurnOptions {
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  model?: string;
+  systemPrompt?: string;
+  sessionId?: string;
+  signal?: AbortSignal;
+}
+
+export async function* streamAIMultiTurn(
+  config: AISettings,
+  options: AIMultiTurnOptions
+): AsyncGenerator<string> {
+  const route = resolveModel(options.model, config);
+  const msgs = options.messages;
+
+  switch (route.provider) {
+    case 'chatgpt-account':
+      yield* streamChatGPTAccountMultiTurn(
+        route.modelId,
+        msgs,
+        options.systemPrompt,
+        options.sessionId,
+        options.signal
+      );
+      break;
+    case 'openai':
+      yield* streamOpenAIMultiTurn(config.openaiApiKey, route.modelId, msgs, options.systemPrompt, options.signal);
+      break;
+    case 'anthropic':
+      yield* streamAnthropicMultiTurn(config.anthropicApiKey, route.modelId, msgs, options.systemPrompt, options.signal);
+      break;
+    case 'ollama':
+      yield* streamOllamaMultiTurn(config.ollamaBaseUrl, route.modelId, msgs, options.systemPrompt, options.signal);
+      break;
+    case 'openai-compatible':
+      yield* streamOpenAIMultiTurn(
+        config.openaiCompatibleApiKey,
+        route.modelId,
+        msgs,
+        options.systemPrompt,
+        options.signal,
+        config.openaiCompatibleBaseUrl
+      );
+      break;
+    case 'gemini':
+      // For gemini, collapse to single prompt for now (no multi-turn streaming API)
+      const lastMsg = msgs[msgs.length - 1];
+      yield* streamGemini(config.geminiApiKey, route.modelId, lastMsg?.content || '', 0.7, options.systemPrompt, options.signal);
       break;
   }
 }
@@ -420,6 +474,122 @@ async function* streamOllama(
   yield* parseNDJSON(response, (obj) => {
     return obj.response || null;
   });
+}
+
+// ─── Multi-turn provider helpers ─────────────────────────────────────
+
+async function* streamOpenAIMultiTurn(
+  apiKey: string,
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+  systemPrompt?: string,
+  signal?: AbortSignal,
+  baseUrl?: string
+): AsyncGenerator<string> {
+  const chatMessages: any[] = [];
+  if (systemPrompt) chatMessages.push({ role: 'system', content: systemPrompt });
+  for (const m of messages) {
+    chatMessages.push({ role: m.role, content: m.content });
+  }
+
+  const body = JSON.stringify({ model, messages: chatMessages, temperature: 0.7, stream: true });
+
+  let hostname = 'api.openai.com';
+  let chatPath = '/v1/chat/completions';
+  let useHttps = true;
+  let port: number | undefined;
+
+  if (baseUrl) {
+    const normalized = baseUrl.replace(/\/$/, '');
+    const chatUrl = normalized.endsWith('/v1') ? `${normalized}/chat/completions` : `${normalized}/v1/chat/completions`;
+    const url = new URL(chatUrl);
+    hostname = url.hostname;
+    chatPath = url.pathname;
+    useHttps = url.protocol === 'https:';
+    port = url.port ? parseInt(url.port) : undefined;
+  }
+
+  const response = await httpRequest({
+    hostname,
+    port,
+    path: chatPath,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body,
+    signal,
+    useHttps,
+  });
+
+  yield* parseSSE(response, (data) => {
+    if (data === '[DONE]') return null;
+    try {
+      const parsed = JSON.parse(data);
+      return parsed.choices?.[0]?.delta?.content || null;
+    } catch { return null; }
+  });
+}
+
+async function* streamAnthropicMultiTurn(
+  apiKey: string,
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+  systemPrompt?: string,
+  signal?: AbortSignal
+): AsyncGenerator<string> {
+  const chatMessages = messages.map((m) => ({ role: m.role, content: m.content }));
+  const body: any = { model, max_tokens: 4096, messages: chatMessages, stream: true };
+  if (systemPrompt) body.system = systemPrompt;
+
+  const response = await httpRequest({
+    hostname: 'api.anthropic.com',
+    path: '/v1/messages',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify(body),
+    signal,
+    useHttps: true,
+  });
+
+  yield* parseSSE(response, (data) => {
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed.type === 'content_block_delta' && parsed.delta?.text) return parsed.delta.text;
+      return null;
+    } catch { return null; }
+  });
+}
+
+async function* streamOllamaMultiTurn(
+  baseUrl: string,
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+  systemPrompt?: string,
+  signal?: AbortSignal
+): AsyncGenerator<string> {
+  const chatMessages: any[] = [];
+  if (systemPrompt) chatMessages.push({ role: 'system', content: systemPrompt });
+  for (const m of messages) chatMessages.push({ role: m.role, content: m.content });
+
+  const url = new URL('/api/chat', baseUrl);
+  const body = JSON.stringify({ model, messages: chatMessages, stream: true });
+  const useHttps = url.protocol === 'https:';
+
+  const response = await httpRequest({
+    hostname: url.hostname,
+    port: url.port ? parseInt(url.port) : undefined,
+    path: url.pathname,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    signal,
+    useHttps,
+  });
+
+  yield* parseNDJSON(response, (obj) => obj.message?.content || null);
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────

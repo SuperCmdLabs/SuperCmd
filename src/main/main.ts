@@ -17,9 +17,14 @@ import { fork, type ChildProcess } from 'child_process';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken } from './settings-store';
 import type { AppSettings } from './settings-store';
-import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
+import { streamAI, isAIAvailable, transcribeAudio, streamAIMultiTurn } from './ai-provider';
 import { startOAuthLogin, chatgptLogout, getChatGPTLoginStatus } from './chatgpt-auth';
 import { getChatGPTModelList } from './chatgpt-upstream';
+import {
+  initAiChatStore, getAllConversations, getConversation, createConversation,
+  updateConversation, addMessageToConversation, deleteConversation,
+  deleteAllConversations, searchConversations
+} from './ai-chat-store';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
 import {
   createScriptCommandTemplate,
@@ -2001,6 +2006,8 @@ let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
 let notesWindow: InstanceType<typeof BrowserWindow> | null = null;
 let pendingNoteJson: string | null = null;
+let aiChatWindow: InstanceType<typeof BrowserWindow> | null = null;
+let pendingAiChatConversationId: string | null = null;
 let isVisible = false;
 let suppressBlurHide = false; // When true, blur won't hide the window (used during file dialogs)
 let oauthBlurHideSuppressionDepth = 0; // Keep launcher alive while OAuth browser flow is in progress
@@ -9389,6 +9396,78 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
   });
 }
 
+function openAiChatWindow(conversationId?: string): void {
+  if (aiChatWindow) {
+    if (conversationId) {
+      aiChatWindow.webContents.send('ai-chat-open-conversation', conversationId);
+    }
+    aiChatWindow.show();
+    aiChatWindow.focus();
+    return;
+  }
+
+  if (process.platform === 'darwin') {
+    app.dock.show();
+  }
+
+  const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = (() => {
+    if (mainWindow) {
+      const b = mainWindow.getBounds();
+      const center = { x: b.x + Math.floor(b.width / 2), y: b.y + Math.floor(b.height / 2) };
+      return screen.getDisplayNearestPoint(center).workArea;
+    }
+    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  })();
+  const chatWidth = Math.max(700, Math.min(1000, displayWidth - 200));
+  const chatHeight = Math.max(500, Math.min(750, displayHeight - 150));
+  const chatX = displayX + Math.floor((displayWidth - chatWidth) / 2);
+  const chatY = displayY + Math.floor((displayHeight - chatHeight) / 2);
+  const useNativeLiquidGlass = shouldUseNativeLiquidGlass();
+
+  aiChatWindow = new BrowserWindow({
+    width: chatWidth,
+    height: chatHeight,
+    x: chatX,
+    y: chatY,
+    minWidth: 600,
+    minHeight: 450,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
+    transparent: true,
+    backgroundColor: '#00000000',
+    vibrancy: useNativeLiquidGlass ? false : 'hud',
+    visualEffectState: 'active',
+    hasShadow: false,
+    alwaysOnTop: false,
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  applyLiquidGlassToWindow(aiChatWindow, {
+    cornerRadius: 14,
+    fallbackVibrancy: 'hud',
+  });
+
+  registerCloseWindowShortcut(aiChatWindow);
+
+  const hash = conversationId ? `/ai-chat?conversationId=${conversationId}` : '/ai-chat';
+  loadWindowUrl(aiChatWindow, hash);
+
+  aiChatWindow.once('ready-to-show', () => {
+    aiChatWindow?.show();
+  });
+
+  aiChatWindow.on('closed', () => {
+    aiChatWindow = null;
+    if (process.platform === 'darwin' && !settingsWindow && !extensionStoreWindow && !notesWindow) {
+      app.dock.hide();
+    }
+  });
+}
+
 function openExtensionStoreWindow(): void {
   if (extensionStoreWindow) {
     extensionStoreWindow.show();
@@ -10236,6 +10315,7 @@ app.whenReady().then(async () => {
   // Initialize snippet store
   initSnippetStore();
   initNoteStore();
+  initAiChatStore();
   try { refreshSnippetExpander(); } catch (e) {
     console.warn('[SnippetExpander] Failed to start:', e);
   }
@@ -12925,6 +13005,95 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('chatgpt-models', () => {
     return getChatGPTModelList();
+  });
+
+  // ─── IPC: AI Chat Window ─────────────────────────────────────────
+
+  ipcMain.handle('open-ai-chat-window', (_event: any, conversationId?: string) => {
+    openAiChatWindow(conversationId);
+  });
+
+  ipcMain.handle('ai-chat-get-all', () => getAllConversations());
+  ipcMain.handle('ai-chat-get', (_event: any, id: string) => getConversation(id));
+  ipcMain.handle('ai-chat-create', (_event: any, data: { firstMessage: string; model?: string; provider?: string; systemPrompt?: string }) => {
+    const s = loadSettings();
+    return createConversation({
+      ...data,
+      model: data.model || s.ai?.defaultModel || '',
+      provider: data.provider || s.ai?.provider || '',
+    });
+  });
+  ipcMain.handle('ai-chat-update', (_event: any, id: string, patch: any) => updateConversation(id, patch));
+  ipcMain.handle('ai-chat-delete', (_event: any, id: string) => deleteConversation(id));
+  ipcMain.handle('ai-chat-delete-all', () => deleteAllConversations());
+  ipcMain.handle('ai-chat-search', (_event: any, query: string) => searchConversations(query));
+  ipcMain.handle('ai-chat-add-message', (_event: any, conversationId: string, message: { role: 'user' | 'assistant'; content: string }) => {
+    return addMessageToConversation(conversationId, message);
+  });
+
+  const activeAiChatRequests = new Map<string, AbortController>();
+
+  ipcMain.handle(
+    'ai-chat-send',
+    async (event: any, requestId: string, conversationId: string, message: string) => {
+      const s = loadSettings();
+      const convo = getConversation(conversationId);
+      if (!convo) {
+        event.sender.send('ai-chat-stream-error', { requestId, error: 'Conversation not found' });
+        return;
+      }
+
+      // Add the user message
+      addMessageToConversation(conversationId, { role: 'user', content: message });
+
+      // Reload to get updated messages
+      const updatedConvo = getConversation(conversationId)!;
+
+      const controller = new AbortController();
+      activeAiChatRequests.set(requestId, controller);
+
+      try {
+        const memoryContextSystemPrompt = await buildMemoryContextSystemPrompt(s, message, { limit: 6 });
+        const mergedSystemPrompt = [updatedConvo.systemPrompt, memoryContextSystemPrompt]
+          .filter((part) => typeof part === 'string' && part.trim().length > 0)
+          .join('\n\n');
+
+        const gen = streamAIMultiTurn(s.ai, {
+          messages: updatedConvo.messages.map((m) => ({ role: m.role, content: m.content })),
+          model: updatedConvo.model || undefined,
+          systemPrompt: mergedSystemPrompt || undefined,
+          sessionId: updatedConvo.sessionId,
+          signal: controller.signal,
+        });
+
+        let fullResponse = '';
+        for await (const chunk of gen) {
+          if (controller.signal.aborted) break;
+          fullResponse += chunk;
+          event.sender.send('ai-chat-stream-chunk', { requestId, chunk });
+        }
+
+        if (!controller.signal.aborted) {
+          // Save assistant response
+          addMessageToConversation(conversationId, { role: 'assistant', content: fullResponse });
+          event.sender.send('ai-chat-stream-done', { requestId });
+        }
+      } catch (e: any) {
+        if (!controller.signal.aborted) {
+          event.sender.send('ai-chat-stream-error', { requestId, error: e?.message || 'AI request failed' });
+        }
+      } finally {
+        activeAiChatRequests.delete(requestId);
+      }
+    }
+  );
+
+  ipcMain.handle('ai-chat-cancel', (_event: any, requestId: string) => {
+    const controller = activeAiChatRequests.get(requestId);
+    if (controller) {
+      controller.abort();
+      activeAiChatRequests.delete(requestId);
+    }
   });
 
   ipcMain.handle('whisper-refine-transcript', async (_event: any, transcript: string) => {

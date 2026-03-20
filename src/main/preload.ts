@@ -758,6 +758,44 @@ contextBridge.exposeInMainWorld('electron', {
     return () => { ipcRenderer.removeListener('chatgpt-login-progress', listener); };
   },
 
+  // ─── AI Chat Window ────────────────────────────────────────────
+  openAiChatWindow: (conversationId?: string): Promise<void> =>
+    ipcRenderer.invoke('open-ai-chat-window', conversationId),
+  aiChatGetAll: (): Promise<any[]> =>
+    ipcRenderer.invoke('ai-chat-get-all'),
+  aiChatGet: (id: string): Promise<any> =>
+    ipcRenderer.invoke('ai-chat-get', id),
+  aiChatCreate: (data: { firstMessage: string; model?: string; provider?: string; systemPrompt?: string }): Promise<any> =>
+    ipcRenderer.invoke('ai-chat-create', data),
+  aiChatUpdate: (id: string, patch: any): Promise<any> =>
+    ipcRenderer.invoke('ai-chat-update', id, patch),
+  aiChatDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('ai-chat-delete', id),
+  aiChatDeleteAll: (): Promise<number> =>
+    ipcRenderer.invoke('ai-chat-delete-all'),
+  aiChatSearch: (query: string): Promise<any[]> =>
+    ipcRenderer.invoke('ai-chat-search', query),
+  aiChatAddMessage: (conversationId: string, message: { role: 'user' | 'assistant'; content: string }): Promise<any> =>
+    ipcRenderer.invoke('ai-chat-add-message', conversationId, message),
+  aiChatSend: (requestId: string, conversationId: string, message: string): Promise<void> =>
+    ipcRenderer.invoke('ai-chat-send', requestId, conversationId, message),
+  aiChatCancel: (requestId: string): Promise<void> =>
+    ipcRenderer.invoke('ai-chat-cancel', requestId),
+  onAiChatStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => {
+    ipcRenderer.on('ai-chat-stream-chunk', (_event: any, data: any) => callback(data));
+  },
+  onAiChatStreamDone: (callback: (data: { requestId: string }) => void) => {
+    ipcRenderer.on('ai-chat-stream-done', (_event: any, data: any) => callback(data));
+  },
+  onAiChatStreamError: (callback: (data: { requestId: string; error: string }) => void) => {
+    ipcRenderer.on('ai-chat-stream-error', (_event: any, data: any) => callback(data));
+  },
+  onAiChatOpenConversation: (callback: (conversationId: string) => void) => {
+    const listener = (_event: any, id: string) => callback(id);
+    ipcRenderer.on('ai-chat-open-conversation', listener);
+    return () => { ipcRenderer.removeListener('ai-chat-open-conversation', listener); };
+  },
+
   // ─── Ollama Model Management ────────────────────────────────────
   ollamaStatus: (): Promise<{ running: boolean; models: any[] }> =>
     ipcRenderer.invoke('ollama-status'),

@@ -56,20 +56,27 @@ interface ResponsesInput {
   [key: string]: any;
 }
 
-function convertMessagesToResponsesInput(
-  prompt: string,
-  systemPrompt?: string
-): ResponsesInput[] {
-  const input: ResponsesInput[] = [];
-
-  // User message
-  input.push({
+function convertSinglePromptToInput(prompt: string): ResponsesInput[] {
+  return [{
     type: 'message',
     role: 'user',
     content: [{ type: 'input_text', text: prompt }],
-  });
+  }];
+}
 
-  return input;
+export function convertMessageHistoryToInput(
+  messages: Array<{ role: string; content: string }>
+): ResponsesInput[] {
+  return messages
+    .filter((m) => m.role !== 'system')
+    .map((m) => ({
+      type: 'message',
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: [{
+        type: m.role === 'assistant' ? 'output_text' : 'input_text',
+        text: m.content,
+      }],
+    }));
 }
 
 // ─── Session ID for prompt caching ───────────────────────────────
@@ -98,7 +105,7 @@ export async function* streamChatGPTAccount(
   const modelConfig = CHATGPT_MODELS[modelId] || { upstreamId: modelId };
   const upstreamModel = modelConfig.upstreamId;
 
-  const input = convertMessagesToResponsesInput(prompt, systemPrompt);
+  const input = convertSinglePromptToInput(prompt);
   const sessionId = generateSessionId(systemPrompt, prompt);
 
   const payload: any = {
@@ -230,6 +237,124 @@ export async function* streamChatGPTAccount(
             yield evt.delta;
           }
         } catch {}
+      }
+    }
+  }
+}
+
+// ─── Multi-turn streaming ────────────────────────────────────────
+
+export async function* streamChatGPTAccountMultiTurn(
+  modelId: string,
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  systemPrompt?: string,
+  sessionId?: string,
+  signal?: AbortSignal
+): AsyncGenerator<string> {
+  const tokens = await loadChatGPTTokens();
+  if (!tokens) {
+    throw new Error('ChatGPT session expired. Please sign in again in Settings → AI.');
+  }
+
+  const modelConfig = CHATGPT_MODELS[modelId] || { upstreamId: modelId };
+  const upstreamModel = modelConfig.upstreamId;
+  const inputItems = convertMessageHistoryToInput(messages);
+  const effectiveSessionId = sessionId || generateSessionId(systemPrompt, messages[0]?.content || '');
+
+  const payload: any = {
+    model: upstreamModel,
+    instructions: systemPrompt || 'You are a helpful assistant.',
+    input: inputItems,
+    store: false,
+    stream: true,
+    prompt_cache_key: effectiveSessionId,
+  };
+
+  if (modelConfig.reasoning !== 'none') {
+    payload.reasoning = {
+      effort: modelConfig.reasoning || 'medium',
+      summary: 'auto',
+    };
+    payload.include = ['reasoning.encrypted_content'];
+  }
+
+  const body = JSON.stringify(payload);
+
+  const response = await new Promise<import('http').IncomingMessage>((resolve, reject) => {
+    const url = new URL(RESPONSES_URL);
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tokens.accessToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+          'chatgpt-account-id': tokens.accountId,
+          'OpenAI-Beta': 'responses=experimental',
+          'session_id': effectiveSessionId,
+        },
+      },
+      (res) => {
+        if (res.statusCode && res.statusCode >= 400) {
+          let errBody = '';
+          res.on('data', (chunk) => { errBody += chunk; });
+          res.on('end', () => {
+            let errorMessage = `ChatGPT API error (HTTP ${res.statusCode})`;
+            try {
+              const parsed = JSON.parse(errBody);
+              if (parsed?.error?.message) errorMessage = parsed.error.message;
+              else if (parsed?.detail) errorMessage = parsed.detail;
+            } catch {}
+            reject(new Error(errorMessage));
+          });
+          return;
+        }
+        resolve(res);
+      }
+    );
+
+    req.on('error', reject);
+
+    if (signal) {
+      if (signal.aborted) {
+        req.destroy();
+        reject(new Error('Request aborted'));
+        return;
+      }
+      signal.addEventListener('abort', () => {
+        req.destroy();
+        reject(new Error('Request aborted'));
+      }, { once: true });
+    }
+
+    req.write(body);
+    req.end();
+  });
+
+  let buffer = '';
+  for await (const rawChunk of response) {
+    if (signal?.aborted) break;
+    buffer += rawChunk.toString();
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+      const data = trimmed.slice(6);
+      if (!data || data === '[DONE]') continue;
+      let evt: any;
+      try { evt = JSON.parse(data); } catch { continue; }
+      const kind = evt.type;
+      if (kind === 'response.output_text.delta') {
+        const delta = evt.delta || '';
+        if (delta) yield delta;
+      } else if (kind === 'response.failed') {
+        throw new Error(evt?.response?.error?.message || evt?.error?.message || 'ChatGPT request failed');
+      } else if (kind === 'response.completed') {
+        break;
       }
     }
   }
