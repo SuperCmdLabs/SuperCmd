@@ -362,7 +362,7 @@ function buildAppKeywords(
   add(rawName);
   if (bundleId) add(bundleId);
 
-  const compactRaw = rawName.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const compactRaw = rawName.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
   if (compactRaw) set.add(compactRaw);
 
   const values = Array.from(set);
