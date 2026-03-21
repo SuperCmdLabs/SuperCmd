@@ -2417,6 +2417,58 @@ function setLauncherOverlayTopmost(enabled: boolean): void {
   } catch {}
 }
 
+/**
+ * If AeroSpace (tiling WM) is running, move the launcher window to the
+ * currently focused AeroSpace workspace so it opens where the user is,
+ * not on the workspace where the window was last shown.
+ *
+ * This is fire-and-forget — failures are silently ignored so we never
+ * block or delay the launcher for users who don't use AeroSpace.
+ */
+let aerospaceAvailable: boolean | null = null; // null = not yet checked
+function moveWindowToCurrentAerospaceWorkspace(): void {
+  if (aerospaceAvailable === false || process.platform !== 'darwin' || !mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    const { execFileSync } = require('child_process');
+    // Quick check: is AeroSpace running?  list-workspaces --focused
+    // exits 0 only when the server is up.
+    const focusedWs = String(
+      execFileSync('aerospace', ['list-workspaces', '--focused'], {
+        timeout: 500,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }) || ''
+    ).trim();
+    if (!focusedWs) return;
+    aerospaceAvailable = true;
+
+    // Find our window(s) by bundle-id
+    const windowsRaw = String(
+      execFileSync('aerospace', ['list-windows', '--all', '--app-bundle-id', 'com.supercmd.app', '--format', '%{window-id} %{workspace}'], {
+        timeout: 500,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }) || ''
+    ).trim();
+    if (!windowsRaw) return;
+
+    for (const line of windowsRaw.split('\n')) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 2) continue;
+      const [windowId, currentWs] = parts;
+      if (currentWs === focusedWs) continue; // already on the right workspace
+      execFileSync('aerospace', ['move-node-to-workspace', focusedWs, '--window-id', windowId], {
+        timeout: 500,
+        stdio: 'ignore',
+      });
+    }
+  } catch (err: any) {
+    // ENOENT = `aerospace` binary not found — will never appear, so skip future calls.
+    if (err?.code === 'ENOENT') {
+      aerospaceAvailable = false;
+    }
+    // Other errors (server not running, command failed) are transient — retry next time.
+  }
+}
+
 function clearOAuthBlurHideSuppression(): void {
   oauthBlurHideSuppressionDepth = 0;
   if (oauthBlurHideSuppressionTimer) {
@@ -7395,6 +7447,10 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     launcherEntryWindowManagementTargetWindowId = null;
     launcherEntryWindowManagementTargetWorkArea = null;
   }
+
+  // Move window to the current AeroSpace workspace (if AeroSpace is active)
+  // so the launcher opens where the user is, not on a stale workspace.
+  moveWindowToCurrentAerospaceWorkspace();
 
   applyLauncherBounds(launcherMode);
   const initialSelectionSnapshot = getRecentSelectionSnapshot();
