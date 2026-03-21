@@ -1118,7 +1118,11 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
         <SlashMenu
           position={slashMenu.position}
           onSelect={handleSlashSelect}
-          onClose={() => setSlashMenu(null)}
+          onClose={() => {
+            const { blockId } = slashMenu;
+            setSlashMenu(null);
+            focusBlock(blockId, 0);
+          }}
         />
       )}
 
