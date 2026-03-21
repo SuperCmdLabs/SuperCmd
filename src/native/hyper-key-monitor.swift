@@ -237,13 +237,13 @@ let callback: CGEventTapCallBack = { _, type, event, userInfo in
             state.sourceKeyDown = true
             state.comboFired = false
             state.pressSeq &+= 1
-            return nil
+            return Unmanaged.passUnretained(event)
         } else if !down && state.sourceKeyDown {
             state.sourceKeyDown = false
             if !state.comboFired { handleTap(state) }
-            return nil
+            return Unmanaged.passUnretained(event)
         }
-        return nil
+        return Unmanaged.passUnretained(event)
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -255,10 +255,10 @@ let callback: CGEventTapCallBack = { _, type, event, userInfo in
             state.comboFired = true
             let keyName = keyCodeToName[keyCode] ?? "unknown-\(keyCode)"
             emit(["combo": keyName])
-            return nil
+            return Unmanaged.passUnretained(event)
         }
         if type == .keyUp {
-            return nil
+            return Unmanaged.passUnretained(event)
         }
     }
 

@@ -14,7 +14,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { fork, type ChildProcess } from 'child_process';
-import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
+import { getAvailableCommands, executeCommand, invalidateCache, getAvailableCommandsSync } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken } from './settings-store';
 import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
@@ -10059,8 +10059,18 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
   }
   registeredHotkeys.clear();
 
+  // Load current available commands to filter out non-existent ones
+  const availableCommands = getAvailableCommandsSync();
+  const availableCommandIds = new Set(availableCommands.map(c => c.id));
+
   for (const [commandId, shortcut] of Object.entries(hotkeys)) {
     if (!shortcut) continue;
+
+    // VALIDATION: Only register if the command ID is recognized
+    if (!availableCommandIds.has(commandId) && !isWindowManagementSystemCommand(commandId)) {
+      continue;
+    }
+
     const normalizedShortcut = normalizeAccelerator(shortcut);
     if (commandId === 'system-supercmd-whisper-speak-toggle' && isFnOnlyShortcut(normalizedShortcut)) {
       continue;
