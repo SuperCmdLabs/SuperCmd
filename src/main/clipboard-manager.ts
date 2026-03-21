@@ -466,10 +466,19 @@ export function copyItemToClipboard(id: string): boolean {
           clipboard.writeImage(image);
         }
       }
+      // Update lastClipboardImage so the next poll doesn't see a "new" image
+      // and create a duplicate entry.
+      try {
+        const img = clipboard.readImage();
+        if (!img.isEmpty()) {
+          lastClipboardImage = img.toPNG();
+        }
+      } catch {}
     } else {
       clipboard.writeText(item.content);
+      lastClipboardText = item.content;
     }
-    
+
     // Bump recency for sorting; pinned items still stay grouped above non-pinned.
     item.timestamp = Date.now();
     sortClipboardHistory();

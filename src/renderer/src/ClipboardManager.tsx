@@ -220,6 +220,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     if (!filteredItems[selectedIndex]) return;
     try {
       await window.electron.clipboardCopyItem(filteredItems[selectedIndex].id);
+      window.electron.hideWindow();
     } catch (e) {
       console.error('Failed to copy item:', e);
     }
