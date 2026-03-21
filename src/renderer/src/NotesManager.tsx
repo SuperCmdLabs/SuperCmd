@@ -218,27 +218,29 @@ function getCursorOffset(el: HTMLElement | null | undefined): number {
   return range.startOffset;
 }
 
+function focusAndSetCursor(el: HTMLElement, offset: number) {
+  el.focus();
+  const textNode = el.firstChild;
+  if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+    const range = document.createRange();
+    const safe = Math.min(offset, textNode.textContent?.length || 0);
+    range.setStart(textNode, safe);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  } else {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(offset > 0 ? false : true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+}
+
 function setCursorPosition(el: HTMLElement, offset: number) {
-  requestAnimationFrame(() => {
-    el.focus();
-    const textNode = el.firstChild;
-    if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-      const range = document.createRange();
-      const safe = Math.min(offset, textNode.textContent?.length || 0);
-      range.setStart(textNode, safe);
-      range.collapse(true);
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(range);
-    } else {
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      range.collapse(offset > 0 ? false : true);
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(range);
-    }
-  });
+  requestAnimationFrame(() => focusAndSetCursor(el, offset));
 }
 
 // ─── Menu Panel Styles (matches clipboard/extension action panels) ───
@@ -734,16 +736,19 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
       }
     }
 
-    // Arrow navigation between blocks
+    // Arrow navigation between blocks — focus synchronously to avoid lag.
+    // Skip over dividers (they have no editable element).
     if (e.key === 'ArrowDown' && !meta && !e.shiftKey) {
       const offset = getCursorOffset(el);
       const textLen = el?.textContent?.length || 0;
       if (offset >= textLen) {
         const idx = blocksRef.current.findIndex(b => b.id === blockId);
-        if (idx < blocksRef.current.length - 1) {
-          e.preventDefault();
-          const next = blocksRef.current[idx + 1];
-          focusBlock(next.id, 0);
+        for (let i = idx + 1; i < blocksRef.current.length; i++) {
+          const target = blocksRef.current[i];
+          if (target.type === 'divider') continue;
+          const targetEl = blockElsRef.current.get(target.id);
+          if (targetEl) { e.preventDefault(); focusAndSetCursor(targetEl, 0); }
+          break;
         }
       }
     }
@@ -752,10 +757,12 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
       const offset = getCursorOffset(el);
       if (offset === 0) {
         const idx = blocksRef.current.findIndex(b => b.id === blockId);
-        if (idx > 0) {
-          e.preventDefault();
-          const prev = blocksRef.current[idx - 1];
-          focusBlock(prev.id, prev.content.length);
+        for (let i = idx - 1; i >= 0; i--) {
+          const target = blocksRef.current[i];
+          if (target.type === 'divider') continue;
+          const targetEl = blockElsRef.current.get(target.id);
+          if (targetEl) { e.preventDefault(); focusAndSetCursor(targetEl, target.content.length); }
+          break;
         }
       }
     }
@@ -765,10 +772,12 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
       const sel = window.getSelection();
       if (offset === 0 && sel?.isCollapsed) {
         const idx = blocksRef.current.findIndex(b => b.id === blockId);
-        if (idx > 0) {
-          e.preventDefault();
-          const prev = blocksRef.current[idx - 1];
-          focusBlock(prev.id, prev.content.length);
+        for (let i = idx - 1; i >= 0; i--) {
+          const target = blocksRef.current[i];
+          if (target.type === 'divider') continue;
+          const targetEl = blockElsRef.current.get(target.id);
+          if (targetEl) { e.preventDefault(); focusAndSetCursor(targetEl, target.content.length); }
+          break;
         }
       }
     }
@@ -779,10 +788,12 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ initialContent, onContentChan
       const sel = window.getSelection();
       if (offset >= textLen && sel?.isCollapsed) {
         const idx = blocksRef.current.findIndex(b => b.id === blockId);
-        if (idx < blocksRef.current.length - 1) {
-          e.preventDefault();
-          const next = blocksRef.current[idx + 1];
-          focusBlock(next.id, 0);
+        for (let i = idx + 1; i < blocksRef.current.length; i++) {
+          const target = blocksRef.current[i];
+          if (target.type === 'divider') continue;
+          const targetEl = blockElsRef.current.get(target.id);
+          if (targetEl) { e.preventDefault(); focusAndSetCursor(targetEl, 0); }
+          break;
         }
       }
     }
