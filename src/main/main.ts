@@ -91,6 +91,7 @@ import {
   initNoteStore,
   getAllNotes,
   searchNotes,
+  getNoteById,
   createNote,
   updateNote,
   deleteNote,
@@ -6041,7 +6042,26 @@ function handleOAuthCallbackUrl(rawUrl: string): void {
 
 app.on('open-url', (event: any, url: string) => {
   event.preventDefault();
-  console.log('[OAuth] open-url event received:', url);
+  console.log('[open-url] event received:', url);
+
+  // Handle note deeplinks: supercmd://notes/<note-id>
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'supercmd:' && parsed.hostname === 'notes') {
+      const noteId = parsed.pathname.replace(/^\//, '');
+      if (noteId) {
+        const note = getNoteById(noteId);
+        if (note) {
+          pendingNoteJson = JSON.stringify(note);
+          openNotesWindow('search');
+          return;
+        }
+      }
+    }
+  } catch {
+    // not a valid URL, fall through to OAuth
+  }
+
   handleOAuthCallbackUrl(url);
 });
 

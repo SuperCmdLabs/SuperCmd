@@ -1415,7 +1415,7 @@ const EditorView: React.FC<EditorViewProps> = ({
       {/* Block Editor */}
       <BlockEditor
         key={note?.id || '__new'}
-        initialContent={content}
+        initialContent={note?.content || ''}
         onContentChange={setContent}
         accentColor={accentColor}
         editorRef={blockEditorRef}
