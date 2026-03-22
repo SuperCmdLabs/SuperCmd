@@ -111,35 +111,35 @@ guard let eventTap = CGEvent.tapCreate(
       if let tap = eventTapRef {
         CGEvent.tapEnable(tap: tap, enable: true)
       }
-      return Unmanaged.passRetained(event)
+      return Unmanaged.passUnretained(event)
     }
 
     if type != .keyDown {
-      return Unmanaged.passRetained(event)
+      return Unmanaged.passUnretained(event)
     }
 
     let flags = event.flags
     if flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) {
-      return Unmanaged.passRetained(event)
+      return Unmanaged.passUnretained(event)
     }
 
     let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
     if keyCode == 51 { // backspace
       if !currentToken.isEmpty { currentToken.removeLast() }
-      return Unmanaged.passRetained(event)
+      return Unmanaged.passUnretained(event)
     }
 
     let chars = extractTypedCharacters(from: event)
     guard !chars.isEmpty else {
       currentToken = ""
-      return Unmanaged.passRetained(event)
+      return Unmanaged.passUnretained(event)
     }
 
     for char in chars {
       processCharacter(char)
     }
 
-    return Unmanaged.passRetained(event)
+    return Unmanaged.passUnretained(event)
   },
   userInfo: nil
 ) else {

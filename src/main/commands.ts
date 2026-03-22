@@ -1785,6 +1785,10 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
   return inflightDiscovery;
 }
 
+export function getAvailableCommandsSync(): CommandInfo[] {
+  return cachedCommands || [];
+}
+
 export async function executeCommand(id: string): Promise<boolean> {
   if (id === 'system-quit-launcher') {
     app.quit();
