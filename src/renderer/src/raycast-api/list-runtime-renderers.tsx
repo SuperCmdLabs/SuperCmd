@@ -10,6 +10,7 @@ import {
   EmptyViewRegistryContext,
   ListRegistryContext,
   ListSectionTitleContext,
+  SelectedItemActionsContext,
   type ListItemAccessory,
   type ListItemProps,
 } from './list-runtime-types';
@@ -53,11 +54,24 @@ export function createListRenderers(deps: ListRendererDeps) {
     const sectionTitle = useContext(ListSectionTitleContext);
     const stableId = useRef(props.id || `__li_${++itemOrderCounter}`).current;
     const renderOrder = ++itemOrderCounter;
+    const selCtx = useContext(SelectedItemActionsContext);
 
     useLayoutEffect(() => {
       registry.set(stableId, { props, sectionTitle, order: renderOrder });
       return () => registry.delete(stableId);
     }, [props, registry, renderOrder, sectionTitle, stableId]);
+
+    // When this item is selected, render its actions within the extension's
+    // context tree so that per-item React contexts (e.g. VaultItemContext)
+    // are available to action panel components.
+    if (selCtx && selCtx.selectedItemId === stableId && props.actions) {
+      const { ActionRegistryContext, actionRegistry } = selCtx;
+      return (
+        <ActionRegistryContext.Provider value={actionRegistry}>
+          <div style={{ display: 'none' }}>{props.actions}</div>
+        </ActionRegistryContext.Provider>
+      );
+    }
 
     return null;
   }

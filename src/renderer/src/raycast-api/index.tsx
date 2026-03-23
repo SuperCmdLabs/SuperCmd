@@ -850,6 +850,13 @@ export class Toast {
     this._isInlineHost = false;
     return Promise.resolve();
   }
+
+  /** Dismiss any active toast — called when leaving an extension view. */
+  static dismissActive() {
+    if (Toast._activeToast) {
+      void Toast._activeToast.hide();
+    }
+  }
 }
 
 // Toast namespace for types (merged with class)

@@ -1346,10 +1346,16 @@ const cryptoStub = {
   getRandomValues: (arr: any) => crypto.getRandomValues(arr),
   createCipheriv: () => ({ update: () => BufferPolyfill.alloc(0), final: () => BufferPolyfill.alloc(0) }),
   createDecipheriv: () => ({ update: () => BufferPolyfill.alloc(0), final: () => BufferPolyfill.alloc(0) }),
-  pbkdf2: noopCb,
-  pbkdf2Sync: () => BufferPolyfill.alloc(32),
-  scrypt: noopCb,
-  scryptSync: () => BufferPolyfill.alloc(32),
+  pbkdf2: (...args: any[]) => {
+    const cb = args[args.length - 1];
+    if (typeof cb === 'function') setTimeout(() => cb(null, BufferPolyfill.alloc(args[3] || 32)), 0);
+  },
+  pbkdf2Sync: (_pwd: any, _salt: any, _iter: any, keylen?: number) => BufferPolyfill.alloc(keylen || 32),
+  scrypt: (...args: any[]) => {
+    const cb = args[args.length - 1];
+    if (typeof cb === 'function') setTimeout(() => cb(null, BufferPolyfill.alloc(args[2] || 32)), 0);
+  },
+  scryptSync: (_pwd: any, _salt: any, keylen?: number) => BufferPolyfill.alloc(keylen || 32),
   timingSafeEqual: (a: Uint8Array, b: Uint8Array) => {
     if (a.length !== b.length) return false;
     let diff = 0;
@@ -1448,7 +1454,35 @@ class ReadableStub extends EventEmitterStub {
   }
   setEncoding() { return this; }
   [Symbol.asyncIterator]() {
-    return { next: async () => ({ done: true, value: undefined }) };
+    const stream = this;
+    const chunks: any[] = [];
+    let ended = false;
+    let resolve: (() => void) | null = null;
+
+    stream.on('data', (chunk: any) => {
+      chunks.push(chunk);
+      if (resolve) { resolve(); resolve = null; }
+    });
+    stream.on('end', () => {
+      ended = true;
+      if (resolve) { resolve(); resolve = null; }
+    });
+    stream.on('error', () => {
+      ended = true;
+      if (resolve) { resolve(); resolve = null; }
+    });
+
+    return {
+      async next(): Promise<{ done: boolean; value: any }> {
+        while (chunks.length === 0 && !ended) {
+          await new Promise<void>(r => { resolve = r; });
+        }
+        if (chunks.length > 0) {
+          return { done: false, value: chunks.shift() };
+        }
+        return { done: true, value: undefined };
+      },
+    };
   }
   static from(iterable: any) {
     const s = new ReadableStub();
@@ -2081,6 +2115,38 @@ const childProcessStub = {
         return pid !== null;
       };
 
+      // Wire up stdin forwarding to the main process
+      const stdinQueue: Array<{ data?: any; end?: boolean }> = [];
+      const flushStdinQueue = () => {
+        if (pid === null) return;
+        for (const entry of stdinQueue) {
+          if (entry.data != null) electron.writeSpawnStdin?.(pid, entry.data, false);
+          if (entry.end) electron.writeSpawnStdin?.(pid, '', true);
+        }
+        stdinQueue.length = 0;
+      };
+      const origStdinWrite = cp.stdin.write.bind(cp.stdin);
+      cp.stdin.write = (chunk: any, enc?: any, cb?: Function) => {
+        const data = typeof chunk === 'string' ? chunk : chunk instanceof Uint8Array ? chunk : undefined;
+        if (pid !== null) {
+          electron.writeSpawnStdin?.(pid, data, false);
+        } else {
+          stdinQueue.push({ data });
+        }
+        return origStdinWrite(chunk, enc, cb);
+      };
+      const origStdinEnd = cp.stdin.end.bind(cp.stdin);
+      cp.stdin.end = (chunk?: any, enc?: any, cb?: Function) => {
+        const data = chunk && typeof chunk !== 'function' ? (typeof chunk === 'string' ? chunk : chunk instanceof Uint8Array ? chunk : undefined) : undefined;
+        if (pid !== null) {
+          electron.writeSpawnStdin?.(pid, data || '', true);
+        } else {
+          if (data) stdinQueue.push({ data });
+          stdinQueue.push({ end: true });
+        }
+        return origStdinEnd(chunk, enc, cb);
+      };
+
       electron.spawnProcess(file, spawnArgs, {
         shell: options?.shell ?? false,
         env: options?.env,
@@ -2088,6 +2154,7 @@ const childProcessStub = {
       }).then((result: { pid: number }) => {
         pid = result.pid;
         cp.pid = pid;
+        flushStdinQueue();
         flushPendingEvents();
       }).catch((err: any) => {
         cleanup();
@@ -2239,12 +2306,26 @@ const utilStub: Record<string, any> = {
   TextDecoder,
   TextEncoder,
   isDeepStrictEqual: (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b),
+  debuglog: () => () => {},
+  debug: () => () => {},
 };
 utilStub.promisify.custom = promisifyCustomSymbol;
 
 // ── process stub ────────────────────────────────────────────────
 const processStub: Record<string, any> = {
-  env: { NODE_ENV: 'production', HOME: '/tmp', PATH: '', USER: 'user' },
+  env: new Proxy({ NODE_ENV: 'production' } as Record<string, string | undefined>, {
+    get(target, prop) {
+      if (typeof prop === 'string' && prop in target) return target[prop];
+      // Return undefined for unknown keys so libraries like execa don't
+      // merge fake values (HOME, PATH, USER) into the real process env
+      // when spawning child processes through the main process.
+      return undefined;
+    },
+    set(target, prop, value) {
+      if (typeof prop === 'string') target[prop] = value;
+      return true;
+    },
+  }),
   cwd: () => '/',
   chdir: noop,
   platform: 'darwin',
@@ -2334,6 +2415,124 @@ function serializeReactElement(element: any): string {
     return `<${tag}>${inner}</${tag}>`;
   }
   return '';
+}
+
+// ── http/https stub that routes through browser fetch ────────────
+function httpStub(scheme: 'http' | 'https') {
+  function parseArgs(args: any[]): { url: string; options: any; callback?: Function } {
+    let url: string;
+    let options: any = {};
+    let callback: Function | undefined;
+    if (typeof args[0] === 'string') {
+      url = args[0];
+      if (typeof args[1] === 'function') { callback = args[1]; }
+      else if (args[1]) { options = args[1]; if (typeof args[2] === 'function') callback = args[2]; }
+    } else if (args[0] instanceof URL) {
+      url = args[0].href;
+      if (typeof args[1] === 'function') { callback = args[1]; }
+      else if (args[1]) { options = args[1]; if (typeof args[2] === 'function') callback = args[2]; }
+    } else {
+      options = args[0] || {};
+      const host = options.hostname || options.host || 'localhost';
+      const port = options.port ? `:${options.port}` : '';
+      const p = options.path || '/';
+      url = `${scheme}://${host}${port}${p}`;
+      if (typeof args[1] === 'function') callback = args[1];
+    }
+    return { url, options, callback };
+  }
+
+  function doRequest(args: any[], autoEnd: boolean) {
+    const { url, options, callback } = parseArgs(args);
+    const method = (options.method || 'GET').toUpperCase();
+    const reqBodyChunks: any[] = [];
+
+    const req = new WritableStub() as any;
+    req.method = method;
+    req.path = options.path || '/';
+    req.setHeader = noop;
+    req.getHeader = () => undefined;
+    req.removeHeader = noop;
+    req.setNoDelay = noop;
+    req.setTimeout = (_ms: number, cb?: Function) => { if (cb) req.on('timeout', cb); return req; };
+    req.abort = () => req.destroy();
+    req.flushHeaders = noop;
+
+    const origWrite = req.write.bind(req);
+    req.write = (chunk: any, ...rest: any[]) => {
+      if (chunk) reqBodyChunks.push(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk);
+      origWrite(chunk, ...rest);
+      return true;
+    };
+
+    const origEnd = req.end.bind(req);
+    req.end = (chunk?: any, ...rest: any[]) => {
+      if (chunk) reqBodyChunks.push(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk);
+      origEnd(chunk, ...rest);
+      doFetch();
+      return req;
+    };
+
+    if (callback) req.on('response', callback);
+
+    function doFetch() {
+      const fetchOpts: RequestInit = { method, redirect: 'follow' };
+      const hdrs: Record<string, string> = {};
+      if (options.headers) {
+        for (const [k, v] of Object.entries(options.headers)) {
+          if (v != null) hdrs[k.toLowerCase()] = String(v);
+        }
+      }
+      if (Object.keys(hdrs).length) fetchOpts.headers = hdrs;
+      if (reqBodyChunks.length && method !== 'GET' && method !== 'HEAD') {
+        const total = reqBodyChunks.reduce((s: number, c: any) => s + c.length, 0);
+        const body = new Uint8Array(total);
+        let off = 0;
+        for (const c of reqBodyChunks) { body.set(c, off); off += c.length; }
+        fetchOpts.body = body;
+      }
+
+      fetch(url, fetchOpts).then(async (resp) => {
+        const res = new ReadableStub() as any;
+        res.statusCode = resp.status;
+        res.statusMessage = resp.statusText;
+        res.headers = Object.fromEntries(resp.headers.entries());
+        res.rawHeaders = [];
+        resp.headers.forEach((v, k) => { res.rawHeaders.push(k, v); });
+        req.emit('response', res);
+
+        const reader = resp.body?.getReader();
+        if (reader) {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              res.emit('data', BufferPolyfill.from(value));
+            }
+          } catch (e) {
+            res.emit('error', e);
+          }
+        }
+        res.emit('end');
+        res.emit('close');
+      }).catch((err) => {
+        req.emit('error', err);
+      });
+    }
+
+    if (autoEnd) req.end();
+    return req;
+  }
+
+  return {
+    request: (...args: any[]) => doRequest(args, false),
+    get: (...args: any[]) => doRequest(args, true),
+    Agent: class { destroy() {} },
+    STATUS_CODES: { 200: 'OK', 201: 'Created', 204: 'No Content', 301: 'Moved Permanently', 302: 'Found', 304: 'Not Modified', 400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 500: 'Internal Server Error' },
+    METHODS: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'],
+    createServer: () => ({ listen: noop, close: noop, on: noop }),
+    globalAgent: { destroy: noop },
+  };
 }
 
 // ── Assemble all stubs ──────────────────────────────────────────
@@ -2426,22 +2625,8 @@ const nodeBuiltinStubs: Record<string, any> = {
     escape: encodeURIComponent,
     unescape: decodeURIComponent,
   },
-  http: {
-    request: (...args: any[]) => { const w = new WritableStub(); setTimeout(() => w.emit('response', new ReadableStub()), 0); return w; },
-    get: (...args: any[]) => { const w = new WritableStub(); setTimeout(() => w.emit('response', new ReadableStub()), 0); w.end(); return w; },
-    Agent: class { destroy() {} },
-    STATUS_CODES: { 200: 'OK', 201: 'Created', 204: 'No Content', 301: 'Moved Permanently', 302: 'Found', 304: 'Not Modified', 400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 500: 'Internal Server Error' },
-    METHODS: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'],
-    createServer: () => ({ listen: noop, close: noop, on: noop }),
-    globalAgent: { destroy: noop },
-  },
-  https: {
-    request: (...args: any[]) => { const w = new WritableStub(); setTimeout(() => w.emit('response', new ReadableStub()), 0); return w; },
-    get: (...args: any[]) => { const w = new WritableStub(); setTimeout(() => w.emit('response', new ReadableStub()), 0); w.end(); return w; },
-    Agent: class { destroy() {} },
-    createServer: () => ({ listen: noop, close: noop, on: noop }),
-    globalAgent: { destroy: noop },
-  },
+  http: httpStub('http'),
+  https: httpStub('https'),
   assert: Object.assign(
     (v: any, msg?: string) => { if (!v) throw new Error(msg || 'Assertion failed'); },
     {
@@ -3519,6 +3704,11 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
     setGlobalNavigation(value);
     return value;
   }, [push, pop, popToRoot]);
+
+  // Dismiss any lingering extension toast when this view unmounts.
+  useEffect(() => {
+    return () => RaycastAPI.Toast.dismissActive();
+  }, []);
 
   // Handle Escape globally for all extensions:
   // pop when nested, otherwise close extension view.
