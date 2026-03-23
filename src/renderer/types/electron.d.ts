@@ -298,6 +298,7 @@ export interface CatalogEntry {
   categories: string[];
   platforms: string[];
   commands: { name: string; title: string; description: string }[];
+  installCount?: number;
 }
 
 export interface ClipboardItem {
@@ -544,6 +545,12 @@ export interface ElectronAPI {
   getInstalledExtensionNames: () => Promise<string[]>;
   installExtension: (name: string) => Promise<boolean>;
   uninstallExtension: (name: string) => Promise<boolean>;
+  searchExtensions: (
+    query: string,
+    options?: { category?: string; limit?: number; offset?: number },
+  ) => Promise<{ results: CatalogEntry[]; total: number }>;
+  getPopularExtensions: (limit?: number) => Promise<CatalogEntry[]>;
+  getExtensionDetails: (name: string) => Promise<CatalogEntry | null>;
   onExtensionsChanged: (callback: () => void) => (() => void);
 
   // Extension APIs (for @raycast/api compatibility)

@@ -327,6 +327,15 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('install-extension', name),
   uninstallExtension: (name: string): Promise<boolean> =>
     ipcRenderer.invoke('uninstall-extension', name),
+  searchExtensions: (
+    query: string,
+    options?: { category?: string; limit?: number; offset?: number },
+  ): Promise<{ results: any[]; total: number }> =>
+    ipcRenderer.invoke('search-extensions', query, options),
+  getPopularExtensions: (limit?: number): Promise<any[]> =>
+    ipcRenderer.invoke('get-popular-extensions', limit),
+  getExtensionDetails: (name: string): Promise<any | null> =>
+    ipcRenderer.invoke('get-extension-details', name),
   onExtensionsChanged: (callback: () => void): (() => void) => {
     const listener = () => callback();
     ipcRenderer.on('extensions-updated', listener);
