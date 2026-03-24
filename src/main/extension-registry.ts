@@ -32,6 +32,7 @@ import {
   reportInstall,
   reportUninstall,
 } from './extension-api';
+import { installDepsWithBun } from './bun-manager';
 
 const execAsync = promisify(exec);
 
@@ -1025,10 +1026,33 @@ async function installExtensionViaAPI(name: string): Promise<boolean> {
 
   try {
     console.log(`Installing extension via API: ${name}…`);
-
-    // Download extension files from GitHub raw via tree API (no git clone needed)
     fs.mkdirSync(tmpDir, { recursive: true });
-    const srcDir = await downloadExtensionFromTree(name, tmpDir);
+
+    let srcDir: string | null = null;
+    let usedPrebuiltBundle = false;
+
+    // FAST PATH: Try downloading pre-built bundle from S3 (via backend)
+    // These are ~50-500KB tarballs with .sc-build/ already done — instant install
+    try {
+      const { url } = await getExtensionBundleUrl(name);
+      console.log(`Downloading pre-built bundle for "${name}"…`);
+      await downloadAndExtractTarball(url, tmpDir);
+
+      // Find the extracted extension directory
+      const nestedPath = path.join(tmpDir, name);
+      if (fs.existsSync(path.join(nestedPath, 'package.json'))) {
+        srcDir = nestedPath;
+        usedPrebuiltBundle = true;
+        console.log(`Got pre-built bundle for "${name}"`);
+      }
+    } catch (bundleError: any) {
+      console.log(`No pre-built bundle for "${name}", downloading source: ${bundleError?.message || bundleError}`);
+    }
+
+    // SLOW PATH: Download source from GitHub raw (no git needed, but needs npm + esbuild)
+    if (!srcDir) {
+      srcDir = await downloadExtensionFromTree(name, tmpDir);
+    }
 
     if (!srcDir || !fs.existsSync(path.join(srcDir, 'package.json'))) {
       throw new Error(`Extension "${name}" not found or has no package.json`);
@@ -1050,29 +1074,50 @@ async function installExtensionViaAPI(name: string): Promise<boolean> {
     // Copy to local extensions directory
     fs.cpSync(srcDir, installPath, { recursive: true });
 
-    // If the bundle came with pre-built .sc-build/ directory, skip npm install
+    // If the bundle came with pre-built .sc-build/ directory, skip npm + esbuild entirely
     const hasPrebuilt = fs.existsSync(path.join(installPath, '.sc-build'));
     const hasNodeModules = fs.existsSync(path.join(installPath, 'node_modules'));
 
-    if (!hasNodeModules && !hasPrebuilt) {
-      // Need to install deps — try npm if available
-      try {
-        await installExtensionDeps(installPath);
-      } catch (npmError: any) {
-        console.warn(`npm install failed for API-downloaded "${name}":`, npmError?.message);
-        // If no node_modules and no pre-built, this extension may not work
-        // but we still proceed since some extensions have no deps
-      }
-    }
+    if (hasPrebuilt) {
+      // Pre-built bundle — nothing more to do, instant install!
+      console.log(`Extension "${name}" installed with pre-built bundle (instant).`);
+    } else if (!hasNodeModules) {
+      // Source download — need npm + esbuild
+      const extPkg = JSON.parse(fs.readFileSync(path.join(installPath, 'package.json'), 'utf-8'));
+      const allDeps = { ...(extPkg.dependencies || {}), ...(extPkg.optionalDependencies || {}) };
+      const thirdPartyDeps = Object.keys(allDeps).filter((d) => !d.startsWith('@raycast/'));
 
-    // Build commands (unless already pre-built)
-    if (!hasPrebuilt) {
+      if (thirdPartyDeps.length === 0) {
+        console.log(`No third-party dependencies for "${name}" — skipping install`);
+      } else {
+        // Try Bun first (faster), fall back to npm
+        let depsInstalled = false;
+
+        try {
+          depsInstalled = await installDepsWithBun(installPath);
+        } catch (bunError: any) {
+          console.warn(`Bun install failed for "${name}":`, bunError?.message);
+        }
+
+        if (!depsInstalled) {
+          console.log(`Bun unavailable or failed, trying npm for "${name}"...`);
+          try {
+            await installExtensionDeps(installPath);
+            depsInstalled = true;
+          } catch (npmError: any) {
+            console.warn(`npm install also failed for "${name}":`, npmError?.message);
+          }
+        }
+
+        if (!depsInstalled) {
+          console.warn(`Could not install deps for "${name}" — extension may not work fully.`);
+        }
+      }
+
       console.log(`Pre-building commands for "${name}"…`);
       const { buildAllCommands } = require('./extension-runner');
       const builtCount = await buildAllCommands(name);
-      console.log(`Extension "${name}" installed via API and pre-built (${builtCount} commands)`);
-    } else {
-      console.log(`Extension "${name}" installed via API with pre-built bundle.`);
+      console.log(`Extension "${name}" installed via source and pre-built (${builtCount} commands)`);
     }
 
     // Cleanup backup
