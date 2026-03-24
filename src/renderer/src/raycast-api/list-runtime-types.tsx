@@ -51,3 +51,10 @@ export type ListItemAccessory = {
   date?: any;
   tooltip?: string;
 };
+
+/** Context that lets a List.Item render its own actions when selected, preserving parent contexts. */
+export const SelectedItemActionsContext = createContext<{
+  selectedItemId: string | null;
+  actionRegistry: any;
+  ActionRegistryContext: React.Context<any>;
+} | null>(null);

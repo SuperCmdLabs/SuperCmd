@@ -394,6 +394,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('spawn-process', file, args, options),
   killSpawnProcess: (pid: number, signal?: string | number): Promise<void> =>
     ipcRenderer.invoke('spawn-kill', pid, signal),
+  writeSpawnStdin: (pid: number, data: Uint8Array | string, end?: boolean): void =>
+    ipcRenderer.send('spawn-stdin', pid, data, end),
   onSpawnStdout: (callback: (pid: number, data: Uint8Array) => void): (() => void) => {
     const handler = (_e: any, pid: number, data: Uint8Array) => callback(pid, data);
     ipcRenderer.on('spawn-stdout', handler);

@@ -11618,6 +11618,17 @@ app.whenReady().then(async () => {
       }
     );
 
+    ipcMain.on('spawn-stdin', (_event: any, pid: number, data: Uint8Array | string, end?: boolean) => {
+      const proc = spawnedProcesses.get(pid);
+      if (!proc?.stdin) return;
+      try {
+        if (data != null && (typeof data === 'string' ? data.length > 0 : data.byteLength > 0)) {
+          proc.stdin.write(typeof data === 'string' ? data : Buffer.from(data));
+        }
+        if (end) proc.stdin.end();
+      } catch {}
+    });
+
     ipcMain.handle('spawn-kill', (_event: any, pid: number, signal?: string | number) => {
       const proc = spawnedProcesses.get(pid);
       if (proc) {

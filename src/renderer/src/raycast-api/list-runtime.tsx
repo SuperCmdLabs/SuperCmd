@@ -14,6 +14,7 @@ import { createListRenderers } from './list-runtime-renderers';
 import {
   EmptyViewRegistryContext,
   ListRegistryContext,
+  SelectedItemActionsContext,
 } from './list-runtime-types';
 
 interface ListRuntimeDeps {
@@ -132,7 +133,14 @@ export function createListRuntime(deps: ListRuntimeDeps) {
     const selectedItem = filteredItems[selectedIdx];
     const [emptyViewProps, setEmptyViewProps] = useState<any>(null);
     const { collectedActions: selectedActions, registryAPI: actionRegistry } = useCollectedActions();
-    const activeActionsElement = selectedItem?.props?.actions || (filteredItems.length === 0 ? emptyViewProps?.actions : null) || listActions;
+    // Actions that can only be rendered at the List level (empty view, list-level actions)
+    const listLevelActionsElement = (filteredItems.length === 0 ? emptyViewProps?.actions : null) || (!selectedItem?.props?.actions ? listActions : null);
+    // The selected item ID so ListItemComponent can render its own actions in-tree
+    const selectedItemActionsCtx = useMemo(() => ({
+      selectedItemId: selectedItem?.id || null,
+      actionRegistry,
+      ActionRegistryContext,
+    }), [selectedItem?.id, actionRegistry, ActionRegistryContext]);
     const primaryAction = selectedActions[0];
 
     const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
@@ -309,8 +317,10 @@ export function createListRuntime(deps: ListRuntimeDeps) {
     return (
       <ListRegistryContext.Provider value={registryAPI}>
         <div style={{ display: 'none' }}>
-          <EmptyViewRegistryContext.Provider value={setEmptyViewProps}>{children}</EmptyViewRegistryContext.Provider>
-          {activeActionsElement && <ActionRegistryContext.Provider value={actionRegistry}><div key={selectedItem?.id || (filteredItems.length === 0 ? '__list_empty_actions' : '__list_actions')}>{activeActionsElement}</div></ActionRegistryContext.Provider>}
+          <SelectedItemActionsContext.Provider value={selectedItemActionsCtx}>
+            <EmptyViewRegistryContext.Provider value={setEmptyViewProps}>{children}</EmptyViewRegistryContext.Provider>
+          </SelectedItemActionsContext.Provider>
+          {listLevelActionsElement && <ActionRegistryContext.Provider value={actionRegistry}><div key={filteredItems.length === 0 ? '__list_empty_actions' : '__list_actions'}>{listLevelActionsElement}</div></ActionRegistryContext.Provider>}
         </div>
 
         <div className="flex flex-col h-full" onKeyDown={handleKeyDown}>
