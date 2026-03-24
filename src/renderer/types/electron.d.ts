@@ -552,6 +552,7 @@ export interface ElectronAPI {
   getPopularExtensions: (limit?: number) => Promise<CatalogEntry[]>;
   getExtensionDetails: (name: string) => Promise<CatalogEntry | null>;
   onExtensionsChanged: (callback: () => void) => (() => void);
+  onExtensionInstallStatus: (callback: (message: string) => void) => (() => void);
 
   // Extension APIs (for @raycast/api compatibility)
   httpRequest: (options: {

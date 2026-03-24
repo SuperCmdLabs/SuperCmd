@@ -343,6 +343,13 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeListener('extensions-updated', listener);
     };
   },
+  onExtensionInstallStatus: (callback: (message: string) => void): (() => void) => {
+    const listener = (_event: any, message: string) => callback(message);
+    ipcRenderer.on('extension-install-status', listener);
+    return () => {
+      ipcRenderer.removeListener('extension-install-status', listener);
+    };
+  },
 
   // ─── Extension APIs (for @raycast/api compatibility) ─────────────
 

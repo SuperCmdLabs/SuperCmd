@@ -28,7 +28,7 @@ interface CatalogEntry {
 
 type DetailTab = 'overview' | 'commands' | 'screenshots' | 'team';
 type InstallStatus =
-  | { kind: 'installing'; name: string; title: string }
+  | { kind: 'installing'; name: string; title: string; statusMessage?: string }
   | { kind: 'success'; name: string; title: string; message: string }
   | { kind: 'failure'; name: string; title: string; message: string };
 
@@ -270,6 +270,18 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
         .getInstalledExtensionNames()
         .then((installed) => setInstalledNames(new Set(installed)))
         .catch(() => {});
+    });
+    return () => {
+      dispose?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const dispose = window.electron.onExtensionInstallStatus((message: string) => {
+      setInstallStatus((current) => {
+        if (!current || current.kind !== 'installing') return current;
+        return { ...current, statusMessage: message };
+      });
     });
     return () => {
       dispose?.();
@@ -565,7 +577,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
         </span>
         <span className="text-[0.8125rem] font-medium text-[var(--text-primary)]/90 truncate">
           {installStatus.kind === 'installing'
-            ? `• ${installStatus.title}`
+            ? `• ${installStatus.statusMessage || installStatus.title}`
             : `• ${installStatus.message}`}
         </span>
       </span>

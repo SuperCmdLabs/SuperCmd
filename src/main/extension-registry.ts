@@ -562,7 +562,7 @@ async function downloadExtensionFromTree(name: string, tmpDir: string): Promise<
   }
 
   // Download files in parallel (up to 15 concurrent)
-  const CONCURRENCY = 15;
+  const CONCURRENCY = 30;
   let index = 0;
 
   const downloadOne = async () => {
@@ -997,24 +997,121 @@ export async function installExtension(name: string): Promise<boolean> {
     return false;
   }
 
-  // Try API-based install first
+  // 1. FASTEST: Pre-built bundle from S3 (~2-3s, no npm/bun/esbuild needed)
+  try {
+    const success = await installExtensionFromBundle(name);
+    if (success) return true;
+  } catch (bundleError: any) {
+    console.warn(`Bundle install failed for "${name}":`, bundleError?.message || bundleError);
+  }
+
+  // 2. FALLBACK: Download source + bun/npm + esbuild
   try {
     const success = await installExtensionViaAPI(name);
     if (success) return true;
   } catch (apiError: any) {
-    console.warn(`API install failed for "${name}", trying git fallback:`, apiError?.message || apiError);
+    console.warn(`API install failed for "${name}":`, apiError?.message || apiError);
   }
 
-  // Fallback to git-based install
-  return installExtensionViaGit(name);
+  // 3. LAST RESORT: git sparse-checkout
+  try {
+    const success = await installExtensionViaGit(name);
+    if (success) return true;
+  } catch (gitError: any) {
+    console.warn(`Git install also failed for "${name}":`, gitError?.message || gitError);
+  }
+
+  return false;
 }
 
-// ─── API-based Install ──────────────────────────────────────────────
+// ─── Pre-built Bundle Install (Fastest) ─────────────────────────────
 
 /**
- * Download and install an extension via the supercmd-backend API.
- * Downloads a tarball from S3 (pre-signed URL), extracts it, and builds.
- * No git or npm required on the user's machine.
+ * Download a pre-built bundle from S3 via the backend API.
+ * The bundle contains package.json + assets/ + .sc-build/ (esbuild output).
+ * No npm, no bun, no esbuild needed. ~2-3s total.
+ */
+async function installExtensionFromBundle(name: string): Promise<boolean> {
+  const installPath = getInstalledPath(name);
+  const hadExistingInstall = fs.existsSync(installPath);
+  const backupPath = hadExistingInstall
+    ? path.join(getExtensionsDir(), `${name}.backup-${Date.now()}`)
+    : '';
+  const tmpDir = path.join(app.getPath('temp'), `supercmd-bundle-${Date.now()}`);
+
+  try {
+    const t0 = Date.now();
+
+    // Get pre-signed S3 URL from backend
+    const { url } = await getExtensionBundleUrl(name);
+    console.log(`Downloading pre-built bundle for "${name}"…`);
+
+    fs.mkdirSync(tmpDir, { recursive: true });
+    await downloadAndExtractTarball(url, tmpDir);
+
+    // Find the extension in the extracted directory
+    const nestedPath = path.join(tmpDir, name);
+    let srcDir = tmpDir;
+    if (fs.existsSync(path.join(nestedPath, 'package.json'))) {
+      srcDir = nestedPath;
+    } else if (!fs.existsSync(path.join(srcDir, 'package.json'))) {
+      // Search subdirs
+      const subdirs = fs.readdirSync(tmpDir, { withFileTypes: true }).filter(d => d.isDirectory());
+      for (const sub of subdirs) {
+        if (fs.existsSync(path.join(tmpDir, sub.name, 'package.json'))) {
+          srcDir = path.join(tmpDir, sub.name);
+          break;
+        }
+      }
+    }
+
+    if (!fs.existsSync(path.join(srcDir, 'package.json'))) {
+      throw new Error('Bundle has no package.json');
+    }
+
+    // Must have .sc-build/ — otherwise it's not a valid pre-built bundle
+    if (!fs.existsSync(path.join(srcDir, '.sc-build'))) {
+      throw new Error('Bundle has no .sc-build/ directory — not a pre-built bundle');
+    }
+
+    // Backup existing
+    if (hadExistingInstall) {
+      fs.renameSync(installPath, backupPath);
+    }
+
+    // Copy to extensions directory
+    fs.cpSync(srcDir, installPath, { recursive: true });
+
+    // Cleanup backup
+    if (backupPath && fs.existsSync(backupPath)) {
+      fs.rmSync(backupPath, { recursive: true, force: true });
+    }
+
+    // Report install (fire-and-forget)
+    reportInstall(name, getMachineId()).catch(() => {});
+
+    console.log(`Extension "${name}" installed from pre-built bundle in ${Date.now() - t0}ms`);
+    return true;
+  } catch (error) {
+    // Rollback
+    try { fs.rmSync(installPath, { recursive: true, force: true }); } catch {}
+    if (backupPath && fs.existsSync(backupPath)) {
+      try { fs.renameSync(backupPath, installPath); } catch {}
+    }
+    throw error;
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    if (backupPath && fs.existsSync(backupPath)) {
+      try { fs.rmSync(backupPath, { recursive: true, force: true }); } catch {}
+    }
+  }
+}
+
+// ─── Source-based Install ───────────────────────────────────────────
+
+/**
+ * Download source from GitHub raw, install deps with bun/npm, esbuild.
+ * Fallback when no pre-built bundle exists.
  */
 async function installExtensionViaAPI(name: string): Promise<boolean> {
   const installPath = getInstalledPath(name);
@@ -1025,34 +1122,13 @@ async function installExtensionViaAPI(name: string): Promise<boolean> {
   const tmpDir = path.join(app.getPath('temp'), `supercmd-api-install-${Date.now()}`);
 
   try {
-    console.log(`Installing extension via API: ${name}…`);
+    const t0 = Date.now();
+    console.log(`Installing extension: ${name}…`);
     fs.mkdirSync(tmpDir, { recursive: true });
 
-    let srcDir: string | null = null;
-    let usedPrebuiltBundle = false;
-
-    // FAST PATH: Try downloading pre-built bundle from S3 (via backend)
-    // These are ~50-500KB tarballs with .sc-build/ already done — instant install
-    try {
-      const { url } = await getExtensionBundleUrl(name);
-      console.log(`Downloading pre-built bundle for "${name}"…`);
-      await downloadAndExtractTarball(url, tmpDir);
-
-      // Find the extracted extension directory
-      const nestedPath = path.join(tmpDir, name);
-      if (fs.existsSync(path.join(nestedPath, 'package.json'))) {
-        srcDir = nestedPath;
-        usedPrebuiltBundle = true;
-        console.log(`Got pre-built bundle for "${name}"`);
-      }
-    } catch (bundleError: any) {
-      console.log(`No pre-built bundle for "${name}", downloading source: ${bundleError?.message || bundleError}`);
-    }
-
-    // SLOW PATH: Download source from GitHub raw (no git needed, but needs npm + esbuild)
-    if (!srcDir) {
-      srcDir = await downloadExtensionFromTree(name, tmpDir);
-    }
+    // Download extension source from GitHub raw (no git needed)
+    const srcDir = await downloadExtensionFromTree(name, tmpDir);
+    console.log(`  Download: ${Date.now() - t0}ms`);
 
     if (!srcDir || !fs.existsSync(path.join(srcDir, 'package.json'))) {
       throw new Error(`Extension "${name}" not found or has no package.json`);
@@ -1074,15 +1150,8 @@ async function installExtensionViaAPI(name: string): Promise<boolean> {
     // Copy to local extensions directory
     fs.cpSync(srcDir, installPath, { recursive: true });
 
-    // If the bundle came with pre-built .sc-build/ directory, skip npm + esbuild entirely
-    const hasPrebuilt = fs.existsSync(path.join(installPath, '.sc-build'));
-    const hasNodeModules = fs.existsSync(path.join(installPath, 'node_modules'));
-
-    if (hasPrebuilt) {
-      // Pre-built bundle — nothing more to do, instant install!
-      console.log(`Extension "${name}" installed with pre-built bundle (instant).`);
-    } else if (!hasNodeModules) {
-      // Source download — need npm + esbuild
+    // Install dependencies and build
+    {
       const extPkg = JSON.parse(fs.readFileSync(path.join(installPath, 'package.json'), 'utf-8'));
       const allDeps = { ...(extPkg.dependencies || {}), ...(extPkg.optionalDependencies || {}) };
       const thirdPartyDeps = Object.keys(allDeps).filter((d) => !d.startsWith('@raycast/'));
@@ -1114,10 +1183,11 @@ async function installExtensionViaAPI(name: string): Promise<boolean> {
         }
       }
 
-      console.log(`Pre-building commands for "${name}"…`);
+      const t1 = Date.now();
+      console.log(`  Deps: ${t1 - t0}ms. Pre-building commands for "${name}"…`);
       const { buildAllCommands } = require('./extension-runner');
       const builtCount = await buildAllCommands(name);
-      console.log(`Extension "${name}" installed via source and pre-built (${builtCount} commands)`);
+      console.log(`  Build: ${Date.now() - t1}ms. Extension "${name}" installed (${builtCount} commands) in ${Date.now() - t0}ms total`);
     }
 
     // Cleanup backup
@@ -1166,7 +1236,7 @@ async function installExtensionViaGit(name: string): Promise<boolean> {
   );
 
   try {
-    console.log(`Installing extension via git fallback: ${name}…`);
+    console.log(`Installing extension: ${name}…`);
     let srcDir: string | null = null;
 
     try {
@@ -1215,14 +1285,20 @@ async function installExtensionViaGit(name: string): Promise<boolean> {
     // Copy to local extensions directory
     fs.cpSync(srcDir, installPath, { recursive: true });
 
-    // Step 1: Install npm dependencies
-    await installExtensionDeps(installPath);
+    // Step 1: Install dependencies (Bun first, npm fallback)
+    let depsInstalled = false;
+    try {
+      depsInstalled = await installDepsWithBun(installPath);
+    } catch {}
+    if (!depsInstalled) {
+      await installExtensionDeps(installPath);
+    }
 
     // Step 2: Pre-build all commands with esbuild
     console.log(`Pre-building commands for "${name}"…`);
     const { buildAllCommands } = require('./extension-runner');
     const builtCount = await buildAllCommands(name);
-    console.log(`Extension "${name}" installed via git and pre-built (${builtCount} commands) at ${installPath}`);
+    console.log(`Extension "${name}" installed (${builtCount} commands) at ${installPath}`);
     if (backupPath && fs.existsSync(backupPath)) {
       fs.rmSync(backupPath, { recursive: true, force: true });
     }

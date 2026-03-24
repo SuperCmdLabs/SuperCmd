@@ -12,8 +12,8 @@ import { loadSettings } from './settings-store';
 
 import type { CatalogEntry } from './extension-registry';
 
-const DEFAULT_API_URL = 'http://localhost:3001'; //'https://api.supercmd.com';
-// const DEFAULT_API_URL = 'https://api.supercmd.sh';
+// const DEFAULT_API_URL = 'http://localhost:3001'; //'https://api.supercmd.com';
+const DEFAULT_API_URL = 'https://api.supercmd.sh';
 const REQUEST_TIMEOUT = 30_000;
 
 function getApiBaseUrl(): string {

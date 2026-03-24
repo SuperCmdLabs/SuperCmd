@@ -10,7 +10,7 @@
  * - `bun install` is ~25x faster than `npm install`
  */
 
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -22,6 +22,16 @@ import * as zlib from 'zlib';
 const execAsync = promisify(exec);
 
 const BUN_VERSION = '1.2.5';
+
+/** Broadcast install status to all renderer windows. */
+function broadcastInstallStatus(message: string): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    try {
+      window.webContents.send('extension-install-status', message);
+    } catch {}
+  }
+}
 
 function getBunDownloadUrl(): string {
   const arch = process.arch === 'arm64' ? 'aarch64' : 'x64';
@@ -79,9 +89,11 @@ export async function ensureBun(): Promise<string | null> {
   fs.mkdirSync(bunDir, { recursive: true });
 
   console.log(`Downloading Bun v${BUN_VERSION}...`);
+  broadcastInstallStatus('Setting up installer for first use…');
 
   try {
     const zipBuffer = await downloadFile(url);
+    broadcastInstallStatus('Setting up installer…');
     console.log(`Downloaded Bun (${(zipBuffer.length / 1024 / 1024).toFixed(1)}MB), extracting...`);
 
     // Extract the zip
@@ -173,6 +185,11 @@ export async function installDepsWithBun(
     };
     const originalPkg = fs.readFileSync(pkgPath, 'utf-8');
     fs.writeFileSync(pkgPath, JSON.stringify(cleanPkg, null, 2));
+
+    // Remove lockfiles — they cause Bun to enter frozen mode
+    for (const lockfile of ['package-lock.json', 'bun.lockb', 'bun.lock', 'yarn.lock', 'pnpm-lock.yaml']) {
+      try { fs.rmSync(path.join(extPath, lockfile), { force: true }); } catch {}
+    }
 
     await execAsync(`"${bunPath}" install --production --no-save`, {
       cwd: extPath,
