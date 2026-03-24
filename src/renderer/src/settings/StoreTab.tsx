@@ -521,6 +521,25 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
         return;
       }
 
+      // Match action shortcuts (Cmd+R, Cmd+O, Cmd+Shift+O, Cmd+Backspace, etc.)
+      if (event.metaKey || event.ctrlKey) {
+        const key = event.key.toLowerCase() === 'backspace' ? 'backspace' : event.key.toLowerCase();
+        for (const action of storeActions) {
+          if (!action.shortcut) continue;
+          const mods = action.shortcut.modifiers || [];
+          const needsMeta = mods.includes('cmd') || mods.includes('ctrl');
+          const needsShift = mods.includes('shift');
+          const hasMeta = event.metaKey || event.ctrlKey;
+          const hasShift = event.shiftKey;
+          if (needsMeta === hasMeta && needsShift === hasShift && action.shortcut.key.toLowerCase() === key) {
+            event.preventDefault();
+            setShowActions(false);
+            action.execute();
+            return;
+          }
+        }
+      }
+
       if (showActions) {
         return;
       }
@@ -540,7 +559,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handlePrimaryAction, moveSelection, showActions]);
+  }, [handlePrimaryAction, moveSelection, showActions, storeActions]);
 
   useEffect(() => {
     if (!selectedName) return;
