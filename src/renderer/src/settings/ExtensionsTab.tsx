@@ -852,7 +852,7 @@ const ExtensionsTab: React.FC<{
 
   return (
     <div className="h-full min-h-0 flex flex-col">
-      <div className="sc-settings-card flex flex-1 min-h-0 bg-[var(--settings-shell-bg)]">
+      <div className="flex flex-1 min-h-0 bg-[var(--settings-panel-bg)]">
         <div className="flex-[0_0_66%] min-w-[600px] h-full border-r border-[var(--ui-divider)] flex flex-col">
           <div className="px-3 py-2 border-b border-[var(--ui-divider)]">
             <div className="flex items-center gap-2">

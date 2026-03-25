@@ -563,22 +563,6 @@ html {
   --settings-panel-bg: rgba(255, 255, 255, 0.06);
 }
 
-/* Glassy settings content panels — subtle tint, not opaque */
-.dark.sc-native-liquid-glass .sc-settings-card,
-.dark.sc-glassy .sc-settings-card {
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  backdrop-filter: blur(20px) saturate(140%);
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
-}
-
-.sc-native-liquid-glass:not(.dark) .sc-settings-card,
-.sc-glassy:not(.dark) .sc-settings-card {
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  backdrop-filter: blur(20px) saturate(140%);
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.06);
-}
 
 .sc-native-liquid-glass .glass-effect::after {
   border-color: var(--glass-outline);

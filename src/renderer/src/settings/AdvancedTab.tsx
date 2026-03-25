@@ -89,7 +89,7 @@ const AdvancedTab: React.FC = () => {
     <div className="w-full max-w-[980px] mx-auto space-y-3">
       <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">{t('settings.advanced.title')}</h2>
 
-      <div className="sc-settings-card overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
+      <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
         {/* Hyper Key */}
         <div className={`grid gap-3 px-4 py-3.5 md:px-5 md:grid-cols-[220px_minmax(0,1fr)] border-b border-[var(--ui-divider)]`}>
           <div className="flex items-start gap-2.5">

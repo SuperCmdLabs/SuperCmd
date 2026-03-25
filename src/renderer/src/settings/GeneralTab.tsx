@@ -381,7 +381,7 @@ const GeneralTab: React.FC = () => {
     <div className="w-full max-w-[980px] mx-auto space-y-3">
       <h2 className="text-[0.9375rem] font-semibold text-[var(--text-primary)]">{t('settings.general.title')}</h2>
 
-      <div className="sc-settings-card overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
+      <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
         <SettingsRow
           icon={<Keyboard className="w-4 h-4" />}
           title={t('settings.general.launcherShortcut.title')}
