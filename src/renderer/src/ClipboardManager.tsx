@@ -415,6 +415,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         if (e.key === 'Escape') {
           e.preventDefault();
           setShowActions(false);
+          requestAnimationFrame(() => inputRef.current?.focus());
           return;
         }
         return;
