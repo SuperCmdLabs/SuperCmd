@@ -22,9 +22,9 @@ function FormFieldRow({
   info?: string;
 }) {
   return (
-    <div className="flex items-start gap-4">
-      <div className="w-24 flex-shrink-0 pt-2 text-right">
-        {title && <label className="text-[13px] font-medium text-[var(--text-secondary)]">{title}</label>}
+    <div className="flex items-center gap-3">
+      <div className="w-28 flex-shrink-0 text-right">
+        {title && <label className="text-[13px] font-medium text-[var(--text-secondary)] leading-tight">{title}</label>}
       </div>
       <div className="flex-1 min-w-0">
         {children}
@@ -55,7 +55,7 @@ export function attachFormFields(FormComponent: any) {
           value={fieldValue}
           onChange={handleChange}
           autoFocus={autoFocus}
-          className={`${FORM_CONTROL_BASE_CLASS} rounded-xl px-3 py-2 text-[15px]`}
+          className={`${FORM_CONTROL_BASE_CLASS} rounded-lg px-3 py-2 text-[15px]`}
         />
       </FormFieldRow>
     );
@@ -79,16 +79,17 @@ export function attachFormFields(FormComponent: any) {
           value={fieldValue}
           onChange={handleChange}
           rows={5}
-          className={`${FORM_CONTROL_BASE_CLASS} min-h-[140px] rounded-2xl px-4 py-3 text-[15px] resize-y`}
+          className={`${FORM_CONTROL_BASE_CLASS} min-h-[140px] rounded-lg px-4 py-3 text-[15px] resize-y`}
         />
       </FormFieldRow>
     );
   };
 
-  FormComponent.PasswordField = ({ id, title, placeholder, value, onChange, defaultValue, error }: any) => {
+  FormComponent.PasswordField = ({ id, title, placeholder, value, onChange, defaultValue, error, info }: any) => {
     const form = useContext(FormContext);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
     const fieldError = error ?? form.errors[id];
+    const [showPassword, setShowPassword] = React.useState(false);
 
     const handleChange = (event: any) => {
       const nextValue = event.target.value;
@@ -96,15 +97,34 @@ export function attachFormFields(FormComponent: any) {
       onChange?.(nextValue);
     };
 
+    const handleKeyDown = (event: any) => {
+      // Opt+E to toggle password visibility (Raycast built-in shortcut)
+      if (event.altKey && event.key.toLowerCase() === 'e') {
+        event.preventDefault();
+        setShowPassword((prev: boolean) => !prev);
+      }
+    };
+
     return (
-      <FormFieldRow title={title} error={fieldError}>
-        <input
-          type="password"
-          placeholder={placeholder}
-          value={fieldValue}
-          onChange={handleChange}
-          className={`${FORM_CONTROL_BASE_CLASS} rounded-xl px-3 py-2 text-[15px]`}
-        />
+      <FormFieldRow title={title} error={fieldError} info={info}>
+        <div className="relative">
+          <input
+            type={showPassword ? 'text' : 'password'}
+            placeholder={placeholder}
+            value={fieldValue}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            className={`${FORM_CONTROL_BASE_CLASS} rounded-lg px-3 py-2 pr-10 text-[15px]`}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((prev: boolean) => !prev)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors p-1"
+            tabIndex={-1}
+          >
+            {showPassword ? '🙈' : '👁'}
+          </button>
+        </div>
       </FormFieldRow>
     );
   };
@@ -147,7 +167,7 @@ export function attachFormFields(FormComponent: any) {
           <select
             value={fieldValue}
             onChange={handleChange}
-            className={`${FORM_CONTROL_BASE_CLASS} rounded-xl px-3 py-2 text-[15px]`}
+            className={`${FORM_CONTROL_BASE_CLASS} rounded-lg px-3 py-2 text-[15px]`}
           >
             {children}
           </select>
@@ -167,7 +187,7 @@ export function attachFormFields(FormComponent: any) {
           type={type === 'date' ? 'date' : 'datetime-local'}
           value={value ? (value instanceof Date ? value.toISOString().slice(0, 16) : value) : ''}
           onChange={(event: any) => onChange?.(event.target.value ? new Date(event.target.value) : null)}
-          className={`${FORM_CONTROL_BASE_CLASS} rounded-xl px-3 py-2 text-[13px]`}
+          className={`${FORM_CONTROL_BASE_CLASS} rounded-lg px-3 py-2 text-[13px]`}
         />
       </FormFieldRow>
     ),
@@ -235,7 +255,7 @@ export function attachFormFields(FormComponent: any) {
           <button
             type="button"
             onClick={pickFiles}
-            className="w-full h-10 rounded-xl border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] hover:bg-[var(--ui-segment-bg-hover)] text-[14px] font-semibold text-[var(--text-primary)] transition-colors"
+            className="w-full h-10 rounded-lg border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] hover:bg-[var(--ui-segment-bg-hover)] text-[14px] font-semibold text-[var(--text-primary)] transition-colors"
           >
             {allowMultipleSelection ? 'Select Files' : 'Select File'}
           </button>

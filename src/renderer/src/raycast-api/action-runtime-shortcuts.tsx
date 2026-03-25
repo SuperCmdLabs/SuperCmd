@@ -11,6 +11,21 @@ import type { ActionShortcut } from './action-runtime-types';
 const shortcutBadgeClassName =
   'inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-subtle)] font-medium';
 
+/**
+ * Normalize platform-specific shortcut objects.
+ * Raycast supports: { key, modifiers } or { macOS: { key, modifiers }, Windows: { key, modifiers } }
+ */
+export function normalizeShortcut(shortcut?: any): ActionShortcut | undefined {
+  if (!shortcut) return undefined;
+  // Already flat format: { key, modifiers }
+  if (shortcut.key) return shortcut as ActionShortcut;
+  // Platform-specific format: { macOS: { key, modifiers }, Windows: { key, modifiers } }
+  const platformKey = process.platform === 'darwin' ? 'macOS' : 'Windows';
+  const platformShortcut = shortcut[platformKey] || shortcut.macOS || shortcut.Windows;
+  if (platformShortcut?.key) return platformShortcut as ActionShortcut;
+  return undefined;
+}
+
 export function renderShortcutKeycap(label: string, key?: React.Key): React.ReactNode {
   return (
     <kbd key={key} className={shortcutBadgeClassName}>
@@ -19,7 +34,8 @@ export function renderShortcutKeycap(label: string, key?: React.Key): React.Reac
   );
 }
 
-export function matchesShortcut(e: React.KeyboardEvent | KeyboardEvent, shortcut?: ActionShortcut): boolean {
+export function matchesShortcut(e: React.KeyboardEvent | KeyboardEvent, rawShortcut?: ActionShortcut): boolean {
+  const shortcut = normalizeShortcut(rawShortcut);
   if (!shortcut?.key) return false;
   const shortcutKey = shortcut.key.toLowerCase();
   const eventKey = e.key.toLowerCase();
@@ -46,7 +62,8 @@ export function isMetaK(e: React.KeyboardEvent | KeyboardEvent): boolean {
   return e.metaKey && String(e.key || '').toLowerCase() === 'k';
 }
 
-export function renderShortcut(shortcut?: ActionShortcut): React.ReactNode {
+export function renderShortcut(rawShortcut?: ActionShortcut): React.ReactNode {
+  const shortcut = normalizeShortcut(rawShortcut);
   if (!shortcut?.key) return null;
 
   const parts: string[] = [];

@@ -18,6 +18,7 @@ import type {
   ActionRegistration,
   ActionRegistryAPI,
 } from './action-runtime-types';
+import { normalizeShortcut } from './action-runtime-shortcuts';
 
 interface RegistryDeps {
   snapshotExtensionContext: () => any;
@@ -319,7 +320,7 @@ export function createActionRegistryRuntime(deps: RegistryDeps) {
       registry.register(idRef.current, {
         title: inferActionTitle(props, kind),
         icon: props.icon,
-        shortcut: props.shortcut,
+        shortcut: normalizeShortcut(props.shortcut),
         style: props.style,
         sectionTitle,
         execute: executor,
