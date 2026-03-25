@@ -305,6 +305,10 @@ When contributing:
 - [ ] Enhanced extension debugging tools
 - [ ] Community extension store (optional)
 
+## Key Documentation
+
+- **Extension Install Flow**: See `docs/extension-install-flow.md` for the complete extension discovery, installation, and pre-building pipeline. Covers the 3-tier install fallback (S3 bundle → source download + Bun → git), the GitHub Actions sync workflow, the backend API (`supercmd-backend/src/extensions/`), Bun manager, S3 bucket structure, and local manual sync commands. **Read this before making any changes to extension installation, the backend extensions module, or the GHA workflow.**
+
 ## Resources
 
 - **Raycast API Docs**: https://developers.raycast.com/api-reference/
