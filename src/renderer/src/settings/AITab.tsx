@@ -773,7 +773,7 @@ const AITab: React.FC = () => {
 
   return (
     <div className="w-full max-w-[980px] mx-auto">
-      <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
+      <div className="sc-settings-card overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
       <AIRow
         icon={<Brain className="w-4 h-4" />}
         title={t('settings.ai.enableAI.title')}
