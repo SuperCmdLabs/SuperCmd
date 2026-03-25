@@ -1019,6 +1019,15 @@ export function tryCalculate(query: string): CalcResult | null {
 export async function tryCalculateAsync(query: string): Promise<CalcResult | null> {
   if (!query || query.trim().length === 0) return null;
 
+  const trimmed = query.trim();
+
+  // Skip plain decimal numbers (e.g. "3", "42", "100.5") — not useful as calculator input
+  if (/^\d+(\.\d+)?$/.test(trimmed)) return null;
+
+  // Skip single continuous strings without spaces (e.g. "cat", "hello", "e")
+  // These are search queries, not math expressions
+  if (/^[a-zA-Z]+$/.test(trimmed)) return null;
+
   try {
     const output = await calculate(query, {
       locale: globalThis.navigator?.language || 'en-US',
