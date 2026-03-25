@@ -9338,8 +9338,8 @@ function openSettingsWindow(payload?: SettingsNavigationPayload): void {
     }
     return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   })();
-  const settingsWidth = Math.max(1120, Math.min(1360, displayWidth - 96));
-  const settingsHeight = Math.max(720, Math.min(860, displayHeight - 96));
+  const settingsWidth = Math.max(900, Math.min(1200, displayWidth - 96));
+  const settingsHeight = Math.max(600, Math.min(760, displayHeight - 96));
   const settingsX = displayX + Math.floor((displayWidth - settingsWidth) / 2);
   const settingsY = displayY + Math.floor((displayHeight - settingsHeight) / 2);
   const useNativeLiquidGlass = shouldUseNativeLiquidGlass();
@@ -9349,15 +9349,15 @@ function openSettingsWindow(payload?: SettingsNavigationPayload): void {
     height: settingsHeight,
     x: settingsX,
     y: settingsY,
-    minWidth: 1120,
-    minHeight: 720,
+    minWidth: 800,
+    minHeight: 520,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     transparent: true,
     backgroundColor: '#00000000',
     vibrancy: useNativeLiquidGlass ? false : 'hud',
     visualEffectState: 'active',
-    hasShadow: false,
+    hasShadow: true,
     show: false,
     webPreferences: {
       nodeIntegration: false,
@@ -9490,8 +9490,8 @@ function openExtensionStoreWindow(): void {
     }
     return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   })();
-  const storeWidth = 980;
-  const storeHeight = 700;
+  const storeWidth = 860;
+  const storeHeight = 600;
   const storeX = displayX + Math.floor((displayWidth - storeWidth) / 2);
   const storeY = displayY + Math.floor((displayHeight - storeHeight) / 2);
   const useNativeLiquidGlass = shouldUseNativeLiquidGlass();
@@ -9501,15 +9501,15 @@ function openExtensionStoreWindow(): void {
     height: storeHeight,
     x: storeX,
     y: storeY,
-    minWidth: 860,
-    minHeight: 560,
+    minWidth: 720,
+    minHeight: 480,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     transparent: true,
     backgroundColor: '#00000000',
     vibrancy: useNativeLiquidGlass ? false : 'hud',
     visualEffectState: 'active',
-    hasShadow: false,
+    hasShadow: true,
     show: false,
     webPreferences: {
       nodeIntegration: false,
