@@ -108,6 +108,24 @@ import {
   exportNotesToFile,
   importNotesFromFile,
 } from './notes-store';
+import {
+  initCanvasStore,
+  getAllCanvases,
+  searchCanvases,
+  getCanvasById,
+  createCanvas,
+  updateCanvas,
+  deleteCanvas,
+  duplicateCanvas,
+  togglePinCanvas,
+  getScene,
+  saveScene,
+  saveThumbnail,
+  getThumbnail,
+  exportCanvas,
+  isCanvasLibInstalled,
+  getCanvasLibDir,
+} from './canvas-store';
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
@@ -2005,6 +2023,8 @@ let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
 let notesWindow: InstanceType<typeof BrowserWindow> | null = null;
 let pendingNoteJson: string | null = null;
+let canvasWindow: InstanceType<typeof BrowserWindow> | null = null;
+let pendingCanvasJson: string | null = null;
 let isVisible = false;
 let suppressBlurHide = false; // When true, blur won't hide the window (used during file dialogs)
 let oauthBlurHideSuppressionDepth = 0; // Keep launcher alive while OAuth browser flow is in progress
@@ -8260,11 +8280,17 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     if (source === 'launcher') hideWindow();
     return true;
   }
+  if (commandId === 'system-create-canvas') {
+    openCanvasWindow('create');
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
   if (
     commandId === 'system-clipboard-manager' ||
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
     commandId === 'system-search-notes' ||
+    commandId === 'system-search-canvases' ||
     commandId === 'system-search-quicklinks' ||
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
@@ -9462,10 +9488,131 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
 
   notesWindow.on('closed', () => {
     notesWindow = null;
-    if (process.platform === 'darwin' && !settingsWindow && !extensionStoreWindow) {
+    if (process.platform === 'darwin' && !settingsWindow && !extensionStoreWindow && !canvasWindow) {
       app.dock.hide();
     }
   });
+}
+
+// ─── Canvas Window ────────────────────────────────────────────────
+
+function openCanvasWindow(mode?: 'create' | 'edit'): void {
+  if (canvasWindow) {
+    canvasWindow.webContents.send('canvas-mode-changed', { mode: mode || 'create', canvasJson: pendingCanvasJson });
+    pendingCanvasJson = null;
+    canvasWindow.show();
+    canvasWindow.focus();
+    return;
+  }
+
+  if (process.platform === 'darwin') {
+    app.dock.show();
+  }
+
+  const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = (() => {
+    if (mainWindow) {
+      const b = mainWindow.getBounds();
+      const center = {
+        x: b.x + Math.floor(b.width / 2),
+        y: b.y + Math.floor(b.height / 2),
+      };
+      return screen.getDisplayNearestPoint(center).workArea;
+    }
+    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  })();
+  const canvasWidth = Math.max(800, Math.min(1200, displayWidth - 200));
+  const canvasHeight = Math.max(600, Math.min(900, displayHeight - 200));
+  const canvasX = displayX + Math.floor((displayWidth - canvasWidth) / 2);
+  const canvasY = displayY + Math.floor((displayHeight - canvasHeight) / 2);
+  const useNativeLiquidGlass = shouldUseNativeLiquidGlass();
+
+  canvasWindow = new BrowserWindow({
+    width: canvasWidth,
+    height: canvasHeight,
+    x: canvasX,
+    y: canvasY,
+    minWidth: 640,
+    minHeight: 480,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
+    transparent: true,
+    backgroundColor: '#00000000',
+    vibrancy: useNativeLiquidGlass ? false : 'hud',
+    visualEffectState: 'active',
+    hasShadow: false,
+    alwaysOnTop: false,  // Normal window, not always-on-top (design review decision)
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  applyLiquidGlassToWindow(canvasWindow, {
+    cornerRadius: 14,
+    fallbackVibrancy: 'hud',
+  });
+
+  registerCloseWindowShortcut(canvasWindow);
+
+  const hash = mode ? `/canvas?mode=${mode}` : '/canvas';
+  loadWindowUrl(canvasWindow, hash);
+
+  canvasWindow.once('ready-to-show', () => {
+    canvasWindow?.show();
+  });
+
+  canvasWindow.on('closed', () => {
+    canvasWindow = null;
+    if (process.platform === 'darwin' && !settingsWindow && !extensionStoreWindow && !notesWindow) {
+      app.dock.hide();
+    }
+  });
+}
+
+// ─── Canvas Lib Install ──────────────────────────────────────────
+
+async function installCanvasLib(sender: any): Promise<void> {
+  const libDir = getCanvasLibDir();
+  const fs = require('fs');
+  const fsp = require('fs/promises');
+
+  if (!fs.existsSync(libDir)) {
+    fs.mkdirSync(libDir, { recursive: true });
+  }
+
+  sender.send('canvas-install-status', { status: 'downloading', progress: 0 });
+
+  try {
+    // Download the pre-built bundle from S3
+    const bundleUrl = 'https://supercmd-extensions.s3.amazonaws.com/canvas/excalidraw-bundle.tgz';
+    const response = await net.fetch(bundleUrl);
+
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    sender.send('canvas-install-status', { status: 'extracting', progress: 80 });
+
+    // Write tarball to temp file and extract
+    const tmpPath = path.join(libDir, 'excalidraw-bundle.tgz');
+    fs.writeFileSync(tmpPath, buffer);
+
+    // Extract using system tar (available on macOS)
+    const { execSync } = require('child_process');
+    execSync(`tar -xzf "${tmpPath}" -C "${libDir}"`, { timeout: 30000 });
+
+    // Cleanup temp file
+    fs.unlinkSync(tmpPath);
+
+    sender.send('canvas-install-status', { status: 'done', progress: 100 });
+    console.log('[Canvas] Excalidraw bundle installed successfully');
+  } catch (e: any) {
+    console.error('[Canvas] Failed to install canvas lib:', e);
+    sender.send('canvas-install-status', { status: 'error', error: e.message || 'Download failed' });
+    throw e;
+  }
 }
 
 function openExtensionStoreWindow(): void {
@@ -10325,6 +10472,7 @@ app.whenReady().then(async () => {
   // Initialize snippet store
   initSnippetStore();
   initNoteStore();
+  initCanvasStore();
   try { refreshSnippetExpander(); } catch (e) {
     console.warn('[SnippetExpander] Failed to start:', e);
   }
@@ -12757,6 +12905,74 @@ if let tiff = image?.tiffRepresentation {
     // Don't clear immediately — React StrictMode double-mounts in dev
     if (json) setTimeout(() => { if (pendingNoteJson === json) pendingNoteJson = null; }, 3000);
     return json;
+  });
+
+  // ─── IPC: Canvas Manager ─────────────────────────────────────────
+
+  ipcMain.handle('canvas-get-all', () => {
+    return getAllCanvases();
+  });
+
+  ipcMain.handle('canvas-search', (_event: any, query: string) => {
+    return searchCanvases(query);
+  });
+
+  ipcMain.handle('canvas-create', (_event: any, data: { title?: string; icon?: string }) => {
+    return createCanvas(data);
+  });
+
+  ipcMain.handle('canvas-update', (_event: any, id: string, data: any) => {
+    return updateCanvas(id, data);
+  });
+
+  ipcMain.handle('canvas-delete', (_event: any, id: string) => {
+    return deleteCanvas(id);
+  });
+
+  ipcMain.handle('canvas-duplicate', (_event: any, id: string) => {
+    return duplicateCanvas(id);
+  });
+
+  ipcMain.handle('canvas-toggle-pin', (_event: any, id: string) => {
+    return togglePinCanvas(id);
+  });
+
+  ipcMain.handle('canvas-get-scene', (_event: any, id: string) => {
+    return getScene(id);
+  });
+
+  ipcMain.handle('canvas-save-scene', async (_event: any, id: string, scene: any) => {
+    await saveScene(id, scene);
+  });
+
+  ipcMain.handle('canvas-export', async (event: any, id: string, format: string) => {
+    suppressBlurHide = true;
+    try {
+      return await exportCanvas(id, format as 'json', getDialogParentWindow(event));
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('canvas-save-thumbnail', async (_event: any, id: string, svgString: string) => {
+    await saveThumbnail(id, svgString);
+  });
+
+  ipcMain.handle('canvas-get-thumbnail', (_event: any, id: string) => {
+    return getThumbnail(id);
+  });
+
+  ipcMain.handle('open-canvas-window', (_event: any, mode?: string, canvasJson?: string) => {
+    if (canvasJson) pendingCanvasJson = canvasJson;
+    openCanvasWindow(mode as 'create' | 'edit' | undefined);
+  });
+
+  ipcMain.handle('canvas-check-installed', () => {
+    return isCanvasLibInstalled();
+  });
+
+  ipcMain.handle('canvas-install', async (event: any) => {
+    await installCanvasLib(event.sender);
   });
 
   // ─── IPC: Quick Link Manager ───────────────────────────────────
