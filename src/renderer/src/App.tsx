@@ -3263,7 +3263,7 @@ const App: React.FC = () => {
       className="launcher-main-surface"
     >
         {/* Search header - transparent background */}
-        <div className="flex h-[60px] items-center gap-2 px-4 border-b border-[var(--ui-divider)]">
+        <div className="drag-region flex h-[60px] items-center gap-2 px-4 border-b border-[var(--ui-divider)]">
           <div ref={inlineArgumentLaneRef} className="relative min-w-0 flex-1">
             <div className="flex h-full items-center">
               <input
