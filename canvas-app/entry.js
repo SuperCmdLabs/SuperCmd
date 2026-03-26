@@ -1,12 +1,12 @@
 /**
  * Entry point for the Excalidraw UMD bundle.
- * Exposes the Excalidraw component and export utilities on window.ExcalidrawBundle.
+ * Explicitly assigns to window.ExcalidrawBundle so the host app can access it.
  */
 
+import './node_modules/@excalidraw/excalidraw/dist/prod/index.css';
 import { Excalidraw, exportToSvg, exportToBlob, serializeAsJSON } from '@excalidraw/excalidraw';
 
-// Re-export everything the canvas editor needs
-export {
+window.ExcalidrawBundle = {
   Excalidraw,
   exportToSvg,
   exportToBlob,

@@ -10391,6 +10391,34 @@ app.whenReady().then(async () => {
     // URL format: sc-asset://ext-asset/path/to/file
     try {
       const url = new URL(request.url);
+      // canvas-lib: serve files from the canvas-lib directory
+      if (url.hostname === 'canvas-lib') {
+        let relPath = decodeURIComponent(url.pathname || '').replace(/^\//, '');
+        if (!relPath) return new Response('Bad Request', { status: 400 });
+        const canvasLibPath = path.join(app.getPath('userData'), 'canvas-lib');
+        const fullPath = path.join(canvasLibPath, relPath);
+        console.log('[sc-asset:canvas-lib] Serving:', fullPath);
+        try {
+          const data = fs.readFileSync(fullPath);
+          const ext = path.extname(fullPath).toLowerCase();
+          const mimeTypes: Record<string, string> = {
+            '.js': 'application/javascript',
+            '.css': 'text/css',
+            '.svg': 'image/svg+xml',
+            '.woff2': 'font/woff2',
+            '.woff': 'font/woff',
+            '.ttf': 'font/ttf',
+            '.png': 'image/png',
+          };
+          return new Response(data, {
+            headers: { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' },
+          });
+        } catch (e) {
+          console.error('[sc-asset:canvas-lib] File not found:', fullPath);
+          return new Response('Not Found', { status: 404 });
+        }
+      }
+
       if (url.hostname !== 'ext-asset') {
         return new Response('Not Found', { status: 404 });
       }
