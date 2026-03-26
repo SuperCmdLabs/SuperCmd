@@ -96,7 +96,24 @@ export function useListRegistry() {
   }), [scheduleRegistryUpdate]);
 
   const allItems = useMemo(() => {
-    return Array.from(registryRef.current.values()).sort((a, b) => a.order - b.order);
+    const items = Array.from(registryRef.current.values());
+
+    // Group by section, preserving the order each section first appeared,
+    // then sort items within each section by their render order.
+    // This prevents new items in a section from appearing after later sections.
+    const sectionOrder = new Map<string | undefined, number>();
+    for (const item of items) {
+      if (!sectionOrder.has(item.sectionTitle)) {
+        sectionOrder.set(item.sectionTitle, sectionOrder.size);
+      }
+    }
+
+    return items.sort((a, b) => {
+      const sectionA = sectionOrder.get(a.sectionTitle) ?? 0;
+      const sectionB = sectionOrder.get(b.sectionTitle) ?? 0;
+      if (sectionA !== sectionB) return sectionA - sectionB;
+      return a.order - b.order;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [registryVersion]);
 

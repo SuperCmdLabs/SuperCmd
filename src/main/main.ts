@@ -1817,8 +1817,8 @@ async function getNodeSnapshot(): Promise<{ target: NodeWindowInfo | null; windo
 
 // ─── Window Configuration ───────────────────────────────────────────
 
-const DEFAULT_WINDOW_WIDTH = 800;
-const DEFAULT_WINDOW_HEIGHT = 500;
+const DEFAULT_WINDOW_WIDTH = 760;
+const DEFAULT_WINDOW_HEIGHT = 480;
 const ONBOARDING_WINDOW_WIDTH = 1120;
 const ONBOARDING_WINDOW_HEIGHT = 740;
 const CURSOR_PROMPT_WINDOW_WIDTH = 500;

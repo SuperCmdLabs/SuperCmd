@@ -274,12 +274,12 @@
 }
 
 .dark.sc-glassy {
-  --bg-secondary: rgba(22, 24, 30, 0.14);
-  --card-bg: rgba(22, 24, 30, 0.14);
-  --input-bg: rgba(22, 24, 30, 0.22);
-  --menu-overlay-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05));
-  --settings-panel-bg: rgba(18, 20, 24, 0.2);
-  --settings-shell-bg: rgba(16, 18, 22, 0.12);
+  --bg-secondary: rgba(5, 5, 8, 0.45);
+  --card-bg: rgba(5, 5, 8, 0.45);
+  --input-bg: rgba(5, 5, 8, 0.52);
+  --menu-overlay-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  --settings-panel-bg: rgba(4, 4, 6, 0.50);
+  --settings-shell-bg: rgba(3, 3, 5, 0.40);
   --ui-divider: rgba(255, 255, 255, 0.16);
   --ui-panel-border: rgba(255, 255, 255, 0.2);
   --ui-segment-border: rgba(255, 255, 255, 0.22);
@@ -391,7 +391,7 @@ html {
   border-radius: var(--glass-radius);
   border: none;
   background-clip: padding-box;
-  box-shadow: 0 0 0 0.5px var(--glass-outline), 0 8px 32px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 0 0 1.5px var(--glass-outline), 0 8px 32px rgba(0, 0, 0, 0.12);
   overflow: hidden;
 }
 
@@ -438,8 +438,8 @@ html {
 
 .dark.sc-glassy .glass-effect {
   background:
-    linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)),
-    rgba(var(--surface-base-rgb), 0.5);
+    linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.06), rgba(var(--on-surface-rgb), 0.01)),
+    rgba(var(--surface-base-rgb), 0.72);
 }
 
 .sc-glassy .launcher-main-surface {
@@ -450,8 +450,8 @@ html {
 
 .dark.sc-glassy .launcher-main-surface {
   background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.018)),
-    rgba(var(--surface-base-rgb), 0.3);
+    linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012)),
+    rgba(var(--surface-base-rgb), 0.55);
 }
 
 .sc-glassy .glass-effect::after {
@@ -532,8 +532,8 @@ html {
 
 .dark.sc-native-liquid-glass .glass-effect {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.04)),
-    rgba(var(--surface-base-rgb), 0.3);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    rgba(var(--surface-base-rgb), 0.58);
 }
 
 /* Keep launcher readable in native liquid glass by giving it the same
@@ -544,8 +544,8 @@ html {
 
 .dark.sc-native-liquid-glass .launcher-main-surface {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.04)),
-    rgba(var(--surface-base-rgb), 0.3);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
+    rgba(var(--surface-base-rgb), 0.58);
 }
 
 .sc-native-liquid-glass {
@@ -556,11 +556,13 @@ html {
 }
 
 .dark.sc-native-liquid-glass {
-  --glass-outline: rgba(255, 255, 255, 0.1);
+  --glass-outline: rgba(255, 255, 255, 0.22);
   --ui-divider: rgba(255, 255, 255, 0.05);
-  --ui-panel-border: rgba(255, 255, 255, 0.07);
+  --ui-panel-border: rgba(255, 255, 255, 0.12);
   --ui-segment-border: rgba(255, 255, 255, 0.08);
+  --settings-panel-bg: rgba(255, 255, 255, 0.06);
 }
+
 
 .sc-native-liquid-glass .glass-effect::after {
   border-color: var(--glass-outline);
