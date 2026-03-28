@@ -7,8 +7,9 @@
  * - Shows save status in footer
  */
 
-import React, { useState, useEffect, useRef, useCallback, createElement } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, createElement } from 'react';
 import ReactDOM from 'react-dom';
+import { Image, Save, FilePlus, RotateCcw, Download, Copy } from 'lucide-react';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
 
 // Excalidraw's UMD bundle expects React/ReactDOM as window globals
@@ -57,8 +58,11 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
   const [sceneReady, setSceneReady] = useState(false);
   const [ExcalidrawComponent, setExcalidrawComponent] = useState<any>(null);
   const [showActions, setShowActions] = useState(false);
-  // Track a "key" to force Excalidraw re-mount when switching canvases
   const [excalidrawKey, setExcalidrawKey] = useState(0);
+  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
+
+  const isGlassyTheme = document.documentElement.classList.contains('sc-glassy') || document.body.classList.contains('sc-glassy');
+  const isNativeLiquidGlass = document.documentElement.classList.contains('sc-native-liquid-glass') || document.body.classList.contains('sc-native-liquid-glass');
 
   const initialSceneRef = useRef<any>(null);
   const excalidrawApiRef = useRef<any>(null);
@@ -184,7 +188,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
         await window.electron.canvasSaveScene(currentCanvasId!, { elements, appState: savableAppState, files });
         setSaveStatus('saved');
         if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
-        statusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 30_000);
+        statusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 1_500);
       } catch {
         setSaveStatus('error');
       }
@@ -281,6 +285,35 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     }
   }, []);
 
+  // Copy canvas as image to clipboard
+  const handleCopyAsImage = useCallback(async () => {
+    if (!excalidrawApiRef.current) return;
+    try {
+      const bundle = (window as any).ExcalidrawBundle;
+      if (!bundle?.exportToBlob) return;
+      const elements = excalidrawApiRef.current.getSceneElements();
+      const { collaborators, ...appState } = excalidrawApiRef.current.getAppState();
+      const files = excalidrawApiRef.current.getFiles();
+      const blob = await bundle.exportToBlob({
+        elements, appState: { ...appState, exportWithDarkMode: true }, files, mimeType: 'image/png',
+      });
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      setSaveStatus('saved');
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 1_500);
+    } catch (e) {
+      console.error('[Canvas] Copy as image failed:', e);
+    }
+  }, []);
+
+  const actions = useMemo(() => [
+    { title: 'Export Image', icon: <Image className="w-4 h-4" />, shortcut: ['⇧', '⌘', 'E'], execute: handleExportImage },
+    { title: 'Copy as Image', icon: <Copy className="w-4 h-4" />, shortcut: ['⇧', '⌘', 'C'], execute: handleCopyAsImage },
+    { title: 'Save to Disk', icon: <Download className="w-4 h-4" />, shortcut: [] as string[], execute: handleExportJSON },
+    { title: 'New Canvas', icon: <FilePlus className="w-4 h-4" />, shortcut: ['⌘', 'N'], execute: handleNewCanvas },
+    { title: 'Reset Canvas', icon: <RotateCcw className="w-4 h-4" />, shortcut: [] as string[], execute: handleReset },
+  ], [handleExportImage, handleCopyAsImage, handleExportJSON, handleNewCanvas, handleReset]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -294,15 +327,27 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
         handleExportImage();
         return;
       }
+      if (e.key === 'c' && e.metaKey && e.shiftKey) {
+        e.preventDefault();
+        handleCopyAsImage();
+        return;
+      }
+      if (e.key === 'n' && e.metaKey) {
+        e.preventDefault();
+        handleNewCanvas();
+        return;
+      }
       if (e.key === 'k' && e.metaKey) {
         e.preventDefault();
         setShowActions((v) => !v);
+        setSelectedActionIndex(0);
         return;
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [handleSaveNow, handleExportImage]);
+    // Use capture phase so we intercept before Excalidraw's own handlers
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [handleSaveNow, handleExportImage, handleCopyAsImage, handleNewCanvas]);
 
   useEffect(() => {
     return () => {
@@ -372,29 +417,41 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
   }
 
   const renderSaveStatus = () => {
-    switch (saveStatus) {
-      case 'saving': return <span className="text-white/40">Saving...</span>;
-      case 'saved': return <span className="text-green-400/60">✓ Saved</span>;
-      case 'error': return <span className="text-red-400/60">Save failed</span>;
-      default: return <span className="text-white/30">Auto-save on</span>;
-    }
-  };
+    const dotClass = saveStatus === 'saving'
+      ? 'bg-[#5a8bff]'
+      : saveStatus === 'saved'
+        ? 'bg-[var(--status-success)]'
+        : saveStatus === 'error'
+          ? 'bg-[var(--status-danger)]'
+          : 'bg-white/20';
+    const dotShadow = saveStatus === 'saving'
+      ? '0 0 0 4px rgba(90, 139, 255, 0.18), 0 0 14px rgba(90, 139, 255, 0.22)'
+      : saveStatus === 'saved'
+        ? '0 0 0 4px rgba(47, 154, 100, 0.18)'
+        : saveStatus === 'error'
+          ? '0 0 0 4px rgba(217, 75, 75, 0.16)'
+          : 'none';
+    const label = saveStatus === 'saving' ? 'Saving'
+      : saveStatus === 'saved' ? 'Saved'
+        : saveStatus === 'error' ? 'Save failed'
+          : 'Auto-save on';
 
-  const actionItems = [
-    { label: 'Export Image', shortcut: '⌘⇧E', action: handleExportImage },
-    { label: 'Save to Disk', shortcut: '', action: handleExportJSON },
-    { label: 'New Canvas', shortcut: '⌘N', action: handleNewCanvas },
-    { label: 'Reset Canvas', shortcut: '', action: handleReset },
-  ];
+    return (
+      <span className="inline-flex items-center gap-2">
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotClass}`} style={{ boxShadow: dotShadow }} />
+        <span className="text-[var(--text-secondary)] text-[0.8125rem] font-medium">{label}</span>
+      </span>
+    );
+  };
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Compact title bar */}
-      <div className="h-8 flex items-center pl-[78px] pr-4" style={{ WebkitAppRegion: 'drag' } as any}>
+      {/* Title bar — tall enough for traffic lights (y:16 + 12px button = 28px min) */}
+      <div className="h-[38px] flex items-center justify-center" style={{ WebkitAppRegion: 'drag' } as any}>
         <input
           value={title}
           onChange={handleTitleChange}
-          className="h-full w-full appearance-none bg-transparent p-0 text-center text-[12px] leading-8 text-white/60 font-medium outline-none"
+          className="max-w-[260px] appearance-none bg-transparent p-0 text-center text-[12px] leading-[38px] text-white/50 font-medium outline-none"
           style={{ WebkitAppRegion: 'no-drag' } as any}
           placeholder="Canvas title..."
         />
@@ -435,23 +492,78 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
         ) : null}
       </div>
 
-      {/* Actions overlay */}
+      {/* Actions overlay — matches Snippets pattern */}
       {showActions && (
         <div
-          className="absolute bottom-10 right-3 w-56 rounded-xl shadow-xl z-50 overflow-hidden"
-          style={{ background: 'var(--card-bg)', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)' }}
+          className="fixed inset-0 z-50"
+          onClick={() => setShowActions(false)}
+          style={{ background: 'var(--bg-scrim)' }}
         >
-          <div className="p-1.5">
-            {actionItems.map((item, i) => (
-              <button
-                key={i}
-                onClick={() => { item.action(); setShowActions(false); }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-[12px] text-white/70 hover:bg-white/5 transition-colors"
-              >
-                <span>{item.label}</span>
-                {item.shortcut && <span className="text-[10px] text-white/30">{item.shortcut}</span>}
-              </button>
-            ))}
+          <div
+            className="absolute bottom-12 right-3 w-80 max-h-[65vh] rounded-xl overflow-hidden flex flex-col shadow-2xl"
+            style={
+              isNativeLiquidGlass
+                ? {
+                    background: 'rgba(var(--surface-base-rgb), 0.72)',
+                    backdropFilter: 'blur(44px) saturate(155%)',
+                    WebkitBackdropFilter: 'blur(44px) saturate(155%)',
+                    border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
+                    boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
+                  }
+                : isGlassyTheme
+                ? {
+                    background: 'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
+                    backdropFilter: 'blur(96px) saturate(190%)',
+                    WebkitBackdropFilter: 'blur(96px) saturate(190%)',
+                    border: '1px solid rgba(var(--on-surface-rgb), 0.05)',
+                  }
+                : {
+                    background: 'var(--card-bg)',
+                    backdropFilter: 'blur(40px)',
+                    WebkitBackdropFilter: 'blur(40px)',
+                    border: '1px solid var(--border-primary)',
+                  }
+            }
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-1 overflow-y-auto py-1">
+              {actions.map((action, idx) => (
+                <div
+                  key={idx}
+                  className={`mx-1 px-2.5 py-1.5 rounded-lg border border-transparent flex items-center gap-2.5 cursor-pointer transition-colors hover:bg-[var(--overlay-item-hover-bg)] text-[var(--text-secondary)] ${
+                    idx === selectedActionIndex ? 'bg-[var(--action-menu-selected-bg)]' : ''
+                  }`}
+                  style={
+                    idx === selectedActionIndex
+                      ? {
+                          background: 'var(--action-menu-selected-bg)',
+                          borderColor: 'var(--action-menu-selected-border)',
+                          boxShadow: 'var(--action-menu-selected-shadow)',
+                        }
+                      : undefined
+                  }
+                  onMouseMove={() => setSelectedActionIndex(idx)}
+                  onClick={() => { action.execute(); setShowActions(false); }}
+                >
+                  {action.icon && (
+                    <span className="text-[var(--text-muted)]">{action.icon}</span>
+                  )}
+                  <span className="flex-1 text-sm truncate">{action.title}</span>
+                  {action.shortcut.length > 0 && (
+                    <span className="flex items-center gap-0.5">
+                      {action.shortcut.map((k, keyIdx) => (
+                        <kbd
+                          key={`${idx}-${keyIdx}`}
+                          className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] font-medium text-[var(--text-muted)]"
+                        >
+                          {k}
+                        </kbd>
+                      ))}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
