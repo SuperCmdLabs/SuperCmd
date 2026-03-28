@@ -9555,7 +9555,16 @@ function openCanvasWindow(mode?: 'create' | 'edit'): void {
 
   registerCloseWindowShortcut(canvasWindow);
 
-  const hash = mode ? `/canvas?mode=${mode}` : '/canvas';
+  // Include canvas ID in URL if available from pendingCanvasJson
+  let canvasIdParam = '';
+  if (pendingCanvasJson) {
+    try {
+      const parsed = JSON.parse(pendingCanvasJson);
+      if (parsed.id) canvasIdParam = `&id=${parsed.id}`;
+    } catch {}
+    pendingCanvasJson = null;
+  }
+  const hash = mode ? `/canvas?mode=${mode}${canvasIdParam}` : '/canvas';
   loadWindowUrl(canvasWindow, hash);
 
   canvasWindow.once('ready-to-show', () => {
