@@ -2007,6 +2007,7 @@ let notesWindow: InstanceType<typeof BrowserWindow> | null = null;
 let pendingNoteJson: string | null = null;
 let isVisible = false;
 let suppressBlurHide = false; // When true, blur won't hide the window (used during file dialogs)
+let showWindowBlurGraceUntil = 0; // Timestamp until which blur-to-hide is suppressed after show (prevents flash-close)
 let oauthBlurHideSuppressionDepth = 0; // Keep launcher alive while OAuth browser flow is in progress
 let oauthBlurHideSuppressionTimer: NodeJS.Timeout | null = null;
 const OAUTH_BLUR_SUPPRESSION_TIMEOUT_MS = 3 * 60 * 1000;
@@ -6762,6 +6763,10 @@ function createWindow(): void {
   });
 
   mainWindow.on('blur', () => {
+    // Grace period after show: AeroSpace / tiling WMs and macOS Space
+    // transitions can fire blur immediately after the window is shown,
+    // causing a visible flash-then-close.
+    if (Date.now() < showWindowBlurGraceUntil) return;
     if (
       isVisible &&
       !suppressBlurHide &&
@@ -7432,7 +7437,27 @@ function captureFrontmostAppContext(): void {
 
 async function showWindow(options?: { systemCommandId?: string }): Promise<void> {
   if (!mainWindow) return;
+
+  // Suppress blur-to-hide for a brief grace period after showing.
+  // AeroSpace, tiling WMs, and macOS Space transitions can fire blur
+  // immediately after show, causing the window to flash then close.
+  showWindowBlurGraceUntil = Date.now() + 400;
+
   setLauncherOverlayTopmost(true);
+
+  // On macOS, setLauncherOverlayTopmost just set visibleOnAllWorkspaces(false),
+  // which pins the window to whatever Space it was last on.  Override that
+  // temporarily so the window appears on the user's CURRENT Space/workspace.
+  // We'll confine it back after the window is visible.
+  if (process.platform === 'darwin' && launcherMode !== 'onboarding') {
+    try {
+      mainWindow.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+        skipTransformProcessType: true,
+      });
+    } catch {}
+  }
+
   const shouldActivateLauncherWindow = process.platform !== 'darwin' || launcherMode === 'onboarding';
   let selectionSnapshotPromise: Promise<string> | null = null;
 
@@ -7453,8 +7478,7 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     launcherEntryWindowManagementTargetWorkArea = null;
   }
 
-  // Move window to the current AeroSpace workspace (if AeroSpace is active)
-  // so the launcher opens where the user is, not on a stale workspace.
+  // Best-effort AeroSpace move before show (may fail if window is hidden).
   moveWindowToCurrentAerospaceWorkspace();
 
   applyLauncherBounds(launcherMode);
@@ -7494,6 +7518,22 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   }
   mainWindow.moveTop();
   isVisible = true;
+
+  // Now that the window is visible on the current Space, confine it here
+  // and re-sync AeroSpace (the pre-show move may have been a no-op for
+  // hidden windows).
+  if (process.platform === 'darwin' && launcherMode !== 'onboarding') {
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed() || !isVisible) return;
+      try {
+        mainWindow.setVisibleOnAllWorkspaces(false, {
+          visibleOnFullScreen: true,
+          skipTransformProcessType: true,
+        } as any);
+      } catch {}
+      moveWindowToCurrentAerospaceWorkspace();
+    }, 80);
+  }
 
   // First launch after app reopen can race with macOS activation; retry once.
   setTimeout(() => {
