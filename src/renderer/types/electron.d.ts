@@ -698,6 +698,9 @@ export interface ElectronAPI {
   canvasInstall: () => Promise<void>;
   onCanvasMode: (callback: (payload: any) => void) => (() => void);
   onCanvasInstallStatus: (callback: (payload: any) => void) => (() => void);
+  onCanvasAddLibrary: (callback: (payload: { libraryItems: any[] }) => void) => (() => void);
+  saveCanvasLibrary: (items: any[]) => Promise<void>;
+  loadCanvasLibrary: () => Promise<any[]>;
 
   quickLinkGetAll: () => Promise<QuickLink[]>;
   quickLinkSearch: (query: string) => Promise<QuickLink[]>;

@@ -9567,6 +9567,68 @@ function openCanvasWindow(mode?: 'create' | 'edit'): void {
   const hash = mode ? `/canvas?mode=${mode}${canvasIdParam}` : '/canvas';
   loadWindowUrl(canvasWindow, hash);
 
+  // Handle window.open() from Excalidraw (library browser + other external links)
+  // Handle window.open() calls from Excalidraw for the library browser.
+  // We intercept and rewrite the URL before opening so that:
+  //   1. referrer=https://excalidraw.com  — gives the library site a known HTTPS origin
+  //      to target; our canvas is file:// or localhost, whose origin is opaque/mismatched
+  //      so postMessage and opener.location both fail silently in production.
+  //   2. useHash=false  — forces the library site to navigate ITSELF (the popup) to
+  //      excalidraw.com?addLibrary=... instead of trying to navigate window.opener
+  //      (which would clobber our React hash router).
+  // With those two changes the popup does a plain will-navigate to
+  // https://excalidraw.com?addLibrary=... which we cleanly intercept.
+  canvasWindow.webContents.setWindowOpenHandler(({ url }: { url: string }) => {
+    if (url.includes('libraries.excalidraw.com') || url.includes('libs.excalidraw.com')) {
+      setImmediate(() => {
+        if (!canvasWindow || canvasWindow.isDestroyed()) return;
+
+        // Rewrite the URL the library site receives
+        let libBrowserUrl = url;
+        try {
+          const parsed = new URL(url);
+          parsed.searchParams.set('referrer', 'https://excalidraw.com');
+          parsed.searchParams.delete('useHash'); // default is false
+          libBrowserUrl = parsed.toString();
+        } catch { /* keep original url */ }
+
+        const libWin = new BrowserWindow({
+          width: 1200,
+          height: 800,
+          title: 'Excalidraw Libraries',
+          autoHideMenuBar: true,
+          webPreferences: { contextIsolation: true, nodeIntegration: false },
+        });
+        libWin.loadURL(libBrowserUrl);
+
+        const maybeImport = (navUrl: string, event?: { preventDefault?: () => void }): boolean => {
+          const libraryUrl = extractCanvasLibraryUrl(navUrl);
+          if (!libraryUrl) return false;
+          event?.preventDefault?.();
+          void loadAndSendCanvasLibrary(libraryUrl);
+          if (!libWin.isDestroyed()) libWin.close();
+          return true;
+        };
+
+        // The library site navigates itself to excalidraw.com?addLibrary=... on click
+        libWin.webContents.on('will-navigate', (event: any, navUrl: string) => { maybeImport(navUrl, event); });
+        libWin.webContents.on('will-redirect', (event: any, navUrl: string) => { maybeImport(navUrl, event); });
+        libWin.webContents.on('did-navigate-in-page', (_e: any, navUrl: string) => { maybeImport(navUrl); });
+
+        // In case the site uses window.open() for the callback
+        libWin.webContents.setWindowOpenHandler(({ url: popupUrl }: { url: string }) => {
+          if (maybeImport(popupUrl)) return { action: 'deny' as const };
+          shell.openExternal(popupUrl).catch(() => {});
+          return { action: 'deny' as const };
+        });
+      });
+      return { action: 'deny' as const };
+    }
+    // All other external links → system browser
+    shell.openExternal(url).catch(() => {});
+    return { action: 'deny' as const };
+  });
+
   canvasWindow.once('ready-to-show', () => {
     canvasWindow?.show();
   });
@@ -9577,6 +9639,33 @@ function openCanvasWindow(mode?: 'create' | 'edit'): void {
       app.dock.hide();
     }
   });
+}
+
+function extractCanvasLibraryUrl(rawUrl: string): string | null {
+  let parsed: URL;
+  try { parsed = new URL(rawUrl); } catch { return null; }
+  // Check query string first (?addLibrary=...)
+  const queryValue = parsed.searchParams.get('addLibrary');
+  if (queryValue) return decodeURIComponent(queryValue);
+  // Excalidraw's real callback uses hash (#addLibrary=...&token=...)
+  const hash = parsed.hash.startsWith('#') ? parsed.hash.slice(1) : parsed.hash;
+  if (!hash) return null;
+  const hashParams = new URLSearchParams(hash);
+  const hashValue = hashParams.get('addLibrary');
+  return hashValue ? decodeURIComponent(hashValue) : null;
+}
+
+async function loadAndSendCanvasLibrary(libraryUrl: string): Promise<void> {
+  try {
+    const response = await net.fetch(libraryUrl);
+    const data = await response.json() as any;
+    const items: any[] = data?.libraryItems ?? data?.library ?? [];
+    if (canvasWindow && !canvasWindow.isDestroyed()) {
+      canvasWindow.webContents.send('canvas-add-library', { libraryItems: items });
+    }
+  } catch (e) {
+    console.error('[Canvas] Failed to load library:', e);
+  }
 }
 
 // ─── Canvas Lib Install ──────────────────────────────────────────
@@ -10386,7 +10475,17 @@ async function rebuildExtensions() {
 // Register custom protocol for serving extension assets (images etc.)
 // Must be called before app.whenReady()
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'sc-asset', privileges: { bypassCSP: true, supportFetchAPI: true, stream: true } }
+  {
+    scheme: 'sc-asset',
+    privileges: {
+      standard: true,
+      secure: true,
+      corsEnabled: true,
+      bypassCSP: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
 ]);
 
 app.whenReady().then(async () => {
@@ -13010,6 +13109,21 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('canvas-install', async (event: any) => {
     await installCanvasLib(event.sender);
+  });
+
+  ipcMain.handle('canvas-save-library', async (_event: any, items: any[]) => {
+    const libPath = path.join(app.getPath('userData'), 'canvas-library.json');
+    await fs.promises.writeFile(libPath, JSON.stringify(items));
+  });
+
+  ipcMain.handle('canvas-load-library', async () => {
+    const libPath = path.join(app.getPath('userData'), 'canvas-library.json');
+    try {
+      const content = await fs.promises.readFile(libPath, 'utf8');
+      return JSON.parse(content);
+    } catch {
+      return [];
+    }
   });
 
   // ─── IPC: Quick Link Manager ───────────────────────────────────

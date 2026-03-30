@@ -666,6 +666,15 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeListener('canvas-install-status', listener);
     };
   },
+  onCanvasAddLibrary: (callback: (payload: any) => void) => {
+    const listener = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('canvas-add-library', listener);
+    return () => {
+      ipcRenderer.removeListener('canvas-add-library', listener);
+    };
+  },
+  saveCanvasLibrary: (items: any[]): Promise<void> => ipcRenderer.invoke('canvas-save-library', items),
+  loadCanvasLibrary: (): Promise<any[]> => ipcRenderer.invoke('canvas-load-library'),
 
   quickLinkGetAll: (): Promise<any[]> =>
     ipcRenderer.invoke('quicklink-get-all'),

@@ -76,6 +76,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
   const isNativeLiquidGlass = document.documentElement.classList.contains('sc-native-liquid-glass') || document.body.classList.contains('sc-native-liquid-glass');
 
   const initialSceneRef = useRef<any>(null);
+  const savedLibraryRef = useRef<any[]>([]);
   const excalidrawApiRef = useRef<any>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -83,6 +84,13 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
   // Check if canvas lib is installed
   useEffect(() => {
     window.electron.canvasCheckInstalled().then(setIsInstalled);
+  }, []);
+
+  // Load persisted library items once on mount
+  useEffect(() => {
+    window.electron.loadCanvasLibrary?.().then((items: any[]) => {
+      if (items?.length) savedLibraryRef.current = items;
+    });
   }, []);
 
   // Listen for install status updates
@@ -406,6 +414,21 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     return () => window.removeEventListener('keydown', handler, true);
   }, [showActions, selectedActionIndex, actions, handleSaveNow, handleExportImage, handleCopyAsImage, handleNewCanvas]);
 
+  // Load library items sent from main process (via "Add to Excalidraw" in library browser)
+  useEffect(() => {
+    const cleanup = window.electron.onCanvasAddLibrary?.((payload) => {
+      const items = payload?.libraryItems;
+      if (!items?.length || !excalidrawApiRef.current) return;
+      const api = excalidrawApiRef.current;
+      if (typeof api.updateLibrary === 'function') {
+        api.updateLibrary({ libraryItems: items, merge: true, openLibraryMenu: true });
+      } else {
+        api.updateScene({ libraryItems: items });
+      }
+    });
+    return cleanup;
+  }, []);
+
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -525,15 +548,22 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
             key: excalidrawKey,
             excalidrawAPI: (api: any) => { excalidrawApiRef.current = api; },
             theme,
-            initialData: initialSceneRef.current ? {
-              elements: initialSceneRef.current.elements,
-              appState: {
-                ...initialSceneRef.current.appState,
-                theme,
-                collaborators: new Map(),
-              },
-              files: initialSceneRef.current.files,
-            } : undefined,
+            initialData: {
+              ...(initialSceneRef.current ? {
+                elements: initialSceneRef.current.elements,
+                appState: {
+                  ...initialSceneRef.current.appState,
+                  theme,
+                  collaborators: new Map(),
+                },
+                files: initialSceneRef.current.files,
+              } : { appState: { theme } }),
+              libraryItems: savedLibraryRef.current,
+            },
+            onLibraryChange: (items: any[]) => {
+              savedLibraryRef.current = items;
+              window.electron.saveCanvasLibrary?.(items);
+            },
             onChange: (elements: any[], appState: any, files: any) => {
               handleSceneChange(elements, appState, files);
             },
