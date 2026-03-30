@@ -10,6 +10,14 @@ import {
 } from 'lucide-react';
 import type { Canvas } from '../types/electron';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
+import IconCodeEditor from './icons/Snippet';
+
+const canvasIconStyle = {
+  '--nc-gradient-1-color-1': '#fcd34d',
+  '--nc-gradient-1-color-2': '#d97706',
+  '--nc-gradient-2-color-1': '#fef3c7b8',
+  '--nc-gradient-2-color-2': '#fcd34d90',
+} as React.CSSProperties;
 
 interface Action {
   title: string;
@@ -39,6 +47,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showActions, setShowActions] = useState(false);
+  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -169,9 +178,33 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
   // Keyboard handling
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Actions overlay open
+      // Actions overlay open: navigate and execute
       if (showActions) {
-        if (e.key === 'Escape') { e.preventDefault(); setShowActions(false); return; }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          e.stopPropagation();
+          setSelectedActionIndex((i) => Math.min(i + 1, actions.length - 1));
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          e.stopPropagation();
+          setSelectedActionIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          actions[selectedActionIndex]?.execute();
+          setShowActions(false);
+          return;
+        }
+        if (e.key === 'Escape' || (e.key === 'k' && e.metaKey)) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowActions(false);
+          return;
+        }
         return;
       }
 
@@ -197,6 +230,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
       if (e.key === 'k' && e.metaKey) {
         e.preventDefault();
         setShowActions((v) => !v);
+        setSelectedActionIndex(0);
         return;
       }
 
@@ -225,15 +259,17 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
       }
     };
 
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [showActions, selectedCanvas, filteredCanvases.length, onClose, openCanvas, loadCanvases, confirmDelete]);
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [showActions, selectedActionIndex, actions, selectedCanvas, filteredCanvases.length, onClose, openCanvas, loadCanvases, confirmDelete]);
 
   // Scroll selected item into view
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
-    const item = list.children[selectedIndex] as HTMLElement;
+    const wrapper = list.children[0] as HTMLElement;
+    if (!wrapper) return;
+    const item = wrapper.children[selectedIndex] as HTMLElement;
     if (item) item.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex]);
 
@@ -272,12 +308,12 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
         {/* Empty state */}
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <div className="text-4xl mb-3">🎨</div>
+            <div className="mb-3 flex justify-center"><IconCodeEditor size="40px" style={canvasIconStyle} /></div>
             <p className="text-[14px] font-medium text-white/70 mb-1">No canvases yet</p>
             <p className="text-[12px] text-white/40 mb-4">Create your first canvas to get started</p>
             <button
               onClick={() => window.electron.openCanvasWindow('create')}
-              className="px-4 py-2 rounded-lg text-[13px] font-medium text-white bg-indigo-500/20 border border-indigo-500/30 hover:bg-indigo-500/30 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--snippet-divider-strong)] bg-white/[0.14] text-xs text-[var(--text-primary)] hover:bg-white/[0.2] transition-colors"
             >
               Create Canvas
             </button>
@@ -352,7 +388,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
                   onDoubleClick={() => openCanvas(canvas)}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-sm flex-shrink-0">{canvas.icon || '🎨'}</span>
+                    <span className="flex-shrink-0"><IconCodeEditor size="14px" style={canvasIconStyle} /></span>
                     <span className="text-white/80 text-[13px] truncate font-medium leading-tight">
                       {canvas.title || 'Untitled Canvas'}
                     </span>
@@ -433,10 +469,11 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
               <button
                 key={i}
                 onClick={() => { action.execute(); setShowActions(false); }}
+                onMouseMove={() => setSelectedActionIndex(i)}
                 className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[12px] transition-colors ${
                   action.style === 'destructive'
-                    ? 'text-red-400 hover:bg-red-500/10'
-                    : 'text-white/70 hover:bg-white/5'
+                    ? `text-red-400 ${i === selectedActionIndex ? 'bg-red-500/10' : 'hover:bg-red-500/10'}`
+                    : `text-white/70 ${i === selectedActionIndex ? 'bg-white/10' : 'hover:bg-white/5'}`
                 }`}
               >
                 {action.icon}

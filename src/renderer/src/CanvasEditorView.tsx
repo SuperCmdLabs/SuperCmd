@@ -9,7 +9,15 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo, createElement } from 'react';
 import ReactDOM from 'react-dom';
-import { Image, Save, FilePlus, RotateCcw, Download, Copy } from 'lucide-react';
+import { Image, Save, FilePlus, RotateCcw, Download, Copy, Sun, Moon } from 'lucide-react';
+import IconCodeEditor from './icons/Snippet';
+
+const canvasIconStyle = {
+  '--nc-gradient-1-color-1': '#fcd34d',
+  '--nc-gradient-1-color-2': '#d97706',
+  '--nc-gradient-2-color-1': '#fef3c7b8',
+  '--nc-gradient-2-color-2': '#fcd34d90',
+} as React.CSSProperties;
 import ExtensionActionFooter from './components/ExtensionActionFooter';
 
 // Excalidraw's UMD bundle expects React/ReactDOM as window globals
@@ -60,6 +68,9 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
   const [showActions, setShowActions] = useState(false);
   const [excalidrawKey, setExcalidrawKey] = useState(0);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
+  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
+    (localStorage.getItem('canvas-theme') as 'dark' | 'light') || 'dark'
+  );
 
   const isGlassyTheme = document.documentElement.classList.contains('sc-glassy') || document.body.classList.contains('sc-glassy');
   const isNativeLiquidGlass = document.documentElement.classList.contains('sc-native-liquid-glass') || document.body.classList.contains('sc-native-liquid-glass');
@@ -268,6 +279,15 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     await window.electron.canvasExport(currentCanvasId, 'json');
   }, [currentCanvasId]);
 
+  const handleToggleTheme = useCallback(() => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    localStorage.setItem('canvas-theme', newTheme);
+    if (excalidrawApiRef.current) {
+      excalidrawApiRef.current.updateScene({ appState: { theme: newTheme } });
+    }
+  }, [theme]);
+
   const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newTitle = e.target.value;
     setTitle(newTitle);
@@ -311,12 +331,49 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     { title: 'Copy as Image', icon: <Copy className="w-4 h-4" />, shortcut: ['⇧', '⌘', 'C'], execute: handleCopyAsImage },
     { title: 'Save to Disk', icon: <Download className="w-4 h-4" />, shortcut: [] as string[], execute: handleExportJSON },
     { title: 'New Canvas', icon: <FilePlus className="w-4 h-4" />, shortcut: ['⌘', 'N'], execute: handleNewCanvas },
+    { title: theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode', icon: theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />, shortcut: [] as string[], execute: handleToggleTheme },
     { title: 'Reset Canvas', icon: <RotateCcw className="w-4 h-4" />, shortcut: [] as string[], execute: handleReset },
-  ], [handleExportImage, handleCopyAsImage, handleExportJSON, handleNewCanvas, handleReset]);
+  ], [theme, handleExportImage, handleCopyAsImage, handleExportJSON, handleNewCanvas, handleToggleTheme, handleReset]);
 
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // When actions menu is open: navigate and execute
+      if (showActions) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          e.stopPropagation();
+          setSelectedActionIndex((i) => Math.min(i + 1, actions.length - 1));
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          e.stopPropagation();
+          setSelectedActionIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          actions[selectedActionIndex]?.execute();
+          setShowActions(false);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowActions(false);
+          return;
+        }
+        if (e.key === 'k' && e.metaKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowActions(false);
+          return;
+        }
+        return;
+      }
+
       if (e.key === 'Enter' && e.metaKey) {
         e.preventDefault();
         handleSaveNow();
@@ -347,7 +404,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     // Use capture phase so we intercept before Excalidraw's own handlers
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [handleSaveNow, handleExportImage, handleCopyAsImage, handleNewCanvas]);
+  }, [showActions, selectedActionIndex, actions, handleSaveNow, handleExportImage, handleCopyAsImage, handleNewCanvas]);
 
   useEffect(() => {
     return () => {
@@ -361,7 +418,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center max-w-sm">
-          <div className="text-5xl mb-4">🎨</div>
+          <div className="mb-4 flex justify-center"><IconCodeEditor size="48px" style={canvasIconStyle} /></div>
           <h2 className="text-lg font-semibold mb-2">Install & Setup Canvas</h2>
           <p className="text-[13px] text-white/50 mb-6 leading-relaxed">
             Canvas uses Excalidraw for drawing. This requires a one-time
@@ -467,12 +524,12 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
           createElement(ExcalidrawComponent, {
             key: excalidrawKey,
             excalidrawAPI: (api: any) => { excalidrawApiRef.current = api; },
-            theme: 'dark',
+            theme,
             initialData: initialSceneRef.current ? {
               elements: initialSceneRef.current.elements,
               appState: {
                 ...initialSceneRef.current.appState,
-                theme: 'dark',
+                theme,
                 collaborators: new Map(),
               },
               files: initialSceneRef.current.files,

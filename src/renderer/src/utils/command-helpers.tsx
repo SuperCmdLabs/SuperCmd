@@ -23,6 +23,7 @@ import IconMagnifier from '../icons/FileSearch';
 import IconLink from '../icons/QuickLinks';
 import IconCodeEditor from '../icons/Snippet';
 import IconNotes from '../icons/Notes';
+import IconPen from '../icons/Pen';
 import { formatShortcutForDisplay } from './hyper-key';
 import { renderQuickLinkIconGlyph } from './quicklink-icons';
 
@@ -966,7 +967,7 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
   ) {
     return (
       <div className="w-5 h-5 flex items-center justify-center">
-        <IconCodeEditor
+        <IconNotes
           size="16px"
           aria-hidden="true"
           style={buildCoreIconStyle('#fcd34d', '#d97706', '#fef3c7b8', '#fcd34d90')}
@@ -981,10 +982,25 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
   ) {
     return (
       <div className="w-5 h-5 flex items-center justify-center">
-        <IconNotes
+        <IconPen
           size="16px"
           aria-hidden="true"
           style={buildCoreIconStyle('#c4b5fd', '#7c3aed', '#ede9feb8', '#c4b5fd90')}
+        />
+      </div>
+    );
+  }
+
+  if (
+    commandId === 'system-search-canvases' ||
+    commandId === 'system-create-canvas'
+  ) {
+    return (
+      <div className="w-5 h-5 flex items-center justify-center">
+        <IconCodeEditor
+          size="16px"
+          aria-hidden="true"
+          style={buildCoreIconStyle('#fcd34d', '#d97706', '#fef3c7b8', '#fcd34d90')}
         />
       </div>
     );

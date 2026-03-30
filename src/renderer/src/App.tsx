@@ -1181,6 +1181,7 @@ const App: React.FC = () => {
     !showClipboardManager &&
     !showSnippetManager &&
     !showNotesSearch &&
+    !showCanvasSearch &&
     !showQuickLinkManager &&
     !showFileSearch &&
     !showCursorPrompt &&
