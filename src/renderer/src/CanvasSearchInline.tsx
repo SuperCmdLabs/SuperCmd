@@ -404,29 +404,30 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
         </div>
 
         {/* Right: Preview (60%) */}
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex-1 flex items-center justify-center">
-            {selectedCanvas && thumbnails[selectedCanvas.id] ? (
-              <div className="text-center">
-                <div
-                  className="max-w-[90%] max-h-[70%] mx-auto rounded-lg overflow-hidden"
-                  dangerouslySetInnerHTML={{ __html: thumbnails[selectedCanvas.id] }}
+        <div className="flex-1 flex flex-col min-h-0 border-l border-[var(--snippet-divider)]">
+          {selectedCanvas && thumbnails[selectedCanvas.id] ? (
+            <>
+              <div className="flex-1 flex items-center justify-center p-5 min-h-0">
+                <img
+                  src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(thumbnails[selectedCanvas.id])}`}
+                  alt={selectedCanvas.title}
+                  className="max-w-full max-h-full object-contain rounded-lg"
+                  style={{ display: 'block' }}
                 />
-                <p className="text-[13px] font-medium text-white/70 mt-3">{selectedCanvas.title}</p>
-                <p className="text-[11px] text-white/30 mt-0.5">
-                  Modified {formatDate(selectedCanvas.updatedAt)}
-                </p>
               </div>
-            ) : selectedCanvas ? (
-              <div className="text-center text-white/30">
-                <p className="text-sm">Select a canvas to preview</p>
+              <div className="px-4 pb-3 flex-shrink-0">
+                <p className="text-[13px] font-medium text-white/75 truncate">{selectedCanvas.title}</p>
+                <p className="text-[11px] text-white/35 mt-0.5">Modified {formatDate(selectedCanvas.updatedAt)}</p>
               </div>
-            ) : (
-              <div className="text-center text-white/30">
-                <p className="text-sm">Select a canvas to preview</p>
-              </div>
-            )}
-          </div>
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-white/20">
+              <IconCodeEditor size="36px" style={canvasIconStyle} />
+              <p className="text-[12px]">
+                {selectedCanvas ? 'No preview yet — save the canvas to generate one' : 'Select a canvas to preview'}
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

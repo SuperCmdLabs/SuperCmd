@@ -132,6 +132,14 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
         const scene = await window.electron.canvasGetScene(id);
         if (scene && scene.elements && scene.elements.length > 0) {
           initialSceneRef.current = scene;
+          // Restore the theme the canvas was last saved in so element colours
+          // (which are stored absolutely, not theme-relative) stay correct.
+          // e.g. text created in light mode has dark stroke — opening in dark
+          // mode would make it invisible against the dark background.
+          const savedTheme = scene.appState?.theme as 'dark' | 'light' | undefined;
+          if (savedTheme === 'dark' || savedTheme === 'light') {
+            setTheme(savedTheme);
+          }
         }
       }
 
@@ -192,6 +200,40 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     loadExcalidraw();
   }, [isInstalled, sceneReady, isExcalidrawLoaded, loadError]);
 
+  const saveThumbnailAsync = useCallback(async (elements: any[], appState: any, files: any) => {
+    if (!currentCanvasId) return;
+    try {
+      const bundle = (window as any).ExcalidrawBundle;
+      if (!bundle?.exportToSvg) return;
+      const nonDeletedElements = elements.filter((el: any) => !el.isDeleted);
+      if (!nonDeletedElements.length) return;
+      const svg: SVGSVGElement = await bundle.exportToSvg({
+        elements: nonDeletedElements,
+        appState: { ...appState, exportWithDarkMode: true, exportBackground: true },
+        files,
+      });
+      await window.electron.canvasSaveThumbnail(currentCanvasId, svg.outerHTML);
+    } catch { /* thumbnail failure is non-critical */ }
+  }, [currentCanvasId]);
+
+  const handleSaveNow = useCallback(async () => {
+    if (!currentCanvasId || !excalidrawApiRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSaveStatus('saving');
+    try {
+      const elements = excalidrawApiRef.current.getSceneElements();
+      const { collaborators, ...savableAppState } = excalidrawApiRef.current.getAppState();
+      const files = excalidrawApiRef.current.getFiles();
+      await window.electron.canvasSaveScene(currentCanvasId, { elements, appState: savableAppState, files });
+      void saveThumbnailAsync(elements, savableAppState, files);
+      setSaveStatus('saved');
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 5_000);
+    } catch {
+      setSaveStatus('error');
+    }
+  }, [currentCanvasId, saveThumbnailAsync]);
+
   // Auto-save with size-adaptive debounce
   const handleSceneChange = useCallback((elements: any[], appState: any, files: any) => {
     if (!currentCanvasId) return;
@@ -205,6 +247,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
       try {
         const { collaborators, ...savableAppState } = appState;
         await window.electron.canvasSaveScene(currentCanvasId!, { elements, appState: savableAppState, files });
+        void saveThumbnailAsync(elements, savableAppState, files);
         setSaveStatus('saved');
         if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
         statusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 1_500);
@@ -212,25 +255,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
         setSaveStatus('error');
       }
     }, debounceMs);
-  }, [currentCanvasId]);
-
-  // Manual save (Cmd+Enter)
-  const handleSaveNow = useCallback(async () => {
-    if (!currentCanvasId || !excalidrawApiRef.current) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    setSaveStatus('saving');
-    try {
-      const elements = excalidrawApiRef.current.getSceneElements();
-      const { collaborators, ...savableAppState } = excalidrawApiRef.current.getAppState();
-      const files = excalidrawApiRef.current.getFiles();
-      await window.electron.canvasSaveScene(currentCanvasId, { elements, appState: savableAppState, files });
-      setSaveStatus('saved');
-      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
-      statusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 5_000);
-    } catch {
-      setSaveStatus('error');
-    }
-  }, [currentCanvasId]);
+  }, [currentCanvasId, saveThumbnailAsync]);
 
   // Export as PNG image
   const handleExportImage = useCallback(async () => {
@@ -428,6 +453,22 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     });
     return cleanup;
   }, []);
+
+  // After each canvas mount, scroll to fit all elements so they're always visible.
+  // The saved scrollX/scrollY can be misaligned if the window size changed between
+  // sessions, leaving elements off-screen and impossible to click on.
+  useEffect(() => {
+    if (!sceneReady || !initialSceneRef.current?.elements?.length) return;
+    const timer = setTimeout(() => {
+      const api = excalidrawApiRef.current;
+      if (!api) return;
+      const elements = api.getSceneElements?.();
+      if (elements?.length) {
+        api.scrollToContent?.(elements, { fitToContent: true, animate: false });
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [excalidrawKey, sceneReady]);
 
   useEffect(() => {
     return () => {
