@@ -268,7 +268,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
       const files = excalidrawApiRef.current.getFiles();
       const blob = await bundle.exportToBlob({
         elements,
-        appState: { ...appState, exportWithDarkMode: true },
+        appState: { ...appState, exportWithDarkMode: theme === 'dark' },
         files,
         mimeType: 'image/png',
       });
@@ -285,7 +285,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     } catch (e) {
       console.error('[Canvas] Export image failed:', e);
     }
-  }, [title]);
+  }, [title, theme]);
 
   // New canvas (save current + open new)
   const handleNewCanvas = useCallback(async () => {
@@ -348,7 +348,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
       const { collaborators, ...appState } = excalidrawApiRef.current.getAppState();
       const files = excalidrawApiRef.current.getFiles();
       const blob = await bundle.exportToBlob({
-        elements, appState: { ...appState, exportWithDarkMode: true }, files, mimeType: 'image/png',
+        elements, appState: { ...appState, exportWithDarkMode: theme === 'dark' }, files, mimeType: 'image/png',
       });
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
       setSaveStatus('saved');
@@ -357,7 +357,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     } catch (e) {
       console.error('[Canvas] Copy as image failed:', e);
     }
-  }, []);
+  }, [theme]);
 
   const actions = useMemo(() => [
     { title: 'Export Image', icon: <Image className="w-4 h-4" />, shortcut: ['⇧', '⌘', 'E'], execute: handleExportImage },
@@ -477,6 +477,16 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     };
   }, []);
 
+  // Auto-save before the canvas window closes
+  useEffect(() => {
+    const cleanup = window.electron.onCanvasSaveBeforeClose(() => {
+      handleSaveNow().finally(() => {
+        window.electron.canvasSaveComplete();
+      });
+    });
+    return cleanup;
+  }, [handleSaveNow]);
+
   // Install screen
   if (isInstalled === false) {
     return (
@@ -566,7 +576,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
   };
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col" style={{ borderRadius: 14, overflow: 'hidden', border: '1.5px solid rgba(0,0,0,0.22)', boxSizing: 'border-box' }}>
       {/* Title bar — tall enough for traffic lights (y:16 + 12px button = 28px min) */}
       <div className="h-[38px] flex items-center justify-center" style={{ WebkitAppRegion: 'drag' } as any}>
         <input

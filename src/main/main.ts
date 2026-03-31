@@ -9633,6 +9633,18 @@ function openCanvasWindow(mode?: 'create' | 'edit'): void {
     canvasWindow?.show();
   });
 
+  let savingBeforeClose = false;
+  canvasWindow.on('close', (event: any) => {
+    if (savingBeforeClose) return;
+    event.preventDefault();
+    savingBeforeClose = true;
+    canvasWindow?.webContents.send('canvas-save-before-close');
+    // Fallback: force close after 3 s if renderer doesn't respond
+    setTimeout(() => {
+      if (canvasWindow && !canvasWindow.isDestroyed()) canvasWindow.destroy();
+    }, 3000);
+  });
+
   canvasWindow.on('closed', () => {
     canvasWindow = null;
     if (process.platform === 'darwin' && !settingsWindow && !extensionStoreWindow && !notesWindow) {
@@ -9672,8 +9684,7 @@ async function loadAndSendCanvasLibrary(libraryUrl: string): Promise<void> {
 
 async function installCanvasLib(sender: any): Promise<void> {
   const libDir = getCanvasLibDir();
-  const fs = require('fs');
-  const fsp = require('fs/promises');
+  const fsp = fs.promises;
 
   if (!fs.existsSync(libDir)) {
     fs.mkdirSync(libDir, { recursive: true });
@@ -9682,7 +9693,24 @@ async function installCanvasLib(sender: any): Promise<void> {
   sender.send('canvas-install-status', { status: 'downloading', progress: 0 });
 
   try {
-    // Download the pre-built bundle from S3
+    // In development: copy from local canvas-app/dist/ if present (avoids broken S3 bundle)
+    const localDist = path.join(__dirname, '..', '..', 'canvas-app', 'dist');
+    const localJs = path.join(localDist, 'excalidraw-bundle.js');
+    const localCss = path.join(localDist, 'excalidraw-bundle.css');
+
+    if (fs.existsSync(localJs)) {
+      console.log('[Canvas] Dev mode: copying bundle from canvas-app/dist/');
+      sender.send('canvas-install-status', { status: 'extracting', progress: 80 });
+      await fsp.copyFile(localJs, path.join(libDir, 'excalidraw-bundle.js'));
+      if (fs.existsSync(localCss)) {
+        await fsp.copyFile(localCss, path.join(libDir, 'excalidraw-bundle.css'));
+      }
+      sender.send('canvas-install-status', { status: 'done', progress: 100 });
+      console.log('[Canvas] Bundle installed from local dist');
+      return;
+    }
+
+    // Production: download the pre-built bundle from S3
     const bundleUrl = 'https://supercmd-extensions.s3.amazonaws.com/canvas/excalidraw-bundle.tgz';
     const response = await net.fetch(bundleUrl);
 
@@ -13101,6 +13129,10 @@ if let tiff = image?.tiffRepresentation {
   ipcMain.handle('open-canvas-window', (_event: any, mode?: string, canvasJson?: string) => {
     if (canvasJson) pendingCanvasJson = canvasJson;
     openCanvasWindow(mode as 'create' | 'edit' | undefined);
+  });
+
+  ipcMain.on('canvas-save-complete', () => {
+    if (canvasWindow && !canvasWindow.isDestroyed()) canvasWindow.destroy();
   });
 
   ipcMain.handle('canvas-check-installed', () => {
