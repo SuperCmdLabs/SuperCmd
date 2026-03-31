@@ -621,6 +621,67 @@ contextBridge.exposeInMainWorld('electron', {
     };
   },
 
+  // ─── Canvas Manager ────────────────────────────────────────────
+  canvasGetAll: (): Promise<any[]> =>
+    ipcRenderer.invoke('canvas-get-all'),
+  canvasSearch: (query: string): Promise<any[]> =>
+    ipcRenderer.invoke('canvas-search', query),
+  canvasCreate: (data: any): Promise<any> =>
+    ipcRenderer.invoke('canvas-create', data),
+  canvasUpdate: (id: string, data: any): Promise<any> =>
+    ipcRenderer.invoke('canvas-update', id, data),
+  canvasDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('canvas-delete', id),
+  canvasDuplicate: (id: string): Promise<any> =>
+    ipcRenderer.invoke('canvas-duplicate', id),
+  canvasTogglePin: (id: string): Promise<any> =>
+    ipcRenderer.invoke('canvas-toggle-pin', id),
+  canvasGetScene: (id: string): Promise<any> =>
+    ipcRenderer.invoke('canvas-get-scene', id),
+  canvasSaveScene: (id: string, scene: any): Promise<void> =>
+    ipcRenderer.invoke('canvas-save-scene', id, scene),
+  canvasExport: (id: string, format: string): Promise<boolean> =>
+    ipcRenderer.invoke('canvas-export', id, format),
+  canvasSaveThumbnail: (id: string, svgString: string): Promise<void> =>
+    ipcRenderer.invoke('canvas-save-thumbnail', id, svgString),
+  canvasGetThumbnail: (id: string): Promise<string | null> =>
+    ipcRenderer.invoke('canvas-get-thumbnail', id),
+  openCanvasWindow: (mode?: string, canvasJson?: string): Promise<void> =>
+    ipcRenderer.invoke('open-canvas-window', mode, canvasJson),
+  canvasCheckInstalled: (): Promise<boolean> =>
+    ipcRenderer.invoke('canvas-check-installed'),
+  canvasInstall: (): Promise<void> =>
+    ipcRenderer.invoke('canvas-install'),
+  onCanvasMode: (callback: (payload: any) => void) => {
+    const listener = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('canvas-mode-changed', listener);
+    return () => {
+      ipcRenderer.removeListener('canvas-mode-changed', listener);
+    };
+  },
+  onCanvasInstallStatus: (callback: (payload: any) => void) => {
+    const listener = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('canvas-install-status', listener);
+    return () => {
+      ipcRenderer.removeListener('canvas-install-status', listener);
+    };
+  },
+  onCanvasAddLibrary: (callback: (payload: any) => void) => {
+    const listener = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('canvas-add-library', listener);
+    return () => {
+      ipcRenderer.removeListener('canvas-add-library', listener);
+    };
+  },
+  saveCanvasLibrary: (items: any[]): Promise<void> => ipcRenderer.invoke('canvas-save-library', items),
+  loadCanvasLibrary: (): Promise<any[]> => ipcRenderer.invoke('canvas-load-library'),
+  onCanvasSaveBeforeClose: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('canvas-save-before-close', listener);
+    return () => { ipcRenderer.removeListener('canvas-save-before-close', listener); };
+  },
+  canvasSaveComplete: (): void => { ipcRenderer.send('canvas-save-complete'); },
+
   quickLinkGetAll: (): Promise<any[]> =>
     ipcRenderer.invoke('quicklink-get-all'),
   quickLinkSearch: (query: string): Promise<any[]> =>

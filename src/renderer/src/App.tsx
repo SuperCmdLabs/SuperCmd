@@ -19,6 +19,7 @@ import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
 import NotesSearchInline from './NotesSearchInline';
+import CanvasSearchInline from './CanvasSearchInline';
 import QuickLinkManager from './QuickLinkManager';
 import CameraExtension from './CameraExtension';
 import ScheduleExtension from './ScheduleExtension';
@@ -336,12 +337,12 @@ const App: React.FC = () => {
   const homeDir = String((window.electron as any).homeDir || '');
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
-    showClipboardManager, showSnippetManager, showNotesSearch, showQuickLinkManager, showFileSearch, showCursorPrompt,
+    showClipboardManager, showSnippetManager, showNotesSearch, showCanvasSearch, showQuickLinkManager, showFileSearch, showCursorPrompt,
     showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
     openOnboarding, openWhisper, openClipboardManager,
-    openSnippetManager, openNotesSearch, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openSchedule, openWindowManager,
+    openSnippetManager, openNotesSearch, openCanvasSearch, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openSchedule, openWindowManager,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
-    setShowClipboardManager, setShowSnippetManager, setShowNotesSearch, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
+    setShowClipboardManager, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
     setShowWhisper, setShowSpeak, setShowCamera, setShowSchedule, setShowWindowManager, setShowWhisperOnboarding, setShowWhisperHint,
     setShowOnboarding, setAiMode,
   } = useAppViewManager();
@@ -733,6 +734,14 @@ const App: React.FC = () => {
         }
         if (routedSystemCommandId === 'system-create-note') {
           window.electron.openNotesWindow('create');
+          return;
+        }
+        if (routedSystemCommandId === 'system-search-canvases') {
+          openCanvasSearch();
+          return;
+        }
+        if (routedSystemCommandId === 'system-create-canvas') {
+          window.electron.openCanvasWindow('create');
           return;
         }
         if (routedSystemCommandId === 'system-search-quicklinks') {
@@ -1172,6 +1181,7 @@ const App: React.FC = () => {
     !showClipboardManager &&
     !showSnippetManager &&
     !showNotesSearch &&
+    !showCanvasSearch &&
     !showQuickLinkManager &&
     !showFileSearch &&
     !showCursorPrompt &&
@@ -2051,6 +2061,16 @@ const App: React.FC = () => {
     if (commandId === 'system-create-note') {
       whisperSessionRef.current = false;
       window.electron.openNotesWindow('create');
+      return true;
+    }
+    if (commandId === 'system-search-canvases') {
+      whisperSessionRef.current = false;
+      openCanvasSearch();
+      return true;
+    }
+    if (commandId === 'system-create-canvas') {
+      whisperSessionRef.current = false;
+      window.electron.openCanvasWindow('create');
       return true;
     }
     if (commandId === 'system-search-quicklinks') {
@@ -3110,6 +3130,30 @@ const App: React.FC = () => {
           <NotesSearchInline
             onClose={() => {
               setShowNotesSearch(false);
+              setSearchQuery('');
+              setSelectedIndex(0);
+              setTimeout(() => inputRef.current?.focus(), 50);
+            }}
+          />
+        </LauncherSurface>
+      </>
+    );
+  }
+
+  // ─── Canvas Search mode ──────────────────────────────────────────
+  if (showCanvasSearch) {
+    return (
+      <>
+        {alwaysMountedRunners}
+        <LauncherSurface
+          backgroundImageUrl={launcherBackgroundImageUrl}
+          showBackground={shouldUseBackgroundEverywhere}
+          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+        >
+          <CanvasSearchInline
+            onClose={() => {
+              setShowCanvasSearch(false);
               setSearchQuery('');
               setSelectedIndex(0);
               setTimeout(() => inputRef.current?.focus(), 50);

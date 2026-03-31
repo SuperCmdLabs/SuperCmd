@@ -10,3 +10,4 @@ extensions*
 extensions/*
 
 **/.build/*
+.gstack/

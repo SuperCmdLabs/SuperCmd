@@ -1533,6 +1533,18 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-search-canvases',
+      title: 'Search Canvases',
+      keywords: ['canvas', 'search', 'find', 'drawing', 'whiteboard', 'excalidraw', 'sketch', 'diagram'],
+      category: 'system',
+    },
+    {
+      id: 'system-create-canvas',
+      title: 'Create Canvas',
+      keywords: ['canvas', 'create', 'new', 'drawing', 'whiteboard', 'excalidraw', 'sketch', 'diagram'],
+      category: 'system',
+    },
+    {
       id: 'system-create-quicklink',
       title: 'Create Quick Link',
       keywords: ['quick link', 'quicklink', 'create', 'new', 'url'],

@@ -108,6 +108,24 @@ import {
   exportNotesToFile,
   importNotesFromFile,
 } from './notes-store';
+import {
+  initCanvasStore,
+  getAllCanvases,
+  searchCanvases,
+  getCanvasById,
+  createCanvas,
+  updateCanvas,
+  deleteCanvas,
+  duplicateCanvas,
+  togglePinCanvas,
+  getScene,
+  saveScene,
+  saveThumbnail,
+  getThumbnail,
+  exportCanvas,
+  isCanvasLibInstalled,
+  getCanvasLibDir,
+} from './canvas-store';
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
@@ -2005,6 +2023,8 @@ let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
 let notesWindow: InstanceType<typeof BrowserWindow> | null = null;
 let pendingNoteJson: string | null = null;
+let canvasWindow: InstanceType<typeof BrowserWindow> | null = null;
+let pendingCanvasJson: string | null = null;
 let isVisible = false;
 let suppressBlurHide = false; // When true, blur won't hide the window (used during file dialogs)
 let showWindowBlurGraceUntil = 0; // Timestamp until which blur-to-hide is suppressed after show (prevents flash-close)
@@ -8300,11 +8320,17 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     if (source === 'launcher') hideWindow();
     return true;
   }
+  if (commandId === 'system-create-canvas') {
+    openCanvasWindow('create');
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
   if (
     commandId === 'system-clipboard-manager' ||
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
     commandId === 'system-search-notes' ||
+    commandId === 'system-search-canvases' ||
     commandId === 'system-search-quicklinks' ||
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
@@ -9502,10 +9528,257 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
 
   notesWindow.on('closed', () => {
     notesWindow = null;
-    if (process.platform === 'darwin' && !settingsWindow && !extensionStoreWindow) {
+    if (process.platform === 'darwin' && !settingsWindow && !extensionStoreWindow && !canvasWindow) {
       app.dock.hide();
     }
   });
+}
+
+// ─── Canvas Window ────────────────────────────────────────────────
+
+function openCanvasWindow(mode?: 'create' | 'edit'): void {
+  if (canvasWindow) {
+    canvasWindow.webContents.send('canvas-mode-changed', { mode: mode || 'create', canvasJson: pendingCanvasJson });
+    pendingCanvasJson = null;
+    canvasWindow.show();
+    canvasWindow.focus();
+    return;
+  }
+
+  if (process.platform === 'darwin') {
+    app.dock.show();
+  }
+
+  const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = (() => {
+    if (mainWindow) {
+      const b = mainWindow.getBounds();
+      const center = {
+        x: b.x + Math.floor(b.width / 2),
+        y: b.y + Math.floor(b.height / 2),
+      };
+      return screen.getDisplayNearestPoint(center).workArea;
+    }
+    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  })();
+  const canvasWidth = Math.max(800, Math.min(1200, displayWidth - 200));
+  const canvasHeight = Math.max(600, Math.min(900, displayHeight - 200));
+  const canvasX = displayX + Math.floor((displayWidth - canvasWidth) / 2);
+  const canvasY = displayY + Math.floor((displayHeight - canvasHeight) / 2);
+  const useNativeLiquidGlass = shouldUseNativeLiquidGlass();
+
+  canvasWindow = new BrowserWindow({
+    width: canvasWidth,
+    height: canvasHeight,
+    x: canvasX,
+    y: canvasY,
+    minWidth: 640,
+    minHeight: 480,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
+    transparent: true,
+    backgroundColor: '#00000000',
+    vibrancy: useNativeLiquidGlass ? false : 'hud',
+    visualEffectState: 'active',
+    hasShadow: false,
+    alwaysOnTop: false,  // Normal window, not always-on-top (design review decision)
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  applyLiquidGlassToWindow(canvasWindow, {
+    cornerRadius: 14,
+    fallbackVibrancy: 'hud',
+  });
+
+  registerCloseWindowShortcut(canvasWindow);
+
+  // Include canvas ID in URL if available from pendingCanvasJson
+  let canvasIdParam = '';
+  if (pendingCanvasJson) {
+    try {
+      const parsed = JSON.parse(pendingCanvasJson);
+      if (parsed.id) canvasIdParam = `&id=${parsed.id}`;
+    } catch {}
+    pendingCanvasJson = null;
+  }
+  const hash = mode ? `/canvas?mode=${mode}${canvasIdParam}` : '/canvas';
+  loadWindowUrl(canvasWindow, hash);
+
+  // Handle window.open() from Excalidraw (library browser + other external links)
+  // Handle window.open() calls from Excalidraw for the library browser.
+  // We intercept and rewrite the URL before opening so that:
+  //   1. referrer=https://excalidraw.com  — gives the library site a known HTTPS origin
+  //      to target; our canvas is file:// or localhost, whose origin is opaque/mismatched
+  //      so postMessage and opener.location both fail silently in production.
+  //   2. useHash=false  — forces the library site to navigate ITSELF (the popup) to
+  //      excalidraw.com?addLibrary=... instead of trying to navigate window.opener
+  //      (which would clobber our React hash router).
+  // With those two changes the popup does a plain will-navigate to
+  // https://excalidraw.com?addLibrary=... which we cleanly intercept.
+  canvasWindow.webContents.setWindowOpenHandler(({ url }: { url: string }) => {
+    if (url.includes('libraries.excalidraw.com') || url.includes('libs.excalidraw.com')) {
+      setImmediate(() => {
+        if (!canvasWindow || canvasWindow.isDestroyed()) return;
+
+        // Rewrite the URL the library site receives
+        let libBrowserUrl = url;
+        try {
+          const parsed = new URL(url);
+          parsed.searchParams.set('referrer', 'https://excalidraw.com');
+          parsed.searchParams.delete('useHash'); // default is false
+          libBrowserUrl = parsed.toString();
+        } catch { /* keep original url */ }
+
+        const libWin = new BrowserWindow({
+          width: 1200,
+          height: 800,
+          title: 'Excalidraw Libraries',
+          autoHideMenuBar: true,
+          webPreferences: { contextIsolation: true, nodeIntegration: false },
+        });
+        libWin.loadURL(libBrowserUrl);
+
+        const maybeImport = (navUrl: string, event?: { preventDefault?: () => void }): boolean => {
+          const libraryUrl = extractCanvasLibraryUrl(navUrl);
+          if (!libraryUrl) return false;
+          event?.preventDefault?.();
+          void loadAndSendCanvasLibrary(libraryUrl);
+          if (!libWin.isDestroyed()) libWin.close();
+          return true;
+        };
+
+        // The library site navigates itself to excalidraw.com?addLibrary=... on click
+        libWin.webContents.on('will-navigate', (event: any, navUrl: string) => { maybeImport(navUrl, event); });
+        libWin.webContents.on('will-redirect', (event: any, navUrl: string) => { maybeImport(navUrl, event); });
+        libWin.webContents.on('did-navigate-in-page', (_e: any, navUrl: string) => { maybeImport(navUrl); });
+
+        // In case the site uses window.open() for the callback
+        libWin.webContents.setWindowOpenHandler(({ url: popupUrl }: { url: string }) => {
+          if (maybeImport(popupUrl)) return { action: 'deny' as const };
+          shell.openExternal(popupUrl).catch(() => {});
+          return { action: 'deny' as const };
+        });
+      });
+      return { action: 'deny' as const };
+    }
+    // All other external links → system browser
+    shell.openExternal(url).catch(() => {});
+    return { action: 'deny' as const };
+  });
+
+  canvasWindow.once('ready-to-show', () => {
+    canvasWindow?.show();
+  });
+
+  let savingBeforeClose = false;
+  canvasWindow.on('close', (event: any) => {
+    if (savingBeforeClose) return;
+    event.preventDefault();
+    savingBeforeClose = true;
+    canvasWindow?.webContents.send('canvas-save-before-close');
+    // Fallback: force close after 3 s if renderer doesn't respond
+    setTimeout(() => {
+      if (canvasWindow && !canvasWindow.isDestroyed()) canvasWindow.destroy();
+    }, 3000);
+  });
+
+  canvasWindow.on('closed', () => {
+    canvasWindow = null;
+    if (process.platform === 'darwin' && !settingsWindow && !extensionStoreWindow && !notesWindow) {
+      app.dock.hide();
+    }
+  });
+}
+
+function extractCanvasLibraryUrl(rawUrl: string): string | null {
+  let parsed: URL;
+  try { parsed = new URL(rawUrl); } catch { return null; }
+  // Check query string first (?addLibrary=...)
+  const queryValue = parsed.searchParams.get('addLibrary');
+  if (queryValue) return decodeURIComponent(queryValue);
+  // Excalidraw's real callback uses hash (#addLibrary=...&token=...)
+  const hash = parsed.hash.startsWith('#') ? parsed.hash.slice(1) : parsed.hash;
+  if (!hash) return null;
+  const hashParams = new URLSearchParams(hash);
+  const hashValue = hashParams.get('addLibrary');
+  return hashValue ? decodeURIComponent(hashValue) : null;
+}
+
+async function loadAndSendCanvasLibrary(libraryUrl: string): Promise<void> {
+  try {
+    const response = await net.fetch(libraryUrl);
+    const data = await response.json() as any;
+    const items: any[] = data?.libraryItems ?? data?.library ?? [];
+    if (canvasWindow && !canvasWindow.isDestroyed()) {
+      canvasWindow.webContents.send('canvas-add-library', { libraryItems: items });
+    }
+  } catch (e) {
+    console.error('[Canvas] Failed to load library:', e);
+  }
+}
+
+// ─── Canvas Lib Install ──────────────────────────────────────────
+
+async function installCanvasLib(sender: any): Promise<void> {
+  const libDir = getCanvasLibDir();
+  const fsp = fs.promises;
+
+  if (!fs.existsSync(libDir)) {
+    fs.mkdirSync(libDir, { recursive: true });
+  }
+
+  sender.send('canvas-install-status', { status: 'downloading', progress: 0 });
+
+  try {
+    // In development: copy from local canvas-app/dist/ if present (avoids broken S3 bundle)
+    const localDist = path.join(__dirname, '..', '..', 'canvas-app', 'dist');
+    const localJs = path.join(localDist, 'excalidraw-bundle.js');
+    const localCss = path.join(localDist, 'excalidraw-bundle.css');
+
+    if (fs.existsSync(localJs)) {
+      console.log('[Canvas] Dev mode: copying bundle from canvas-app/dist/');
+      sender.send('canvas-install-status', { status: 'extracting', progress: 80 });
+      await fsp.copyFile(localJs, path.join(libDir, 'excalidraw-bundle.js'));
+      if (fs.existsSync(localCss)) {
+        await fsp.copyFile(localCss, path.join(libDir, 'excalidraw-bundle.css'));
+      }
+      sender.send('canvas-install-status', { status: 'done', progress: 100 });
+      console.log('[Canvas] Bundle installed from local dist');
+      return;
+    }
+
+    // Production: download the pre-built bundle from S3
+    const bundleUrl = 'https://supercmd-extensions.s3.amazonaws.com/canvas/excalidraw-bundle.tgz';
+    const response = await net.fetch(bundleUrl);
+
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    sender.send('canvas-install-status', { status: 'extracting', progress: 80 });
+
+    // Write tarball to temp file and extract
+    const tmpPath = path.join(libDir, 'excalidraw-bundle.tgz');
+    fs.writeFileSync(tmpPath, buffer);
+
+    // Extract using system tar (available on macOS)
+    const { execSync } = require('child_process');
+    execSync(`tar -xzf "${tmpPath}" -C "${libDir}"`, { timeout: 30000 });
+
+    // Cleanup temp file
+    fs.unlinkSync(tmpPath);
+
+    sender.send('canvas-install-status', { status: 'done', progress: 100 });
+    console.log('[Canvas] Excalidraw bundle installed successfully');
+  } catch (e: any) {
+    console.error('[Canvas] Failed to install canvas lib:', e);
+    sender.send('canvas-install-status', { status: 'error', error: e.message || 'Download failed' });
+    throw e;
+  }
 }
 
 function openExtensionStoreWindow(): void {
@@ -10261,7 +10534,17 @@ async function rebuildExtensions() {
 // Register custom protocol for serving extension assets (images etc.)
 // Must be called before app.whenReady()
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'sc-asset', privileges: { bypassCSP: true, supportFetchAPI: true, stream: true } }
+  {
+    scheme: 'sc-asset',
+    privileges: {
+      standard: true,
+      secure: true,
+      corsEnabled: true,
+      bypassCSP: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
 ]);
 
 app.whenReady().then(async () => {
@@ -10275,6 +10558,34 @@ app.whenReady().then(async () => {
     // URL format: sc-asset://ext-asset/path/to/file
     try {
       const url = new URL(request.url);
+      // canvas-lib: serve files from the canvas-lib directory
+      if (url.hostname === 'canvas-lib') {
+        let relPath = decodeURIComponent(url.pathname || '').replace(/^\//, '');
+        if (!relPath) return new Response('Bad Request', { status: 400 });
+        const canvasLibPath = path.join(app.getPath('userData'), 'canvas-lib');
+        const fullPath = path.join(canvasLibPath, relPath);
+        console.log('[sc-asset:canvas-lib] Serving:', fullPath);
+        try {
+          const data = fs.readFileSync(fullPath);
+          const ext = path.extname(fullPath).toLowerCase();
+          const mimeTypes: Record<string, string> = {
+            '.js': 'application/javascript',
+            '.css': 'text/css',
+            '.svg': 'image/svg+xml',
+            '.woff2': 'font/woff2',
+            '.woff': 'font/woff',
+            '.ttf': 'font/ttf',
+            '.png': 'image/png',
+          };
+          return new Response(data, {
+            headers: { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' },
+          });
+        } catch (e) {
+          console.error('[sc-asset:canvas-lib] File not found:', fullPath);
+          return new Response('Not Found', { status: 404 });
+        }
+      }
+
       if (url.hostname !== 'ext-asset') {
         return new Response('Not Found', { status: 404 });
       }
@@ -10356,6 +10667,7 @@ app.whenReady().then(async () => {
   // Initialize snippet store
   initSnippetStore();
   initNoteStore();
+  initCanvasStore();
   try { refreshSnippetExpander(); } catch (e) {
     console.warn('[SnippetExpander] Failed to start:', e);
   }
@@ -12788,6 +13100,93 @@ if let tiff = image?.tiffRepresentation {
     // Don't clear immediately — React StrictMode double-mounts in dev
     if (json) setTimeout(() => { if (pendingNoteJson === json) pendingNoteJson = null; }, 3000);
     return json;
+  });
+
+  // ─── IPC: Canvas Manager ─────────────────────────────────────────
+
+  ipcMain.handle('canvas-get-all', () => {
+    return getAllCanvases();
+  });
+
+  ipcMain.handle('canvas-search', (_event: any, query: string) => {
+    return searchCanvases(query);
+  });
+
+  ipcMain.handle('canvas-create', (_event: any, data: { title?: string; icon?: string }) => {
+    return createCanvas(data);
+  });
+
+  ipcMain.handle('canvas-update', (_event: any, id: string, data: any) => {
+    return updateCanvas(id, data);
+  });
+
+  ipcMain.handle('canvas-delete', (_event: any, id: string) => {
+    return deleteCanvas(id);
+  });
+
+  ipcMain.handle('canvas-duplicate', (_event: any, id: string) => {
+    return duplicateCanvas(id);
+  });
+
+  ipcMain.handle('canvas-toggle-pin', (_event: any, id: string) => {
+    return togglePinCanvas(id);
+  });
+
+  ipcMain.handle('canvas-get-scene', (_event: any, id: string) => {
+    return getScene(id);
+  });
+
+  ipcMain.handle('canvas-save-scene', async (_event: any, id: string, scene: any) => {
+    await saveScene(id, scene);
+  });
+
+  ipcMain.handle('canvas-export', async (event: any, id: string, format: string) => {
+    suppressBlurHide = true;
+    try {
+      return await exportCanvas(id, format as 'json', getDialogParentWindow(event));
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('canvas-save-thumbnail', async (_event: any, id: string, svgString: string) => {
+    await saveThumbnail(id, svgString);
+  });
+
+  ipcMain.handle('canvas-get-thumbnail', (_event: any, id: string) => {
+    return getThumbnail(id);
+  });
+
+  ipcMain.handle('open-canvas-window', (_event: any, mode?: string, canvasJson?: string) => {
+    if (canvasJson) pendingCanvasJson = canvasJson;
+    openCanvasWindow(mode as 'create' | 'edit' | undefined);
+  });
+
+  ipcMain.on('canvas-save-complete', () => {
+    if (canvasWindow && !canvasWindow.isDestroyed()) canvasWindow.destroy();
+  });
+
+  ipcMain.handle('canvas-check-installed', () => {
+    return isCanvasLibInstalled();
+  });
+
+  ipcMain.handle('canvas-install', async (event: any) => {
+    await installCanvasLib(event.sender);
+  });
+
+  ipcMain.handle('canvas-save-library', async (_event: any, items: any[]) => {
+    const libPath = path.join(app.getPath('userData'), 'canvas-library.json');
+    await fs.promises.writeFile(libPath, JSON.stringify(items));
+  });
+
+  ipcMain.handle('canvas-load-library', async () => {
+    const libPath = path.join(app.getPath('userData'), 'canvas-library.json');
+    try {
+      const content = await fs.promises.readFile(libPath, 'utf8');
+      return JSON.parse(content);
+    } catch {
+      return [];
+    }
   });
 
   // ─── IPC: Quick Link Manager ───────────────────────────────────

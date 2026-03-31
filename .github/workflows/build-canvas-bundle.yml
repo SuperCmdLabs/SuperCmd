@@ -1,0 +1,59 @@
+name: Build Canvas Bundle
+
+on:
+  workflow_dispatch: # Manual trigger
+  push:
+    paths:
+      - 'canvas-app/**'
+    branches:
+      - main
+      - supercmd-canvas
+
+env:
+  S3_BUCKET: ${{ secrets.S3_EXTENSIONS_BUCKET }}
+
+jobs:
+  build-canvas-bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: canvas-app
+
+      - name: Build Excalidraw bundle
+        run: npm run build
+        working-directory: canvas-app
+
+      - name: Package as tarball
+        run: npm run package
+        working-directory: canvas-app
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp canvas-app/excalidraw-bundle.tgz \
+            s3://${{ env.S3_BUCKET }}/canvas/excalidraw-bundle.tgz \
+            --cache-control "public, max-age=3600"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: excalidraw-bundle
+          path: canvas-app/excalidraw-bundle.tgz
+          retention-days: 30

@@ -1,0 +1,16 @@
+{
+  "name": "supercmd-canvas-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pre-built Excalidraw bundle for SuperCmd Canvas",
+  "scripts": {
+    "build": "node build.mjs",
+    "package": "cd dist && tar -czf ../excalidraw-bundle.tgz ."
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

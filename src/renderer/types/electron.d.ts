@@ -359,6 +359,21 @@ export interface Note {
   updatedAt: number;
 }
 
+export interface Canvas {
+  id: string;
+  title: string;
+  icon: string;
+  pinned: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CanvasScene {
+  elements: any[];
+  appState: Record<string, any>;
+  files: Record<string, any>;
+}
+
 export type QuickLinkIcon = string;
 
 export interface QuickLink {
@@ -665,6 +680,30 @@ export interface ElectronAPI {
   openNotesWindow: (mode?: 'search' | 'create' | 'edit', noteJson?: string) => Promise<void>;
   notesGetPending: () => Promise<string | null>;
   onNotesMode: (callback: (payload: any) => void) => (() => void);
+  // Canvas Manager
+  canvasGetAll: () => Promise<Canvas[]>;
+  canvasSearch: (query: string) => Promise<Canvas[]>;
+  canvasCreate: (data: { title?: string; icon?: string }) => Promise<Canvas>;
+  canvasUpdate: (id: string, data: { title?: string; icon?: string; pinned?: boolean }) => Promise<Canvas | null>;
+  canvasDelete: (id: string) => Promise<boolean>;
+  canvasDuplicate: (id: string) => Promise<Canvas | null>;
+  canvasTogglePin: (id: string) => Promise<Canvas | null>;
+  canvasGetScene: (id: string) => Promise<CanvasScene>;
+  canvasSaveScene: (id: string, scene: CanvasScene) => Promise<void>;
+  canvasExport: (id: string, format: 'json') => Promise<boolean>;
+  canvasSaveThumbnail: (id: string, svgString: string) => Promise<void>;
+  canvasGetThumbnail: (id: string) => Promise<string | null>;
+  openCanvasWindow: (mode?: 'create' | 'edit', canvasJson?: string) => Promise<void>;
+  canvasCheckInstalled: () => Promise<boolean>;
+  canvasInstall: () => Promise<void>;
+  onCanvasMode: (callback: (payload: any) => void) => (() => void);
+  onCanvasInstallStatus: (callback: (payload: any) => void) => (() => void);
+  onCanvasAddLibrary: (callback: (payload: { libraryItems: any[] }) => void) => (() => void);
+  saveCanvasLibrary: (items: any[]) => Promise<void>;
+  loadCanvasLibrary: () => Promise<any[]>;
+  onCanvasSaveBeforeClose: (callback: () => void) => (() => void);
+  canvasSaveComplete: () => void;
+
   quickLinkGetAll: () => Promise<QuickLink[]>;
   quickLinkSearch: (query: string) => Promise<QuickLink[]>;
   quickLinkGetDynamicFields: (id: string) => Promise<QuickLinkDynamicField[]>;
