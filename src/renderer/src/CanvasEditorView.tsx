@@ -48,6 +48,20 @@ if (!document.getElementById('excalidraw-tailwind-fix')) {
   document.head.appendChild(style);
 }
 
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+async function generateCanvasTitle(): Promise<string> {
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = MONTHS[now.getMonth()];
+  const year = String(now.getFullYear()).slice(-2);
+  const base = `${day} ${month} ${year}`;
+  const re = new RegExp(`^${base}( \\d+)?$`);
+  const existing: any[] = await window.electron.canvasGetAll();
+  const count = existing.filter((c) => re.test(c.title)).length;
+  return count === 0 ? base : `${base} ${count + 1}`;
+}
+
 interface CanvasEditorViewProps {
   mode: 'create' | 'edit';
   canvasId: string | null;
@@ -68,9 +82,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
   const [showActions, setShowActions] = useState(false);
   const [excalidrawKey, setExcalidrawKey] = useState(0);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
-  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
-    (localStorage.getItem('canvas-theme') as 'dark' | 'light') || 'dark'
-  );
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
 
   const isGlassyTheme = document.documentElement.classList.contains('sc-glassy') || document.body.classList.contains('sc-glassy');
   const isNativeLiquidGlass = document.documentElement.classList.contains('sc-native-liquid-glass') || document.body.classList.contains('sc-native-liquid-glass');
@@ -117,8 +129,9 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
         const canvas = canvases.find((c: any) => c.id === id);
         if (canvas) setTitle(canvas.title);
       } else {
-        // Create new canvas
-        const canvas = await window.electron.canvasCreate({ title: 'Untitled Canvas' });
+        // Create new canvas with date-based title
+        const title = await generateCanvasTitle();
+        const canvas = await window.electron.canvasCreate({ title });
         id = canvas.id;
         setTitle(canvas.title);
       }
@@ -290,7 +303,8 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
   // New canvas (save current + open new)
   const handleNewCanvas = useCallback(async () => {
     await handleSaveNow();
-    const canvas = await window.electron.canvasCreate({ title: 'Untitled Canvas' });
+    const title = await generateCanvasTitle();
+    const canvas = await window.electron.canvasCreate({ title });
     setCurrentCanvasId(canvas.id);
     setTitle(canvas.title);
     initialSceneRef.current = null;
@@ -407,7 +421,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
         return;
       }
 
-      if (e.key === 'Enter' && e.metaKey) {
+      if (e.key === 's' && e.metaKey) {
         e.preventDefault();
         handleSaveNow();
         return;
@@ -501,7 +515,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
           {installStatus?.status === 'error' ? (
             <>
               <p className="text-[12px] text-red-400 mb-4">{installStatus.error || 'Download failed'}</p>
-              <button onClick={handleInstall} className="px-5 py-2.5 rounded-lg text-[14px] font-medium text-white" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+              <button onClick={handleInstall} className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg border border-[var(--snippet-divider-strong)] bg-white/[0.14] text-[14px] font-medium text-[var(--text-primary)] hover:bg-white/[0.2] transition-colors">
                 Retry Download
               </button>
             </>
@@ -515,7 +529,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
               </p>
             </>
           ) : (
-            <button onClick={handleInstall} className="px-5 py-2.5 rounded-lg text-[14px] font-medium text-white" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+            <button onClick={handleInstall} className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg border border-[var(--snippet-divider-strong)] bg-white/[0.14] text-[14px] font-medium text-[var(--text-primary)] hover:bg-white/[0.2] transition-colors">
               Download & Install
             </button>
           )}
@@ -712,7 +726,7 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
         primaryAction={{
           label: 'Save',
           onClick: handleSaveNow,
-          shortcut: ['⌘', '↩'],
+          shortcut: ['⌘', 'S'],
         }}
         actionsButton={{
           label: 'Actions',

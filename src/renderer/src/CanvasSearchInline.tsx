@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   ArrowLeft, Plus, Pin, PinOff, X,
-  Files, Copy, Download, Trash2, Palette,
+  Files, Copy, Download, Trash2, Palette, Pencil,
 } from 'lucide-react';
 import type { Canvas } from '../types/electron';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
@@ -28,14 +28,22 @@ interface Action {
   section?: string;
 }
 
-function formatDate(ts: number): string {
-  const now = Date.now();
-  const diff = now - ts;
+function formatRelative(ts: number): string {
+  const diff = Date.now() - ts;
   if (diff < 60_000) return 'Just now';
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`;
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatAbsolute(ts: number): string {
+  const d = new Date(ts);
+  const today = new Date();
+  const isToday = d.toDateString() === today.toDateString();
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (isToday) return time;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' · ' + time;
 }
 
 interface CanvasSearchInlineProps {
@@ -49,9 +57,16 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
   const [showActions, setShowActions] = useState(false);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [renameCanvas, setRenameCanvas] = useState<Canvas | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const actionsOverlayRef = useRef<HTMLDivElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  const isGlassyTheme = document.documentElement.classList.contains('sc-glassy') || document.body.classList.contains('sc-glassy');
+  const isNativeLiquidGlass = document.documentElement.classList.contains('sc-native-liquid-glass') || document.body.classList.contains('sc-native-liquid-glass');
 
   // Load canvases
   const loadCanvases = useCallback(async () => {
@@ -95,6 +110,20 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
     setTimeout(() => searchInputRef.current?.focus(), 50);
   }, []);
 
+  useEffect(() => {
+    if (!showActions) return;
+    setSelectedActionIndex(0);
+    setTimeout(() => actionsOverlayRef.current?.focus(), 0);
+  }, [showActions]);
+
+  useEffect(() => {
+    if (!renameCanvas) return;
+    setTimeout(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }, 50);
+  }, [renameCanvas]);
+
   // Open canvas in editor
   const openCanvas = useCallback((canvas: Canvas) => {
     window.electron.openCanvasWindow('edit', JSON.stringify({ id: canvas.id }));
@@ -118,6 +147,13 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
           icon: <Palette className="w-3.5 h-3.5" />,
           shortcut: ['↩'],
           execute: () => openCanvas(selectedCanvas),
+          section: 'actions',
+        },
+        {
+          title: 'Rename',
+          icon: <Pencil className="w-3.5 h-3.5" />,
+          shortcut: ['⌘', 'R'],
+          execute: () => { setRenameValue(selectedCanvas.title); setRenameCanvas(selectedCanvas); },
           section: 'actions',
         },
         {
@@ -212,16 +248,18 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex((i) => Math.min(i + 1, filteredCanvases.length - 1));
         return;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex((i) => Math.max(0, i - 1));
         return;
       }
 
-      if (e.key === 'Enter' && selectedCanvas && !confirmDelete) {
+      if (e.key === 'Enter' && selectedCanvas && !confirmDelete && !renameCanvas) {
         e.preventDefault();
         openCanvas(selectedCanvas);
         return;
@@ -237,6 +275,13 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
       if (e.key === 'n' && e.metaKey) {
         e.preventDefault();
         window.electron.openCanvasWindow('create');
+        return;
+      }
+
+      if (e.key === 'r' && e.metaKey && selectedCanvas) {
+        e.preventDefault();
+        setRenameValue(selectedCanvas.title);
+        setRenameCanvas(selectedCanvas);
         return;
       }
 
@@ -261,7 +306,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
 
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [showActions, selectedActionIndex, actions, selectedCanvas, filteredCanvases.length, onClose, openCanvas, loadCanvases, confirmDelete]);
+  }, [showActions, selectedActionIndex, actions, selectedCanvas, filteredCanvases.length, onClose, openCanvas, loadCanvases, confirmDelete, renameCanvas]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -298,14 +343,26 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
   if (canvases.length === 0 && !searchQuery) {
     return (
       <div className="snippet-view flex flex-col h-full">
-        {/* Header */}
+        {/* Same header as normal view */}
         <div className="snippet-header flex h-16 items-center gap-2 px-4">
-          <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0">
+          <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0" tabIndex={-1}>
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <span className="text-[15px] text-white/60 flex-1 font-medium">Canvases</span>
+          <input
+            value=""
+            readOnly
+            placeholder="Search canvases..."
+            className="min-w-0 w-full bg-transparent border-none outline-none text-white/95 placeholder:text-[color:var(--text-subtle)] text-[15px] font-medium tracking-[0.005em]"
+          />
+          <button
+            onClick={() => window.electron.openCanvasWindow('create')}
+            className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"
+            title="Create Canvas"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
         </div>
-        {/* Empty state */}
+        {/* Empty body */}
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div className="mb-3 flex justify-center"><IconCodeEditor size="40px" style={canvasIconStyle} /></div>
@@ -394,8 +451,10 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
                     </span>
                     {canvas.pinned && <Pin className="w-3 h-3 text-amber-300/80 flex-shrink-0" />}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-white/30 pl-6">
-                    {formatDate(canvas.updatedAt)}
+                  <div className="mt-0.5 text-[11px] text-white/30 pl-6 flex items-center gap-1.5">
+                    <span>{formatRelative(canvas.updatedAt)}</span>
+                    <span className="text-white/15">·</span>
+                    <span>{formatAbsolute(canvas.updatedAt)}</span>
                   </div>
                 </div>
               ))}
@@ -417,7 +476,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
               </div>
               <div className="px-4 pb-3 flex-shrink-0">
                 <p className="text-[13px] font-medium text-white/75 truncate">{selectedCanvas.title}</p>
-                <p className="text-[11px] text-white/35 mt-0.5">Modified {formatDate(selectedCanvas.updatedAt)}</p>
+                <p className="text-[11px] text-white/35 mt-0.5">Modified {formatRelative(selectedCanvas.updatedAt)}</p>
               </div>
             </>
           ) : (
@@ -430,6 +489,57 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
           )}
         </div>
       </div>
+
+      {/* Rename dialog */}
+      {renameCanvas && (
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="rounded-xl p-5 w-72" style={{ background: 'var(--card-bg)', backdropFilter: 'blur(40px)', border: '1px solid var(--border-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+            <p className="text-[13px] font-medium text-white/90 mb-3">Rename Canvas</p>
+            <input
+              ref={renameInputRef}
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter' && renameValue.trim()) {
+                  e.preventDefault();
+                  window.electron.canvasUpdate(renameCanvas.id, { title: renameValue.trim() }).then(() => {
+                    loadCanvases();
+                    setRenameCanvas(null);
+                  });
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setRenameCanvas(null);
+                }
+              }}
+              className="w-full bg-transparent border border-[var(--border-primary)] rounded-md px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--text-muted)] mb-4"
+              placeholder="Canvas name..."
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setRenameCanvas(null)}
+                className="px-3 py-1.5 rounded-md text-[12px] border border-[var(--border-primary)] text-[var(--text-secondary)] hover:bg-[var(--overlay-item-hover-bg)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!renameValue.trim()) return;
+                  window.electron.canvasUpdate(renameCanvas.id, { title: renameValue.trim() }).then(() => {
+                    loadCanvases();
+                    setRenameCanvas(null);
+                  });
+                }}
+                className="px-3 py-1.5 rounded-md text-[12px] font-medium border border-[var(--border-primary)] bg-[var(--launcher-card-selected-bg)] text-[var(--text-primary)] hover:bg-[var(--overlay-item-hover-bg)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={!renameValue.trim()}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete confirmation */}
       {confirmDelete && selectedCanvas && (
@@ -462,32 +572,89 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
 
       {/* Actions overlay */}
       {showActions && (
-        <div className="absolute bottom-12 right-3 w-72 rounded-xl shadow-xl z-50 overflow-hidden"
-          style={{ background: 'var(--card-bg)', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)' }}
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setShowActions(false)}
+          style={{ background: 'var(--bg-scrim)' }}
         >
-          <div className="p-1.5">
-            {actions.map((action, i) => (
-              <button
-                key={i}
-                onClick={() => { action.execute(); setShowActions(false); }}
-                onMouseMove={() => setSelectedActionIndex(i)}
-                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[12px] transition-colors ${
-                  action.style === 'destructive'
-                    ? `text-red-400 ${i === selectedActionIndex ? 'bg-red-500/10' : 'hover:bg-red-500/10'}`
-                    : `text-white/70 ${i === selectedActionIndex ? 'bg-white/10' : 'hover:bg-white/5'}`
-                }`}
-              >
-                {action.icon}
-                <span className="flex-1 text-left">{action.title}</span>
-                {action.shortcut && (
-                  <span className="flex gap-0.5">
-                    {action.shortcut.map((k, j) => (
-                      <kbd key={j} className="px-1 py-0.5 text-[9px] bg-white/5 rounded text-white/40">{k}</kbd>
-                    ))}
-                  </span>
-                )}
-              </button>
-            ))}
+          <div
+            ref={actionsOverlayRef}
+            className="absolute bottom-12 right-3 w-80 max-h-[65vh] rounded-xl overflow-hidden flex flex-col shadow-2xl outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0 focus-visible:ring-0"
+            tabIndex={0}
+            style={
+              isNativeLiquidGlass
+                ? {
+                    background: 'rgba(var(--surface-base-rgb), 0.72)',
+                    backdropFilter: 'blur(44px) saturate(155%)',
+                    WebkitBackdropFilter: 'blur(44px) saturate(155%)',
+                    border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
+                    boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
+                  }
+                : isGlassyTheme
+                ? {
+                    background: 'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
+                    backdropFilter: 'blur(96px) saturate(190%)',
+                    WebkitBackdropFilter: 'blur(96px) saturate(190%)',
+                    border: '1px solid rgba(var(--on-surface-rgb), 0.05)',
+                  }
+                : {
+                    background: 'var(--card-bg)',
+                    backdropFilter: 'blur(40px)',
+                    WebkitBackdropFilter: 'blur(40px)',
+                    border: '1px solid var(--border-primary)',
+                  }
+            }
+            onFocus={(e) => { (e.currentTarget as HTMLDivElement).style.outline = 'none'; }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-1 overflow-y-auto py-1">
+              {actions.map((action, idx) => (
+                <div
+                  key={idx}
+                  className={`mx-1 px-2.5 py-1.5 rounded-lg border border-transparent flex items-center gap-2.5 cursor-pointer transition-colors ${
+                    idx === selectedActionIndex
+                      ? action.style === 'destructive'
+                        ? 'bg-[var(--action-menu-selected-bg)] text-[var(--status-danger-faded)]'
+                        : 'bg-[var(--action-menu-selected-bg)] text-[var(--text-primary)]'
+                      : ''
+                  } ${
+                    action.style === 'destructive'
+                      ? 'hover:bg-[var(--overlay-item-hover-bg)] text-[var(--status-danger-faded)]'
+                      : 'hover:bg-[var(--overlay-item-hover-bg)] text-[var(--text-secondary)]'
+                  }`}
+                  style={
+                    idx === selectedActionIndex
+                      ? {
+                          background: 'var(--action-menu-selected-bg)',
+                          borderColor: 'var(--action-menu-selected-border)',
+                          boxShadow: 'var(--action-menu-selected-shadow)',
+                        }
+                      : undefined
+                  }
+                  onMouseMove={() => setSelectedActionIndex(idx)}
+                  onClick={() => { action.execute(); setShowActions(false); }}
+                >
+                  {action.icon ? (
+                    <span className={action.style === 'destructive' ? 'text-[var(--status-danger-faded)]' : 'text-[var(--text-muted)]'}>
+                      {action.icon}
+                    </span>
+                  ) : null}
+                  <span className="flex-1 text-sm truncate">{action.title}</span>
+                  {action.shortcut ? (
+                    <span className="flex items-center gap-0.5">
+                      {action.shortcut.map((key, keyIdx) => (
+                        <kbd
+                          key={`${idx}-${key}-${keyIdx}`}
+                          className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] font-medium text-[var(--text-muted)]"
+                        >
+                          {key}
+                        </kbd>
+                      ))}
+                    </span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
