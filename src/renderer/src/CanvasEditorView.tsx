@@ -222,12 +222,12 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
       if (!nonDeletedElements.length) return;
       const svg: SVGSVGElement = await bundle.exportToSvg({
         elements: nonDeletedElements,
-        appState: { ...appState, exportWithDarkMode: true, exportBackground: true },
+        appState: { ...appState, exportWithDarkMode: theme === 'dark', exportBackground: true },
         files,
       });
       await window.electron.canvasSaveThumbnail(currentCanvasId, svg.outerHTML);
     } catch { /* thumbnail failure is non-critical */ }
-  }, [currentCanvasId]);
+  }, [currentCanvasId, theme]);
 
   const handleSaveNow = useCallback(async () => {
     if (!currentCanvasId || !excalidrawApiRef.current) return;
@@ -447,11 +447,24 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
         setSelectedActionIndex(0);
         return;
       }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        // Capture thumbnail before closing so it shows in search canvases
+        if (currentCanvasId && excalidrawApiRef.current) {
+          const elements = excalidrawApiRef.current.getSceneElements();
+          const { collaborators, ...appState } = excalidrawApiRef.current.getAppState();
+          const files = excalidrawApiRef.current.getFiles();
+          saveThumbnailAsync(elements, appState, files).finally(() => window.close());
+        } else {
+          window.close();
+        }
+        return;
+      }
     };
     // Use capture phase so we intercept before Excalidraw's own handlers
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [showActions, selectedActionIndex, actions, handleSaveNow, handleExportImage, handleCopyAsImage, handleNewCanvas]);
+  }, [showActions, selectedActionIndex, actions, handleSaveNow, handleExportImage, handleCopyAsImage, handleNewCanvas, currentCanvasId, saveThumbnailAsync]);
 
   // Load library items sent from main process (via "Add to Excalidraw" in library browser)
   useEffect(() => {
@@ -491,15 +504,23 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
     };
   }, []);
 
-  // Auto-save before the canvas window closes
+  // Save scene + thumbnail before the canvas window closes
   useEffect(() => {
     const cleanup = window.electron.onCanvasSaveBeforeClose(() => {
-      handleSaveNow().finally(() => {
+      const doClose = async () => {
+        if (!currentCanvasId || !excalidrawApiRef.current) return;
+        const elements = excalidrawApiRef.current.getSceneElements();
+        const { collaborators, ...appState } = excalidrawApiRef.current.getAppState();
+        const files = excalidrawApiRef.current.getFiles();
+        await window.electron.canvasSaveScene(currentCanvasId, { elements, appState, files });
+        await saveThumbnailAsync(elements, appState, files);
+      };
+      doClose().finally(() => {
         window.electron.canvasSaveComplete();
       });
     });
     return cleanup;
-  }, [handleSaveNow]);
+  }, [currentCanvasId, saveThumbnailAsync]);
 
   // Install screen
   if (isInstalled === false) {
