@@ -451,9 +451,9 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
                     </span>
                     {canvas.pinned && <Pin className="w-3 h-3 text-amber-300/80 flex-shrink-0" />}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-white/30 pl-6 flex items-center gap-1.5">
+                  <div className="mt-0.5 text-[11px] text-[var(--text-subtle)] pl-6 flex items-center gap-1.5">
                     <span>{formatRelative(canvas.updatedAt)}</span>
-                    <span className="text-white/15">·</span>
+                    <span className="text-[var(--text-muted)]">·</span>
                     <span>{formatAbsolute(canvas.updatedAt)}</span>
                   </div>
                 </div>
@@ -474,9 +474,16 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
                   style={{ display: 'block' }}
                 />
               </div>
-              <div className="px-4 pb-3 flex-shrink-0">
-                <p className="text-[13px] font-medium text-white/75 truncate">{selectedCanvas.title}</p>
-                <p className="text-[11px] text-white/35 mt-0.5">Modified {formatRelative(selectedCanvas.updatedAt)}</p>
+              <div className="px-5 pb-4 flex-shrink-0">
+                <p className="text-[13px] font-medium text-[var(--text-primary)] truncate mb-2">{selectedCanvas.title}</p>
+                <div className="pt-2.5 border-t border-[var(--ui-divider)]">
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="text-[var(--text-subtle)]">Modified</span>
+                    <span className="text-[var(--text-muted)] text-right truncate">
+                      {formatAbsolute(selectedCanvas.updatedAt)}
+                    </span>
+                  </div>
+                </div>
               </div>
             </>
           ) : (

@@ -6123,6 +6123,7 @@ app.on('open-url', (event: any, url: string) => {
   console.log('[open-url] event received:', url);
 
   // Handle note deeplinks: supercmd://notes/<note-id>
+  // Handle canvas deeplinks: supercmd://canvas/<canvas-id>
   try {
     const parsed = new URL(url);
     if (parsed.protocol === 'supercmd:' && parsed.hostname === 'notes') {
@@ -6134,6 +6135,14 @@ app.on('open-url', (event: any, url: string) => {
           openNotesWindow('search');
           return;
         }
+      }
+    }
+    if (parsed.protocol === 'supercmd:' && parsed.hostname === 'canvas') {
+      const canvasId = parsed.pathname.replace(/^\//, '');
+      if (canvasId) {
+        pendingCanvasJson = JSON.stringify({ id: canvasId });
+        openCanvasWindow('edit');
+        return;
       }
     }
   } catch {
