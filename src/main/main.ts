@@ -13159,6 +13159,7 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('canvas-save-scene', async (_event: any, id: string, scene: any) => {
     await saveScene(id, scene);
+    mainWindow?.webContents.send('canvas-list-updated');
   });
 
   ipcMain.handle('canvas-export', async (event: any, id: string, format: string) => {
@@ -13172,6 +13173,7 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('canvas-save-thumbnail', async (_event: any, id: string, svgString: string) => {
     await saveThumbnail(id, svgString);
+    mainWindow?.webContents.send('canvas-thumbnail-updated', id);
   });
 
   ipcMain.handle('canvas-get-thumbnail', (_event: any, id: string) => {

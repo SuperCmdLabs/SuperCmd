@@ -680,6 +680,16 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('canvas-save-before-close', listener);
     return () => { ipcRenderer.removeListener('canvas-save-before-close', listener); };
   },
+  onCanvasThumbnailUpdated: (callback: (id: string) => void) => {
+    const listener = (_event: any, id: string) => callback(id);
+    ipcRenderer.on('canvas-thumbnail-updated', listener);
+    return () => { ipcRenderer.removeListener('canvas-thumbnail-updated', listener); };
+  },
+  onCanvasListUpdated: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('canvas-list-updated', listener);
+    return () => { ipcRenderer.removeListener('canvas-list-updated', listener); };
+  },
   canvasSaveComplete: (): void => { ipcRenderer.send('canvas-save-complete'); },
 
   quickLinkGetAll: (): Promise<any[]> =>

@@ -89,6 +89,21 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
     if (canvases.length > 0) loadThumbnails();
   }, [canvases]);
 
+  // Refresh canvas list when a scene is saved (e.g. new canvas created, Escape pressed)
+  useEffect(() => {
+    const unsub = window.electron.onCanvasListUpdated(() => { loadCanvases(); });
+    return unsub;
+  }, [loadCanvases]);
+
+  // Refresh thumbnail when canvas editor saves one (e.g. on Escape)
+  useEffect(() => {
+    const unsub = window.electron.onCanvasThumbnailUpdated(async (id: string) => {
+      const thumb = await window.electron.canvasGetThumbnail(id);
+      if (thumb) setThumbnails((prev) => ({ ...prev, [id]: thumb }));
+    });
+    return unsub;
+  }, []);
+
   // Filter canvases
   const filteredCanvases = useMemo(() => {
     if (!searchQuery.trim()) return canvases;

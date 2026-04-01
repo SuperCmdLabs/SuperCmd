@@ -702,6 +702,8 @@ export interface ElectronAPI {
   saveCanvasLibrary: (items: any[]) => Promise<void>;
   loadCanvasLibrary: () => Promise<any[]>;
   onCanvasSaveBeforeClose: (callback: () => void) => (() => void);
+  onCanvasThumbnailUpdated: (callback: (id: string) => void) => (() => void);
+  onCanvasListUpdated: (callback: () => void) => (() => void);
   canvasSaveComplete: () => void;
 
   quickLinkGetAll: () => Promise<QuickLink[]>;

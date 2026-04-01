@@ -449,12 +449,15 @@ const CanvasEditorView: React.FC<CanvasEditorViewProps> = ({ mode, canvasId }) =
       }
       if (e.key === 'Escape') {
         e.preventDefault();
-        // Capture thumbnail before closing so it shows in search canvases
+        // Save scene + thumbnail before closing
         if (currentCanvasId && excalidrawApiRef.current) {
           const elements = excalidrawApiRef.current.getSceneElements();
           const { collaborators, ...appState } = excalidrawApiRef.current.getAppState();
           const files = excalidrawApiRef.current.getFiles();
-          saveThumbnailAsync(elements, appState, files).finally(() => window.close());
+          Promise.all([
+            window.electron.canvasSaveScene(currentCanvasId, { elements, appState, files }),
+            saveThumbnailAsync(elements, appState, files),
+          ]).finally(() => window.close());
         } else {
           window.close();
         }
