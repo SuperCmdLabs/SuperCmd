@@ -14,7 +14,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { fork, type ChildProcess } from 'child_process';
-import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
+import { getAvailableCommands, executeCommand, invalidateCache, getAvailableCommandsSync } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken } from './settings-store';
 import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
@@ -6123,6 +6123,7 @@ app.on('open-url', (event: any, url: string) => {
   console.log('[open-url] event received:', url);
 
   // Handle note deeplinks: supercmd://notes/<note-id>
+  // Handle canvas deeplinks: supercmd://canvas/<canvas-id>
   try {
     const parsed = new URL(url);
     if (parsed.protocol === 'supercmd:' && parsed.hostname === 'notes') {
@@ -6134,6 +6135,14 @@ app.on('open-url', (event: any, url: string) => {
           openNotesWindow('search');
           return;
         }
+      }
+    }
+    if (parsed.protocol === 'supercmd:' && parsed.hostname === 'canvas') {
+      const canvasId = parsed.pathname.replace(/^\//, '');
+      if (canvasId) {
+        pendingCanvasJson = JSON.stringify({ id: canvasId });
+        openCanvasWindow('edit');
+        return;
       }
     }
   } catch {
@@ -10453,8 +10462,20 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
   }
   registeredHotkeys.clear();
 
+  // Only register hotkeys for commands that actually exist, plus known system commands
+  // that aren't surfaced through getAvailableCommandsSync (window management, AI/speak, etc.)
+  const availableCommandIds = new Set(getAvailableCommandsSync().map((c) => c.id));
+
   for (const [commandId, shortcut] of Object.entries(hotkeys)) {
     if (!shortcut) continue;
+
+    if (
+      !availableCommandIds.has(commandId) &&
+      !isWindowManagementSystemCommand(commandId) &&
+      !isAIDependentSystemCommand(commandId)
+    ) {
+      continue;
+    }
 
     const normalizedShortcut = normalizeAccelerator(shortcut);
     if (commandId === 'system-supercmd-whisper-speak-toggle' && isFnOnlyShortcut(normalizedShortcut)) {
@@ -13138,6 +13159,7 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('canvas-save-scene', async (_event: any, id: string, scene: any) => {
     await saveScene(id, scene);
+    mainWindow?.webContents.send('canvas-list-updated');
   });
 
   ipcMain.handle('canvas-export', async (event: any, id: string, format: string) => {
@@ -13151,6 +13173,7 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('canvas-save-thumbnail', async (_event: any, id: string, svgString: string) => {
     await saveThumbnail(id, svgString);
+    mainWindow?.webContents.send('canvas-thumbnail-updated', id);
   });
 
   ipcMain.handle('canvas-get-thumbnail', (_event: any, id: string) => {
