@@ -17,9 +17,10 @@ import { fork, type ChildProcess } from 'child_process';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken } from './settings-store';
 import type { AppSettings } from './settings-store';
-import { streamAI, isAIAvailable, transcribeAudio, streamAIMultiTurn } from './ai-provider';
+import { streamAI, isAIAvailable, transcribeAudio, streamAIMultiTurn, resolveModelRoute } from './ai-provider';
 import { startOAuthLogin, chatgptLogout, getChatGPTLoginStatus, cancelOAuthLogin } from './chatgpt-auth';
 import { getChatGPTModelList, streamChatGPTDirect } from './chatgpt-upstream';
+import { startClaudeLogin, claudeLogout, getClaudeLoginStatus, cancelClaudeLogin, getClaudeModelList, submitClaudeLoginCode } from './claude-auth';
 import {
   initAiChatStore, getAllConversations, getConversation, createConversation,
   updateConversation, addMessageToConversation, deleteConversation,
@@ -13087,6 +13088,37 @@ if let tiff = image?.tiffRepresentation {
     return getChatGPTModelList();
   });
 
+  ipcMain.handle('claude-login', async (event: any) => {
+    try {
+      const tokens = await startClaudeLogin((status) => {
+        try { event.sender.send('claude-login-progress', status); } catch {}
+      });
+      return { success: true, source: tokens.source };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Claude login failed' };
+    }
+  });
+
+  ipcMain.handle('claude-logout', async () => {
+    return await claudeLogout();
+  });
+
+  ipcMain.handle('claude-cancel-login', () => {
+    cancelClaudeLogin();
+  });
+
+  ipcMain.handle('claude-submit-login-code', (_event: any, code: string) => {
+    return submitClaudeLoginCode(code);
+  });
+
+  ipcMain.handle('claude-login-status', async () => {
+    return await getClaudeLoginStatus();
+  });
+
+  ipcMain.handle('claude-models', () => {
+    return getClaudeModelList();
+  });
+
   // ─── IPC: AI Chat Window ─────────────────────────────────────────
 
   ipcMain.handle('open-ai-chat-window', (_event: any, conversationId?: string) => {
@@ -13097,10 +13129,12 @@ if let tiff = image?.tiffRepresentation {
   ipcMain.handle('ai-chat-get', (_event: any, id: string) => getConversation(id));
   ipcMain.handle('ai-chat-create', (_event: any, data: { firstMessage: string; model?: string; provider?: string; systemPrompt?: string }) => {
     const s = loadSettings();
+    const effectiveModel = data.model || s.ai?.defaultModel || '';
+    const resolvedRoute = resolveModelRoute(effectiveModel || undefined, s.ai);
     return createConversation({
       ...data,
-      model: data.model || s.ai?.defaultModel || '',
-      provider: data.provider || s.ai?.provider || '',
+      model: effectiveModel,
+      provider: data.provider || resolvedRoute.provider || s.ai?.provider || '',
     });
   });
   ipcMain.handle('ai-chat-update', (_event: any, id: string, patch: any) => updateConversation(id, patch));
@@ -13145,11 +13179,20 @@ if let tiff = image?.tiffRepresentation {
 
         // Use model override from chat window if provided, else conversation default
         const effectiveModel = modelOverride || updatedConvo.model || undefined;
+        const effectiveRoute = resolveModelRoute(effectiveModel, s.ai);
+        if (modelOverride) {
+          if (updatedConvo.model !== modelOverride || updatedConvo.provider !== effectiveRoute.provider) {
+            updateConversation(conversationId, {
+              model: modelOverride,
+              provider: effectiveRoute.provider,
+            });
+          }
+        }
         const msgArray = updatedConvo.messages.map((m) => ({ role: m.role, content: m.content, images: (m as any).images }));
 
         // For chatgpt-account: use direct callback streaming (no async generator)
         // to ensure tokens are sent to IPC the instant they arrive from the API
-        if (s.ai?.provider === 'chatgpt-account' || (effectiveModel && effectiveModel.startsWith('chatgpt-'))) {
+        if (effectiveRoute.provider === 'chatgpt-account') {
           const modelId = effectiveModel?.replace(/^chatgpt-/, '') || s.ai?.chatgptAccountModel || 'gpt-5';
           let fullResponse = '';
 

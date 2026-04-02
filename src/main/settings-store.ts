@@ -17,8 +17,15 @@ export interface ChatGPTAccountTokens {
   lastRefresh: string; // ISO timestamp
 }
 
+export interface ClaudeAccountTokens {
+  authToken: string;
+  baseUrl: string;
+  source: 'claude-code';
+  lastSync: string;
+}
+
 export interface AISettings {
-  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible' | 'chatgpt-account';
+  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible' | 'chatgpt-account' | 'claude-account';
   openaiApiKey: string;
   anthropicApiKey: string;
   geminiApiKey: string;
@@ -44,6 +51,8 @@ export interface AISettings {
   openaiCompatibleModel: string;
   chatgptAccountTokens?: ChatGPTAccountTokens;
   chatgptAccountModel: string;
+  claudeAccountTokens?: ClaudeAccountTokens;
+  claudeAccountModel: string;
 }
 
 export type HyperKeySourceKey =
@@ -141,6 +150,8 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   openaiCompatibleModel: '',
   chatgptAccountTokens: undefined,
   chatgptAccountModel: 'gpt-5',
+  claudeAccountTokens: undefined,
+  claudeAccountModel: 'claude-sonnet-4-5',
 };
 
 const DEFAULT_SETTINGS: AppSettings = {

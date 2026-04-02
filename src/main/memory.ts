@@ -455,16 +455,15 @@ export async function searchMemories(
 ): Promise<MemoryEntry[]> {
   const query = String(options?.query || '').trim();
   if (!query) return [];
+  const limit = clampTopK(options?.limit);
 
   const config = resolveSupermemoryConfig(settings, options?.userId);
   if (!config.clientId) return [];
   if (!config.localMode && !config.apiKey) {
     // No Supermemory — search local file
-    const limit = clampTopK(options?.limit);
     return searchLocalMemories(query, limit).map((m) => ({ id: m.id, text: m.text, raw: m }));
   }
 
-  const limit = clampTopK(options?.limit);
   // Supermemory memory search endpoint is /v4/search (low-latency memories),
   // with /v3/search as broader document-search fallback.
   const paths = ['/v4/search', '/v3/search', '/v2/memories/search', '/v1/memories/search', '/memories/search', '/search'];
@@ -508,7 +507,15 @@ export async function searchMemories(
     },
   ];
 
-  const response = await requestSupermemoryWithPathAndPayloadFallback(config, paths, payloads);
+  let response: any;
+  try {
+    response = await requestSupermemoryWithPathAndPayloadFallback(config, paths, payloads);
+  } catch (error) {
+    // Memory retrieval should never break chat. If the remote service is
+    // unavailable or the endpoint layout does not match, fall back locally.
+    console.warn('[Supermemory] search fallback:', error);
+    return searchLocalMemories(query, limit).map((m) => ({ id: m.id, text: m.text, raw: m }));
+  }
 
   const entries = pickArrayPayload(response);
   const output: MemoryEntry[] = [];

@@ -10,7 +10,12 @@ import {
   Plus, Search, Trash2, Pin, PinOff, Pencil, Sparkles, Send,
   MessageSquare, Check, X, ImagePlus, Square,
 } from 'lucide-react';
-import type { Conversation, ChatMessageData } from '../../types/electron';
+import type { AppSettings, Conversation, ChatMessageData } from '../../types/electron';
+import type { AiModelInfo, AiModelOption } from '../utils/ai-models';
+import {
+  getConfiguredChatModelOptions,
+  getConversationModelInfo,
+} from '../utils/ai-models';
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -24,6 +29,10 @@ function formatRelativeTime(timestamp: number): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
   return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function normalizeOllamaModelName(value: string): string {
+  return String(value || '').trim();
 }
 
 // ─── Component ───────────────────────────────────────────────────────
@@ -45,8 +54,11 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
   const [renameValue, setRenameValue] = useState('');
 
   const [chatModel, setChatModel] = useState('');
-  const [availableModels, setAvailableModels] = useState<Array<{ id: string; label: string }>>([]);
+  const [availableModels, setAvailableModels] = useState<AiModelOption[]>([]);
   const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [settingsSnapshot, setSettingsSnapshot] = useState<AppSettings | null>(null);
+  const [selectedModelInfo, setSelectedModelInfo] = useState<AiModelInfo | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
 
   const requestIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -63,45 +75,65 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
 
   useEffect(() => { refreshList(); }, [refreshList]);
 
-  // Load available models based on current settings
   useEffect(() => {
-    window.electron.getSettings().then((s) => {
-      const ai = s.ai;
-      const models: Array<{ id: string; label: string }> = [];
-      const allModels: Record<string, Array<{ id: string; label: string }>> = {
-        'chatgpt-account': [
-          { id: 'chatgpt-gpt-5', label: 'GPT-5' },
-          { id: 'chatgpt-gpt-5.4', label: 'GPT-5.4' },
-          { id: 'chatgpt-gpt-5.2', label: 'GPT-5.2' },
-          { id: 'chatgpt-gpt-5.1', label: 'GPT-5.1' },
-          { id: 'chatgpt-gpt-5-codex', label: 'GPT-5 Codex' },
-          { id: 'chatgpt-codex-mini', label: 'Codex Mini' },
-          { id: 'chatgpt-gpt-4o', label: 'GPT-4o' },
-        ],
-        openai: [
-          { id: 'openai-gpt-4o', label: 'GPT-4o' },
-          { id: 'openai-gpt-4o-mini', label: 'GPT-4o Mini' },
-          { id: 'openai-o3-mini', label: 'o3-mini' },
-        ],
-        anthropic: [
-          { id: 'anthropic-claude-opus', label: 'Claude Opus' },
-          { id: 'anthropic-claude-sonnet', label: 'Claude Sonnet' },
-          { id: 'anthropic-claude-haiku', label: 'Claude Haiku' },
-        ],
-        gemini: [
-          { id: 'gemini-gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-          { id: 'gemini-gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-        ],
-      };
-      if (allModels[ai.provider]) {
-        models.push(...allModels[ai.provider]);
-      }
-      setAvailableModels(models);
-      // Set default chat model — prefer settings default, then first available
-      const defaultModel = ai.defaultModel || (models[0]?.id ?? '');
-      setChatModel(defaultModel);
-    });
+    window.electron.getSettings().then(setSettingsSnapshot).catch(() => setSettingsSnapshot(null));
+    const cleanup = window.electron.onSettingsUpdated?.((next) => setSettingsSnapshot(next));
+    return cleanup;
   }, []);
+
+  useEffect(() => {
+    if (!settingsSnapshot) {
+      setOllamaModels([]);
+      return;
+    }
+
+    const needsOllamaModels =
+      settingsSnapshot.ai.provider === 'ollama' ||
+      String(activeConvo?.model || '').startsWith('ollama-') ||
+      chatModel.startsWith('ollama-');
+
+    if (!needsOllamaModels) {
+      setOllamaModels([]);
+      return;
+    }
+
+    window.electron.ollamaStatus().then((result) => {
+      if (!result.running) {
+        setOllamaModels([]);
+        return;
+      }
+      const nextModels = Array.from(new Set(
+        (result.models || [])
+          .map((item: any) => normalizeOllamaModelName(item?.name))
+          .filter(Boolean)
+      ));
+      setOllamaModels(nextModels);
+    }).catch(() => setOllamaModels([]));
+  }, [settingsSnapshot, activeConvo?.model, chatModel]);
+
+  useEffect(() => {
+    if (!settingsSnapshot) {
+      setAvailableModels([]);
+      setSelectedModelInfo(null);
+      return;
+    }
+
+    const models = getConfiguredChatModelOptions(settingsSnapshot.ai, {
+      currentModelKey: activeConvo?.model || chatModel,
+      ollamaModels,
+    });
+    setAvailableModels(models);
+
+    const resolved = activeConvo
+      ? getConversationModelInfo(activeConvo, settingsSnapshot.ai)
+      : getConversationModelInfo(null, settingsSnapshot.ai);
+    const nextModel = activeConvo?.model || chatModel || resolved.modelKey || models[0]?.id || '';
+    setChatModel(nextModel);
+    setSelectedModelInfo(getConversationModelInfo(
+      { model: nextModel, provider: activeConvo?.provider || resolved.providerId } as Pick<Conversation, 'model' | 'provider'>,
+      settingsSnapshot.ai
+    ));
+  }, [settingsSnapshot, activeConvo, ollamaModels]);
 
   useEffect(() => {
     if (!activeId) { setActiveConvo(null); return; }
@@ -174,6 +206,11 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
     setInputValue('');
     setStreamingText('');
     setPendingImages([]);
+    if (settingsSnapshot) {
+      const fallbackInfo = getConversationModelInfo(null, settingsSnapshot.ai);
+      setChatModel(fallbackInfo.modelKey);
+      setSelectedModelInfo(fallbackInfo);
+    }
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
@@ -196,10 +233,34 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
     input.click();
   };
 
+  const handleModelChange = async (nextModel: string) => {
+    setChatModel(nextModel);
+    if (!settingsSnapshot) return;
+
+    const nextInfo = getConversationModelInfo(
+      { model: nextModel, provider: activeConvo?.provider || settingsSnapshot.ai.provider } as Pick<Conversation, 'model' | 'provider'>,
+      settingsSnapshot.ai
+    );
+    setSelectedModelInfo(nextInfo);
+
+    if (!activeId) return;
+    await window.electron.aiChatUpdate(activeId, {
+      model: nextInfo.modelKey,
+      provider: nextInfo.providerId,
+    });
+    setActiveConvo((prev) => prev ? {
+      ...prev,
+      model: nextInfo.modelKey,
+      provider: nextInfo.providerId,
+    } : prev);
+    refreshList();
+  };
+
   const handleSend = async () => {
     const msg = inputValue.trim();
     if ((!msg && pendingImages.length === 0) || streaming) return;
     const images = pendingImages.length > 0 ? [...pendingImages] : undefined;
+    const modelInfo = selectedModelInfo;
     setInputValue('');
     setPendingImages([]);
     setStreamingText('');
@@ -210,7 +271,11 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
 
     let convId = activeId;
     if (!convId) {
-      const convo = await window.electron.aiChatCreate({ firstMessage: msg || 'Image' });
+      const convo = await window.electron.aiChatCreate({
+        firstMessage: msg || 'Image',
+        model: modelInfo?.modelKey || chatModel || undefined,
+        provider: modelInfo?.providerId || undefined,
+      });
       convId = convo.id;
       setActiveId(convo.id);
       setActiveConvo(convo);
@@ -224,7 +289,7 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
 
     const rid = `chat-${Date.now()}`;
     requestIdRef.current = rid;
-    window.electron.aiChatSend(rid, convId, msg || 'Describe this image.', chatModel || undefined, images);
+    window.electron.aiChatSend(rid, convId, msg || 'Describe this image.', modelInfo?.modelKey || chatModel || undefined, images);
   };
 
   const handleCancel = () => {
@@ -328,12 +393,12 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
       <div className="flex items-center justify-between px-3 pb-2 pt-0">
         <select
           value={chatModel}
-          onChange={(e) => setChatModel(e.target.value)}
+          onChange={(e) => { void handleModelChange(e.target.value); }}
           className="bg-transparent border-none outline-none text-[0.625rem] text-[var(--text-subtle)] cursor-pointer hover:text-[var(--text-muted)] transition-colors"
         >
           {availableModels.length > 0 ? (
             availableModels.map((m) => (
-              <option key={m.id} value={m.id}>{m.label}</option>
+              <option key={m.id} value={m.id}>{`${m.providerLabel} · ${m.label}`}</option>
             ))
           ) : (
             <option value="">Default</option>
@@ -468,10 +533,18 @@ const AiChatManager: React.FC<AiChatManagerProps> = ({ initialConversationId }) 
         {activeConvo ? (
           <>
             {/* Title bar + convo title */}
-            <div className="h-[52px] flex-shrink-0 flex items-center justify-center px-5 border-b border-[var(--ui-divider)] drag-region">
-              <span className="text-[0.8125rem] font-medium text-[var(--text-secondary)] truncate">
+            <div className="h-[52px] flex-shrink-0 flex items-center justify-between px-5 border-b border-[var(--ui-divider)] drag-region">
+              <div className="w-[160px]" />
+              <span className="text-[0.8125rem] font-medium text-[var(--text-secondary)] truncate text-center">
                 {activeConvo.title}
               </span>
+              <div className="w-[160px] flex justify-end">
+                {selectedModelInfo && (
+                  <div className="rounded-full border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-2.5 py-1 text-[0.625rem] text-[var(--text-subtle)]">
+                    {selectedModelInfo.modelLabel} · {selectedModelInfo.providerLabel}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Messages */}

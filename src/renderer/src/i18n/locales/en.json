@@ -311,7 +311,9 @@
         },
         "defaultModel": {
           "label": "Default Model",
-          "auto": "Auto (provider default)"
+          "auto": "Auto (provider default)",
+          "help": "A chosen default model overrides the provider picker. If left on Auto, SuperCmd uses the selected provider's default model.",
+          "loginNote": "Signing in to ChatGPT or Claude only authorizes that provider. It does not switch your default model automatically."
         }
       },
       "whisper": {
