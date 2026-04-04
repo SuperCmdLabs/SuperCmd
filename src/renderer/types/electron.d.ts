@@ -183,8 +183,15 @@ export interface ChatGPTAccountTokens {
   lastRefresh: string;
 }
 
+export interface ClaudeAccountTokens {
+  authToken: string;
+  baseUrl: string;
+  source: 'claude-code';
+  lastSync: string;
+}
+
 export interface AISettings {
-  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible' | 'chatgpt-account';
+  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible' | 'chatgpt-account' | 'claude-account';
   openaiApiKey: string;
   anthropicApiKey: string;
   geminiApiKey: string;
@@ -210,6 +217,8 @@ export interface AISettings {
   openaiCompatibleModel: string;
   chatgptAccountTokens?: ChatGPTAccountTokens;
   chatgptAccountModel: string;
+  claudeAccountTokens?: ClaudeAccountTokens;
+  claudeAccountModel: string;
 }
 
 export interface EdgeTtsVoice {
@@ -750,6 +759,13 @@ export interface ElectronAPI {
   chatgptLoginStatus: () => Promise<{ loggedIn: boolean; accountId?: string }>;
   chatgptModels: () => Promise<Array<{ id: string; label: string }>>;
   onChatGPTLoginProgress: (callback: (status: string) => void) => () => void;
+  claudeLogin: () => Promise<{ success: boolean; source?: string; error?: string }>;
+  claudeLogout: () => Promise<{ success: boolean; error?: string }>;
+  claudeCancelLogin: () => Promise<void>;
+  claudeSubmitLoginCode: (code: string) => Promise<{ success: boolean; error?: string }>;
+  claudeLoginStatus: () => Promise<{ loggedIn: boolean; source?: string }>;
+  claudeModels: () => Promise<Array<{ id: string; label: string }>>;
+  onClaudeLoginProgress: (callback: (status: string) => void) => () => void;
 
   // AI Chat Window
   openAiChatWindow: (conversationId?: string) => Promise<void>;

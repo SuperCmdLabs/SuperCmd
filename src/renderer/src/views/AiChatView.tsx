@@ -13,6 +13,7 @@
 
 import React from 'react';
 import { X, Sparkles } from 'lucide-react';
+import type { AiModelInfo } from '../utils/ai-models';
 
 interface AiChatViewProps {
   alwaysMountedRunners: React.ReactNode;
@@ -20,6 +21,7 @@ interface AiChatViewProps {
   setAiQuery: (query: string) => void;
   aiResponse: string;
   aiStreaming: boolean;
+  aiModelInfo: AiModelInfo | null;
   aiInputRef: React.RefObject<HTMLInputElement>;
   aiResponseRef: React.RefObject<HTMLDivElement>;
   submitAiQuery: (query: string) => void;
@@ -32,6 +34,7 @@ const AiChatView: React.FC<AiChatViewProps> = ({
   setAiQuery,
   aiResponse,
   aiStreaming,
+  aiModelInfo,
   aiInputRef,
   aiResponseRef,
   submitAiQuery,
@@ -40,13 +43,17 @@ const AiChatView: React.FC<AiChatViewProps> = ({
   const continueInChat = React.useCallback(async () => {
     if (aiStreaming || !aiResponse) return;
     // Fire-and-forget: create convo, add response, open window — don't block UI
-    window.electron.aiChatCreate({ firstMessage: aiQuery }).then((convo) => {
+    window.electron.aiChatCreate({
+      firstMessage: aiQuery,
+      model: aiModelInfo?.modelKey,
+      provider: aiModelInfo?.providerId,
+    }).then((convo) => {
       window.electron.aiChatAddMessage(convo.id, { role: 'assistant', content: aiResponse });
       window.electron.openAiChatWindow(convo.id);
     });
     window.electron.hideWindow();
     exitAiMode();
-  }, [aiStreaming, aiResponse, aiQuery, exitAiMode]);
+  }, [aiStreaming, aiResponse, aiQuery, aiModelInfo, exitAiMode]);
 
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -85,6 +92,14 @@ const AiChatView: React.FC<AiChatViewProps> = ({
               className="flex-1 bg-transparent border-none outline-none text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] text-[15px] font-light tracking-wide min-w-0"
               autoFocus
             />
+            {aiModelInfo && (
+              <div className="flex items-center gap-1.5 flex-shrink-0 rounded-full border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2 py-1">
+                <span className="text-[10px] text-[var(--text-subtle)] uppercase tracking-[0.12em]">Current</span>
+                <span className="text-[11px] text-[var(--text-secondary)] whitespace-nowrap">
+                  {aiModelInfo.modelLabel} · {aiModelInfo.providerLabel}
+                </span>
+              </div>
+            )}
             {aiQuery.trim() && (
               <button
                 onClick={() => submitAiQuery(aiQuery)}
@@ -126,7 +141,13 @@ const AiChatView: React.FC<AiChatViewProps> = ({
           {/* Footer */}
           <div className="sc-glass-footer px-4 py-2.5 flex items-center">
             <div className="flex items-center gap-2 text-[var(--text-subtle)] text-xs flex-1 min-w-0 font-normal">
-              <span className="truncate">{aiStreaming ? 'Streaming...' : 'AI Response'}</span>
+              <span className="truncate">
+                {aiStreaming
+                  ? 'Streaming...'
+                  : aiModelInfo
+                    ? `AI Response · ${aiModelInfo.modelLabel}`
+                    : 'AI Response'}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               {!aiStreaming && aiResponse && (

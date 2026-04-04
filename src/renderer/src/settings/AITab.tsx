@@ -41,6 +41,7 @@ import {
 
 const getProviderOptions = (t: (key: string) => string) => [
   { id: 'chatgpt-account' as const, label: 'ChatGPT Account', description: 'Sign in with your ChatGPT Plus/Pro account' },
+  { id: 'claude-account' as const, label: 'Claude Account', description: 'Sign in with your Claude Code account' },
   { id: 'openai' as const, label: t('settings.ai.llm.provider.openai'), description: t('settings.ai.llm.providerDescriptions.openai') },
   { id: 'anthropic' as const, label: t('settings.ai.llm.provider.anthropic'), description: t('settings.ai.llm.providerDescriptions.anthropic') },
   { id: 'gemini' as const, label: t('settings.ai.llm.provider.gemini'), description: t('settings.ai.llm.providerDescriptions.gemini') },
@@ -68,6 +69,11 @@ const MODELS_BY_PROVIDER: Record<string, { id: string; label: string }[]> = {
     { id: 'chatgpt-gpt-5-codex', label: 'GPT-5 Codex' },
     { id: 'chatgpt-codex-mini', label: 'Codex Mini' },
     { id: 'chatgpt-gpt-4o', label: 'GPT-4o' },
+  ],
+  'claude-account': [
+    { id: 'claude-account-sonnet', label: 'Claude Sonnet' },
+    { id: 'claude-account-opus', label: 'Claude Opus' },
+    { id: 'claude-account-haiku', label: 'Claude Haiku' },
   ],
   openai: [
     { id: 'openai-gpt-4o', label: 'GPT-4o' },
@@ -281,6 +287,13 @@ const AITab: React.FC = () => {
   const [chatgptLoggingIn, setChatgptLoggingIn] = useState(false);
   const [chatgptLoginProgress, setChatgptLoginProgress] = useState('');
   const [chatgptLoginError, setChatgptLoginError] = useState('');
+  const [claudeLoggedIn, setClaudeLoggedIn] = useState(false);
+  const [claudeLoggingIn, setClaudeLoggingIn] = useState(false);
+  const [claudeLoginProgress, setClaudeLoginProgress] = useState('');
+  const [claudeLoginError, setClaudeLoginError] = useState('');
+  const [claudeNeedsCode, setClaudeNeedsCode] = useState(false);
+  const [claudeAuthCode, setClaudeAuthCode] = useState('');
+  const claudeCodeInputRef = useRef<HTMLInputElement>(null);
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
   const selectingOllamaDefaultRef = useRef(false);
@@ -290,6 +303,9 @@ const AITab: React.FC = () => {
     window.electron.chatgptLoginStatus().then((status) => {
       setChatgptLoggedIn(status.loggedIn);
       setChatgptAccountId(status.accountId || '');
+    });
+    window.electron.claudeLoginStatus().then((status) => {
+      setClaudeLoggedIn(status.loggedIn);
     });
   }, []);
 
@@ -424,6 +440,99 @@ const AITab: React.FC = () => {
     setChatgptLoggedIn(false);
     setChatgptAccountId('');
     setChatgptLoginError('');
+  };
+
+  const handleClaudeLogin = async () => {
+    setClaudeLoggedIn(false);
+    setClaudeLoggingIn(true);
+    setClaudeLoginError('');
+    setClaudeLoginProgress('');
+    setClaudeNeedsCode(false);
+    setClaudeAuthCode('');
+
+    const unsub = window.electron.onClaudeLoginProgress((status) => {
+      setClaudeLoginProgress(status);
+      if (/authentication code/i.test(status)) {
+        setClaudeNeedsCode(true);
+      } else if (/connected/i.test(status)) {
+        setClaudeNeedsCode(false);
+      }
+    });
+
+    try {
+      const result = await window.electron.claudeLogin();
+      if (result.success) {
+        setClaudeLoggedIn(true);
+        setClaudeLoginProgress('');
+        const freshSettings = await window.electron.getSettings();
+        setSettings(freshSettings);
+        const freshAI = freshSettings.ai;
+        const newAI = { ...freshAI, provider: 'claude-account' as const, defaultModel: 'claude-account-sonnet' };
+        const updated = await window.electron.saveSettings({ ai: newAI } as any);
+        setSettings(updated);
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 1600);
+      } else {
+        const status = await window.electron.claudeLoginStatus().catch(() => ({ loggedIn: false }));
+        setClaudeLoggedIn(status.loggedIn);
+        setClaudeLoginError(result.error || 'Claude login failed');
+      }
+    } catch (e: any) {
+      const status = await window.electron.claudeLoginStatus().catch(() => ({ loggedIn: false }));
+      setClaudeLoggedIn(status.loggedIn);
+      setClaudeLoginError(e?.message || 'Claude login failed');
+    } finally {
+      setClaudeLoggingIn(false);
+      setClaudeNeedsCode(false);
+      setClaudeAuthCode('');
+      unsub();
+    }
+  };
+
+  useEffect(() => {
+    if (claudeNeedsCode) {
+      setTimeout(() => claudeCodeInputRef.current?.focus(), 50);
+    }
+  }, [claudeNeedsCode]);
+
+  const handleClaudeCodeSubmit = async () => {
+    const code = claudeAuthCode.trim();
+    if (!code) {
+      setClaudeLoginError('Paste the authentication code from the browser.');
+      return;
+    }
+
+    setClaudeLoginError('');
+    setClaudeLoginProgress('Verifying authentication code...');
+
+    const result = await window.electron.claudeSubmitLoginCode(code);
+    if (!result.success) {
+      setClaudeLoginError(result.error || 'Failed to submit authentication code.');
+      return;
+    }
+
+    setClaudeAuthCode('');
+    setClaudeNeedsCode(false);
+  };
+
+  const handleClaudeLogout = async () => {
+    setClaudeLoggingIn(false);
+    setClaudeLoginProgress('');
+    setClaudeLoginError('');
+    setClaudeNeedsCode(false);
+    setClaudeAuthCode('');
+
+    const result = await window.electron.claudeLogout();
+    const status = await window.electron.claudeLoginStatus().catch(() => ({ loggedIn: false }));
+    setClaudeLoggedIn(status.loggedIn);
+
+    const freshSettings = await window.electron.getSettings();
+    setSettings(freshSettings);
+
+    if (!result.success) {
+      setClaudeLoginError(result.error || 'Claude logout failed');
+      return;
+    }
   };
 
   const refreshWhisperCppModelStatus = useCallback(async () => {
@@ -837,6 +946,55 @@ const AITab: React.FC = () => {
 
   return (
     <div className="w-full max-w-[980px] mx-auto">
+      {/* Claude auth code modal */}
+      {claudeNeedsCode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-[400px] rounded-xl border border-[var(--ui-divider)] bg-[var(--settings-panel-bg)] shadow-2xl p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <RefreshCw className="w-4 h-4 text-[var(--text-muted)]" />
+              <span className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Complete Claude Authentication</span>
+            </div>
+            <p className="text-[0.75rem] text-[var(--text-muted)] mb-3">
+              Copy the authentication code from the browser window and paste it below.
+            </p>
+            {claudeLoginError && (
+              <div className="flex items-start gap-1.5 text-[0.6875rem] text-red-400 mb-2">
+                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span>{claudeLoginError}</span>
+              </div>
+            )}
+            <input
+              ref={claudeCodeInputRef}
+              type="text"
+              value={claudeAuthCode}
+              onChange={(e) => setClaudeAuthCode(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); void handleClaudeCodeSubmit(); }
+                if (e.key === 'Escape') { void window.electron.claudeCancelLogin(); }
+              }}
+              placeholder="Paste authentication code..."
+              className="w-full rounded-md border border-[var(--ui-divider)] bg-[var(--input-bg)] px-3 py-2 text-[0.75rem] text-[var(--text-primary)] outline-none focus:border-[var(--ui-segment-active-bg)] mb-3"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => void window.electron.claudeCancelLogin()}
+                className="rounded-md border border-[var(--ui-divider)] bg-transparent px-3 py-1.5 text-[0.75rem] text-[var(--text-muted)] transition-colors hover:bg-[var(--ui-segment-hover-bg)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleClaudeCodeSubmit()}
+                className="rounded-md bg-blue-500 px-3 py-1.5 text-[0.75rem] font-medium text-white transition-colors hover:bg-blue-600"
+              >
+                Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
       <AIRow
         icon={<Brain className="w-4 h-4" />}
@@ -1063,6 +1221,19 @@ const AITab: React.FC = () => {
                             }
                             return;
                           }
+                          if (p.id === 'claude-account') {
+                            if (claudeLoggingIn) {
+                              window.electron.claudeCancelLogin();
+                              setClaudeLoggingIn(false);
+                              setClaudeLoginProgress('');
+                              setClaudeLoginError('');
+                              setClaudeNeedsCode(false);
+                              setClaudeAuthCode('');
+                              return;
+                            }
+                            updateAI({ provider: p.id, defaultModel: 'claude-account-sonnet' });
+                            return;
+                          }
                           updateAI({ provider: p.id, defaultModel: '' });
                         }}
                         className={`rounded-md border px-2 py-2 text-left transition-colors ${
@@ -1075,7 +1246,13 @@ const AITab: React.FC = () => {
                           {p.id === 'chatgpt-account' && chatgptLoggedIn && (
                             <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
                           )}
+                          {p.id === 'claude-account' && claudeLoggedIn && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
+                          )}
                           {p.id === 'chatgpt-account' && chatgptLoggingIn && (
+                            <RefreshCw className="w-3 h-3 animate-spin flex-shrink-0" />
+                          )}
+                          {p.id === 'claude-account' && claudeLoggingIn && (
                             <RefreshCw className="w-3 h-3 animate-spin flex-shrink-0" />
                           )}
                           <span className="flex-1">{p.label}</span>
@@ -1087,12 +1264,35 @@ const AITab: React.FC = () => {
                               Sign Out
                             </span>
                           )}
+                          {p.id === 'claude-account' && claudeLoggedIn && ai.provider === 'claude-account' && (
+                            <span
+                              onClick={(e) => { e.stopPropagation(); handleClaudeLogout(); }}
+                              className="text-[0.5625rem] text-red-400/70 hover:text-red-400 font-normal transition-colors"
+                            >
+                              Sign Out
+                            </span>
+                          )}
+                          {p.id === 'claude-account' && !claudeLoggedIn && !claudeLoggingIn && ai.provider === 'claude-account' && (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleClaudeLogin();
+                              }}
+                              className="text-[0.5625rem] text-blue-400/80 hover:text-blue-300 font-normal transition-colors"
+                            >
+                              Sign In
+                            </span>
+                          )}
                         </div>
                         <div className="text-[0.625rem] text-[var(--text-subtle)] mt-0.5 leading-tight">
                           {p.id === 'chatgpt-account' && chatgptLoggingIn
                             ? (chatgptLoginProgress || 'Signing in... click to cancel')
+                            : p.id === 'claude-account' && claudeLoggingIn
+                              ? (claudeLoginProgress || 'Signing in... click to cancel')
                             : p.id === 'chatgpt-account' && chatgptLoggedIn
                               ? 'Connected'
+                              : p.id === 'claude-account' && claudeLoggedIn
+                                ? 'Connected'
                               : p.description}
                         </div>
                       </button>
@@ -1106,6 +1306,14 @@ const AITab: React.FC = () => {
                     <span>{chatgptLoginError}</span>
                   </div>
                 )}
+
+                {ai.provider === 'claude-account' && claudeLoginError && (
+                  <div className="flex items-start gap-1.5 text-[0.6875rem] text-red-400 px-1">
+                    <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>{claudeLoginError}</span>
+                  </div>
+                )}
+
 
                 {ai.provider === 'ollama' && (
                   <div>
@@ -1187,6 +1395,12 @@ const AITab: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                  <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1 leading-snug">
+                    {t('settings.ai.llm.defaultModel.help')}
+                  </p>
+                  <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1 leading-snug">
+                    {t('settings.ai.llm.defaultModel.loginNote')}
+                  </p>
                 </div>
 
               {ai.provider === 'ollama' && (

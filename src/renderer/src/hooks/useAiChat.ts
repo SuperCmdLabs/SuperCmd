@@ -15,6 +15,8 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import type { AiModelInfo } from '../utils/ai-models';
+import { getEffectiveLauncherModel } from '../utils/ai-models';
 
 // ─── Interfaces ──────────────────────────────────────────────────────
 
@@ -28,6 +30,7 @@ export interface UseAiChatReturn {
   aiStreaming: boolean;
   aiAvailable: boolean;
   aiQuery: string;
+  aiModelInfo: AiModelInfo | null;
   setAiQuery: (value: string) => void;
   aiResponseRef: React.RefObject<HTMLDivElement>;
   aiInputRef: React.RefObject<HTMLInputElement>;
@@ -44,6 +47,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiAvailable, setAiAvailable] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
+  const [aiModelInfo, setAiModelInfo] = useState<AiModelInfo | null>(null);
 
   const aiRequestIdRef = useRef<string | null>(null);
   const aiStreamingRef = useRef(false);
@@ -123,6 +127,9 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
       setAiResponse('');
       setAiStreaming(true);
       setAiMode(true);
+      window.electron.getSettings()
+        .then((settings) => setAiModelInfo(getEffectiveLauncherModel(settings.ai)))
+        .catch(() => setAiModelInfo(null));
       window.electron.aiAsk(requestId, searchQuery);
     },
     [aiAvailable, setAiMode],
@@ -141,6 +148,9 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
       setAiQuery(query);
       setAiResponse('');
       setAiStreaming(true);
+      window.electron.getSettings()
+        .then((settings) => setAiModelInfo(getEffectiveLauncherModel(settings.ai)))
+        .catch(() => setAiModelInfo(null));
       window.electron.aiAsk(requestId, query);
     },
     [],
@@ -156,6 +166,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     setAiResponse('');
     setAiStreaming(false);
     setAiQuery('');
+    setAiModelInfo(null);
     onExitAiMode?.();
   }, [setAiMode, onExitAiMode]);
 
@@ -164,6 +175,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     aiStreaming,
     aiAvailable,
     aiQuery,
+    aiModelInfo,
     setAiQuery,
     aiResponseRef,
     aiInputRef,

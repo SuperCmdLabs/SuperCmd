@@ -423,7 +423,7 @@ const App: React.FC = () => {
 
   const {
     aiResponse, aiStreaming, aiAvailable, aiQuery, setAiQuery,
-    aiResponseRef, aiInputRef, setAiAvailable,
+    aiModelInfo, aiResponseRef, aiInputRef, setAiAvailable,
     startAiChat, submitAiQuery, exitAiMode,
   } = useAiChat({
     setAiMode,
@@ -3205,6 +3205,7 @@ const App: React.FC = () => {
         setAiQuery={setAiQuery}
         aiResponse={aiResponse}
         aiStreaming={aiStreaming}
+        aiModelInfo={aiModelInfo}
         aiInputRef={aiInputRef as React.RefObject<HTMLInputElement>}
         aiResponseRef={aiResponseRef as React.RefObject<HTMLDivElement>}
         submitAiQuery={submitAiQuery}

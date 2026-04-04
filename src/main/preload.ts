@@ -765,6 +765,23 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('chatgpt-login-progress', listener);
     return () => { ipcRenderer.removeListener('chatgpt-login-progress', listener); };
   },
+  claudeLogin: (): Promise<{ success: boolean; source?: string; error?: string }> =>
+    ipcRenderer.invoke('claude-login'),
+  claudeLogout: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('claude-logout'),
+  claudeCancelLogin: (): Promise<void> =>
+    ipcRenderer.invoke('claude-cancel-login'),
+  claudeSubmitLoginCode: (code: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('claude-submit-login-code', code),
+  claudeLoginStatus: (): Promise<{ loggedIn: boolean; source?: string }> =>
+    ipcRenderer.invoke('claude-login-status'),
+  claudeModels: (): Promise<Array<{ id: string; label: string }>> =>
+    ipcRenderer.invoke('claude-models'),
+  onClaudeLoginProgress: (callback: (status: string) => void) => {
+    const listener = (_event: any, status: string) => callback(status);
+    ipcRenderer.on('claude-login-progress', listener);
+    return () => { ipcRenderer.removeListener('claude-login-progress', listener); };
+  },
 
   // ─── AI Chat Window ────────────────────────────────────────────
   openAiChatWindow: (conversationId?: string): Promise<void> =>

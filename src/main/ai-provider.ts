@@ -9,6 +9,8 @@ import * as http from 'http';
 import type { AISettings } from './settings-store';
 import { streamChatGPTAccount, streamChatGPTAccountMultiTurn } from './chatgpt-upstream';
 import { isChatGPTLoggedIn } from './chatgpt-auth';
+import { streamClaudeAccount, streamClaudeAccountMultiTurn } from './claude-upstream';
+import { isClaudeLoggedIn } from './claude-auth';
 
 export interface AIRequestOptions {
   prompt: string;
@@ -21,7 +23,7 @@ export interface AIRequestOptions {
 // ─── Model routing ────────────────────────────────────────────────────
 
 interface ModelRoute {
-  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible' | 'chatgpt-account';
+  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible' | 'chatgpt-account' | 'claude-account';
   modelId: string;
 }
 
@@ -54,18 +56,23 @@ const MODEL_ROUTES: Record<string, ModelRoute> = {
   'chatgpt-gpt-5-codex': { provider: 'chatgpt-account', modelId: 'gpt-5-codex' },
   'chatgpt-codex-mini': { provider: 'chatgpt-account', modelId: 'codex-mini' },
   'chatgpt-gpt-4o': { provider: 'chatgpt-account', modelId: 'gpt-4o' },
+  // Claude Account (via Claude Code auth token)
+  'claude-account-sonnet': { provider: 'claude-account', modelId: 'sonnet' },
+  'claude-account-opus': { provider: 'claude-account', modelId: 'opus' },
+  'claude-account-haiku': { provider: 'claude-account', modelId: 'haiku' },
 };
 
-function resolveModel(model: string | undefined, config: AISettings): ModelRoute {
+export function resolveModelRoute(model: string | undefined, config: AISettings): ModelRoute {
   if (model && MODEL_ROUTES[model]) {
     return MODEL_ROUTES[model];
   }
   // If the model key is not in our routing table, strip provider prefix and route directly
   if (model) {
     // Order matters: check longer prefixes first to avoid partial matches
-    const prefixes = ['openai-compatible-', 'chatgpt-', 'anthropic-', 'gemini-', 'ollama-', 'openai-'] as const;
+    const prefixes = ['openai-compatible-', 'claude-account-', 'chatgpt-', 'anthropic-', 'gemini-', 'ollama-', 'openai-'] as const;
     const prefixProviderMap: Record<string, ModelRoute['provider']> = {
       'openai-compatible-': 'openai-compatible',
+      'claude-account-': 'claude-account',
       'chatgpt-': 'chatgpt-account',
       'anthropic-': 'anthropic',
       'gemini-': 'gemini',
@@ -86,9 +93,10 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
     }
     // Handle dynamic model IDs (e.g. "ollama-llama3.2", "chatgpt-gpt-5")
     // Order matters: check longer prefixes first to avoid partial matches
-    const defaultPrefixes = ['openai-compatible-', 'chatgpt-', 'anthropic-', 'gemini-', 'ollama-', 'openai-'] as const;
+    const defaultPrefixes = ['openai-compatible-', 'claude-account-', 'chatgpt-', 'anthropic-', 'gemini-', 'ollama-', 'openai-'] as const;
     const defaultPrefixProviderMap: Record<string, ModelRoute['provider']> = {
       'openai-compatible-': 'openai-compatible',
+      'claude-account-': 'claude-account',
       'chatgpt-': 'chatgpt-account',
       'anthropic-': 'anthropic',
       'gemini-': 'gemini',
@@ -109,6 +117,7 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
     ollama: 'llama3',
     'openai-compatible': config.openaiCompatibleModel?.trim() || 'gpt-4o',
     'chatgpt-account': config.chatgptAccountModel?.trim() || 'gpt-5',
+    'claude-account': config.claudeAccountModel?.trim() || 'claude-sonnet-4-5',
   };
   return { provider: config.provider, modelId: defaults[config.provider] || 'gpt-4o-mini' };
 }
@@ -129,6 +138,8 @@ function hasProviderCredentials(provider: ModelRoute['provider'], config: AISett
       return !!(config.openaiCompatibleBaseUrl && config.openaiCompatibleApiKey);
     case 'chatgpt-account':
       return isChatGPTLoggedIn();
+    case 'claude-account':
+      return isClaudeLoggedIn();
     default:
       return false;
   }
@@ -141,7 +152,7 @@ export function isAIAvailable(config: AISettings): boolean {
 
   // Availability should follow the effective model route (defaultModel can
   // point to a different provider than config.provider).
-  const route = resolveModel(undefined, config);
+  const route = resolveModelRoute(undefined, config);
   if (hasProviderCredentials(route.provider, config)) return true;
 
   // Fallback to configured provider in case defaultModel is invalid.
@@ -154,7 +165,7 @@ export async function* streamAI(
   config: AISettings,
   options: AIRequestOptions
 ): AsyncGenerator<string> {
-  const route = resolveModel(options.model, config);
+  const route = resolveModelRoute(options.model, config);
   const temperature = options.creativity ?? 0.7;
 
   switch (route.provider) {
@@ -189,6 +200,14 @@ export async function* streamAI(
         options.signal
       );
       break;
+    case 'claude-account':
+      yield* streamClaudeAccount(
+        route.modelId,
+        options.prompt,
+        options.systemPrompt,
+        options.signal
+      );
+      break;
   }
 }
 
@@ -206,12 +225,21 @@ export async function* streamAIMultiTurn(
   config: AISettings,
   options: AIMultiTurnOptions
 ): AsyncGenerator<string> {
-  const route = resolveModel(options.model, config);
+  const route = resolveModelRoute(options.model, config);
   const msgs = options.messages;
 
   switch (route.provider) {
     case 'chatgpt-account':
       yield* streamChatGPTAccountMultiTurn(
+        route.modelId,
+        msgs,
+        options.systemPrompt,
+        options.sessionId,
+        options.signal
+      );
+      break;
+    case 'claude-account':
+      yield* streamClaudeAccountMultiTurn(
         route.modelId,
         msgs,
         options.systemPrompt,

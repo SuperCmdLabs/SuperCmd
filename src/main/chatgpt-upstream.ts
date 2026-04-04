@@ -45,14 +45,23 @@ function streamSSEDirect(
     response.on('data', (chunk: Buffer) => {
       if (settled || signal?.aborted) return;
       sseBuffer += chunk.toString();
-      const lines = sseBuffer.split('\n');
-      sseBuffer = lines.pop() || '';
-      for (const line of lines) {
+      const normalized = sseBuffer.replace(/\r\n/g, '\n');
+      const events = normalized.split('\n\n');
+      sseBuffer = events.pop() || '';
+
+      for (const rawEvent of events) {
         if (settled) break;
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const data = trimmed.slice(6);
+
+        const dataLines = rawEvent
+          .split('\n')
+          .map((line) => line.trimEnd())
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart());
+
+        if (dataLines.length === 0) continue;
+        const data = dataLines.join('\n').trim();
         if (!data || data === '[DONE]') continue;
+
         try {
           const evt = JSON.parse(data);
           const kind: string = evt.type || '';
