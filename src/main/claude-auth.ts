@@ -21,8 +21,13 @@ const LOGIN_TIMEOUT_MS = 120_000;
 const STATUS_TIMEOUT_MS = 5_000;
 const POLL_INTERVAL_MS = 1_500;
 const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
+
+// Broad pattern: matches any auth URL from Claude/Anthropic domains regardless of exact path
 const CLAUDE_AUTH_URL_PATTERN =
-  /https:\/\/(?:claude\.ai\/oauth\/authorize|claude\.com\/cai\/oauth\/authorize)\?[^\s"'<>]+/i;
+  /https:\/\/(?:[a-zA-Z0-9-]+\.)*(?:claude\.(?:ai|com)|anthropic\.com)\/[^\s"'<>]+/i;
+
+// Detects when Claude Code says it already opened the browser
+const BROWSER_OPENED_PATTERN = /opening browser/i;
 
 type ClaudeCodeSettings = {
   env?: Record<string, unknown>;
@@ -61,6 +66,26 @@ function stripAnsi(value: string): string {
   return value
     .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, '')
     .replace(/\u001B\][\s\S]*?(?:\u0007|\u001B\\)/g, '');
+}
+
+/** Returns a PATH string augmented with common Claude Code installation directories. */
+function getAugmentedPath(): string {
+  const homeDir = os.homedir();
+  const candidates = [
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    '/usr/local/bin',
+    '/usr/local/sbin',
+    '/usr/bin',
+    '/bin',
+    path.join(homeDir, '.local', 'bin'),
+    path.join(homeDir, '.npm-global', 'bin'),
+    path.join(homeDir, '.nvm', 'versions', 'node', 'current', 'bin'),
+    path.join(homeDir, '.volta', 'bin'),
+    path.join(homeDir, '.bun', 'bin'),
+  ];
+  const current = (process.env.PATH || '').split(':').filter(Boolean);
+  return [...new Set([...current, ...candidates])].join(':');
 }
 
 function readClaudeCodeAuth(): ClaudeAccountTokens | null {
@@ -117,6 +142,7 @@ async function readClaudeAuthStatus(): Promise<ClaudeAuthStatus | null> {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
+        PATH: getAugmentedPath(),
         NO_COLOR: '1',
         FORCE_COLOR: '0',
       },
@@ -176,6 +202,7 @@ async function runClaudeAuthLogout(): Promise<{ success: boolean; message?: stri
       stdio: ['ignore', 'ignore', 'pipe'],
       env: {
         ...process.env,
+        PATH: getAugmentedPath(),
         NO_COLOR: '1',
         FORCE_COLOR: '0',
       },
@@ -261,9 +288,15 @@ export function submitClaudeLoginCode(code: string): { success: boolean; error?:
 export async function startClaudeLogin(
   onProgress?: (status: string) => void
 ): Promise<ClaudeAccountTokens> {
-  // Pre-flight: ensure `claude` CLI is available
+  const augmentedPath = getAugmentedPath();
+
+  // Pre-flight: ensure `claude` CLI is available (use augmented PATH so we find it even when
+  // Electron was launched from a limited-PATH environment such as a .app bundle)
   try {
-    await execFileAsync('which', ['claude'], { timeout: 3_000 });
+    await execFileAsync('which', ['claude'], {
+      timeout: 3_000,
+      env: { ...process.env, PATH: augmentedPath },
+    });
   } catch {
     throw new Error(
       'Claude CLI not found. Please install Claude Code first: https://docs.anthropic.com/en/docs/claude-code'
@@ -331,24 +364,47 @@ export async function startClaudeLogin(
 
     const processLoginOutput = (chunk: string) => {
       if (!chunk) return;
-      const nextUrl = extractClaudeAuthUrl(`${stdoutBuffer}\n${stderrBuffer}\n${chunk}`);
-      if (nextUrl && !browserOpened) {
-        authUrl = nextUrl;
+      const combined = `${stdoutBuffer}\n${stderrBuffer}\n${chunk}`;
+
+      // Try to extract the auth URL from the combined output so far.
+      if (!authUrl) {
+        const nextUrl = extractClaudeAuthUrl(combined);
+        if (nextUrl) {
+          authUrl = nextUrl;
+          let requiresCode = false;
+          try {
+            requiresCode = new URL(nextUrl).searchParams.get('code') === 'true';
+          } catch {}
+          activeLoginRequiresCode = requiresCode;
+
+          if (!browserOpened) {
+            browserOpened = true;
+            // If Claude Code already opened the browser (printed "Opening browser…"),
+            // we don't open it again. Otherwise open it ourselves as a fallback.
+            const claudeOpenedBrowser = BROWSER_OPENED_PATTERN.test(stripAnsi(combined));
+            if (!claudeOpenedBrowser) {
+              onProgress?.('Opening Claude login...');
+              void shell.openExternal(nextUrl).catch(() => {
+                finishWithError('Unable to open Claude authorization page.');
+              });
+            }
+          }
+
+          onProgress?.(
+            requiresCode
+              ? 'Paste the authentication code from the browser.'
+              : 'Waiting for authorization...'
+          );
+          return;
+        }
+      }
+
+      // Fallback: if no URL could be parsed but Claude Code says it opened the browser,
+      // show the code modal proactively. Current Claude Code always uses code-based auth.
+      if (!browserOpened && BROWSER_OPENED_PATTERN.test(stripAnsi(chunk))) {
         browserOpened = true;
-        let requiresCode = false;
-        try {
-          requiresCode = new URL(nextUrl).searchParams.get('code') === 'true';
-        } catch {}
-        activeLoginRequiresCode = requiresCode;
-        onProgress?.('Opening Claude login...');
-        void shell.openExternal(nextUrl).catch(() => {
-          finishWithError('Unable to open Claude authorization page.');
-        });
-        onProgress?.(
-          requiresCode
-            ? 'Paste the authentication code from the browser.'
-            : 'Waiting for authorization...'
-        );
+        activeLoginRequiresCode = true;
+        onProgress?.('Paste the authentication code from the browser.');
       }
     };
 
@@ -357,7 +413,7 @@ export async function startClaudeLogin(
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        BROWSER: 'none',
+        PATH: augmentedPath,
         NO_COLOR: '1',
         FORCE_COLOR: '0',
       },
