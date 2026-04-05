@@ -1574,8 +1574,8 @@ function applyLiquidGlassToWindow(
 
   const fallbackVibrancy = 'hud';
   const cornerRadius = Number.isFinite(Number(options?.cornerRadius)) ? Number(options?.cornerRadius) : 16;
-  const darkTint = String(options?.darkTint || '#10131a42');
-  const lightTint = String(options?.lightTint || '#f8fbff26');
+  const darkTint = String(options?.darkTint || '#10131a18');
+  const lightTint = String(options?.lightTint || '#f8fbff10');
   const subdued = options?.subdued ?? 0;
   const forceDarkTheme = options?.forceDarkTheme === true;
 
@@ -7311,6 +7311,12 @@ function setLauncherMode(mode: LauncherMode): void {
     try {
       if (process.platform === 'darwin') {
         if (mode === 'whisper' || mode === 'speak') {
+          mainWindow.setVibrancy(null as any);
+          mainWindow.setHasShadow(false);
+          mainWindow.setFocusable(true);
+          mainWindow.setBackgroundColor('#00000000');
+        } else if (shouldUseNativeLiquidGlass()) {
+          // Do NOT set vibrancy when native liquid glass is active — it overrides the glass effect.
           mainWindow.setVibrancy(null as any);
           mainWindow.setHasShadow(false);
           mainWindow.setFocusable(true);

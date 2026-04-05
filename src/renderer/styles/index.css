@@ -523,29 +523,28 @@ html {
   border: none;
 }
 
-/* Native NSGlassEffectView is active; keep renderer layer very light so it doesn't wash out glass. */
+/* Native NSGlassEffectView is active; keep renderer layer very transparent so glass effect shows through. */
 .sc-native-liquid-glass .glass-effect {
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.08);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
 .dark.sc-native-liquid-glass .glass-effect {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
-    rgba(var(--surface-base-rgb), 0.58);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    rgba(var(--surface-base-rgb), 0.10);
 }
 
-/* Keep launcher readable in native liquid glass by giving it the same
-   tinted panel feel used in Settings > General. */
+/* Keep launcher readable in native liquid glass while letting the glass effect show. */
 .sc-native-liquid-glass .launcher-main-surface {
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .dark.sc-native-liquid-glass .launcher-main-surface {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
-    rgba(var(--surface-base-rgb), 0.58);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    rgba(var(--surface-base-rgb), 0.10);
 }
 
 .sc-native-liquid-glass {
@@ -571,11 +570,11 @@ html {
 .sc-native-liquid-glass .sc-glass-footer {
   position: relative;
   overflow: hidden;
-  border-top: 1px solid rgba(var(--on-surface-rgb), 0.16);
-  background: linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.045), rgba(var(--on-surface-rgb), 0.012)), rgba(var(--surface-base-rgb), 0.14);
-  -webkit-backdrop-filter: blur(44px) saturate(155%);
-  backdrop-filter: blur(44px) saturate(155%);
-  box-shadow: 0 -8px 22px -14px rgba(var(--backdrop-rgb), 0.26);
+  border-top: 1px solid rgba(var(--on-surface-rgb), 0.10);
+  background: rgba(var(--surface-base-rgb), 0.05);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
 }
 
 .sc-native-liquid-glass .sc-glass-footer::before {
