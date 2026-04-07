@@ -10471,8 +10471,7 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
 
     if (
       !availableCommandIds.has(commandId) &&
-      !isWindowManagementSystemCommand(commandId) &&
-      !isAIDependentSystemCommand(commandId)
+      !commandId.startsWith('system-')
     ) {
       continue;
     }
