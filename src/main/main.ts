@@ -127,6 +127,8 @@ import {
   getCanvasLibDir,
 } from './canvas-store';
 
+import { initialize as initAptabase, trackEvent } from "@aptabase/electron/main";
+
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
 try {
@@ -10542,6 +10544,8 @@ async function rebuildExtensions() {
   }
 }
 
+initAptabase("A-US-7660732429");
+
 // Register custom protocol for serving extension assets (images etc.)
 // Must be called before app.whenReady()
 protocol.registerSchemesAsPrivileged([
@@ -10559,6 +10563,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.whenReady().then(async () => {
+  trackEvent("app_started");
   app.setAsDefaultProtocolClient('supercmd');
   scrubInternalClipboardProbe('app startup');
   // Warm the worker so the first window-management action does not race spawn.
