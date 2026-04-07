@@ -38,6 +38,7 @@
     "wait-on": "^7.2.0"
   },
   "dependencies": {
+    "@aptabase/electron": "^0.3.1",
     "@phosphor-icons/react": "^2.1.10",
     "@raycast/api": "^1.104.5",
     "@supercmd/calculator": "^1.0.6",

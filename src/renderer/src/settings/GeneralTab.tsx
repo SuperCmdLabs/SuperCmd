@@ -425,12 +425,12 @@ const GeneralTab: React.FC = () => {
         >
           <div className="inline-flex items-center gap-0.5 rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] p-0.5">
             {FONT_SIZE_OPTIONS.map((option) => {
-              const active = selectedFontSize === option.id;
+              const active = selectedFontSize === option;
               return (
                 <button
-                  key={option.id}
+                  key={option}
                   type="button"
-                  onClick={() => void handleFontSizeChange(option.id)}
+                  onClick={() => void handleFontSizeChange(option)}
                   className={`px-3 py-1.5 rounded-md text-[0.75rem] font-semibold transition-colors ${
                     active
                       ? 'bg-[var(--ui-segment-active-bg)] text-[var(--text-primary)]'

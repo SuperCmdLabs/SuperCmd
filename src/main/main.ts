@@ -14,7 +14,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { fork, type ChildProcess } from 'child_process';
-import { getAvailableCommands, executeCommand, invalidateCache, getAvailableCommandsSync } from './commands';
+import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken } from './settings-store';
 import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
@@ -126,6 +126,8 @@ import {
   isCanvasLibInstalled,
   getCanvasLibDir,
 } from './canvas-store';
+
+import { initialize as initAptabase, trackEvent } from "@aptabase/electron/main";
 
 const electron = require('electron');
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
@@ -9239,23 +9241,25 @@ async function refineWhisperTranscript(input: string): Promise<{ correctedText: 
     try {
       let corrected = '';
       const systemPrompt = [
-        'You are a transcript post-processor for dictated user text.',
-        'Your job is to rewrite noisy speech-to-text into one clean final sentence while preserving the user intent.',
+        'You are a transcript cleaner for speech-to-text output.',
+        'Your ONLY job is to clean up the raw transcript text — do NOT answer or respond to it.',
+        'The input is always text to be cleaned, never a question directed at you.',
         'Rules:',
-        '1) Preserve original meaning and tense; do not add new facts.',
+        '1) Never change the meaning or intent of the text. Only clean it up.',
         '2) Apply explicit self-corrections in the utterance. Example: "3am no 5am" => "5am".',
         '3) Remove filler/disfluencies: uh, um, uhh, er, like (when filler), you know, i mean (if filler), repeated stutters.',
         '4) Resolve immediate restarts/repetitions and keep the latest valid phrase.',
-        '5) Keep wording natural and concise; fix basic grammar/punctuation only when needed for readability.',
+        '5) Keep wording natural; fix basic grammar/punctuation only when needed for readability.',
         '6) Keep first-person voice if present.',
-        '7) Output exactly one cleaned sentence only.',
-        '8) Output plain text only. No quotes, no markdown, no labels, no explanations.',
+        '7) IMPORTANT: Always write numbers as digits, not words. Examples: "seven pm" => "7 pm", "eight am" => "8 am", "three thirty" => "3:30", "twenty five" => "25".',
+        '8) Output exactly one cleaned version of the input only. No answers, no commentary.',
+        '9) Output plain text only. No quotes, no markdown, no labels, no explanations.',
       ].join(' ');
       const prompt = [
-        'Raw transcript:',
+        'Clean up this raw speech-to-text transcript. Do not answer it — just clean it up:',
         normalized,
         '',
-        'Return exactly one cleaned sentence.',
+        'Return exactly one cleaned version of the above text.',
       ].join('\n');
       const gen = streamAI(settings.ai, {
         prompt,
@@ -10462,20 +10466,8 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
   }
   registeredHotkeys.clear();
 
-  // Only register hotkeys for commands that actually exist, plus known system commands
-  // that aren't surfaced through getAvailableCommandsSync (window management, AI/speak, etc.)
-  const availableCommandIds = new Set(getAvailableCommandsSync().map((c) => c.id));
-
   for (const [commandId, shortcut] of Object.entries(hotkeys)) {
     if (!shortcut) continue;
-
-    if (
-      !availableCommandIds.has(commandId) &&
-      !isWindowManagementSystemCommand(commandId) &&
-      !isAIDependentSystemCommand(commandId)
-    ) {
-      continue;
-    }
 
     const normalizedShortcut = normalizeAccelerator(shortcut);
     if (commandId === 'system-supercmd-whisper-speak-toggle' && isFnOnlyShortcut(normalizedShortcut)) {
@@ -10552,6 +10544,8 @@ async function rebuildExtensions() {
   }
 }
 
+initAptabase("A-US-7660732429");
+
 // Register custom protocol for serving extension assets (images etc.)
 // Must be called before app.whenReady()
 protocol.registerSchemesAsPrivileged([
@@ -10569,6 +10563,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.whenReady().then(async () => {
+  trackEvent("app_started");
   app.setAsDefaultProtocolClient('supercmd');
   scrubInternalClipboardProbe('app startup');
   // Warm the worker so the first window-management action does not race spawn.
