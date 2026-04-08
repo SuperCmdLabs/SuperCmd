@@ -523,43 +523,48 @@ html {
   border: none;
 }
 
-/* Native NSGlassEffectView is active; keep renderer layer very transparent so glass effect shows through. */
+/* Native liquid glass — zero CSS overlay, pure native NSGlassEffectView. */
 .sc-native-liquid-glass .glass-effect {
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
 .dark.sc-native-liquid-glass .glass-effect {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-    rgba(var(--surface-base-rgb), 0.10);
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
-/* Keep launcher readable in native liquid glass while letting the glass effect show. */
 .sc-native-liquid-glass .launcher-main-surface {
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent;
 }
 
 .dark.sc-native-liquid-glass .launcher-main-surface {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-    rgba(var(--surface-base-rgb), 0.10);
+  background: transparent;
 }
 
 .sc-native-liquid-glass {
-  --glass-outline: rgba(var(--on-surface-rgb), 0.1);
-  --ui-divider: rgba(var(--on-surface-rgb), 0.12);
-  --ui-panel-border: rgba(var(--on-surface-rgb), 0.16);
-  --ui-segment-border: rgba(var(--on-surface-rgb), 0.18);
+  --glass-outline: rgba(var(--on-surface-rgb), 0.08);
+  --ui-divider: rgba(var(--on-surface-rgb), 0.06);
+  --ui-panel-border: rgba(var(--on-surface-rgb), 0.08);
+  --ui-segment-border: rgba(var(--on-surface-rgb), 0.10);
+  --bg-secondary: transparent;
+  --card-bg: transparent;
+  --input-bg: rgba(var(--on-surface-rgb), 0.03);
+  --settings-panel-bg: transparent;
+  --settings-shell-bg: transparent;
 }
 
 .dark.sc-native-liquid-glass {
-  --glass-outline: rgba(255, 255, 255, 0.22);
-  --ui-divider: rgba(255, 255, 255, 0.05);
-  --ui-panel-border: rgba(255, 255, 255, 0.12);
-  --ui-segment-border: rgba(255, 255, 255, 0.08);
-  --settings-panel-bg: rgba(255, 255, 255, 0.06);
+  --glass-outline: rgba(255, 255, 255, 0.08);
+  --ui-divider: rgba(255, 255, 255, 0.04);
+  --ui-panel-border: rgba(255, 255, 255, 0.06);
+  --ui-segment-border: rgba(255, 255, 255, 0.05);
+  --settings-panel-bg: transparent;
+  --bg-secondary: transparent;
+  --card-bg: transparent;
+  --input-bg: rgba(255, 255, 255, 0.03);
 }
 
 
@@ -570,8 +575,8 @@ html {
 .sc-native-liquid-glass .sc-glass-footer {
   position: relative;
   overflow: hidden;
-  border-top: 1px solid rgba(var(--on-surface-rgb), 0.10);
-  background: rgba(var(--surface-base-rgb), 0.05);
+  border-top: 1px solid rgba(var(--on-surface-rgb), 0.04);
+  background: transparent;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: none;
@@ -586,31 +591,31 @@ html {
   right: 0 !important;
   bottom: 0 !important;
   border-radius: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
   border-left: none;
   border-right: none;
   border-bottom: none;
-  background: rgba(255, 255, 255, 0.01);
+  background: transparent;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: none;
 }
 
-/* Native liquid glass mode always uses white typography, regardless of theme preference. */
+/* Native liquid glass mode — frosted glass UI variables. */
 .sc-native-liquid-glass {
-  --command-item-hover-bg: rgba(24, 34, 50, 0.14);
+  --command-item-hover-bg: rgba(24, 34, 50, 0.08);
   --command-item-hover-border: transparent;
-  --command-item-selected-bg: rgba(24, 34, 50, 0.2);
-  --command-item-selected-border: rgba(24, 34, 50, 0.24);
-  --launcher-card-bg: rgba(24, 34, 50, 0.06);
-  --launcher-card-border: rgba(24, 34, 50, 0.12);
-  --launcher-card-hover-bg: rgba(24, 34, 50, 0.12);
-  --launcher-card-selected-bg: rgba(24, 34, 50, 0.2);
-  --launcher-card-selected-border: rgba(24, 34, 50, 0.24);
-  --overlay-item-active-bg: rgba(24, 34, 52, 0.34);
-  --action-menu-selected-bg: rgba(24, 34, 52, 0.36);
+  --command-item-selected-bg: rgba(24, 34, 50, 0.14);
+  --command-item-selected-border: rgba(24, 34, 50, 0.16);
+  --launcher-card-bg: rgba(24, 34, 50, 0.04);
+  --launcher-card-border: rgba(24, 34, 50, 0.08);
+  --launcher-card-hover-bg: rgba(24, 34, 50, 0.08);
+  --launcher-card-selected-bg: rgba(24, 34, 50, 0.14);
+  --launcher-card-selected-border: rgba(24, 34, 50, 0.16);
+  --overlay-item-active-bg: rgba(24, 34, 52, 0.18);
+  --action-menu-selected-bg: rgba(24, 34, 52, 0.20);
   --action-menu-selected-border: transparent;
-  --action-menu-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  --action-menu-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
   --text-primary: rgba(8, 12, 18, 0.98);
   --text-secondary: rgba(17, 23, 32, 0.92);
   --text-muted: rgba(28, 36, 50, 0.84);
@@ -624,12 +629,13 @@ html {
 }
 
 .dark.sc-native-liquid-glass {
-  --command-item-selected-bg: var(--command-item-hover-bg);
-  --command-item-selected-border: rgba(255, 255, 255, 0.16);
-  --launcher-card-selected-bg: var(--command-item-hover-bg);
-  --launcher-card-selected-border: rgba(255, 255, 255, 0.16);
-  --overlay-item-active-bg: rgba(255, 255, 255, 0.16);
-  --action-menu-selected-bg: rgba(255, 255, 255, 0.16);
+  --command-item-hover-bg: rgba(255, 255, 255, 0.06);
+  --command-item-selected-bg: rgba(255, 255, 255, 0.10);
+  --command-item-selected-border: rgba(255, 255, 255, 0.12);
+  --launcher-card-selected-bg: rgba(255, 255, 255, 0.10);
+  --launcher-card-selected-border: rgba(255, 255, 255, 0.12);
+  --overlay-item-active-bg: rgba(255, 255, 255, 0.10);
+  --action-menu-selected-bg: rgba(255, 255, 255, 0.10);
   --action-menu-selected-border: transparent;
   --text-primary: rgba(255, 255, 255, 0.96);
   --text-secondary: rgba(255, 255, 255, 0.88);
@@ -651,6 +657,13 @@ html {
   -webkit-backdrop-filter: blur(96px) saturate(190%);
   backdrop-filter: blur(96px) saturate(190%);
   border-color: rgba(var(--on-surface-rgb), 0.22);
+}
+
+.sc-native-liquid-glass .cursor-prompt-surface {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: rgba(var(--on-surface-rgb), 0.06);
 }
 
 .sc-glassy .rounded-md { border-radius: 12px !important; }
@@ -735,8 +748,8 @@ html {
 .cursor-prompt-surface {
   border-radius: 10px;
   background: var(--bg-overlay);
-  -webkit-backdrop-filter: blur(40px) saturate(150%);
-  backdrop-filter: blur(40px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   border: 1px solid rgba(var(--on-surface-rgb), 0.14);
   box-shadow: none;
   overflow: hidden;

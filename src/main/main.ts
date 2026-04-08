@@ -1574,9 +1574,9 @@ function applyLiquidGlassToWindow(
 
   const fallbackVibrancy = 'hud';
   const cornerRadius = Number.isFinite(Number(options?.cornerRadius)) ? Number(options?.cornerRadius) : 16;
-  const darkTint = String(options?.darkTint || '#10131a18');
-  const lightTint = String(options?.lightTint || '#f8fbff10');
-  const subdued = options?.subdued ?? 0;
+  const darkTint = String(options?.darkTint || '#00000000');
+  const lightTint = String(options?.lightTint || '#ffffff00');
+  const subdued = options?.subdued ?? 1;
   const forceDarkTheme = options?.forceDarkTheme === true;
 
   const liquidGlass = getElectronLiquidGlassApi();
@@ -1619,8 +1619,10 @@ function applyLiquidGlassToWindow(
         liquidGlassAppliedWindowIds.add(windowId);
         syncNativeLiquidGlassClassOnWindow(win, true);
       }
-      if (typeof glassId === 'number' && glassId >= 0 && typeof liquidGlass.unstable_setSubdued === 'function') {
-        try { liquidGlass.unstable_setSubdued(glassId, subdued); } catch {}
+      if (typeof glassId === 'number' && glassId >= 0) {
+        if (typeof liquidGlass.unstable_setSubdued === 'function') {
+          try { liquidGlass.unstable_setSubdued(glassId, subdued); } catch {}
+        }
       }
     } catch (error) {
       console.warn('[LiquidGlass] Failed to apply liquid glass to window:', error);
@@ -1653,8 +1655,8 @@ function applyLiquidGlassToWindowManagerPopup(win: any): void {
   applyLiquidGlassToWindow(win, {
     cornerRadius: 20,
     fallbackVibrancy: 'under-window',
-    darkTint: '#16181fd0',
-    lightTint: '#f4f6f8b0',
+    darkTint: '#00000000',
+    lightTint: '#ffffff00',
     subdued: 0,
   });
 }
