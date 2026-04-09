@@ -13,6 +13,7 @@ import {
   setCurrentFormValues,
 } from './form-runtime-context';
 import type { ExtractedAction } from './action-runtime';
+import { useI18n } from '../i18n';
 
 interface FormRuntimeDeps {
   ExtensionInfoReactContext: React.Context<any>;
@@ -48,6 +49,7 @@ export function createFormRuntime(deps: FormRuntimeDeps) {
   } = deps;
 
   function FormComponent({ children, actions, navigationTitle, isLoading, draftValues }: any) {
+    const { t } = useI18n();
     const extInfo = useContext(ExtensionInfoReactContext);
     const [values, setValues] = useState<Record<string, any>>(draftValues || {});
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -157,7 +159,7 @@ export function createFormRuntime(deps: FormRuntimeDeps) {
           <div className="flex-1 overflow-y-auto py-4 px-4">
             {isLoading ? (
               <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
-                <p className="text-sm">Loading…</p>
+                <p className="text-sm">{t('common.loading')}</p>
               </div>
             ) : (
               <div className="max-w-2xl mx-auto space-y-3">{children}</div>

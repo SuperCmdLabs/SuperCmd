@@ -11,6 +11,7 @@ import {
 import type { Canvas } from '../types/electron';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
 import IconCodeEditor from './icons/Snippet';
+import { useI18n } from './i18n';
 
 const canvasIconStyle = {
   '--nc-gradient-1-color-1': '#fcd34d',
@@ -28,22 +29,27 @@ interface Action {
   section?: string;
 }
 
-function formatRelative(ts: number): string {
+function formatRelative(
+  ts: number,
+  locale: string,
+  t: (key: string) => string
+): string {
   const diff = Date.now() - ts;
-  if (diff < 60_000) return 'Just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`;
-  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (diff < 60_000) return t('canvas.time.justNow');
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  if (diff < 3_600_000) return formatter.format(-Math.floor(diff / 60_000), 'minute');
+  if (diff < 86_400_000) return formatter.format(-Math.floor(diff / 3_600_000), 'hour');
+  if (diff < 604_800_000) return formatter.format(-Math.floor(diff / 86_400_000), 'day');
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(new Date(ts));
 }
 
-function formatAbsolute(ts: number): string {
+function formatAbsolute(ts: number, locale: string): string {
   const d = new Date(ts);
   const today = new Date();
   const isToday = d.toDateString() === today.toDateString();
-  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const time = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(d);
   if (isToday) return time;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' · ' + time;
+  return `${new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(d)} · ${time}`;
 }
 
 interface CanvasSearchInlineProps {
@@ -51,6 +57,7 @@ interface CanvasSearchInlineProps {
 }
 
 const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
+  const { t, locale } = useI18n();
   const [canvases, setCanvases] = useState<Canvas[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -148,7 +155,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
   const actions: Action[] = useMemo(() => {
     const items: Action[] = [
       {
-        title: 'New Canvas',
+        title: t('canvas.actions.new'),
         icon: <Plus className="w-3.5 h-3.5" />,
         shortcut: ['⌘', 'N'],
         execute: () => window.electron.openCanvasWindow('create'),
@@ -158,21 +165,21 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
     if (selectedCanvas) {
       items.push(
         {
-          title: 'Open Canvas',
+          title: t('canvas.actions.open'),
           icon: <Palette className="w-3.5 h-3.5" />,
           shortcut: ['↩'],
           execute: () => openCanvas(selectedCanvas),
           section: 'actions',
         },
         {
-          title: 'Rename',
+          title: t('canvas.actions.rename'),
           icon: <Pencil className="w-3.5 h-3.5" />,
           shortcut: ['⌘', 'R'],
           execute: () => { setRenameValue(selectedCanvas.title); setRenameCanvas(selectedCanvas); },
           section: 'actions',
         },
         {
-          title: 'Duplicate',
+          title: t('canvas.actions.duplicate'),
           icon: <Files className="w-3.5 h-3.5" />,
           shortcut: ['⌘', 'D'],
           execute: async () => {
@@ -182,7 +189,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
           section: 'actions',
         },
         {
-          title: 'Copy Deeplink',
+          title: t('canvas.actions.copyDeeplink'),
           icon: <Copy className="w-3.5 h-3.5" />,
           shortcut: ['⇧', '⌘', 'D'],
           execute: () => {
@@ -191,7 +198,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
           section: 'actions',
         },
         {
-          title: 'Export as JSON',
+          title: t('canvas.actions.exportJson'),
           icon: <Download className="w-3.5 h-3.5" />,
           shortcut: ['⇧', '⌘', 'E'],
           execute: async () => {
@@ -200,7 +207,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
           section: 'manage',
         },
         {
-          title: selectedCanvas.pinned ? 'Unpin' : 'Pin',
+          title: selectedCanvas.pinned ? t('canvas.actions.unpin') : t('canvas.actions.pin'),
           icon: selectedCanvas.pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />,
           shortcut: ['⇧', '⌘', 'P'],
           execute: async () => {
@@ -210,7 +217,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
           section: 'manage',
         },
         {
-          title: 'Delete Canvas',
+          title: t('canvas.actions.delete'),
           icon: <Trash2 className="w-3.5 h-3.5" />,
           shortcut: ['⌃', 'X'],
           execute: async () => {
@@ -224,7 +231,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
       );
     }
     return items;
-  }, [selectedCanvas, openCanvas, loadCanvases]);
+  }, [selectedCanvas, openCanvas, loadCanvases, t]);
 
   // Keyboard handling
   useEffect(() => {
@@ -366,13 +373,13 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
           <input
             value=""
             readOnly
-            placeholder="Search canvases..."
+            placeholder={t('canvas.searchPlaceholder')}
             className="min-w-0 w-full bg-transparent border-none outline-none text-white/95 placeholder:text-[color:var(--text-subtle)] text-[15px] font-medium tracking-[0.005em]"
           />
           <button
             onClick={() => window.electron.openCanvasWindow('create')}
             className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"
-            title="Create Canvas"
+            title={t('canvas.actions.new')}
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -381,15 +388,15 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div className="mb-3 flex justify-center"><IconCodeEditor size="40px" style={canvasIconStyle} /></div>
-            <p className="text-[14px] font-medium text-white/70 mb-1">No canvases yet</p>
-            <p className="text-[12px] text-white/40 mb-4">Create your first canvas to get started</p>
+            <p className="text-[14px] font-medium text-white/70 mb-1">{t('canvas.empty.title')}</p>
+            <p className="text-[12px] text-white/40 mb-4">{t('canvas.empty.description')}</p>
             <button
               onClick={() => window.electron.openCanvasWindow('create')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--snippet-divider-strong)] bg-white/[0.14] text-xs text-[var(--text-primary)] hover:bg-white/[0.2] transition-colors"
             >
-              Create Canvas
+              {t('canvas.actions.new')}
             </button>
-            <p className="text-[11px] text-white/30 mt-2">or press ⌘N</p>
+            <p className="text-[11px] text-white/30 mt-2">{t('canvas.empty.shortcutHint')}</p>
           </div>
         </div>
       </div>
@@ -413,7 +420,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
               ref={searchInputRef}
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setSelectedIndex(0); }}
-              placeholder="Search canvases..."
+              placeholder={t('canvas.searchPlaceholder')}
               className="min-w-0 w-full bg-transparent border-none outline-none text-white/95 placeholder:text-[color:var(--text-subtle)] text-[15px] font-medium tracking-[0.005em]"
               autoFocus
             />
@@ -428,7 +435,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
           <button
             onClick={() => window.electron.openCanvasWindow('create')}
             className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"
-            title="Create Canvas"
+            title={t('canvas.actions.new')}
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -444,7 +451,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
         >
           {filteredCanvases.length === 0 ? (
             <div className="flex items-center justify-center h-full text-white/30">
-              <p className="text-sm">{searchQuery ? 'No canvases found' : 'No canvases yet'}</p>
+              <p className="text-sm">{searchQuery ? t('canvas.empty.noSearchResults') : t('canvas.empty.title')}</p>
             </div>
           ) : (
             <div className="p-2 space-y-1">
@@ -462,14 +469,14 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
                   <div className="flex items-center gap-2">
                     <span className="flex-shrink-0"><IconCodeEditor size="14px" style={canvasIconStyle} /></span>
                     <span className="text-white/80 text-[13px] truncate font-medium leading-tight">
-                      {canvas.title || 'Untitled Canvas'}
+                      {canvas.title || t('canvas.untitled')}
                     </span>
                     {canvas.pinned && <Pin className="w-3 h-3 text-amber-300/80 flex-shrink-0" />}
                   </div>
                   <div className="mt-0.5 text-[11px] text-[var(--text-subtle)] pl-6 flex items-center gap-1.5">
-                    <span>{formatRelative(canvas.updatedAt)}</span>
+                    <span>{formatRelative(canvas.updatedAt, locale, t)}</span>
                     <span className="text-[var(--text-muted)]">·</span>
-                    <span>{formatAbsolute(canvas.updatedAt)}</span>
+                    <span>{formatAbsolute(canvas.updatedAt, locale)}</span>
                   </div>
                 </div>
               ))}
@@ -493,9 +500,9 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
                 <p className="text-[13px] font-medium text-[var(--text-primary)] truncate mb-2">{selectedCanvas.title}</p>
                 <div className="pt-2.5 border-t border-[var(--ui-divider)]">
                   <div className="flex items-center justify-between gap-3 text-xs">
-                    <span className="text-[var(--text-subtle)]">Modified</span>
+                    <span className="text-[var(--text-subtle)]">{t('canvas.modified')}</span>
                     <span className="text-[var(--text-muted)] text-right truncate">
-                      {formatAbsolute(selectedCanvas.updatedAt)}
+                      {formatAbsolute(selectedCanvas.updatedAt, locale)}
                     </span>
                   </div>
                 </div>
@@ -505,7 +512,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-white/20">
               <IconCodeEditor size="36px" style={canvasIconStyle} />
               <p className="text-[12px]">
-                {selectedCanvas ? 'No preview yet — save the canvas to generate one' : 'Select a canvas to preview'}
+                {selectedCanvas ? t('canvas.preview.empty') : t('canvas.preview.selectPrompt')}
               </p>
             </div>
           )}
@@ -516,7 +523,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
       {renameCanvas && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="rounded-xl p-5 w-72" style={{ background: 'var(--card-bg)', backdropFilter: 'blur(40px)', border: '1px solid var(--border-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
-            <p className="text-[13px] font-medium text-white/90 mb-3">Rename Canvas</p>
+            <p className="text-[13px] font-medium text-white/90 mb-3">{t('canvas.rename.title')}</p>
             <input
               ref={renameInputRef}
               value={renameValue}
@@ -536,14 +543,14 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
                 }
               }}
               className="w-full bg-transparent border border-[var(--border-primary)] rounded-md px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--text-muted)] mb-4"
-              placeholder="Canvas name..."
+              placeholder={t('canvas.rename.placeholder')}
             />
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setRenameCanvas(null)}
                 className="px-3 py-1.5 rounded-md text-[12px] border border-[var(--border-primary)] text-[var(--text-secondary)] hover:bg-[var(--overlay-item-hover-bg)] transition-colors"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={() => {
@@ -556,7 +563,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
                 className="px-3 py-1.5 rounded-md text-[12px] font-medium border border-[var(--border-primary)] bg-[var(--launcher-card-selected-bg)] text-[var(--text-primary)] hover:bg-[var(--overlay-item-hover-bg)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 disabled={!renameValue.trim()}
               >
-                Save
+                {t('common.save')}
               </button>
             </div>
           </div>
@@ -567,14 +574,14 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
       {confirmDelete && selectedCanvas && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="rounded-xl p-5 max-w-sm" style={{ background: 'var(--card-bg)', backdropFilter: 'blur(40px)' }}>
-            <p className="text-[14px] font-medium text-white/90 mb-2">Delete "{selectedCanvas.title}"?</p>
-            <p className="text-[12px] text-white/50 mb-4">This action cannot be undone.</p>
+            <p className="text-[14px] font-medium text-white/90 mb-2">{t('canvas.delete.title', { title: selectedCanvas.title })}</p>
+            <p className="text-[12px] text-white/50 mb-4">{t('canvas.delete.description')}</p>
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setConfirmDelete(false)}
                 className="px-3 py-1.5 rounded-md text-[12px] text-white/60 hover:bg-white/5"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={() => {
@@ -585,7 +592,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
                 }}
                 className="px-3 py-1.5 rounded-md text-[12px] text-red-400 bg-red-500/10 hover:bg-red-500/20"
               >
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           </div>
@@ -683,14 +690,14 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
 
       {/* Footer */}
       <ExtensionActionFooter
-        leftContent={<span className="text-[11px] text-white/30">{filteredCanvases.length} canvas{filteredCanvases.length !== 1 ? 'es' : ''}</span>}
+        leftContent={<span className="text-[11px] text-white/30">{t('canvas.count', { count: filteredCanvases.length })}</span>}
         primaryAction={selectedCanvas ? {
-          label: 'Open',
+          label: t('common.open'),
           onClick: () => openCanvas(selectedCanvas),
           shortcut: ['↩'],
         } : undefined}
         actionsButton={{
-          label: 'Actions',
+          label: t('common.actions'),
           onClick: () => setShowActions((v) => !v),
           shortcut: ['⌘', 'K'],
         }}

@@ -9,6 +9,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import type { ExtractedAction } from './action-runtime';
 import { createGridItemsRuntime } from './grid-runtime-items';
 import { groupGridItems, useGridRegistry } from './grid-runtime-hooks';
+import { useI18n } from '../i18n';
 
 interface GridRuntimeDeps {
   ExtensionInfoReactContext: React.Context<any>;
@@ -62,6 +63,7 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
     throttle,
     actions: gridActions,
   }: any) {
+    const { t } = useI18n();
     const extInfo = useContext(ExtensionInfoReactContext);
     const [internalSearch, setInternalSearch] = useState(() => controlledSearch ?? '');
     const [selectedIdx, setSelectedIdx] = useState(0);
@@ -205,15 +207,15 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
             <button onClick={pop} className="sc-back-button text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors flex-shrink-0 p-0.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
             </button>
-            <input ref={inputRef} data-supercmd-search-input="true" type="text" placeholder={searchBarPlaceholder || 'Search…'} value={internalSearch} onChange={(event) => handleSearchChange(event.target.value)} className="flex-1 bg-transparent border-none outline-none text-[var(--text-primary)] placeholder:text-[color:var(--text-subtle)] text-[14px] font-light" autoFocus />
+            <input ref={inputRef} data-supercmd-search-input="true" type="text" placeholder={searchBarPlaceholder || t('common.search')} value={internalSearch} onChange={(event) => handleSearchChange(event.target.value)} className="flex-1 bg-transparent border-none outline-none text-[var(--text-primary)] placeholder:text-[color:var(--text-subtle)] text-[14px] font-light" autoFocus />
             {searchBarAccessory && <div className="flex-shrink-0">{searchBarAccessory}</div>}
           </div>
 
           <div ref={gridRef} className="flex-1 overflow-y-auto p-2">
             {isLoading && filteredItems.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-[var(--text-muted)]"><p className="text-sm">Loading…</p></div>
+              <div className="flex items-center justify-center h-full text-[var(--text-muted)]"><p className="text-sm">{t('common.loading')}</p></div>
             ) : filteredItems.length === 0 ? (
-              emptyViewProps ? <ListEmptyView title={emptyViewProps.title} description={emptyViewProps.description} icon={emptyViewProps.icon} actions={emptyViewProps.actions} /> : <div className="flex items-center justify-center h-full text-[var(--text-subtle)]"><p className="text-sm">No results</p></div>
+              emptyViewProps ? <ListEmptyView title={emptyViewProps.title} description={emptyViewProps.description} icon={emptyViewProps.icon} actions={emptyViewProps.actions} /> : <div className="flex items-center justify-center h-full text-[var(--text-subtle)]"><p className="text-sm">{t('common.noResults')}</p></div>
             ) : (
               groupedItems.map((group, groupIndex) => (
                 <div key={groupIndex} className="mb-2">
@@ -258,7 +260,7 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
               </button>
             )}
             <button onClick={() => setShowActions(true)} className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors">
-              <span className="text-xs font-normal">Actions</span>
+              <span className="text-xs font-normal">{t('common.actions')}</span>
               <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-subtle)] font-medium">⌘</kbd>
               <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-subtle)] font-medium">K</kbd>
             </button>

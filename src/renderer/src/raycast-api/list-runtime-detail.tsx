@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { renderSimpleMarkdown } from './detail-markdown';
+import { useI18n } from '../i18n';
 
 interface ListDetailDeps {
   getExtensionContext: () => { assetsPath: string };
@@ -33,19 +34,23 @@ export function createListDetailRuntime(deps: ListDetailDeps) {
     isLoading?: boolean;
     metadata?: React.ReactElement;
     children?: React.ReactNode;
-  }) => (
-    <div className="flex flex-col h-full overflow-y-auto px-3 py-2.5">
-      {isLoading ? (
-        <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">Loading…</p></div>
-      ) : (
-        <>
-          {markdown && <div className="text-white/80 text-sm leading-relaxed">{renderSimpleMarkdown(markdown, resolveListDetailMarkdownImageSrc)}</div>}
-          {metadata}
-          {children}
-        </>
-      )}
-    </div>
-  );
+  }) => {
+    const { t } = useI18n();
+
+    return (
+      <div className="flex flex-col h-full overflow-y-auto px-3 py-2.5">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full text-white/50"><p className="text-sm">{t('common.loading')}</p></div>
+        ) : (
+          <>
+            {markdown && <div className="text-white/80 text-sm leading-relaxed">{renderSimpleMarkdown(markdown, resolveListDetailMarkdownImageSrc)}</div>}
+            {metadata}
+            {children}
+          </>
+        )}
+      </div>
+    );
+  };
 
   const ListItemDetail: any = Object.assign(ListItemDetailComponent, {});
   return { ListItemDetail };

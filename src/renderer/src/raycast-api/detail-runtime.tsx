@@ -6,6 +6,7 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { normalizeScAssetUrl, resolveReadableTintColor, resolveTintColor, toScAssetUrl } from './icon-runtime-assets';
 import { renderSimpleMarkdown } from './detail-markdown';
+import { useI18n } from '../i18n';
 
 type ExtractedActionLike = {
   title: string;
@@ -67,6 +68,7 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
   };
 
   function DetailComponent({ markdown, isLoading, children, actions, metadata, navigationTitle }: DetailProps) {
+    const { t } = useI18n();
     const extInfo = useContext(deps.ExtensionInfoReactContext);
     const [showActions, setShowActions] = useState(false);
     const { pop } = deps.useNavigation();
@@ -187,7 +189,7 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
           <div className="sc-glass-footer flex items-center px-4 py-2.5">
             <div className="flex items-center gap-2 text-[var(--text-secondary)] text-sm">
               <div className="w-4 h-4 border-2 border-[var(--surface-tint-6)] border-t-[var(--text-secondary)] rounded-full animate-spin" />
-              <span>{navigationTitle || 'Loading…'}</span>
+              <span>{navigationTitle || t('common.loading')}</span>
             </div>
           </div>
         ) : detailActions.length > 0 ? (
@@ -203,7 +205,7 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
               </button>
             ) : null}
             <button onClick={() => setShowActions(true)} className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors">
-              <span className="text-xs font-normal">Actions</span>
+              <span className="text-xs font-normal">{t('common.actions')}</span>
               <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-subtle)] font-medium">⌘</kbd>
               <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-subtle)] font-medium">K</kbd>
             </button>

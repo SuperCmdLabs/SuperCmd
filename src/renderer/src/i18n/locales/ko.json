@@ -1,932 +1,1043 @@
 {
   "common": {
-    "actions": "操作",
-    "loading": "加载中...",
-    "noResults": "没有结果",
-    "search": "搜索...",
-    "save": "保存",
-    "cancel": "取消",
-    "close": "关闭",
-    "continue": "继续",
-    "back": "返回",
-    "remove": "移除",
-    "add": "添加",
-    "edit": "编辑",
-    "delete": "删除",
-    "enable": "启用",
-    "disable": "禁用",
-    "enabled": "已启用",
-    "disabled": "已禁用",
-    "success": "成功",
-    "error": "错误",
-    "warning": "警告",
-    "info": "信息",
-    "copy": "复制",
-    "paste": "粘贴",
-    "cut": "剪切",
-    "selectAll": "全选",
-    "undo": "撤销",
-    "redo": "重做",
-    "refresh": "刷新",
-    "reload": "重新加载",
-    "apply": "应用",
-    "reset": "重置",
-    "clear": "清除",
-    "done": "完成",
-    "ok": "确定",
-    "yes": "是",
-    "no": "否",
-    "submit": "提交",
-    "browse": "浏览",
-    "choose": "选择",
-    "change": "更换",
-    "update": "更新",
-    "install": "安装",
-    "uninstall": "卸载",
-    "download": "下载",
-    "upload": "上传",
-    "import": "导入",
-    "export": "导出",
-    "open": "打开",
-    "create": "创建",
-    "new": "新建",
-    "unknown": "未知",
-    "none": "无",
-    "default": "默认",
-    "custom": "自定义",
-    "other": "其他",
-    "all": "全部",
-    "required": "必填",
-    "optional": "可选",
-    "preferences": "偏好设置",
-    "settings": "设置",
-    "general": "通用",
-    "advanced": "高级",
-    "about": "关于",
-    "version": "版本",
-    "language": "语言",
-    "appearance": "外观",
-    "theme": "主题",
-    "light": "浅色",
-    "dark": "深色",
-    "system": "系统",
-    "auto": "自动"
+    "actions": "동작",
+    "loading": "불러오는 중...",
+    "noResults": "결과 없음",
+    "search": "검색...",
+    "save": "저장",
+    "cancel": "취소",
+    "close": "닫기",
+    "continue": "계속",
+    "back": "뒤로",
+    "remove": "제거",
+    "add": "추가",
+    "edit": "편집",
+    "delete": "삭제",
+    "enable": "활성화",
+    "disable": "비활성화",
+    "enabled": "활성화됨",
+    "disabled": "비활성화됨",
+    "success": "성공",
+    "error": "오류",
+    "warning": "경고",
+    "info": "정보",
+    "copy": "복사",
+    "paste": "붙여넣기",
+    "cut": "잘라내기",
+    "selectAll": "모두 선택",
+    "undo": "실행 취소",
+    "redo": "다시 실행",
+    "refresh": "새로고침",
+    "reload": "다시 불러오기",
+    "apply": "적용",
+    "reset": "초기화",
+    "clear": "지우기",
+    "done": "완료",
+    "ok": "확인",
+    "yes": "예",
+    "no": "아니요",
+    "submit": "제출",
+    "browse": "찾아보기",
+    "choose": "선택",
+    "change": "변경",
+    "update": "업데이트",
+    "install": "설치",
+    "uninstall": "제거",
+    "download": "다운로드",
+    "upload": "업로드",
+    "import": "가져오기",
+    "export": "내보내기",
+    "open": "열기",
+    "create": "만들기",
+    "new": "새로 만들기",
+    "unknown": "알 수 없음",
+    "none": "없음",
+    "default": "기본값",
+    "custom": "사용자 지정",
+    "other": "기타",
+    "all": "전체",
+    "required": "필수",
+    "optional": "선택",
+    "preferences": "환경설정",
+    "settings": "설정",
+    "general": "일반",
+    "advanced": "고급",
+    "about": "정보",
+    "version": "버전",
+    "language": "언어",
+    "appearance": "모양",
+    "theme": "테마",
+    "light": "라이트",
+    "dark": "다크",
+    "system": "시스템",
+    "auto": "자동"
   },
   "settings": {
-    "title": "SuperCmd 设置",
+    "title": "SuperCmd 설정",
     "tabs": {
-      "general": "通用",
+      "general": "일반",
       "ai": "AI",
-      "extensions": "扩展",
-      "advanced": "高级"
+      "extensions": "확장",
+      "advanced": "고급"
     },
     "general": {
-      "title": "通用",
-      "loading": "正在加载设置...",
+      "title": "일반",
+      "loading": "설정을 불러오는 중...",
       "launcherShortcut": {
-        "title": "启动器快捷键",
-        "description": "设置打开和关闭 SuperCmd 的全局快捷键。",
-        "updated": "快捷键已更新",
-        "failed": "设置失败，快捷键可能已被其他应用占用。"
+        "title": "런처 단축키",
+        "description": "SuperCmd를 열고 닫는 전역 단축키를 설정합니다.",
+        "updated": "단축키가 업데이트되었습니다.",
+        "failed": "실패했습니다. 다른 앱에서 이 단축키를 사용 중일 수 있습니다."
       },
       "startAtLogin": {
-        "title": "登录时启动",
-        "description": "在你登录系统时自动启动 SuperCmd。",
-        "enabled": "已开启",
-        "disabled": "已关闭"
+        "title": "로그인 시 시작",
+        "description": "로그인하면 SuperCmd가 자동으로 실행됩니다.",
+        "enabled": "활성화됨",
+        "disabled": "비활성화됨"
       },
       "language": {
-        "title": "语言",
-        "description": "选择界面语言，或跟随系统语言。",
-        "system": "跟随系统",
-        "en": "英语",
-        "zh-Hans": "简体中文",
-        "zh-Hant": "繁體中文",
-        "ja": "日本語",
+        "title": "언어",
+        "description": "표시 언어를 선택하거나 시스템 로캘을 따릅니다.",
+        "system": "시스템 따르기",
+        "en": "영어",
+        "zh-Hans": "중국어 간체",
+        "zh-Hant": "중국어 번체",
+        "ja": "일본어",
         "ko": "한국어",
         "fr": "Français",
         "de": "Deutsch",
         "es": "Español",
-        "ru": "러시아어"
+        "ru": "Русский"
       },
       "fontSize": {
-        "title": "字体大小",
-        "description": "调整整个应用的文字大小。",
-        "extra-small": "特小",
-        "small": "小",
-        "medium": "中",
-        "large": "大",
-        "extra-large": "特大"
+        "title": "글꼴 크기",
+        "description": "앱 전체에서 텍스트 크기를 조정하세요.",
+        "extra-small": "매우 작게",
+        "small": "작게",
+        "medium": "보통",
+        "large": "크게",
+        "extra-large": "매우 크게"
       },
       "appearance": {
-        "title": "外观",
-        "description": "选择浅色、深色，或跟随系统外观。",
-        "light": "浅色",
-        "system": "系统",
-        "dark": "深色"
+        "title": "모양",
+        "description": "라이트, 다크 또는 시스템 설정을 따르도록 선택합니다.",
+        "light": "라이트",
+        "system": "시스템",
+        "dark": "다크"
       },
       "visualStyle": {
-        "title": "视觉风格",
-        "description": "使用默认风格，或启用更接近 macOS Tahoe 风格的玻璃态界面。",
-        "default": "默认",
-        "glassy": "玻璃态"
+        "title": "비주얼 스타일",
+        "description": "기본 디자인을 사용하거나 macOS Tahoe에서 영감을 받은 스타일을 활성화하세요.",
+        "default": "기본",
+        "glassy": "글래시"
       },
       "background": {
-        "title": "启动器背景图",
-        "description": "在启动器后面显示一张低透明度、轻微模糊的背景图，让它更像氛围提示而不是完整壁纸。",
-        "empty": "尚未选择图片，启动器会继续使用当前背景。",
-        "choose": "选择图片",
-        "change": "更换图片",
-        "remove": "移除",
-        "appearance": "显示效果",
-        "summary": "模糊 {blur}% · 不透明度 {opacity}%",
-        "blur": "模糊",
-        "opacity": "不透明度",
-        "useEverywhere": "在扩展视图和核心启动器视图中也使用这张图片"
+        "title": "런처 배경 이미지",
+        "description": "런처 뒤에 부드럽게 흐릿하고 불투명도가 낮은 이미지를 표시하여 전체 배경화면이 아닌 힌트처럼 읽혀지게 합니다.",
+        "empty": "선택한 이미지가 없습니다. 런처는 현재 배경을 계속 사용합니다.",
+        "choose": "이미지 선택",
+        "change": "이미지 변경",
+        "remove": "제거",
+        "appearance": "표시 방식",
+        "summary": "흐림 {blur}% · 불투명도 {opacity}%",
+        "blur": "흐림",
+        "opacity": "불투명",
+        "useEverywhere": "확장 및 핵심 실행기 보기에서도 이 이미지를 사용하십시오."
       },
       "updates": {
-        "title": "应用更新",
-        "description": "检查并安装打包版本的应用更新。",
-        "defaultMessage": "检查并安装打包版本的应用更新。",
-        "unsupported": "只有打包后的应用版本才支持更新。",
-        "checking": "正在检查更新...",
-        "available": "发现可用更新 v{version}。",
-        "notAvailable": "你已经是最新版本。",
-        "downloading": "正在下载更新...",
-        "downloaded": "更新已下载，重启后即可安装。",
-        "error": "无法完成更新操作。",
-        "check": "检查更新",
-        "download": "下载更新",
-        "downloadingButton": "正在下载更新...",
-        "restart": "重启并更新",
-        "currentVersion": "当前版本：v{version}",
-        "latestVersion": "最新版本：v{version}",
+        "title": "앱 업데이트",
+        "description": "패키지 앱 업데이트를 확인하고 설치합니다.",
+        "defaultMessage": "패키지 앱 업데이트를 확인하고 설치합니다.",
+        "unsupported": "업데이트는 패키지된 빌드에서만 사용할 수 있습니다.",
+        "checking": "업데이트 확인 중...",
+        "available": "v{version} 업데이트를 사용할 수 있습니다.",
+        "notAvailable": "이미 최신 버전을 사용하고 있습니다.",
+        "downloading": "업데이트 다운로드 중...",
+        "downloaded": "업데이트가 다운로드되었습니다. 다시 시작하면 설치됩니다.",
+        "error": "업데이트 작업을 완료할 수 없습니다.",
+        "check": "업데이트 확인",
+        "download": "업데이트 다운로드",
+        "downloadingButton": "업데이트 다운로드 중...",
+        "restart": "다시 시작 후 업데이트",
+        "currentVersion": "현재 버전: v{version}",
+        "latestVersion": "최신: v{version}",
         "progress": "{progress}% · {transferred} / {total}",
-        "failed": "更新失败。"
+        "failed": "업데이트에 실패했습니다."
       },
       "about": {
-        "title": "关于",
-        "description": "版本信息。",
+        "title": "정보",
+        "description": "버전 정보.",
         "version": "SuperCmd v{version}"
       }
     },
     "ai": {
-      "title": "AI 设置",
-      "loading": "正在加载 AI 设置...",
-      "saved": "已保存",
+      "title": "AI 설정",
+      "loading": "AI 설정을 불러오는 중...",
+      "saved": "저장됨",
+      "languages": {
+        "arabic": "아랍어",
+        "chineseMandarin": "중국어(만다린)",
+        "englishUs": "영어(미국)",
+        "englishUk": "영어(영국)",
+        "frenchCanada": "프랑스어(캐나다)",
+        "frenchFrance": "프랑스어(프랑스)",
+        "german": "독일어",
+        "hindi": "힌디어",
+        "italian": "이탈리아어",
+        "japanese": "일본어",
+        "korean": "한국어",
+        "portugueseBrazil": "포르투갈어(브라질)",
+        "russian": "러시아어",
+        "spanishMexico": "스페인어(멕시코)",
+        "spanishSpain": "스페인어(스페인)"
+      },
       "enableAI": {
-        "title": "启用 AI",
-        "description": "AI 功能的总开关。"
+        "title": "AI 활성화",
+        "description": "AI 기능을 위한 마스터 스위치."
       },
       "tabs": {
-        "apiKeys": "API 密钥",
-        "llm": "大语言模型",
-        "whisper": "SuperCmd 语音输入",
-        "speak": "SuperCmd 语音朗读"
+        "apiKeys": "API 키",
+        "llm": "LLM",
+        "whisper": "SuperCmd Whisper",
+        "speak": "SuperCmd Read"
       },
       "apiKeys": {
         "openai": {
-          "label": "ChatGPT (OpenAI) API 密钥",
+          "label": "ChatGPT (OpenAI) API 키",
           "placeholder": "sk-..."
         },
         "anthropic": {
-          "label": "Claude (Anthropic) API 密钥",
+          "label": "Claude (Anthropic) API 키",
           "placeholder": "sk-ant-..."
         },
         "gemini": {
-          "label": "Gemini (Google) API 密钥",
+          "label": "Gemini (Google) API 키",
           "placeholder": "AIza..."
         },
         "elevenlabs": {
-          "label": "ElevenLabs API 密钥",
+          "label": "ElevenLabs API 키",
           "placeholder": "xi-..."
         },
         "supermemory": {
           "title": "Supermemory",
-          "description": "用于长期上下文记忆的存储后端。",
+          "description": "장기 컨텍스트를 위한 메모리 백엔드.",
           "apiKey": {
-            "label": "Supermemory API 密钥",
+            "label": "Supermemory API 키",
             "placeholder": "sm-..."
           },
           "client": {
-            "label": "Supermemory 客户端",
+            "label": "Supermemory 클라이언트",
             "placeholder": "client-123",
-            "hint": "用于限定用户记忆检索的范围。"
+            "hint": "사용자별 메모리 검색 범위를 구분할 때 사용합니다."
           },
           "baseUrl": {
-            "label": "Supermemory 基础 URL",
+            "label": "Supermemory 기본 URL",
             "placeholder": "https://api.supermemory.ai"
           },
-          "localMode": "使用本地模式（保存在本地）"
+          "localMode": "로컬 모드 사용(로컬에 저장됨)"
         }
       },
       "llm": {
         "enableLLM": {
-          "title": "启用大语言模型",
-          "description": "开启基于模型的 AI 功能。"
+          "title": "LLM 활성화",
+          "description": "모델 기반 AI 기능을 켜거나 끕니다."
         },
         "modelSelection": {
-          "title": "通用模型选择",
-          "description": "供扩展和不依赖特定模型的 AI 操作使用。"
+          "title": "일반 모델 선택",
+          "description": "확장 기능과 특정 모델에 종속되지 않는 AI 작업에 사용됩니다."
         },
         "provider": {
-          "label": "提供商",
+          "label": "제공자",
           "openai": "OpenAI",
           "anthropic": "Claude",
           "gemini": "Gemini",
           "ollama": "Ollama",
-          "openaiCompatible": "自定义 (OpenAI 兼容)"
+          "openaiCompatible": "사용자 지정(OpenAI 호환)"
+        },
+        "providerDescriptions": {
+          "openai": "GPT 제품군 모델",
+          "anthropic": "Claude 계열 모델",
+          "gemini": "Google Gemini 모델",
+          "ollama": "로컬 모델",
+          "openaiCompatible": "모든 OpenAI 호환 API(OpenRouter, Together 등)"
         },
         "ollama": {
           "serverUrl": {
-            "label": "Ollama 服务器地址",
+            "label": "Ollama 서버 URL",
             "placeholder": "http://localhost:11434"
           },
-          "models": "Ollama 模型",
-          "refresh": "刷新",
-          "checking": "正在检查 Ollama 状态...",
+          "models": "Ollama 모델",
+          "refresh": "새로고침",
+          "checking": "Ollama 상태 확인 중...",
           "notRunning": {
-            "title": "Ollama 未运行",
-            "description": "安装并运行 Ollama 以使用本地模型。",
-            "download": "下载 Ollama"
+            "title": "Ollama가 실행되고 있지 않습니다.",
+            "description": "로컬 모델을 사용하려면 Ollama를 설치하고 실행하세요.",
+            "download": "Ollama 다운로드"
           },
-          "running": "Ollama 运行中",
-          "installed": "已安装",
-          "downloadModel": "下载",
-          "removeModel": "移除",
-          "downloading": "正在下载...",
-          "removing": "正在移除..."
+          "running": "Ollama 실행 중",
+          "installed": "설치됨",
+          "downloadModel": "다운로드",
+          "removeModel": "제거",
+          "downloading": "다운로드 중...",
+          "removing": "제거 중...",
+          "startingDownload": "다운로드 시작 중...",
+          "deleteFailed": "모델을 삭제하지 못했습니다.",
+          "curatedDescriptions": {
+            "llama32": "메타범용(3B)",
+            "llama32_1b": "작고 빠름",
+            "mistral": "효율적인 범용",
+            "codellama": "코드 생성 및 완성",
+            "phi3": "Microsoft 소규모 언어 모델",
+            "gemma2": "Google 개방형 모델(9B)",
+            "qwen25": "Alibaba 다국어 모델(7B)",
+            "deepseekR1": "추론 중심 모델(7B)"
+          }
         },
         "openaiCompatible": {
           "baseUrl": {
-            "label": "基础 URL",
+            "label": "기본 URL",
             "placeholder": "https://api.openrouter.ai/v1",
-            "hint": "如果你的提供商使用 /v1，请包含它（例如 https://api.openai.com/v1）"
+            "hint": "공급자가 사용하는 경우 /v1을 포함합니다(예: https://api.openai.com/v1)."
           },
           "apiKey": {
-            "label": "API 密钥",
+            "label": "API 키",
             "placeholder": "sk-..."
           },
           "modelName": {
-            "label": "模型名称",
+            "label": "모델명",
             "placeholder": "anthropic/claude-3.5-sonnet",
-            "hint": "你的提供商期望的确切模型名称（例如 gpt-4o、meta-llama/llama-3.1-70b-instruct）"
+            "hint": "제공자가 요구하는 정확한 모델 이름을 입력하세요(예: gpt-4o, meta-llama/llama-3.1-70b-instruct)."
           }
         },
         "defaultModel": {
-          "label": "默认模型",
-          "auto": "自动（提供商默认）"
+          "label": "기본 모델",
+          "auto": "자동(제공자 기본값)"
         }
       },
       "whisper": {
         "enableWhisper": {
-          "title": "启用 SuperCmd 语音输入",
-          "description": "开启语音转文字功能。"
+          "title": "SuperCmd Whisper 활성화",
+          "description": "음성 받아쓰기 기능을 켜거나 끕니다."
         },
-        "title": "SuperCmd 语音输入",
-        "description": "语音转文字和转录文本清理。",
+        "title": "SuperCmd Whisper",
+        "description": "음성을 텍스트로 변환하고 전사 결과를 정리합니다.",
         "model": {
-          "label": "转录模型",
-          "native": "原生（默认）",
-          "openaiGpt4o": "OpenAI GPT-4o 转录",
+          "label": "전사 모델",
+          "native": "기본(권장)",
+          "openaiGpt4o": "OpenAI GPT-4o Transcribe",
           "openaiWhisper": "OpenAI Whisper-1",
           "elevenlabsScribeV1": "ElevenLabs Scribe v1",
           "elevenlabsScribeV2": "ElevenLabs Scribe v2"
         },
-        "openaiWarning": "已选择 OpenAI Whisper。请在 API 密钥中添加 OpenAI API 密钥。",
-        "elevenlabsWarning": "已选择 ElevenLabs 语音转文字。请在 API 密钥中{action} ElevenLabs API 密钥。",
-        "elevenlabsReady": "已选择 ElevenLabs 语音转文字。云端转录将使用你的 ElevenLabs 密钥。",
-        "hotkeys": {
-          "title": "语音输入快捷键",
-          "startStop": "开始/停止说话",
-          "setToFn": "设为 Fn 键",
-          "fnHint": "使用「设为 Fn 键」恢复默认的按住说话快捷键。",
-          "fnHintBefore": "Use",
-          "fnHintAfter": "to restore the default hold-to-talk key."
-        },
-        "smoothOutput": {
-          "title": "平滑输出",
-          "description": "清理填充词和自我纠正。"
-        },
-        "smoothingModel": {
-          "label": "平滑模型",
-          "useDefault": "使用通用默认模型",
-          "hint": "使用你当前提供商的模型。"
-        },
         "modelOptions": {
-          "whispercpp": "SuperCmd Whisper (Default)",
-          "parakeet": "Parakeet v3 (Best and fastest, 25+ European languages)",
-          "qwen3": "Qwen3 ASR (30+ languages including Chinese, Japanese, Korean, Thai, Vietnamese, Hindi)",
+          "whispercpp": "SuperCmd Whisper (기본값)",
+          "parakeet": "Parakeet TDT v3(가장 빠름, 25개 이상의 유럽 언어 지원)",
+          "qwen3": "Qwen3 ASR(중국어, 일본어, 한국어, 태국어, 베트남어, 힌디어를 포함한 30개 이상의 언어)",
           "native": "Apple Speech Recognition",
           "openaiGpt4o": "OpenAI GPT-4o Transcribe",
           "openaiWhisper": "OpenAI Whisper-1",
           "elevenlabsScribeV1": "ElevenLabs Scribe v1",
           "elevenlabsScribeV2": "ElevenLabs Scribe v2"
         },
+        "openaiWarning": "OpenAI Whisper가 선택되었습니다. API 키에서 OpenAI API 키를 추가하세요.",
+        "elevenlabsWarning": "ElevenLabs STT가 선택되었습니다. API 키에서 ElevenLabs API 키를 {action}하세요.",
+        "elevenlabsReady": "ElevenLabs STT가 선택되었습니다. 클라우드 전사에 ElevenLabs 키가 사용됩니다.",
+        "recognitionLanguage": "인식 언어",
         "providerInfo": {
-          "parakeet": "Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Requires model warmup on first use. Download the model below before using dictation.",
-          "qwen3": "Offline on-device transcription via Qwen3 ASR. Supports 30+ languages, requires macOS 15+, and warms up on first use.",
-          "whispercpp": "Offline on-device transcription via Whisper.cpp. Download the default ggml base model below before using dictation.",
-          "native": "Uses Apple Speech Recognition instead of SuperCmd Whisper."
+          "parakeet": "Parakeet TDT v3를 통한 오프라인 기기 내 전사. Apple Neural Engine에서 실행됩니다. 처음 사용할 때 모델 준비가 필요합니다. 받아쓰기를 사용하기 전에 아래 모델을 다운로드하세요.",
+          "qwen3": "Qwen3 ASR을 통한 오프라인 온디바이스 전사. 30개 이상의 언어를 지원하고 macOS 15 이상이 필요하며 처음 사용할 때 예열됩니다.",
+          "whispercpp": "Whisper.cpp를 통한 오프라인 온디바이스 전사입니다. 받아쓰기를 사용하기 전에 아래의 기본 ggml 모델을 다운로드하세요.",
+          "native": "SuperCmd Whisper 대신 Apple Speech Recognition을 사용합니다."
         },
-        "recognitionLanguage": "Recognition Language",
+        "hotkeys": {
+          "title": "Whisper 단축키",
+          "startStop": "말하기 시작/중지",
+          "setToFn": "Fn으로 설정",
+          "fnHint": "기본 길게 눌러 말하기 키로 되돌리려면 Fn으로 설정을 사용하세요.",
+          "fnHintBefore": "사용",
+          "fnHintAfter": "하여 기본 길게 눌러 말하기 키로 복원하세요."
+        },
+        "smoothOutput": {
+          "title": "부드러운 출력",
+          "description": "군더더기 표현과 자기 수정 표현을 정리합니다."
+        },
+        "smoothingModel": {
+          "label": "스무딩 모델",
+          "useDefault": "일반 기본 모델 사용",
+          "hint": "현재 제공자의 모델을 사용합니다."
+        },
         "downloadCards": {
-          "modelDownloadFailed": "Model download failed.",
+          "modelDownloadFailed": "모델 다운로드에 실패했습니다.",
           "actions": {
-            "downloaded": "Model Downloaded",
-            "downloading": "Downloading...",
-            "download": "Download Model"
+            "downloaded": "모델이 다운로드됨",
+            "downloading": "다운로드 중...",
+            "download": "모델 다운로드"
           },
           "parakeet": {
             "title": "Parakeet TDT v3",
-            "description": "Multilingual on-device transcription. Runs on Apple Neural Engine.",
-            "ready": "Downloaded. Parakeet v3 is ready to use offline.",
-            "downloading": "Downloading Parakeet v3 models",
-            "notDownloaded": "Model not downloaded yet. Download it now to use Parakeet dictation."
+            "description": "다국어 온디바이스 전사. Apple Neural Engine에서 실행됩니다.",
+            "ready": "다운로드되었습니다. Parakeet v3를 오프라인에서 사용할 수 있습니다.",
+            "downloading": "Parakeet v3 모델 다운로드 중",
+            "notDownloaded": "모델이 아직 다운로드되지 않았습니다. 지금 다운로드하여 Parakeet 받아쓰기를 사용하세요."
           },
           "qwen3": {
             "title": "Qwen3 ASR",
-            "description": "30-language on-device transcription. Requires macOS 15+.",
-            "ready": "Downloaded. Qwen3 ASR is ready to use offline.",
-            "downloading": "Downloading Qwen3 ASR models",
-            "notDownloaded": "Model not downloaded yet. Download the ~900 MB int8 model to use Qwen3 dictation."
+            "description": "30개 언어 온디바이스 전사. macOS 15 이상이 필요합니다.",
+            "ready": "다운로드되었습니다. Qwen3 ASR은 오프라인에서도 사용할 수 있습니다.",
+            "downloading": "Qwen3 ASR 모델 다운로드",
+            "notDownloaded": "모델이 아직 다운로드되지 않았습니다. Qwen3 받아쓰기를 사용하려면 ~900MB int8 모델을 다운로드하세요."
           },
           "whispercpp": {
             "title": "SuperCmd Whisper",
-            "description": "Download the ggml base model once to enable local dictation.",
-            "ready": "Downloaded. SuperCmd Whisper is ready to use offline.",
-            "downloading": "Downloading SuperCmd Whisper",
-            "notDownloaded": "Model not downloaded yet. Download it now to use SuperCmd Whisper dictation."
+            "description": "로컬 받아쓰기를 활성화하려면 ggml 기본 모델을 한 번 다운로드하세요.",
+            "ready": "다운로드되었습니다. SuperCmd Whisper를 오프라인에서 사용할 수 있습니다.",
+            "downloading": "SuperCmd Whisper 다운로드 중",
+            "notDownloaded": "모델이 아직 다운로드되지 않았습니다. SuperCmd Whisper 받아쓰기를 사용하려면 지금 다운로드하세요."
           }
         }
       },
       "speak": {
         "enableRead": {
-          "title": "启用 SuperCmd 语音朗读",
-          "description": "开启文字转语音功能。"
+          "title": "SuperCmd Read 활성화",
+          "description": "텍스트 음성 변환 기능을 켜거나 끕니다."
         },
-        "title": "SuperCmd 语音朗读",
-        "description": "朗读选中的文字。",
+        "title": "SuperCmd Read",
+        "description": "선택한 텍스트를 음성으로 읽어줍니다.",
         "provider": {
-          "label": "语音提供商",
-          "edgeTTS": "Edge TTS（默认）",
-          "elevenlabsMultilingual": "ElevenLabs 多语言 v2",
-          "elevenlabsFlash": "ElevenLabs Flash v2.5",
-          "elevenlabsTurbo": "ElevenLabs Turbo v2.5",
-          "elevenlabsV3": "ElevenLabs v3（Alpha）"
+          "label": "음성 제공자",
+          "edgeTTS": "Edge TTS(기본값)",
+          "elevenlabsMultilingual": "ElevenLabs 다국어 v2",
+          "elevenlabsFlash": "ElevenLabs 플래시 v2.5",
+          "elevenlabsTurbo": "ElevenLabs 터보 v2.5",
+          "elevenlabsV3": "ElevenLabs v3(알파)"
         },
         "edgeTTS": {
-          "voice": "Edge TTS 语音",
-          "fetching": "正在获取完整语音列表...",
+          "voice": "Edge TTS 음성",
+          "fetching": "전체 음성 목록을 가져오는 중...",
           "language": {
-            "label": "语言"
+            "label": "언어"
           },
           "gender": {
-            "label": "语音性别",
-            "female": "女声",
-            "male": "男声"
+            "label": "음성 성별",
+            "female": "여성",
+            "male": "남성"
           },
           "voiceLabel": {
-            "label": "语音"
+            "label": "목소리"
           },
           "playSample": {
-            "idle": "播放示例语音",
-            "playing": "正在播放示例..."
+            "idle": "샘플 음성 재생",
+            "playing": "샘플 재생 중..."
           }
         },
         "elevenlabs": {
           "model": {
-            "label": "ElevenLabs 模型"
+            "label": "ElevenLabs 모델"
           },
           "voice": {
-            "label": "ElevenLabs 语音",
-            "fetching": "正在获取你的语音...",
-            "builtIn": "内置语音",
-            "premade": "额外预制语音",
-            "custom": "你的自定义语音（克隆/生成）",
-            "professional": "专业语音克隆",
-            "available": "你的 ElevenLabs 账户中有 {count} 个自定义语音可用"
+            "label": "ElevenLabs 음성",
+            "fetching": "목소리를 가져오는 중...",
+            "fetchFailed": "음성을 가져오지 못했습니다.",
+            "builtIn": "기본 제공 음성",
+            "premade": "추가 사전 제작 음성",
+            "custom": "사용자 지정 음성(복제/생성)",
+            "professional": "전문 음성 복제",
+            "available": "ElevenLabs 계정에서 사용자 지정 음성 {count}개{plural}를 사용할 수 있습니다."
           },
           "playSample": {
-            "idle": "播放示例语音",
-            "playing": "正在播放示例..."
+            "idle": "샘플 음성 재생",
+            "playing": "샘플 재생 중..."
           },
-          "storageHint": "SuperCmd 将其存储为 {value}。",
-          "apiKeyWarning": "请在 API 密钥中添加 ElevenLabs API 密钥。"
+          "storageHint": "SuperCmd는 이를 {value}로 저장합니다.",
+          "apiKeyWarning": "API 키에 ElevenLabs API 키를 추가합니다."
         },
         "notes": {
-          "title": "说明",
-          "whisperDefault": "语音输入默认使用 SuperCmd Whisper 和本地 ggml base 模型。",
-          "speakDefault": "语音朗读默认使用 Edge TTS，支持按语言选择男女声。",
-          "englishVoice": "英语语音选项故意限制为美国和英国变体。",
-          "elevenlabsVoices": "配置 API 密钥后，ElevenLabs 自定义语音（克隆/生成）将自动显示。"
+          "title": "참고",
+          "whisperDefault": "Whisper 기본값은 로컬 ggml base 모델을 사용하는 SuperCmd Whisper입니다.",
+          "speakDefault": "말하기 기본값은 언어별 남성/여성 음성 선택이 가능한 Edge TTS입니다.",
+          "englishVoice": "영어 음성 옵션은 의도적으로 미국 및 영국 변형으로 제한됩니다.",
+          "elevenlabsVoices": "API 키가 구성되면 ElevenLabs 사용자 정의 음성(복제/생성)이 자동으로 나타납니다."
         }
       },
-      "hotkeyUpdated": "快捷键已更新。",
-      "hotkeyRemoved": "快捷键已移除。",
-      "hotkeyDuplicate": "快捷键已被其他 SuperCmd 命令使用。",
-      "hotkeyUnavailable": "快捷键不可用。它可能已被 macOS 或其他应用占用。"
+      "hotkeyUpdated": "단축키가 업데이트되었습니다.",
+      "hotkeyRemoved": "단축키가 제거되었습니다.",
+      "hotkeyDuplicate": "다른 SuperCmd 명령에서 이미 사용 중인 단축키입니다.",
+      "hotkeyUnavailable": "단축키를 사용할 수 없습니다. macOS 또는 다른 앱에서 사용될 수 있습니다."
     },
     "extensions": {
-      "title": "扩展",
-      "loading": "正在加载扩展设置...",
+      "title": "확장",
+      "loading": "확장 설정을 불러오는 중...",
       "builtIn": {
         "superCmd": {
           "title": "SuperCmd",
-          "description": "SuperCmd 内置命令"
+          "description": "내장 SuperCmd 명령"
         },
         "scriptCommands": {
-          "title": "脚本命令",
-          "description": "自定义和 Raycast 兼容的脚本命令"
+          "title": "스크립트 명령",
+          "description": "사용자 정의 및 Raycast 호환 스크립트 명령"
         },
         "applications": {
-          "title": "应用程序",
-          "description": "已安装的 macOS 应用程序，支持启动和快捷键"
+          "title": "앱",
+          "description": "실행 및 단축키를 지원하는 설치된 macOS 앱"
         },
         "systemSettings": {
-          "title": "系统设置",
-          "description": "macOS 设置面板，支持启动和快捷键",
-          "pane": "系统设置面板"
+          "title": "시스템 설정",
+          "description": "실행 및 단축키 지원이 포함된 macOS 설정 창",
+          "pane": "시스템 설정 창"
         }
       },
       "search": {
-        "placeholder": "搜索...",
-        "all": "全部",
-        "commands": "命令"
+        "placeholder": "검색...",
+        "all": "모두",
+        "commands": "명령"
       },
       "install": {
-        "button": "安装扩展",
-        "fromStore": "从商店安装",
-        "addFolder": "添加文件夹",
-        "customScript": "自定义脚本"
+        "button": "확장 설치",
+        "fromStore": "스토어에서 설치",
+        "addFolder": "폴더 추가",
+        "customScript": "사용자 정의 스크립트"
       },
       "customFolders": {
-        "title": "自定义文件夹",
-        "empty": "从安装扩展中添加文件夹",
-        "remove": "移除"
+        "title": "사용자 정의 폴더",
+        "empty": "설치 확장에서 폴더 추가",
+        "remove": "제거"
       },
-      "installExtension": "安装扩展",
-      "installFromStore": "从商店安装",
-      "addFolder": "添加文件夹",
-      "customScript": "自定义脚本",
+      "installExtension": "확장 설치",
+      "installFromStore": "스토어에서 설치",
+      "addFolder": "폴더 추가",
+      "customScript": "사용자 정의 스크립트",
       "columns": {
-        "name": "名称",
-        "type": "类型",
-        "alias": "别名",
-        "hotkey": "快捷键",
-        "enabled": "启用"
+        "name": "이름",
+        "type": "유형",
+        "alias": "별명",
+        "hotkey": "단축키",
+        "enabled": "활성화됨"
       },
       "types": {
-        "builtIn": "内置",
-        "apps": "应用",
-        "settings": "设置",
-        "scripts": "脚本",
-        "extension": "扩展",
-        "application": "应用程序"
+        "builtIn": "내장",
+        "apps": "앱",
+        "settings": "설정",
+        "scripts": "스크립트",
+        "extension": "확장",
+        "application": "애플리케이션",
+        "command": "명령",
+        "menuBarCommand": "메뉴 표시줄 명령"
       },
       "alias": {
-        "add": "添加别名",
-        "placeholder": "添加别名",
-        "edit": "编辑别名"
+        "add": "별칭 추가",
+        "placeholder": "별칭 추가",
+        "edit": "별칭 편집"
       },
       "hotkey": {
-        "record": "录制快捷键"
+        "record": "단축키 기록",
+        "duplicateWithCommand": "\"{name}\"이(가) 이미 사용하고 있는 단축키입니다."
       },
-      "noResults": "没有匹配的扩展",
-      "selectExtension": "选择一个扩展",
-      "extensionPreferences": "扩展偏好设置",
-      "commandPreferences": "命令偏好设置",
-      "noPreferences": "没有偏好设置",
-      "enabled": "已启用",
-      "logout": "退出登录",
-      "loggedIn": "已登录 {name}",
+      "preferences": {
+        "selectOption": "옵션을 선택하세요"
+      },
+      "noResults": "일치하는 확장자가 없습니다.",
+      "selectExtension": "확장 프로그램 선택",
+      "extensionPreferences": "확장 기본 설정",
+      "commandPreferences": "명령 기본 설정",
+      "noPreferences": "환경설정 없음",
+      "enabled": "활성화됨",
+      "logout": "로그아웃",
+      "loggedIn": "{name}에 로그인했습니다.",
       "uninstall": {
-        "title": "卸载 \"{name}\"？",
-        "description": "此扩展及其命令将从 SuperCmd 中移除。",
-        "cancel": "取消",
-        "confirm": "卸载",
-        "uninstalling": "正在卸载...",
-        "success": "已卸载 \"{name}\"。",
-        "failed": "卸载 \"{name}\" 失败。"
+        "title": "\"{name}\"을(를) 제거하시겠습니까?",
+        "description": "이 확장 프로그램과 해당 명령은 SuperCmd에서 제거됩니다.",
+        "cancel": "취소",
+        "confirm": "제거",
+        "uninstalling": "제거 중...",
+        "success": "\"{name}\"을(를) 제거했습니다.",
+        "failed": "\"{name}\"을(를) 제거하지 못했습니다."
       },
       "folder": {
-        "added": "已添加扩展文件夹。",
-        "removed": "已移除扩展文件夹。",
-        "failed": "{action}扩展文件夹失败。",
-        "duplicate": "文件夹已添加。"
+        "added": "확장 폴더가 추가되었습니다.",
+        "removed": "확장 폴더가 제거되었습니다.",
+        "failed": "{action} 확장 폴더에 실패했습니다.",
+        "duplicate": "폴더가 이미 추가되었습니다."
       },
       "scripts": {
-        "opened": "已打开包含示例脚本的自定义脚本文件夹。",
-        "openedExisting": "已打开自定义脚本文件夹。",
-        "failed": "打开自定义脚本文件夹失败。"
+        "opened": "샘플 스크립트가 포함된 사용자 정의 스크립트 폴더를 열었습니다.",
+        "openedExisting": "사용자 정의 스크립트 폴더를 열었습니다.",
+        "failed": "사용자 정의 스크립트 폴더를 열지 못했습니다."
       }
     },
     "advanced": {
-      "title": "高级",
-      "loading": "正在加载高级设置...",
+      "title": "고급",
+      "loading": "고급 설정을 불러오는 중...",
       "debugMode": {
-        "title": "调试模式",
-        "description": "当扩展加载或构建失败时显示详细日志。",
-        "label": "启用调试模式"
+        "title": "디버그 모드",
+        "description": "확장 프로그램을 로드하거나 빌드하지 못한 경우 자세한 로그를 표시합니다.",
+        "label": "디버그 모드 활성화"
       }
     }
   },
   "launcher": {
-    "searchPlaceholder": "搜索应用、命令，或向 AI 提问...",
+    "searchPlaceholder": "앱, 명령을 검색하거나 AI에게 물어보세요...",
+    "status": {
+      "discoveringApps": "앱 검색 중...",
+      "noMatchingResults": "일치하는 결과가 없습니다",
+      "results": "{count} 결과"
+    },
     "aiMode": {
-      "placeholder": "向 AI 提问...",
-      "ask": "提问",
-      "thinking": "思考中...",
-      "streaming": "接收中...",
-      "response": "AI 回复",
-      "enterToAsk": "提问",
-      "escToBack": "返回"
+      "placeholder": "AI에게 무엇이든 물어보세요...",
+      "ask": "질문하기",
+      "thinking": "생각 중...",
+      "streaming": "스트리밍 중...",
+      "response": "AI 응답",
+      "enterToAsk": "질문하기",
+      "escToBack": "뒤로"
     },
     "categories": {
-      "recent": "最近使用",
-      "applications": "应用程序",
-      "commands": "命令",
-      "extensions": "扩展",
-      "scripts": "脚本",
-      "settings": "设置",
-      "files": "文件",
-      "calculator": "计算器",
-      "quickLinks": "快速链接"
+      "recent": "최근 항목",
+      "applications": "앱",
+      "commands": "명령",
+      "extensions": "확장",
+      "scripts": "스크립트",
+      "settings": "설정",
+      "files": "파일",
+      "calculator": "계산자",
+      "quickLinks": "빠른 링크"
     },
     "actions": {
-      "open": "打开",
-      "execute": "执行",
-      "run": "运行",
-      "copy": "复制",
-      "copyToClipboard": "复制到剪贴板",
-      "paste": "粘贴",
-      "showInFinder": "在 Finder 中显示",
-      "revealInFinder": "在 Finder 中定位",
-      "getInfo": "显示简介",
-      "quit": "退出",
-      "forceQuit": "强制退出",
-      "hide": "隐藏",
-      "show": "显示",
-      "preferences": "偏好设置",
-      "actions": "操作"
+      "open": "열기",
+      "openCommand": "명령 열기",
+      "openFile": "파일 열기",
+      "execute": "실행",
+      "run": "실행",
+      "copy": "복사",
+      "copyPath": "경로 복사",
+      "copyToClipboard": "클립보드에 복사",
+      "paste": "붙여넣기",
+      "showDetails": "세부정보 표시",
+      "showInFinder": "Finder에 표시",
+      "revealInFinder": "Finder에서 보기",
+      "getInfo": "정보 가져오기",
+      "quit": "종료",
+      "forceQuit": "강제 종료",
+      "hide": "숨기기",
+      "show": "표시",
+      "preferences": "환경설정",
+      "actions": "동작",
+      "pinCommand": "명령 고정",
+      "unpinCommand": "명령 고정 해제",
+      "pinExtension": "확장 고정",
+      "unpinExtension": "확장 고정 해제",
+      "disableCommand": "명령 비활성화",
+      "moveUp": "위로 이동",
+      "moveDown": "아래로 이동"
     },
     "empty": {
-      "noResults": "未找到结果",
-      "startTyping": "开始输入以搜索...",
-      "allCommands": "你的所有命令将显示在这里"
+      "noResults": "검색결과가 없습니다",
+      "startTyping": "검색하려면 입력을 시작하세요...",
+      "allCommands": "모든 명령이 여기에 표시됩니다."
     },
     "footer": {
-      "actions": "操作",
-      "select": "选择",
-      "back": "返回"
+      "actions": "동작",
+      "select": "선택",
+      "back": "뒤로"
+    },
+    "sections": {
+      "selectedText": "선택한 텍스트",
+      "pinned": "고정됨"
+    },
+    "calculator": {
+      "pressEnterToCopy": "복사하려면 Enter를 누르세요.",
+      "clickToCopy": "복사하려면 클릭하세요.",
+      "copy": "복사"
+    },
+    "badges": {
+      "application": "애플리케이션",
+      "extension": "확장",
+      "script": "스크립트",
+      "settings": "설정",
+      "quickLink": "빠른 링크"
     }
   },
   "scriptCommand": {
     "setup": {
-      "title": "配置脚本命令",
-      "description": "运行前请提供必需的参数。",
-      "continue": "继续"
+      "title": "스크립트 명령 설정",
+      "description": "실행하기 전에 필수 인수를 제공하십시오.",
+      "continue": "계속"
     },
     "output": {
-      "success": "成功",
-      "exitCode": "退出码 {code}",
-      "noOutput": "（无输出）"
+      "success": "성공",
+      "exitCode": "종료 코드 {code}",
+      "noOutput": "(출력 없음)"
     }
   },
   "extension": {
     "setup": {
-      "title": "配置 {name}",
-      "description": "运行此命令前请添加必需的设置。",
-      "arguments": "参数",
-      "preferences": "偏好设置",
-      "continue": "继续",
-      "selectOption": "选择一个选项"
+      "title": "{name} 설정",
+      "description": "이 명령을 실행하기 전에 필수 설정을 추가하세요.",
+      "arguments": "인수",
+      "preferences": "환경설정",
+      "continue": "계속",
+      "selectOption": "옵션을 선택하세요"
     }
   },
   "cursorPrompt": {
-    "placeholder": "告诉 AI 如何处理选中的文字...",
-    "processing": "处理中...",
-    "ready": "准备应用",
-    "applied": "已应用到编辑器",
-    "close": "关闭",
-    "accept": "接受",
-    "submit": "提交",
-    "enterToSubmit": "回车"
+    "placeholder": "AI에게 선택한 텍스트로 무엇을 할지 알려주세요...",
+    "processing": "처리 중...",
+    "ready": "적용 준비 완료",
+    "applied": "편집기에 적용됨",
+    "close": "닫기",
+    "accept": "수락",
+    "submit": "제출",
+    "enterToSubmit": "Enter"
   },
   "store": {
-    "title": "商店",
-    "community": "社区",
-    "searchPlaceholder": "搜索扩展...",
-    "installedFirst": "已安装的扩展优先显示。",
-    "refresh": "刷新",
-    "loading": "正在加载扩展目录...",
-    "noResults": "没有匹配的扩展",
-    "noExtensions": "没有可用的扩展",
-    "tryAgain": "尝试更短的查询、其他关键词，或使用扩展名称的一部分进行模糊匹配。",
-    "refreshCatalog": "刷新目录或稍后再试。",
-    "clearSearch": "清除搜索",
-    "refreshButton": "刷新目录",
-    "installed": "已安装",
-    "install": "安装扩展",
-    "update": "更新扩展",
-    "uninstall": "卸载扩展",
-    "openReadme": "打开 README",
-    "viewSource": "查看源码",
-    "installing": "正在安装扩展",
-    "installedSuccess": "扩展安装成功",
-    "installFailed": "安装失败",
+    "title": "스토어",
+    "community": "커뮤니티",
+    "searchPlaceholder": "확장 검색...",
+    "installedFirst": "설치된 확장 프로그램이 먼저 나타납니다.",
+    "refresh": "새로고침",
+    "loading": "확장 카탈로그 로드 중...",
+    "noResults": "검색어와 일치하는 확장자가 없습니다.",
+    "noExtensions": "사용 가능한 확장 프로그램이 없습니다.",
+    "tryAgain": "다른 검색어로 다시 시도해 보세요.",
+    "refreshCatalog": "카탈로그를 새로 고치거나 잠시 후에 다시 시도하세요.",
+    "clearSearch": "검색 지우기",
+    "refreshButton": "카탈로그 새로 고침",
+    "installed": "설치됨",
+    "install": "확장 설치",
+    "update": "확장 프로그램 업데이트",
+    "uninstall": "확장 프로그램 제거",
+    "openReadme": "읽어보기 열기",
+    "viewSource": "소스 보기",
+    "installing": "확장 설치",
+    "installedSuccess": "확장 프로그램이 설치됨",
+    "installFailed": "설치 실패",
     "tabs": {
-      "overview": "概览",
-      "commands": "命令",
-      "screenshots": "截图",
-      "team": "团队"
+      "overview": "개요",
+      "commands": "명령",
+      "screenshots": "스크린샷",
+      "team": "팀"
     },
     "sections": {
-      "description": "描述",
-      "screenshots": "截图",
-      "topCommands": "热门命令",
-      "categories": "分类",
-      "noDescription": "没有提供描述。",
-      "noScreenshots": "没有声明截图。",
-      "noScreenshotsAvailable": "此扩展没有可用的截图。",
-      "noCommands": "没有声明命令。",
-      "moreCommands": "+{count} 个更多命令",
-      "noContributors": "没有声明贡献者。"
+      "description": "설명",
+      "screenshots": "스크린샷",
+      "topCommands": "상위 명령",
+      "categories": "카테고리",
+      "noDescription": "설명이 제공되지 않았습니다.",
+      "noScreenshots": "선언된 스크린샷이 없습니다.",
+      "noScreenshotsAvailable": "이 확장 프로그램에 사용할 수 있는 스크린샷이 없습니다.",
+      "noCommands": "선언된 명령이 없습니다.",
+      "moreCommands": "+{count}개 추가 명령",
+      "noContributors": "선언된 기여자가 없습니다."
     },
     "actions": {
-      "title": "操作",
-      "install": "安装扩展",
-      "update": "更新扩展",
-      "uninstall": "卸载扩展"
+      "title": "동작"
+    },
+    "errorBoundary": {
+      "title": "확장 스토어를 불러오는 중 문제가 발생했습니다.",
+      "retry": "다시 시도"
     }
   },
   "clipboard": {
-    "title": "剪贴板历史",
-    "empty": "剪贴板为空",
-    "clear": "清除历史",
-    "pin": "固定",
-    "unpin": "取消固定",
-    "delete": "删除",
-    "copy": "复制",
-    "paste": "粘贴",
-    "searchPlaceholder": "搜索剪贴板历史..."
+    "title": "클립보드 기록",
+    "empty": "클립보드가 비어 있습니다.",
+    "clear": "기록 지우기",
+    "pin": "고정",
+    "unpin": "고정 해제",
+    "delete": "삭제",
+    "copy": "복사",
+    "paste": "붙여넣기",
+    "searchPlaceholder": "클립보드 기록 검색..."
   },
   "snippets": {
-    "title": "代码片段",
-    "empty": "还没有代码片段",
-    "create": "创建代码片段",
-    "edit": "编辑代码片段",
-    "delete": "删除代码片段",
-    "searchPlaceholder": "搜索代码片段...",
-    "name": "名称",
-    "content": "内容",
-    "keyword": "关键词",
-    "save": "保存代码片段"
+    "title": "스니펫",
+    "empty": "아직 스니펫이 없습니다.",
+    "create": "스니펫 생성",
+    "edit": "스니펫 편집",
+    "delete": "스니펫 삭제",
+    "searchPlaceholder": "스니펫 검색...",
+    "name": "이름",
+    "content": "콘텐츠",
+    "keyword": "예어",
+    "save": "스니펫 저장"
   },
   "quickLinks": {
-    "title": "快速链接",
-    "empty": "还没有快速链接",
-    "create": "创建快速链接",
-    "edit": "编辑快速链接",
-    "delete": "删除快速链接",
-    "searchPlaceholder": "搜索快速链接...",
-    "name": "名称",
-    "url": "网址",
-    "icon": "图标",
-    "save": "保存快速链接"
+    "title": "빠른 링크",
+    "empty": "아직 빠른 링크가 없습니다.",
+    "create": "빠른 링크 만들기",
+    "edit": "빠른 링크 편집",
+    "delete": "빠른 링크 삭제",
+    "searchPlaceholder": "빠른 링크 검색...",
+    "name": "이름",
+    "url": "URL",
+    "icon": "아이콘",
+    "save": "빠른 링크 저장"
   },
   "fileSearch": {
-    "placeholder": "搜索文件...",
-    "noResults": "未找到文件",
-    "searching": "搜索中...",
-    "filters": "筛选",
-    "type": "类型",
-    "date": "日期",
-    "size": "大小"
+    "placeholder": "파일 검색...",
+    "noResults": "파일을 찾을 수 없습니다",
+    "searching": "검색 중...",
+    "filters": "필터",
+    "type": "유형",
+    "date": "날짜",
+    "size": "크기"
   },
   "windowManager": {
-    "title": "窗口管理",
-    "arrange": "排列窗口",
-    "resize": "调整大小",
-    "move": "移动",
-    "focus": "聚焦",
-    "close": "关闭窗口",
-    "minimize": "最小化",
-    "maximize": "最大化",
-    "fullscreen": "全屏",
-    "center": "居中",
-    "leftHalf": "左半屏",
-    "rightHalf": "右半屏",
-    "topHalf": "上半屏",
-    "bottomHalf": "下半屏",
-    "corners": "角落",
-    "displays": "显示器",
-    "nextDisplay": "下一个显示器",
-    "previousDisplay": "上一个显示器"
+    "title": "창 관리",
+    "arrange": "창 정렬",
+    "resize": "크기 조정",
+    "move": "이동",
+    "focus": "포커스",
+    "close": "창 닫기",
+    "minimize": "최소화",
+    "maximize": "최대화",
+    "fullscreen": "전체 화면",
+    "center": "가운데",
+    "leftHalf": "왼쪽 절반",
+    "rightHalf": "오른쪽 절반",
+    "topHalf": "상위 절반",
+    "bottomHalf": "하반부",
+    "corners": "코너",
+    "displays": "디스플레이",
+    "nextDisplay": "다음 디스플레이",
+    "previousDisplay": "이전 디스플레이"
   },
   "onboarding": {
-    "welcome": "欢迎使用 SuperCmd",
-    "description": "你的 macOS 生产力启动器",
-    "getStarted": "开始使用",
-    "skip": "跳过",
-    "next": "下一步",
-    "previous": "上一步",
-    "finish": "完成",
+    "welcome": "SuperCmd에 오신 것을 환영합니다",
+    "description": "macOS용 생산성 런처",
+    "getStarted": "시작하기",
+    "skip": "건너뛰기",
+    "next": "다음",
+    "previous": "이전",
+    "finish": "완료",
     "features": {
       "launcher": {
-        "title": "快速启动器",
-        "description": "使用单个快捷键启动应用、运行命令和搜索文件。"
+        "title": "빠른 실행기",
+        "description": "단일 바로가기로 앱을 실행하고, 명령을 실행하고, 파일을 검색하세요."
       },
       "extensions": {
-        "title": "扩展",
-        "description": "安装并使用兼容 Raycast 的扩展来增强你的工作流程。"
+        "title": "확장",
+        "description": "Raycast 호환 확장을 설치해 작업 흐름을 더 강력하게 만들어 보세요."
       },
       "ai": {
-        "title": "AI 集成",
-        "description": "与 AI 对话、使用语音转文字，并让 AI 帮助你写作和编辑。"
+        "title": "AI 통합",
+        "description": "AI와 대화하고, 음성 입력을 사용하고, 글쓰기와 편집에 도움을 받을 수 있습니다."
       }
     },
     "whisper": {
       "quick": {
-        "title": "Whisper Quick Onboarding",
-        "subtitle": "Hold to record, release to type",
+        "title": "Whisper 빠른 온보딩",
+        "subtitle": "길게 누르면 녹음되고, 떼면 입력됩니다.",
         "instructions": {
-          "before": "Press and hold ",
-          "after": " while speaking. Release it to process and type at your current cursor."
+          "before": "길게 누르기",
+          "after": "한 상태로 말해 보세요. 놓으면 현재 커서 위치에 입력됩니다."
         },
-        "practiceTitle": "Practice paragraph",
-        "practicePlaceholder": "Today I reviewed the roadmap and prioritized the top three tasks for this week. Please draft a short summary and share it with the team before lunch.",
-        "practiceHint": "Practice in this editor: hold hotkey, speak these two sentences, release, and verify the output.",
-        "footerHint": "Whisper stays near the bottom when active."
+        "practiceTitle": "문단 연습",
+        "practicePlaceholder": "오늘 저는 로드맵을 검토하고 이번 주에 가장 중요한 세 가지 작업의 우선순위를 정했습니다. 간단한 요약 초안을 작성하여 점심 식사 전에 팀과 공유하세요.",
+        "practiceHint": "이 편집기에서 연습하세요. 단축키를 누른 상태에서 이 두 문장을 말한 후 손을 떼고 출력을 확인하세요.",
+        "footerHint": "Whisper는 활성화되면 화면 하단 근처에 유지됩니다."
       }
     },
     "voice": {
       "steps": {
-        "welcome": "Welcome",
-        "coreFeatures": "Core Features",
-        "hotkeySetup": "Hotkey Setup",
-        "permissions": "Permissions",
-        "dictationMode": "Dictation Mode",
-        "readMode": "Read Mode",
-        "finalCheck": "Final Check"
+        "welcome": "환영",
+        "coreFeatures": "핵심 기능",
+        "hotkeySetup": "단축키 설정",
+        "permissions": "권한",
+        "dictationMode": "받아쓰기 모드",
+        "readMode": "읽기 모드",
+        "finalCheck": "최종 확인"
       },
       "featureCards": {
         "whisper": {
           "title": "Whisper",
-          "description": "Hold to speak and release to type."
+          "description": "말하려면 길게 누르고 입력하려면 손을 떼세요."
         },
         "read": {
           "title": "Read",
-          "description": "Read selected text with natural voice."
+          "description": "선택한 텍스트를 자연스러운 목소리로 읽어보세요."
         }
       },
       "permissions": {
-        "inputMonitoringTitle": "Input Monitoring",
-        "inputMonitoringDescription": "Required for Fn hold-to-talk detection and other global key monitoring in Whisper mode.",
-        "speechRecognitionTitle": "Speech Recognition",
-        "speechRecognitionDescription": "Optional. Needed only if you switch Whisper to the Apple Speech Recognition fallback.",
-        "microphoneTitle": "Microphone",
-        "microphoneDescription": "Required for SuperCmd Whisper Dictation."
+        "inputMonitoringTitle": "입력 모니터링",
+        "inputMonitoringDescription": "Whisper 모드에서 Fn 길게 눌러 말하기 감지와 기타 전역 키 모니터링에 필요합니다.",
+        "speechRecognitionTitle": "음성 인식",
+        "speechRecognitionDescription": "선택 사항입니다. Whisper를 Apple Speech Recognition 대체 모드로 전환한 경우에만 필요합니다.",
+        "microphoneTitle": "마이크로폰",
+        "microphoneDescription": "SuperCmd Whisper 받아쓰기에 필요합니다."
       },
       "permissionNotes": {
-        "blocked": "{target} access is blocked. Enable SuperCmd in System Settings, then return.",
-        "promptFailed": "Could not trigger the permission prompt. Open System Settings -> Privacy & Security, enable SuperCmd, then press request again.",
-        "notShown": "Permission prompt did not appear. Open Whisper once and press this again.",
-        "homeFolder": "Select your Home folder when prompted, then enable SuperCmd under Files and Folders if needed.",
-        "inputMonitoring": "In Input Monitoring, click \"+\" at the bottom left and add SuperCmd from your Applications folder."
+        "blocked": "{target} 접근이 차단되었습니다. 시스템 설정에서 SuperCmd를 허용한 뒤 다시 돌아오세요.",
+        "promptFailed": "권한 프롬프트를 트리거할 수 없습니다. 시스템 설정 -> 개인 정보 보호 및 보안을 열고 SuperCmd를 활성화한 다음 요청을 다시 누르세요.",
+        "notShown": "권한 프롬프트가 나타나지 않았습니다. Whisper를 한 번 연 뒤 다시 눌러 주세요.",
+        "homeFolder": "메시지가 나타나면 홈 폴더를 선택한 다음, 필요한 경우 파일 및 폴더에서 SuperCmd를 활성화합니다.",
+        "inputMonitoring": "입력 모니터링에서 왼쪽 아래의 \"+\"를 클릭한 뒤 응용 프로그램 폴더에서 SuperCmd를 추가하세요."
       },
       "dictation": {
-        "title": "Dictation Mode",
-        "howToTest": "How to test",
-        "howToTestHint": "Hold key, read sample, release to insert.",
-        "holdKeyUpdated": "Hold key updated",
-        "language": "Dictation language",
-        "sampleTitle": "Messages sample",
-        "sampleHint": "Hold your key and read the message above:",
-        "placeholder": "Dictated text appears here...",
-        "footerHint": "SuperCmd Whisper uses a local ggml base model by default. Apple Speech Recognition remains available as a fallback in Settings.",
-        "models": {
-          "downloadFailed": "Model download failed. Retry now or use Settings -> AI -> SuperCmd Whisper.",
+        "title": "받아쓰기 모드",
+        "howToTest": "테스트 방법",
+        "howToTestHint": "키를 누른 채 샘플을 읽은 후 손을 떼면 삽입됩니다.",
+        "holdKeyUpdated": "길게 누르기 키가 업데이트되었습니다.",
+        "language": "받아쓰기 언어",
+        "sampleTitle": "메시지 샘플",
+        "sampleHint": "키를 누른 채 위 메시지를 읽어보세요.",
+        "placeholder": "받아쓰기 텍스트가 여기에 표시됩니다...",
+        "footerHint": "SuperCmd Whisper는 기본적으로 로컬 ggml base 모델을 사용합니다. Apple Speech Recognition은 설정에서 대체 옵션으로 계속 사용할 수 있습니다.",
+      "models": {
+        "downloadFailed": "모델 다운로드에 실패했습니다. 지금 다시 시도하거나 설정 -> AI -> SuperCmd Whisper를 사용하세요.",
           "actions": {
-            "downloaded": "Downloaded",
-            "downloading": "Downloading...",
-            "download": "Download Model"
+            "downloaded": "다운로드됨",
+            "downloading": "다운로드 중...",
+            "download": "모델 다운로드"
           },
-          "parakeet": {
-            "title": "Parakeet TDT v3",
-            "ready": "Download complete. Parakeet v3 dictation is ready.",
-            "downloadingLead": "Downloading models, just a moment.",
-            "downloading": "Downloading Parakeet v3 CoreML models",
-            "notDownloaded": "SuperCmd starts downloading Parakeet v3 models on this step so dictation is ready before first use."
-          },
-          "whispercpp": {
-            "title": "SuperCmd Whisper",
-            "ready": "Download complete. SuperCmd Whisper dictation is ready.",
-            "downloadingLead": "Downloading model, just a moment.",
-            "downloading": "Downloading the ~300 MB ggml base model",
-            "notDownloaded": "SuperCmd starts downloading the SuperCmd Whisper model on this step so dictation is ready before first use."
+        "parakeet": {
+          "title": "Parakeet TDT v3",
+          "ready": "다운로드가 완료되었습니다. Parakeet v3 받아쓰기가 준비되었습니다.",
+          "downloadingLead": "모델을 다운로드하는 중입니다. 잠시만 기다리세요.",
+          "downloading": "Parakeet v3 CoreML 모델 다운로드",
+          "notDownloaded": "SuperCmd는 이 단계에서 Parakeet v3 모델 다운로드를 시작하므로 처음 사용하기 전에 받아쓰기가 준비됩니다."
+        },
+        "whispercpp": {
+          "title": "SuperCmd Whisper",
+          "ready": "다운로드가 완료되었습니다. SuperCmd Whisper 받아쓰기가 준비되었습니다.",
+          "downloadingLead": "모델을 다운로드하는 중입니다. 잠시만 기다리세요.",
+          "downloading": "~300MB ggml 기본 모델 다운로드",
+          "notDownloaded": "SuperCmd는 이 단계에서 SuperCmd Whisper 모델 다운로드를 시작하므로 처음 사용하기 전에 받아쓰기가 준비됩니다."
           },
           "cloud": {
-            "title": "Cloud Transcription",
-            "description": "Using cloud-based transcription. No model download needed."
+            "title": "클라우드 전사",
+            "description": "클라우드 기반 전사를 사용합니다. 모델 다운로드가 필요하지 않습니다."
           }
         },
-        "sampleText": "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness."
+        "sampleText": "최고의 시대이자 최악의 시대였으며, 지혜의 시대이자 어리석음의 시대였습니다."
       },
       "read": {
-        "badge": "Classic Literature",
-        "readTime": "1 min read",
-        "articleTitle": "Pride and Prejudice",
+        "badge": "고전문학",
+        "readTime": "1분 읽기",
+        "articleTitle": "오만과 편견",
         "instructions": {
-          "before": "Select the text above then press",
-          "after": "to hear it read aloud."
+          "before": "위의 텍스트를 선택한 후 다음을 누르세요.",
+          "after": "을 눌러 소리 내어 읽어보세요."
         },
-        "sampleText": "Voice-first interfaces are having a moment. After years of being dismissed as gimmicks, a new wave of tools is making it genuinely faster to speak than type - with transcription that keeps up, smart corrections, and shortcut keys that slot into existing workflows without disruption."
+      "sampleText": "음성 우선 인터페이스가 인기를 끌고 있습니다. 몇 년 동안 속임수로 여겨졌던 새로운 도구가 문자 입력보다 말하는 속도를 훨씬 더 빠르게 만들고 있습니다. 이에 맞춰 기록하는 기능, 스마트 수정 기능, 중단 없이 기존 작업 흐름에 삽입되는 바로가기 키 등이 있습니다."
+    },
+    "final": {
+        "title": "마지막 단계: 어디서든 SuperCmd 시작하기",
+        "description": "이제 전역 단축키를 눌러 모든 앱에서 SuperCmd를 시작하세요.",
+        "nextStep": "다음 단계: SuperCmd 설정 -> 확장에서 AI 프롬프트 및 메모리용 단축키를 설정하여 어디에서나 AI 사용을 시작할 수 있습니다."
       },
-      "final": {
-        "title": "Final step: start SuperCmd from anywhere",
-        "description": "Press your global shortcut now to start SuperCmd from any app.",
-        "nextStep": "Next step: Setup Hotkeys for AI Prompt and Memory from SuperCmd Settings -> Extensions to start using AI anywhere."
-      },
-      "setupDescription": "We will configure launcher hotkeys, privacy permissions, and whisper mode in one pass.",
-      "setupSummary": "Whisper dictation and Read mode practice",
+    "setupDescription": "런처 단축키, 개인정보 보호 권한, Whisper 모드를 한 번에 설정합니다.",
+    "setupSummary": "Whisper 받아쓰기와 읽기 모드 연습",
       "summary": {
-        "title": "What gets configured now:",
-        "hotkey": "1. Launcher hotkey",
-        "permissions": "2. Accessibility, Input Monitoring, Speech Recognition, Microphone"
+        "title": "지금 구성되는 사항은 다음과 같습니다.",
+        "hotkey": "1. 런처 단축키",
+        "permissions": "2. 접근성, 입력 모니터링, 음성 인식, 마이크"
       },
-      "setupTitle": "One command surface for launch, ask, dictate, and read."
-    }
-  },
-  "whisper": {
-    "title": "SuperCmd 语音输入",
-    "description": "简单好用的语音转文字",
-    "start": "开始说话",
-    "stop": "停止说话",
-    "listening": "正在收听...",
-    "processing": "处理中...",
-    "placeholder": "请说话...",
-    "close": "Close whisper",
+    "setupTitle": "실행, 질문, 받아쓰기, 읽기를 하나로 묶은 명령 인터페이스입니다."
+  }
+},
+"whisper": {
+    "title": "SuperCmd Whisper",
+    "description": "음성을 텍스트로 간단하게 변환",
+    "start": "말하기 시작",
+    "stop": "말하기 중지",
+    "listening": "청취...",
+    "processing": "처리 중...",
+    "placeholder": "지금 말하세요...",
+    "close": "Whisper 닫기",
     "coachmark": {
-      "holdToTalk": "Whisper sits here. Hold {shortcut} to talk, release to type.",
-      "warmingUp": "First-time setup - Warming up models..."
+      "holdToTalk": "Whisper가 여기에 표시됩니다. {shortcut}을 길게 눌러 말하고, 놓으면 입력됩니다.",
+      "warmingUp": "최초 설정 - 모델 준비 중..."
     },
     "status": {
-      "idle": "Press start to begin speaking.",
-      "apiError": "Whisper API error.",
-      "nativeFallback": "Whisper model is Apple Speech Recognition. Press start to use the Apple fallback.",
-      "transcriptionFailedLocal": "SuperCmd Whisper transcription failed.",
-      "transcriptionFailed": "Whisper transcription failed.",
-      "microphonePermissionRequired": "Microphone permission required.",
-      "microphonePermissionCheckFailed": "Microphone permission check failed.",
-      "microphoneAccessDenied": "Microphone access denied.",
-      "startingMicrophone": "Starting microphone...",
-      "loadingModels": "Loading Whisper models...",
-      "nativeRecognizerStartFailed": "Speech recognition failed to start.",
-      "finishing": "Finishing transcription...",
-      "listeningReleaseToProcess": "Listening. Release to process.",
-      "listeningPressAgainToFinish": "Listening. Press again to finish.",
-      "recordingFailed": "Recording failed.",
-      "speechRecognitionError": "Speech recognition error."
+      "idle": "말하기를 시작하려면 시작을 누르세요.",
+      "apiError": "Whisper API 오류입니다.",
+      "nativeFallback": "현재 Whisper 모델은 Apple Speech Recognition입니다. Apple 대체 모델을 사용하려면 시작을 누르세요.",
+      "transcriptionFailedLocal": "SuperCmd Whisper 전사에 실패했습니다.",
+      "transcriptionFailed": "Whisper 전사에 실패했습니다.",
+      "microphonePermissionRequired": "마이크 권한이 필요합니다.",
+      "microphonePermissionCheckFailed": "마이크 권한 확인에 실패했습니다.",
+      "microphoneAccessDenied": "마이크 액세스가 거부되었습니다.",
+      "startingMicrophone": "마이크 시작 중...",
+      "loadingModels": "Whisper 모델 로드 중...",
+      "nativeRecognizerStartFailed": "음성 인식을 시작하지 못했습니다.",
+      "finishing": "텍스트 변환을 완료하는 중...",
+      "listeningReleaseToProcess": "청취. 처리하려면 릴리스하세요.",
+      "listeningPressAgainToFinish": "청취. 완료하려면 다시 누르세요.",
+      "recordingFailed": "녹음에 실패했습니다.",
+      "speechRecognitionError": "음성 인식 오류입니다."
     },
     "errors": {
-      "typeIntoActiveApp": "Could not type into the active app.",
-      "enableMicrophonePermission": "Enable SuperCmd in System Settings -> Privacy & Security -> Microphone, then retry.",
-      "allowMicrophonePermission": "Allow microphone permission to use SuperCmd Whisper.",
-      "microphoneUnavailable": "Could not access microphone. Check System Settings -> Privacy & Security -> Microphone.",
-      "nativeRecognizerStartFailed": "Failed to start native speech recognizer.",
-      "liveTypingRetry": "Live typing fell behind. Try again.",
-      "modelNotReady": "Model is still warming up. Try again in a moment.",
-      "recordingFailed": "Could not start audio recording."
+      "typeIntoActiveApp": "활성 앱에 입력할 수 없습니다.",
+      "enableMicrophonePermission": "시스템 설정 -> 개인 정보 보호 및 보안 -> 마이크에서 SuperCmd를 활성화한 후 다시 시도하세요.",
+      "allowMicrophonePermission": "SuperCmd Whisper를 사용하려면 마이크 권한을 허용하세요.",
+      "microphoneUnavailable": "마이크에 액세스할 수 없습니다. 시스템 설정 -> 개인 정보 보호 및 보안 -> 마이크를 확인하세요.",
+      "nativeRecognizerStartFailed": "기본 음성 인식기를 시작하지 못했습니다.",
+      "liveTypingRetry": "라이브 타이핑이 뒤쳐졌습니다. 다시 시도해 보세요.",
+      "modelNotReady": "모델은 아직 워밍업 중입니다. 잠시 후에 다시 시도해 보세요.",
+      "recordingFailed": "오디오 녹음을 시작할 수 없습니다."
     }
   },
-  "read": {
-    "title": "SuperCmd 语音朗读",
-    "description": "朗读任何选中的文字",
-    "start": "开始朗读",
-    "stop": "停止朗读",
-    "reading": "朗读中...",
-    "noText": "没有选中文字"
+"read": {
+    "title": "SuperCmd Read",
+    "description": "선택한 텍스트를 음성으로 읽어줍니다.",
+    "start": "읽기 시작",
+    "stop": "읽기 중지",
+    "reading": "읽는 중...",
+    "noText": "선택한 텍스트가 없습니다."
   },
   "camera": {
-    "title": "相机",
-    "capture": "拍摄",
-    "flip": "翻转相机",
-    "mirror": "镜像",
-    "settings": "相机设置"
+    "title": "카메라",
+    "capture": "포착",
+    "flip": "카메라 뒤집기",
+    "mirror": "거울",
+    "settings": "카메라 설정"
   },
-  "schedule": {
-    "title": "标题",
-    "newEvent": "新建事件",
-    "editEvent": "编辑事件",
-    "deleteEvent": "删除事件",
-    "date": "日期",
-    "time": "时间",
-    "duration": "时长",
-    "reminder": "提醒",
-    "save": "保存事件"
+"schedule": {
+    "title": "일정",
+    "newEvent": "새 이벤트",
+    "editEvent": "이벤트 편집",
+    "deleteEvent": "이벤트 삭제",
+    "date": "날짜",
+    "time": "시간",
+    "duration": "기간",
+    "reminder": "알림",
+    "save": "이벤트 저장"
   },
-  "language": {
-    "name": "한국어"
+  "canvas": {
+    "searchPlaceholder": "캔버스 검색...",
+    "untitled": "제목 없는 캔버스",
+    "modified": "수정됨",
+    "count": "캔버스 {count}개",
+    "time": {
+      "justNow": "방금 전"
+    },
+    "actions": {
+      "new": "새 캔버스",
+      "open": "캔버스 열기",
+      "rename": "이름 바꾸기",
+      "duplicate": "복제",
+      "copyDeeplink": "딥링크 복사",
+      "exportJson": "JSON으로 내보내기",
+      "pin": "고정",
+      "unpin": "고정 해제",
+      "delete": "캔버스 삭제"
+    },
+    "empty": {
+      "title": "아직 캔버스가 없습니다",
+      "description": "첫 번째 캔버스를 만들어 시작하세요",
+      "noSearchResults": "일치하는 캔버스를 찾지 못했습니다",
+      "shortcutHint": "또는 ⌘N을 누르세요"
+    },
+    "preview": {
+      "empty": "아직 미리보기가 없습니다. 캔버스를 저장하면 생성됩니다.",
+      "selectPrompt": "미리보려면 캔버스를 선택하세요"
+    },
+    "rename": {
+      "title": "캔버스 이름 바꾸기",
+      "placeholder": "캔버스 이름..."
+    },
+    "delete": {
+      "title": "\"{title}\"을(를) 삭제할까요?",
+      "description": "이 작업은 되돌릴 수 없습니다."
+    }
   }
 }

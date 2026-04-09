@@ -27,12 +27,13 @@
 ## Adoption Rules
 
 - Add all new user-facing copy through `i18n` resources.
-- Keep Chinese strings inside `src/renderer/src/i18n/` so review scope stays explicit.
+- Keep locale strings inside `src/renderer/src/i18n/` so review scope stays explicit.
 - Prefer stable keys grouped by feature (`settings.general.*`, `common.*`).
 - Start with shared surfaces first, then expand feature-by-feature.
+- Treat Korean (`ko`) as a release-quality locale: no mixed-language strings, no untranslated placeholders, and no obvious machine-translation artifacts on core surfaces.
 
 ## Next Suggested Expansions
 
 - Migrate onboarding and prompt surfaces to `useI18n`.
 - Add locale-aware date and number formatting helpers that reuse the resolved app locale.
-- Add a small key-coverage test to catch missing translations before PR creation.
+- Run `npm run check:i18n` before shipping locale changes to catch missing or extra keys.
