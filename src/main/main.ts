@@ -8147,6 +8147,42 @@ function isAISectionDisabledForCommand(commandId: string, settings?: AppSettings
   return false;
 }
 
+async function closeAllRegularApps(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  const script = `
+    use framework "AppKit"
+
+    set excludedPid to ${process.pid}
+    set protectedBundleIds to {"com.apple.finder"}
+    set runningApps to current application's NSWorkspace's sharedWorkspace()'s runningApplications()
+
+    repeat with runningApp in runningApps
+      try
+        if (runningApp's activationPolicy() as integer) is not 0 then
+          -- Skip non-regular apps.
+        else
+          set runningPid to runningApp's processIdentifier() as integer
+          if runningPid is not excludedPid then
+            set bundleIdValue to runningApp's bundleIdentifier()
+            if bundleIdValue is missing value then
+              set bundleIdText to ""
+            else
+              set bundleIdText to bundleIdValue as text
+            end if
+            if protectedBundleIds does not contain bundleIdText then
+              runningApp's terminate()
+            end if
+          end if
+        end if
+      end try
+    end repeat
+  `;
+
+  await execFileAsync('/usr/bin/osascript', ['-l', 'AppleScript', '-e', script]);
+}
+
 async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' | 'widget' = 'launcher'): Promise<boolean> {
   if (isAIDependentSystemCommand(commandId) && isAIDisabledInSettings()) {
     return false;
@@ -8323,6 +8359,16 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
   }
   if (commandId === 'system-open-extensions-settings') {
     openSettingsWindow({ tab: 'extensions' });
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
+  if (commandId === 'system-close-all-apps') {
+    try {
+      await closeAllRegularApps();
+    } catch (error) {
+      console.error('Failed to close all apps:', error);
+      return false;
+    }
     if (source === 'launcher') hideWindow();
     return true;
   }

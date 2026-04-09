@@ -1604,6 +1604,14 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       keywords: ['update', 'upgrade', 'version', 'download', 'install', 'supercmd'],
       category: 'system',
     },
+    {
+      id: 'system-close-all-apps',
+      title: 'Close All Apps',
+      subtitle: 'Quit all running applications',
+      keywords: ['close', 'quit', 'all', 'apps', 'applications', 'exit', 'kill'],
+      category: 'system',
+      needsConfirmation: true,
+    },
   ];
 
   // Installed community extensions

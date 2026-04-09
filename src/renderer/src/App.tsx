@@ -2537,6 +2537,11 @@ const App: React.FC = () => {
         return;
       }
 
+      if (command.needsConfirmation) {
+        const ok = window.confirm(`Run "${command.title}"?`);
+        if (!ok) return;
+      }
+
       await window.electron.executeCommand(command.id);
       await updateRecentCommands(command.id);
       setSearchQuery('');
