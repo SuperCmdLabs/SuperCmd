@@ -285,6 +285,8 @@ export function getCategoryLabel(category: string, t?: Translator): string {
       return t ? t('launcher.badges.extension') : 'Extension';
     case 'script':
       return t ? t('launcher.badges.script') : 'Script';
+    case 'personal':
+      return 'Personal';
     case 'app':
     default:
       return t ? t('launcher.badges.application') : 'Application';

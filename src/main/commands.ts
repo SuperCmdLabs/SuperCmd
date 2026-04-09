@@ -20,6 +20,7 @@ import { discoverInstalledExtensionCommands } from './extension-runner';
 import { discoverScriptCommands } from './script-command-runner';
 import { getAllQuickLinks, getQuickLinkCommandId, type QuickLink, type QuickLinkIcon } from './quicklink-store';
 import { loadSettings } from './settings-store';
+import { getPersonalCommands, ensurePersonalCommandsFile, PERSONAL_COMMAND_PREFIX } from './personal-commands';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -33,7 +34,7 @@ export interface CommandInfo {
   iconDataUrl?: string;
   iconEmoji?: string;
   iconName?: string;
-  category: 'app' | 'settings' | 'system' | 'extension' | 'script';
+  category: 'app' | 'settings' | 'system' | 'extension' | 'script' | 'personal';
   /** .app path for apps, bundle identifier for settings */
   path?: string;
   /** Extension command mode, e.g. view/no-view/menu-bar */
@@ -1686,7 +1687,16 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
     console.error('Failed to discover quick links:', e);
   }
 
-  const allCommands = [...apps, ...settings, ...extensionCommands, ...scriptCommands, ...quickLinkCommands, ...systemCommands];
+  // Personal commands — config-driven, loaded from personal-commands.json
+  ensurePersonalCommandsFile();
+  let personalCommands: CommandInfo[] = [];
+  try {
+    personalCommands = getPersonalCommands() as unknown as CommandInfo[];
+  } catch (e) {
+    console.error('Failed to load personal commands:', e);
+  }
+
+  const allCommands = [...personalCommands, ...apps, ...settings, ...extensionCommands, ...scriptCommands, ...quickLinkCommands, ...systemCommands];
 
   // ── Batch-extract icons via NSWorkspace for app/settings bundles ──
   const bundlesNeedingIcon = allCommands.filter(
@@ -1803,6 +1813,33 @@ export async function executeCommand(id: string): Promise<boolean> {
   if (id === 'system-quit-launcher') {
     app.quit();
     return true;
+  }
+
+  // Personal command dispatch — decode action from path field
+  if (id.startsWith(PERSONAL_COMMAND_PREFIX)) {
+    const commands = await getAvailableCommands();
+    const command = commands.find((c) => c.id === id);
+    if (!command?.path) {
+      console.error(`Personal command not found: ${id}`);
+      return false;
+    }
+    try {
+      const { action, target } = JSON.parse(command.path) as { action: string; target: string };
+      if (action === 'url') {
+        await execAsync(`open "${target.replace(/"/g, '\\"')}"`);
+      } else if (action === 'open') {
+        await execAsync(`open "${target.replace(/"/g, '\\"')}"`);
+      } else if (action === 'shell') {
+        await execAsync(target);
+      } else if (action === 'copy') {
+        const { clipboard } = await import('electron');
+        clipboard.writeText(target);
+      }
+      return true;
+    } catch (error) {
+      console.error(`Failed to execute personal command ${id}:`, error);
+      return false;
+    }
   }
 
   const commands = await getAvailableCommands();

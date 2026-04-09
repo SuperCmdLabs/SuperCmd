@@ -1079,6 +1079,29 @@ const AITab: React.FC = () => {
                   </select>
                 </div>
 
+                {/* Prefer local AI toggle */}
+                <div className="flex items-center justify-between pt-3 border-t border-[var(--ui-divider)]">
+                  <div>
+                    <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Prefer local AI when available</h3>
+                    <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
+                      Route requests to Ollama first. Falls back to the selected cloud provider when Ollama is unreachable.
+                    </p>
+                    {ai.preferLocalAI && (
+                      <p className="text-[0.7rem] mt-1 leading-snug">
+                        {ollamaRunning
+                          ? <span className="text-green-400">Ollama detected — local routing active</span>
+                          : <span className="text-[var(--text-subtle)]">Ollama not detected — will use {ai.provider}</span>
+                        }
+                      </p>
+                    )}
+                  </div>
+                  <SectionToggle
+                    enabled={!!ai.preferLocalAI}
+                    onToggle={() => updateAI({ preferLocalAI: !ai.preferLocalAI })}
+                    label="Prefer local AI when available"
+                  />
+                </div>
+
               {ai.provider === 'ollama' && (
                 <div className="pt-3 border-t border-[var(--ui-divider)]">
                   <div className="flex items-center justify-between mb-2.5">

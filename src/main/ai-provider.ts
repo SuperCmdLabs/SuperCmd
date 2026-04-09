@@ -86,6 +86,28 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
   return { provider: config.provider, modelId: defaults[config.provider] || 'gpt-4o-mini' };
 }
 
+// ─── Ollama reachability pre-flight ──────────────────────────────────
+// Quick HEAD-style check with a 2-second timeout. Returns true when the
+// Ollama HTTP server responds with any non-5xx status. Used by the
+// preferLocalAI routing path so we don't hang on a dead server.
+
+export function pingOllama(baseUrl: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const url = new URL('/api/tags', baseUrl || 'http://localhost:11434');
+      const mod: typeof https = url.protocol === 'https:' ? https : (http as unknown as typeof https);
+      const req = mod.get(url.toString(), (res) => {
+        res.resume(); // drain so the socket closes
+        resolve((res.statusCode ?? 0) < 500);
+      });
+      req.on('error', () => resolve(false));
+      req.setTimeout(2000, () => { req.destroy(); resolve(false); });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 // ─── Availability check ──────────────────────────────────────────────
 
 function hasProviderCredentials(provider: ModelRoute['provider'], config: AISettings): boolean {
@@ -125,8 +147,27 @@ export async function* streamAI(
   config: AISettings,
   options: AIRequestOptions
 ): AsyncGenerator<string> {
-  const route = resolveModel(options.model, config);
   const temperature = options.creativity ?? 0.7;
+
+  // preferLocalAI: when no explicit model is requested, try Ollama first.
+  // If Ollama is unreachable, fall through to the configured cloud provider.
+  if (config.preferLocalAI && !options.model) {
+    const ollamaUp = await pingOllama(config.ollamaBaseUrl || 'http://localhost:11434');
+    if (ollamaUp) {
+      // Honour a user-chosen Ollama default model; fall back to llama3.
+      let ollamaModelId = 'llama3';
+      if (config.defaultModel?.startsWith('ollama-')) {
+        ollamaModelId = config.defaultModel.slice('ollama-'.length);
+      } else if (config.provider === 'ollama' && !config.defaultModel) {
+        ollamaModelId = 'llama3';
+      }
+      yield* streamOllama(config.ollamaBaseUrl, ollamaModelId, options.prompt, temperature, options.systemPrompt, options.signal);
+      return;
+    }
+    // Ollama not reachable — continue with configured provider below.
+  }
+
+  const route = resolveModel(options.model, config);
 
   switch (route.provider) {
     case 'openai':

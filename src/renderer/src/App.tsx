@@ -1397,6 +1397,7 @@ const App: React.FC = () => {
     if (hasSearchQuery) {
       return {
         contextual: [] as CommandInfo[],
+        personal: [] as CommandInfo[],
         pinned: [] as CommandInfo[],
         recent: [] as CommandInfo[],
         other: visibleSourceCommands,
@@ -1411,9 +1412,13 @@ const App: React.FC = () => {
       : [];
     const contextualIds = new Set(contextual.map((c) => c.id));
 
+    // Personal commands — always shown prominently above pinned when not searching
+    const personal = visibleSourceCommands.filter((c) => c.category === 'personal');
+    const personalIds = new Set(personal.map((c) => c.id));
+
     const pinned = pinnedCommands
       .map((id) => sourceMap.get(id))
-      .filter((cmd): cmd is CommandInfo => Boolean(cmd) && !contextualIds.has((cmd as CommandInfo).id));
+      .filter((cmd): cmd is CommandInfo => Boolean(cmd) && !contextualIds.has((cmd as CommandInfo).id) && !personalIds.has((cmd as CommandInfo).id));
     const pinnedSet = new Set(pinned.map((c) => c.id));
 
     const recentRecencyRank = new Map(recentCommands.map((id, index) => [id, index]));
@@ -1423,7 +1428,8 @@ const App: React.FC = () => {
         (c): c is CommandInfo =>
           Boolean(c) &&
           !pinnedSet.has((c as CommandInfo).id) &&
-          !contextualIds.has((c as CommandInfo).id)
+          !contextualIds.has((c as CommandInfo).id) &&
+          !personalIds.has((c as CommandInfo).id)
       )
       .sort((a, b) => {
         const countA = recentCommandLaunchCounts[a.id] || 0;
@@ -1436,15 +1442,16 @@ const App: React.FC = () => {
     const recentSet = new Set(recent.map((c) => c.id));
 
     const other = visibleSourceCommands.filter(
-      (c) => !pinnedSet.has(c.id) && !recentSet.has(c.id) && !contextualIds.has(c.id)
+      (c) => !pinnedSet.has(c.id) && !recentSet.has(c.id) && !contextualIds.has(c.id) && !personalIds.has(c.id)
     );
 
-    return { contextual, pinned, recent, files: fileResultCommands, other };
+    return { contextual, personal, pinned, recent, files: fileResultCommands, other };
   }, [hasSearchQuery, visibleSourceCommands, pinnedCommands, recentCommands, recentCommandLaunchCounts, selectedTextSnapshot, fileResultCommands]);
 
   const displayCommands = useMemo(
     () => [
       ...groupedCommands.contextual,
+      ...groupedCommands.personal,
       ...groupedCommands.pinned,
       ...groupedCommands.recent,
       ...groupedCommands.other,
@@ -3540,6 +3547,7 @@ const App: React.FC = () => {
 
               {[
                 { title: t('launcher.sections.selectedText'), items: groupedCommands.contextual },
+                { title: 'Personal', items: groupedCommands.personal },
                 { title: t('launcher.sections.pinned'), items: groupedCommands.pinned },
                 { title: t('launcher.categories.recent'), items: groupedCommands.recent },
                 { title: t('common.other'), items: groupedCommands.other },

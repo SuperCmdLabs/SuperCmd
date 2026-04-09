@@ -34,6 +34,7 @@ export interface AISettings {
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
+  preferLocalAI: boolean;
 }
 
 export type HyperKeySourceKey =
@@ -129,6 +130,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   openaiCompatibleBaseUrl: '',
   openaiCompatibleApiKey: '',
   openaiCompatibleModel: '',
+  preferLocalAI: false,
 };
 
 const DEFAULT_SETTINGS: AppSettings = {

@@ -10,7 +10,7 @@ export interface CommandInfo {
   iconDataUrl?: string;
   iconEmoji?: string;
   iconName?: string;
-  category: 'app' | 'settings' | 'system' | 'extension' | 'script';
+  category: 'app' | 'settings' | 'system' | 'extension' | 'script' | 'personal';
   path?: string;
   mode?: string;
   interval?: string;
@@ -179,6 +179,7 @@ export interface AISettings {
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
+  preferLocalAI: boolean;
 }
 
 export interface EdgeTtsVoice {
