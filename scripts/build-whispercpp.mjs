@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import { createHash } from 'crypto';
 import path from 'path';
 import { tmpdir } from 'os';
 import { spawnSync } from 'child_process';
@@ -12,6 +13,10 @@ const repoRoot = path.resolve(__dirname, '..');
 
 const whisperVersion = 'v1.8.3';
 const frameworkUrl = `https://github.com/ggml-org/whisper.cpp/releases/download/${whisperVersion}/whisper-${whisperVersion}-xcframework.zip`;
+// SHA-256 of the xcframework zip. The whisper.cpp project does not publish
+// checksums with their releases, so this was computed from the v1.8.3 asset
+// and pinned here. Update this when bumping whisperVersion.
+const frameworkSha256 = 'a970006f256c8e689bc79e73f7fa7ddb8c1ed2703ad43ee48eb545b5bb6de6af';
 
 const distNativeDir = path.join(repoRoot, 'dist', 'native');
 const runtimeDir = path.join(distNativeDir, 'whisper-runtime');
@@ -39,6 +44,19 @@ function prepareFramework() {
 
   console.log(`[whisper.cpp] Downloading macOS framework (${whisperVersion})`);
   run('curl', ['-L', frameworkUrl, '-o', archivePath]);
+
+  const fileBuffer = readFileSync(archivePath);
+  const actualHash = createHash('sha256').update(fileBuffer).digest('hex');
+  if (actualHash !== frameworkSha256) {
+    throw new Error(
+      `[whisper.cpp] Integrity check failed!\n` +
+      `  Expected SHA-256: ${frameworkSha256}\n` +
+      `  Actual SHA-256:   ${actualHash}\n` +
+      `  The downloaded file does not match the pinned hash. ` +
+      `This could indicate a corrupted download or a compromised release asset.`
+    );
+  }
+  console.log('[whisper.cpp] Integrity check passed (SHA-256)');
 
   console.log('[whisper.cpp] Extracting framework');
   run('unzip', ['-q', '-o', archivePath, '-d', extractDir]);
