@@ -98,7 +98,7 @@ export function getPersonalCommands(): CommandInfo[] {
       title: def.title.trim(),
       subtitle: def.subtitle?.trim(),
       keywords: Array.isArray(def.keywords) ? def.keywords.map(String) : [],
-      category: 'personal' as unknown as 'system', // rendered distinctly in UI
+      category: 'personal' as const,
       // Encode action + target as a JSON string in the path field so the
       // executor in main.ts can decode it without new IPC.
       path: JSON.stringify({ action: def.action, target: def.target }),

@@ -10,7 +10,7 @@
  * 3. Persistent disk cache so icons are only extracted once
  */
 
-import { app } from 'electron';
+import { app, clipboard } from 'electron';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -1832,7 +1832,6 @@ export async function executeCommand(id: string): Promise<boolean> {
       } else if (action === 'shell') {
         await execAsync(target);
       } else if (action === 'copy') {
-        const { clipboard } = await import('electron');
         clipboard.writeText(target);
       }
       return true;
