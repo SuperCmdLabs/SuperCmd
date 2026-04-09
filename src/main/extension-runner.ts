@@ -434,12 +434,63 @@ function extensionRequiresNodeModules(pkg: any): boolean {
   return getInstallableRuntimeDeps(pkg).length > 0;
 }
 
+/**
+ * Parse a tsconfig.json that may contain JSONC features (comments, trailing commas).
+ * TypeScript itself accepts these, and many Raycast extensions ship them
+ * (e.g. library-genesis has a trailing comma after `paths`).
+ */
+function parseJsonc(source: string): any {
+  // Strip block comments, then line comments, then trailing commas before } or ].
+  // String-aware: skip over double-quoted string contents so we don't mangle them.
+  let out = '';
+  let i = 0;
+  const n = source.length;
+  while (i < n) {
+    const ch = source[i];
+    // String literal — copy verbatim, honoring escapes
+    if (ch === '"') {
+      out += ch;
+      i++;
+      while (i < n) {
+        const c = source[i];
+        out += c;
+        i++;
+        if (c === '\\' && i < n) {
+          out += source[i];
+          i++;
+          continue;
+        }
+        if (c === '"') break;
+      }
+      continue;
+    }
+    // Line comment
+    if (ch === '/' && source[i + 1] === '/') {
+      i += 2;
+      while (i < n && source[i] !== '\n') i++;
+      continue;
+    }
+    // Block comment
+    if (ch === '/' && source[i + 1] === '*') {
+      i += 2;
+      while (i < n && !(source[i] === '*' && source[i + 1] === '/')) i++;
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  // Strip trailing commas: `,` followed by optional whitespace and `}` or `]`.
+  out = out.replace(/,(\s*[}\]])/g, '$1');
+  return JSON.parse(out);
+}
+
 function getExtensionCompilerOptions(extPath: string): Record<string, any> {
   const tsconfigPath = path.join(extPath, 'tsconfig.json');
   if (!fs.existsSync(tsconfigPath)) return {};
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(tsconfigPath, 'utf-8'));
+    const parsed = parseJsonc(fs.readFileSync(tsconfigPath, 'utf-8'));
     const compilerOptions =
       parsed && typeof parsed === 'object' && parsed.compilerOptions && typeof parsed.compilerOptions === 'object'
         ? parsed.compilerOptions
@@ -964,11 +1015,17 @@ export async function buildSingleCommand(extName: string, cmdName: string): Prom
       logLevel: 'warning',
     });
     return fs.existsSync(outFile);
-  } catch (e) {
+  } catch (e: any) {
     console.error(`  On-demand esbuild failed for ${extName}/${cmdName}:`, e);
+    lastBuildError.set(`${extName}/${cmdName}`, e?.message || String(e));
     return false;
   }
 }
+
+// Records the most recent build error per extension/command so that
+// getExtensionBundle can surface the real cause to the user instead of
+// the generic "On-demand build failed" message.
+const lastBuildError = new Map<string, string>();
 
 /**
  * Get a pre-built extension command bundle.
@@ -1023,7 +1080,9 @@ export async function getExtensionBundle(
         }
       } catch {}
 
-      const msg = `On-demand build failed for ${normalizedExtName}/${cmdName}. Extension path: ${extPath}. Expected output: ${outFile}.${diagnostic}`;
+      const underlying = lastBuildError.get(`${normalizedExtName}/${cmdName}`);
+      const underlyingSuffix = underlying ? ` Underlying error: ${underlying}` : '';
+      const msg = `On-demand build failed for ${normalizedExtName}/${cmdName}. Extension path: ${extPath}. Expected output: ${outFile}.${diagnostic}${underlyingSuffix}`;
       console.error(msg);
       throw new Error(msg);
     }

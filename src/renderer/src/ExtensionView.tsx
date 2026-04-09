@@ -2346,6 +2346,10 @@ const processStub: Record<string, any> = {
   off: function() { return processStub; },
   once: function() { return processStub; },
   emit: () => false,
+  // fs-extra (and other libs) call process.emitWarning at module init
+  // to warn about deprecated APIs. Stub it out so requiring fs-extra in
+  // the renderer doesn't throw.
+  emitWarning: noop,
   addListener: function() { return processStub; },
   removeListener: function() { return processStub; },
   removeAllListeners: function() { return processStub; },
