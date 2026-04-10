@@ -823,13 +823,19 @@ contextBridge.exposeInMainWorld('electron', {
     return () => { ipcRenderer.removeListener('whisper-native-chunk', listener); };
   },
   onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => {
-    ipcRenderer.on('ai-stream-chunk', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-stream-chunk', listener);
+    return () => { ipcRenderer.removeListener('ai-stream-chunk', listener); };
   },
   onAIStreamDone: (callback: (data: { requestId: string }) => void) => {
-    ipcRenderer.on('ai-stream-done', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-stream-done', listener);
+    return () => { ipcRenderer.removeListener('ai-stream-done', listener); };
   },
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => {
-    ipcRenderer.on('ai-stream-error', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-stream-error', listener);
+    return () => { ipcRenderer.removeListener('ai-stream-error', listener); };
   },
 
   // ─── Ollama Model Management ────────────────────────────────────
