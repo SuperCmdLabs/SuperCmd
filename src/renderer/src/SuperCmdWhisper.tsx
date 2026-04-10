@@ -1231,11 +1231,12 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
     let preflightStream: MediaStream | null = null;
 
-    // For whispercpp with native capture, skip getUserMedia entirely —
-    // the server opens the mic natively via AVAudioEngine (~3ms vs ~400ms).
-    if (sessionConfig.engine === 'whispercpp' && sttModelRef.current === 'whispercpp') {
-    } else {
-    // Disable Chromium audio processing pipelines for faster mic open.
+    // For whispercpp with native capture, skip getUserMedia — the server
+    // opens the mic natively via AVAudioEngine (~1ms vs ~400ms).
+    // If native capture fails, the fall-through path needs getUserMedia,
+    // so we only skip it when we're confident native will work.
+    const skipGetUserMedia = sessionConfig.engine === 'whispercpp' && sttModelRef.current === 'whispercpp';
+    if (!skipGetUserMedia) {
     const micAudioOpts = {
       echoCancellation: false,
       noiseSuppression: false,
@@ -1351,29 +1352,45 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           // Stop the preflightStream — we don't need it for native capture.
           if (stream) { for (const track of stream.getTracks()) track.stop(); }
 
-          const listenResult = await window.electron.whisperCppListen();
-          if (!listenResult?.ok) {
-            setState('error');
-            setStatusText(t('whisper.errors.modelNotReady'));
-            setErrorText(listenResult?.error || t('whisper.errors.modelNotReady'));
+          let nativeCaptureOk = false;
+          try {
+            const listenResult = await window.electron.whisperCppListen();
+            nativeCaptureOk = !!listenResult?.ok;
+            if (!nativeCaptureOk) {
+              console.warn('[Whisper] Native capture failed, falling back to getUserMedia:', listenResult?.error);
+            }
+          } catch (err) {
+            console.warn('[Whisper] Native capture unavailable, falling back to getUserMedia:', err);
+          }
+
+          if (nativeCaptureOk) {
+            // Mark as using native capture so finalize knows to use whisperCppStop
+            transcriptionEngineRef.current = 'whispercpp';
+            (window as any).__scWhisperNativeCapture = true;
+
+            setState('listening');
+            playRecordingCue('start');
+            setStatusText(
+              PUSH_TO_TALK_MODE
+                ? t('whisper.status.listeningReleaseToProcess')
+                : t('whisper.status.listeningPressAgainToFinish')
+            );
             startInFlightRef.current = false;
-            whisperStateRef.current = 'idle';
-            stopVisualizer();
             return;
           }
-          // Mark as using native capture so finalize knows to use whisperCppStop
-          transcriptionEngineRef.current = 'whispercpp';
-          (window as any).__scWhisperNativeCapture = true;
-
-          setState('listening');
-          playRecordingCue('start');
-          setStatusText(
-            PUSH_TO_TALK_MODE
-              ? t('whisper.status.listeningReleaseToProcess')
-              : t('whisper.status.listeningPressAgainToFinish')
-          );
-          startInFlightRef.current = false;
-          return;
+          // Native capture failed — need getUserMedia for fallback path
+          try {
+            preflightStream = await navigator.mediaDevices.getUserMedia({
+              audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+            });
+          } catch {
+            setState('error');
+            setStatusText(t('whisper.errors.modelNotReady'));
+            startInFlightRef.current = false;
+            whisperStateRef.current = 'idle';
+            return;
+          }
+          // Fall through to warmup + file-based transcription path below
         }
 
         if (sessionConfig.engine === 'whispercpp') {
