@@ -175,6 +175,7 @@ export interface AISettings {
   enabled: boolean;
   llmEnabled: boolean;
   whisperEnabled: boolean;
+  whisperAutoClose: boolean;
   readEnabled: boolean;
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
