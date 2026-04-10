@@ -180,7 +180,8 @@ function bestTermScore(term: string, candidates: SearchCandidate[]): number {
 export function filterCommands(
   commands: CommandInfo[],
   query: string,
-  aliasLookup: Record<string, string> = {}
+  aliasLookup: Record<string, string> = {},
+  recentCommands: string[] = []
 ): CommandInfo[] {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) {
@@ -188,6 +189,8 @@ export function filterCommands(
   }
 
   const queryTerms = tokenizeSearchText(normalizedQuery);
+
+  const recencyRankMap = new Map(recentCommands.map((id, index) => [id, index]));
 
   const scored = commands
     .map((cmd) => {
@@ -255,10 +258,16 @@ export function filterCommands(
       // Favor concise titles when scores are close.
       score += Math.max(0, 12 - Math.max(0, title.length - normalizedQuery.length));
 
-      return { cmd, score, title, hasExactAliasMatch };
+      // Boost recently used commands (Alfred-style). Most recent gets +80, decays quickly.
+      const recencyRank = recencyRankMap.get(cmd.id) ?? Number.MAX_SAFE_INTEGER;
+      if (recencyRank !== Number.MAX_SAFE_INTEGER) {
+        score += Math.round(80 / (1 + recencyRank));
+      }
+
+      return { cmd, score, title, hasExactAliasMatch, recencyRank };
     })
     .filter(
-      (entry): entry is { cmd: CommandInfo; score: number; title: string; hasExactAliasMatch: boolean } =>
+      (entry): entry is { cmd: CommandInfo; score: number; title: string; hasExactAliasMatch: boolean; recencyRank: number } =>
         Boolean(entry) && entry.score > 0
     )
     .sort((a, b) => {
@@ -266,6 +275,10 @@ export function filterCommands(
         return Number(b.hasExactAliasMatch) - Number(a.hasExactAliasMatch);
       }
       if (b.score !== a.score) return b.score - a.score;
+      // When scores are equal, prefer the most recently used command (Alfred-style)
+      const recencyA = a.recencyRank;
+      const recencyB = b.recencyRank;
+      if (recencyA !== recencyB) return recencyA - recencyB;
       return a.title.localeCompare(b.title);
     });
 
