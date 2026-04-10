@@ -175,6 +175,7 @@ export interface AISettings {
   enabled: boolean;
   llmEnabled: boolean;
   whisperEnabled: boolean;
+  whisperCppModelSize: string;
   readEnabled: boolean;
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
