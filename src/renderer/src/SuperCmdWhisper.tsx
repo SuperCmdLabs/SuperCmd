@@ -1637,6 +1637,20 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     whisperStateRef.current = state;
   }, [state]);
 
+  // Drive waveform from native FFT levels when using native mic capture.
+  useEffect(() => {
+    const dispose = window.electron.onWhisperLevels((levels: number[]) => {
+      if (levels.length !== BAR_COUNT) return;
+      setWaveBars((prev) =>
+        prev.map((prevVal, i) => {
+          const target = Math.max(0.04, Math.min(1, levels[i]));
+          return prevVal * 0.5 + target * 0.5;
+        })
+      );
+    });
+    return dispose;
+  }, []);
+
   useEffect(() => {
     const keyWindow = portalTarget?.ownerDocument?.defaultView || window;
     if (!keyWindow) return;

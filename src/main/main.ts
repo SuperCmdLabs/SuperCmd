@@ -1182,6 +1182,13 @@ function ensureWhisperCppServer(): Promise<void> {
             console.log('[Whisper][whisper.cpp] Server ready (model loaded)');
             continue;
           }
+          // Forward FFT levels to renderer for waveform visualization
+          if (json.levels) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('whisper-levels', json.levels);
+            }
+            continue;
+          }
           if (whisperCppPendingRequest) {
             const req = whisperCppPendingRequest;
             whisperCppPendingRequest = null;

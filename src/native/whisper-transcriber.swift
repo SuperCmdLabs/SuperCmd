@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Accelerate
 import whisper
 
 enum WhisperTranscriberError: Error, CustomStringConvertible {
@@ -302,22 +303,93 @@ func writeJSON(_ dict: [String: Any]) {
 
 // ─── Native mic capture ──────────────────────────────────────────
 
+let BAND_COUNT = 13
+
+/// Compute FFT and bucket into `BAND_COUNT` frequency bands (0.0–1.0 each).
+func computeFFTBands(samples: UnsafePointer<Float>, count: Int) -> [Float] {
+  // Need power-of-2 for FFT
+  let fftSize = 1024
+  guard count >= fftSize else { return Array(repeating: 0, count: BAND_COUNT) }
+
+  let log2n = vDSP_Length(log2(Float(fftSize)))
+  guard let fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2)) else {
+    return Array(repeating: 0, count: BAND_COUNT)
+  }
+  defer { vDSP_destroy_fftsetup(fftSetup) }
+
+  // Use last fftSize samples (most recent audio)
+  let offset = max(0, count - fftSize)
+  var window = [Float](repeating: 0, count: fftSize)
+  vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
+
+  var windowed = [Float](repeating: 0, count: fftSize)
+  vDSP_vmul(samples + offset, 1, window, 1, &windowed, 1, vDSP_Length(fftSize))
+
+  let halfSize = fftSize / 2
+  var realp = [Float](repeating: 0, count: halfSize)
+  var imagp = [Float](repeating: 0, count: halfSize)
+
+  realp.withUnsafeMutableBufferPointer { realBuf in
+    imagp.withUnsafeMutableBufferPointer { imagBuf in
+      var splitComplex = DSPSplitComplex(realp: realBuf.baseAddress!, imagp: imagBuf.baseAddress!)
+      windowed.withUnsafeBufferPointer { windowedBuf in
+        windowedBuf.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: halfSize) { complexPtr in
+          vDSP_ctoz(complexPtr, 2, &splitComplex, 1, vDSP_Length(halfSize))
+        }
+      }
+      vDSP_fft_zrip(fftSetup, &splitComplex, 1, log2n, FFTDirection(FFT_FORWARD))
+
+      // Compute magnitudes
+      var magnitudes = [Float](repeating: 0, count: halfSize)
+      vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(halfSize))
+
+      // Bucket into bands (logarithmic spacing)
+      var bands = [Float](repeating: 0, count: BAND_COUNT)
+      let binCount = halfSize
+      for i in 0..<BAND_COUNT {
+        let lo = Int(Float(binCount) * pow(Float(i) / Float(BAND_COUNT), 2.0))
+        let hi = Int(Float(binCount) * pow(Float(i + 1) / Float(BAND_COUNT), 2.0))
+        let clampedLo = min(lo, binCount - 1)
+        let clampedHi = min(max(hi, clampedLo + 1), binCount)
+        var sum: Float = 0
+        for j in clampedLo..<clampedHi {
+          sum += magnitudes[j]
+        }
+        let avg = sum / Float(max(1, clampedHi - clampedLo))
+        // Convert to dB-ish scale, clamp to 0–1
+        let db = 10.0 * log10(max(avg, 1e-10))
+        bands[i] = max(0, min(1, (db + 40) / 40))
+      }
+
+      // Write bands to the outer scope
+      for i in 0..<BAND_COUNT {
+        realBuf[i] = bands[i]
+      }
+    }
+  }
+
+  return Array(realp.prefix(BAND_COUNT))
+}
+
 class MicCapture {
   private let audioEngine = AVAudioEngine()
   private var capturedSamples: [Float] = []
   private let lock = NSLock()
   private(set) var isCapturing = false
+  private var levelTimer: DispatchSourceTimer?
+  // Keep a snapshot of recent samples for FFT
+  private var recentSamples: [Float] = []
 
   func start() throws {
     lock.lock()
     capturedSamples.removeAll()
+    recentSamples.removeAll()
     lock.unlock()
 
     let inputNode = audioEngine.inputNode
     let nativeFormat = inputNode.outputFormat(forBus: 0)
     let targetRate: Double = 16000
 
-    // Set up converter to 16kHz mono Float32
     guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                            sampleRate: targetRate,
                                            channels: 1,
@@ -342,8 +414,14 @@ class MicCapture {
       }
       if let floatData = outputBuffer.floatChannelData?[0] {
         let count = Int(outputBuffer.frameLength)
+        let chunk = Array(UnsafeBufferPointer(start: floatData, count: count))
         self.lock.lock()
-        self.capturedSamples.append(contentsOf: UnsafeBufferPointer(start: floatData, count: count))
+        self.capturedSamples.append(contentsOf: chunk)
+        // Keep last 1024 samples for FFT
+        self.recentSamples.append(contentsOf: chunk)
+        if self.recentSamples.count > 2048 {
+          self.recentSamples.removeFirst(self.recentSamples.count - 2048)
+        }
         self.lock.unlock()
       }
     }
@@ -351,15 +429,36 @@ class MicCapture {
     audioEngine.prepare()
     try audioEngine.start()
     isCapturing = true
+
+    // Emit FFT bands every 50ms
+    let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInteractive))
+    timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+    timer.setEventHandler { [weak self] in
+      guard let self = self, self.isCapturing else { return }
+      self.lock.lock()
+      let snapshot = self.recentSamples
+      self.lock.unlock()
+      guard snapshot.count >= 1024 else { return }
+      let bands = snapshot.withUnsafeBufferPointer { buf in
+        computeFFTBands(samples: buf.baseAddress!, count: buf.count)
+      }
+      let rounded = bands.map { round($0 * 100) / 100 }
+      writeJSON(["levels": rounded])
+    }
+    timer.resume()
+    levelTimer = timer
   }
 
   func stop() -> [Float] {
+    levelTimer?.cancel()
+    levelTimer = nil
     audioEngine.stop()
     audioEngine.inputNode.removeTap(onBus: 0)
     isCapturing = false
     lock.lock()
     let samples = capturedSamples
     capturedSamples.removeAll()
+    recentSamples.removeAll()
     lock.unlock()
     return samples
   }

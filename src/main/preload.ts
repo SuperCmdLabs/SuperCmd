@@ -88,6 +88,13 @@ contextBridge.exposeInMainWorld('electron', {
   setWhisperIgnoreMouseEvents: (ignore: boolean): void => {
     ipcRenderer.send('whisper-ignore-mouse-events', { ignore });
   },
+  onWhisperLevels: (callback: (levels: number[]) => void) => {
+    const listener = (_event: any, levels: number[]) => callback(levels);
+    ipcRenderer.on('whisper-levels', listener);
+    return () => {
+      ipcRenderer.removeListener('whisper-levels', listener);
+    };
+  },
   onWhisperStopAndClose: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on('whisper-stop-and-close', listener);

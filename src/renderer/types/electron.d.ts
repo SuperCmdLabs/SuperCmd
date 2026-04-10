@@ -431,6 +431,7 @@ export interface ElectronAPI {
   onOnboardingHotkeyPressed: (callback: () => void) => (() => void);
   setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean) => void;
   setWhisperIgnoreMouseEvents: (ignore: boolean) => void;
+  onWhisperLevels: (callback: (levels: number[]) => void) => (() => void);
   onWhisperStopAndClose: (callback: () => void) => (() => void);
   onWhisperStartListening: (callback: () => void) => (() => void);
   onWhisperStopListening: (callback: () => void) => (() => void);
