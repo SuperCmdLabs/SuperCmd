@@ -1350,6 +1350,20 @@ const AITab: React.FC = () => {
                 </div>
               )}
 
+              {(whisperModelValue === 'whispercpp') && (
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.prompt.label')}</label>
+                  <textarea
+                    value={ai.whisperPrompt || ''}
+                    onChange={(e) => updateAI({ whisperPrompt: e.target.value })}
+                    placeholder={t('settings.ai.whisper.prompt.placeholder')}
+                    rows={2}
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50 resize-y"
+                  />
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-1">{t('settings.ai.whisper.prompt.hint')}</p>
+                </div>
+              )}
+
               <div className="pt-3 border-t border-[var(--ui-divider)] space-y-2">
                 <p className="text-[0.75rem] text-[var(--text-muted)]">{t('settings.ai.whisper.hotkeys.title')}</p>
                 <div>

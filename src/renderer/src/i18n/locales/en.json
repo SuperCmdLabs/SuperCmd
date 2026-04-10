@@ -367,6 +367,11 @@
           "fnHintBefore": "Use",
           "fnHintAfter": "to restore the default hold-to-talk key."
         },
+        "prompt": {
+          "label": "Initial Prompt",
+          "placeholder": "e.g. technical terms, names, formatting hints…",
+          "hint": "Guide transcription with vocabulary, names, or style hints. Applies to whisper.cpp models only."
+        },
         "autoClose": {
           "title": "Auto-Close After Dictation",
           "description": "Automatically close the whisper bar when dictation finishes."

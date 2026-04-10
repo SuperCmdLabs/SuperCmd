@@ -1278,11 +1278,14 @@ async function transcribeAudioWithWhisperCpp(opts: {
     fs.writeFileSync(audioPath, opts.audioBuffer);
 
     const language = normalizeWhisperLanguageCode(opts.language);
-    const result = await sendWhisperCppRequest({
+    const req: Record<string, any> = {
       command: 'transcribe',
       file: audioPath,
       language,
-    });
+    };
+    const s = loadSettings();
+    if (s.ai?.whisperPrompt) req.prompt = s.ai.whisperPrompt;
+    const result = await sendWhisperCppRequest(req);
 
     return result.text || '';
   } finally {
@@ -14166,9 +14169,12 @@ if let tiff = image?.tiffRepresentation {
     }
   });
 
-  ipcMain.handle('whispercpp-stop', async (_event: any, language?: string) => {
+  ipcMain.handle('whispercpp-stop', async (_event: any, language?: string, prompt?: string) => {
     try {
-      const result = await sendWhisperCppRequest({ command: 'stop', language: language || 'en' });
+      const req: Record<string, any> = { command: 'stop', language: language || 'en' };
+      const resolvedPrompt = prompt || loadSettings().ai?.whisperPrompt || '';
+      if (resolvedPrompt) req.prompt = resolvedPrompt;
+      const result = await sendWhisperCppRequest(req);
       return { text: result?.text || '' };
     } catch (err: any) {
       return { text: '', error: err?.message };

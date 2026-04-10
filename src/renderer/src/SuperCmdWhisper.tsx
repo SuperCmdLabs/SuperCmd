@@ -37,6 +37,7 @@ const PUSH_TO_TALK_MODE = true;
 
 // Cache survives component unmount/remount and HMR reloads.
 const _sessionConfigCache = ((window as any).__scWhisperSessionConfigCache ??= { value: null }) as { value: { backend: string; engine: string; language: string } | null };
+const _lastFinalizedCache = ((window as any).__scWhisperLastFinalized ??= { text: '', at: 0 }) as { text: string; at: number };
 
 function formatShortcutLabel(shortcut: string): string {
   return formatShortcutForDisplay(shortcut).replace(/ \+ /g, ' ');
@@ -270,6 +271,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const [hintText, setHintText] = useState('');
   const hintTimerRef = useRef<number | null>(null);
   const sttModelRef = useRef<string>('whispercpp');
+  const whisperPromptRef = useRef<string>('');
 
   const showHint = useCallback((text: string, durationMs = 3000) => {
     if (hintTimerRef.current !== null) window.clearTimeout(hintTimerRef.current);
@@ -317,6 +319,11 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const startRequestSeqRef = useRef(0);
   const whisperStateRef = useRef<WhisperState>('idle');
   const startInFlightRef = useRef(false);
+
+  // Double-tap resend window — needs to be generous because the full
+  // component unmount → hotkey → window reopen → mount → IPC cycle
+  // adds 1–2s of overhead on top of the user's physical key press.
+  const DOUBLE_TAP_WINDOW_MS = 3000;
 
   // Native backend refs
   const nativeChunkDisposerRef = useRef<(() => void) | null>(null);
@@ -521,6 +528,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       speakToggleShortcutRef.current = speakToggleHotkey;
       setSpeakToggleShortcutLabel(formatShortcutLabel(speakToggleHotkey));
 
+      whisperPromptRef.current = settings.ai.whisperPrompt || '';
       const sttModel = String(settings.ai.speechToTextModel || 'whispercpp');
       sttModelRef.current = sttModel;
       let engine: WhisperEngine = 'whispercpp';
@@ -571,6 +579,8 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
     if (onboardingCaptureMode) {
       onOnboardingTranscriptAppend?.(normalized);
+      _lastFinalizedCache.text = normalized;
+      _lastFinalizedCache.at = Date.now();
       onClose();
       return;
     }
@@ -579,6 +589,8 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     if (!applied.consumed) {
       setErrorText(t('whisper.errors.typeIntoActiveApp'));
     }
+    _lastFinalizedCache.text = normalized;
+    _lastFinalizedCache.at = Date.now();
     onClose();
   }, [onClose, onboardingCaptureMode, onOnboardingTranscriptAppend, t, typeIntoWhisperTarget]);
 
@@ -1032,7 +1044,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         if ((window as any).__scWhisperNativeCapture) {
           (window as any).__scWhisperNativeCapture = false;
           const language = speechLanguage || 'en-US';
-          const result = await window.electron.whisperCppStop(language);
+          const result = await window.electron.whisperCppStop(language, whisperPromptRef.current || undefined);
           if (result?.text) {
             combinedTranscriptRef.current = result.text;
           }
@@ -1145,6 +1157,8 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
                 setErrorText(t('whisper.errors.typeIntoActiveApp'));
               }
             }
+            _lastFinalizedCache.text = combined;
+            _lastFinalizedCache.at = Date.now();
           }
           combinedTranscriptRef.current = '';
           liveTypedTextRef.current = '';
@@ -1189,6 +1203,8 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
               setErrorText(t('whisper.errors.typeIntoActiveApp'));
             }
           }
+          _lastFinalizedCache.text = finalTranscript;
+          _lastFinalizedCache.at = Date.now();
           combinedTranscriptRef.current = '';
           liveTypedTextRef.current = '';
           setStatusText(idleStatus);
@@ -1223,6 +1239,22 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     if (startInFlightRef.current) return;
     const currentState = whisperStateRef.current;
     if (currentState === 'listening' || currentState === 'processing') return;
+
+    // Double-tap resend: if activated again quickly after a successful dictation,
+    // re-type the last transcript instead of starting a new recording.
+    const lastText = _lastFinalizedCache.text;
+    const elapsed = Date.now() - _lastFinalizedCache.at;
+    if (lastText && elapsed < DOUBLE_TAP_WINDOW_MS) {
+      _lastFinalizedCache.at = 0; // prevent triple-tap
+      if (onboardingCaptureMode) {
+        onOnboardingTranscriptAppend?.(lastText);
+      } else {
+        await typeIntoWhisperTarget(lastText);
+      }
+      onClose();
+      return;
+    }
+
     startInFlightRef.current = true;
 
     // Resolve session config first (cached after first call, ~1ms).
@@ -1633,7 +1665,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     } finally {
       startInFlightRef.current = false;
     }
-  }, [finalizeAndClose, flushNativeCurrentPartial, playRecordingCue, resolveSessionConfig, restoreEditorFocusOnce, scheduleNativeProcessTimer, startNativeSilenceWatchdog, startPeriodicTranscription, startVisualizer, stopNativeProcessTimer, stopNativeSilenceWatchdog, stopRecording, stopVisualizer, t]);
+  }, [finalizeAndClose, flushNativeCurrentPartial, onClose, onboardingCaptureMode, onOnboardingTranscriptAppend, playRecordingCue, resolveSessionConfig, restoreEditorFocusOnce, scheduleNativeProcessTimer, startNativeSilenceWatchdog, startPeriodicTranscription, startVisualizer, stopNativeProcessTimer, stopNativeSilenceWatchdog, stopRecording, stopVisualizer, t, typeIntoWhisperTarget]);
 
   // ─── Effects ───────────────────────────────────────────────────────
 

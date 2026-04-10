@@ -31,6 +31,7 @@ export interface AISettings {
   llmEnabled: boolean;
   whisperEnabled: boolean;
   whisperCppModelSize: string;
+  whisperPrompt: string;
   readEnabled: boolean;
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
@@ -128,6 +129,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   llmEnabled: true,
   whisperEnabled: true,
   whisperCppModelSize: 'base',
+  whisperPrompt: '',
   readEnabled: true,
   openaiCompatibleBaseUrl: '',
   openaiCompatibleApiKey: '',

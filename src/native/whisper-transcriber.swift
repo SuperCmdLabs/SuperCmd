@@ -234,7 +234,7 @@ func decodeWaveFile(at path: String) throws -> [Float] {
   return resampled
 }
 
-func transcribe(context: OpaquePointer, audioPath: String, language: String) throws -> String {
+func transcribe(context: OpaquePointer, audioPath: String, language: String, prompt: String = "") throws -> String {
   let samples = try decodeWaveFile(at: audioPath)
 
   var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
@@ -248,22 +248,33 @@ func transcribe(context: OpaquePointer, audioPath: String, language: String) thr
   params.n_threads = Int32(max(1, min(8, ProcessInfo.processInfo.processorCount - 2)))
 
   let normalizedLanguage = language.isEmpty ? "en" : language
+  let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
   return try normalizedLanguage.withCString { languageCString -> String in
     params.language = languageCString
-    let result = samples.withUnsafeBufferPointer { buffer in
-      whisper_full(context, params, buffer.baseAddress, Int32(buffer.count))
+    if !normalizedPrompt.isEmpty {
+      return try normalizedPrompt.withCString { promptCString -> String in
+        params.initial_prompt = promptCString
+        return try runWhisperFull(context: context, params: params, samples: samples)
+      }
     }
-    if result != 0 {
-      throw WhisperTranscriberError.transcriptionFailed("whisper.cpp transcription failed with code \(result)")
-    }
-
-    let segmentCount = whisper_full_n_segments(context)
-    var text = ""
-    for index in 0..<segmentCount {
-      text += String(cString: whisper_full_get_segment_text(context, index))
-    }
-    return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    return try runWhisperFull(context: context, params: params, samples: samples)
   }
+}
+
+private func runWhisperFull(context: OpaquePointer, params: whisper_full_params, samples: [Float]) throws -> String {
+  let result = samples.withUnsafeBufferPointer { buffer in
+    whisper_full(context, params, buffer.baseAddress, Int32(buffer.count))
+  }
+  if result != 0 {
+    throw WhisperTranscriberError.transcriptionFailed("whisper.cpp transcription failed with code \(result)")
+  }
+
+  let segmentCount = whisper_full_n_segments(context)
+  var text = ""
+  for index in 0..<segmentCount {
+    text += String(cString: whisper_full_get_segment_text(context, index))
+  }
+  return text.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 func loadModel(at modelPath: String) throws -> OpaquePointer {
@@ -465,7 +476,7 @@ class MicCapture {
   }
 }
 
-func transcribeSamples(context: OpaquePointer, samples: [Float], language: String) throws -> String {
+func transcribeSamples(context: OpaquePointer, samples: [Float], language: String, prompt: String = "") throws -> String {
   if samples.isEmpty { return "" }
 
   var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
@@ -479,21 +490,16 @@ func transcribeSamples(context: OpaquePointer, samples: [Float], language: Strin
   params.n_threads = Int32(max(1, min(8, ProcessInfo.processInfo.processorCount - 2)))
 
   let normalizedLanguage = language.isEmpty ? "en" : language
+  let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
   return try normalizedLanguage.withCString { languageCString -> String in
     params.language = languageCString
-    let result = samples.withUnsafeBufferPointer { buffer in
-      whisper_full(context, params, buffer.baseAddress, Int32(buffer.count))
+    if !normalizedPrompt.isEmpty {
+      return try normalizedPrompt.withCString { promptCString -> String in
+        params.initial_prompt = promptCString
+        return try runWhisperFull(context: context, params: params, samples: samples)
+      }
     }
-    if result != 0 {
-      throw WhisperTranscriberError.transcriptionFailed("whisper.cpp transcription failed with code \(result)")
-    }
-
-    let segmentCount = whisper_full_n_segments(context)
-    var text = ""
-    for index in 0..<segmentCount {
-      text += String(cString: whisper_full_get_segment_text(context, index))
-    }
-    return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    return try runWhisperFull(context: context, params: params, samples: samples)
   }
 }
 
@@ -533,13 +539,14 @@ func runServeMode(modelPath: String) throws {
 
     if command == "stop" {
       let language = json["language"] as? String ?? "en"
+      let prompt = json["prompt"] as? String ?? ""
       let samples = mic.stop()
       if samples.count < 1600 { // less than 0.1s of audio
         writeJSON(["text": ""])
         continue
       }
       do {
-        let text = try transcribeSamples(context: context, samples: samples, language: language)
+        let text = try transcribeSamples(context: context, samples: samples, language: language, prompt: prompt)
         writeJSON(["text": text])
       } catch {
         writeJSON(["error": String(describing: error)])
@@ -553,9 +560,10 @@ func runServeMode(modelPath: String) throws {
         continue
       }
       let language = json["language"] as? String ?? "en"
+      let prompt = json["prompt"] as? String ?? ""
 
       do {
-        let text = try transcribe(context: context, audioPath: filePath, language: language)
+        let text = try transcribe(context: context, audioPath: filePath, language: language, prompt: prompt)
         writeJSON(["text": text])
       } catch {
         writeJSON(["error": String(describing: error)])

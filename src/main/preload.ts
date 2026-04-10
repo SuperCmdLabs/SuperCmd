@@ -787,8 +787,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('whispercpp-warmup'),
   whisperCppListen: (): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('whispercpp-listen'),
-  whisperCppStop: (language?: string): Promise<{ text: string; error?: string }> =>
-    ipcRenderer.invoke('whispercpp-stop', language),
+  whisperCppStop: (language?: string, prompt?: string): Promise<{ text: string; error?: string }> =>
+    ipcRenderer.invoke('whispercpp-stop', language, prompt),
   parakeetModelStatus: (): Promise<any> =>
     ipcRenderer.invoke('parakeet-model-status'),
   parakeetDownloadModel: (): Promise<any> =>

@@ -179,6 +179,7 @@ export interface AISettings {
   whisperEnabled: boolean;
   whisperAutoClose: boolean;
   whisperCppModelSize: string;
+  whisperPrompt: string;
   readEnabled: boolean;
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
@@ -775,7 +776,7 @@ export interface ElectronAPI {
   whisperCppDownloadModel: () => Promise<WhisperCppModelStatus>;
   whisperCppWarmup: () => Promise<{ ready: boolean; error?: string }>;
   whisperCppListen: () => Promise<{ ok: boolean; error?: string }>;
-  whisperCppStop: (language?: string) => Promise<{ text: string; error?: string }>;
+  whisperCppStop: (language?: string, prompt?: string) => Promise<{ text: string; error?: string }>;
   parakeetModelStatus: () => Promise<ParakeetModelStatus>;
   parakeetDownloadModel: () => Promise<ParakeetModelStatus>;
   parakeetWarmup: () => Promise<{ ready: boolean; error?: string }>;
