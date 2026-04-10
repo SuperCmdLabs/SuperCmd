@@ -35,6 +35,7 @@ import { tryCalculate, tryCalculateAsync } from './smart-calculator';
 import { useDetachedPortalWindow } from './useDetachedPortalWindow';
 import { useAppViewManager } from './hooks/useAppViewManager';
 import { useAiChat } from './hooks/useAiChat';
+import { useCowork } from './hooks/useCowork';
 import { useCursorPrompt } from './hooks/useCursorPrompt';
 import { useMenuBarExtensions } from './hooks/useMenuBarExtensions';
 import { useBackgroundRefresh } from './hooks/useBackgroundRefresh';
@@ -68,6 +69,7 @@ import ScriptCommandSetupView from './views/ScriptCommandSetupView';
 import ScriptCommandOutputView from './views/ScriptCommandOutputView';
 import ExtensionPreferenceSetupView from './views/ExtensionPreferenceSetupView';
 import AiChatView from './views/AiChatView';
+import CoworkView from './views/CoworkView';
 import CursorPromptView from './views/CursorPromptView';
 import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowBadge } from './components/InlineArgumentField';
 import { useI18n } from './i18n';
@@ -339,13 +341,26 @@ const App: React.FC = () => {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
     showClipboardManager, showSnippetManager, showNotesSearch, showCanvasSearch, showQuickLinkManager, showFileSearch, showCursorPrompt,
     showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
+    showCowork,
     openOnboarding, openWhisper, openClipboardManager,
     openSnippetManager, openNotesSearch, openCanvasSearch, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openSchedule, openWindowManager,
+    openCowork,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
     setShowClipboardManager, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
     setShowWhisper, setShowSpeak, setShowCamera, setShowSchedule, setShowWindowManager, setShowWhisperOnboarding, setShowWhisperHint,
-    setShowOnboarding, setAiMode,
+    setShowOnboarding, setAiMode, setShowCowork,
   } = useAppViewManager();
+  const {
+    messages: coworkMessages,
+    currentInput: coworkInput,
+    setCurrentInput: setCoworkInput,
+    isStreaming: coworkStreaming,
+    inputRef: coworkInputRef,
+    messagesEndRef: coworkMessagesEndRef,
+    submitMessage: coworkSubmit,
+    clearConversation: coworkClear,
+    exitCowork,
+  } = useCowork({ setShowCowork });
   const {
     whisperOnboardingPracticeText, setWhisperOnboardingPracticeText,
     whisperSpeakToggleLabel, setWhisperSpeakToggleLabel,
@@ -2105,6 +2120,11 @@ const App: React.FC = () => {
       openCamera();
       return true;
     }
+    if (commandId === 'system-cowork') {
+      whisperSessionRef.current = false;
+      openCowork();
+      return true;
+    }
     if (isWindowManagementPresetCommandId(commandId)) {
       whisperSessionRef.current = false;
       // For launcher-initiated execution, route through main first so it can
@@ -3260,6 +3280,24 @@ const App: React.FC = () => {
         aiResponseRef={aiResponseRef as React.RefObject<HTMLDivElement>}
         submitAiQuery={submitAiQuery}
         exitAiMode={exitAiMode}
+      />
+    );
+  }
+
+  // ─── Cowork mode ───────────────────────────────────────────────
+  if (showCowork) {
+    return (
+      <CoworkView
+        alwaysMountedRunners={alwaysMountedRunners}
+        messages={coworkMessages}
+        currentInput={coworkInput}
+        setCurrentInput={setCoworkInput}
+        isStreaming={coworkStreaming}
+        inputRef={coworkInputRef as React.RefObject<HTMLInputElement>}
+        messagesEndRef={coworkMessagesEndRef as React.RefObject<HTMLDivElement>}
+        submitMessage={coworkSubmit}
+        clearConversation={coworkClear}
+        exitCowork={exitCowork}
       />
     );
   }

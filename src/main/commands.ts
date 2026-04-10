@@ -1576,6 +1576,13 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-cowork',
+      title: 'Cowork — Local AI Assistant',
+      subtitle: 'Chat with a local Gemma model via Ollama',
+      keywords: ['cowork', 'local', 'ai', 'gemma', 'ollama', 'code', 'assistant', 'chat'],
+      category: 'system',
+    },
+    {
       id: 'system-create-script-command',
       title: 'Create Script Command',
       keywords: ['script', 'command', 'create', 'custom', 'raycast', 'shell'],

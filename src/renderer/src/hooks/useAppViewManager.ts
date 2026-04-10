@@ -58,6 +58,7 @@ export interface AppViewManager {
   showWhisperHint: boolean;
   showOnboarding: boolean;
   aiMode: boolean;
+  showCowork: boolean;
 
   // Reset all views to defaults
   resetAllViews: () => void;
@@ -82,6 +83,7 @@ export interface AppViewManager {
   openWhisperOnboarding: () => void;
   openOnboarding: () => void;
   openAiMode: () => void;
+  openCowork: () => void;
   closeCurrentView: () => void;
 
   // Individual setters for partial updates (used when only one flag changes)
@@ -105,6 +107,7 @@ export interface AppViewManager {
   setShowWhisperHint: React.Dispatch<React.SetStateAction<boolean>>;
   setShowOnboarding: React.Dispatch<React.SetStateAction<boolean>>;
   setAiMode: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowCowork: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export function useAppViewManager(): AppViewManager {
@@ -128,6 +131,7 @@ export function useAppViewManager(): AppViewManager {
   const [showWhisperHint, setShowWhisperHint] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [aiMode, setAiMode] = useState(false);
+  const [showCowork, setShowCowork] = useState(false);
 
   const resetAllViews = useCallback(() => {
     setExtensionView(null);
@@ -150,6 +154,7 @@ export function useAppViewManager(): AppViewManager {
     setShowWhisperHint(false);
     setShowOnboarding(false);
     setAiMode(false);
+    setShowCowork(false);
   }, []);
 
   const openExtensionView = useCallback((bundle: ExtensionBundle) => {
@@ -248,6 +253,11 @@ export function useAppViewManager(): AppViewManager {
     setAiMode(true);
   }, [resetAllViews]);
 
+  const openCowork = useCallback(() => {
+    resetAllViews();
+    setShowCowork(true);
+  }, [resetAllViews]);
+
   const closeCurrentView = useCallback(() => {
     resetAllViews();
   }, [resetAllViews]);
@@ -273,6 +283,7 @@ export function useAppViewManager(): AppViewManager {
     showWhisperHint,
     showOnboarding,
     aiMode,
+    showCowork,
 
     resetAllViews,
 
@@ -295,6 +306,7 @@ export function useAppViewManager(): AppViewManager {
     openWhisperOnboarding,
     openOnboarding,
     openAiMode,
+    openCowork,
     closeCurrentView,
 
     setExtensionView,
@@ -317,5 +329,6 @@ export function useAppViewManager(): AppViewManager {
     setShowWhisperHint,
     setShowOnboarding,
     setAiMode,
+    setShowCowork,
   };
 }
