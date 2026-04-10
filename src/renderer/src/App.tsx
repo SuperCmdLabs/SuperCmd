@@ -367,6 +367,7 @@ const App: React.FC = () => {
   const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
   const [onboardingHotkeyPresses, setOnboardingHotkeyPresses] = useState(0);
   const [launcherShortcut, setLauncherShortcut] = useState('Alt+Space');
+  const [whisperAutoClose, setWhisperAutoClose] = useState(true);
   const [showActions, setShowActions] = useState(false);
   const [actionsCommand, setActionsCommand] = useState<CommandInfo | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -536,6 +537,7 @@ const App: React.FC = () => {
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
       setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
+      setWhisperAutoClose(settings.ai?.whisperAutoClose !== false);
       setLauncherBackgroundImagePath(String(settings.launcherBackgroundImagePath || ''));
       setLauncherBackgroundImageEverywhere(Boolean(settings.launcherBackgroundImageEverywhere));
       setLauncherBackgroundImageBlurPercent(
@@ -1917,6 +1919,17 @@ const App: React.FC = () => {
         return;
       }
 
+      // Cmd+1 through Cmd+9: quick-launch the Nth command (Alfred-style)
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        const target = displayCommands[idx];
+        if (target) {
+          e.preventDefault();
+          handleCommandExecute(target);
+          return;
+        }
+      }
+
       switch (e.key) {
         case 'Tab':
           if (isSearchInputTarget && isShowingInlineArgumentInputs) {
@@ -2839,6 +2852,7 @@ const App: React.FC = () => {
               ? t('whisper.coachmark.holdToTalk', { shortcut: whisperSpeakToggleLabel })
               : undefined
           }
+          autoClose={whisperAutoClose}
           onClose={() => {
             whisperSessionRef.current = false;
             setShowWhisper(false);
@@ -3623,6 +3637,12 @@ const App: React.FC = () => {
                                 {typeBadgeLabel}
                               </div>
                             ) : null}
+                            {flatIndex < 9 && (
+                              <span className="inline-flex items-center gap-0.5 flex-shrink-0">
+                                <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">⌘</kbd>
+                                <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">{flatIndex + 1}</kbd>
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
