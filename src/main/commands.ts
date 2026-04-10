@@ -25,6 +25,14 @@ const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 let iconCounter = 0;
 
+function svgToBase64DataUrl(svg: string): string {
+  return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
+}
+
+const QUIT_ALL_APPS_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="quitAllAppsBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#fda4af" stop-opacity="0.7"/><stop offset="1" stop-color="#be123c" stop-opacity="0.82"/></linearGradient><linearGradient id="quitAllAppsStroke" x1="22" y1="20" x2="44" y2="44" gradientUnits="userSpaceOnUse"><stop stop-color="#fff1f2" stop-opacity="0.88"/><stop offset="1" stop-color="#ffe4e6" stop-opacity="0.62"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#quitAllAppsBg)"/><path d="M23 23L41 41" stroke="url(#quitAllAppsStroke)" stroke-width="5" stroke-linecap="round"/><path d="M41 23L23 41" stroke="url(#quitAllAppsStroke)" stroke-width="5" stroke-linecap="round"/></svg>'
+);
+
 export interface CommandInfo {
   id: string;
   title: string;
@@ -1606,9 +1614,10 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
     },
     {
       id: 'system-close-all-apps',
-      title: 'Close All Apps',
+      title: 'Quit All Apps',
       subtitle: 'Quit all running applications',
       keywords: ['close', 'quit', 'all', 'apps', 'applications', 'exit', 'kill'],
+      iconDataUrl: QUIT_ALL_APPS_ICON_DATA_URL,
       category: 'system',
       needsConfirmation: true,
     },
