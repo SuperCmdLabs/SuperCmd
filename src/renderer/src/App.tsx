@@ -1917,6 +1917,17 @@ const App: React.FC = () => {
         return;
       }
 
+      // Cmd+1 through Cmd+9: quick-launch the Nth command (Alfred-style)
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        const target = displayCommands[idx];
+        if (target) {
+          e.preventDefault();
+          handleCommandExecute(target);
+          return;
+        }
+      }
+
       switch (e.key) {
         case 'Tab':
           if (isSearchInputTarget && isShowingInlineArgumentInputs) {
@@ -3618,6 +3629,12 @@ const App: React.FC = () => {
                                 {typeBadgeLabel}
                               </div>
                             ) : null}
+                            {flatIndex < 9 && (
+                              <span className="inline-flex items-center gap-0.5 flex-shrink-0">
+                                <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">⌘</kbd>
+                                <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">{flatIndex + 1}</kbd>
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
