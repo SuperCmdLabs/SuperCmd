@@ -367,6 +367,7 @@ const App: React.FC = () => {
   const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
   const [onboardingHotkeyPresses, setOnboardingHotkeyPresses] = useState(0);
   const [launcherShortcut, setLauncherShortcut] = useState('Alt+Space');
+  const [whisperAutoClose, setWhisperAutoClose] = useState(true);
   const [showActions, setShowActions] = useState(false);
   const [actionsCommand, setActionsCommand] = useState<CommandInfo | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -536,6 +537,7 @@ const App: React.FC = () => {
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
       setConfiguredTtsModel(String(settings.ai?.textToSpeechModel || 'edge-tts'));
+      setWhisperAutoClose(settings.ai?.whisperAutoClose !== false);
       setLauncherBackgroundImagePath(String(settings.launcherBackgroundImagePath || ''));
       setLauncherBackgroundImageEverywhere(Boolean(settings.launcherBackgroundImageEverywhere));
       setLauncherBackgroundImageBlurPercent(
@@ -2845,6 +2847,7 @@ const App: React.FC = () => {
               ? t('whisper.coachmark.holdToTalk', { shortcut: whisperSpeakToggleLabel })
               : undefined
           }
+          autoClose={whisperAutoClose}
           onClose={() => {
             whisperSessionRef.current = false;
             setShowWhisper(false);

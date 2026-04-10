@@ -9,6 +9,7 @@ interface SuperCmdWhisperProps {
   onboardingCaptureMode?: boolean;
   onOnboardingTranscriptAppend?: (text: string) => void;
   coachmarkText?: string;
+  autoClose?: boolean;
 }
 
 type WhisperState = 'idle' | 'listening' | 'processing' | 'error';
@@ -250,6 +251,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   onboardingCaptureMode = false,
   onOnboardingTranscriptAppend,
   coachmarkText,
+  autoClose = true,
 }) => {
   const { t } = useI18n();
   const idleStatus = t('whisper.status.idle');
@@ -1319,10 +1321,14 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
               ? window.electron.qwen3Warmup
               : window.electron.parakeetWarmup;
             parakeetWarmingUpRef.current = true;
-            setParakeetWarmingUp(true);
-            setState('listening');
-            setStatusText(t('whisper.status.loadingModels'));
-            console.log(`[Whisper][${sttModelRef.current}] Warming up server (first use)...`);
+            // Only show the "loading models" banner if warmup takes a while.
+            // When the server is already warm the IPC roundtrip is <10ms.
+            const bannerTimer = window.setTimeout(() => {
+              setParakeetWarmingUp(true);
+              setState('listening');
+              setStatusText(t('whisper.status.loadingModels'));
+            }, 200);
+            console.log(`[Whisper][${sttModelRef.current}] Warming up server...`);
             let warmupOk = false;
             try {
               const result = await warmupFn();
@@ -1335,6 +1341,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
             } catch (err) {
               console.warn(`[Whisper][${sttModelRef.current}] Warmup failed:`, err);
             }
+            window.clearTimeout(bannerTimer);
             // Always clear the warming banner once the warmup call returns.
             parakeetWarmingUpRef.current = false;
             setParakeetWarmingUp(false);
@@ -1576,7 +1583,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       if (!PUSH_TO_TALK_MODE) return;
       pushToTalkArmedRef.current = false;
       if (whisperStateRef.current === 'listening') {
-        void finalizeAndClose(false);
+        void finalizeAndClose(autoClose);
       }
     });
     const disposeWhisperStart = window.electron.onWhisperStartListening(() => {
@@ -1592,7 +1599,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       const currentState = whisperStateRef.current;
       if (currentState === 'listening' || currentState === 'processing') {
         pushToTalkArmedRef.current = false;
-        void finalizeAndClose(false);
+        void finalizeAndClose(autoClose);
       } else {
         pushToTalkArmedRef.current = false;
         void startListening();
@@ -1606,7 +1613,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       disposeWhisperStart();
       disposeWhisperToggle();
     };
-  }, [finalizeAndClose, portalTarget, startListening]);
+  }, [finalizeAndClose, portalTarget, startListening, autoClose]);
 
   useEffect(() => {
     return () => {

@@ -1553,6 +1553,18 @@ const AITab: React.FC = () => {
 
               <div className="flex items-center justify-between gap-3">
                 <div>
+                  <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.autoClose.title')}</h3>
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.whisper.autoClose.description')}</p>
+                </div>
+                <SectionToggle
+                  enabled={ai.whisperAutoClose !== false}
+                  onToggle={() => updateAI({ whisperAutoClose: ai.whisperAutoClose === false })}
+                  label={t('settings.ai.whisper.autoClose.title')}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <div>
                   <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.whisper.smoothOutput.title')}</h3>
                   <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.whisper.smoothOutput.description')}</p>
                 </div>
