@@ -24,6 +24,7 @@ struct Arguments {
   let modelPath: String
   let audioPath: String
   let language: String
+  let serve: Bool
 }
 
 struct WaveFormat {
@@ -62,6 +63,31 @@ func parseArguments() throws -> Arguments {
   var audioPath = ""
   var language = "en"
 
+  // Check for serve mode first
+  if args.first == "serve" {
+    // serve mode: whisper-transcriber serve --model <path>
+    let rest = Array(args.dropFirst())
+    var index = 0
+    while index < rest.count {
+      let argument = rest[index]
+      switch argument {
+      case "--model", "-m":
+        index += 1
+        guard index < rest.count else {
+          throw WhisperTranscriberError.invalidArguments("Missing value for \(argument)")
+        }
+        modelPath = rest[index]
+      default:
+        throw WhisperTranscriberError.invalidArguments("Unknown argument: \(argument)")
+      }
+      index += 1
+    }
+    guard !modelPath.isEmpty else {
+      throw WhisperTranscriberError.invalidArguments("Missing --model")
+    }
+    return Arguments(modelPath: modelPath, audioPath: "", language: "", serve: true)
+  }
+
   var index = 0
   while index < args.count {
     let argument = args[index]
@@ -97,7 +123,7 @@ func parseArguments() throws -> Arguments {
     throw WhisperTranscriberError.invalidArguments("Missing --file")
   }
 
-  return Arguments(modelPath: modelPath, audioPath: audioPath, language: language)
+  return Arguments(modelPath: modelPath, audioPath: audioPath, language: language, serve: false)
 }
 
 func decodeWaveFile(at path: String) throws -> [Float] {
@@ -206,18 +232,8 @@ func decodeWaveFile(at path: String) throws -> [Float] {
   return resampled
 }
 
-func transcribe(arguments: Arguments) throws -> String {
-  whisper_log_set({ _, _, _ in }, nil)
-  let samples = try decodeWaveFile(at: arguments.audioPath)
-
-  var contextParams = whisper_context_default_params()
-  contextParams.use_gpu = false
-  contextParams.flash_attn = false
-
-  guard let context = whisper_init_from_file_with_params(arguments.modelPath, contextParams) else {
-    throw WhisperTranscriberError.modelLoadFailed("Failed to load whisper.cpp model at \(arguments.modelPath)")
-  }
-  defer { whisper_free(context) }
+func transcribe(context: OpaquePointer, audioPath: String, language: String) throws -> String {
+  let samples = try decodeWaveFile(at: audioPath)
 
   var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
   params.print_realtime = false
@@ -229,7 +245,7 @@ func transcribe(arguments: Arguments) throws -> String {
   params.single_segment = false
   params.n_threads = Int32(max(1, min(8, ProcessInfo.processInfo.processorCount - 2)))
 
-  let normalizedLanguage = arguments.language.isEmpty ? "en" : arguments.language
+  let normalizedLanguage = language.isEmpty ? "en" : language
   return try normalizedLanguage.withCString { languageCString -> String in
     params.language = languageCString
     let result = samples.withUnsafeBufferPointer { buffer in
@@ -248,10 +264,92 @@ func transcribe(arguments: Arguments) throws -> String {
   }
 }
 
+func loadModel(at modelPath: String) throws -> OpaquePointer {
+  whisper_log_set({ _, _, _ in }, nil)
+  var contextParams = whisper_context_default_params()
+  contextParams.use_gpu = false
+  contextParams.flash_attn = false
+
+  guard let context = whisper_init_from_file_with_params(modelPath, contextParams) else {
+    throw WhisperTranscriberError.modelLoadFailed("Failed to load whisper.cpp model at \(modelPath)")
+  }
+  return context
+}
+
+// ─── One-shot mode ─────────────────────────────────────────────────
+func transcribeOneShot(arguments: Arguments) throws -> String {
+  let context = try loadModel(at: arguments.modelPath)
+  defer { whisper_free(context) }
+  return try transcribe(context: context, audioPath: arguments.audioPath, language: arguments.language)
+}
+
+// ─── Serve mode ────────────────────────────────────────────────────
+// Reads JSON commands from stdin, writes JSON responses to stdout.
+// Model stays loaded in memory between requests.
+//
+// Input:  {"command":"transcribe","file":"/path/to/input.wav","language":"en"}
+//         {"command":"exit"}
+// Output: {"ready":true}
+//         {"text":"transcribed text"}
+//         {"error":"message"}
+
+func writeJSON(_ dict: [String: Any]) {
+  guard let data = try? JSONSerialization.data(withJSONObject: dict, options: []),
+        let line = String(data: data, encoding: .utf8) else { return }
+  FileHandle.standardOutput.write(Data((line + "\n").utf8))
+}
+
+func runServeMode(modelPath: String) throws {
+  let context = try loadModel(at: modelPath)
+  defer { whisper_free(context) }
+
+  writeJSON(["ready": true])
+
+  while let line = readLine(strippingNewline: true) {
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { continue }
+
+    guard let jsonData = trimmed.data(using: .utf8),
+          let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+          let command = json["command"] as? String else {
+      writeJSON(["error": "Invalid JSON"])
+      continue
+    }
+
+    if command == "exit" {
+      break
+    }
+
+    if command == "transcribe" {
+      guard let filePath = json["file"] as? String else {
+        writeJSON(["error": "Missing 'file' field"])
+        continue
+      }
+      let language = json["language"] as? String ?? "en"
+
+      do {
+        let text = try transcribe(context: context, audioPath: filePath, language: language)
+        writeJSON(["text": text])
+      } catch {
+        writeJSON(["error": String(describing: error)])
+      }
+      continue
+    }
+
+    writeJSON(["error": "Unknown command: \(command)"])
+  }
+}
+
+// ─── Entry point ───────────────────────────────────────────────────
 do {
   let arguments = try parseArguments()
-  let text = try transcribe(arguments: arguments)
-  FileHandle.standardOutput.write(Data(("__TRANSCRIPT__:" + text).utf8))
+
+  if arguments.serve {
+    try runServeMode(modelPath: arguments.modelPath)
+  } else {
+    let text = try transcribeOneShot(arguments: arguments)
+    FileHandle.standardOutput.write(Data(("__TRANSCRIPT__:" + text).utf8))
+  }
 } catch {
   let message = String(describing: error)
   FileHandle.standardError.write(Data((message + "\n").utf8))

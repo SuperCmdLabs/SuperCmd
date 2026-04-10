@@ -1310,16 +1310,18 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         if (sessionConfig.engine === 'whispercpp') {
           if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) return;
 
-          // If parakeet or qwen3, warm up the server (loads CoreML models on first use).
+          // Warm up the persistent server (loads model on first use).
           // Audio is already being captured in the background while we wait.
           // The hint stays visible until warmup fully completes — even if the user
           // releases the hold key early and triggers finalize, we keep the banner
           // so the next session starts instantly.
-          const needsWarmup = sttModelRef.current === 'parakeet' || sttModelRef.current === 'qwen3';
+          const needsWarmup = sttModelRef.current === 'parakeet' || sttModelRef.current === 'qwen3' || sttModelRef.current === 'whispercpp';
           if (needsWarmup) {
             const warmupFn = sttModelRef.current === 'qwen3'
               ? window.electron.qwen3Warmup
-              : window.electron.parakeetWarmup;
+              : sttModelRef.current === 'parakeet'
+                ? window.electron.parakeetWarmup
+                : window.electron.whisperCppWarmup;
             parakeetWarmingUpRef.current = true;
             // Only show the "loading models" banner if warmup takes a while.
             // When the server is already warm the IPC roundtrip is <10ms.

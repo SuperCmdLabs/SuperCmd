@@ -175,6 +175,14 @@ type WhisperCppModelStatus = {
 };
 let whisperCppModelStatus: WhisperCppModelStatus | null = null;
 
+// Persistent serve-mode process for whisper.cpp (model stays loaded in memory)
+let whisperCppServerProcess: any = null; // ChildProcess
+let whisperCppServerReady = false;
+let whisperCppServerStarting: Promise<void> | null = null;
+let whisperCppServerBuffer = '';
+type PendingWhisperCppRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
+let whisperCppPendingRequest: PendingWhisperCppRequest | null = null;
+
 // ─── Parakeet TDT v3 (FluidAudio) ─────────────────────────────────
 type ParakeetModelStatus = {
   state: 'not-downloaded' | 'downloading' | 'downloaded' | 'error';
@@ -1075,6 +1083,133 @@ function ensureWhisperCppTranscriberBinary(): string {
   return binaryPath;
 }
 
+function killWhisperCppServer(): void {
+  if (whisperCppServerProcess) {
+    try {
+      whisperCppServerProcess.stdin?.write('{"command":"exit"}\n');
+      whisperCppServerProcess.kill();
+    } catch {}
+    whisperCppServerProcess = null;
+  }
+  whisperCppServerReady = false;
+  whisperCppServerStarting = null;
+  whisperCppServerBuffer = '';
+  if (whisperCppPendingRequest) {
+    whisperCppPendingRequest.reject(new Error('whisper.cpp server killed'));
+    whisperCppPendingRequest = null;
+  }
+}
+
+function ensureWhisperCppServer(): Promise<void> {
+  if (whisperCppServerReady && whisperCppServerProcess && !whisperCppServerProcess.killed) {
+    return Promise.resolve();
+  }
+  if (whisperCppServerStarting) return whisperCppServerStarting;
+
+  whisperCppServerStarting = (async () => {
+    killWhisperCppServer();
+    const binaryPath = ensureWhisperCppTranscriberBinary();
+    const status = getWhisperCppModelStatus();
+    if (status.state !== 'downloaded') {
+      throw new Error('whisper.cpp model not downloaded');
+    }
+
+    const { spawn } = require('child_process');
+    const child = spawn(binaryPath, ['serve', '--model', status.path], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    whisperCppServerProcess = child;
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      console.log(`[Whisper][whisper.cpp server stderr] ${chunk.toString().trim()}`);
+    });
+
+    child.on('exit', (code: number | null) => {
+      console.log(`[Whisper][whisper.cpp] Server process exited with code ${code}`);
+      whisperCppServerReady = false;
+      whisperCppServerProcess = null;
+      whisperCppServerStarting = null;
+      if (whisperCppPendingRequest) {
+        whisperCppPendingRequest.reject(new Error(`whisper.cpp server exited with code ${code}`));
+        whisperCppPendingRequest = null;
+      }
+    });
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      whisperCppServerBuffer += chunk.toString();
+      const lines = whisperCppServerBuffer.split('\n');
+      whisperCppServerBuffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const json = JSON.parse(trimmed);
+          if (json.ready) {
+            whisperCppServerReady = true;
+            console.log('[Whisper][whisper.cpp] Server ready (model loaded)');
+            continue;
+          }
+          if (whisperCppPendingRequest) {
+            const req = whisperCppPendingRequest;
+            whisperCppPendingRequest = null;
+            if (json.error) {
+              req.reject(new Error(json.error));
+            } else {
+              req.resolve(json);
+            }
+          }
+        } catch (e) {
+          console.warn('[Whisper][whisper.cpp] Failed to parse server output:', trimmed);
+        }
+      }
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('whisper.cpp server startup timed out (60s)'));
+        killWhisperCppServer();
+      }, 60_000);
+
+      const checkReady = setInterval(() => {
+        if (whisperCppServerReady) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          resolve();
+        }
+        if (!whisperCppServerProcess || whisperCppServerProcess.killed) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          reject(new Error('whisper.cpp server process died during startup'));
+        }
+      }, 50);
+    });
+
+    whisperCppServerStarting = null;
+  })();
+
+  return whisperCppServerStarting;
+}
+
+function sendWhisperCppRequest(request: Record<string, any>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!whisperCppServerProcess || whisperCppServerProcess.killed || !whisperCppServerReady) {
+      reject(new Error('whisper.cpp server not running'));
+      return;
+    }
+    if (whisperCppPendingRequest) {
+      reject(new Error('Another whisper.cpp request is already in flight'));
+      return;
+    }
+    whisperCppPendingRequest = { resolve, reject };
+    try {
+      whisperCppServerProcess.stdin.write(JSON.stringify(request) + '\n');
+    } catch (err: any) {
+      whisperCppPendingRequest = null;
+      reject(err);
+    }
+  });
+}
+
 async function transcribeAudioWithWhisperCpp(opts: {
   audioBuffer: Buffer;
   language?: string;
@@ -1085,7 +1220,6 @@ async function transcribeAudioWithWhisperCpp(opts: {
     throw new Error(`SuperCmd Whisper transcription expects WAV audio, received ${mimeType}.`);
   }
 
-  const binaryPath = ensureWhisperCppTranscriberBinary();
   const status = getWhisperCppModelStatus();
   if (status.state === 'downloading') {
     throw new Error('The SuperCmd Whisper model is still downloading. Finish setup from onboarding or Settings -> AI -> SuperCmd Whisper.');
@@ -1093,7 +1227,10 @@ async function transcribeAudioWithWhisperCpp(opts: {
   if (status.state !== 'downloaded') {
     throw new Error('The SuperCmd Whisper model has not been downloaded yet. Download it from onboarding or Settings -> AI -> SuperCmd Whisper.');
   }
-  const modelPath = status.path;
+
+  // Ensure the persistent server is running (model loaded in memory)
+  await ensureWhisperCppServer();
+
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'supercmd-whispercpp-'));
   const audioPath = path.join(tempDir, 'input.wav');
 
@@ -1101,43 +1238,13 @@ async function transcribeAudioWithWhisperCpp(opts: {
     fs.writeFileSync(audioPath, opts.audioBuffer);
 
     const language = normalizeWhisperLanguageCode(opts.language);
-    const { spawn } = require('child_process');
-
-    const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-      const child = spawn(binaryPath, [
-        '--model', modelPath,
-        '--file', audioPath,
-        '--language', language,
-      ], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', (chunk: Buffer | string) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on('data', (chunk: Buffer | string) => {
-        stderr += chunk.toString();
-      });
-      child.on('error', (error: Error) => reject(error));
-      child.on('exit', (code: number | null) => {
-        if (code === 0) {
-          resolve({ stdout, stderr });
-          return;
-        }
-        reject(new Error(stderr.trim() || `SuperCmd Whisper exited with code ${code}`));
-      });
+    const result = await sendWhisperCppRequest({
+      command: 'transcribe',
+      file: audioPath,
+      language,
     });
 
-    const transcriptMarker = '__TRANSCRIPT__:';
-    const markerIndex = result.stdout.lastIndexOf(transcriptMarker);
-    if (markerIndex >= 0) {
-      return result.stdout.slice(markerIndex + transcriptMarker.length).trim();
-    }
-
-    return result.stdout.trim();
+    return result.text || '';
   } finally {
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
@@ -10919,6 +11026,17 @@ app.whenReady().then(async () => {
   // Warm the worker so the first window-management action does not race spawn.
   setTimeout(() => { ensureWindowManagerWorker(); }, 0);
 
+  // Pre-load whisper.cpp model so the first dictation session is instant.
+  // Delayed slightly so it doesn't compete with critical startup work.
+  setTimeout(() => {
+    const status = getWhisperCppModelStatus();
+    if (status.state === 'downloaded') {
+      ensureWhisperCppServer().catch((err) => {
+        console.warn('[Whisper][whisper.cpp] Startup warmup failed:', err?.message);
+      });
+    }
+  }, 3000);
+
   // Register the sc-asset:// protocol handler to serve extension asset files
   protocol.handle('sc-asset', (request: any) => {
     // URL format: sc-asset://ext-asset/path/to/file
@@ -13773,6 +13891,28 @@ if let tiff = image?.tiffRepresentation {
     const nextText = String(text || '');
     if (!nextText) return false;
     console.log('[Whisper][type-live]', JSON.stringify(nextText));
+
+    // Fast path: native addon — activate + ⌘V via CGEvent, no osascript spawn
+    const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
+    if (target) {
+      try {
+        const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+        const previousClipboardText = systemClipboard.readText();
+        systemClipboard.writeText(nextText);
+        const ok = fastPasteAddon.activateAndPaste(target);
+        if (ok) {
+          setTimeout(() => {
+            try { systemClipboard.writeText(previousClipboardText); } catch {}
+          }, 250);
+          return true;
+        }
+        try { systemClipboard.writeText(previousClipboardText); } catch {}
+      } catch (e: any) {
+        console.warn('[type-text-live] fast-paste addon failed:', e?.message);
+      }
+    }
+
+    // Slow fallback: osascript
     await activateLastFrontmostApp();
     await new Promise((resolve) => setTimeout(resolve, 70));
     let typed = await typeTextDirectly(nextText);
@@ -13788,6 +13928,27 @@ if let tiff = image?.tiffRepresentation {
       return { typed: false, fallbackClipboard: false };
     }
 
+    // Fast path: native addon — activate + ⌘V via CGEvent, no osascript spawn
+    const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
+    if (target) {
+      try {
+        const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+        const previousClipboardText = systemClipboard.readText();
+        systemClipboard.writeText(nextText);
+        const ok = fastPasteAddon.activateAndPaste(target);
+        if (ok) {
+          setTimeout(() => {
+            try { systemClipboard.writeText(previousClipboardText); } catch {}
+          }, 250);
+          return { typed: true, fallbackClipboard: false };
+        }
+        try { systemClipboard.writeText(previousClipboardText); } catch {}
+      } catch (e: any) {
+        console.warn('[whisper-type-text-live] fast-paste addon failed:', e?.message);
+      }
+    }
+
+    // Slow fallback: osascript
     await activateLastFrontmostApp();
     await new Promise((resolve) => setTimeout(resolve, 70));
     let typed = await pasteTextToActiveApp(nextText);
@@ -13929,6 +14090,22 @@ if let tiff = image?.tiffRepresentation {
   ipcMain.handle('whispercpp-download-model', async () => {
     await ensureWhisperCppModelDownloaded();
     return getWhisperCppModelStatus();
+  });
+
+  ipcMain.handle('whispercpp-warmup', async () => {
+    const status = getWhisperCppModelStatus();
+    if (status.state !== 'downloaded') {
+      return { ready: false, error: 'Model not downloaded' };
+    }
+    if (whisperCppServerReady && whisperCppServerProcess && !whisperCppServerProcess.killed) {
+      return { ready: true };
+    }
+    try {
+      await ensureWhisperCppServer();
+      return { ready: true };
+    } catch (err: any) {
+      return { ready: false, error: err?.message || 'Warmup failed' };
+    }
   });
 
   ipcMain.handle('parakeet-model-status', async () => {
@@ -15116,6 +15293,7 @@ app.on('will-quit', () => {
     try { appTray.destroy(); } catch {}
     appTray = null;
   }
+  killWhisperCppServer();
   // Clean up trays
   for (const [, tray] of menuBarTrays) {
     tray.destroy();

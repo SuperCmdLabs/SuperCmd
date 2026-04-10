@@ -771,6 +771,7 @@ export interface ElectronAPI {
   ) => Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }>;
   whisperCppModelStatus: () => Promise<WhisperCppModelStatus>;
   whisperCppDownloadModel: () => Promise<WhisperCppModelStatus>;
+  whisperCppWarmup: () => Promise<{ ready: boolean; error?: string }>;
   parakeetModelStatus: () => Promise<ParakeetModelStatus>;
   parakeetDownloadModel: () => Promise<ParakeetModelStatus>;
   parakeetWarmup: () => Promise<{ ready: boolean; error?: string }>;

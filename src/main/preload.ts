@@ -776,6 +776,8 @@ contextBridge.exposeInMainWorld('electron', {
     error?: string;
   }> =>
     ipcRenderer.invoke('whispercpp-download-model'),
+  whisperCppWarmup: (): Promise<{ ready: boolean; error?: string }> =>
+    ipcRenderer.invoke('whispercpp-warmup'),
   parakeetModelStatus: (): Promise<any> =>
     ipcRenderer.invoke('parakeet-model-status'),
   parakeetDownloadModel: (): Promise<any> =>
