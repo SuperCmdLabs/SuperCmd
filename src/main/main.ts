@@ -7829,10 +7829,22 @@ async function hideAndPaste(): Promise<boolean> {
   const { promisify } = require('util');
   const execFileAsync = promisify(execFile);
 
-  // Re-activate the previous frontmost app explicitly
-  await activateLastFrontmostApp();
+  // Fast path: in-process native addon — activates app, polls until
+  // frontmost, posts ⌘V via CGEvent. Runs inside Electron so it
+  // inherits accessibility permissions. Zero process spawn overhead.
+  const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
+  if (target) {
+    try {
+      const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+      const ok = fastPasteAddon.activateAndPaste(target);
+      if (ok) return true;
+    } catch (e: any) {
+      console.warn('[hideAndPaste] fast-paste addon failed:', e?.message);
+    }
+  }
 
-  // Small delay to let the target app gain focus
+  // Slow fallback: osascript for both activation and keystroke
+  await activateLastFrontmostApp();
   await new Promise(resolve => setTimeout(resolve, 200));
 
   try {
@@ -7840,7 +7852,6 @@ async function hideAndPaste(): Promise<boolean> {
     return true;
   } catch (e) {
     console.error('Failed to simulate paste keystroke:', e);
-    // Fallback with extra delay
     try {
       await new Promise(resolve => setTimeout(resolve, 200));
       await execFileAsync('osascript', ['-e', `
