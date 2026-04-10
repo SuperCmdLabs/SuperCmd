@@ -354,6 +354,16 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         return;
       }
 
+      // Cmd+1 through Cmd+9: quick-paste the Nth item (Alfred-style)
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        if (idx < filteredItems.length) {
+          e.preventDefault();
+          handlePasteItem(filteredItems[idx]);
+          return;
+        }
+      }
+
       if (showActions) {
         if (isMetaEnter(e)) {
           e.preventDefault();
@@ -576,6 +586,12 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                   onDoubleClick={() => handlePasteItem(item)}
                 >
                   <div className="flex items-center gap-2">
+                    {index < 9 && (
+                      <span className="inline-flex items-center gap-0.5 flex-shrink-0">
+                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">⌘</kbd>
+                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">{index + 1}</kbd>
+                      </span>
+                    )}
                     {item.type === 'image' ? (
                       <>
                         <img
