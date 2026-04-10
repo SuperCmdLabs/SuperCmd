@@ -356,9 +356,10 @@ func computeFFTBands(samples: UnsafePointer<Float>, count: Int) -> [Float] {
           sum += magnitudes[j]
         }
         let avg = sum / Float(max(1, clampedHi - clampedLo))
-        // Convert to dB-ish scale, clamp to 0–1
+        // Convert to dB scale, clamp to 0–1. Range -25dB to 0dB maps to 0–1,
+        // so background noise (typically below -25dB) reads as zero.
         let db = 10.0 * log10(max(avg, 1e-10))
-        bands[i] = max(0, min(1, (db + 40) / 40))
+        bands[i] = max(0, min(1, (db + 25) / 25))
       }
 
       // Write bands to the outer scope

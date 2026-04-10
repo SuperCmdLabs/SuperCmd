@@ -1645,8 +1645,8 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         prev.map((prevVal, i) => {
           // Squelch low-level noise and reduce minimum bar height
           const raw = levels[i];
-          const squelched = raw < 0.15 ? raw * 0.2 : raw;
-          const target = Math.max(0.02, Math.min(1, squelched));
+          const squelched = raw < 0.25 ? 0 : raw;
+          const target = Math.max(0.01, Math.min(1, squelched));
           return prevVal * 0.5 + target * 0.5;
         })
       );
