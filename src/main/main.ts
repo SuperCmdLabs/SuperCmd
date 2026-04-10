@@ -7761,11 +7761,13 @@ async function replaceTextDirectly(previousText: string, nextText: string): Prom
 
   try {
     if (prev.length > 0) {
+      // The original selection is still active in the target app, so a single
+      // backspace (or simply typing) replaces the entire selection.  Sending
+      // prev.length backspaces is wrong: the first one deletes the whole
+      // selection and every subsequent one eats a character *before* it.
       const script = `
         tell application "System Events"
-          repeat ${prev.length} times
-            key code 51
-          end repeat
+          key code 51
         end tell
       `;
       await execFileAsync('osascript', ['-e', script]);
@@ -7790,11 +7792,11 @@ async function replaceTextViaBackspaceAndPaste(previousText: string, nextText: s
 
   try {
     if (prev.length > 0) {
+      // Single backspace to clear the active selection — see replaceTextDirectly
+      // for rationale.
       const script = `
         tell application "System Events"
-          repeat ${prev.length} times
-            key code 51
-          end repeat
+          key code 51
         end tell
       `;
       await execFileAsync('osascript', ['-e', script]);
