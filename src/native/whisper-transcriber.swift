@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import whisper
 
 enum WhisperTranscriberError: Error, CustomStringConvertible {
@@ -267,8 +268,8 @@ func transcribe(context: OpaquePointer, audioPath: String, language: String) thr
 func loadModel(at modelPath: String) throws -> OpaquePointer {
   whisper_log_set({ _, _, _ in }, nil)
   var contextParams = whisper_context_default_params()
-  contextParams.use_gpu = false
-  contextParams.flash_attn = false
+  contextParams.use_gpu = true
+  contextParams.flash_attn = true
 
   guard let context = whisper_init_from_file_with_params(modelPath, contextParams) else {
     throw WhisperTranscriberError.modelLoadFailed("Failed to load whisper.cpp model at \(modelPath)")
@@ -299,9 +300,107 @@ func writeJSON(_ dict: [String: Any]) {
   FileHandle.standardOutput.write(Data((line + "\n").utf8))
 }
 
+// ─── Native mic capture ──────────────────────────────────────────
+
+class MicCapture {
+  private let audioEngine = AVAudioEngine()
+  private var capturedSamples: [Float] = []
+  private let lock = NSLock()
+  private(set) var isCapturing = false
+
+  func start() throws {
+    lock.lock()
+    capturedSamples.removeAll()
+    lock.unlock()
+
+    let inputNode = audioEngine.inputNode
+    let nativeFormat = inputNode.outputFormat(forBus: 0)
+    let targetRate: Double = 16000
+
+    // Set up converter to 16kHz mono Float32
+    guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                           sampleRate: targetRate,
+                                           channels: 1,
+                                           interleaved: false) else {
+      throw WhisperTranscriberError.unsupportedAudio("Cannot create 16kHz format")
+    }
+
+    guard let converter = AVAudioConverter(from: nativeFormat, to: targetFormat) else {
+      throw WhisperTranscriberError.unsupportedAudio("Cannot create audio converter from \(nativeFormat) to \(targetFormat)")
+    }
+
+    inputNode.installTap(onBus: 0, bufferSize: 4096, format: nativeFormat) { [weak self] buffer, _ in
+      guard let self = self else { return }
+      let ratio = targetRate / nativeFormat.sampleRate
+      let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+      guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat,
+                                                 frameCapacity: outputFrameCount) else { return }
+      var error: NSError?
+      converter.convert(to: outputBuffer, error: &error) { _, outStatus in
+        outStatus.pointee = .haveData
+        return buffer
+      }
+      if let floatData = outputBuffer.floatChannelData?[0] {
+        let count = Int(outputBuffer.frameLength)
+        self.lock.lock()
+        self.capturedSamples.append(contentsOf: UnsafeBufferPointer(start: floatData, count: count))
+        self.lock.unlock()
+      }
+    }
+
+    audioEngine.prepare()
+    try audioEngine.start()
+    isCapturing = true
+  }
+
+  func stop() -> [Float] {
+    audioEngine.stop()
+    audioEngine.inputNode.removeTap(onBus: 0)
+    isCapturing = false
+    lock.lock()
+    let samples = capturedSamples
+    capturedSamples.removeAll()
+    lock.unlock()
+    return samples
+  }
+}
+
+func transcribeSamples(context: OpaquePointer, samples: [Float], language: String) throws -> String {
+  if samples.isEmpty { return "" }
+
+  var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
+  params.print_realtime = false
+  params.print_progress = false
+  params.print_timestamps = false
+  params.print_special = false
+  params.translate = false
+  params.no_context = true
+  params.single_segment = false
+  params.n_threads = Int32(max(1, min(8, ProcessInfo.processInfo.processorCount - 2)))
+
+  let normalizedLanguage = language.isEmpty ? "en" : language
+  return try normalizedLanguage.withCString { languageCString -> String in
+    params.language = languageCString
+    let result = samples.withUnsafeBufferPointer { buffer in
+      whisper_full(context, params, buffer.baseAddress, Int32(buffer.count))
+    }
+    if result != 0 {
+      throw WhisperTranscriberError.transcriptionFailed("whisper.cpp transcription failed with code \(result)")
+    }
+
+    let segmentCount = whisper_full_n_segments(context)
+    var text = ""
+    for index in 0..<segmentCount {
+      text += String(cString: whisper_full_get_segment_text(context, index))
+    }
+    return text.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+}
+
 func runServeMode(modelPath: String) throws {
   let context = try loadModel(at: modelPath)
   defer { whisper_free(context) }
+  let mic = MicCapture()
 
   writeJSON(["ready": true])
 
@@ -317,7 +416,35 @@ func runServeMode(modelPath: String) throws {
     }
 
     if command == "exit" {
+      if mic.isCapturing { _ = mic.stop() }
       break
+    }
+
+    if command == "listen" {
+      if mic.isCapturing { _ = mic.stop() }
+      do {
+        try mic.start()
+        writeJSON(["listening": true])
+      } catch {
+        writeJSON(["error": "Mic start failed: \(error)"])
+      }
+      continue
+    }
+
+    if command == "stop" {
+      let language = json["language"] as? String ?? "en"
+      let samples = mic.stop()
+      if samples.count < 1600 { // less than 0.1s of audio
+        writeJSON(["text": ""])
+        continue
+      }
+      do {
+        let text = try transcribeSamples(context: context, samples: samples, language: language)
+        writeJSON(["text": text])
+      } catch {
+        writeJSON(["error": String(describing: error)])
+      }
+      continue
     }
 
     if command == "transcribe" {

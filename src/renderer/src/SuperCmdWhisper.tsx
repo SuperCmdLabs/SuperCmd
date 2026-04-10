@@ -35,6 +35,9 @@ const NATIVE_MAX_TYPE_RETRIES = 2;
 const NATIVE_FINAL_DRAIN_TIMEOUT_MS = 3000;
 const PUSH_TO_TALK_MODE = true;
 
+// Cache survives component unmount/remount and HMR reloads.
+const _sessionConfigCache = ((window as any).__scWhisperSessionConfigCache ??= { value: null }) as { value: { backend: string; engine: string; language: string } | null };
+
 function formatShortcutLabel(shortcut: string): string {
   return formatShortcutForDisplay(shortcut).replace(/ \+ /g, ' ');
 }
@@ -502,6 +505,14 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   }, []);
 
   const resolveSessionConfig = useCallback(async (): Promise<WhisperSessionConfig> => {
+    // Return cached config on subsequent calls — avoids ~450ms IPC roundtrip.
+    // Module-level cache survives component unmount/remount (auto-close cycles).
+    if (_sessionConfigCache.value) {
+      const cached = _sessionConfigCache.value as WhisperSessionConfig;
+      backendRef.current = cached.backend;
+      transcriptionEngineRef.current = cached.engine;
+      return cached;
+    }
     try {
       const settings = await window.electron.getSettings();
       const language = settings.ai.speechLanguage || 'en-US';
@@ -526,7 +537,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       const backend: WhisperBackend = engine === 'native' ? 'native' : 'whisper';
       backendRef.current = backend;
       transcriptionEngineRef.current = engine;
-      return { backend, engine, language };
+      const config = { backend, engine, language };
+      _sessionConfigCache.value = config;
+      return config;
     } catch {
       return {
         backend: backendRef.current,
@@ -983,6 +996,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
   const finalizeAndClose = useCallback(async (closeAfter = true) => {
     if (finalizingRef.current) return;
+
     if (whisperStateRef.current === 'listening') {
       playRecordingCue('end');
     }
@@ -1014,6 +1028,17 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       const isNativeBackend = backend === 'native';
 
       if (backend === 'whisper') {
+        // Native mic capture path: server has the audio, just send stop.
+        if ((window as any).__scWhisperNativeCapture) {
+          (window as any).__scWhisperNativeCapture = false;
+          const language = speechLanguage || 'en-US';
+          const result = await window.electron.whisperCppStop(language);
+          if (result?.text) {
+            combinedTranscriptRef.current = result.text;
+          }
+          // Skip the normal transcription path — we already have the text.
+          // Fall through to the paste/close logic below.
+        } else {
         const engine = transcriptionEngineRef.current;
         // Stop periodic timer
         if (periodicTimerRef.current !== null) {
@@ -1053,6 +1078,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
             transcribeInFlightRef.current = false;
           }
         }
+        } // close else (non-native-capture whisper path)
       } else {
         // native backend — stop the native process
         stopNativeSilenceWatchdog();
@@ -1199,13 +1225,21 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     if (currentState === 'listening' || currentState === 'processing') return;
     startInFlightRef.current = true;
 
-    // Request mic stream immediately — don't wait for IPC permission checks.
-    // This minimizes the delay between hotkey press and audio capture start.
+    // Resolve session config first (cached after first call, ~1ms).
+    // This tells us whether to use native mic capture or getUserMedia.
+    const sessionConfig = await resolveSessionConfig();
+
     let preflightStream: MediaStream | null = null;
+
+    // For whispercpp with native capture, skip getUserMedia entirely —
+    // the server opens the mic natively via AVAudioEngine (~3ms vs ~400ms).
+    if (sessionConfig.engine === 'whispercpp' && sttModelRef.current === 'whispercpp') {
+    } else {
+    // Disable Chromium audio processing pipelines for faster mic open.
     const micAudioOpts = {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
     };
     try {
       preflightStream = await navigator.mediaDevices.getUserMedia({ audio: micAudioOpts });
@@ -1243,6 +1277,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         return;
       }
     }
+    } // close else (non-native-capture getUserMedia path)
 
     const requestSeq = ++startRequestSeqRef.current;
 
@@ -1251,7 +1286,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     // capturing a few extra chunks is harmless.
     pcmCaptureChunksRef.current = [];
     captureSampleRateRef.current = 16000;
-    startVisualizer(preflightStream!, true);
+    if (preflightStream) {
+      startVisualizer(preflightStream, true);
+    }
 
     // Optimistically flip to active state so the button toggles immediately.
     whisperStateRef.current = 'listening';
@@ -1259,7 +1296,6 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     setErrorText('');
     setStatusText(t('whisper.status.startingMicrophone'));
 
-    const sessionConfig = await resolveSessionConfig();
 
     // Reset shared state
     combinedTranscriptRef.current = '';
@@ -1297,24 +1333,53 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     }
 
     const backend = sessionConfig.backend;
-    const stream = preflightStream!;
+    const stream = preflightStream;
 
     try {
       if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) {
-        for (const track of stream.getTracks()) track.stop();
+        if (stream) { for (const track of stream.getTracks()) track.stop(); }
         return;
       }
 
       if (backend === 'whisper') {
         stopNativeSilenceWatchdog();
+
+        // Native mic capture path for whispercpp: server opens mic directly,
+        // bypasses getUserMedia (~400ms) entirely.
+        if (sessionConfig.engine === 'whispercpp' && sttModelRef.current === 'whispercpp') {
+          if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) return;
+          // Stop the preflightStream — we don't need it for native capture.
+          if (stream) { for (const track of stream.getTracks()) track.stop(); }
+
+          const listenResult = await window.electron.whisperCppListen();
+          if (!listenResult?.ok) {
+            setState('error');
+            setStatusText(t('whisper.errors.modelNotReady'));
+            setErrorText(listenResult?.error || t('whisper.errors.modelNotReady'));
+            startInFlightRef.current = false;
+            whisperStateRef.current = 'idle';
+            stopVisualizer();
+            return;
+          }
+          // Mark as using native capture so finalize knows to use whisperCppStop
+          transcriptionEngineRef.current = 'whispercpp';
+          (window as any).__scWhisperNativeCapture = true;
+
+          setState('listening');
+          playRecordingCue('start');
+          setStatusText(
+            PUSH_TO_TALK_MODE
+              ? t('whisper.status.listeningReleaseToProcess')
+              : t('whisper.status.listeningPressAgainToFinish')
+          );
+          startInFlightRef.current = false;
+          return;
+        }
+
         if (sessionConfig.engine === 'whispercpp') {
           if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) return;
 
           // Warm up the persistent server (loads model on first use).
-          // Audio is already being captured in the background while we wait.
-          // The hint stays visible until warmup fully completes — even if the user
-          // releases the hold key early and triggers finalize, we keep the banner
-          // so the next session starts instantly.
           const needsWarmup = sttModelRef.current === 'parakeet' || sttModelRef.current === 'qwen3' || sttModelRef.current === 'whispercpp';
           if (needsWarmup) {
             const warmupFn = sttModelRef.current === 'qwen3'
@@ -1351,9 +1416,14 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
               return;
             }
             if (!warmupOk) {
-              // Models not downloaded or warmup failed — show error hint and continue
-              // with normal listening. Transcription will fail with a clear error.
-              showHint(t('whisper.errors.modelNotReady'), 4000);
+              setState('error');
+              setStatusText(t('whisper.errors.modelNotReady'));
+              setErrorText(t('whisper.errors.modelNotReady'));
+              startInFlightRef.current = false;
+              whisperStateRef.current = 'idle';
+              for (const track of stream.getTracks()) track.stop();
+              stopVisualizer();
+              return;
             }
           }
 
@@ -1551,6 +1621,8 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   // ─── Effects ───────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Only fetch config on first mount — subsequent mounts use the cache.
+    if (_sessionConfigCache.value) return;
     let cancelled = false;
     void resolveSessionConfig().then(() => {
       if (cancelled) return;

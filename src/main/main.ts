@@ -161,8 +161,39 @@ function getNativeBinaryPath(name: string): string {
 }
 
 const WHISPERCPP_FRAMEWORK_VERSION = 'v1.8.3';
-const WHISPERCPP_MODEL_NAME = 'base';
-const WHISPERCPP_MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${WHISPERCPP_MODEL_NAME}.bin`;
+const WHISPERCPP_DEFAULT_MODEL_SIZE = 'base';
+const WHISPERCPP_MODEL_SIZES = ['tiny', 'base', 'small', 'medium', 'large'] as const;
+let whisperCppModelSizeCache: string | null = null;
+
+function getWhisperCppModelSize(): string {
+  if (whisperCppModelSizeCache) return whisperCppModelSizeCache;
+  try {
+    const s = loadSettings();
+    const size = (s as any).ai?.whisperCppModelSize;
+    if (size && WHISPERCPP_MODEL_SIZES.includes(size)) {
+      whisperCppModelSizeCache = size;
+      return size;
+    }
+  } catch {}
+  whisperCppModelSizeCache = WHISPERCPP_DEFAULT_MODEL_SIZE;
+  return WHISPERCPP_DEFAULT_MODEL_SIZE;
+}
+
+const WHISPERCPP_MODEL_FILENAMES: Record<string, string> = {
+  tiny: 'ggml-tiny.bin',
+  base: 'ggml-base.bin',
+  small: 'ggml-small.bin',
+  medium: 'ggml-medium.bin',
+  large: 'ggml-large-v3-turbo.bin',
+};
+
+function getWhisperCppModelFilename(size: string): string {
+  return WHISPERCPP_MODEL_FILENAMES[size] || `ggml-${size}.bin`;
+}
+
+function getWhisperCppModelUrl(size: string): string {
+  return `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${getWhisperCppModelFilename(size)}`;
+}
 
 let whisperCppModelEnsurePromise: Promise<string> | null = null;
 type WhisperCppModelStatus = {
@@ -807,7 +838,8 @@ function getWhisperCppTranscriberBinaryPath(): string {
 }
 
 function getWhisperCppModelPath(): string {
-  return path.join(app.getPath('userData'), 'whispercpp', 'models', `ggml-${WHISPERCPP_MODEL_NAME}.bin`);
+  const size = getWhisperCppModelSize();
+  return path.join(app.getPath('userData'), 'whispercpp', 'models', getWhisperCppModelFilename(size));
 }
 
 function getWhisperCppModelStatus(): WhisperCppModelStatus {
@@ -817,7 +849,7 @@ function getWhisperCppModelStatus(): WhisperCppModelStatus {
       const stats = fs.statSync(modelPath);
       whisperCppModelStatus = {
         state: 'downloaded',
-        modelName: WHISPERCPP_MODEL_NAME,
+        modelName: getWhisperCppModelSize(),
         path: modelPath,
         bytesDownloaded: Math.max(0, Number(stats.size) || 0),
         totalBytes: Math.max(0, Number(stats.size) || 0),
@@ -829,7 +861,7 @@ function getWhisperCppModelStatus(): WhisperCppModelStatus {
   if (whisperCppModelStatus?.state === 'downloading') {
     return {
       ...whisperCppModelStatus,
-      modelName: WHISPERCPP_MODEL_NAME,
+      modelName: getWhisperCppModelSize(),
       path: modelPath,
     };
   }
@@ -837,14 +869,14 @@ function getWhisperCppModelStatus(): WhisperCppModelStatus {
   if (whisperCppModelStatus?.state === 'error') {
     return {
       ...whisperCppModelStatus,
-      modelName: WHISPERCPP_MODEL_NAME,
+      modelName: getWhisperCppModelSize(),
       path: modelPath,
     };
   }
 
   whisperCppModelStatus = {
     state: 'not-downloaded',
-    modelName: WHISPERCPP_MODEL_NAME,
+    modelName: getWhisperCppModelSize(),
     path: modelPath,
     bytesDownloaded: 0,
     totalBytes: null,
@@ -963,12 +995,13 @@ async function downloadFileWithRedirects(
 }
 
 async function ensureWhisperCppModelDownloaded(): Promise<string> {
+  const size = getWhisperCppModelSize();
   const modelPath = getWhisperCppModelPath();
   try {
     if (fs.existsSync(modelPath)) {
       whisperCppModelStatus = {
         state: 'downloaded',
-        modelName: WHISPERCPP_MODEL_NAME,
+        modelName: size,
         path: modelPath,
         bytesDownloaded: Math.max(0, Number(fs.statSync(modelPath).size) || 0),
         totalBytes: Math.max(0, Number(fs.statSync(modelPath).size) || 0),
@@ -987,18 +1020,18 @@ async function ensureWhisperCppModelDownloaded(): Promise<string> {
     fs.mkdirSync(modelDir, { recursive: true });
     whisperCppModelStatus = {
       state: 'downloading',
-      modelName: WHISPERCPP_MODEL_NAME,
+      modelName: size,
       path: modelPath,
       bytesDownloaded: 0,
       totalBytes: null,
     };
 
     try {
-      console.log(`[Whisper][whisper.cpp] Downloading ${WHISPERCPP_MODEL_NAME} model`);
-      await downloadFileWithRedirects(WHISPERCPP_MODEL_URL, tempPath, 5, (bytesDownloaded, totalBytes) => {
+      console.log(`[Whisper][whisper.cpp] Downloading ${size} model`);
+      await downloadFileWithRedirects(getWhisperCppModelUrl(size), tempPath, 5, (bytesDownloaded, totalBytes) => {
         whisperCppModelStatus = {
           state: 'downloading',
-          modelName: WHISPERCPP_MODEL_NAME,
+          modelName: size,
           path: modelPath,
           bytesDownloaded,
           totalBytes,
@@ -1008,7 +1041,7 @@ async function ensureWhisperCppModelDownloaded(): Promise<string> {
       const finalSize = Math.max(0, Number(fs.statSync(modelPath).size) || 0);
       whisperCppModelStatus = {
         state: 'downloaded',
-        modelName: WHISPERCPP_MODEL_NAME,
+        modelName: size,
         path: modelPath,
         bytesDownloaded: finalSize,
         totalBytes: finalSize,
@@ -1019,7 +1052,7 @@ async function ensureWhisperCppModelDownloaded(): Promise<string> {
       try { fs.unlinkSync(tempPath); } catch {}
       whisperCppModelStatus = {
         state: 'error',
-        modelName: WHISPERCPP_MODEL_NAME,
+        modelName: size,
         path: modelPath,
         bytesDownloaded: 0,
         totalBytes: null,
@@ -11595,6 +11628,10 @@ app.whenReady().then(async () => {
       if (patch.openAtLogin !== undefined) {
         applyOpenAtLogin(Boolean(patch.openAtLogin));
       }
+      // Invalidate cached model size when it changes
+      if (patch.ai?.whisperCppModelSize !== undefined) {
+        whisperCppModelSizeCache = null;
+      }
       // When onboarding completes: hide dock, then start services that were
       // deferred to avoid triggering permission dialogs during onboarding.
       if (patch.hasSeenOnboarding === true) {
@@ -14108,6 +14145,29 @@ if let tiff = image?.tiffRepresentation {
     }
   });
 
+  // Native mic capture: server opens mic directly, no getUserMedia overhead.
+  ipcMain.handle('whispercpp-listen', async () => {
+    try {
+      await ensureWhisperCppServer();
+      // "listen" is fire-and-forget — server starts capturing immediately.
+      // We don't await the response because the server writes {"listening":true}
+      // asynchronously and we don't want to block the renderer.
+      sendWhisperCppRequest({ command: 'listen' }).catch(() => {});
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message };
+    }
+  });
+
+  ipcMain.handle('whispercpp-stop', async (_event: any, language?: string) => {
+    try {
+      const result = await sendWhisperCppRequest({ command: 'stop', language: language || 'en' });
+      return { text: result?.text || '' };
+    } catch (err: any) {
+      return { text: '', error: err?.message };
+    }
+  });
+
   ipcMain.handle('parakeet-model-status', async () => {
     return getParakeetModelStatus();
   });
@@ -14171,7 +14231,7 @@ if let tiff = image?.tiffRepresentation {
 
       // Parse speechToTextModel to a concrete provider/model pair.
       let provider: 'parakeet' | 'qwen3' | 'whispercpp' | 'openai' | 'elevenlabs' = 'whispercpp';
-      let model = `ggml-${WHISPERCPP_MODEL_NAME}`;
+      let model = `ggml-${getWhisperCppModelSize()}`;
       const sttModel = s.ai.speechToTextModel || '';
       if (sttModel === 'parakeet') {
         provider = 'parakeet';
@@ -14181,7 +14241,7 @@ if let tiff = image?.tiffRepresentation {
         model = 'qwen3-asr-0.6b';
       } else if (!sttModel || sttModel === 'default' || sttModel === 'whispercpp') {
         provider = 'whispercpp';
-        model = `ggml-${WHISPERCPP_MODEL_NAME}`;
+        model = `ggml-${getWhisperCppModelSize()}`;
       } else if (sttModel === 'native') {
         // Renderer should not call cloud transcription in native mode.
         // Return empty transcript instead of surfacing an IPC error.
