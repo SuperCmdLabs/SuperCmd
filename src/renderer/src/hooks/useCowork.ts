@@ -49,10 +49,16 @@ export function useCowork({ setShowCowork }: UseCoworkOptions): UseCoworkReturn 
   const streamingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const listenersRegisteredRef = useRef(false);
 
   // ── AI streaming listeners ──────────────────────────────────────
+  // Guard against React StrictMode double-invocation: ipcRenderer.on() is
+  // additive, so registering twice causes each chunk to fire twice.
 
   useEffect(() => {
+    if (listenersRegisteredRef.current) return;
+    listenersRegisteredRef.current = true;
+
     const handleChunk = (data: { requestId: string; chunk: string }) => {
       if (data.requestId !== requestIdRef.current) return;
       setMessages((prev) => {
