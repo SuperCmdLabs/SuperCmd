@@ -1643,7 +1643,10 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       if (levels.length !== BAR_COUNT) return;
       setWaveBars((prev) =>
         prev.map((prevVal, i) => {
-          const target = Math.max(0.04, Math.min(1, levels[i]));
+          // Squelch low-level noise and reduce minimum bar height
+          const raw = levels[i];
+          const squelched = raw < 0.15 ? raw * 0.2 : raw;
+          const target = Math.max(0.02, Math.min(1, squelched));
           return prevVal * 0.5 + target * 0.5;
         })
       );
@@ -1753,8 +1756,8 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           ) : (
             waveBars.map((value, index) => {
               const profile = BAR_HEIGHT_PROFILE[index];
-              const minHeight = dotMode ? 3 : 4 + Math.round(profile * 4);
-              const amplitude = dotMode ? 0 : 4 + Math.round(profile * 10);
+              const minHeight = dotMode ? 3 : 2 + Math.round(profile * 2);
+              const amplitude = dotMode ? 0 : 6 + Math.round(profile * 12);
               return (
                 <span
                   key={`bar-${index}`}
