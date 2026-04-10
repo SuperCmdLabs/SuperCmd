@@ -343,6 +343,16 @@
         "elevenlabsWarning": "ElevenLabs STT selected. {action} ElevenLabs API key in API Keys.",
         "elevenlabsReady": "ElevenLabs STT selected. Cloud transcription will use your ElevenLabs key.",
         "recognitionLanguage": "Recognition Language",
+        "modelSize": {
+          "label": "Model Size",
+          "tiny": "Tiny (~39 MB) — Fastest, lower accuracy",
+          "base": "Base (~140 MB) — Good balance (default)",
+          "small": "Small (~466 MB) — Better accuracy",
+          "medium": "Medium (~1.5 GB) — High accuracy",
+          "large": "Large (~2.9 GB) — Best accuracy, slowest",
+          "notDownloaded": "This model is not downloaded yet. Download it below before using dictation.",
+          "hint": "Larger models are more accurate but use more memory and take longer to transcribe. Changing the model size requires re-downloading."
+        },
         "providerInfo": {
           "parakeet": "Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Requires model warmup on first use. Download the model below before using dictation.",
           "qwen3": "Offline on-device transcription via Qwen3 ASR. Supports 30+ languages, requires macOS 15+, and warms up on first use.",
