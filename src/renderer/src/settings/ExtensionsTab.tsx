@@ -143,6 +143,21 @@ const ExtensionsTab: React.FC<{
   const [showTopActionsMenu, setShowTopActionsMenu] = useState(false);
   const [oauthTokens, setOauthTokens] = useState<Record<string, { accessToken: string; provider: string } | null>>({});
   const topActionsMenuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isCmdF = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f';
+      if (!isCmdF) return;
+      const target = event.target as HTMLElement | null;
+      if (target === searchInputRef.current) return;
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -859,6 +874,7 @@ const ExtensionsTab: React.FC<{
               <div className="relative w-[360px] max-w-full shrink-0">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-subtle)]" />
                 <input
+                  ref={searchInputRef}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={t('common.search')}
