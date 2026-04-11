@@ -8208,10 +8208,9 @@ async function executeLockScreen(): Promise<void> {
   const { execFile } = require('child_process') as typeof import('child_process');
   const { promisify } = require('util') as typeof import('util');
   const execFileAsync = promisify(execFile);
-  await execFileAsync(
-    '/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession',
-    ['-suspend']
-  );
+  await execFileAsync('/usr/bin/osascript', [
+    '-e', 'tell application "System Events" to keystroke "q" using {command down, control down}',
+  ]);
 }
 
 async function executeLogout(): Promise<void> {

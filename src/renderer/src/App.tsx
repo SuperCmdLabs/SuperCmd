@@ -2219,6 +2219,12 @@ const App: React.FC = () => {
       await window.electron.appUpdaterCheckAndInstall();
       return true;
     }
+    if (commandId === 'system-empty-trash') {
+      const ok = window.confirm('Are you sure you want to permanently delete the items in the Trash?');
+      if (!ok) return true;
+      await window.electron.executeCommand('system-empty-trash');
+      return true;
+    }
     return false;
   }, [memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager]);
 

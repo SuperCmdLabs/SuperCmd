@@ -51,6 +51,10 @@ const LOGOUT_ICON_DATA_URL = svgToBase64DataUrl(
   '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="loBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#fdba74" stop-opacity="0.7"/><stop offset="1" stop-color="#ea580c" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#loBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></g></svg>'
 );
 
+const EMPTY_TRASH_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="etBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#6ee7b7" stop-opacity="0.7"/><stop offset="1" stop-color="#047857" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#etBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></g></svg>'
+);
+
 export interface CommandInfo {
   id: string;
   title: string;
@@ -1673,6 +1677,15 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
       needsConfirmation: true,
     },
+    {
+      id: 'system-empty-trash',
+      title: 'Empty Trash',
+      subtitle: 'Permanently delete items in the Trash',
+      keywords: ['trash', 'empty', 'delete', 'bin', 'garbage', 'clean', 'recycle'],
+      iconDataUrl: EMPTY_TRASH_ICON_DATA_URL,
+      category: 'system',
+      needsConfirmation: true,
+    },
   ];
 
   // Installed community extensions
@@ -1872,6 +1885,26 @@ export async function executeCommand(id: string): Promise<boolean> {
   if (id === 'system-quit-launcher') {
     app.quit();
     return true;
+  }
+
+  if (id === 'system-lock-screen') {
+    try {
+      await execAsync(`osascript -e 'tell application "System Events" to keystroke "q" using {command down, control down}'`);
+      return true;
+    } catch (error) {
+      console.error('Failed to lock screen:', error);
+      return false;
+    }
+  }
+
+  if (id === 'system-empty-trash') {
+    try {
+      await execAsync(`osascript -e 'tell application "Finder" to empty trash'`);
+      return true;
+    } catch (error) {
+      console.error('Failed to empty trash:', error);
+      return false;
+    }
   }
 
   const commands = await getAvailableCommands();
