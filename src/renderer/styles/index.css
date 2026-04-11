@@ -69,7 +69,7 @@
   --command-item-selected-border: rgba(118, 130, 149, 0.24);
   --launcher-card-bg: rgba(118, 130, 149, 0.04);
   --launcher-card-border: rgba(118, 130, 149, 0.1);
-  --launcher-card-hover-bg: rgba(118, 130, 149, 0.06);
+  --launcher-card-hover-bg: rgba(118, 130, 149, 0.03);
   --launcher-card-selected-bg: rgba(118, 130, 149, 0.14);
   --launcher-card-selected-border: rgba(118, 130, 149, 0.22);
   --icon-neutral-bg: rgba(118, 130, 149, 0.18);
@@ -188,7 +188,7 @@
   --command-item-selected-border: rgba(255, 255, 255, 0.12);
   --launcher-card-bg: rgba(255, 255, 255, 0.03);
   --launcher-card-border: rgba(255, 255, 255, 0.06);
-  --launcher-card-hover-bg: rgba(255, 255, 255, 0.04);
+  --launcher-card-hover-bg: rgba(255, 255, 255, 0.02);
   --launcher-card-selected-bg: rgba(255, 255, 255, 0.08);
   --launcher-card-selected-border: rgba(255, 255, 255, 0.12);
   --icon-neutral-bg: rgba(255, 255, 255, 0.1);
@@ -261,7 +261,7 @@
   --command-item-selected-border: rgba(86, 98, 118, 0.22);
   --launcher-card-bg: rgba(86, 98, 118, 0.09);
   --launcher-card-border: rgba(86, 98, 118, 0.14);
-  --launcher-card-hover-bg: rgba(86, 98, 118, 0.10);
+  --launcher-card-hover-bg: rgba(86, 98, 118, 0.05);
   --launcher-card-selected-bg: rgba(86, 98, 118, 0.17);
   --launcher-card-selected-border: rgba(86, 98, 118, 0.24);
   --text-primary: rgba(32, 39, 52, 0.98);
@@ -292,7 +292,7 @@
   --command-item-selected-border: rgba(255, 255, 255, 0.16);
   --launcher-card-bg: rgba(255, 255, 255, 0.12);
   --launcher-card-border: rgba(255, 255, 255, 0.16);
-  --launcher-card-hover-bg: rgba(255, 255, 255, 0.14);
+  --launcher-card-hover-bg: rgba(255, 255, 255, 0.07);
   --launcher-card-selected-bg: rgba(255, 255, 255, 0.26);
   --launcher-card-selected-border: rgba(255, 255, 255, 0.22);
   --text-primary: rgba(var(--on-surface-rgb), 0.98);
@@ -605,7 +605,7 @@ html {
   --command-item-selected-border: rgba(24, 34, 50, 0.24);
   --launcher-card-bg: rgba(24, 34, 50, 0.06);
   --launcher-card-border: rgba(24, 34, 50, 0.12);
-  --launcher-card-hover-bg: rgba(24, 34, 50, 0.12);
+  --launcher-card-hover-bg: rgba(24, 34, 50, 0.06);
   --launcher-card-selected-bg: rgba(24, 34, 50, 0.2);
   --launcher-card-selected-border: rgba(24, 34, 50, 0.24);
   --overlay-item-active-bg: rgba(24, 34, 52, 0.34);
