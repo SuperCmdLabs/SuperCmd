@@ -240,7 +240,7 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
   return (
     <div className="snippet-view w-full h-full flex flex-col" onKeyDown={handleKeyDown}>
       {/* Header */}
-      <div className="snippet-header flex items-center gap-3 px-5 py-3.5">
+      <div className="snippet-header drag-region flex items-center gap-3 px-5 py-3.5">
         <button
           onClick={onCancel}
           className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"
@@ -978,7 +978,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
   return (
     <div className="snippet-view snippet-search-view w-full h-full flex flex-col" onKeyDown={handleKeyDown} tabIndex={-1}>
       {/* Header */}
-      <div className="snippet-header flex h-16 items-center gap-2 px-4">
+      <div className="snippet-header drag-region flex h-16 items-center gap-2 px-4">
         <button
           onClick={onClose}
           className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"

@@ -2225,6 +2225,11 @@ const App: React.FC = () => {
       await window.electron.executeCommand('system-empty-trash');
       return true;
     }
+    if (commandId === 'system-reset-launcher-position') {
+      await window.electron.resetLauncherPosition();
+      await window.electron.hideWindow();
+      return true;
+    }
     return false;
   }, [memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager]);
 

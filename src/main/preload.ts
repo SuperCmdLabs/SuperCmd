@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electron', {
   executeCommandFromWidget: (commandId: string): Promise<boolean> =>
     ipcRenderer.invoke('execute-command-from-widget', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
+  resetLauncherPosition: (): Promise<void> => ipcRenderer.invoke('reset-launcher-position'),
   openDevTools: (): Promise<boolean> => ipcRenderer.invoke('open-devtools'),
   closePromptWindow: (): Promise<void> => ipcRenderer.invoke('close-prompt-window'),
   setLauncherMode: (mode: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt'): Promise<void> =>

@@ -1227,6 +1227,12 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-reset-launcher-position',
+      title: 'Reset Launcher Position',
+      keywords: ['reset', 'position', 'center', 'move', 'launcher', 'window', 'default'],
+      category: 'system',
+    },
+    {
       id: 'system-open-settings',
       title: 'SuperCmd Settings',
       keywords: ['settings', 'preferences', 'config', 'configuration', 'supercmd'],

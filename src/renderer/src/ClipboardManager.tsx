@@ -501,7 +501,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   return (
     <div className="w-full h-full flex flex-col" onKeyDown={handleKeyDown} tabIndex={-1}>
       {/* Header - transparent background same as main screen */}
-      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-[var(--ui-divider)]">
+      <div className="drag-region flex items-center gap-3 px-5 py-3.5 border-b border-[var(--ui-divider)]">
         <button
           onClick={onClose}
           className="text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors flex-shrink-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"

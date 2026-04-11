@@ -413,6 +413,7 @@ export interface ElectronAPI {
   executeCommandAsHotkey: (commandId: string) => Promise<boolean>;
   executeCommandFromWidget: (commandId: string) => Promise<boolean>;
   hideWindow: () => Promise<void>;
+  resetLauncherPosition: () => Promise<void>;
   openDevTools: () => Promise<boolean>;
   closePromptWindow: () => Promise<void>;
   setLauncherMode: (mode: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt') => Promise<void>;

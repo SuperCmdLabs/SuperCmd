@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { fork, type ChildProcess } from 'child_process';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
-import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken } from './settings-store';
+import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState } from './settings-store';
 import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
@@ -6815,6 +6815,15 @@ function createWindow(): void {
     }
   });
 
+  // Persist the window position whenever it is moved in default mode so we
+  // can restore it on the next open.
+  mainWindow.on('moved', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (launcherMode !== 'default') return;
+    const [x, y] = mainWindow.getPosition();
+    saveWindowState({ x, y });
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -7276,6 +7285,22 @@ function applyLauncherBounds(mode: LauncherMode): void {
   } = currentDisplay.workArea;
   const size = getLauncherSize(mode);
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+  // In default mode, restore the last saved position if it falls within any display.
+  if (mode === 'default') {
+    const saved = loadWindowState();
+    if (saved) {
+      const savedCenter = { x: saved.x + Math.floor(size.width / 2), y: saved.y + Math.floor(size.height / 2) };
+      const nearestDisplay = screen.getDisplayNearestPoint(savedCenter);
+      const wa = nearestDisplay.workArea;
+      // Clamp to keep the window fully on-screen.
+      const clampedX = clamp(saved.x, wa.x, wa.x + wa.width - size.width);
+      const clampedY = clamp(saved.y, wa.y, wa.y + wa.height - size.height);
+      mainWindow.setBounds({ x: clampedX, y: clampedY, width: size.width, height: size.height });
+      return;
+    }
+  }
+
   const promptFallbackX = displayX + Math.floor((displayWidth - size.width) / 2);
   const promptFallbackY = displayY + Math.floor(displayHeight * 0.32);
   const windowX = mode === 'speak'
@@ -8465,6 +8490,15 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     if (source === 'launcher') {
       setTimeout(() => hideWindow(), 50);
     }
+    return true;
+  }
+
+  if (commandId === 'system-reset-launcher-position') {
+    clearWindowState();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      applyLauncherBounds('default');
+    }
+    if (source === 'launcher') hideWindow();
     return true;
   }
 
@@ -10959,6 +10993,13 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('close-prompt-window', () => {
     hidePromptWindow();
+  });
+
+  ipcMain.handle('reset-launcher-position', () => {
+    clearWindowState();
+    if (mainWindow && !mainWindow.isDestroyed() && isVisible && launcherMode === 'default') {
+      applyLauncherBounds('default');
+    }
   });
 
   ipcMain.handle('set-launcher-mode', (_event: any, mode: LauncherMode) => {

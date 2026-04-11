@@ -3747,7 +3747,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
       || (code ? `Failed to load extension module for ${extensionName}/${commandName}.` : 'Failed to load extension. No valid export found.');
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+        <div className="drag-region flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
           <button
             onClick={onClose}
             className="text-white/40 hover:text-white/70 transition-colors"

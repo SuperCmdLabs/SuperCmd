@@ -359,7 +359,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
     return (
       <div className="snippet-view flex flex-col h-full">
         {/* Same header as normal view */}
-        <div className="snippet-header flex h-16 items-center gap-2 px-4">
+        <div className="snippet-header drag-region flex h-16 items-center gap-2 px-4">
           <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0" tabIndex={-1}>
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -399,7 +399,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
   return (
     <div className="snippet-view flex flex-col h-full">
       {/* Header (matches snippet-header pattern) */}
-      <div className="snippet-header flex h-16 items-center gap-2 px-4">
+      <div className="snippet-header drag-region flex h-16 items-center gap-2 px-4">
         <button
           onClick={onClose}
           className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"

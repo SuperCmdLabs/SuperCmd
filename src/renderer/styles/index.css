@@ -1033,7 +1033,11 @@ kbd {
 /* Prevent drag on interactive elements inside drag regions */
 .drag-region button,
 .drag-region input,
-.drag-region a {
+.drag-region a,
+.drag-region select,
+.drag-region textarea,
+.drag-region [role="button"],
+.drag-region [tabindex]:not([tabindex="-1"]) {
   -webkit-app-region: no-drag;
 }
 
