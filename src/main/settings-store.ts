@@ -96,6 +96,7 @@ export interface AppSettings {
   launcherBackgroundImageOpacityPercent: number;
   appUpdaterLastCheckedAt: number;
   hyperKey: HyperKeySettings;
+  telemetryEnabled: boolean;
 }
 
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
@@ -179,6 +180,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   launcherBackgroundImageOpacityPercent: 45,
   appUpdaterLastCheckedAt: 0,
   hyperKey: { ...DEFAULT_HYPER_KEY_SETTINGS },
+  telemetryEnabled: true,
 };
 
 let settingsCache: AppSettings | null = null;
@@ -366,6 +368,7 @@ export function loadSettings(): AppSettings {
       appUpdaterLastCheckedAt: Number.isFinite(Number(parsed.appUpdaterLastCheckedAt))
         ? Math.max(0, Number(parsed.appUpdaterLastCheckedAt))
         : DEFAULT_SETTINGS.appUpdaterLastCheckedAt,
+      telemetryEnabled: normalizeBoolean(parsed.telemetryEnabled, DEFAULT_SETTINGS.telemetryEnabled),
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };

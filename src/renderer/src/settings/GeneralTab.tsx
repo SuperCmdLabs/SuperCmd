@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2, SlidersHorizontal, ChevronDown, ChevronUp, Power } from 'lucide-react';
+import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2, SlidersHorizontal, ChevronDown, ChevronUp, Power, BarChart2 } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AppUpdaterStatus } from '../../types/electron';
 import { applyAppFontSize, getDefaultAppFontSize } from '../utils/font-size';
@@ -336,6 +336,18 @@ const GeneralTab: React.FC = () => {
       setSettings((prev) => (
         prev ? { ...prev, launcherBackgroundImageEverywhere: !enabled } : prev
       ));
+    }
+  };
+
+  const handleTelemetryChange = async (enabled: boolean) => {
+    if (!settings) return;
+    const previous = settings.telemetryEnabled ?? true;
+    if (previous === enabled) return;
+    setSettings((prev) => (prev ? { ...prev, telemetryEnabled: enabled } : prev));
+    try {
+      await window.electron.saveSettings({ telemetryEnabled: enabled });
+    } catch {
+      setSettings((prev) => (prev ? { ...prev, telemetryEnabled: previous } : prev));
     }
   };
 
@@ -697,6 +709,28 @@ const GeneralTab: React.FC = () => {
               </button>
             </div>
           </div>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<BarChart2 className="w-4 h-4" />}
+          title={t('settings.general.telemetry.title')}
+          description={t('settings.general.telemetry.description')}
+        >
+          <label className="inline-flex items-center gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.telemetryEnabled ?? true}
+              onChange={(event) => {
+                void handleTelemetryChange(event.target.checked);
+              }}
+              className="settings-checkbox"
+            />
+            <span className="text-[0.75rem] text-[var(--text-secondary)]">
+              {(settings.telemetryEnabled ?? true)
+                ? t('settings.general.telemetry.enabled')
+                : t('settings.general.telemetry.disabled')}
+            </span>
+          </label>
         </SettingsRow>
 
         <SettingsRow

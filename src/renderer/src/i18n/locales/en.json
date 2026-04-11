@@ -168,6 +168,12 @@
         "title": "About",
         "description": "Version information.",
         "version": "SuperCmd v{version}"
+      },
+      "telemetry": {
+        "title": "Anonymous Analytics",
+        "description": "Send anonymous usage data to help improve SuperCmd. Only collects: app version, OS version, and an anonymous session ID. No personal information, file paths, or extension content is ever collected. This data helps the developer understand which features are used and prioritize improvements.",
+        "enabled": "Enabled",
+        "disabled": "Disabled"
       }
     },
     "ai": {

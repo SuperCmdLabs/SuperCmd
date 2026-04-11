@@ -10546,7 +10546,8 @@ async function rebuildExtensions() {
   }
 }
 
-initAptabase("A-US-7660732429");
+// Aptabase is initialized inside app.whenReady() so that settings are available
+// before deciding whether to enable telemetry.
 
 // Register custom protocol for serving extension assets (images etc.)
 // Must be called before app.whenReady()
@@ -10565,7 +10566,11 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.whenReady().then(async () => {
-  trackEvent("app_started");
+  const startupSettings = loadSettings();
+  if (startupSettings.telemetryEnabled !== false) {
+    initAptabase("A-US-7660732429");
+    trackEvent("app_started");
+  }
   app.setAsDefaultProtocolClient('supercmd');
   scrubInternalClipboardProbe('app startup');
   // Warm the worker so the first window-management action does not race spawn.

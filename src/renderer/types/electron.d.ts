@@ -285,6 +285,7 @@ export interface AppSettings {
   launcherBackgroundImageOpacityPercent: number;
   appUpdaterLastCheckedAt: number;
   hyperKey: HyperKeySettings;
+  telemetryEnabled: boolean;
 }
 
 export interface CatalogEntry {
