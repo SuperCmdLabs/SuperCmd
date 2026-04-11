@@ -2348,6 +2348,12 @@ const App: React.FC = () => {
             await updateRecentCommands(command.id);
             setSearchQuery('');
             setSelectedIndex(0);
+            setInlineQuickLinkDynamicValuesById((prev) => {
+              if (!prev[quickLinkId]) return prev;
+              const next = { ...prev };
+              delete next[quickLinkId];
+              return next;
+            });
             await window.electron.hideWindow();
             return true;
           }
@@ -2377,6 +2383,12 @@ const App: React.FC = () => {
       await updateRecentCommands(command.id);
       setSearchQuery('');
       setSelectedIndex(0);
+      setInlineQuickLinkDynamicValuesById((prev) => {
+        if (!prev[quickLinkId]) return prev;
+        const next = { ...prev };
+        delete next[quickLinkId];
+        return next;
+      });
       await window.electron.hideWindow();
       return true;
     },
