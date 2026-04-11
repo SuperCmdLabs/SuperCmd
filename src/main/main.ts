@@ -7022,9 +7022,6 @@ function createPromptWindow(initialBounds?: { x: number; y: number; width: numbe
   });
   promptWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   loadWindowUrl(promptWindow, '/prompt');
-  promptWindow.on('blur', () => {
-    hidePromptWindow();
-  });
   promptWindow.on('closed', () => {
     promptWindow = null;
   });

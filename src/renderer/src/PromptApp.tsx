@@ -153,24 +153,6 @@ const PromptApp: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const handleFocus = () => {
-      void (async () => {
-        await resetPromptState(true);
-        const available = await window.electron.aiIsAvailable().catch(() => false);
-        setAiAvailable(available);
-        if (!available) {
-          setStatus('error');
-          setErrorText(NO_AI_MODEL_ERROR);
-        }
-        setTimeout(() => textareaRef.current?.focus(), 20);
-      })();
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [resetPromptState]);
-
-  useEffect(() => {
     let cancelled = false;
     window.electron.aiIsAvailable()
       .then((available) => {
@@ -238,6 +220,9 @@ const PromptApp: React.FC = () => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 void submitPrompt();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                void closePrompt();
               }
             }}
             placeholder="Tell AI what to do with selected text..."
