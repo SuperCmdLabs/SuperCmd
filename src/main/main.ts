@@ -7765,6 +7765,26 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
 
   try {
     systemClipboard.writeText(value);
+
+    // Fast path: in-process native addon — activates app, polls until
+    // frontmost, posts ⌘V via CGEvent. Same addon used by clipboard paste.
+    const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
+    if (target) {
+      try {
+        const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+        const ok = fastPasteAddon.activateAndPaste(target);
+        if (ok) {
+          setTimeout(() => {
+            try { systemClipboard.writeText(previousClipboardText); } catch {}
+          }, 250);
+          return true;
+        }
+      } catch (e: any) {
+        console.warn('[pasteTextToActiveApp] fast-paste addon failed:', e?.message);
+      }
+    }
+
+    // Slow fallback: osascript
     await execFileAsync('osascript', [
       '-e',
       'tell application "System Events" to keystroke "v" using command down',

@@ -858,6 +858,16 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         }
       }
 
+      // Cmd+1 through Cmd+9: quick-paste the Nth snippet (Alfred-style)
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        if (idx < filteredSnippets.length) {
+          e.preventDefault();
+          handlePaste(filteredSnippets[idx]);
+          return;
+        }
+      }
+
       if (e.key.toLowerCase() === 'e' && e.metaKey) {
         e.preventDefault();
         handleEdit();
@@ -946,7 +956,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
           break;
       }
     },
-    [showActions, selectedActionIndex, actions, filteredSnippets, selectedIndex, onClose, dynamicPrompt, activeSnippet, loadSnippets]
+    [showActions, selectedActionIndex, actions, filteredSnippets, selectedIndex, onClose, dynamicPrompt, activeSnippet, loadSnippets, handlePaste]
   );
 
   // ─── Render: Create / Edit ──────────────────────────────────────
@@ -1170,6 +1180,12 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
                         {snippet.content.split('\n')[0]}
                       </div>
                     </div>
+                    {index < 9 && (
+                      <span className="inline-flex items-center gap-0.5 flex-shrink-0 mt-0.5">
+                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-white/[0.08] text-[10px] font-medium text-white/30">⌘</kbd>
+                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-white/[0.08] text-[10px] font-medium text-white/30">{index + 1}</kbd>
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}

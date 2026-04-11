@@ -586,12 +586,6 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                   onDoubleClick={() => handlePasteItem(item)}
                 >
                   <div className="flex items-center gap-2">
-                    {index < 9 && (
-                      <span className="inline-flex items-center gap-0.5 flex-shrink-0">
-                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">⌘</kbd>
-                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">{index + 1}</kbd>
-                      </span>
-                    )}
                     {item.type === 'image' ? (
                       <>
                         <img
@@ -625,6 +619,12 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                           <Pin className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0" />
                         ) : null}
                       </>
+                    )}
+                    {index < 9 && (
+                      <span className="inline-flex items-center gap-0.5 flex-shrink-0">
+                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">⌘</kbd>
+                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">{index + 1}</kbd>
+                      </span>
                     )}
                   </div>
                 </div>
