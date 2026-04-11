@@ -7829,6 +7829,46 @@ async function replaceTextDirectly(previousText: string, nextText: string): Prom
   }
 }
 
+/**
+ * After a paste, select the just-pasted text via AX so the next
+ * replaceTextViaBackspaceAndPaste call can clear it with a backspace.
+ * Falls back silently if the app doesn't support AXSelectedTextRange writes.
+ */
+async function selectJustPastedText(textLength: number): Promise<void> {
+  if (textLength <= 0) return;
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const execFileAsync = promisify(execFile);
+  const script = `
+    ObjC.import('ApplicationServices');
+    function copyAttr(el, attr) {
+      const ref = Ref();
+      return $.AXUIElementCopyAttributeValue(el, attr, ref) === 0 ? ref[0] : null;
+    }
+    function decodeCFRange(axVal) {
+      const ref = Ref(); ref[0] = $.CFRangeMake(0,0);
+      $.AXValueGetValue(axVal, $.kAXValueCFRangeType, ref);
+      return ref[0];
+    }
+    (function() {
+      const sys = $.AXUIElementCreateSystemWide();
+      const el = copyAttr(sys, $.kAXFocusedUIElementAttribute);
+      if (!el) return;
+      const rangeVal = copyAttr(el, $.kAXSelectedTextRangeAttribute);
+      if (!rangeVal) return;
+      const cur = decodeCFRange(rangeVal);
+      const endPos = cur.location + cur.length;
+      const start = endPos - ${textLength};
+      if (start < 0) return;
+      const newRange = $.AXValueCreate($.kAXValueCFRangeType, $.CFRangeMake(start, ${textLength}));
+      $.AXUIElementSetAttributeValue(el, $.kAXSelectedTextRangeAttribute, newRange);
+    })();
+  `;
+  try {
+    await execFileAsync('/usr/bin/osascript', ['-l', 'JavaScript', '-e', script], { timeout: 2000 });
+  } catch {}
+}
+
 async function replaceTextViaBackspaceAndPaste(previousText: string, nextText: string): Promise<boolean> {
   const prev = String(previousText || '');
   const next = String(nextText || '');
@@ -13679,9 +13719,8 @@ if let tiff = image?.tiffRepresentation {
     const nextText = String(payload?.nextText || '');
     if (!nextText.trim()) return false;
 
-    // The prompt window has alwaysOnTop:true so it stays visible while we
-    // activate the target app. No hide/show needed — just switch active app,
-    // apply the text, then bring focus back to the prompt.
+    // Close the prompt window before typing so keystrokes land in the original app.
+    hidePromptWindow();
     await activateLastFrontmostApp();
     await new Promise((resolve) => setTimeout(resolve, 70));
 
@@ -13694,17 +13733,6 @@ if let tiff = image?.tiffRepresentation {
       // Paste first so multiline responses keep exact line breaks.
       applied = await pasteTextToActiveApp(nextText);
       if (!applied) applied = await typeTextDirectly(nextText);
-    }
-
-    // Wait for the paste CGEvent and clipboard restore (250 ms) to finish
-    // before shifting focus back to the prompt window.
-    await new Promise((resolve) => setTimeout(resolve, 320));
-
-    // Return focus to the prompt window for continued iteration.
-    if (promptWindow && !promptWindow.isDestroyed() && promptWindow.isVisible()) {
-      promptWindow.focus();
-      promptWindow.moveTop();
-      promptWindow.webContents.focus();
     }
 
     return applied;
