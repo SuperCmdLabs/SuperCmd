@@ -554,6 +554,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
     inlineRef: inlineArgumentClusterRef,
     minStartRatio: 0.26,
     gapPx: 8,
+    revisionKey: view,
   });
 
   const getResolvedInlineArgumentValues = useCallback(
@@ -1033,7 +1034,10 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
               <div
                 ref={inlineArgumentClusterRef}
                 className="pointer-events-auto inline-flex min-w-0 items-center gap-1.5"
-                style={{ marginLeft: inlineArgumentStartPx != null ? `${inlineArgumentStartPx}px` : '30%' }}
+                style={{
+                  marginLeft: inlineArgumentStartPx != null ? `${inlineArgumentStartPx}px` : '30%',
+                  visibility: inlineArgumentStartPx != null ? 'visible' : 'hidden',
+                }}
               >
                 {inlineActiveSnippetDynamicFields.map((field, index) => (
                   <InlineArgumentField

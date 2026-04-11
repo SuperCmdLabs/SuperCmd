@@ -9,6 +9,8 @@ interface UseInlineArgumentAnchorOptions {
   inlineRef: RefObject<HTMLElement>;
   minStartRatio?: number;
   gapPx?: number;
+  /** Change this value to force a recalculation (e.g. pass the current view name). */
+  revisionKey?: string | number;
 }
 
 function getInputFont(style: CSSStyleDeclaration): string {
@@ -34,6 +36,7 @@ export function useInlineArgumentAnchor({
   inlineRef,
   minStartRatio = 0.3,
   gapPx = 12,
+  revisionKey,
 }: UseInlineArgumentAnchorOptions): number | null {
   const [leftPx, setLeftPx] = useState<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -61,14 +64,19 @@ export function useInlineArgumentAnchor({
     const inputPaddingLeft = Number.parseFloat(inputStyle.paddingLeft || '0') || 0;
     const normalizedQuery = String(query || '');
     const textWidth = measureTextWidth(normalizedQuery, inputEl, canvasRef.current);
+    // When there is no query the placeholder is visible — measure it too so the
+    // inline argument cluster never overlaps the placeholder text.
+    const placeholderWidth = normalizedQuery.length === 0
+      ? measureTextWidth(inputEl.placeholder, inputEl, canvasRef.current)
+      : 0;
     const desiredStart = normalizedQuery.length > 0
       ? inputPaddingLeft + textWidth + gapPx
-      : defaultStart;
+      : Math.max(defaultStart, inputPaddingLeft + placeholderWidth + gapPx);
     const maxStart = Math.max(0, laneWidth - inlineWidth);
     const nextLeft = Math.min(desiredStart, maxStart);
 
     setLeftPx((previous) => (previous === nextLeft ? previous : nextLeft));
-  }, [enabled, gapPx, inlineRef, laneRef, minStartRatio, query, searchInputRef]);
+  }, [enabled, gapPx, inlineRef, laneRef, minStartRatio, query, revisionKey, searchInputRef]);
 
   useLayoutEffect(() => {
     recalculate();
