@@ -8190,6 +8190,83 @@ async function closeAllRegularApps(): Promise<void> {
   await execFileAsync('/usr/bin/osascript', ['-l', 'AppleScript', '-e', script]);
 }
 
+async function executeSleep(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  await execFileAsync('/usr/bin/pmset', ['sleepnow']);
+}
+
+async function executeRestart(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  await execFileAsync('/usr/bin/osascript', ['-e', 'tell application "Finder" to restart']);
+}
+
+async function executeLockScreen(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  await execFileAsync(
+    '/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession',
+    ['-suspend']
+  );
+}
+
+async function executeLogout(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  await execFileAsync('/usr/bin/osascript', ['-e', 'tell application "Finder" to log out']);
+}
+
+async function confirmSystemAction(
+  commandId: string,
+  source: 'launcher' | 'hotkey' | 'widget'
+): Promise<boolean> {
+  const commands = await getAvailableCommands();
+  const command = commands.find((item) => item.id === commandId);
+  const title = String(command?.title || commandId).trim() || commandId;
+  const iconDataUrl = String(command?.iconDataUrl || '').trim();
+
+  let icon: Electron.NativeImage | undefined;
+  if (iconDataUrl) {
+    try {
+      const created = nativeImage.createFromDataURL(iconDataUrl);
+      if (!created.isEmpty()) {
+        icon = created.resize({ width: 64, height: 64 });
+      }
+    } catch {}
+  }
+
+  const details: Record<string, string> = {
+    'system-restart': 'Your Mac will restart. Make sure to save your work first.',
+    'system-logout': 'You will be logged out of your current session.',
+  };
+
+  const options: Electron.MessageBoxOptions = {
+    type: 'question',
+    buttons: [title, 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    title,
+    message: `${title}?`,
+    detail: details[commandId] || '',
+    icon,
+  };
+
+  const dialogParent = source === 'launcher' && mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow
+    : undefined;
+  const result = dialogParent
+    ? await dialog.showMessageBox(dialogParent, options)
+    : await dialog.showMessageBox(options);
+
+  return result.response === 0;
+}
+
 async function confirmQuitAllApps(source: 'launcher' | 'hotkey' | 'widget'): Promise<boolean> {
   const commands = await getAvailableCommands();
   const command = commands.find((item) => item.id === 'system-close-all-apps');
@@ -8417,6 +8494,50 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       return false;
     }
     if (source === 'launcher') hideWindow();
+    return true;
+  }
+  if (commandId === 'system-sleep') {
+    if (source === 'launcher') hideWindow();
+    try {
+      await executeSleep();
+    } catch (error) {
+      console.error('Failed to sleep:', error);
+      return false;
+    }
+    return true;
+  }
+  if (commandId === 'system-restart') {
+    try {
+      const confirmed = await confirmSystemAction('system-restart', source);
+      if (!confirmed) return false;
+      if (source === 'launcher') hideWindow();
+      await executeRestart();
+    } catch (error) {
+      console.error('Failed to restart:', error);
+      return false;
+    }
+    return true;
+  }
+  if (commandId === 'system-lock-screen') {
+    if (source === 'launcher') hideWindow();
+    try {
+      await executeLockScreen();
+    } catch (error) {
+      console.error('Failed to lock screen:', error);
+      return false;
+    }
+    return true;
+  }
+  if (commandId === 'system-logout') {
+    try {
+      const confirmed = await confirmSystemAction('system-logout', source);
+      if (!confirmed) return false;
+      if (source === 'launcher') hideWindow();
+      await executeLogout();
+    } catch (error) {
+      console.error('Failed to log out:', error);
+      return false;
+    }
     return true;
   }
   if (commandId === 'system-create-note') {

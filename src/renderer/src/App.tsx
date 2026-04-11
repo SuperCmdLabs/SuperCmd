@@ -2551,7 +2551,12 @@ const App: React.FC = () => {
       }
 
       if (command.needsConfirmation) {
-        if (command.id === 'system-close-all-apps') {
+        // Commands where the main process owns the confirmation dialog (native Electron dialog with icon).
+        if (
+          command.id === 'system-close-all-apps' ||
+          command.id === 'system-restart' ||
+          command.id === 'system-logout'
+        ) {
           await window.electron.executeCommand(command.id);
           await updateRecentCommands(command.id);
           setSearchQuery('');

@@ -29,8 +29,26 @@ function svgToBase64DataUrl(svg: string): string {
   return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
 }
 
+// Icons use lucide-react icon paths (24x24 viewBox) scaled and centered in a 64x64 styled background.
+// Transform "translate(18,18) scale(1.167)" maps the 24x24 lucide viewBox into a ~28px area centered in 64px.
 const QUIT_ALL_APPS_ICON_DATA_URL = svgToBase64DataUrl(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="quitAllAppsBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#fda4af" stop-opacity="0.7"/><stop offset="1" stop-color="#be123c" stop-opacity="0.82"/></linearGradient><linearGradient id="quitAllAppsStroke" x1="22" y1="20" x2="44" y2="44" gradientUnits="userSpaceOnUse"><stop stop-color="#fff1f2" stop-opacity="0.88"/><stop offset="1" stop-color="#ffe4e6" stop-opacity="0.62"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#quitAllAppsBg)"/><path d="M23 23L41 41" stroke="url(#quitAllAppsStroke)" stroke-width="5" stroke-linecap="round"/><path d="M41 23L23 41" stroke="url(#quitAllAppsStroke)" stroke-width="5" stroke-linecap="round"/></svg>'
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="qaBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#fda4af" stop-opacity="0.7"/><stop offset="1" stop-color="#be123c" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#qaBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></g></svg>'
+);
+
+const SLEEP_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="slBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#c4b5fd" stop-opacity="0.7"/><stop offset="1" stop-color="#7c3aed" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#slBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></g></svg>'
+);
+
+const RESTART_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="rsBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#93c5fd" stop-opacity="0.7"/><stop offset="1" stop-color="#1d4ed8" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#rsBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></g></svg>'
+);
+
+const LOCK_SCREEN_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="lsBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#fcd34d" stop-opacity="0.7"/><stop offset="1" stop-color="#b45309" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#lsBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></g></svg>'
+);
+
+const LOGOUT_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="loBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#fdba74" stop-opacity="0.7"/><stop offset="1" stop-color="#ea580c" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#loBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></g></svg>'
 );
 
 export interface CommandInfo {
@@ -1618,6 +1636,40 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       subtitle: 'Quit all running applications',
       keywords: ['close', 'quit', 'all', 'apps', 'applications', 'exit', 'kill'],
       iconDataUrl: QUIT_ALL_APPS_ICON_DATA_URL,
+      category: 'system',
+      needsConfirmation: true,
+    },
+    {
+      id: 'system-sleep',
+      title: 'Sleep',
+      subtitle: 'Put the Mac to sleep',
+      keywords: ['sleep', 'power', 'rest', 'suspend', 'hibernate'],
+      iconDataUrl: SLEEP_ICON_DATA_URL,
+      category: 'system',
+    },
+    {
+      id: 'system-restart',
+      title: 'Restart',
+      subtitle: 'Restart the Mac',
+      keywords: ['restart', 'reboot', 'power', 'reset'],
+      iconDataUrl: RESTART_ICON_DATA_URL,
+      category: 'system',
+      needsConfirmation: true,
+    },
+    {
+      id: 'system-lock-screen',
+      title: 'Lock Screen',
+      subtitle: 'Lock the screen',
+      keywords: ['lock', 'screen', 'security', 'password', 'suspend'],
+      iconDataUrl: LOCK_SCREEN_ICON_DATA_URL,
+      category: 'system',
+    },
+    {
+      id: 'system-logout',
+      title: 'Log Out',
+      subtitle: 'Log out of the current user session',
+      keywords: ['logout', 'log out', 'sign out', 'session', 'user'],
+      iconDataUrl: LOGOUT_ICON_DATA_URL,
       category: 'system',
       needsConfirmation: true,
     },
