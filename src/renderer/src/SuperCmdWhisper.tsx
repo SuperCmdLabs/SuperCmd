@@ -38,6 +38,8 @@ const PUSH_TO_TALK_MODE = true;
 // Cache survives component unmount/remount and HMR reloads.
 const _sessionConfigCache = ((window as any).__scWhisperSessionConfigCache ??= { value: null }) as { value: { backend: string; engine: string; language: string } | null };
 const _lastFinalizedCache = ((window as any).__scWhisperLastFinalized ??= { text: '', at: 0 }) as { text: string; at: number };
+let _nativeCaptureActive = false;
+const DOUBLE_TAP_WINDOW_MS = 3000;
 
 function formatShortcutLabel(shortcut: string): string {
   return formatShortcutForDisplay(shortcut).replace(/ \+ /g, ' ');
@@ -319,11 +321,6 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const startRequestSeqRef = useRef(0);
   const whisperStateRef = useRef<WhisperState>('idle');
   const startInFlightRef = useRef(false);
-
-  // Double-tap resend window — needs to be generous because the full
-  // component unmount → hotkey → window reopen → mount → IPC cycle
-  // adds 1–2s of overhead on top of the user's physical key press.
-  const DOUBLE_TAP_WINDOW_MS = 3000;
 
   // Native backend refs
   const nativeChunkDisposerRef = useRef<(() => void) | null>(null);
@@ -1041,8 +1038,8 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
       if (backend === 'whisper') {
         // Native mic capture path: server has the audio, just send stop.
-        if ((window as any).__scWhisperNativeCapture) {
-          (window as any).__scWhisperNativeCapture = false;
+        if (_nativeCaptureActive) {
+          _nativeCaptureActive = false;
           const language = speechLanguage || 'en-US';
           const result = await window.electron.whisperCppStop(language, whisperPromptRef.current || undefined);
           if (result?.text) {
@@ -1398,7 +1395,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           if (nativeCaptureOk) {
             // Mark as using native capture so finalize knows to use whisperCppStop
             transcriptionEngineRef.current = 'whispercpp';
-            (window as any).__scWhisperNativeCapture = true;
+            _nativeCaptureActive = true;
 
             setState('listening');
             playRecordingCue('start');
@@ -1470,7 +1467,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
               setErrorText(t('whisper.errors.modelNotReady'));
               startInFlightRef.current = false;
               whisperStateRef.current = 'idle';
-              for (const track of stream.getTracks()) track.stop();
+              if (stream) { for (const track of stream.getTracks()) track.stop(); }
               stopVisualizer();
               return;
             }

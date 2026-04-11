@@ -2,6 +2,13 @@
 #import <Cocoa/Cocoa.h>
 #import <CoreGraphics/CoreGraphics.h>
 
+// NOTE: These functions run synchronously on the Node.js main thread.
+// The polling loop in ActivateApp (up to 500ms) and the 30ms settle
+// delay in ActivateAndPaste intentionally block the event loop — this is
+// a trade-off: the blocking window is short (~30–80ms typical, 500ms worst
+// case) and avoids the complexity of async N-API, while eliminating the
+// ~200–300ms overhead of spawning osascript for each paste operation.
+
 // Activate an app by bundle ID or name, poll until frontmost (up to 500ms).
 // Returns true if the app was successfully activated.
 Napi::Value ActivateApp(const Napi::CallbackInfo& info) {

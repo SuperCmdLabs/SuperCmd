@@ -207,7 +207,7 @@ type WhisperCppModelStatus = {
 let whisperCppModelStatus: WhisperCppModelStatus | null = null;
 
 // Persistent serve-mode process for whisper.cpp (model stays loaded in memory)
-let whisperCppServerProcess: any = null; // ChildProcess
+let whisperCppServerProcess: ChildProcess | null = null;
 let whisperCppServerReady = false;
 let whisperCppServerStarting: Promise<void> | null = null;
 let whisperCppServerBuffer = '';
@@ -13934,30 +13934,35 @@ if let tiff = image?.tiffRepresentation {
     }
   });
 
+  // Shared fast-paste helper: activate target app + ⌘V via native CGEvent addon.
+  // Returns true if text was pasted successfully, false to fall through to osascript.
+  function tryFastPaste(text: string): boolean {
+    const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
+    if (!target) return false;
+    try {
+      const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+      const previousClipboardText = systemClipboard.readText();
+      systemClipboard.writeText(text);
+      const ok = fastPasteAddon.activateAndPaste(target);
+      if (ok) {
+        setTimeout(() => {
+          try { systemClipboard.writeText(previousClipboardText); } catch {}
+        }, 250);
+        return true;
+      }
+      try { systemClipboard.writeText(previousClipboardText); } catch {}
+    } catch (e: any) {
+      console.warn('[fast-paste] addon failed:', e?.message);
+    }
+    return false;
+  }
+
   ipcMain.handle('type-text-live', async (_event: any, text: string) => {
     const nextText = String(text || '');
     if (!nextText) return false;
     console.log('[Whisper][type-live]', JSON.stringify(nextText));
 
-    // Fast path: native addon — activate + ⌘V via CGEvent, no osascript spawn
-    const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
-    if (target) {
-      try {
-        const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
-        const previousClipboardText = systemClipboard.readText();
-        systemClipboard.writeText(nextText);
-        const ok = fastPasteAddon.activateAndPaste(target);
-        if (ok) {
-          setTimeout(() => {
-            try { systemClipboard.writeText(previousClipboardText); } catch {}
-          }, 250);
-          return true;
-        }
-        try { systemClipboard.writeText(previousClipboardText); } catch {}
-      } catch (e: any) {
-        console.warn('[type-text-live] fast-paste addon failed:', e?.message);
-      }
-    }
+    if (tryFastPaste(nextText)) return true;
 
     // Slow fallback: osascript
     await activateLastFrontmostApp();
@@ -13975,25 +13980,7 @@ if let tiff = image?.tiffRepresentation {
       return { typed: false, fallbackClipboard: false };
     }
 
-    // Fast path: native addon — activate + ⌘V via CGEvent, no osascript spawn
-    const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
-    if (target) {
-      try {
-        const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
-        const previousClipboardText = systemClipboard.readText();
-        systemClipboard.writeText(nextText);
-        const ok = fastPasteAddon.activateAndPaste(target);
-        if (ok) {
-          setTimeout(() => {
-            try { systemClipboard.writeText(previousClipboardText); } catch {}
-          }, 250);
-          return { typed: true, fallbackClipboard: false };
-        }
-        try { systemClipboard.writeText(previousClipboardText); } catch {}
-      } catch (e: any) {
-        console.warn('[whisper-type-text-live] fast-paste addon failed:', e?.message);
-      }
-    }
+    if (tryFastPaste(nextText)) return { typed: true, fallbackClipboard: false };
 
     // Slow fallback: osascript
     await activateLastFrontmostApp();
