@@ -262,6 +262,8 @@ export interface HyperKeySettings {
   capsLockTapBehavior: HyperKeyCapsLockTapBehavior;
 }
 
+export type AppNavigationStyle = 'vim' | 'macos';
+
 export interface AppSettings {
   globalShortcut: string;
   openAtLogin: boolean;
@@ -292,6 +294,7 @@ export interface AppSettings {
   appUpdaterLastCheckedAt: number;
   hyperKey: HyperKeySettings;
   launcherViewMode: 'expanded' | 'compact';
+  navigationStyle: AppNavigationStyle;
 }
 
 export interface CatalogEntry {

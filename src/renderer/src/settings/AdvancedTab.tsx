@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bug, FolderSearch, Languages, Sparkles } from 'lucide-react';
-import type { AppSettings, HyperKeySourceKey, HyperKeyCapsLockTapBehavior } from '../../types/electron';
+import { Bug, FolderSearch, Keyboard, Languages, Sparkles } from 'lucide-react';
+import type { AppNavigationStyle, AppSettings, HyperKeySourceKey, HyperKeyCapsLockTapBehavior } from '../../types/electron';
 import { APP_LANGUAGE_OPTIONS, DEFAULT_APP_LANGUAGE, type AppLanguageSetting, useI18n } from '../i18n';
 
 type SettingsRowProps = {
@@ -53,6 +53,11 @@ const CAPS_LOCK_TAP_OPTIONS: { value: HyperKeyCapsLockTapBehavior; label: string
   { value: 'nothing', label: 'Do Nothing' },
   { value: 'escape', label: 'Simulate Escape' },
   { value: 'toggle', label: 'Toggles Caps Lock' },
+];
+
+const NAVIGATION_STYLE_OPTIONS: { value: AppNavigationStyle; label: string }[] = [
+  { value: 'vim', label: 'Vim Style (^J, ^K)' },
+  { value: 'macos', label: 'macOS Style (^N, ^P)' },
 ];
 
 const AdvancedTab: React.FC = () => {
@@ -209,6 +214,28 @@ const AdvancedTab: React.FC = () => {
             />
             Disable file and folder search results
           </label>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<Keyboard className="w-4 h-4" />}
+          title="Navigation Style"
+          description="Choose the keyboard shortcuts for navigating up and down in the launcher."
+        >
+          <div className="w-full max-w-[320px]">
+            <select
+              value={settings.navigationStyle || 'vim'}
+              onChange={(event) => {
+                void applySettingsPatch({ navigationStyle: event.target.value as AppNavigationStyle });
+              }}
+              className={selectClassName}
+            >
+              {NAVIGATION_STYLE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </SettingsRow>
 
         <SettingsRow

@@ -58,6 +58,7 @@ export interface HyperKeySettings {
 export type AppFontSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
 export type AppUiStyle = 'default' | 'glassy';
 export type LauncherViewMode = 'expanded' | 'compact';
+export type AppNavigationStyle = 'vim' | 'macos';
 export type AppLanguage =
   | 'system'
   | 'en'
@@ -101,6 +102,7 @@ export interface AppSettings {
   updateBannerDismissedAt?: number;
   hyperKey: HyperKeySettings;
   launcherViewMode: LauncherViewMode;
+  navigationStyle: AppNavigationStyle;
 }
 
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
@@ -187,6 +189,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   appUpdaterLastCheckedAt: 0,
   hyperKey: { ...DEFAULT_HYPER_KEY_SETTINGS },
   launcherViewMode: 'expanded',
+  navigationStyle: 'vim',
 };
 
 let settingsCache: AppSettings | null = null;
@@ -211,6 +214,12 @@ function normalizeUiStyle(value: any): AppUiStyle {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'glassy') return 'glassy';
   return 'default';
+}
+
+function normalizeNavigationStyle(value: any): AppNavigationStyle {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'macos') return 'macos';
+  return 'vim';
 }
 
 function normalizeAppLanguage(value: any): AppLanguage {
@@ -384,6 +393,7 @@ export function loadSettings(): AppSettings {
         ? Math.max(0, Number(parsed.appUpdaterLastCheckedAt))
         : DEFAULT_SETTINGS.appUpdaterLastCheckedAt,
       launcherViewMode: (parsed.launcherViewMode === 'compact' ? 'compact' : 'expanded'),
+      navigationStyle: normalizeNavigationStyle(parsed.navigationStyle),
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };
