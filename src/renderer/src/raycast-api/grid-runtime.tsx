@@ -203,7 +203,7 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
         </div>
 
         <div className="flex flex-col h-full" onKeyDown={handleKeyDown}>
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--ui-divider)]">
+          <div className="drag-region flex items-center gap-2 px-4 py-3 border-b border-[var(--ui-divider)]">
             <button onClick={pop} className="sc-back-button text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors flex-shrink-0 p-0.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
             </button>

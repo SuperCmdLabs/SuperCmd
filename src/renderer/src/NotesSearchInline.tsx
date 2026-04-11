@@ -219,7 +219,7 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
   return (
     <div className="snippet-view flex flex-col h-full">
       {/* ─── Header (matches snippet-header) ─── */}
-      <div className="snippet-header flex h-16 items-center gap-2 px-4">
+      <div className="snippet-header drag-region flex h-16 items-center gap-2 px-4">
         <button
           onClick={onClose}
           className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"

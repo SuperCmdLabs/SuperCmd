@@ -92,7 +92,7 @@ export function createListRenderers(deps: ListRendererDeps) {
         className={`mx-1.5 px-2.5 py-1 rounded-xl min-h-[34px] border flex items-center cursor-pointer transition-colors ${
           isSelected
             ? 'border-transparent bg-[var(--launcher-card-selected-bg)]'
-            : 'border-transparent hover:border-[var(--launcher-card-border)] hover:bg-[var(--launcher-card-hover-bg)]'
+            : 'border-transparent hover:bg-[var(--launcher-card-hover-bg)]'
         }`}
         onClick={onActivate}
         onMouseMove={onSelect}

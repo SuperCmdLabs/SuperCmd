@@ -107,9 +107,15 @@ export function useCursorPrompt({
       }
     };
 
-    window.electron.onAIStreamChunk(handleChunk);
-    window.electron.onAIStreamDone(handleDone);
-    window.electron.onAIStreamError(handleError);
+    const removeChunk = window.electron.onAIStreamChunk(handleChunk);
+    const removeDone = window.electron.onAIStreamDone(handleDone);
+    const removeError = window.electron.onAIStreamError(handleError);
+
+    return () => {
+      removeChunk?.();
+      removeDone?.();
+      removeError?.();
+    };
   }, [applyCursorPromptResultToEditor]);
 
   // ── Focus cursor prompt input when shown ────────────────────────

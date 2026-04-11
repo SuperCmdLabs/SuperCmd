@@ -35,7 +35,10 @@ import {
 interface QuickLinkManagerProps {
   onClose: () => void;
   initialView: 'search' | 'create';
+  commandAliases?: Record<string, string>;
 }
+
+const QUICK_LINK_COMMAND_PREFIX = 'quicklink-';
 
 interface ApplicationOption {
   name: string;
@@ -934,7 +937,7 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
 
   return (
     <div className="snippet-view w-full h-full flex flex-col" onKeyDown={handleKeyDown}>
-      <div className="snippet-header flex items-center gap-3 px-5 py-3.5">
+      <div className="snippet-header drag-region flex items-center gap-3 px-5 py-3.5">
         <button
           onClick={onCancel}
           className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"
@@ -1252,7 +1255,7 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
   );
 };
 
-const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialView }) => {
+const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialView, commandAliases = {} }) => {
   const [view, setView] = useState<'search' | 'create' | 'edit'>(initialView);
   const [quickLinks, setQuickLinks] = useState<QuickLink[]>([]);
   const [filteredQuickLinks, setFilteredQuickLinks] = useState<QuickLink[]>([]);
@@ -1316,16 +1319,27 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
       return;
     }
 
-    const filtered = quickLinks.filter((quickLink) => {
-      return (
-        quickLink.name.toLowerCase().includes(normalized) ||
-        quickLink.urlTemplate.toLowerCase().includes(normalized) ||
-        String(quickLink.applicationName || '').toLowerCase().includes(normalized)
-      );
-    });
+    const filtered = quickLinks
+      .filter((quickLink) => {
+        const alias = String(commandAliases[`${QUICK_LINK_COMMAND_PREFIX}${quickLink.id}`] || '').trim().toLowerCase();
+        return (
+          quickLink.name.toLowerCase().includes(normalized) ||
+          quickLink.urlTemplate.toLowerCase().includes(normalized) ||
+          String(quickLink.applicationName || '').toLowerCase().includes(normalized) ||
+          (alias && alias.includes(normalized))
+        );
+      })
+      .sort((a, b) => {
+        const aAlias = String(commandAliases[`${QUICK_LINK_COMMAND_PREFIX}${a.id}`] || '').trim().toLowerCase();
+        const bAlias = String(commandAliases[`${QUICK_LINK_COMMAND_PREFIX}${b.id}`] || '').trim().toLowerCase();
+        const aAliasMatch = Boolean(aAlias && aAlias.includes(normalized));
+        const bAliasMatch = Boolean(bAlias && bAlias.includes(normalized));
+        if (aAliasMatch !== bAliasMatch) return aAliasMatch ? -1 : 1;
+        return 0;
+      });
     setFilteredQuickLinks(filtered);
     setSelectedIndex(0);
-  }, [quickLinks, searchQuery]);
+  }, [quickLinks, searchQuery, commandAliases]);
 
   useEffect(() => {
     itemRefs.current = itemRefs.current.slice(0, filteredQuickLinks.length);
@@ -1746,7 +1760,7 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
 
   return (
     <div className="snippet-view snippet-search-view w-full h-full flex flex-col" onKeyDown={handleKeyDown} tabIndex={-1}>
-      <div className="snippet-header flex h-16 items-center gap-2 px-4">
+      <div className="snippet-header drag-region flex h-16 items-center gap-2 px-4">
         <button
           onClick={onClose}
           className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"
@@ -1896,7 +1910,13 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
             </div>
           ) : (
             <div className="p-2 space-y-1">
-              {filteredQuickLinks.map((quickLink, index) => (
+              {filteredQuickLinks.map((quickLink, index) => {
+                const alias = String(commandAliases[`${QUICK_LINK_COMMAND_PREFIX}${quickLink.id}`] || '').trim();
+                const aliasMatchesSearch =
+                  Boolean(alias) &&
+                  Boolean(searchQuery.trim()) &&
+                  alias.toLowerCase().includes(searchQuery.trim().toLowerCase());
+                return (
                 <div
                   key={quickLink.id}
                   ref={(el) => {
@@ -1915,14 +1935,22 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
                       <QuickLinkIconPreview icon={quickLink.icon} appIconDataUrl={quickLink.appIconDataUrl} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-white/80 text-[13px] truncate font-medium leading-tight">{quickLink.name}</div>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="text-white/80 text-[13px] truncate font-medium leading-tight">{quickLink.name}</div>
+                        {aliasMatchesSearch ? (
+                          <div className="inline-flex items-center h-5 rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[0.625rem] font-mono text-[var(--text-subtle)] leading-none flex-shrink-0">
+                            {alias}
+                          </div>
+                        ) : null}
+                      </div>
                       <div className="text-white/35 text-[11px] truncate mt-0.5 leading-tight">
                         {quickLink.applicationName || 'Default Browser'}
                       </div>
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

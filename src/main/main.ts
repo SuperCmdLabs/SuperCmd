@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { fork, type ChildProcess } from 'child_process';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
-import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken } from './settings-store';
+import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState } from './settings-store';
 import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
@@ -5403,6 +5403,11 @@ function parseHoldShortcutConfig(shortcut: string): {
     n: 45, m: 46, '.': 47, '`': 50,
     period: 47, comma: 43, slash: 44, semicolon: 41, quote: 39,
     tab: 48, space: 49, return: 36, enter: 36, escape: 53, fn: 63, function: 63,
+    backspace: 51, delete: 117, forwarddelete: 117,
+    up: 126, down: 125, left: 123, right: 124,
+    home: 115, end: 119, pageup: 116, pagedown: 121,
+    f1: 122, f2: 120, f3: 99, f4: 118, f5: 96, f6: 97, f7: 98, f8: 100,
+    f9: 101, f10: 109, f11: 103, f12: 111,
   };
   const keyCode = map[keyToken];
   if (!Number.isFinite(keyCode)) return null;
@@ -6810,6 +6815,15 @@ function createWindow(): void {
     }
   });
 
+  // Persist the window position whenever it is moved in default mode so we
+  // can restore it on the next open.
+  mainWindow.on('moved', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (launcherMode !== 'default') return;
+    const [x, y] = mainWindow.getPosition();
+    saveWindowState({ x, y });
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -7271,6 +7285,22 @@ function applyLauncherBounds(mode: LauncherMode): void {
   } = currentDisplay.workArea;
   const size = getLauncherSize(mode);
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+  // In default mode, restore the last saved position if it falls within any display.
+  if (mode === 'default') {
+    const saved = loadWindowState();
+    if (saved) {
+      const savedCenter = { x: saved.x + Math.floor(size.width / 2), y: saved.y + Math.floor(size.height / 2) };
+      const nearestDisplay = screen.getDisplayNearestPoint(savedCenter);
+      const wa = nearestDisplay.workArea;
+      // Clamp to keep the window fully on-screen.
+      const clampedX = clamp(saved.x, wa.x, wa.x + wa.width - size.width);
+      const clampedY = clamp(saved.y, wa.y, wa.y + wa.height - size.height);
+      mainWindow.setBounds({ x: clampedX, y: clampedY, width: size.width, height: size.height });
+      return;
+    }
+  }
+
   const promptFallbackX = displayX + Math.floor((displayWidth - size.width) / 2);
   const promptFallbackY = displayY + Math.floor(displayHeight * 0.32);
   const windowX = mode === 'speak'
@@ -7735,6 +7765,26 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
 
   try {
     systemClipboard.writeText(value);
+
+    // Fast path: in-process native addon — activates app, polls until
+    // frontmost, posts ⌘V via CGEvent. Same addon used by clipboard paste.
+    const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
+    if (target) {
+      try {
+        const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+        const ok = fastPasteAddon.activateAndPaste(target);
+        if (ok) {
+          setTimeout(() => {
+            try { systemClipboard.writeText(previousClipboardText); } catch {}
+          }, 250);
+          return true;
+        }
+      } catch (e: any) {
+        console.warn('[pasteTextToActiveApp] fast-paste addon failed:', e?.message);
+      }
+    }
+
+    // Slow fallback: osascript
     await execFileAsync('osascript', [
       '-e',
       'tell application "System Events" to keystroke "v" using command down',
@@ -7761,11 +7811,13 @@ async function replaceTextDirectly(previousText: string, nextText: string): Prom
 
   try {
     if (prev.length > 0) {
+      // The original selection is still active in the target app, so a single
+      // backspace (or simply typing) replaces the entire selection.  Sending
+      // prev.length backspaces is wrong: the first one deletes the whole
+      // selection and every subsequent one eats a character *before* it.
       const script = `
         tell application "System Events"
-          repeat ${prev.length} times
-            key code 51
-          end repeat
+          key code 51
         end tell
       `;
       await execFileAsync('osascript', ['-e', script]);
@@ -7790,11 +7842,11 @@ async function replaceTextViaBackspaceAndPaste(previousText: string, nextText: s
 
   try {
     if (prev.length > 0) {
+      // Single backspace to clear the active selection — see replaceTextDirectly
+      // for rationale.
       const script = `
         tell application "System Events"
-          repeat ${prev.length} times
-            key code 51
-          end repeat
+          key code 51
         end tell
       `;
       await execFileAsync('osascript', ['-e', script]);
@@ -7829,10 +7881,22 @@ async function hideAndPaste(): Promise<boolean> {
   const { promisify } = require('util');
   const execFileAsync = promisify(execFile);
 
-  // Re-activate the previous frontmost app explicitly
-  await activateLastFrontmostApp();
+  // Fast path: in-process native addon — activates app, polls until
+  // frontmost, posts ⌘V via CGEvent. Runs inside Electron so it
+  // inherits accessibility permissions. Zero process spawn overhead.
+  const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
+  if (target) {
+    try {
+      const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+      const ok = fastPasteAddon.activateAndPaste(target);
+      if (ok) return true;
+    } catch (e: any) {
+      console.warn('[hideAndPaste] fast-paste addon failed:', e?.message);
+    }
+  }
 
-  // Small delay to let the target app gain focus
+  // Slow fallback: osascript for both activation and keystroke
+  await activateLastFrontmostApp();
   await new Promise(resolve => setTimeout(resolve, 200));
 
   try {
@@ -7840,7 +7904,6 @@ async function hideAndPaste(): Promise<boolean> {
     return true;
   } catch (e) {
     console.error('Failed to simulate paste keystroke:', e);
-    // Fallback with extra delay
     try {
       await new Promise(resolve => setTimeout(resolve, 200));
       await execFileAsync('osascript', ['-e', `
@@ -8147,6 +8210,156 @@ function isAISectionDisabledForCommand(commandId: string, settings?: AppSettings
   return false;
 }
 
+async function closeAllRegularApps(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  const script = `
+    use framework "AppKit"
+
+    set excludedPid to ${process.pid}
+    set protectedBundleIds to {"com.apple.finder"}
+    set runningApps to current application's NSWorkspace's sharedWorkspace()'s runningApplications()
+
+    repeat with runningApp in runningApps
+      try
+        if (runningApp's activationPolicy() as integer) is not 0 then
+          -- Skip non-regular apps.
+        else
+          set runningPid to runningApp's processIdentifier() as integer
+          if runningPid is not excludedPid then
+            set bundleIdValue to runningApp's bundleIdentifier()
+            if bundleIdValue is missing value then
+              set bundleIdText to ""
+            else
+              set bundleIdText to bundleIdValue as text
+            end if
+            if protectedBundleIds does not contain bundleIdText then
+              runningApp's terminate()
+            end if
+          end if
+        end if
+      end try
+    end repeat
+  `;
+
+  await execFileAsync('/usr/bin/osascript', ['-l', 'AppleScript', '-e', script]);
+}
+
+async function executeSleep(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  await execFileAsync('/usr/bin/pmset', ['sleepnow']);
+}
+
+async function executeRestart(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  await execFileAsync('/usr/bin/osascript', ['-e', 'tell application "Finder" to restart']);
+}
+
+async function executeLockScreen(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  await execFileAsync('/usr/bin/osascript', [
+    '-e', 'tell application "System Events" to keystroke "q" using {command down, control down}',
+  ]);
+}
+
+async function executeLogout(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  await execFileAsync('/usr/bin/osascript', ['-e', 'tell application "Finder" to log out']);
+}
+
+async function confirmSystemAction(
+  commandId: string,
+  source: 'launcher' | 'hotkey' | 'widget'
+): Promise<boolean> {
+  const commands = await getAvailableCommands();
+  const command = commands.find((item) => item.id === commandId);
+  const title = String(command?.title || commandId).trim() || commandId;
+  const iconDataUrl = String(command?.iconDataUrl || '').trim();
+
+  let icon: Electron.NativeImage | undefined;
+  if (iconDataUrl) {
+    try {
+      const created = nativeImage.createFromDataURL(iconDataUrl);
+      if (!created.isEmpty()) {
+        icon = created.resize({ width: 64, height: 64 });
+      }
+    } catch {}
+  }
+
+  const details: Record<string, string> = {
+    'system-restart': 'Your Mac will restart. Make sure to save your work first.',
+    'system-logout': 'You will be logged out of your current session.',
+  };
+
+  const options: Electron.MessageBoxOptions = {
+    type: 'question',
+    buttons: [title, 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    title,
+    message: `${title}?`,
+    detail: details[commandId] || '',
+    icon,
+  };
+
+  const dialogParent = source === 'launcher' && mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow
+    : undefined;
+  const result = dialogParent
+    ? await dialog.showMessageBox(dialogParent, options)
+    : await dialog.showMessageBox(options);
+
+  return result.response === 0;
+}
+
+async function confirmQuitAllApps(source: 'launcher' | 'hotkey' | 'widget'): Promise<boolean> {
+  const commands = await getAvailableCommands();
+  const command = commands.find((item) => item.id === 'system-close-all-apps');
+  const title = String(command?.title || 'Quit All Apps').trim() || 'Quit All Apps';
+  const iconDataUrl = String(command?.iconDataUrl || '').trim();
+
+  let icon: Electron.NativeImage | undefined;
+  if (iconDataUrl) {
+    try {
+      const created = nativeImage.createFromDataURL(iconDataUrl);
+      if (!created.isEmpty()) {
+        icon = created.resize({ width: 64, height: 64 });
+      }
+    } catch {}
+  }
+
+  const options: Electron.MessageBoxOptions = {
+    type: 'question',
+    buttons: [title, 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    title,
+    message: `${title}?`,
+    detail: 'This will ask all currently running apps to quit. Finder and SuperCmd stay open.',
+    icon,
+  };
+
+  const dialogParent = source === 'launcher' && mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow
+    : undefined;
+  const result = dialogParent
+    ? await dialog.showMessageBox(dialogParent, options)
+    : await dialog.showMessageBox(options);
+
+  return result.response === 0;
+}
+
 async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' | 'widget' = 'launcher'): Promise<boolean> {
   if (isAIDependentSystemCommand(commandId) && isAIDisabledInSettings()) {
     return false;
@@ -8311,6 +8524,15 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     return true;
   }
 
+  if (commandId === 'system-reset-launcher-position') {
+    clearWindowState();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      applyLauncherBounds('default');
+    }
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
+
   if (commandId === 'system-open-settings') {
     openSettingsWindow();
     if (source === 'launcher') hideWindow();
@@ -8324,6 +8546,62 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
   if (commandId === 'system-open-extensions-settings') {
     openSettingsWindow({ tab: 'extensions' });
     if (source === 'launcher') hideWindow();
+    return true;
+  }
+  if (commandId === 'system-close-all-apps') {
+    try {
+      const confirmed = await confirmQuitAllApps(source);
+      if (!confirmed) return false;
+      await closeAllRegularApps();
+    } catch (error) {
+      console.error('Failed to close all apps:', error);
+      return false;
+    }
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
+  if (commandId === 'system-sleep') {
+    if (source === 'launcher') hideWindow();
+    try {
+      await executeSleep();
+    } catch (error) {
+      console.error('Failed to sleep:', error);
+      return false;
+    }
+    return true;
+  }
+  if (commandId === 'system-restart') {
+    try {
+      const confirmed = await confirmSystemAction('system-restart', source);
+      if (!confirmed) return false;
+      if (source === 'launcher') hideWindow();
+      await executeRestart();
+    } catch (error) {
+      console.error('Failed to restart:', error);
+      return false;
+    }
+    return true;
+  }
+  if (commandId === 'system-lock-screen') {
+    if (source === 'launcher') hideWindow();
+    try {
+      await executeLockScreen();
+    } catch (error) {
+      console.error('Failed to lock screen:', error);
+      return false;
+    }
+    return true;
+  }
+  if (commandId === 'system-logout') {
+    try {
+      const confirmed = await confirmSystemAction('system-logout', source);
+      if (!confirmed) return false;
+      if (source === 'launcher') hideWindow();
+      await executeLogout();
+    } catch (error) {
+      console.error('Failed to log out:', error);
+      return false;
+    }
     return true;
   }
   if (commandId === 'system-create-note') {
@@ -10746,6 +11024,13 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('close-prompt-window', () => {
     hidePromptWindow();
+  });
+
+  ipcMain.handle('reset-launcher-position', () => {
+    clearWindowState();
+    if (mainWindow && !mainWindow.isDestroyed() && isVisible && launcherMode === 'default') {
+      applyLauncherBounds('default');
+    }
   });
 
   ipcMain.handle('set-launcher-mode', (_event: any, mode: LauncherMode) => {

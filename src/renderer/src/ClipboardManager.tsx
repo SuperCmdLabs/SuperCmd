@@ -354,6 +354,16 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         return;
       }
 
+      // Cmd+1 through Cmd+9: quick-paste the Nth item (Alfred-style)
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        if (idx < filteredItems.length) {
+          e.preventDefault();
+          handlePasteItem(filteredItems[idx]);
+          return;
+        }
+      }
+
       if (showActions) {
         if (isMetaEnter(e)) {
           e.preventDefault();
@@ -501,7 +511,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   return (
     <div className="w-full h-full flex flex-col" onKeyDown={handleKeyDown} tabIndex={-1}>
       {/* Header - transparent background same as main screen */}
-      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-[var(--ui-divider)]">
+      <div className="drag-region flex items-center gap-3 px-5 py-3.5 border-b border-[var(--ui-divider)]">
         <button
           onClick={onClose}
           className="text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors flex-shrink-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
@@ -609,6 +619,12 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                           <Pin className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0" />
                         ) : null}
                       </>
+                    )}
+                    {index < 9 && (
+                      <span className="inline-flex items-center gap-0.5 flex-shrink-0">
+                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">⌘</kbd>
+                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">{index + 1}</kbd>
+                      </span>
                     )}
                   </div>
                 </div>

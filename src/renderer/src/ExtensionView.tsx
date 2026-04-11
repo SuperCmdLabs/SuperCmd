@@ -2346,6 +2346,10 @@ const processStub: Record<string, any> = {
   off: function() { return processStub; },
   once: function() { return processStub; },
   emit: () => false,
+  // fs-extra (and other libs) call process.emitWarning at module init
+  // to warn about deprecated APIs. Stub it out so requiring fs-extra in
+  // the renderer doesn't throw.
+  emitWarning: noop,
   addListener: function() { return processStub; },
   removeListener: function() { return processStub; },
   removeAllListeners: function() { return processStub; },
@@ -3743,7 +3747,7 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
       || (code ? `Failed to load extension module for ${extensionName}/${commandName}.` : 'Failed to load extension. No valid export found.');
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+        <div className="drag-region flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
           <button
             onClick={onClose}
             className="text-white/40 hover:text-white/70 transition-colors"

@@ -240,7 +240,7 @@ const SnippetForm: React.FC<SnippetFormProps> = ({ snippet, onSave, onCancel }) 
   return (
     <div className="snippet-view w-full h-full flex flex-col" onKeyDown={handleKeyDown}>
       {/* Header */}
-      <div className="snippet-header flex items-center gap-3 px-5 py-3.5">
+      <div className="snippet-header drag-region flex items-center gap-3 px-5 py-3.5">
         <button
           onClick={onCancel}
           className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"
@@ -858,6 +858,16 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         }
       }
 
+      // Cmd+1 through Cmd+9: quick-paste the Nth snippet (Alfred-style)
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        if (idx < filteredSnippets.length) {
+          e.preventDefault();
+          handlePaste(filteredSnippets[idx]);
+          return;
+        }
+      }
+
       if (e.key.toLowerCase() === 'e' && e.metaKey) {
         e.preventDefault();
         handleEdit();
@@ -946,7 +956,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
           break;
       }
     },
-    [showActions, selectedActionIndex, actions, filteredSnippets, selectedIndex, onClose, dynamicPrompt, activeSnippet, loadSnippets]
+    [showActions, selectedActionIndex, actions, filteredSnippets, selectedIndex, onClose, dynamicPrompt, activeSnippet, loadSnippets, handlePaste]
   );
 
   // ─── Render: Create / Edit ──────────────────────────────────────
@@ -978,7 +988,7 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
   return (
     <div className="snippet-view snippet-search-view w-full h-full flex flex-col" onKeyDown={handleKeyDown} tabIndex={-1}>
       {/* Header */}
-      <div className="snippet-header flex h-16 items-center gap-2 px-4">
+      <div className="snippet-header drag-region flex h-16 items-center gap-2 px-4">
         <button
           onClick={onClose}
           className="text-white/40 hover:text-white/70 transition-colors flex-shrink-0"
@@ -1170,6 +1180,12 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
                         {snippet.content.split('\n')[0]}
                       </div>
                     </div>
+                    {index < 9 && (
+                      <span className="inline-flex items-center gap-0.5 flex-shrink-0 mt-0.5">
+                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-white/[0.08] text-[10px] font-medium text-white/30">⌘</kbd>
+                        <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-white/[0.08] text-[10px] font-medium text-white/30">{index + 1}</kbd>
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}

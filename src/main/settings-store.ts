@@ -465,3 +465,59 @@ export function removeOAuthToken(provider: string): void {
   delete tokens[provider];
   saveOAuthTokens(tokens);
 }
+
+// ─── Window State Store ───────────────────────────────────────────
+// Stores the last known position of the launcher window so it can be
+// restored on the next open. Kept separate from AppSettings because
+// it updates on every move and should never be part of user-facing
+// settings sync.
+
+export interface LauncherWindowState {
+  /** Last saved X position of the launcher window. */
+  x: number;
+  /** Last saved Y position of the launcher window. */
+  y: number;
+}
+
+let windowStateCache: LauncherWindowState | null | undefined = undefined; // undefined = not loaded yet
+
+function getWindowStatePath(): string {
+  return path.join(app.getPath('userData'), 'window-state.json');
+}
+
+export function loadWindowState(): LauncherWindowState | null {
+  if (windowStateCache !== undefined) return windowStateCache;
+  try {
+    const raw = fs.readFileSync(getWindowStatePath(), 'utf-8');
+    const parsed = JSON.parse(raw);
+    const x = Number(parsed?.x);
+    const y = Number(parsed?.y);
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      windowStateCache = { x: Math.round(x), y: Math.round(y) };
+    } else {
+      windowStateCache = null;
+    }
+  } catch {
+    windowStateCache = null;
+  }
+  return windowStateCache;
+}
+
+export function saveWindowState(state: LauncherWindowState): void {
+  windowStateCache = state;
+  try {
+    fs.writeFileSync(getWindowStatePath(), JSON.stringify(state, null, 2));
+  } catch (e) {
+    console.error('Failed to save window state:', e);
+  }
+}
+
+export function clearWindowState(): void {
+  windowStateCache = null;
+  try {
+    const p = getWindowStatePath();
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  } catch (e) {
+    console.error('Failed to clear window state:', e);
+  }
+}

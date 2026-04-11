@@ -636,7 +636,7 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose, init
 
   return (
     <div className="w-full h-full flex flex-col relative" onKeyDown={handleKeyDown} tabIndex={-1}>
-      <div className="flex items-center gap-2 px-3.5 py-2 border-b border-[var(--ui-divider)]">
+      <div className="drag-region flex items-center gap-2 px-3.5 py-2 border-b border-[var(--ui-divider)]">
         <button
           onClick={() => {
             if (showDetails) {

@@ -63,13 +63,13 @@
   --ui-segment-hover-bg: rgba(118, 130, 149, 0.1);
   --snippet-divider: var(--ui-divider);
   --snippet-divider-strong: var(--ui-segment-border);
-  --command-item-hover-bg: rgba(118, 130, 149, 0.055);
+  --command-item-hover-bg: rgba(118, 130, 149, 0.05);
   --command-item-hover-border: rgba(118, 130, 149, 0.11);
   --command-item-selected-bg: rgba(118, 130, 149, 0.14);
   --command-item-selected-border: rgba(118, 130, 149, 0.24);
   --launcher-card-bg: rgba(118, 130, 149, 0.04);
   --launcher-card-border: rgba(118, 130, 149, 0.1);
-  --launcher-card-hover-bg: rgba(118, 130, 149, 0.06);
+  --launcher-card-hover-bg: rgba(118, 130, 149, 0.03);
   --launcher-card-selected-bg: rgba(118, 130, 149, 0.14);
   --launcher-card-selected-border: rgba(118, 130, 149, 0.22);
   --icon-neutral-bg: rgba(118, 130, 149, 0.18);
@@ -182,13 +182,13 @@
   --ui-segment-bg: rgba(255, 255, 255, 0.03);
   --ui-segment-active-bg: rgba(255, 255, 255, 0.08);
   --ui-segment-hover-bg: rgba(255, 255, 255, 0.045);
-  --command-item-hover-bg: rgba(255, 255, 255, 0.045);
+  --command-item-hover-bg: rgba(255, 255, 255, 0.035);
   --command-item-hover-border: rgba(255, 255, 255, 0.07);
   --command-item-selected-bg: rgba(255, 255, 255, 0.08);
   --command-item-selected-border: rgba(255, 255, 255, 0.12);
   --launcher-card-bg: rgba(255, 255, 255, 0.03);
   --launcher-card-border: rgba(255, 255, 255, 0.06);
-  --launcher-card-hover-bg: rgba(255, 255, 255, 0.04);
+  --launcher-card-hover-bg: rgba(255, 255, 255, 0.02);
   --launcher-card-selected-bg: rgba(255, 255, 255, 0.08);
   --launcher-card-selected-border: rgba(255, 255, 255, 0.12);
   --icon-neutral-bg: rgba(255, 255, 255, 0.1);
@@ -255,13 +255,13 @@
   --ui-segment-bg: rgba(255, 255, 255, 0.22);
   --ui-segment-active-bg: rgba(86, 98, 118, 0.22);
   --ui-segment-hover-bg: rgba(86, 98, 118, 0.14);
-  --command-item-hover-bg: rgba(86, 98, 118, 0.07);
+  --command-item-hover-bg: rgba(86, 98, 118, 0.055);
   --command-item-hover-border: rgba(86, 98, 118, 0.11);
   --command-item-selected-bg: rgba(86, 98, 118, 0.14);
   --command-item-selected-border: rgba(86, 98, 118, 0.22);
   --launcher-card-bg: rgba(86, 98, 118, 0.09);
   --launcher-card-border: rgba(86, 98, 118, 0.14);
-  --launcher-card-hover-bg: rgba(86, 98, 118, 0.10);
+  --launcher-card-hover-bg: rgba(86, 98, 118, 0.05);
   --launcher-card-selected-bg: rgba(86, 98, 118, 0.17);
   --launcher-card-selected-border: rgba(86, 98, 118, 0.24);
   --text-primary: rgba(32, 39, 52, 0.98);
@@ -286,13 +286,13 @@
   --ui-segment-bg: rgba(255, 255, 255, 0.12);
   --ui-segment-active-bg: rgba(255, 255, 255, 0.22);
   --ui-segment-hover-bg: rgba(255, 255, 255, 0.17);
-  --command-item-hover-bg: rgba(255, 255, 255, 0.06);
+  --command-item-hover-bg: rgba(255, 255, 255, 0.045);
   --command-item-hover-border: rgba(255, 255, 255, 0.09);
   --command-item-selected-bg: rgba(255, 255, 255, 0.11);
   --command-item-selected-border: rgba(255, 255, 255, 0.16);
   --launcher-card-bg: rgba(255, 255, 255, 0.12);
   --launcher-card-border: rgba(255, 255, 255, 0.16);
-  --launcher-card-hover-bg: rgba(255, 255, 255, 0.14);
+  --launcher-card-hover-bg: rgba(255, 255, 255, 0.07);
   --launcher-card-selected-bg: rgba(255, 255, 255, 0.26);
   --launcher-card-selected-border: rgba(255, 255, 255, 0.22);
   --text-primary: rgba(var(--on-surface-rgb), 0.98);
@@ -599,13 +599,13 @@ html {
 
 /* Native liquid glass mode always uses white typography, regardless of theme preference. */
 .sc-native-liquid-glass {
-  --command-item-hover-bg: rgba(24, 34, 50, 0.14);
+  --command-item-hover-bg: rgba(24, 34, 50, 0.08);
   --command-item-hover-border: transparent;
   --command-item-selected-bg: rgba(24, 34, 50, 0.2);
   --command-item-selected-border: rgba(24, 34, 50, 0.24);
   --launcher-card-bg: rgba(24, 34, 50, 0.06);
   --launcher-card-border: rgba(24, 34, 50, 0.12);
-  --launcher-card-hover-bg: rgba(24, 34, 50, 0.12);
+  --launcher-card-hover-bg: rgba(24, 34, 50, 0.06);
   --launcher-card-selected-bg: rgba(24, 34, 50, 0.2);
   --launcher-card-selected-border: rgba(24, 34, 50, 0.24);
   --overlay-item-active-bg: rgba(24, 34, 52, 0.34);
@@ -625,9 +625,11 @@ html {
 }
 
 .dark.sc-native-liquid-glass {
-  --command-item-selected-bg: var(--command-item-hover-bg);
+  --command-item-hover-bg: rgba(255, 255, 255, 0.065);
+  --command-item-selected-bg: rgba(255, 255, 255, 0.14);
   --command-item-selected-border: rgba(255, 255, 255, 0.16);
-  --launcher-card-selected-bg: var(--command-item-hover-bg);
+  --launcher-card-hover-bg: rgba(255, 255, 255, 0.065);
+  --launcher-card-selected-bg: rgba(255, 255, 255, 0.14);
   --launcher-card-selected-border: rgba(255, 255, 255, 0.16);
   --overlay-item-active-bg: rgba(255, 255, 255, 0.16);
   --action-menu-selected-bg: rgba(255, 255, 255, 0.16);
@@ -894,7 +896,7 @@ html {
 
 .command-item:hover {
   background: var(--command-item-hover-bg);
-  border-color: var(--command-item-hover-border);
+  /* No border on hover — keeps it visually lighter than the selected state */
 }
 
 .command-item.selected {
@@ -1033,7 +1035,11 @@ kbd {
 /* Prevent drag on interactive elements inside drag regions */
 .drag-region button,
 .drag-region input,
-.drag-region a {
+.drag-region a,
+.drag-region select,
+.drag-region textarea,
+.drag-region [role="button"],
+.drag-region [tabindex]:not([tabindex="-1"]) {
   -webkit-app-region: no-drag;
 }
 

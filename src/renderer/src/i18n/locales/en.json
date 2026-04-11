@@ -357,6 +357,10 @@
           "fnHintBefore": "Use",
           "fnHintAfter": "to restore the default hold-to-talk key."
         },
+        "autoClose": {
+          "title": "Auto-Close After Dictation",
+          "description": "Automatically close the whisper bar when dictation finishes."
+        },
         "smoothOutput": {
           "title": "Smooth Output",
           "description": "Clean up filler words and self-corrections."

@@ -43,7 +43,7 @@ const AiChatView: React.FC<AiChatViewProps> = ({
       <div className="w-full h-full">
         <div className="glass-effect overflow-hidden h-full flex flex-col">
           {/* AI header — editable input */}
-          <div className="flex items-center gap-3 px-5 py-3.5 border-b border-[var(--ui-divider)]">
+          <div className="drag-region flex items-center gap-3 px-5 py-3.5 border-b border-[var(--ui-divider)]">
             <Sparkles className="w-4 h-4 text-[var(--accent)] flex-shrink-0" />
             <input
               ref={aiInputRef}

@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electron', {
   executeCommandFromWidget: (commandId: string): Promise<boolean> =>
     ipcRenderer.invoke('execute-command-from-widget', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
+  resetLauncherPosition: (): Promise<void> => ipcRenderer.invoke('reset-launcher-position'),
   openDevTools: (): Promise<boolean> => ipcRenderer.invoke('open-devtools'),
   closePromptWindow: (): Promise<void> => ipcRenderer.invoke('close-prompt-window'),
   setLauncherMode: (mode: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt'): Promise<void> =>
@@ -823,13 +824,19 @@ contextBridge.exposeInMainWorld('electron', {
     return () => { ipcRenderer.removeListener('whisper-native-chunk', listener); };
   },
   onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => {
-    ipcRenderer.on('ai-stream-chunk', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-stream-chunk', listener);
+    return () => { ipcRenderer.removeListener('ai-stream-chunk', listener); };
   },
   onAIStreamDone: (callback: (data: { requestId: string }) => void) => {
-    ipcRenderer.on('ai-stream-done', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-stream-done', listener);
+    return () => { ipcRenderer.removeListener('ai-stream-done', listener); };
   },
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => {
-    ipcRenderer.on('ai-stream-error', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ai-stream-error', listener);
+    return () => { ipcRenderer.removeListener('ai-stream-error', listener); };
   },
 
   // ─── Ollama Model Management ────────────────────────────────────
