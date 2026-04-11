@@ -1842,7 +1842,7 @@ const DEFAULT_WINDOW_HEIGHT = 480;
 const ONBOARDING_WINDOW_WIDTH = 1120;
 const ONBOARDING_WINDOW_HEIGHT = 740;
 const CURSOR_PROMPT_WINDOW_WIDTH = 500;
-const CURSOR_PROMPT_WINDOW_HEIGHT = 90;
+const CURSOR_PROMPT_WINDOW_HEIGHT = 100;
 const CURSOR_PROMPT_LEFT_OFFSET = 20;
 const PROMPT_WINDOW_PREWARM_DELAY_MS = 420;
 const WHISPER_WINDOW_WIDTH = 266;
@@ -8457,18 +8457,13 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     return true;
   }
   if (isCursorPromptCommand) {
-    const selectedBeforeOpenRaw = String(
-      await getSelectedTextForSpeak({ allowClipboardFallback: true }) || getRecentSelectionSnapshot() || ''
-    );
-    const selectedBeforeOpen = selectedBeforeOpenRaw.trim();
-    if (selectedBeforeOpen) {
-      rememberSelectionSnapshot(selectedBeforeOpenRaw);
-      lastCursorPromptSelection = selectedBeforeOpenRaw;
-    } else {
-      lastCursorPromptSelection = String(getRecentSelectionSnapshot() || '');
-    }
     captureFrontmostAppContext();
-    // Capture caret/input anchor before prompt focus changes active UI element.
+    // Kick off the selection fetch immediately so the AX query runs
+    // concurrently with the sync caret captures below (~150 ms each).
+    // Clipboard fallback is enabled here because the original app still has
+    // focus — showPromptWindow has not been called yet.
+    const selectionPromise = getSelectedTextForSpeak({ allowClipboardFallback: true });
+    // Caret/input captures must happen synchronously before focus shifts.
     const earlyCaretRect = getTypingCaretRect();
     const earlyInputRect = earlyCaretRect ? null : getFocusedInputRect();
     if (source === 'hotkey' && isVisible && launcherMode === 'prompt') {
@@ -8480,16 +8475,20 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       hidePromptWindow();
       return true;
     }
-    // Open anchored to the captured typing caret (not mouse pointer).
+    // Await the selection. In the common case (AX-supporting app) the AX query
+    // has already resolved during the ~150 ms caret capture above, so this adds
+    // no measurable delay. For clipboard fallback, the original app is still
+    // frontmost here (showPromptWindow not yet called), so Cmd+C reaches the
+    // right target.
+    const selectedBeforeOpenRaw = String((await selectionPromise) || getRecentSelectionSnapshot() || '');
+    const selectedBeforeOpen = selectedBeforeOpenRaw.trim();
+    if (selectedBeforeOpen) {
+      rememberSelectionSnapshot(selectedBeforeOpenRaw);
+      lastCursorPromptSelection = selectedBeforeOpenRaw;
+    } else {
+      lastCursorPromptSelection = String(getRecentSelectionSnapshot() || '');
+    }
     showPromptWindow(earlyCaretRect, earlyInputRect);
-    // Refresh selection in the background for AX-compatible apps.
-    void getSelectedTextForSpeak({ allowClipboardFallback: false, clipboardWaitMs: 0 })
-      .then((selectedBeforeOpen) => {
-        const selected = String(selectedBeforeOpen || '').trim();
-        if (!selected) return;
-        lastCursorPromptSelection = selected;
-      })
-      .catch(() => {});
     return true;
   }
   if (commandId === 'system-add-to-memory') {
@@ -13680,26 +13679,35 @@ if let tiff = image?.tiffRepresentation {
     const nextText = String(payload?.nextText || '');
     if (!nextText.trim()) return false;
 
-    // Ensure prompt window is closed before typing/replacing so text is not inserted back into prompt UI.
-    hidePromptWindow();
+    // The prompt window has alwaysOnTop:true so it stays visible while we
+    // activate the target app. No hide/show needed — just switch active app,
+    // apply the text, then bring focus back to the prompt.
     await activateLastFrontmostApp();
     await new Promise((resolve) => setTimeout(resolve, 70));
 
+    let applied: boolean;
     if (previousText.trim()) {
       // Use paste-based replacement first to preserve all newlines exactly.
-      let replaced = await replaceTextViaBackspaceAndPaste(previousText, nextText);
-      if (!replaced) {
-        replaced = await replaceTextDirectly(previousText, nextText);
-      }
-      return replaced;
+      applied = await replaceTextViaBackspaceAndPaste(previousText, nextText);
+      if (!applied) applied = await replaceTextDirectly(previousText, nextText);
+    } else {
+      // Paste first so multiline responses keep exact line breaks.
+      applied = await pasteTextToActiveApp(nextText);
+      if (!applied) applied = await typeTextDirectly(nextText);
     }
 
-    // Paste first so multiline responses keep exact line breaks.
-    let typed = await pasteTextToActiveApp(nextText);
-    if (!typed) {
-      typed = await typeTextDirectly(nextText);
+    // Wait for the paste CGEvent and clipboard restore (250 ms) to finish
+    // before shifting focus back to the prompt window.
+    await new Promise((resolve) => setTimeout(resolve, 320));
+
+    // Return focus to the prompt window for continued iteration.
+    if (promptWindow && !promptWindow.isDestroyed() && promptWindow.isVisible()) {
+      promptWindow.focus();
+      promptWindow.moveTop();
+      promptWindow.webContents.focus();
     }
-    return typed;
+
+    return applied;
   });
 
   ipcMain.on('whisper-debug-log', (_event: any, payload: { tag?: string; message?: string; data?: any }) => {

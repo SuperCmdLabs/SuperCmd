@@ -782,6 +782,10 @@ html {
   overflow: auto;
 }
 
+.cursor-prompt-textarea::placeholder {
+  color: rgba(var(--on-surface-rgb), 0.28);
+}
+
 .cursor-prompt-submit {
   width: 24px;
   height: 24px;
@@ -826,6 +830,45 @@ html {
   min-height: 16px;
   display: flex;
   align-items: center;
+}
+
+.cursor-prompt-presets {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 5px;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  padding-bottom: 1px;
+}
+
+.cursor-prompt-presets::-webkit-scrollbar {
+  display: none;
+}
+
+.cursor-prompt-preset-pill {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--on-surface-rgb), 0.16);
+  background: transparent;
+  color: rgba(var(--on-surface-rgb), 0.58);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+  white-space: nowrap;
+}
+
+.cursor-prompt-preset-pill:hover {
+  background: rgba(var(--on-surface-rgb), 0.1);
+  color: rgba(var(--on-surface-rgb), 0.9);
+  border-color: rgba(var(--on-surface-rgb), 0.28);
+}
+
+.cursor-prompt-history-badge {
+  font-size: 11px;
+  color: rgba(var(--on-surface-rgb), 0.46);
 }
 
 .cursor-prompt-preview-wrap {
