@@ -202,10 +202,9 @@ const AdvancedTab: React.FC = () => {
           <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
             <input
               type="checkbox"
-              checked={settings?.developerMode ?? false}
-              onChange={async (e) => {
-                await window.electron.updateSettings({ developerMode: e.target.checked });
-                setSettings((prev) => (prev ? { ...prev, developerMode: e.target.checked } : null));
+              checked={settings?.debugMode ?? false}
+              onChange={(e) => {
+                void applySettingsPatch({ debugMode: e.target.checked });
               }}
               className="settings-checkbox"
             />
