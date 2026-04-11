@@ -415,6 +415,7 @@ export interface ElectronAPI {
   hideWindow: () => Promise<void>;
   openDevTools: () => Promise<boolean>;
   closePromptWindow: () => Promise<void>;
+  resizePromptWindow: (height: number) => Promise<void>;
   setLauncherMode: (mode: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt') => Promise<void>;
   getLastFrontmostApp: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   restoreLastFrontmostApp: () => Promise<boolean>;

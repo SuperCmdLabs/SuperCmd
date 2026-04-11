@@ -10750,6 +10750,19 @@ app.whenReady().then(async () => {
     hidePromptWindow();
   });
 
+  ipcMain.handle('resize-prompt-window', (_event: any, height: number) => {
+    if (!promptWindow || promptWindow.isDestroyed()) return;
+    const clampedHeight = Math.max(90, Math.min(480, Math.round(height)));
+    const bounds = promptWindow.getBounds();
+    const deltaHeight = clampedHeight - bounds.height;
+    // Keep the bottom edge anchored — grow upward
+    promptWindow.setBounds({
+      ...bounds,
+      y: Math.round(bounds.y - deltaHeight),
+      height: clampedHeight,
+    });
+  });
+
   ipcMain.handle('set-launcher-mode', (_event: any, mode: LauncherMode) => {
     if (mode !== 'default' && mode !== 'onboarding' && mode !== 'whisper' && mode !== 'speak' && mode !== 'prompt') return;
     setLauncherMode(mode);
