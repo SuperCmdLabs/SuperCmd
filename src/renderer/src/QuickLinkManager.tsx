@@ -1411,6 +1411,7 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
     laneRef: inlineArgumentLaneRef,
     inlineRef: inlineArgumentClusterRef,
     minStartRatio: 0.3,
+    revisionKey: view,
   });
 
   const getDynamicFieldsForQuickLink = useCallback(
@@ -1798,7 +1799,10 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
               <div
                 ref={inlineArgumentClusterRef}
                 className="pointer-events-auto inline-flex min-w-0 items-center gap-1"
-                style={{ marginLeft: inlineArgumentStartPx != null ? `${inlineArgumentStartPx}px` : '30%' }}
+                style={{
+                  marginLeft: inlineArgumentStartPx != null ? `${inlineArgumentStartPx}px` : '30%',
+                  visibility: inlineArgumentStartPx != null ? 'visible' : 'hidden',
+                }}
               >
                 {selectedInlineLeadingIcon ? (
                   <InlineArgumentLeadingIcon>{selectedInlineLeadingIcon}</InlineArgumentLeadingIcon>

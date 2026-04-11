@@ -762,6 +762,7 @@ export interface ElectronAPI {
   onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => (() => void);
   onAIStreamDone: (callback: (data: { requestId: string }) => void) => (() => void);
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => (() => void);
+  onPromptInsertText: (callback: (text: string) => void) => (() => void);
   whisperRefineTranscript: (
     transcript: string
   ) => Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }>;
