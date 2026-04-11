@@ -3216,6 +3216,7 @@ const App: React.FC = () => {
         >
           <QuickLinkManager
             initialView={showQuickLinkManager}
+            commandAliases={commandAliases}
             onClose={() => {
               setShowQuickLinkManager(null);
               setSearchQuery('');
