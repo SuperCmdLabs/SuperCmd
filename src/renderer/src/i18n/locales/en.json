@@ -740,7 +740,7 @@
     "searchPlaceholder": "Search canvases...",
     "untitled": "Untitled Canvas",
     "modified": "Modified",
-    "count": "{count} canvases",
+    "count": "{count} canvas{plural}",
     "time": {
       "justNow": "Just now"
     },

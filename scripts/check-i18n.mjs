@@ -19,8 +19,16 @@ function walk(baseNode, localeNode, currentPath, result) {
       result.missing.push(nextPath);
       continue;
     }
-    if (isObject(baseNode[key]) && isObject(localeNode[key])) {
-      walk(baseNode[key], localeNode[key], nextPath, result);
+    const baseValue = baseNode[key];
+    const localeValue = localeNode[key];
+    const baseIsObject = isObject(baseValue);
+    const localeIsObject = isObject(localeValue);
+    if (baseIsObject !== localeIsObject || typeof baseValue !== typeof localeValue) {
+      result.invalid.push(nextPath);
+      continue;
+    }
+    if (baseIsObject) {
+      walk(baseValue, localeValue, nextPath, result);
     }
   }
 
@@ -40,19 +48,20 @@ let hasStrictFailure = false;
 for (const file of localeFiles) {
   const locale = file.replace(/\.json$/, '');
   const localeMessages = JSON.parse(fs.readFileSync(path.join(localesDir, file), 'utf8'));
-  const result = { missing: [], extra: [] };
+  const result = { missing: [], extra: [], invalid: [] };
   walk(baseMessages, localeMessages, '', result);
 
-  if (result.missing.length === 0 && result.extra.length === 0) {
+  if (result.missing.length === 0 && result.extra.length === 0 && result.invalid.length === 0) {
     console.log(`[i18n] ${locale}: OK`);
     continue;
   }
 
   const lines = [
-    `[i18n] ${locale}: missing=${result.missing.length} extra=${result.extra.length}`,
+    `[i18n] ${locale}: missing=${result.missing.length} extra=${result.extra.length} invalid=${result.invalid.length}`,
   ];
   if (result.missing.length > 0) lines.push(`  missing: ${result.missing.slice(0, 12).join(', ')}`);
   if (result.extra.length > 0) lines.push(`  extra: ${result.extra.slice(0, 12).join(', ')}`);
+  if (result.invalid.length > 0) lines.push(`  invalid: ${result.invalid.slice(0, 12).join(', ')}`);
 
   const message = lines.join('\n');
   if (strictLocales.has(locale)) {

@@ -117,6 +117,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
     const q = searchQuery.toLowerCase();
     return canvases.filter((c) => c.title.toLowerCase().includes(q));
   }, [canvases, searchQuery]);
+  const filteredCanvasCount = filteredCanvases.length;
 
   const selectedCanvas = filteredCanvases[selectedIndex] || null;
 
@@ -690,7 +691,14 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
 
       {/* Footer */}
       <ExtensionActionFooter
-        leftContent={<span className="text-[11px] text-white/30">{t('canvas.count', { count: filteredCanvases.length })}</span>}
+        leftContent={(
+          <span className="text-[11px] text-white/30">
+            {t('canvas.count', {
+              count: filteredCanvasCount,
+              plural: filteredCanvasCount === 1 ? '' : 'es',
+            })}
+          </span>
+        )}
         primaryAction={selectedCanvas ? {
           label: t('common.open'),
           onClick: () => openCanvas(selectedCanvas),
