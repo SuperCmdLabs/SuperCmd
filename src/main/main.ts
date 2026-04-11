@@ -8154,6 +8154,80 @@ function isAISectionDisabledForCommand(commandId: string, settings?: AppSettings
   return false;
 }
 
+async function closeAllRegularApps(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  const script = `
+    use framework "AppKit"
+
+    set excludedPid to ${process.pid}
+    set protectedBundleIds to {"com.apple.finder"}
+    set runningApps to current application's NSWorkspace's sharedWorkspace()'s runningApplications()
+
+    repeat with runningApp in runningApps
+      try
+        if (runningApp's activationPolicy() as integer) is not 0 then
+          -- Skip non-regular apps.
+        else
+          set runningPid to runningApp's processIdentifier() as integer
+          if runningPid is not excludedPid then
+            set bundleIdValue to runningApp's bundleIdentifier()
+            if bundleIdValue is missing value then
+              set bundleIdText to ""
+            else
+              set bundleIdText to bundleIdValue as text
+            end if
+            if protectedBundleIds does not contain bundleIdText then
+              runningApp's terminate()
+            end if
+          end if
+        end if
+      end try
+    end repeat
+  `;
+
+  await execFileAsync('/usr/bin/osascript', ['-l', 'AppleScript', '-e', script]);
+}
+
+async function confirmQuitAllApps(source: 'launcher' | 'hotkey' | 'widget'): Promise<boolean> {
+  const commands = await getAvailableCommands();
+  const command = commands.find((item) => item.id === 'system-close-all-apps');
+  const title = String(command?.title || 'Quit All Apps').trim() || 'Quit All Apps';
+  const iconDataUrl = String(command?.iconDataUrl || '').trim();
+
+  let icon: Electron.NativeImage | undefined;
+  if (iconDataUrl) {
+    try {
+      const created = nativeImage.createFromDataURL(iconDataUrl);
+      if (!created.isEmpty()) {
+        icon = created.resize({ width: 64, height: 64 });
+      }
+    } catch {}
+  }
+
+  const options: Electron.MessageBoxOptions = {
+    type: 'question',
+    buttons: [title, 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    title,
+    message: `${title}?`,
+    detail: 'This will ask all currently running apps to quit. Finder and SuperCmd stay open.',
+    icon,
+  };
+
+  const dialogParent = source === 'launcher' && mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow
+    : undefined;
+  const result = dialogParent
+    ? await dialog.showMessageBox(dialogParent, options)
+    : await dialog.showMessageBox(options);
+
+  return result.response === 0;
+}
+
 async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' | 'widget' = 'launcher'): Promise<boolean> {
   if (isAIDependentSystemCommand(commandId) && isAIDisabledInSettings()) {
     return false;
@@ -8330,6 +8404,18 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
   }
   if (commandId === 'system-open-extensions-settings') {
     openSettingsWindow({ tab: 'extensions' });
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
+  if (commandId === 'system-close-all-apps') {
+    try {
+      const confirmed = await confirmQuitAllApps(source);
+      if (!confirmed) return false;
+      await closeAllRegularApps();
+    } catch (error) {
+      console.error('Failed to close all apps:', error);
+      return false;
+    }
     if (source === 'launcher') hideWindow();
     return true;
   }
