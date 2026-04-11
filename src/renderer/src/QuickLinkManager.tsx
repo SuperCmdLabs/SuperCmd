@@ -1516,6 +1516,12 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
         if (fields.length <= MAX_INLINE_QUICK_LINK_ARGUMENTS) {
           const opened = await window.electron.quickLinkOpen(target.id, resolvedValues);
           if (opened) {
+            setInlineDynamicValuesByQuickLinkId((prev) => {
+              if (!prev[target.id]) return prev;
+              const next = { ...prev };
+              delete next[target.id];
+              return next;
+            });
             await window.electron.hideWindow();
           }
           return;

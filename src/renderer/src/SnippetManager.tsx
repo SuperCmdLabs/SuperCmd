@@ -602,6 +602,12 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         const resolvedValues = getResolvedInlineArgumentValues(s, fields);
         if (fields.length <= MAX_INLINE_SNIPPET_ARGUMENTS) {
           await window.electron.snippetPasteResolved(s.id, resolvedValues);
+          setInlineArgumentValuesBySnippetId((prev) => {
+            if (!prev[s.id]) return prev;
+            const next = { ...prev };
+            delete next[s.id];
+            return next;
+          });
           return;
         }
         setDynamicPrompt({ snippet: s, mode: 'paste', fields, values: resolvedValues });
@@ -621,6 +627,12 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
         const resolvedValues = getResolvedInlineArgumentValues(activeSnippet, fields);
         if (fields.length <= MAX_INLINE_SNIPPET_ARGUMENTS) {
           await window.electron.snippetCopyToClipboardResolved(activeSnippet.id, resolvedValues);
+          setInlineArgumentValuesBySnippetId((prev) => {
+            if (!prev[activeSnippet.id]) return prev;
+            const next = { ...prev };
+            delete next[activeSnippet.id];
+            return next;
+          });
           return;
         }
         setDynamicPrompt({ snippet: activeSnippet, mode: 'copy', fields, values: resolvedValues });

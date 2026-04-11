@@ -1702,6 +1702,18 @@ const App: React.FC = () => {
     },
     []
   );
+
+  const clearInlineQuickLinkDynamicValuesForId = useCallback((quickLinkId: string) => {
+    const normalizedId = String(quickLinkId || '').trim();
+    if (!normalizedId) return;
+    setInlineQuickLinkDynamicValuesById((prev) => {
+      if (!prev[normalizedId]) return prev;
+      const next = { ...prev };
+      delete next[normalizedId];
+      return next;
+    });
+  }, []);
+
   const getInlineExtensionArgumentsForCommand = useCallback(
     (command: CommandInfo): Record<string, string> => {
       const definitions = (command.commandArgumentDefinitions || []).filter((definition) => definition?.name);
@@ -2344,6 +2356,7 @@ const App: React.FC = () => {
           if (fields.length <= MAX_INLINE_QUICK_LINK_ARGUMENTS) {
             const openedInline = await window.electron.quickLinkOpen(quickLinkId, resolvedValuesFromInline);
             if (!openedInline) return false;
+            clearInlineQuickLinkDynamicValuesForId(quickLinkId);
             setQuickLinkDynamicPrompt(null);
             await updateRecentCommands(command.id);
             setSearchQuery('');
@@ -2373,6 +2386,7 @@ const App: React.FC = () => {
       const opened = await window.electron.quickLinkOpen(quickLinkId, dynamicValues);
       if (!opened) return false;
 
+      clearInlineQuickLinkDynamicValuesForId(quickLinkId);
       setQuickLinkDynamicPrompt(null);
       await updateRecentCommands(command.id);
       setSearchQuery('');
@@ -2381,6 +2395,7 @@ const App: React.FC = () => {
       return true;
     },
     [
+      clearInlineQuickLinkDynamicValuesForId,
       getDynamicFieldsForQuickLink,
       inlineQuickLinkDynamicValuesById,
       selectedQuickLinkId,
