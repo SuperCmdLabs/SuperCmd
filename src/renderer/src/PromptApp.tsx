@@ -6,14 +6,14 @@ import { applyUiStyle } from './utils/ui-style';
 
 const NO_AI_MODEL_ERROR = 'No AI model available. Configure one in Settings -> AI.';
 
-const PRESETS = [
-  'Fix grammar',
-  'Make professional',
-  'Make concise',
-  'Simplify',
-  'Expand',
-  'Make casual',
-  'Translate to English',
+const PRESETS: { label: string; prompt: string }[] = [
+  { label: 'Fix grammar', prompt: 'Fix any grammar, spelling, and punctuation errors. Keep the original tone and meaning.' },
+  { label: 'Make professional', prompt: 'Rewrite this to sound polished and professional, suitable for a work or business context.' },
+  { label: 'Make concise', prompt: 'Make this more concise. Remove unnecessary words and filler while keeping the full meaning.' },
+  { label: 'Simplify', prompt: 'Simplify this. Use plain, everyday language that anyone can understand.' },
+  { label: 'Expand', prompt: 'Expand this with more detail, context, and supporting points. Keep the same tone.' },
+  { label: 'Make casual', prompt: 'Rewrite this in a friendly, casual tone — like texting a friend.' },
+  { label: 'Translate to English', prompt: 'Translate this to English. Use natural, idiomatic phrasing.' },
 ];
 
 const PromptApp: React.FC = () => {
@@ -75,11 +75,10 @@ const PromptApp: React.FC = () => {
     sourceTextRef.current = '';
     resultTextRef.current = '';
 
-    const liveSelectedText = String(await window.electron.getSelectedText() || '');
-    const selectedText =
-      liveSelectedText.trim().length > 0
-        ? liveSelectedText
-        : String(selectedTextSnapshotRef.current || '');
+    // Use the snapshot captured when the prompt opened. Do NOT call getSelectedText()
+    // here — at submit time the prompt window has focus, so any live AX/clipboard query
+    // would target the prompt itself and could return the instruction text as the selection.
+    const selectedText = String(selectedTextSnapshotRef.current || '');
     if (selectedText.trim().length > 0) sourceTextRef.current = selectedText;
 
     const requestId = `prompt-window-${Date.now()}`;
@@ -173,6 +172,18 @@ const PromptApp: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const cleanup = window.electron.onPromptInsertText?.((text) => {
+      setPromptText((prev) => {
+        const joined = prev ? `${prev} ${text}` : text;
+        return joined;
+      });
+      // Move focus back to the textarea so the user can keep typing.
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    });
+    return cleanup;
+  }, []);
+
+  useEffect(() => {
     const handleChunk = (data: { requestId: string; chunk: string }) => {
       if (data.requestId !== requestIdRef.current) return;
       resultTextRef.current += data.chunk;
@@ -241,14 +252,14 @@ const PromptApp: React.FC = () => {
               <div className="cursor-prompt-presets">
                 {PRESETS.map((preset) => (
                   <button
-                    key={preset}
+                    key={preset.label}
                     onClick={() => {
-                      setPromptText(preset);
+                      setPromptText(preset.prompt);
                       textareaRef.current?.focus();
                     }}
                     className="cursor-prompt-preset-pill"
                   >
-                    {preset}
+                    {preset.label}
                   </button>
                 ))}
               </div>

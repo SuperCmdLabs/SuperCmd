@@ -5101,11 +5101,13 @@ async function captureSelectionSnapshotBeforeShow(options?: { allowClipboardFall
     const selected = String(
       await getSelectedTextForSpeak({ allowClipboardFallback, clipboardWaitMs: 90 }) || ''
     );
-    rememberSelectionSnapshot(selected);
+    // Only update the snapshot if we actually captured something; if AX returned
+    // empty (common for apps that don't expose AXSelectedText), leave the existing
+    // snapshot intact so cursor-prompt can still use a recently captured selection.
+    if (selected.trim()) rememberSelectionSnapshot(selected);
     return getRecentSelectionSnapshot();
   } catch {
-    rememberSelectionSnapshot('');
-    return '';
+    return getRecentSelectionSnapshot();
   }
 }
 
@@ -7527,9 +7529,13 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     await captureWindowManagementTargetWindow();
     launcherEntryWindowManagementTargetWindowId = String(windowManagementTargetWindowId || '').trim() || null;
     launcherEntryWindowManagementTargetWorkArea = cloneWorkArea(windowManagementTargetWorkArea);
-    // Keep launcher open path fast: avoid clipboard fallback (synthetic Cmd+C)
-    // on window open because it can interfere with immediate typing.
-    selectionSnapshotPromise = captureSelectionSnapshotBeforeShow({ allowClipboardFallback: false });
+    // Capture the current selection via AX first; fall back to a synthetic
+    // Cmd+C if AX returns nothing.  The original app is still frontmost here
+    // (the launcher window hasn't been shown yet), so the Cmd+C reaches the
+    // right target.  clipboardWaitMs is short (90 ms) and the clipboard is
+    // restored afterwards, so this has no user-visible side effects.
+    // The promise runs in the background — the launcher appears immediately.
+    selectionSnapshotPromise = captureSelectionSnapshotBeforeShow({ allowClipboardFallback: true });
   } else {
     launcherEntryFrontmostApp = null;
     launcherEntryWindowManagementTargetWindowId = null;
@@ -8498,14 +8504,22 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
   }
   if (isCursorPromptCommand) {
     captureFrontmostAppContext();
-    // Kick off the selection fetch immediately so the AX query runs
-    // concurrently with the sync caret captures below (~150 ms each).
-    // Clipboard fallback is enabled here because the original app still has
-    // focus — showPromptWindow has not been called yet.
-    const selectionPromise = getSelectedTextForSpeak({ allowClipboardFallback: true });
+
+    // For the hotkey path the original app is still frontmost — kick off the
+    // selection fetch concurrently with the sync caret captures so the two
+    // ~150 ms operations overlap.  For the launcher path the launcher itself
+    // is frontmost, so a live AX/clipboard query would target the launcher's
+    // search bar rather than the original app; in that case we rely entirely
+    // on the snapshot captured when the launcher opened.
+    const isLauncherPath = source === 'launcher';
+    const selectionPromise = isLauncherPath
+      ? Promise.resolve('')
+      : getSelectedTextForSpeak({ allowClipboardFallback: true });
+
     // Caret/input captures must happen synchronously before focus shifts.
-    const earlyCaretRect = getTypingCaretRect();
-    const earlyInputRect = earlyCaretRect ? null : getFocusedInputRect();
+    const earlyCaretRect = isLauncherPath ? null : getTypingCaretRect();
+    const earlyInputRect = earlyCaretRect ? null : (isLauncherPath ? null : getFocusedInputRect());
+
     if (source === 'hotkey' && isVisible && launcherMode === 'prompt') {
       hideWindow();
       return true;
@@ -8515,19 +8529,20 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       hidePromptWindow();
       return true;
     }
-    // Await the selection. In the common case (AX-supporting app) the AX query
-    // has already resolved during the ~150 ms caret capture above, so this adds
-    // no measurable delay. For clipboard fallback, the original app is still
-    // frontmost here (showPromptWindow not yet called), so Cmd+C reaches the
-    // right target.
-    const selectedBeforeOpenRaw = String((await selectionPromise) || getRecentSelectionSnapshot() || '');
+
+    // Await the selection. For the hotkey path the AX query has typically
+    // already resolved during the ~150 ms caret capture above, so this adds
+    // no measurable delay. Cmd+C clipboard fallback also reaches the right
+    // target because the original app is still frontmost here.
+    const selectedBeforeOpenRaw = String(
+      (await selectionPromise) || getRecentSelectionSnapshot() || lastCursorPromptSelection || ''
+    );
     const selectedBeforeOpen = selectedBeforeOpenRaw.trim();
     if (selectedBeforeOpen) {
       rememberSelectionSnapshot(selectedBeforeOpenRaw);
       lastCursorPromptSelection = selectedBeforeOpenRaw;
-    } else {
-      lastCursorPromptSelection = String(getRecentSelectionSnapshot() || '');
     }
+    // If nothing found, keep lastCursorPromptSelection as-is (don't overwrite with empty).
     showPromptWindow(earlyCaretRect, earlyInputRect);
     return true;
   }
@@ -12987,6 +13002,20 @@ return appURL's |path|() as text`,
   });
 
   ipcMain.handle('clipboard-paste-item', async (_event: any, id: string) => {
+    // If the AI prompt window is open, redirect text into its textarea instead.
+    if (promptWindow && !promptWindow.isDestroyed() && promptWindow.isVisible()) {
+      const item = getClipboardItemById(id);
+      if (item && (item.type === 'text' || item.type === 'url')) {
+        const text = String(item.content || '');
+        if (text) {
+          if (isVisible) hideWindow();
+          promptWindow.webContents.send('prompt-insert-text', text);
+          promptWindow.focus();
+          return true;
+        }
+      }
+    }
+
     const success = copyItemToClipboard(id);
     if (!success) return false;
 
@@ -13329,6 +13358,17 @@ if let tiff = image?.tiffRepresentation {
   });
 
   ipcMain.handle('snippet-paste', async (_event: any, id: string) => {
+    // If the AI prompt window is open, redirect text into its textarea instead.
+    if (promptWindow && !promptWindow.isDestroyed() && promptWindow.isVisible()) {
+      const text = renderSnippetById(id);
+      if (text) {
+        if (isVisible) hideWindow();
+        promptWindow.webContents.send('prompt-insert-text', text);
+        promptWindow.focus();
+        return true;
+      }
+    }
+
     const success = copySnippetToClipboard(id);
     if (!success) return false;
 
@@ -13336,6 +13376,17 @@ if let tiff = image?.tiffRepresentation {
   });
 
   ipcMain.handle('snippet-paste-resolved', async (_event: any, id: string, dynamicValues?: Record<string, string>) => {
+    // If the AI prompt window is open, redirect text into its textarea instead.
+    if (promptWindow && !promptWindow.isDestroyed() && promptWindow.isVisible()) {
+      const text = renderSnippetById(id, dynamicValues);
+      if (text) {
+        if (isVisible) hideWindow();
+        promptWindow.webContents.send('prompt-insert-text', text);
+        promptWindow.focus();
+        return true;
+      }
+    }
+
     const success = copySnippetToClipboardResolved(id, dynamicValues);
     if (!success) return false;
 

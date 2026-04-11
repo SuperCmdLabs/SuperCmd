@@ -838,6 +838,11 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('ai-stream-error', listener);
     return () => { ipcRenderer.removeListener('ai-stream-error', listener); };
   },
+  onPromptInsertText: (callback: (text: string) => void) => {
+    const listener = (_event: any, text: string) => callback(text);
+    ipcRenderer.on('prompt-insert-text', listener);
+    return () => { ipcRenderer.removeListener('prompt-insert-text', listener); };
+  },
 
   // ─── Ollama Model Management ────────────────────────────────────
   ollamaStatus: (): Promise<{ running: boolean; models: any[] }> =>
