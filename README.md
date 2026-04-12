@@ -24,13 +24,13 @@ SuperCmd gives you Raycast-style extension workflows, hold-to-speak dictation, n
 
 ## What It Is
 
-SuperCmd is an Electron + React launcher that focuses on Raycast extension compatibility while remaining community-driven and open source. It ships a full `@raycast/api` and `@raycast/utils` compatibility shim so existing Raycast extensions work without modification.
+SuperCmd is an Electron + React launcher that focuses on Raycast extension compatibility while remaining community-driven and open source. It ships a full `@raycast/api` and `@raycast/utils` compatibility shim so existing Raycast extensions work without modification. For anything that requires tight system integration — hotkeys, window management, speech recognition, clipboard, snippet injection — it drops into Swift and Objective-C to talk directly to macOS frameworks (ApplicationServices, EventKit, AVFoundation, Carbon) for native speed and reliability.
 
 ## Key Features
 
 - **Raycast extension compatibility** — `@raycast/api` and `@raycast/utils` shims; install extensions directly from the Raycast store
 - **AI cursor prompt** — inline AI suggestions at your cursor position across any app
-- **AI chat** — full-screen chat with configurable providers (OpenAI / Anthropic / Ollama / Gemini / OpenAI-compatible)
+- **AI chat** — chat with configurable providers (OpenAI / Anthropic / Ollama / Gemini / OpenAI-compatible)
 - **Hold-to-speak dictation** — Wispr Flow-style voice input; hold hotkey, speak, release to type (Whisper, Parakeet, or native macOS STT)
 - **Read aloud** — Speechify-style TTS for selected text (Edge TTS or ElevenLabs)
 - **Clipboard history** — full clipboard manager with Cmd+1–9 quick-paste shortcuts
@@ -311,7 +311,7 @@ OAuth tokens are stored separately in `~/Library/Application Support/SuperCmd/oa
 
 SuperCmd is open-source, so you can audit exactly what it does. The short version:
 
-- **Telemetry**: one anonymous `app_started` event via [Aptabase](https://aptabase.com/). Can be disabled in Settings → General.
+- **Telemetry**: one anonymous `app_started` event via [Aptabase](https://aptabase.com/).
 - **AI prompts**: sent directly from your device to your configured provider (OpenAI / Anthropic / Gemini / Ollama).
 - **Extension install/uninstall**: reports extension name + an anonymous random machine ID to `api.supercmd.sh` for download counts.
 - **Voice data**: STT runs fully on-device (Whisper, Parakeet, native macOS) — audio never leaves your machine.
@@ -333,6 +333,20 @@ Quick version:
 
 - Raycast API docs: https://developers.raycast.com/api-reference/
 - Raycast extension store: https://www.raycast.com/store
+
+## Contributors
+
+Thanks to everyone who has contributed to SuperCmd!
+
+<a href="https://github.com/shobhit99"><img src="https://avatars.githubusercontent.com/u/38807205?v=4" width="48" height="48" alt="shobhit99" title="shobhit99" style="border-radius:50%"></a>
+<a href="https://github.com/monotykamary"><img src="https://avatars.githubusercontent.com/u/1130103?v=4" width="48" height="48" alt="monotykamary" title="monotykamary" style="border-radius:50%"></a>
+<a href="https://github.com/elicep01"><img src="https://avatars.githubusercontent.com/u/184329244?v=4" width="48" height="48" alt="elicep01" title="elicep01" style="border-radius:50%"></a>
+<a href="https://github.com/tuanddd"><img src="https://avatars.githubusercontent.com/u/25856620?v=4" width="48" height="48" alt="tuanddd" title="tuanddd" style="border-radius:50%"></a>
+<a href="https://github.com/stephaneRR"><img src="https://avatars.githubusercontent.com/u/120036021?v=4" width="48" height="48" alt="stephaneRR" title="stephaneRR" style="border-radius:50%"></a>
+<a href="https://github.com/ericmason"><img src="https://avatars.githubusercontent.com/u/17150?v=4" width="48" height="48" alt="ericmason" title="ericmason" style="border-radius:50%"></a>
+<a href="https://github.com/pablopunk"><img src="https://avatars.githubusercontent.com/u/4324982?v=4" width="48" height="48" alt="pablopunk" title="pablopunk" style="border-radius:50%"></a>
+<a href="https://github.com/Hantok"><img src="https://avatars.githubusercontent.com/u/1752322?v=4" width="48" height="48" alt="Hantok" title="Hantok" style="border-radius:50%"></a>
+<a href="https://github.com/dardevelin"><img src="https://avatars.githubusercontent.com/u/1424739?v=4" width="48" height="48" alt="dardevelin" title="dardevelin" style="border-radius:50%"></a>
 
 ## GitHub Star History
 
