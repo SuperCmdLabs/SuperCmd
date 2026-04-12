@@ -212,6 +212,8 @@ const PromptApp: React.FC = () => {
   return (
     <div className="w-full h-full">
       <div className="cursor-prompt-surface h-full flex flex-col gap-1 px-3.5 pt-2.5 pb-2 relative">
+        {/* Drag handle — lets the user reposition the window */}
+        <div className="drag-region cursor-prompt-drag-handle" />
         <button
           onClick={() => void closePrompt()}
           className="cursor-prompt-close"

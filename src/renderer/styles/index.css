@@ -745,6 +745,16 @@ html {
   overflow: hidden;
 }
 
+.cursor-prompt-drag-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  cursor: move;
+  z-index: 0;
+}
+
 .cursor-prompt-close {
   position: absolute;
   top: 6px;
@@ -762,6 +772,7 @@ html {
   z-index: 1;
   opacity: 0;
   pointer-events: none;
+  -webkit-app-region: no-drag;
 }
 
 .cursor-prompt-surface:hover .cursor-prompt-close {
