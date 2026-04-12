@@ -1444,16 +1444,20 @@ const App: React.FC = () => {
     return { contextual, pinned, recent, files: fileResultCommands, other };
   }, [hasSearchQuery, visibleSourceCommands, pinnedCommands, recentCommands, recentCommandLaunchCounts, selectedTextSnapshot, fileResultCommands]);
 
-  const displayCommands = useMemo(
-    () => [
+  const displayCommands = useMemo(() => {
+    const all = [
       ...groupedCommands.contextual,
       ...groupedCommands.pinned,
       ...groupedCommands.recent,
       ...groupedCommands.other,
       ...groupedCommands.files,
-    ],
-    [groupedCommands]
-  );
+    ];
+    // alwaysOnTop commands (e.g. update banner) must be the very first items,
+    // above pinned, contextual, and everything else.
+    const top = all.filter((c) => c.alwaysOnTop);
+    const rest = all.filter((c) => !c.alwaysOnTop);
+    return [...top, ...rest];
+  }, [groupedCommands]);
 
   useEffect(() => {
     itemRefs.current = itemRefs.current.slice(0, displayCommands.length + calcOffset);
@@ -2639,6 +2643,26 @@ const App: React.FC = () => {
   const getActionsForCommand = useCallback(
     (command: CommandInfo | null): LauncherAction[] => {
       if (!command) return [];
+
+      if (command.id === 'system-update-and-reopen') {
+        return [
+          {
+            id: 'update-and-reopen',
+            title: 'Update and Reopen',
+            shortcut: 'Enter',
+            execute: () => handleCommandExecute(command),
+          },
+          {
+            id: 'dismiss-update-banner',
+            title: 'Dismiss for 3 Days',
+            execute: async () => {
+              await window.electron.dismissUpdateBanner();
+              await fetchCommands({ showLoading: false });
+            },
+          },
+        ] as LauncherAction[];
+      }
+
       const filePath = getFileResultPathFromCommand(command);
       if (filePath) {
         return [
@@ -2729,6 +2753,7 @@ const App: React.FC = () => {
       showFileResultDetailsByPath,
       revealFileResultByPath,
       copyFileResultPath,
+      fetchCommands,
       t,
     ]
   );
@@ -3596,26 +3621,35 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              {[
-                { title: t('launcher.sections.selectedText'), items: groupedCommands.contextual },
-                { title: t('launcher.sections.pinned'), items: groupedCommands.pinned },
-                { title: t('launcher.categories.recent'), items: groupedCommands.recent },
-                { title: t('common.other'), items: groupedCommands.other },
-                { title: t('launcher.categories.files'), items: groupedCommands.files },
-              ]
+              {(() => {
+                // Pull alwaysOnTop commands out first so they render above every section
+                const allTopItems = displayCommands.filter((c) => c.alwaysOnTop);
+                const topIds = new Set(allTopItems.map((c) => c.id));
+                const strip = (items: CommandInfo[]) => items.filter((c) => !topIds.has(c.id));
+                return [
+                  { title: '', items: allTopItems },
+                  { title: t('launcher.sections.selectedText'), items: strip(groupedCommands.contextual) },
+                  { title: t('launcher.sections.pinned'), items: strip(groupedCommands.pinned) },
+                  { title: t('launcher.categories.recent'), items: strip(groupedCommands.recent) },
+                  { title: t('common.other'), items: strip(groupedCommands.other) },
+                  { title: t('launcher.categories.files'), items: strip(groupedCommands.files) },
+                ];
+              })()
                 .filter((section) => section.items.length > 0)
                 .map((section) => section)
                 .reduce(
                   (acc, section) => {
                     const startIndex = acc.index;
-                    acc.nodes.push(
-                      <div
-                        key={`section-${section.title}`}
-                        className="px-3 pt-2 pb-1 text-[0.6875rem] uppercase tracking-wider text-[var(--text-subtle)] font-medium"
-                      >
-                        {section.title}
-                      </div>
-                    );
+                    if (section.title) {
+                      acc.nodes.push(
+                        <div
+                          key={`section-${section.title}`}
+                          className="px-3 pt-2 pb-1 text-[0.6875rem] uppercase tracking-wider text-[var(--text-subtle)] font-medium"
+                        >
+                          {section.title}
+                        </div>
+                      );
+                    }
                     section.items.forEach((command, i) => {
                       const flatIndex = startIndex + i;
                       const accessoryLabel = getCommandAccessoryLabel(command);

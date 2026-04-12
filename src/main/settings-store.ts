@@ -95,6 +95,7 @@ export interface AppSettings {
   launcherBackgroundImageBlurPercent: number;
   launcherBackgroundImageOpacityPercent: number;
   appUpdaterLastCheckedAt: number;
+  updateBannerDismissedAt?: number;
   hyperKey: HyperKeySettings;
 }
 

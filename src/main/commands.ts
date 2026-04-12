@@ -78,6 +78,8 @@ export interface CommandInfo {
   disabledByDefault?: boolean;
   /** Whether user confirmation is required before execution */
   needsConfirmation?: boolean;
+  /** Always shown at the top of the command list, regardless of search query */
+  alwaysOnTop?: boolean;
   /** Argument definitions (used by script commands and extension no-view setup) */
   commandArgumentDefinitions?: Array<{
     name: string;

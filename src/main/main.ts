@@ -2306,6 +2306,9 @@ let appUpdater: any | null = null;
 let appUpdaterCheckPromise: Promise<void> | null = null;
 let appUpdaterDownloadPromise: Promise<void> | null = null;
 const APP_UPDATER_AUTO_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// Version string set when a background auto-check silently downloads an update.
+// null means no auto-downloaded update is ready (user must use manual flow).
+let autoUpdateDownloadedVersion: string | null = null;
 let appUpdaterAutoCheckTimer: NodeJS.Timeout | null = null;
 let appUpdaterStatusSnapshot: AppUpdaterStatusSnapshot = {
   state: 'idle',
@@ -8917,6 +8920,16 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     }
   }
 
+  if (commandId === 'system-update-and-reopen') {
+    if (appUpdaterStatusSnapshot.state !== 'downloaded') {
+      void showMemoryStatusBar('error', 'No update ready to install.');
+      return false;
+    }
+    void showMemoryStatusBar('processing', 'Restarting to install update...');
+    restartAndInstallAppUpdate();
+    return true;
+  }
+
   if (commandId === 'system-check-for-updates') {
     try {
       ensureAppUpdaterConfigured();
@@ -10573,13 +10586,31 @@ async function runBackgroundAppUpdaterCheck(): Promise<void> {
   }
 
   try {
-    await checkForAppUpdates();
+    const checkStatus = await checkForAppUpdates();
+    if (checkStatus.state === 'available') {
+      // Silently download the update in the background so it's ready to install.
+      try {
+        await downloadAppUpdate();
+        if (appUpdaterStatusSnapshot.state === 'downloaded') {
+          autoUpdateDownloadedVersion =
+            appUpdaterStatusSnapshot.latestVersion || checkStatus.latestVersion || 'unknown';
+        }
+      } catch {
+        // Non-fatal: the banner will not appear but the app keeps working.
+      }
+    }
   } catch {
     // Keep background checks non-fatal.
   } finally {
     const latestCheckedAt = readAppUpdaterLastCheckedAt();
     scheduleNextAppUpdaterAutoCheck(latestCheckedAt || Date.now());
   }
+}
+
+function isUpdateBannerDismissed(): boolean {
+  const dismissedAt = Number((loadSettings() as any).updateBannerDismissedAt || 0);
+  if (!dismissedAt) return false;
+  return Date.now() - dismissedAt < 3 * 24 * 60 * 60 * 1000;
 }
 
 async function downloadAppUpdate(): Promise<AppUpdaterStatusSnapshot> {
@@ -11034,7 +11065,7 @@ app.whenReady().then(async () => {
     const disabled = new Set(s.disabledCommands || []);
     const enabled = new Set((s as any).enabledCommands || []);
     const aiDisabled = isAIDisabledInSettings(s);
-    return commands.filter((c: any) => {
+    const filtered = commands.filter((c: any) => {
       const commandId = String(c?.id || '');
       if (aiDisabled && isAIDependentSystemCommand(commandId)) return false;
       if (isAISectionDisabledForCommand(commandId, s)) return false;
@@ -11042,6 +11073,31 @@ app.whenReady().then(async () => {
       if (c?.disabledByDefault && !enabled.has(c.id)) return false;
       return true;
     });
+
+    // Prepend the update banner command whenever an update is downloaded and ready —
+    // regardless of whether it came from the background auto-check or a manual trigger.
+    if (appUpdaterStatusSnapshot.state === 'downloaded' && !isUpdateBannerDismissed()) {
+      const version = appUpdaterStatusSnapshot.latestVersion || autoUpdateDownloadedVersion || app.getVersion();
+      const tadaIconDataUrl = `data:image/svg+xml;base64,${Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="tdBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#86efac" stop-opacity="0.7"/><stop offset="1" stop-color="#16a34a" stop-opacity="0.9"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#tdBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.95)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M5.8 11.3 2 22l10.7-3.8"/><path d="M4 3h.01M22 8h.01M15 2h.01M22 20h.01M22 2l-2.5 2.5M8 8l-2.5 2.5"/><path d="m15 7-6.5 6.5"/><path d="m9 13 1.5 1.5"/></g></svg>',
+        'utf8'
+      ).toString('base64')}`;
+      filtered.unshift({
+        id: 'system-update-and-reopen',
+        title: 'Update and Reopen',
+        subtitle: `Version ${version} downloaded and ready to install`,
+        keywords: ['update', 'reopen', 'restart', 'install', 'version', version],
+        category: 'system',
+        iconDataUrl: tadaIconDataUrl,
+        alwaysOnTop: true,
+      });
+    }
+
+    return filtered;
+  });
+
+  ipcMain.handle('dismiss-update-banner', () => {
+    saveSettings({ updateBannerDismissedAt: Date.now() } as any);
   });
 
   ipcMain.handle(
