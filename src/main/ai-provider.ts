@@ -8,8 +8,14 @@ import * as https from 'https';
 import * as http from 'http';
 import type { AISettings } from './settings-store';
 
+export interface AIMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface AIRequestOptions {
   prompt: string;
+  messages?: AIMessage[]; // Full conversation history (excluding the current prompt turn)
   model?: string;
   creativity?: number; // 0-2 temperature
   systemPrompt?: string;
@@ -161,7 +167,7 @@ export async function* streamAI(
       } else if (config.provider === 'ollama' && !config.defaultModel) {
         ollamaModelId = 'llama3';
       }
-      yield* streamOllama(config.ollamaBaseUrl, ollamaModelId, options.prompt, temperature, options.systemPrompt, options.signal);
+      yield* streamOllama(config.ollamaBaseUrl, ollamaModelId, options.prompt, temperature, options.systemPrompt, options.signal, options.messages);
       return;
     }
     // Ollama not reachable — continue with configured provider below.
@@ -171,16 +177,16 @@ export async function* streamAI(
 
   switch (route.provider) {
     case 'openai':
-      yield* streamOpenAI(config.openaiApiKey, route.modelId, options.prompt, temperature, options.systemPrompt, options.signal);
+      yield* streamOpenAI(config.openaiApiKey, route.modelId, options.prompt, temperature, options.systemPrompt, options.signal, options.messages);
       break;
     case 'anthropic':
-      yield* streamAnthropic(config.anthropicApiKey, route.modelId, options.prompt, temperature, options.systemPrompt, options.signal);
+      yield* streamAnthropic(config.anthropicApiKey, route.modelId, options.prompt, temperature, options.systemPrompt, options.signal, options.messages);
       break;
     case 'gemini':
-      yield* streamGemini(config.geminiApiKey, route.modelId, options.prompt, temperature, options.systemPrompt, options.signal);
+      yield* streamGemini(config.geminiApiKey, route.modelId, options.prompt, temperature, options.systemPrompt, options.signal, options.messages);
       break;
     case 'ollama':
-      yield* streamOllama(config.ollamaBaseUrl, route.modelId, options.prompt, temperature, options.systemPrompt, options.signal);
+      yield* streamOllama(config.ollamaBaseUrl, route.modelId, options.prompt, temperature, options.systemPrompt, options.signal, options.messages);
       break;
     case 'openai-compatible':
       yield* streamOpenAICompatible(
@@ -190,7 +196,8 @@ export async function* streamAI(
         options.prompt,
         temperature,
         options.systemPrompt,
-        options.signal
+        options.signal,
+        options.messages
       );
       break;
   }
@@ -204,10 +211,12 @@ async function* streamOpenAI(
   prompt: string,
   temperature: number,
   systemPrompt?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  history?: AIMessage[]
 ): AsyncGenerator<string> {
   const messages: any[] = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  if (history?.length) messages.push(...history);
   messages.push({ role: 'user', content: prompt });
 
   const body = JSON.stringify({
@@ -250,10 +259,12 @@ async function* streamOpenAICompatible(
   prompt: string,
   temperature: number,
   systemPrompt?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  history?: AIMessage[]
 ): AsyncGenerator<string> {
   const messages: any[] = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  if (history?.length) messages.push(...history);
   messages.push({ role: 'user', content: prompt });
 
   const body = JSON.stringify({
@@ -305,12 +316,16 @@ async function* streamAnthropic(
   prompt: string,
   temperature: number,
   systemPrompt?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  history?: AIMessage[]
 ): AsyncGenerator<string> {
+  const turnMessages: any[] = [];
+  if (history?.length) turnMessages.push(...history);
+  turnMessages.push({ role: 'user', content: prompt });
   const body: any = {
     model,
     max_tokens: 4096,
-    messages: [{ role: 'user', content: prompt }],
+    messages: turnMessages,
     stream: true,
   };
   if (temperature !== undefined) body.temperature = temperature;
@@ -351,10 +366,19 @@ async function* streamGemini(
   prompt: string,
   temperature: number,
   systemPrompt?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  history?: AIMessage[]
 ): AsyncGenerator<string> {
+  // Gemini uses 'model' instead of 'assistant' for the assistant role
+  const contents: any[] = [];
+  if (history?.length) {
+    for (const msg of history) {
+      contents.push({ role: msg.role === 'assistant' ? 'model' : 'user', parts: [{ text: msg.content }] });
+    }
+  }
+  contents.push({ role: 'user', parts: [{ text: prompt }] });
   const body: any = {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    contents,
     generationConfig: { temperature },
   };
   if (systemPrompt) {
@@ -396,8 +420,32 @@ async function* streamOllama(
   prompt: string,
   temperature: number,
   systemPrompt?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  history?: AIMessage[]
 ): AsyncGenerator<string> {
+  // Use /api/chat (multi-turn) when history is provided; /api/generate for single-shot prompts
+  if (history?.length) {
+    const chatUrl = new URL('/api/chat', baseUrl);
+    const chatMessages: any[] = [];
+    if (systemPrompt) chatMessages.push({ role: 'system', content: systemPrompt });
+    chatMessages.push(...history);
+    chatMessages.push({ role: 'user', content: prompt });
+    const body: any = { model, messages: chatMessages, stream: true, options: { temperature } };
+    const useHttps = chatUrl.protocol === 'https:';
+    const response = await httpRequest({
+      hostname: chatUrl.hostname,
+      port: chatUrl.port ? parseInt(chatUrl.port) : undefined,
+      path: chatUrl.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+      useHttps,
+    });
+    yield* parseNDJSON(response, (obj) => obj.message?.content || null);
+    return;
+  }
+
   const url = new URL('/api/generate', baseUrl);
 
   const body: any = {

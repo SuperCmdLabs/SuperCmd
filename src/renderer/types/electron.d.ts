@@ -755,7 +755,7 @@ export interface ElectronAPI {
   onMenuBarItemClick: (callback: (data: { extId: string; itemId: string }) => void) => void;
 
   // AI
-  aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }) => Promise<void>;
+  aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string; messages?: Array<{ role: 'user' | 'assistant'; content: string }> }) => Promise<void>;
   aiCancel: (requestId: string) => Promise<void>;
   aiIsAvailable: () => Promise<boolean>;
   onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => void;

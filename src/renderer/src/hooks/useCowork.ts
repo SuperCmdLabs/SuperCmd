@@ -111,18 +111,18 @@ export function useCowork({ setShowCowork }: UseCoworkOptions): UseCoworkReturn 
       setMessages(updatedMessages);
       setCurrentInput('');
 
-      // Format conversation history into a single prompt string
-      const prompt = updatedMessages
-        .map((m) => `${m.role === 'user' ? 'Human' : 'Assistant'}: ${m.content}`)
-        .join('\n\n') + '\n\nAssistant:';
+      // Pass history (all turns except the current user message) so providers
+      // can use native multi-turn APIs (e.g. Ollama /api/chat, OpenAI messages[]).
+      const history = updatedMessages.slice(0, -1);
 
       const requestId = `cowork-${Date.now()}`;
       requestIdRef.current = requestId;
       streamingRef.current = true;
       setIsStreaming(true);
 
-      window.electron.aiAsk(requestId, prompt, {
+      window.electron.aiAsk(requestId, userMessage.content, {
         systemPrompt: COWORK_SYSTEM_PROMPT,
+        messages: history.length > 0 ? history : undefined,
       });
     },
     [messages],

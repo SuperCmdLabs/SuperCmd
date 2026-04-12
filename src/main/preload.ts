@@ -748,7 +748,7 @@ contextBridge.exposeInMainWorld('electron', {
   },
 
   // ─── AI ────────────────────────────────────────────────────────
-  aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }): Promise<void> =>
+  aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string; messages?: Array<{ role: 'user' | 'assistant'; content: string }> }): Promise<void> =>
     ipcRenderer.invoke('ai-ask', requestId, prompt, options),
   aiCancel: (requestId: string): Promise<void> =>
     ipcRenderer.invoke('ai-cancel', requestId),

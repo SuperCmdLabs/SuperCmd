@@ -13435,7 +13435,7 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle(
     'ai-ask',
-    async (event: any, requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }) => {
+    async (event: any, requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string; messages?: Array<{ role: 'user' | 'assistant'; content: string }> }) => {
       const s = loadSettings();
       if (s.ai?.llmEnabled === false) {
         event.sender.send('ai-stream-error', { requestId, error: 'LLM is disabled in Settings → AI.' });
@@ -13461,6 +13461,7 @@ if let tiff = image?.tiffRepresentation {
 
         const gen = streamAI(s.ai, {
           prompt,
+          messages: options?.messages,
           model: options?.model,
           creativity: options?.creativity,
           systemPrompt: mergedSystemPrompt || undefined,
