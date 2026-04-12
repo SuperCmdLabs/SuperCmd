@@ -5012,21 +5012,10 @@ async function getSelectedTextForSpeak(options?: { allowClipboardFallback?: bool
       const { execFile } = require('child_process');
       const { promisify } = require('util');
       const execFileAsync = promisify(execFile);
-      const script = `
-        tell application "System Events"
-          try
-            set frontApp to first application process whose frontmost is true
-            set focusedElement to value of attribute "AXFocusedUIElement" of frontApp
-            if focusedElement is missing value then return ""
-            set selectedText to value of attribute "AXSelectedText" of focusedElement
-            return selectedText
-          on error
-            return ""
-          end try
-        end tell
-      `;
-      const { stdout } = await execFileAsync('/usr/bin/osascript', ['-e', script]);
-      markSystemEventsPermissionGranted();
+      // Use the native get-selected-text binary (AXUIElement direct calls, ~5-10 ms)
+      // instead of osascript (~50-200 ms + System Events permission dialog risk).
+      const binaryPath = getNativeBinaryPath('get-selected-text');
+      const { stdout } = await execFileAsync(binaryPath, [], { timeout: 500 });
       return String(stdout || '').trim();
     } catch {
       return '';
@@ -6991,10 +6980,11 @@ function computePromptWindowBounds(
 }
 
 function getDefaultPromptWindowBounds(): { x: number; y: number; width: number; height: number } {
-  const area = screen.getPrimaryDisplay().workArea;
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const area = display?.workArea || screen.getPrimaryDisplay().workArea;
   return {
     x: area.x + Math.floor((area.width - CURSOR_PROMPT_WINDOW_WIDTH) / 2),
-    y: area.y + Math.floor(area.height * 0.28),
+    y: area.y + Math.floor((area.height - CURSOR_PROMPT_WINDOW_HEIGHT) / 2),
     width: CURSOR_PROMPT_WINDOW_WIDTH,
     height: CURSOR_PROMPT_WINDOW_HEIGHT,
   };
@@ -7059,7 +7049,7 @@ function showPromptWindow(
     createPromptWindow(getDefaultPromptWindowBounds());
   }
   if (!promptWindow) return;
-  const bounds = computePromptWindowBounds(preCapturedCaretRect, preCapturedInputRect);
+  const bounds = getDefaultPromptWindowBounds();
   promptWindow.setBounds(bounds);
   promptWindow.show();
   promptWindow.focus();
@@ -7532,13 +7522,13 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     await captureWindowManagementTargetWindow();
     launcherEntryWindowManagementTargetWindowId = String(windowManagementTargetWindowId || '').trim() || null;
     launcherEntryWindowManagementTargetWorkArea = cloneWorkArea(windowManagementTargetWorkArea);
-    // Capture the current selection via AX first; fall back to a synthetic
-    // Cmd+C if AX returns nothing.  The original app is still frontmost here
-    // (the launcher window hasn't been shown yet), so the Cmd+C reaches the
-    // right target.  clipboardWaitMs is short (90 ms) and the clipboard is
-    // restored afterwards, so this has no user-visible side effects.
-    // The promise runs in the background — the launcher appears immediately.
-    selectionSnapshotPromise = captureSelectionSnapshotBeforeShow({ allowClipboardFallback: true });
+    // AX-only selection capture on window open: avoid clipboard fallback
+    // (synthetic Cmd+C) here because the promise is not awaited — by the
+    // time the AX check completes (~50 ms osascript spawn), mainWindow.show()
+    // has already run and the launcher is frontmost.  The synthetic Cmd+C
+    // would therefore land in the launcher's own input rather than the
+    // original app, interfering with immediate typing.
+    selectionSnapshotPromise = captureSelectionSnapshotBeforeShow({ allowClipboardFallback: false });
   } else {
     launcherEntryFrontmostApp = null;
     launcherEntryWindowManagementTargetWindowId = null;
