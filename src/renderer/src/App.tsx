@@ -1365,9 +1365,13 @@ const App: React.FC = () => {
     [contextualCommands, searchQuery, commandAliases]
   );
 
-  // When calculator is showing but no commands match, show unfiltered list below
+  // When calculator is showing but no commands match, show unfiltered list below.
+  // alwaysOnTop commands are always present in filteredCommands regardless of query,
+  // so exclude them from the "nothing matched" check.
   const sourceCommands =
-    calcResult && filteredCommands.length === 0 ? contextualCommands : filteredCommands;
+    calcResult && filteredCommands.filter((c) => !c.alwaysOnTop).length === 0
+      ? contextualCommands
+      : filteredCommands;
   const hiddenListOnlyCommandIds = useMemo(
     () => new Set(['system-add-to-memory', 'system-cursor-prompt']),
     []

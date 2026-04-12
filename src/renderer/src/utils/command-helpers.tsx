@@ -185,7 +185,8 @@ export function filterCommands(
   const normalizedQuery = normalizeSearchText(query);
 
   // Always-on-top commands (e.g. update banner) are pinned above the list
-  // regardless of the search query.
+  // when there is no active query. With a query they are scored normally and
+  // only shown if they match — but always sorted before other results.
   const alwaysOnTop = commands.filter((c) => c.alwaysOnTop);
   const rest = commands.filter((c) => !c.alwaysOnTop);
 
@@ -195,7 +196,7 @@ export function filterCommands(
 
   const queryTerms = tokenizeSearchText(normalizedQuery);
 
-  const scored = rest
+  const scored = commands
     .map((cmd) => {
       const title = normalizeSearchText(cmd.title);
       const subtitle = normalizeSearchText(String(cmd.subtitle || ''));
@@ -275,7 +276,9 @@ export function filterCommands(
       return a.title.localeCompare(b.title);
     });
 
-  return [...alwaysOnTop, ...scored.map(({ cmd }) => cmd)];
+  const matchedTop = scored.filter(({ cmd }) => cmd.alwaysOnTop).map(({ cmd }) => cmd);
+  const matchedRest = scored.filter(({ cmd }) => !cmd.alwaysOnTop).map(({ cmd }) => cmd);
+  return [...matchedTop, ...matchedRest];
 }
 
 /**
