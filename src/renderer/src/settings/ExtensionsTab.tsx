@@ -142,8 +142,10 @@ const ExtensionsTab: React.FC<{
   const [folderBusy, setFolderBusy] = useState(false);
   const [showTopActionsMenu, setShowTopActionsMenu] = useState(false);
   const [oauthTokens, setOauthTokens] = useState<Record<string, { accessToken: string; provider: string } | null>>({});
+  const [compactToolbar, setCompactToolbar] = useState(false);
   const topActionsMenuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const toolbarRowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -157,6 +159,16 @@ const ExtensionsTab: React.FC<{
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
+  useEffect(() => {
+    const el = toolbarRowRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setCompactToolbar(entry.contentRect.width < 520);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   const loadData = useCallback(async () => {
@@ -870,7 +882,7 @@ const ExtensionsTab: React.FC<{
       <div className="flex flex-1 min-h-0 bg-[var(--settings-panel-bg)]">
         <div className="flex-[0_0_66%] min-w-[600px] h-full border-r border-[var(--ui-divider)] flex flex-col">
           <div className="px-3 py-2 border-b border-[var(--ui-divider)]">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" ref={toolbarRowRef}>
               <div className="relative w-[360px] max-w-full shrink-0">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-subtle)]" />
                 <input
@@ -902,11 +914,12 @@ const ExtensionsTab: React.FC<{
               <div className="relative" ref={topActionsMenuRef}>
                 <button
                   onClick={() => setShowTopActionsMenu((prev) => !prev)}
+                  title={compactToolbar ? t('settings.extensions.installExtension') : undefined}
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[var(--accent-soft)] border border-[var(--accent)] text-[var(--accent)] hover:brightness-95 transition-colors whitespace-nowrap"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>{t('settings.extensions.installExtension')}</span>
-                  <ChevronDown className="w-3.5 h-3.5" />
+                  {!compactToolbar && <span>{t('settings.extensions.installExtension')}</span>}
+                  {!compactToolbar && <ChevronDown className="w-3.5 h-3.5" />}
                 </button>
                 {showTopActionsMenu ? (
                   <div
