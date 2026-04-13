@@ -294,55 +294,58 @@ else:
 # ══════════════════════════════════════════════════════════════════════════════
 # Part 3: Inject relevant past skills into _handle_build_command prompt
 # ══════════════════════════════════════════════════════════════════════════════
-# Find run_build(task, ...) inside _handle_build_command only.
-# _rerun_build uses run_build(_full_task, ...) so anchoring on 'task,' is safe.
+# Strategy: find "run_build(task" inside _handle_build_command, read the actual
+# line indentation from the source (don't guess it), and INSERT BEFORE that line
+# without replacing it.  We rebind `task` before the call, so run_build(task, ...)
+# will receive the enriched context automatically.
+# This avoids all indentation detection issues from using f-strings.
 
-# Locate _handle_build_command function boundary
 _hbc_start = s.find('\ndef _handle_build_command(')
 if _hbc_start == -1:
     _hbc_start = s.find('def _handle_build_command(')
 
+_injected3 = False
 if _hbc_start != -1:
     _hbc_nxt = re.search(r'\ndef [a-zA-Z_]|\nclass [a-zA-Z_]', s[_hbc_start + 1:])
     _hbc_end = (_hbc_start + 1 + _hbc_nxt.start()) if _hbc_nxt else len(s)
     _hbc_body = s[_hbc_start:_hbc_end]
 
-    # Try several call forms that _handle_build_command might use
-    _run_build_forms = [
-        "    state = run_build(task, progress_cb=_progress)\n",
-        "    state = run_build(task)\n",
-        "        state = run_build(task, progress_cb=_progress)\n",
-        "        state = run_build(task)\n",
-    ]
-    _injected3 = False
-    for _rbf in _run_build_forms:
-        if _rbf in _hbc_body:
-            _indent3 = _rbf[: len(_rbf) - len(_rbf.lstrip())]
-            NEW_RUN_BUILD = (
-                f"{_indent3}# Inject relevant past skills as prompt context\n"
-                f"{_indent3}_sk_refs = _search_skills(task)\n"
-                f"{_indent3}if _sk_refs:\n"
-                f"{_indent3}    _sk_hdr = ['Past skills that may be relevant:']\n"
-                f"{_indent3}    for _sk_r in _sk_refs:\n"
-                f"{_indent3}        _sk_hdr.append(\n"
-                f"{_indent3}            f'  [{{_sk_r[\"name\"]}}] {{_sk_r.get(\"description\", \"\")[:120]}}'\n"
-                f"{_indent3}        )\n"
-                f"{_indent3}        if _sk_r.get('code_summary'):\n"
-                f"{_indent3}            _sk_hdr.append(f'    {{_sk_r[\"code_summary\"][:250]}}')\n"
-                f"{_indent3}    _task_ctx = '\\n'.join(_sk_hdr) + '\\n\\nTask: ' + task\n"
-                f"{_indent3}else:\n"
-                f"{_indent3}    _task_ctx = task\n"
-                + _rbf.replace('run_build(task', 'run_build(_task_ctx')
-            )
-            _hbc_body_new = _hbc_body.replace(_rbf, NEW_RUN_BUILD, 1)
-            s = s[:_hbc_start] + _hbc_body_new + s[_hbc_end:]
-            print(f'Part 3: _handle_build_command injects top-3 relevant skills into task context')
-            _injected3 = True
-            break
+    # Find "run_build(task" (not run_build(_full_task) from _rerun_build)
+    _rb_pos = _hbc_body.find('run_build(task')
+    if _rb_pos != -1:
+        # Walk back to the start of this line
+        _line_start_in_body = _hbc_body.rfind('\n', 0, _rb_pos) + 1
+        # Read the actual indentation chars from the line
+        _raw_line = _hbc_body[_line_start_in_body:]
+        _ind3 = _raw_line[:len(_raw_line) - len(_raw_line.lstrip())]
 
-    if not _injected3:
-        print('Part 3 WARNING: run_build(task, ...) pattern not found inside _handle_build_command')
-        print('  Skill context injection not added — run_build will receive the raw task as-is')
+        # Build the injection using plain string concat — no f-strings, no {{}}
+        _I  = _ind3        # base indent (matches run_build call)
+        _I1 = _ind3 + '    '   # +4 for if-body
+        _I2 = _ind3 + '        '  # +8 for for-body
+
+        SKILL_INJ = (
+            _I  + "# ── Inject relevant past skills as prompt context ─────────────────────\n"
+            + _I  + "_sk_refs_p3 = _search_skills(task)\n"
+            + _I  + "if _sk_refs_p3:\n"
+            + _I1 + "_sk_hdr_p3 = ['Past skills that may be relevant:']\n"
+            + _I1 + "for _sk_r_p3 in _sk_refs_p3:\n"
+            + _I2 + "_sk_d_p3 = _sk_r_p3.get('description', '')[:120]\n"
+            + _I2 + "_sk_hdr_p3.append('  [' + _sk_r_p3['name'] + '] ' + _sk_d_p3)\n"
+            + _I2 + "if _sk_r_p3.get('code_summary'):\n"
+            + _I2 + "    _sk_hdr_p3.append('    ' + _sk_r_p3['code_summary'][:250])\n"
+            + _I1 + "task = '\\n'.join(_sk_hdr_p3) + '\\n\\nTask: ' + task\n"
+            + _I  + "# ── End skill injection ─────────────────────────────────────────────\n"
+        )
+
+        # Insert before the run_build line (absolute position in s)
+        _abs_line_start = _hbc_start + _line_start_in_body
+        s = s[:_abs_line_start] + SKILL_INJ + s[_abs_line_start:]
+        print('Part 3: skill context inserted before run_build(task in _handle_build_command')
+        _injected3 = True
+    else:
+        print('Part 3 WARNING: run_build(task not found inside _handle_build_command')
+        print('  Skills will NOT be auto-injected into future !build prompts')
 else:
     print('Part 3 WARNING: _handle_build_command not found — skill injection skipped')
 
