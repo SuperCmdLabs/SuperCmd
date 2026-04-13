@@ -381,62 +381,55 @@ else:
 # ══════════════════════════════════════════════════════════════════════════════
 # Find the main message processing — look for where we call query_ollama on
 # the incoming message and insert a prefix check before it.
-BUILD_DISPATCH = '''\
-        # ── LangGraph build command ───────────────────────────────────────────
-        if text.lower().startswith('!build ') or text.lower().startswith('!task '):
-            _task_desc = text.split(' ', 1)[1].strip()
-            if _task_desc:
-                import threading as _bth
-                _bth.Thread(
-                    target=_handle_build_command,
-                    args=(_task_desc, sender),
-                    daemon=True,
-                    name='langgraph-build',
-                ).start()
-                continue
-'''
+# Anchor: insert !build check right after the /help command's continue,
+# matching the 16-space indent used in the main message loop.
+# The /help block ends with:
+#                     send_imessage(REPLY_TO, help_msg)
+#                     continue
+BUILD_DISPATCH = (
+    '                # ── !build / !task LangGraph command ──────────────────\n'
+    '                if text.lower().startswith(\'!build \') or text.lower().startswith(\'!task \'):\n'
+    '                    _task_desc = text.split(\' \', 1)[1].strip()\n'
+    '                    if _task_desc:\n'
+    '                        import threading as _bth\n'
+    '                        _bth.Thread(\n'
+    '                            target=_handle_build_command,\n'
+    '                            args=(_task_desc, REPLY_TO),\n'
+    '                            daemon=True,\n'
+    '                            name=\'langgraph-build\',\n'
+    '                        ).start()\n'
+    '                        continue\n'
+)
 
 import re as _re
 
-# Look for the main message loop — find where 'text' and 'sender' are used with query_ollama
-# Strategy: find the processing loop body and insert before the query_ollama call
 patched_dispatch = False
 
-# Common pattern: right after dedup / URL skip checks, before calling the LLM
-# Look for a block that has 'msgs = [' or 'query_ollama(msgs' after extracting text
-anchors4 = [
-    # After the URL skip check
-    "            continue  # URL skip\n",
-    # After dedup continue
-    "            print('[dedup] Skipping already-replied message', flush=True)\n            continue\n",
-    # Generic: before 'msgs = ['
-]
+# Primary anchor: after /help block's send+continue (16-space indent)
+HELP_ANCHOR = '                    send_imessage(REPLY_TO, help_msg)\n                    continue\n'
+if HELP_ANCHOR in s:
+    idx = s.find(HELP_ANCHOR)
+    insert_pos = idx + len(HELP_ANCHOR)
+    s = s[:insert_pos] + BUILD_DISPATCH + s[insert_pos:]
+    print('Part 4: !build dispatch wired after /help continue')
+    patched_dispatch = True
 
-for anc in anchors4:
-    if anc in s:
-        # Insert our dispatch after the last dedup/skip continue
-        # Find the last occurrence near the message processing loop
-        idx = s.rfind(anc)
-        insert_pos = idx + len(anc)
+if not patched_dispatch:
+    # Fallback: after /reset block's continue
+    RESET_ANCHOR = '                    send_imessage(REPLY_TO, "\u2705 Conversation cleared.")\n                    continue\n'
+    if RESET_ANCHOR in s:
+        idx = s.find(RESET_ANCHOR)
+        insert_pos = idx + len(RESET_ANCHOR)
         s = s[:insert_pos] + BUILD_DISPATCH + s[insert_pos:]
-        print(f'Part 4: !build dispatch wired after "{anc[:50].strip()}"')
-        patched_dispatch = True
-        break
-
-if not patched_dispatch:
-    # Try inserting before the first query_ollama call in the message loop
-    # Find the main processing section
-    m = _re.search(r'\n(\s+)msgs\s*=\s*\[', s)
-    if m:
-        indent = m.group(1)
-        insert_pos = m.start()
-        s = s[:insert_pos] + '\n' + BUILD_DISPATCH + s[insert_pos:]
-        print('Part 4: !build dispatch wired before msgs = [ (regex)')
+        print('Part 4: !build dispatch wired after /reset continue (fallback)')
         patched_dispatch = True
 
 if not patched_dispatch:
-    print('Part 4 WARNING: could not find insertion point for !build dispatch')
-    print('  You may need to add the command check manually')
+    print('Part 4 WARNING: could not find /help or /reset anchor')
+    print('  Showing lines around dedup skip for manual diagnosis:')
+    idx = s.find('[dedup] Skipping already-replied message')
+    if idx != -1:
+        print(repr(s[idx-20:idx+200]))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
