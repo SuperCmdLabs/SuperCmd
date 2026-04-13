@@ -307,6 +307,7 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
         <div
           ref={ref}
           tabIndex={0}
+          data-hotkey-recorder=""
           onClick={() => setIsRecording(true)}
           onBlur={() => {
             clearPendingPrimary();
@@ -369,6 +370,7 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
     <div
       ref={ref}
       tabIndex={0}
+      data-hotkey-recorder=""
       onClick={() => setIsRecording(true)}
       onBlur={() => {
         clearPendingPrimary();

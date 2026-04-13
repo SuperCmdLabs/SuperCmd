@@ -153,6 +153,8 @@ const ExtensionsTab: React.FC<{
       if (!isCmdF) return;
       const target = event.target as HTMLElement | null;
       if (target === searchInputRef.current) return;
+      // Don't steal focus while a HotkeyRecorder is capturing input
+      if (target?.closest('[data-hotkey-recorder]')) return;
       event.preventDefault();
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
