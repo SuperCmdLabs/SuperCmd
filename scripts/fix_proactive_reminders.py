@@ -393,56 +393,55 @@ if not inserted_cmds:
 # ══════════════════════════════════════════════════════════════════════════════
 # Part 6: Wire _check_reminders() into _scheduler_loop
 # ══════════════════════════════════════════════════════════════════════════════
-# The scheduler loop sleeps 60s then processes jobs.  We call _check_reminders()
-# at the top of the try block each tick, before job processing.
+# The scheduler loop: while True: → sleep(60) → try: → state = _load_job_state()
+# We insert _check_reminders() as the first statement inside the try block,
+# or right after the sleep() call if no try block is found.
 #
-# Anchor pattern (from fix_scheduler.py):
-#   while True:
-#       _tsched.sleep(60)
-#       try:
-#           state = _load_job_state()
-#
-# We insert _check_reminders() right after the try: line.
+# Both strategies bound the search to _scheduler_loop's function body only
+# to avoid accidentally matching try: blocks in other functions.
 
-SCHED_ANCHOR = '        try:\n            state = _load_job_state()'
-SCHED_WITH_REMINDERS = (
-    '        try:\n'
-    '            _check_reminders()  # fire any due proactive reminders\n'
-    '            state = _load_job_state()'
-)
+_p6_done = False
 
-if SCHED_ANCHOR in s:
-    s = s.replace(SCHED_ANCHOR, SCHED_WITH_REMINDERS, 1)
-    print('Part 6: _check_reminders() wired into _scheduler_loop tick')
-else:
-    # Fallback: find _scheduler_loop and insert _check_reminders() in its while True body
-    sched_fn_idx = s.find('def _scheduler_loop(')
-    if sched_fn_idx != -1:
-        # Find the while True: inside the function
-        while_idx = s.find('    while True:', sched_fn_idx)
-        if while_idx != -1:
-            # Find the next line after while True:
-            after_while = s.find('\n', while_idx) + 1
-            # Find the first try: or sleep() inside the while
-            next_sleep = s.find('sleep(', after_while)
-            next_try   = s.find('try:', after_while)
-            # Insert after the sleep line (end of sleep line)
-            if next_sleep != -1 and (next_try == -1 or next_sleep < next_try):
-                sleep_line_end = s.find('\n', next_sleep) + 1
-                # Determine indent from the sleep line
-                sleep_line_start = s.rfind('\n', 0, next_sleep) + 1
-                ind = s[sleep_line_start:next_sleep]
-                ind = ind[:len(ind) - len(ind.lstrip())]
-                insertion = f'{ind}try:\n{ind}    _check_reminders()\n{ind}except Exception as _cre:\n{ind}    print(f\'[reminders] check error: {{_cre}}\', flush=True)\n'
-                s = s[:sleep_line_end] + insertion + s[sleep_line_end:]
-                print('Part 6: _check_reminders() wired into _scheduler_loop (fallback — after sleep)')
-            else:
-                print('Part 6 WARNING: could not wire _check_reminders() — patch manually')
-        else:
-            print('Part 6 WARNING: _scheduler_loop has no while True — patch manually')
-    else:
-        print('Part 6 WARNING: _scheduler_loop not found — _check_reminders() not wired')
-        print('  → Add "_check_reminders()" inside the scheduler loop manually')
+_fn6_idx = s.find('def _scheduler_loop(')
+if _fn6_idx != -1:
+    # Bound search to just this function: find next top-level def/class after it
+    _next_tl6 = re.search(r'\ndef [a-zA-Z_]|\nclass [a-zA-Z_]', s[_fn6_idx + 20:])
+    _fn6_end  = _fn6_idx + 20 + _next_tl6.start() if _next_tl6 else len(s)
+    _sched6   = s[_fn6_idx:_fn6_end]
+
+    # ── Strategy A: insert as first statement inside the try block ────────────
+    # Match `try:` with at least 6 spaces indent (ensures it's inside a function)
+    _try6_pat = re.compile(r'^([ \t]{6,})try:[ \t]*\n', re.MULTILINE)
+    _m_try6   = _try6_pat.search(_sched6)
+    if _m_try6:
+        # Absolute position in s right after 'try:\n'
+        _try_body_abs = _fn6_idx + _m_try6.end()
+        # Detect actual body indentation from the first non-blank line inside try
+        _body_m6  = re.match(r'([ \t]+)\S', s[_try_body_abs:])
+        _body_ind6 = _body_m6.group(1) if _body_m6 else (_m_try6.group(1) + '    ')
+        s = (s[:_try_body_abs]
+             + f'{_body_ind6}_check_reminders()  # fire any due proactive reminders\n'
+             + s[_try_body_abs:])
+        print('Part 6: _check_reminders() wired into _scheduler_loop try block')
+        _p6_done = True
+
+    if not _p6_done:
+        # ── Strategy B: insert _check_reminders() right after sleep() call ───
+        _slp6_pat = re.compile(r'^([ \t]+)[^\n]*\.sleep\(\d+\)', re.MULTILINE)
+        _m_slp6   = _slp6_pat.search(_sched6)
+        if _m_slp6:
+            _slp_ind6 = _m_slp6.group(1)
+            _slp_abs6 = _fn6_idx + _m_slp6.end()
+            _eol6     = s.find('\n', _slp_abs6) + 1
+            s = (s[:_eol6]
+                 + f'{_slp_ind6}_check_reminders()  # fire any due proactive reminders\n'
+                 + s[_eol6:])
+            print('Part 6: _check_reminders() wired into _scheduler_loop (after sleep)')
+            _p6_done = True
+
+if not _p6_done:
+    print('Part 6 WARNING: could not wire _check_reminders() — add manually to _scheduler_loop')
+    print('  → Insert "_check_reminders()" inside the while True: body of _scheduler_loop()')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
