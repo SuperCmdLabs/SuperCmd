@@ -948,7 +948,13 @@ async function discoverApplications(): Promise<CommandInfo[]> {
         }
 
         const rawName = path.basename(appPath, '.app');
-        const name = canonicalAppTitle(rawName);
+        const fallbackDisplayName = String(info?.CFBundleDisplayName || info?.CFBundleName || '').trim();
+        const localizedDisplayName = await resolveLocalizedBundleDisplayName(
+          appPath,
+          'CFBundleDisplayName',
+          'CFBundleName'
+        );
+        const name = canonicalAppTitle(localizedDisplayName || fallbackDisplayName || rawName);
         const bundleId =
           typeof info?.CFBundleIdentifier === 'string'
             ? info.CFBundleIdentifier
