@@ -393,50 +393,46 @@ if not inserted_cmds:
 # ══════════════════════════════════════════════════════════════════════════════
 # Part 6: Wire _check_reminders() into _scheduler_loop
 # ══════════════════════════════════════════════════════════════════════════════
-# The scheduler loop: while True: → sleep(60) → try: → state = _load_job_state()
-# We insert _check_reminders() as the first statement inside the try block,
-# or right after the sleep() call if no try block is found.
-#
-# Both strategies bound the search to _scheduler_loop's function body only
-# to avoid accidentally matching try: blocks in other functions.
+# fix_scheduler.py produced exactly:
+#     while True:
+#         _tsched.sleep(60)
+#         try:
+#             state = _load_job_state()
+# We insert _check_reminders() right before the sleep() call so it runs
+# at the top of every scheduler tick.  A simple text substitution is the
+# most reliable approach — _tsched.sleep(60) is unique in the file.
 
 _p6_done = False
 
-_fn6_idx = s.find('def _scheduler_loop(')
-if _fn6_idx != -1:
-    # Bound search to just this function: find next top-level def/class after it
-    _next_tl6 = re.search(r'\ndef [a-zA-Z_]|\nclass [a-zA-Z_]', s[_fn6_idx + 20:])
-    _fn6_end  = _fn6_idx + 20 + _next_tl6.start() if _next_tl6 else len(s)
-    _sched6   = s[_fn6_idx:_fn6_end]
+# ── Primary: exact text match (handles any prior insertions safely) ───────────
+# Build the sleep anchor dynamically from what's actually in the file so we
+# match the correct indentation even if the scheduler was inserted differently.
+_slp_re6 = re.search(r'^([ \t]+)_tsched\.sleep\(\d+\)', s, re.MULTILINE)
+if _slp_re6:
+    _slp_ind6   = _slp_re6.group(1)          # e.g. '        ' (8 spaces)
+    _slp_line6  = _slp_re6.group(0)           # e.g. '        _tsched.sleep(60)'
+    _check_line = f'{_slp_ind6}_check_reminders()  # fire any due proactive reminders'
+    # Insert our line immediately before the sleep line (replace first occurrence)
+    s = s.replace(
+        _slp_line6,
+        f'{_check_line}\n{_slp_line6}',
+        1,
+    )
+    print('Part 6: _check_reminders() wired into _scheduler_loop (before sleep)')
+    _p6_done = True
 
-    # ── Strategy A: insert as first statement inside the try block ────────────
-    # Match `try:` with at least 6 spaces indent (ensures it's inside a function)
-    _try6_pat = re.compile(r'^([ \t]{6,})try:[ \t]*\n', re.MULTILINE)
-    _m_try6   = _try6_pat.search(_sched6)
-    if _m_try6:
-        # Absolute position in s right after 'try:\n'
-        _try_body_abs = _fn6_idx + _m_try6.end()
-        # Detect actual body indentation from the first non-blank line inside try
-        _body_m6  = re.match(r'([ \t]+)\S', s[_try_body_abs:])
-        _body_ind6 = _body_m6.group(1) if _body_m6 else (_m_try6.group(1) + '    ')
-        s = (s[:_try_body_abs]
-             + f'{_body_ind6}_check_reminders()  # fire any due proactive reminders\n'
-             + s[_try_body_abs:])
-        print('Part 6: _check_reminders() wired into _scheduler_loop try block')
-        _p6_done = True
-
-    if not _p6_done:
-        # ── Strategy B: insert _check_reminders() right after sleep() call ───
-        _slp6_pat = re.compile(r'^([ \t]+)[^\n]*\.sleep\(\d+\)', re.MULTILINE)
-        _m_slp6   = _slp6_pat.search(_sched6)
-        if _m_slp6:
-            _slp_ind6 = _m_slp6.group(1)
-            _slp_abs6 = _fn6_idx + _m_slp6.end()
-            _eol6     = s.find('\n', _slp_abs6) + 1
-            s = (s[:_eol6]
-                 + f'{_slp_ind6}_check_reminders()  # fire any due proactive reminders\n'
-                 + s[_eol6:])
-            print('Part 6: _check_reminders() wired into _scheduler_loop (after sleep)')
+if not _p6_done:
+    # ── Fallback: generic .sleep(\d+) inside _scheduler_loop ─────────────────
+    _fn6_idx = s.find('def _scheduler_loop(')
+    if _fn6_idx != -1:
+        _slp6_any = re.search(r'^([ \t]+)[^\n]*\.sleep\(\d+\)', s[_fn6_idx:], re.MULTILINE)
+        if _slp6_any:
+            _ind6  = _slp6_any.group(1)
+            _abs6  = _fn6_idx + _slp6_any.start()
+            s = (s[:_abs6]
+                 + f'{_ind6}_check_reminders()  # fire any due proactive reminders\n'
+                 + s[_abs6:])
+            print('Part 6: _check_reminders() wired into _scheduler_loop (generic sleep fallback)')
             _p6_done = True
 
 if not _p6_done:
@@ -459,6 +455,18 @@ if r.returncode == 0:
     print('  !reminders                         → list pending reminders')
 else:
     print(f'\nSYNTAX ERROR:\n{r.stderr}')
+    # Print context around the error line to help debug
+    import re as _dbgre
+    _line_m = _dbgre.search(r'line (\d+)', r.stderr)
+    if _line_m:
+        _errline = int(_line_m.group(1))
+        _lines = s.splitlines()
+        _lo, _hi = max(0, _errline - 5), min(len(_lines), _errline + 3)
+        print(f'\n--- bridge.py lines {_lo+1}–{_hi} (around error) ---')
+        for _i, _l in enumerate(_lines[_lo:_hi], _lo + 1):
+            _marker = ' >>>' if _i == _errline else '    '
+            print(f'{_marker} {_i:4d}: {_l}')
+        print('--- end context ---')
     open(BRIDGE, 'w').write(orig)
     print('Restored original bridge.py — no changes applied')
     sys.exit(1)
