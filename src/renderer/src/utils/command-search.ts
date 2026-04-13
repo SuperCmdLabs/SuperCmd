@@ -1,6 +1,8 @@
+import { pinyin } from 'pinyin-pro';
 import type { CommandInfo } from '../../types/electron';
 
 const SEARCH_TOKEN_SPLIT_REGEX = /[^\p{L}\p{N}]+/gu;
+const HAN_CHARACTER_REGEX = /\p{Script=Han}/u;
 
 type SearchCandidate = {
   token: string;
@@ -34,6 +36,39 @@ function normalizeSearchText(value: string): string {
 function tokenizeSearchText(value: string): string[] {
   const normalized = normalizeSearchText(value);
   return normalized ? normalized.split(/\s+/).filter(Boolean) : [];
+}
+
+function compactSearchText(value: string): string {
+  return normalizeSearchText(value).replace(/\s+/g, '');
+}
+
+function buildPinyinSearchTokens(value: string): string[] {
+  const text = String(value || '').trim();
+  if (!text || !HAN_CHARACTER_REGEX.test(text)) return [];
+
+  const full = compactSearchText(
+    pinyin(text, { toneType: 'none', type: 'array' }).join('')
+  );
+  const initials = compactSearchText(
+    pinyin(text, { toneType: 'none', pattern: 'first', type: 'array' }).join('')
+  );
+
+  const tokens = new Set<string>();
+  if (full) tokens.add(full);
+  if (initials) tokens.add(initials);
+  return Array.from(tokens);
+}
+
+function dedupeSearchCandidates(candidates: SearchCandidate[]): SearchCandidate[] {
+  const byToken = new Map<string, SearchCandidate>();
+  for (const candidate of candidates) {
+    if (!candidate.token) continue;
+    const existing = byToken.get(candidate.token);
+    if (!existing || candidate.weight > existing.weight) {
+      byToken.set(candidate.token, candidate);
+    }
+  }
+  return Array.from(byToken.values());
 }
 
 function isSubsequenceMatch(needle: string, haystack: string): boolean {
@@ -137,16 +172,24 @@ export function buildCommandSearchIndex(
       const subtitle = normalizeSearchText(String(cmd.subtitle || ''));
       const normalizedAlias = normalizeSearchText(aliasLookup[cmd.id] || '');
       const aliasTokens = normalizedAlias ? tokenizeSearchText(normalizedAlias) : [];
+      const aliasPinyinTokens = buildPinyinSearchTokens(aliasLookup[cmd.id] || '');
       const keywordTokens = (cmd.keywords || []).flatMap((keyword) => tokenizeSearchText(keyword));
+      const keywordPinyinTokens = (cmd.keywords || []).flatMap((keyword) => buildPinyinSearchTokens(keyword));
       const titleTokens = tokenizeSearchText(cmd.title);
+      const titlePinyinTokens = buildPinyinSearchTokens(cmd.title);
       const subtitleTokens = tokenizeSearchText(String(cmd.subtitle || ''));
+      const subtitlePinyinTokens = buildPinyinSearchTokens(String(cmd.subtitle || ''));
 
-      const candidates: SearchCandidate[] = [
+      const candidates = dedupeSearchCandidates([
         ...aliasTokens.map((token) => ({ token, weight: 1.08 })),
+        ...aliasPinyinTokens.map((token) => ({ token, weight: 1.04 })),
         ...titleTokens.map((token) => ({ token, weight: 1 })),
+        ...titlePinyinTokens.map((token) => ({ token, weight: 0.98 })),
         ...keywordTokens.map((token) => ({ token, weight: 0.92 })),
+        ...keywordPinyinTokens.map((token) => ({ token, weight: 0.9 })),
         ...subtitleTokens.map((token) => ({ token, weight: 0.76 })),
-      ];
+        ...subtitlePinyinTokens.map((token) => ({ token, weight: 0.72 })),
+      ]);
 
       if (candidates.length === 0) {
         return null;
