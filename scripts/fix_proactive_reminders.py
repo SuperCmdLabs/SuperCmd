@@ -355,34 +355,53 @@ REMIND_DISPATCH = '''\
 '''
 
 # ── Find insertion point: just before the !build dispatch ──────────────────
-# The !build block starts with one of these recognisable anchors.
+# The !build block pattern changes depending on which fix scripts were applied:
+#   Original form (fix_langgraph.py):  text.strip().lower().startswith('!build')
+#   After fix_build_generalize.py:     text.lower().startswith('!build ')
+# We include all known variants so the match survives across patch versions.
 CMD_ANCHORS = [
-    '                if text.strip().lower().startswith(\'!build\')',
+    # ── After fix_build_generalize.py (matches new dispatch form) ──────────
+    "                if text.lower().startswith('!build ') or text.lower().startswith('!task ')",
+    "                if text.lower().startswith('!build') or text.lower().startswith('!task')",
+    # ── Original form before fix_build_generalize.py ───────────────────────
+    "                if text.strip().lower().startswith('!build')",
     '                if text.strip().lower().startswith("!build")',
-    '                if _tl.startswith(\'!build\')',
+    "                if _tl.startswith('!build')",
     '                if _tl.startswith("!build")',
+    # ── Other stable command anchors (present in many bridge versions) ──────
+    "                if text.strip().lower().startswith('!summarize')",
+    "                if text.strip().lower().startswith('!search ')",
+    "                if text.strip().lower().startswith('!help')",
 ]
 
 inserted_cmds = False
 for anchor in CMD_ANCHORS:
     idx = s.find(anchor)
     if idx != -1:
-        s = s[:idx] + REMIND_DISPATCH + s[idx:]
+        # Walk back to the start of the line so we insert before the full
+        # if-statement (not just mid-line)
+        line_start = s.rfind('\n', 0, idx) + 1
+        s = s[:line_start] + REMIND_DISPATCH + s[line_start:]
         print(f'Parts 4-5: !remind / !reminders dispatch inserted before "{anchor.strip()[:60]}"')
         inserted_cmds = True
         break
 
 if not inserted_cmds:
-    # Fallback: look for the for-loop over messages and insert before its first
-    # command dispatch (any 'if text.strip()' at 16-space indent inside the loop).
-    fallback_pattern = re.search(
-        r'(                if text\.strip\(\)\.lower\(\)\.startswith\()',
-        s
+    # Fallback: find the for-loop header over new_msgs and insert REMIND_DISPATCH
+    # right after the tuple-unpack block that fix_imessage_attachments.py adds.
+    # This anchor is stable regardless of which command handlers are present.
+    _loop_anchor_pat = re.compile(
+        r'([ \t]+)for _msg_tuple in new_msgs:\n'
+        r'(?:.*\n)*?'                          # any unpack/attachment lines
+        r'([ \t]{14,})(?:if |_\w+ =)',         # first substantive statement ≥14sp
+        re.MULTILINE,
     )
-    if fallback_pattern:
-        idx = fallback_pattern.start()
-        s = s[:idx] + REMIND_DISPATCH + s[idx:]
-        print('Parts 4-5: !remind / !reminders dispatch inserted (fallback — first command block)')
+    _loop_m = _loop_anchor_pat.search(s)
+    if _loop_m:
+        # Insert at the start of the first substantive line in the loop body
+        line_start = s.rfind('\n', 0, _loop_m.start(2)) + 1
+        s = s[:line_start] + REMIND_DISPATCH + s[line_start:]
+        print('Parts 4-5: !remind / !reminders dispatch inserted (fallback — top of msg loop)')
         inserted_cmds = True
 
 if not inserted_cmds:
