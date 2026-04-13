@@ -162,13 +162,10 @@ const ExtensionsTab: React.FC<{
   }, []);
 
   useEffect(() => {
-    const el = toolbarRowRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) => {
-      setCompactToolbar(entry.contentRect.width < 520);
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
+    const check = () => setCompactToolbar(window.innerWidth < 1000);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
   }, []);
 
   const loadData = useCallback(async () => {
