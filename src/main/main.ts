@@ -6434,12 +6434,21 @@ function ensureAppTray(): void {
 
 // ─── URL Helpers ────────────────────────────────────────────────────
 
+function getDevServerBaseUrl(): string {
+  const urlFile = path.join(__dirname, '..', '.vite-dev-url');
+  try {
+    const url = fs.readFileSync(urlFile, 'utf8').trim();
+    if (url) return url;
+  } catch {}
+  return 'http://localhost:5173';
+}
+
 function loadWindowUrl(
   win: InstanceType<typeof BrowserWindow>,
   hash = ''
 ): void {
   if (process.env.NODE_ENV === 'development') {
-    win.loadURL(`http://localhost:5173/#${hash}`);
+    win.loadURL(`${getDevServerBaseUrl()}/#${hash}`);
   } else {
     win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), {
       hash,
