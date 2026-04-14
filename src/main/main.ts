@@ -7891,9 +7891,140 @@ async function activateLastFrontmostApp(): Promise<boolean> {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Fast-path text injection helpers (shared across all paste/type IPC handlers).
+//
+// Every paste or type operation should try one of these first. They use the
+// native CGEvent addon (Accessibility-gated) to activate the previous
+// frontmost app and post keyboard events — ~20× faster than osascript and
+// independent of the Automation/System Events permission.
+//
+// All helpers return a Promise<boolean>; false means the caller should fall
+// back to the osascript implementation in the corresponding leaf function.
+// ---------------------------------------------------------------------------
+
+let cachedFastPasteAddon: any = undefined;
+function getFastPasteAddon(): any {
+  if (cachedFastPasteAddon !== undefined) return cachedFastPasteAddon;
+  try {
+    cachedFastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+  } catch (e: any) {
+    console.warn('[fast-paste] addon load failed:', e?.message);
+    cachedFastPasteAddon = null;
+  }
+  return cachedFastPasteAddon;
+}
+
+function getFrontmostTarget(): string | null {
+  return lastFrontmostApp?.bundleId || lastFrontmostApp?.name || null;
+}
+
+// Activate the previous frontmost app via the native addon. Returns true
+// on success; the app should be frontmost on return.
+function tryFastActivate(): boolean {
+  const addon = getFastPasteAddon();
+  if (!addon) return false;
+  const target = getFrontmostTarget();
+  if (!target) return false;
+  try {
+    return !!addon.activateApp(target);
+  } catch (e: any) {
+    console.warn('[fast-paste] activateApp failed:', e?.message);
+    return false;
+  }
+}
+
+// Activate target + post ⌘V. Writes text to the clipboard first, restores
+// the previous clipboard after the paste fires. Returns true on success.
+function tryFastPaste(text: string): boolean {
+  const addon = getFastPasteAddon();
+  if (!addon) return false;
+  const target = getFrontmostTarget();
+  if (!target) return false;
+  try {
+    const previousClipboardText = systemClipboard.readText();
+    systemClipboard.writeText(text);
+    const ok = !!addon.activateAndPaste(target);
+    if (ok) {
+      setTimeout(() => {
+        try { systemClipboard.writeText(previousClipboardText); } catch {}
+      }, 250);
+      return true;
+    }
+    try { systemClipboard.writeText(previousClipboardText); } catch {}
+    return false;
+  } catch (e: any) {
+    console.warn('[fast-paste] tryFastPaste failed:', e?.message);
+    return false;
+  }
+}
+
+// Activate target + post Unicode text via CGEvent (char-by-char, no clipboard).
+function tryFastType(text: string): boolean {
+  const addon = getFastPasteAddon();
+  if (!addon || typeof addon.postText !== 'function') return false;
+  const target = getFrontmostTarget();
+  if (!target) return false;
+  try {
+    if (!addon.activateApp(target)) return false;
+    return !!addon.postText(text);
+  } catch (e: any) {
+    console.warn('[fast-paste] tryFastType failed:', e?.message);
+    return false;
+  }
+}
+
+// Activate target + post N backspaces + ⌘V. Replaces the selected-or-preceding
+// `prev` characters with `next`.
+function tryFastReplaceAndPaste(prev: string, next: string): boolean {
+  const addon = getFastPasteAddon();
+  if (!addon || typeof addon.postBackspaces !== 'function') return false;
+  const target = getFrontmostTarget();
+  if (!target) return false;
+  try {
+    if (!addon.activateApp(target)) return false;
+    if (prev.length > 0 && !addon.postBackspaces(prev.length)) return false;
+    if (next.length === 0) return true;
+    const previousClipboardText = systemClipboard.readText();
+    systemClipboard.writeText(next);
+    const ok = !!addon.postPaste();
+    if (ok) {
+      setTimeout(() => {
+        try { systemClipboard.writeText(previousClipboardText); } catch {}
+      }, 250);
+      return true;
+    }
+    try { systemClipboard.writeText(previousClipboardText); } catch {}
+    return false;
+  } catch (e: any) {
+    console.warn('[fast-paste] tryFastReplaceAndPaste failed:', e?.message);
+    return false;
+  }
+}
+
+// Activate target + post N backspaces + Unicode typing (char-by-char).
+function tryFastReplaceAndType(prev: string, next: string): boolean {
+  const addon = getFastPasteAddon();
+  if (!addon || typeof addon.postBackspaces !== 'function' || typeof addon.postText !== 'function') return false;
+  const target = getFrontmostTarget();
+  if (!target) return false;
+  try {
+    if (!addon.activateApp(target)) return false;
+    if (prev.length > 0 && !addon.postBackspaces(prev.length)) return false;
+    if (next.length === 0) return true;
+    return !!addon.postText(next);
+  } catch (e: any) {
+    console.warn('[fast-paste] tryFastReplaceAndType failed:', e?.message);
+    return false;
+  }
+}
+
 async function typeTextDirectly(text: string): Promise<boolean> {
   const value = String(text || '');
   if (!value) return false;
+
+  // Fast path: CGEvent Unicode keystroke via native addon.
+  if (tryFastType(value)) return true;
 
   const { execFile } = require('child_process');
   const { promisify } = require('util');
@@ -7919,6 +8050,9 @@ async function typeTextDirectly(text: string): Promise<boolean> {
 async function pasteTextToActiveApp(text: string): Promise<boolean> {
   const value = String(text || '');
   if (!value) return false;
+
+  // Fast path: CGEvent ⌘V via native addon.
+  if (tryFastPaste(value)) return true;
 
   const { execFile } = require('child_process');
   const { promisify } = require('util');
@@ -7966,6 +8100,9 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
 async function replaceTextDirectly(previousText: string, nextText: string): Promise<boolean> {
   const prev = String(previousText || '');
   const next = String(nextText || '');
+
+  // Fast path: CGEvent backspaces + Unicode typing via native addon.
+  if (tryFastReplaceAndType(prev, next)) return true;
 
   const { execFile } = require('child_process');
   const { promisify } = require('util');
@@ -8038,6 +8175,9 @@ async function replaceTextViaBackspaceAndPaste(previousText: string, nextText: s
   const prev = String(previousText || '');
   const next = String(nextText || '');
 
+  // Fast path: CGEvent backspaces + ⌘V via native addon.
+  if (tryFastReplaceAndPaste(prev, next)) return true;
+
   const { execFile } = require('child_process');
   const { promisify } = require('util');
   const execFileAsync = promisify(execFile);
@@ -8077,6 +8217,23 @@ async function hideAndPaste(): Promise<boolean> {
     mainWindow.hide();
     isVisible = false;
     setLauncherMode('default');
+  }
+
+  // Fast path: native addon activates the target app and posts ⌘V via CGEvent.
+  // Requires only Accessibility permission — no Automation/System Events prompt.
+  const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
+  if (target) {
+    try {
+      const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+      const ok = fastPasteAddon.activateAndPaste(target);
+      if (ok) {
+        console.log(`[hideAndPaste] fast-paste succeeded (target=${target})`);
+        return true;
+      }
+      console.warn('[hideAndPaste] fast-paste returned false, falling back to osascript');
+    } catch (e: any) {
+      console.warn('[hideAndPaste] fast-paste addon failed:', e?.message);
+    }
   }
 
   const { execFile } = require('child_process');
@@ -8135,6 +8292,30 @@ async function expandSnippetKeywordInPlace(keyword: string, delimiter: string): 
     const backspaceCount = keyword.length + (delimiter ? 1 : 0);
     if (backspaceCount <= 0) return;
 
+    // Fast path: CGEvent backspaces + ⌘V via native addon. Typed directly
+    // into the app the user was typing into — no osascript, no Automation
+    // permission prompt, much lower latency.
+    const addon = getFastPasteAddon();
+    if (addon && typeof addon.postBackspaces === 'function') {
+      try {
+        const originalClipboard = electron.clipboard.readText();
+        electron.clipboard.writeText(fullText);
+        const bs = addon.postBackspaces(backspaceCount);
+        const pv = bs ? addon.postPaste() : false;
+        if (bs && pv) {
+          setTimeout(() => {
+            try { electron.clipboard.writeText(originalClipboard); } catch {}
+          }, 80);
+          return;
+        }
+        // Restore clipboard immediately if fast path failed.
+        try { electron.clipboard.writeText(originalClipboard); } catch {}
+      } catch (e: any) {
+        console.warn('[SnippetExpander] fast path failed, falling back:', e?.message);
+      }
+    }
+
+    // Slow fallback: osascript.
     const originalClipboard = electron.clipboard.readText();
     electron.clipboard.writeText(fullText);
 
@@ -11104,6 +11285,19 @@ app.whenReady().then(async () => {
   trackEvent("app_started");
   app.setAsDefaultProtocolClient('supercmd');
   scrubInternalClipboardProbe('app startup');
+
+  // Diagnostic: log Accessibility trust state once at startup. Fast-paste
+  // (CGEvent ⌘V for clipboard history, snippet paste, whisper type-live)
+  // silently falls back to osascript when untrusted — this log makes the
+  // distinction observable. Permission is requested through the onboarding
+  // flow (TODO), not unprompted at launch.
+  try {
+    const addon = getFastPasteAddon();
+    const trusted = addon?.isAccessibilityTrusted?.();
+    console.log(`[fast-paste] Accessibility trusted: ${trusted}`);
+  } catch (e: any) {
+    console.warn('[fast-paste] trust check failed:', e?.message);
+  }
   // Warm the worker so the first window-management action does not race spawn.
   setTimeout(() => { ensureWindowManagerWorker(); }, 0);
 
@@ -13971,29 +14165,6 @@ if let tiff = image?.tiffRepresentation {
       return false;
     }
   });
-
-  // Shared fast-paste helper: activate target app + ⌘V via native CGEvent addon.
-  // Returns true if text was pasted successfully, false to fall through to osascript.
-  function tryFastPaste(text: string): boolean {
-    const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
-    if (!target) return false;
-    try {
-      const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
-      const previousClipboardText = systemClipboard.readText();
-      systemClipboard.writeText(text);
-      const ok = fastPasteAddon.activateAndPaste(target);
-      if (ok) {
-        setTimeout(() => {
-          try { systemClipboard.writeText(previousClipboardText); } catch {}
-        }, 250);
-        return true;
-      }
-      try { systemClipboard.writeText(previousClipboardText); } catch {}
-    } catch (e: any) {
-      console.warn('[fast-paste] addon failed:', e?.message);
-    }
-    return false;
-  }
 
   ipcMain.handle('type-text-live', async (_event: any, text: string) => {
     const nextText = String(text || '');
