@@ -831,6 +831,9 @@ contextBridge.exposeInMainWorld('electron', {
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => {
     ipcRenderer.on('ai-stream-error', (_event: any, data: any) => callback(data));
   },
+  onAIToolCalls: (callback: (data: { requestId: string; toolCalls: Array<{ name: string; args: Record<string, any> }> }) => void) => {
+    ipcRenderer.on('ai-tool-calls', (_event: any, data: any) => callback(data));
+  },
 
   // ─── Ollama Model Management ────────────────────────────────────
   ollamaStatus: (): Promise<{ running: boolean; models: any[] }> =>

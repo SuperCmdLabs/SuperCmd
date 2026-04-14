@@ -17,8 +17,9 @@ import { fork, type ChildProcess } from 'child_process';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken } from './settings-store';
 import type { AppSettings } from './settings-store';
-import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
-import { addMemory, buildMemoryContextSystemPrompt } from './memory';
+import { streamAI, isAIAvailable, transcribeAudio, callAIForTools } from './ai-provider';
+import type { ToolDefinition, ToolCall, AIMessage } from './ai-provider';
+import { addMemory, searchMemories, buildMemoryContextSystemPrompt } from './memory';
 import {
   createScriptCommandTemplate,
   ensureSampleScriptCommand,
@@ -13431,11 +13432,77 @@ if let tiff = image?.tiffRepresentation {
     console.log(`[Whisper][${tag}] ${message}`, data);
   });
 
+  // ─── Built-in tools available to the AI ───────────────────────────
+
+  const BUILTIN_TOOLS: ToolDefinition[] = [
+    {
+      name: 'search_memory',
+      description: 'Search the user\'s long-term memory for relevant information. Use this before answering questions about the user\'s preferences, past conversations, or personal context.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'What to search for in memory' },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'save_memory',
+      description: 'Save important information to the user\'s long-term memory so it persists across sessions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'The information to remember' },
+        },
+        required: ['text'],
+      },
+    },
+    {
+      name: 'get_clipboard',
+      description: 'Read the current contents of the clipboard.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  ];
+
+  async function executeBuiltinTool(
+    toolName: string,
+    args: Record<string, any>,
+    settings: any
+  ): Promise<string> {
+    try {
+      if (toolName === 'search_memory') {
+        const entries = await searchMemories(settings, { query: String(args.query || ''), limit: 6 });
+        if (!entries.length) return 'No relevant memories found.';
+        return entries.map((e, i) => `${i + 1}. ${e.text}`).join('\n');
+      }
+
+      if (toolName === 'save_memory') {
+        const result = await addMemory(settings, { text: String(args.text || ''), source: 'ai-tool' });
+        return result.success ? 'Memory saved.' : `Failed to save memory: ${result.error}`;
+      }
+
+      if (toolName === 'get_clipboard') {
+        const { clipboard } = await import('electron');
+        return clipboard.readText() || '(clipboard is empty)';
+      }
+
+      return `Unknown tool: ${toolName}`;
+    } catch (e: any) {
+      return `Tool error: ${e?.message || 'unknown error'}`;
+    }
+  }
+
   // ─── IPC: AI ───────────────────────────────────────────────────
 
   ipcMain.handle(
     'ai-ask',
-    async (event: any, requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string; messages?: Array<{ role: 'user' | 'assistant'; content: string }> }) => {
+    async (event: any, requestId: string, prompt: string, options?: {
+      model?: string;
+      creativity?: number;
+      systemPrompt?: string;
+      messages?: AIMessage[];
+      useTools?: boolean; // default true for chat mode
+    }) => {
       const s = loadSettings();
       if (s.ai?.llmEnabled === false) {
         event.sender.send('ai-stream-error', { requestId, error: 'LLM is disabled in Settings → AI.' });
@@ -13455,16 +13522,85 @@ if let tiff = image?.tiffRepresentation {
           String(prompt || ''),
           { limit: 6 }
         );
-        const mergedSystemPrompt = [options?.systemPrompt, memoryContextSystemPrompt]
+        const systemPrompt = [options?.systemPrompt, memoryContextSystemPrompt]
           .filter((part) => typeof part === 'string' && part.trim().length > 0)
-          .join('\n\n');
+          .join('\n\n') || undefined;
+
+        // ── Agentic tool loop (max 5 rounds to prevent runaway) ──
+        const useTools = options?.useTools !== false;
+        const conversationMessages: AIMessage[] = [...(options?.messages || [])];
+        const MAX_TOOL_ROUNDS = 5;
+
+        if (useTools) {
+          for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+            if (controller.signal.aborted) break;
+
+            const toolResponse = await callAIForTools(s.ai, {
+              prompt: round === 0 ? prompt : '(continue)',
+              messages: round === 0
+                ? conversationMessages
+                : [...conversationMessages, { role: 'user', content: prompt }],
+              model: options?.model,
+              creativity: options?.creativity,
+              systemPrompt,
+              signal: controller.signal,
+              tools: BUILTIN_TOOLS,
+            });
+
+            // No tool calls — stream the text response and finish
+            if (!toolResponse.toolCalls?.length) {
+              // If we got text back from the tool call phase, stream it
+              if (toolResponse.text) {
+                event.sender.send('ai-stream-chunk', { requestId, chunk: toolResponse.text });
+              } else {
+                // Fall through to normal streaming below
+                break;
+              }
+              if (!controller.signal.aborted) {
+                event.sender.send('ai-stream-done', { requestId });
+              }
+              activeAIRequests.delete(requestId);
+              return;
+            }
+
+            // Notify renderer that tools are running (for UX feedback)
+            event.sender.send('ai-tool-calls', {
+              requestId,
+              toolCalls: toolResponse.toolCalls.map((tc: ToolCall) => ({ name: tc.name, args: tc.arguments })),
+            });
+
+            // Execute all tool calls in parallel
+            const toolResults = await Promise.all(
+              toolResponse.toolCalls.map(async (tc: ToolCall) => ({
+                toolCallId: tc.id,
+                toolName: tc.name,
+                result: await executeBuiltinTool(tc.name, tc.arguments, s),
+              }))
+            );
+
+            // Append tool results to conversation for next round
+            for (const tr of toolResults) {
+              conversationMessages.push({
+                role: 'tool',
+                content: tr.result,
+                toolCallId: tr.toolCallId,
+                toolName: tr.toolName,
+              });
+            }
+          }
+        }
+
+        // ── Stream the final text response ──
+        if (controller.signal.aborted) return;
 
         const gen = streamAI(s.ai, {
           prompt,
-          messages: options?.messages,
+          messages: useTools && conversationMessages.length > (options?.messages?.length || 0)
+            ? conversationMessages
+            : options?.messages,
           model: options?.model,
           creativity: options?.creativity,
-          systemPrompt: mergedSystemPrompt || undefined,
+          systemPrompt,
           signal: controller.signal,
         });
 

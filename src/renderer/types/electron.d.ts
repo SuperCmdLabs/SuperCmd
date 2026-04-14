@@ -755,12 +755,13 @@ export interface ElectronAPI {
   onMenuBarItemClick: (callback: (data: { extId: string; itemId: string }) => void) => void;
 
   // AI
-  aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string; messages?: Array<{ role: 'user' | 'assistant'; content: string }> }) => Promise<void>;
+  aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string; messages?: Array<{ role: 'user' | 'assistant' | 'tool'; content: string; toolCallId?: string; toolName?: string }>; useTools?: boolean }) => Promise<void>;
   aiCancel: (requestId: string) => Promise<void>;
   aiIsAvailable: () => Promise<boolean>;
   onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => void;
   onAIStreamDone: (callback: (data: { requestId: string }) => void) => void;
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => void;
+  onAIToolCalls: (callback: (data: { requestId: string; toolCalls: Array<{ name: string; args: Record<string, any> }> }) => void) => void;
   whisperRefineTranscript: (
     transcript: string
   ) => Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }>;

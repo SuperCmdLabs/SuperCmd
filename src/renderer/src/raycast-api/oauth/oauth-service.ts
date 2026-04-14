@@ -1,6 +1,11 @@
 /**
  * raycast-api/oauth/oauth-service.ts
  * Purpose: OAuthService public class with built-in provider factory methods.
+ *
+ * OAuth relay URL: providers that require a server-side relay (Linear, Spotify,
+ * Jira) default to the SUPERCMD_OAUTH_RELAY_URL environment variable.
+ * Set this to your own relay server to avoid any third-party dependency.
+ * If unset, the relay flow is skipped and PKCE is used directly where possible.
  */
 
 import { PKCEClientCompat } from './oauth-client';
@@ -17,8 +22,27 @@ type OAuthFactoryOptions = {
   onAuthorize?: OAuthServiceOptions['onAuthorize'];
 };
 
-function createServerAuthorize(url: string, providerName: string): () => Promise<string> {
+/**
+ * Returns the configured OAuth relay base URL.
+ * Reads SUPERCMD_OAUTH_RELAY_URL env var — unset means no relay.
+ * Operators running their own SuperCmd instance should set this to
+ * their own relay server URL.
+ */
+function getRelayBaseUrl(): string | null {
+  const envUrl = (typeof process !== 'undefined' && process.env?.SUPERCMD_OAUTH_RELAY_URL) || '';
+  return envUrl.trim() || null;
+}
+
+function createServerAuthorize(providerPath: string, providerName: string): () => Promise<string> {
   return async () => {
+    const relayBase = getRelayBaseUrl();
+    if (!relayBase) {
+      throw new Error(
+        `${providerName} OAuth requires a relay server. ` +
+        `Set SUPERCMD_OAUTH_RELAY_URL to your relay URL, or provide a custom authorize() function.`
+      );
+    }
+    const url = `${relayBase.replace(/\/$/, '')}${providerPath}`;
     ensureOAuthCallbackBridge();
     await getOAuthRuntimeDeps().open(url);
     const callback = await waitForOAuthCallback('');
@@ -42,14 +66,15 @@ export class OAuthService extends OAuthServiceCore {
       description: 'Connect your Linear account',
     });
 
+    const relayBase = getRelayBaseUrl();
     return new OAuthService({
       client,
       clientId: options.clientId || '_supercmd_linear',
       scope: options.scope,
-      authorizeUrl: 'https://api.supercmd.sh/auth/linear/authorize',
+      authorizeUrl: relayBase ? `${relayBase.replace(/\/$/, '')}/auth/linear/authorize` : 'https://linear.app/oauth/authorize',
       tokenUrl: 'https://api.linear.app/oauth/token',
       personalAccessToken: options.personalAccessToken,
-      authorize: options.authorize || createServerAuthorize('https://api.supercmd.sh/auth/linear/authorize', 'Linear'),
+      authorize: options.authorize || createServerAuthorize('/auth/linear/authorize', 'Linear'),
       onAuthorize: options.onAuthorize,
     });
   }
@@ -62,14 +87,15 @@ export class OAuthService extends OAuthServiceCore {
       description: 'Connect your Spotify account',
     });
 
+    const relayBase = getRelayBaseUrl();
     return new OAuthService({
       client,
       clientId: options.clientId || '_supercmd_spotify',
       scope: options.scope,
-      authorizeUrl: 'https://api.supercmd.sh/auth/spotify/authorize',
+      authorizeUrl: relayBase ? `${relayBase.replace(/\/$/, '')}/auth/spotify/authorize` : 'https://accounts.spotify.com/authorize',
       tokenUrl: 'https://accounts.spotify.com/api/token',
       personalAccessToken: options.personalAccessToken,
-      authorize: options.authorize || createServerAuthorize('https://api.supercmd.sh/auth/spotify/authorize', 'Spotify'),
+      authorize: options.authorize || createServerAuthorize('/auth/spotify/authorize', 'Spotify'),
       onAuthorize: options.onAuthorize,
     });
   }
@@ -132,14 +158,15 @@ export class OAuthService extends OAuthServiceCore {
 
   static jira(options: OAuthFactoryOptions): OAuthService {
     const client = new PKCEClientCompat({ providerId: 'jira', providerName: 'Jira', providerIcon: 'jira-icon.png', description: 'Connect your Jira account' });
+    const relayBase = getRelayBaseUrl();
     return new OAuthService({
       client,
       clientId: options.clientId || '_supercmd_jira',
       scope: options.scope,
-      authorizeUrl: 'https://api.supercmd.sh/auth/jira/authorize',
+      authorizeUrl: relayBase ? `${relayBase.replace(/\/$/, '')}/auth/jira/authorize` : 'https://auth.atlassian.com/authorize',
       tokenUrl: 'https://auth.atlassian.com/oauth/token',
       personalAccessToken: options.personalAccessToken,
-      authorize: options.authorize || createServerAuthorize('https://api.supercmd.sh/auth/jira/authorize', 'Jira'),
+      authorize: options.authorize || createServerAuthorize('/auth/jira/authorize', 'Jira'),
       onAuthorize: options.onAuthorize,
     });
   }

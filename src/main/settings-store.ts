@@ -5,9 +5,93 @@
  * Stored at ~/Library/Application Support/SuperCmd/settings.json
  */
 
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+
+// ─── Credential encryption helpers ───────────────────────────────────────────
+// Uses Electron safeStorage (OS keychain-backed AES) to encrypt API keys.
+// Encrypted values are stored as Base64 with an '_enc_' prefix so we can
+// detect them and transparently decrypt on load. Plaintext values written
+// by older versions are accepted as-is and re-encrypted on next save.
+
+const ENC_PREFIX = '_enc_';
+const SENSITIVE_AI_KEYS: Array<keyof AISettings> = [
+  'openaiApiKey',
+  'anthropicApiKey',
+  'geminiApiKey',
+  'elevenlabsApiKey',
+  'supermemoryApiKey',
+  'openaiCompatibleApiKey',
+];
+
+function encryptCredential(value: string): string {
+  if (!value || !safeStorage.isEncryptionAvailable()) return value;
+  try {
+    const buf = safeStorage.encryptString(value);
+    return ENC_PREFIX + buf.toString('base64');
+  } catch {
+    return value;
+  }
+}
+
+function decryptCredential(value: string): string {
+  if (!value || !value.startsWith(ENC_PREFIX)) return value;
+  if (!safeStorage.isEncryptionAvailable()) return '';
+  try {
+    const buf = Buffer.from(value.slice(ENC_PREFIX.length), 'base64');
+    return safeStorage.decryptString(buf);
+  } catch {
+    return '';
+  }
+}
+
+function encryptAISettings(ai: AISettings): AISettings {
+  const encrypted = { ...ai };
+  for (const key of SENSITIVE_AI_KEYS) {
+    const val = encrypted[key] as string;
+    if (val && typeof val === 'string' && !val.startsWith(ENC_PREFIX)) {
+      (encrypted as any)[key] = encryptCredential(val);
+    }
+  }
+  return encrypted;
+}
+
+function decryptAISettings(ai: AISettings): AISettings {
+  const decrypted = { ...ai };
+  for (const key of SENSITIVE_AI_KEYS) {
+    const val = decrypted[key] as string;
+    if (val && typeof val === 'string' && val.startsWith(ENC_PREFIX)) {
+      (decrypted as any)[key] = decryptCredential(val);
+    }
+  }
+  return decrypted;
+}
+
+function encryptOAuthTokens(tokens: Record<string, any>): Record<string, any> {
+  if (!safeStorage.isEncryptionAvailable()) return tokens;
+  const result: Record<string, any> = {};
+  for (const [provider, entry] of Object.entries(tokens)) {
+    if (entry && typeof entry.accessToken === 'string' && !entry.accessToken.startsWith(ENC_PREFIX)) {
+      result[provider] = { ...entry, accessToken: encryptCredential(entry.accessToken) };
+    } else {
+      result[provider] = entry;
+    }
+  }
+  return result;
+}
+
+function decryptOAuthTokens(tokens: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [provider, entry] of Object.entries(tokens)) {
+    if (entry && typeof entry.accessToken === 'string' && entry.accessToken.startsWith(ENC_PREFIX)) {
+      result[provider] = { ...entry, accessToken: decryptCredential(entry.accessToken) };
+    } else {
+      result[provider] = entry;
+    }
+  }
+  return result;
+}
 
 export interface AISettings {
   provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible';
@@ -344,7 +428,7 @@ export function loadSettings(): AppSettings {
         parsed.hasSeenWhisperOnboarding ?? false,
       fileSearchProtectedRootsEnabled:
         parsed.fileSearchProtectedRootsEnabled ?? DEFAULT_SETTINGS.fileSearchProtectedRootsEnabled,
-      ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
+      ai: decryptAISettings({ ...DEFAULT_AI_SETTINGS, ...parsed.ai }),
       hyperKey: { ...DEFAULT_HYPER_KEY_SETTINGS, ...parsed.hyperKey },
       commandMetadata: parsed.commandMetadata ?? {},
       debugMode: parsed.debugMode ?? DEFAULT_SETTINGS.debugMode,
@@ -400,12 +484,13 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   };
 
   try {
-    fs.writeFileSync(getSettingsPath(), JSON.stringify(updated, null, 2));
+    const toWrite = { ...updated, ai: encryptAISettings(updated.ai) };
+    fs.writeFileSync(getSettingsPath(), JSON.stringify(toWrite, null, 2));
   } catch (e) {
     console.error('Failed to save settings:', e);
   }
 
-  settingsCache = updated;
+  settingsCache = updated; // cache stores plaintext (decrypted) values
   return { ...updated };
 }
 
@@ -435,7 +520,8 @@ function loadOAuthTokens(): Record<string, OAuthTokenEntry> {
   if (oauthTokensCache) return oauthTokensCache;
   try {
     const raw = fs.readFileSync(getOAuthTokensPath(), 'utf-8');
-    oauthTokensCache = JSON.parse(raw) || {};
+    const parsed = JSON.parse(raw) || {};
+    oauthTokensCache = decryptOAuthTokens(parsed) as Record<string, OAuthTokenEntry>;
   } catch {
     oauthTokensCache = {};
   }
@@ -443,9 +529,10 @@ function loadOAuthTokens(): Record<string, OAuthTokenEntry> {
 }
 
 function saveOAuthTokens(tokens: Record<string, OAuthTokenEntry>): void {
-  oauthTokensCache = tokens;
+  oauthTokensCache = tokens; // cache stores plaintext
   try {
-    fs.writeFileSync(getOAuthTokensPath(), JSON.stringify(tokens, null, 2));
+    const toWrite = encryptOAuthTokens(tokens);
+    fs.writeFileSync(getOAuthTokensPath(), JSON.stringify(toWrite, null, 2));
   } catch (e) {
     console.error('Failed to save OAuth tokens:', e);
   }

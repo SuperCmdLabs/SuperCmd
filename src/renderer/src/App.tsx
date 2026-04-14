@@ -16,6 +16,7 @@ import type {
   IndexedFileSearchResult,
 } from '../types/electron';
 import ExtensionView from './ExtensionView';
+import { ExtensionErrorBoundary } from './ExtensionErrorBoundary';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
 import NotesSearchInline from './NotesSearchInline';
@@ -3023,32 +3024,43 @@ const App: React.FC = () => {
           backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
           className="extension-runtime-shell"
         >
-          <ExtensionView
-            code={extensionView.code}
-            title={extensionView.title}
-            mode={extensionView.mode}
-            error={(extensionView as any).error}
-            extensionName={(extensionView as any).extensionName || extensionView.extName}
-            extensionDisplayName={(extensionView as any).extensionDisplayName}
-            extensionIconDataUrl={(extensionView as any).extensionIconDataUrl}
-            commandName={(extensionView as any).commandName || extensionView.cmdName}
-            assetsPath={(extensionView as any).assetsPath}
-            supportPath={(extensionView as any).supportPath}
-            owner={(extensionView as any).owner}
-            preferences={(extensionView as any).preferences}
-            preferenceDefinitions={(extensionView as any).preferenceDefinitions}
-            launchArguments={(extensionView as any).launchArguments}
-            launchContext={(extensionView as any).launchContext}
-            fallbackText={(extensionView as any).fallbackText}
-            launchType={(extensionView as any).launchType}
-            onClose={() => {
+          <ExtensionErrorBoundary
+            extensionName={(extensionView as any).extensionDisplayName || (extensionView as any).extensionName || extensionView.extName}
+            onDismiss={() => {
               setExtensionView(null);
               localStorage.removeItem(LAST_EXT_KEY);
               setSearchQuery('');
               setSelectedIndex(0);
               setTimeout(() => inputRef.current?.focus(), 50);
             }}
-          />
+          >
+            <ExtensionView
+              code={extensionView.code}
+              title={extensionView.title}
+              mode={extensionView.mode}
+              error={(extensionView as any).error}
+              extensionName={(extensionView as any).extensionName || extensionView.extName}
+              extensionDisplayName={(extensionView as any).extensionDisplayName}
+              extensionIconDataUrl={(extensionView as any).extensionIconDataUrl}
+              commandName={(extensionView as any).commandName || extensionView.cmdName}
+              assetsPath={(extensionView as any).assetsPath}
+              supportPath={(extensionView as any).supportPath}
+              owner={(extensionView as any).owner}
+              preferences={(extensionView as any).preferences}
+              preferenceDefinitions={(extensionView as any).preferenceDefinitions}
+              launchArguments={(extensionView as any).launchArguments}
+              launchContext={(extensionView as any).launchContext}
+              fallbackText={(extensionView as any).fallbackText}
+              launchType={(extensionView as any).launchType}
+              onClose={() => {
+                setExtensionView(null);
+                localStorage.removeItem(LAST_EXT_KEY);
+                setSearchQuery('');
+                setSelectedIndex(0);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+            />
+          </ExtensionErrorBoundary>
         </LauncherSurface>
       </>
     );

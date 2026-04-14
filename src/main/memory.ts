@@ -13,13 +13,16 @@ const MAX_MEMORY_ITEM_CHARS = 320;
 const MAX_MEMORY_CONTEXT_CHARS = 2400;
 
 // ─── Local File-Based Memory Store ──────────────────────────────────────────
-// Used as a fallback when Supermemory is not configured. Persists to
-// <userData>/local-memories.json so memories survive restarts.
+// Primary local backend — no cloud dependency required.
+// Persists to <userData>/local-memories.json.
+// Supports semantic search via Ollama embeddings when available,
+// with keyword-grep fallback when Ollama is not running.
 
 interface LocalMemoryEntry {
   id: string;
   text: string;
   createdAt: string;
+  embedding?: number[]; // cached embedding vector
 }
 
 function getLocalMemoryPath(): string {
@@ -49,12 +52,122 @@ function addLocalMemory(text: string): { id: string } {
   const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   memories.push({ id, text: sanitizeMemoryText(text), createdAt: new Date().toISOString() });
   writeLocalMemories(memories);
+  // Kick off background embedding so this entry will be searchable semantically
+  void embedAndUpdateMemory(id, text);
   return { id };
 }
 
-function searchLocalMemories(query: string, limit: number): LocalMemoryEntry[] {
+// ─── Ollama Embedding ─────────────────────────────────────────────────────
+// Uses the Ollama /api/embeddings endpoint with nomic-embed-text (or
+// all-minilm as fallback). Returns null if Ollama is unavailable.
+
+const EMBED_MODELS = ['nomic-embed-text', 'all-minilm', 'mxbai-embed-large'];
+
+async function getOllamaEmbedding(
+  text: string,
+  baseUrl = 'http://localhost:11434'
+): Promise<number[] | null> {
+  for (const model of EMBED_MODELS) {
+    try {
+      const url = new URL('/api/embeddings', baseUrl);
+      const body = JSON.stringify({ model, prompt: text });
+      const useHttps = url.protocol === 'https:';
+      const client = useHttps ? https : http;
+
+      const embedding = await new Promise<number[] | null>((resolve) => {
+        const req = client.request(
+          {
+            hostname: url.hostname,
+            port: url.port ? Number(url.port) : undefined,
+            path: url.pathname,
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+          },
+          (res) => {
+            let responseBody = '';
+            res.on('data', (chunk: Buffer) => { responseBody += chunk.toString(); });
+            res.on('end', () => {
+              if ((res.statusCode || 0) >= 400) { resolve(null); return; }
+              try {
+                const parsed = JSON.parse(responseBody);
+                const vec = parsed?.embedding;
+                resolve(Array.isArray(vec) && vec.length > 0 ? vec : null);
+              } catch {
+                resolve(null);
+              }
+            });
+          }
+        );
+        req.on('error', () => resolve(null));
+        req.setTimeout(5000, () => { req.destroy(); resolve(null); });
+        req.write(body);
+        req.end();
+      });
+
+      if (embedding) return embedding;
+    } catch {
+      // try next model
+    }
+  }
+  return null;
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/** Background job: compute embedding for a memory entry and persist it. */
+async function embedAndUpdateMemory(id: string, text: string): Promise<void> {
+  const embedding = await getOllamaEmbedding(text);
+  if (!embedding) return;
   const memories = readLocalMemories();
+  const entry = memories.find((m) => m.id === id);
+  if (entry) {
+    entry.embedding = embedding;
+    writeLocalMemories(memories);
+  }
+}
+
+/** Semantic search using Ollama embeddings. Falls back to keyword search. */
+async function searchLocalMemoriesSemantic(
+  query: string,
+  limit: number,
+  ollamaBaseUrl?: string
+): Promise<LocalMemoryEntry[]> {
+  const memories = readLocalMemories();
+  if (!memories.length) return [];
   if (!query.trim()) return memories.slice(-limit).reverse();
+
+  // Try semantic search via Ollama
+  const queryEmbedding = await getOllamaEmbedding(query, ollamaBaseUrl || 'http://localhost:11434');
+
+  if (queryEmbedding) {
+    const withEmbeddings = memories.filter((m) => m.embedding?.length);
+
+    // For entries without embeddings, kick off background embedding
+    const missing = memories.filter((m) => !m.embedding?.length);
+    for (const m of missing.slice(0, 10)) {
+      void embedAndUpdateMemory(m.id, m.text);
+    }
+
+    if (withEmbeddings.length > 0) {
+      const scored = withEmbeddings
+        .map((m) => ({ m, score: cosineSimilarity(queryEmbedding, m.embedding!) }))
+        .filter(({ score }) => score > 0.25)
+        .sort((a, b) => b.score - a.score);
+      return scored.slice(0, limit).map(({ m }) => m);
+    }
+  }
+
+  // Keyword fallback
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   const scored = memories
     .map((m) => {
@@ -459,9 +572,11 @@ export async function searchMemories(
   const config = resolveSupermemoryConfig(settings, options?.userId);
   if (!config.clientId) return [];
   if (!config.localMode && !config.apiKey) {
-    // No Supermemory — search local file
+    // No Supermemory — use local semantic search (Ollama embeddings with keyword fallback)
     const limit = clampTopK(options?.limit);
-    return searchLocalMemories(query, limit).map((m) => ({ id: m.id, text: m.text, raw: m }));
+    const ollamaBaseUrl = (settings.ai as any)?.ollamaBaseUrl || 'http://localhost:11434';
+    const results = await searchLocalMemoriesSemantic(query, limit, ollamaBaseUrl);
+    return results.map((m) => ({ id: m.id, text: m.text, raw: m }));
   }
 
   const limit = clampTopK(options?.limit);

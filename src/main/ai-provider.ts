@@ -9,8 +9,46 @@ import * as http from 'http';
 import type { AISettings } from './settings-store';
 
 export interface AIMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool';
   content: string;
+  toolCallId?: string; // for role='tool' results
+  toolName?: string;   // for role='tool' results
+}
+
+// ─── Tool calling types ───────────────────────────────────────────────
+
+export interface ToolParameterProperty {
+  type: string;
+  description: string;
+  enum?: string[];
+  items?: { type: string };
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: 'object';
+    properties: Record<string, ToolParameterProperty>;
+    required?: string[];
+  };
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, any>;
+}
+
+export interface ToolResult {
+  toolCallId: string;
+  toolName: string;
+  result: string; // JSON string or plain text
+}
+
+export interface AIToolResponse {
+  text?: string;
+  toolCalls?: ToolCall[];
 }
 
 export interface AIRequestOptions {
@@ -20,6 +58,8 @@ export interface AIRequestOptions {
   creativity?: number; // 0-2 temperature
   systemPrompt?: string;
   signal?: AbortSignal;
+  tools?: ToolDefinition[];         // Tool definitions available to the model
+  toolChoice?: 'auto' | 'none';    // Default: 'auto' when tools provided
 }
 
 // ─── Model routing ────────────────────────────────────────────────────
@@ -201,6 +241,222 @@ export async function* streamAI(
       );
       break;
   }
+}
+
+// ─── Non-streaming tool-use request ─────────────────────────────────
+// Used for the first pass when tools are configured. Returns either plain
+// text (if the model responded directly) or a list of tool calls to execute.
+// After tool execution, the caller streams the final response via streamAI.
+
+export async function callAIForTools(
+  config: AISettings,
+  options: AIRequestOptions
+): Promise<AIToolResponse> {
+  if (!options.tools?.length) return { text: options.prompt };
+
+  const route = resolveModel(options.model, config);
+  const temperature = Math.max(0, Math.min(2, options.creativity ?? 0.7));
+
+  switch (route.provider) {
+    case 'openai':
+    case 'openai-compatible':
+      return callOpenAIForTools(config, route, options, temperature);
+    case 'anthropic':
+      return callAnthropicForTools(config, route, options, temperature);
+    case 'ollama':
+      return callOllamaForTools(config, route, options, temperature);
+    default:
+      // Gemini tool calling not yet wired — fall back to text-only
+      return { text: undefined };
+  }
+}
+
+async function callOpenAIForTools(
+  config: AISettings,
+  route: ModelRoute,
+  options: AIRequestOptions,
+  temperature: number
+): Promise<AIToolResponse> {
+  const messages: any[] = [];
+  if (options.systemPrompt) messages.push({ role: 'system', content: options.systemPrompt });
+  if (options.messages?.length) messages.push(...buildOpenAIMessages(options.messages));
+  messages.push({ role: 'user', content: options.prompt });
+
+  const oaiTools = options.tools!.map((t) => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
+
+  const isCompatible = route.provider === 'openai-compatible';
+  const baseUrl = isCompatible
+    ? (config.openaiCompatibleBaseUrl || '').replace(/\/$/, '').replace(/\/v1$/, '')
+    : 'https://api.openai.com';
+  const apiKey = isCompatible ? config.openaiCompatibleApiKey : config.openaiApiKey;
+
+  const url = new URL(`${baseUrl}/v1/chat/completions`);
+  const body = JSON.stringify({
+    model: route.modelId,
+    messages,
+    tools: oaiTools,
+    tool_choice: options.toolChoice ?? 'auto',
+    temperature,
+    stream: false,
+  });
+
+  const resp = await httpRequest({
+    hostname: url.hostname,
+    port: url.port ? parseInt(url.port) : undefined,
+    path: url.pathname,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body,
+    signal: options.signal,
+    useHttps: url.protocol === 'https:',
+  });
+
+  const raw = JSON.parse(await readResponseBody(resp));
+  const choice = raw?.choices?.[0];
+  if (!choice) return { text: undefined };
+
+  if (choice.finish_reason === 'tool_calls' && choice.message?.tool_calls?.length) {
+    return {
+      toolCalls: choice.message.tool_calls.map((tc: any) => ({
+        id: tc.id || `tc-${Math.random().toString(36).slice(2)}`,
+        name: tc.function.name,
+        arguments: (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })(),
+      })),
+    };
+  }
+
+  return { text: choice.message?.content || undefined };
+}
+
+async function callAnthropicForTools(
+  config: AISettings,
+  route: ModelRoute,
+  options: AIRequestOptions,
+  temperature: number
+): Promise<AIToolResponse> {
+  const turnMessages: any[] = [];
+  if (options.messages?.length) turnMessages.push(...buildOpenAIMessages(options.messages));
+  turnMessages.push({ role: 'user', content: options.prompt });
+
+  const claudeTools = options.tools!.map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.parameters,
+  }));
+
+  const body: any = {
+    model: route.modelId,
+    max_tokens: 4096,
+    messages: turnMessages,
+    tools: claudeTools,
+    tool_choice: { type: options.toolChoice === 'none' ? 'none' : 'auto' },
+    temperature,
+    stream: false,
+  };
+  if (options.systemPrompt) body.system = options.systemPrompt;
+
+  const resp = await httpRequest({
+    hostname: 'api.anthropic.com',
+    path: '/v1/messages',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': config.anthropicApiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify(body),
+    signal: options.signal,
+    useHttps: true,
+  });
+
+  const raw = JSON.parse(await readResponseBody(resp));
+  if (raw.stop_reason === 'tool_use') {
+    const toolUseBlocks = (raw.content || []).filter((b: any) => b.type === 'tool_use');
+    if (toolUseBlocks.length) {
+      return {
+        toolCalls: toolUseBlocks.map((b: any) => ({
+          id: b.id || `tc-${Math.random().toString(36).slice(2)}`,
+          name: b.name,
+          arguments: b.input || {},
+        })),
+      };
+    }
+  }
+
+  const textBlock = (raw.content || []).find((b: any) => b.type === 'text');
+  return { text: textBlock?.text || undefined };
+}
+
+async function callOllamaForTools(
+  config: AISettings,
+  route: ModelRoute,
+  options: AIRequestOptions,
+  temperature: number
+): Promise<AIToolResponse> {
+  const url = new URL('/api/chat', config.ollamaBaseUrl || 'http://localhost:11434');
+
+  const chatMessages: any[] = [];
+  if (options.systemPrompt) chatMessages.push({ role: 'system', content: options.systemPrompt });
+  if (options.messages?.length) chatMessages.push(...buildOpenAIMessages(options.messages));
+  chatMessages.push({ role: 'user', content: options.prompt });
+
+  const ollamaTools = options.tools!.map((t) => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
+
+  const body: any = {
+    model: route.modelId,
+    messages: chatMessages,
+    tools: ollamaTools,
+    stream: false,
+    options: { temperature },
+  };
+
+  const resp = await httpRequest({
+    hostname: url.hostname,
+    port: url.port ? parseInt(url.port) : undefined,
+    path: url.pathname,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: options.signal,
+    useHttps: url.protocol === 'https:',
+  });
+
+  const raw = JSON.parse(await readResponseBody(resp));
+  const msg = raw?.message;
+  if (msg?.tool_calls?.length) {
+    return {
+      toolCalls: msg.tool_calls.map((tc: any) => ({
+        id: tc.id || `tc-${Math.random().toString(36).slice(2)}`,
+        name: tc.function?.name || tc.name,
+        arguments: (() => {
+          const args = tc.function?.arguments || tc.arguments || {};
+          if (typeof args === 'string') { try { return JSON.parse(args); } catch { return {}; } }
+          return args;
+        })(),
+      })),
+    };
+  }
+
+  return { text: msg?.content || undefined };
+}
+
+/** Normalize AIMessage history to plain OpenAI-style messages (strips tool metadata). */
+function buildOpenAIMessages(messages: AIMessage[]): any[] {
+  return messages.map((m) => {
+    if (m.role === 'tool') {
+      return { role: 'tool', tool_call_id: m.toolCallId, name: m.toolName, content: m.content };
+    }
+    return { role: m.role, content: m.content };
+  });
 }
 
 // ─── OpenAI ──────────────────────────────────────────────────────────
