@@ -130,7 +130,7 @@ import {
 import { initialize as initAptabase, trackEvent } from "@aptabase/electron/main";
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard, webContents: webContentsModule } = electron;
 try {
   app.setName('SuperCmd');
 } catch {}
@@ -11213,28 +11213,49 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
   syncHyperKeyMonitor();
 }
 
+// Match Cmd+Option+I (macOS) / Ctrl+Alt+I (other platforms). Scoped to
+// individual webContents via `before-input-event` so the shortcut only fires
+// when a SuperCmd window has keyboard focus — not system-wide.
+function isDevToolsInput(input: any): boolean {
+  if (String(input?.type || '').toLowerCase() !== 'keydown') return false;
+  const key = String(input?.key || '').toLowerCase();
+  if (key !== 'i') return false;
+  if (input?.shift) return false;
+  if (process.platform === 'darwin') {
+    return !!input?.meta && !!input?.alt && !input?.control;
+  }
+  return !!input?.control && !!input?.alt && !input?.meta;
+}
+
+function installDevToolsInputHandler(wc: Electron.WebContents | undefined | null): void {
+  if (!wc || wc.isDestroyed()) return;
+  wc.on('before-input-event', (event: any, input: any) => {
+    if (!isDevToolsInput(input)) return;
+    event.preventDefault();
+    openPreferredDevTools();
+  });
+}
+
 function registerDevToolsShortcut(): void {
+  // No-op: globalShortcut.register is intentionally avoided here because it
+  // intercepts ⌘⌥I system-wide (e.g., stealing the combo while Chrome is
+  // focused). Instead, dev-tools access is wired per-window via
+  // `installDevToolsInputHandler`, which only fires when one of our
+  // windows has focus.
   try {
     unregisterShortcutVariants(DEVTOOLS_SHORTCUT);
   } catch {}
 
-  if (process.env.NODE_ENV !== 'development') {
-    return;
-  }
+  if (process.env.NODE_ENV !== 'development') return;
 
-  try {
-    const success = globalShortcut.register(DEVTOOLS_SHORTCUT, () => {
-      const opened = openPreferredDevTools();
-      if (!opened) {
-        console.warn('[DevTools] No window available to open developer tools.');
-      }
-    });
-    if (!success) {
-      console.warn(`[DevTools] Failed to register shortcut: ${DEVTOOLS_SHORTCUT}`);
-    }
-  } catch (error) {
-    console.warn(`[DevTools] Error registering shortcut: ${DEVTOOLS_SHORTCUT}`, error);
+  // Cover all current and future webContents (main, settings, detached
+  // popups, extension windows, etc.) with a scoped devtools handler.
+  for (const wc of webContentsModule.getAllWebContents()) {
+    installDevToolsInputHandler(wc);
   }
+  app.on('web-contents-created', (_event: any, wc: Electron.WebContents) => {
+    installDevToolsInputHandler(wc);
+  });
 }
 
 // ─── App Initialization ─────────────────────────────────────────────
