@@ -8312,6 +8312,22 @@ async function executeLogout(): Promise<void> {
   await execFileAsync('/usr/bin/osascript', ['-e', 'tell application "Finder" to log out']);
 }
 
+async function executeToggleAppearance(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  await execFileAsync('/usr/bin/osascript', [
+    '-e', 'tell app "System Events" to tell appearance preferences to set dark mode to not dark mode',
+  ]);
+}
+
+async function executeShutdown(): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  const { promisify } = require('util') as typeof import('util');
+  const execFileAsync = promisify(execFile);
+  await execFileAsync('/usr/bin/osascript', ['-e', 'tell application "Finder" to shut down']);
+}
+
 async function confirmSystemAction(
   commandId: string,
   source: 'launcher' | 'hotkey' | 'widget'
@@ -8334,6 +8350,7 @@ async function confirmSystemAction(
   const details: Record<string, string> = {
     'system-restart': 'Your Mac will restart. Make sure to save your work first.',
     'system-logout': 'You will be logged out of your current session.',
+    'system-shutdown': 'Your Mac will shut down. Make sure to save your work first.',
   };
 
   const options: Electron.MessageBoxOptions = {
@@ -8644,6 +8661,28 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       await executeLogout();
     } catch (error) {
       console.error('Failed to log out:', error);
+      return false;
+    }
+    return true;
+  }
+  if (commandId === 'system-toggle-appearance') {
+    if (source === 'launcher') hideWindow();
+    try {
+      await executeToggleAppearance();
+    } catch (error) {
+      console.error('Failed to toggle appearance:', error);
+      return false;
+    }
+    return true;
+  }
+  if (commandId === 'system-shutdown') {
+    try {
+      const confirmed = await confirmSystemAction('system-shutdown', source);
+      if (!confirmed) return false;
+      if (source === 'launcher') hideWindow();
+      await executeShutdown();
+    } catch (error) {
+      console.error('Failed to shut down:', error);
       return false;
     }
     return true;
