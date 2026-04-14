@@ -72,10 +72,11 @@ def calendar_list_matching(event_name: str) -> str:
     Find all calendar events whose title contains event_name (case-insensitive).
     Returns a summary string: count, calendar names, and date range.
     """
-    script = f'''
+    safe_name = event_name.replace('"', '').replace("'", '')
+    script = f"""
 tell application "Calendar"
     set matchList to {{}}
-    set searchName to "{event_name.replace('"', '')}"
+    set searchName to "{safe_name}"
     repeat with aCal in calendars
         set evts to (every event of aCal whose summary contains searchName)
         repeat with anEvt in evts
@@ -89,7 +90,7 @@ tell application "Calendar"
     set AppleScript's text item delimiters to linefeed
     return (matchList as string) & linefeed & "TOTAL:" & (length of matchList as string)
 end tell
-'''
+"""
     return _run_applescript(script)
 
 
@@ -101,13 +102,14 @@ def calendar_delete_events(event_name: str, future_only: bool = False) -> str:
     """
     import datetime as _dt
     today_str = _dt.date.today().strftime("%Y-%m-%d")
+    safe_name = event_name.replace('"', '').replace("'", '')
 
     if future_only:
-        filter_clause = f'whose summary contains "{event_name.replace(chr(34), "")}" and start date >= (date "{today_str}")'
+        filter_clause = f'whose summary contains "{safe_name}" and start date >= (date "{today_str}")'
     else:
-        filter_clause = f'whose summary contains "{event_name.replace(chr(34), "")}"'
+        filter_clause = f'whose summary contains "{safe_name}"'
 
-    script = f'''
+    script = f"""
 tell application "Calendar"
     set deleteCount to 0
     repeat with aCal in calendars
@@ -119,7 +121,7 @@ tell application "Calendar"
     end repeat
     return deleteCount as string
 end tell
-'''
+"""
     result = _run_applescript(script)
     if result.isdigit():
         n = int(result)
@@ -162,18 +164,19 @@ def calendar_create_event(title: str, start_str: str, end_str: str,
     safe_title = title.replace('"', "'")
 
     if calendar_name:
-        cal_clause = f'tell calendar "{calendar_name.replace(chr(34), "")}"'
+        safe_cal = calendar_name.replace('"', '').replace("'", '')
+        cal_clause = f'tell calendar "{safe_cal}"'
     else:
         cal_clause = 'tell calendar 1'
 
-    script = f'''
+    script = f"""
 tell application "Calendar"
     {cal_clause}
         set newEvt to make new event with properties {{summary:"{safe_title}", start date:date "{as_start}", end date:date "{as_end}"}}
         return summary of newEvt & " @ " & (start date of newEvt as string)
     end tell
 end tell
-'''
+"""
     result = _run_applescript(script)
     if result.startswith("AppleScript"):
         return f"CALENDAR CREATE ERROR: {result}"
