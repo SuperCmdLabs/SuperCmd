@@ -415,6 +415,7 @@ export interface ElectronAPI {
   executeCommandAsHotkey: (commandId: string) => Promise<boolean>;
   executeCommandFromWidget: (commandId: string) => Promise<boolean>;
   hideWindow: () => Promise<void>;
+  showWindow: () => Promise<void>;
   dismissUpdateBanner: () => Promise<void>;
   resetLauncherPosition: () => Promise<void>;
   openDevTools: () => Promise<boolean>;

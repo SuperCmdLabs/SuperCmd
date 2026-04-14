@@ -2048,16 +2048,7 @@ const OPENING_SHORTCUT_SUPPRESSION_MS = 220;
 let openingShortcutSuppressionUntil = 0;
 let openingShortcutToSuppress = '';
 
-function getMemoryStatusWindowHtml(
-  variant: 'processing' | 'success' | 'error' = 'processing',
-  text: string = ''
-): string {
-  const safeVariant =
-    variant === 'success' || variant === 'error' ? variant : 'processing';
-  const safeText = String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+function getMemoryStatusWindowHtml(): string {
   return `<!doctype html>
 <html>
 <head>
@@ -2074,6 +2065,8 @@ function getMemoryStatusWindowHtml(
       -webkit-font-smoothing: antialiased;
       user-select: none;
       pointer-events: none;
+      opacity: 0;
+      transition: opacity 180ms ease;
     }
     .wrap {
       width: 100%;
@@ -2086,7 +2079,7 @@ function getMemoryStatusWindowHtml(
       border-radius: 12px;
       border: 1px solid rgba(255,255,255,0.12);
       background: rgba(12,12,14,0.78);
-      box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
       backdrop-filter: blur(18px);
       -webkit-backdrop-filter: blur(18px);
       display: flex;
@@ -2095,6 +2088,7 @@ function getMemoryStatusWindowHtml(
       padding: 0 12px;
       box-sizing: border-box;
       color: rgba(255,255,255,0.92);
+      transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
     }
     .card.success {
       border-color: rgba(52, 211, 153, 0.28);
@@ -2113,6 +2107,7 @@ function getMemoryStatusWindowHtml(
       background: rgba(255,255,255,0.9);
       flex: 0 0 auto;
       box-shadow: 0 0 0 4px rgba(255,255,255,0.10);
+      transition: background 180ms ease, box-shadow 180ms ease;
     }
     .card.processing .dot {
       animation: pulse 1s ease-in-out infinite;
@@ -2141,11 +2136,21 @@ function getMemoryStatusWindowHtml(
 </head>
 <body>
   <div class="wrap">
-    <div id="card" class="card ${safeVariant}">
+    <div id="card" class="card processing">
       <div class="dot"></div>
-      <div id="text" class="text">${safeText}</div>
+      <div id="text" class="text"></div>
     </div>
   </div>
+  <script>
+    window.__scUpdate = function(variant, text) {
+      document.getElementById('card').className = 'card ' + variant;
+      document.getElementById('text').textContent = text;
+      document.documentElement.style.opacity = '1';
+    };
+    window.__scFadeOut = function() {
+      document.documentElement.style.opacity = '0';
+    };
+  </script>
 </body>
 </html>`;
 }
@@ -2161,9 +2166,17 @@ function hideMemoryStatusBar(): void {
   clearMemoryStatusHideTimer();
   memoryStatusRenderSeq += 1;
   if (!memoryStatusWindow || memoryStatusWindow.isDestroyed()) return;
+  const win = memoryStatusWindow;
   try {
-    memoryStatusWindow.hide();
+    if (win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.executeJavaScript('window.__scFadeOut && window.__scFadeOut()').catch(() => {});
+    }
   } catch {}
+  setTimeout(() => {
+    if (!win.isDestroyed()) {
+      try { win.hide(); } catch {}
+    }
+  }, 200);
 }
 
 async function ensureMemoryStatusWindow(): Promise<InstanceType<typeof BrowserWindow> | null> {
@@ -2220,11 +2233,12 @@ async function renderMemoryStatusBarContent(
   if (!memoryStatusWindow || memoryStatusWindow.isDestroyed()) return;
   if (renderSeq !== memoryStatusRenderSeq) return;
   if (!win.webContents || win.webContents.isDestroyed()) return;
+  const safeText = String(payload.text || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'");
   try {
-    await win.loadURL(
-      `data:text/html;charset=utf-8,${encodeURIComponent(
-        getMemoryStatusWindowHtml(payload.variant, payload.text)
-      )}`
+    await win.webContents.executeJavaScript(
+      `window.__scUpdate && window.__scUpdate('${payload.variant}', '${safeText}')`
     );
   } catch (error) {
     if (renderSeq === memoryStatusRenderSeq) {
@@ -6781,6 +6795,11 @@ function createWindow(): void {
   // The dock is hidden later in openLauncherFromUserEntry() after the window
   // is confirmed loaded, or deferred until onboarding completes for fresh installs.
 
+  // Prevent Chromium from throttling JS timers/execution when the window is
+  // hidden. Without this, executeJavaScript on the hidden renderer (no-view
+  // hotkey dispatch) can stall for 1–2 seconds.
+  mainWindow.webContents.setBackgroundThrottling(false);
+
   loadWindowUrl(mainWindow, '/');
 
   mainWindow.webContents.once('did-finish-load', () => {
@@ -8881,7 +8900,19 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
         commandName: cmdName,
         type: 'userInitiated',
       });
-      await showWindow();
+      // For hotkey-triggered no-view commands, skip opening the launcher window.
+      // The renderer will show it if required preferences or arguments still need
+      // to be collected (shouldOpenCommandSetup path in App.tsx).
+      if (source === 'hotkey' && bundle.mode === 'no-view') {
+        // Re-activate the previous frontmost app immediately so that macOS
+        // does not flash the settings window (or any other SuperCmd window)
+        // to the front when the hotkey fires, and so that paste/type operations
+        // land in the correct app without any delay.
+        void activateLastFrontmostApp();
+        void showMemoryStatusBar('processing', `Running ${bundle.title}…`);
+      } else {
+        await showWindow();
+      }
       return await dispatchRendererCustomEvent('sc-launch-extension-bundle', {
         bundle,
         launchOptions: { type: bundle.launchType || 'userInitiated' },
@@ -11113,6 +11144,14 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('hide-window', () => {
     hideWindow();
+  });
+
+  ipcMain.handle('show-window', async () => {
+    await showWindow();
+  });
+
+  ipcMain.handle('no-view-status', (_event: Electron.IpcMainInvokeEvent, variant: 'processing' | 'success' | 'error', text: string) => {
+    void showMemoryStatusBar(variant, String(text || ''));
   });
 
   ipcMain.handle('open-devtools', () => {

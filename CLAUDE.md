@@ -275,6 +275,32 @@ AI availability is checked via `environment.canAccess(AI)` and cached for perfor
 - **Renderer Process**: UI rendering, extension execution, API shim
 - **Preload Script**: Secure IPC bridge between main and renderer
 
+### Memory Status Bar (System Status Badge)
+
+A floating 340×60 px `BrowserWindow` anchored at the bottom-right of the screen used to surface transient system status to the user without opening the launcher.
+
+**Main-process API** (`src/main/main.ts`):
+```typescript
+showMemoryStatusBar(variant: 'processing' | 'success' | 'error', text: string)
+```
+- `processing` — never auto-hides; use while an async operation is in flight
+- `success` / `error` — auto-hide after 3 000 ms
+
+**Renderer → main bridge** (`window.electron.reportNoViewStatus`):
+```typescript
+window.electron.reportNoViewStatus(variant, text)
+// IPC channel: 'no-view-status' → showMemoryStatusBar(variant, text)
+```
+
+**No-view hotkey execution flow:**
+1. `runCommandById` in `main.ts` shows `'processing'` badge immediately (skips `showWindow()`)
+2. Renderer's `NoViewRunner` sets `window.__scNoViewStatusTracking = true` before running the extension fn
+3. `Toast.show()` in `raycast-api/index.tsx` checks `__scNoViewStatusTracking`; if set, it calls `reportNoViewStatus` and sets `__scNoViewStatusReported = true`
+4. `showHUD` internally calls `showToast` which flows through `Toast.show()`, so it is automatically bridged
+5. After the fn resolves/rejects, `NoViewRunner` calls `reportNoViewStatus('success', 'Done')` only if `__scNoViewStatusReported` is still `false` (prevents duplicate messages), then clears both flags
+
+**Rule:** Whenever you want to surface progress/completion of a background or hotkey-triggered operation, use `showMemoryStatusBar` from the main process or `window.electron.reportNoViewStatus` from the renderer. Do not show the launcher window for silent no-view commands.
+
 ## Testing Strategy
 
 1. **Unit Tests**: Test individual API implementations

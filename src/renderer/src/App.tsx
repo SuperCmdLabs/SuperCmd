@@ -413,10 +413,11 @@ const App: React.FC = () => {
 
   const queueNoViewBundleRun = useCallback((
     bundle: ExtensionBundle,
-    launchType: 'userInitiated' | 'background' = 'userInitiated'
+    launchType: 'userInitiated' | 'background' = 'userInitiated',
+    reportStatus = false
   ) => {
     const runId = `${bundle.extensionName || bundle.extName}/${bundle.commandName || bundle.cmdName}/${Date.now()}`;
-    setBackgroundNoViewRuns((prev) => [...prev, { runId, bundle, launchType }]);
+    setBackgroundNoViewRuns((prev) => [...prev, { runId, bundle, launchType, reportStatus }]);
   }, [setBackgroundNoViewRuns]);
 
   const onExitAiMode = useCallback(() => {
@@ -930,6 +931,23 @@ const App: React.FC = () => {
       // Hidden menu-bar runners should not hijack the launcher by forcing
       // view commands into the foreground (e.g. pomodoro auto transitions).
       if (sourceMode === 'menu-bar' && hydrated.mode === 'view') {
+        return;
+      }
+
+      // Hotkey-triggered no-view commands: run silently without showing the launcher.
+      // If required preferences or arguments are missing, open the launcher with the
+      // command name pre-typed in the search so the user can fill in args naturally.
+      if (sourceMode === 'hotkey' && hydrated.mode === 'no-view') {
+        if (shouldOpenCommandSetup(hydrated)) {
+          void window.electron.showWindow();
+          setShowFileSearch(false);
+          setExtensionPreferenceSetup(null);
+          const cmdTitle = hydrated.title || hydrated.commandName || hydrated.cmdName || '';
+          setSearchQuery(cmdTitle);
+          setSelectedIndex(0);
+        } else {
+          queueNoViewBundleRun(hydrated, 'userInitiated', true);
+        }
         return;
       }
 
@@ -2892,6 +2910,7 @@ const App: React.FC = () => {
           launchContext={(run.bundle as any).launchContext}
           fallbackText={(run.bundle as any).fallbackText}
           launchType={run.launchType}
+          reportStatus={run.reportStatus}
           onClose={() => {
             setBackgroundNoViewRuns((prev) => prev.filter((item) => item.runId !== run.runId));
           }}
