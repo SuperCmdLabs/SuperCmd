@@ -23,7 +23,6 @@ THE FIX
 Replace the plain open/write with an fcntl-locked write:
   - Acquire an exclusive advisory lock (fcntl.LOCK_EX) on the file
   - Read current contents under the lock
-  - Check dedup (already done in memory with _seen_msg_hashes set)
   - Append new hash
   - Cap if needed
   - Release lock
@@ -33,7 +32,7 @@ at startup, log a clear warning and rename the file (don't silently reset).
 
 Guard sentinel: '_seen_msgs_filelock'
 """
-import pathlib, subprocess, sys
+import pathlib, subprocess, sys, re, tempfile, os
 
 HOME       = pathlib.Path.home()
 BRIDGE_DIR = HOME / 'cowork-bridge'
@@ -51,22 +50,12 @@ if '_SEEN_MSGS_FILE' not in s:
     print('ERROR — persistent dedup not installed; run fix_persistent_dedup.py first')
     sys.exit(1)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Part 1: Replace _load_seen_msgs() with a hardened version that:
-#   - Renames corrupt files instead of silently resetting
-#   - Logs clearly when starting fresh
-# ══════════════════════════════════════════════════════════════════════════════
+applied = 0
 
-OLD_LOAD = (
-    'def _load_seen_msgs():\n'
-    '    try:\n'
-    '        if _SEEN_MSGS_FILE.exists():\n'
-    '            lines = _SEEN_MSGS_FILE.read_text().splitlines()\n'
-    '            return set(h.strip() for h in lines if h.strip())\n'
-    '    except Exception as _e:\n'
-    '        print(f\'[dedup] Could not load seen-msgs file: {_e}\', flush=True)\n'
-    '    return set()\n'
-)
+# ══════════════════════════════════════════════════════════════════════════════
+# Part 1: Replace _load_seen_msgs() with a hardened version
+#   Uses regex to match regardless of exact quote style / whitespace diffs
+# ══════════════════════════════════════════════════════════════════════════════
 
 NEW_LOAD = (
     'def _load_seen_msgs():\n'
@@ -91,45 +80,48 @@ NEW_LOAD = (
     '    return set()\n'
 )
 
-if OLD_LOAD in s:
-    s = s.replace(OLD_LOAD, NEW_LOAD, 1)
-    print('Part 1: _load_seen_msgs() hardened (corrupt file rename)')
+# Match the entire _load_seen_msgs function body (from def to the final `return set()`)
+_fn_pattern = re.compile(
+    r'def _load_seen_msgs\(\):.*?    return set\(\)\n',
+    re.DOTALL,
+)
+_fn_match = _fn_pattern.search(s)
+if _fn_match:
+    old_fn = _fn_match.group(0)
+    if '_seen_msgs_filelock' in old_fn:
+        print('Part 1: _load_seen_msgs() already hardened')
+    else:
+        s = s.replace(old_fn, NEW_LOAD, 1)
+        print('Part 1: _load_seen_msgs() hardened (regex match)')
+        applied += 1
 else:
-    print('Part 1 WARNING: _load_seen_msgs() pattern not found — skipping')
+    print('Part 1 WARNING: _load_seen_msgs() not found in bridge.py — skipping')
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Part 2: Replace the plain append + cap block with a locked version
+# Part 2: Replace the plain append + cap block with an fcntl-locked version
+#   Flexible regex match on the key lines regardless of indentation level
 # ══════════════════════════════════════════════════════════════════════════════
 
-# The existing persist block (from fix_persistent_dedup.py) looks like:
-OLD_PERSIST = None
-
-# Try to find the exact block using a flexible approach
-import re
-
-# Find the persist block by looking for the try: ... with open(_SEEN_MSGS_FILE, "a") pattern
+# Match: try: ... with open(_SEEN_MSGS_FILE, "a") ... except Exception as _sme: ...
 _persist_pattern = re.compile(
-    r'(?P<indent>[ \t]*)try:\n'
-    r'(?P=indent)    with open\(_SEEN_MSGS_FILE, "a"\) as _smf:\n'
-    r'(?P=indent)        _smf\.write\(_msg_hash \+ "\\n"\)\n'
-    r'(?P=indent)    # Cap file at 5000 lines \(keep newest\)\n'
-    r'(?P=indent)    _sm_lines = _SEEN_MSGS_FILE\.read_text\(\)\.splitlines\(\)\n'
-    r'(?P=indent)    if len\(_sm_lines\) > 5000:\n'
-    r'(?P=indent)        _SEEN_MSGS_FILE\.write_text\("\\n"\.join\(_sm_lines\[-5000:\]\) \+ "\\n"\)\n'
-    r'(?P=indent)except Exception as _sme:\n'
-    r'(?P=indent)    print\(f"\[dedup\] Could not persist hash: \{_sme\}", flush=True\)\n'
+    r'(?P<ind>[ \t]*)try:\n'
+    r'(?P=ind)[ \t]+with open\(_SEEN_MSGS_FILE,\s*["\']a["\']\)[^\n]*:\n'
+    r'(?:.*\n)*?'                     # any lines inside
+    r'(?P=ind)except Exception as _sme:[^\n]*\n'
+    r'(?P=ind)[ \t]+print[^\n]*_sme[^\n]*\n',
+    re.MULTILINE,
 )
 
-m = _persist_pattern.search(s)
-if m:
-    ind = m.group('indent')
-    OLD_PERSIST = m.group(0)
+_pm = _persist_pattern.search(s)
+if _pm:
+    ind = _pm.group('ind')
+    OLD_PERSIST = _pm.group(0)
 
     NEW_PERSIST = (
         f'{ind}try:\n'
         f'{ind}    import fcntl as _fcntl\n'
         f'{ind}    with open(_SEEN_MSGS_FILE, "a+", encoding="utf-8") as _smf:\n'
-        f'{ind}        _fcntl.flock(_smf, _fcntl.LOCK_EX)  # acquire exclusive lock\n'
+        f'{ind}        _fcntl.flock(_smf, _fcntl.LOCK_EX)  # exclusive lock\n'
         f'{ind}        try:\n'
         f'{ind}            _smf.write(_msg_hash + "\\n")\n'
         f'{ind}            _smf.flush()\n'
@@ -144,7 +136,7 @@ if m:
         f'{ind}        finally:\n'
         f'{ind}            _fcntl.flock(_smf, _fcntl.LOCK_UN)  # always release\n'
         f'{ind}except ImportError:\n'
-        f'{ind}    # fcntl not available (non-Unix) — fall back to plain append\n'
+        f'{ind}    # fcntl not available — fall back to plain append\n'
         f'{ind}    with open(_SEEN_MSGS_FILE, "a", encoding="utf-8") as _smf:\n'
         f'{ind}        _smf.write(_msg_hash + "\\n")\n'
         f'{ind}except Exception as _sme:\n'
@@ -153,14 +145,20 @@ if m:
 
     s = s.replace(OLD_PERSIST, NEW_PERSIST, 1)
     print('Part 2: dedup persist block replaced with fcntl-locked version')
+    applied += 1
 else:
-    print('Part 2 WARNING: persist block pattern not found — file locking not applied')
-    print('  (dedup may have different structure than expected)')
+    print('Part 2 WARNING: persist block not found — file locking not applied')
+    print('  Run: grep -n "_SEEN_MSGS_FILE" ~/cowork-bridge/bridge.py | head -20')
+    print('  to inspect the dedup structure manually')
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Validate & write
+# Validate & write — only if something actually changed
 # ══════════════════════════════════════════════════════════════════════════════
-import tempfile, os
+
+if applied == 0:
+    print('\nNo changes made — bridge.py unchanged')
+    print('Dedup may already be hardened or have an unexpected structure.')
+    sys.exit(0)
 
 with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tf:
     tf.write(s)
@@ -175,6 +173,6 @@ if r.returncode != 0:
     sys.exit(1)
 
 open(BRIDGE, 'w', encoding='utf-8').write(s)
-print('\n✅ Dedup file locking installed')
+print(f'\n✅ Dedup file locking installed ({applied} change(s))')
 print('  - fcntl.LOCK_EX protects concurrent .seen_msgs writes')
 print('  - Corrupt .seen_msgs renamed instead of silently reset')

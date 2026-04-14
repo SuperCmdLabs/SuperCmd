@@ -147,7 +147,6 @@ if '_backup_hardened' not in s:
 # ══════════════════════════════════════════════════════════════════════════════
 skills_dir = BRIDGE_DIR / 'skills'
 if skills_dir.exists():
-    import json, os
     from collections import defaultdict
     versioned = defaultdict(list)
     for p in skills_dir.glob('*.json'):
@@ -176,7 +175,7 @@ else:
 # ══════════════════════════════════════════════════════════════════════════════
 # Validate & write
 # ══════════════════════════════════════════════════════════════════════════════
-import tempfile
+import tempfile, os
 
 with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tf:
     tf.write(s)

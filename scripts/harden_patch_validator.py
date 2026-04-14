@@ -45,8 +45,13 @@ if '_check_patch_safety' in s:
     sys.exit(0)
 
 if '_apply_patch' not in s:
-    print('ERROR — _apply_patch not found; run fix_self_improvement.py first')
-    sys.exit(1)
+    print('NOTE — _apply_patch not found (fix_self_improvement.py not yet installed)')
+    print('Installing _check_patch_safety() as a standalone function.')
+    print('It will be wired in automatically when fix_self_improvement.py is run.')
+    # Still install the safety function so it exists when needed; skip wiring steps.
+    _APPLY_PATCH_MISSING = True
+else:
+    _APPLY_PATCH_MISSING = False
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Part 1: Add _check_patch_safety() function before _apply_patch
@@ -93,11 +98,24 @@ def _check_patch_safety(code: str) -> list:
 
 '''
 
-# Insert before _apply_patch
+# Insert safety code — before _apply_patch if present, else before _pending_exec or
+# the main loop sentinel as a standalone function
 APPLY_ANCHOR = 'def _apply_patch(code: str, task: str, sender: str):'
+FALLBACK_ANCHORS = ['_pending_exec  = {}', '    # _bridge_main_loop_fixed']
+
 if APPLY_ANCHOR in s:
     s = s.replace(APPLY_ANCHOR, SAFETY_CODE + APPLY_ANCHOR, 1)
     print('Part 1: _check_patch_safety() inserted before _apply_patch()')
+elif _APPLY_PATCH_MISSING:
+    inserted_fb = False
+    for _fa in FALLBACK_ANCHORS:
+        if _fa in s:
+            s = s.replace(_fa, SAFETY_CODE.rstrip() + '\n\n' + _fa, 1)
+            print(f'Part 1: _check_patch_safety() installed as standalone (anchor: {_fa!r})')
+            inserted_fb = True
+            break
+    if not inserted_fb:
+        print('Part 1 WARNING: no insertion anchor found — safety function not installed')
 else:
     print('Part 1 FAILED — def _apply_patch not found')
     sys.exit(1)
@@ -149,7 +167,9 @@ NEW_EMPTY_CHECK = (
     '            print(f"[build] MEDIUM-risk patterns noted — applying anyway", flush=True)\n'
 )
 
-if OLD_EMPTY_CHECK in s:
+if _APPLY_PATCH_MISSING:
+    print('Part 2: skipped — _apply_patch not present (will wire on next run after install)')
+elif OLD_EMPTY_CHECK in s:
     s = s.replace(OLD_EMPTY_CHECK, NEW_EMPTY_CHECK, 1)
     print('Part 2: safety scan wired into _apply_patch()')
 else:
@@ -187,7 +207,9 @@ UNSAFE_APPROVE_DISPATCH = (
     "                    continue\n"
 )
 
-if OLD_APPROVE in s:
+if _APPLY_PATCH_MISSING:
+    print('Part 3: skipped — no approve handler (will wire on next run after install)')
+elif OLD_APPROVE in s:
     s = s.replace(OLD_APPROVE, UNSAFE_APPROVE_DISPATCH + OLD_APPROVE, 1)
     print('Part 3: "approve unsafe" handler inserted before "approve" handler')
 else:
