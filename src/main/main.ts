@@ -6880,9 +6880,26 @@ function createWindow(): void {
         focusable:
           detachedPopupName !== DETACHED_WHISPER_WINDOW_NAME &&
           detachedPopupName !== DETACHED_MEMORY_STATUS_WINDOW_NAME,
+        // Use NSPanel for non-focusable overlays so showing them does not
+        // activate SuperCmd's app context. `focusable: false` alone prevents
+        // keyboard focus but still causes app activation on macOS, which
+        // triggers hide-on-blur behavior in other apps (e.g., other
+        // launcher-style Electron apps the user has running).
+        ...(process.platform === 'darwin' &&
+          (detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ||
+            detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME)
+          ? { type: 'panel' as const }
+          : {}),
         skipTaskbar: true,
         alwaysOnTop: true,
-        show: true,
+        // For whisper/memory-status overlays, defer showing until
+        // `ready-to-show` fires and then use `showInactive()` — the default
+        // `show: true` path triggers [NSApp activate] on macOS even with
+        // `type: 'panel'` + `focusable: false`, which blurs other apps.
+        show:
+          !(process.platform === 'darwin' &&
+            (detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ||
+              detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME)),
         acceptFirstMouse: true,
         webPreferences: {
           nodeIntegration: false,
@@ -6918,6 +6935,11 @@ function createWindow(): void {
       try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
       // Ignore mouse events by default so clicks pass through; widget will re-enable on hover
       try { childWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+      if (process.platform === 'darwin') {
+        childWindow.once('ready-to-show', () => {
+          try { childWindow.showInactive(); } catch {}
+        });
+      }
       childWindow.on('closed', () => {
         if (whisperChildWindow === childWindow) whisperChildWindow = null;
       });
@@ -6931,6 +6953,11 @@ function createWindow(): void {
     if (detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME) {
       try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
       try { childWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+      if (process.platform === 'darwin') {
+        childWindow.once('ready-to-show', () => {
+          try { childWindow.showInactive(); } catch {}
+        });
+      }
     }
   });
 
@@ -8240,20 +8267,6 @@ async function hideAndPaste(): Promise<boolean> {
   const { promisify } = require('util');
   const execFileAsync = promisify(execFile);
 
-  // Fast path: in-process native addon — activates app, polls until
-  // frontmost, posts ⌘V via CGEvent. Runs inside Electron so it
-  // inherits accessibility permissions. Zero process spawn overhead.
-  const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
-  if (target) {
-    try {
-      const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
-      const ok = fastPasteAddon.activateAndPaste(target);
-      if (ok) return true;
-    } catch (e: any) {
-      console.warn('[hideAndPaste] fast-paste addon failed:', e?.message);
-    }
-  }
-
   // Slow fallback: osascript for both activation and keystroke
   await activateLastFrontmostApp();
   await new Promise(resolve => setTimeout(resolve, 200));
@@ -8520,15 +8533,11 @@ async function openLauncherAndRunSystemCommand(
     } else {
       mainWindow?.webContents.send('run-system-command', commandId);
     }
-    if (preserveFocusWhenHidden && !showLauncher) {
-      // Detached overlays can temporarily activate SuperCmd; restore the editor app.
-      [50, 180, 360].forEach((delayMs) => {
-        setTimeout(() => {
-          if (isVisible) return;
-          void activateLastFrontmostApp();
-        }, delayMs);
-      });
-    }
+    // Intentionally NO focus-restore loop here. Detached overlays
+    // (whisper / memory-status) use `type: 'panel'` + `showInactive()` and
+    // therefore never take focus; any explicit `activateLastFrontmostApp()`
+    // would re-order windows in other apps (e.g. launcher-style apps that
+    // hide-on-blur) even though nothing stole focus in the first place.
   };
 
   if (mainWindow.webContents.isLoadingMainFrame()) {

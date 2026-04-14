@@ -39,7 +39,7 @@ const PUSH_TO_TALK_MODE = true;
 const _sessionConfigCache = ((window as any).__scWhisperSessionConfigCache ??= { value: null }) as { value: { backend: string; engine: string; language: string } | null };
 const _lastFinalizedCache = ((window as any).__scWhisperLastFinalized ??= { text: '', at: 0 }) as { text: string; at: number };
 let _nativeCaptureActive = false;
-const DOUBLE_TAP_WINDOW_MS = 3000;
+const DOUBLE_TAP_WINDOW_MS = 500;
 
 function formatShortcutLabel(shortcut: string): string {
   return formatShortcutForDisplay(shortcut).replace(/ \+ /g, ' ');
