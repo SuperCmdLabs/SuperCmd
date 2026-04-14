@@ -208,14 +208,39 @@ else:
 # We add: delete_calendar_events, create_calendar_event
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Find the get_calendar tool definition and insert new tools after it
-# Pattern: the closing brace of the get_calendar tool entry
-_gc_tool_m = re.search(
-    r'(\{[^{}]*"name"\s*:\s*"get_calendar"[^{}]*\})',
-    s, re.DOTALL
-)
+# Find the get_calendar tool entry — it uses nested {"type":"function","function":{...}}
+# so we locate "name":"get_calendar" then find the closing }} of its outer wrapper.
+_gc_name_pos = s.find('"name":"get_calendar"')
+if _gc_name_pos == -1:
+    _gc_name_pos = s.find('"name": "get_calendar"')
+
+if _gc_name_pos != -1:
+    # Scan backward to find the opening { of the outer tool object
+    depth = 0
+    outer_start = _gc_name_pos
+    for _ci in range(_gc_name_pos, -1, -1):
+        if s[_ci] == '}': depth += 1
+        elif s[_ci] == '{':
+            if depth == 0:
+                outer_start = _ci
+                break
+            depth -= 1
+    # Scan forward to find the matching closing }}
+    depth = 0
+    outer_end = _gc_name_pos
+    for _ci in range(outer_start, len(s)):
+        if s[_ci] == '{': depth += 1
+        elif s[_ci] == '}':
+            depth -= 1
+            if depth == 0:
+                outer_end = _ci + 1
+                break
+    old_tool_def = s[outer_start:outer_end]
+    _gc_tool_m = True  # signal success
+else:
+    _gc_tool_m = None
+
 if _gc_tool_m:
-    old_tool_def = _gc_tool_m.group(0)
     new_tool_defs = old_tool_def + ''',
         {
             "name": "delete_calendar_events",
@@ -312,8 +337,9 @@ if _gc_disp_m:
 {ind}            lines = preview.strip().splitlines()
 {ind}            total_line = [l for l in lines if l.startswith("TOTAL:")]
 {ind}            count = total_line[0].replace("TOTAL:", "").strip() if total_line else "?"
+{ind}            scope = "future occurrences" if future_only else "ALL occurrences"
 {ind}            r = (f"Found {{count}} event(s) matching '{{event_name}}'.\\n"
-{ind}                 f"To delete {'future occurrences' if future_only else 'ALL occurrences'}, "
+{ind}                 f"To delete {{scope}}, "
 {ind}                 f"call delete_calendar_events again with confirmed=true.")
 {ind}    else:
 {ind}        r = calendar_delete_events(event_name, future_only=future_only)
