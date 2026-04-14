@@ -100,12 +100,17 @@ def _check_patch_safety(code: str) -> list:
 
 # Insert safety code — before _apply_patch if present, else before _pending_exec or
 # the main loop sentinel as a standalone function
-APPLY_ANCHOR = 'def _apply_patch(code: str, task: str, sender: str):'
+# Match any of the known _apply_patch signatures (with or without target_file param)
+APPLY_ANCHORS = [
+    'def _apply_patch(code: str, task: str, sender: str, target_file: str = None):',
+    'def _apply_patch(code: str, task: str, sender: str):',
+]
+APPLY_ANCHOR = next((a for a in APPLY_ANCHORS if a in s), None)
 FALLBACK_ANCHORS = ['_pending_exec  = {}', '    # _bridge_main_loop_fixed']
 
-if APPLY_ANCHOR in s:
+if APPLY_ANCHOR is not None:
     s = s.replace(APPLY_ANCHOR, SAFETY_CODE + APPLY_ANCHOR, 1)
-    print('Part 1: _check_patch_safety() inserted before _apply_patch()')
+    print(f'Part 1: _check_patch_safety() inserted before _apply_patch()')
 elif _APPLY_PATCH_MISSING:
     inserted_fb = False
     for _fa in FALLBACK_ANCHORS:
@@ -173,7 +178,17 @@ elif OLD_EMPTY_CHECK in s:
     s = s.replace(OLD_EMPTY_CHECK, NEW_EMPTY_CHECK, 1)
     print('Part 2: safety scan wired into _apply_patch()')
 else:
-    print('Part 2 WARNING: could not find insertion point in _apply_patch — scan not wired')
+    # Try regex match for the empty-code guard (message text may differ)
+    import re as _re2
+    _ec_m = _re2.search(
+        r'(    if not _code:\n        send_imessage\(sender,[^\n]+\n        return False\n)',
+        s
+    )
+    if _ec_m:
+        s = s.replace(_ec_m.group(0), _ec_m.group(0) + '\n' + ''.join(NEW_EMPTY_CHECK.splitlines(True)[3:]), 1)
+        print('Part 2: safety scan wired into _apply_patch() (regex match)')
+    else:
+        print('Part 2 WARNING: could not find insertion point in _apply_patch — scan not wired')
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Part 3: Add "approve unsafe" handler to the message loop
