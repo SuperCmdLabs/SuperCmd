@@ -456,6 +456,11 @@ const App: React.FC = () => {
   const quickLinkDynamicInputRef = useRef<HTMLInputElement>(null);
   const windowPresetCommandQueueRef = useRef<Promise<void>>(Promise.resolve());
   const lastWindowHiddenAtRef = useRef<number>(0);
+  // Holds a search query to restore after the window-shown reset, set by the
+  // hotkey no-view path when it needs to open the launcher with a pre-typed query.
+  const pendingWindowShownQueryRef = useRef<string | null>(null);
+  // When true, focus the first inline argument input as soon as it appears.
+  const pendingFocusInlineArgRef = useRef(false);
   const calcRequestSeqRef = useRef(0);
   const isLauncherModeActiveRef = useRef(false);
   const pinnedCommandsRef = useRef<string[]>([]);
@@ -827,7 +832,12 @@ const App: React.FC = () => {
 
       // If an extension is open, keep it alive — don't reset
       if (extensionViewRef.current && !shouldResetOverlays) return;
-      setSearchQuery('');
+      const pendingQuery = pendingWindowShownQueryRef.current;
+      pendingWindowShownQueryRef.current = null;
+      if (pendingQuery) {
+        pendingFocusInlineArgRef.current = true;
+      }
+      setSearchQuery(pendingQuery ?? '');
       setSelectedIndex(0);
       exitAiMode();
       setShowClipboardManager(false);
@@ -939,13 +949,17 @@ const App: React.FC = () => {
       // command name pre-typed in the search so the user can fill in args naturally.
       if (sourceMode === 'hotkey' && hydrated.mode === 'no-view') {
         if (shouldOpenCommandSetup(hydrated)) {
+          const cmdTitle = hydrated.title || hydrated.commandName || hydrated.cmdName || '';
+          pendingWindowShownQueryRef.current = cmdTitle;
           void window.electron.showWindow();
           setShowFileSearch(false);
           setExtensionPreferenceSetup(null);
-          const cmdTitle = hydrated.title || hydrated.commandName || hydrated.cmdName || '';
-          setSearchQuery(cmdTitle);
-          setSelectedIndex(0);
         } else {
+          // Restore the previous frontmost app immediately so paste/type
+          // operations land in the right window. Only done here (silent path)
+          // — the launcher-open path must NOT call this or it races with
+          // showWindow() and steals focus back from the launcher.
+          void window.electron.activateLastFrontmostApp?.();
           queueNoViewBundleRun(hydrated, 'userInitiated', true);
         }
         return;
@@ -1619,6 +1633,17 @@ const App: React.FC = () => {
       selectedInlineQuickLinkDynamicFields.length
     );
   }, [selectedInlineQuickLinkDynamicFields.length]);
+
+  // When a hotkey-triggered no-view command opens the launcher with a pre-typed
+  // query, focus the first inline argument input once it appears in the DOM.
+  useEffect(() => {
+    if (!pendingFocusInlineArgRef.current) return;
+    if (!isShowingInlineArgumentInputs) return;
+    pendingFocusInlineArgRef.current = false;
+    requestAnimationFrame(() => {
+      inlineArgumentInputRefs.current[0]?.focus();
+    });
+  }, [isShowingInlineArgumentInputs]);
 
   useEffect(() => {
     if (!isLauncherModeActive) return;

@@ -8904,11 +8904,6 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       // The renderer will show it if required preferences or arguments still need
       // to be collected (shouldOpenCommandSetup path in App.tsx).
       if (source === 'hotkey' && bundle.mode === 'no-view') {
-        // Re-activate the previous frontmost app immediately so that macOS
-        // does not flash the settings window (or any other SuperCmd window)
-        // to the front when the hotkey fires, and so that paste/type operations
-        // land in the correct app without any delay.
-        void activateLastFrontmostApp();
         void showMemoryStatusBar('processing', `Running ${bundle.title}…`);
       } else {
         await showWindow();
@@ -11148,6 +11143,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('show-window', async () => {
     await showWindow();
+  });
+
+  ipcMain.handle('activate-last-frontmost-app', async () => {
+    await activateLastFrontmostApp();
   });
 
   ipcMain.handle('no-view-status', (_event: Electron.IpcMainInvokeEvent, variant: 'processing' | 'success' | 'error', text: string) => {

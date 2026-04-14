@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('execute-command-from-widget', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
   showWindow: (): Promise<void> => ipcRenderer.invoke('show-window'),
+  activateLastFrontmostApp: (): Promise<void> => ipcRenderer.invoke('activate-last-frontmost-app'),
   dismissUpdateBanner: (): Promise<void> => ipcRenderer.invoke('dismiss-update-banner'),
   resetLauncherPosition: (): Promise<void> => ipcRenderer.invoke('reset-launcher-position'),
   openDevTools: (): Promise<boolean> => ipcRenderer.invoke('open-devtools'),
