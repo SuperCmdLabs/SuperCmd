@@ -2065,7 +2065,7 @@ function getMemoryStatusWindowHtml(): string {
       -webkit-font-smoothing: antialiased;
       user-select: none;
       pointer-events: none;
-      opacity: 0;
+      opacity: 1;
       transition: opacity 180ms ease;
     }
     .wrap {
@@ -2145,6 +2145,7 @@ function getMemoryStatusWindowHtml(): string {
     window.__scUpdate = function(variant, text) {
       document.getElementById('card').className = 'card ' + variant;
       document.getElementById('text').textContent = text;
+      // Restore opacity in case a previous fade-out set it to 0.
       document.documentElement.style.opacity = '1';
     };
     window.__scFadeOut = function() {
@@ -2206,6 +2207,12 @@ async function ensureMemoryStatusWindow(): Promise<InstanceType<typeof BrowserWi
   });
   try { memoryStatusWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
   try { memoryStatusWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+  // pop-up-menu level floats reliably above all normal app windows on macOS
+  // without the entitlement issues that screen-saver level can trigger.
+  try { memoryStatusWindow.setAlwaysOnTop(true, 'pop-up-menu'); } catch {}
+  // Prevent Chromium throttling on the hidden status window so executeJavaScript
+  // fires immediately when the badge needs to update.
+  try { memoryStatusWindow.webContents.setBackgroundThrottling(false); } catch {}
   if (process.platform === 'darwin') {
     try { memoryStatusWindow.setWindowButtonVisibility(false); } catch {}
   }

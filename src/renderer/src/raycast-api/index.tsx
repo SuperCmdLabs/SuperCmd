@@ -664,6 +664,18 @@ export class Toast {
   private refresh() {
     if (!this._el) return;
 
+    // Mirror live property changes (style, title) to the system badge while a
+    // no-view hotkey run is in progress. show() handles the initial report;
+    // refresh() handles subsequent mutations like toast.style = Success.
+    if ((window as any).__scNoViewStatusTracking) {
+      const variant =
+        this._style === ToastStyle.Failure ? 'error' as const :
+        this._style === ToastStyle.Animated ? 'processing' as const :
+        'success' as const;
+      void (window as any).electron?.reportNoViewStatus?.(variant, String(this._title || ''));
+      (window as any).__scNoViewStatusReported = true;
+    }
+
     this.updateActions();
     this.updateKeyboardHandler();
     this.renderToastBody();
