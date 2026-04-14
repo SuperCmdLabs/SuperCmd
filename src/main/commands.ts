@@ -60,7 +60,7 @@ const RESET_POSITION_ICON_DATA_URL = svgToBase64DataUrl(
 );
 
 const TOGGLE_APPEARANCE_ICON_DATA_URL = svgToBase64DataUrl(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="taBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#cbd5e1" stop-opacity="0.7"/><stop offset="1" stop-color="#475569" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#taBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z"/></g></svg>'
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="taBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#cbd5e1" stop-opacity="0.7"/><stop offset="1" stop-color="#475569" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#taBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z" fill="rgba(255,255,255,0.92)"/></g></svg>'
 );
 
 const SHUTDOWN_ICON_DATA_URL = svgToBase64DataUrl(
