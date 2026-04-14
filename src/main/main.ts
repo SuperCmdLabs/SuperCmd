@@ -1236,6 +1236,10 @@ function sendWhisperCppRequest(request: Record<string, any>): Promise<any> {
       reject(new Error('whisper.cpp server not running'));
       return;
     }
+    if (!whisperCppServerProcess.stdin) {
+      reject(new Error('whisper.cpp server stdin not available'));
+      return;
+    }
     if (whisperCppPendingRequest) {
       reject(new Error('Another whisper.cpp request is already in flight'));
       return;
@@ -6200,6 +6204,8 @@ function startWhisperHoldWatcher(shortcut: string, holdSeq: number): void {
     if (text) console.warn('[Whisper][hold]', text);
   });
 
+  console.log(`[Whisper][hold] Spawned hold watcher for ${shortcut} (pid ${whisperHoldWatcherProcess?.pid})`);
+
   whisperHoldWatcherProcess.on('error', (error: any) => {
     console.warn('[Whisper][hold] Monitor process error:', error);
     whisperHoldWatcherProcess = null;
@@ -6207,7 +6213,8 @@ function startWhisperHoldWatcher(shortcut: string, holdSeq: number): void {
     whisperHoldWatcherSeq = 0;
   });
 
-  whisperHoldWatcherProcess.on('exit', () => {
+  whisperHoldWatcherProcess.on('exit', (code: number | null, signal: string | null) => {
+    console.log(`[Whisper][hold] Hold watcher exited (code=${code}, signal=${signal})`);
     whisperHoldWatcherProcess = null;
     whisperHoldWatcherStdoutBuffer = '';
     if (whisperHoldWatcherSeq === holdSeq) {
@@ -8588,6 +8595,23 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
 
   if (isWhisperSpeakToggleCommand) {
     const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '').trim();
+    console.log(`[Whisper][speak-toggle] source=${source} overlayVisible=${whisperOverlayVisible} sinceShown=${Date.now() - lastWhisperShownAt}ms`);
+    if (source === 'hotkey' && whisperOverlayVisible) {
+      // Treat a second hotkey press as toggle-off. Push-to-talk release is
+      // handled by the Swift hold watcher (when Input Monitoring is granted);
+      // if that's unavailable, this path remains the only way to end the
+      // session via keyboard.
+      const now = Date.now();
+      if (now - lastWhisperShownAt < 350) {
+        console.log('[Whisper][speak-toggle] ignoring toggle-off (within 350ms debounce)');
+        return true;
+      }
+      console.log('[Whisper][speak-toggle] sending whisper-stop-and-close (toggle-off)');
+      mainWindow?.webContents.send('whisper-stop-and-close');
+      whisperHoldRequestSeq += 1;
+      stopWhisperHoldWatcher();
+      return true;
+    }
     const holdSeq = ++whisperHoldRequestSeq;
     if (whisperOverlayVisible) {
       captureFrontmostAppContext();
@@ -10994,8 +11018,13 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
       });
       if (success) {
         registeredHotkeys.set(normalizedShortcut, commandId);
+        console.log(`[Hotkey] Registered ${normalizedShortcut} → ${commandId}`);
+      } else {
+        console.warn(`[Hotkey] FAILED to register ${normalizedShortcut} → ${commandId} (likely held by another app)`);
       }
-    } catch {}
+    } catch (err) {
+      console.warn(`[Hotkey] Exception registering ${normalizedShortcut} → ${commandId}:`, err);
+    }
   }
 
   syncFnSpeakToggleWatcher(hotkeys);
@@ -13985,11 +14014,16 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('whisper-type-text-live', async (_event: any, text: string) => {
     const nextText = String(text || '');
+    console.log(`[Whisper][whisper-type-live] len=${nextText.length} target=${lastFrontmostApp?.bundleId || lastFrontmostApp?.name || 'none'}`);
     if (!nextText) {
       return { typed: false, fallbackClipboard: false };
     }
 
-    if (tryFastPaste(nextText)) return { typed: true, fallbackClipboard: false };
+    if (tryFastPaste(nextText)) {
+      console.log('[Whisper][whisper-type-live] fast-paste succeeded');
+      return { typed: true, fallbackClipboard: false };
+    }
+    console.log('[Whisper][whisper-type-live] fast-paste failed, falling back to osascript');
 
     // Slow fallback: osascript
     await activateLastFrontmostApp();
@@ -15276,21 +15310,30 @@ if let tiff = image?.tiffRepresentation {
     hideWindow();
   });
 
-  // Wait for the renderer React app to mount before dispatching the initial
-  // window-shown / run-system-command.  `did-finish-load` only means the HTML
-  // document loaded — React useEffect listeners register asynchronously after
-  // that, so messages sent too early are silently lost.
-  let launcherEntryDispatched = false;
-  const dispatchLauncherEntry = () => {
-    if (launcherEntryDispatched) return;
-    launcherEntryDispatched = true;
-    void openLauncherFromUserEntry();
-  };
-  ipcMain.once('renderer-ready', dispatchLauncherEntry);
-  // Safety fallback: if the renderer-ready signal never arrives (e.g. the
-  // renderer crashes or loads a different route), open the launcher anyway
-  // so first launch never silently hangs.
-  setTimeout(dispatchLauncherEntry, 5000);
+  // Fresh installs need to surface the onboarding UI; returning users should
+  // stay in the background until the global hotkey is pressed.
+  if (!settings.hasSeenOnboarding) {
+    // Wait for the renderer React app to mount before dispatching the initial
+    // window-shown / run-system-command.  `did-finish-load` only means the HTML
+    // document loaded — React useEffect listeners register asynchronously after
+    // that, so messages sent too early are silently lost.
+    let launcherEntryDispatched = false;
+    const dispatchLauncherEntry = () => {
+      if (launcherEntryDispatched) return;
+      launcherEntryDispatched = true;
+      void openLauncherFromUserEntry();
+    };
+    ipcMain.once('renderer-ready', dispatchLauncherEntry);
+    // Safety fallback: if the renderer-ready signal never arrives (e.g. the
+    // renderer crashes or loads a different route), open the launcher anyway
+    // so first launch never silently hangs.
+    setTimeout(dispatchLauncherEntry, 5000);
+  } else {
+    if (process.platform === 'darwin') {
+      app.dock.hide();
+    }
+    setLauncherMode('default');
+  }
 
   app.on('activate', () => {
     // During onboarding the window is shown but may lose visual focus to a system
