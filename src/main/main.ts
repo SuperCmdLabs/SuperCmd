@@ -1948,9 +1948,11 @@ function computeDetachedPopupPosition(
   }
 
   if (popupName === DETACHED_MEMORY_STATUS_WINDOW_NAME) {
+    // Horizontally centered, vertically centered in the bottom half of the
+    // work area (i.e. 3/4 of the way down the screen).
     return {
-      x: workArea.x + workArea.width - width - 20,
-      y: workArea.y + 16,
+      x: workArea.x + Math.floor((workArea.width - width) / 2),
+      y: workArea.y + Math.floor(workArea.height * 0.75 - height / 2),
     };
   }
 
@@ -2282,12 +2284,9 @@ async function showMemoryStatusBar(
   } catch {}
   if (renderSeq !== memoryStatusRenderSeq) return;
   try {
-    if (!win.isVisible()) {
-      if (typeof (win as any).showInactive === 'function') (win as any).showInactive();
-      else win.show();
-    } else {
-      win.show();
-    }
+    // Always use showInactive — the badge must never steal focus from the user's app.
+    if (typeof (win as any).showInactive === 'function') (win as any).showInactive();
+    else if (!win.isVisible()) win.show();
     win.moveTop();
   } catch {}
 
@@ -7664,6 +7663,11 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
 
 function hideWindow(): void {
   if (!mainWindow) return;
+  // Already hidden — calling mainWindow.hide() again on macOS triggers an
+  // NSWindow orderOut which can shift focus to another SuperCmd window (e.g.
+  // the settings window), causing paste/keystroke events to land there instead
+  // of the user's active app.
+  if (!isVisible) return;
   emitWindowHidden();
   mainWindow.hide();
   isVisible = false;
@@ -8907,11 +8911,12 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
         commandName: cmdName,
         type: 'userInitiated',
       });
-      // For hotkey-triggered no-view commands, skip opening the launcher window.
-      // The renderer will show it if required preferences or arguments still need
-      // to be collected (shouldOpenCommandSetup path in App.tsx).
+      // For hotkey-triggered no-view commands, capture the frontmost app NOW
+      // (before the event reaches the renderer) so that any subsequent
+      // pasteText / hideAndPaste() call has a fresh lastFrontmostApp value.
+      // showWindow() captures it inside, but for silent runs we never call it.
       if (source === 'hotkey' && bundle.mode === 'no-view') {
-        void showMemoryStatusBar('processing', `Running ${bundle.title}…`);
+        captureFrontmostAppContext();
       } else {
         await showWindow();
       }

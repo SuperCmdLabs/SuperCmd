@@ -59,6 +59,7 @@ import {
   clearCommandArguments,
   hydrateExtensionBundlePreferences,
   shouldOpenCommandSetup,
+  getMissingRequiredPreferences,
   getMissingRequiredScriptArguments, toScriptArgumentMapFromArray,
 } from './utils/extension-preferences';
 import { applyAppFontSize, getDefaultAppFontSize } from './utils/font-size';
@@ -945,21 +946,23 @@ const App: React.FC = () => {
       }
 
       // Hotkey-triggered no-view commands: run silently without showing the launcher.
-      // If required preferences or arguments are missing, open the launcher with the
-      // command name pre-typed in the search so the user can fill in args naturally.
+      // If the command has argument definitions, ALWAYS open the launcher with the
+      // command name pre-typed so the user can review/fill args before running.
+      // Only run silently when the command has no arguments (and prefs are all filled).
       if (sourceMode === 'hotkey' && hydrated.mode === 'no-view') {
-        if (shouldOpenCommandSetup(hydrated)) {
+        const hasRequiredArgDefs = (hydrated.commandArgumentDefinitions || []).some(d => !!d.required);
+        const hasMissingPrefs = getMissingRequiredPreferences(hydrated).length > 0;
+        if (hasRequiredArgDefs || hasMissingPrefs) {
           const cmdTitle = hydrated.title || hydrated.commandName || hydrated.cmdName || '';
           pendingWindowShownQueryRef.current = cmdTitle;
           void window.electron.showWindow();
           setShowFileSearch(false);
           setExtensionPreferenceSetup(null);
         } else {
-          // Restore the previous frontmost app immediately so paste/type
-          // operations land in the right window. Only done here (silent path)
-          // — the launcher-open path must NOT call this or it races with
-          // showWindow() and steals focus back from the launcher.
-          void window.electron.activateLastFrontmostApp?.();
+          // No-view hotkey commands never call showWindow(), so SuperCmd never
+          // takes focus — the user's active app keeps focus throughout.
+          // activateLastFrontmostApp() is intentionally NOT called here: it
+          // uses stale lastFrontmostApp data and can activate the wrong app.
           queueNoViewBundleRun(hydrated, 'userInitiated', true);
         }
         return;

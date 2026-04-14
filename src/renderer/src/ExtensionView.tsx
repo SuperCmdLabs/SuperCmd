@@ -3525,7 +3525,9 @@ const NoViewRunner: React.FC<{
 
     (async () => {
       try {
-        // Signal to Toast.show() that this run should mirror status to the badge.
+        // Enable badge bridging so showHUD / showToast calls from the extension
+        // are mirrored to the system status badge. No automatic "Running…" or
+        // "Done" messages are shown — the extension owns its own status.
         if (reportStatus) {
           (window as any).__scNoViewStatusTracking = true;
           (window as any).__scNoViewStatusReported = false;
@@ -3538,10 +3540,6 @@ const NoViewRunner: React.FC<{
         });
         if (!cancelled) {
           if (reportStatus) {
-            // If the extension already called showHUD/showToast, don't add a generic "Done".
-            if (!(window as any).__scNoViewStatusReported) {
-              void window.electron?.reportNoViewStatus?.('success', 'Done');
-            }
             (window as any).__scNoViewStatusTracking = false;
             (window as any).__scNoViewStatusReported = false;
           }
@@ -3551,7 +3549,6 @@ const NoViewRunner: React.FC<{
       } catch (e: any) {
         if (!cancelled) {
           if (reportStatus) {
-            void window.electron?.reportNoViewStatus?.('error', e?.message || 'Command failed');
             (window as any).__scNoViewStatusTracking = false;
             (window as any).__scNoViewStatusReported = false;
           }
