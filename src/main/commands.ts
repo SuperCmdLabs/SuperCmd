@@ -59,6 +59,14 @@ const RESET_POSITION_ICON_DATA_URL = svgToBase64DataUrl(
   '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="rpBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#7dd3fc" stop-opacity="0.7"/><stop offset="1" stop-color="#0369a1" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#rpBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></g></svg>'
 );
 
+const TOGGLE_APPEARANCE_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="taBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#cbd5e1" stop-opacity="0.7"/><stop offset="1" stop-color="#475569" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#taBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z"/></g></svg>'
+);
+
+const SHUTDOWN_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="sdBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#fca5a5" stop-opacity="0.7"/><stop offset="1" stop-color="#dc2626" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#sdBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></g></svg>'
+);
+
 export interface CommandInfo {
   id: string;
   title: string;
@@ -1696,6 +1704,23 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       subtitle: 'Permanently delete items in the Trash',
       keywords: ['trash', 'empty', 'delete', 'bin', 'garbage', 'clean', 'recycle'],
       iconDataUrl: EMPTY_TRASH_ICON_DATA_URL,
+      category: 'system',
+      needsConfirmation: true,
+    },
+    {
+      id: 'system-toggle-appearance',
+      title: 'Toggle System Appearance',
+      subtitle: 'Switch between dark and light mode',
+      keywords: ['dark', 'light', 'mode', 'appearance', 'theme', 'toggle', 'system', 'display', 'contrast'],
+      iconDataUrl: TOGGLE_APPEARANCE_ICON_DATA_URL,
+      category: 'system',
+    },
+    {
+      id: 'system-shutdown',
+      title: 'Shutdown',
+      subtitle: 'Shut down the Mac',
+      keywords: ['shutdown', 'shut down', 'power off', 'turn off', 'halt', 'power'],
+      iconDataUrl: SHUTDOWN_ICON_DATA_URL,
       category: 'system',
       needsConfirmation: true,
     },
