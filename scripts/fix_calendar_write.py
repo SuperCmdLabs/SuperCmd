@@ -305,15 +305,24 @@ else:
 # Insert after its block.
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Find the get_calendar dispatch block
-_gc_disp_m = re.search(
-    r'([ \t]*elif name == "get_calendar":[^\n]*\n'
-    r'(?:[ \t]+[^\n]*\n)*)',
-    s
-)
+# Find the get_calendar dispatch block.
+# We first determine the exact indentation of the elif line, then only match
+# body lines that have STRICTLY MORE indentation (preventing capture of
+# subsequent elif/else blocks at the same indent level).
+_gc_indent_m = re.search(r'^([ \t]*)elif name == "get_calendar"', s, re.MULTILINE)
+if _gc_indent_m:
+    _gc_indent    = _gc_indent_m.group(1)          # e.g. "            " (12 spaces)
+    _body_min_len = len(_gc_indent) + 1             # body must have > this many leading spaces
+    _gc_disp_m = re.search(
+        re.escape(_gc_indent) + r'elif name == "get_calendar":[^\n]*\n'
+        r'(?:[ \t]{' + str(_body_min_len) + r',}[^\n]*\n)*',
+        s
+    )
+else:
+    _gc_disp_m = None
 if _gc_disp_m:
     old_dispatch = _gc_disp_m.group(0)
-    ind = _gc_disp_m.group(1).split('elif')[0]  # base indentation
+    ind = _gc_indent  # base indentation (the elif's own indent)
 
     NEW_DISPATCH = old_dispatch + f'''{ind}elif name == "list_calendar_matches":
 {ind}    event_name = args.get("event_name", "")
