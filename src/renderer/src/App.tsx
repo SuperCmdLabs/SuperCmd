@@ -1793,6 +1793,16 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const copyCommandDeeplink = useCallback(async (command: CommandInfo) => {
+    const deeplink = String(command?.deeplink || '').trim();
+    if (!deeplink) return;
+    try {
+      await window.electron.clipboardWrite({ text: deeplink });
+    } catch (error) {
+      console.error('Failed to copy deeplink:', error);
+    }
+  }, []);
+
   const showFileResultDetailsByPath = useCallback(
     (targetPath: string) => {
       if (!targetPath) return;
@@ -1816,6 +1826,11 @@ const App: React.FC = () => {
     if (!selectedCommand) return;
     await uninstallExtensionCommand(selectedCommand);
   }, [selectedCommand, uninstallExtensionCommand]);
+
+  const copyDeeplinkForSelectedCommand = useCallback(async () => {
+    if (!selectedCommand || !selectedCommand.deeplink) return;
+    await copyCommandDeeplink(selectedCommand);
+  }, [selectedCommand, copyCommandDeeplink]);
 
   const moveSelectedPinnedCommand = useCallback(
     async (direction: 'up' | 'down') => {
@@ -1919,6 +1934,17 @@ const App: React.FC = () => {
       if (!selectedFileResultPath && e.metaKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
         e.preventDefault();
         disableSelectedCommand();
+        return;
+      }
+      if (
+        !selectedFileResultPath &&
+        e.metaKey &&
+        e.shiftKey &&
+        (e.key === 'L' || e.key === 'l') &&
+        selectedCommand?.deeplink
+      ) {
+        e.preventDefault();
+        void copyDeeplinkForSelectedCommand();
         return;
       }
       if (!selectedFileResultPath && e.metaKey && (e.key === 'Backspace' || e.key === 'Delete')) {
@@ -2036,6 +2062,7 @@ const App: React.FC = () => {
       disableSelectedCommand,
       uninstallSelectedExtension,
       moveSelectedPinnedCommand,
+      copyDeeplinkForSelectedCommand,
       selectedFileResultPath,
       showFileResultDetailsByPath,
       revealFileResultByPath,
@@ -2699,12 +2726,20 @@ const App: React.FC = () => {
 
       const isPinned = pinnedCommands.includes(command.id);
       const pinnedIndex = pinnedCommands.indexOf(command.id);
+      const hasDeeplink = Boolean(String(command.deeplink || '').trim());
       return [
         {
           id: 'open',
           title: t('launcher.actions.openCommand'),
           shortcut: 'Enter',
           execute: () => handleCommandExecute(command),
+        },
+        {
+          id: 'copy-deeplink',
+          title: t('launcher.actions.copyDeeplink'),
+          shortcut: 'Cmd+Shift+L',
+          enabled: hasDeeplink,
+          execute: () => copyCommandDeeplink(command),
         },
         {
           id: 'pin',
@@ -2757,6 +2792,7 @@ const App: React.FC = () => {
       showFileResultDetailsByPath,
       revealFileResultByPath,
       copyFileResultPath,
+      copyCommandDeeplink,
       fetchCommands,
       t,
     ]

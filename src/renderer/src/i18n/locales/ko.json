@@ -609,6 +609,7 @@
       "run": "실행",
       "copy": "복사",
       "copyPath": "경로 복사",
+      "copyDeeplink": "딥링크 복사",
       "copyToClipboard": "클립보드에 복사",
       "paste": "붙여넣기",
       "showDetails": "세부정보 표시",

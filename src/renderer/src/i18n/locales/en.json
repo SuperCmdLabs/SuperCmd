@@ -613,6 +613,7 @@
       "run": "Run",
       "copy": "Copy",
       "copyPath": "Copy Path",
+      "copyDeeplink": "Copy Deeplink",
       "copyToClipboard": "Copy to Clipboard",
       "paste": "Paste",
       "showDetails": "Show Details",

@@ -26,6 +26,8 @@ export interface CommandInfo {
     title?: string;
     data?: Array<{ title?: string; value?: string }>;
   }>;
+  /** Raycast-compatible deeplink (e.g. `raycast://extensions/<owner>/<ext>/<cmd>`). Set for extension and script commands. */
+  deeplink?: string;
 }
 
 export interface IndexedFileSearchResult {

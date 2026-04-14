@@ -609,6 +609,7 @@
       "run": "运行",
       "copy": "复制",
       "copyPath": "复制路径",
+      "copyDeeplink": "复制深层链接",
       "copyToClipboard": "复制到剪贴板",
       "paste": "粘贴",
       "showDetails": "显示详情",

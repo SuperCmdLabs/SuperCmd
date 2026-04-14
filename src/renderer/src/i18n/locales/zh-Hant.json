@@ -566,6 +566,7 @@
       "run": "執行",
       "copy": "複製",
       "copyPath": "複製路徑",
+      "copyDeeplink": "複製深層連結",
       "copyToClipboard": "複製到剪貼簿",
       "paste": "貼上",
       "showDetails": "顯示詳情",
