@@ -215,71 +215,79 @@ if _gc_name_pos == -1:
     _gc_name_pos = s.find('"name": "get_calendar"')
 
 if _gc_name_pos != -1:
-    # Scan backward to find the opening { of the outer tool object
-    depth = 0
+    # Scan backward from "name":"get_calendar" to find the 2nd unmatched {
+    # going backward:  inner { is 1st (for "function":{...}),
+    #                  outer { is 2nd (for {"type":"function",...})
+    _containers = 0
+    _depth = 0
     outer_start = _gc_name_pos
     for _ci in range(_gc_name_pos, -1, -1):
-        if s[_ci] == '}': depth += 1
+        if s[_ci] == '}':
+            _depth += 1
         elif s[_ci] == '{':
-            if depth == 0:
-                outer_start = _ci
-                break
-            depth -= 1
-    # Scan forward to find the matching closing }}
-    depth = 0
-    outer_end = _gc_name_pos
+            if _depth > 0:
+                _depth -= 1
+            else:
+                _containers += 1
+                if _containers == 2:   # outer { of {"type":"function",...}
+                    outer_start = _ci
+                    break
+    # Scan forward from outer_start to find its balanced closing }
+    _depth = 0
+    outer_end = outer_start
     for _ci in range(outer_start, len(s)):
-        if s[_ci] == '{': depth += 1
+        if s[_ci] == '{': _depth += 1
         elif s[_ci] == '}':
-            depth -= 1
-            if depth == 0:
+            _depth -= 1
+            if _depth == 0:
                 outer_end = _ci + 1
                 break
     old_tool_def = s[outer_start:outer_end]
+    print(f'  Part 2: outer tool entry ({len(old_tool_def)} chars): {old_tool_def[:60]!r}...')
     _gc_tool_m = True  # signal success
 else:
     _gc_tool_m = None
 
 if _gc_tool_m:
     new_tool_defs = old_tool_def + ''',
-        {
-            "name": "delete_calendar_events",
-            "description": "Delete calendar events by name. Always call list_calendar_matches first to confirm what will be deleted, then call this with confirmed=True.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "event_name": {"type": "string", "description": "The event name to search and delete (partial match)"},
-                    "future_only": {"type": "boolean", "description": "If true, only delete events from today onwards (default: false = all occurrences)"},
-                    "confirmed": {"type": "boolean", "description": "Must be true to actually delete — set only after user confirms"}
-                },
-                "required": ["event_name"]
-            }
-        },
-        {
-            "name": "list_calendar_matches",
-            "description": "Find all calendar events matching a name, to preview before deleting. Always call this before delete_calendar_events.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "event_name": {"type": "string", "description": "The event name to search (partial match, case-insensitive)"}
-                },
-                "required": ["event_name"]
-            }
-        },
-        {
-            "name": "create_calendar_event",
-            "description": "Create a new calendar event.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "Event title"},
-                    "start": {"type": "string", "description": "Start datetime: YYYY-MM-DD HH:MM format"},
-                    "end": {"type": "string", "description": "End datetime: YYYY-MM-DD HH:MM format"},
-                    "calendar": {"type": "string", "description": "Calendar name (optional, uses default if omitted)"}
-                },
-                "required": ["title", "start", "end"]
-            }
-        }'''
+    {"type": "function", "function": {
+        "name": "delete_calendar_events",
+        "description": "Delete calendar events by name. Always call list_calendar_matches first to confirm what will be deleted, then call this with confirmed=True.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "event_name": {"type": "string", "description": "The event name to search and delete (partial match)"},
+                "future_only": {"type": "boolean", "description": "If true, only delete events from today onwards (default: false = all occurrences)"},
+                "confirmed": {"type": "boolean", "description": "Must be true to actually delete — set only after user confirms"}
+            },
+            "required": ["event_name"]
+        }
+    }},
+    {"type": "function", "function": {
+        "name": "list_calendar_matches",
+        "description": "Find all calendar events matching a name, to preview before deleting. Always call this before delete_calendar_events.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "event_name": {"type": "string", "description": "The event name to search (partial match, case-insensitive)"}
+            },
+            "required": ["event_name"]
+        }
+    }},
+    {"type": "function", "function": {
+        "name": "create_calendar_event",
+        "description": "Create a new calendar event.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Event title"},
+                "start": {"type": "string", "description": "Start datetime: YYYY-MM-DD HH:MM format"},
+                "end": {"type": "string", "description": "End datetime: YYYY-MM-DD HH:MM format"},
+                "calendar": {"type": "string", "description": "Calendar name (optional, uses default if omitted)"}
+            },
+            "required": ["title", "start", "end"]
+        }
+    }}'''
     s = s.replace(old_tool_def, new_tool_defs, 1)
     print('Part 2: delete_calendar_events, list_calendar_matches, create_calendar_event added to tool JSON')
     applied += 1
