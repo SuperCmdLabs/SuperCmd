@@ -20,6 +20,13 @@ import type { WhisperCppModelStatus, ParakeetModelStatus } from '../types/electr
 
 interface OnboardingExtensionProps {
   initialShortcut: string;
+  /**
+   * Zero-based step index to open on. Used when re-entering onboarding for
+   * users who have already completed it but are missing a required permission
+   * — we jump straight to the Permissions step rather than replaying the
+   * Welcome / Features / Hotkey intro. Defaults to 0 (Welcome).
+   */
+  initialStepIndex?: number;
   requireWorkingShortcut?: boolean;
   dictationPracticeText: string;
   onDictationPracticeTextChange: (value: string) => void;
@@ -39,6 +46,10 @@ const STEPS = [
   'Read Mode',
   'Final Check',
 ];
+
+// Named step indices so callers can jump to a specific step without
+// hard-coding magic numbers. Keep in sync with STEPS above.
+export const ONBOARDING_STEP_PERMISSIONS = 3;
 
 function getFeatureCards(t: (key: string) => string) {
   return [
@@ -146,6 +157,7 @@ function toHotkeyCaps(shortcut: string): string[] {
 
 const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   initialShortcut,
+  initialStepIndex,
   requireWorkingShortcut = false,
   dictationPracticeText,
   onDictationPracticeTextChange,
@@ -158,7 +170,12 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
   const permissionTargets = useMemo(() => getPermissionTargets(t), [t]);
   const dictationSample = t('onboarding.voice.dictation.sampleText');
   const readSample = t('onboarding.voice.read.sampleText');
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(() => {
+    if (typeof initialStepIndex !== 'number') return 0;
+    if (initialStepIndex < 0) return 0;
+    if (initialStepIndex >= STEPS.length) return STEPS.length - 1;
+    return initialStepIndex;
+  });
   const [shortcut, setShortcut] = useState(initialShortcut || 'Alt+Space');
   const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [hasValidShortcut, setHasValidShortcut] = useState(!requireWorkingShortcut);

@@ -23,7 +23,7 @@ import CanvasSearchInline from './CanvasSearchInline';
 import QuickLinkManager from './QuickLinkManager';
 import CameraExtension from './CameraExtension';
 import ScheduleExtension from './ScheduleExtension';
-import OnboardingExtension from './OnboardingExtension';
+import OnboardingExtension, { ONBOARDING_STEP_PERMISSIONS } from './OnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
 import SuperCmdWhisper from './SuperCmdWhisper';
 import SuperCmdRead from './SuperCmdRead';
@@ -365,6 +365,7 @@ const App: React.FC = () => {
     speakPortalTarget,
   } = useSpeakManager({ showSpeak, setShowSpeak });
   const [onboardingRequiresShortcutFix, setOnboardingRequiresShortcutFix] = useState(false);
+  const [onboardingInitialStepIndex, setOnboardingInitialStepIndex] = useState<number | undefined>(undefined);
   const [onboardingHotkeyPresses, setOnboardingHotkeyPresses] = useState(0);
   const [launcherShortcut, setLauncherShortcut] = useState('Alt+Space');
   const [whisperAutoClose, setWhisperAutoClose] = useState(true);
@@ -555,9 +556,29 @@ const App: React.FC = () => {
       applyAppFontSize(settings.fontSize);
       applyUiStyle(settings.uiStyle || 'default');
       applyBaseColor(settings.baseColor || '#101113');
-      const shouldShowOnboarding = !settings.hasSeenOnboarding;
+      const firstTimeOnboarding = !settings.hasSeenOnboarding;
+      // If the user has seen onboarding before but a required permission is
+      // now missing (e.g., they revoked it, reinstalled the app, or switched
+      // to a new Electron binary in dev), reopen onboarding at the
+      // Permissions step rather than replaying the full intro.
+      let missingPermissions = false;
+      if (!firstTimeOnboarding) {
+        try {
+          const statuses = await window.electron.checkOnboardingPermissions?.();
+          if (statuses) {
+            // Required core permissions. Feature-specific ones (microphone,
+            // speech-recognition, home-folder) don't force re-onboarding —
+            // users who don't use those features shouldn't be nagged.
+            missingPermissions = !statuses['accessibility'] || !statuses['input-monitoring'];
+          }
+        } catch {}
+      }
+      const shouldShowOnboarding = firstTimeOnboarding || missingPermissions;
       setShowOnboarding(shouldShowOnboarding);
-      setOnboardingRequiresShortcutFix(shouldShowOnboarding && !shortcutStatus.ok);
+      setOnboardingInitialStepIndex(
+        !firstTimeOnboarding && missingPermissions ? ONBOARDING_STEP_PERMISSIONS : undefined
+      );
+      setOnboardingRequiresShortcutFix(firstTimeOnboarding && !shortcutStatus.ok);
     } catch (e) {
       console.error('Failed to load launcher preferences:', e);
       setPinnedCommands([]);
@@ -3351,6 +3372,7 @@ const App: React.FC = () => {
         {alwaysMountedRunners}
         <OnboardingExtension
           initialShortcut={launcherShortcut}
+          initialStepIndex={onboardingInitialStepIndex}
           requireWorkingShortcut={onboardingRequiresShortcutFix}
           dictationPracticeText={whisperOnboardingPracticeText}
           onDictationPracticeTextChange={setWhisperOnboardingPracticeText}
@@ -3361,6 +3383,7 @@ const App: React.FC = () => {
             setShowOnboarding(false);
             setShowWhisperOnboarding(false);
             setOnboardingRequiresShortcutFix(false);
+            setOnboardingInitialStepIndex(undefined);
             await window.electron.hideWindow();
           }}
           onComplete={async () => {
@@ -3369,6 +3392,7 @@ const App: React.FC = () => {
             setShowOnboarding(false);
             setShowWhisperOnboarding(false);
             setOnboardingRequiresShortcutFix(false);
+            setOnboardingInitialStepIndex(undefined);
             await window.electron.hideWindow();
           }}
         />
