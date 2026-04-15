@@ -1343,64 +1343,6 @@ const cryptoStub = {
     const cb = args[args.length - 1];
     try { cryptoStub.randomFillSync(buf); if (typeof cb === 'function') cb(null, buf); } catch (e) { if (typeof cb === 'function') cb(e); }
   },
-  // Node's crypto.randomInt([min], max, [callback]) — returns an integer n where min <= n < max.
-  // Extensions like "Random Password Generator" and "Passphrase Generator" rely on this.
-  // Uses rejection sampling over crypto.getRandomValues for a uniform distribution.
-  randomInt: (...args: any[]) => {
-    let min = 0;
-    let max: number;
-    let cb: Function | undefined;
-    if (args.length >= 2 && typeof args[args.length - 1] === 'function') {
-      cb = args[args.length - 1];
-      if (args.length === 2) {
-        max = args[0];
-      } else {
-        min = args[0];
-        max = args[1];
-      }
-    } else if (args.length === 1) {
-      max = args[0];
-    } else {
-      min = args[0];
-      max = args[1];
-    }
-    const compute = (): number => {
-      if (!Number.isInteger(min) || !Number.isInteger(max)) {
-        throw new TypeError('The "min" and "max" arguments must be safe integers');
-      }
-      if (max <= min) {
-        throw new RangeError('The value of "max" must be greater than "min"');
-      }
-      const range = max - min;
-      if (range > 2 ** 48) {
-        throw new RangeError('The range is too large (must be <= 2^48)');
-      }
-      const bitsNeeded = Math.ceil(Math.log2(range));
-      const bytesNeeded = Math.max(1, Math.ceil(bitsNeeded / 8));
-      const maxValue = 2 ** (bytesNeeded * 8);
-      const threshold = maxValue - (maxValue % range);
-      const buf = new Uint8Array(bytesNeeded);
-      // Rejection sampling to avoid modulo bias.
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        crypto.getRandomValues(buf);
-        let value = 0;
-        for (let i = 0; i < bytesNeeded; i++) value = value * 256 + buf[i];
-        if (value < threshold) return min + (value % range);
-      }
-    };
-    if (cb) {
-      try {
-        const result = compute();
-        setTimeout(() => cb!(null, result), 0);
-        return undefined as any;
-      } catch (e) {
-        setTimeout(() => cb!(e), 0);
-        return undefined as any;
-      }
-    }
-    return compute();
-  },
   getRandomValues: (arr: any) => crypto.getRandomValues(arr),
   createCipheriv: () => ({ update: () => BufferPolyfill.alloc(0), final: () => BufferPolyfill.alloc(0) }),
   createDecipheriv: () => ({ update: () => BufferPolyfill.alloc(0), final: () => BufferPolyfill.alloc(0) }),
