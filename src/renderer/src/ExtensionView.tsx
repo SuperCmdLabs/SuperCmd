@@ -2988,12 +2988,24 @@ for (const [key, val] of Object.entries({ ...nodeBuiltinStubs })) {
 }
 
 // ─── Real Node built-in bridge ──────────────────────────────────────
-// The launcher window runs with `sandbox: false` + `nodeIntegration: true`,
-// and `preload.ts` exposes `window.__scNodeRequire` as a guarded passthrough
-// to Electron's Node `require`. When available we prefer real built-ins over
-// our hand-rolled stubs — real `fs`, real `crypto`, real `child_process`, etc.
-// The stubs remain as a fallback for windows where Node isn't exposed (and so
-// we can flip back quickly by toggling USE_REAL_NODE_BUILTINS).
+// The launcher window runs with `sandbox: false` + `nodeIntegration: true`
+// + `contextIsolation: false`. In that mode Node's `require`, `process`,
+// `Buffer` etc. are available directly on the main-world globalThis. We
+// want extensions to reach **real built-ins** (so classes like EventEmitter
+// and Buffer have correct prototypes), but we do NOT want them to bypass
+// our allowlist by reaching for electron internals or arbitrary file paths.
+//
+// So we do two things at module init:
+//   1. Capture real `require` / `process` / `Buffer` into module-private
+//      references nothing outside this file can see.
+//   2. Delete them from globalThis so `globalThis.require('electron')` /
+//      `globalThis.require('/abs/path')` no longer resolves.
+//
+// Extensions then only see Node built-ins we explicitly allow through
+// `fakeRequire` + `isNodeBuiltinRequest` + the captured real require.
+//
+// Flip `USE_REAL_NODE_BUILTINS = false` to fall back to the pure-stub
+// implementation (preserves rollback).
 const USE_REAL_NODE_BUILTINS = true;
 
 /** Names we believe real Node can resolve. Kept as the union of stub keys
@@ -3023,24 +3035,56 @@ function isNodeBuiltinRequest(name: string): boolean {
   return false;
 }
 
+// Capture real Node globals once, then remove them from globalThis so
+// extensions can't reach around fakeRequire. Runs at module load, before
+// any extension code executes.
+//
+// The preload's `__scNodeRequire` is kept as a fallback path for sandboxed
+// windows (where Node lives only in the preload context).
+const {
+  _realNodeRequire,
+  _realNodeProcess,
+  _realNodeBuffer,
+} = (() => {
+  const g = globalThis as any;
+  const capturedRequire: ((id: string) => any) | undefined =
+    typeof g.require === 'function' ? g.require : undefined;
+  const capturedProcess = g.process && typeof g.process.version === 'string' ? g.process : undefined;
+  const capturedBuffer = g.Buffer && typeof g.Buffer.isBuffer === 'function' ? g.Buffer : undefined;
+
+  if (USE_REAL_NODE_BUILTINS && capturedRequire) {
+    // Remove Node-loader globals from the main world. Extensions that try
+    // `globalThis.require('electron')` or `require('/abs/path/to/anything')`
+    // now get `undefined is not a function`.
+    //
+    // We can't prevent every conceivable bypass (a determined extension
+    // could still `Function(...)` its way somewhere), but deleting the
+    // obvious handles is a meaningful barrier for curated code.
+    for (const key of ['require', 'module', 'exports', '__filename', '__dirname']) {
+      try { delete g[key]; } catch {}
+    }
+  }
+
+  return {
+    _realNodeRequire: capturedRequire,
+    _realNodeProcess: capturedProcess,
+    _realNodeBuffer: capturedBuffer,
+  };
+})();
+
 function tryRealNodeRequire(name: string): any | undefined {
   if (!USE_REAL_NODE_BUILTINS) return undefined;
   if (!isNodeBuiltinRequest(name)) return undefined;
-  // Preferred path: the launcher window runs with contextIsolation: false,
-  // so Node's real `require` lives directly on the main-world globalThis.
-  // Classes, prototypes, and process/Buffer identity all work naturally
-  // because there's no cross-context serialization.
+  // Preferred path: the captured main-world require (contextIsolation: false
+  // on the launcher window). Classes, prototypes, and process/Buffer identity
+  // all work naturally because there's no cross-context serialization.
   //
   // Fallback: the preload exposes `__scNodeRequire` for windows that keep
   // contextIsolation on. Classes won't survive the bridge cleanly there,
   // but simple modules still work — better than returning a stub.
-  const directRequire =
-    typeof globalThis !== 'undefined' && typeof (globalThis as any).require === 'function'
-      ? ((globalThis as any).require as (id: string) => any)
-      : undefined;
   const bridgeRequire =
     typeof window !== 'undefined' ? ((window as any).__scNodeRequire as ((id: string) => any) | undefined) : undefined;
-  const realRequire = directRequire || bridgeRequire;
+  const realRequire = _realNodeRequire || bridgeRequire;
   if (!realRequire) return undefined;
   try {
     return realRequire(name);
@@ -3052,6 +3096,56 @@ function tryRealNodeRequire(name: string): any | undefined {
     }
     return undefined;
   }
+}
+
+/**
+ * Build a `process` object for a single extension execution.
+ *
+ * We want the extension to see:
+ *   - real process properties (version, platform, nextTick, setMaxListeners,
+ *     emitWarning, ...) so classes extending EventEmitter and libraries like
+ *     signal-exit / fs-extra work
+ *   - an `env` that has the extension's node_modules/.bin and bin directories
+ *     prepended to PATH, and HOME set to the user's home, so `spawn('git')` /
+ *     `spawn('tree-sitter')` find the extension-bundled binaries
+ *
+ * Critically, we do NOT mutate the host renderer's `process.env`. Previously
+ * loadExtensionExport did `globalThis.process.env.PATH = ...` which leaked
+ * across extensions and into the host. Now each extension gets its own env
+ * copy via a prototype wrapper; the real process is untouched.
+ */
+function buildBundleProcess(extensionPath?: string): any {
+  // Fallback — real process not available (sandboxed window, tests, etc.).
+  if (!_realNodeProcess) return processStub;
+
+  const baseEnv = { ..._realNodeProcess.env };
+  if (extensionPath) {
+    const systemPath = baseEnv.PATH || '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+    const extBins = [
+      `${extensionPath}/node_modules/.bin`,
+      `${extensionPath}/bin`,
+      extensionPath,
+    ].join(':');
+    baseEnv.PATH = `${extBins}:${systemPath}`;
+    const homeDir =
+      (typeof window !== 'undefined' && (window as any).electron?.homeDir) ||
+      baseEnv.HOME ||
+      '~';
+    baseEnv.HOME = homeDir;
+  }
+
+  // Shallow wrapper so mutations to .env stay local to this extension, but
+  // reads of other process properties (stdout, nextTick, etc.) go to the real
+  // process. We intentionally keep the prototype link so class checks like
+  // `emitter instanceof EventEmitter` involving `process` still work.
+  return Object.create(_realNodeProcess, {
+    env: {
+      value: baseEnv,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    },
+  });
 }
 
 // ─── Inject globals that extensions expect ──────────────────────────
@@ -3222,31 +3316,19 @@ function loadExtensionExport(
     );
   };
 
-  // Make sure Node globals (process, Buffer, global) are available
+  // Make sure Node globals (process, Buffer, global) are available for any
+  // code that references them without importing (e.g. `process.nextTick`).
   ensureGlobals();
 
-  // Update PATH to include extension binaries
-  if (extensionPath && (globalThis as any).process) {
-    const systemPath = process.env.PATH || '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
-    const nodeBinPath = `${extensionPath}/node_modules/.bin`;
-    const extBinPath = `${extensionPath}/bin`;
-    const homeDir = (window as any).electron?.homeDir || '~';
-
-    // Build PATH with:
-    // 1. Extension's node_modules/.bin (for npm-installed binaries)
-    // 2. Extension's bin directory (for custom binaries)
-    // 3. Extension root (some binaries are in the root)
-    // 4. System PATH
-    (globalThis as any).process.env.PATH = [
-      nodeBinPath,
-      extBinPath,
-      extensionPath,
-      systemPath
-    ].join(':');
-
-    // Also set HOME for binaries that need it
-    (globalThis as any).process.env.HOME = homeDir;
-  }
+  // Build a per-extension `process` with extension-scoped PATH/HOME.
+  // We deliberately do NOT mutate the host renderer's globalThis.process.env
+  // here — that would leak extension PATH changes into every subsequent
+  // extension and into host code.
+  const bundleProcess = buildBundleProcess(extensionPath);
+  // Prefer the real Node Buffer so identity checks like
+  // `Buffer.isBuffer(require('crypto').randomBytes(1))` work. Fall back to
+  // the polyfill only when Node isn't available in this window.
+  const bundleBuffer = _realNodeBuffer || BufferPolyfill;
 
   try {
     const moduleExports: any = {};
@@ -3519,8 +3601,8 @@ function loadExtensionExport(
       fakeModule,
       '/extension/index.js',
       '/extension',
-      processStub,
-      BufferPolyfill,
+      bundleProcess,
+      bundleBuffer,
       globalThis,
       globalThis,
       (cb: Function, ...args: any[]) => setTimeout(() => cb(...args), 0),
