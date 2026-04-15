@@ -598,7 +598,8 @@
     },
     "sections": {
       "selectedText": "已選文字",
-      "pinned": "已固定"
+      "pinned": "已固定",
+      "results": "結果"
     },
     "calculator": {
       "pressEnterToCopy": "按 Enter 複製",

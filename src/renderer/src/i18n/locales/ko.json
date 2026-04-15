@@ -641,7 +641,8 @@
     },
     "sections": {
       "selectedText": "선택한 텍스트",
-      "pinned": "고정됨"
+      "pinned": "고정됨",
+      "results": "결과"
     },
     "calculator": {
       "pressEnterToCopy": "복사하려면 Enter를 누르세요.",

@@ -3635,7 +3635,7 @@ const App: React.FC = () => {
                   { title: t('launcher.sections.selectedText'), items: strip(groupedCommands.contextual) },
                   { title: t('launcher.sections.pinned'), items: strip(groupedCommands.pinned) },
                   { title: t('launcher.categories.recent'), items: strip(groupedCommands.recent) },
-                  { title: t('common.other'), items: strip(groupedCommands.other) },
+                  { title: t('launcher.sections.results'), items: strip(groupedCommands.other) },
                   { title: t('launcher.categories.files'), items: strip(groupedCommands.files) },
                 ];
               })()

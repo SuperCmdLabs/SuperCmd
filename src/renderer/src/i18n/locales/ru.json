@@ -139,7 +139,8 @@
     },
     "sections": {
       "selectedText": "Выделенный текст",
-      "pinned": "Закреплённое"
+      "pinned": "Закреплённое",
+      "results": "Результаты"
     },
     "calculator": {
       "pressEnterToCopy": "Нажмите Enter, чтобы скопировать",
