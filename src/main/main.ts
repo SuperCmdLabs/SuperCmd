@@ -8609,6 +8609,11 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     if (source === 'launcher') hideWindow();
     return true;
   }
+  if (commandId === 'system-open-extension-store') {
+    openExtensionStoreWindow();
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
   if (commandId === 'system-close-all-apps') {
     try {
       const confirmed = await confirmQuitAllApps(source);
