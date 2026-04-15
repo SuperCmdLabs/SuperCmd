@@ -26,7 +26,7 @@ export interface CommandInfo {
     title?: string;
     data?: Array<{ title?: string; value?: string }>;
   }>;
-  /** Raycast-compatible deeplink (e.g. `raycast://extensions/<owner>/<ext>/<cmd>`). Set for extension and script commands. */
+  /** SuperCmd deeplink (e.g. `supercmd://extensions/<owner>/<ext>/<cmd>`). Set for extension and script commands. */
   deeplink?: string;
 }
 

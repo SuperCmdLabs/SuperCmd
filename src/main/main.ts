@@ -6150,6 +6150,15 @@ app.on('open-url', (event: any, url: string) => {
     // not a valid URL, fall through to OAuth
   }
 
+  // Handle command-launch deeplinks: supercmd://extensions/<owner>/<ext>/<cmd>
+  // and supercmd://script-commands/<slug> (plus legacy raycast:// equivalents).
+  if (isCommandDeepLink(url)) {
+    void launchCommandDeepLink(url).catch((e) => {
+      console.error(`[open-url] Failed to launch command deeplink: ${url}`, e);
+    });
+    return;
+  }
+
   handleOAuthCallbackUrl(url);
 });
 
@@ -6333,7 +6342,7 @@ function parseExtensionCommandPath(pathValue: string): { extensionName: string; 
   return { extensionName, commandName };
 }
 
-type ParsedRaycastDeepLink =
+type ParsedCommandDeepLink =
   | {
       type: 'extension';
       ownerOrAuthorName?: string;
@@ -6349,10 +6358,15 @@ type ParsedRaycastDeepLink =
       arguments: string[];
     };
 
-function parseRaycastDeepLink(url: string): ParsedRaycastDeepLink | null {
+/**
+ * Parse `supercmd://extensions/...` / `supercmd://script-commands/...` deeplinks.
+ * Also accepts the legacy `raycast://` scheme so extension authors that emit
+ * Raycast-style URLs keep working.
+ */
+function parseCommandDeepLink(url: string): ParsedCommandDeepLink | null {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== 'raycast:') return null;
+    if (parsed.protocol !== 'supercmd:' && parsed.protocol !== 'raycast:') return null;
 
     const parts = parsed.pathname.split('/').filter(Boolean).map((v) => decodeURIComponent(v));
 
@@ -6396,6 +6410,88 @@ function parseRaycastDeepLink(url: string): ParsedRaycastDeepLink | null {
   }
 
   return null;
+}
+
+/**
+ * True when the URL looks like a command-launch deeplink we can handle
+ * (supercmd://extensions/..., supercmd://script-commands/..., or the
+ * legacy raycast:// equivalents).
+ */
+function isCommandDeepLink(url: string): boolean {
+  if (!url) return false;
+  if (url.startsWith('raycast://')) return true;
+  if (!url.startsWith('supercmd://')) return false;
+  try {
+    const host = new URL(url).hostname;
+    return host === 'extensions' || host === 'script-commands';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve a command-launch deeplink and dispatch it to the renderer.
+ * Returns true on success, false if the URL is unsupported or the
+ * command target cannot be found.
+ */
+async function launchCommandDeepLink(url: string): Promise<boolean> {
+  const deepLink = parseCommandDeepLink(url);
+  if (!deepLink) {
+    console.warn(`Unsupported command deep link: ${url}`);
+    return false;
+  }
+
+  if (deepLink.type === 'scriptCommand') {
+    const script = getScriptCommandBySlug(deepLink.commandName);
+    if (!script) {
+      console.warn(`Script command deeplink target not found: ${deepLink.commandName}`);
+      return false;
+    }
+    try {
+      await showWindow();
+      const payload = JSON.stringify({
+        commandId: script.id,
+        arguments: deepLink.arguments || [],
+        source: 'deeplink',
+      });
+      await mainWindow?.webContents.executeJavaScript(
+        `window.dispatchEvent(new CustomEvent('sc-run-script-command', { detail: ${payload} }));`,
+        true
+      );
+      return true;
+    } catch (e) {
+      console.error(`Failed to launch script command deeplink: ${url}`, e);
+      return false;
+    }
+  }
+
+  try {
+    const bundle = await buildLaunchBundle({
+      extensionName: deepLink.extensionName,
+      commandName: deepLink.commandName,
+      args: deepLink.arguments,
+      type: deepLink.launchType || 'userInitiated',
+      fallbackText: deepLink.fallbackText || null,
+    });
+    await showWindow();
+    const payload = JSON.stringify({
+      bundle,
+      launchOptions: { type: bundle.launchType || 'userInitiated' },
+      source: {
+        commandMode: 'deeplink',
+        extensionName: bundle.extensionName,
+        commandName: bundle.commandName,
+      },
+    });
+    await mainWindow?.webContents.executeJavaScript(
+      `window.dispatchEvent(new CustomEvent('sc-launch-extension-bundle', { detail: ${payload} }));`,
+      true
+    );
+    return true;
+  } catch (e) {
+    console.error(`Failed to launch extension deep link: ${url}`, e);
+    return false;
+  }
 }
 
 function normalizeOpenTarget(rawTarget: string): {
@@ -11807,64 +11903,10 @@ app.whenReady().then(async () => {
     if (!rawTarget) return false;
     const appName = typeof application === 'string' ? application.trim() : '';
 
-    if (rawTarget.startsWith('raycast://')) {
-      const deepLink = parseRaycastDeepLink(rawTarget);
-      if (!deepLink) {
-        console.warn(`Unsupported Raycast deep link: ${rawTarget}`);
-        return false;
-      }
-
-      if (deepLink.type === 'scriptCommand') {
-        const script = getScriptCommandBySlug(deepLink.commandName);
-        if (!script) {
-          console.warn(`Script command deeplink target not found: ${deepLink.commandName}`);
-          return false;
-        }
-        try {
-          await showWindow();
-          const payload = JSON.stringify({
-            commandId: script.id,
-            arguments: deepLink.arguments || [],
-            source: 'deeplink',
-          });
-          await mainWindow?.webContents.executeJavaScript(
-            `window.dispatchEvent(new CustomEvent('sc-run-script-command', { detail: ${payload} }));`,
-            true
-          );
-          return true;
-        } catch (e) {
-          console.error(`Failed to launch script command deeplink: ${rawTarget}`, e);
-          return false;
-        }
-      }
-
-      try {
-        const bundle = await buildLaunchBundle({
-          extensionName: deepLink.extensionName,
-          commandName: deepLink.commandName,
-          args: deepLink.arguments,
-          type: deepLink.launchType || 'userInitiated',
-          fallbackText: deepLink.fallbackText || null,
-        });
-        await showWindow();
-        const payload = JSON.stringify({
-          bundle,
-          launchOptions: { type: bundle.launchType || 'userInitiated' },
-          source: {
-            commandMode: 'deeplink',
-            extensionName: bundle.extensionName,
-            commandName: bundle.commandName,
-          },
-        });
-        await mainWindow?.webContents.executeJavaScript(
-          `window.dispatchEvent(new CustomEvent('sc-launch-extension-bundle', { detail: ${payload} }));`,
-          true
-        );
-        return true;
-      } catch (e) {
-        console.error(`Failed to launch Raycast deep link: ${rawTarget}`, e);
-        return false;
-      }
+    if (isCommandDeepLink(rawTarget)) {
+      const launched = await launchCommandDeepLink(rawTarget);
+      if (launched) return true;
+      return false;
     }
 
     return await openTargetWithApplication(rawTarget, appName);

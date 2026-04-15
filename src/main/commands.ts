@@ -97,7 +97,7 @@ export interface CommandInfo {
     title?: string;
     data?: Array<{ title?: string; value?: string }>;
   }>;
-  /** Raycast-compatible deeplink (e.g. `raycast://extensions/<owner>/<ext>/<cmd>`). Set for extension and script commands. */
+  /** SuperCmd deeplink (e.g. `supercmd://extensions/<owner>/<ext>/<cmd>`). Set for extension and script commands. */
   deeplink?: string;
   /** Bundle path on disk (used for icon extraction) */
   _bundlePath?: string;
@@ -1744,8 +1744,8 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       disabledByDefault: ext.disabledByDefault,
       commandArgumentDefinitions: ext.commandArgumentDefinitions || [],
       deeplink: ext.owner
-        ? `raycast://extensions/${encodeURIComponent(ext.owner)}/${encodeURIComponent(ext.extName)}/${encodeURIComponent(ext.cmdName)}`
-        : `raycast://extensions/${encodeURIComponent(ext.extName)}/${encodeURIComponent(ext.cmdName)}`,
+        ? `supercmd://extensions/${encodeURIComponent(ext.owner)}/${encodeURIComponent(ext.extName)}/${encodeURIComponent(ext.cmdName)}`
+        : `supercmd://extensions/${encodeURIComponent(ext.extName)}/${encodeURIComponent(ext.cmdName)}`,
     }));
   } catch (e) {
     console.error('Failed to discover installed extensions:', e);
@@ -1775,7 +1775,7 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
         data: arg.data,
       })),
       deeplink: script.slug
-        ? `raycast://script-commands/${encodeURIComponent(script.slug)}`
+        ? `supercmd://script-commands/${encodeURIComponent(script.slug)}`
         : undefined,
     }));
   } catch (e) {
