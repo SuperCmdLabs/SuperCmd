@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowRight, CornerDownLeft } from 'lucide-react';
+import { X, Sparkles, ArrowRight, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2 } from 'lucide-react';
 import type {
   CommandInfo,
   ExtensionBundle,
@@ -51,6 +51,7 @@ import {
   getCommandAccessoryLabel,
   getCommandTypeBadgeLabel,
   renderShortcutLabel,
+  matchesLauncherShortcut,
 } from './utils/command-helpers';
 import {
   readJsonObject, writeJsonObject,
@@ -377,6 +378,7 @@ const App: React.FC = () => {
   } | null>(null);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [selectedContextActionIndex, setSelectedContextActionIndex] = useState(0);
+  const [quickLinkEditId, setQuickLinkEditId] = useState<string | null>(null);
   const [quickLinkDynamicPrompt, setQuickLinkDynamicPrompt] = useState<{
     command: CommandInfo;
     quickLinkId: string;
@@ -2697,6 +2699,59 @@ const App: React.FC = () => {
         ];
       }
 
+      const quickLinkId = getQuickLinkIdFromCommandId(command.id);
+      if (quickLinkId) {
+        return [
+          {
+            id: 'open-quick-link',
+            title: 'Open Quick Link',
+            shortcut: 'Enter',
+            icon: <ExternalLink className="w-4 h-4" />,
+            execute: () => handleCommandExecute(command),
+          },
+          {
+            id: 'create-quick-link',
+            title: 'Create Quick Link',
+            shortcut: 'Cmd+N',
+            icon: <Plus className="w-4 h-4" />,
+            execute: () => openQuickLinkManager('create'),
+          },
+          {
+            id: 'edit-quick-link',
+            title: 'Edit Quick Link',
+            shortcut: 'Cmd+E',
+            icon: <Pencil className="w-4 h-4" />,
+            execute: () => {
+              setQuickLinkEditId(quickLinkId);
+              openQuickLinkManager('search');
+            },
+          },
+          {
+            id: 'duplicate-quick-link',
+            title: 'Duplicate Quick Link',
+            shortcut: 'Cmd+D',
+            icon: <Files className="w-4 h-4" />,
+            execute: async () => {
+              await window.electron.quickLinkDuplicate(quickLinkId);
+              await fetchCommands({ showLoading: false });
+            },
+          },
+          {
+            id: 'delete-quick-link',
+            title: 'Delete Quick Link',
+            shortcut: 'Ctrl+X',
+            icon: <Trash2 className="w-4 h-4" />,
+            style: 'destructive' as const,
+            execute: async () => {
+              await window.electron.quickLinkDelete(quickLinkId);
+              setSearchQuery('');
+              setSelectedIndex(0);
+              await fetchCommands({ showLoading: false });
+            },
+          },
+        ];
+      }
+
       const isPinned = pinnedCommands.includes(command.id);
       const pinnedIndex = pinnedCommands.indexOf(command.id);
       return [
@@ -2758,6 +2813,8 @@ const App: React.FC = () => {
       revealFileResultByPath,
       copyFileResultPath,
       fetchCommands,
+      openQuickLinkManager,
+      setQuickLinkEditId,
       t,
     ]
   );
@@ -2784,6 +2841,21 @@ const App: React.FC = () => {
   const handleActionsOverlayKeyDown = useCallback(
     async (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (actionsOverlayActions.length === 0) return;
+
+      // Match modifier shortcuts (Cmd+N, Ctrl+X, etc.) to actions
+      if (!e.repeat && (e.metaKey || e.ctrlKey || e.altKey)) {
+        for (const action of actionsOverlayActions) {
+          if (!action.shortcut || action.shortcut === 'Enter') continue;
+          if (matchesLauncherShortcut(e, action.shortcut)) {
+            e.preventDefault();
+            await Promise.resolve(action.execute());
+            setShowActions(false);
+            restoreLauncherFocus();
+            return;
+          }
+        }
+      }
+
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault();
@@ -2814,6 +2886,21 @@ const App: React.FC = () => {
   const handleContextMenuKeyDown = useCallback(
     async (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (contextActions.length === 0) return;
+
+      // Match modifier shortcuts to actions
+      if (!e.repeat && (e.metaKey || e.ctrlKey || e.altKey)) {
+        for (const action of contextActions) {
+          if (!action.shortcut || action.shortcut === 'Enter') continue;
+          if (matchesLauncherShortcut(e, action.shortcut)) {
+            e.preventDefault();
+            await Promise.resolve(action.execute());
+            setContextMenu(null);
+            restoreLauncherFocus();
+            return;
+          }
+        }
+      }
+
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault();
@@ -3289,8 +3376,10 @@ const App: React.FC = () => {
           <QuickLinkManager
             initialView={showQuickLinkManager}
             commandAliases={commandAliases}
+            initialEditId={quickLinkEditId ?? undefined}
             onClose={() => {
               setShowQuickLinkManager(null);
+              setQuickLinkEditId(null);
               setSearchQuery('');
               setSelectedIndex(0);
               setTimeout(() => inputRef.current?.focus(), 50);
@@ -3939,6 +4028,9 @@ const App: React.FC = () => {
                 }}
                 onMouseMove={() => setSelectedActionIndex(idx)}
               >
+                {action.icon && (
+                  <span className="shrink-0 opacity-70">{action.icon}</span>
+                )}
                 <span className="flex-1 text-sm truncate">{action.title}</span>
                 {action.shortcut && (
                   <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] font-medium text-[var(--text-muted)]">
@@ -4027,6 +4119,9 @@ const App: React.FC = () => {
                 }}
                 onMouseMove={() => setSelectedContextActionIndex(idx)}
               >
+                {action.icon && (
+                  <span className="shrink-0 opacity-70">{action.icon}</span>
+                )}
                 <span className="flex-1 text-sm truncate">{action.title}</span>
                 {action.shortcut && (
                   <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] font-medium text-[var(--text-muted)]">

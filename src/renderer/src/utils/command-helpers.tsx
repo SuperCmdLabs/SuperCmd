@@ -33,7 +33,31 @@ export interface LauncherAction {
   shortcut?: string;
   style?: 'default' | 'destructive';
   enabled?: boolean;
+  icon?: React.ReactNode;
   execute: () => void | Promise<void>;
+}
+
+/**
+ * Match a keyboard event against a LauncherAction shortcut string.
+ * Shortcut format: 'Cmd+N', 'Ctrl+X', 'Cmd+Shift+P', 'Enter', 'Cmd+Delete', etc.
+ */
+export function matchesLauncherShortcut(
+  e: React.KeyboardEvent | KeyboardEvent,
+  shortcut: string,
+): boolean {
+  const parts = shortcut.split('+');
+  const key = parts[parts.length - 1];
+  const mods = parts.slice(0, -1).map((m) => m.toLowerCase());
+
+  if ((mods.includes('cmd')) !== e.metaKey) return false;
+  if ((mods.includes('ctrl')) !== e.ctrlKey) return false;
+  if ((mods.includes('alt')) !== e.altKey) return false;
+  if ((mods.includes('shift')) !== e.shiftKey) return false;
+
+  // Single character keys — compare case-insensitively
+  if (key.length === 1) return e.key.toLowerCase() === key.toLowerCase();
+  // Special keys (Enter, Escape, Delete, ArrowUp, etc.)
+  return e.key === key;
 }
 
 export type MemoryFeedback = {
