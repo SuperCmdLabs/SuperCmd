@@ -6356,6 +6356,10 @@ type ParsedCommandDeepLink =
       type: 'scriptCommand';
       commandName: string;
       arguments: string[];
+    }
+  | {
+      type: 'command';
+      commandId: string;
     };
 
 /**
@@ -6405,6 +6409,18 @@ function parseCommandDeepLink(url: string): ParsedCommandDeepLink | null {
         arguments: parseScriptArgumentsFromQuery(parsed),
       };
     }
+
+    // `commands/<id>` is a SuperCmd-specific universal launcher — Raycast
+    // doesn't expose its internal command ids, so we only accept the
+    // `supercmd://` scheme here (not the legacy `raycast://` compat scheme).
+    if (parsed.hostname === 'commands' && parsed.protocol === 'supercmd:') {
+      const commandId = parts.join('/').trim();
+      if (!commandId) return null;
+      return {
+        type: 'command',
+        commandId,
+      };
+    }
   } catch {
     return null;
   }
@@ -6423,7 +6439,7 @@ function isCommandDeepLink(url: string): boolean {
   if (!url.startsWith('supercmd://')) return false;
   try {
     const host = new URL(url).hostname;
-    return host === 'extensions' || host === 'script-commands';
+    return host === 'extensions' || host === 'script-commands' || host === 'commands';
   } catch {
     return false;
   }
@@ -6461,6 +6477,21 @@ async function launchCommandDeepLink(url: string): Promise<boolean> {
       return true;
     } catch (e) {
       console.error(`Failed to launch script command deeplink: ${url}`, e);
+      return false;
+    }
+  }
+
+  if (deepLink.type === 'command') {
+    try {
+      const commands = await getAvailableCommands();
+      const target = commands.find((c) => c.id === deepLink.commandId);
+      if (!target) {
+        console.warn(`Command deeplink target not found: ${deepLink.commandId}`);
+        return false;
+      }
+      return await runCommandById(deepLink.commandId, 'launcher');
+    } catch (e) {
+      console.error(`Failed to launch command deeplink: ${url}`, e);
       return false;
     }
   }

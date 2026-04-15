@@ -1856,6 +1856,16 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
     delete cmd._bundlePath;
   }
 
+  // Assign a universal deeplink to any launcher command that doesn't already
+  // have one (extensions + scripts keep their owner/slug-based schemes above).
+  // This lets apps, settings, system, and quick-link commands be copied and
+  // re-invoked via `supercmd://commands/<id>`.
+  for (const cmd of allCommands) {
+    if (!cmd.deeplink && cmd.id) {
+      cmd.deeplink = `supercmd://commands/${encodeURIComponent(cmd.id)}`;
+    }
+  }
+
   // Runtime metadata overlays (used by updateCommandMetadata and inline scripts).
   try {
     const loadedSettings = loadSettings();
