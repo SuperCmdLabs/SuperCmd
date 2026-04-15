@@ -826,5 +826,15 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     electron: ElectronAPI;
+    /**
+     * Real Node `require`, exposed by preload when the hosting window runs
+     * with `sandbox: false` + `nodeIntegration: true`. Available in the main
+     * launcher window (where Raycast extensions execute) so the extension
+     * loader can return real `node:*` built-ins instead of shims. May throw
+     * if called from a sandboxed window.
+     */
+    __scNodeRequire?: (name: string) => any;
+    /** Whether `__scNodeRequire` is usable in the current window. */
+    __scHasRealNode?: boolean;
   }
 }

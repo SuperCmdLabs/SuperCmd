@@ -3045,6 +3045,73 @@ for (const [key, val] of Object.entries({ ...nodeBuiltinStubs })) {
   }
 }
 
+// ─── Real Node built-in bridge ──────────────────────────────────────
+// The launcher window runs with `sandbox: false` + `nodeIntegration: true`,
+// and `preload.ts` exposes `window.__scNodeRequire` as a guarded passthrough
+// to Electron's Node `require`. When available we prefer real built-ins over
+// our hand-rolled stubs — real `fs`, real `crypto`, real `child_process`, etc.
+// The stubs remain as a fallback for windows where Node isn't exposed (and so
+// we can flip back quickly by toggling USE_REAL_NODE_BUILTINS).
+const USE_REAL_NODE_BUILTINS = true;
+
+/** Names we believe real Node can resolve. Kept as the union of stub keys
+ *  plus a few well-known names extensions sometimes import without being in
+ *  the stub table (e.g. `worker_threads`, `vm`). Real require naturally
+ *  accepts deep paths like `fs/promises` and `stream/web`. */
+const KNOWN_NODE_BUILTINS = new Set<string>([
+  'fs', 'fs/promises', 'path', 'path/posix', 'path/win32', 'os', 'crypto',
+  'child_process', 'events', 'stream', 'stream/web', 'stream/promises',
+  'stream/consumers', 'util', 'util/types', 'buffer', 'http', 'https',
+  'net', 'tls', 'dns', 'dns/promises', 'url', 'querystring', 'zlib',
+  'assert', 'assert/strict', 'timers', 'timers/promises', 'module',
+  'readline', 'readline/promises', 'perf_hooks', 'string_decoder',
+  'process', 'constants', 'punycode', 'async_hooks', 'diagnostics_channel',
+  'worker_threads', 'vm', 'v8', 'inspector', 'tty', 'dgram', 'cluster',
+  'trace_events', 'wasi',
+]);
+
+function isNodeBuiltinRequest(name: string): boolean {
+  if (name.startsWith('node:')) return true;
+  if (KNOWN_NODE_BUILTINS.has(name)) return true;
+  const slash = name.indexOf('/');
+  if (slash > 0) {
+    const base = name.slice(0, slash);
+    if (KNOWN_NODE_BUILTINS.has(base)) return true;
+  }
+  return false;
+}
+
+function tryRealNodeRequire(name: string): any | undefined {
+  if (!USE_REAL_NODE_BUILTINS) return undefined;
+  if (!isNodeBuiltinRequest(name)) return undefined;
+  // Preferred path: the launcher window runs with contextIsolation: false,
+  // so Node's real `require` lives directly on the main-world globalThis.
+  // Classes, prototypes, and process/Buffer identity all work naturally
+  // because there's no cross-context serialization.
+  //
+  // Fallback: the preload exposes `__scNodeRequire` for windows that keep
+  // contextIsolation on. Classes won't survive the bridge cleanly there,
+  // but simple modules still work — better than returning a stub.
+  const directRequire =
+    typeof globalThis !== 'undefined' && typeof (globalThis as any).require === 'function'
+      ? ((globalThis as any).require as (id: string) => any)
+      : undefined;
+  const bridgeRequire =
+    typeof window !== 'undefined' ? ((window as any).__scNodeRequire as ((id: string) => any) | undefined) : undefined;
+  const realRequire = directRequire || bridgeRequire;
+  if (!realRequire) return undefined;
+  try {
+    return realRequire(name);
+  } catch (e) {
+    // Fall through to the stub path — don't let a missing-in-Node import
+    // break the extension. Log once at debug level.
+    if (typeof console !== 'undefined') {
+      console.debug(`[fakeRequire] real require("${name}") failed, falling back to stub:`, e);
+    }
+    return undefined;
+  }
+}
+
 // ─── Inject globals that extensions expect ──────────────────────────
 
 function ensureGlobals() {
@@ -3385,6 +3452,13 @@ function loadExtensionExport(
       }
 
       // ── Node.js built-in modules ─────────────────────────────
+      // Prefer real Node (via the preload bridge) when the hosting window
+      // has Node enabled. Falls back to the stub if the module isn't a
+      // recognised built-in, or if real require throws.
+      const realModule = tryRealNodeRequire(name);
+      if (realModule !== undefined) {
+        return realModule;
+      }
       if (name in nodeBuiltinStubs) {
         return nodeBuiltinStubs[name];
       }

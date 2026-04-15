@@ -6604,8 +6604,23 @@ function createWindow(): void {
         }
       : {}),
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
+      // Extensions (curated from Raycast store) execute inside this window's
+      // renderer. We enable Node so they can import real `node:*` built-ins
+      // (fs, crypto, child_process, stream, ...) instead of hand-rolled stubs.
+      //
+      // contextIsolation MUST be false: with it on, `contextBridge` serializes
+      // values across worlds and does NOT support classes — so real Node
+      // classes like EventEmitter lose their prototype, breaking packages
+      // like signal-exit and anything that extends Node base classes.
+      //
+      // sandbox must also be false for Node to be available at all.
+      //
+      // Other windows (settings, notes, canvas, overlays, extension store)
+      // keep contextIsolation: true — they run only our own code and don't
+      // need Node in the renderer.
+      nodeIntegration: true,
+      contextIsolation: false,
+      sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
