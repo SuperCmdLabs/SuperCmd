@@ -7414,18 +7414,23 @@ function applyLauncherBounds(mode: LauncherMode): void {
   const size = getLauncherSize(mode);
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-  // In default mode, restore the last saved position if it falls within any display.
+  // In default mode, restore the last saved position — but only if the cursor
+  // is on the same display as the saved position. Otherwise the launcher would
+  // open on the "wrong" monitor (the one where it was last used), even when
+  // the user has moved to a different display.
   if (mode === 'default') {
     const saved = loadWindowState();
     if (saved) {
       const savedCenter = { x: saved.x + Math.floor(size.width / 2), y: saved.y + Math.floor(size.height / 2) };
-      const nearestDisplay = screen.getDisplayNearestPoint(savedCenter);
-      const wa = nearestDisplay.workArea;
-      // Clamp to keep the window fully on-screen.
-      const clampedX = clamp(saved.x, wa.x, wa.x + wa.width - size.width);
-      const clampedY = clamp(saved.y, wa.y, wa.y + wa.height - size.height);
-      mainWindow.setBounds({ x: clampedX, y: clampedY, width: size.width, height: size.height });
-      return;
+      const savedDisplay = screen.getDisplayNearestPoint(savedCenter);
+      const cursorDisplay = screen.getDisplayNearestPoint(cursorPoint);
+      if (savedDisplay.id === cursorDisplay.id) {
+        const wa = savedDisplay.workArea;
+        const clampedX = clamp(saved.x, wa.x, wa.x + wa.width - size.width);
+        const clampedY = clamp(saved.y, wa.y, wa.y + wa.height - size.height);
+        mainWindow.setBounds({ x: clampedX, y: clampedY, width: size.width, height: size.height });
+        return;
+      }
     }
   }
 
