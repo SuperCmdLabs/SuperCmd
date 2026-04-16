@@ -52,6 +52,7 @@ import {
   getCommandTypeBadgeLabel,
   renderShortcutLabel,
   matchesLauncherShortcut,
+  getShortcutDisplayParts,
 } from './utils/command-helpers';
 import {
   readJsonObject, writeJsonObject,
@@ -322,6 +323,7 @@ const App: React.FC = () => {
   const { t } = useI18n();
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [commandAliases, setCommandAliases] = useState<Record<string, string>>({});
+  const [commandHotkeys, setCommandHotkeys] = useState<Record<string, string>>({});
   const [pinnedCommands, setPinnedCommands] = useState<string[]>([]);
   const [pinnedFiles, setPinnedFiles] = useState<string[]>([]);
   const [recentCommands, setRecentCommands] = useState<string[]>([]);
@@ -576,6 +578,15 @@ const App: React.FC = () => {
           return acc;
         }, {} as Record<string, string>)
       );
+      setCommandHotkeys(
+        Object.entries(settings.commandHotkeys || {}).reduce((acc, [commandId, hotkey]) => {
+          const normalizedCommandId = String(commandId || '').trim();
+          const normalizedHotkey = String(hotkey || '').trim();
+          if (!normalizedCommandId || !normalizedHotkey) return acc;
+          acc[normalizedCommandId] = normalizedHotkey;
+          return acc;
+        }, {} as Record<string, string>)
+      );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
@@ -609,6 +620,7 @@ const App: React.FC = () => {
       setRecentCommands([]);
       setRecentCommandLaunchCounts({});
       setCommandAliases({});
+      setCommandHotkeys({});
       setLauncherShortcut('Alt+Space');
       setConfiguredEdgeTtsVoice('en-US-EricNeural');
       setConfiguredTtsModel('edge-tts');
@@ -4018,10 +4030,8 @@ const App: React.FC = () => {
                       const typeBadgeLabel = getCommandTypeBadgeLabel(command, t);
                       const fallbackCategory = getCategoryLabel(command.category, t);
                       const commandAlias = String(commandAliases[command.id] || '').trim();
-                      const aliasMatchesSearch =
-                        Boolean(commandAlias) &&
-                        Boolean(searchQuery.trim()) &&
-                        commandAlias.toLowerCase().includes(searchQuery.trim().toLowerCase());
+                      const commandHotkey = String(commandHotkeys[command.id] || '').trim();
+                      const hotkeyParts = commandHotkey ? getShortcutDisplayParts(commandHotkey) : [];
                       acc.nodes.push(
                         <div
                           key={command.id}
@@ -4061,10 +4071,19 @@ const App: React.FC = () => {
                                   {fallbackCategory}
                                 </div>
                               )}
-                              {aliasMatchesSearch ? (
+                              {commandAlias ? (
                                 <div className="inline-flex items-center h-5 rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[0.625rem] font-mono text-[var(--text-subtle)] leading-none flex-shrink-0">
                                   {commandAlias}
                                 </div>
+                              ) : null}
+                              {hotkeyParts.length > 0 ? (
+                                <span className="inline-flex items-center gap-0.5 flex-shrink-0">
+                                  {hotkeyParts.map((part, idx) => (
+                                    <kbd key={idx} className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] px-1 text-[10px] font-medium text-[var(--text-muted)]">
+                                      {part}
+                                    </kbd>
+                                  ))}
+                                </span>
                               ) : null}
                             </div>
                             {typeBadgeLabel ? (

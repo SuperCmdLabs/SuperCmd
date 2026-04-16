@@ -1185,6 +1185,36 @@ export function renderShortcutLabel(shortcut?: string): string {
   return formatShortcutForDisplay(shortcut).replace(/ \+ /g, ' ');
 }
 
+/**
+ * Split a hotkey string (e.g. "Command+Shift+L") into individual display symbols
+ * (e.g. ["⌘", "⇧", "L"]) so each part can be rendered as a separate kbd badge.
+ */
+export function getShortcutDisplayParts(shortcut: string): string[] {
+  if (!shortcut) return [];
+  const parts = String(shortcut).split('+').map((token) => {
+    const value = String(token || '').trim();
+    if (!value) return '';
+    if (/^hyper$/i.test(value) || value === '✦') return '✦';
+    if (/^(command|cmd)$/i.test(value)) return '⌘';
+    if (/^(control|ctrl)$/i.test(value)) return '⌃';
+    if (/^(alt|option)$/i.test(value)) return '⌥';
+    if (/^shift$/i.test(value)) return '⇧';
+    if (/^(function|fn)$/i.test(value)) return 'fn';
+    if (/^arrowup$/i.test(value)) return '↑';
+    if (/^arrowdown$/i.test(value)) return '↓';
+    if (/^arrowleft$/i.test(value)) return '←';
+    if (/^arrowright$/i.test(value)) return '→';
+    if (/^(backspace|delete)$/i.test(value)) return '⌫';
+    if (/^period$/i.test(value)) return '.';
+    if (/^return$/i.test(value)) return '↩';
+    if (/^escape$/i.test(value)) return '⎋';
+    if (/^space$/i.test(value)) return '␣';
+    if (/^tab$/i.test(value)) return '⇥';
+    return value.length === 1 ? value.toUpperCase() : value;
+  });
+  return parts.filter(Boolean);
+}
+
 export function parseIntervalToMs(interval?: string): number | null {
   if (!interval) return null;
   const trimmed = interval.trim();
