@@ -78,6 +78,7 @@ export interface AppSettings {
   commandHotkeys: Record<string, string>;
   commandAliases: Record<string, string>;
   pinnedCommands: string[];
+  pinnedFiles: string[];
   recentCommands: string[];
   recentCommandLaunchCounts: Record<string, number>;
   hasSeenOnboarding: boolean;
@@ -163,6 +164,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
   commandAliases: {},
   pinnedCommands: ['system-open-settings'],
+  pinnedFiles: [],
   recentCommands: [],
   recentCommandLaunchCounts: {},
   hasSeenOnboarding: false,
@@ -334,6 +336,11 @@ export function loadSettings(): AppSettings {
         ...normalizedAliases,
       },
       pinnedCommands: parsed.pinnedCommands ?? DEFAULT_SETTINGS.pinnedCommands,
+      pinnedFiles: Array.isArray(parsed.pinnedFiles)
+        ? parsed.pinnedFiles
+            .map((value: any) => String(value || '').trim())
+            .filter(Boolean)
+        : DEFAULT_SETTINGS.pinnedFiles,
       recentCommands: parsed.recentCommands ?? DEFAULT_SETTINGS.recentCommands,
       recentCommandLaunchCounts: normalizeRecentCommandLaunchCounts(parsed.recentCommandLaunchCounts),
       // Existing users with older settings should not be forced into onboarding.

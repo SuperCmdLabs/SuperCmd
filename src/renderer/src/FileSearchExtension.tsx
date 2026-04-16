@@ -6,6 +6,8 @@ import type { FileSearchIndexStatus } from '../types/electron';
 interface FileSearchExtensionProps {
   onClose: () => void;
   initialDetailPath?: string | null;
+  pinnedFiles?: string[];
+  onTogglePinFile?: (filePath: string) => void | Promise<void>;
 }
 
 interface SearchScope {
@@ -164,7 +166,7 @@ function matchesPathQuery(filePath: string, rawQuery: string, homeDir: string): 
   return Boolean(tildePath && tildePath.includes(normalizedRawQuery));
 }
 
-const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose, initialDetailPath }) => {
+const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose, initialDetailPath, pinnedFiles, onTogglePinFile }) => {
   const [query, setQuery] = useState('');
   const [scopes, setScopes] = useState<SearchScope[]>([]);
   const [scopeId, setScopeId] = useState('home');
@@ -515,15 +517,49 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose, init
     });
   }, [selectedPath]);
 
+  const isSelectedPathPinned = Boolean(
+    selectedPath && Array.isArray(pinnedFiles) && pinnedFiles.includes(selectedPath)
+  );
+
+  const isSelectedPathDirectory = useMemo(() => {
+    if (!selectedPath) return false;
+    try {
+      const stat = window.electron.statSync(selectedPath);
+      return Boolean(stat && stat.exists && stat.isDirectory);
+    } catch {
+      return false;
+    }
+  }, [selectedPath]);
+
+  const togglePinSelectedFile = useCallback(async () => {
+    if (!selectedPath || !onTogglePinFile) return;
+    try {
+      await Promise.resolve(onTogglePinFile(selectedPath));
+    } catch (error) {
+      console.error('Failed to toggle pin for file:', error);
+    }
+  }, [selectedPath, onTogglePinFile]);
+
   const selectedActions = useMemo<ActionItem[]>(() => {
     if (!selectedPath) return [];
-    return [
+    const actions: ActionItem[] = [
       { title: 'Open', shortcut: '↩', execute: openSelectedFile },
       { title: 'Show Details', shortcut: '⌘ D', execute: showSelectedDetails },
       { title: 'Copy File', shortcut: '⌘ ⇧ C', execute: copySelectedFile },
       { title: 'Reveal in Finder', shortcut: '⌘ ↩', execute: revealSelectedFile },
     ];
-  }, [selectedPath, openSelectedFile, showSelectedDetails, copySelectedFile, revealSelectedFile]);
+    if (onTogglePinFile) {
+      const pinTitle = isSelectedPathDirectory
+        ? (isSelectedPathPinned ? 'Unpin Folder' : 'Pin Folder')
+        : (isSelectedPathPinned ? 'Unpin File' : 'Pin File');
+      actions.push({
+        title: pinTitle,
+        shortcut: '⌘ ⇧ P',
+        execute: togglePinSelectedFile,
+      });
+    }
+    return actions;
+  }, [selectedPath, openSelectedFile, showSelectedDetails, copySelectedFile, revealSelectedFile, onTogglePinFile, isSelectedPathPinned, isSelectedPathDirectory, togglePinSelectedFile]);
 
   const handleKeyDown = useCallback(
     async (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -610,6 +646,11 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose, init
         await copySelectedFile();
         return;
       }
+      if (e.key.toLowerCase() === 'p' && e.metaKey && e.shiftKey) {
+        e.preventDefault();
+        await togglePinSelectedFile();
+        return;
+      }
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
@@ -625,6 +666,7 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose, init
       openSelectedFile,
       showSelectedDetails,
       copySelectedFile,
+      togglePinSelectedFile,
       onClose,
     ]
   );
