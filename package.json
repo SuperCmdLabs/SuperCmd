@@ -50,6 +50,7 @@
     "lucide-react": "^0.312.0",
     "node-edge-tts": "^1.2.10",
     "node-window-manager": "^2.2.4",
+    "pinyin-pro": "^3.28.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

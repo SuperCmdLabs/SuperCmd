@@ -46,13 +46,14 @@ import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
 import {
   type LauncherAction, type MemoryFeedback,
-  filterCommands, formatShortcutLabel, getCategoryLabel,
+  formatShortcutLabel, getCategoryLabel,
   renderCommandIcon, getCommandDisplayTitle,
   getCommandAccessoryLabel,
   getCommandTypeBadgeLabel,
   renderShortcutLabel,
   matchesLauncherShortcut,
 } from './utils/command-helpers';
+import { buildCommandSearchIndex, filterIndexedCommands } from './utils/command-search';
 import {
   readJsonObject, writeJsonObject,
   getCmdArgsKey,
@@ -335,6 +336,7 @@ const App: React.FC = () => {
     DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const normalizedSearchQuery = searchQuery.trim();
   const [inlineExtensionArgumentValues, setInlineExtensionArgumentValues] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -1314,7 +1316,7 @@ const App: React.FC = () => {
   useEffect(() => {
     fileSearchRequestSeqRef.current += 1;
     const requestSeq = fileSearchRequestSeqRef.current;
-    const trimmed = searchQuery.trim();
+    const trimmed = normalizedSearchQuery;
     const pathLikeQuery = isPathLikeLauncherFileQuery(trimmed);
     const terms = pathLikeQuery ? [] : getLauncherFileSearchTerms(trimmed);
     const minimumQueryLength = pathLikeQuery ? 1 : MIN_LAUNCHER_FILE_QUERY_LENGTH;
@@ -1394,7 +1396,7 @@ const App: React.FC = () => {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [searchQuery, shouldKeepLauncherSearchResults, homeDir]);
+  }, [normalizedSearchQuery, shouldKeepLauncherSearchResults, homeDir]);
 
   useEffect(() => {
     if (!isLauncherModeActive) return;
@@ -1455,6 +1457,8 @@ const App: React.FC = () => {
       return;
     }
 
+    setAsyncCalcResult(null);
+
     const timer = window.setTimeout(() => {
       void tryCalculateAsync(searchQuery)
         .then((result) => {
@@ -1473,10 +1477,18 @@ const App: React.FC = () => {
   }, [searchQuery, syncCalcResult]);
   const calcResult = syncCalcResult ?? asyncCalcResult;
   const calcOffset = calcResult ? 1 : 0;
+  const launcherListRenderKey = useMemo(() => {
+    const calcKey = calcResult ? `${calcResult.kind}:${calcResult.result}` : 'no-calc';
+    return `${normalizedSearchQuery}::${calcKey}`;
+  }, [normalizedSearchQuery, calcResult]);
   const contextualCommands = commands;
+  const commandSearchIndex = useMemo(
+    () => buildCommandSearchIndex(contextualCommands, commandAliases),
+    [contextualCommands, commandAliases]
+  );
   const filteredCommands = useMemo(
-    () => filterCommands(contextualCommands, searchQuery, commandAliases),
-    [contextualCommands, searchQuery, commandAliases]
+    () => filterIndexedCommands(commandSearchIndex, normalizedSearchQuery),
+    [commandSearchIndex, normalizedSearchQuery]
   );
 
   // When calculator is showing but no commands match, show unfiltered list below.
@@ -1494,7 +1506,7 @@ const App: React.FC = () => {
     () => sourceCommands.filter((cmd) => !hiddenListOnlyCommandIds.has(cmd.id)),
     [sourceCommands, hiddenListOnlyCommandIds]
   );
-  const hasSearchQuery = searchQuery.trim().length > 0;
+  const hasSearchQuery = normalizedSearchQuery.length > 0;
 
   const fileResultCommands = useMemo<CommandInfo[]>(
     () =>
@@ -3904,7 +3916,7 @@ const App: React.FC = () => {
               <p className="text-sm">{t('launcher.status.noMatchingResults')}</p>
             </div>
           ) : (
-            <div className="space-y-0.5">
+            <div key={launcherListRenderKey} className="launcher-results">
               {/* Calculator card */}
               {calcResult && (
                 <div
@@ -4020,8 +4032,8 @@ const App: React.FC = () => {
                       const commandAlias = String(commandAliases[command.id] || '').trim();
                       const aliasMatchesSearch =
                         Boolean(commandAlias) &&
-                        Boolean(searchQuery.trim()) &&
-                        commandAlias.toLowerCase().includes(searchQuery.trim().toLowerCase());
+                        Boolean(normalizedSearchQuery) &&
+                        commandAlias.toLowerCase().includes(normalizedSearchQuery.toLowerCase());
                       acc.nodes.push(
                         <div
                           key={command.id}
