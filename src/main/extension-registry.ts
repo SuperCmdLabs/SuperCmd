@@ -889,6 +889,40 @@ export async function getExtensionScreenshotUrls(name: string): Promise<string[]
  *   3. Install them explicitly (avoids issues with @raycast/api peer deps)
  *   4. If that fails, fall back to `npm install --production --legacy-peer-deps`
  */
+/**
+ * Install a specific set of packages into an extension's node_modules without
+ * modifying its package.json. Used to repair extensions that import modules not
+ * declared in their dependencies (a pattern Raycast tolerates via `ray build`
+ * but esbuild does not).
+ */
+export async function installSpecificPackages(
+  extPath: string,
+  packageNames: string[]
+): Promise<void> {
+  const unique = Array.from(
+    new Set(
+      packageNames
+        .map((name) => String(name || '').trim())
+        .filter(Boolean)
+    )
+  );
+  if (unique.length === 0) return;
+
+  const quoted = unique
+    .map((name) => `"${name.replace(/"/g, '\\"')}"`)
+    .join(' ');
+
+  console.log(
+    `Installing missing packages for ${path.basename(extPath)}: ${unique.join(', ')}`
+  );
+
+  await runNpmCommand(
+    extPath,
+    `install --no-save --legacy-peer-deps ${quoted}`,
+    300_000
+  );
+}
+
 export async function installExtensionDeps(
   extPath: string
 ): Promise<void> {
