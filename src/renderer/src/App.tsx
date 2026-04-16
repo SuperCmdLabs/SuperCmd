@@ -126,6 +126,18 @@ function buildFileResultCommandId(filePath: string): string {
   return `${FILE_RESULT_COMMAND_PREFIX}${encodeURIComponent(filePath)}`;
 }
 
+function getFileBasename(filePath: string): string {
+  const normalized = String(filePath || '').replace(/\/$/, '');
+  const idx = normalized.lastIndexOf('/');
+  return idx >= 0 ? normalized.slice(idx + 1) : normalized;
+}
+
+function getFileDirname(filePath: string): string {
+  const normalized = String(filePath || '').replace(/\/$/, '');
+  const idx = normalized.lastIndexOf('/');
+  return idx > 0 ? normalized.slice(0, idx) : '/';
+}
+
 function normalizeLauncherFileSearchText(value: string): string {
   return String(value || '').normalize('NFKD').toLowerCase();
 }
@@ -311,6 +323,7 @@ const App: React.FC = () => {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [commandAliases, setCommandAliases] = useState<Record<string, string>>({});
   const [pinnedCommands, setPinnedCommands] = useState<string[]>([]);
+  const [pinnedFiles, setPinnedFiles] = useState<string[]>([]);
   const [recentCommands, setRecentCommands] = useState<string[]>([]);
   const [recentCommandLaunchCounts, setRecentCommandLaunchCounts] = useState<Record<string, number>>({});
   const [launcherBackgroundImagePath, setLauncherBackgroundImagePath] = useState('');
@@ -333,6 +346,9 @@ const App: React.FC = () => {
   >({});
   const [launcherFileResults, setLauncherFileResults] = useState<IndexedFileSearchResult[]>([]);
   const [launcherFileIcons, setLauncherFileIcons] = useState<Record<string, string>>({});
+  const [fileIsDirectoryMap, setFileIsDirectoryMap] = useState<Record<string, boolean>>({});
+  const [launcherFooterStatus, setLauncherFooterStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const launcherFooterStatusTimerRef = useRef<number | null>(null);
   const [fileSearchInitialDetailPath, setFileSearchInitialDetailPath] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -467,9 +483,11 @@ const App: React.FC = () => {
   const calcRequestSeqRef = useRef(0);
   const isLauncherModeActiveRef = useRef(false);
   const pinnedCommandsRef = useRef<string[]>([]);
+  const pinnedFilesRef = useRef<string[]>([]);
   const extensionViewRef = useRef<ExtensionBundle | null>(null);
   extensionViewRef.current = extensionView;
   pinnedCommandsRef.current = pinnedCommands;
+  pinnedFilesRef.current = pinnedFiles;
 
 
   const cursorPromptPortalTarget = useDetachedPortalWindow(showCursorPrompt, {
@@ -493,6 +511,18 @@ const App: React.FC = () => {
       setShowWindowManager(false);
     },
   });
+
+  const showLauncherFooterStatus = useCallback((type: 'success' | 'error', text: string, durationMs = 3000) => {
+    if (launcherFooterStatusTimerRef.current !== null) {
+      window.clearTimeout(launcherFooterStatusTimerRef.current);
+      launcherFooterStatusTimerRef.current = null;
+    }
+    setLauncherFooterStatus({ type, text });
+    launcherFooterStatusTimerRef.current = window.setTimeout(() => {
+      setLauncherFooterStatus(null);
+      launcherFooterStatusTimerRef.current = null;
+    }, durationMs);
+  }, []);
 
   const showMemoryFeedback = useCallback((type: 'success' | 'error', text: string) => {
     if (memoryFeedbackTimerRef.current !== null) {
@@ -520,6 +550,11 @@ const App: React.FC = () => {
       const settings = (await window.electron.getSettings()) as AppSettings;
       const shortcutStatus = await window.electron.getGlobalShortcutStatus();
       setPinnedCommands(settings.pinnedCommands || []);
+      setPinnedFiles(
+        Array.isArray(settings.pinnedFiles)
+          ? settings.pinnedFiles.map((p) => String(p || '').trim()).filter(Boolean)
+          : []
+      );
       setRecentCommands(settings.recentCommands || []);
       setRecentCommandLaunchCounts(
         Object.entries(settings.recentCommandLaunchCounts || {}).reduce((acc, [commandId, launchCount]) => {
@@ -570,6 +605,7 @@ const App: React.FC = () => {
     } catch (e) {
       console.error('Failed to load launcher preferences:', e);
       setPinnedCommands([]);
+      setPinnedFiles([]);
       setRecentCommands([]);
       setRecentCommandLaunchCounts({});
       setCommandAliases({});
@@ -1049,9 +1085,10 @@ const App: React.FC = () => {
   }, [refreshSelectedTextSnapshot]);
 
   const saveLauncherPreferences = useCallback(
-    async (next: { pinnedCommands?: string[]; recentCommands?: string[]; recentCommandLaunchCounts?: Record<string, number> }) => {
+    async (next: { pinnedCommands?: string[]; pinnedFiles?: string[]; recentCommands?: string[]; recentCommandLaunchCounts?: Record<string, number> }) => {
       const patch: Partial<AppSettings> = {};
       if (next.pinnedCommands) patch.pinnedCommands = next.pinnedCommands;
+      if (next.pinnedFiles) patch.pinnedFiles = next.pinnedFiles;
       if (next.recentCommands) patch.recentCommands = next.recentCommands;
       if (next.recentCommandLaunchCounts) patch.recentCommandLaunchCounts = next.recentCommandLaunchCounts;
       if (Object.keys(patch).length > 0) {
@@ -1105,6 +1142,42 @@ const App: React.FC = () => {
       console.log('[PIN-TOGGLE] done, new pinned:', pinnedCommandsRef.current);
     },
     [updatePinnedCommands]
+  );
+
+  const updatePinnedFiles = useCallback(
+    async (nextPinned: string[]) => {
+      setPinnedFiles(nextPinned);
+      await saveLauncherPreferences({ pinnedFiles: nextPinned });
+    },
+    [saveLauncherPreferences]
+  );
+
+  const pinToggleForFile = useCallback(
+    async (filePath: string) => {
+      const normalized = String(filePath || '').trim();
+      if (!normalized) return;
+      const currentPinned = pinnedFilesRef.current;
+      const exists = currentPinned.includes(normalized);
+      const name = getFileBasename(normalized) || normalized;
+      let isDirectory = Boolean(fileIsDirectoryMap[normalized]);
+      if (fileIsDirectoryMap[normalized] === undefined) {
+        try {
+          const stat = window.electron.statSync(normalized);
+          if (stat && stat.exists) isDirectory = Boolean(stat.isDirectory);
+        } catch {
+          // ignore
+        }
+      }
+      const kindLabel = isDirectory ? 'folder' : 'file';
+      if (exists) {
+        await updatePinnedFiles(currentPinned.filter((p) => p !== normalized));
+        showLauncherFooterStatus('success', `Unpinned ${kindLabel} "${name}"`);
+      } else {
+        await updatePinnedFiles([normalized, ...currentPinned]);
+        showLauncherFooterStatus('success', `Pinned ${kindLabel} "${name}"`);
+      }
+    },
+    [updatePinnedFiles, fileIsDirectoryMap, showLauncherFooterStatus]
   );
 
   const disableCommand = useCallback(
@@ -1361,6 +1434,10 @@ const App: React.FC = () => {
         window.clearTimeout(memoryFeedbackTimerRef.current);
         memoryFeedbackTimerRef.current = null;
       }
+      if (launcherFooterStatusTimerRef.current !== null) {
+        window.clearTimeout(launcherFooterStatusTimerRef.current);
+        launcherFooterStatusTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -1436,6 +1513,92 @@ const App: React.FC = () => {
     [launcherFileResults, launcherFileIcons, homeDir]
   );
 
+  const pinnedFileCommands = useMemo<CommandInfo[]>(
+    () =>
+      pinnedFiles.map((filePath) => {
+        const name = getFileBasename(filePath);
+        const parentPath = getFileDirname(filePath);
+        return {
+          id: buildFileResultCommandId(filePath),
+          title: name || filePath,
+          subtitle: asTildePath(parentPath, homeDir),
+          keywords: [name, parentPath, filePath],
+          iconDataUrl: launcherFileIcons[filePath] || undefined,
+          category: 'system',
+          path: filePath,
+        };
+      }),
+    [pinnedFiles, launcherFileIcons, homeDir]
+  );
+
+  useEffect(() => {
+    if (pinnedFiles.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const missing = pinnedFiles.filter((p) => !launcherFileIcons[p]);
+      if (missing.length === 0) return;
+      const entries = await Promise.all(
+        missing.map(async (filePath) => {
+          try {
+            const dataUrl = await window.electron.getFileIconDataUrl(filePath, 20);
+            return [filePath, dataUrl || ''] as const;
+          } catch {
+            return [filePath, ''] as const;
+          }
+        })
+      );
+      if (cancelled) return;
+      setLauncherFileIcons((prev) => {
+        const next = { ...prev };
+        let changed = false;
+        for (const [filePath, icon] of entries) {
+          if (icon && !next[filePath]) {
+            next[filePath] = icon;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pinnedFiles, launcherFileIcons]);
+
+  useEffect(() => {
+    const pending: Array<[string, boolean]> = [];
+    for (const result of launcherFileResults) {
+      const path = String(result?.path || '').trim();
+      if (!path) continue;
+      if (fileIsDirectoryMap[path] === undefined) {
+        pending.push([path, Boolean(result?.isDirectory)]);
+      }
+    }
+    for (const pinnedPath of pinnedFiles) {
+      if (!pinnedPath || fileIsDirectoryMap[pinnedPath] !== undefined) continue;
+      try {
+        const stat = window.electron.statSync(pinnedPath);
+        if (stat && stat.exists) {
+          pending.push([pinnedPath, Boolean(stat.isDirectory)]);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (pending.length === 0) return;
+    setFileIsDirectoryMap((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const [path, isDirectory] of pending) {
+        if (next[path] !== isDirectory) {
+          next[path] = isDirectory;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [launcherFileResults, pinnedFiles, fileIsDirectoryMap]);
+
   const groupedCommands = useMemo(() => {
     if (hasSearchQuery) {
       return {
@@ -1454,9 +1617,10 @@ const App: React.FC = () => {
       : [];
     const contextualIds = new Set(contextual.map((c) => c.id));
 
-    const pinned = pinnedCommands
+    const pinnedFromCommands = pinnedCommands
       .map((id) => sourceMap.get(id))
       .filter((cmd): cmd is CommandInfo => Boolean(cmd) && !contextualIds.has((cmd as CommandInfo).id));
+    const pinned = [...pinnedFromCommands, ...pinnedFileCommands];
     const pinnedSet = new Set(pinned.map((c) => c.id));
 
     const recentRecencyRank = new Map(recentCommands.map((id, index) => [id, index]));
@@ -1483,7 +1647,7 @@ const App: React.FC = () => {
     );
 
     return { contextual, pinned, recent, files: fileResultCommands, other };
-  }, [hasSearchQuery, visibleSourceCommands, pinnedCommands, recentCommands, recentCommandLaunchCounts, selectedTextSnapshot, fileResultCommands]);
+  }, [hasSearchQuery, visibleSourceCommands, pinnedCommands, pinnedFileCommands, recentCommands, recentCommandLaunchCounts, selectedTextSnapshot, fileResultCommands]);
 
   const displayCommands = useMemo(() => {
     const all = [
@@ -1974,6 +2138,11 @@ const App: React.FC = () => {
         void copyFileResultPath(selectedFileResultPath);
         return;
       }
+      if (selectedFileResultPath && e.metaKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+        e.preventDefault();
+        void pinToggleForFile(selectedFileResultPath);
+        return;
+      }
       if (!selectedFileResultPath && e.metaKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
         e.preventDefault();
         togglePinSelectedCommand();
@@ -2115,6 +2284,7 @@ const App: React.FC = () => {
       showFileResultDetailsByPath,
       revealFileResultByPath,
       copyFileResultPath,
+      pinToggleForFile,
       selectedCommand,
       contextMenu,
       showActions,
@@ -2744,6 +2914,11 @@ const App: React.FC = () => {
 
       const filePath = getFileResultPathFromCommand(command);
       if (filePath) {
+        const isPinnedFile = pinnedFiles.includes(filePath);
+        const isDirectory = Boolean(fileIsDirectoryMap[filePath]);
+        const pinActionTitle = isDirectory
+          ? (isPinnedFile ? 'Unpin Folder' : 'Pin Folder')
+          : (isPinnedFile ? 'Unpin File' : 'Pin File');
         return [
           {
             id: 'open-file',
@@ -2768,6 +2943,12 @@ const App: React.FC = () => {
             title: t('launcher.actions.copyPath'),
             shortcut: 'Cmd+Shift+C',
             execute: () => copyFileResultPath(filePath),
+          },
+          {
+            id: 'pin-file',
+            title: pinActionTitle,
+            shortcut: 'Cmd+Shift+P',
+            execute: () => pinToggleForFile(filePath),
           },
         ];
       }
@@ -2884,6 +3065,9 @@ const App: React.FC = () => {
     },
     [
       pinnedCommands,
+      pinnedFiles,
+      fileIsDirectoryMap,
+      pinToggleForFile,
       handleCommandExecute,
       pinToggleForCommand,
       disableCommand,
@@ -3486,6 +3670,8 @@ const App: React.FC = () => {
         >
           <FileSearchExtension
             initialDetailPath={fileSearchInitialDetailPath}
+            pinnedFiles={pinnedFiles}
+            onTogglePinFile={pinToggleForFile}
             onClose={() => {
               setShowFileSearch(false);
               setFileSearchInitialDetailPath(null);
@@ -3913,16 +4099,25 @@ const App: React.FC = () => {
             <div
               className="sc-footer-primary flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate text-[var(--text-subtle)]"
             >
-              {selectedCommand
-                ? (
-                  <>
-                    <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      {renderCommandIcon(selectedCommand)}
-                    </span>
-                    <span className="truncate">{getCommandDisplayTitle(selectedCommand, t)}</span>
-                  </>
-                )
-                : t('launcher.status.results', { count: displayCommands.length })}
+              {launcherFooterStatus ? (
+                <>
+                  {launcherFooterStatus.type === 'success' ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/90 shadow-[0_0_0_3px_rgba(52,211,153,0.18)] flex-shrink-0" />
+                  ) : (
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400/90 shadow-[0_0_0_3px_rgba(244,114,182,0.18)] flex-shrink-0" />
+                  )}
+                  <span className="truncate text-[var(--text-secondary)]">{launcherFooterStatus.text}</span>
+                </>
+              ) : selectedCommand ? (
+                <>
+                  <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    {renderCommandIcon(selectedCommand)}
+                  </span>
+                  <span className="truncate">{getCommandDisplayTitle(selectedCommand, t)}</span>
+                </>
+              ) : (
+                t('launcher.status.results', { count: displayCommands.length })
+              )}
             </div>
             {selectedActions[0] && (
               <div className="flex items-center gap-2 mr-3">

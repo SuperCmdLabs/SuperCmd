@@ -271,6 +271,7 @@ export interface AppSettings {
   commandHotkeys: Record<string, string>;
   commandAliases: Record<string, string>;
   pinnedCommands: string[];
+  pinnedFiles: string[];
   recentCommands: string[];
   recentCommandLaunchCounts: Record<string, number>;
   hasSeenOnboarding: boolean;
