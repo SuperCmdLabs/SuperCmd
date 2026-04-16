@@ -130,7 +130,7 @@ import {
 import { initialize as initAptabase, trackEvent } from "@aptabase/electron/main";
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard, webContents: webContentsModule } = electron;
 try {
   app.setName('SuperCmd');
 } catch {}
@@ -161,8 +161,39 @@ function getNativeBinaryPath(name: string): string {
 }
 
 const WHISPERCPP_FRAMEWORK_VERSION = 'v1.8.3';
-const WHISPERCPP_MODEL_NAME = 'base';
-const WHISPERCPP_MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${WHISPERCPP_MODEL_NAME}.bin`;
+const WHISPERCPP_DEFAULT_MODEL_SIZE = 'base';
+const WHISPERCPP_MODEL_SIZES = ['tiny', 'base', 'small', 'medium', 'large'] as const;
+let whisperCppModelSizeCache: string | null = null;
+
+function getWhisperCppModelSize(): string {
+  if (whisperCppModelSizeCache) return whisperCppModelSizeCache;
+  try {
+    const s = loadSettings();
+    const size = (s as any).ai?.whisperCppModelSize;
+    if (size && WHISPERCPP_MODEL_SIZES.includes(size)) {
+      whisperCppModelSizeCache = size;
+      return size;
+    }
+  } catch {}
+  whisperCppModelSizeCache = WHISPERCPP_DEFAULT_MODEL_SIZE;
+  return WHISPERCPP_DEFAULT_MODEL_SIZE;
+}
+
+const WHISPERCPP_MODEL_FILENAMES: Record<string, string> = {
+  tiny: 'ggml-tiny.bin',
+  base: 'ggml-base.bin',
+  small: 'ggml-small.bin',
+  medium: 'ggml-medium.bin',
+  large: 'ggml-large-v3-turbo.bin',
+};
+
+function getWhisperCppModelFilename(size: string): string {
+  return WHISPERCPP_MODEL_FILENAMES[size] || `ggml-${size}.bin`;
+}
+
+function getWhisperCppModelUrl(size: string): string {
+  return `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${getWhisperCppModelFilename(size)}`;
+}
 
 let whisperCppModelEnsurePromise: Promise<string> | null = null;
 type WhisperCppModelStatus = {
@@ -174,6 +205,14 @@ type WhisperCppModelStatus = {
   error?: string;
 };
 let whisperCppModelStatus: WhisperCppModelStatus | null = null;
+
+// Persistent serve-mode process for whisper.cpp (model stays loaded in memory)
+let whisperCppServerProcess: ChildProcess | null = null;
+let whisperCppServerReady = false;
+let whisperCppServerStarting: Promise<void> | null = null;
+let whisperCppServerBuffer = '';
+type PendingWhisperCppRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
+let whisperCppPendingRequest: PendingWhisperCppRequest | null = null;
 
 // ─── Parakeet TDT v3 (FluidAudio) ─────────────────────────────────
 type ParakeetModelStatus = {
@@ -799,7 +838,8 @@ function getWhisperCppTranscriberBinaryPath(): string {
 }
 
 function getWhisperCppModelPath(): string {
-  return path.join(app.getPath('userData'), 'whispercpp', 'models', `ggml-${WHISPERCPP_MODEL_NAME}.bin`);
+  const size = getWhisperCppModelSize();
+  return path.join(app.getPath('userData'), 'whispercpp', 'models', getWhisperCppModelFilename(size));
 }
 
 function getWhisperCppModelStatus(): WhisperCppModelStatus {
@@ -809,7 +849,7 @@ function getWhisperCppModelStatus(): WhisperCppModelStatus {
       const stats = fs.statSync(modelPath);
       whisperCppModelStatus = {
         state: 'downloaded',
-        modelName: WHISPERCPP_MODEL_NAME,
+        modelName: getWhisperCppModelSize(),
         path: modelPath,
         bytesDownloaded: Math.max(0, Number(stats.size) || 0),
         totalBytes: Math.max(0, Number(stats.size) || 0),
@@ -821,7 +861,7 @@ function getWhisperCppModelStatus(): WhisperCppModelStatus {
   if (whisperCppModelStatus?.state === 'downloading') {
     return {
       ...whisperCppModelStatus,
-      modelName: WHISPERCPP_MODEL_NAME,
+      modelName: getWhisperCppModelSize(),
       path: modelPath,
     };
   }
@@ -829,14 +869,14 @@ function getWhisperCppModelStatus(): WhisperCppModelStatus {
   if (whisperCppModelStatus?.state === 'error') {
     return {
       ...whisperCppModelStatus,
-      modelName: WHISPERCPP_MODEL_NAME,
+      modelName: getWhisperCppModelSize(),
       path: modelPath,
     };
   }
 
   whisperCppModelStatus = {
     state: 'not-downloaded',
-    modelName: WHISPERCPP_MODEL_NAME,
+    modelName: getWhisperCppModelSize(),
     path: modelPath,
     bytesDownloaded: 0,
     totalBytes: null,
@@ -955,12 +995,13 @@ async function downloadFileWithRedirects(
 }
 
 async function ensureWhisperCppModelDownloaded(): Promise<string> {
+  const size = getWhisperCppModelSize();
   const modelPath = getWhisperCppModelPath();
   try {
     if (fs.existsSync(modelPath)) {
       whisperCppModelStatus = {
         state: 'downloaded',
-        modelName: WHISPERCPP_MODEL_NAME,
+        modelName: size,
         path: modelPath,
         bytesDownloaded: Math.max(0, Number(fs.statSync(modelPath).size) || 0),
         totalBytes: Math.max(0, Number(fs.statSync(modelPath).size) || 0),
@@ -979,18 +1020,18 @@ async function ensureWhisperCppModelDownloaded(): Promise<string> {
     fs.mkdirSync(modelDir, { recursive: true });
     whisperCppModelStatus = {
       state: 'downloading',
-      modelName: WHISPERCPP_MODEL_NAME,
+      modelName: size,
       path: modelPath,
       bytesDownloaded: 0,
       totalBytes: null,
     };
 
     try {
-      console.log(`[Whisper][whisper.cpp] Downloading ${WHISPERCPP_MODEL_NAME} model`);
-      await downloadFileWithRedirects(WHISPERCPP_MODEL_URL, tempPath, 5, (bytesDownloaded, totalBytes) => {
+      console.log(`[Whisper][whisper.cpp] Downloading ${size} model`);
+      await downloadFileWithRedirects(getWhisperCppModelUrl(size), tempPath, 5, (bytesDownloaded, totalBytes) => {
         whisperCppModelStatus = {
           state: 'downloading',
-          modelName: WHISPERCPP_MODEL_NAME,
+          modelName: size,
           path: modelPath,
           bytesDownloaded,
           totalBytes,
@@ -1000,7 +1041,7 @@ async function ensureWhisperCppModelDownloaded(): Promise<string> {
       const finalSize = Math.max(0, Number(fs.statSync(modelPath).size) || 0);
       whisperCppModelStatus = {
         state: 'downloaded',
-        modelName: WHISPERCPP_MODEL_NAME,
+        modelName: size,
         path: modelPath,
         bytesDownloaded: finalSize,
         totalBytes: finalSize,
@@ -1011,7 +1052,7 @@ async function ensureWhisperCppModelDownloaded(): Promise<string> {
       try { fs.unlinkSync(tempPath); } catch {}
       whisperCppModelStatus = {
         state: 'error',
-        modelName: WHISPERCPP_MODEL_NAME,
+        modelName: size,
         path: modelPath,
         bytesDownloaded: 0,
         totalBytes: null,
@@ -1075,6 +1116,144 @@ function ensureWhisperCppTranscriberBinary(): string {
   return binaryPath;
 }
 
+function killWhisperCppServer(): void {
+  if (whisperCppServerProcess) {
+    try {
+      whisperCppServerProcess.stdin?.write('{"command":"exit"}\n');
+      whisperCppServerProcess.kill();
+    } catch {}
+    whisperCppServerProcess = null;
+  }
+  whisperCppServerReady = false;
+  whisperCppServerStarting = null;
+  whisperCppServerBuffer = '';
+  if (whisperCppPendingRequest) {
+    whisperCppPendingRequest.reject(new Error('whisper.cpp server killed'));
+    whisperCppPendingRequest = null;
+  }
+}
+
+function ensureWhisperCppServer(): Promise<void> {
+  if (whisperCppServerReady && whisperCppServerProcess && !whisperCppServerProcess.killed) {
+    return Promise.resolve();
+  }
+  if (whisperCppServerStarting) return whisperCppServerStarting;
+
+  whisperCppServerStarting = (async () => {
+    killWhisperCppServer();
+    const binaryPath = ensureWhisperCppTranscriberBinary();
+    const status = getWhisperCppModelStatus();
+    if (status.state !== 'downloaded') {
+      throw new Error('whisper.cpp model not downloaded');
+    }
+
+    const { spawn } = require('child_process');
+    const child = spawn(binaryPath, ['serve', '--model', status.path], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    whisperCppServerProcess = child;
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      console.log(`[Whisper][whisper.cpp server stderr] ${chunk.toString().trim()}`);
+    });
+
+    child.on('exit', (code: number | null) => {
+      console.log(`[Whisper][whisper.cpp] Server process exited with code ${code}`);
+      whisperCppServerReady = false;
+      whisperCppServerProcess = null;
+      whisperCppServerStarting = null;
+      if (whisperCppPendingRequest) {
+        whisperCppPendingRequest.reject(new Error(`whisper.cpp server exited with code ${code}`));
+        whisperCppPendingRequest = null;
+      }
+    });
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      whisperCppServerBuffer += chunk.toString();
+      const lines = whisperCppServerBuffer.split('\n');
+      whisperCppServerBuffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const json = JSON.parse(trimmed);
+          if (json.ready) {
+            whisperCppServerReady = true;
+            console.log('[Whisper][whisper.cpp] Server ready (model loaded)');
+            continue;
+          }
+          // Forward FFT levels to renderer for waveform visualization
+          if (json.levels) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('whisper-levels', json.levels);
+            }
+            continue;
+          }
+          if (whisperCppPendingRequest) {
+            const req = whisperCppPendingRequest;
+            whisperCppPendingRequest = null;
+            if (json.error) {
+              req.reject(new Error(json.error));
+            } else {
+              req.resolve(json);
+            }
+          }
+        } catch (e) {
+          console.warn('[Whisper][whisper.cpp] Failed to parse server output:', trimmed);
+        }
+      }
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('whisper.cpp server startup timed out (60s)'));
+        killWhisperCppServer();
+      }, 60_000);
+
+      const checkReady = setInterval(() => {
+        if (whisperCppServerReady) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          resolve();
+        }
+        if (!whisperCppServerProcess || whisperCppServerProcess.killed) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          reject(new Error('whisper.cpp server process died during startup'));
+        }
+      }, 50);
+    });
+
+    whisperCppServerStarting = null;
+  })();
+
+  return whisperCppServerStarting;
+}
+
+function sendWhisperCppRequest(request: Record<string, any>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!whisperCppServerProcess || whisperCppServerProcess.killed || !whisperCppServerReady) {
+      reject(new Error('whisper.cpp server not running'));
+      return;
+    }
+    if (!whisperCppServerProcess.stdin) {
+      reject(new Error('whisper.cpp server stdin not available'));
+      return;
+    }
+    if (whisperCppPendingRequest) {
+      reject(new Error('Another whisper.cpp request is already in flight'));
+      return;
+    }
+    whisperCppPendingRequest = { resolve, reject };
+    try {
+      whisperCppServerProcess.stdin.write(JSON.stringify(request) + '\n');
+    } catch (err: any) {
+      whisperCppPendingRequest = null;
+      reject(err);
+    }
+  });
+}
+
 async function transcribeAudioWithWhisperCpp(opts: {
   audioBuffer: Buffer;
   language?: string;
@@ -1085,7 +1264,6 @@ async function transcribeAudioWithWhisperCpp(opts: {
     throw new Error(`SuperCmd Whisper transcription expects WAV audio, received ${mimeType}.`);
   }
 
-  const binaryPath = ensureWhisperCppTranscriberBinary();
   const status = getWhisperCppModelStatus();
   if (status.state === 'downloading') {
     throw new Error('The SuperCmd Whisper model is still downloading. Finish setup from onboarding or Settings -> AI -> SuperCmd Whisper.');
@@ -1093,7 +1271,10 @@ async function transcribeAudioWithWhisperCpp(opts: {
   if (status.state !== 'downloaded') {
     throw new Error('The SuperCmd Whisper model has not been downloaded yet. Download it from onboarding or Settings -> AI -> SuperCmd Whisper.');
   }
-  const modelPath = status.path;
+
+  // Ensure the persistent server is running (model loaded in memory)
+  await ensureWhisperCppServer();
+
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'supercmd-whispercpp-'));
   const audioPath = path.join(tempDir, 'input.wav');
 
@@ -1101,43 +1282,16 @@ async function transcribeAudioWithWhisperCpp(opts: {
     fs.writeFileSync(audioPath, opts.audioBuffer);
 
     const language = normalizeWhisperLanguageCode(opts.language);
-    const { spawn } = require('child_process');
+    const req: Record<string, any> = {
+      command: 'transcribe',
+      file: audioPath,
+      language,
+    };
+    const s = loadSettings();
+    if (s.ai?.whisperPrompt) req.prompt = s.ai.whisperPrompt;
+    const result = await sendWhisperCppRequest(req);
 
-    const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-      const child = spawn(binaryPath, [
-        '--model', modelPath,
-        '--file', audioPath,
-        '--language', language,
-      ], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', (chunk: Buffer | string) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on('data', (chunk: Buffer | string) => {
-        stderr += chunk.toString();
-      });
-      child.on('error', (error: Error) => reject(error));
-      child.on('exit', (code: number | null) => {
-        if (code === 0) {
-          resolve({ stdout, stderr });
-          return;
-        }
-        reject(new Error(stderr.trim() || `SuperCmd Whisper exited with code ${code}`));
-      });
-    });
-
-    const transcriptMarker = '__TRANSCRIPT__:';
-    const markerIndex = result.stdout.lastIndexOf(transcriptMarker);
-    if (markerIndex >= 0) {
-      return result.stdout.slice(markerIndex + transcriptMarker.length).trim();
-    }
-
-    return result.stdout.trim();
+    return result.text || '';
   } finally {
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
@@ -6070,6 +6224,8 @@ function startWhisperHoldWatcher(shortcut: string, holdSeq: number): void {
     if (text) console.warn('[Whisper][hold]', text);
   });
 
+  console.log(`[Whisper][hold] Spawned hold watcher for ${shortcut} (pid ${whisperHoldWatcherProcess?.pid})`);
+
   whisperHoldWatcherProcess.on('error', (error: any) => {
     console.warn('[Whisper][hold] Monitor process error:', error);
     whisperHoldWatcherProcess = null;
@@ -6077,7 +6233,8 @@ function startWhisperHoldWatcher(shortcut: string, holdSeq: number): void {
     whisperHoldWatcherSeq = 0;
   });
 
-  whisperHoldWatcherProcess.on('exit', () => {
+  whisperHoldWatcherProcess.on('exit', (code: number | null, signal: string | null) => {
+    console.log(`[Whisper][hold] Hold watcher exited (code=${code}, signal=${signal})`);
     whisperHoldWatcherProcess = null;
     whisperHoldWatcherStdoutBuffer = '';
     if (whisperHoldWatcherSeq === holdSeq) {
@@ -6313,12 +6470,21 @@ function ensureAppTray(): void {
 
 // ─── URL Helpers ────────────────────────────────────────────────────
 
+function getDevServerBaseUrl(): string {
+  const urlFile = path.join(__dirname, '..', '.vite-dev-url');
+  try {
+    const url = fs.readFileSync(urlFile, 'utf8').trim();
+    if (url) return url;
+  } catch {}
+  return 'http://localhost:5173';
+}
+
 function loadWindowUrl(
   win: InstanceType<typeof BrowserWindow>,
   hash = ''
 ): void {
   if (process.env.NODE_ENV === 'development') {
-    win.loadURL(`http://localhost:5173/#${hash}`);
+    win.loadURL(`${getDevServerBaseUrl()}/#${hash}`);
   } else {
     win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), {
       hash,
@@ -6845,9 +7011,26 @@ function createWindow(): void {
         focusable:
           detachedPopupName !== DETACHED_WHISPER_WINDOW_NAME &&
           detachedPopupName !== DETACHED_MEMORY_STATUS_WINDOW_NAME,
+        // Use NSPanel for non-focusable overlays so showing them does not
+        // activate SuperCmd's app context. `focusable: false` alone prevents
+        // keyboard focus but still causes app activation on macOS, which
+        // triggers hide-on-blur behavior in other apps (e.g., other
+        // launcher-style Electron apps the user has running).
+        ...(process.platform === 'darwin' &&
+          (detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ||
+            detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME)
+          ? { type: 'panel' as const }
+          : {}),
         skipTaskbar: true,
         alwaysOnTop: true,
-        show: true,
+        // For whisper/memory-status overlays, defer showing until
+        // `ready-to-show` fires and then use `showInactive()` — the default
+        // `show: true` path triggers [NSApp activate] on macOS even with
+        // `type: 'panel'` + `focusable: false`, which blurs other apps.
+        show:
+          !(process.platform === 'darwin' &&
+            (detachedPopupName === DETACHED_WHISPER_WINDOW_NAME ||
+              detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME)),
         acceptFirstMouse: true,
         webPreferences: {
           nodeIntegration: false,
@@ -6883,6 +7066,11 @@ function createWindow(): void {
       try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
       // Ignore mouse events by default so clicks pass through; widget will re-enable on hover
       try { childWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+      if (process.platform === 'darwin') {
+        childWindow.once('ready-to-show', () => {
+          try { childWindow.showInactive(); } catch {}
+        });
+      }
       childWindow.on('closed', () => {
         if (whisperChildWindow === childWindow) whisperChildWindow = null;
       });
@@ -6896,6 +7084,11 @@ function createWindow(): void {
     if (detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME) {
       try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
       try { childWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+      if (process.platform === 'darwin') {
+        childWindow.once('ready-to-show', () => {
+          try { childWindow.showInactive(); } catch {}
+        });
+      }
     }
   });
 
@@ -7866,9 +8059,140 @@ async function activateLastFrontmostApp(): Promise<boolean> {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Fast-path text injection helpers (shared across all paste/type IPC handlers).
+//
+// Every paste or type operation should try one of these first. They use the
+// native CGEvent addon (Accessibility-gated) to activate the previous
+// frontmost app and post keyboard events — ~20× faster than osascript and
+// independent of the Automation/System Events permission.
+//
+// All helpers return a Promise<boolean>; false means the caller should fall
+// back to the osascript implementation in the corresponding leaf function.
+// ---------------------------------------------------------------------------
+
+let cachedFastPasteAddon: any = undefined;
+function getFastPasteAddon(): any {
+  if (cachedFastPasteAddon !== undefined) return cachedFastPasteAddon;
+  try {
+    cachedFastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+  } catch (e: any) {
+    console.warn('[fast-paste] addon load failed:', e?.message);
+    cachedFastPasteAddon = null;
+  }
+  return cachedFastPasteAddon;
+}
+
+function getFrontmostTarget(): string | null {
+  return lastFrontmostApp?.bundleId || lastFrontmostApp?.name || null;
+}
+
+// Activate the previous frontmost app via the native addon. Returns true
+// on success; the app should be frontmost on return.
+function tryFastActivate(): boolean {
+  const addon = getFastPasteAddon();
+  if (!addon) return false;
+  const target = getFrontmostTarget();
+  if (!target) return false;
+  try {
+    return !!addon.activateApp(target);
+  } catch (e: any) {
+    console.warn('[fast-paste] activateApp failed:', e?.message);
+    return false;
+  }
+}
+
+// Activate target + post ⌘V. Writes text to the clipboard first, restores
+// the previous clipboard after the paste fires. Returns true on success.
+function tryFastPaste(text: string): boolean {
+  const addon = getFastPasteAddon();
+  if (!addon) return false;
+  const target = getFrontmostTarget();
+  if (!target) return false;
+  try {
+    const previousClipboardText = systemClipboard.readText();
+    systemClipboard.writeText(text);
+    const ok = !!addon.activateAndPaste(target);
+    if (ok) {
+      setTimeout(() => {
+        try { systemClipboard.writeText(previousClipboardText); } catch {}
+      }, 250);
+      return true;
+    }
+    try { systemClipboard.writeText(previousClipboardText); } catch {}
+    return false;
+  } catch (e: any) {
+    console.warn('[fast-paste] tryFastPaste failed:', e?.message);
+    return false;
+  }
+}
+
+// Activate target + post Unicode text via CGEvent (char-by-char, no clipboard).
+function tryFastType(text: string): boolean {
+  const addon = getFastPasteAddon();
+  if (!addon || typeof addon.postText !== 'function') return false;
+  const target = getFrontmostTarget();
+  if (!target) return false;
+  try {
+    if (!addon.activateApp(target)) return false;
+    return !!addon.postText(text);
+  } catch (e: any) {
+    console.warn('[fast-paste] tryFastType failed:', e?.message);
+    return false;
+  }
+}
+
+// Activate target + post N backspaces + ⌘V. Replaces the selected-or-preceding
+// `prev` characters with `next`.
+function tryFastReplaceAndPaste(prev: string, next: string): boolean {
+  const addon = getFastPasteAddon();
+  if (!addon || typeof addon.postBackspaces !== 'function') return false;
+  const target = getFrontmostTarget();
+  if (!target) return false;
+  try {
+    if (!addon.activateApp(target)) return false;
+    if (prev.length > 0 && !addon.postBackspaces(prev.length)) return false;
+    if (next.length === 0) return true;
+    const previousClipboardText = systemClipboard.readText();
+    systemClipboard.writeText(next);
+    const ok = !!addon.postPaste();
+    if (ok) {
+      setTimeout(() => {
+        try { systemClipboard.writeText(previousClipboardText); } catch {}
+      }, 250);
+      return true;
+    }
+    try { systemClipboard.writeText(previousClipboardText); } catch {}
+    return false;
+  } catch (e: any) {
+    console.warn('[fast-paste] tryFastReplaceAndPaste failed:', e?.message);
+    return false;
+  }
+}
+
+// Activate target + post N backspaces + Unicode typing (char-by-char).
+function tryFastReplaceAndType(prev: string, next: string): boolean {
+  const addon = getFastPasteAddon();
+  if (!addon || typeof addon.postBackspaces !== 'function' || typeof addon.postText !== 'function') return false;
+  const target = getFrontmostTarget();
+  if (!target) return false;
+  try {
+    if (!addon.activateApp(target)) return false;
+    if (prev.length > 0 && !addon.postBackspaces(prev.length)) return false;
+    if (next.length === 0) return true;
+    return !!addon.postText(next);
+  } catch (e: any) {
+    console.warn('[fast-paste] tryFastReplaceAndType failed:', e?.message);
+    return false;
+  }
+}
+
 async function typeTextDirectly(text: string): Promise<boolean> {
   const value = String(text || '');
   if (!value) return false;
+
+  // Fast path: CGEvent Unicode keystroke via native addon.
+  if (tryFastType(value)) return true;
 
   const { execFile } = require('child_process');
   const { promisify } = require('util');
@@ -7894,6 +8218,9 @@ async function typeTextDirectly(text: string): Promise<boolean> {
 async function pasteTextToActiveApp(text: string): Promise<boolean> {
   const value = String(text || '');
   if (!value) return false;
+
+  // Fast path: CGEvent ⌘V via native addon.
+  if (tryFastPaste(value)) return true;
 
   const { execFile } = require('child_process');
   const { promisify } = require('util');
@@ -7941,6 +8268,9 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
 async function replaceTextDirectly(previousText: string, nextText: string): Promise<boolean> {
   const prev = String(previousText || '');
   const next = String(nextText || '');
+
+  // Fast path: CGEvent backspaces + Unicode typing via native addon.
+  if (tryFastReplaceAndType(prev, next)) return true;
 
   const { execFile } = require('child_process');
   const { promisify } = require('util');
@@ -8013,6 +8343,9 @@ async function replaceTextViaBackspaceAndPaste(previousText: string, nextText: s
   const prev = String(previousText || '');
   const next = String(nextText || '');
 
+  // Fast path: CGEvent backspaces + ⌘V via native addon.
+  if (tryFastReplaceAndPaste(prev, next)) return true;
+
   const { execFile } = require('child_process');
   const { promisify } = require('util');
   const execFileAsync = promisify(execFile);
@@ -8054,23 +8387,26 @@ async function hideAndPaste(): Promise<boolean> {
     setLauncherMode('default');
   }
 
-  const { execFile } = require('child_process');
-  const { promisify } = require('util');
-  const execFileAsync = promisify(execFile);
-
-  // Fast path: in-process native addon — activates app, polls until
-  // frontmost, posts ⌘V via CGEvent. Runs inside Electron so it
-  // inherits accessibility permissions. Zero process spawn overhead.
+  // Fast path: native addon activates the target app and posts ⌘V via CGEvent.
+  // Requires only Accessibility permission — no Automation/System Events prompt.
   const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
   if (target) {
     try {
       const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
       const ok = fastPasteAddon.activateAndPaste(target);
-      if (ok) return true;
+      if (ok) {
+        console.log(`[hideAndPaste] fast-paste succeeded (target=${target})`);
+        return true;
+      }
+      console.warn('[hideAndPaste] fast-paste returned false, falling back to osascript');
     } catch (e: any) {
       console.warn('[hideAndPaste] fast-paste addon failed:', e?.message);
     }
   }
+
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const execFileAsync = promisify(execFile);
 
   // Slow fallback: osascript for both activation and keystroke
   await activateLastFrontmostApp();
@@ -8110,6 +8446,30 @@ async function expandSnippetKeywordInPlace(keyword: string, delimiter: string): 
     const backspaceCount = keyword.length + (delimiter ? 1 : 0);
     if (backspaceCount <= 0) return;
 
+    // Fast path: CGEvent backspaces + ⌘V via native addon. Typed directly
+    // into the app the user was typing into — no osascript, no Automation
+    // permission prompt, much lower latency.
+    const addon = getFastPasteAddon();
+    if (addon && typeof addon.postBackspaces === 'function') {
+      try {
+        const originalClipboard = electron.clipboard.readText();
+        electron.clipboard.writeText(fullText);
+        const bs = addon.postBackspaces(backspaceCount);
+        const pv = bs ? addon.postPaste() : false;
+        if (bs && pv) {
+          setTimeout(() => {
+            try { electron.clipboard.writeText(originalClipboard); } catch {}
+          }, 80);
+          return;
+        }
+        // Restore clipboard immediately if fast path failed.
+        try { electron.clipboard.writeText(originalClipboard); } catch {}
+      } catch (e: any) {
+        console.warn('[SnippetExpander] fast path failed, falling back:', e?.message);
+      }
+    }
+
+    // Slow fallback: osascript.
     const originalClipboard = electron.clipboard.readText();
     electron.clipboard.writeText(fullText);
 
@@ -8314,15 +8674,11 @@ async function openLauncherAndRunSystemCommand(
     } else {
       mainWindow?.webContents.send('run-system-command', commandId);
     }
-    if (preserveFocusWhenHidden && !showLauncher) {
-      // Detached overlays can temporarily activate SuperCmd; restore the editor app.
-      [50, 180, 360].forEach((delayMs) => {
-        setTimeout(() => {
-          if (isVisible) return;
-          void activateLastFrontmostApp();
-        }, delayMs);
-      });
-    }
+    // Intentionally NO focus-restore loop here. Detached overlays
+    // (whisper / memory-status) use `type: 'panel'` + `showInactive()` and
+    // therefore never take focus; any explicit `activateLastFrontmostApp()`
+    // would re-order windows in other apps (e.g. launcher-style apps that
+    // hide-on-blur) even though nothing stole focus in the first place.
   };
 
   if (mainWindow.webContents.isLoadingMainFrame()) {
@@ -8587,6 +8943,23 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
 
   if (isWhisperSpeakToggleCommand) {
     const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '').trim();
+    console.log(`[Whisper][speak-toggle] source=${source} overlayVisible=${whisperOverlayVisible} sinceShown=${Date.now() - lastWhisperShownAt}ms`);
+    if (source === 'hotkey' && whisperOverlayVisible) {
+      // Treat a second hotkey press as toggle-off. Push-to-talk release is
+      // handled by the Swift hold watcher (when Input Monitoring is granted);
+      // if that's unavailable, this path remains the only way to end the
+      // session via keyboard.
+      const now = Date.now();
+      if (now - lastWhisperShownAt < 350) {
+        console.log('[Whisper][speak-toggle] ignoring toggle-off (within 350ms debounce)');
+        return true;
+      }
+      console.log('[Whisper][speak-toggle] sending whisper-stop-and-close (toggle-off)');
+      mainWindow?.webContents.send('whisper-stop-and-close');
+      whisperHoldRequestSeq += 1;
+      stopWhisperHoldWatcher();
+      return true;
+    }
     const holdSeq = ++whisperHoldRequestSeq;
     if (whisperOverlayVisible) {
       captureFrontmostAppContext();
@@ -11028,8 +11401,13 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
       });
       if (success) {
         registeredHotkeys.set(normalizedShortcut, commandId);
+        console.log(`[Hotkey] Registered ${normalizedShortcut} → ${commandId}`);
+      } else {
+        console.warn(`[Hotkey] FAILED to register ${normalizedShortcut} → ${commandId} (likely held by another app)`);
       }
-    } catch {}
+    } catch (err) {
+      console.warn(`[Hotkey] Exception registering ${normalizedShortcut} → ${commandId}:`, err);
+    }
   }
 
   syncFnSpeakToggleWatcher(hotkeys);
@@ -11037,28 +11415,49 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
   syncHyperKeyMonitor();
 }
 
+// Match Cmd+Option+I (macOS) / Ctrl+Alt+I (other platforms). Scoped to
+// individual webContents via `before-input-event` so the shortcut only fires
+// when a SuperCmd window has keyboard focus — not system-wide.
+function isDevToolsInput(input: any): boolean {
+  if (String(input?.type || '').toLowerCase() !== 'keydown') return false;
+  const key = String(input?.key || '').toLowerCase();
+  if (key !== 'i') return false;
+  if (input?.shift) return false;
+  if (process.platform === 'darwin') {
+    return !!input?.meta && !!input?.alt && !input?.control;
+  }
+  return !!input?.control && !!input?.alt && !input?.meta;
+}
+
+function installDevToolsInputHandler(wc: Electron.WebContents | undefined | null): void {
+  if (!wc || wc.isDestroyed()) return;
+  wc.on('before-input-event', (event: any, input: any) => {
+    if (!isDevToolsInput(input)) return;
+    event.preventDefault();
+    openPreferredDevTools();
+  });
+}
+
 function registerDevToolsShortcut(): void {
+  // No-op: globalShortcut.register is intentionally avoided here because it
+  // intercepts ⌘⌥I system-wide (e.g., stealing the combo while Chrome is
+  // focused). Instead, dev-tools access is wired per-window via
+  // `installDevToolsInputHandler`, which only fires when one of our
+  // windows has focus.
   try {
     unregisterShortcutVariants(DEVTOOLS_SHORTCUT);
   } catch {}
 
-  if (process.env.NODE_ENV !== 'development') {
-    return;
-  }
+  if (process.env.NODE_ENV !== 'development') return;
 
-  try {
-    const success = globalShortcut.register(DEVTOOLS_SHORTCUT, () => {
-      const opened = openPreferredDevTools();
-      if (!opened) {
-        console.warn('[DevTools] No window available to open developer tools.');
-      }
-    });
-    if (!success) {
-      console.warn(`[DevTools] Failed to register shortcut: ${DEVTOOLS_SHORTCUT}`);
-    }
-  } catch (error) {
-    console.warn(`[DevTools] Error registering shortcut: ${DEVTOOLS_SHORTCUT}`, error);
+  // Cover all current and future webContents (main, settings, detached
+  // popups, extension windows, etc.) with a scoped devtools handler.
+  for (const wc of webContentsModule.getAllWebContents()) {
+    installDevToolsInputHandler(wc);
   }
+  app.on('web-contents-created', (_event: any, wc: Electron.WebContents) => {
+    installDevToolsInputHandler(wc);
+  });
 }
 
 // ─── App Initialization ─────────────────────────────────────────────
@@ -11109,8 +11508,32 @@ app.whenReady().then(async () => {
   trackEvent("app_started");
   app.setAsDefaultProtocolClient('supercmd');
   scrubInternalClipboardProbe('app startup');
+
+  // Diagnostic: log Accessibility trust state once at startup. Fast-paste
+  // (CGEvent ⌘V for clipboard history, snippet paste, whisper type-live)
+  // silently falls back to osascript when untrusted — this log makes the
+  // distinction observable. Permission is requested through the onboarding
+  // flow (TODO), not unprompted at launch.
+  try {
+    const addon = getFastPasteAddon();
+    const trusted = addon?.isAccessibilityTrusted?.();
+    console.log(`[fast-paste] Accessibility trusted: ${trusted}`);
+  } catch (e: any) {
+    console.warn('[fast-paste] trust check failed:', e?.message);
+  }
   // Warm the worker so the first window-management action does not race spawn.
   setTimeout(() => { ensureWindowManagerWorker(); }, 0);
+
+  // Pre-load whisper.cpp model so the first dictation session is instant.
+  // Delayed slightly so it doesn't compete with critical startup work.
+  setTimeout(() => {
+    const status = getWhisperCppModelStatus();
+    if (status.state === 'downloaded') {
+      ensureWhisperCppServer().catch((err) => {
+        console.warn('[Whisper][whisper.cpp] Startup warmup failed:', err?.message);
+      });
+    }
+  }, 3000);
 
   // Register the sc-asset:// protocol handler to serve extension asset files
   protocol.handle('sc-asset', (request: any) => {
@@ -11681,6 +12104,10 @@ app.whenReady().then(async () => {
       }
       if (patch.openAtLogin !== undefined) {
         applyOpenAtLogin(Boolean(patch.openAtLogin));
+      }
+      // Invalidate cached model size when it changes
+      if (patch.ai?.whisperCppModelSize !== undefined) {
+        whisperCppModelSizeCache = null;
       }
       // When onboarding completes: hide dock, then start services that were
       // deferred to avoid triggering permission dialogs during onboarding.
@@ -13924,6 +14351,10 @@ if let tiff = image?.tiffRepresentation {
     const nextText = String(text || '');
     if (!nextText) return false;
     console.log('[Whisper][type-live]', JSON.stringify(nextText));
+
+    if (tryFastPaste(nextText)) return true;
+
+    // Slow fallback: osascript
     await activateLastFrontmostApp();
     await new Promise((resolve) => setTimeout(resolve, 70));
     let typed = await typeTextDirectly(nextText);
@@ -13935,10 +14366,18 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('whisper-type-text-live', async (_event: any, text: string) => {
     const nextText = String(text || '');
+    console.log(`[Whisper][whisper-type-live] len=${nextText.length} target=${lastFrontmostApp?.bundleId || lastFrontmostApp?.name || 'none'}`);
     if (!nextText) {
       return { typed: false, fallbackClipboard: false };
     }
 
+    if (tryFastPaste(nextText)) {
+      console.log('[Whisper][whisper-type-live] fast-paste succeeded');
+      return { typed: true, fallbackClipboard: false };
+    }
+    console.log('[Whisper][whisper-type-live] fast-paste failed, falling back to osascript');
+
+    // Slow fallback: osascript
     await activateLastFrontmostApp();
     await new Promise((resolve) => setTimeout(resolve, 70));
     let typed = await pasteTextToActiveApp(nextText);
@@ -14082,6 +14521,48 @@ if let tiff = image?.tiffRepresentation {
     return getWhisperCppModelStatus();
   });
 
+  ipcMain.handle('whispercpp-warmup', async () => {
+    const status = getWhisperCppModelStatus();
+    if (status.state !== 'downloaded') {
+      return { ready: false, error: 'Model not downloaded' };
+    }
+    if (whisperCppServerReady && whisperCppServerProcess && !whisperCppServerProcess.killed) {
+      return { ready: true };
+    }
+    try {
+      await ensureWhisperCppServer();
+      return { ready: true };
+    } catch (err: any) {
+      return { ready: false, error: err?.message || 'Warmup failed' };
+    }
+  });
+
+  // Native mic capture: server opens mic directly, no getUserMedia overhead.
+  ipcMain.handle('whispercpp-listen', async () => {
+    try {
+      await ensureWhisperCppServer();
+      // "listen" is fire-and-forget — server starts capturing immediately.
+      // We don't await the response because the server writes {"listening":true}
+      // asynchronously and we don't want to block the renderer.
+      sendWhisperCppRequest({ command: 'listen' }).catch(() => {});
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message };
+    }
+  });
+
+  ipcMain.handle('whispercpp-stop', async (_event: any, language?: string, prompt?: string) => {
+    try {
+      const req: Record<string, any> = { command: 'stop', language: language || 'en' };
+      const resolvedPrompt = prompt || loadSettings().ai?.whisperPrompt || '';
+      if (resolvedPrompt) req.prompt = resolvedPrompt;
+      const result = await sendWhisperCppRequest(req);
+      return { text: result?.text || '' };
+    } catch (err: any) {
+      return { text: '', error: err?.message };
+    }
+  });
+
   ipcMain.handle('parakeet-model-status', async () => {
     return getParakeetModelStatus();
   });
@@ -14145,7 +14626,7 @@ if let tiff = image?.tiffRepresentation {
 
       // Parse speechToTextModel to a concrete provider/model pair.
       let provider: 'parakeet' | 'qwen3' | 'whispercpp' | 'openai' | 'elevenlabs' = 'whispercpp';
-      let model = `ggml-${WHISPERCPP_MODEL_NAME}`;
+      let model = `ggml-${getWhisperCppModelSize()}`;
       const sttModel = s.ai.speechToTextModel || '';
       if (sttModel === 'parakeet') {
         provider = 'parakeet';
@@ -14155,7 +14636,7 @@ if let tiff = image?.tiffRepresentation {
         model = 'qwen3-asr-0.6b';
       } else if (!sttModel || sttModel === 'default' || sttModel === 'whispercpp') {
         provider = 'whispercpp';
-        model = `ggml-${WHISPERCPP_MODEL_NAME}`;
+        model = `ggml-${getWhisperCppModelSize()}`;
       } else if (sttModel === 'native') {
         // Renderer should not call cloud transcription in native mode.
         // Return empty transcript instead of surfacing an IPC error.
@@ -15181,21 +15662,30 @@ if let tiff = image?.tiffRepresentation {
     hideWindow();
   });
 
-  // Wait for the renderer React app to mount before dispatching the initial
-  // window-shown / run-system-command.  `did-finish-load` only means the HTML
-  // document loaded — React useEffect listeners register asynchronously after
-  // that, so messages sent too early are silently lost.
-  let launcherEntryDispatched = false;
-  const dispatchLauncherEntry = () => {
-    if (launcherEntryDispatched) return;
-    launcherEntryDispatched = true;
-    void openLauncherFromUserEntry();
-  };
-  ipcMain.once('renderer-ready', dispatchLauncherEntry);
-  // Safety fallback: if the renderer-ready signal never arrives (e.g. the
-  // renderer crashes or loads a different route), open the launcher anyway
-  // so first launch never silently hangs.
-  setTimeout(dispatchLauncherEntry, 5000);
+  // Fresh installs need to surface the onboarding UI; returning users should
+  // stay in the background until the global hotkey is pressed.
+  if (!settings.hasSeenOnboarding) {
+    // Wait for the renderer React app to mount before dispatching the initial
+    // window-shown / run-system-command.  `did-finish-load` only means the HTML
+    // document loaded — React useEffect listeners register asynchronously after
+    // that, so messages sent too early are silently lost.
+    let launcherEntryDispatched = false;
+    const dispatchLauncherEntry = () => {
+      if (launcherEntryDispatched) return;
+      launcherEntryDispatched = true;
+      void openLauncherFromUserEntry();
+    };
+    ipcMain.once('renderer-ready', dispatchLauncherEntry);
+    // Safety fallback: if the renderer-ready signal never arrives (e.g. the
+    // renderer crashes or loads a different route), open the launcher anyway
+    // so first launch never silently hangs.
+    setTimeout(dispatchLauncherEntry, 5000);
+  } else {
+    if (process.platform === 'darwin') {
+      app.dock.hide();
+    }
+    setLauncherMode('default');
+  }
 
   app.on('activate', () => {
     // During onboarding the window is shown but may lose visual focus to a system
@@ -15267,6 +15757,7 @@ app.on('will-quit', () => {
     try { appTray.destroy(); } catch {}
     appTray = null;
   }
+  killWhisperCppServer();
   // Clean up trays
   for (const [, tray] of menuBarTrays) {
     tray.destroy();

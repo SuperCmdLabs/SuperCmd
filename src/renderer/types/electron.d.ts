@@ -180,6 +180,8 @@ export interface AISettings {
   llmEnabled: boolean;
   whisperEnabled: boolean;
   whisperAutoClose: boolean;
+  whisperCppModelSize: string;
+  whisperPrompt: string;
   readEnabled: boolean;
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
@@ -436,6 +438,7 @@ export interface ElectronAPI {
   onOnboardingHotkeyPressed: (callback: () => void) => (() => void);
   setDetachedOverlayState: (overlay: 'whisper' | 'speak', visible: boolean) => void;
   setWhisperIgnoreMouseEvents: (ignore: boolean) => void;
+  onWhisperLevels: (callback: (levels: number[]) => void) => (() => void);
   onWhisperStopAndClose: (callback: () => void) => (() => void);
   onWhisperStartListening: (callback: () => void) => (() => void);
   onWhisperStopListening: (callback: () => void) => (() => void);
@@ -777,6 +780,9 @@ export interface ElectronAPI {
   ) => Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }>;
   whisperCppModelStatus: () => Promise<WhisperCppModelStatus>;
   whisperCppDownloadModel: () => Promise<WhisperCppModelStatus>;
+  whisperCppWarmup: () => Promise<{ ready: boolean; error?: string }>;
+  whisperCppListen: () => Promise<{ ok: boolean; error?: string }>;
+  whisperCppStop: (language?: string, prompt?: string) => Promise<{ text: string; error?: string }>;
   parakeetModelStatus: () => Promise<ParakeetModelStatus>;
   parakeetDownloadModel: () => Promise<ParakeetModelStatus>;
   parakeetWarmup: () => Promise<{ ready: boolean; error?: string }>;

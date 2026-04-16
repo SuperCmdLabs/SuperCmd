@@ -1301,6 +1301,34 @@ const AITab: React.FC = () => {
 
               {whisperModelValue === 'whispercpp' && (
                 <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.modelSize.label')}</label>
+                  <select
+                    value={ai.whisperCppModelSize || 'base'}
+                    onChange={(e) => {
+                      updateAI({ whisperCppModelSize: e.target.value });
+                      void refreshWhisperCppModelStatus();
+                    }}
+                    className={`w-full bg-[var(--ui-segment-bg)] border rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50 ${
+                      whisperCppModelStatus && whisperCppModelStatus.state !== 'downloaded' && whisperCppModelStatus.state !== 'downloading'
+                        ? 'border-red-500/60'
+                        : 'border-[var(--ui-divider)]'
+                    }`}
+                  >
+                    <option value="tiny">{t('settings.ai.whisper.modelSize.tiny')}</option>
+                    <option value="base">{t('settings.ai.whisper.modelSize.base')}</option>
+                    <option value="small">{t('settings.ai.whisper.modelSize.small')}</option>
+                    <option value="medium">{t('settings.ai.whisper.modelSize.medium')}</option>
+                    <option value="large">{t('settings.ai.whisper.modelSize.large')}</option>
+                  </select>
+                  {whisperCppModelStatus && whisperCppModelStatus.state !== 'downloaded' && whisperCppModelStatus.state !== 'downloading' && (
+                    <p className="text-[0.6875rem] text-red-400 mt-1">{t('settings.ai.whisper.modelSize.notDownloaded')}</p>
+                  )}
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-1">{t('settings.ai.whisper.modelSize.hint')}</p>
+                </div>
+              )}
+
+              {whisperModelValue === 'whispercpp' && (
+                <div>
                   <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.recognitionLanguage')}</label>
                   <select
                     value={ai.speechLanguage || 'en-US'}
@@ -1319,6 +1347,20 @@ const AITab: React.FC = () => {
                   <p className="text-[0.6875rem] text-sky-300">
                     {t('settings.ai.whisper.providerInfo.native')}
                   </p>
+                </div>
+              )}
+
+              {(whisperModelValue === 'whispercpp') && (
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.prompt.label')}</label>
+                  <textarea
+                    value={ai.whisperPrompt || ''}
+                    onChange={(e) => updateAI({ whisperPrompt: e.target.value })}
+                    placeholder={t('settings.ai.whisper.prompt.placeholder')}
+                    rows={2}
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50 resize-y"
+                  />
+                  <p className="text-[0.75rem] text-[var(--text-muted)] mt-1">{t('settings.ai.whisper.prompt.hint')}</p>
                 </div>
               )}
 

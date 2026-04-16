@@ -11,3 +11,4 @@ extensions/*
 
 **/.build/*
 .gstack/
+.claude/settings.local.json

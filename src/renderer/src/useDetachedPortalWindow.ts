@@ -205,8 +205,10 @@ export function useDetachedPortalWindow(
     const features = buildWindowFeatures(options.width, positionHeight, options.anchor);
     let child = childWindowRef.current;
     if (!child || child.closed) {
+      // Use a stable name based on options.name so window.open reuses an
+      // existing popup instead of creating a duplicate (singleton behavior).
       if (!windowNameRef.current) {
-        windowNameRef.current = `${options.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        windowNameRef.current = options.name;
       }
       const popupUrl = `about:blank?sc_detached=${encodeURIComponent(options.name)}`;
       child = window.open(popupUrl, windowNameRef.current, features);
