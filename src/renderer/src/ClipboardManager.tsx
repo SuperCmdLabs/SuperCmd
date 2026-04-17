@@ -16,6 +16,12 @@ interface ClipboardManagerProps {
   onClose: () => void;
 }
 
+function fileUrl(filePath: string): string {
+  // Paths can contain spaces (e.g. /Library/Application Support/...) so use
+  // encodeURI to make a valid file:// URL while leaving path separators alone.
+  return `file://${encodeURI(filePath)}`;
+}
+
 interface Action {
   title: string;
   icon?: React.ReactNode;
@@ -589,15 +595,23 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                     {item.type === 'image' ? (
                       <>
                         <img
-                          src={`file://${item.content}`}
+                          src={fileUrl(item.content)}
                           alt="Clipboard"
                           className="w-7 h-7 object-cover rounded flex-shrink-0"
+                          onError={(e) => {
+                            const fallback = item.metadata?.sourcePath;
+                            const img = e.currentTarget;
+                            if (fallback && img.dataset.fallback !== '1') {
+                              img.dataset.fallback = '1';
+                              img.src = fileUrl(fallback);
+                            }
+                          }}
                         />
                         <div className="flex-1 min-w-0">
                           <div className="text-[var(--text-secondary)] text-[13px] truncate leading-tight">
-                            Image
+                            {item.metadata?.filename || 'Image'}
                           </div>
-                          <div className="text-[var(--text-muted)] text-[11px] leading-tight">
+                          <div className="text-[var(--text-muted)] text-[11px] leading-tight truncate whitespace-nowrap">
                             {item.metadata?.width} × {item.metadata?.height}
                           </div>
                         </div>
@@ -634,33 +648,55 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         </div>
 
         {/* Right: Preview (60%) */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 min-h-0 flex flex-col">
           {selectedItem ? (
-            <div className={selectedItem.type === 'image' ? 'p-1' : 'p-5'}>
-              {selectedItem.type === 'image' ? (
-                <div className="flex items-center justify-center">
+            <>
+              <div className="flex-1 min-h-0 overflow-auto custom-scrollbar p-3.5 flex items-center justify-center">
+                {selectedItem.type === 'image' ? (
                   <img
-                    src={`file://${selectedItem.content}`}
+                    src={fileUrl(selectedItem.content)}
                     alt="Clipboard"
-                    className="w-full object-contain"
-                    style={{ maxHeight: 'calc(75vh - 80px)' }}
+                    className="max-w-full max-h-full object-contain"
+                    onError={(e) => {
+                      const fallback = selectedItem.metadata?.sourcePath;
+                      const img = e.currentTarget;
+                      if (fallback && img.dataset.fallback !== '1') {
+                        img.dataset.fallback = '1';
+                        img.src = fileUrl(fallback);
+                      }
+                    }}
                   />
-                </div>
-              ) : (
-                <pre className="text-[var(--text-secondary)] text-xs whitespace-pre-wrap break-words font-mono leading-normal">
-                  {selectedItem.content}
-                </pre>
-              )}
-
-              <div className={selectedItem.type === 'image' ? 'px-5 pb-5 pt-3 border-t border-[var(--ui-divider)]' : 'mt-4 pt-3 border-t border-[var(--ui-divider)]'}>
-                <div className="flex items-center justify-between gap-3 text-xs">
+                ) : (
+                  <pre className="w-full self-start text-[var(--text-secondary)] text-xs whitespace-pre-wrap break-words font-mono leading-normal">
+                    {selectedItem.content}
+                  </pre>
+                )}
+              </div>
+              <div className="shrink-0 px-5 pt-3 pb-4 border-t border-[var(--ui-divider)]">
+                <div className="grid grid-cols-[90px_minmax(0,1fr)] items-center gap-3 text-xs">
                   <span className="text-[var(--text-subtle)]">Date</span>
-                  <span className="text-[var(--text-muted)] text-right truncate">
+                  <span className="text-[var(--text-muted)] text-right truncate min-w-0">
                     {formatDate(selectedItem.timestamp)}
                   </span>
                 </div>
+                {selectedItem.metadata?.filename ? (
+                  <div className="grid grid-cols-[90px_minmax(0,1fr)] items-center gap-3 text-xs mt-2">
+                    <span className="text-[var(--text-subtle)]">Filename</span>
+                    <span className="text-[var(--text-muted)] text-right truncate min-w-0" title={selectedItem.metadata.filename}>
+                      {selectedItem.metadata.filename}
+                    </span>
+                  </div>
+                ) : null}
+                {selectedItem.metadata?.sourcePath ? (
+                  <div className="grid grid-cols-[90px_minmax(0,1fr)] items-center gap-3 text-xs mt-2">
+                    <span className="text-[var(--text-subtle)]">Source path</span>
+                    <span className="text-[var(--text-muted)] text-right truncate min-w-0" title={selectedItem.metadata.sourcePath}>
+                      {selectedItem.metadata.sourcePath}
+                    </span>
+                  </div>
+                ) : null}
               </div>
-            </div>
+            </>
           ) : (
             <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
               <p className="text-sm">Select an item to preview</p>

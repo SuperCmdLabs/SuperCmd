@@ -321,6 +321,7 @@ export interface ClipboardItem {
     size?: number;
     format?: string;
     filename?: string;
+    sourcePath?: string;
   };
 }
 

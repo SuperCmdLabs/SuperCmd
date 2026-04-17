@@ -59,6 +59,9 @@ export interface ClipboardItem {
     format?: string;
     // For files
     filename?: string;
+    // Original file path at the moment of copy — used as a fallback preview
+    // source when our saved copy is missing or fails to decode.
+    sourcePath?: string;
   };
 }
 
@@ -71,6 +74,7 @@ const INTERNAL_CLIPBOARD_PROBE_REGEX = /^__supercmd_[a-z0-9_]+_probe__\d+_[a-z0-
 let clipboardHistory: ClipboardItem[] = [];
 let lastClipboardText = '';
 let lastClipboardImage: Buffer | null = null;
+let lastClipboardFilePath = '';
 let pollInterval: NodeJS.Timeout | null = null;
 let isEnabled = true;
 
@@ -205,18 +209,35 @@ function addTextItem(text: string): void {
   if (!normalized || normalized.length > MAX_TEXT_LENGTH) return;
   if (INTERNAL_CLIPBOARD_PROBE_REGEX.test(normalized)) return;
 
-  const type = detectType(normalized);
-  const preview = normalized.length > 200 ? normalized.substring(0, 200) + '...' : normalized;
+  // If the text looks like a bare filename (no slash) and the pasteboard is
+  // carrying a file URL, promote it to a file entry with the full path so the
+  // metadata panel shows a useful source path.
+  let effectiveContent = normalized;
+  let resolvedFilePath: string | null = null;
+  if (!normalized.includes('/') && !normalized.startsWith('http')) {
+    const filePath = readClipboardFilePath();
+    if (filePath && path.basename(filePath) === normalized) {
+      effectiveContent = filePath;
+      resolvedFilePath = filePath;
+    }
+  }
+  const normalizedResolved = normalizeTextForComparison(effectiveContent);
+  const type = detectType(normalizedResolved);
+  const preview = normalizedResolved.length > 200 ? normalizedResolved.substring(0, 200) + '...' : normalizedResolved;
 
-  const existingIndex = findComparableTextItemIndex(type, normalized);
+  const existingIndex = findComparableTextItemIndex(type, normalizedResolved);
   if (existingIndex >= 0) {
     const existing = clipboardHistory[existingIndex];
     existing.timestamp = Date.now();
     existing.preview = preview;
-    existing.content = normalized;
+    existing.content = normalizedResolved;
     if (type === 'file') {
-      const filename = path.basename(normalized);
-      existing.metadata = { ...(existing.metadata || {}), filename };
+      const filename = path.basename(normalizedResolved);
+      existing.metadata = {
+        ...(existing.metadata || {}),
+        filename,
+        ...(resolvedFilePath ? { sourcePath: resolvedFilePath } : {}),
+      };
     }
     sortClipboardHistory();
     saveHistory();
@@ -226,14 +247,17 @@ function addTextItem(text: string): void {
   const item: ClipboardItem = {
     id: crypto.randomUUID(),
     type,
-    content: normalized,
+    content: normalizedResolved,
     preview,
     timestamp: Date.now(),
   };
 
   if (type === 'file') {
-    const filename = path.basename(normalized);
-    item.metadata = { filename };
+    const filename = path.basename(normalizedResolved);
+    item.metadata = {
+      filename,
+      ...(resolvedFilePath ? { sourcePath: resolvedFilePath } : {}),
+    };
   }
 
   clipboardHistory.unshift(item);
@@ -245,7 +269,11 @@ function addTextItem(text: string): void {
   saveHistory();
 }
 
-function addImageItem(image: ReturnType<typeof nativeImage.createFromDataURL>, rawGifData?: Buffer): void {
+function addImageItem(
+  image: ReturnType<typeof nativeImage.createFromDataURL>,
+  rawGifData?: Buffer,
+  sourceFilename?: string
+): void {
   try {
     const size = image.getSize();
     if (size.width === 0 || size.height === 0) return;
@@ -271,6 +299,7 @@ function addImageItem(image: ReturnType<typeof nativeImage.createFromDataURL>, r
         height: size.height,
         size: dataToSave.length,
         format: ext,
+        ...(sourceFilename ? { filename: sourceFilename } : {}),
       },
     };
 
@@ -292,10 +321,161 @@ function addImageItem(image: ReturnType<typeof nativeImage.createFromDataURL>, r
   }
 }
 
+function decodeFileUrlCandidate(raw: string): string | null {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return null;
+  const first = trimmed.split(/\r?\n|\0/)[0].trim();
+  if (!first) return null;
+  try {
+    if (first.startsWith('file://')) {
+      return decodeURIComponent(new URL(first).pathname);
+    }
+  } catch {}
+  if (first.startsWith('/')) return first;
+  return null;
+}
+
+function readClipboardFilePathViaOsascript(): string | null {
+  if (process.platform !== 'darwin') return null;
+  try {
+    const { execFileSync } = require('child_process');
+    // `the clipboard as «class furl»` returns the file URL if the pasteboard
+    // has a file reference, throws otherwise. -e is a single AppleScript.
+    const out = execFileSync(
+      '/usr/bin/osascript',
+      ['-e', 'POSIX path of (the clipboard as «class furl»)'],
+      { timeout: 500, stdio: ['ignore', 'pipe', 'ignore'] }
+    ).toString().trim();
+    if (!out) return null;
+    if (out.startsWith('/')) return out;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function clipboardLooksLikeFileCopy(): boolean {
+  try {
+    const formats = clipboard.availableFormats();
+    for (const fmt of formats) {
+      const lower = fmt.toLowerCase();
+      if (
+        lower === 'public.file-url' ||
+        lower === 'nsfilenamespboardtype' ||
+        lower.includes('file-url') ||
+        lower.includes('filenames')
+      ) {
+        return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+// Cache the osascript result for the last-seen clipboard "signature" so we
+// don't spawn a subprocess on every 1 s poll. We invalidate the cache when
+// readText or readImage changes.
+let lastOsascriptSignature = '';
+let lastOsascriptResult: string | null = null;
+
+function computeClipboardSignature(): string {
+  try {
+    const text = clipboard.readText();
+    const img = clipboard.readImage();
+    const imgHash = !img.isEmpty() ? hashBuffer(img.toPNG()).slice(0, 16) : '';
+    return `${text.length}:${text.slice(0, 64)}:${imgHash}`;
+  } catch {
+    return '';
+  }
+}
+
+function readClipboardFilePath(): string | null {
+  // Fast path: try the common pasteboard UTIs directly.
+  const candidateFormats = [
+    'public.file-url',
+    'NSFilenamesPboardType',
+  ];
+  for (const fmt of candidateFormats) {
+    try {
+      const viaString = decodeFileUrlCandidate(clipboard.read(fmt));
+      if (viaString && fs.existsSync(viaString)) return viaString;
+    } catch {}
+    try {
+      const buf = clipboard.readBuffer(fmt);
+      if (buf && buf.length > 0) {
+        const viaBuffer = decodeFileUrlCandidate(buf.toString('utf8'));
+        if (viaBuffer && fs.existsSync(viaBuffer)) return viaBuffer;
+      }
+    } catch {}
+  }
+  // If the plain-text slot happens to be a valid existing path, use it.
+  try {
+    const asText = decodeFileUrlCandidate(clipboard.readText());
+    if (asText && fs.existsSync(asText)) return asText;
+  } catch {}
+  // Always try osascript as a fallback — it reliably catches file URLs on
+  // all macOS versions regardless of how Electron exposes pasteboard UTIs.
+  // Cache the result per clipboard signature so we don't spawn a subprocess
+  // on every poll when the clipboard hasn't changed.
+  const signature = computeClipboardSignature();
+  if (signature && signature === lastOsascriptSignature) {
+    return lastOsascriptResult;
+  }
+  const viaOsascript = readClipboardFilePathViaOsascript();
+  lastOsascriptSignature = signature;
+  lastOsascriptResult = viaOsascript && fs.existsSync(viaOsascript) ? viaOsascript : null;
+  return lastOsascriptResult;
+}
+
+const IMAGE_FILE_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif',
+  '.bmp', '.tiff', '.tif', '.svg', '.ico',
+]);
+
+function isImageFilePath(filePath: string): boolean {
+  return IMAGE_FILE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
 function pollClipboard(): void {
   if (!isEnabled) return;
 
   try {
+    // A file URL on the pasteboard (Finder copy) takes priority over
+    // readImage() — Finder places the file's *generic icon* as the clipboard
+    // image, not the actual contents, and a filename-only text representation,
+    // which would otherwise produce two extra junk entries per copy.
+    const clipboardFilePath = readClipboardFilePath();
+    if (clipboardFilePath) {
+      if (clipboardFilePath !== lastClipboardFilePath) {
+        console.log(`[Clipboard] File URL detected on pasteboard: ${clipboardFilePath}`);
+        const handled = handleClipboardFileCopy(clipboardFilePath);
+        if (handled) {
+          lastClipboardFilePath = clipboardFilePath;
+          // Seed the image/text caches with whatever the file copy is showing
+          // on the pasteboard so subsequent polls treat it as "already seen".
+          try { lastClipboardText = clipboard.readText() || ''; } catch {}
+          try {
+            const img = clipboard.readImage();
+            if (!img.isEmpty()) lastClipboardImage = img.toPNG();
+          } catch {}
+        }
+      }
+      // Whether or not this specific path was handled *this* poll, the
+      // pasteboard currently holds a file reference. Skip image/text paths
+      // entirely — otherwise we'd create:
+      //   (a) a generic-document-icon image entry from readImage(), and
+      //   (b) a bare-filename text entry from readText()
+      // alongside the real file entry.
+      return;
+    }
+
+    // No file URL on the clipboard. If the Finder-style formats still show
+    // up (e.g. we couldn't extract the path but it looks like a file copy),
+    // skip the image/text paths too to avoid the same two junk entries.
+    if (clipboardLooksLikeFileCopy()) {
+      return;
+    }
+
     // Check for GIF data first (clipboard.readImage loses animation)
     let rawGifData: Buffer | undefined;
     try {
@@ -332,6 +512,79 @@ function pollClipboard(): void {
   }
 }
 
+function handleClipboardFileCopy(filePath: string): boolean {
+  if (!fs.existsSync(filePath)) {
+    console.log(`[Clipboard] File URL on pasteboard but path does not exist: ${filePath}`);
+    return false;
+  }
+  const filename = path.basename(filePath);
+
+  if (isImageFilePath(filePath)) {
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size === 0 || stat.size > MAX_IMAGE_SIZE) {
+        console.log(`[Clipboard] Skipping image file (size=${stat.size}): ${filePath}`);
+        return false;
+      }
+
+      // Copy the file as-is into our images dir. Going through
+      // nativeImage.createFromBuffer() drops unsupported formats (HEIC, SVG,
+      // some WebP), so keep the original bytes and let the renderer <img>
+      // tag — which uses the system image decoder via file:// — render it.
+      const imageId = crypto.randomUUID();
+      const ext = path.extname(filePath).toLowerCase().replace(/^\./, '') || 'bin';
+      const imagePath = path.join(getImagesDir(), `${imageId}.${ext}`);
+      fs.copyFileSync(filePath, imagePath);
+      console.log(`[Clipboard] Copied image file → ${imagePath} (filename=${filename}, size=${stat.size})`);
+
+      let width = 0;
+      let height = 0;
+      try {
+        const img = nativeImage.createFromPath(imagePath);
+        if (!img.isEmpty()) {
+          const size = img.getSize();
+          width = size.width;
+          height = size.height;
+        }
+      } catch {}
+
+      const item: ClipboardItem = {
+        id: imageId,
+        type: 'image',
+        content: imagePath,
+        timestamp: Date.now(),
+        metadata: {
+          width,
+          height,
+          size: stat.size,
+          format: ext,
+          filename,
+          sourcePath: filePath,
+        },
+      };
+
+      clipboardHistory.unshift(item);
+      sortClipboardHistory();
+      if (clipboardHistory.length > MAX_ITEMS) {
+        const removed = clipboardHistory.pop();
+        if (removed && removed.type === 'image' && fs.existsSync(removed.content)) {
+          try { fs.unlinkSync(removed.content); } catch {}
+        }
+      }
+      saveHistory();
+      return true;
+    } catch (e) {
+      console.error('[Clipboard] Failed to capture image file, falling back to file entry:', e);
+      // Fall through to add as file entry so we at least don't lose it.
+    }
+  }
+
+  // Non-image file (or image capture failed) — add a single file entry
+  // keyed on the real path with filename metadata.
+  addTextItem(filePath);
+  return true;
+}
+
 // ─── Public API ─────────────────────────────────────────────────────
 
 export function startClipboardMonitor(): void {
@@ -344,6 +597,7 @@ export function startClipboardMonitor(): void {
     if (!image.isEmpty()) {
       lastClipboardImage = image.toPNG();
     }
+    lastClipboardFilePath = readClipboardFilePath() || '';
   } catch {}
   
   // Start polling
