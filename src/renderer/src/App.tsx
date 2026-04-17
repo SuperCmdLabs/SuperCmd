@@ -3923,8 +3923,8 @@ const App: React.FC = () => {
                   ref={(el) => (itemRefs.current[0] = el)}
                   className={`mx-1 mt-0.5 mb-2 px-3 py-3 rounded-xl cursor-pointer transition-colors border ${
                     selectedIndex === 0
-                      ? 'bg-[var(--launcher-card-selected-bg)] border-[var(--launcher-card-selected-border)]'
-                      : 'bg-[var(--launcher-card-bg)] border-[var(--launcher-card-border)] hover:bg-[var(--launcher-card-hover-bg)]'
+                      ? 'bg-[color-mix(in_srgb,var(--launcher-card-selected-bg)_60%,transparent)] border-[color-mix(in_srgb,var(--launcher-card-selected-border)_60%,transparent)]'
+                      : 'bg-transparent border-[color-mix(in_srgb,var(--launcher-card-border)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--launcher-card-hover-bg)_50%,transparent)]'
                   }`}
                   onClick={() => {
                     navigator.clipboard.writeText(calcResult.result);
@@ -3959,7 +3959,7 @@ const App: React.FC = () => {
                             {calcResult.inputLabel}
                           </div>
                           <div
-                            className="mt-1 text-[1.15rem] leading-7 font-semibold text-[var(--text-primary)] text-center whitespace-normal break-words"
+                            className="mt-1 text-[1.15rem] leading-7 font-medium text-[var(--text-secondary)] text-center whitespace-normal break-words"
                             style={{
                               display: '-webkit-box',
                               WebkitLineClamp: 2,
@@ -3978,7 +3978,7 @@ const App: React.FC = () => {
                             {calcResult.resultLabel}
                           </div>
                           <div
-                            className="mt-1 text-[1.15rem] leading-7 font-semibold text-[var(--text-primary)] text-center whitespace-normal break-words"
+                            className="mt-1 text-[1.15rem] leading-7 font-medium text-[var(--text-secondary)] text-center whitespace-normal break-words"
                             style={{
                               display: '-webkit-box',
                               WebkitLineClamp: 2,

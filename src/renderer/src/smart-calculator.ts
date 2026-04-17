@@ -16,6 +16,11 @@ export interface CalcResult {
 
 type SoulverKind = 'math' | 'unit' | 'currency' | 'percentage' | 'date' | 'duration' | 'string' | 'unknown';
 
+const CALC_KEYWORDS = new Set([
+  'today', 'tomorrow', 'yesterday', 'now',
+  'pi', 'e', 'tau', 'phi',
+]);
+
 const KIND_LABELS: Record<CalcResult['kind'], { input: string; result: string }> = {
   math: { input: 'Expression', result: 'Result' },
   unit: { input: 'From', result: 'To' },
@@ -56,9 +61,13 @@ export async function tryCalculateAsync(query: string): Promise<CalcResult | nul
   const trimmed = (query ?? '').trim();
   if (!trimmed) return null;
 
-  // Plain decimal numbers and single unhyphenated words are search queries, not math.
+  // Plain decimal numbers are more likely search queries than calculator input.
   if (/^\d+(\.\d+)?$/.test(trimmed)) return null;
-  if (/^[a-zA-Z]+$/.test(trimmed)) return null;
+  // Single alphabetic words are usually search queries, except for a small set
+  // of known calculator keywords (date references + math constants).
+  if (/^[a-zA-Z]+$/.test(trimmed) && !CALC_KEYWORDS.has(trimmed.toLowerCase())) {
+    return null;
+  }
 
   const api = (globalThis as any)?.electron;
   if (!api?.calculatorEvaluate) return null;

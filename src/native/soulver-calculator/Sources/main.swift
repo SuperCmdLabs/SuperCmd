@@ -10,13 +10,39 @@ import SoulverCore
 //
 // One long-lived process per launcher. Requests arrive one per line.
 
+// Long-lived ECB provider kept in a shared constant so updateRates() populates
+// the same cache that rateFor(request:) reads from.
+let currencyRateProvider = ECBCurrencyRateProvider()
+
 let calculator: Calculator = {
-    var customization = EngineCustomization.standard
-    // Fetch ECB currency rates in the background; 33 fiat currencies, no API key.
-    // SoulverCore falls back to its hardcoded rate table until this resolves.
-    customization.currencyRateProvider = ECBCurrencyRateProvider()
-    return Calculator(customization: customization)
+    // .soulver is the fully-featured customization (vs .standard which is a
+    // minimal subset used for simple expression evaluation). It enables unit
+    // conversions, currency conversions, natural-language parsing, etc.
+    // convertTo(locale:) adapts currency symbol defaults and auto-conversion
+    // targets to the user's locale — so "12 usd" resolves to INR on en_IN.
+    var customization = EngineCustomization.soulver.convertTo(locale: .current)
+    customization.currencyRateProvider = currencyRateProvider
+    // Defensive: ensure the feature flags we care about are on, even if a
+    // future SoulverCore release changes .soulver's defaults.
+    customization.featureFlags.converters = true
+    customization.featureFlags.wordFunctions = true
+    customization.featureFlags.useDefaultRatesForUnhandledCurrencies = true
+
+    let calc = Calculator(customization: customization)
+    // .automatic tells SoulverCore to auto-convert currency results to the
+    // locale's default currency (e.g. "12 usd" → ₹-value on en_IN). Matches
+    // Raycast's default calculator behavior.
+    var formatting = FormattingPreferences()
+    formatting.resultConversionBehavior = .automatic
+    calc.formattingPreferences = formatting
+    return calc
 }()
+
+// Kick off an ECB fetch in the background. Until it completes (or fails), the
+// calculator falls back to SoulverCore's hardcoded rate table.
+Task.detached(priority: .utility) {
+    _ = await currencyRateProvider.updateRates()
+}
 
 struct Request: Decodable {
     let id: Int
