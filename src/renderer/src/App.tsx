@@ -3495,7 +3495,7 @@ const App: React.FC = () => {
               setShowClipboardManager(false);
               setSearchQuery('');
               setSelectedIndex(0);
-              window.electron.hideWindow();
+              setTimeout(() => inputRef.current?.focus(), 50);
             }}
           />
         </LauncherSurface>
