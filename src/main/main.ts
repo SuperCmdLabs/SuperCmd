@@ -18,6 +18,7 @@ import { getAvailableCommands, executeCommand, invalidateCache } from './command
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState } from './settings-store';
 import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
+import * as soulverCalculator from './soulver-calculator';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
 import {
   createScriptCommandTemplate,
@@ -11278,6 +11279,14 @@ app.whenReady().then(async () => {
 
   // ─── IPC: Launcher ──────────────────────────────────────────────
 
+  ipcMain.handle('calculator-evaluate', async (_event: any, expression: string) => {
+    try {
+      return await soulverCalculator.evaluate(String(expression ?? ''));
+    } catch (err: any) {
+      return { id: 0, value: null, raw: null, type: 'unknown', error: err?.message || String(err) };
+    }
+  });
+
   ipcMain.handle('get-commands', async () => {
     const s = loadSettings();
     const commands = await getAvailableCommands();
@@ -15299,6 +15308,7 @@ app.on('will-quit', () => {
   stopClipboardMonitor();
   stopSnippetExpander();
   stopFileSearchIndexing();
+  try { soulverCalculator.shutdown(); } catch {}
   if (appTray) {
     try { appTray.destroy(); } catch {}
     appTray = null;

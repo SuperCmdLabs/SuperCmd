@@ -37,6 +37,15 @@ const electronAPI = {
   /** Signal main process that the renderer React app has mounted. */
   rendererReady: (): void => { ipcRenderer.send('renderer-ready'); },
 
+  // ─── Calculator (SoulverCore) ───────────────────────────────────
+  calculatorEvaluate: (expression: string): Promise<{
+    id: number;
+    value: string | null;
+    raw: number | null;
+    type: string;
+    error: string | null;
+  }> => ipcRenderer.invoke('calculator-evaluate', expression),
+
   // ─── Launcher ───────────────────────────────────────────────────
   getCommands: (): Promise<any[]> => ipcRenderer.invoke('get-commands'),
   executeCommand: (commandId: string): Promise<boolean> =>

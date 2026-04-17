@@ -410,9 +410,19 @@ export interface OllamaLocalModel {
   modifiedAt: string;
 }
 
+export interface SoulverResponse {
+  id: number;
+  value: string | null;
+  raw: number | null;
+  type: string;
+  error: string | null;
+}
+
 export interface ElectronAPI {
   // Lifecycle
   rendererReady: () => void;
+  // Calculator (SoulverCore)
+  calculatorEvaluate: (expression: string) => Promise<SoulverResponse>;
   // Launcher
   getCommands: () => Promise<CommandInfo[]>;
   executeCommand: (commandId: string) => Promise<boolean>;
