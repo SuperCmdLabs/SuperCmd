@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bug, Languages, Sparkles } from 'lucide-react';
+import { Bug, FolderSearch, Languages, Sparkles } from 'lucide-react';
 import type { AppSettings, HyperKeySourceKey, HyperKeyCapsLockTapBehavior } from '../../types/electron';
 import { APP_LANGUAGE_OPTIONS, DEFAULT_APP_LANGUAGE, type AppLanguageSetting, useI18n } from '../i18n';
 
@@ -191,6 +191,24 @@ const AdvancedTab: React.FC = () => {
               ))}
             </select>
           </div>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<FolderSearch className="w-4 h-4" />}
+          title="Disable File & Folder Search"
+          description="Hide file and folder results from the main launcher search."
+        >
+          <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings?.disableFileSearchResults ?? false}
+              onChange={(e) => {
+                void applySettingsPatch({ disableFileSearchResults: e.target.checked });
+              }}
+              className="settings-checkbox"
+            />
+            Disable file and folder search results
+          </label>
         </SettingsRow>
 
         <SettingsRow

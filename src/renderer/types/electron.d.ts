@@ -277,6 +277,7 @@ export interface AppSettings {
   hasSeenOnboarding: boolean;
   hasSeenWhisperOnboarding: boolean;
   fileSearchProtectedRootsEnabled: boolean;
+  disableFileSearchResults: boolean;
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;

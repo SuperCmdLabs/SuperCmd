@@ -347,6 +347,7 @@ const App: React.FC = () => {
     Record<string, Record<string, string>>
   >({});
   const [launcherFileResults, setLauncherFileResults] = useState<IndexedFileSearchResult[]>([]);
+  const [disableFileSearchResults, setDisableFileSearchResults] = useState(false);
   const [launcherFileIcons, setLauncherFileIcons] = useState<Record<string, string>>({});
   const [fileIsDirectoryMap, setFileIsDirectoryMap] = useState<Record<string, boolean>>({});
   const [launcherFooterStatus, setLauncherFooterStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -607,6 +608,7 @@ const App: React.FC = () => {
           DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
         )
       );
+      setDisableFileSearchResults(Boolean(settings.disableFileSearchResults));
       applyAppFontSize(settings.fontSize);
       applyUiStyle(settings.uiStyle || 'default');
       applyBaseColor(settings.baseColor || '#101113');
@@ -932,6 +934,7 @@ const App: React.FC = () => {
         )
       );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
+      setDisableFileSearchResults(Boolean(settings.disableFileSearchResults));
     });
     return cleanup;
   }, []);
@@ -1331,7 +1334,7 @@ const App: React.FC = () => {
     const terms = pathLikeQuery ? [] : getLauncherFileSearchTerms(trimmed);
     const minimumQueryLength = pathLikeQuery ? 1 : MIN_LAUNCHER_FILE_QUERY_LENGTH;
 
-    if (!shouldKeepLauncherSearchResults || trimmed.length < minimumQueryLength) {
+    if (disableFileSearchResults || !shouldKeepLauncherSearchResults || trimmed.length < minimumQueryLength) {
       setLauncherFileResults([]);
       return;
     }
@@ -1406,7 +1409,7 @@ const App: React.FC = () => {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [searchQuery, shouldKeepLauncherSearchResults, homeDir]);
+  }, [searchQuery, shouldKeepLauncherSearchResults, homeDir, disableFileSearchResults]);
 
   useEffect(() => {
     if (!isLauncherModeActive) return;

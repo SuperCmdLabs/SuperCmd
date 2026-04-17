@@ -84,6 +84,7 @@ export interface AppSettings {
   hasSeenOnboarding: boolean;
   hasSeenWhisperOnboarding: boolean;
   fileSearchProtectedRootsEnabled: boolean;
+  disableFileSearchResults: boolean;
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
@@ -170,6 +171,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   hasSeenOnboarding: false,
   hasSeenWhisperOnboarding: false,
   fileSearchProtectedRootsEnabled: false,
+  disableFileSearchResults: false,
   ai: { ...DEFAULT_AI_SETTINGS },
   debugMode: false,
   appLanguage: 'system',
@@ -350,6 +352,10 @@ export function loadSettings(): AppSettings {
         parsed.hasSeenWhisperOnboarding ?? false,
       fileSearchProtectedRootsEnabled:
         parsed.fileSearchProtectedRootsEnabled ?? DEFAULT_SETTINGS.fileSearchProtectedRootsEnabled,
+      disableFileSearchResults: normalizeBoolean(
+        parsed.disableFileSearchResults,
+        DEFAULT_SETTINGS.disableFileSearchResults
+      ),
       ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
       hyperKey: { ...DEFAULT_HYPER_KEY_SETTINGS, ...parsed.hyperKey },
       commandMetadata: parsed.commandMetadata ?? {},
