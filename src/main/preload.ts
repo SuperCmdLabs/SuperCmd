@@ -12,7 +12,23 @@ import { contextBridge, ipcRenderer } from 'electron';
 const _homeDir = process.env.HOME || process.env.USERPROFILE || '/tmp';
 const _platform = process.platform;
 
-contextBridge.exposeInMainWorld('electron', {
+// The launcher window runs with contextIsolation: false so that Raycast
+// extensions can use real Node classes (EventEmitter, Buffer, etc.) without
+// going through contextBridge's class-mangling serialization. Other windows
+// still run contextIsolated. Use the right exposure mechanism for each.
+//
+// contextBridge.exposeInMainWorld() THROWS when contextIsolation is off,
+// so we must branch.
+const _contextIsolated = (process as any).contextIsolated !== false;
+function exposeToRenderer(name: string, value: any): void {
+  if (_contextIsolated) {
+    contextBridge.exposeInMainWorld(name, value);
+  } else {
+    (globalThis as any)[name] = value;
+  }
+}
+
+const electronAPI = {
   // ─── System Info ────────────────────────────────────────────────
   homeDir: _homeDir,
   platform: _platform,
@@ -30,6 +46,10 @@ contextBridge.exposeInMainWorld('electron', {
   executeCommandFromWidget: (commandId: string): Promise<boolean> =>
     ipcRenderer.invoke('execute-command-from-widget', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
+  showWindow: (): Promise<void> => ipcRenderer.invoke('show-window'),
+  activateLastFrontmostApp: (): Promise<void> => ipcRenderer.invoke('activate-last-frontmost-app'),
+  reportNoViewStatus: (variant: 'processing' | 'success' | 'error', text: string): Promise<void> =>
+    ipcRenderer.invoke('no-view-status', variant, text),
   dismissUpdateBanner: (): Promise<void> => ipcRenderer.invoke('dismiss-update-banner'),
   resetLauncherPosition: (): Promise<void> => ipcRenderer.invoke('reset-launcher-position'),
   openDevTools: (): Promise<boolean> => ipcRenderer.invoke('open-devtools'),
@@ -890,4 +910,31 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('window-management-set-window-layout', items),
   getWindowManagementSnapshot: (): Promise<any> =>
     ipcRenderer.invoke('window-management-snapshot'),
-});
+};
+
+exposeToRenderer('electron', electronAPI);
+
+// ─── Real Node require for extensions ───────────────────────────
+// Windows that run Raycast extensions (currently: the main launcher) have
+// `sandbox: false` + `nodeIntegration: true` + `contextIsolation: false`.
+// In that configuration, `require`, `process`, `Buffer`, etc. are already
+// present on the main world — extensions get real Node natively, no bridge
+// needed. For safety (and for any future window that opts into sandboxed
+// extension execution), we still expose a guarded passthrough.
+{
+  const maybeRequire: ((id: string) => any) | undefined =
+    typeof (globalThis as any).require === 'function'
+      ? (globalThis as any).require
+      : undefined;
+
+  exposeToRenderer('__scNodeRequire', (name: string): any => {
+    if (!maybeRequire) {
+      throw new Error('Node require is not available in this window (sandboxed).');
+    }
+    return maybeRequire(name);
+  });
+
+  // Flag so the renderer can detect whether real Node is available without
+  // having to catch on every call.
+  exposeToRenderer('__scHasRealNode', Boolean(maybeRequire));
+}

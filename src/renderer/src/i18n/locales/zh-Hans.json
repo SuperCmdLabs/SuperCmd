@@ -642,7 +642,8 @@
     },
     "sections": {
       "selectedText": "选中文本",
-      "pinned": "已固定"
+      "pinned": "已固定",
+      "results": "结果"
     },
     "calculator": {
       "pressEnterToCopy": "按回车复制",

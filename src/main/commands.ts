@@ -958,7 +958,13 @@ async function discoverApplications(): Promise<CommandInfo[]> {
         }
 
         const rawName = path.basename(appPath, '.app');
-        const name = canonicalAppTitle(rawName);
+        const fallbackDisplayName = String(info?.CFBundleDisplayName || info?.CFBundleName || '').trim();
+        const localizedDisplayName = await resolveLocalizedBundleDisplayName(
+          appPath,
+          'CFBundleDisplayName',
+          'CFBundleName'
+        );
+        const name = canonicalAppTitle(localizedDisplayName || fallbackDisplayName || rawName);
         const bundleId =
           typeof info?.CFBundleIdentifier === 'string'
             ? info.CFBundleIdentifier
@@ -1547,6 +1553,12 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       id: 'system-open-extensions-settings',
       title: 'SuperCmd Extensions',
       keywords: ['extensions', 'store', 'community', 'hotkey', 'supercmd'],
+      category: 'system',
+    },
+    {
+      id: 'system-open-extension-store',
+      title: 'Extension Store',
+      keywords: ['extension', 'store', 'browse', 'install', 'community', 'marketplace', 'supercmd'],
       category: 'system',
     },
     {

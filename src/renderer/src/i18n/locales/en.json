@@ -646,7 +646,8 @@
     },
     "sections": {
       "selectedText": "Selected Text",
-      "pinned": "Pinned"
+      "pinned": "Pinned",
+      "results": "Results"
     },
     "calculator": {
       "pressEnterToCopy": "Press Enter to copy",

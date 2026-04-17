@@ -33,6 +33,8 @@ export interface BackgroundNoViewRun {
   runId: string;
   bundle: ExtensionBundle;
   launchType: 'userInitiated' | 'background';
+  /** When true, execution status is mirrored to the system status-bar badge. */
+  reportStatus?: boolean;
 }
 
 export interface UseMenuBarExtensionsReturn {

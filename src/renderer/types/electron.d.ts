@@ -271,6 +271,7 @@ export interface AppSettings {
   commandHotkeys: Record<string, string>;
   commandAliases: Record<string, string>;
   pinnedCommands: string[];
+  pinnedFiles: string[];
   recentCommands: string[];
   recentCommandLaunchCounts: Record<string, number>;
   hasSeenOnboarding: boolean;
@@ -417,6 +418,9 @@ export interface ElectronAPI {
   executeCommandAsHotkey: (commandId: string) => Promise<boolean>;
   executeCommandFromWidget: (commandId: string) => Promise<boolean>;
   hideWindow: () => Promise<void>;
+  showWindow: () => Promise<void>;
+  activateLastFrontmostApp: () => Promise<void>;
+  reportNoViewStatus: (variant: 'processing' | 'success' | 'error', text: string) => Promise<void>;
   dismissUpdateBanner: () => Promise<void>;
   resetLauncherPosition: () => Promise<void>;
   openDevTools: () => Promise<boolean>;
@@ -828,5 +832,15 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     electron: ElectronAPI;
+    /**
+     * Real Node `require`, exposed by preload when the hosting window runs
+     * with `sandbox: false` + `nodeIntegration: true`. Available in the main
+     * launcher window (where Raycast extensions execute) so the extension
+     * loader can return real `node:*` built-ins instead of shims. May throw
+     * if called from a sandboxed window.
+     */
+    __scNodeRequire?: (name: string) => any;
+    /** Whether `__scNodeRequire` is usable in the current window. */
+    __scHasRealNode?: boolean;
   }
 }

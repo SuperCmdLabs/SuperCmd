@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { Search, Power, Settings, Puzzle, Sparkles, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Lock, Trash2 } from 'lucide-react';
+import { Search, Power, Settings, Puzzle, Sparkles, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Lock, Trash2, Store } from 'lucide-react';
 import type { CommandInfo, EdgeTtsVoice } from '../../types/electron';
 import supercmdLogo from '../../../../supercmd.svg';
 import IconCalendar from '../icons/Calendar';
@@ -33,7 +33,31 @@ export interface LauncherAction {
   shortcut?: string;
   style?: 'default' | 'destructive';
   enabled?: boolean;
+  icon?: React.ReactNode;
   execute: () => void | Promise<void>;
+}
+
+/**
+ * Match a keyboard event against a LauncherAction shortcut string.
+ * Shortcut format: 'Cmd+N', 'Ctrl+X', 'Cmd+Shift+P', 'Enter', 'Cmd+Delete', etc.
+ */
+export function matchesLauncherShortcut(
+  e: React.KeyboardEvent | KeyboardEvent,
+  shortcut: string,
+): boolean {
+  const parts = shortcut.split('+');
+  const key = parts[parts.length - 1];
+  const mods = parts.slice(0, -1).map((m) => m.toLowerCase());
+
+  if ((mods.includes('cmd')) !== e.metaKey) return false;
+  if ((mods.includes('ctrl')) !== e.ctrlKey) return false;
+  if ((mods.includes('alt')) !== e.altKey) return false;
+  if ((mods.includes('shift')) !== e.shiftKey) return false;
+
+  // Single character keys — compare case-insensitively
+  if (key.length === 1) return e.key.toLowerCase() === key.toLowerCase();
+  // Special keys (Enter, Escape, Delete, ArrowUp, etc.)
+  return e.key === key;
 }
 
 export type MemoryFeedback = {
@@ -1100,6 +1124,14 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     );
   }
 
+  if (commandId === 'system-open-extension-store') {
+    return (
+      <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
+        <Store className="w-3 h-3 text-purple-300" />
+      </div>
+    );
+  }
+
   if (commandId === 'system-camera') {
     return (
       <div className="w-5 h-5 flex items-center justify-center">
@@ -1151,6 +1183,36 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
 export function renderShortcutLabel(shortcut?: string): string {
   if (!shortcut) return '';
   return formatShortcutForDisplay(shortcut).replace(/ \+ /g, ' ');
+}
+
+/**
+ * Split a hotkey string (e.g. "Command+Shift+L") into individual display symbols
+ * (e.g. ["⌘", "⇧", "L"]) so each part can be rendered as a separate kbd badge.
+ */
+export function getShortcutDisplayParts(shortcut: string): string[] {
+  if (!shortcut) return [];
+  const parts = String(shortcut).split('+').map((token) => {
+    const value = String(token || '').trim();
+    if (!value) return '';
+    if (/^hyper$/i.test(value) || value === '✦') return '✦';
+    if (/^(command|cmd)$/i.test(value)) return '⌘';
+    if (/^(control|ctrl)$/i.test(value)) return '⌃';
+    if (/^(alt|option)$/i.test(value)) return '⌥';
+    if (/^shift$/i.test(value)) return '⇧';
+    if (/^(function|fn)$/i.test(value)) return 'fn';
+    if (/^arrowup$/i.test(value)) return '↑';
+    if (/^arrowdown$/i.test(value)) return '↓';
+    if (/^arrowleft$/i.test(value)) return '←';
+    if (/^arrowright$/i.test(value)) return '→';
+    if (/^(backspace|delete)$/i.test(value)) return '⌫';
+    if (/^period$/i.test(value)) return '.';
+    if (/^return$/i.test(value)) return '↩';
+    if (/^escape$/i.test(value)) return '⎋';
+    if (/^space$/i.test(value)) return '␣';
+    if (/^tab$/i.test(value)) return '⇥';
+    return value.length === 1 ? value.toUpperCase() : value;
+  });
+  return parts.filter(Boolean);
 }
 
 export function parseIntervalToMs(interval?: string): number | null {

@@ -36,6 +36,8 @@ interface QuickLinkManagerProps {
   onClose: () => void;
   initialView: 'search' | 'create';
   commandAliases?: Record<string, string>;
+  /** If set, immediately open the edit form for this quick link ID. */
+  initialEditId?: string;
 }
 
 const QUICK_LINK_COMMAND_PREFIX = 'quicklink-';
@@ -1255,7 +1257,7 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
   );
 };
 
-const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialView, commandAliases = {} }) => {
+const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialView, commandAliases = {}, initialEditId }) => {
   const [view, setView] = useState<'search' | 'create' | 'edit'>(initialView);
   const [quickLinks, setQuickLinks] = useState<QuickLink[]>([]);
   const [filteredQuickLinks, setFilteredQuickLinks] = useState<QuickLink[]>([]);
@@ -1310,6 +1312,17 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
       inputRef.current?.focus();
     }
   }, [loadQuickLinks, view]);
+
+  // If opened with an initialEditId, switch to edit mode once quick links have loaded.
+  useEffect(() => {
+    if (!initialEditId || quickLinks.length === 0) return;
+    const target = quickLinks.find((ql) => ql.id === initialEditId);
+    if (!target) return;
+    setEditingQuickLink(target);
+    setView('edit');
+  // Only run when quickLinks first loads (or initialEditId changes).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quickLinks, initialEditId]);
 
   useEffect(() => {
     const normalized = searchQuery.trim().toLowerCase();
@@ -1580,13 +1593,18 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
       }
       await loadQuickLinks();
       setEditingQuickLink(undefined);
+      // If we jumped directly to edit via initialEditId, close the manager after saving.
+      if (view === 'edit' && initialEditId) {
+        onClose();
+        return;
+      }
       setView('search');
       setTimeout(() => inputRef.current?.focus(), 40);
     } catch (error: any) {
       console.error('Failed to save quick link:', error);
       throw error;
     }
-  }, [editingQuickLink, loadQuickLinks, view]);
+  }, [editingQuickLink, initialEditId, loadQuickLinks, onClose, view]);
 
   const actions = useMemo(() => {
     const list: Array<{
@@ -1758,6 +1776,12 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
         onSave={handleSave}
         onCancel={() => {
           setEditingQuickLink(undefined);
+          // If we jumped directly to edit via initialEditId (no search view to go back to),
+          // close the manager entirely so Escape returns to the main launcher.
+          if (view === 'edit' && initialEditId) {
+            onClose();
+            return;
+          }
           setView('search');
           setTimeout(() => inputRef.current?.focus(), 40);
         }}

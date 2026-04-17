@@ -1948,9 +1948,11 @@ function computeDetachedPopupPosition(
   }
 
   if (popupName === DETACHED_MEMORY_STATUS_WINDOW_NAME) {
+    // Horizontally centered, vertically centered in the bottom half of the
+    // work area (i.e. 3/4 of the way down the screen).
     return {
-      x: workArea.x + workArea.width - width - 20,
-      y: workArea.y + 16,
+      x: workArea.x + Math.floor((workArea.width - width) / 2),
+      y: workArea.y + Math.floor(workArea.height * 0.75 - height / 2),
     };
   }
 
@@ -2048,16 +2050,7 @@ const OPENING_SHORTCUT_SUPPRESSION_MS = 220;
 let openingShortcutSuppressionUntil = 0;
 let openingShortcutToSuppress = '';
 
-function getMemoryStatusWindowHtml(
-  variant: 'processing' | 'success' | 'error' = 'processing',
-  text: string = ''
-): string {
-  const safeVariant =
-    variant === 'success' || variant === 'error' ? variant : 'processing';
-  const safeText = String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+function getMemoryStatusWindowHtml(): string {
   return `<!doctype html>
 <html>
 <head>
@@ -2074,6 +2067,8 @@ function getMemoryStatusWindowHtml(
       -webkit-font-smoothing: antialiased;
       user-select: none;
       pointer-events: none;
+      opacity: 1;
+      transition: opacity 180ms ease;
     }
     .wrap {
       width: 100%;
@@ -2086,7 +2081,7 @@ function getMemoryStatusWindowHtml(
       border-radius: 12px;
       border: 1px solid rgba(255,255,255,0.12);
       background: rgba(12,12,14,0.78);
-      box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
       backdrop-filter: blur(18px);
       -webkit-backdrop-filter: blur(18px);
       display: flex;
@@ -2095,6 +2090,7 @@ function getMemoryStatusWindowHtml(
       padding: 0 12px;
       box-sizing: border-box;
       color: rgba(255,255,255,0.92);
+      transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
     }
     .card.success {
       border-color: rgba(52, 211, 153, 0.28);
@@ -2113,6 +2109,7 @@ function getMemoryStatusWindowHtml(
       background: rgba(255,255,255,0.9);
       flex: 0 0 auto;
       box-shadow: 0 0 0 4px rgba(255,255,255,0.10);
+      transition: background 180ms ease, box-shadow 180ms ease;
     }
     .card.processing .dot {
       animation: pulse 1s ease-in-out infinite;
@@ -2141,11 +2138,22 @@ function getMemoryStatusWindowHtml(
 </head>
 <body>
   <div class="wrap">
-    <div id="card" class="card ${safeVariant}">
+    <div id="card" class="card processing">
       <div class="dot"></div>
-      <div id="text" class="text">${safeText}</div>
+      <div id="text" class="text"></div>
     </div>
   </div>
+  <script>
+    window.__scUpdate = function(variant, text) {
+      document.getElementById('card').className = 'card ' + variant;
+      document.getElementById('text').textContent = text;
+      // Restore opacity in case a previous fade-out set it to 0.
+      document.documentElement.style.opacity = '1';
+    };
+    window.__scFadeOut = function() {
+      document.documentElement.style.opacity = '0';
+    };
+  </script>
 </body>
 </html>`;
 }
@@ -2161,9 +2169,17 @@ function hideMemoryStatusBar(): void {
   clearMemoryStatusHideTimer();
   memoryStatusRenderSeq += 1;
   if (!memoryStatusWindow || memoryStatusWindow.isDestroyed()) return;
+  const win = memoryStatusWindow;
   try {
-    memoryStatusWindow.hide();
+    if (win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.executeJavaScript('window.__scFadeOut && window.__scFadeOut()').catch(() => {});
+    }
   } catch {}
+  setTimeout(() => {
+    if (!win.isDestroyed()) {
+      try { win.hide(); } catch {}
+    }
+  }, 200);
 }
 
 async function ensureMemoryStatusWindow(): Promise<InstanceType<typeof BrowserWindow> | null> {
@@ -2193,6 +2209,12 @@ async function ensureMemoryStatusWindow(): Promise<InstanceType<typeof BrowserWi
   });
   try { memoryStatusWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
   try { memoryStatusWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+  // pop-up-menu level floats reliably above all normal app windows on macOS
+  // without the entitlement issues that screen-saver level can trigger.
+  try { memoryStatusWindow.setAlwaysOnTop(true, 'pop-up-menu'); } catch {}
+  // Prevent Chromium throttling on the hidden status window so executeJavaScript
+  // fires immediately when the badge needs to update.
+  try { memoryStatusWindow.webContents.setBackgroundThrottling(false); } catch {}
   if (process.platform === 'darwin') {
     try { memoryStatusWindow.setWindowButtonVisibility(false); } catch {}
   }
@@ -2220,11 +2242,12 @@ async function renderMemoryStatusBarContent(
   if (!memoryStatusWindow || memoryStatusWindow.isDestroyed()) return;
   if (renderSeq !== memoryStatusRenderSeq) return;
   if (!win.webContents || win.webContents.isDestroyed()) return;
+  const safeText = String(payload.text || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'");
   try {
-    await win.loadURL(
-      `data:text/html;charset=utf-8,${encodeURIComponent(
-        getMemoryStatusWindowHtml(payload.variant, payload.text)
-      )}`
+    await win.webContents.executeJavaScript(
+      `window.__scUpdate && window.__scUpdate('${payload.variant}', '${safeText}')`
     );
   } catch (error) {
     if (renderSeq === memoryStatusRenderSeq) {
@@ -2261,12 +2284,9 @@ async function showMemoryStatusBar(
   } catch {}
   if (renderSeq !== memoryStatusRenderSeq) return;
   try {
-    if (!win.isVisible()) {
-      if (typeof (win as any).showInactive === 'function') (win as any).showInactive();
-      else win.show();
-    } else {
-      win.show();
-    }
+    // Always use showInactive — the badge must never steal focus from the user's app.
+    if (typeof (win as any).showInactive === 'function') (win as any).showInactive();
+    else if (!win.isVisible()) win.show();
     win.moveTop();
   } catch {}
 
@@ -6731,8 +6751,23 @@ function createWindow(): void {
         }
       : {}),
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
+      // Extensions (curated from Raycast store) execute inside this window's
+      // renderer. We enable Node so they can import real `node:*` built-ins
+      // (fs, crypto, child_process, stream, ...) instead of hand-rolled stubs.
+      //
+      // contextIsolation MUST be false: with it on, `contextBridge` serializes
+      // values across worlds and does NOT support classes — so real Node
+      // classes like EventEmitter lose their prototype, breaking packages
+      // like signal-exit and anything that extends Node base classes.
+      //
+      // sandbox must also be false for Node to be available at all.
+      //
+      // Other windows (settings, notes, canvas, overlays, extension store)
+      // keep contextIsolation: true — they run only our own code and don't
+      // need Node in the renderer.
+      nodeIntegration: true,
+      contextIsolation: false,
+      sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
@@ -6907,6 +6942,11 @@ function createWindow(): void {
   // causing the window to never appear on first launch from Launchpad/Finder.
   // The dock is hidden later in openLauncherFromUserEntry() after the window
   // is confirmed loaded, or deferred until onboarding completes for fresh installs.
+
+  // Prevent Chromium from throttling JS timers/execution when the window is
+  // hidden. Without this, executeJavaScript on the hidden renderer (no-view
+  // hotkey dispatch) can stall for 1–2 seconds.
+  mainWindow.webContents.setBackgroundThrottling(false);
 
   loadWindowUrl(mainWindow, '/');
 
@@ -7405,18 +7445,23 @@ function applyLauncherBounds(mode: LauncherMode): void {
   const size = getLauncherSize(mode);
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-  // In default mode, restore the last saved position if it falls within any display.
+  // In default mode, restore the last saved position — but only if the cursor
+  // is on the same display as the saved position. Otherwise the launcher would
+  // open on the "wrong" monitor (the one where it was last used), even when
+  // the user has moved to a different display.
   if (mode === 'default') {
     const saved = loadWindowState();
     if (saved) {
       const savedCenter = { x: saved.x + Math.floor(size.width / 2), y: saved.y + Math.floor(size.height / 2) };
-      const nearestDisplay = screen.getDisplayNearestPoint(savedCenter);
-      const wa = nearestDisplay.workArea;
-      // Clamp to keep the window fully on-screen.
-      const clampedX = clamp(saved.x, wa.x, wa.x + wa.width - size.width);
-      const clampedY = clamp(saved.y, wa.y, wa.y + wa.height - size.height);
-      mainWindow.setBounds({ x: clampedX, y: clampedY, width: size.width, height: size.height });
-      return;
+      const savedDisplay = screen.getDisplayNearestPoint(savedCenter);
+      const cursorDisplay = screen.getDisplayNearestPoint(cursorPoint);
+      if (savedDisplay.id === cursorDisplay.id) {
+        const wa = savedDisplay.workArea;
+        const clampedX = clamp(saved.x, wa.x, wa.x + wa.width - size.width);
+        const clampedY = clamp(saved.y, wa.y, wa.y + wa.height - size.height);
+        mainWindow.setBounds({ x: clampedX, y: clampedY, width: size.width, height: size.height });
+        return;
+      }
     }
   }
 
@@ -7765,6 +7810,11 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
 
 function hideWindow(): void {
   if (!mainWindow) return;
+  // Already hidden — calling mainWindow.hide() again on macOS triggers an
+  // NSWindow orderOut which can shift focus to another SuperCmd window (e.g.
+  // the settings window), causing paste/keystroke events to land there instead
+  // of the user's active app.
+  if (!isVisible) return;
   emitWindowHidden();
   mainWindow.hide();
   isVisible = false;
@@ -8736,6 +8786,11 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     if (source === 'launcher') hideWindow();
     return true;
   }
+  if (commandId === 'system-open-extension-store') {
+    openExtensionStoreWindow();
+    if (source === 'launcher') hideWindow();
+    return true;
+  }
   if (commandId === 'system-close-all-apps') {
     try {
       const confirmed = await confirmQuitAllApps(source);
@@ -9047,7 +9102,15 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
         commandName: cmdName,
         type: 'userInitiated',
       });
-      await showWindow();
+      // For hotkey-triggered no-view commands, capture the frontmost app NOW
+      // (before the event reaches the renderer) so that any subsequent
+      // pasteText / hideAndPaste() call has a fresh lastFrontmostApp value.
+      // showWindow() captures it inside, but for silent runs we never call it.
+      if (source === 'hotkey' && bundle.mode === 'no-view') {
+        captureFrontmostAppContext();
+      } else {
+        await showWindow();
+      }
       return await dispatchRendererCustomEvent('sc-launch-extension-bundle', {
         bundle,
         launchOptions: { type: bundle.launchType || 'userInitiated' },
@@ -11279,6 +11342,18 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('hide-window', () => {
     hideWindow();
+  });
+
+  ipcMain.handle('show-window', async () => {
+    await showWindow();
+  });
+
+  ipcMain.handle('activate-last-frontmost-app', async () => {
+    await activateLastFrontmostApp();
+  });
+
+  ipcMain.handle('no-view-status', (_event: Electron.IpcMainInvokeEvent, variant: 'processing' | 'success' | 'error', text: string) => {
+    void showMemoryStatusBar(variant, String(text || ''));
   });
 
   ipcMain.handle('open-devtools', () => {
