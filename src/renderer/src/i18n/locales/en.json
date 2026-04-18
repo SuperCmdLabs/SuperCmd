@@ -131,6 +131,12 @@
         "default": "Default",
         "glassy": "Glassy"
       },
+      "launcherMode": {
+        "title": "Launcher Mode",
+        "description": "Choose how the launcher appears when opened.",
+        "expanded": "Expanded",
+        "compact": "Compact"
+      },
       "background": {
         "title": "Launcher Background Image",
         "description": "Show a softly blurred, low-opacity image behind the launcher so it reads like a hint, not a full wallpaper.",
@@ -580,6 +586,9 @@
   },
   "launcher": {
     "searchPlaceholder": "Search for apps, commands, or ask AI...",
+    "compact": {
+      "showMore": "Show More"
+    },
     "status": {
       "discoveringApps": "Discovering apps...",
       "noMatchingResults": "No matching results",

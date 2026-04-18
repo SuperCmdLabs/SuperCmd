@@ -1840,6 +1840,7 @@ async function getNodeSnapshot(): Promise<{ target: NodeWindowInfo | null; windo
 
 const DEFAULT_WINDOW_WIDTH = 760;
 const DEFAULT_WINDOW_HEIGHT = 480;
+const COMPACT_WINDOW_HEIGHT = 100;
 const ONBOARDING_WINDOW_WIDTH = 1120;
 const ONBOARDING_WINDOW_HEIGHT = 740;
 const CURSOR_PROMPT_WINDOW_WIDTH = 500;
@@ -7255,7 +7256,13 @@ function getLauncherSize(mode: LauncherMode) {
   if (mode === 'onboarding') {
     return { width: ONBOARDING_WINDOW_WIDTH, height: ONBOARDING_WINDOW_HEIGHT, topFactor: 0.12 };
   }
-  return { width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT, topFactor: 0.2 };
+  const viewMode = loadSettings().launcherViewMode || 'expanded';
+  const height = viewMode === 'compact' ? COMPACT_WINDOW_HEIGHT : DEFAULT_WINDOW_HEIGHT;
+  return { width: DEFAULT_WINDOW_WIDTH, height, topFactor: 0.2 };
+}
+
+function getLauncherSizeForCompact(): { width: number; height: number; topFactor: number } {
+  return { width: DEFAULT_WINDOW_WIDTH, height: COMPACT_WINDOW_HEIGHT, topFactor: 0.2 };
 }
 
 function getTypingCaretRect():
@@ -11587,6 +11594,13 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('get-settings', () => {
     return loadSettings();
+  });
+
+  ipcMain.handle('resize-launcher-window', (_event: any, expanded: boolean) => {
+    if (!mainWindow) return;
+    const curBounds = mainWindow.getBounds();
+    const targetHeight = expanded ? DEFAULT_WINDOW_HEIGHT : COMPACT_WINDOW_HEIGHT;
+    mainWindow.setBounds({ x: curBounds.x, y: curBounds.y, width: curBounds.width, height: targetHeight });
   });
 
   ipcMain.handle('get-global-shortcut-status', () => {

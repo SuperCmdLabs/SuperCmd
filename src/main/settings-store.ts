@@ -57,6 +57,7 @@ export interface HyperKeySettings {
 
 export type AppFontSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
 export type AppUiStyle = 'default' | 'glassy';
+export type LauncherViewMode = 'expanded' | 'compact';
 export type AppLanguage =
   | 'system'
   | 'en'
@@ -99,6 +100,7 @@ export interface AppSettings {
   appUpdaterLastCheckedAt: number;
   updateBannerDismissedAt?: number;
   hyperKey: HyperKeySettings;
+  launcherViewMode: LauncherViewMode;
 }
 
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
@@ -184,6 +186,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   launcherBackgroundImageOpacityPercent: 45,
   appUpdaterLastCheckedAt: 0,
   hyperKey: { ...DEFAULT_HYPER_KEY_SETTINGS },
+  launcherViewMode: 'expanded',
 };
 
 let settingsCache: AppSettings | null = null;
@@ -380,6 +383,7 @@ export function loadSettings(): AppSettings {
       appUpdaterLastCheckedAt: Number.isFinite(Number(parsed.appUpdaterLastCheckedAt))
         ? Math.max(0, Number(parsed.appUpdaterLastCheckedAt))
         : DEFAULT_SETTINGS.appUpdaterLastCheckedAt,
+      launcherViewMode: (parsed.launcherViewMode === 'compact' ? 'compact' : 'expanded'),
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };

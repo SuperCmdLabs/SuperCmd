@@ -55,6 +55,7 @@ const electronAPI = {
   executeCommandFromWidget: (commandId: string): Promise<boolean> =>
     ipcRenderer.invoke('execute-command-from-widget', commandId),
   hideWindow: (): Promise<void> => ipcRenderer.invoke('hide-window'),
+  resizeLauncherWindow: (expanded: boolean): Promise<void> => ipcRenderer.invoke('resize-launcher-window', expanded),
   showWindow: (): Promise<void> => ipcRenderer.invoke('show-window'),
   activateLastFrontmostApp: (): Promise<void> => ipcRenderer.invoke('activate-last-frontmost-app'),
   reportNoViewStatus: (variant: 'processing' | 'success' | 'error', text: string): Promise<void> =>

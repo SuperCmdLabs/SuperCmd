@@ -291,6 +291,7 @@ export interface AppSettings {
   launcherBackgroundImageOpacityPercent: number;
   appUpdaterLastCheckedAt: number;
   hyperKey: HyperKeySettings;
+  launcherViewMode: 'expanded' | 'compact';
 }
 
 export interface CatalogEntry {
@@ -430,6 +431,7 @@ export interface ElectronAPI {
   executeCommandAsHotkey: (commandId: string) => Promise<boolean>;
   executeCommandFromWidget: (commandId: string) => Promise<boolean>;
   hideWindow: () => Promise<void>;
+  resizeLauncherWindow: (expanded: boolean) => Promise<void>;
   showWindow: () => Promise<void>;
   activateLastFrontmostApp: () => Promise<void>;
   reportNoViewStatus: (variant: 'processing' | 'success' | 'error', text: string) => Promise<void>;
