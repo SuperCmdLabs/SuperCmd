@@ -757,6 +757,11 @@ const App: React.FC = () => {
         return;
       }
       if (routedSystemCommandId) {
+        // Launching directly into a command/extension via hotkey should bypass
+        // compact mode — expand the launcher so the command UI is visible
+        // instead of the compact search-only chrome.
+        setIsCompactCollapsed(false);
+        window.electron.resizeLauncherWindow(true);
         whisperSessionRef.current = false;
         setShowCursorPrompt(false);
         setShowWhisperHint(false);
@@ -896,7 +901,15 @@ const App: React.FC = () => {
       }
       setSearchQuery(pendingQuery ?? '');
       setSelectedIndex(0);
-      setIsCompactCollapsed(true);
+      // When a pending query is pre-filled (e.g. hotkey-triggered no-view
+      // command with missing args), expand out of compact so results are
+      // immediately visible.
+      if (pendingQuery) {
+        setIsCompactCollapsed(false);
+        window.electron.resizeLauncherWindow(true);
+      } else {
+        setIsCompactCollapsed(true);
+      }
       exitAiMode();
       setShowClipboardManager(false);
       setShowSnippetManager(null);
@@ -1027,6 +1040,9 @@ const App: React.FC = () => {
       }
 
       if (shouldOpenCommandSetup(hydrated)) {
+        // Launching into a setup form via hotkey must bypass compact mode.
+        setIsCompactCollapsed(false);
+        window.electron.resizeLauncherWindow(true);
         setShowFileSearch(false);
         setExtensionPreferenceSetup({
           bundle: hydrated,
@@ -1036,6 +1052,11 @@ const App: React.FC = () => {
       } else if (hydrated.mode === 'no-view') {
         queueNoViewBundleRun(hydrated, 'userInitiated');
       } else {
+        // Launching directly into a view/form command via hotkey must bypass
+        // compact mode so the extension UI is visible instead of the compact
+        // search-only chrome.
+        setIsCompactCollapsed(false);
+        window.electron.resizeLauncherWindow(true);
         setShowFileSearch(false);
         setExtensionView(hydrated);
       }
