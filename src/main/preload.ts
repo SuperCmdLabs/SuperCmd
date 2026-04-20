@@ -114,6 +114,13 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeListener('whisper-toggle-listening', listener);
     };
   },
+  onWhisperInsertIntoLauncher: (callback: (text: string) => void) => {
+    const listener = (_event: any, text: string) => callback(text);
+    ipcRenderer.on('whisper-insert-into-launcher', listener);
+    return () => {
+      ipcRenderer.removeListener('whisper-insert-into-launcher', listener);
+    };
+  },
   onOAuthCallback: (callback: (url: string) => void) => {
     const listener = (_event: any, url: string) => callback(url);
     ipcRenderer.on('oauth-callback', listener);

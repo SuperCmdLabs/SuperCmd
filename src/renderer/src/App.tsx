@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowRight, CornerDownLeft, Mic } from 'lucide-react';
+import { X, Sparkles, ArrowRight, CornerDownLeft } from 'lucide-react';
 import type {
   CommandInfo,
   ExtensionBundle,
@@ -846,6 +846,29 @@ const App: React.FC = () => {
       setSelectedTextSnapshot(String(payload?.selectedTextSnapshot || '').trim());
     });
     return cleanupSelectionSnapshotUpdated;
+  }, []);
+
+  // Insert whisper-transcribed text directly into the focused launcher input
+  // when dictation was triggered from within the visible launcher window.
+  useEffect(() => {
+    const dispose = window.electron.onWhisperInsertIntoLauncher((text) => {
+      const activeEl = document.activeElement as HTMLElement | null;
+      // If no input is focused or focus is on document/body, fall back to the search bar.
+      const targetEl = (activeEl && activeEl !== document.body)
+        ? activeEl
+        : inputRef.current;
+      if (targetEl) {
+        targetEl.focus();
+      }
+      // execCommand('insertText') inserts at cursor position and fires the
+      // input event that React's synthetic system picks up in Electron.
+      const inserted = document.execCommand('insertText', false, text);
+      if (!inserted && inputRef.current) {
+        // Fallback: append to search query state directly.
+        setSearchQuery((prev) => prev + text);
+      }
+    });
+    return dispose;
   }, []);
 
   useEffect(() => {
@@ -3443,15 +3466,6 @@ const App: React.FC = () => {
                 <Sparkles className="w-3 h-3 text-white/30 group-hover:text-purple-400 transition-colors" />
                 <span className="text-[0.6875rem] text-white/30 group-hover:text-white/50 transition-colors">Ask AI</span>
                 <kbd className="text-[0.625rem] text-white/20 bg-[var(--soft-pill-bg)] px-1 py-0.5 rounded font-mono leading-none">Tab</kbd>
-              </button>
-            )}
-            {aiAvailable && (
-              <button
-                onClick={() => void runLocalSystemCommand('system-supercmd-whisper')}
-                title="Dictate"
-                className={`transition-colors flex-shrink-0 ${showWhisper ? 'text-red-400 hover:text-red-300' : 'text-[var(--text-subtle)] hover:text-[var(--text-muted)]'}`}
-              >
-                <Mic className="w-4 h-4" />
               </button>
             )}
             {searchQuery && (

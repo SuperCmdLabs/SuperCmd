@@ -429,6 +429,7 @@ export interface ElectronAPI {
   onWhisperStartListening: (callback: () => void) => (() => void);
   onWhisperStopListening: (callback: () => void) => (() => void);
   onWhisperToggleListening: (callback: () => void) => (() => void);
+  onWhisperInsertIntoLauncher: (callback: (text: string) => void) => (() => void);
   onOAuthCallback: (callback: (url: string) => void) => (() => void);
   oauthGetToken: (provider: string) => Promise<{ accessToken: string; tokenType?: string; scope?: string; expiresIn?: number; obtainedAt: string } | null>;
   oauthSetToken: (provider: string, token: { accessToken: string; tokenType?: string; scope?: string; expiresIn?: number; obtainedAt: string }) => Promise<void>;

@@ -13370,6 +13370,13 @@ if let tiff = image?.tiffRepresentation {
       return { typed: false, fallbackClipboard: false };
     }
 
+    // If the launcher is currently visible, insert text directly into the
+    // focused input in the renderer instead of switching to another app.
+    if (isVisible && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-insert-into-launcher', nextText);
+      return { typed: true, fallbackClipboard: false };
+    }
+
     await activateLastFrontmostApp();
     await new Promise((resolve) => setTimeout(resolve, 70));
     let typed = await pasteTextToActiveApp(nextText);
