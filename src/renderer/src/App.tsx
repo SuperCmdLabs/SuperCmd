@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowRight, CornerDownLeft } from 'lucide-react';
+import { X, Sparkles, ArrowRight, CornerDownLeft, Mic } from 'lucide-react';
 import type {
   CommandInfo,
   ExtensionBundle,
@@ -3443,6 +3443,15 @@ const App: React.FC = () => {
                 <Sparkles className="w-3 h-3 text-white/30 group-hover:text-purple-400 transition-colors" />
                 <span className="text-[0.6875rem] text-white/30 group-hover:text-white/50 transition-colors">Ask AI</span>
                 <kbd className="text-[0.625rem] text-white/20 bg-[var(--soft-pill-bg)] px-1 py-0.5 rounded font-mono leading-none">Tab</kbd>
+              </button>
+            )}
+            {aiAvailable && (
+              <button
+                onClick={() => void runLocalSystemCommand('system-supercmd-whisper')}
+                title="Dictate"
+                className={`transition-colors flex-shrink-0 ${showWhisper ? 'text-red-400 hover:text-red-300' : 'text-[var(--text-subtle)] hover:text-[var(--text-muted)]'}`}
+              >
+                <Mic className="w-4 h-4" />
               </button>
             )}
             {searchQuery && (
