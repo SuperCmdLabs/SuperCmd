@@ -35,11 +35,13 @@ type IndexedEntry = {
   compactName: string;
   tokens: string[];
   isDirectory: boolean;
+  deleted?: boolean;
 };
 
 type IndexSnapshot = {
   entries: IndexedEntry[];
   prefixToEntryIds: Map<string, number[]>;
+  pathToEntryId: Map<string, number>;
   builtAt: number;
 };
 
@@ -50,6 +52,7 @@ const DEFAULT_MAX_RESULTS = 80;
 const MAX_QUERY_RESULTS = 5_000;
 const MIN_REBUILD_GAP_MS = 45_000;
 const DEFAULT_REFRESH_INTERVAL_MS = 8 * 60_000;
+const WATCH_EVENT_DEBOUNCE_MS = 500;
 const MAX_SPOTLIGHT_CANDIDATES = 10_000;
 const SPOTLIGHT_SEARCH_TIMEOUT_MS = 2_400;
 
@@ -120,6 +123,10 @@ let includeProtectedHomeRoots = false;
 let indexing = false;
 let lastIndexError: string | null = null;
 let lastBuildStartedAt = 0;
+let activeWatcher: fs.FSWatcher | null = null;
+let pendingWatchEvents: Set<string> = new Set();
+let watchDebounceTimer: NodeJS.Timeout | null = null;
+let watchedHomeDir = '';
 
 type DirectoryQueueEntry = {
   scanPath: string;
@@ -217,12 +224,25 @@ function addPrefixIndexValue(prefixToEntryIds: Map<string, number[]>, key: strin
 
 function indexEntry(
   snapshot: IndexSnapshot,
-  entry: Omit<IndexedEntry, 'normalizedName' | 'normalizedPath' | 'compactName' | 'tokens'>
+  entry: Omit<IndexedEntry, 'normalizedName' | 'normalizedPath' | 'compactName' | 'tokens' | 'deleted'>
 ): void {
   const normalizedName = normalizeSearchText(entry.name);
   if (!normalizedName) return;
   const normalizedPath = normalizePathSearchText(entry.path);
   if (!normalizedPath) return;
+
+  const existingId = snapshot.pathToEntryId.get(entry.path);
+  if (existingId !== undefined) {
+    const existing = snapshot.entries[existingId];
+    if (existing) {
+      existing.deleted = false;
+      existing.isDirectory = entry.isDirectory;
+      existing.parentPath = entry.parentPath;
+      return;
+    }
+  }
+
+  if (snapshot.entries.length >= MAX_INDEX_ENTRIES) return;
 
   const tokens = tokenizeSearchText(entry.name);
   const compactName = normalizedName.replace(/\s+/g, '');
@@ -236,6 +256,7 @@ function indexEntry(
     tokens,
   };
   snapshot.entries.push(nextEntry);
+  snapshot.pathToEntryId.set(entry.path, entryId);
 
   const seenIndexKeys = new Set<string>();
   for (const token of tokens) {
@@ -264,6 +285,7 @@ async function buildIndexSnapshot(homeDir: string): Promise<IndexSnapshot> {
   const snapshot: IndexSnapshot = {
     entries: [],
     prefixToEntryIds: new Map<string, number[]>(),
+    pathToEntryId: new Map<string, number>(),
     builtAt: Date.now(),
   };
 
@@ -531,6 +553,186 @@ export function requestFileSearchIndexRefresh(reason = 'manual'): void {
   void rebuildFileSearchIndex(reason);
 }
 
+function isWatchablePath(absolutePath: string): boolean {
+  if (!configuredHomeDir) return false;
+  if (!isPathWithinRoot(absolutePath, configuredHomeDir)) return false;
+
+  const relative = path.relative(configuredHomeDir, absolutePath);
+  if (!relative || relative.startsWith('..')) return false;
+
+  const segments = relative.split(path.sep).filter(Boolean);
+  if (segments.length === 0) return false;
+
+  const topLevel = segments[0].toLowerCase();
+  if (EXCLUDED_TOP_LEVEL_SET.has(topLevel)) return false;
+  if (PROTECTED_TOP_LEVEL_SET.has(topLevel) && !includeProtectedHomeRoots) return false;
+
+  for (const segment of segments) {
+    if (!segment) continue;
+    if (segment.startsWith('.')) return false;
+    if (EXCLUDED_DIRECTORY_NAME_SET.has(segment.toLowerCase())) return false;
+  }
+  return true;
+}
+
+function startFileSearchWatcher(): void {
+  stopFileSearchWatcher();
+  if (!configuredHomeDir) return;
+
+  try {
+    activeWatcher = fs.watch(
+      configuredHomeDir,
+      { recursive: true, persistent: false },
+      (_eventType, filename) => {
+        if (!filename) return;
+        const absolutePath = path.resolve(configuredHomeDir, filename);
+        if (!isWatchablePath(absolutePath)) return;
+        pendingWatchEvents.add(absolutePath);
+        if (!watchDebounceTimer) {
+          watchDebounceTimer = setTimeout(flushWatchEvents, WATCH_EVENT_DEBOUNCE_MS);
+        }
+      }
+    );
+    watchedHomeDir = configuredHomeDir;
+    activeWatcher.on('error', (error) => {
+      console.warn('[FileIndex] watcher error:', error);
+    });
+    console.log(`[FileIndex] watcher started on ${configuredHomeDir}`);
+  } catch (error) {
+    console.warn('[FileIndex] failed to start watcher:', error);
+    activeWatcher = null;
+    watchedHomeDir = '';
+  }
+}
+
+function stopFileSearchWatcher(): void {
+  if (activeWatcher) {
+    try {
+      activeWatcher.close();
+    } catch {
+      // ignore
+    }
+    activeWatcher = null;
+  }
+  watchedHomeDir = '';
+  if (watchDebounceTimer) {
+    clearTimeout(watchDebounceTimer);
+    watchDebounceTimer = null;
+  }
+  pendingWatchEvents.clear();
+}
+
+function flushWatchEvents(): void {
+  watchDebounceTimer = null;
+  if (rebuildPromise) {
+    // Defer until the in-progress rebuild completes — it will refresh state wholesale.
+    watchDebounceTimer = setTimeout(flushWatchEvents, WATCH_EVENT_DEBOUNCE_MS * 2);
+    return;
+  }
+  if (pendingWatchEvents.size === 0) return;
+  const batch = [...pendingWatchEvents];
+  pendingWatchEvents.clear();
+  void applyWatchEventBatch(batch);
+}
+
+async function applyWatchEventBatch(paths: string[]): Promise<void> {
+  const snapshot = activeIndex;
+  if (!snapshot) return;
+
+  const stated = await Promise.all(
+    paths.map(async (absolutePath) => {
+      try {
+        const stats = await fs.promises.stat(absolutePath);
+        return { absolutePath, stats, exists: true as const };
+      } catch {
+        return { absolutePath, exists: false as const };
+      }
+    })
+  );
+
+  const deletePaths: string[] = [];
+  const newDirectoriesToWalk: string[] = [];
+
+  for (const result of stated) {
+    if (!result.exists) {
+      deletePaths.push(result.absolutePath);
+      continue;
+    }
+    const { absolutePath, stats } = result;
+    const name = path.basename(absolutePath);
+    const parentPath = path.dirname(absolutePath);
+
+    if (stats.isDirectory()) {
+      if (shouldSkipDirectory(absolutePath, name, configuredHomeDir)) continue;
+      const existingId = snapshot.pathToEntryId.get(absolutePath);
+      const isFresh = existingId === undefined || Boolean(snapshot.entries[existingId]?.deleted);
+      indexEntry(snapshot, { path: absolutePath, name, parentPath, isDirectory: true });
+      if (isFresh) newDirectoriesToWalk.push(absolutePath);
+    } else if (stats.isFile()) {
+      if (shouldSkipFile(name)) continue;
+      indexEntry(snapshot, { path: absolutePath, name, parentPath, isDirectory: false });
+    }
+  }
+
+  if (deletePaths.length > 0) {
+    tombstoneDeletedPaths(snapshot, deletePaths);
+  }
+
+  for (const dirPath of newDirectoriesToWalk) {
+    if (snapshot.entries.length >= MAX_INDEX_ENTRIES) break;
+    await walkAddedDirectory(snapshot, dirPath);
+  }
+}
+
+function tombstoneDeletedPaths(snapshot: IndexSnapshot, deletePaths: string[]): void {
+  const directIds = new Set<number>();
+  for (const deletedPath of deletePaths) {
+    const id = snapshot.pathToEntryId.get(deletedPath);
+    if (id !== undefined) directIds.add(id);
+  }
+  const prefixes = deletePaths.map((p) => p + path.sep);
+
+  for (let i = 0; i < snapshot.entries.length; i += 1) {
+    const entry = snapshot.entries[i];
+    if (entry.deleted) continue;
+    if (directIds.has(i)) {
+      entry.deleted = true;
+      continue;
+    }
+    for (const prefix of prefixes) {
+      if (entry.path.startsWith(prefix)) {
+        entry.deleted = true;
+        break;
+      }
+    }
+  }
+}
+
+async function walkAddedDirectory(snapshot: IndexSnapshot, dirPath: string): Promise<void> {
+  let dirents: fs.Dirent[] = [];
+  try {
+    dirents = await fs.promises.readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const dirent of dirents) {
+    if (snapshot.entries.length >= MAX_INDEX_ENTRIES) return;
+    const name = dirent.name;
+    const childPath = path.join(dirPath, name);
+    if (!isWatchablePath(childPath)) continue;
+
+    if (dirent.isDirectory()) {
+      if (shouldSkipDirectory(childPath, name, configuredHomeDir)) continue;
+      indexEntry(snapshot, { path: childPath, name, parentPath: dirPath, isDirectory: true });
+      await walkAddedDirectory(snapshot, childPath);
+    } else if (dirent.isFile()) {
+      if (shouldSkipFile(name)) continue;
+      indexEntry(snapshot, { path: childPath, name, parentPath: dirPath, isDirectory: false });
+    }
+  }
+}
+
 export function startFileSearchIndexing(options?: {
   homeDir?: string;
   refreshIntervalMs?: number;
@@ -554,6 +756,10 @@ export function startFileSearchIndexing(options?: {
   }, refreshIntervalMs);
 
   requestFileSearchIndexRefresh('startup');
+
+  if (watchedHomeDir !== configuredHomeDir) {
+    startFileSearchWatcher();
+  }
 }
 
 export function stopFileSearchIndexing(): void {
@@ -561,6 +767,7 @@ export function stopFileSearchIndexing(): void {
     clearInterval(refreshTimer);
     refreshTimer = null;
   }
+  stopFileSearchWatcher();
 }
 
 export async function searchIndexedFiles(
@@ -591,6 +798,7 @@ export async function searchIndexedFiles(
 
         const scored: Array<{ entry: IndexedEntry; score: number }> = [];
         for (const entry of snapshot.entries) {
+          if (entry.deleted) continue;
           const pathIndex = entry.normalizedPath.indexOf(expandedNeedle);
           const tildePath = normalizePathSearchText(asTildePath(entry.path, configuredHomeDir));
           const tildeIndex = tildePath.indexOf(rawNeedle);
@@ -632,7 +840,7 @@ export async function searchIndexedFiles(
         const scored: Array<{ entry: IndexedEntry; score: number }> = [];
         for (const entryId of candidateIds) {
           const entry = snapshot.entries[entryId];
-          if (!entry) continue;
+          if (!entry || entry.deleted) continue;
           const score = scoreEntryMatch(entry, normalizedQuery, terms);
           if (score <= 0) continue;
           scored.push({ entry, score });
