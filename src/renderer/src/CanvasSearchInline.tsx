@@ -523,7 +523,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
       {/* Rename dialog */}
       {renameCanvas && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="rounded-xl p-5 w-72" style={{ background: 'var(--card-bg)', backdropFilter: 'blur(40px)', border: '1px solid var(--border-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+          <div className="rounded-xl p-5 w-72" style={{ background: 'linear-gradient(var(--card-bg), var(--card-bg)), var(--bg-primary)', border: '1px solid var(--border-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
             <p className="text-[13px] font-medium text-white/90 mb-3">{t('canvas.rename.title')}</p>
             <input
               ref={renameInputRef}
@@ -574,7 +574,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
       {/* Delete confirmation */}
       {confirmDelete && selectedCanvas && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="rounded-xl p-5 max-w-sm" style={{ background: 'var(--card-bg)', backdropFilter: 'blur(40px)' }}>
+          <div className="rounded-xl p-5 max-w-sm" style={{ background: 'linear-gradient(var(--card-bg), var(--card-bg)), var(--bg-primary)', border: '1px solid var(--border-primary)' }}>
             <p className="text-[14px] font-medium text-white/90 mb-2">{t('canvas.delete.title', { title: selectedCanvas.title })}</p>
             <p className="text-[12px] text-white/50 mb-4">{t('canvas.delete.description')}</p>
             <div className="flex gap-2 justify-end">

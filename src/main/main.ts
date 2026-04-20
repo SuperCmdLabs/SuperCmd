@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { fork, type ChildProcess } from 'child_process';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
-import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState } from './settings-store';
+import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState } from './settings-store';
 import type { AppSettings } from './settings-store';
 import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
 import * as soulverCalculator from './soulver-calculator';
@@ -10038,30 +10038,66 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
     // Send mode + pending note JSON to the existing window
     notesWindow.webContents.send('notes-mode-changed', { mode: mode || 'create', noteJson: pendingNoteJson });
     pendingNoteJson = null;
+    // Re-assert cross-Space / fullscreen float — macOS can drop this flag
+    // across hide/show cycles, so reapply it defensively on every show.
+    try {
+      notesWindow.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+        skipTransformProcessType: true,
+      } as any);
+    } catch {}
     notesWindow.show();
     notesWindow.focus();
     return;
   }
 
-  if (process.platform === 'darwin') {
-    app.dock.show();
-  }
+  // Note: intentionally NOT calling app.dock.show() here. On macOS,
+  // transformProcessType (triggered by dock.show) forces the app onto the
+  // primary Desktop Space, so opening Notes while a fullscreen app is
+  // active would cause macOS to Space-switch away from the fullscreen app.
+  // The floating setup below keeps Notes visible on the current Space —
+  // including the fullscreen Space — without a dock/process transform.
 
-  const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = (() => {
-    if (mainWindow) {
-      const b = mainWindow.getBounds();
-      const center = {
-        x: b.x + Math.floor(b.width / 2),
-        y: b.y + Math.floor(b.height / 2),
-      };
-      return screen.getDisplayNearestPoint(center).workArea;
-    }
-    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-  })();
-  const notesWidth = Math.max(520, Math.min(680, displayWidth - 300));
-  const notesHeight = Math.max(420, Math.min(560, displayHeight - 250));
-  const notesX = displayX + Math.floor((displayWidth - notesWidth) / 2);
-  const notesY = displayY + Math.floor((displayHeight - notesHeight) / 2);
+  // Prefer persisted bounds from the last session if they still land on an
+  // attached display; otherwise fall back to the centered-default layout.
+  const savedNotesBounds = loadNotesWindowState();
+  const notesBoundsOnScreen = (b: { x: number; y: number; width: number; height: number }): boolean => {
+    const displays = screen.getAllDisplays();
+    const cx = b.x + b.width / 2;
+    const cy = b.y + b.height / 2;
+    return displays.some((d: Electron.Display) => {
+      const wa = d.workArea;
+      return cx >= wa.x && cx <= wa.x + wa.width && cy >= wa.y && cy <= wa.y + wa.height;
+    });
+  };
+
+  let notesX: number;
+  let notesY: number;
+  let notesWidth: number;
+  let notesHeight: number;
+
+  if (savedNotesBounds && notesBoundsOnScreen(savedNotesBounds)) {
+    notesX = savedNotesBounds.x;
+    notesY = savedNotesBounds.y;
+    notesWidth = savedNotesBounds.width;
+    notesHeight = savedNotesBounds.height;
+  } else {
+    const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = (() => {
+      if (mainWindow) {
+        const b = mainWindow.getBounds();
+        const center = {
+          x: b.x + Math.floor(b.width / 2),
+          y: b.y + Math.floor(b.height / 2),
+        };
+        return screen.getDisplayNearestPoint(center).workArea;
+      }
+      return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+    })();
+    notesWidth = Math.max(520, Math.min(680, displayWidth - 300));
+    notesHeight = Math.max(420, Math.min(560, displayHeight - 250));
+    notesX = displayX + Math.floor((displayWidth - notesWidth) / 2);
+    notesY = displayY + Math.floor((displayHeight - notesHeight) / 2);
+  }
   const useNativeLiquidGlass = shouldUseNativeLiquidGlass();
 
   notesWindow = new BrowserWindow({
@@ -10079,6 +10115,7 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
     visualEffectState: 'active',
     hasShadow: false,
     alwaysOnTop: true,
+    fullscreenable: false,
     show: false,
     webPreferences: {
       nodeIntegration: false,
@@ -10086,6 +10123,19 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  // Make Notes follow the user across Desktop Spaces and overlay fullscreen
+  // apps — mirrors the launcher / cursor prompt / memory status bar pattern.
+  // 'pop-up-menu' level is required to sit above native macOS fullscreen apps;
+  // the lower 'floating' level gets covered by fullscreen windows.
+  // skipTransformProcessType prevents a Space-switch when called while a
+  // fullscreen app is active.
+  try {
+    notesWindow.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+      skipTransformProcessType: true,
+    } as any);
+  } catch {}
+  try { notesWindow.setAlwaysOnTop(true, 'pop-up-menu'); } catch {}
   applyLiquidGlassToWindow(notesWindow, {
     cornerRadius: 14,
     fallbackVibrancy: 'hud',
@@ -10099,6 +10149,27 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
 
   notesWindow.once('ready-to-show', () => {
     notesWindow?.show();
+  });
+
+  // Persist window position/size so Notes reopens where the user left it.
+  // Debounce move/resize events so we don't rewrite the JSON on every pixel.
+  let notesPersistTimer: NodeJS.Timeout | null = null;
+  const persistNotesBounds = () => {
+    if (notesPersistTimer) clearTimeout(notesPersistTimer);
+    notesPersistTimer = setTimeout(() => {
+      notesPersistTimer = null;
+      if (!notesWindow || notesWindow.isDestroyed()) return;
+      const b = notesWindow.getBounds();
+      saveNotesWindowState({ x: b.x, y: b.y, width: b.width, height: b.height });
+    }, 250);
+  };
+  notesWindow.on('move', persistNotesBounds);
+  notesWindow.on('resize', persistNotesBounds);
+  notesWindow.on('close', () => {
+    if (notesPersistTimer) { clearTimeout(notesPersistTimer); notesPersistTimer = null; }
+    if (!notesWindow || notesWindow.isDestroyed()) return;
+    const b = notesWindow.getBounds();
+    saveNotesWindowState({ x: b.x, y: b.y, width: b.width, height: b.height });
   });
 
   notesWindow.on('closed', () => {

@@ -535,3 +535,63 @@ export function clearWindowState(): void {
     console.error('Failed to clear window state:', e);
   }
 }
+
+// ─── Notes window state ────────────────────────────────────────────
+// Separate from LauncherWindowState because Notes persists width/height as
+// well as position. Stored in its own JSON file so migrating/clearing one
+// doesn't affect the other.
+
+export interface NotesWindowState {
+  /** Last saved X position of the notes window. */
+  x: number;
+  /** Last saved Y position of the notes window. */
+  y: number;
+  /** Last saved width of the notes window. */
+  width: number;
+  /** Last saved height of the notes window. */
+  height: number;
+}
+
+let notesWindowStateCache: NotesWindowState | null | undefined = undefined;
+
+function getNotesWindowStatePath(): string {
+  return path.join(app.getPath('userData'), 'notes-window-state.json');
+}
+
+export function loadNotesWindowState(): NotesWindowState | null {
+  if (notesWindowStateCache !== undefined) return notesWindowStateCache;
+  try {
+    const raw = fs.readFileSync(getNotesWindowStatePath(), 'utf-8');
+    const parsed = JSON.parse(raw);
+    const x = Number(parsed?.x);
+    const y = Number(parsed?.y);
+    const width = Number(parsed?.width);
+    const height = Number(parsed?.height);
+    if (
+      [x, y, width, height].every(Number.isFinite) &&
+      width > 0 &&
+      height > 0
+    ) {
+      notesWindowStateCache = {
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(width),
+        height: Math.round(height),
+      };
+    } else {
+      notesWindowStateCache = null;
+    }
+  } catch {
+    notesWindowStateCache = null;
+  }
+  return notesWindowStateCache;
+}
+
+export function saveNotesWindowState(state: NotesWindowState): void {
+  notesWindowStateCache = state;
+  try {
+    fs.writeFileSync(getNotesWindowStatePath(), JSON.stringify(state, null, 2));
+  } catch (e) {
+    console.error('Failed to save notes window state:', e);
+  }
+}

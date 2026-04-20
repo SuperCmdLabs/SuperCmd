@@ -569,7 +569,12 @@ const ConfirmDeleteModal: React.FC<{
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div className="w-[320px] rounded-xl shadow-2xl overflow-hidden"
-        style={{ background: 'var(--card-bg)', backdropFilter: 'blur(40px)', border: '1px solid var(--border-primary)' }}>
+        style={{
+          // Paint the translucent card color over an opaque surface so the
+          // scrim behind the dialog can't bleed through and dim the card.
+          background: 'linear-gradient(var(--card-bg), var(--card-bg)), var(--bg-primary)',
+          border: '1px solid var(--border-primary)',
+        }}>
         <div className="px-5 pt-5 pb-3">
           <h3 className="text-[14px] font-semibold text-[var(--text-primary)] mb-1.5">Delete Note</h3>
           <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">
