@@ -7,7 +7,8 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowRight, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2 } from 'lucide-react';
+import { X, Sparkles, ArrowRight, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2 } from 'lucide-react';
+import supercmdLogo from '../../../supercmd.png';
 import type {
   CommandInfo,
   ExtensionBundle,
@@ -2322,6 +2323,8 @@ const App: React.FC = () => {
       contextMenu,
       showActions,
       quickLinkDynamicPrompt,
+      launcherViewMode,
+      isCompactCollapsed,
     ]
   );
 
@@ -3794,10 +3797,16 @@ const App: React.FC = () => {
                 placeholder={aiMode ? t('launcher.aiMode.placeholder') : t('launcher.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  if (launcherViewMode === 'compact' && isCompactCollapsed && e.target.value.length > 0) {
-                    setIsCompactCollapsed(false);
-                    window.electron.resizeLauncherWindow(true);
+                  const value = e.target.value;
+                  setSearchQuery(value);
+                  if (launcherViewMode === 'compact') {
+                    if (isCompactCollapsed && value.length > 0) {
+                      setIsCompactCollapsed(false);
+                      window.electron.resizeLauncherWindow(true);
+                    } else if (!isCompactCollapsed && value.length === 0) {
+                      setIsCompactCollapsed(true);
+                      window.electron.resizeLauncherWindow(false);
+                    }
                   }
                 }}
                 onBlur={handleLauncherSearchBlur}
@@ -3939,11 +3948,13 @@ const App: React.FC = () => {
             }}
           >
             <div className="flex items-center gap-2 text-[var(--text-muted)]">
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/><path d="m9 12 2 2 4-4"/></svg>
+              <img src={supercmdLogo} alt="SuperCmd" className="w-4 h-4" />
             </div>
             <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
               <span className="text-xs font-medium">{t('launcher.compact.showMore')}</span>
-              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-[var(--kbd-bg)] text-[0.625rem] text-[var(--text-subtle)] font-medium">↓</kbd>
+              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-[var(--kbd-bg)] text-[var(--text-subtle)]">
+                <ArrowDown className="w-3 h-3" />
+              </kbd>
             </div>
           </div>
         )}
