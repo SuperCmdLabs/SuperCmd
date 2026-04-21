@@ -531,7 +531,8 @@
         "extension": "확장",
         "application": "애플리케이션",
         "command": "명령",
-        "menuBarCommand": "메뉴 표시줄 명령"
+        "menuBarCommand": "메뉴 표시줄 명령",
+        "quickLink": "빠른 링크"
       },
       "alias": {
         "add": "별칭 추가",

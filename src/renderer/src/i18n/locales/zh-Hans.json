@@ -531,7 +531,8 @@
         "extension": "扩展",
         "application": "应用程序",
         "command": "命令",
-        "menuBarCommand": "菜单栏命令"
+        "menuBarCommand": "菜单栏命令",
+        "quickLink": "快速链接"
       },
       "alias": {
         "add": "添加别名",

@@ -531,7 +531,8 @@
         "extension": "擴充功能",
         "application": "應用程式",
         "command": "指令",
-        "menuBarCommand": "選單列指令"
+        "menuBarCommand": "選單列指令",
+        "quickLink": "快速連結"
       },
       "alias": {
         "add": "新增別名",

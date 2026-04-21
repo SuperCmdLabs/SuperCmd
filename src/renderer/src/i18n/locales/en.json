@@ -531,7 +531,8 @@
         "extension": "Extension",
         "application": "Application",
         "command": "Command",
-        "menuBarCommand": "Menu Bar Command"
+        "menuBarCommand": "Menu Bar Command",
+        "quickLink": "Quick Link"
       },
       "alias": {
         "add": "Add Alias",

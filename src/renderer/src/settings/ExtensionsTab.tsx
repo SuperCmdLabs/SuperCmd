@@ -679,6 +679,7 @@ const ExtensionsTab: React.FC<{
   };
 
   const getModeTypeLabel = (mode: string, command?: CommandInfo): string => {
+    if (command?.id?.startsWith('quicklink-')) return t('settings.extensions.types.quickLink');
     if (command?.category === 'app') return t('settings.extensions.types.application');
     if (command?.category === 'settings') return t('settings.extensions.types.settings');
     if (mode === 'menu-bar') return t('settings.extensions.types.menuBarCommand');

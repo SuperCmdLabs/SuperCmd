@@ -531,7 +531,8 @@
         "extension": "拡張機能",
         "application": "アプリケーション",
         "command": "コマンド",
-        "menuBarCommand": "メニューバーコマンド"
+        "menuBarCommand": "メニューバーコマンド",
+        "quickLink": "クイックリンク"
       },
       "alias": {
         "add": "エイリアスを追加",
