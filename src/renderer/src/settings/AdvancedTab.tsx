@@ -56,8 +56,8 @@ const CAPS_LOCK_TAP_OPTIONS: { value: HyperKeyCapsLockTapBehavior; label: string
 ];
 
 const NAVIGATION_STYLE_OPTIONS: { value: AppNavigationStyle; label: string }[] = [
-  { value: 'vim', label: 'Vim Style (^J, ^K)' },
-  { value: 'macos', label: 'macOS Style (^N, ^P)' },
+  { value: 'vim', label: 'Vim Style (^J, ^K, ^H, ^L)' },
+  { value: 'macos', label: 'macOS Style (^N, ^P, ^B, ^F)' },
 ];
 
 const AdvancedTab: React.FC = () => {
@@ -219,7 +219,7 @@ const AdvancedTab: React.FC = () => {
         <SettingsRow
           icon={<Keyboard className="w-4 h-4" />}
           title="Navigation Style"
-          description="Choose the keyboard shortcuts for navigating up and down in the launcher."
+          description="Choose the keyboard shortcuts for navigating up, down, left, and right in the launcher."
         >
           <div className="w-full max-w-[320px]">
             <select

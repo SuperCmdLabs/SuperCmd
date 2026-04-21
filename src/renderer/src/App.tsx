@@ -2145,32 +2145,6 @@ const App: React.FC = () => {
         return;
       }
 
-      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-        if (navigationStyle === 'vim') {
-          if (e.key === 'j' || e.key === 'J') {
-            e.preventDefault();
-            moveSelection('down');
-            return;
-          }
-          if (e.key === 'k' || e.key === 'K') {
-            e.preventDefault();
-            moveSelection('up');
-            return;
-          }
-        } else {
-          if (e.key === 'n' || e.key === 'N') {
-            e.preventDefault();
-            moveSelection('down');
-            return;
-          }
-          if (e.key === 'p' || e.key === 'P') {
-            e.preventDefault();
-            moveSelection('up');
-            return;
-          }
-        }
-      }
-
       if (showActions || contextMenu) {
         if (e.key === 'Escape') {
           e.preventDefault();
@@ -2780,6 +2754,33 @@ const App: React.FC = () => {
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [cancelQuickLinkDynamicPrompt, quickLinkDynamicPrompt, submitQuickLinkDynamicPrompt]);
+
+  // Global nav-key rebinding — works in the main launcher AND inside
+  // extensions. Ctrl+<key> is translated into a synthetic arrow key event
+  // dispatched at the original target so whichever component handles arrow
+  // keys (list, grid, submenu, text input) picks it up naturally.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      const keyLower = event.key.toLowerCase();
+      const navMap: Record<string, 'ArrowDown' | 'ArrowUp' | 'ArrowLeft' | 'ArrowRight'> =
+        navigationStyle === 'vim'
+          ? { j: 'ArrowDown', k: 'ArrowUp', h: 'ArrowLeft', l: 'ArrowRight' }
+          : { n: 'ArrowDown', p: 'ArrowUp', b: 'ArrowLeft', f: 'ArrowRight' };
+      const mapped = navMap[keyLower];
+      if (!mapped) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const target =
+        (event.target as HTMLElement | null) ||
+        (document.activeElement as HTMLElement | null);
+      target?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: mapped, bubbles: true, cancelable: true })
+      );
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [navigationStyle]);
 
   const handleCommandExecute = async (command: CommandInfo) => {
     try {
