@@ -15,6 +15,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { ArrowLeft, Plus, ChevronLeft, ChevronRight, History, Trash2, Eraser } from 'lucide-react';
 import { renderSimpleMarkdown } from '../raycast-api/detail-markdown';
 import type { AiMessage, AiConversation } from '../hooks/useAiChat';
+import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import supercmdLogo from '../../../../supercmd.png';
 
 interface AiChatViewProps {
@@ -438,6 +439,16 @@ const AiChatView: React.FC<AiChatViewProps> = ({
 
   const [actionsOpen, setActionsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [confirm, setConfirm] = useState<
+    | {
+        title: string;
+        target?: string;
+        message?: React.ReactNode;
+        confirmLabel: string;
+        onConfirm: () => void;
+      }
+    | null
+  >(null);
 
   // Keep the latest card pinned to the TOP of the viewport:
   // when a new pair is added, scroll container so the new card's offsetTop
@@ -490,18 +501,60 @@ const AiChatView: React.FC<AiChatViewProps> = ({
   }, [hasNext, activeIdx, conversations, selectConversation]);
 
   const deleteCurrentChat = useCallback(() => {
-    if (activeConversationId) deleteConversation(activeConversationId);
-    else newChat();
-  }, [activeConversationId, deleteConversation, newChat]);
+    if (!activeConversationId) {
+      newChat();
+      return;
+    }
+    const active = conversations.find((c) => c.id === activeConversationId);
+    setConfirm({
+      title: 'Delete Chat',
+      target: active?.title || 'this chat',
+      confirmLabel: 'Delete',
+      onConfirm: () => {
+        deleteConversation(activeConversationId);
+        setConfirm(null);
+      },
+    });
+  }, [activeConversationId, conversations, deleteConversation, newChat]);
 
   const deleteAllHistory = useCallback(() => {
-    for (const c of [...conversations]) deleteConversation(c.id);
-    newChat();
+    if (conversations.length === 0) return;
+    const n = conversations.length;
+    setConfirm({
+      title: 'Delete All History',
+      message: (
+        <>
+          {n} conversation{n === 1 ? '' : 's'} will be permanently removed. This action cannot be undone.
+        </>
+      ),
+      confirmLabel: 'Delete All',
+      onConfirm: () => {
+        for (const c of [...conversations]) deleteConversation(c.id);
+        newChat();
+        setConfirm(null);
+      },
+    });
   }, [conversations, deleteConversation, newChat]);
+
+  const requestDeleteConversation = useCallback(
+    (id: string) => {
+      const c = conversations.find((x) => x.id === id);
+      setConfirm({
+        title: 'Delete Chat',
+        target: c?.title || 'this chat',
+        confirmLabel: 'Delete',
+        onConfirm: () => {
+          deleteConversation(id);
+          setConfirm(null);
+        },
+      });
+    },
+    [conversations, deleteConversation]
+  );
 
   const actions: ActionItem[] = useMemo(() => {
     const list: ActionItem[] = [
-      { id: 'new', title: 'New Question', icon: <Plus size={14} />, shortcut: ['⌘', 'N'], onRun: newChat, section: '' },
+      { id: 'new', title: 'New Chat', icon: <Plus size={14} />, shortcut: ['⌘', 'N'], onRun: newChat, section: '' },
     ];
     if (hasPrev) list.push({ id: 'prev', title: 'Previous Chat', icon: <ChevronLeft size={14} />, shortcut: ['⌘', '['], onRun: goPrevChat });
     if (hasNext) list.push({ id: 'next', title: 'Next Chat', icon: <ChevronRight size={14} />, shortcut: ['⌘', ']'], onRun: goNextChat });
@@ -514,7 +567,7 @@ const AiChatView: React.FC<AiChatViewProps> = ({
   // Global hotkeys (suppressed while overlays open — they own their keys)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (actionsOpen || historyOpen) return;
+      if (actionsOpen || historyOpen || confirm) return;
       const meta = e.metaKey || e.ctrlKey;
       if (!meta) return;
       const k = e.key.toLowerCase();
@@ -535,7 +588,7 @@ const AiChatView: React.FC<AiChatViewProps> = ({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [actionsOpen, historyOpen, newChat, goPrevChat, goNextChat, deleteCurrentChat, deleteAllHistory, hasCurrentChat, hasHistory]);
+  }, [actionsOpen, historyOpen, confirm, newChat, goPrevChat, goNextChat, deleteCurrentChat, deleteAllHistory, hasCurrentChat, hasHistory]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -667,9 +720,22 @@ const AiChatView: React.FC<AiChatViewProps> = ({
               conversations={conversations}
               activeId={activeConversationId}
               onSelect={selectConversation}
-              onDelete={deleteConversation}
+              onDelete={requestDeleteConversation}
               onClose={() => {
                 setHistoryOpen(false);
+                setTimeout(() => aiInputRef.current?.focus(), 0);
+              }}
+            />
+          )}
+          {confirm && (
+            <ConfirmDeleteDialog
+              title={confirm.title}
+              target={confirm.target}
+              message={confirm.message}
+              confirmLabel={confirm.confirmLabel}
+              onConfirm={confirm.onConfirm}
+              onCancel={() => {
+                setConfirm(null);
                 setTimeout(() => aiInputRef.current?.focus(), 0);
               }}
             />

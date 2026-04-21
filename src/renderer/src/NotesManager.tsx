@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import type { Note, NoteTheme } from '../types/electron';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
+import ConfirmDeleteDialog from './components/ConfirmDeleteDialog';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -2260,7 +2261,8 @@ const NotesManager: React.FC<NotesManagerProps> = ({ initialView }) => {
 
       {confirmDelete && targetNote && (
         <ConfirmDeleteDialog
-          title={targetNote.title || 'Untitled'}
+          title="Delete Note"
+          target={targetNote.title || 'Untitled'}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={async () => {
             await window.electron.noteDelete(targetNote.id);
@@ -2277,70 +2279,6 @@ const NotesManager: React.FC<NotesManagerProps> = ({ initialView }) => {
 export default NotesManager;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Confirm Delete Dialog
+// (ConfirmDeleteDialog moved to components/ConfirmDeleteDialog.tsx for reuse)
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface ConfirmDeleteDialogProps {
-  title: string;
-  onConfirm: () => void | Promise<void>;
-  onCancel: () => void;
-}
-
-const ConfirmDeleteDialog: React.FC<ConfirmDeleteDialogProps> = ({ title, onConfirm, onCancel }) => {
-  const confirmRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    // Move focus to the Delete button so the active editor no longer
-    // receives keystrokes while the dialog is open.
-    confirmRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        e.stopPropagation();
-        onConfirm();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        onCancel();
-      }
-    };
-    // Capture-phase so we intercept before the editor / other listeners.
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [onConfirm, onCancel]);
-
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="w-[320px] rounded-xl shadow-2xl overflow-hidden"
-        style={{
-          // Layer the translucent card color over an opaque surface so the
-          // 0.5 black overlay behind the dialog can't bleed through and dim
-          // the card. Skip backdrop-filter for the same reason (it would
-          // blur the dark overlay and darken the card).
-          background: 'linear-gradient(var(--card-bg), var(--card-bg)), var(--bg-primary)',
-          border: '1px solid var(--border-primary)',
-        }}>
-        <div className="px-5 pt-5 pb-3">
-          <h3 className="text-[14px] font-semibold text-[var(--text-primary)] mb-1.5">Delete Note</h3>
-          <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">
-            Are you sure you want to delete "<span className="text-[var(--text-secondary)]">{title}</span>"? This action cannot be undone.
-          </p>
-        </div>
-        <div className="flex items-center justify-end gap-2 px-5 pb-4 pt-2">
-          <button onClick={onCancel}
-            className="px-3 py-1.5 rounded-md text-[12px] text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] transition-colors">
-            Cancel
-          </button>
-          <button ref={confirmRef} onClick={() => onConfirm()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] text-white bg-red-400/70 hover:bg-red-400/90 transition-colors focus:outline-none focus:ring-2 focus:ring-red-400/50">
-            Delete
-            <kbd className="inline-flex items-center justify-center min-w-[18px] h-[16px] px-1 rounded bg-white/15 text-[10px] font-medium">↩</kbd>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
