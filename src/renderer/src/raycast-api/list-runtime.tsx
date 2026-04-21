@@ -119,10 +119,13 @@ export function createListRuntime(deps: ListRuntimeDeps) {
         if (hasTranslitQuery && (title.includes(translitQuery) || subtitle.includes(translitQuery))) {
           return true;
         }
-        // Latin query vs non-Latin titles (e.g. pinyin "ji suan" matches "计算器")
+        // Latin query vs non-Latin titles/subtitles (e.g. pinyin "ji suan" matches "计算器")
         const titleTranslit = transliterateForSearch(rawTitle);
         const subtitleTranslit = transliterateForSearch(rawSubtitle);
-        if (titleTranslit !== title && (titleTranslit.includes(query) || subtitleTranslit.includes(query))) {
+        if (
+          (titleTranslit !== title && titleTranslit.includes(query)) ||
+          (subtitleTranslit !== subtitle && subtitleTranslit.includes(query))
+        ) {
           return true;
         }
         return false;

@@ -99,7 +99,10 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
         }
         const titleTranslit = transliterateForSearch(rawTitle);
         const subtitleTranslit = transliterateForSearch(rawSubtitle);
-        if (titleTranslit !== title && (titleTranslit.includes(query) || subtitleTranslit.includes(query))) {
+        if (
+          (titleTranslit !== title && titleTranslit.includes(query)) ||
+          (subtitleTranslit !== subtitle && subtitleTranslit.includes(query))
+        ) {
           return true;
         }
         return false;
