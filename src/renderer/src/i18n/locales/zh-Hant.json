@@ -168,6 +168,12 @@
         "title": "關於",
         "description": "版本資訊。",
         "version": "SuperCmd v{version}"
+      },
+      "launcherMode": {
+        "title": "啟動器模式",
+        "description": "選擇打開啟動器時的顯示方式。",
+        "expanded": "展開",
+        "compact": "緊湊"
       }
     },
     "ai": {
@@ -255,7 +261,19 @@
           "downloadModel": "下載",
           "removeModel": "移除",
           "downloading": "正在下載...",
-          "removing": "正在移除..."
+          "removing": "正在移除...",
+          "startingDownload": "開始下載...",
+          "deleteFailed": "刪除模型失敗。",
+          "curatedDescriptions": {
+            "llama32": "Meta 通用模型（3B）",
+            "llama32_1b": "體積小，速度快",
+            "mistral": "高效通用模型",
+            "codellama": "程式碼生成與補全",
+            "phi3": "Microsoft 小型語言模型",
+            "gemma2": "Google 開源模型（9B）",
+            "qwen25": "Alibaba 多語言模型（7B）",
+            "deepseekR1": "側重推理能力的模型（7B）"
+          }
         },
         "openaiCompatible": {
           "baseUrl": {
@@ -276,6 +294,13 @@
         "defaultModel": {
           "label": "預設模型",
           "auto": "自動（提供者預設）"
+        },
+        "providerDescriptions": {
+          "openai": "GPT 系列模型",
+          "anthropic": "Anthropic Claude 模型",
+          "gemini": "Google Gemini 模型",
+          "ollama": "本地模型",
+          "openaiCompatible": "任何 OpenAI 相容 API（OpenRouter、Together 等）"
         }
       },
       "whisper": {
@@ -358,6 +383,10 @@
             "downloading": "正在下載 SuperCmd Whisper",
             "notDownloaded": "模型尚未下載。現在下載後即可使用 SuperCmd Whisper 聽寫。"
           }
+        },
+        "autoClose": {
+          "title": "聽寫後自動關閉",
+          "description": "聽寫完成後自動關閉 Whisper 列。"
         }
       },
       "speak": {
@@ -405,7 +434,8 @@
             "premade": "額外預製語音",
             "custom": "您的自訂語音（複製/生成）",
             "professional": "專業語音複製",
-            "available": "您的 ElevenLabs 帳戶中有 {count} 個自訂語音可用"
+            "available": "您的 ElevenLabs 帳戶中有 {count} 個自訂語音可用",
+            "fetchFailed": "獲取語音失敗。"
           },
           "playSample": {
             "idle": "播放範例語音",
@@ -425,7 +455,24 @@
       "hotkeyUpdated": "快捷鍵已更新。",
       "hotkeyRemoved": "快捷鍵已移除。",
       "hotkeyDuplicate": "快捷鍵已被其他 SuperCmd 命令使用。",
-      "hotkeyUnavailable": "快捷鍵不可用。它可能已被 macOS 或其他應用程式占用。"
+      "hotkeyUnavailable": "快捷鍵不可用。它可能已被 macOS 或其他應用程式占用。",
+      "languages": {
+        "arabic": "阿拉伯語",
+        "chineseMandarin": "中文（普通話）",
+        "englishUs": "英語（美國）",
+        "englishUk": "英語（英國）",
+        "frenchCanada": "法語（加拿大）",
+        "frenchFrance": "法語（法國）",
+        "german": "德語",
+        "hindi": "印地語",
+        "italian": "義大利語",
+        "japanese": "日語",
+        "korean": "韓語",
+        "portugueseBrazil": "葡萄牙語（巴西）",
+        "russian": "俄語",
+        "spanishMexico": "西班牙語（墨西哥）",
+        "spanishSpain": "西班牙語（西班牙）"
+      }
     },
     "extensions": {
       "title": "擴充功能",
@@ -482,7 +529,9 @@
         "settings": "設定",
         "scripts": "指令碼",
         "extension": "擴充功能",
-        "application": "應用程式"
+        "application": "應用程式",
+        "command": "指令",
+        "menuBarCommand": "選單列指令"
       },
       "alias": {
         "add": "新增別名",
@@ -490,7 +539,8 @@
         "edit": "編輯別名"
       },
       "hotkey": {
-        "record": "錄製快捷鍵"
+        "record": "錄製快捷鍵",
+        "duplicateWithCommand": "熱鍵已被「{name}」使用。"
       },
       "noResults": "沒有符合的擴充功能",
       "selectExtension": "選擇一個擴充功能",
@@ -519,6 +569,9 @@
         "opened": "已開啟包含範例指令碼的自訂指令碼資料夾。",
         "openedExisting": "已開啟自訂指令碼資料夾。",
         "failed": "開啟自訂指令碼資料夾失敗。"
+      },
+      "preferences": {
+        "selectOption": "選擇一個選項"
       }
     },
     "advanced": {
@@ -613,6 +666,9 @@
       "script": "指令碼",
       "settings": "設定",
       "quickLink": "快速連結"
+    },
+    "compact": {
+      "showMore": "顯示更多"
     }
   },
   "scriptCommand": {
@@ -689,6 +745,10 @@
     },
     "actions": {
       "title": "操作"
+    },
+    "errorBoundary": {
+      "title": "加載擴充商店時出錯。",
+      "retry": "重試"
     }
   },
   "clipboard": {
@@ -956,5 +1016,43 @@
     "duration": "持續時間",
     "reminder": "提醒",
     "save": "儲存事件"
+  },
+  "canvas": {
+    "searchPlaceholder": "搜尋畫布...",
+    "untitled": "未命名畫布",
+    "modified": "修改時間",
+    "count": "{count} 個畫布{plural}",
+    "time": {
+      "justNow": "剛剛"
+    },
+    "actions": {
+      "new": "新建畫布",
+      "open": "打開畫布",
+      "rename": "重新命名",
+      "duplicate": "複製",
+      "copyDeeplink": "複製深層連結",
+      "exportJson": "匯出為 JSON",
+      "pin": "置頂",
+      "unpin": "取消置頂",
+      "delete": "刪除畫布"
+    },
+    "empty": {
+      "title": "還沒有畫布",
+      "description": "建立你的第一個畫布開始使用",
+      "noSearchResults": "沒有找到畫布",
+      "shortcutHint": "或按 ⌘N"
+    },
+    "preview": {
+      "empty": "暫無預覽 — 儲存畫布以產生預覽",
+      "selectPrompt": "選擇一個畫布以預覽"
+    },
+    "rename": {
+      "title": "重新命名畫布",
+      "placeholder": "畫布名稱..."
+    },
+    "delete": {
+      "title": "刪除「{title}」？",
+      "description": "此操作無法撤銷。"
+    }
   }
 }

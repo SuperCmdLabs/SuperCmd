@@ -168,6 +168,12 @@
         "title": "정보",
         "description": "버전 정보.",
         "version": "SuperCmd v{version}"
+      },
+      "launcherMode": {
+        "title": "런처 모드",
+        "description": "런처가 열릴 때 표시되는 방식을 선택합니다.",
+        "expanded": "확장",
+        "compact": "컴팩트"
       }
     },
     "ai": {
@@ -394,6 +400,10 @@
             "downloading": "SuperCmd Whisper 다운로드 중",
             "notDownloaded": "모델이 아직 다운로드되지 않았습니다. SuperCmd Whisper 받아쓰기를 사용하려면 지금 다운로드하세요."
           }
+        },
+        "autoClose": {
+          "title": "받아쓰기 후 자동 닫기",
+          "description": "받아쓰기가 끝나면 Whisper 바를 자동으로 닫습니다."
         }
       },
       "speak": {
@@ -656,6 +666,9 @@
       "script": "스크립트",
       "settings": "설정",
       "quickLink": "빠른 링크"
+    },
+    "compact": {
+      "showMore": "더 보기"
     }
   },
   "scriptCommand": {
@@ -883,26 +896,26 @@
         "sampleHint": "키를 누른 채 위 메시지를 읽어보세요.",
         "placeholder": "받아쓰기 텍스트가 여기에 표시됩니다...",
         "footerHint": "SuperCmd Whisper는 기본적으로 로컬 ggml base 모델을 사용합니다. Apple Speech Recognition은 설정에서 대체 옵션으로 계속 사용할 수 있습니다.",
-      "models": {
-        "downloadFailed": "모델 다운로드에 실패했습니다. 지금 다시 시도하거나 설정 -> AI -> SuperCmd Whisper를 사용하세요.",
+        "models": {
+          "downloadFailed": "모델 다운로드에 실패했습니다. 지금 다시 시도하거나 설정 -> AI -> SuperCmd Whisper를 사용하세요.",
           "actions": {
             "downloaded": "다운로드됨",
             "downloading": "다운로드 중...",
             "download": "모델 다운로드"
           },
-        "parakeet": {
-          "title": "Parakeet TDT v3",
-          "ready": "다운로드가 완료되었습니다. Parakeet v3 받아쓰기가 준비되었습니다.",
-          "downloadingLead": "모델을 다운로드하는 중입니다. 잠시만 기다리세요.",
-          "downloading": "Parakeet v3 CoreML 모델 다운로드",
-          "notDownloaded": "SuperCmd는 이 단계에서 Parakeet v3 모델 다운로드를 시작하므로 처음 사용하기 전에 받아쓰기가 준비됩니다."
-        },
-        "whispercpp": {
-          "title": "SuperCmd Whisper",
-          "ready": "다운로드가 완료되었습니다. SuperCmd Whisper 받아쓰기가 준비되었습니다.",
-          "downloadingLead": "모델을 다운로드하는 중입니다. 잠시만 기다리세요.",
-          "downloading": "~300MB ggml 기본 모델 다운로드",
-          "notDownloaded": "SuperCmd는 이 단계에서 SuperCmd Whisper 모델 다운로드를 시작하므로 처음 사용하기 전에 받아쓰기가 준비됩니다."
+          "parakeet": {
+            "title": "Parakeet TDT v3",
+            "ready": "다운로드가 완료되었습니다. Parakeet v3 받아쓰기가 준비되었습니다.",
+            "downloadingLead": "모델을 다운로드하는 중입니다. 잠시만 기다리세요.",
+            "downloading": "Parakeet v3 CoreML 모델 다운로드",
+            "notDownloaded": "SuperCmd는 이 단계에서 Parakeet v3 모델 다운로드를 시작하므로 처음 사용하기 전에 받아쓰기가 준비됩니다."
+          },
+          "whispercpp": {
+            "title": "SuperCmd Whisper",
+            "ready": "다운로드가 완료되었습니다. SuperCmd Whisper 받아쓰기가 준비되었습니다.",
+            "downloadingLead": "모델을 다운로드하는 중입니다. 잠시만 기다리세요.",
+            "downloading": "~300MB ggml 기본 모델 다운로드",
+            "notDownloaded": "SuperCmd는 이 단계에서 SuperCmd Whisper 모델 다운로드를 시작하므로 처음 사용하기 전에 받아쓰기가 준비됩니다."
           },
           "cloud": {
             "title": "클라우드 전사",
@@ -919,24 +932,24 @@
           "before": "위의 텍스트를 선택한 후 다음을 누르세요.",
           "after": "을 눌러 소리 내어 읽어보세요."
         },
-      "sampleText": "음성 우선 인터페이스가 인기를 끌고 있습니다. 몇 년 동안 속임수로 여겨졌던 새로운 도구가 문자 입력보다 말하는 속도를 훨씬 더 빠르게 만들고 있습니다. 이에 맞춰 기록하는 기능, 스마트 수정 기능, 중단 없이 기존 작업 흐름에 삽입되는 바로가기 키 등이 있습니다."
-    },
-    "final": {
+        "sampleText": "음성 우선 인터페이스가 인기를 끌고 있습니다. 몇 년 동안 속임수로 여겨졌던 새로운 도구가 문자 입력보다 말하는 속도를 훨씬 더 빠르게 만들고 있습니다. 이에 맞춰 기록하는 기능, 스마트 수정 기능, 중단 없이 기존 작업 흐름에 삽입되는 바로가기 키 등이 있습니다."
+      },
+      "final": {
         "title": "마지막 단계: 어디서든 SuperCmd 시작하기",
         "description": "이제 전역 단축키를 눌러 모든 앱에서 SuperCmd를 시작하세요.",
         "nextStep": "다음 단계: SuperCmd 설정 -> 확장에서 AI 프롬프트 및 메모리용 단축키를 설정하여 어디에서나 AI 사용을 시작할 수 있습니다."
       },
-    "setupDescription": "런처 단축키, 개인정보 보호 권한, Whisper 모드를 한 번에 설정합니다.",
-    "setupSummary": "Whisper 받아쓰기와 읽기 모드 연습",
+      "setupDescription": "런처 단축키, 개인정보 보호 권한, Whisper 모드를 한 번에 설정합니다.",
+      "setupSummary": "Whisper 받아쓰기와 읽기 모드 연습",
       "summary": {
         "title": "지금 구성되는 사항은 다음과 같습니다.",
         "hotkey": "1. 런처 단축키",
         "permissions": "2. 접근성, 입력 모니터링, 음성 인식, 마이크"
       },
-    "setupTitle": "실행, 질문, 받아쓰기, 읽기를 하나로 묶은 명령 인터페이스입니다."
-  }
-},
-"whisper": {
+      "setupTitle": "실행, 질문, 받아쓰기, 읽기를 하나로 묶은 명령 인터페이스입니다."
+    }
+  },
+  "whisper": {
     "title": "SuperCmd Whisper",
     "description": "음성을 텍스트로 간단하게 변환",
     "start": "말하기 시작",
@@ -978,7 +991,7 @@
       "recordingFailed": "오디오 녹음을 시작할 수 없습니다."
     }
   },
-"read": {
+  "read": {
     "title": "SuperCmd Read",
     "description": "선택한 텍스트를 음성으로 읽어줍니다.",
     "start": "읽기 시작",
@@ -993,7 +1006,7 @@
     "mirror": "거울",
     "settings": "카메라 설정"
   },
-"schedule": {
+  "schedule": {
     "title": "일정",
     "newEvent": "새 이벤트",
     "editEvent": "이벤트 편집",

@@ -219,6 +219,24 @@ When implementing a new Raycast API:
 2. **Report Incompatibilities**: Document any extensions that don't work and identify missing APIs
 3. **Progressive Enhancement**: Prioritize APIs used by popular extensions
 
+### Internationalization (i18n)
+
+Locales live in `src/renderer/src/i18n/locales/` — `en.json` is the source of truth, plus `zh-Hans`, `zh-Hant`, `ja`, `ko`, `fr`, `de`, `es`, `ru`.
+
+**Rule: whenever you add, rename, or remove a user-facing string, update every locale file in the same change.** Missing keys fall back to English (or a derived label from the last path segment), which looks broken for non-English users. Keys are only "done" when all locales have them.
+
+Checklist when touching `en.json`:
+
+1. Add the new key(s) to `en.json` with the English copy.
+2. Mirror the exact same key path into every other locale file with a proper translation — don't leave English values in a non-English locale, and don't machine-translate blindly for user-facing product names / brand terms (e.g. "SuperCmd", "Whisper", model names).
+3. If you remove a key from `en.json`, remove it from every other locale too.
+4. Preserve interpolation variables verbatim (`{count}`, `{name}`, `{version}`, `{plural}`, etc.) — translations must keep the same placeholders.
+5. Verify structural parity after edits — all locales must have the same set of keys as `en.json`. A quick node check:
+   ```bash
+   node -e "const fs=require('fs');function k(o,p=''){const r=[];for(const x of Object.keys(o)){const v=o[x],q=p?p+'.'+x:x;v&&typeof v==='object'?r.push(...k(v,q)):r.push(q)}return r}const en=new Set(k(JSON.parse(fs.readFileSync('src/renderer/src/i18n/locales/en.json','utf8'))));for(const l of ['zh-Hans','zh-Hant','ja','ko','fr','de','es','ru']){const s=new Set(k(JSON.parse(fs.readFileSync('src/renderer/src/i18n/locales/'+l+'.json','utf8'))));console.log(l,'missing:',[...en].filter(x=>!s.has(x)).length,'extra:',[...s].filter(x=>!en.has(x)).length)}"
+   ```
+6. Never copy a locale file wholesale from another language as a starting point — past incidents have left one locale filled with another language's text (e.g. `ja.json` was Chinese). Always translate each value.
+
 ### Code Organization
 
 - **API Shim**: All Raycast API implementations go in `src/renderer/src/raycast-api/index.tsx`
