@@ -358,6 +358,12 @@ const AITab: React.FC = () => {
   const updateAI = async (patch: Partial<AISettings>) => {
     if (!settings) return;
     const newAI = { ...settings.ai, ...patch };
+    // Apply locally first so controlled inputs reflect the new value
+    // immediately. Without this, a slow IPC round-trip (notably on Intel
+    // Macs, where fs.writeFileSync blocks longer) keeps `value` at the stale
+    // state, and any unrelated re-render during the wait snaps the DOM back,
+    // visually "eating" pasted text even though the patch is already saved.
+    setSettings((prev) => (prev ? { ...prev, ai: newAI } : prev));
     const updated = await window.electron.saveSettings({ ai: newAI } as any);
     setSettings(updated);
     setSaveStatus('saved');
