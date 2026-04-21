@@ -500,7 +500,10 @@
       "search": {
         "placeholder": "검색...",
         "all": "모두",
-        "commands": "명령"
+        "commands": "명령",
+        "statusAll": "전체",
+        "enabled": "활성화됨",
+        "disabled": "비활성화됨"
       },
       "install": {
         "button": "확장 설치",

@@ -500,7 +500,10 @@
       "search": {
         "placeholder": "搜索...",
         "all": "全部",
-        "commands": "命令"
+        "commands": "命令",
+        "statusAll": "全部",
+        "enabled": "已启用",
+        "disabled": "已禁用"
       },
       "install": {
         "button": "安装扩展",

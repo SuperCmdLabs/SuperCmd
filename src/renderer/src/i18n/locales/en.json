@@ -500,7 +500,10 @@
       "search": {
         "placeholder": "Search...",
         "all": "All",
-        "commands": "Commands"
+        "commands": "Commands",
+        "statusAll": "All",
+        "enabled": "Enabled",
+        "disabled": "Disabled"
       },
       "install": {
         "button": "Install Extension",

@@ -20,6 +20,8 @@ import {
   Sparkles,
   LayoutGrid,
   Link2,
+  ListFilter,
+  Check,
 } from 'lucide-react';
 import supercmdLogo from '../../../../supercmd.svg';
 import HotkeyRecorder from './HotkeyRecorder';
@@ -109,6 +111,9 @@ const ExtensionsTab: React.FC<{
   const [installedExtensionNames, setInstalledExtensionNames] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [activeScope, setActiveScope] = useState<'all' | 'commands'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [statusFilterMenuOpen, setStatusFilterMenuOpen] = useState(false);
+  const statusFilterMenuRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selected, setSelected] = useState<SelectedTarget | null>(null);
   const [expandedExtensions, setExpandedExtensions] = useState<Record<string, boolean>>({});
@@ -443,31 +448,45 @@ const ExtensionsTab: React.FC<{
 
   const filteredSchemas = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return displaySchemas;
+    const hasSearch = q.length > 0;
+    const hasStatus = statusFilter !== 'all';
+    if (!hasSearch && !hasStatus) return displaySchemas;
+
+    const commandEnabled = (command: CommandInfo | undefined): boolean => {
+      if (!command || !settings) return true;
+      if (settings.disabledCommands.includes(command.id)) return false;
+      if (command.disabledByDefault) return settings.enabledCommands.includes(command.id);
+      return true;
+    };
+    const matchesStatus = (command: CommandInfo | undefined): boolean => {
+      if (!hasStatus) return true;
+      return statusFilter === 'enabled' ? commandEnabled(command) : !commandEnabled(command);
+    };
+
     return displaySchemas
       .map((schema) => {
-        const matchesExtension =
+        const matchesExtensionText =
+          !hasSearch ||
           schema.title.toLowerCase().includes(q) ||
           schema.extName.toLowerCase().includes(q) ||
           schema.description.toLowerCase().includes(q);
-        const commandsMatched = schema.commands.filter(
-          (cmd) => {
-            const commandInfo = resolveCommandInfo(schema.extName, cmd.name);
-            const commandAlias = commandInfo ? String(settings?.commandAliases?.[commandInfo.id] || '').toLowerCase() : '';
-            return (
-              cmd.title.toLowerCase().includes(q) ||
-              cmd.name.toLowerCase().includes(q) ||
-              cmd.description.toLowerCase().includes(q) ||
-              commandAlias.includes(q)
-            );
-          }
-        );
-        if (matchesExtension) return schema;
-        if (commandsMatched.length > 0) return { ...schema, commands: commandsMatched };
-        return null;
+        const commandsMatched = schema.commands.filter((cmd) => {
+          const commandInfo = resolveCommandInfo(schema.extName, cmd.name);
+          const commandAlias = commandInfo ? String(settings?.commandAliases?.[commandInfo.id] || '').toLowerCase() : '';
+          const textMatch =
+            !hasSearch ||
+            cmd.title.toLowerCase().includes(q) ||
+            cmd.name.toLowerCase().includes(q) ||
+            cmd.description.toLowerCase().includes(q) ||
+            commandAlias.includes(q);
+          return textMatch && matchesStatus(commandInfo);
+        });
+        if (commandsMatched.length === 0) return null;
+        if (matchesExtensionText && commandsMatched.length === schema.commands.length) return schema;
+        return { ...schema, commands: commandsMatched };
       })
       .filter(Boolean) as InstalledExtensionSettingsSchema[];
-  }, [displaySchemas, search, settings]);
+  }, [displaySchemas, search, statusFilter, settings]);
 
   useEffect(() => {
     if (displaySchemas.length === 0) {
@@ -516,6 +535,7 @@ const ExtensionsTab: React.FC<{
 
     setSearch('');
     setActiveScope('all');
+    setStatusFilter('all');
     setExpandedExtensions((prev) => ({ ...prev, [matchedSchema.extName]: true }));
 
     if (requestedCommand) {
@@ -851,6 +871,23 @@ const ExtensionsTab: React.FC<{
   }, [showTopActionsMenu]);
 
   useEffect(() => {
+    if (!statusFilterMenuOpen) return;
+    const onMouseDown = (event: MouseEvent) => {
+      if (statusFilterMenuRef.current?.contains(event.target as Node)) return;
+      setStatusFilterMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setStatusFilterMenuOpen(false);
+    };
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [statusFilterMenuOpen]);
+
+  useEffect(() => {
     if (!extensionContextMenu && !uninstallDialog) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -1012,7 +1049,59 @@ const ExtensionsTab: React.FC<{
             <div className="px-2 border-r border-[var(--ui-divider)]">{t('settings.extensions.columns.type')}</div>
             <div className="px-2 border-r border-[var(--ui-divider)]">{t('settings.extensions.columns.alias')}</div>
             <div className="px-2 border-r border-[var(--ui-divider)]">{t('settings.extensions.columns.hotkey')}</div>
-            <div className="pl-2">{t('settings.extensions.columns.enabled')}</div>
+            <div className="pl-2 flex items-center justify-between gap-1.5" ref={statusFilterMenuRef}>
+              <span>{t('settings.extensions.columns.enabled')}</span>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilterMenuOpen((prev) => !prev)}
+                  title={t('settings.extensions.search.statusAll')}
+                  aria-label={t('settings.extensions.search.statusAll')}
+                  className={`p-0.5 rounded hover:bg-[var(--ui-segment-hover-bg)] transition-colors ${
+                    statusFilter === 'all'
+                      ? 'text-[var(--text-subtle)]'
+                      : 'text-[var(--accent)]'
+                  }`}
+                >
+                  <ListFilter className="w-3.5 h-3.5" />
+                </button>
+                {statusFilterMenuOpen ? (
+                  <div
+                    className="absolute right-0 top-full mt-1 w-40 rounded-lg border border-[var(--ui-panel-border)] shadow-2xl overflow-hidden z-20"
+                    style={{
+                      background:
+                        'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
+                      backdropFilter: 'blur(96px) saturate(190%)',
+                      WebkitBackdropFilter: 'blur(96px) saturate(190%)',
+                      borderColor: 'rgba(var(--on-surface-rgb), 0.05)',
+                    }}
+                  >
+                    {(['all', 'enabled', 'disabled'] as const).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => {
+                          setStatusFilter(option);
+                          setStatusFilterMenuOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-[12px] text-left text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] normal-case tracking-normal"
+                      >
+                        <span>
+                          {option === 'all'
+                            ? t('settings.extensions.search.statusAll')
+                            : option === 'enabled'
+                              ? t('settings.extensions.search.enabled')
+                              : t('settings.extensions.search.disabled')}
+                        </span>
+                        {statusFilter === option ? (
+                          <Check className="w-3.5 h-3.5 text-[var(--accent)]" />
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-scroll custom-scrollbar" style={{ scrollbarGutter: 'stable' }}>

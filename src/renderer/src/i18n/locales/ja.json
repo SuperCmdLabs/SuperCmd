@@ -500,7 +500,10 @@
       "search": {
         "placeholder": "検索...",
         "all": "すべて",
-        "commands": "コマンド"
+        "commands": "コマンド",
+        "statusAll": "すべて",
+        "enabled": "有効",
+        "disabled": "無効"
       },
       "install": {
         "button": "拡張機能をインストール",

@@ -500,7 +500,10 @@
       "search": {
         "placeholder": "Cerca...",
         "all": "Tutti",
-        "commands": "Comandi"
+        "commands": "Comandi",
+        "statusAll": "Tutti",
+        "enabled": "Abilitati",
+        "disabled": "Disabilitati"
       },
       "install": {
         "button": "Installa estensione",
