@@ -567,7 +567,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         {/* Left: List (40%) */}
         <div
           ref={listRef}
-          className="w-[40%] overflow-y-auto custom-scrollbar border-r border-[var(--ui-divider)]"
+          className="flex-[0_0_40%] min-w-0 overflow-y-auto custom-scrollbar border-r border-[var(--ui-divider)]"
         >
           {isLoading ? (
             <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
@@ -648,7 +648,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
         </div>
 
         {/* Right: Preview (60%) */}
-        <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
           {selectedItem ? (
             <>
               <div className="flex-1 min-h-0 overflow-auto custom-scrollbar p-3.5 flex items-center justify-center">
