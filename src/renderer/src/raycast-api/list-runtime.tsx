@@ -8,6 +8,7 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExtractedAction } from './action-runtime';
 import { useI18n } from '../i18n';
+import { transliterateForSearch } from '../utils/transliterate';
 import { createListDetailRuntime } from './list-runtime-detail';
 import { groupListItems, shouldUseEmojiGrid, useListRegistry } from './list-runtime-hooks';
 import { createListRenderers } from './list-runtime-renderers';
@@ -102,10 +103,29 @@ export function createListRuntime(deps: ListRuntimeDeps) {
     const filteredItems = useMemo(() => {
       if (onSearchTextChange || filtering === false || !internalSearch.trim()) return allItems;
       const query = internalSearch.toLowerCase();
+      // transliterateForSearch returns unchanged lowercase for Latin input,
+      // or a phonetically-normalized Latin form for non-Latin input.
+      const translitQuery = transliterateForSearch(internalSearch);
+      const hasTranslitQuery = translitQuery !== query && translitQuery.length > 0;
       return allItems.filter((item) => {
-        const title = (typeof item.props.title === 'string' ? item.props.title : (item.props.title as any)?.value || '').toLowerCase();
-        const subtitle = (typeof item.props.subtitle === 'string' ? item.props.subtitle : (item.props.subtitle as any)?.value || '').toLowerCase();
-        return title.includes(query) || subtitle.includes(query) || item.props.keywords?.some((keyword: string) => keyword.toLowerCase().includes(query));
+        const rawTitle = typeof item.props.title === 'string' ? item.props.title : (item.props.title as any)?.value || '';
+        const rawSubtitle = typeof item.props.subtitle === 'string' ? item.props.subtitle : (item.props.subtitle as any)?.value || '';
+        const title = rawTitle.toLowerCase();
+        const subtitle = rawSubtitle.toLowerCase();
+        if (title.includes(query) || subtitle.includes(query) || item.props.keywords?.some((keyword: string) => keyword.toLowerCase().includes(query))) {
+          return true;
+        }
+        // Non-Latin query → transliterated query vs Latin titles
+        if (hasTranslitQuery && (title.includes(translitQuery) || subtitle.includes(translitQuery))) {
+          return true;
+        }
+        // Latin query vs non-Latin titles (e.g. pinyin "ji suan" matches "计算器")
+        const titleTranslit = transliterateForSearch(rawTitle);
+        const subtitleTranslit = transliterateForSearch(rawSubtitle);
+        if (titleTranslit !== title && (titleTranslit.includes(query) || subtitleTranslit.includes(query))) {
+          return true;
+        }
+        return false;
       });
     }, [allItems, filtering, internalSearch, onSearchTextChange]);
 

@@ -42,6 +42,7 @@
     "@aptabase/electron": "^0.3.1",
     "@phosphor-icons/react": "^2.1.10",
     "@raycast/api": "^1.104.5",
+    "any-ascii": "^0.3.3",
     "electron-builder-notarize": "^1.5.2",
     "electron-liquid-glass": "^1.1.1",
     "electron-updater": "^6.7.3",

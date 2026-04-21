@@ -7,6 +7,7 @@
 
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExtractedAction } from './action-runtime';
+import { transliterateForSearch } from '../utils/transliterate';
 import { createGridItemsRuntime } from './grid-runtime-items';
 import { groupGridItems, useGridRegistry } from './grid-runtime-hooks';
 import { useI18n } from '../i18n';
@@ -83,10 +84,25 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
     const filteredItems = useMemo(() => {
       if (onSearchTextChange || filtering === false || !internalSearch.trim()) return allItems;
       const query = internalSearch.toLowerCase();
+      const translitQuery = transliterateForSearch(internalSearch);
+      const hasTranslitQuery = translitQuery !== query && translitQuery.length > 0;
       return allItems.filter((item) => {
-        const title = (item.props.title || '').toLowerCase();
-        const subtitle = (item.props.subtitle || '').toLowerCase();
-        return title.includes(query) || subtitle.includes(query) || item.props.keywords?.some((keyword: string) => keyword.toLowerCase().includes(query));
+        const rawTitle = item.props.title || '';
+        const rawSubtitle = item.props.subtitle || '';
+        const title = rawTitle.toLowerCase();
+        const subtitle = rawSubtitle.toLowerCase();
+        if (title.includes(query) || subtitle.includes(query) || item.props.keywords?.some((keyword: string) => keyword.toLowerCase().includes(query))) {
+          return true;
+        }
+        if (hasTranslitQuery && (title.includes(translitQuery) || subtitle.includes(translitQuery))) {
+          return true;
+        }
+        const titleTranslit = transliterateForSearch(rawTitle);
+        const subtitleTranslit = transliterateForSearch(rawSubtitle);
+        if (titleTranslit !== title && (titleTranslit.includes(query) || subtitleTranslit.includes(query))) {
+          return true;
+        }
+        return false;
       });
     }, [allItems, filtering, internalSearch, onSearchTextChange]);
 

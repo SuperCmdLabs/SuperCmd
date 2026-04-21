@@ -26,6 +26,7 @@ import IconNotes from '../icons/Notes';
 import IconPen from '../icons/Pen';
 import { formatShortcutForDisplay } from './hyper-key';
 import { renderQuickLinkIconGlyph } from './quicklink-icons';
+import { getTranslitVariant } from './transliterate';
 
 export interface LauncherAction {
   id: string;
@@ -198,6 +199,61 @@ function bestTermScore(term: string, candidates: SearchCandidate[]): number {
   return best;
 }
 
+// Compute a relevance score for a single (query, command-candidates) pair.
+// Returns 0 if the command doesn't match the query at all.
+function computeCommandScore(
+  normalizedQuery: string,
+  queryTerms: string[],
+  title: string,
+  subtitle: string,
+  normalizedAlias: string,
+  candidates: SearchCandidate[],
+  keywordTokens: string[],
+): number {
+  let score = 0;
+
+  if (Boolean(normalizedAlias) && normalizedAlias === normalizedQuery) {
+    score += 1200;
+  } else if (title === normalizedQuery) {
+    score += 420;
+  } else if (title.startsWith(normalizedQuery)) {
+    score += 320;
+  } else if (title.includes(normalizedQuery)) {
+    score += 260;
+  } else if (normalizedAlias && normalizedAlias.startsWith(normalizedQuery)) {
+    score += 240;
+  } else if (normalizedAlias && normalizedAlias.includes(normalizedQuery)) {
+    score += 200;
+  } else if (keywordTokens.includes(normalizedQuery)) {
+    score += 225;
+  } else if (keywordTokens.some((keyword) => keyword.includes(normalizedQuery))) {
+    score += 180;
+  } else if (subtitle.includes(normalizedQuery)) {
+    score += 145;
+  }
+
+  let termScoreSum = 0;
+  for (const term of queryTerms) {
+    const termScore = bestTermScore(term, candidates);
+    if (termScore <= 0) return 0;
+    termScoreSum += termScore;
+  }
+
+  score += termScoreSum;
+
+  if (normalizedQuery.length >= 3) {
+    const compactQuery = normalizedQuery.replace(/\s+/g, '');
+    const compactTitle = title.replace(/\s+/g, '');
+    if (compactQuery && compactTitle && isSubsequenceMatch(compactQuery, compactTitle)) {
+      score += 18;
+    }
+  }
+
+  score += Math.max(0, 12 - Math.max(0, title.length - normalizedQuery.length));
+
+  return score;
+}
+
 /**
  * Filter and sort commands based on search query
  */
@@ -219,6 +275,12 @@ export function filterCommands(
   }
 
   const queryTerms = tokenizeSearchText(normalizedQuery);
+
+  // Transliteration: when the query contains non-Latin script (Cyrillic, Devanagari, CJK, etc.),
+  // also score against the phonetically-normalized Latin equivalent so users can search
+  // English-named commands from any keyboard/script.
+  const translitVariant = getTranslitVariant(query, normalizedQuery);
+  const transliteratedTerms = translitVariant.isVariant ? tokenizeSearchText(translitVariant.query) : [];
 
   const scored = commands
     .map((cmd) => {
@@ -242,55 +304,19 @@ export function filterCommands(
         return null;
       }
 
-      let score = 0;
+      const primaryScore = computeCommandScore(normalizedQuery, queryTerms, title, subtitle, normalizedAlias, candidates, keywordTokens);
+      const translitScore = translitVariant.isVariant
+        ? computeCommandScore(translitVariant.query, transliteratedTerms, title, subtitle, normalizedAlias, candidates, keywordTokens)
+        : 0;
+      const score = Math.max(primaryScore, translitScore);
 
-      if (hasExactAliasMatch) {
-        score += 1200;
-      } else if (title === normalizedQuery) {
-        score += 420;
-      } else if (title.startsWith(normalizedQuery)) {
-        score += 320;
-      } else if (title.includes(normalizedQuery)) {
-        score += 260;
-      } else if (normalizedAlias && normalizedAlias.startsWith(normalizedQuery)) {
-        score += 240;
-      } else if (normalizedAlias && normalizedAlias.includes(normalizedQuery)) {
-        score += 200;
-      } else if (keywordTokens.includes(normalizedQuery)) {
-        score += 225;
-      } else if (keywordTokens.some((keyword) => keyword.includes(normalizedQuery))) {
-        score += 180;
-      } else if (subtitle.includes(normalizedQuery)) {
-        score += 145;
-      }
-
-      let termScoreSum = 0;
-      for (const term of queryTerms) {
-        const termScore = bestTermScore(term, candidates);
-        if (termScore <= 0) {
-          return null;
-        }
-        termScoreSum += termScore;
-      }
-
-      score += termScoreSum;
-
-      if (normalizedQuery.length >= 3) {
-        const compactQuery = normalizedQuery.replace(/\s+/g, '');
-        const compactTitle = title.replace(/\s+/g, '');
-        if (compactQuery && compactTitle && isSubsequenceMatch(compactQuery, compactTitle)) {
-          score += 18;
-        }
-      }
-
-      // Favor concise titles when scores are close.
-      score += Math.max(0, 12 - Math.max(0, title.length - normalizedQuery.length));
+      if (score <= 0) return null;
 
       return { cmd, score, title, hasExactAliasMatch };
     })
     .filter(
       (entry): entry is { cmd: CommandInfo; score: number; title: string; hasExactAliasMatch: boolean } =>
-        entry !== null && entry.score > 0
+        entry !== null
     )
     .sort((a, b) => {
       if (a.hasExactAliasMatch !== b.hasExactAliasMatch) {
