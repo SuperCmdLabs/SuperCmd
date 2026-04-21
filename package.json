@@ -42,7 +42,6 @@
     "@aptabase/electron": "^0.3.1",
     "@phosphor-icons/react": "^2.1.10",
     "@raycast/api": "^1.104.5",
-    "any-ascii": "^0.3.3",
     "electron-builder-notarize": "^1.5.2",
     "electron-liquid-glass": "^1.1.1",
     "electron-updater": "^6.7.3",
@@ -51,7 +50,8 @@
     "node-edge-tts": "^1.2.10",
     "node-window-manager": "^2.2.4",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "transliteration": "^2.6.1"
   },
   "build": {
     "appId": "com.supercmd.app",

@@ -10,7 +10,7 @@
  *   "计算器" (CJK) → "JiSuanQi"  → pinyin matching in List/Grid items
  */
 
-import anyAscii from 'any-ascii';
+import { transliterate as toLatinScript } from 'transliteration';
 
 const NORM_REGEX = /[^\p{L}\p{N}]+/gu;
 
@@ -22,7 +22,7 @@ function containsNonLatinChars(text: string): boolean {
 }
 
 // Apply phonetic normalization to a transliterated Latin string.
-// Only called on anyAscii() output — never on raw English input.
+// Only called on transliterate() output — never on raw English input.
 function phoneticallyNormalize(text: string): string {
   return (
     text
@@ -54,7 +54,7 @@ export function getTranslitVariant(
   if (!containsNonLatinChars(originalQuery)) {
     return { query: normalizedQuery, isVariant: false };
   }
-  const transliterated = anyAscii(originalQuery);
+  const transliterated = toLatinScript(originalQuery);
   const phonetized = phoneticallyNormalize(transliterated);
   const normalized = normalizeForSearch(phonetized);
   return {
@@ -70,7 +70,7 @@ export function getTranslitVariant(
  */
 export function transliterateForSearch(text: string): string {
   if (!text || !containsNonLatinChars(text)) return text.toLowerCase();
-  const transliterated = anyAscii(text);
+  const transliterated = toLatinScript(text);
   const phonetized = phoneticallyNormalize(transliterated);
   return normalizeForSearch(phonetized);
 }
