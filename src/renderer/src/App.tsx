@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowRight, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2 } from 'lucide-react';
+import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play } from 'lucide-react';
 import supercmdLogo from '../../../supercmd.png';
 import type {
   CommandInfo,
@@ -2973,11 +2973,13 @@ const App: React.FC = () => {
             id: 'update-and-reopen',
             title: 'Update and Reopen',
             shortcut: 'Enter',
+            icon: <Download className="w-4 h-4" />,
             execute: () => handleCommandExecute(command),
           },
           {
             id: 'dismiss-update-banner',
             title: 'Dismiss for 3 Days',
+            icon: <BellOff className="w-4 h-4" />,
             execute: async () => {
               await window.electron.dismissUpdateBanner();
               await fetchCommands({ showLoading: false });
@@ -2998,30 +3000,35 @@ const App: React.FC = () => {
             id: 'open-file',
             title: t('launcher.actions.openFile'),
             shortcut: 'Enter',
+            icon: <CornerDownLeft className="w-4 h-4" />,
             execute: () => openFileResultByPath(filePath),
           },
           {
             id: 'show-file-details',
             title: t('launcher.actions.showDetails'),
             shortcut: 'Cmd+D',
+            icon: <Info className="w-4 h-4" />,
             execute: () => showFileResultDetailsByPath(filePath),
           },
           {
             id: 'reveal-file',
             title: t('launcher.actions.revealInFinder'),
             shortcut: 'Cmd+Enter',
+            icon: <FolderOpen className="w-4 h-4" />,
             execute: () => revealFileResultByPath(filePath),
           },
           {
             id: 'copy-file-path',
             title: t('launcher.actions.copyPath'),
             shortcut: 'Cmd+Shift+C',
+            icon: <Copy className="w-4 h-4" />,
             execute: () => copyFileResultPath(filePath),
           },
           {
             id: 'pin-file',
             title: pinActionTitle,
             shortcut: 'Cmd+Shift+P',
+            icon: <Pin className="w-4 h-4" />,
             execute: () => pinToggleForFile(filePath),
           },
         ];
@@ -3088,6 +3095,7 @@ const App: React.FC = () => {
           id: 'open',
           title: t('launcher.actions.openCommand'),
           shortcut: 'Enter',
+          icon: <Play className="w-4 h-4" />,
           execute: () => handleCommandExecute(command),
         },
         {
@@ -3095,6 +3103,7 @@ const App: React.FC = () => {
           title: t('launcher.actions.copyDeeplink'),
           shortcut: 'Cmd+Shift+L',
           enabled: hasDeeplink,
+          icon: <Link className="w-4 h-4" />,
           execute: () => copyCommandDeeplink(command),
         },
         {
@@ -3105,20 +3114,24 @@ const App: React.FC = () => {
               ? t('launcher.actions.pinExtension')
               : t('launcher.actions.pinCommand'),
           shortcut: 'Cmd+Shift+P',
+          icon: <Pin className="w-4 h-4" />,
           execute: () => pinToggleForCommand(command),
         },
         {
           id: 'disable',
           title: t('launcher.actions.disableCommand'),
           shortcut: 'Cmd+Shift+D',
+          style: 'destructive' as const,
+          icon: <EyeOff className="w-4 h-4" />,
           execute: () => disableCommand(command),
         },
         {
           id: 'uninstall',
           title: 'Uninstall',
           shortcut: 'Cmd+Delete',
-          style: 'destructive',
+          style: 'destructive' as const,
           enabled: command.category === 'extension',
+          icon: <Trash2 className="w-4 h-4" />,
           execute: () => uninstallExtensionCommand(command),
         },
         {
@@ -3126,6 +3139,7 @@ const App: React.FC = () => {
           title: t('launcher.actions.moveUp'),
           shortcut: 'Cmd+Alt+Up',
           enabled: isPinned && pinnedIndex > 0,
+          icon: <ArrowUp className="w-4 h-4" />,
           execute: () => movePinnedCommand(command, 'up'),
         },
         {
@@ -3133,6 +3147,7 @@ const App: React.FC = () => {
           title: t('launcher.actions.moveDown'),
           shortcut: 'Cmd+Alt+Down',
           enabled: isPinned && pinnedIndex >= 0 && pinnedIndex < pinnedCommands.length - 1,
+          icon: <ArrowDown className="w-4 h-4" />,
           execute: () => movePinnedCommand(command, 'down'),
         },
       ].filter((action) => action.enabled !== false);
@@ -4422,13 +4437,28 @@ const App: React.FC = () => {
                 onMouseMove={() => setSelectedActionIndex(idx)}
               >
                 {action.icon && (
-                  <span className="shrink-0 opacity-70">{action.icon}</span>
+                  <span
+                    className={`shrink-0 ${
+                      action.style === 'destructive'
+                        ? 'text-[var(--status-danger-faded)]'
+                        : 'text-[var(--text-muted)]'
+                    }`}
+                  >
+                    {action.icon}
+                  </span>
                 )}
                 <span className="flex-1 text-sm truncate">{action.title}</span>
                 {action.shortcut && (
-                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] font-medium text-[var(--text-muted)]">
-                    {renderShortcutLabel(action.shortcut)}
-                  </kbd>
+                  <span className="flex items-center gap-0.5">
+                    {getShortcutDisplayParts(action.shortcut).map((key, keyIdx) => (
+                      <kbd
+                        key={`${action.id}-${key}-${keyIdx}`}
+                        className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] font-medium text-[var(--text-muted)]"
+                      >
+                        {key}
+                      </kbd>
+                    ))}
+                  </span>
                 )}
               </div>
             ))}
@@ -4513,13 +4543,28 @@ const App: React.FC = () => {
                 onMouseMove={() => setSelectedContextActionIndex(idx)}
               >
                 {action.icon && (
-                  <span className="shrink-0 opacity-70">{action.icon}</span>
+                  <span
+                    className={`shrink-0 ${
+                      action.style === 'destructive'
+                        ? 'text-[var(--status-danger-faded)]'
+                        : 'text-[var(--text-muted)]'
+                    }`}
+                  >
+                    {action.icon}
+                  </span>
                 )}
                 <span className="flex-1 text-sm truncate">{action.title}</span>
                 {action.shortcut && (
-                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] font-medium text-[var(--text-muted)]">
-                    {renderShortcutLabel(action.shortcut)}
-                  </kbd>
+                  <span className="flex items-center gap-0.5">
+                    {getShortcutDisplayParts(action.shortcut).map((key, keyIdx) => (
+                      <kbd
+                        key={`ctx-${action.id}-${key}-${keyIdx}`}
+                        className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] font-medium text-[var(--text-muted)]"
+                      >
+                        {key}
+                      </kbd>
+                    ))}
+                  </span>
                 )}
               </div>
             ))}
