@@ -946,7 +946,11 @@ const App: React.FC = () => {
       }
 
       // If an extension is open, keep it alive — don't reset
-      if (extensionViewRef.current && !shouldResetOverlays) return;
+      if (extensionViewRef.current && !shouldResetOverlays) {
+        setIsCompactCollapsed(false);
+        void window.electron.resizeLauncherWindow(true);
+        return;
+      }
       const pendingQuery = pendingWindowShownQueryRef.current;
       pendingWindowShownQueryRef.current = null;
       if (pendingQuery) {
@@ -1401,6 +1405,12 @@ const App: React.FC = () => {
   useEffect(() => {
     isLauncherModeActiveRef.current = isLauncherModeActive;
   }, [isLauncherModeActive]);
+
+  useEffect(() => {
+    if (launcherViewMode !== 'compact' || isLauncherModeActive) return;
+    setIsCompactCollapsed(false);
+    void window.electron.resizeLauncherWindow(true);
+  }, [isLauncherModeActive, launcherViewMode]);
 
   useEffect(() => {
     fileSearchRequestSeqRef.current += 1;
