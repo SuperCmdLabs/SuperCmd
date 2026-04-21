@@ -104,7 +104,8 @@
         "fr": "Français",
         "de": "Deutsch",
         "es": "Español",
-        "ru": "Ruso"
+        "ru": "Ruso",
+        "it": "Italiano"
       },
       "theme": {
         "label": "Tema",

@@ -1,0 +1,1060 @@
+{
+  "common": {
+    "actions": "Azioni",
+    "loading": "Caricamento...",
+    "noResults": "Nessun risultato",
+    "search": "Cerca...",
+    "save": "Salva",
+    "cancel": "Annulla",
+    "close": "Chiudi",
+    "continue": "Continua",
+    "back": "Indietro",
+    "remove": "Rimuovi",
+    "add": "Aggiungi",
+    "edit": "Modifica",
+    "delete": "Elimina",
+    "enable": "Abilita",
+    "disable": "Disabilita",
+    "enabled": "Abilitato",
+    "disabled": "Disabilitato",
+    "success": "Completato",
+    "error": "Errore",
+    "warning": "Avviso",
+    "info": "Info",
+    "copy": "Copia",
+    "paste": "Incolla",
+    "cut": "Taglia",
+    "selectAll": "Seleziona tutto",
+    "undo": "Annulla",
+    "redo": "Ripeti",
+    "refresh": "Aggiorna",
+    "reload": "Ricarica",
+    "apply": "Applica",
+    "reset": "Reimposta",
+    "clear": "Cancella",
+    "done": "Fatto",
+    "ok": "OK",
+    "yes": "Sì",
+    "no": "No",
+    "submit": "Invia",
+    "browse": "Sfoglia",
+    "choose": "Scegli",
+    "change": "Cambia",
+    "update": "Aggiorna",
+    "install": "Installa",
+    "uninstall": "Disinstalla",
+    "download": "Scarica",
+    "upload": "Carica",
+    "import": "Importa",
+    "export": "Esporta",
+    "open": "Apri",
+    "create": "Crea",
+    "new": "Nuovo",
+    "unknown": "Sconosciuto",
+    "none": "Nessuno",
+    "default": "Predefinito",
+    "custom": "Personalizzato",
+    "other": "Altro",
+    "all": "Tutti",
+    "required": "Obbligatorio",
+    "optional": "Facoltativo",
+    "preferences": "Preferenze",
+    "settings": "Impostazioni",
+    "general": "Generali",
+    "advanced": "Avanzate",
+    "about": "Informazioni",
+    "version": "Versione",
+    "language": "Lingua",
+    "appearance": "Aspetto",
+    "theme": "Tema",
+    "light": "Chiaro",
+    "dark": "Scuro",
+    "system": "Sistema",
+    "auto": "Automatico"
+  },
+  "settings": {
+    "title": "Impostazioni SuperCmd",
+    "tabs": {
+      "general": "Generali",
+      "ai": "AI",
+      "extensions": "Estensioni",
+      "advanced": "Avanzate"
+    },
+    "general": {
+      "title": "Generali",
+      "loading": "Caricamento impostazioni...",
+      "launcherShortcut": {
+        "title": "Scorciatoia del launcher",
+        "description": "Imposta la scorciatoia globale per aprire e chiudere SuperCmd.",
+        "updated": "Scorciatoia aggiornata",
+        "failed": "Operazione non riuscita. La scorciatoia potrebbe essere usata da un'altra app."
+      },
+      "startAtLogin": {
+        "title": "Avvia all'accesso",
+        "description": "Avvia automaticamente SuperCmd quando accedi.",
+        "enabled": "Abilitato",
+        "disabled": "Disabilitato"
+      },
+      "language": {
+        "title": "Lingua",
+        "description": "Scegli la lingua di visualizzazione o segui la lingua di sistema.",
+        "system": "Segui il sistema",
+        "en": "Inglese",
+        "zh-Hans": "Cinese semplificato",
+        "zh-Hant": "Cinese tradizionale",
+        "ja": "Giapponese",
+        "ko": "Coreano",
+        "fr": "Francese",
+        "de": "Tedesco",
+        "es": "Spagnolo",
+        "ru": "Russo",
+        "it": "Italiano"
+      },
+      "fontSize": {
+        "title": "Dimensione del testo",
+        "description": "Ridimensiona il testo in tutta l'app.",
+        "extra-small": "Molto piccolo",
+        "small": "Piccolo",
+        "medium": "Medio",
+        "large": "Grande",
+        "extra-large": "Molto grande"
+      },
+      "appearance": {
+        "title": "Aspetto",
+        "description": "Scegli Chiaro, Scuro o segui le preferenze di sistema.",
+        "light": "Chiaro",
+        "system": "Sistema",
+        "dark": "Scuro"
+      },
+      "visualStyle": {
+        "title": "Stile visivo",
+        "description": "Usa l'aspetto predefinito o abilita uno stile vetroso ispirato a macOS Tahoe.",
+        "default": "Predefinito",
+        "glassy": "Vetroso"
+      },
+      "launcherMode": {
+        "title": "Modalità launcher",
+        "description": "Scegli come appare il launcher all'apertura.",
+        "expanded": "Esteso",
+        "compact": "Compatto"
+      },
+      "background": {
+        "title": "Immagine di sfondo del launcher",
+        "description": "Mostra un'immagine leggermente sfocata e poco opaca dietro il launcher, come un accenno e non uno sfondo completo.",
+        "empty": "Nessuna immagine selezionata. Il launcher manterrà lo sfondo attuale.",
+        "choose": "Scegli immagine",
+        "change": "Cambia immagine",
+        "remove": "Rimuovi",
+        "appearance": "Aspetto",
+        "summary": "Sfocatura {blur}% · Opacità {opacity}%",
+        "blur": "Sfocatura",
+        "opacity": "Opacità",
+        "useEverywhere": "Usa questa immagine anche nelle estensioni e nelle viste principali del launcher"
+      },
+      "updates": {
+        "title": "Aggiornamenti app",
+        "description": "Verifica e installa gli aggiornamenti dell'app pacchettizzata.",
+        "defaultMessage": "Verifica e installa gli aggiornamenti dell'app pacchettizzata.",
+        "unsupported": "Gli aggiornamenti sono disponibili solo nelle build pacchettizzate.",
+        "checking": "Verifica degli aggiornamenti in corso...",
+        "available": "È disponibile l'aggiornamento v{version}.",
+        "notAvailable": "Stai già usando l'ultima versione.",
+        "downloading": "Download dell'aggiornamento in corso...",
+        "downloaded": "Aggiornamento scaricato. Riavvia per installarlo.",
+        "error": "Impossibile completare l'operazione di aggiornamento.",
+        "check": "Verifica aggiornamenti",
+        "download": "Scarica aggiornamento",
+        "downloadingButton": "Download aggiornamento...",
+        "restart": "Riavvia per aggiornare",
+        "currentVersion": "Versione attuale: v{version}",
+        "latestVersion": "Ultima: v{version}",
+        "progress": "{progress}% · {transferred} / {total}",
+        "failed": "Aggiornamento non riuscito."
+      },
+      "about": {
+        "title": "Informazioni",
+        "description": "Informazioni sulla versione.",
+        "version": "SuperCmd v{version}"
+      }
+    },
+    "ai": {
+      "title": "Impostazioni AI",
+      "loading": "Caricamento impostazioni AI...",
+      "saved": "Salvato",
+      "languages": {
+        "arabic": "Arabo",
+        "chineseMandarin": "Cinese (mandarino)",
+        "englishUs": "Inglese (USA)",
+        "englishUk": "Inglese (Regno Unito)",
+        "frenchCanada": "Francese (Canada)",
+        "frenchFrance": "Francese (Francia)",
+        "german": "Tedesco",
+        "hindi": "Hindi",
+        "italian": "Italiano",
+        "japanese": "Giapponese",
+        "korean": "Coreano",
+        "portugueseBrazil": "Portoghese (Brasile)",
+        "russian": "Russo",
+        "spanishMexico": "Spagnolo (Messico)",
+        "spanishSpain": "Spagnolo (Spagna)"
+      },
+      "enableAI": {
+        "title": "Abilita AI",
+        "description": "Interruttore principale per le funzionalità AI."
+      },
+      "tabs": {
+        "apiKeys": "Chiavi API",
+        "llm": "LLM",
+        "whisper": "SuperCmd Whisper",
+        "speak": "SuperCmd Read"
+      },
+      "apiKeys": {
+        "openai": {
+          "label": "Chiave API di ChatGPT (OpenAI)",
+          "placeholder": "sk-..."
+        },
+        "anthropic": {
+          "label": "Chiave API di Claude (Anthropic)",
+          "placeholder": "sk-ant-..."
+        },
+        "gemini": {
+          "label": "Chiave API di Gemini (Google)",
+          "placeholder": "AIza..."
+        },
+        "elevenlabs": {
+          "label": "Chiave API di ElevenLabs",
+          "placeholder": "xi-..."
+        },
+        "supermemory": {
+          "title": "Supermemory",
+          "description": "Backend di memoria per il contesto a lungo termine.",
+          "apiKey": {
+            "label": "Chiave API di Supermemory",
+            "placeholder": "sm-..."
+          },
+          "client": {
+            "label": "Client Supermemory",
+            "placeholder": "client-123",
+            "hint": "Usato per delimitare il recupero della memoria utente."
+          },
+          "baseUrl": {
+            "label": "URL base di Supermemory",
+            "placeholder": "https://api.supermemory.ai"
+          },
+          "localMode": "Usa la modalità locale (salvata in locale)"
+        }
+      },
+      "llm": {
+        "enableLLM": {
+          "title": "Abilita LLM",
+          "description": "Attiva o disattiva le funzionalità AI basate su modelli."
+        },
+        "modelSelection": {
+          "title": "Selezione generica del modello",
+          "description": "Usato dalle estensioni e dalle azioni AI indipendenti dal modello."
+        },
+        "provider": {
+          "label": "Provider",
+          "openai": "OpenAI",
+          "anthropic": "Claude",
+          "gemini": "Gemini",
+          "ollama": "Ollama",
+          "openaiCompatible": "Personalizzato (compatibile OpenAI)"
+        },
+        "providerDescriptions": {
+          "openai": "Modelli della famiglia GPT",
+          "anthropic": "Modelli Anthropic Claude",
+          "gemini": "Modelli Google Gemini",
+          "ollama": "Modelli locali",
+          "openaiCompatible": "Qualsiasi API compatibile OpenAI (OpenRouter, Together, ecc.)"
+        },
+        "ollama": {
+          "serverUrl": {
+            "label": "URL del server Ollama",
+            "placeholder": "http://localhost:11434"
+          },
+          "models": "Modelli Ollama",
+          "refresh": "Aggiorna",
+          "checking": "Verifica dello stato di Ollama...",
+          "notRunning": {
+            "title": "Ollama non è in esecuzione",
+            "description": "Installa e avvia Ollama per usare i modelli locali.",
+            "download": "Scarica Ollama"
+          },
+          "running": "Ollama è in esecuzione",
+          "installed": "Installato",
+          "downloadModel": "Scarica",
+          "removeModel": "Rimuovi",
+          "downloading": "Download in corso...",
+          "removing": "Rimozione in corso...",
+          "startingDownload": "Avvio del download...",
+          "deleteFailed": "Impossibile eliminare il modello.",
+          "curatedDescriptions": {
+            "llama32": "Meta multiuso (3B)",
+            "llama32_1b": "Piccolo e veloce",
+            "mistral": "Multiuso ed efficiente",
+            "codellama": "Generazione e completamento di codice",
+            "phi3": "Modello linguistico compatto di Microsoft",
+            "gemma2": "Modello open di Google (9B)",
+            "qwen25": "Modello multilingue di Alibaba (7B)",
+            "deepseekR1": "Modello orientato al ragionamento (7B)"
+          }
+        },
+        "openaiCompatible": {
+          "baseUrl": {
+            "label": "URL base",
+            "placeholder": "https://api.openrouter.ai/v1",
+            "hint": "Includi /v1 se il tuo provider lo richiede (es. https://api.openai.com/v1)"
+          },
+          "apiKey": {
+            "label": "Chiave API",
+            "placeholder": "sk-..."
+          },
+          "modelName": {
+            "label": "Nome del modello",
+            "placeholder": "anthropic/claude-3.5-sonnet",
+            "hint": "Il nome esatto del modello atteso dal tuo provider (es. gpt-4o, meta-llama/llama-3.1-70b-instruct)"
+          }
+        },
+        "defaultModel": {
+          "label": "Modello predefinito",
+          "auto": "Automatico (predefinito del provider)"
+        }
+      },
+      "whisper": {
+        "enableWhisper": {
+          "title": "Abilita SuperCmd Whisper",
+          "description": "Attiva o disattiva le funzionalità di dettatura vocale."
+        },
+        "title": "SuperCmd Whisper",
+        "description": "Dettatura vocale e pulizia della trascrizione.",
+        "model": {
+          "label": "Modello di trascrizione",
+          "native": "Nativo (predefinito)",
+          "openaiGpt4o": "OpenAI GPT-4o Transcribe",
+          "openaiWhisper": "OpenAI Whisper-1",
+          "elevenlabsScribeV1": "ElevenLabs Scribe v1",
+          "elevenlabsScribeV2": "ElevenLabs Scribe v2"
+        },
+        "modelOptions": {
+          "whispercpp": "SuperCmd Whisper (predefinito)",
+          "parakeet": "Parakeet v3 (il migliore e più veloce, oltre 25 lingue europee)",
+          "qwen3": "Qwen3 ASR (oltre 30 lingue, tra cui cinese, giapponese, coreano, thai, vietnamita, hindi)",
+          "native": "Riconoscimento vocale di Apple",
+          "openaiGpt4o": "OpenAI GPT-4o Transcribe",
+          "openaiWhisper": "OpenAI Whisper-1",
+          "elevenlabsScribeV1": "ElevenLabs Scribe v1",
+          "elevenlabsScribeV2": "ElevenLabs Scribe v2"
+        },
+        "openaiWarning": "OpenAI Whisper selezionato. Aggiungi la chiave API OpenAI in Chiavi API.",
+        "elevenlabsWarning": "STT di ElevenLabs selezionato. {action} la chiave API di ElevenLabs in Chiavi API.",
+        "elevenlabsReady": "STT di ElevenLabs selezionato. La trascrizione cloud userà la tua chiave ElevenLabs.",
+        "recognitionLanguage": "Lingua di riconoscimento",
+        "providerInfo": {
+          "parakeet": "Trascrizione offline sul dispositivo con Parakeet TDT v3. Viene eseguita su Apple Neural Engine. Richiede un riscaldamento del modello al primo utilizzo. Scarica il modello qui sotto prima di usare la dettatura.",
+          "qwen3": "Trascrizione offline sul dispositivo con Qwen3 ASR. Supporta oltre 30 lingue, richiede macOS 15+ e si riscalda al primo utilizzo.",
+          "whispercpp": "Trascrizione offline sul dispositivo con Whisper.cpp. Scarica il modello ggml base predefinito qui sotto prima di usare la dettatura.",
+          "native": "Usa il riconoscimento vocale di Apple invece di SuperCmd Whisper."
+        },
+        "hotkeys": {
+          "title": "Scorciatoie di Whisper",
+          "startStop": "Avvia/Ferma la dettatura",
+          "setToFn": "Imposta su Fn",
+          "fnHint": "Usa Imposta su Fn per ripristinare il tasto predefinito di registrazione.",
+          "fnHintBefore": "Usa",
+          "fnHintAfter": "per ripristinare il tasto predefinito di registrazione."
+        },
+        "autoClose": {
+          "title": "Chiusura automatica dopo la dettatura",
+          "description": "Chiudi automaticamente la barra whisper al termine della dettatura."
+        },
+        "smoothOutput": {
+          "title": "Output fluido",
+          "description": "Pulisci intercalari e autocorrezioni."
+        },
+        "smoothingModel": {
+          "label": "Modello di smoothing",
+          "useDefault": "Usa il modello generico predefinito",
+          "hint": "Utilizza i modelli del provider attuale."
+        },
+        "downloadCards": {
+          "modelDownloadFailed": "Download del modello non riuscito.",
+          "actions": {
+            "downloaded": "Modello scaricato",
+            "downloading": "Download in corso...",
+            "download": "Scarica modello"
+          },
+          "parakeet": {
+            "title": "Parakeet TDT v3",
+            "description": "Trascrizione multilingue sul dispositivo. Viene eseguita su Apple Neural Engine.",
+            "ready": "Scaricato. Parakeet v3 è pronto per l'uso offline.",
+            "downloading": "Download dei modelli Parakeet v3 in corso",
+            "notDownloaded": "Modello non ancora scaricato. Scaricalo ora per usare la dettatura con Parakeet."
+          },
+          "qwen3": {
+            "title": "Qwen3 ASR",
+            "description": "Trascrizione sul dispositivo in 30 lingue. Richiede macOS 15+.",
+            "ready": "Scaricato. Qwen3 ASR è pronto per l'uso offline.",
+            "downloading": "Download dei modelli Qwen3 ASR in corso",
+            "notDownloaded": "Modello non ancora scaricato. Scarica il modello int8 da ~900 MB per usare la dettatura Qwen3."
+          },
+          "whispercpp": {
+            "title": "SuperCmd Whisper",
+            "description": "Scarica una volta il modello ggml base per abilitare la dettatura locale.",
+            "ready": "Scaricato. SuperCmd Whisper è pronto per l'uso offline.",
+            "downloading": "Download di SuperCmd Whisper in corso",
+            "notDownloaded": "Modello non ancora scaricato. Scaricalo ora per usare la dettatura di SuperCmd Whisper."
+          }
+        }
+      },
+      "speak": {
+        "enableRead": {
+          "title": "Abilita SuperCmd Read",
+          "description": "Attiva o disattiva la sintesi vocale."
+        },
+        "title": "SuperCmd Read",
+        "description": "Leggi il testo selezionato ad alta voce.",
+        "provider": {
+          "label": "Provider di sintesi vocale",
+          "edgeTTS": "Edge TTS (predefinito)",
+          "elevenlabsMultilingual": "ElevenLabs Multilingual v2",
+          "elevenlabsFlash": "ElevenLabs Flash v2.5",
+          "elevenlabsTurbo": "ElevenLabs Turbo v2.5",
+          "elevenlabsV3": "ElevenLabs v3 (Alpha)"
+        },
+        "edgeTTS": {
+          "voice": "Voce Edge TTS",
+          "fetching": "Recupero dell'elenco completo delle voci...",
+          "language": {
+            "label": "Lingua"
+          },
+          "gender": {
+            "label": "Genere della voce",
+            "female": "Femminile",
+            "male": "Maschile"
+          },
+          "voiceLabel": {
+            "label": "Voce"
+          },
+          "playSample": {
+            "idle": "Riproduci voce di esempio",
+            "playing": "Riproduzione dell'esempio..."
+          }
+        },
+        "elevenlabs": {
+          "model": {
+            "label": "Modello ElevenLabs"
+          },
+          "voice": {
+            "label": "Voce ElevenLabs",
+            "fetching": "Recupero delle tue voci...",
+            "fetchFailed": "Impossibile recuperare le voci.",
+            "builtIn": "Voci integrate",
+            "premade": "Altre voci predefinite",
+            "custom": "Le tue voci personalizzate (clonate/generate)",
+            "professional": "Cloni vocali professionali",
+            "available": "{count} voce{plural} personalizzate disponibili dal tuo account ElevenLabs"
+          },
+          "playSample": {
+            "idle": "Riproduci voce di esempio",
+            "playing": "Riproduzione dell'esempio..."
+          },
+          "storageHint": "SuperCmd la memorizza come {value}.",
+          "apiKeyWarning": "Aggiungi la chiave API di ElevenLabs in Chiavi API."
+        },
+        "notes": {
+          "title": "Note",
+          "whisperDefault": "L'impostazione predefinita di Whisper è SuperCmd Whisper con un modello ggml base locale.",
+          "speakDefault": "L'impostazione predefinita di Speak è Edge TTS con scelta tra voci maschili/femminili per lingua.",
+          "englishVoice": "Le opzioni vocali in inglese sono volutamente limitate alle varianti USA e Regno Unito.",
+          "elevenlabsVoices": "Le voci personalizzate di ElevenLabs (clonate/generate) appariranno automaticamente quando la chiave API è configurata."
+        }
+      },
+      "hotkeyUpdated": "Scorciatoia aggiornata.",
+      "hotkeyRemoved": "Scorciatoia rimossa.",
+      "hotkeyDuplicate": "Scorciatoia già usata da un altro comando di SuperCmd.",
+      "hotkeyUnavailable": "Scorciatoia non disponibile. Potrebbe essere usata da macOS o da un'altra app."
+    },
+    "extensions": {
+      "title": "Estensioni",
+      "loading": "Caricamento impostazioni estensioni...",
+      "builtIn": {
+        "superCmd": {
+          "title": "SuperCmd",
+          "description": "Comandi integrati di SuperCmd"
+        },
+        "scriptCommands": {
+          "title": "Comandi script",
+          "description": "Comandi script personalizzati e compatibili con Raycast"
+        },
+        "applications": {
+          "title": "Applicazioni",
+          "description": "Applicazioni macOS installate con supporto per avvio e scorciatoie"
+        },
+        "systemSettings": {
+          "title": "Impostazioni di sistema",
+          "description": "Pannelli delle impostazioni di macOS con supporto per avvio e scorciatoie",
+          "pane": "Pannello Impostazioni di sistema"
+        }
+      },
+      "search": {
+        "placeholder": "Cerca...",
+        "all": "Tutti",
+        "commands": "Comandi"
+      },
+      "install": {
+        "button": "Installa estensione",
+        "fromStore": "Installa dallo Store",
+        "addFolder": "Aggiungi cartella",
+        "customScript": "Script personalizzato"
+      },
+      "customFolders": {
+        "title": "Cartelle personalizzate",
+        "empty": "Aggiungi una cartella da Installa estensione",
+        "remove": "Rimuovi"
+      },
+      "installExtension": "Installa estensione",
+      "installFromStore": "Installa dallo Store",
+      "addFolder": "Aggiungi cartella",
+      "customScript": "Script personalizzato",
+      "columns": {
+        "name": "Nome",
+        "type": "Tipo",
+        "alias": "Alias",
+        "hotkey": "Scorciatoia",
+        "enabled": "Abilitato"
+      },
+      "types": {
+        "builtIn": "Integrato",
+        "apps": "App",
+        "settings": "Impostazioni",
+        "scripts": "Script",
+        "extension": "Estensione",
+        "application": "Applicazione",
+        "command": "Comando",
+        "menuBarCommand": "Comando della barra dei menu",
+        "quickLink": "Collegamento rapido"
+      },
+      "alias": {
+        "add": "Aggiungi alias",
+        "placeholder": "Aggiungi alias",
+        "edit": "Modifica alias"
+      },
+      "hotkey": {
+        "record": "Registra scorciatoia",
+        "duplicateWithCommand": "Scorciatoia già usata da \"{name}\"."
+      },
+      "preferences": {
+        "selectOption": "Seleziona un'opzione"
+      },
+      "noResults": "Nessuna estensione corrispondente",
+      "selectExtension": "Seleziona un'estensione",
+      "extensionPreferences": "Preferenze dell'estensione",
+      "commandPreferences": "Preferenze del comando",
+      "noPreferences": "Nessuna preferenza",
+      "enabled": "Abilitato",
+      "logout": "Disconnetti",
+      "loggedIn": "Connesso a {name}",
+      "uninstall": {
+        "title": "Disinstallare \"{name}\"?",
+        "description": "Questa estensione e i suoi comandi saranno rimossi da SuperCmd.",
+        "cancel": "Annulla",
+        "confirm": "Disinstalla",
+        "uninstalling": "Disinstallazione in corso...",
+        "success": "\"{name}\" disinstallata.",
+        "failed": "Impossibile disinstallare \"{name}\"."
+      },
+      "folder": {
+        "added": "Cartella delle estensioni aggiunta.",
+        "removed": "Cartella delle estensioni rimossa.",
+        "failed": "Impossibile {action} la cartella delle estensioni.",
+        "duplicate": "Cartella già aggiunta."
+      },
+      "scripts": {
+        "opened": "Cartella degli script personalizzati aperta con uno script di esempio.",
+        "openedExisting": "Cartella degli script personalizzati aperta.",
+        "failed": "Impossibile aprire la cartella degli script personalizzati."
+      }
+    },
+    "advanced": {
+      "title": "Avanzate",
+      "loading": "Caricamento impostazioni avanzate...",
+      "debugMode": {
+        "title": "Modalità debug",
+        "description": "Mostra log dettagliati quando le estensioni non riescono a caricarsi o a compilarsi.",
+        "label": "Abilita modalità debug"
+      }
+    }
+  },
+  "launcher": {
+    "searchPlaceholder": "Cerca app, comandi o chiedi all'AI...",
+    "compact": {
+      "showMore": "Mostra di più"
+    },
+    "status": {
+      "discoveringApps": "Ricerca delle app...",
+      "noMatchingResults": "Nessun risultato corrispondente",
+      "results": "{count} risultati"
+    },
+    "aiMode": {
+      "placeholder": "Chiedi qualunque cosa all'AI...",
+      "ask": "Chiedi",
+      "thinking": "Sto pensando...",
+      "streaming": "Streaming...",
+      "response": "Risposta dell'AI",
+      "enterToAsk": "Chiedi",
+      "escToBack": "Indietro"
+    },
+    "categories": {
+      "recent": "Recenti",
+      "applications": "Applicazioni",
+      "commands": "Comandi",
+      "extensions": "Estensioni",
+      "scripts": "Script",
+      "settings": "Impostazioni",
+      "files": "File",
+      "calculator": "Calcolatrice",
+      "quickLinks": "Collegamenti rapidi"
+    },
+    "actions": {
+      "open": "Apri",
+      "openCommand": "Apri comando",
+      "openFile": "Apri file",
+      "execute": "Esegui",
+      "run": "Esegui",
+      "copy": "Copia",
+      "copyPath": "Copia percorso",
+      "copyDeeplink": "Copia deeplink",
+      "copyToClipboard": "Copia negli appunti",
+      "paste": "Incolla",
+      "showDetails": "Mostra dettagli",
+      "showInFinder": "Mostra in Finder",
+      "revealInFinder": "Mostra in Finder",
+      "getInfo": "Ottieni informazioni",
+      "quit": "Esci",
+      "forceQuit": "Uscita forzata",
+      "hide": "Nascondi",
+      "show": "Mostra",
+      "preferences": "Preferenze",
+      "actions": "Azioni",
+      "pinCommand": "Fissa comando",
+      "unpinCommand": "Rimuovi dalla lista fissa",
+      "pinExtension": "Fissa estensione",
+      "unpinExtension": "Rimuovi estensione dalla lista fissa",
+      "disableCommand": "Disabilita comando",
+      "moveUp": "Sposta su",
+      "moveDown": "Sposta giù"
+    },
+    "empty": {
+      "noResults": "Nessun risultato trovato",
+      "startTyping": "Inizia a scrivere per cercare...",
+      "allCommands": "Tutti i tuoi comandi appariranno qui"
+    },
+    "footer": {
+      "actions": "Azioni",
+      "select": "Seleziona",
+      "back": "Indietro"
+    },
+    "sections": {
+      "selectedText": "Testo selezionato",
+      "pinned": "Fissati",
+      "results": "Risultati"
+    },
+    "calculator": {
+      "pressEnterToCopy": "Premi Invio per copiare",
+      "clickToCopy": "Clicca per copiare",
+      "copy": "Copia"
+    },
+    "badges": {
+      "application": "Applicazione",
+      "extension": "Estensione",
+      "script": "Script",
+      "settings": "Impostazioni",
+      "quickLink": "Collegamento rapido"
+    }
+  },
+  "scriptCommand": {
+    "setup": {
+      "title": "Configura comando script",
+      "description": "Fornisci gli argomenti richiesti prima di eseguire.",
+      "continue": "Continua"
+    },
+    "output": {
+      "success": "Completato",
+      "exitCode": "Exit {code}",
+      "noOutput": "(Nessun output)"
+    }
+  },
+  "extension": {
+    "setup": {
+      "title": "Configura {name}",
+      "description": "Aggiungi le impostazioni richieste prima di eseguire questo comando.",
+      "arguments": "Argomenti",
+      "preferences": "Preferenze",
+      "continue": "Continua",
+      "selectOption": "Seleziona un'opzione"
+    }
+  },
+  "cursorPrompt": {
+    "placeholder": "Dì all'AI cosa fare con il testo selezionato...",
+    "processing": "Elaborazione in corso...",
+    "ready": "Pronto da applicare",
+    "applied": "Applicato nell'editor",
+    "close": "Chiudi",
+    "accept": "Accetta",
+    "submit": "Invia",
+    "enterToSubmit": "Invio"
+  },
+  "store": {
+    "title": "Store",
+    "community": "Community",
+    "searchPlaceholder": "Cerca estensioni...",
+    "installedFirst": "Le estensioni installate appaiono per prime.",
+    "refresh": "Aggiorna",
+    "loading": "Caricamento del catalogo delle estensioni...",
+    "noResults": "Nessuna estensione corrisponde alla tua ricerca",
+    "noExtensions": "Nessuna estensione disponibile",
+    "tryAgain": "Prova una query più breve, un'altra parola chiave o una corrispondenza parziale con parte del nome dell'estensione.",
+    "refreshCatalog": "Aggiorna il catalogo o riprova tra poco.",
+    "clearSearch": "Cancella ricerca",
+    "refreshButton": "Aggiorna catalogo",
+    "installed": "Installata",
+    "install": "Installa estensione",
+    "update": "Aggiorna estensione",
+    "uninstall": "Disinstalla estensione",
+    "openReadme": "Apri README",
+    "viewSource": "Visualizza sorgente",
+    "installing": "Installazione estensione",
+    "installedSuccess": "Estensione installata",
+    "installFailed": "Installazione non riuscita",
+    "tabs": {
+      "overview": "Panoramica",
+      "commands": "Comandi",
+      "screenshots": "Screenshot",
+      "team": "Team"
+    },
+    "sections": {
+      "description": "Descrizione",
+      "screenshots": "Screenshot",
+      "topCommands": "Comandi principali",
+      "categories": "Categorie",
+      "noDescription": "Nessuna descrizione fornita.",
+      "noScreenshots": "Nessuno screenshot dichiarato.",
+      "noScreenshotsAvailable": "Nessuno screenshot disponibile per questa estensione.",
+      "noCommands": "Nessun comando dichiarato.",
+      "moreCommands": "+{count} altri comandi",
+      "noContributors": "Nessun collaboratore dichiarato."
+    },
+    "actions": {
+      "title": "Azioni"
+    },
+    "errorBoundary": {
+      "title": "Si è verificato un errore durante il caricamento dello store delle estensioni.",
+      "retry": "Riprova"
+    }
+  },
+  "canvas": {
+    "searchPlaceholder": "Cerca canvas...",
+    "untitled": "Canvas senza titolo",
+    "modified": "Modificato",
+    "count": "{count} canvas{plural}",
+    "time": {
+      "justNow": "Proprio ora"
+    },
+    "actions": {
+      "new": "Nuovo canvas",
+      "open": "Apri canvas",
+      "rename": "Rinomina",
+      "duplicate": "Duplica",
+      "copyDeeplink": "Copia deeplink",
+      "exportJson": "Esporta come JSON",
+      "pin": "Fissa",
+      "unpin": "Rimuovi dai fissati",
+      "delete": "Elimina canvas"
+    },
+    "empty": {
+      "title": "Ancora nessun canvas",
+      "description": "Crea il tuo primo canvas per iniziare",
+      "noSearchResults": "Nessun canvas trovato",
+      "shortcutHint": "o premi ⌘N"
+    },
+    "preview": {
+      "empty": "Ancora nessuna anteprima — salva il canvas per generarla",
+      "selectPrompt": "Seleziona un canvas per l'anteprima"
+    },
+    "rename": {
+      "title": "Rinomina canvas",
+      "placeholder": "Nome del canvas..."
+    },
+    "delete": {
+      "title": "Eliminare \"{title}\"?",
+      "description": "Questa azione non può essere annullata."
+    }
+  },
+  "clipboard": {
+    "title": "Cronologia appunti",
+    "empty": "Gli appunti sono vuoti",
+    "clear": "Cancella cronologia",
+    "pin": "Fissa",
+    "unpin": "Rimuovi dai fissati",
+    "delete": "Elimina",
+    "copy": "Copia",
+    "paste": "Incolla",
+    "searchPlaceholder": "Cerca nella cronologia appunti..."
+  },
+  "snippets": {
+    "title": "Snippet",
+    "empty": "Ancora nessuno snippet",
+    "create": "Crea snippet",
+    "edit": "Modifica snippet",
+    "delete": "Elimina snippet",
+    "searchPlaceholder": "Cerca snippet...",
+    "name": "Nome",
+    "content": "Contenuto",
+    "keyword": "Parola chiave",
+    "save": "Salva snippet"
+  },
+  "quickLinks": {
+    "title": "Collegamenti rapidi",
+    "empty": "Ancora nessun collegamento rapido",
+    "create": "Crea collegamento rapido",
+    "edit": "Modifica collegamento rapido",
+    "delete": "Elimina collegamento rapido",
+    "searchPlaceholder": "Cerca collegamenti rapidi...",
+    "name": "Nome",
+    "url": "URL",
+    "icon": "Icona",
+    "save": "Salva collegamento rapido"
+  },
+  "fileSearch": {
+    "placeholder": "Cerca file...",
+    "noResults": "Nessun file trovato",
+    "searching": "Ricerca in corso...",
+    "filters": "Filtri",
+    "type": "Tipo",
+    "date": "Data",
+    "size": "Dimensione"
+  },
+  "windowManager": {
+    "title": "Gestione finestre",
+    "arrange": "Disponi finestre",
+    "resize": "Ridimensiona",
+    "move": "Sposta",
+    "focus": "Metti a fuoco",
+    "close": "Chiudi finestra",
+    "minimize": "Riduci a icona",
+    "maximize": "Ingrandisci",
+    "fullscreen": "Schermo intero",
+    "center": "Centra",
+    "leftHalf": "Metà sinistra",
+    "rightHalf": "Metà destra",
+    "topHalf": "Metà superiore",
+    "bottomHalf": "Metà inferiore",
+    "corners": "Angoli",
+    "displays": "Schermi",
+    "nextDisplay": "Schermo successivo",
+    "previousDisplay": "Schermo precedente"
+  },
+  "onboarding": {
+    "welcome": "Benvenuto in SuperCmd",
+    "description": "Il tuo launcher di produttività per macOS",
+    "getStarted": "Inizia",
+    "skip": "Salta",
+    "next": "Avanti",
+    "previous": "Indietro",
+    "finish": "Fine",
+    "features": {
+      "launcher": {
+        "title": "Launcher rapido",
+        "description": "Avvia app, esegui comandi e cerca file con un'unica scorciatoia."
+      },
+      "extensions": {
+        "title": "Estensioni",
+        "description": "Installa e usa estensioni compatibili con Raycast per potenziare il tuo flusso di lavoro."
+      },
+      "ai": {
+        "title": "Integrazione AI",
+        "description": "Chatta con l'AI, usa la dettatura vocale e lascia che l'AI ti aiuti a scrivere e modificare."
+      }
+    },
+    "whisper": {
+      "quick": {
+        "title": "Onboarding rapido di Whisper",
+        "subtitle": "Tieni premuto per registrare, rilascia per scrivere",
+        "instructions": {
+          "before": "Tieni premuto ",
+          "after": " mentre parli. Rilascialo per elaborare e scrivere nella posizione attuale del cursore."
+        },
+        "practiceTitle": "Paragrafo di esercizio",
+        "practicePlaceholder": "Oggi ho rivisto la roadmap e stabilito le priorità per i tre task principali di questa settimana. Per favore, prepara un breve riepilogo e condividilo con il team prima di pranzo.",
+        "practiceHint": "Esercitati in questo editor: tieni premuta la scorciatoia, pronuncia queste due frasi, rilascia e verifica il risultato.",
+        "footerHint": "Whisper resta in basso quando è attivo."
+      }
+    },
+    "voice": {
+      "steps": {
+        "welcome": "Benvenuto",
+        "coreFeatures": "Funzionalità principali",
+        "hotkeySetup": "Configurazione scorciatoia",
+        "permissions": "Autorizzazioni",
+        "dictationMode": "Modalità dettatura",
+        "readMode": "Modalità lettura",
+        "finalCheck": "Verifica finale"
+      },
+      "featureCards": {
+        "whisper": {
+          "title": "Whisper",
+          "description": "Tieni premuto per parlare e rilascia per scrivere."
+        },
+        "read": {
+          "title": "Read",
+          "description": "Leggi il testo selezionato con una voce naturale."
+        }
+      },
+      "permissions": {
+        "inputMonitoringTitle": "Monitoraggio input",
+        "inputMonitoringDescription": "Necessario per il rilevamento di Fn in modalità hold-to-talk e per altri monitoraggi globali dei tasti in modalità Whisper.",
+        "speechRecognitionTitle": "Riconoscimento vocale",
+        "speechRecognitionDescription": "Facoltativo. Serve solo se passi Whisper al fallback con il Riconoscimento vocale di Apple.",
+        "microphoneTitle": "Microfono",
+        "microphoneDescription": "Necessario per la dettatura di SuperCmd Whisper."
+      },
+      "permissionNotes": {
+        "blocked": "L'accesso a {target} è bloccato. Abilita SuperCmd in Impostazioni di sistema, poi torna qui.",
+        "promptFailed": "Impossibile mostrare la richiesta di autorizzazione. Apri Impostazioni di sistema -> Privacy e sicurezza, abilita SuperCmd, poi premi di nuovo su richiedi.",
+        "notShown": "La richiesta di autorizzazione non è apparsa. Apri Whisper una volta, poi premi di nuovo qui.",
+        "homeFolder": "Seleziona la tua cartella Home quando richiesto, poi abilita SuperCmd sotto File e cartelle se necessario.",
+        "inputMonitoring": "In Monitoraggio input, clicca su \"+\" in basso a sinistra e aggiungi SuperCmd dalla cartella Applicazioni."
+      },
+      "dictation": {
+        "title": "Modalità dettatura",
+        "howToTest": "Come provare",
+        "howToTestHint": "Tieni premuto il tasto, leggi l'esempio, rilascia per inserire.",
+        "holdKeyUpdated": "Tasto da tenere premuto aggiornato",
+        "language": "Lingua di dettatura",
+        "sampleTitle": "Messaggio di esempio",
+        "sampleHint": "Tieni premuto il tasto e leggi il messaggio qui sopra:",
+        "placeholder": "Il testo dettato appare qui...",
+        "footerHint": "SuperCmd Whisper utilizza per impostazione predefinita un modello ggml base locale. Il Riconoscimento vocale di Apple rimane disponibile come fallback nelle Impostazioni.",
+        "models": {
+          "downloadFailed": "Download del modello non riuscito. Riprova ora o vai in Impostazioni -> AI -> SuperCmd Whisper.",
+          "actions": {
+            "downloaded": "Scaricato",
+            "downloading": "Download in corso...",
+            "download": "Scarica modello"
+          },
+          "parakeet": {
+            "title": "Parakeet TDT v3",
+            "ready": "Download completato. La dettatura con Parakeet v3 è pronta.",
+            "downloadingLead": "Download dei modelli in corso, un momento.",
+            "downloading": "Download dei modelli CoreML di Parakeet v3",
+            "notDownloaded": "SuperCmd avvia il download dei modelli Parakeet v3 in questa fase, così la dettatura è pronta al primo utilizzo."
+          },
+          "whispercpp": {
+            "title": "SuperCmd Whisper",
+            "ready": "Download completato. La dettatura di SuperCmd Whisper è pronta.",
+            "downloadingLead": "Download del modello in corso, un momento.",
+            "downloading": "Download del modello ggml base da ~300 MB",
+            "notDownloaded": "SuperCmd avvia il download del modello di SuperCmd Whisper in questa fase, così la dettatura è pronta al primo utilizzo."
+          },
+          "cloud": {
+            "title": "Trascrizione cloud",
+            "description": "Utilizzo della trascrizione cloud. Non è necessario scaricare alcun modello."
+          }
+        },
+        "sampleText": "Era il migliore dei tempi, era il peggiore dei tempi, era l'età della saggezza, era l'età della follia."
+      },
+      "read": {
+        "badge": "Letteratura classica",
+        "readTime": "1 min di lettura",
+        "articleTitle": "Orgoglio e pregiudizio",
+        "instructions": {
+          "before": "Seleziona il testo qui sopra, poi premi",
+          "after": "per ascoltarlo letto ad alta voce."
+        },
+        "sampleText": "Le interfacce voice-first stanno vivendo il loro momento. Dopo anni in cui erano liquidate come trovate, una nuova ondata di strumenti sta rendendo davvero più veloce parlare che scrivere: trascrizione al passo, correzioni intelligenti e scorciatoie che si integrano nei flussi di lavoro esistenti senza interruzioni."
+      },
+      "final": {
+        "title": "Ultimo passo: avvia SuperCmd da ovunque",
+        "description": "Premi ora la tua scorciatoia globale per avviare SuperCmd da qualsiasi app.",
+        "nextStep": "Prossimo passo: configura le scorciatoie per Prompt AI e Memoria in Impostazioni SuperCmd -> Estensioni per iniziare a usare l'AI ovunque."
+      },
+      "setupDescription": "Configureremo in un unico passaggio le scorciatoie del launcher, le autorizzazioni di privacy e la modalità whisper.",
+      "setupSummary": "Dettatura Whisper e pratica della modalità Read",
+      "summary": {
+        "title": "Cosa viene configurato ora:",
+        "hotkey": "1. Scorciatoia del launcher",
+        "permissions": "2. Accessibilità, Monitoraggio input, Riconoscimento vocale, Microfono"
+      },
+      "setupTitle": "Un'unica superficie di comando per avviare, chiedere, dettare e leggere."
+    }
+  },
+  "whisper": {
+    "title": "SuperCmd Whisper",
+    "description": "Dettatura vocale resa semplice",
+    "start": "Inizia a parlare",
+    "stop": "Ferma dettatura",
+    "listening": "In ascolto...",
+    "processing": "Elaborazione in corso...",
+    "placeholder": "Parla ora...",
+    "close": "Chiudi whisper",
+    "coachmark": {
+      "holdToTalk": "Whisper si trova qui. Tieni premuto {shortcut} per parlare, rilascia per scrivere.",
+      "warmingUp": "Configurazione iniziale - Riscaldamento dei modelli in corso..."
+    },
+    "status": {
+      "idle": "Premi avvia per iniziare a parlare.",
+      "apiError": "Errore dell'API Whisper.",
+      "nativeFallback": "Il modello Whisper è il Riconoscimento vocale di Apple. Premi avvia per usare il fallback di Apple.",
+      "transcriptionFailedLocal": "Trascrizione di SuperCmd Whisper non riuscita.",
+      "transcriptionFailed": "Trascrizione Whisper non riuscita.",
+      "microphonePermissionRequired": "È richiesta l'autorizzazione per il microfono.",
+      "microphonePermissionCheckFailed": "Verifica dell'autorizzazione del microfono non riuscita.",
+      "microphoneAccessDenied": "Accesso al microfono negato.",
+      "startingMicrophone": "Avvio del microfono...",
+      "loadingModels": "Caricamento dei modelli Whisper...",
+      "nativeRecognizerStartFailed": "Avvio del riconoscimento vocale non riuscito.",
+      "finishing": "Completamento della trascrizione...",
+      "listeningReleaseToProcess": "In ascolto. Rilascia per elaborare.",
+      "listeningPressAgainToFinish": "In ascolto. Premi di nuovo per terminare.",
+      "recordingFailed": "Registrazione non riuscita.",
+      "speechRecognitionError": "Errore del riconoscimento vocale."
+    },
+    "errors": {
+      "typeIntoActiveApp": "Impossibile scrivere nell'app attiva.",
+      "enableMicrophonePermission": "Abilita SuperCmd in Impostazioni di sistema -> Privacy e sicurezza -> Microfono, poi riprova.",
+      "allowMicrophonePermission": "Consenti l'autorizzazione al microfono per usare SuperCmd Whisper.",
+      "microphoneUnavailable": "Impossibile accedere al microfono. Verifica Impostazioni di sistema -> Privacy e sicurezza -> Microfono.",
+      "nativeRecognizerStartFailed": "Impossibile avviare il riconoscimento vocale nativo.",
+      "liveTypingRetry": "La scrittura in tempo reale è rimasta indietro. Riprova.",
+      "modelNotReady": "Il modello si sta ancora riscaldando. Riprova tra un momento.",
+      "recordingFailed": "Impossibile avviare la registrazione audio."
+    }
+  },
+  "read": {
+    "title": "SuperCmd Read",
+    "description": "Sintesi vocale per qualsiasi testo selezionato",
+    "start": "Avvia lettura",
+    "stop": "Ferma lettura",
+    "reading": "Lettura in corso...",
+    "noText": "Nessun testo selezionato"
+  },
+  "camera": {
+    "title": "Fotocamera",
+    "capture": "Scatta",
+    "flip": "Capovolgi fotocamera",
+    "mirror": "Specchia",
+    "settings": "Impostazioni fotocamera"
+  },
+  "schedule": {
+    "title": "Titolo",
+    "newEvent": "Nuovo evento",
+    "editEvent": "Modifica evento",
+    "deleteEvent": "Elimina evento",
+    "date": "Data",
+    "time": "Ora",
+    "duration": "Durata",
+    "reminder": "Promemoria",
+    "save": "Salva evento"
+  }
+}

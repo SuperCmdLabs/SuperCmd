@@ -107,7 +107,8 @@
         "fr": "French",
         "de": "German",
         "es": "Spanish",
-        "ru": "Russian"
+        "ru": "Russian",
+        "it": "Italian"
       },
       "fontSize": {
         "title": "Font Size",
