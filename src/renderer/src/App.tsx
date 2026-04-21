@@ -447,13 +447,21 @@ const App: React.FC = () => {
   }, [setBackgroundNoViewRuns]);
 
   const onExitAiMode = useCallback(() => {
+    if (launcherViewMode === 'compact') {
+      setSearchQuery('');
+      setIsCompactCollapsed(true);
+      window.electron.resizeLauncherWindow(false);
+    }
     setTimeout(() => inputRef.current?.focus(), 50);
-  }, []);
+  }, [launcherViewMode]);
 
   const {
-    aiResponse, aiStreaming, aiAvailable, aiQuery, setAiQuery,
+    messages: aiMessages, aiStreaming, aiAvailable, aiQuery, setAiQuery,
     aiResponseRef, aiInputRef, setAiAvailable,
-    startAiChat, submitAiQuery, exitAiMode,
+    conversations: aiConversations, activeConversationId: aiActiveConversationId,
+    startAiChat, sendMessage: aiSendMessage, stopStreaming: aiStopStreaming,
+    newChat: aiNewChat, selectConversation: aiSelectConversation,
+    deleteConversation: aiDeleteConversation, exitAiMode,
   } = useAiChat({
     setAiMode,
     onExitAiMode,
@@ -2243,8 +2251,12 @@ const App: React.FC = () => {
               return;
             }
           }
-          if (isSearchInputTarget && searchQuery.trim() && aiAvailable && !shouldHideAskAi) {
+          if (isSearchInputTarget && aiAvailable && !shouldHideAskAi) {
             e.preventDefault();
+            if (launcherViewMode === 'compact') {
+              setIsCompactCollapsed(false);
+              window.electron.resizeLauncherWindow(true);
+            }
             startAiChat(searchQuery);
           }
           break;
@@ -3766,11 +3778,17 @@ const App: React.FC = () => {
         alwaysMountedRunners={alwaysMountedRunners}
         aiQuery={aiQuery}
         setAiQuery={setAiQuery}
-        aiResponse={aiResponse}
+        messages={aiMessages}
         aiStreaming={aiStreaming}
         aiInputRef={aiInputRef as React.RefObject<HTMLInputElement>}
         aiResponseRef={aiResponseRef as React.RefObject<HTMLDivElement>}
-        submitAiQuery={submitAiQuery}
+        conversations={aiConversations}
+        activeConversationId={aiActiveConversationId}
+        sendMessage={aiSendMessage}
+        stopStreaming={aiStopStreaming}
+        newChat={aiNewChat}
+        selectConversation={aiSelectConversation}
+        deleteConversation={aiDeleteConversation}
         exitAiMode={exitAiMode}
       />
     );

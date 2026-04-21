@@ -783,6 +783,7 @@ export interface ElectronAPI {
 
   // AI
   aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }) => Promise<void>;
+  aiChat: (requestId: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, options?: { model?: string; creativity?: number; systemPrompt?: string }) => Promise<void>;
   aiCancel: (requestId: string) => Promise<void>;
   aiIsAvailable: () => Promise<boolean>;
   onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => (() => void);

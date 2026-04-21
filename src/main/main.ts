@@ -17,7 +17,7 @@ import { fork, type ChildProcess } from 'child_process';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState } from './settings-store';
 import type { AppSettings } from './settings-store';
-import { streamAI, isAIAvailable, transcribeAudio } from './ai-provider';
+import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
 import * as soulverCalculator from './soulver-calculator';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
 import {
@@ -14188,6 +14188,64 @@ if let tiff = image?.tiffRepresentation {
       activeAIRequests.delete(requestId);
     }
   });
+
+  ipcMain.handle(
+    'ai-chat',
+    async (
+      event: any,
+      requestId: string,
+      messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+      options?: { model?: string; creativity?: number; systemPrompt?: string }
+    ) => {
+      const s = loadSettings();
+      if (s.ai?.llmEnabled === false) {
+        event.sender.send('ai-stream-error', { requestId, error: 'LLM is disabled in Settings → AI.' });
+        return;
+      }
+      if (!isAIAvailable(s.ai)) {
+        event.sender.send('ai-stream-error', { requestId, error: 'AI is not configured. Please set up an API key in Settings → AI.' });
+        return;
+      }
+
+      const controller = new AbortController();
+      activeAIRequests.set(requestId, controller);
+
+      try {
+        const latestUser = [...(messages || [])].reverse().find((m) => m.role === 'user');
+        const memoryContextSystemPrompt = await buildMemoryContextSystemPrompt(
+          s,
+          String(latestUser?.content || ''),
+          { limit: 6 }
+        );
+        const mergedSystemPrompt = [options?.systemPrompt, memoryContextSystemPrompt]
+          .filter((part) => typeof part === 'string' && part.trim().length > 0)
+          .join('\n\n');
+
+        const gen = streamAIChat(s.ai, {
+          messages: (messages || []).map((m) => ({ role: m.role, content: String(m.content || '') })),
+          model: options?.model,
+          creativity: options?.creativity,
+          systemPrompt: mergedSystemPrompt || undefined,
+          signal: controller.signal,
+        });
+
+        for await (const chunk of gen) {
+          if (controller.signal.aborted) break;
+          event.sender.send('ai-stream-chunk', { requestId, chunk });
+        }
+
+        if (!controller.signal.aborted) {
+          event.sender.send('ai-stream-done', { requestId });
+        }
+      } catch (e: any) {
+        if (!controller.signal.aborted) {
+          event.sender.send('ai-stream-error', { requestId, error: e?.message || 'AI request failed' });
+        }
+      } finally {
+        activeAIRequests.delete(requestId);
+      }
+    }
+  );
 
   ipcMain.handle('ai-is-available', () => {
     const s = loadSettings();

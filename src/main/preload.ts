@@ -782,6 +782,8 @@ const electronAPI = {
   // ─── AI ────────────────────────────────────────────────────────
   aiAsk: (requestId: string, prompt: string, options?: { model?: string; creativity?: number; systemPrompt?: string }): Promise<void> =>
     ipcRenderer.invoke('ai-ask', requestId, prompt, options),
+  aiChat: (requestId: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, options?: { model?: string; creativity?: number; systemPrompt?: string }): Promise<void> =>
+    ipcRenderer.invoke('ai-chat', requestId, messages, options),
   aiCancel: (requestId: string): Promise<void> =>
     ipcRenderer.invoke('ai-cancel', requestId),
   aiIsAvailable: (): Promise<boolean> =>
