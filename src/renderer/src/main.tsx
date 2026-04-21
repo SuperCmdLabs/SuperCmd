@@ -1,38 +1,35 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
-import SettingsApp from './SettingsApp';
-import ExtensionStoreApp from './ExtensionStoreApp';
-import PromptApp from './PromptApp';
-import NotesApp from './NotesApp';
-import CanvasApp from './CanvasApp';
 import { I18nProvider } from './i18n';
 import '../styles/index.css';
 import { initializeTheme } from './utils/theme';
 
-// Hash-based routing: launcher uses #/ , settings uses #/settings
+// Each BrowserWindow only needs one root app. Static imports of every app
+// here forced a single ~8MB bundle into every window (e.g. settings loaded
+// the full launcher + raycast-api shim), inflating renderer memory to ~250MB.
+// Dynamic import() lets Vite code-split per-app so each window parses only
+// the chunk it actually uses.
 const hash = window.location.hash;
-const isSettings = hash.includes('/settings');
-const isExtensionStore = hash.includes('/extension-store');
-const isPrompt = hash.includes('/prompt');
-const isNotes = hash.includes('/notes');
-const isCanvas = hash.includes('/canvas');
+
+function loadRoot(): Promise<React.ComponentType> {
+  if (hash.includes('/canvas')) return import('./CanvasApp').then((m) => m.default);
+  if (hash.includes('/notes')) return import('./NotesApp').then((m) => m.default);
+  if (hash.includes('/prompt')) return import('./PromptApp').then((m) => m.default);
+  if (hash.includes('/extension-store')) return import('./ExtensionStoreApp').then((m) => m.default);
+  if (hash.includes('/settings')) return import('./SettingsApp').then((m) => m.default);
+  return import('./App').then((m) => m.default);
+}
 
 initializeTheme();
 
-function RootApp() {
-  if (isCanvas) return <CanvasApp />;
-  if (isNotes) return <NotesApp />;
-  if (isPrompt) return <PromptApp />;
-  if (isExtensionStore) return <ExtensionStoreApp />;
-  if (isSettings) return <SettingsApp />;
-  return <App />;
-}
+const root = ReactDOM.createRoot(document.getElementById('root')!);
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <I18nProvider>
-      <RootApp />
-    </I18nProvider>
-  </React.StrictMode>
-);
+void loadRoot().then((Root) => {
+  root.render(
+    <React.StrictMode>
+      <I18nProvider>
+        <Root />
+      </I18nProvider>
+    </React.StrictMode>
+  );
+});
