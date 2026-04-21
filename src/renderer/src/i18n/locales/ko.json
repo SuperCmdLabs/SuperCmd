@@ -582,6 +582,19 @@
     "advanced": {
       "title": "고급",
       "loading": "고급 설정을 불러오는 중...",
+      "clipboardRetention": {
+        "title": "클립보드 기록 보존 기간",
+        "description": "선택한 기간보다 오래된 클립보드 항목을 자동으로 삭제합니다. 고정된 항목은 항상 유지됩니다.",
+        "option": {
+          "1day": "1일",
+          "7days": "7일",
+          "1month": "1개월",
+          "3months": "3개월",
+          "6months": "6개월",
+          "1year": "1년",
+          "never": "삭제 안 함"
+        }
+      },
       "debugMode": {
         "title": "디버그 모드",
         "description": "확장 프로그램을 로드하거나 빌드하지 못한 경우 자세한 로그를 표시합니다.",

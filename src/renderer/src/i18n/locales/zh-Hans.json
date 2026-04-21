@@ -582,6 +582,19 @@
     "advanced": {
       "title": "高级",
       "loading": "正在加载高级设置...",
+      "clipboardRetention": {
+        "title": "剪贴板历史保留期限",
+        "description": "自动删除超过所选时长的剪贴板条目。已固定的条目始终保留。",
+        "option": {
+          "1day": "1 天",
+          "7days": "7 天",
+          "1month": "1 个月",
+          "3months": "3 个月",
+          "6months": "6 个月",
+          "1year": "1 年",
+          "never": "永不"
+        }
+      },
       "debugMode": {
         "title": "调试模式",
         "description": "当扩展加载或构建失败时显示详细日志。",

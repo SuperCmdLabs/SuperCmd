@@ -623,6 +623,41 @@ export function getClipboardHistory(): ClipboardItem[] {
   return clipboardHistory;
 }
 
+/**
+ * Drop non-pinned entries whose timestamp is older than `retentionDays`.
+ * `null` / undefined / non-positive = no-op (keep forever).
+ * Returns the number of entries removed.
+ */
+export function pruneClipboardHistoryOlderThan(retentionDays: number | null | undefined): number {
+  if (retentionDays == null) return 0;
+  const days = Number(retentionDays);
+  if (!Number.isFinite(days) || days <= 0) return 0;
+
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const before = clipboardHistory.length;
+  const kept: ClipboardItem[] = [];
+  for (const item of clipboardHistory) {
+    if (item.pinned) {
+      kept.push(item);
+      continue;
+    }
+    if (typeof item.timestamp !== 'number' || item.timestamp >= cutoff) {
+      kept.push(item);
+      continue;
+    }
+    if (item.type === 'image' && fs.existsSync(item.content)) {
+      try { fs.unlinkSync(item.content); } catch {}
+    }
+  }
+  const removed = before - kept.length;
+  if (removed > 0) {
+    clipboardHistory = kept;
+    saveHistory();
+    console.log(`Pruned ${removed} clipboard item${removed === 1 ? '' : 's'} older than ${days} day${days === 1 ? '' : 's'}`);
+  }
+  return removed;
+}
+
 export function clearClipboardHistory(): void {
   // Delete all image files
   for (const item of clipboardHistory) {

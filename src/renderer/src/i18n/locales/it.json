@@ -582,6 +582,19 @@
     "advanced": {
       "title": "Avanzate",
       "loading": "Caricamento impostazioni avanzate...",
+      "clipboardRetention": {
+        "title": "Conservazione cronologia appunti",
+        "description": "Elimina automaticamente le voci degli appunti più vecchie della durata selezionata. Le voci fissate vengono sempre conservate.",
+        "option": {
+          "1day": "1 giorno",
+          "7days": "7 giorni",
+          "1month": "1 mese",
+          "3months": "3 mesi",
+          "6months": "6 mesi",
+          "1year": "1 anno",
+          "never": "Mai"
+        }
+      },
       "debugMode": {
         "title": "Modalità debug",
         "description": "Mostra log dettagliati quando le estensioni non riescono a caricarsi o a compilarsi.",

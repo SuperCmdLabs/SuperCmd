@@ -283,7 +283,7 @@ export interface AppSettings {
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
-  appLanguage: 'system' | 'en' | 'zh-Hans' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'ru';
+  appLanguage: 'system' | 'en' | 'zh-Hans' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'ru' | 'it';
   fontSize: 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
   uiStyle: 'default' | 'glassy';
   baseColor: string;
@@ -295,6 +295,7 @@ export interface AppSettings {
   hyperKey: HyperKeySettings;
   launcherViewMode: 'expanded' | 'compact';
   navigationStyle: AppNavigationStyle;
+  clipboardHistoryRetentionDays: number | null;
 }
 
 export interface CatalogEntry {

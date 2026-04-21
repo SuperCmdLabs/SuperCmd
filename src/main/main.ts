@@ -52,6 +52,7 @@ import {
   searchClipboardHistory,
   setClipboardMonitorEnabled,
   togglePinClipboardItem,
+  pruneClipboardHistoryOlderThan,
 } from './clipboard-manager';
 import {
   initSnippetStore,
@@ -11336,7 +11337,17 @@ app.whenReady().then(async () => {
   // which should not appear while the user is on the onboarding screen.
   if (settings.hasSeenOnboarding) {
     startClipboardMonitor();
+    pruneClipboardHistoryOlderThan(settings.clipboardHistoryRetentionDays);
   }
+
+  // Daily re-prune so long-running sessions also drop expired clipboard items.
+  setInterval(() => {
+    try {
+      pruneClipboardHistoryOlderThan(loadSettings().clipboardHistoryRetentionDays);
+    } catch (e) {
+      console.error('Clipboard prune tick failed:', e);
+    }
+  }, 24 * 60 * 60 * 1000);
 
   // Initialize snippet store
   initSnippetStore();
@@ -11842,6 +11853,9 @@ app.whenReady().then(async () => {
       }
       if (patch.hyperKey !== undefined) {
         syncHyperKeyMonitor();
+      }
+      if (patch.clipboardHistoryRetentionDays !== undefined) {
+        pruneClipboardHistoryOlderThan(result.clipboardHistoryRetentionDays);
       }
       return result;
     }

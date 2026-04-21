@@ -582,6 +582,19 @@
     "advanced": {
       "title": "詳細",
       "loading": "詳細設定を読み込み中...",
+      "clipboardRetention": {
+        "title": "クリップボード履歴の保持期間",
+        "description": "選択した期間より古いクリップボードの項目を自動的に削除します。固定された項目は常に保持されます。",
+        "option": {
+          "1day": "1日",
+          "7days": "7日",
+          "1month": "1か月",
+          "3months": "3か月",
+          "6months": "6か月",
+          "1year": "1年",
+          "never": "削除しない"
+        }
+      },
       "debugMode": {
         "title": "デバッグモード",
         "description": "拡張機能の読み込みやビルドに失敗したときに詳細なログを表示します。",

@@ -582,6 +582,19 @@
     "advanced": {
       "title": "進階",
       "loading": "正在載入進階設定...",
+      "clipboardRetention": {
+        "title": "剪貼簿歷史保留期限",
+        "description": "自動刪除超過所選時長的剪貼簿項目。已釘選的項目會一直保留。",
+        "option": {
+          "1day": "1 天",
+          "7days": "7 天",
+          "1month": "1 個月",
+          "3months": "3 個月",
+          "6months": "6 個月",
+          "1year": "1 年",
+          "never": "永不"
+        }
+      },
       "debugMode": {
         "title": "偵錯模式",
         "description": "當擴充功能載入或建置失敗時顯示詳細記錄。",

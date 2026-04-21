@@ -582,6 +582,19 @@
     "advanced": {
       "title": "Advanced",
       "loading": "Loading advanced settings...",
+      "clipboardRetention": {
+        "title": "Clipboard History Retention",
+        "description": "Auto-delete clipboard entries older than the selected duration. Pinned entries are always kept.",
+        "option": {
+          "1day": "1 day",
+          "7days": "7 days",
+          "1month": "1 month",
+          "3months": "3 months",
+          "6months": "6 months",
+          "1year": "1 year",
+          "never": "Never"
+        }
+      },
       "debugMode": {
         "title": "Debug Mode",
         "description": "Show detailed logs when extensions fail to load or build.",
