@@ -97,6 +97,19 @@ const MAX_LAUNCHER_FILE_RESULT_ICONS = MAX_LAUNCHER_FILE_RESULTS;
 const MIN_LAUNCHER_FILE_QUERY_LENGTH = 2;
 const MAX_INLINE_EXTENSION_ARGUMENTS = 3;
 const MAX_INLINE_QUICK_LINK_ARGUMENTS = 3;
+const DIRECT_LAUNCH_EXPANSION_GUARD_MS = 700;
+const DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS = new Set([
+  'system-clipboard-manager',
+  'system-search-snippets',
+  'system-create-snippet',
+  'system-search-notes',
+  'system-search-canvases',
+  'system-search-quicklinks',
+  'system-create-quicklink',
+  'system-search-files',
+  'system-my-schedule',
+  'system-camera',
+]);
 
 function asTildePath(filePath: string, homeDir: string): string {
   if (!homeDir) return filePath;
@@ -490,6 +503,7 @@ const App: React.FC = () => {
   const quickLinkDynamicInputRef = useRef<HTMLInputElement>(null);
   const windowPresetCommandQueueRef = useRef<Promise<void>>(Promise.resolve());
   const lastWindowHiddenAtRef = useRef<number>(0);
+  const directLaunchExpansionGuardUntilRef = useRef<number>(0);
   // Holds a search query to restore after the window-shown reset, set by the
   // hotkey no-view path when it needs to open the launcher with a pre-typed query.
   const pendingWindowShownQueryRef = useRef<string | null>(null);
@@ -503,6 +517,23 @@ const App: React.FC = () => {
   extensionViewRef.current = extensionView;
   pinnedCommandsRef.current = pinnedCommands;
   pinnedFilesRef.current = pinnedFiles;
+
+  const expandLauncherForDirectLaunch = useCallback(() => {
+    directLaunchExpansionGuardUntilRef.current = Date.now() + DIRECT_LAUNCH_EXPANSION_GUARD_MS;
+    setIsCompactCollapsed(false);
+    void window.electron.resizeLauncherWindow(true);
+
+    // Extension/script direct launches are dispatched with executeJavaScript(),
+    // which can beat the async window-shown IPC reset. Retry briefly so the
+    // direct launch remains expanded regardless of delivery order.
+    [0, 80, 180].forEach((delayMs) => {
+      window.setTimeout(() => {
+        if (Date.now() > directLaunchExpansionGuardUntilRef.current) return;
+        setIsCompactCollapsed(false);
+        void window.electron.resizeLauncherWindow(true);
+      }, delayMs);
+    });
+  }, []);
 
 
   const cursorPromptPortalTarget = useDetachedPortalWindow(showCursorPrompt, {
@@ -767,11 +798,6 @@ const App: React.FC = () => {
         return;
       }
       if (routedSystemCommandId) {
-        // Launching directly into a command/extension via hotkey should bypass
-        // compact mode — expand the launcher so the command UI is visible
-        // instead of the compact search-only chrome.
-        setIsCompactCollapsed(false);
-        window.electron.resizeLauncherWindow(true);
         whisperSessionRef.current = false;
         setShowCursorPrompt(false);
         setShowWhisperHint(false);
@@ -787,6 +813,9 @@ const App: React.FC = () => {
         setSearchQuery('');
         setSelectedIndex(0);
         exitAiMode();
+        if (!isOnboardingMode) {
+          expandLauncherForDirectLaunch();
+        }
         if (routedSystemCommandId === 'system-clipboard-manager') {
           setShowSnippetManager(null);
           setShowFileSearch(false);
@@ -869,6 +898,20 @@ const App: React.FC = () => {
         }
       }
 
+      if (Date.now() <= directLaunchExpansionGuardUntilRef.current) {
+        whisperSessionRef.current = false;
+        setShowCursorPrompt(false);
+        setShowWhisperHint(false);
+        setMemoryFeedback(null);
+        setMemoryActionLoading(false);
+        setSelectedTextSnapshot(String(payload?.selectedTextSnapshot || '').trim());
+        setSearchQuery('');
+        setSelectedIndex(0);
+        exitAiMode();
+        expandLauncherForDirectLaunch();
+        return;
+      }
+
       whisperSessionRef.current = false;
       setShowCursorPrompt(false);
       setShowWhisperHint(false);
@@ -915,12 +958,12 @@ const App: React.FC = () => {
       // command with missing args), expand out of compact so results are
       // immediately visible.
       if (pendingQuery) {
-        setIsCompactCollapsed(false);
-        window.electron.resizeLauncherWindow(true);
+        exitAiMode();
+        expandLauncherForDirectLaunch();
       } else {
         setIsCompactCollapsed(true);
+        exitAiMode();
       }
-      exitAiMode();
       setShowClipboardManager(false);
       setShowSnippetManager(null);
       setShowQuickLinkManager(null);
@@ -933,7 +976,7 @@ const App: React.FC = () => {
       inputRef.current?.focus();
     });
     return cleanupWindowShown;
-  }, [fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openSchedule, openCamera, openOnboarding, setShowCamera, setShowSchedule, setShowWindowManager]);
+  }, [expandLauncherForDirectLaunch, fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openSchedule, openCamera, openOnboarding, setShowCamera, setShowSchedule, setShowWindowManager]);
 
   useEffect(() => {
     const cleanupSelectionSnapshotUpdated = window.electron.onSelectionSnapshotUpdated((payload) => {
@@ -1051,9 +1094,7 @@ const App: React.FC = () => {
       }
 
       if (shouldOpenCommandSetup(hydrated)) {
-        // Launching into a setup form via hotkey must bypass compact mode.
-        setIsCompactCollapsed(false);
-        window.electron.resizeLauncherWindow(true);
+        expandLauncherForDirectLaunch();
         setShowFileSearch(false);
         setExtensionPreferenceSetup({
           bundle: hydrated,
@@ -1063,11 +1104,7 @@ const App: React.FC = () => {
       } else if (hydrated.mode === 'no-view') {
         queueNoViewBundleRun(hydrated, 'userInitiated');
       } else {
-        // Launching directly into a view/form command via hotkey must bypass
-        // compact mode so the extension UI is visible instead of the compact
-        // search-only chrome.
-        setIsCompactCollapsed(false);
-        window.electron.resizeLauncherWindow(true);
+        expandLauncherForDirectLaunch();
         setShowFileSearch(false);
         setExtensionView(hydrated);
       }
@@ -1075,7 +1112,7 @@ const App: React.FC = () => {
 
     window.addEventListener('sc-launch-extension-bundle', onLaunchBundle as EventListener);
     return () => window.removeEventListener('sc-launch-extension-bundle', onLaunchBundle as EventListener);
-  }, [queueNoViewBundleRun, upsertMenuBarExtension]);
+  }, [expandLauncherForDirectLaunch, queueNoViewBundleRun, upsertMenuBarExtension]);
 
   useEffect(() => {
     const onRunScript = (event: Event) => {
@@ -1101,6 +1138,7 @@ const App: React.FC = () => {
         });
         if (!result) return;
         if (result.needsArguments) {
+          expandLauncherForDirectLaunch();
           setShowFileSearch(false);
           setScriptCommandSetup({
             command,
@@ -1109,6 +1147,7 @@ const App: React.FC = () => {
           return;
         }
         if (result.mode === 'fullOutput') {
+          expandLauncherForDirectLaunch();
           setShowFileSearch(false);
           setScriptCommandOutput({
             command,
@@ -1124,7 +1163,7 @@ const App: React.FC = () => {
     };
     window.addEventListener('sc-run-script-command', onRunScript as EventListener);
     return () => window.removeEventListener('sc-run-script-command', onRunScript as EventListener);
-  }, [commands, fetchCommands]);
+  }, [commands, expandLauncherForDirectLaunch, fetchCommands]);
 
   useBackgroundRefresh({ commands, fetchCommands });
 
@@ -2355,6 +2394,9 @@ const App: React.FC = () => {
     commandId: string,
     options?: { fromMainEvent?: boolean }
   ): Promise<boolean> => {
+    if (DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS.has(commandId)) {
+      expandLauncherForDirectLaunch();
+    }
     if (commandId === 'system-supercmd-whisper' || commandId === 'system-supercmd-speak') {
       try {
         const settings = await window.electron.getSettings();
@@ -2555,7 +2597,7 @@ const App: React.FC = () => {
       return true;
     }
     return false;
-  }, [memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager]);
+  }, [expandLauncherForDirectLaunch, memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager]);
 
   useEffect(() => {
     const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {

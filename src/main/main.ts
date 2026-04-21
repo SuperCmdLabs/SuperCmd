@@ -3627,6 +3627,7 @@ function isWindowShownRoutedSystemCommand(commandId: string): boolean {
     commandId === 'system-search-snippets' ||
     commandId === 'system-create-snippet' ||
     commandId === 'system-search-notes' ||
+    commandId === 'system-search-canvases' ||
     commandId === 'system-search-quicklinks' ||
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
