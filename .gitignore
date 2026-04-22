@@ -7,4 +7,4 @@ out/
 
 
 extensions*
-extensions/*
+extensions/*.worktrees/
