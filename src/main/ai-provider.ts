@@ -112,6 +112,17 @@ export function isAIAvailable(config: AISettings): boolean {
   return hasProviderCredentials(config.provider, config);
 }
 
+// ─── Model capabilities ───────────────────────────────────────────────
+
+// OpenAI reasoning models (o1, o3 families) reject `temperature` outright.
+// Match the model ID itself — not our internal key — since users can also
+// reach these via openai-compatible endpoints with arbitrary keys.
+function modelSupportsTemperature(modelId: string): boolean {
+  // o1 and o3 families reject temperature outright.
+  // Covers: o1, o1-mini, o1-preview, o3, o3-mini, o3-turbo, future variants.
+  return !/^o[13]/i.test(modelId.trim());
+}
+
 // ─── Streaming implementation ────────────────────────────────────────
 
 export async function* streamAI(
@@ -162,7 +173,7 @@ async function* streamOpenAI(
   const body = JSON.stringify({
     model,
     messages,
-    temperature,
+    ...(modelSupportsTemperature(model) ? { temperature } : {}),
     stream: true,
   });
 
@@ -208,7 +219,7 @@ async function* streamOpenAICompatible(
   const body = JSON.stringify({
     model,
     messages,
-    temperature,
+    ...(modelSupportsTemperature(model) ? { temperature } : {}),
     stream: true,
   });
 
