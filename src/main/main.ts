@@ -2716,7 +2716,10 @@ function createWindow(): void {
         focusable: detachedPopupName !== DETACHED_WHISPER_WINDOW_NAME,
         skipTaskbar: true,
         alwaysOnTop: true,
-        show: true,
+        // Whisper window must not auto-show via window.open() — showing it normally activates
+        // the parent app, which causes any visible SuperCmd windows (e.g. settings) to flash.
+        // We call showInactive() in did-create-window instead.
+        show: detachedPopupName !== DETACHED_WHISPER_WINDOW_NAME,
         acceptFirstMouse: true,
         webPreferences: {
           nodeIntegration: false,
@@ -2752,6 +2755,9 @@ function createWindow(): void {
       try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
       // Ignore mouse events by default so clicks pass through; widget will re-enable on hover
       try { childWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+      // showInactive() uses NSWindow.orderFrontRegardless() — shows the window without
+      // activating the parent app, so the settings window never gets a spurious flash.
+      try { childWindow.showInactive(); } catch {}
       childWindow.on('closed', () => {
         if (whisperChildWindow === childWindow) whisperChildWindow = null;
       });
