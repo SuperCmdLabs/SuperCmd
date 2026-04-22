@@ -9,6 +9,52 @@ import { isEmojiOrSymbol, renderTintedAssetIcon, resolveIconSrc, resolveTintColo
 
 const fileIconCache = new Map<string, string | null>();
 
+/** Pre-populate the file icon cache (e.g. from getApplications() results) to avoid IPC round-trips. */
+export function preloadFileIconCache(entries: Array<{ path: string; iconDataUrl?: string | null }>): void {
+  for (const { path, iconDataUrl } of entries) {
+    if (path && iconDataUrl && !fileIconCache.has(path)) {
+      fileIconCache.set(path, iconDataUrl);
+    }
+  }
+}
+
+// Limit concurrent file-icon IPC requests to avoid flooding the main process
+// when extensions like App Grid load hundreds of icons simultaneously.
+const FILE_ICON_MAX_CONCURRENT = 20;
+let fileIconActiveRequests = 0;
+const fileIconQueue: Array<() => void> = [];
+
+function drainFileIconQueue(): void {
+  while (fileIconQueue.length > 0 && fileIconActiveRequests < FILE_ICON_MAX_CONCURRENT) {
+    const next = fileIconQueue.shift()!;
+    fileIconActiveRequests++;
+    next();
+  }
+}
+
+function fetchFileIcon(filePath: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const run = () => {
+      // 128px: uses Electron 'large' native icon quality (≥64px threshold),
+      // 4× smaller data URL than 256px, handles retina adequately.
+      (window as any).electron?.getFileIconDataUrl?.(filePath, 128)
+        .then((result: string | null) => resolve(result))
+        .catch(() => resolve(null))
+        .finally(() => {
+          fileIconActiveRequests--;
+          drainFileIconQueue();
+        });
+    };
+
+    if (fileIconActiveRequests < FILE_ICON_MAX_CONCURRENT) {
+      fileIconActiveRequests++;
+      run();
+    } else {
+      fileIconQueue.push(run);
+    }
+  });
+}
+
 function FileIcon({ filePath, className }: { filePath: string; className: string }) {
   const [src, setSrc] = useState<string | null>(() => fileIconCache.get(filePath) ?? null);
 
@@ -20,16 +66,11 @@ function FileIcon({ filePath, className }: { filePath: string; className: string
       return;
     }
 
-    (window as any).electron?.getFileIconDataUrl?.(filePath, 20)
-      .then((iconSrc: string | null) => {
+    fetchFileIcon(filePath)
+      .then((iconSrc) => {
         if (cancelled) return;
         fileIconCache.set(filePath, iconSrc || null);
         setSrc(iconSrc || null);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        fileIconCache.set(filePath, null);
-        setSrc(null);
       });
 
     return () => {
@@ -39,15 +80,9 @@ function FileIcon({ filePath, className }: { filePath: string; className: string
 
   if (src) return <img src={src} className={className + ' rounded'} alt="" />;
 
-  let isDirectory = false;
-  try {
-    const stat = (window as any).electron?.statSync?.(filePath);
-    isDirectory = Boolean(stat?.exists && stat?.isDirectory);
-  } catch {
-    // best-effort
-  }
-
-  return <span className="text-center" style={{ fontSize: '0.875rem' }}>{isDirectory ? '📁' : '📄'}</span>;
+  // No synchronous statSync call — avoids 200+ blocking IPC round-trips when extensions
+  // like App Grid render many file icons simultaneously. Show a neutral placeholder instead.
+  return <span className="text-center opacity-40" style={{ fontSize: '0.875rem' }}>◻</span>;
 }
 
 export const Icon: Record<string, string> = new Proxy({} as Record<string, string>, {

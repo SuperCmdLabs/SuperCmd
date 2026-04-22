@@ -32,7 +32,7 @@ import React, {
   createContext,
   useContext,
 } from 'react';
-import { configureIconRuntime, Icon, Color, Image, Keyboard, renderIcon, resolveIconSrc } from './icon-runtime';
+import { configureIconRuntime, Icon, Color, Image, Keyboard, renderIcon, resolveIconSrc, preloadFileIconCache } from './icon-runtime';
 import { addHexAlpha, isEmojiOrSymbol, normalizeScAssetUrl, resolveReadableTintColor, resolveTintColor, toScAssetUrl } from './icon-runtime-assets';
 import { configureOAuthRuntime, OAuth, OAuthService, withAccessToken, getAccessToken, resetAccessToken } from './oauth';
 import {
@@ -1914,7 +1914,11 @@ export async function getApplications(path?: string): Promise<Application[]> {
   try {
     const electron = (window as any).electron;
     if (electron?.getApplications) {
-      return await electron.getApplications(path);
+      const apps = await electron.getApplications(path);
+      // Pre-populate the file icon cache so Grid.Item/List.Item fileIcon rendering
+      // never needs to make IPC round-trips for app icons we already have.
+      preloadFileIconCache(apps as Array<{ path: string; iconDataUrl?: string }>);
+      return apps;
     }
   } catch (e) {
     console.error('getApplications error:', e);
