@@ -8694,38 +8694,33 @@ function writeEmojiTriggerCmd(cmd: Record<string, unknown>): void {
 }
 
 async function insertEmojiReplacingTrigger(emoji: string, queryLen: number, prefixLen: number): Promise<void> {
-  // Delete (prefixLen + queryLen) chars then paste the emoji.
+  // Do NOT use pasteTextToActiveApp here — it targets `lastFrontmostApp` by
+  // bundle ID, which is stale for system-wide emoji triggers (the user never
+  // opened the launcher, so lastFrontmostApp points to an old app).
+  // Instead, drive everything via a single osascript call that always targets
+  // whoever is currently frontmost. Writing the emoji to clipboard first and
+  // restoring after avoids clipboard history pollution.
   const deleteCount = prefixLen + queryLen;
   const { execFile } = require('child_process');
   const { promisify } = require('util');
   const execFileAsync = promisify(execFile);
 
-  // Save & restore clipboard so we don't pollute the user's clipboard history.
   const prevClipboard = systemClipboard.readText();
+  systemClipboard.writeText(emoji);
   try {
-    // 1. Send N backspaces to remove `:query`
-    if (deleteCount > 0) {
-      const backspaces = Array(deleteCount)
-        .fill('key code 51')
-        .join('\n');
-      await execFileAsync('osascript', [
-        '-e',
-        `tell application "System Events"\n${backspaces}\nend tell`,
-      ]);
-    }
-    // 2. Write emoji to clipboard and paste via Cmd+V
-    systemClipboard.writeText(emoji);
+    const backspaces = deleteCount > 0
+      ? Array(deleteCount).fill('key code 51').join('\n') + '\n'
+      : '';
+    // One process spawn: backspaces + Cmd+V, both directed at the current
+    // frontmost app (no bundle ID lookup, no stale state).
     await execFileAsync('osascript', [
       '-e',
-      'tell application "System Events" to keystroke "v" using command down',
+      `tell application "System Events"\n${backspaces}keystroke "v" using command down\nend tell`,
     ]);
-    setTimeout(() => {
-      try { systemClipboard.writeText(prevClipboard); } catch {}
-    }, 300);
   } catch (error) {
     console.warn('[EmojiTrigger] Failed to insert emoji:', error);
-    try { systemClipboard.writeText(prevClipboard); } catch {}
   }
+  setTimeout(() => { try { systemClipboard.writeText(prevClipboard); } catch {} }, 300);
 }
 
 function handleEmojiTriggerNav(key: string): void {
