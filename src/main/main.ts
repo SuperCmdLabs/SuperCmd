@@ -8790,7 +8790,9 @@ function startEmojiTriggerMonitor(): void {
   try {
     emojiTriggerProcess = spawn(binaryPath, [], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, AX_CARET_DEBUG: '1' },
+      env: process.env.NODE_ENV === 'development'
+        ? { ...process.env, AX_CARET_DEBUG: '1' }
+        : process.env,
     });
   } catch (error) {
     console.warn('[EmojiTrigger] Failed to spawn native helper:', error);
@@ -8817,7 +8819,12 @@ function startEmojiTriggerMonitor(): void {
           const caret = payload.caret && typeof payload.caret.x === 'number'
             ? { x: payload.caret.x, y: payload.caret.y, w: payload.caret.w, h: payload.caret.h }
             : null;
-          console.log('[EmojiTrigger] query=' + JSON.stringify(payload.value) + ' caret=' + JSON.stringify(caret) + (payload.caret?.tier ? ' tier=' + payload.caret.tier : ''));
+          if (process.env.NODE_ENV === 'development') {
+            // Log only metadata — never the raw query text — to avoid persisting
+            // typed input in application logs.
+            const caretDesc = caret ? `(${Math.round(caret.x)},${Math.round(caret.y)}) tier=${payload.caret?.tier ?? '?'}` : 'null';
+            console.log(`[EmojiTrigger] queryLen=${payload.value.length} caret=${caretDesc}`);
+          }
           void renderEmojiPicker(payload.value, caret);
         } else if (payload.type === 'dismiss') {
           hideEmojiPicker();

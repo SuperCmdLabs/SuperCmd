@@ -26,17 +26,24 @@ func emit(_ obj: [String: Any]) {
 // → AXBoundsForTextMarkerRange → AXBoundsForRange → element frame.
 
 func emitQuery(_ query: String) {
-  var obj: [String: Any] = ["type": "query", "value": query]
-  if let caret = AXCaretQuery.current() {
-    obj["caret"] = [
-      "x": caret.x,
-      "y": caret.y,
-      "w": caret.w,
-      "h": caret.h,
-      "tier": caret.tier,
-    ]
+  switch AXCaretQuery.current() {
+  case .secureField:
+    // Password / credential field — suppress the entire trigger immediately.
+    // Never forward query text out of this process; reset state and dismiss.
+    triggerActive = false
+    currentQuery = ""
+    interceptEnabled = false
+    emit(["type": "dismiss"])
+  case .rect(let caret):
+    emit([
+      "type": "query",
+      "value": query,
+      "caret": ["x": caret.x, "y": caret.y, "w": caret.w, "h": caret.h, "tier": caret.tier],
+    ])
+  case .noRect:
+    // AX gap — still show the picker but let the host position it via cursor.
+    emit(["type": "query", "value": query])
   }
-  emit(obj)
 }
 
 // MARK: - Helpers

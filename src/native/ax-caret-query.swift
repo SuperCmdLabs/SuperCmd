@@ -34,6 +34,22 @@ public struct AXCaretRect {
   public let tier: String
 }
 
+/// Three-way result so callers can distinguish the security-sensitive case
+/// from an ordinary AX gap.  A plain `AXCaretRect?` cannot express this:
+/// both "secure field" and "no rect available" would be nil, and the caller
+/// would silently fall back to showing the picker at the mouse cursor — which
+/// leaks query text typed in a password field.
+public enum AXCaretResult {
+  /// The focused element is a password / secure-text field.
+  /// The caller MUST NOT forward any query text out of the process.
+  case secureField
+  /// Got a plausible caret position.
+  case rect(AXCaretRect)
+  /// Focused element exists but no rect could be determined (AX gap).
+  /// The caller may show the picker at an approximate position (e.g. mouse).
+  case noRect
+}
+
 public enum AXCaretQuery {
   // PIDs we've already nudged. Avoid re-setting AX opt-in attributes every keystroke.
   nonisolated(unsafe) private static var nudgedPIDs: Set<pid_t> = []
@@ -48,12 +64,11 @@ public enum AXCaretQuery {
     if debugEnabled { FileHandle.standardError.write(Data(("[ax-caret] " + s() + "\n").utf8)) }
   }
 
-  /// Query the caret rect for the frontmost app's focused text element.
-  /// Returns nil if no text is focused or the app doesn't expose AX info.
-  public static func current() -> AXCaretRect? {
+  /// Query the caret state for the frontmost app's focused text element.
+  public static func current() -> AXCaretResult {
     guard let frontApp = NSWorkspace.shared.frontmostApplication else {
       dbg("no frontmost app")
-      return nil
+      return .noRect
     }
     let pid = frontApp.processIdentifier
     let appElement = AXUIElementCreateApplication(pid)
@@ -78,18 +93,23 @@ public enum AXCaretQuery {
     }
     guard focusErr == .success, let focused = focusedRaw else {
       dbg("kAXFocusedUIElementAttribute failed: err=\(focusErr.rawValue)")
-      return nil
+      return .noRect
     }
-    guard CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+    guard CFGetTypeID(focused) == AXUIElementGetTypeID() else { return .noRect }
     var element = focused as! AXUIElement
 
     let role = copyString(element, kAXRoleAttribute as CFString) ?? ""
     let subrole = copyString(element, kAXSubroleAttribute as CFString) ?? ""
     dbg("focused app=\(frontApp.bundleIdentifier ?? "?") role=\(role) subrole=\(subrole)")
 
-    // Reject secure (password) fields.
-    if subrole == (kAXSecureTextFieldSubrole as String) {
-      return nil
+    // ── Security gate ──────────────────────────────────────────────────────
+    // Return .secureField — NOT .noRect — so the caller knows to suppress the
+    // trigger entirely rather than falling back to showing the picker at the
+    // mouse cursor.
+    if subrole == (kAXSecureTextFieldSubrole as String)
+        || role == "AXSecureTextField" {
+      dbg("secure field detected")
+      return .secureField
     }
 
     // If the reported focused element is a container (web area, window,
@@ -101,19 +121,15 @@ public enum AXCaretQuery {
     }
 
     if let r = caretRectViaTextMarker(element: element), isPlausible(r) {
-      return AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "textMarker")
+      return .rect(AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "textMarker"))
     }
     if let r = caretRectViaRange(element: element), isPlausible(r) {
-      return AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "boundsForRange")
+      return .rect(AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "boundsForRange"))
     }
-    // If the selection-range path returned something implausibly large (a
-    // whole-document rect), it means we hit an AX implementation that answers
-    // BoundsForRange with the container, not the caret line. Prefer a nil
-    // here to the element-frame fallback so the caller can decide what to do.
     if let r = caretRectViaElementFrame(element: element) {
-      return AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "elementFrame")
+      return .rect(AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "elementFrame"))
     }
-    return nil
+    return .noRect
   }
 
   // MARK: - Descend focus tree to find the true text leaf
