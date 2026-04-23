@@ -587,6 +587,13 @@
         "opened": "Cartella degli script personalizzati aperta con uno script di esempio.",
         "openedExisting": "Cartella degli script personalizzati aperta.",
         "failed": "Impossibile aprire la cartella degli script personalizzati."
+      },
+      "emojiPicker": {
+        "enabled": "Abilita il selettore emoji",
+        "enabledDesc": "Mostra suggerimenti emoji quando si digita un prefisso trigger.",
+        "triggerPrefix": "Prefisso trigger",
+        "triggerPrefixDesc": "Carattere che avvia la ricerca emoji (es. :fuoco).",
+        "triggerPrefixPlaceholder": "es. :"
       }
     },
     "advanced": {

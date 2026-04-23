@@ -2543,6 +2543,7 @@ let emojiTriggerProcess: any = null;
 let emojiTriggerStdoutBuffer = '';
 let emojiPickerWindow: InstanceType<typeof BrowserWindow> | null = null;
 let emojiPickerCurrentQuery = '';
+let emojiPickerCurrentPrefixLen = 1;
 let emojiPickerSelectedIdx = 0;
 let nativeSpeechProcess: any = null;
 let nativeSpeechStdoutBuffer = '';
@@ -8641,8 +8642,9 @@ function positionEmojiPickerAtCaret(
   }
 }
 
-async function renderEmojiPicker(query: string, caret: CaretRect | null): Promise<void> {
+async function renderEmojiPicker(query: string, caret: CaretRect | null, prefixLen: number): Promise<void> {
   emojiPickerCurrentQuery = query;
+  emojiPickerCurrentPrefixLen = prefixLen;
   emojiPickerSelectedIdx = 0;
   const matches = searchEmojiTriggerMatches(query);
   if (matches.length === 0) {
@@ -8676,6 +8678,7 @@ function updateEmojiPickerSelection(delta: number): void {
 
 function hideEmojiPicker(): void {
   emojiPickerCurrentQuery = '';
+  emojiPickerCurrentPrefixLen = 1; // reset so a stale value never corrupts deletion count
   emojiPickerSelectedIdx = 0;
   writeEmojiTriggerCmd({ cmd: 'intercept', enabled: false });
   if (emojiPickerWindow && !emojiPickerWindow.isDestroyed() && emojiPickerWindow.isVisible()) {
@@ -8690,11 +8693,9 @@ function writeEmojiTriggerCmd(cmd: Record<string, unknown>): void {
   } catch {}
 }
 
-async function insertEmojiReplacingTrigger(emoji: string, queryLen: number): Promise<void> {
-  // The user has typed `:query` at the caret. We need to delete (queryLen + 1)
-  // chars (the colon + query) and insert the emoji via paste. Send backspaces
-  // via CGEvent-like osascript path since target app owns focus.
-  const deleteCount = queryLen + 1;
+async function insertEmojiReplacingTrigger(emoji: string, queryLen: number, prefixLen: number): Promise<void> {
+  // Delete (prefixLen + queryLen) chars then paste the emoji.
+  const deleteCount = prefixLen + queryLen;
   const { execFile } = require('child_process');
   const { promisify } = require('util');
   const execFileAsync = promisify(execFile);
@@ -8741,12 +8742,11 @@ function handleEmojiTriggerNav(key: string): void {
   if (key === 'enter' || key === 'tab') {
     const pick = matches[emojiPickerSelectedIdx];
     if (!pick) { hideEmojiPicker(); return; }
-    const queryLen = emojiPickerCurrentQuery.length;
+    const queryLen  = emojiPickerCurrentQuery.length;
+    const prefixLen = emojiPickerCurrentPrefixLen;
     hideEmojiPicker();
-    // Tell the Swift monitor that the trigger is cleared so subsequent
-    // typing doesn't resume matching.
     writeEmojiTriggerCmd({ cmd: 'dismiss' });
-    void insertEmojiReplacingTrigger(pick.emoji, queryLen);
+    void insertEmojiReplacingTrigger(pick.emoji, queryLen, prefixLen);
     return;
   }
   if (key === 'escape') {
@@ -8763,7 +8763,15 @@ function stopEmojiTriggerMonitor(): void {
   hideEmojiPicker();
 }
 
-function startEmojiTriggerMonitor(): void {
+function refreshEmojiTriggerMonitor(): void {
+  const settings = loadSettings();
+  stopEmojiTriggerMonitor();
+  if (settings.emojiPickerEnabled) {
+    startEmojiTriggerMonitor(settings.emojiPickerTriggerPrefix || ':');
+  }
+}
+
+function startEmojiTriggerMonitor(triggerPrefix = ':'): void {
   if (process.platform !== 'darwin') return;
   if (emojiTriggerProcess) return;
 
@@ -8788,7 +8796,7 @@ function startEmojiTriggerMonitor(): void {
 
   const { spawn } = require('child_process');
   try {
-    emojiTriggerProcess = spawn(binaryPath, [], {
+    emojiTriggerProcess = spawn(binaryPath, [triggerPrefix], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env.NODE_ENV === 'development'
         ? { ...process.env, AX_CARET_DEBUG: '1' }
@@ -8813,19 +8821,21 @@ function startEmojiTriggerMonitor(): void {
           type?: string;
           value?: string;
           key?: string;
+          prefixLen?: number;
           caret?: { x: number; y: number; w: number; h: number; tier?: string };
         };
         if (payload.type === 'query' && typeof payload.value === 'string') {
           const caret = payload.caret && typeof payload.caret.x === 'number'
             ? { x: payload.caret.x, y: payload.caret.y, w: payload.caret.w, h: payload.caret.h }
             : null;
+          const prefixLen = typeof payload.prefixLen === 'number' && payload.prefixLen > 0
+            ? payload.prefixLen
+            : 1;
           if (process.env.NODE_ENV === 'development') {
-            // Log only metadata — never the raw query text — to avoid persisting
-            // typed input in application logs.
             const caretDesc = caret ? `(${Math.round(caret.x)},${Math.round(caret.y)}) tier=${payload.caret?.tier ?? '?'}` : 'null';
-            console.log(`[EmojiTrigger] queryLen=${payload.value.length} caret=${caretDesc}`);
+            console.log(`[EmojiTrigger] queryLen=${payload.value.length} prefixLen=${prefixLen} caret=${caretDesc}`);
           }
-          void renderEmojiPicker(payload.value, caret);
+          void renderEmojiPicker(payload.value, caret, prefixLen);
         } else if (payload.type === 'dismiss') {
           hideEmojiPicker();
         } else if (payload.type === 'nav' && typeof payload.key === 'string') {
@@ -11952,7 +11962,7 @@ app.whenReady().then(async () => {
   try { refreshSnippetExpander(); } catch (e) {
     console.warn('[SnippetExpander] Failed to start:', e);
   }
-  try { startEmojiTriggerMonitor(); } catch (e) {
+  try { refreshEmojiTriggerMonitor(); } catch (e) {
     console.warn('[EmojiTrigger] Failed to start:', e);
   }
   initQuickLinkStore();
@@ -12416,6 +12426,9 @@ app.whenReady().then(async () => {
         } catch (error) {
           console.error('Failed to rebuild extensions after updating custom folders:', error);
         }
+      }
+      if (patch.emojiPickerEnabled !== undefined || patch.emojiPickerTriggerPrefix !== undefined) {
+        refreshEmojiTriggerMonitor();
       }
       if (patch.fileSearchProtectedRootsEnabled !== undefined) {
         startFileSearchIndexing({

@@ -297,6 +297,8 @@ export interface AppSettings {
   navigationStyle: AppNavigationStyle;
   clipboardHistoryRetentionDays: number | null;
   clipboardAppBlacklist: string[];
+  emojiPickerEnabled: boolean;
+  emojiPickerTriggerPrefix: string;
 }
 
 export interface CatalogEntry {

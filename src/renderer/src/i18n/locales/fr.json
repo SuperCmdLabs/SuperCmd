@@ -554,6 +554,13 @@
         "confirm": "Êtes-vous sûr de vouloir désinstaller cette extension ?",
         "description": "Cette action ne peut pas être annulée.",
         "button": "Désinstaller"
+      },
+      "emojiPicker": {
+        "enabled": "Activer le sélecteur d'emoji",
+        "enabledDesc": "Affiche des suggestions d'emoji lors de la saisie d'un préfixe déclencheur.",
+        "triggerPrefix": "Préfixe déclencheur",
+        "triggerPrefixDesc": "Caractère qui lance la recherche d'emoji (ex. :feu).",
+        "triggerPrefixPlaceholder": "ex. :"
       }
     },
     "advanced": {

@@ -587,6 +587,13 @@
         "opened": "샘플 스크립트가 포함된 사용자 정의 스크립트 폴더를 열었습니다.",
         "openedExisting": "사용자 정의 스크립트 폴더를 열었습니다.",
         "failed": "사용자 정의 스크립트 폴더를 열지 못했습니다."
+      },
+      "emojiPicker": {
+        "enabled": "이모지 선택기 활성화",
+        "enabledDesc": "트리거 접두어를 입력하면 이모지 제안이 표시됩니다.",
+        "triggerPrefix": "트리거 접두어",
+        "triggerPrefixDesc": "이모지 검색을 시작하는 문자(예: :fire).",
+        "triggerPrefixPlaceholder": "예: :"
       }
     },
     "advanced": {

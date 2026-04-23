@@ -587,6 +587,13 @@
         "opened": "Opened custom scripts folder with sample script.",
         "openedExisting": "Opened custom scripts folder.",
         "failed": "Failed to open custom scripts folder."
+      },
+      "emojiPicker": {
+        "enabled": "Enable Emoji Picker",
+        "enabledDesc": "Show emoji suggestions when typing a trigger prefix followed by a name.",
+        "triggerPrefix": "Trigger Prefix",
+        "triggerPrefixDesc": "Character that starts an emoji search. Type this followed by a name (e.g. :fire).",
+        "triggerPrefixPlaceholder": "e.g. :"
       }
     },
     "advanced": {

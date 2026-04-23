@@ -587,6 +587,13 @@
         "opened": "已打开包含示例脚本的自定义脚本文件夹。",
         "openedExisting": "已打开自定义脚本文件夹。",
         "failed": "打开自定义脚本文件夹失败。"
+      },
+      "emojiPicker": {
+        "enabled": "启用表情符号选择器",
+        "enabledDesc": "在输入触发前缀后显示表情符号建议。",
+        "triggerPrefix": "触发前缀",
+        "triggerPrefixDesc": "开始表情符号搜索的字符，例如 :fire。",
+        "triggerPrefixPlaceholder": "例如 :"
       }
     },
     "advanced": {

@@ -550,6 +550,13 @@
         "confirm": "¿Estás seguro de que quieres desinstalar esta extensión?",
         "description": "Esta acción no se puede deshacer.",
         "button": "Desinstalar"
+      },
+      "emojiPicker": {
+        "enabled": "Activar selector de emoji",
+        "enabledDesc": "Muestra sugerencias de emoji al escribir un prefijo desencadenador.",
+        "triggerPrefix": "Prefijo desencadenador",
+        "triggerPrefixDesc": "Carácter que inicia la búsqueda de emoji (ej. :fuego).",
+        "triggerPrefixPlaceholder": "ej. :"
       }
     },
     "advanced": {

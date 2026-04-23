@@ -550,6 +550,13 @@
         "confirm": "Sind Sie sicher, dass Sie diese Erweiterung deinstallieren möchten?",
         "description": "Diese Aktion kann nicht rückgängig gemacht werden.",
         "button": "Deinstallieren"
+      },
+      "emojiPicker": {
+        "enabled": "Emoji-Auswahl aktivieren",
+        "enabledDesc": "Zeigt Emoji-Vorschläge an, wenn ein Auslösezeichen eingegeben wird.",
+        "triggerPrefix": "Auslösezeichen",
+        "triggerPrefixDesc": "Zeichen, das die Emoji-Suche startet (z. B. :feuer).",
+        "triggerPrefixPlaceholder": "z. B. :"
       }
     },
     "advanced": {

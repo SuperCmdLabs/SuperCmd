@@ -587,6 +587,13 @@
         "opened": "サンプルスクリプト付きのカスタムスクリプトフォルダを開きました。",
         "openedExisting": "カスタムスクリプトフォルダを開きました。",
         "failed": "カスタムスクリプトフォルダを開けませんでした。"
+      },
+      "emojiPicker": {
+        "enabled": "絵文字ピッカーを有効にする",
+        "enabledDesc": "トリガー文字に続けて名前を入力すると絵文字候補を表示します。",
+        "triggerPrefix": "トリガー文字",
+        "triggerPrefixDesc": "絵文字検索を開始する文字（例: :fire）。",
+        "triggerPrefixPlaceholder": "例: :"
       }
     },
     "advanced": {

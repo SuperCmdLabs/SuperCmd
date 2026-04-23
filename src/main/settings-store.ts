@@ -110,6 +110,8 @@ export interface AppSettings {
   // SuperCmd's clipboard history. Clipboard content copied while one of these
   // apps is frontmost is simply ignored. The system pasteboard is untouched.
   clipboardAppBlacklist: string[];
+  emojiPickerEnabled: boolean;
+  emojiPickerTriggerPrefix: string;
 }
 
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
@@ -199,6 +201,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   navigationStyle: 'vim',
   clipboardHistoryRetentionDays: null,
   clipboardAppBlacklist: [],
+  emojiPickerEnabled: true,
+  emojiPickerTriggerPrefix: ':',
 };
 
 let settingsCache: AppSettings | null = null;
@@ -432,6 +436,10 @@ export function loadSettings(): AppSettings {
       navigationStyle: normalizeNavigationStyle(parsed.navigationStyle),
       clipboardHistoryRetentionDays: normalizeClipboardHistoryRetentionDays(parsed.clipboardHistoryRetentionDays),
       clipboardAppBlacklist: normalizeClipboardAppBlacklist(parsed.clipboardAppBlacklist),
+      emojiPickerEnabled: typeof parsed.emojiPickerEnabled === 'boolean' ? parsed.emojiPickerEnabled : DEFAULT_SETTINGS.emojiPickerEnabled,
+      emojiPickerTriggerPrefix: typeof parsed.emojiPickerTriggerPrefix === 'string' && parsed.emojiPickerTriggerPrefix.length > 0
+        ? parsed.emojiPickerTriggerPrefix
+        : DEFAULT_SETTINGS.emojiPickerTriggerPrefix,
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };
@@ -471,6 +479,13 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
         ? patch.clipboardAppBlacklist
         : current.clipboardAppBlacklist
     ),
+    emojiPickerEnabled: typeof (patch.emojiPickerEnabled ?? current.emojiPickerEnabled) === 'boolean'
+      ? (patch.emojiPickerEnabled ?? current.emojiPickerEnabled)!
+      : DEFAULT_SETTINGS.emojiPickerEnabled,
+    emojiPickerTriggerPrefix: typeof (patch.emojiPickerTriggerPrefix ?? current.emojiPickerTriggerPrefix) === 'string'
+      && (patch.emojiPickerTriggerPrefix ?? current.emojiPickerTriggerPrefix)!.length > 0
+      ? (patch.emojiPickerTriggerPrefix ?? current.emojiPickerTriggerPrefix)!
+      : DEFAULT_SETTINGS.emojiPickerTriggerPrefix,
   };
 
   try {

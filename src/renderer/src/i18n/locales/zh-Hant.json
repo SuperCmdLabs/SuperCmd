@@ -587,6 +587,13 @@
       },
       "preferences": {
         "selectOption": "選擇一個選項"
+      },
+      "emojiPicker": {
+        "enabled": "啟用表情符號選擇器",
+        "enabledDesc": "輸入觸發前綴後顯示表情符號建議。",
+        "triggerPrefix": "觸發前綴",
+        "triggerPrefixDesc": "開始表情符號搜尋的字元，例如 :fire。",
+        "triggerPrefixPlaceholder": "例如 :"
       }
     },
     "advanced": {

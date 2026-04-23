@@ -1250,6 +1250,12 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-emoji-picker',
+      title: 'Emoji Picker',
+      keywords: ['emoji', 'picker', 'trigger', 'smiley', 'emoticon'],
+      category: 'system',
+    },
+    {
       id: 'system-reset-launcher-position',
       title: 'Reset Launcher Position',
       keywords: ['reset', 'position', 'center', 'move', 'launcher', 'window', 'default'],

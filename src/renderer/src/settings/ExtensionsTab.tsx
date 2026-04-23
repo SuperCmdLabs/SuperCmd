@@ -1403,6 +1403,17 @@ const ExtensionsTab: React.FC<{
                   </div>
                 ) : null}
 
+                {selectedCommandInfo?.id === 'system-emoji-picker' ? (
+                  <EmojiPickerSettingsSection
+                    enabled={settings?.emojiPickerEnabled ?? true}
+                    triggerPrefix={settings?.emojiPickerTriggerPrefix ?? ':'}
+                    onChange={async (patch) => {
+                      await window.electron.saveSettings(patch);
+                      setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
+                    }}
+                  />
+                ) : null}
+
                 {selectedCommandInfo?.id === 'system-clipboard-manager' ? (
                   <ClipboardSettingsSection
                     retentionDays={settings?.clipboardHistoryRetentionDays ?? null}
@@ -1912,6 +1923,74 @@ const ClipboardBlacklistSection: React.FC<{
               </button>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const EmojiPickerSettingsSection: React.FC<{
+  enabled: boolean;
+  triggerPrefix: string;
+  onChange: (patch: { emojiPickerEnabled?: boolean; emojiPickerTriggerPrefix?: string }) => Promise<void>;
+}> = ({ enabled, triggerPrefix, onChange }) => {
+  const { t } = useI18n();
+  const [prefixDraft, setPrefixDraft] = React.useState(triggerPrefix);
+
+  React.useEffect(() => { setPrefixDraft(triggerPrefix); }, [triggerPrefix]);
+
+  return (
+    <div className="space-y-4">
+      <div className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">
+        {t('settings.extensions.emojiPicker.enabled')}
+      </div>
+
+      {/* Enable toggle */}
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-[11px] text-[var(--text-subtle)] leading-snug max-w-[260px]">
+          {t('settings.extensions.emojiPicker.enabledDesc')}
+        </p>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          onClick={() => void onChange({ emojiPickerEnabled: !enabled })}
+          className={`relative flex-shrink-0 w-9 h-5 rounded-full transition-colors ${enabled ? 'bg-blue-500' : 'bg-[var(--ui-segment-bg)]'} border border-[var(--ui-divider)]`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0'}`}
+          />
+        </button>
+      </div>
+
+      {/* Trigger prefix — only shown when enabled */}
+      {enabled && (
+        <div className="space-y-1.5">
+          <label className="text-xs text-[var(--text-secondary)] font-medium">
+            {t('settings.extensions.emojiPicker.triggerPrefix')}
+          </label>
+          <p className="text-[11px] text-[var(--text-subtle)] leading-snug">
+            {t('settings.extensions.emojiPicker.triggerPrefixDesc')}
+          </p>
+          <input
+            type="text"
+            maxLength={4}
+            value={prefixDraft}
+            placeholder={t('settings.extensions.emojiPicker.triggerPrefixPlaceholder')}
+            onChange={(e) => setPrefixDraft(e.target.value)}
+            onBlur={() => {
+              const trimmed = prefixDraft.trim();
+              if (trimmed && trimmed !== triggerPrefix) {
+                void onChange({ emojiPickerTriggerPrefix: trimmed });
+              } else if (!trimmed) {
+                setPrefixDraft(triggerPrefix);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            }}
+            className="w-24 bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-1.5 text-xs text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-blue-500/50"
+          />
         </div>
       )}
     </div>
