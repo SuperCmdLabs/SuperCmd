@@ -2382,6 +2382,12 @@ const activeAIRequests = new Map<string, AbortController>(); // requestId → co
 const pendingOAuthCallbackUrls: string[] = [];
 let snippetExpanderProcess: any = null;
 let snippetExpanderStdoutBuffer = '';
+let snippetExpanderIntentionalStop = false; // true when we kill it ourselves (prevent restart loop)
+
+// Serial queue for clipboard-based paste operations.
+// Both snippet expansion and pasteTextToActiveApp write to the clipboard temporarily.
+// Without serialization they race and paste the wrong content.
+let clipboardOpQueue: Promise<void> = Promise.resolve();
 let nativeSpeechProcess: any = null;
 let nativeSpeechStdoutBuffer = '';
 let nativeColorPickerPromise: Promise<any> | null = null;
@@ -7942,47 +7948,55 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
   const value = String(text || '');
   if (!value) return false;
 
-  const { execFile } = require('child_process');
-  const { promisify } = require('util');
-  const execFileAsync = promisify(execFile);
-  const previousClipboardText = systemClipboard.readText();
+  // Signal caller as soon as the paste keystroke fires, but hold the queue
+  // slot until the clipboard is restored so concurrent ops don't read our
+  // temporary value as their "original".
+  let signalCaller!: (v: boolean) => void;
+  const callerPromise = new Promise<boolean>((res) => { signalCaller = res; });
 
-  try {
-    systemClipboard.writeText(value);
+  clipboardOpQueue = clipboardOpQueue.then(async () => {
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const execFileAsync = promisify(execFile);
+    const previousClipboardText = systemClipboard.readText();
 
-    // Fast path: in-process native addon — activates app, polls until
-    // frontmost, posts ⌘V via CGEvent. Same addon used by clipboard paste.
-    const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
-    if (target) {
-      try {
-        const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
-        const ok = fastPasteAddon.activateAndPaste(target);
-        if (ok) {
-          setTimeout(() => {
+    try {
+      systemClipboard.writeText(value);
+
+      // Fast path: in-process native addon — activates app, polls until
+      // frontmost, posts ⌘V via CGEvent. Same addon used by clipboard paste.
+      const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
+      if (target) {
+        try {
+          const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+          const ok = fastPasteAddon.activateAndPaste(target);
+          if (ok) {
+            signalCaller(true);
+            await new Promise<void>((resolve) => setTimeout(resolve, 250));
             try { systemClipboard.writeText(previousClipboardText); } catch {}
-          }, 250);
-          return true;
+            return;
+          }
+        } catch (e: any) {
+          console.warn('[pasteTextToActiveApp] fast-paste addon failed:', e?.message);
         }
-      } catch (e: any) {
-        console.warn('[pasteTextToActiveApp] fast-paste addon failed:', e?.message);
       }
-    }
 
-    // Slow fallback: osascript
-    await execFileAsync('osascript', [
-      '-e',
-      'tell application "System Events" to keystroke "v" using command down',
-    ]);
-    setTimeout(() => {
-      try {
-        systemClipboard.writeText(previousClipboardText);
-      } catch {}
-    }, 250);
-    return true;
-  } catch (error) {
-    console.error('pasteTextToActiveApp failed:', error);
-    return false;
-  }
+      // Slow fallback: osascript
+      await execFileAsync('osascript', [
+        '-e',
+        'tell application "System Events" to keystroke "v" using command down',
+      ]);
+      signalCaller(true);
+      await new Promise<void>((resolve) => setTimeout(resolve, 250));
+      try { systemClipboard.writeText(previousClipboardText); } catch {}
+    } catch (error) {
+      console.error('pasteTextToActiveApp failed:', error);
+      signalCaller(false);
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+  }).catch(() => {});
+
+  return callerPromise;
 }
 
 async function replaceTextDirectly(previousText: string, nextText: string): Promise<boolean> {
@@ -8145,47 +8159,52 @@ async function hideAndPaste(): Promise<boolean> {
 }
 
 async function expandSnippetKeywordInPlace(keyword: string, delimiter: string): Promise<void> {
-  try {
-    console.log(`[SnippetExpander] trigger keyword="${keyword}" delimiter="${delimiter}"`);
-    const snippet = getSnippetByKeyword(keyword);
-    if (!snippet) return;
+  // Enqueue so this never races with pasteTextToActiveApp or another concurrent expansion.
+  clipboardOpQueue = clipboardOpQueue.then(async () => {
+    try {
+      console.log(`[SnippetExpander] trigger keyword="${keyword}" delimiter="${delimiter}"`);
+      const snippet = getSnippetByKeyword(keyword);
+      if (!snippet) return;
 
-    const resolved = renderSnippetById(snippet.id, {});
-    if (!resolved) return;
+      const resolved = renderSnippetById(snippet.id, {});
+      if (!resolved) return;
 
-    const fullText = `${resolved}${delimiter || ''}`;
-    const backspaceCount = keyword.length + (delimiter ? 1 : 0);
-    if (backspaceCount <= 0) return;
+      const fullText = `${resolved}${delimiter || ''}`;
+      const backspaceCount = keyword.length + (delimiter ? 1 : 0);
+      if (backspaceCount <= 0) return;
 
-    const originalClipboard = electron.clipboard.readText();
-    electron.clipboard.writeText(fullText);
+      const originalClipboard = electron.clipboard.readText();
+      electron.clipboard.writeText(fullText);
 
-    const { execFile } = require('child_process');
-    const { promisify } = require('util');
-    const execFileAsync = promisify(execFile);
+      const { execFile } = require('child_process');
+      const { promisify } = require('util');
+      const execFileAsync = promisify(execFile);
 
-    const script = `
-      tell application "System Events"
-        repeat ${backspaceCount} times
-          key code 51
-        end repeat
-        keystroke "v" using command down
-      end tell
-    `;
+      const script = `
+        tell application "System Events"
+          repeat ${backspaceCount} times
+            key code 51
+          end repeat
+          keystroke "v" using command down
+        end tell
+      `;
 
-    await execFileAsync('osascript', ['-e', script]);
+      await execFileAsync('osascript', ['-e', script]);
 
-    // Restore user's clipboard after insertion.
-    setTimeout(() => {
+      // Restore user's clipboard. Await so the queue slot isn't released until
+      // the clipboard is back to normal (prevents the next op from saving our
+      // temporary snippet content as its "original").
+      await new Promise<void>((resolve) => setTimeout(resolve, 80));
       electron.clipboard.writeText(originalClipboard);
-    }, 80);
-  } catch (error) {
-    console.error('[SnippetExpander] Failed to expand keyword:', error);
-  }
+    } catch (error) {
+      console.error('[SnippetExpander] Failed to expand keyword:', error);
+    }
+  }).catch(() => {});
 }
 
 function stopSnippetExpander(): void {
   if (!snippetExpanderProcess) return;
+  snippetExpanderIntentionalStop = true;
   try {
     snippetExpanderProcess.kill();
   } catch {}
@@ -8253,6 +8272,12 @@ function refreshSnippetExpander(): void {
   snippetExpanderProcess.on('exit', () => {
     snippetExpanderProcess = null;
     snippetExpanderStdoutBuffer = '';
+    if (!snippetExpanderIntentionalStop) {
+      // Unexpected exit (crash, OS signal, etc.) — restart after a short delay.
+      console.warn('[SnippetExpander] Process exited unexpectedly, restarting...');
+      setTimeout(() => refreshSnippetExpander(), 500);
+    }
+    snippetExpanderIntentionalStop = false;
   });
 }
 
