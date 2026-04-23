@@ -8820,8 +8820,6 @@ function startEmojiTriggerMonitor(): void {
             ? { x: payload.caret.x, y: payload.caret.y, w: payload.caret.w, h: payload.caret.h }
             : null;
           if (process.env.NODE_ENV === 'development') {
-            // Log only metadata — never the raw query text — to avoid persisting
-            // typed input in application logs.
             const caretDesc = caret ? `(${Math.round(caret.x)},${Math.round(caret.y)}) tier=${payload.caret?.tier ?? '?'}` : 'null';
             console.log(`[EmojiTrigger] queryLen=${payload.value.length} caret=${caretDesc}`);
           }
