@@ -13163,16 +13163,47 @@ return appURL's |path|() as text`,
     }
   });
 
-  ipcMain.handle('get-file-icon-data-url', async (_event: any, filePath: string, size = 20) => {
-    try {
-      const icon = await app.getFileIcon(filePath, { size: size <= 16 ? 'small' : size >= 64 ? 'large' : 'normal' });
-      if (icon && !icon.isEmpty()) {
-        return icon.resize({ width: size, height: size }).toDataURL();
+  const fileIconPendingRequests = new Map<string, Promise<string | null>>();
+
+  async function computeFileIconDataUrl(filePath: string, size: number): Promise<string | null> {
+    if (size >= 48) {
+      try {
+        const thumb = await nativeImage.createThumbnailFromPath(filePath, { width: size, height: size });
+        if (thumb && !thumb.isEmpty()) {
+          return thumb.toDataURL();
+        }
+      } catch {
+        // Fall through to app.getFileIcon fallback below.
       }
-      return null;
-    } catch {
-      return null;
     }
+
+    try {
+      const icon = await app.getFileIcon(filePath, {
+        size: size <= 16 ? 'small' : size >= 32 ? 'large' : 'normal',
+      });
+      if (icon && !icon.isEmpty()) {
+        return icon.toDataURL();
+      }
+    } catch {
+      // Ignore and return null below.
+    }
+    return null;
+  }
+
+  ipcMain.handle('get-file-icon-data-url', async (_event: any, filePath: string, size = 20) => {
+    if (typeof filePath !== 'string' || !filePath) return null;
+    const clampedSize = Math.max(16, Math.min(256, Math.round(Number(size) || 20)));
+    const key = `${clampedSize}:${filePath}`;
+    const existing = fileIconPendingRequests.get(key);
+    if (existing) return existing;
+
+    const pending = computeFileIconDataUrl(filePath, clampedSize)
+      .catch(() => null)
+      .finally(() => {
+        fileIconPendingRequests.delete(key);
+      });
+    fileIconPendingRequests.set(key, pending);
+    return pending;
   });
 
   ipcMain.handle('file-search-query', async (_event: any, query: string, options?: { limit?: number }) => {
