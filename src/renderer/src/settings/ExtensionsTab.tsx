@@ -1954,11 +1954,18 @@ const EmojiPickerSettingsSection: React.FC<{
           type="button"
           role="switch"
           aria-checked={enabled}
+          aria-label={t('settings.extensions.emojiPicker.enabled')}
           onClick={() => void onChange({ emojiPickerEnabled: !enabled })}
-          className={`relative flex-shrink-0 w-9 h-5 rounded-full transition-colors ${enabled ? 'bg-blue-500' : 'bg-[var(--ui-segment-bg)]'} border border-[var(--ui-divider)]`}
+          className={`relative flex-shrink-0 w-10 h-6 rounded-full border transition-colors ${
+            enabled
+              ? 'bg-[var(--accent)] border-[var(--accent-hover)]'
+              : 'bg-[var(--ui-segment-bg)] border-[var(--ui-segment-border)]'
+          }`}
         >
           <span
-            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0'}`}
+            className={`absolute left-0.5 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border shadow-sm bg-[var(--bg-overlay-strong)] border-[var(--ui-segment-border)] transition-transform ${
+              enabled ? 'translate-x-[18px]' : 'translate-x-0'
+            }`}
           />
         </button>
       </div>
