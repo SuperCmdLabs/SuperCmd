@@ -2539,6 +2539,11 @@ const snippetExpanderIntentionalKills = new WeakSet<object>();
 // Both snippet expansion and pasteTextToActiveApp write to the clipboard temporarily.
 // Without serialization they race and paste the wrong content.
 let clipboardOpQueue: Promise<void> = Promise.resolve();
+let emojiTriggerProcess: any = null;
+let emojiTriggerStdoutBuffer = '';
+let emojiPickerWindow: InstanceType<typeof BrowserWindow> | null = null;
+let emojiPickerCurrentQuery = '';
+let emojiPickerSelectedIdx = 0;
 let nativeSpeechProcess: any = null;
 let nativeSpeechStdoutBuffer = '';
 let nativeColorPickerPromise: Promise<any> | null = null;
@@ -8434,6 +8439,409 @@ function refreshSnippetExpander(): void {
   });
 }
 
+// ─── Emoji Trigger (system-wide `:name` popup) ─────────────────────
+
+type EmojiEntry = { name: string; emoji: string; keywords: string[] };
+
+// Loaded lazily from src/main/emoji-data.json (bundled at build time).
+// File format: [{ n: name, e: emoji, k: [keywords] }, ...]
+let emojiTriggerData: EmojiEntry[] | null = null;
+
+function loadEmojiTriggerData(): EmojiEntry[] {
+  if (emojiTriggerData) return emojiTriggerData;
+  try {
+    const fs = require('fs');
+    const candidates = [
+      path.join(__dirname, 'emoji-data.json'),           // dist/main/emoji-data.json (if bundled there)
+      path.join(__dirname, '..', '..', 'src', 'main', 'emoji-data.json'), // dev: read from source
+      path.join(app.getAppPath(), 'src', 'main', 'emoji-data.json'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        const raw = JSON.parse(fs.readFileSync(p, 'utf8')) as Array<{ n: string; e: string; k?: string[] }>;
+        emojiTriggerData = raw.map((r) => ({
+          name: r.n,
+          emoji: r.e,
+          keywords: r.k || [],
+        }));
+        return emojiTriggerData;
+      }
+    }
+    console.warn('[EmojiTrigger] emoji-data.json not found in any candidate path');
+  } catch (e) {
+    console.warn('[EmojiTrigger] Failed to load emoji-data.json:', e);
+  }
+  emojiTriggerData = [];
+  return emojiTriggerData;
+}
+
+function searchEmojiTriggerMatches(query: string, max = 8): EmojiEntry[] {
+  if (!query) return [];
+  const q = query.toLowerCase();
+  const data = loadEmojiTriggerData();
+  const nameExact: EmojiEntry[] = [];
+  const namePrefix: EmojiEntry[] = [];
+  const keywordPrefix: EmojiEntry[] = [];
+  const substring: EmojiEntry[] = [];
+  for (const e of data) {
+    if (e.name === q) {
+      nameExact.push(e);
+    } else if (e.name.startsWith(q)) {
+      namePrefix.push(e);
+    } else if (e.keywords.some((k) => k.startsWith(q))) {
+      keywordPrefix.push(e);
+    } else if (e.name.includes(q) || e.keywords.some((k) => k.includes(q))) {
+      substring.push(e);
+    }
+  }
+  return [...nameExact, ...namePrefix, ...keywordPrefix, ...substring].slice(0, max);
+}
+
+function getEmojiPickerWindowHtml(): string {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      background: transparent; overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      user-select: none; pointer-events: none; color: rgba(255,255,255,0.92);
+    }
+    #card {
+      display: inline-flex; align-items: center; gap: 1px;
+      padding: 3px 4px;
+      border-radius: 9px;
+      background: rgba(18,18,20,0.86);
+      border: 1px solid rgba(255,255,255,0.10);
+      box-shadow: 0 6px 22px rgba(0,0,0,0.38);
+      backdrop-filter: blur(24px) saturate(160%);
+      -webkit-backdrop-filter: blur(24px) saturate(160%);
+    }
+    .item {
+      display: flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px;
+      border-radius: 6px;
+      font-size: 18px; line-height: 1;
+      transition: background 60ms ease, transform 60ms ease;
+    }
+    .item.sel { background: rgba(86, 140, 255, 0.95); transform: scale(1.06); }
+  </style>
+</head>
+<body>
+  <div id="card"></div>
+  <script>
+    const card = document.getElementById('card');
+    function render(matches, selIdx) {
+      if (!matches || matches.length === 0) { card.innerHTML = ''; return; }
+      let html = '';
+      for (let i = 0; i < matches.length; i++) {
+        html += '<div class="item' + (i === selIdx ? ' sel' : '') + '">' + matches[i].emoji + '</div>';
+      }
+      card.innerHTML = html;
+    }
+    window.__render = render;
+  </script>
+</body>
+</html>`;
+}
+
+async function ensureEmojiPickerWindow(): Promise<InstanceType<typeof BrowserWindow> | null> {
+  if (emojiPickerWindow && !emojiPickerWindow.isDestroyed()) return emojiPickerWindow;
+  emojiPickerWindow = new BrowserWindow({
+    width: 260,
+    height: 34,
+    // Explicit x/y so the window does NOT default to screen-center; we'll
+    // setBounds to the real position before showing.
+    x: 0,
+    y: 0,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    show: false,
+    acceptFirstMouse: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+  try { emojiPickerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
+  try { emojiPickerWindow.setIgnoreMouseEvents(true, { forward: false }); } catch {}
+  try { emojiPickerWindow.setAlwaysOnTop(true, 'pop-up-menu'); } catch {}
+  try { emojiPickerWindow.webContents.setBackgroundThrottling(false); } catch {}
+  if (process.platform === 'darwin') {
+    try { emojiPickerWindow.setWindowButtonVisibility(false); } catch {}
+  }
+  emojiPickerWindow.on('closed', () => { emojiPickerWindow = null; });
+  try {
+    await emojiPickerWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getEmojiPickerWindowHtml())}`);
+  } catch (error) {
+    console.warn('[EmojiTrigger] Failed to load picker window:', error);
+    try { emojiPickerWindow.close(); } catch {}
+    emojiPickerWindow = null;
+    return null;
+  }
+  return emojiPickerWindow;
+}
+
+type CaretRect = { x: number; y: number; w: number; h: number };
+
+function computeEmojiPickerPosition(
+  winW: number,
+  winH: number,
+  caret: CaretRect | null
+): { x: number; y: number } {
+  let anchorX: number;
+  let anchorY: number;
+  let caretTop: number;
+  if (caret) {
+    anchorX = caret.x;
+    anchorY = caret.y + caret.h + 2;
+    caretTop = caret.y;
+  } else {
+    const cursor = screen.getCursorScreenPoint();
+    anchorX = cursor.x + 4;
+    anchorY = cursor.y + 18;
+    caretTop = cursor.y;
+  }
+  const display = screen.getDisplayNearestPoint({ x: anchorX, y: anchorY });
+  const bounds = display.workArea;
+  let x = anchorX;
+  let y = anchorY;
+  if (x + winW > bounds.x + bounds.width) x = bounds.x + bounds.width - winW - 4;
+  if (x < bounds.x) x = bounds.x + 4;
+  // If the popup would extend below the screen, flip above the caret.
+  if (y + winH > bounds.y + bounds.height) y = caretTop - winH - 2;
+  if (y < bounds.y) y = bounds.y + 4;
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
+function positionEmojiPickerAtCaret(
+  win: InstanceType<typeof BrowserWindow>,
+  caret: CaretRect | null
+): void {
+  try {
+    const [w, h] = win.getSize();
+    const { x, y } = computeEmojiPickerPosition(w, h, caret);
+    // setBounds is more reliable than setPosition on hidden windows in macOS.
+    win.setBounds({ x, y, width: w, height: h });
+  } catch (err) {
+    console.warn('[EmojiTrigger] setBounds failed:', err);
+  }
+}
+
+async function renderEmojiPicker(query: string, caret: CaretRect | null): Promise<void> {
+  emojiPickerCurrentQuery = query;
+  emojiPickerSelectedIdx = 0;
+  const matches = searchEmojiTriggerMatches(query);
+  if (matches.length === 0) {
+    hideEmojiPicker();
+    return;
+  }
+  const win = await ensureEmojiPickerWindow();
+  if (!win) return;
+  // Position BEFORE first show so there's no visible flicker at (0,0).
+  positionEmojiPickerAtCaret(win, caret);
+  const js = `window.__render(${JSON.stringify(matches)}, ${emojiPickerSelectedIdx});`;
+  try { await win.webContents.executeJavaScript(js, true); } catch {}
+  if (!win.isVisible()) {
+    try { win.showInactive(); } catch {}
+    // macOS quirk: setBounds on a hidden window sometimes does not commit.
+    // Re-apply the position after show to guarantee it lands at the caret.
+    positionEmojiPickerAtCaret(win, caret);
+  }
+  // Enable keyboard interception now that picker is visible
+  writeEmojiTriggerCmd({ cmd: 'intercept', enabled: true });
+}
+
+function updateEmojiPickerSelection(delta: number): void {
+  if (!emojiPickerWindow || emojiPickerWindow.isDestroyed() || !emojiPickerWindow.isVisible()) return;
+  const matches = searchEmojiTriggerMatches(emojiPickerCurrentQuery);
+  if (matches.length === 0) return;
+  emojiPickerSelectedIdx = (emojiPickerSelectedIdx + delta + matches.length) % matches.length;
+  const js = `window.__render(${JSON.stringify(matches)}, ${emojiPickerSelectedIdx});`;
+  try { emojiPickerWindow.webContents.executeJavaScript(js, true); } catch {}
+}
+
+function hideEmojiPicker(): void {
+  emojiPickerCurrentQuery = '';
+  emojiPickerSelectedIdx = 0;
+  writeEmojiTriggerCmd({ cmd: 'intercept', enabled: false });
+  if (emojiPickerWindow && !emojiPickerWindow.isDestroyed() && emojiPickerWindow.isVisible()) {
+    try { emojiPickerWindow.hide(); } catch {}
+  }
+}
+
+function writeEmojiTriggerCmd(cmd: Record<string, unknown>): void {
+  if (!emojiTriggerProcess || !emojiTriggerProcess.stdin) return;
+  try {
+    emojiTriggerProcess.stdin.write(JSON.stringify(cmd) + '\n');
+  } catch {}
+}
+
+async function insertEmojiReplacingTrigger(emoji: string, queryLen: number): Promise<void> {
+  // The user has typed `:query` at the caret. We need to delete (queryLen + 1)
+  // chars (the colon + query) and insert the emoji via paste. Send backspaces
+  // via CGEvent-like osascript path since target app owns focus.
+  const deleteCount = queryLen + 1;
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const execFileAsync = promisify(execFile);
+
+  // Save & restore clipboard so we don't pollute the user's clipboard history.
+  const prevClipboard = systemClipboard.readText();
+  try {
+    // 1. Send N backspaces to remove `:query`
+    if (deleteCount > 0) {
+      const backspaces = Array(deleteCount)
+        .fill('key code 51')
+        .join('\n');
+      await execFileAsync('osascript', [
+        '-e',
+        `tell application "System Events"\n${backspaces}\nend tell`,
+      ]);
+    }
+    // 2. Write emoji to clipboard and paste via Cmd+V
+    systemClipboard.writeText(emoji);
+    await execFileAsync('osascript', [
+      '-e',
+      'tell application "System Events" to keystroke "v" using command down',
+    ]);
+    setTimeout(() => {
+      try { systemClipboard.writeText(prevClipboard); } catch {}
+    }, 300);
+  } catch (error) {
+    console.warn('[EmojiTrigger] Failed to insert emoji:', error);
+    try { systemClipboard.writeText(prevClipboard); } catch {}
+  }
+}
+
+function handleEmojiTriggerNav(key: string): void {
+  const matches = searchEmojiTriggerMatches(emojiPickerCurrentQuery);
+  if (matches.length === 0) { hideEmojiPicker(); return; }
+  if (key === 'left') {
+    updateEmojiPickerSelection(-1);
+    return;
+  }
+  if (key === 'right') {
+    updateEmojiPickerSelection(1);
+    return;
+  }
+  if (key === 'enter' || key === 'tab') {
+    const pick = matches[emojiPickerSelectedIdx];
+    if (!pick) { hideEmojiPicker(); return; }
+    const queryLen = emojiPickerCurrentQuery.length;
+    hideEmojiPicker();
+    // Tell the Swift monitor that the trigger is cleared so subsequent
+    // typing doesn't resume matching.
+    writeEmojiTriggerCmd({ cmd: 'dismiss' });
+    void insertEmojiReplacingTrigger(pick.emoji, queryLen);
+    return;
+  }
+  if (key === 'escape') {
+    hideEmojiPicker();
+    return;
+  }
+}
+
+function stopEmojiTriggerMonitor(): void {
+  if (!emojiTriggerProcess) return;
+  try { emojiTriggerProcess.kill(); } catch {}
+  emojiTriggerProcess = null;
+  emojiTriggerStdoutBuffer = '';
+  hideEmojiPicker();
+}
+
+function startEmojiTriggerMonitor(): void {
+  if (process.platform !== 'darwin') return;
+  if (emojiTriggerProcess) return;
+
+  const binaryPath = getNativeBinaryPath('emoji-trigger-monitor');
+  const fs = require('fs');
+  if (!fs.existsSync(binaryPath)) {
+    try {
+      const { execFileSync } = require('child_process');
+      const nativeDir = path.join(app.getAppPath(), 'src', 'native');
+      execFileSync('swiftc', [
+        '-O', '-o', binaryPath,
+        path.join(nativeDir, 'emoji-trigger-monitor.swift'),
+        path.join(nativeDir, 'ax-caret-query.swift'),
+        '-framework', 'AppKit',
+        '-framework', 'ApplicationServices',
+      ]);
+    } catch (error) {
+      console.warn('[EmojiTrigger] Native helper not found and compile failed:', error);
+      return;
+    }
+  }
+
+  const { spawn } = require('child_process');
+  try {
+    emojiTriggerProcess = spawn(binaryPath, [], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, AX_CARET_DEBUG: '1' },
+    });
+  } catch (error) {
+    console.warn('[EmojiTrigger] Failed to spawn native helper:', error);
+    return;
+  }
+  console.log('[EmojiTrigger] Started system-wide emoji monitor');
+
+  emojiTriggerProcess.stdout.on('data', (chunk: Buffer | string) => {
+    emojiTriggerStdoutBuffer += chunk.toString();
+    const lines = emojiTriggerStdoutBuffer.split('\n');
+    emojiTriggerStdoutBuffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (trimmed === 'emoji-trigger-monitor-ready') continue;
+      try {
+        const payload = JSON.parse(trimmed) as {
+          type?: string;
+          value?: string;
+          key?: string;
+          caret?: { x: number; y: number; w: number; h: number; tier?: string };
+        };
+        if (payload.type === 'query' && typeof payload.value === 'string') {
+          const caret = payload.caret && typeof payload.caret.x === 'number'
+            ? { x: payload.caret.x, y: payload.caret.y, w: payload.caret.w, h: payload.caret.h }
+            : null;
+          console.log('[EmojiTrigger] query=' + JSON.stringify(payload.value) + ' caret=' + JSON.stringify(caret) + (payload.caret?.tier ? ' tier=' + payload.caret.tier : ''));
+          void renderEmojiPicker(payload.value, caret);
+        } else if (payload.type === 'dismiss') {
+          hideEmojiPicker();
+        } else if (payload.type === 'nav' && typeof payload.key === 'string') {
+          handleEmojiTriggerNav(payload.key);
+        }
+      } catch {
+        // ignore malformed lines
+      }
+    }
+  });
+
+  emojiTriggerProcess.stderr.on('data', (chunk: Buffer | string) => {
+    const text = chunk.toString().trim();
+    if (text) console.warn('[EmojiTrigger]', text);
+  });
+
+  emojiTriggerProcess.on('exit', () => {
+    emojiTriggerProcess = null;
+    emojiTriggerStdoutBuffer = '';
+    hideEmojiPicker();
+  });
+}
+
 function toggleWindow(): void {
   if (!mainWindow) {
     createWindow();
@@ -11536,6 +11944,9 @@ app.whenReady().then(async () => {
   initCanvasStore();
   try { refreshSnippetExpander(); } catch (e) {
     console.warn('[SnippetExpander] Failed to start:', e);
+  }
+  try { startEmojiTriggerMonitor(); } catch (e) {
+    console.warn('[EmojiTrigger] Failed to start:', e);
   }
   initQuickLinkStore();
 
@@ -15688,6 +16099,7 @@ app.on('will-quit', () => {
   stopSpeakSession({ resetStatus: false });
   stopClipboardMonitor();
   stopSnippetExpander();
+  stopEmojiTriggerMonitor();
   stopFileSearchIndexing();
   try { soulverCalculator.shutdown(); } catch {}
   if (appTray) {
