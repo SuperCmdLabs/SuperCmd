@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search,
   RefreshCw,
@@ -8,6 +9,9 @@ import {
   List,
   Info,
   Image as ImageIcon,
+  X,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { InternalActionPanelOverlay } from '../raycast-api';
 import type { ExtractedAction } from '../raycast-api/action-runtime-types';
@@ -231,6 +235,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [installedNames, setInstalledNames] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyName, setBusyName] = useState<string | null>(null);
@@ -300,21 +305,41 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
     return () => window.clearTimeout(timer);
   }, [installStatus]);
 
-  // Reset render limit when search changes
+  // Reset render limit when search or category filter changes
   useEffect(() => {
     setRenderLimit(RENDER_PAGE_SIZE);
-  }, [searchQuery]);
+  }, [searchQuery, categoryFilter]);
+
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    for (const ext of catalog) {
+      for (const category of ext.categories) {
+        if (category) set.add(category);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [catalog]);
+
+  useEffect(() => {
+    if (categoryFilter !== 'all' && !availableCategories.includes(categoryFilter)) {
+      setCategoryFilter('all');
+    }
+  }, [availableCategories, categoryFilter]);
 
   const filteredCatalog = useMemo(() => {
     const query = searchQuery.trim();
+    const byCategory = categoryFilter === 'all'
+      ? catalog
+      : catalog.filter((entry) => entry.categories.includes(categoryFilter));
+
     if (!query) {
-      return catalog.map((entry) => ({ entry, score: 0 }));
+      return byCategory.map((entry) => ({ entry, score: 0 }));
     }
 
-    return catalog
+    return byCategory
       .map((entry) => ({ entry, score: scoreCatalogEntry(entry, query) }))
       .filter((entry) => entry.score > 0);
-  }, [catalog, searchQuery]);
+  }, [catalog, searchQuery, categoryFilter]);
 
   const sortedCatalog = useMemo(() => {
     return [...filteredCatalog].sort((a, b) => {
@@ -623,6 +648,19 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                 className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-lg pl-10 pr-4 py-2 text-sm text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-[var(--ui-segment-border)] transition-colors"
               />
             </div>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              disabled={availableCategories.length === 0}
+              className="px-3 py-1.5 text-xs text-[var(--text-secondary)] border border-[var(--ui-panel-border)] bg-[var(--ui-segment-bg)] hover:bg-[var(--ui-segment-hover-bg)] rounded-lg transition-colors outline-none focus:border-[var(--ui-segment-border)] disabled:opacity-40 max-w-[180px]"
+            >
+              <option value="all">All Categories</option>
+              {availableCategories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
             <button
               onClick={() => loadCatalog(true)}
               disabled={isLoading}
@@ -898,6 +936,35 @@ const CommunityDetails: React.FC<{
   const { t } = useI18n();
   const team = ext.contributors?.length ? ext.contributors : ext.author ? [ext.author] : [];
   const visibleCommands = ext.commands.slice(0, 7);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    setLightboxIndex(null);
+  }, [ext.name]);
+
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setLightboxIndex(null);
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        setLightboxIndex((idx) =>
+          idx === null ? null : Math.min(idx + 1, screenshots.length - 1)
+        );
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setLightboxIndex((idx) => (idx === null ? null : Math.max(idx - 1, 0)));
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [lightboxIndex, screenshots.length]);
 
   return (
     <div className="h-full flex flex-col">
@@ -954,7 +1021,7 @@ const CommunityDetails: React.FC<{
                   {screenshots.slice(0, 4).map((url, idx) => (
                     <button
                       key={`${url}-${idx}`}
-                      onClick={() => window.electron.openUrl(url)}
+                      onClick={() => setLightboxIndex(idx)}
                       className="rounded-md overflow-hidden border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] hover:border-[var(--ui-segment-border)] transition-colors"
                     >
                       <img src={url} alt="" className="w-full h-24 object-cover" draggable={false} />
@@ -1052,7 +1119,7 @@ const CommunityDetails: React.FC<{
               screenshots.map((url, idx) => (
                 <button
                   key={`${url}-${idx}`}
-                  onClick={() => window.electron.openUrl(url)}
+                  onClick={() => setLightboxIndex(idx)}
                   className="w-full rounded-lg overflow-hidden border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] hover:border-[var(--ui-segment-border)] transition-colors"
                 >
                   <img src={url} alt="" className="w-full max-h-56 object-cover" draggable={false} />
@@ -1065,6 +1132,68 @@ const CommunityDetails: React.FC<{
         )}
       </div>
 
+      {lightboxIndex !== null && screenshots[lightboxIndex] &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            onClick={() => setLightboxIndex(null)}
+          >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setLightboxIndex(null);
+              }}
+              aria-label="Close preview"
+              className="absolute right-4 w-9 h-9 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 text-white transition-colors"
+              style={{ top: '56px' }}
+            >
+              <X className="w-5 h-5" />
+            </button>
+            {lightboxIndex > 0 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((idx) => (idx === null ? null : Math.max(idx - 1, 0)));
+                }}
+                aria-label="Previous screenshot"
+                className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 text-white transition-colors"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+            {lightboxIndex < screenshots.length - 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((idx) =>
+                    idx === null ? null : Math.min(idx + 1, screenshots.length - 1)
+                  );
+                }}
+                aria-label="Next screenshot"
+                className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 text-white transition-colors"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+            <img
+              src={screenshots[lightboxIndex]}
+              alt=""
+              onClick={(e) => e.stopPropagation()}
+              draggable={false}
+              className="max-w-[92vw] max-h-[88vh] object-contain rounded-lg shadow-2xl"
+            />
+            {screenshots.length > 1 && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/50 text-white text-xs font-medium">
+                {lightboxIndex + 1} / {screenshots.length}
+              </div>
+            )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

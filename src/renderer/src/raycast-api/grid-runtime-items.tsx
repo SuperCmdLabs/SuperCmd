@@ -186,7 +186,7 @@ export function createGridItemsRuntime(resolveIconSrc: (src: string) => string) 
             <div className="w-full h-full rounded" style={{ backgroundColor: swatchColor }} />
           ) : renderableContent ? (
             <div className="w-full h-full flex items-center justify-center">
-              {renderIcon(renderableContent, 'w-full h-full object-contain')}
+              {renderIcon(renderableContent, 'w-full h-full object-contain', undefined, 128)}
             </div>
           ) : (
             <div className="w-full h-full bg-[var(--surface-tint-2)] rounded flex items-center justify-center text-[var(--text-subtle)] text-2xl">

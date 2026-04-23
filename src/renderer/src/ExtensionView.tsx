@@ -3862,7 +3862,14 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
 
   // Navigation context
   const push = useCallback((element: React.ReactElement) => {
-    setNavStack((prev) => [...prev, element]);
+    setNavStack((prev) => {
+      // Force a fresh mount on each push — otherwise React reconciles
+      // same-type pushes (e.g. <Directory> → <Directory>) and preserves the
+      // previous view's useState, so new props (like a new path) never take
+      // effect. Keying on the stack position gives each push its own instance.
+      const keyed = React.cloneElement(element, { key: `__sc_nav_${prev.length}` });
+      return [...prev, keyed];
+    });
   }, []);
 
   const pop = useCallback(() => {

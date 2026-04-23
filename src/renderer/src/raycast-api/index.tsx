@@ -1803,6 +1803,20 @@ export function getPreferenceValues<Values extends PreferenceValues = Preference
 
 export async function open(target: string, application?: string | Application): Promise<void> {
   const electron = (window as any).electron;
+
+  // Intercept raycast://confetti deeplinks (used by the 1-click-confetti extension)
+  // and map them to SuperCmd's native confetti overlay.
+  if (typeof target === 'string') {
+    const normalized = target.trim().toLowerCase();
+    if (
+      normalized === 'raycast://confetti' ||
+      normalized === 'raycast://extensions/raycast/raycast/confetti'
+    ) {
+      try { await electron?.showConfetti?.(); } catch {}
+      return;
+    }
+  }
+
   if (application) {
     const appName = typeof application === 'string' ? application : application.name;
     if (electron?.openUrl) {

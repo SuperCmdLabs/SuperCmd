@@ -2027,6 +2027,8 @@ let memoryStatusWindow: InstanceType<typeof BrowserWindow> | null = null;
 let memoryStatusHideTimer: NodeJS.Timeout | null = null;
 let memoryStatusRenderSeq = 0;
 let memoryStatusHideTimerSeq = 0;
+let confettiWindow: InstanceType<typeof BrowserWindow> | null = null;
+let confettiCloseTimer: NodeJS.Timeout | null = null;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
 let notesWindow: InstanceType<typeof BrowserWindow> | null = null;
@@ -2303,6 +2305,155 @@ async function showMemoryStatusBar(
     }, MEMORY_STATUS_AUTOHIDE_MS);
   }
 }
+
+function getConfettiWindowHtml(): string {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script>
+    (function() {
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+
+      const COLORS = ['#ff4d6d', '#ffd166', '#06d6a0', '#4cc9f0', '#f72585', '#b8f2e6', '#ffffff'];
+      const particles = [];
+      // Two bursts from lower-left and lower-right, plus a center shower
+      const bursts = [
+        { x: canvas.width * 0.15, y: canvas.height * 0.85, angle: -Math.PI * 0.30, spread: 0.9 },
+        { x: canvas.width * 0.85, y: canvas.height * 0.85, angle: -Math.PI * 0.70, spread: 0.9 },
+        { x: canvas.width * 0.50, y: canvas.height * 0.55, angle: -Math.PI * 0.50, spread: 1.1 },
+      ];
+      const gravity = 0.32 * dpr;
+      for (const b of bursts) {
+        const count = 110;
+        for (let i = 0; i < count; i++) {
+          const a = b.angle + (Math.random() - 0.5) * b.spread;
+          const speed = (9 + Math.random() * 12) * dpr;
+          particles.push({
+            x: b.x,
+            y: b.y,
+            vx: Math.cos(a) * speed,
+            vy: Math.sin(a) * speed,
+            size: (4 + Math.random() * 7) * dpr,
+            color: COLORS[Math.floor(Math.random() * COLORS.length)],
+            rot: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 0.3,
+          });
+        }
+      }
+
+      const durationMs = 1800;
+      const start = performance.now();
+      function tick(now) {
+        const elapsed = now - start;
+        const t = Math.min(1, elapsed / durationMs);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (const p of particles) {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += gravity;
+          p.vx *= 0.993;
+          p.rot += p.rotSpeed;
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.rot);
+          ctx.globalAlpha = 1 - t;
+          ctx.fillStyle = p.color;
+          ctx.fillRect(-p.size * 0.5, -p.size * 0.5, p.size, p.size * 0.62);
+          ctx.restore();
+        }
+        if (elapsed < durationMs) {
+          requestAnimationFrame(tick);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+function closeConfettiWindow(): void {
+  if (confettiCloseTimer) {
+    clearTimeout(confettiCloseTimer);
+    confettiCloseTimer = null;
+  }
+  if (confettiWindow && !confettiWindow.isDestroyed()) {
+    try { confettiWindow.close(); } catch {}
+  }
+  confettiWindow = null;
+}
+
+async function showConfettiBurst(): Promise<void> {
+  try {
+    closeConfettiWindow();
+    const cursor = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(cursor) || screen.getPrimaryDisplay();
+    const { x, y, width, height } = display.bounds;
+    confettiWindow = new BrowserWindow({
+      x,
+      y,
+      width,
+      height,
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      hasShadow: false,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      focusable: false,
+      show: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+      },
+    });
+    try { confettiWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
+    try { confettiWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+    try { confettiWindow.setAlwaysOnTop(true, 'screen-saver'); } catch {}
+    const win = confettiWindow;
+    win.on('closed', () => {
+      if (confettiWindow === win) confettiWindow = null;
+    });
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getConfettiWindowHtml())}`);
+    if (win.isDestroyed()) return;
+    try {
+      if (typeof (win as any).showInactive === 'function') (win as any).showInactive();
+      else win.show();
+    } catch {}
+    confettiCloseTimer = setTimeout(() => {
+      confettiCloseTimer = null;
+      closeConfettiWindow();
+    }, 2200);
+  } catch (error) {
+    console.warn('[Confetti] Failed to show confetti burst:', error);
+    closeConfettiWindow();
+  }
+}
+
 type AppUpdaterState =
   | 'idle'
   | 'unsupported'
@@ -11484,6 +11635,10 @@ app.whenReady().then(async () => {
     void showMemoryStatusBar(variant, String(text || ''));
   });
 
+  ipcMain.handle('show-confetti', () => {
+    void showConfettiBurst();
+  });
+
   ipcMain.handle('open-devtools', () => {
     return openPreferredDevTools();
   });
@@ -13190,16 +13345,47 @@ return appURL's |path|() as text`,
     }
   });
 
-  ipcMain.handle('get-file-icon-data-url', async (_event: any, filePath: string, size = 20) => {
-    try {
-      const icon = await app.getFileIcon(filePath, { size: size <= 16 ? 'small' : size >= 64 ? 'large' : 'normal' });
-      if (icon && !icon.isEmpty()) {
-        return icon.resize({ width: size, height: size }).toDataURL();
+  const fileIconPendingRequests = new Map<string, Promise<string | null>>();
+
+  async function computeFileIconDataUrl(filePath: string, size: number): Promise<string | null> {
+    if (size >= 48) {
+      try {
+        const thumb = await nativeImage.createThumbnailFromPath(filePath, { width: size, height: size });
+        if (thumb && !thumb.isEmpty()) {
+          return thumb.toDataURL();
+        }
+      } catch {
+        // Fall through to app.getFileIcon fallback below.
       }
-      return null;
-    } catch {
-      return null;
     }
+
+    try {
+      const icon = await app.getFileIcon(filePath, {
+        size: size <= 16 ? 'small' : size >= 32 ? 'large' : 'normal',
+      });
+      if (icon && !icon.isEmpty()) {
+        return icon.toDataURL();
+      }
+    } catch {
+      // Ignore and return null below.
+    }
+    return null;
+  }
+
+  ipcMain.handle('get-file-icon-data-url', async (_event: any, filePath: string, size = 20) => {
+    if (typeof filePath !== 'string' || !filePath) return null;
+    const clampedSize = Math.max(16, Math.min(256, Math.round(Number(size) || 20)));
+    const key = `${clampedSize}:${filePath}`;
+    const existing = fileIconPendingRequests.get(key);
+    if (existing) return existing;
+
+    const pending = computeFileIconDataUrl(filePath, clampedSize)
+      .catch(() => null)
+      .finally(() => {
+        fileIconPendingRequests.delete(key);
+      });
+    fileIconPendingRequests.set(key, pending);
+    return pending;
   });
 
   ipcMain.handle('file-search-query', async (_event: any, query: string, options?: { limit?: number }) => {
@@ -15227,12 +15413,16 @@ if let tiff = image?.tiffRepresentation {
     };
 
     let lastResolvedTrayIconOk = false;
+    const hasEmojiIcon = typeof iconEmoji === 'string' && iconEmoji.trim().length > 0;
     const resolveTrayIcon = () => {
       const primaryImg = createNativeImageFromMenuIcon({ pathValue: iconPath, dataUrlValue: iconDataUrl }, 18);
       const usingPrimary = Boolean(primaryImg);
+      // When the extension supplies an emoji as its tray icon (e.g. "🎉"), we render that
+      // emoji as the tray title and leave the tray image empty. Falling back to the
+      // extension's package icon here would produce two visuals side-by-side in one slot.
       const img =
         primaryImg ||
-        createNativeImageFromMenuIcon({ dataUrlValue: fallbackIconDataUrl }, 18);
+        (hasEmojiIcon ? null : createNativeImageFromMenuIcon({ dataUrlValue: fallbackIconDataUrl }, 18));
       lastResolvedTrayIconOk = Boolean(img);
       if (img) {
         // Raycast icon tokens are serialized as data URLs and should be template images
