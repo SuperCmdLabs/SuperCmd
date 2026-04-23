@@ -99,6 +99,14 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
   return { provider: config.provider, modelId: defaults[config.provider] || 'gpt-4o-mini' };
 }
 
+// ─── Model capability helpers ────────────────────────────────────────
+
+// OpenAI reasoning models (o1, o1-mini, o1-preview, o3, o3-mini, o4-mini, …)
+// reject the `temperature` parameter — they only support the default.
+function isOpenAIReasoningModel(model: string): boolean {
+  return /^o\d/i.test(model.trim());
+}
+
 // ─── Availability check ──────────────────────────────────────────────
 
 function hasProviderCredentials(provider: ModelRoute['provider'], config: AISettings): boolean {
@@ -216,7 +224,9 @@ async function* streamOpenAIChat(
   if (systemPrompt) full.push({ role: 'system', content: systemPrompt });
   for (const m of messages) full.push({ role: m.role, content: m.content });
 
-  const body = JSON.stringify({ model, messages: full, temperature, stream: true });
+  const payload: any = { model, messages: full, stream: true };
+  if (!isOpenAIReasoningModel(model)) payload.temperature = temperature;
+  const body = JSON.stringify(payload);
 
   const response = await httpRequest({
     hostname: 'api.openai.com',
@@ -252,7 +262,9 @@ async function* streamOpenAICompatibleChat(
   if (systemPrompt) full.push({ role: 'system', content: systemPrompt });
   for (const m of messages) full.push({ role: m.role, content: m.content });
 
-  const body = JSON.stringify({ model, messages: full, temperature, stream: true });
+  const payload: any = { model, messages: full, stream: true };
+  if (!isOpenAIReasoningModel(model)) payload.temperature = temperature;
+  const body = JSON.stringify(payload);
 
   const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
   const chatUrl = normalizedBaseUrl.endsWith('/v1')
@@ -416,12 +428,9 @@ async function* streamOpenAI(
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   messages.push({ role: 'user', content: prompt });
 
-  const body = JSON.stringify({
-    model,
-    messages,
-    temperature,
-    stream: true,
-  });
+  const payload: any = { model, messages, stream: true };
+  if (!isOpenAIReasoningModel(model)) payload.temperature = temperature;
+  const body = JSON.stringify(payload);
 
   const response = await httpRequest({
     hostname: 'api.openai.com',
@@ -462,12 +471,9 @@ async function* streamOpenAICompatible(
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   messages.push({ role: 'user', content: prompt });
 
-  const body = JSON.stringify({
-    model,
-    messages,
-    temperature,
-    stream: true,
-  });
+  const payload: any = { model, messages, stream: true };
+  if (!isOpenAIReasoningModel(model)) payload.temperature = temperature;
+  const body = JSON.stringify(payload);
 
   // Ensure baseUrl ends with /v1 and append /chat/completions
   const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
