@@ -8758,10 +8758,17 @@ function stopEmojiTriggerMonitor(): void {
   hideEmojiPicker();
 }
 
+function isEmojiPickerActive(settings: AppSettings): boolean {
+  // Disabled either via the dedicated toggle or by disabling the command entry.
+  if (!settings.emojiPickerEnabled) return false;
+  if (settings.disabledCommands?.includes('system-emoji-picker')) return false;
+  return true;
+}
+
 function refreshEmojiTriggerMonitor(): void {
   const settings = loadSettings();
   stopEmojiTriggerMonitor();
-  if (settings.emojiPickerEnabled) {
+  if (isEmojiPickerActive(settings)) {
     startEmojiTriggerMonitor(settings.emojiPickerTriggerPrefix || ':');
   }
 }
@@ -8790,8 +8797,9 @@ function startEmojiTriggerMonitor(triggerPrefix = ':'): void {
   }
 
   const { spawn } = require('child_process');
+  let proc: any;
   try {
-    emojiTriggerProcess = spawn(binaryPath, [triggerPrefix], {
+    proc = spawn(binaryPath, [triggerPrefix], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env.NODE_ENV === 'development'
         ? { ...process.env, AX_CARET_DEBUG: '1' }
@@ -8801,9 +8809,10 @@ function startEmojiTriggerMonitor(triggerPrefix = ':'): void {
     console.warn('[EmojiTrigger] Failed to spawn native helper:', error);
     return;
   }
+  emojiTriggerProcess = proc;
   console.log('[EmojiTrigger] Started system-wide emoji monitor');
 
-  emojiTriggerProcess.stdout.on('data', (chunk: Buffer | string) => {
+  proc.stdout.on('data', (chunk: Buffer | string) => {
     emojiTriggerStdoutBuffer += chunk.toString();
     const lines = emojiTriggerStdoutBuffer.split('\n');
     emojiTriggerStdoutBuffer = lines.pop() || '';
@@ -8844,15 +8853,20 @@ function startEmojiTriggerMonitor(triggerPrefix = ':'): void {
     }
   });
 
-  emojiTriggerProcess.stderr.on('data', (chunk: Buffer | string) => {
+  proc.stderr.on('data', (chunk: Buffer | string) => {
     const text = chunk.toString().trim();
     if (text) console.warn('[EmojiTrigger]', text);
   });
 
-  emojiTriggerProcess.on('exit', () => {
-    emojiTriggerProcess = null;
-    emojiTriggerStdoutBuffer = '';
-    hideEmojiPicker();
+  proc.on('exit', () => {
+    // Only clear the global reference if it still points at THIS process.
+    // Otherwise a late-firing exit handler from an old killed process would
+    // wipe the reference to the newly-spawned one, silently breaking it.
+    if (emojiTriggerProcess === proc) {
+      emojiTriggerProcess = null;
+      emojiTriggerStdoutBuffer = '';
+      hideEmojiPicker();
+    }
   });
 }
 
@@ -12424,7 +12438,12 @@ app.whenReady().then(async () => {
           console.error('Failed to rebuild extensions after updating custom folders:', error);
         }
       }
-      if (patch.emojiPickerEnabled !== undefined || patch.emojiPickerTriggerPrefix !== undefined) {
+      if (
+        patch.emojiPickerEnabled !== undefined ||
+        patch.emojiPickerTriggerPrefix !== undefined ||
+        patch.disabledCommands !== undefined ||
+        patch.enabledCommands !== undefined
+      ) {
         refreshEmojiTriggerMonitor();
       }
       if (patch.fileSearchProtectedRootsEnabled !== undefined) {

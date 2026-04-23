@@ -12,7 +12,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { ArrowLeft, Plus, ChevronLeft, ChevronRight, History, Trash2, Eraser } from 'lucide-react';
+import { ArrowLeft, Plus, ChevronLeft, ChevronRight, History, Trash2, Eraser, Sparkles, Copy, Check } from 'lucide-react';
 import { renderSimpleMarkdown } from '../raycast-api/detail-markdown';
 import type { AiMessage, AiConversation } from '../hooks/useAiChat';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
@@ -123,37 +123,129 @@ const QACard: React.FC<{ pair: QAPair; isStreaming: boolean }> = ({ pair, isStre
   const answerContent = pair.answer?.content || '';
   const cancelled = pair.answer?.cancelled;
   const showThinking = isStreaming && !answerContent;
+  const showAssistantRow = showThinking || answerContent || cancelled;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    if (!answerContent) return;
+    navigator.clipboard.writeText(answerContent).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    });
+  }, [answerContent]);
 
   return (
-    <div
-      className="rounded-lg px-4 py-3"
-      style={{
-        background: cancelled
-          ? 'color-mix(in srgb, var(--danger, #ef4444) 8%, var(--ui-segment-active-bg))'
-          : 'var(--ui-segment-active-bg)',
-        border: cancelled
-          ? '1px solid color-mix(in srgb, var(--danger, #ef4444) 40%, transparent)'
-          : '1px solid var(--ui-segment-border)',
-      }}
-    >
+    <div className="flex flex-col gap-3">
+      {/* User question — right-aligned bubble */}
       {pair.question && (
-        <div className="text-[13px] text-[var(--text-muted)] mb-2">{pair.question}</div>
+        <div className="flex justify-end">
+          <div
+            className="max-w-[85%] px-3.5 py-2 text-[13.5px] leading-snug whitespace-pre-wrap break-words"
+            style={{
+              background: 'var(--accent-soft)',
+              color: 'var(--text-primary)',
+              border: '1px solid color-mix(in srgb, var(--accent) 24%, transparent)',
+              borderRadius: '16px 16px 4px 16px',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+            }}
+          >
+            {pair.question}
+          </div>
+        </div>
       )}
-      {showThinking ? (
-        <div className="flex items-center gap-1 py-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" style={{ animationDelay: '0.2s' }} />
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" style={{ animationDelay: '0.4s' }} />
-        </div>
-      ) : answerContent ? (
-        <div className="text-[14px] leading-relaxed text-[var(--text-primary)] ai-markdown">
-          {renderSimpleMarkdown(answerContent, (src) => src)}
-        </div>
-      ) : null}
-      {cancelled && (
-        <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-[var(--danger,#ef4444)]">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--danger,#ef4444)]" />
-          Cancelled
+
+      {/* Assistant answer — sparkle glyph + prose, no card */}
+      {showAssistantRow && (
+        <div className="group relative flex gap-3">
+          <div
+            className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5 relative"
+            style={{
+              background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent) 28%, transparent)',
+              color: 'var(--accent)',
+            }}
+          >
+            <Sparkles size={13} strokeWidth={2.25} />
+            {isStreaming && (
+              <span
+                aria-hidden="true"
+                className="absolute inset-0 rounded-full"
+                style={{
+                  boxShadow: '0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent)',
+                  animation: 'sc-ai-pulse 1.6s ease-out infinite',
+                }}
+              />
+            )}
+          </div>
+          <div className="flex-1 min-w-0 pt-0.5">
+            {showThinking ? (
+              <div className="flex flex-col gap-1.5 pt-1">
+                <div
+                  className="h-2.5 rounded-full sc-ai-shimmer"
+                  style={{ width: '78%' }}
+                />
+                <div
+                  className="h-2.5 rounded-full sc-ai-shimmer"
+                  style={{ width: '62%', animationDelay: '0.15s' }}
+                />
+                <div
+                  className="h-2.5 rounded-full sc-ai-shimmer"
+                  style={{ width: '44%', animationDelay: '0.3s' }}
+                />
+              </div>
+            ) : answerContent ? (
+              <div
+                className="text-[14px] leading-[1.65] text-[var(--text-primary)] ai-markdown sc-ai-selectable"
+                style={cancelled ? { opacity: 0.75 } : undefined}
+              >
+                {renderSimpleMarkdown(answerContent, (src) => src)}
+                {isStreaming && (
+                  <span
+                    aria-hidden="true"
+                    className="inline-block align-[-2px] ml-0.5"
+                    style={{
+                      width: '6px',
+                      height: '14px',
+                      background: 'var(--accent)',
+                      borderRadius: '1.5px',
+                      animation: 'sc-ai-caret 1.1s steps(2) infinite',
+                    }}
+                  />
+                )}
+              </div>
+            ) : null}
+            {cancelled && (
+              <div
+                className="mt-2 inline-flex items-center gap-1.5 text-[11px]"
+                style={{ color: 'var(--danger, #ef4444)' }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ background: 'var(--danger, #ef4444)' }}
+                />
+                Response cancelled
+              </div>
+            )}
+          </div>
+          {answerContent && !isStreaming && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              title={copied ? 'Copied' : 'Copy'}
+              aria-label={copied ? 'Copied' : 'Copy response'}
+              className={`absolute top-0 right-0 inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] transition-opacity ${
+                copied ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
+              }`}
+              style={{
+                background: 'var(--ui-segment-active-bg)',
+                border: '1px solid var(--ui-segment-border)',
+                color: copied ? 'var(--accent)' : 'var(--text-muted)',
+              }}
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -451,19 +543,20 @@ const AiChatView: React.FC<AiChatViewProps> = ({
   >(null);
 
   // Keep the latest card pinned to the TOP of the viewport:
-  // when a new pair is added, scroll container so the new card's offsetTop
-  // lines up with the top of the scrollable area.
+  // when a new pair is added, scroll so the new card's top edge aligns with
+  // the top of the scroll area (accounting for container padding).
   useEffect(() => {
     if (pairs.length > prevPairCountRef.current) {
       const lastId = pairs[pairs.length - 1]?.id;
       const container = aiResponseRef.current;
-      // defer to next frame so the new DOM node (+ spacer) is measured
       const r = requestAnimationFrame(() => {
         const el = lastId ? pairRefs.current.get(lastId) : null;
-        if (el && container) {
-          const top = el.offsetTop - container.offsetTop;
-          container.scrollTo({ top, behavior: 'smooth' });
-        }
+        if (!el || !container) return;
+        const containerRect = container.getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+        const paddingTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
+        const delta = elRect.top - containerRect.top - paddingTop;
+        container.scrollTo({ top: container.scrollTop + delta, behavior: 'smooth' });
       });
       return () => cancelAnimationFrame(r);
     }
@@ -471,7 +564,7 @@ const AiChatView: React.FC<AiChatViewProps> = ({
   }, [pairs.length, aiResponseRef]);
 
   // Ensure spacer is tall enough to allow latest card to reach the top of the viewport.
-  // spacerHeight = container.clientHeight - card.offsetHeight
+  // spacerHeight = (visible content area) - card.offsetHeight
   useEffect(() => {
     const container = aiResponseRef.current;
     const spacer = spacerRef.current;
@@ -479,7 +572,11 @@ const AiChatView: React.FC<AiChatViewProps> = ({
     const lastId = pairs[pairs.length - 1]?.id;
     const el = lastId ? pairRefs.current.get(lastId) : null;
     if (!el) return;
-    const target = Math.max(0, container.clientHeight - el.offsetHeight - 24);
+    const cs = getComputedStyle(container);
+    const paddingTop = parseFloat(cs.paddingTop) || 0;
+    const paddingBottom = parseFloat(cs.paddingBottom) || 0;
+    const visible = container.clientHeight - paddingTop - paddingBottom;
+    const target = Math.max(0, visible - el.offsetHeight);
     spacer.style.height = `${target}px`;
   }, [pairs, aiResponseRef]);
 
@@ -636,11 +733,38 @@ const AiChatView: React.FC<AiChatViewProps> = ({
           {/* Body: QA cards + tall spacer to let latest card anchor at top */}
           <div
             ref={aiResponseRef}
-            className="flex-1 overflow-y-auto custom-scrollbar px-4 py-3 space-y-3"
+            className="flex-1 overflow-y-auto custom-scrollbar px-5 py-5 space-y-7"
           >
             {pairs.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-center">
-                <div className="text-sm text-[var(--text-muted)]">Ask anything to get started</div>
+              <div className="h-full flex flex-col items-center justify-center text-center gap-4 px-8 -mt-4">
+                <div
+                  className="relative w-14 h-14 rounded-2xl flex items-center justify-center"
+                  style={{
+                    background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--accent) 26%, transparent)',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  <Sparkles size={22} strokeWidth={2.25} />
+                  <div
+                    aria-hidden="true"
+                    className="absolute -inset-3 rounded-[24px] pointer-events-none"
+                    style={{
+                      background:
+                        'radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 32%, transparent), transparent 68%)',
+                      filter: 'blur(14px)',
+                      opacity: 0.9,
+                    }}
+                  />
+                </div>
+                <div className="space-y-1 max-w-[320px]">
+                  <div className="text-[15px] font-medium text-[var(--text-primary)]">
+                    Ask AI anything
+                  </div>
+                  <div className="text-[12px] text-[var(--text-muted)] leading-relaxed">
+                    Ideas, code, writing, quick answers — start typing to begin a new conversation.
+                  </div>
+                </div>
               </div>
             ) : (
               <>

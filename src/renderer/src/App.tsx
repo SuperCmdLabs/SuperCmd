@@ -1589,7 +1589,7 @@ const App: React.FC = () => {
       ? contextualCommands
       : filteredCommands;
   const hiddenListOnlyCommandIds = useMemo(
-    () => new Set(['system-add-to-memory', 'system-cursor-prompt']),
+    () => new Set(['system-add-to-memory', 'system-cursor-prompt', 'system-emoji-picker']),
     []
   );
   const visibleSourceCommands = useMemo(
