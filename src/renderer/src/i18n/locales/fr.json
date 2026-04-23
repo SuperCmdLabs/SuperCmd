@@ -481,6 +481,16 @@
     },
     "extensions": {
       "title": "Configuration des extensions",
+      "clipboardBlacklist": {
+        "title": "Applications ignorées",
+        "description": "Le contenu copié dans le presse-papiers pendant que l'une de ces applications est au premier plan ne sera pas enregistré dans l'historique du presse-papiers de SuperCmd.",
+        "add": "Ajouter une application",
+        "remove": "Supprimer",
+        "empty": "Aucune application sur la liste noire. Les copies de toutes les applications sont enregistrées dans l'historique.",
+        "searchPlaceholder": "Rechercher des applications…",
+        "loading": "Chargement des applications…",
+        "noApps": "Aucune application trouvée"
+      },
       "builtIn": {
         "superCmd": {
           "title": "SuperCmd",

@@ -51,6 +51,7 @@ import {
   getClipboardItemById,
   searchClipboardHistory,
   setClipboardMonitorEnabled,
+  setClipboardAppBlacklist,
   togglePinClipboardItem,
   pruneClipboardHistoryOlderThan,
 } from './clipboard-manager';
@@ -11338,6 +11339,7 @@ app.whenReady().then(async () => {
   // which should not appear while the user is on the onboarding screen.
   if (settings.hasSeenOnboarding) {
     startClipboardMonitor();
+    setClipboardAppBlacklist(settings.clipboardAppBlacklist);
     pruneClipboardHistoryOlderThan(settings.clipboardHistoryRetentionDays);
   }
 
@@ -11832,6 +11834,7 @@ app.whenReady().then(async () => {
           app.dock.hide();
         }
         startClipboardMonitor();
+        setClipboardAppBlacklist(loadSettings().clipboardAppBlacklist);
         syncFnSpeakToggleWatcher(loadSettings().commandHotkeys);
         syncFnCommandWatchers(loadSettings().commandHotkeys);
       }
@@ -11857,6 +11860,9 @@ app.whenReady().then(async () => {
       }
       if (patch.clipboardHistoryRetentionDays !== undefined) {
         pruneClipboardHistoryOlderThan(result.clipboardHistoryRetentionDays);
+      }
+      if (patch.clipboardAppBlacklist !== undefined) {
+        setClipboardAppBlacklist(result.clipboardAppBlacklist);
       }
       return result;
     }

@@ -481,6 +481,16 @@
     },
     "extensions": {
       "title": "Configuración de extensiones",
+      "clipboardBlacklist": {
+        "title": "Aplicaciones ignoradas",
+        "description": "El contenido del portapapeles copiado mientras una de estas aplicaciones está al frente no se guardará en el historial del portapapeles de SuperCmd.",
+        "add": "Agregar aplicación",
+        "remove": "Eliminar",
+        "empty": "No hay aplicaciones en la lista negra. Las copias de todas las aplicaciones se guardan en el historial del portapapeles.",
+        "searchPlaceholder": "Buscar aplicaciones…",
+        "loading": "Cargando aplicaciones…",
+        "noApps": "No se encontraron aplicaciones"
+      },
       "builtIn": {
         "superCmd": {
           "title": "SuperCmd",

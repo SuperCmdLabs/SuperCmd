@@ -555,6 +555,16 @@
       "extensionPreferences": "확장 기본 설정",
       "commandPreferences": "명령 기본 설정",
       "noPreferences": "환경설정 없음",
+      "clipboardBlacklist": {
+        "title": "무시된 애플리케이션",
+        "description": "아래 앱이 전면에 있을 때 복사된 내용은 SuperCmd의 클립보드 기록에 저장되지 않습니다.",
+        "add": "애플리케이션 추가",
+        "remove": "제거",
+        "empty": "차단된 앱이 없습니다. 모든 앱의 복사 내용이 클립보드 기록에 저장됩니다.",
+        "searchPlaceholder": "애플리케이션 검색…",
+        "loading": "애플리케이션을 불러오는 중…",
+        "noApps": "애플리케이션을 찾을 수 없습니다"
+      },
       "enabled": "활성화됨",
       "logout": "로그아웃",
       "loggedIn": "{name}에 로그인했습니다.",

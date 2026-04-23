@@ -555,6 +555,16 @@
       "extensionPreferences": "Extension Preferences",
       "commandPreferences": "Command Preferences",
       "noPreferences": "No preferences",
+      "clipboardBlacklist": {
+        "title": "Ignored Applications",
+        "description": "Clipboard content copied while one of these apps is frontmost will not be saved to SuperCmd's clipboard history.",
+        "add": "Add Application",
+        "remove": "Remove",
+        "empty": "No applications blacklisted. Copies from every app are saved to clipboard history.",
+        "searchPlaceholder": "Search applications…",
+        "loading": "Loading applications…",
+        "noApps": "No applications found"
+      },
       "enabled": "Enabled",
       "logout": "Logout",
       "loggedIn": "Logged into {name}",

@@ -481,6 +481,16 @@
     },
     "extensions": {
       "title": "Erweiterungs-Einstellungen",
+      "clipboardBlacklist": {
+        "title": "Ignorierte Anwendungen",
+        "description": "Zwischenablage-Inhalte, die kopiert werden, während eine dieser Apps im Vordergrund ist, werden nicht in der Zwischenablage-Historie von SuperCmd gespeichert.",
+        "add": "Anwendung hinzufügen",
+        "remove": "Entfernen",
+        "empty": "Keine Anwendungen auf der Sperrliste. Kopien aus allen Apps werden im Verlauf gespeichert.",
+        "searchPlaceholder": "Anwendungen suchen…",
+        "loading": "Anwendungen werden geladen…",
+        "noApps": "Keine Anwendungen gefunden"
+      },
       "builtIn": {
         "superCmd": {
           "title": "SuperCmd",

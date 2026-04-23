@@ -555,6 +555,16 @@
       "extensionPreferences": "Preferenze dell'estensione",
       "commandPreferences": "Preferenze del comando",
       "noPreferences": "Nessuna preferenza",
+      "clipboardBlacklist": {
+        "title": "Applicazioni ignorate",
+        "description": "I contenuti copiati negli appunti mentre una di queste app è in primo piano non verranno salvati nella cronologia degli appunti di SuperCmd.",
+        "add": "Aggiungi applicazione",
+        "remove": "Rimuovi",
+        "empty": "Nessuna applicazione in lista nera. Le copie da tutte le app vengono salvate nella cronologia degli appunti.",
+        "searchPlaceholder": "Cerca applicazioni…",
+        "loading": "Caricamento applicazioni…",
+        "noApps": "Nessuna applicazione trovata"
+      },
       "enabled": "Abilitato",
       "logout": "Disconnetti",
       "loggedIn": "Connesso a {name}",

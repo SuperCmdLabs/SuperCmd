@@ -555,6 +555,16 @@
       "extensionPreferences": "拡張機能の環境設定",
       "commandPreferences": "コマンドの環境設定",
       "noPreferences": "環境設定がありません",
+      "clipboardBlacklist": {
+        "title": "無視するアプリケーション",
+        "description": "以下のアプリがフロントモストのときにコピーされた内容は、SuperCmd のクリップボード履歴に保存されません。",
+        "add": "アプリを追加",
+        "remove": "削除",
+        "empty": "ブロックされたアプリはありません。すべてのアプリからのコピーがクリップボード履歴に保存されます。",
+        "searchPlaceholder": "アプリを検索…",
+        "loading": "アプリを読み込み中…",
+        "noApps": "アプリが見つかりません"
+      },
       "enabled": "有効",
       "logout": "ログアウト",
       "loggedIn": "{name} にログイン中",

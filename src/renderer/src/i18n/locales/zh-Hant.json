@@ -552,6 +552,16 @@
       "extensionPreferences": "擴充功能偏好設定",
       "commandPreferences": "命令偏好設定",
       "noPreferences": "沒有偏好設定",
+      "clipboardBlacklist": {
+        "title": "忽略的應用程式",
+        "description": "當以下應用程式在最前景時，複製的內容不會儲存到 SuperCmd 的剪貼簿歷史。",
+        "add": "新增應用程式",
+        "remove": "移除",
+        "empty": "未封鎖任何應用程式。所有應用程式的複製都會儲存到剪貼簿歷史。",
+        "searchPlaceholder": "搜尋應用程式…",
+        "loading": "正在載入應用程式…",
+        "noApps": "找不到應用程式"
+      },
       "enabled": "已啟用",
       "logout": "登出",
       "loggedIn": "已登入 {name}",

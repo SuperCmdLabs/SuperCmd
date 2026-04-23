@@ -77,6 +77,9 @@ let lastClipboardImage: Buffer | null = null;
 let lastClipboardFilePath = '';
 let pollInterval: NodeJS.Timeout | null = null;
 let isEnabled = true;
+// Bundle IDs (lower-cased) whose copies should be skipped. Kept lowercase
+// so membership checks are case-insensitive against whatever macOS reports.
+let blacklistedAppBundleIds: Set<string> = new Set();
 
 // ─── Paths ──────────────────────────────────────────────────────────
 
@@ -165,6 +168,37 @@ function saveHistory(): void {
 
 function hashBuffer(buf: Buffer): string {
   return crypto.createHash('md5').update(buf).digest('hex');
+}
+
+function getCurrentFrontmostBundleId(): string | undefined {
+  if (process.platform !== 'darwin') return undefined;
+  try {
+    const asn = String(
+      execFileSync('/usr/bin/lsappinfo', ['front'], { encoding: 'utf-8', timeout: 500, stdio: ['ignore', 'pipe', 'ignore'] }) || ''
+    ).trim();
+    if (!asn) return undefined;
+    const info = String(
+      execFileSync(
+        '/usr/bin/lsappinfo',
+        ['info', '-only', 'bundleid', asn],
+        { encoding: 'utf-8', timeout: 500, stdio: ['ignore', 'pipe', 'ignore'] }
+      ) || ''
+    );
+    const bundleId =
+      info.match(/"CFBundleIdentifier"\s*=\s*"([^"]*)"/)?.[1]?.trim() ||
+      info.match(/"bundleid"\s*=\s*"([^"]*)"/i)?.[1]?.trim() ||
+      undefined;
+    return bundleId || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isFrontmostAppBlacklisted(): boolean {
+  if (blacklistedAppBundleIds.size === 0) return false;
+  const bundleId = getCurrentFrontmostBundleId();
+  if (!bundleId) return false;
+  return blacklistedAppBundleIds.has(bundleId.toLowerCase());
 }
 
 function detectType(text: string): 'url' | 'file' | 'text' {
@@ -447,6 +481,17 @@ function pollClipboard(): void {
     const clipboardFilePath = readClipboardFilePath();
     if (clipboardFilePath) {
       if (clipboardFilePath !== lastClipboardFilePath) {
+        if (isFrontmostAppBlacklisted()) {
+          // Seed the caches so we don't keep re-checking the same paste as "new"
+          // on every poll once the user leaves the blacklisted app.
+          lastClipboardFilePath = clipboardFilePath;
+          try { lastClipboardText = clipboard.readText() || ''; } catch {}
+          try {
+            const img = clipboard.readImage();
+            if (!img.isEmpty()) lastClipboardImage = img.toPNG();
+          } catch {}
+          return;
+        }
         console.log(`[Clipboard] File URL detected on pasteboard: ${clipboardFilePath}`);
         const handled = handleClipboardFileCopy(clipboardFilePath);
         if (handled) {
@@ -495,6 +540,11 @@ function pollClipboard(): void {
       const hash = hashBuffer(hashSource);
 
       if (!lastClipboardImage || hashBuffer(lastClipboardImage) !== hash) {
+        if (isFrontmostAppBlacklisted()) {
+          // Seed the image cache so subsequent polls don't re-trigger.
+          lastClipboardImage = hashSource;
+          return;
+        }
         lastClipboardImage = hashSource;
         addImageItem(image, rawGifData);
         return;
@@ -504,6 +554,10 @@ function pollClipboard(): void {
     // Check for text
     const text = clipboard.readText();
     if (text && text !== lastClipboardText) {
+      if (isFrontmostAppBlacklisted()) {
+        lastClipboardText = text;
+        return;
+      }
       lastClipboardText = text;
       addTextItem(text);
     }
@@ -784,6 +838,17 @@ export function copyItemToClipboard(id: string): boolean {
     console.error('Failed to copy item to clipboard:', e);
     return false;
   }
+}
+
+export function setClipboardAppBlacklist(bundleIds: string[] | null | undefined): void {
+  const next = new Set<string>();
+  if (Array.isArray(bundleIds)) {
+    for (const entry of bundleIds) {
+      const normalized = String(entry || '').trim().toLowerCase();
+      if (normalized) next.add(normalized);
+    }
+  }
+  blacklistedAppBundleIds = next;
 }
 
 export function setClipboardMonitorEnabled(enabled: boolean): void {

@@ -555,6 +555,16 @@
       "extensionPreferences": "扩展偏好设置",
       "commandPreferences": "命令偏好设置",
       "noPreferences": "没有偏好设置",
+      "clipboardBlacklist": {
+        "title": "忽略的应用",
+        "description": "当以下应用在前台时，复制的内容不会保存到 SuperCmd 的剪贴板历史。",
+        "add": "添加应用",
+        "remove": "移除",
+        "empty": "未屏蔽任何应用。所有应用的复制都会保存到剪贴板历史。",
+        "searchPlaceholder": "搜索应用…",
+        "loading": "正在加载应用…",
+        "noApps": "未找到应用"
+      },
       "enabled": "已启用",
       "logout": "退出登录",
       "loggedIn": "已登录 {name}",

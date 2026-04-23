@@ -106,6 +106,10 @@ export interface AppSettings {
   navigationStyle: AppNavigationStyle;
   // Auto-prune clipboard items older than N days. `null` = never prune.
   clipboardHistoryRetentionDays: number | null;
+  // Bundle IDs of applications whose clipboard copies should NOT be saved to
+  // SuperCmd's clipboard history. Clipboard content copied while one of these
+  // apps is frontmost is simply ignored. The system pasteboard is untouched.
+  clipboardAppBlacklist: string[];
 }
 
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
@@ -194,6 +198,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   launcherViewMode: 'expanded',
   navigationStyle: 'vim',
   clipboardHistoryRetentionDays: null,
+  clipboardAppBlacklist: [],
 };
 
 let settingsCache: AppSettings | null = null;
@@ -224,6 +229,20 @@ function normalizeNavigationStyle(value: any): AppNavigationStyle {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'macos') return 'macos';
   return 'vim';
+}
+
+function normalizeClipboardAppBlacklist(value: any): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of value) {
+    const normalized = String(entry || '').trim();
+    if (!normalized) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
 }
 
 const ALLOWED_CLIPBOARD_RETENTION_DAYS = new Set([1, 7, 30, 90, 180, 365]);
@@ -412,6 +431,7 @@ export function loadSettings(): AppSettings {
       launcherViewMode: (parsed.launcherViewMode === 'compact' ? 'compact' : 'expanded'),
       navigationStyle: normalizeNavigationStyle(parsed.navigationStyle),
       clipboardHistoryRetentionDays: normalizeClipboardHistoryRetentionDays(parsed.clipboardHistoryRetentionDays),
+      clipboardAppBlacklist: normalizeClipboardAppBlacklist(parsed.clipboardAppBlacklist),
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };
@@ -445,6 +465,11 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
       'clipboardHistoryRetentionDays' in patch
         ? patch.clipboardHistoryRetentionDays
         : current.clipboardHistoryRetentionDays
+    ),
+    clipboardAppBlacklist: normalizeClipboardAppBlacklist(
+      'clipboardAppBlacklist' in patch
+        ? patch.clipboardAppBlacklist
+        : current.clipboardAppBlacklist
     ),
   };
 

@@ -296,6 +296,7 @@ export interface AppSettings {
   launcherViewMode: 'expanded' | 'compact';
   navigationStyle: AppNavigationStyle;
   clipboardHistoryRetentionDays: number | null;
+  clipboardAppBlacklist: string[];
 }
 
 export interface CatalogEntry {
