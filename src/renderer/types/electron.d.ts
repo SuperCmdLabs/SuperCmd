@@ -440,6 +440,7 @@ export interface ElectronAPI {
   showWindow: () => Promise<void>;
   activateLastFrontmostApp: () => Promise<void>;
   reportNoViewStatus: (variant: 'processing' | 'success' | 'error', text: string) => Promise<void>;
+  showConfetti: () => Promise<void>;
   dismissUpdateBanner: () => Promise<void>;
   resetLauncherPosition: () => Promise<void>;
   openDevTools: () => Promise<boolean>;
