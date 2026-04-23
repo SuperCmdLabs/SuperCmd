@@ -922,6 +922,7 @@ async function discoverApplications(): Promise<CommandInfo[]> {
     '/Applications',
     '/System/Applications',
     '/System/Applications/Utilities',
+    '/System/Library/CoreServices/Applications',
     path.join(process.env.HOME || '', 'Applications'),
   ];
 

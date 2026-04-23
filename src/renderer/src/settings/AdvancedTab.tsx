@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bug, ClipboardList, FolderSearch, Keyboard, Languages, Sparkles } from 'lucide-react';
+import { Bug, FolderSearch, Keyboard, Languages, Sparkles } from 'lucide-react';
 import type { AppNavigationStyle, AppSettings, HyperKeySourceKey, HyperKeyCapsLockTapBehavior } from '../../types/electron';
 import { APP_LANGUAGE_OPTIONS, DEFAULT_APP_LANGUAGE, type AppLanguageSetting, useI18n } from '../i18n';
 
@@ -58,17 +58,6 @@ const CAPS_LOCK_TAP_OPTIONS: { value: HyperKeyCapsLockTapBehavior; label: string
 const NAVIGATION_STYLE_OPTIONS: { value: AppNavigationStyle; labelKey: string }[] = [
   { value: 'vim', labelKey: 'settings.advanced.navigationStyle.option.vim' },
   { value: 'macos', labelKey: 'settings.advanced.navigationStyle.option.macos' },
-];
-
-// `null` means "never prune" — represented in the <select> as the literal string "never".
-const CLIPBOARD_RETENTION_OPTIONS: { value: number | null; labelKey: string }[] = [
-  { value: 1, labelKey: 'settings.advanced.clipboardRetention.option.1day' },
-  { value: 7, labelKey: 'settings.advanced.clipboardRetention.option.7days' },
-  { value: 30, labelKey: 'settings.advanced.clipboardRetention.option.1month' },
-  { value: 90, labelKey: 'settings.advanced.clipboardRetention.option.3months' },
-  { value: 180, labelKey: 'settings.advanced.clipboardRetention.option.6months' },
-  { value: 365, labelKey: 'settings.advanced.clipboardRetention.option.1year' },
-  { value: null, labelKey: 'settings.advanced.clipboardRetention.option.never' },
 ];
 
 const AdvancedTab: React.FC = () => {
@@ -242,30 +231,6 @@ const AdvancedTab: React.FC = () => {
             >
               {NAVIGATION_STYLE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
-                  {t(opt.labelKey)}
-                </option>
-              ))}
-            </select>
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          icon={<ClipboardList className="w-4 h-4" />}
-          title={t('settings.advanced.clipboardRetention.title')}
-          description={t('settings.advanced.clipboardRetention.description')}
-        >
-          <div className="w-full max-w-[320px]">
-            <select
-              value={settings.clipboardHistoryRetentionDays == null ? 'never' : String(settings.clipboardHistoryRetentionDays)}
-              onChange={(event) => {
-                const raw = event.target.value;
-                const next = raw === 'never' ? null : Number(raw);
-                void applySettingsPatch({ clipboardHistoryRetentionDays: next });
-              }}
-              className={selectClassName}
-            >
-              {CLIPBOARD_RETENTION_OPTIONS.map((opt) => (
-                <option key={opt.value == null ? 'never' : String(opt.value)} value={opt.value == null ? 'never' : String(opt.value)}>
                   {t(opt.labelKey)}
                 </option>
               ))}

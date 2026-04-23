@@ -1404,9 +1404,14 @@ const ExtensionsTab: React.FC<{
                 ) : null}
 
                 {selectedCommandInfo?.id === 'system-clipboard-manager' ? (
-                  <ClipboardBlacklistSection
+                  <ClipboardSettingsSection
+                    retentionDays={settings?.clipboardHistoryRetentionDays ?? null}
+                    onRetentionChange={async (next) => {
+                      await window.electron.saveSettings({ clipboardHistoryRetentionDays: next });
+                      setSettings((prev) => (prev ? { ...prev, clipboardHistoryRetentionDays: next } : prev));
+                    }}
                     blacklist={settings?.clipboardAppBlacklist ?? []}
-                    onChange={async (next) => {
+                    onBlacklistChange={async (next) => {
                       await window.electron.saveSettings({ clipboardAppBlacklist: next });
                       setSettings((prev) => (prev ? { ...prev, clipboardAppBlacklist: next } : prev));
                     }}
@@ -1641,6 +1646,58 @@ type InstalledAppEntry = {
   path: string;
   bundleId?: string;
   iconDataUrl?: string;
+};
+
+const CLIPBOARD_RETENTION_OPTIONS: { value: number | null; labelKey: string }[] = [
+  { value: 1, labelKey: 'settings.advanced.clipboardRetention.option.1day' },
+  { value: 7, labelKey: 'settings.advanced.clipboardRetention.option.7days' },
+  { value: 30, labelKey: 'settings.advanced.clipboardRetention.option.1month' },
+  { value: 90, labelKey: 'settings.advanced.clipboardRetention.option.3months' },
+  { value: 180, labelKey: 'settings.advanced.clipboardRetention.option.6months' },
+  { value: 365, labelKey: 'settings.advanced.clipboardRetention.option.1year' },
+  { value: null, labelKey: 'settings.advanced.clipboardRetention.option.never' },
+];
+
+const ClipboardSettingsSection: React.FC<{
+  retentionDays: number | null;
+  onRetentionChange: (next: number | null) => Promise<void>;
+  blacklist: string[];
+  onBlacklistChange: (next: string[]) => Promise<void>;
+}> = ({ retentionDays, onRetentionChange, blacklist, onBlacklistChange }) => {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <div className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">
+          {t('settings.advanced.clipboardRetention.title')}
+        </div>
+        <p className="text-[11px] text-[var(--text-subtle)] leading-snug">
+          {t('settings.advanced.clipboardRetention.description')}
+        </p>
+        <div className="w-full max-w-[320px]">
+          <select
+            value={retentionDays == null ? 'never' : String(retentionDays)}
+            onChange={(event) => {
+              const raw = event.target.value;
+              const next = raw === 'never' ? null : Number(raw);
+              void onRetentionChange(next);
+            }}
+            className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+          >
+            {CLIPBOARD_RETENTION_OPTIONS.map((opt) => (
+              <option
+                key={opt.value == null ? 'never' : String(opt.value)}
+                value={opt.value == null ? 'never' : String(opt.value)}
+              >
+                {t(opt.labelKey)}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <ClipboardBlacklistSection blacklist={blacklist} onChange={onBlacklistChange} />
+    </div>
+  );
 };
 
 const ClipboardBlacklistSection: React.FC<{
