@@ -2382,7 +2382,7 @@ const activeAIRequests = new Map<string, AbortController>(); // requestId → co
 const pendingOAuthCallbackUrls: string[] = [];
 let snippetExpanderProcess: any = null;
 let snippetExpanderStdoutBuffer = '';
-let snippetExpanderIntentionalStop = false; // true when we kill it ourselves (prevent restart loop)
+const snippetExpanderIntentionalKills = new WeakSet<object>();
 
 // Serial queue for clipboard-based paste operations.
 // Both snippet expansion and pasteTextToActiveApp write to the clipboard temporarily.
@@ -7958,9 +7958,9 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
     const { execFile } = require('child_process');
     const { promisify } = require('util');
     const execFileAsync = promisify(execFile);
-    const previousClipboardText = systemClipboard.readText();
 
     try {
+      const previousClipboardText = systemClipboard.readText();
       systemClipboard.writeText(value);
 
       // Fast path: in-process native addon — activates app, polls until
@@ -8204,7 +8204,7 @@ async function expandSnippetKeywordInPlace(keyword: string, delimiter: string): 
 
 function stopSnippetExpander(): void {
   if (!snippetExpanderProcess) return;
-  snippetExpanderIntentionalStop = true;
+  snippetExpanderIntentionalKills.add(snippetExpanderProcess);
   try {
     snippetExpanderProcess.kill();
   } catch {}
@@ -8269,15 +8269,17 @@ function refreshSnippetExpander(): void {
     if (text) console.warn('[SnippetExpander]', text);
   });
 
+  const spawnedProcess = snippetExpanderProcess;
   snippetExpanderProcess.on('exit', () => {
-    snippetExpanderProcess = null;
-    snippetExpanderStdoutBuffer = '';
-    if (!snippetExpanderIntentionalStop) {
+    if (snippetExpanderProcess === spawnedProcess) {
+      snippetExpanderProcess = null;
+      snippetExpanderStdoutBuffer = '';
+    }
+    if (!snippetExpanderIntentionalKills.has(spawnedProcess)) {
       // Unexpected exit (crash, OS signal, etc.) — restart after a short delay.
       console.warn('[SnippetExpander] Process exited unexpectedly, restarting...');
       setTimeout(() => refreshSnippetExpander(), 500);
     }
-    snippetExpanderIntentionalStop = false;
   });
 }
 
