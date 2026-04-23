@@ -1952,3 +1952,46 @@ body.sc-detached-window .speak-close-button {
     line-height: 1.36;
   }
 }
+
+/* ─── AI Chat shimmer + caret animations ───────────────────────────── */
+
+.sc-ai-selectable,
+.sc-ai-selectable * {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+
+.sc-ai-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(var(--on-surface-rgb), 0.06) 0%,
+    color-mix(in srgb, var(--accent) 22%, transparent) 50%,
+    rgba(var(--on-surface-rgb), 0.06) 100%
+  );
+  background-size: 200% 100%;
+  animation: sc-ai-shimmer-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes sc-ai-shimmer-slide {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes sc-ai-caret {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes sc-ai-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  80% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+}
