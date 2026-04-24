@@ -71,7 +71,7 @@ const electronAPI = {
     ipcRenderer.invoke('get-last-frontmost-app'),
   restoreLastFrontmostApp: (): Promise<boolean> =>
     ipcRenderer.invoke('restore-last-frontmost-app'),
-  onWindowShown: (callback: (payload?: { mode?: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt'; systemCommandId?: string; selectedTextSnapshot?: string }) => void) => {
+  onWindowShown: (callback: (payload?: { mode?: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt'; systemCommandId?: string; selectedTextSnapshot?: string; workingDir?: string | null }) => void) => {
     const listener = (_event: any, payload: any) => callback(payload);
     ipcRenderer.on('window-shown', listener);
     return () => {
@@ -791,10 +791,20 @@ const electronAPI = {
     ipcRenderer.invoke('ai-is-available'),
 
   // ─── Agent (autonomous action loop) ────────────────────────────
-  agentRun: (requestId: string, query: string): Promise<void> =>
-    ipcRenderer.invoke('agent-run', requestId, query),
+  agentRun: (requestId: string, query: string, workingDir?: string, resumeFromSessionId?: string): Promise<void> =>
+    ipcRenderer.invoke('agent-run', requestId, query, workingDir, resumeFromSessionId),
   agentCancel: (requestId: string): Promise<void> =>
     ipcRenderer.invoke('agent-cancel', requestId),
+  agentGetContextFolder: (): Promise<string | null> =>
+    ipcRenderer.invoke('agent-get-context-folder'),
+  agentListSessions: (limit?: number): Promise<any[]> =>
+    ipcRenderer.invoke('agent-list-sessions', limit),
+  agentLoadSession: (id: string): Promise<any | null> =>
+    ipcRenderer.invoke('agent-load-session', id),
+  agentDeleteSession: (id: string): Promise<void> =>
+    ipcRenderer.invoke('agent-delete-session', id),
+  agentApprovalResponse: (callId: string, approved: boolean): Promise<void> =>
+    ipcRenderer.invoke('agent-approval-response', callId, approved),
   onAgentEvent: (callback: (event: any) => void) => {
     const listener = (_event: any, data: any) => callback(data);
     ipcRenderer.on('agent-event', listener);

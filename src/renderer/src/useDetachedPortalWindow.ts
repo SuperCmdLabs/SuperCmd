@@ -97,14 +97,22 @@ function computeWindowPosition(anchor: DetachedWindowAnchor, width: number, heig
   };
 }
 
-function buildWindowFeatures(width: number, height: number, anchor: DetachedWindowAnchor): string {
-  const { left, top } = computeWindowPosition(anchor, width, height);
+function buildWindowFeatures(
+  width: number,
+  height: number,
+  anchor: DetachedWindowAnchor,
+  positionHeight?: number,
+): string {
+  const { left, top } = computeWindowPosition(anchor, width, positionHeight ?? height);
   return [
     `width=${Math.max(80, Math.round(width))}`,
     `height=${Math.max(36, Math.round(height))}`,
     `left=${left}`,
     `top=${top}`,
-    'resizable=no',
+    // resizable=yes is required so programmatic window.resizeTo() calls take
+    // effect (some Chromium configurations refuse to resize popups created
+    // with resizable=no, which breaks expand/collapse UIs).
+    'resizable=yes',
     'scrollbars=no',
   ].join(',');
 }
@@ -202,7 +210,10 @@ export function useDetachedPortalWindow(
     }
 
     const positionHeight = options.positionHeight ?? options.height;
-    const features = buildWindowFeatures(options.width, positionHeight, options.anchor);
+    // The window opens at options.height — but is positioned as if it were
+    // positionHeight (used by callers that resize between collapsed/expanded
+    // states and want anchoring to stay stable across the toggle).
+    const features = buildWindowFeatures(options.width, options.height, options.anchor, positionHeight);
     let child = childWindowRef.current;
     if (!child || child.closed) {
       if (!windowNameRef.current) {
@@ -232,7 +243,12 @@ export function useDetachedPortalWindow(
     } else {
       try {
         const stored = positionRef.current;
-        if (stored) {
+        // Corner anchors (top-right / bottom-right) want to stay pinned to the
+        // corner across resize — center-preserving would push them off-screen
+        // when callers toggle a collapsed/expanded state.
+        const isCornerAnchor =
+          options.anchor === 'top-right' || options.anchor === 'bottom-right';
+        if (stored && !isCornerAnchor) {
           // Get current dimensions to calculate center-preserving offset
           const currentWidth = (child as any).outerWidth || options.width;
           const currentHeight = (child as any).outerHeight || options.height;
@@ -242,7 +258,7 @@ export function useDetachedPortalWindow(
           child.resizeTo(Math.round(options.width), Math.round(options.height));
           child.moveTo(Math.round(stored.left + dx), Math.round(stored.top + dy));
         } else {
-          const { left, top } = computeWindowPosition(options.anchor, options.width, positionHeight);
+          const { left, top } = computeWindowPosition(options.anchor, options.width, options.height);
           child.resizeTo(Math.round(options.width), Math.round(options.height));
           child.moveTo(left, top);
         }

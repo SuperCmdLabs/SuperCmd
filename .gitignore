@@ -11,3 +11,5 @@ extensions/*
 
 **/.build/*
 .gstack/
+
+codex-main/**

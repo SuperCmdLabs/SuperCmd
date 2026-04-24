@@ -336,6 +336,33 @@ function normalizeQuickLinkDynamicFields(fields: QuickLinkDynamicField[]): Quick
   return Array.from(map.values());
 }
 
+function prettifyLauncherWorkingDir(absPath: string): string {
+  if (!absPath) return '';
+  const match = absPath.match(/^\/Users\/[^/]+(?:\/(.*))?$/);
+  if (match) return match[1] ? `~/${match[1]}` : '~';
+  return absPath;
+}
+
+const LauncherWorkingDirChip: React.FC<{ path: string }> = ({ path }) => (
+  <div
+    title={`Working in ${path}`}
+    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--kbd-bg)] border border-[var(--ui-divider)] max-w-[180px] shrink-0"
+    style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+  >
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden className="shrink-0 text-[color:var(--text-muted)]">
+      <path
+        d="M1.5 3.25a.75.75 0 0 1 .75-.75h2.19c.2 0 .39.08.53.22l.72.72c.14.14.33.22.53.22h4.03a.75.75 0 0 1 .75.75v5.34a.75.75 0 0 1-.75.75h-8A.75.75 0 0 1 1.5 9.75z"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+    </svg>
+    <span className="text-[11px] font-medium text-[color:var(--text-muted)] truncate">
+      {prettifyLauncherWorkingDir(path)}
+    </span>
+  </div>
+);
+
 const App: React.FC = () => {
   const { t } = useI18n();
   const [commands, setCommands] = useState<CommandInfo[]>([]);
@@ -433,6 +460,7 @@ const App: React.FC = () => {
     upsertMenuBarExtension,
   } = useMenuBarExtensions();
   const [selectedTextSnapshot, setSelectedTextSnapshot] = useState('');
+  const [launcherWorkingDir, setLauncherWorkingDir] = useState<string | null>(null);
   const [memoryFeedback, setMemoryFeedback] = useState<MemoryFeedback>(null);
   const [memoryActionLoading, setMemoryActionLoading] = useState(false);
   const memoryFeedbackTimerRef = useRef<number | null>(null);
@@ -489,6 +517,7 @@ const App: React.FC = () => {
     startAgent,
     cancelAgent,
     closeWidget: closeAgentWidget,
+    respondToApproval: respondToAgentApproval,
   } = useAgentWidget();
 
   const {
@@ -916,6 +945,7 @@ const App: React.FC = () => {
         setMemoryFeedback(null);
         setMemoryActionLoading(false);
         setSelectedTextSnapshot(String(payload?.selectedTextSnapshot || '').trim());
+        setLauncherWorkingDir(payload?.workingDir ? String(payload.workingDir) : null);
         setSearchQuery('');
         setSelectedIndex(0);
         exitAiMode();
@@ -934,6 +964,7 @@ const App: React.FC = () => {
       setScriptCommandSetup(null);
       setScriptCommandOutput(null);
       setSelectedTextSnapshot(String(payload?.selectedTextSnapshot || '').trim());
+      setLauncherWorkingDir(payload?.workingDir ? String(payload.workingDir) : null);
       const shouldResetOverlays =
         lastWindowHiddenAtRef.current > 0 &&
         Date.now() - lastWindowHiddenAtRef.current > STALE_OVERLAY_RESET_MS;
@@ -3944,6 +3975,7 @@ const App: React.FC = () => {
     >
         {/* Search header - transparent background */}
         <div className="drag-region flex h-[60px] items-center gap-2 px-4 border-b border-[var(--ui-divider)]">
+          {launcherWorkingDir && <LauncherWorkingDirChip path={launcherWorkingDir} />}
           <div ref={inlineArgumentLaneRef} className="relative min-w-0 flex-1">
             <div className="flex h-full items-center">
               <input
@@ -4691,10 +4723,13 @@ const App: React.FC = () => {
       </div>
     )}
     <AgentWidget
+      key={agentSession?.id || 'agent-widget-empty'}
       session={agentSession}
       isOpen={isAgentWidgetOpen}
       onCancel={cancelAgent}
       onClose={closeAgentWidget}
+      onApprove={(callId) => respondToAgentApproval(callId, true)}
+      onDeny={(callId) => respondToAgentApproval(callId, false)}
     />
     </>
   );

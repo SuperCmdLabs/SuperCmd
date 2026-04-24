@@ -2544,6 +2544,9 @@ function scheduleNextAppUpdaterAutoCheck(lastCheckedAtMs: number): void {
 type FrontmostAppContext = { name: string; path: string; bundleId?: string };
 let lastFrontmostApp: FrontmostAppContext | null = null;
 let launcherEntryFrontmostApp: FrontmostAppContext | null = null;
+// Folder the user was looking at when SuperCmd was invoked (Finder target,
+// iTerm2 session cwd, etc.). Used by the agent as its working directory.
+let launcherEntryContextFolder: string | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
 const activeAgentRequests = new Map<string, AbortController>(); // requestId → controller
@@ -7060,7 +7063,10 @@ function createWindow(): void {
             ? 'active'
             : undefined,
         hasShadow: false,
-        resizable: false,
+        // Agent widget toggles between collapsed/expanded heights, which
+        // requires programmatic resize. The other detached popups stay a
+        // fixed size, so resizable stays off for them.
+        resizable: detachedPopupName === DETACHED_AGENT_WINDOW_NAME,
         minimizable: false,
         maximizable: false,
         fullscreenable: false,
@@ -7124,6 +7130,9 @@ function createWindow(): void {
       // The agent widget stays visible across spaces and fullscreen. Mouse
       // events must flow through so the user can cancel/close without focus.
       try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
+      // Allow shrinking below macOS's default NSWindow minimum so the
+      // collapsed bar actually renders at its target ~52px height.
+      try { childWindow.setMinimumSize(80, 32); } catch {}
     }
   });
 
@@ -7863,6 +7872,114 @@ function captureFrontmostAppContext(): void {
   }
 }
 
+// Detect the folder the user is "looking at" in the frontmost app:
+//   - Finder      → target of front window
+//   - iTerm2      → current session's pwd (requires iTerm2 shell integration
+//                    or the default `session.path` variable)
+//   - Terminal    → shell cwd via lsof on the tty's foreground process
+//   - VSCode / Cursor and similar — skipped (window title parsing is brittle).
+// Best-effort; returns null if nothing sensible can be derived.
+function captureContextFolder(): void {
+  if (process.platform !== 'darwin') {
+    launcherEntryContextFolder = null;
+    return;
+  }
+  const { execFileSync } = require('child_process');
+  const osascript = (script: string): string => {
+    try {
+      const out = execFileSync('/usr/bin/osascript', ['-l', 'AppleScript', '-e', script], {
+        encoding: 'utf-8',
+        timeout: 1500,
+      });
+      return String(out || '').trim();
+    } catch {
+      return '';
+    }
+  };
+
+  const appName = String(lastFrontmostApp?.name || '').toLowerCase();
+  const bundleId = String(lastFrontmostApp?.bundleId || '').toLowerCase();
+
+  // 1) Finder — the common case.
+  if (appName === 'finder' || bundleId === 'com.apple.finder') {
+    const finderPath = osascript(
+      'tell application "Finder"\n' +
+        '  try\n' +
+        '    set t to (target of front window) as alias\n' +
+        '    return POSIX path of t\n' +
+        '  on error\n' +
+        '    return ""\n' +
+        '  end try\n' +
+        'end tell'
+    );
+    if (finderPath) {
+      launcherEntryContextFolder = finderPath.replace(/\/$/, '');
+      return;
+    }
+  }
+
+  // 2) iTerm2 — cwd via session variable (set by shell integration, or by
+  //    iTerm2 itself on recent versions for most shells).
+  if (appName === 'iterm2' || appName === 'iterm' || bundleId === 'com.googlecode.iterm2') {
+    const itermPath = osascript(
+      'tell application "iTerm2"\n' +
+        '  try\n' +
+        '    tell current session of current window\n' +
+        '      return (variable named "session.path")\n' +
+        '    end tell\n' +
+        '  on error\n' +
+        '    return ""\n' +
+        '  end try\n' +
+        'end tell'
+    );
+    if (itermPath && itermPath.startsWith('/')) {
+      launcherEntryContextFolder = itermPath.replace(/\/$/, '');
+      return;
+    }
+  }
+
+  // 3) Terminal.app — derive cwd from the tty's foreground shell via lsof.
+  if (appName === 'terminal' || bundleId === 'com.apple.terminal') {
+    const tty = osascript(
+      'tell application "Terminal"\n' +
+        '  try\n' +
+        '    return tty of selected tab of front window\n' +
+        '  on error\n' +
+        '    return ""\n' +
+        '  end try\n' +
+        'end tell'
+    );
+    if (tty && tty.startsWith('/dev/')) {
+      try {
+        const ttyName = tty.replace(/^\/dev\//, '');
+        const pid = execFileSync('/bin/ps', ['-t', ttyName, '-o', 'pid=,stat='], {
+          encoding: 'utf-8',
+          timeout: 1000,
+        })
+          .split('\n')
+          .map((l: string) => l.trim().split(/\s+/))
+          .filter((cols: string[]) => cols.length >= 2 && /\+/.test(cols[1])) // foreground
+          .map((cols: string[]) => cols[0])[0];
+        if (pid) {
+          const lsout = execFileSync('/usr/sbin/lsof', ['-a', '-p', pid, '-d', 'cwd', '-Fn'], {
+            encoding: 'utf-8',
+            timeout: 1000,
+          });
+          const cwdLine = lsout.split('\n').find((l: string) => l.startsWith('n/'));
+          if (cwdLine) {
+            launcherEntryContextFolder = cwdLine.slice(1).replace(/\/$/, '');
+            return;
+          }
+        }
+      } catch {
+        // fall through
+      }
+    }
+  }
+
+  launcherEntryContextFolder = null;
+}
+
 async function showWindow(options?: { systemCommandId?: string }): Promise<void> {
   if (!mainWindow) return;
 
@@ -7894,6 +8011,7 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   if (launcherMode !== 'onboarding') {
     captureFrontmostAppContext();
     launcherEntryFrontmostApp = cloneFrontmostAppContext(lastFrontmostApp);
+    captureContextFolder();
     await captureWindowManagementTargetWindow();
     launcherEntryWindowManagementTargetWindowId = String(windowManagementTargetWindowId || '').trim() || null;
     launcherEntryWindowManagementTargetWorkArea = cloneWorkArea(windowManagementTargetWorkArea);
@@ -7908,6 +8026,7 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     launcherEntryFrontmostApp = null;
     launcherEntryWindowManagementTargetWindowId = null;
     launcherEntryWindowManagementTargetWorkArea = null;
+    launcherEntryContextFolder = null;
   }
 
   // Best-effort AeroSpace move before show (may fail if window is hidden).
@@ -7920,6 +8039,10 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     mode: launcherMode,
     systemCommandId: options?.systemCommandId,
     selectedTextSnapshot: initialSelectionSnapshot,
+    // Folder the user was looking at when SuperCmd opened (Finder / terminal
+    // cwd). Used by the launcher to display a context chip and by the agent
+    // as its default working directory.
+    workingDir: launcherEntryContextFolder || null,
   };
 
   // Notify renderer before showing the window so it can finalize view state
@@ -8024,6 +8147,7 @@ function hideWindow(): void {
   launcherEntryFrontmostApp = null;
   launcherEntryWindowManagementTargetWindowId = null;
   launcherEntryWindowManagementTargetWorkArea = null;
+  launcherEntryContextFolder = null;
   unregisterWhisperEscapeShortcut();
   try {
     mainWindow.setFocusable(true);
@@ -14964,9 +15088,32 @@ if let tiff = image?.tiffRepresentation {
   });
 
   // ─── Agent (autonomous action loop) ────────────────────────────────
+  ipcMain.handle('agent-get-context-folder', () => launcherEntryContextFolder);
+
+  ipcMain.handle('agent-list-sessions', async (_event: any, limit?: number) => {
+    const { listAgentSessions } = require('./agent-session-store');
+    return await listAgentSessions(typeof limit === 'number' ? limit : 100);
+  });
+
+  ipcMain.handle('agent-load-session', async (_event: any, id: string) => {
+    const { loadAgentSession } = require('./agent-session-store');
+    return await loadAgentSession(id);
+  });
+
+  ipcMain.handle('agent-delete-session', async (_event: any, id: string) => {
+    const { deleteAgentSession } = require('./agent-session-store');
+    await deleteAgentSession(id);
+  });
+
   ipcMain.handle(
     'agent-run',
-    async (event: any, requestId: string, query: string) => {
+    async (
+      event: any,
+      requestId: string,
+      query: string,
+      workingDir?: string,
+      resumeFromSessionId?: string,
+    ) => {
       const s = loadSettings();
       const emit = (payload: AgentEvent) => {
         try { event.sender.send('agent-event', payload); } catch {}
@@ -14985,6 +15132,11 @@ if let tiff = image?.tiffRepresentation {
         return;
       }
 
+      // Prefer the explicitly-passed workingDir (captured by the renderer
+      // at submit time); fall back to whatever main captured on show.
+      const resolvedWorkingDir =
+        (typeof workingDir === 'string' && workingDir.trim()) || launcherEntryContextFolder || undefined;
+
       const controller = new AbortController();
       activeAgentRequests.set(requestId, controller);
       try {
@@ -14994,6 +15146,9 @@ if let tiff = image?.tiffRepresentation {
           settings: s,
           signal: controller.signal,
           emit,
+          workingDir: resolvedWorkingDir,
+          resumeFromSessionId:
+            typeof resumeFromSessionId === 'string' && resumeFromSessionId ? resumeFromSessionId : undefined,
         });
       } catch (err: any) {
         if (!controller.signal.aborted) {
@@ -15011,6 +15166,13 @@ if let tiff = image?.tiffRepresentation {
       controller.abort();
       activeAgentRequests.delete(requestId);
     }
+    const { rejectAllPendingApprovalsForRequest } = require('./agent-runner');
+    rejectAllPendingApprovalsForRequest(requestId);
+  });
+
+  ipcMain.handle('agent-approval-response', (_event: any, callId: string, approved: boolean) => {
+    const { resolveAgentApproval } = require('./agent-runner');
+    resolveAgentApproval(callId, Boolean(approved));
   });
 
   ipcMain.handle('whisper-refine-transcript', async (_event: any, transcript: string) => {
@@ -16197,6 +16359,11 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   stopInstalledAppsWatchers();
   globalShortcut.unregisterAll();
+  // Shut down any spawned MCP servers so child processes don't linger.
+  try {
+    const { mcpPool } = require('./mcp-client');
+    void mcpPool.shutdown();
+  } catch {}
   if (windowManagerWorkerRestartTimer) {
     clearTimeout(windowManagerWorkerRestartTimer);
     windowManagerWorkerRestartTimer = null;

@@ -31,7 +31,7 @@ export interface AIChatRequestOptions {
 
 // ─── Model routing ────────────────────────────────────────────────────
 
-interface ModelRoute {
+export interface ModelRoute {
   provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible';
   modelId: string;
 }
@@ -59,7 +59,7 @@ const MODEL_ROUTES: Record<string, ModelRoute> = {
   'ollama-codellama': { provider: 'ollama', modelId: 'codellama' },
 };
 
-function resolveModel(model: string | undefined, config: AISettings): ModelRoute {
+export function resolveModel(model: string | undefined, config: AISettings): ModelRoute {
   if (model && MODEL_ROUTES[model]) {
     return MODEL_ROUTES[model];
   }
@@ -103,7 +103,7 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
 
 // OpenAI reasoning models (o1, o1-mini, o1-preview, o3, o3-mini, o4-mini, …)
 // reject the `temperature` parameter — they only support the default.
-function isOpenAIReasoningModel(model: string): boolean {
+export function isOpenAIReasoningModel(model: string): boolean {
   return /^o\d/i.test(model.trim());
 }
 
@@ -640,7 +640,7 @@ async function* streamOllama(
 
 // ─── HTTP helpers ────────────────────────────────────────────────────
 
-interface HttpRequestOptions {
+export interface HttpRequestOptions {
   hostname: string;
   port?: number;
   path: string;
@@ -651,7 +651,7 @@ interface HttpRequestOptions {
   useHttps: boolean;
 }
 
-function httpRequest(opts: HttpRequestOptions): Promise<http.IncomingMessage> {
+export function httpRequest(opts: HttpRequestOptions): Promise<http.IncomingMessage> {
   return new Promise((resolve, reject) => {
     const mod = opts.useHttps ? https : http;
 
@@ -702,7 +702,7 @@ async function readResponseBody(response: http.IncomingMessage): Promise<string>
   return body;
 }
 
-async function* parseSSE(
+export async function* parseSSE(
   response: http.IncomingMessage,
   extractChunk: (data: string) => string | null
 ): AsyncGenerator<string> {
@@ -732,6 +732,65 @@ async function* parseSSE(
       if (text) yield text;
     }
   }
+}
+
+export async function* parseNDJSONLines(
+  response: http.IncomingMessage,
+): AsyncGenerator<any> {
+  let buffer = '';
+  for await (const rawChunk of response) {
+    buffer += rawChunk.toString();
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        yield JSON.parse(trimmed);
+      } catch {
+        // skip malformed lines
+      }
+    }
+  }
+  if (buffer.trim()) {
+    try {
+      yield JSON.parse(buffer.trim());
+    } catch {}
+  }
+}
+
+/**
+ * Stream raw SSE `data:` blobs (not already-extracted text). Multi-line
+ * `data:` fields are concatenated per SSE spec; dispatch happens on blank
+ * line. Comment lines starting with `:` and non-data fields are ignored.
+ */
+export async function* parseSSELines(
+  response: http.IncomingMessage,
+): AsyncGenerator<string> {
+  let buffer = '';
+  let eventData: string[] = [];
+  for await (const rawChunk of response) {
+    buffer += rawChunk.toString();
+    let nl: number;
+    while ((nl = buffer.indexOf('\n')) !== -1) {
+      const rawLine = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      const line = rawLine.replace(/\r$/, '');
+      if (line === '') {
+        if (eventData.length > 0) {
+          yield eventData.join('\n');
+          eventData = [];
+        }
+        continue;
+      }
+      if (line.startsWith(':')) continue;
+      if (line.startsWith('data:')) {
+        eventData.push(line.slice(5).replace(/^ /, ''));
+      }
+      // We ignore `event:`, `id:`, and `retry:` lines — we don't need them.
+    }
+  }
+  if (eventData.length > 0) yield eventData.join('\n');
 }
 
 async function* parseNDJSON(

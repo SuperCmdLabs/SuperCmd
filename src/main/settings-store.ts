@@ -112,6 +112,23 @@ export interface AppSettings {
   clipboardAppBlacklist: string[];
   emojiPickerEnabled: boolean;
   emojiPickerTriggerPrefix: string;
+  /**
+   * Agent approval policy for tool calls that modify the system
+   * (run_shell, run_applescript, write_file, apply_patch):
+   *   - 'prompt' (default): always ask the user before running
+   *   - 'auto-workspace': auto-approve writes confined to the current folder
+   *     and its descendants; still prompt for shell/AppleScript
+   *   - 'auto-all': run everything without prompting (power users)
+   */
+  agentApprovalMode?: 'prompt' | 'auto-workspace' | 'auto-all';
+  /**
+   * MCP (Model Context Protocol) servers to spawn for the agent. Each
+   * keyed entry becomes a stdio subprocess whose tools are prefixed as
+   * `<serverId>__<toolName>` and merged into the agent's tool list.
+   * Example:
+   *   "linear": { "command": "npx", "args": ["-y", "@linear/mcp"] }
+   */
+  mcpServers?: Record<string, { command: string; args?: string[]; env?: Record<string, string>; cwd?: string }>;
 }
 
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
@@ -203,6 +220,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   clipboardAppBlacklist: [],
   emojiPickerEnabled: true,
   emojiPickerTriggerPrefix: ':',
+  // Default to auto-workspace: agent can run shell commands and edit files
+  // confined to the current folder without prompting; only clearly
+  // destructive or out-of-workspace ops require approval.
+  agentApprovalMode: 'auto-workspace',
+  mcpServers: {},
 };
 
 let settingsCache: AppSettings | null = null;
@@ -440,6 +462,29 @@ export function loadSettings(): AppSettings {
       emojiPickerTriggerPrefix: typeof parsed.emojiPickerTriggerPrefix === 'string' && parsed.emojiPickerTriggerPrefix.length > 0
         ? parsed.emojiPickerTriggerPrefix
         : DEFAULT_SETTINGS.emojiPickerTriggerPrefix,
+      agentApprovalMode:
+        parsed.agentApprovalMode === 'auto-all' || parsed.agentApprovalMode === 'auto-workspace' || parsed.agentApprovalMode === 'prompt'
+          ? parsed.agentApprovalMode
+          : DEFAULT_SETTINGS.agentApprovalMode,
+      mcpServers:
+        parsed.mcpServers && typeof parsed.mcpServers === 'object' && !Array.isArray(parsed.mcpServers)
+          ? Object.fromEntries(
+              Object.entries(parsed.mcpServers as Record<string, any>)
+                .filter(([, v]) => v && typeof v === 'object' && typeof (v as any).command === 'string')
+                .map(([k, v]) => [
+                  k,
+                  {
+                    command: String((v as any).command),
+                    args: Array.isArray((v as any).args) ? (v as any).args.map(String) : undefined,
+                    env:
+                      (v as any).env && typeof (v as any).env === 'object'
+                        ? Object.fromEntries(Object.entries((v as any).env).map(([ek, ev]) => [ek, String(ev)]))
+                        : undefined,
+                    cwd: typeof (v as any).cwd === 'string' ? (v as any).cwd : undefined,
+                  },
+                ])
+            )
+          : DEFAULT_SETTINGS.mcpServers,
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };

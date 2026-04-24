@@ -25,9 +25,17 @@ export interface AgentTimelineStep {
 
 export type AgentLifecycle = 'idle' | 'running' | 'done' | 'error' | 'cancelled';
 
+export interface AgentPendingApproval {
+  id: string;
+  tool: string;
+  args: Record<string, any>;
+  summary: string;
+}
+
 export interface AgentSession {
   id: string;
   query: string;
+  workingDir: string | null;
   steps: AgentTimelineStep[];
   message: string | null;
   error: string | null;
@@ -35,6 +43,8 @@ export interface AgentSession {
   currentStep: number;
   startedAt: number;
   finishedAt: number | null;
+  /** Tool calls currently blocked waiting on a user approve/deny decision. */
+  pendingApproval: AgentPendingApproval | null;
 }
 
 interface UseAgentWidgetResult {
@@ -43,6 +53,7 @@ interface UseAgentWidgetResult {
   startAgent: (query: string) => void;
   cancelAgent: () => void;
   closeWidget: () => void;
+  respondToApproval: (callId: string, approved: boolean) => void;
 }
 
 function newRequestId(): string {
@@ -89,6 +100,7 @@ export function useAgentWidget(): UseAgentWidgetResult {
     const next: AgentSession = {
       id: requestId,
       query: trimmed,
+      workingDir: null,
       steps: [],
       message: null,
       error: null,
@@ -96,19 +108,34 @@ export function useAgentWidget(): UseAgentWidgetResult {
       currentStep: 0,
       startedAt: Date.now(),
       finishedAt: null,
+      pendingApproval: null,
     };
     setSession(next);
     setIsOpen(true);
-    try {
-      void window.electron.agentRun(requestId, trimmed);
-    } catch (err: any) {
-      setSession({
-        ...next,
-        lifecycle: 'error',
-        error: err?.message || 'Failed to start agent',
-        finishedAt: Date.now(),
-      });
-    }
+
+    // Resolve the context folder (Finder target / terminal cwd captured at
+    // show-time) and kick off the run. We don't block UI on the lookup — the
+    // `started` event will backfill workingDir if this call races.
+    (async () => {
+      let workingDir: string | null = null;
+      try {
+        workingDir = (await window.electron.agentGetContextFolder()) || null;
+      } catch {
+        workingDir = null;
+      }
+      if (workingDir) {
+        setSession((s) => (s && s.id === requestId ? { ...s, workingDir } : s));
+      }
+      try {
+        void window.electron.agentRun(requestId, trimmed, workingDir || undefined);
+      } catch (err: any) {
+        setSession((s) =>
+          s && s.id === requestId
+            ? { ...s, lifecycle: 'error', error: err?.message || 'Failed to start agent', finishedAt: Date.now() }
+            : s
+        );
+      }
+    })();
   }, []);
 
   const cancelAgent = useCallback(() => {
@@ -138,13 +165,22 @@ export function useAgentWidget(): UseAgentWidgetResult {
     setSession(null);
   }, []);
 
-  return { session, isOpen, startAgent, cancelAgent, closeWidget };
+  const respondToApproval = useCallback((callId: string, approved: boolean) => {
+    try { window.electron.agentApprovalResponse(callId, approved); } catch {}
+    // Optimistically clear the pending prompt — the `approval_resolved`
+    // event from main will confirm.
+    setSession((prev) => (prev ? { ...prev, pendingApproval: null } : prev));
+  }, []);
+
+  return { session, isOpen, startAgent, cancelAgent, closeWidget, respondToApproval };
 }
 
 function reduceAgentEvent(state: AgentSession, event: AgentEvent): AgentSession {
   switch (event.type) {
     case 'started':
-      return state;
+      return event.workingDir && !state.workingDir
+        ? { ...state, workingDir: event.workingDir }
+        : state;
     case 'step':
       return { ...state, currentStep: event.step };
     case 'thinking':
@@ -182,6 +218,20 @@ function reduceAgentEvent(state: AgentSession, event: AgentEvent): AgentSession 
       };
     case 'message':
       return { ...state, message: event.text };
+    case 'approval_request':
+      return {
+        ...state,
+        pendingApproval: {
+          id: event.id,
+          tool: event.tool,
+          args: event.args || {},
+          summary: event.summary,
+        },
+      };
+    case 'approval_resolved':
+      return state.pendingApproval && state.pendingApproval.id === event.id
+        ? { ...state, pendingApproval: null }
+        : state;
     case 'done':
       return {
         ...state,

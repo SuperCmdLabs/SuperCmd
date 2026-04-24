@@ -3,14 +3,50 @@
  */
 
 export type AgentEvent =
-  | { requestId: string; type: 'started'; query: string }
+  | { requestId: string; type: 'started'; query: string; workingDir?: string }
   | { requestId: string; type: 'thinking'; delta: string }
   | { requestId: string; type: 'step'; step: number }
   | { requestId: string; type: 'tool_call'; id: string; tool: string; args: Record<string, any>; summary: string }
   | { requestId: string; type: 'tool_result'; id: string; ok: boolean; output: string }
   | { requestId: string; type: 'message'; text: string }
+  | { requestId: string; type: 'approval_request'; id: string; tool: string; args: Record<string, any>; summary: string; risk: 'review' }
+  | { requestId: string; type: 'approval_resolved'; id: string; approved: boolean }
   | { requestId: string; type: 'done' }
   | { requestId: string; type: 'error'; error: string };
+
+export interface AgentSessionSummary {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+  query: string;
+  workingDir: string | null;
+  lifecycle: 'running' | 'done' | 'error' | 'cancelled';
+  stepCount: number;
+  finalMessage?: string;
+  error?: string;
+}
+
+export interface PersistedAgentSessionWire {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+  query: string;
+  workingDir: string | null;
+  messages: any[];
+  steps: Array<{
+    id: string;
+    tool: string;
+    args: Record<string, any>;
+    summary: string;
+    ok: boolean;
+    output: string;
+    startedAt: number;
+    finishedAt: number;
+  }>;
+  lifecycle: 'running' | 'done' | 'error' | 'cancelled';
+  finalMessage?: string;
+  error?: string;
+}
 
 export interface CommandInfo {
   id: string;
@@ -460,7 +496,7 @@ export interface ElectronAPI {
   setLauncherMode: (mode: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt') => Promise<void>;
   getLastFrontmostApp: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   restoreLastFrontmostApp: () => Promise<boolean>;
-  onWindowShown: (callback: (payload?: { mode?: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt'; systemCommandId?: string; selectedTextSnapshot?: string }) => void) => (() => void);
+  onWindowShown: (callback: (payload?: { mode?: 'default' | 'onboarding' | 'whisper' | 'speak' | 'prompt'; systemCommandId?: string; selectedTextSnapshot?: string; workingDir?: string | null }) => void) => (() => void);
   onSelectionSnapshotUpdated: (callback: (payload?: { selectedTextSnapshot?: string }) => void) => (() => void);
   onWindowHidden: (callback: () => void) => (() => void);
   onCommandsUpdated: (callback: () => void) => (() => void);
@@ -806,8 +842,13 @@ export interface ElectronAPI {
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => (() => void);
 
   // Agent (autonomous action loop)
-  agentRun: (requestId: string, query: string) => Promise<void>;
+  agentRun: (requestId: string, query: string, workingDir?: string, resumeFromSessionId?: string) => Promise<void>;
   agentCancel: (requestId: string) => Promise<void>;
+  agentGetContextFolder: () => Promise<string | null>;
+  agentListSessions: (limit?: number) => Promise<AgentSessionSummary[]>;
+  agentLoadSession: (id: string) => Promise<PersistedAgentSessionWire | null>;
+  agentDeleteSession: (id: string) => Promise<void>;
+  agentApprovalResponse: (callId: string, approved: boolean) => Promise<void>;
   onAgentEvent: (callback: (event: AgentEvent) => void) => (() => void);
   onPromptInsertText: (callback: (text: string) => void) => (() => void);
   whisperRefineTranscript: (
