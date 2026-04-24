@@ -1134,6 +1134,14 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     );
   }
 
+  if (commandId === 'system-supercmd-agent-voice') {
+    return (
+      <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
+        <Brain className="w-3 h-3 text-cyan-300" />
+      </div>
+    );
+  }
+
   if (commandId === 'system-whisper-onboarding') {
     return (
       <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">

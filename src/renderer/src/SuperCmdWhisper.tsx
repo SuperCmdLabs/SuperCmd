@@ -8,8 +8,11 @@ interface SuperCmdWhisperProps {
   portalTarget?: HTMLElement | null;
   onboardingCaptureMode?: boolean;
   onOnboardingTranscriptAppend?: (text: string) => void;
+  outputMode?: 'dictation' | 'agent';
+  onFinalTranscript?: (text: string) => void;
   coachmarkText?: string;
   autoClose?: boolean;
+  autoStart?: boolean;
 }
 
 type WhisperState = 'idle' | 'listening' | 'processing' | 'error';
@@ -250,8 +253,11 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   portalTarget,
   onboardingCaptureMode = false,
   onOnboardingTranscriptAppend,
+  outputMode = 'dictation',
+  onFinalTranscript,
   coachmarkText,
   autoClose = true,
+  autoStart = false,
 }) => {
   const { t } = useI18n();
   const idleStatus = t('whisper.status.idle');
@@ -327,6 +333,8 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const nativeFlushQueueRef = useRef<NativeQueuedSuffix[]>([]);
   const nativeFlushInFlightRef = useRef(false);
   const pushToTalkArmedRef = useRef(false);
+  const autoStartTriggeredRef = useRef(false);
+  const autoStartCancelledRef = useRef(false);
 
   // ─── Audio Visualizer ──────────────────────────────────────────────
 
@@ -455,6 +463,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   }, []);
 
   const restoreEditorFocusOnce = useCallback((delayMs = 0) => {
+    if (outputMode === 'agent') return;
     // Onboarding whisper practice is intentionally in-app; never steal focus
     // to another app while the user is typing in the onboarding editor.
     if (onboardingCaptureMode) return;
@@ -474,7 +483,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       return;
     }
     run();
-  }, [onboardingCaptureMode]);
+  }, [onboardingCaptureMode, outputMode]);
 
   const playRecordingCue = useCallback((kind: 'start' | 'end') => {
     try {
@@ -562,12 +571,18 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       return;
     }
 
+    if (outputMode === 'agent') {
+      onFinalTranscript?.(normalized);
+      onClose();
+      return;
+    }
+
     const applied = await typeIntoWhisperTarget(normalized);
     if (!applied.consumed) {
       setErrorText(t('whisper.errors.typeIntoActiveApp'));
     }
     onClose();
-  }, [onClose, onboardingCaptureMode, onOnboardingTranscriptAppend, t, typeIntoWhisperTarget]);
+  }, [onClose, onboardingCaptureMode, onFinalTranscript, onOnboardingTranscriptAppend, outputMode, t, typeIntoWhisperTarget]);
 
   // ─── Live typing helper (debounced + refined) ──────────────────────
 
@@ -1564,6 +1579,17 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   }, [state]);
 
   useEffect(() => {
+    if (!autoStart || autoStartTriggeredRef.current) return;
+    autoStartTriggeredRef.current = true;
+    const timer = window.setTimeout(() => {
+      if (autoStartCancelledRef.current) return;
+      pushToTalkArmedRef.current = false;
+      void startListening();
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [autoStart, startListening]);
+
+  useEffect(() => {
     const keyWindow = portalTarget?.ownerDocument?.defaultView || window;
     if (!keyWindow) return;
 
@@ -1582,12 +1608,14 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     const disposeWhisperStopListening = window.electron.onWhisperStopListening(() => {
       if (!PUSH_TO_TALK_MODE) return;
       pushToTalkArmedRef.current = false;
+      autoStartCancelledRef.current = true;
       if (whisperStateRef.current === 'listening') {
         void finalizeAndClose(autoClose);
       }
     });
     const disposeWhisperStart = window.electron.onWhisperStartListening(() => {
       pushToTalkArmedRef.current = PUSH_TO_TALK_MODE;
+      autoStartCancelledRef.current = false;
       const currentState = whisperStateRef.current;
       if (startInFlightRef.current || currentState === 'listening' || currentState === 'processing') {
         // Hold-to-talk: repeated keydown callbacks while key is held should not stop capture.
@@ -1599,9 +1627,11 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       const currentState = whisperStateRef.current;
       if (currentState === 'listening' || currentState === 'processing') {
         pushToTalkArmedRef.current = false;
+        autoStartCancelledRef.current = true;
         void finalizeAndClose(autoClose);
       } else {
         pushToTalkArmedRef.current = false;
+        autoStartCancelledRef.current = false;
         void startListening();
       }
     });

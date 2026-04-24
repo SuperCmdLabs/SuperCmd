@@ -172,6 +172,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   customExtensionFolders: [],
   commandHotkeys: {
     'system-supercmd-whisper': 'Command+Shift+W',
+    'system-supercmd-agent-voice': 'Command+Shift+A',
     'system-supercmd-whisper-speak-toggle': 'Fn',
     'system-supercmd-speak': 'Command+Shift+S',
     'system-window-management-left': 'Control+Alt+Left',

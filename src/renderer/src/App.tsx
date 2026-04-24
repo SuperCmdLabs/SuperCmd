@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play } from 'lucide-react';
+import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, Mic } from 'lucide-react';
 import supercmdLogo from '../../../supercmd.png';
 import type {
   CommandInfo,
@@ -436,6 +436,7 @@ const App: React.FC = () => {
   const [onboardingHotkeyPresses, setOnboardingHotkeyPresses] = useState(0);
   const [launcherShortcut, setLauncherShortcut] = useState('Alt+Space');
   const [whisperAutoClose, setWhisperAutoClose] = useState(true);
+  const [whisperOutputMode, setWhisperOutputMode] = useState<'dictation' | 'agent'>('dictation');
   const [showActions, setShowActions] = useState(false);
   const [actionsCommand, setActionsCommand] = useState<CommandInfo | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -519,6 +520,22 @@ const App: React.FC = () => {
     closeWidget: closeAgentWidget,
     respondToApproval: respondToAgentApproval,
   } = useAgentWidget();
+
+  const startVoiceAgent = useCallback(() => {
+    whisperSessionRef.current = true;
+    setWhisperOutputMode('agent');
+    setShowWhisperOnboarding(false);
+    setShowWhisperHint(true);
+    setShowWhisper(true);
+  }, [setShowWhisper, setShowWhisperHint, setShowWhisperOnboarding, whisperSessionRef]);
+
+  const handleAgentVoiceTranscript = useCallback((transcript: string) => {
+    const trimmed = String(transcript || '').trim();
+    setWhisperOutputMode('dictation');
+    if (!trimmed) return;
+    startAgent(trimmed, launcherWorkingDir);
+    window.electron.hideWindow();
+  }, [launcherWorkingDir, startAgent]);
 
   const {
     cursorPromptText, setCursorPromptText,
@@ -814,6 +831,7 @@ const App: React.FC = () => {
       const isPromptMode = payload?.mode === 'prompt';
       if (isWhisperMode) {
         whisperSessionRef.current = true;
+        setWhisperOutputMode('dictation');
         setSelectedTextSnapshot('');
         setMemoryFeedback(null);
         setMemoryActionLoading(false);
@@ -2373,7 +2391,7 @@ const App: React.FC = () => {
           if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
             const trimmed = searchQuery.trim();
             if (trimmed) {
-              startAgent(trimmed);
+              startAgent(trimmed, launcherWorkingDir);
               window.electron.hideWindow();
             }
             break;
@@ -2431,6 +2449,7 @@ const App: React.FC = () => {
       shouldHideAskAi,
       startAiChat,
       startAgent,
+      launcherWorkingDir,
       calcResult,
       calcOffset,
       togglePinSelectedCommand,
@@ -2459,7 +2478,7 @@ const App: React.FC = () => {
     if (DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS.has(commandId)) {
       expandLauncherForDirectLaunch();
     }
-    if (commandId === 'system-supercmd-whisper' || commandId === 'system-supercmd-speak') {
+    if (commandId === 'system-supercmd-whisper' || commandId === 'system-supercmd-agent-voice' || commandId === 'system-supercmd-speak') {
       try {
         const settings = await window.electron.getSettings();
         if (settings.ai?.enabled === false) {
@@ -2613,6 +2632,7 @@ const App: React.FC = () => {
     }
     if (commandId === 'system-supercmd-whisper') {
       whisperSessionRef.current = true;
+      setWhisperOutputMode('dictation');
       if (showOnboarding) {
         setShowWhisper(true);
         setShowWhisperOnboarding(true);
@@ -2620,6 +2640,11 @@ const App: React.FC = () => {
         return true;
       }
       openWhisper();
+      return true;
+    }
+    if (commandId === 'system-supercmd-agent-voice') {
+      whisperSessionRef.current = true;
+      startVoiceAgent();
       return true;
     }
     if (commandId === 'system-supercmd-speak') {
@@ -2659,7 +2684,7 @@ const App: React.FC = () => {
       return true;
     }
     return false;
-  }, [expandLauncherForDirectLaunch, memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager]);
+  }, [expandLauncherForDirectLaunch, memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, startVoiceAgent, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager]);
 
   useEffect(() => {
     const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {
@@ -3484,14 +3509,20 @@ const App: React.FC = () => {
           portalTarget={whisperPortalTarget}
           onboardingCaptureMode={showWhisperOnboarding}
           onOnboardingTranscriptAppend={appendWhisperOnboardingPracticeText}
+          outputMode={whisperOutputMode}
+          onFinalTranscript={whisperOutputMode === 'agent' ? handleAgentVoiceTranscript : undefined}
           coachmarkText={
-            showWhisperHint && whisperSpeakToggleLabel
+            whisperOutputMode === 'agent'
+              ? 'Speak an agent instruction'
+              : showWhisperHint && whisperSpeakToggleLabel
               ? t('whisper.coachmark.holdToTalk', { shortcut: whisperSpeakToggleLabel })
               : undefined
           }
-          autoClose={whisperAutoClose}
+          autoClose={whisperOutputMode === 'agent' ? true : whisperAutoClose}
+          autoStart={whisperOutputMode === 'agent'}
           onClose={() => {
             whisperSessionRef.current = false;
+            setWhisperOutputMode('dictation');
             setShowWhisper(false);
             setShowWhisperOnboarding(false);
             setShowWhisperHint(false);
@@ -4104,6 +4135,16 @@ const App: React.FC = () => {
             ) : null}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {aiAvailable && !shouldHideAskAi && (
+              <button
+                onClick={startVoiceAgent}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--soft-pill-bg)] hover:bg-[var(--soft-pill-hover-bg)] transition-colors flex-shrink-0 group"
+                title="Speak an agent instruction"
+              >
+                <Mic className="w-3 h-3 text-white/30 group-hover:text-[#55b3ff] transition-colors" />
+                <span className="text-[0.6875rem] text-white/30 group-hover:text-white/50 transition-colors">Voice Agent</span>
+              </button>
+            )}
             {searchQuery && aiAvailable && !shouldHideAskAi && (
               <button
                 onClick={() => startAiChat(searchQuery)}
@@ -4119,7 +4160,7 @@ const App: React.FC = () => {
                 onClick={() => {
                   const trimmed = searchQuery.trim();
                   if (!trimmed) return;
-                  startAgent(trimmed);
+                  startAgent(trimmed, launcherWorkingDir);
                   window.electron.hideWindow();
                 }}
                 className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--soft-pill-bg)] hover:bg-[var(--soft-pill-hover-bg)] transition-colors flex-shrink-0 group"

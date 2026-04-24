@@ -1281,6 +1281,12 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-supercmd-agent-voice',
+      title: 'SuperCmd Voice Agent',
+      keywords: ['agent', 'voice', 'speech', 'whisper', 'dictation', 'assistant', 'action', 'supercmd'],
+      category: 'system',
+    },
+    {
       id: 'system-supercmd-speak',
       title: 'SuperCmd Read',
       keywords: ['speak', 'tts', 'read', 'selected text', 'edge-tts', 'speechify', 'jarvis', 'supercmd'],

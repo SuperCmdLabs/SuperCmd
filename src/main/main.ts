@@ -9175,6 +9175,7 @@ const AI_DISABLED_SYSTEM_COMMANDS = new Set<string>([
   'system-cursor-prompt',
   'system-add-to-memory',
   'system-supercmd-whisper',
+  'system-supercmd-agent-voice',
   'system-supercmd-whisper-toggle',
   'system-supercmd-whisper-speak-toggle',
   'system-supercmd-speak',
@@ -9194,6 +9195,9 @@ function isAISectionDisabledForCommand(commandId: string, settings?: AppSettings
   const id = String(commandId || '').trim();
   if (!id) return false;
   if (id === 'system-supercmd-speak') return resolved.ai?.readEnabled === false;
+  if (id === 'system-supercmd-agent-voice') {
+    return resolved.ai?.whisperEnabled === false || resolved.ai?.llmEnabled === false;
+  }
   if (id === 'system-supercmd-whisper' || id === 'system-supercmd-whisper-toggle' || id === 'system-supercmd-whisper-speak-toggle') {
     return resolved.ai?.whisperEnabled === false;
   }
@@ -9386,6 +9390,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
   const isWhisperOpenCommand =
     commandId === 'system-supercmd-whisper' ||
     commandId === 'system-supercmd-whisper-toggle';
+  const isVoiceAgentCommand = commandId === 'system-supercmd-agent-voice';
   const isWhisperSpeakToggleCommand = commandId === 'system-supercmd-whisper-speak-toggle';
   const isWhisperCommand = isWhisperOpenCommand || isWhisperSpeakToggleCommand;
   const isSpeakCommand = commandId === 'system-supercmd-speak';
@@ -9451,6 +9456,33 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       preserveFocusWhenHidden: launcherMode !== 'onboarding',
     });
     return started;
+  }
+
+  if (isVoiceAgentCommand) {
+    lastWhisperShownAt = Date.now();
+    const voiceAgentHotkey = String(loadSettings().commandHotkeys?.['system-supercmd-agent-voice'] ?? '').trim();
+    const holdSeq = ++whisperHoldRequestSeq;
+    if (source === 'hotkey' && voiceAgentHotkey) {
+      startWhisperHoldWatcher(voiceAgentHotkey, holdSeq);
+    } else {
+      stopWhisperHoldWatcher();
+    }
+    const opened = await openLauncherAndRunSystemCommand('system-supercmd-agent-voice', {
+      showWindow: source === 'launcher',
+      mode: 'default',
+      preserveFocusWhenHidden: source !== 'launcher',
+    });
+    if (source === 'hotkey') {
+      const startDelays = [180, 340, 520];
+      startDelays.forEach((delay) => {
+        setTimeout(() => {
+          if (holdSeq !== whisperHoldRequestSeq) return;
+          if (whisperHoldReleasedSeq >= holdSeq) return;
+          mainWindow?.webContents.send('whisper-start-listening');
+        }, delay);
+      });
+    }
+    return opened;
   }
 
   if (

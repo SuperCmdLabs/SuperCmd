@@ -50,7 +50,7 @@ export interface AgentSession {
 interface UseAgentWidgetResult {
   session: AgentSession | null;
   isOpen: boolean;
-  startAgent: (query: string) => void;
+  startAgent: (query: string, workingDirOverride?: string | null) => void;
   cancelAgent: () => void;
   closeWidget: () => void;
   respondToApproval: (callId: string, approved: boolean) => void;
@@ -86,9 +86,10 @@ export function useAgentWidget(): UseAgentWidgetResult {
     };
   }, []);
 
-  const startAgent = useCallback((query: string) => {
+  const startAgent = useCallback((query: string, workingDirOverride?: string | null) => {
     const trimmed = String(query || '').trim();
     if (!trimmed) return;
+    const initialWorkingDir = String(workingDirOverride || '').trim() || null;
 
     // Cancel any in-flight session before starting a new one.
     const prev = sessionRef.current;
@@ -100,7 +101,7 @@ export function useAgentWidget(): UseAgentWidgetResult {
     const next: AgentSession = {
       id: requestId,
       query: trimmed,
-      workingDir: null,
+      workingDir: initialWorkingDir,
       steps: [],
       message: null,
       error: null,
@@ -117,11 +118,13 @@ export function useAgentWidget(): UseAgentWidgetResult {
     // show-time) and kick off the run. We don't block UI on the lookup — the
     // `started` event will backfill workingDir if this call races.
     (async () => {
-      let workingDir: string | null = null;
-      try {
-        workingDir = (await window.electron.agentGetContextFolder()) || null;
-      } catch {
-        workingDir = null;
+      let workingDir: string | null = initialWorkingDir;
+      if (!workingDir) {
+        try {
+          workingDir = (await window.electron.agentGetContextFolder()) || null;
+        } catch {
+          workingDir = null;
+        }
       }
       if (workingDir) {
         setSession((s) => (s && s.id === requestId ? { ...s, workingDir } : s));
