@@ -634,6 +634,8 @@
   },
   "launcher": {
     "searchPlaceholder": "Cerca app, comandi o chiedi all'AI...",
+    "runAgent": "Agente",
+    "runAgentTooltip": "Invia questa richiesta all'agente (Maiusc+Invio)",
     "compact": {
       "showMore": "Mostra di più"
     },
@@ -1102,5 +1104,21 @@
     "duration": "Durata",
     "reminder": "Promemoria",
     "save": "Salva evento"
+  },
+  "agent": {
+    "title": "Agente",
+    "queryLabel": "Attività",
+    "statusIdle": "Inattivo",
+    "statusStarting": "Avvio…",
+    "statusThinking": "Ragiona — passo {step}",
+    "statusDone": "Fatto",
+    "statusCancelled": "Annullato",
+    "statusError": "Errore",
+    "cancel": "Annulla",
+    "thinking": "Ragiona…",
+    "footerRunning": "Passo {step}",
+    "footerSteps": "{count} passi",
+    "hotkeyCancel": "Esc",
+    "hotkeyClose": "Esc"
   }
 }

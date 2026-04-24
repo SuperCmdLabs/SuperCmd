@@ -634,6 +634,8 @@
   },
   "launcher": {
     "searchPlaceholder": "搜尋應用程式、命令，或向 AI 提問...",
+    "runAgent": "助手",
+    "runAgentTooltip": "將查詢交給智慧助手 (Shift+Enter)",
     "status": {
       "discoveringApps": "正在探索應用程式...",
       "noMatchingResults": "沒有符合的結果",
@@ -1102,5 +1104,21 @@
       "title": "刪除「{title}」？",
       "description": "此操作無法撤銷。"
     }
+  },
+  "agent": {
+    "title": "智慧助手",
+    "queryLabel": "任務",
+    "statusIdle": "閒置",
+    "statusStarting": "啟動中…",
+    "statusThinking": "思考中 — 第 {step} 步",
+    "statusDone": "完成",
+    "statusCancelled": "已取消",
+    "statusError": "錯誤",
+    "cancel": "取消",
+    "thinking": "思考中…",
+    "footerRunning": "第 {step} 步",
+    "footerSteps": "共 {count} 步",
+    "hotkeyCancel": "Esc",
+    "hotkeyClose": "Esc"
   }
 }

@@ -73,6 +73,8 @@ import ScriptCommandOutputView from './views/ScriptCommandOutputView';
 import ExtensionPreferenceSetupView from './views/ExtensionPreferenceSetupView';
 import AiChatView from './views/AiChatView';
 import CursorPromptView from './views/CursorPromptView';
+import { AgentWidget } from './views/AgentWidget';
+import { useAgentWidget } from './hooks/useAgentWidget';
 import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowBadge } from './components/InlineArgumentField';
 import { useI18n } from './i18n';
 
@@ -480,6 +482,14 @@ const App: React.FC = () => {
     setAiMode,
     onExitAiMode,
   });
+
+  const {
+    session: agentSession,
+    isOpen: isAgentWidgetOpen,
+    startAgent,
+    cancelAgent,
+    closeWidget: closeAgentWidget,
+  } = useAgentWidget();
 
   const {
     cursorPromptText, setCursorPromptText,
@@ -2328,6 +2338,15 @@ const App: React.FC = () => {
 
         case 'Enter':
           e.preventDefault();
+          // Shift+Enter: hand the current query to the agent widget.
+          if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            const trimmed = searchQuery.trim();
+            if (trimmed) {
+              startAgent(trimmed);
+              window.electron.hideWindow();
+            }
+            break;
+          }
           if (calcResult && selectedIndex === 0) {
             navigator.clipboard.writeText(calcResult.result);
             window.electron.hideWindow();
@@ -2380,6 +2399,7 @@ const App: React.FC = () => {
       selectedInlineQuickLinkDynamicFields.length,
       shouldHideAskAi,
       startAiChat,
+      startAgent,
       calcResult,
       calcOffset,
       togglePinSelectedCommand,
@@ -4062,6 +4082,22 @@ const App: React.FC = () => {
                 <kbd className="text-[0.625rem] text-white/20 bg-[var(--soft-pill-bg)] px-1 py-0.5 rounded font-mono leading-none">Tab</kbd>
               </button>
             )}
+            {searchQuery && aiAvailable && (
+              <button
+                onClick={() => {
+                  const trimmed = searchQuery.trim();
+                  if (!trimmed) return;
+                  startAgent(trimmed);
+                  window.electron.hideWindow();
+                }}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--soft-pill-bg)] hover:bg-[var(--soft-pill-hover-bg)] transition-colors flex-shrink-0 group"
+                title={t('launcher.runAgentTooltip')}
+              >
+                <Play className="w-3 h-3 text-white/30 group-hover:text-[#55b3ff] transition-colors" />
+                <span className="text-[0.6875rem] text-white/30 group-hover:text-white/50 transition-colors">{t('launcher.runAgent')}</span>
+                <kbd className="text-[0.625rem] text-white/20 bg-[var(--soft-pill-bg)] px-1 py-0.5 rounded font-mono leading-none">⇧↵</kbd>
+              </button>
+            )}
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
@@ -4654,6 +4690,12 @@ const App: React.FC = () => {
         </div>
       </div>
     )}
+    <AgentWidget
+      session={agentSession}
+      isOpen={isAgentWidgetOpen}
+      onCancel={cancelAgent}
+      onClose={closeAgentWidget}
+    />
     </>
   );
 };

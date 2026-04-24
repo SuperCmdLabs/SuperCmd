@@ -634,6 +634,8 @@
   },
   "launcher": {
     "searchPlaceholder": "Search for apps, commands, or ask AI...",
+    "runAgent": "Agent",
+    "runAgentTooltip": "Hand this query to the agent (Shift+Enter)",
     "compact": {
       "showMore": "Show More"
     },
@@ -1102,5 +1104,21 @@
     "duration": "Duration",
     "reminder": "Reminder",
     "save": "Save Event"
+  },
+  "agent": {
+    "title": "Agent",
+    "queryLabel": "Task",
+    "statusIdle": "Idle",
+    "statusStarting": "Starting…",
+    "statusThinking": "Thinking — step {step}",
+    "statusDone": "Done",
+    "statusCancelled": "Cancelled",
+    "statusError": "Error",
+    "cancel": "Cancel",
+    "thinking": "Thinking…",
+    "footerRunning": "Step {step}",
+    "footerSteps": "{count} steps",
+    "hotkeyCancel": "Esc",
+    "hotkeyClose": "Esc"
   }
 }

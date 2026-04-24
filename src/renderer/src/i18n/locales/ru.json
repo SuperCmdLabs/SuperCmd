@@ -74,6 +74,8 @@
   },
   "launcher": {
     "searchPlaceholder": "Поиск приложений, команд или запрос к AI...",
+    "runAgent": "Агент",
+    "runAgentTooltip": "Передать запрос агенту (Shift+Enter)",
     "status": {
       "discoveringApps": "Поиск приложений...",
       "noMatchingResults": "Ничего не найдено",
@@ -227,5 +229,21 @@
         "triggerPrefixPlaceholder": "напр. :"
       }
     }
+  },
+  "agent": {
+    "title": "Агент",
+    "queryLabel": "Задача",
+    "statusIdle": "Ожидание",
+    "statusStarting": "Запуск…",
+    "statusThinking": "Думает — шаг {step}",
+    "statusDone": "Готово",
+    "statusCancelled": "Отменено",
+    "statusError": "Ошибка",
+    "cancel": "Отмена",
+    "thinking": "Думает…",
+    "footerRunning": "Шаг {step}",
+    "footerSteps": "{count} шагов",
+    "hotkeyCancel": "Esc",
+    "hotkeyClose": "Esc"
   }
 }

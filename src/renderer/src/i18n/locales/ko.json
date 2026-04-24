@@ -634,6 +634,8 @@
   },
   "launcher": {
     "searchPlaceholder": "앱, 명령을 검색하거나 AI에게 물어보세요...",
+    "runAgent": "에이전트",
+    "runAgentTooltip": "에이전트에 쿼리 전달 (Shift+Enter)",
     "status": {
       "discoveringApps": "앱 검색 중...",
       "noMatchingResults": "일치하는 결과가 없습니다",
@@ -1102,5 +1104,21 @@
       "title": "\"{title}\"을(를) 삭제할까요?",
       "description": "이 작업은 되돌릴 수 없습니다."
     }
+  },
+  "agent": {
+    "title": "에이전트",
+    "queryLabel": "작업",
+    "statusIdle": "대기 중",
+    "statusStarting": "시작 중…",
+    "statusThinking": "생각 중 — 단계 {step}",
+    "statusDone": "완료",
+    "statusCancelled": "취소됨",
+    "statusError": "오류",
+    "cancel": "취소",
+    "thinking": "생각 중…",
+    "footerRunning": "단계 {step}",
+    "footerSteps": "{count} 단계",
+    "hotkeyCancel": "Esc",
+    "hotkeyClose": "Esc"
   }
 }

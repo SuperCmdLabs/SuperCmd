@@ -652,6 +652,8 @@
   },
   "launcher": {
     "searchPlaceholder": "Rechercher des commandes...",
+    "runAgent": "Agent",
+    "runAgentTooltip": "Confier cette requête à l'agent (Maj+Entrée)",
     "searchPlaceholderWithAI": "Rechercher des commandes ou demander à l'IA...",
     "aiMode": {
       "enabled": "Mode IA activé",
@@ -1005,5 +1007,21 @@
     "addEvent": "Ajouter un événement",
     "editEvent": "Modifier l'événement",
     "deleteEvent": "Supprimer l'événement"
+  },
+  "agent": {
+    "title": "Agent",
+    "queryLabel": "Tâche",
+    "statusIdle": "Inactif",
+    "statusStarting": "Démarrage…",
+    "statusThinking": "Réflexion — étape {step}",
+    "statusDone": "Terminé",
+    "statusCancelled": "Annulé",
+    "statusError": "Erreur",
+    "cancel": "Annuler",
+    "thinking": "Réflexion…",
+    "footerRunning": "Étape {step}",
+    "footerSteps": "{count} étapes",
+    "hotkeyCancel": "Esc",
+    "hotkeyClose": "Esc"
   }
 }

@@ -789,6 +789,17 @@ const electronAPI = {
     ipcRenderer.invoke('ai-cancel', requestId),
   aiIsAvailable: (): Promise<boolean> =>
     ipcRenderer.invoke('ai-is-available'),
+
+  // ─── Agent (autonomous action loop) ────────────────────────────
+  agentRun: (requestId: string, query: string): Promise<void> =>
+    ipcRenderer.invoke('agent-run', requestId, query),
+  agentCancel: (requestId: string): Promise<void> =>
+    ipcRenderer.invoke('agent-cancel', requestId),
+  onAgentEvent: (callback: (event: any) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('agent-event', listener);
+    return () => { ipcRenderer.removeListener('agent-event', listener); };
+  },
   whisperRefineTranscript: (transcript: string): Promise<{ correctedText: string; source: 'ai' | 'heuristic' | 'raw' }> =>
     ipcRenderer.invoke('whisper-refine-transcript', transcript),
   whisperCppModelStatus: (): Promise<{

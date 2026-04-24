@@ -648,6 +648,8 @@
   },
   "launcher": {
     "searchPlaceholder": "Befehle suchen...",
+    "runAgent": "Agent",
+    "runAgentTooltip": "Anfrage an den Agenten übergeben (Umschalt+Eingabe)",
     "searchPlaceholderWithAI": "Befehle suchen oder KI fragen...",
     "aiMode": {
       "enabled": "KI-Modus aktiviert",
@@ -1001,5 +1003,21 @@
     "addEvent": "Ereignis hinzufügen",
     "editEvent": "Ereignis bearbeiten",
     "deleteEvent": "Ereignis löschen"
+  },
+  "agent": {
+    "title": "Agent",
+    "queryLabel": "Aufgabe",
+    "statusIdle": "Bereit",
+    "statusStarting": "Wird gestartet…",
+    "statusThinking": "Denkt nach — Schritt {step}",
+    "statusDone": "Fertig",
+    "statusCancelled": "Abgebrochen",
+    "statusError": "Fehler",
+    "cancel": "Abbrechen",
+    "thinking": "Denkt nach…",
+    "footerRunning": "Schritt {step}",
+    "footerSteps": "{count} Schritte",
+    "hotkeyCancel": "Esc",
+    "hotkeyClose": "Esc"
   }
 }

@@ -2,6 +2,16 @@
  * Type definitions for the Electron API exposed via preload
  */
 
+export type AgentEvent =
+  | { requestId: string; type: 'started'; query: string }
+  | { requestId: string; type: 'thinking'; delta: string }
+  | { requestId: string; type: 'step'; step: number }
+  | { requestId: string; type: 'tool_call'; id: string; tool: string; args: Record<string, any>; summary: string }
+  | { requestId: string; type: 'tool_result'; id: string; ok: boolean; output: string }
+  | { requestId: string; type: 'message'; text: string }
+  | { requestId: string; type: 'done' }
+  | { requestId: string; type: 'error'; error: string };
+
 export interface CommandInfo {
   id: string;
   title: string;
@@ -794,6 +804,11 @@ export interface ElectronAPI {
   onAIStreamChunk: (callback: (data: { requestId: string; chunk: string }) => void) => (() => void);
   onAIStreamDone: (callback: (data: { requestId: string }) => void) => (() => void);
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => (() => void);
+
+  // Agent (autonomous action loop)
+  agentRun: (requestId: string, query: string) => Promise<void>;
+  agentCancel: (requestId: string) => Promise<void>;
+  onAgentEvent: (callback: (event: AgentEvent) => void) => (() => void);
   onPromptInsertText: (callback: (text: string) => void) => (() => void);
   whisperRefineTranscript: (
     transcript: string

@@ -634,6 +634,8 @@
   },
   "launcher": {
     "searchPlaceholder": "アプリ、コマンドを検索、または AI に質問...",
+    "runAgent": "エージェント",
+    "runAgentTooltip": "クエリをエージェントに渡す (Shift+Enter)",
     "compact": {
       "showMore": "もっと見る"
     },
@@ -1102,5 +1104,21 @@
     "duration": "期間",
     "reminder": "リマインダー",
     "save": "イベントを保存"
+  },
+  "agent": {
+    "title": "エージェント",
+    "queryLabel": "タスク",
+    "statusIdle": "待機中",
+    "statusStarting": "起動中…",
+    "statusThinking": "思考中 — ステップ {step}",
+    "statusDone": "完了",
+    "statusCancelled": "キャンセル済み",
+    "statusError": "エラー",
+    "cancel": "キャンセル",
+    "thinking": "考え中…",
+    "footerRunning": "ステップ {step}",
+    "footerSteps": "{count} ステップ",
+    "hotkeyCancel": "Esc",
+    "hotkeyClose": "Esc"
   }
 }

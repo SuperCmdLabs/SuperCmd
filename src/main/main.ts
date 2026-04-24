@@ -18,6 +18,7 @@ import { getAvailableCommands, executeCommand, invalidateCache } from './command
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState } from './settings-store';
 import type { AppSettings } from './settings-store';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
+import { runAgent, type AgentEvent } from './agent-runner';
 import * as soulverCalculator from './soulver-calculator';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
 import {
@@ -1857,6 +1858,9 @@ const DETACHED_SPEAK_WINDOW_NAME = 'supercmd-speak-window';
 const DETACHED_WINDOW_MANAGER_WINDOW_NAME = 'supercmd-window-manager-window';
 const DETACHED_PROMPT_WINDOW_NAME = 'supercmd-prompt-window';
 const DETACHED_MEMORY_STATUS_WINDOW_NAME = 'supercmd-memory-status-window';
+const DETACHED_AGENT_WINDOW_NAME = 'supercmd-agent-window';
+const AGENT_WINDOW_WIDTH = 420;
+const AGENT_WINDOW_HEIGHT = 560;
 const DETACHED_WINDOW_QUERY_KEY = 'sc_detached';
 const MEMORY_STATUS_WINDOW_WIDTH = 340;
 const MEMORY_STATUS_WINDOW_HEIGHT = 60;
@@ -1894,12 +1898,14 @@ function resolveDetachedPopupName(details: any): string | null {
     byFrameName === DETACHED_WINDOW_MANAGER_WINDOW_NAME ||
     byFrameName === DETACHED_PROMPT_WINDOW_NAME ||
     byFrameName === DETACHED_MEMORY_STATUS_WINDOW_NAME ||
+    byFrameName === DETACHED_AGENT_WINDOW_NAME ||
     byFrameName.startsWith(`${DETACHED_WHISPER_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_WHISPER_ONBOARDING_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_SPEAK_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_WINDOW_MANAGER_WINDOW_NAME}-`) ||
     byFrameName.startsWith(`${DETACHED_PROMPT_WINDOW_NAME}-`) ||
-    byFrameName.startsWith(`${DETACHED_MEMORY_STATUS_WINDOW_NAME}-`)
+    byFrameName.startsWith(`${DETACHED_MEMORY_STATUS_WINDOW_NAME}-`) ||
+    byFrameName.startsWith(`${DETACHED_AGENT_WINDOW_NAME}-`)
   ) {
     if (byFrameName.startsWith(DETACHED_WHISPER_WINDOW_NAME)) return DETACHED_WHISPER_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_WHISPER_ONBOARDING_WINDOW_NAME)) return DETACHED_WHISPER_ONBOARDING_WINDOW_NAME;
@@ -1907,6 +1913,7 @@ function resolveDetachedPopupName(details: any): string | null {
     if (byFrameName.startsWith(DETACHED_WINDOW_MANAGER_WINDOW_NAME)) return DETACHED_WINDOW_MANAGER_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_PROMPT_WINDOW_NAME)) return DETACHED_PROMPT_WINDOW_NAME;
     if (byFrameName.startsWith(DETACHED_MEMORY_STATUS_WINDOW_NAME)) return DETACHED_MEMORY_STATUS_WINDOW_NAME;
+    if (byFrameName.startsWith(DETACHED_AGENT_WINDOW_NAME)) return DETACHED_AGENT_WINDOW_NAME;
     return byFrameName;
   }
   const rawUrl = String(details?.url || '').trim();
@@ -1920,7 +1927,8 @@ function resolveDetachedPopupName(details: any): string | null {
       byQuery === DETACHED_SPEAK_WINDOW_NAME ||
       byQuery === DETACHED_WINDOW_MANAGER_WINDOW_NAME ||
       byQuery === DETACHED_PROMPT_WINDOW_NAME ||
-      byQuery === DETACHED_MEMORY_STATUS_WINDOW_NAME
+      byQuery === DETACHED_MEMORY_STATUS_WINDOW_NAME ||
+      byQuery === DETACHED_AGENT_WINDOW_NAME
     ) {
       return byQuery;
     }
@@ -1957,6 +1965,14 @@ function computeDetachedPopupPosition(
     return {
       x: workArea.x + Math.floor((workArea.width - width) / 2),
       y: workArea.y + Math.floor(workArea.height * 0.75 - height / 2),
+    };
+  }
+
+  if (popupName === DETACHED_AGENT_WINDOW_NAME) {
+    // Pinned to the top-right with a comfortable 20px margin.
+    return {
+      x: workArea.x + workArea.width - width - 20,
+      y: workArea.y + 16,
     };
   }
 
@@ -2530,6 +2546,7 @@ let lastFrontmostApp: FrontmostAppContext | null = null;
 let launcherEntryFrontmostApp: FrontmostAppContext | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
+const activeAgentRequests = new Map<string, AbortController>(); // requestId → controller
 const pendingOAuthCallbackUrls: string[] = [];
 let snippetExpanderProcess: any = null;
 let snippetExpanderStdoutBuffer = '';
@@ -6986,6 +7003,8 @@ function createWindow(): void {
         ? CURSOR_PROMPT_WINDOW_WIDTH
       : detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME
         ? 340
+      : detachedPopupName === DETACHED_AGENT_WINDOW_NAME
+        ? AGENT_WINDOW_WIDTH
         : 520;
     const defaultHeight = detachedPopupName === DETACHED_WHISPER_WINDOW_NAME
       ? 52
@@ -6997,6 +7016,8 @@ function createWindow(): void {
         ? CURSOR_PROMPT_WINDOW_HEIGHT
       : detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME
         ? 60
+      : detachedPopupName === DETACHED_AGENT_WINDOW_NAME
+        ? AGENT_WINDOW_HEIGHT
         : 112;
     const finalWidth = typeof popupBounds.width === 'number' ? popupBounds.width : defaultWidth;
     const finalHeight = typeof popupBounds.height === 'number' ? popupBounds.height : defaultHeight;
@@ -7021,6 +7042,8 @@ function createWindow(): void {
                 ? 'SuperCmd Window Manager'
               : detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME
                 ? 'SuperCmd Status'
+              : detachedPopupName === DETACHED_AGENT_WINDOW_NAME
+                ? 'SuperCmd Agent'
               : 'SuperCmd Read',
         frame: false,
         titleBarStyle: 'hidden',
@@ -7095,6 +7118,12 @@ function createWindow(): void {
     if (detachedPopupName === DETACHED_MEMORY_STATUS_WINDOW_NAME) {
       try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
       try { childWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+    }
+
+    if (detachedPopupName === DETACHED_AGENT_WINDOW_NAME) {
+      // The agent widget stays visible across spaces and fullscreen. Mouse
+      // events must flow through so the user can cancel/close without focus.
+      try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
     }
   });
 
@@ -14932,6 +14961,56 @@ if let tiff = image?.tiffRepresentation {
     const s = loadSettings();
     if (s.ai?.llmEnabled === false) return false;
     return isAIAvailable(s.ai);
+  });
+
+  // ─── Agent (autonomous action loop) ────────────────────────────────
+  ipcMain.handle(
+    'agent-run',
+    async (event: any, requestId: string, query: string) => {
+      const s = loadSettings();
+      const emit = (payload: AgentEvent) => {
+        try { event.sender.send('agent-event', payload); } catch {}
+      };
+      if (s.ai?.llmEnabled === false) {
+        emit({ requestId, type: 'error', error: 'LLM is disabled in Settings → AI.' });
+        return;
+      }
+      if (!isAIAvailable(s.ai)) {
+        emit({ requestId, type: 'error', error: 'AI is not configured. Please set up an API key in Settings → AI.' });
+        return;
+      }
+      const trimmed = String(query || '').trim();
+      if (!trimmed) {
+        emit({ requestId, type: 'error', error: 'Empty query.' });
+        return;
+      }
+
+      const controller = new AbortController();
+      activeAgentRequests.set(requestId, controller);
+      try {
+        await runAgent({
+          requestId,
+          query: trimmed,
+          settings: s,
+          signal: controller.signal,
+          emit,
+        });
+      } catch (err: any) {
+        if (!controller.signal.aborted) {
+          emit({ requestId, type: 'error', error: err?.message || 'Agent failed' });
+        }
+      } finally {
+        activeAgentRequests.delete(requestId);
+      }
+    }
+  );
+
+  ipcMain.handle('agent-cancel', (_event: any, requestId: string) => {
+    const controller = activeAgentRequests.get(requestId);
+    if (controller) {
+      controller.abort();
+      activeAgentRequests.delete(requestId);
+    }
   });
 
   ipcMain.handle('whisper-refine-transcript', async (_event: any, transcript: string) => {

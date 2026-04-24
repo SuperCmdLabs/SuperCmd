@@ -634,6 +634,8 @@
   },
   "launcher": {
     "searchPlaceholder": "搜索应用、命令，或向 AI 提问...",
+    "runAgent": "助手",
+    "runAgentTooltip": "将查询交给智能助手 (Shift+Enter)",
     "status": {
       "discoveringApps": "正在发现应用...",
       "noMatchingResults": "没有匹配的结果",
@@ -1102,5 +1104,21 @@
       "title": "删除 \"{title}\" ?",
       "description": "此操作无法撤销。"
     }
+  },
+  "agent": {
+    "title": "智能助手",
+    "queryLabel": "任务",
+    "statusIdle": "空闲",
+    "statusStarting": "启动中…",
+    "statusThinking": "思考中 — 第 {step} 步",
+    "statusDone": "完成",
+    "statusCancelled": "已取消",
+    "statusError": "错误",
+    "cancel": "取消",
+    "thinking": "思考中…",
+    "footerRunning": "第 {step} 步",
+    "footerSteps": "共 {count} 步",
+    "hotkeyCancel": "Esc",
+    "hotkeyClose": "Esc"
   }
 }

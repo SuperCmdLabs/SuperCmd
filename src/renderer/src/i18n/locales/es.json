@@ -648,6 +648,8 @@
   },
   "launcher": {
     "searchPlaceholder": "Buscar comandos...",
+    "runAgent": "Agente",
+    "runAgentTooltip": "Enviar esta consulta al agente (Mayús+Entrar)",
     "searchPlaceholderWithAI": "Buscar comandos o preguntar a la IA...",
     "aiMode": {
       "enabled": "Modo IA habilitado",
@@ -1001,5 +1003,21 @@
     "addEvent": "Añadir evento",
     "editEvent": "Editar evento",
     "deleteEvent": "Eliminar evento"
+  },
+  "agent": {
+    "title": "Agente",
+    "queryLabel": "Tarea",
+    "statusIdle": "Inactivo",
+    "statusStarting": "Iniciando…",
+    "statusThinking": "Pensando — paso {step}",
+    "statusDone": "Listo",
+    "statusCancelled": "Cancelado",
+    "statusError": "Error",
+    "cancel": "Cancelar",
+    "thinking": "Pensando…",
+    "footerRunning": "Paso {step}",
+    "footerSteps": "{count} pasos",
+    "hotkeyCancel": "Esc",
+    "hotkeyClose": "Esc"
   }
 }
