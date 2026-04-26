@@ -134,7 +134,7 @@ import {
 import { initialize as initAptabase, trackEvent } from "@aptabase/electron/main";
 
 const electron = require('electron');
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, clipboard: systemClipboard } = electron;
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell, Menu, Tray, nativeImage, protocol, net, dialog, systemPreferences, desktopCapturer, clipboard: systemClipboard } = electron;
 try {
   app.setName('SuperCmd');
 } catch {}
@@ -3832,7 +3832,7 @@ function scrubInternalClipboardProbe(reason: string): void {
   }
 }
 
-type OnboardingPermissionTarget = 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition' | 'home-folder';
+type OnboardingPermissionTarget = 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition' | 'home-folder' | 'screen-recording';
 type OnboardingPermissionResult = {
   granted: boolean;
   requested: boolean;
@@ -3843,11 +3843,30 @@ type OnboardingPermissionResult = {
 };
 
 type MicrophoneAccessStatus = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+type ScreenCaptureAccessStatus = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
 type MicrophonePermissionResult = {
   granted: boolean;
   requested: boolean;
   status: MicrophoneAccessStatus;
   canPrompt: boolean;
+  error?: string;
+};
+type ScreenCapturePermissionResult = {
+  granted: boolean;
+  requested: boolean;
+  status: ScreenCaptureAccessStatus;
+  canPrompt: boolean;
+  error?: string;
+};
+type AgentScreenContext = {
+  mimeType: string;
+  dataBase64: string;
+  label: string;
+  width: number;
+  height: number;
+};
+type AgentScreenContextResult = {
+  image: AgentScreenContext | null;
   error?: string;
 };
 type HomeFolderAccessProbeResult = {
@@ -3883,6 +3902,204 @@ function readMicrophoneAccessStatus(): MicrophoneAccessStatus {
     return 'unknown';
   } catch {
     return 'unknown';
+  }
+}
+
+function readScreenCaptureAccessStatus(): ScreenCaptureAccessStatus {
+  if (process.platform !== 'darwin') return 'granted';
+  try {
+    const raw = String(systemPreferences.getMediaAccessStatus('screen') || '').toLowerCase();
+    if (
+      raw === 'granted' ||
+      raw === 'denied' ||
+      raw === 'restricted' ||
+      raw === 'not-determined'
+    ) {
+      return raw;
+    }
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function describeScreenCaptureStatus(status: ScreenCaptureAccessStatus): string {
+  if (status === 'denied') {
+    return 'Screen Recording is denied. Enable SuperCmd in System Settings -> Privacy & Security -> Screen & System Audio Recording.';
+  }
+  if (status === 'restricted') {
+    return 'Screen Recording is restricted on this device.';
+  }
+  if (status === 'not-determined') {
+    return 'Screen Recording is not determined yet. Press request again to trigger the prompt.';
+  }
+  return 'Failed to request Screen Recording access.';
+}
+
+async function ensureScreenCaptureAccess(prompt = true): Promise<ScreenCapturePermissionResult> {
+  if (process.platform !== 'darwin') {
+    return {
+      granted: true,
+      requested: false,
+      status: 'granted',
+      canPrompt: false,
+    };
+  }
+
+  const before = readScreenCaptureAccessStatus();
+  if (before === 'granted') {
+    return {
+      granted: true,
+      requested: false,
+      status: before,
+      canPrompt: false,
+    };
+  }
+
+  if (!prompt) {
+    return {
+      granted: false,
+      requested: false,
+      status: before,
+      canPrompt: before === 'not-determined' || before === 'unknown',
+    };
+  }
+
+  let requested = false;
+  let errorText = '';
+  try {
+    try { app.focus({ steal: true }); } catch {}
+    requested = true;
+    await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 1, height: 1 },
+    });
+  } catch (error: any) {
+    errorText = String(error?.message || error || '').trim();
+  }
+
+  const after = readScreenCaptureAccessStatus();
+  return {
+    granted: after === 'granted',
+    requested,
+    status: after,
+    canPrompt: after === 'not-determined' || after === 'unknown',
+    error: after === 'granted' ? undefined : errorText || describeScreenCaptureStatus(after),
+  };
+}
+
+async function captureAgentScreenContext(): Promise<AgentScreenContextResult> {
+  const permission = await ensureScreenCaptureAccess(true);
+  if (!permission.granted) {
+    const error = permission.error || `Screen Recording permission is ${permission.status}.`;
+    console.warn('[agent] Screen context unavailable:', error);
+    const fallback = await captureAgentScreenContextWithScreencapture(error);
+    if (fallback.image) return fallback;
+    return fallback.error ? fallback : { image: null, error };
+  }
+
+  const cursorPoint = screen.getCursorScreenPoint();
+  const activeDisplay = screen.getDisplayNearestPoint(cursorPoint) || screen.getPrimaryDisplay();
+  const scaleFactor = Math.max(1, Number(activeDisplay.scaleFactor || 1));
+  const targetWidth = Math.min(1440, Math.max(720, Math.round(activeDisplay.bounds.width * scaleFactor)));
+  const targetHeight = Math.min(1000, Math.max(450, Math.round(activeDisplay.bounds.height * scaleFactor)));
+  let sources: any[] = [];
+  try {
+    sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: targetWidth, height: targetHeight },
+    });
+  } catch (error: any) {
+    const message = String(error?.message || error || 'Failed to get screen sources.').trim();
+    console.warn('[agent] desktopCapturer failed, trying screencapture fallback:', message);
+    const fallback = await captureAgentScreenContextWithScreencapture(message);
+    if (fallback.image) return fallback;
+    return fallback.error ? fallback : { image: null, error: message };
+  }
+  const displayId = String(activeDisplay.id);
+  const source =
+    sources.find((candidate: any) => String(candidate.display_id || '') === displayId) ||
+    sources[0];
+
+  if (!source?.thumbnail || source.thumbnail.isEmpty()) {
+    const error = 'Screen capture returned an empty screenshot.';
+    console.warn('[agent] Screen context unavailable:', error);
+    return { image: null, error };
+  }
+
+  const size = source.thumbnail.getSize();
+  const jpeg = source.thumbnail.toJPEG(68);
+  return {
+    image: {
+      mimeType: 'image/jpeg',
+      dataBase64: jpeg.toString('base64'),
+      label: source.name || 'Current screen',
+      width: size.width,
+      height: size.height,
+    },
+  };
+}
+
+async function captureAgentScreenContextWithScreencapture(previousError?: string): Promise<AgentScreenContextResult> {
+  if (process.platform !== 'darwin') {
+    return {
+      image: null,
+      error: previousError || 'Screen capture fallback is only available on macOS.',
+    };
+  }
+
+  const screenshotPath = path.join(os.tmpdir(), `supercmd-agent-screen-${process.pid}-${Date.now()}.jpg`);
+  try {
+    const { execFile } = require('child_process');
+    await new Promise<void>((resolve, reject) => {
+      execFile('/usr/sbin/screencapture', ['-x', '-t', 'jpg', screenshotPath], { timeout: 10000 }, (error: any, _stdout: string, stderr: string) => {
+        if (error) {
+          const stderrText = String(stderr || '').trim();
+          reject(new Error(stderrText || error.message || 'screencapture failed.'));
+          return;
+        }
+        resolve();
+      });
+    });
+
+    const raw = await fs.promises.readFile(screenshotPath);
+    const image = nativeImage.createFromBuffer(raw);
+    if (image.isEmpty()) {
+      throw new Error('screencapture produced an empty image.');
+    }
+    const originalSize = image.getSize();
+    const scale = Math.min(
+      1,
+      1440 / Math.max(1, originalSize.width),
+      1000 / Math.max(1, originalSize.height)
+    );
+    const normalized = scale < 1
+      ? image.resize({
+          width: Math.max(1, Math.round(originalSize.width * scale)),
+          height: Math.max(1, Math.round(originalSize.height * scale)),
+        })
+      : image;
+    const size = normalized.getSize();
+    const jpeg = normalized.toJPEG(68);
+    console.log('[agent] Attached screen context via screencapture fallback');
+    return {
+      image: {
+        mimeType: 'image/jpeg',
+        dataBase64: jpeg.toString('base64'),
+        label: 'Current screen',
+        width: size.width,
+        height: size.height,
+      },
+    };
+  } catch (error: any) {
+    const fallbackError = String(error?.message || error || 'screencapture failed.').trim();
+    const combined = previousError
+      ? `${previousError}; screencapture fallback failed: ${fallbackError}`
+      : `screencapture fallback failed: ${fallbackError}`;
+    console.warn('[agent] Screen context fallback unavailable:', combined);
+    return { image: null, error: combined };
+  } finally {
+    try { await fs.promises.unlink(screenshotPath); } catch {}
   }
 }
 
@@ -4202,7 +4419,7 @@ async function requestOnboardingPermissionAccess(target: OnboardingPermissionTar
         canPrompt: false,
       };
     }
-    if (target === 'microphone' || target === 'speech-recognition') {
+    if (target === 'microphone' || target === 'speech-recognition' || target === 'screen-recording') {
       return { granted: true, requested: false, mode: 'already-granted', status: 'granted', canPrompt: false };
     }
     return { granted: false, requested: false, mode: 'manual' };
@@ -4300,6 +4517,27 @@ async function requestOnboardingPermissionAccess(target: OnboardingPermissionTar
 
   if (target === 'microphone') {
     const result = await ensureMicrophoneAccess(true);
+    if (result.granted) {
+      return {
+        granted: true,
+        requested: result.requested,
+        mode: result.requested ? 'prompted' : 'already-granted',
+        status: result.status,
+        canPrompt: result.canPrompt,
+      };
+    }
+    return {
+      granted: false,
+      requested: result.requested,
+      mode: result.requested ? 'prompted' : 'manual',
+      status: result.status,
+      canPrompt: result.canPrompt,
+      error: result.error,
+    };
+  }
+
+  if (target === 'screen-recording') {
+    const result = await ensureScreenCaptureAccess(true);
     if (result.granted) {
       return {
         granted: true,
@@ -4837,6 +5075,12 @@ function getElevenLabsApiKey(settings: AppSettings): string {
   return normalizeApiKey(process.env.ELEVENLABS_API_KEY);
 }
 
+function getMistralApiKey(settings: AppSettings): string {
+  const fromSettings = normalizeApiKey(settings.ai?.mistralApiKey);
+  if (fromSettings) return fromSettings;
+  return normalizeApiKey(process.env.MISTRAL_API_KEY);
+}
+
 const DEFAULT_ELEVENLABS_TTS_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // Rachel
 
 function resolveElevenLabsTtsConfig(selectedModel: string): { modelId: string; voiceId: string } {
@@ -4958,6 +5202,98 @@ function transcribeAudioWithElevenLabs(opts: {
         }
       );
       req.on('error', reject);
+      req.write(body);
+      req.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function transcribeAudioWithMistralVoxtral(opts: {
+  audioBuffer: Buffer;
+  apiKey: string;
+  model: string;
+  language?: string;
+  mimeType?: string;
+}): Promise<string> {
+  const boundary = `----SuperCmdMistralBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+  const normalized = String(opts.mimeType || '').toLowerCase();
+  const filename = normalized.includes('mp3') || normalized.includes('mpeg') ? 'audio.mp3' : 'audio.wav';
+  const contentType = filename.endsWith('.mp3') ? 'audio/mpeg' : 'audio/wav';
+  const parts: Buffer[] = [];
+
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`
+  ));
+  parts.push(opts.audioBuffer);
+  parts.push(Buffer.from('\r\n'));
+
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n${opts.model || 'voxtral-mini-latest'}\r\n`
+  ));
+
+  if (opts.language) {
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${opts.language}\r\n`
+    ));
+  }
+
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+  const body = Buffer.concat(parts);
+
+  return new Promise<string>((resolve, reject) => {
+    try {
+      const https = require('https');
+      const req = https.request(
+        {
+          hostname: 'api.mistral.ai',
+          path: '/v1/audio/transcriptions',
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${opts.apiKey}`,
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            'Content-Length': body.length,
+          },
+        },
+        (res: any) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            const responseBody = Buffer.concat(chunks).toString('utf-8');
+            if (res.statusCode && res.statusCode >= 400) {
+              reject(new Error(`Mistral Voxtral STT HTTP ${res.statusCode}: ${responseBody.slice(0, 500)}`));
+              return;
+            }
+            try {
+              const parsed = JSON.parse(responseBody || '{}');
+              const content = parsed?.choices?.[0]?.message?.content;
+              const text = Array.isArray(content)
+                ? content
+                    .map((part: any) => typeof part === 'string' ? part : String(part?.text || ''))
+                    .join('')
+                    .trim()
+                : String(content || parsed?.text || parsed?.transcript || '').trim();
+              if (!text) {
+                reject(new Error('Mistral Voxtral STT returned an empty transcript.'));
+                return;
+              }
+              resolve(text);
+            } catch {
+              const text = responseBody.trim();
+              if (!text) {
+                reject(new Error('Mistral Voxtral STT returned an empty response.'));
+                return;
+              }
+              resolve(text);
+            }
+          });
+        }
+      );
+      req.on('error', reject);
+      req.setTimeout(60000, () => {
+        req.destroy(new Error('Mistral Voxtral STT timed out.'));
+      });
       req.write(body);
       req.end();
     } catch (error) {
@@ -12721,6 +13057,10 @@ app.whenReady().then(async () => {
     const prompt = options?.prompt !== false;
     return await ensureSpeechRecognitionAccess(prompt);
   });
+  ipcMain.handle('agent-ensure-screen-capture-access', async (_event: any, options?: { prompt?: boolean }) => {
+    const prompt = options?.prompt !== false;
+    return await ensureScreenCaptureAccess(prompt);
+  });
 
   // ─── IPC: Check permission statuses without triggering dialogs ──────
   // Used by the onboarding screen to refresh green/amber badges when the user
@@ -12742,6 +13082,10 @@ app.whenReady().then(async () => {
       try {
         const srResult = await ensureSpeechRecognitionAccess(false);
         statuses['speech-recognition'] = Boolean(srResult.granted);
+      } catch {}
+      try {
+        const screenResult = await ensureScreenCaptureAccess(false);
+        statuses['screen-recording'] = Boolean(screenResult.granted);
       } catch {}
     }
     return statuses;
@@ -15145,6 +15489,7 @@ if let tiff = image?.tiffRepresentation {
       query: string,
       workingDir?: string,
       resumeFromSessionId?: string,
+      runOptions?: { includeScreenContext?: boolean },
     ) => {
       const s = loadSettings();
       const emit = (payload: AgentEvent) => {
@@ -15172,6 +15517,22 @@ if let tiff = image?.tiffRepresentation {
       const controller = new AbortController();
       activeAgentRequests.set(requestId, controller);
       try {
+        let screenContext: AgentScreenContext | undefined;
+        let screenContextError = '';
+        if (runOptions?.includeScreenContext) {
+          try {
+            await new Promise((resolve) => setTimeout(resolve, 160));
+            const result = await captureAgentScreenContext();
+            screenContext = result.image || undefined;
+            screenContextError = result.error || '';
+            if (screenContext) {
+              console.log(`[agent] Attached screen context (${screenContext.width}x${screenContext.height}, ${screenContext.dataBase64.length} base64 chars)`);
+            }
+          } catch (error: any) {
+            screenContextError = String(error?.message || error || 'Screen capture failed.');
+            console.warn('[agent] Failed to capture screen context:', screenContextError);
+          }
+        }
         await runAgent({
           requestId,
           query: trimmed,
@@ -15179,6 +15540,8 @@ if let tiff = image?.tiffRepresentation {
           signal: controller.signal,
           emit,
           workingDir: resolvedWorkingDir,
+          screenContext,
+          screenContextError: screenContextError || undefined,
           resumeFromSessionId:
             typeof resumeFromSessionId === 'string' && resumeFromSessionId ? resumeFromSessionId : undefined,
         });
@@ -15286,7 +15649,7 @@ if let tiff = image?.tiffRepresentation {
       }
 
       // Parse speechToTextModel to a concrete provider/model pair.
-      let provider: 'parakeet' | 'qwen3' | 'whispercpp' | 'openai' | 'elevenlabs' = 'whispercpp';
+      let provider: 'parakeet' | 'qwen3' | 'whispercpp' | 'openai' | 'elevenlabs' | 'mistral' = 'whispercpp';
       let model = `ggml-${WHISPERCPP_MODEL_NAME}`;
       const sttModel = s.ai.speechToTextModel || '';
       if (sttModel === 'parakeet') {
@@ -15308,6 +15671,9 @@ if let tiff = image?.tiffRepresentation {
       } else if (sttModel.startsWith('elevenlabs-')) {
         provider = 'elevenlabs';
         model = resolveElevenLabsSttModel(sttModel);
+      } else if (sttModel.startsWith('mistral-')) {
+        provider = 'mistral';
+        model = sttModel.slice('mistral-'.length) || 'voxtral-mini-latest';
       } else if (sttModel) {
         model = sttModel;
       }
@@ -15318,6 +15684,10 @@ if let tiff = image?.tiffRepresentation {
       const elevenLabsApiKey = getElevenLabsApiKey(s);
       if (provider === 'elevenlabs' && !elevenLabsApiKey) {
         throw new Error('ElevenLabs API key not configured. Set it in Settings -> AI (or ELEVENLABS_API_KEY env var).');
+      }
+      const mistralApiKey = getMistralApiKey(s);
+      if (provider === 'mistral' && !mistralApiKey) {
+        throw new Error('Mistral API key not configured. Set it in Settings -> AI (or MISTRAL_API_KEY env var).');
       }
 
       const rawLang = options?.language || s.ai.speechLanguage || 'en-US';
@@ -15354,6 +15724,14 @@ if let tiff = image?.tiffRepresentation {
                 language,
                 mimeType,
               })
+            : provider === 'mistral'
+              ? await transcribeAudioWithMistralVoxtral({
+                  audioBuffer,
+                  apiKey: mistralApiKey,
+                  model,
+                  language,
+                  mimeType,
+                })
             : await transcribeAudio({
                 audioBuffer,
                 apiKey: s.ai.openaiApiKey,

@@ -9,6 +9,7 @@ import {
   FolderOpen,
   Keyboard,
   Mic,
+  Monitor,
   Shield,
   Volume2,
 } from 'lucide-react';
@@ -28,7 +29,7 @@ interface OnboardingExtensionProps {
   onClose: () => void;
 }
 
-type PermissionTargetId = 'accessibility' | 'input-monitoring' | 'speech-recognition' | 'microphone' | 'home-folder';
+type PermissionTargetId = 'accessibility' | 'input-monitoring' | 'speech-recognition' | 'microphone' | 'home-folder' | 'screen-recording';
 
 const STEPS = [
   'Welcome',
@@ -105,6 +106,15 @@ function getPermissionTargets(t: (key: string) => string): Array<{
     icon: Mic,
     iconTone: 'text-cyan-100',
     iconBg: 'bg-cyan-500/22 border-cyan-100/30',
+  },
+  {
+    id: 'screen-recording',
+    title: 'Screen Recording',
+    description: 'Optional. Lets Voice Agent attach a current-screen screenshot as context.',
+    url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+    icon: Monitor,
+    iconTone: 'text-indigo-100',
+    iconBg: 'bg-indigo-500/22 border-indigo-100/30',
   },
   ];
 }
@@ -619,10 +629,12 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       if (granted) {
         setOpenedPermissions((prev) => ({ ...prev, [id]: true }));
         setPermissionNotes((prev) => ({ ...prev, [id]: '' }));
-      } else if (id === 'microphone' || id === 'speech-recognition') {
+      } else if (id === 'microphone' || id === 'speech-recognition' || id === 'screen-recording') {
         const targetLabel = id === 'microphone'
           ? t('onboarding.voice.permissions.microphoneTitle')
-          : t('onboarding.voice.permissions.speechRecognitionTitle');
+          : id === 'speech-recognition'
+            ? t('onboarding.voice.permissions.speechRecognitionTitle')
+            : 'Screen Recording';
         if (status === 'denied' || status === 'restricted') {
           setPermissionNotes((prev) => ({
             ...prev,
@@ -656,12 +668,14 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
       if (id === 'microphone') {
         await new Promise((resolve) => setTimeout(resolve, 350));
       }
-      // Only open Privacy & Security for input-monitoring (requires manual "+" to add app).
+      // Only open Privacy & Security for permissions that require manual action.
       // All other permissions show a native dialog and don't need the system settings panel.
-      if (id === 'input-monitoring') {
+      if (id === 'input-monitoring' || (id === 'screen-recording' && !granted && (status === 'denied' || status === 'restricted'))) {
         const candidateUrls = [
           url,
-          'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent',
+          id === 'input-monitoring'
+            ? 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent'
+            : 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture',
         ];
         try {
           await window.electron.setLauncherMode('onboarding');
@@ -672,12 +686,14 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
           ok = await window.electron.openUrl(candidate);
         }
         if (ok) {
-          // macOS 13+ does not auto-add apps to Input Monitoring via CGEventTap.
-          // The user must click "+" in System Settings and manually select SuperCmd.
-          setPermissionNotes((prev) => ({
-            ...prev,
-            [id]: t('onboarding.voice.permissionNotes.inputMonitoring'),
-          }));
+          if (id === 'input-monitoring') {
+            // macOS 13+ does not auto-add apps to Input Monitoring via CGEventTap.
+            // The user must click "+" in System Settings and manually select SuperCmd.
+            setPermissionNotes((prev) => ({
+              ...prev,
+              [id]: t('onboarding.voice.permissionNotes.inputMonitoring'),
+            }));
+          }
         }
       }
     } finally {
@@ -895,37 +911,37 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
           )}
 
           {step === 3 && (
-            <div className="min-h-full flex items-center justify-center">
-              <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
+            <div className="h-full flex items-center justify-center">
+              <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-3">
                 <div
-                  className="rounded-3xl border border-white/[0.09] p-5"
+                  className="rounded-2xl border border-white/[0.09] p-4"
                   style={{
                     background: 'var(--onboarding-permission-side-bg)',
                     boxShadow: 'var(--onboarding-permission-side-shadow)',
                   }}
                 >
-                  <p className="text-white text-[20px] leading-tight font-semibold mb-2">Grant Access</p>
-                  <p className="text-white/72 text-sm leading-relaxed mb-4">
+                  <p className="text-white text-[18px] leading-tight font-semibold mb-1.5">Grant Access</p>
+                  <p className="text-white/72 text-xs leading-relaxed mb-3">
                     We now request each permission first, then jump to the exact Privacy & Security page so SuperCmd appears where needed.
                   </p>
-                  <div className="space-y-2 text-xs text-white/70">
+                  <div className="space-y-1.5 text-[11px] text-white/70">
                     <p>1. Click each access row once</p>
                     <p>2. Enable SuperCmd in System Settings</p>
                     <p>3. Return and continue setup</p>
                   </div>
                 </div>
 
-                <div className="rounded-3xl border border-white/[0.09] bg-white/[0.05] p-4 space-y-3">
+                <div className="rounded-2xl border border-white/[0.09] bg-white/[0.05] p-3 grid grid-cols-1 xl:grid-cols-2 gap-2 content-start">
                   {permissionTargets.map((target, index) => {
                     const Icon = target.icon;
                     const isDone = Boolean(openedPermissions[target.id]);
                     const isRequested = Boolean(requestedPermissions[target.id]);
                     const note = permissionNotes[target.id];
-                    const permissionNoteClass = 'mt-1 pl-[60px] text-[11px]';
+                    const permissionNoteClass = 'mt-1 pl-[50px] text-[10px] leading-snug';
                     return (
                       <div
                         key={target.id}
-                        className="rounded-2xl border p-3.5"
+                        className="rounded-xl border p-2.5"
                         style={{
                           borderColor: isDone ? 'var(--onboarding-permission-border-done)' : 'var(--onboarding-permission-border-pending)',
                           background: isDone
@@ -936,15 +952,15 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                             : 'var(--onboarding-permission-pending-shadow)',
                         }}
                       >
-                        <div className="flex flex-col gap-3 md:flex-row md:items-start">
-                          <div className="flex items-start gap-3 flex-1 min-w-0">
-                            <div className="text-white/35 text-[11px] font-semibold mt-1">{String(index + 1).padStart(2, '0')}</div>
-                            <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${target.iconBg}`}>
-                              <Icon className={`w-4 h-4 ${target.iconTone}`} />
+                        <div className="flex flex-col gap-2 md:flex-row md:items-start">
+                          <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                            <div className="text-white/35 text-[10px] font-semibold mt-0.5">{String(index + 1).padStart(2, '0')}</div>
+                            <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${target.iconBg}`}>
+                              <Icon className={`w-3.5 h-3.5 ${target.iconTone}`} />
                             </div>
                             <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap mb-1">
-                              <p className="text-white/96 text-sm font-semibold">
+                              <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                              <p className="text-white/96 text-[13px] font-semibold leading-tight">
                                 {target.id === 'microphone'
                                   ? t('onboarding.voice.permissions.microphoneTitle')
                                   : target.id === 'speech-recognition'
@@ -954,21 +970,25 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                                       : target.title}
                               </p>
                                 {isDone ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-emerald-200/35 bg-emerald-500/22 text-emerald-100">
-                                    <Check className="w-3 h-3" />
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] border border-emerald-200/35 bg-emerald-500/22 text-emerald-100">
+                                    <Check className="w-2.5 h-2.5" />
                                     Granted
                                   </span>
                                 ) : isRequested ? (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border border-amber-200/30 bg-amber-500/20 text-amber-100">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] border border-amber-200/30 bg-amber-500/20 text-amber-100">
                                     Requested
                                   </span>
+                                ) : target.id === 'screen-recording' ? (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] border border-indigo-200/30 bg-indigo-500/20 text-indigo-100">
+                                    Optional
+                                  </span>
                                 ) : (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border border-rose-200/30 bg-rose-500/20 text-rose-100">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] border border-rose-200/30 bg-rose-500/20 text-rose-100">
                                     Required
                                   </span>
                                 )}
                               </div>
-                              <p className="text-white/68 text-xs leading-relaxed">
+                              <p className="text-white/68 text-[11px] leading-snug">
                                 {target.id === 'microphone'
                                   ? t('onboarding.voice.permissions.microphoneDescription')
                                   : target.id === 'speech-recognition'
@@ -982,7 +1002,7 @@ const OnboardingExtension: React.FC<OnboardingExtensionProps> = ({
                           <button
                             onClick={() => openPermissionTarget(target.id, target.url)}
                             disabled={Boolean(permissionLoading[target.id])}
-                            className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-md border border-white/[0.12] bg-white/[0.10] hover:bg-white/[0.18] text-white text-xs font-medium transition-colors disabled:opacity-60 md:min-w-[190px]"
+                            className="inline-flex justify-center items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/[0.12] bg-white/[0.10] hover:bg-white/[0.18] text-white text-[11px] font-medium transition-colors disabled:opacity-60 md:min-w-[128px]"
                           >
                             {permissionLoading[target.id] ? 'Requesting...' : 'Request Access'}
                           </button>

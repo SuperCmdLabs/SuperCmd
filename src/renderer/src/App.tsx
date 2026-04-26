@@ -533,7 +533,7 @@ const App: React.FC = () => {
     const trimmed = String(transcript || '').trim();
     setWhisperOutputMode('dictation');
     if (!trimmed) return;
-    startAgent(trimmed, launcherWorkingDir);
+    startAgent(trimmed, launcherWorkingDir, { includeScreenContext: true });
     window.electron.hideWindow();
   }, [launcherWorkingDir, startAgent]);
 

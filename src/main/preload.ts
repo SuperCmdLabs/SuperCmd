@@ -284,7 +284,7 @@ const electronAPI = {
   disableFnWatcherForOnboarding: (): Promise<void> =>
     ipcRenderer.invoke('disable-fn-watcher-for-onboarding'),
   onboardingRequestPermission: (
-    target: 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition' | 'home-folder'
+    target: 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition' | 'home-folder' | 'screen-recording'
   ): Promise<{
     granted: boolean;
     requested: boolean;
@@ -791,12 +791,20 @@ const electronAPI = {
     ipcRenderer.invoke('ai-is-available'),
 
   // ─── Agent (autonomous action loop) ────────────────────────────
-  agentRun: (requestId: string, query: string, workingDir?: string, resumeFromSessionId?: string): Promise<void> =>
-    ipcRenderer.invoke('agent-run', requestId, query, workingDir, resumeFromSessionId),
+  agentRun: (
+    requestId: string,
+    query: string,
+    workingDir?: string,
+    resumeFromSessionId?: string,
+    options?: { includeScreenContext?: boolean },
+  ): Promise<void> =>
+    ipcRenderer.invoke('agent-run', requestId, query, workingDir, resumeFromSessionId, options),
   agentCancel: (requestId: string): Promise<void> =>
     ipcRenderer.invoke('agent-cancel', requestId),
   agentGetContextFolder: (): Promise<string | null> =>
     ipcRenderer.invoke('agent-get-context-folder'),
+  agentEnsureScreenCaptureAccess: (options?: { prompt?: boolean }) =>
+    ipcRenderer.invoke('agent-ensure-screen-capture-access', options),
   agentListSessions: (limit?: number): Promise<any[]> =>
     ipcRenderer.invoke('agent-list-sessions', limit),
   agentLoadSession: (id: string): Promise<any | null> =>

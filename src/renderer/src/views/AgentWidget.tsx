@@ -728,8 +728,8 @@ function StepItem({ step, accent }: { step: AgentTimelineStep; accent: SessionAc
             color: step.status === 'error' ? '#ffb1b1' : 'rgba(244, 244, 245, 0.75)',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
-            maxHeight: 130,
-            overflowY: 'auto',
+            maxHeight: 'none',
+            overflow: 'visible',
           }}
         >
           {clampOutput(step.output)}

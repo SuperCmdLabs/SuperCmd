@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   Mic,
+  Monitor,
   RefreshCw,
   Trash2,
   Volume2,
@@ -56,6 +57,7 @@ const getWhisperSttOptions = (t: (key: string) => string) => [
   { id: 'openai-whisper-1', label: t('settings.ai.whisper.modelOptions.openaiWhisper') },
   { id: 'elevenlabs-scribe-v1', label: t('settings.ai.whisper.modelOptions.elevenlabsScribeV1') },
   { id: 'elevenlabs-scribe-v2', label: t('settings.ai.whisper.modelOptions.elevenlabsScribeV2') },
+  { id: 'mistral-voxtral-mini-latest', label: 'Mistral Voxtral Mini' },
 ];
 
 const MODELS_BY_PROVIDER: Record<string, { id: string; label: string }[]> = {
@@ -240,6 +242,7 @@ const AITab: React.FC = () => {
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [showElevenLabsKey, setShowElevenLabsKey] = useState(false);
+  const [showMistralKey, setShowMistralKey] = useState(false);
   const [showSupermemoryKey, setShowSupermemoryKey] = useState(false);
   const [showOpenAICompatibleKey, setShowOpenAICompatibleKey] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
@@ -266,6 +269,12 @@ const AITab: React.FC = () => {
   const [parakeetModelLoading, setParakeetModelLoading] = useState(false);
   const [qwen3ModelStatus, setQwen3ModelStatus] = useState<Qwen3ModelStatus | null>(null);
   const [qwen3ModelLoading, setQwen3ModelLoading] = useState(false);
+  const [screenCapturePermission, setScreenCapturePermission] = useState<{
+    granted: boolean;
+    status: string;
+    error?: string;
+  } | null>(null);
+  const [screenCapturePermissionLoading, setScreenCapturePermissionLoading] = useState(false);
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
   const selectingOllamaDefaultRef = useRef(false);
@@ -369,6 +378,52 @@ const AITab: React.FC = () => {
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 1600);
   };
+
+  const refreshScreenCapturePermission = useCallback(async () => {
+    try {
+      const result = await window.electron.agentEnsureScreenCaptureAccess({ prompt: false });
+      setScreenCapturePermission({
+        granted: result.granted,
+        status: result.status,
+        error: result.error,
+      });
+      return result;
+    } catch (error: any) {
+      setScreenCapturePermission({
+        granted: false,
+        status: 'unknown',
+        error: String(error?.message || error || 'Screen Recording check failed.'),
+      });
+      return null;
+    }
+  }, []);
+
+  const handleScreenContextToggle = useCallback(async () => {
+    if (!settingsRef.current) return;
+    const currentEnabled = Boolean(settingsRef.current.ai?.agentVoiceScreenContextEnabled);
+    if (currentEnabled) {
+      await updateAI({ agentVoiceScreenContextEnabled: false });
+      return;
+    }
+
+    await updateAI({ agentVoiceScreenContextEnabled: true });
+    setScreenCapturePermissionLoading(true);
+    try {
+      const result = await window.electron.agentEnsureScreenCaptureAccess({ prompt: true });
+      setScreenCapturePermission({
+        granted: result.granted,
+        status: result.status,
+        error: result.error,
+      });
+    } finally {
+      setScreenCapturePermissionLoading(false);
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    if (activeTab !== 'whisper') return;
+    void refreshScreenCapturePermission();
+  }, [activeTab, refreshScreenCapturePermission]);
 
   const refreshWhisperCppModelStatus = useCallback(async () => {
     try {
@@ -893,6 +948,25 @@ const AITab: React.FC = () => {
                   </div>
                 </div>
 
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">Mistral API Key</label>
+                  <div className="relative">
+                    <input
+                      type={showMistralKey ? 'text' : 'password'}
+                      value={ai.mistralApiKey || ''}
+                      onChange={(e) => updateAI({ mistralApiKey: e.target.value.trim() })}
+                      placeholder="For Voxtral speech-to-text"
+                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
+                    />
+                    <button
+                      onClick={() => setShowMistralKey(!showMistralKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    >
+                      {showMistralKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
                 <div className="pt-1 border-t border-[var(--ui-divider)]">
                   <p className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.apiKeys.supermemory.title')}</p>
                   <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.apiKeys.supermemory.description')}</p>
@@ -1266,6 +1340,16 @@ const AITab: React.FC = () => {
                 </div>
               )}
 
+              {whisperModelValue.startsWith('mistral-') && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-md px-2.5 py-2">
+                  <p className="text-[0.6875rem] text-amber-300">
+                    {ai.mistralApiKey
+                      ? 'Mistral Voxtral will be used for cloud speech-to-text.'
+                      : 'Add a Mistral API key in API Keys to use Voxtral speech-to-text.'}
+                  </p>
+                </div>
+              )}
+
               {whisperModelValue === 'parakeet' && (
                 <div className="rounded-md px-2.5 py-2 border border-[color:var(--status-success-soft)] bg-[color:var(--status-success-soft)]">
                   <p className="text-[0.6875rem] text-[color:var(--status-success)]">
@@ -1363,6 +1447,39 @@ const AITab: React.FC = () => {
                   >
                     {hotkeyStatus.text}
                   </p>
+                ) : null}
+              </div>
+
+              <div className="pt-3 border-t border-[var(--ui-divider)] space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2">
+                    <Monitor className="w-4 h-4 mt-0.5 text-[var(--text-muted)] shrink-0" />
+                    <div>
+                      <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">Voice Agent screen context</h3>
+                      <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">
+                        Optional. Attach one current-screen screenshot to Voice Agent prompts so the agent can understand what you are looking at.
+                      </p>
+                    </div>
+                  </div>
+                  <SectionToggle
+                    enabled={Boolean(ai.agentVoiceScreenContextEnabled)}
+                    onToggle={() => { void handleScreenContextToggle(); }}
+                    label="Voice Agent screen context"
+                  />
+                </div>
+                {ai.agentVoiceScreenContextEnabled ? (
+                  <div className="rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-2.5 py-2 text-[0.6875rem]">
+                    {screenCapturePermissionLoading ? (
+                      <span className="text-[var(--text-muted)]">Requesting Screen Recording permission...</span>
+                    ) : screenCapturePermission?.granted ? (
+                      <span className="text-[color:var(--status-success)]">Screen Recording permission is granted.</span>
+                    ) : (
+                      <span className="text-amber-300">
+                        {screenCapturePermission?.error ||
+                          'Enable SuperCmd in System Settings -> Privacy & Security -> Screen & System Audio Recording.'}
+                      </span>
+                    )}
+                  </div>
                 ) : null}
               </div>
             </div>

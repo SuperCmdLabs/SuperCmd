@@ -50,7 +50,11 @@ export interface AgentSession {
 interface UseAgentWidgetResult {
   session: AgentSession | null;
   isOpen: boolean;
-  startAgent: (query: string, workingDirOverride?: string | null) => void;
+  startAgent: (
+    query: string,
+    workingDirOverride?: string | null,
+    options?: { includeScreenContext?: boolean },
+  ) => void;
   cancelAgent: () => void;
   closeWidget: () => void;
   respondToApproval: (callId: string, approved: boolean) => void;
@@ -86,7 +90,7 @@ export function useAgentWidget(): UseAgentWidgetResult {
     };
   }, []);
 
-  const startAgent = useCallback((query: string, workingDirOverride?: string | null) => {
+  const startAgent = useCallback((query: string, workingDirOverride?: string | null, options?: { includeScreenContext?: boolean }) => {
     const trimmed = String(query || '').trim();
     if (!trimmed) return;
     const initialWorkingDir = String(workingDirOverride || '').trim() || null;
@@ -130,7 +134,9 @@ export function useAgentWidget(): UseAgentWidgetResult {
         setSession((s) => (s && s.id === requestId ? { ...s, workingDir } : s));
       }
       try {
-        void window.electron.agentRun(requestId, trimmed, workingDir || undefined);
+        void window.electron.agentRun(requestId, trimmed, workingDir || undefined, undefined, {
+          includeScreenContext: options?.includeScreenContext === true,
+        });
       } catch (err: any) {
         setSession((s) =>
           s && s.id === requestId

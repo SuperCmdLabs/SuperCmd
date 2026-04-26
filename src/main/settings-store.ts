@@ -15,6 +15,7 @@ export interface AISettings {
   anthropicApiKey: string;
   geminiApiKey: string;
   elevenlabsApiKey: string;
+  mistralApiKey: string;
   supermemoryApiKey: string;
   supermemoryClient: string;
   supermemoryBaseUrl: string;
@@ -30,6 +31,8 @@ export interface AISettings {
   enabled: boolean;
   llmEnabled: boolean;
   whisperEnabled: boolean;
+  whisperAutoClose: boolean;
+  agentVoiceScreenContextEnabled: boolean;
   readEnabled: boolean;
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
@@ -143,6 +146,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   anthropicApiKey: '',
   geminiApiKey: '',
   elevenlabsApiKey: '',
+  mistralApiKey: '',
   supermemoryApiKey: '',
   supermemoryClient: '',
   supermemoryBaseUrl: 'https://api.supermemory.ai',
@@ -158,6 +162,8 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   enabled: true,
   llmEnabled: true,
   whisperEnabled: true,
+  whisperAutoClose: true,
+  agentVoiceScreenContextEnabled: false,
   readEnabled: true,
   openaiCompatibleBaseUrl: '',
   openaiCompatibleApiKey: '',

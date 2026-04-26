@@ -25,6 +25,7 @@ import * as os from 'os';
 import { shell, clipboard } from 'electron';
 import {
   streamAgentChat,
+  type AgentImage,
   type AgentMessage,
   type ToolCall,
   type ToolSchema,
@@ -241,6 +242,10 @@ interface RunAgentOptions {
    * session's id is reused so all turns live under one record.
    */
   resumeFromSessionId?: string;
+  /** Optional visual context captured at invocation time. Used by voice agent only. */
+  screenContext?: AgentImage;
+  /** Capture failure reason for voice agent screen context. */
+  screenContextError?: string;
 }
 
 // ─── Tool registry ────────────────────────────────────────────────────
@@ -598,6 +603,7 @@ function buildSystemPrompt(workingDir?: string): string {
   end tell
   Notes bodies are HTML — use <br> for newlines.
 - Shell commands must be non-interactive and self-contained.
+- Keep final answers compact. Default to 1-3 short sentences unless the user explicitly asks for detail.
 - Stop after at most ${MAX_STEPS} tool calls. When you are finished, reply with plain text describing the outcome — that assistant message is the final answer the user sees.
 - If a request is unsafe, overly destructive, or impossible, explain in plain text instead of refusing silently.
 
@@ -1282,7 +1288,7 @@ function anySignal(signals: AbortSignal[]): AbortSignal {
 // ─── Main loop ────────────────────────────────────────────────────────
 
 export async function runAgent(options: RunAgentOptions): Promise<void> {
-  const { requestId, query, settings, signal, emit, workingDir, resumeFromSessionId } = options;
+  const { requestId, query, settings, signal, emit, workingDir, resumeFromSessionId, screenContext, screenContextError } = options;
 
   emit({ requestId, type: 'started', query, workingDir });
 
@@ -1296,7 +1302,15 @@ export async function runAgent(options: RunAgentOptions): Promise<void> {
   const stepTimeline: PersistedAgentStep[] = priorSession ? [...priorSession.steps] : [];
   const sessionTitle = priorSession?.query || query;
 
-  history.push({ role: 'user', content: query });
+  history.push({
+    role: 'user',
+    content: screenContext
+      ? `${query}\n\nIMPORTANT: The attached screenshot IS the user's current screen right now. Treat it as your visual context. If the user asks what you see on the screen, describe the screenshot directly in 1-2 short sentences. Do not say you cannot see the screen, do not say you lack visual access, and do not mention limitations unless the screenshot itself is unreadable.`
+      : screenContextError
+        ? `${query}\n\nI attempted to attach the user's current screen screenshot, but capture failed: ${screenContextError}. If the user asked what is on screen, briefly say the screen capture failed and mention this exact reason.`
+        : query,
+    images: screenContext ? [screenContext] : undefined,
+  });
 
   const systemPrompt = buildSystemPrompt(workingDir);
 

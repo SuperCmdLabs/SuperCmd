@@ -50,8 +50,16 @@ export interface ToolCall {
   arguments: Record<string, any>;
 }
 
+export interface AgentImage {
+  mimeType: string;
+  dataBase64: string;
+  label?: string;
+  width?: number;
+  height?: number;
+}
+
 export type AgentMessage =
-  | { role: 'user'; content: string }
+  | { role: 'user'; content: string; images?: AgentImage[] }
   | { role: 'assistant'; content: string; tool_calls?: ToolCall[] }
   | { role: 'tool'; tool_call_id: string; name: string; content: string };
 
@@ -230,7 +238,13 @@ async function* streamOllamaTools(args: {
   if (options.systemPrompt) messages.push({ role: 'system', content: options.systemPrompt });
   for (const m of options.messages) {
     if (m.role === 'user') {
-      messages.push({ role: 'user', content: m.content });
+      const message: any = { role: 'user', content: m.content };
+      if (m.images && m.images.length > 0) {
+        message.images = m.images
+          .filter((image) => image?.dataBase64)
+          .map((image) => image.dataBase64);
+      }
+      messages.push(message);
     } else if (m.role === 'assistant') {
       const am: any = { role: 'assistant', content: m.content };
       if (m.tool_calls && m.tool_calls.length > 0) {
@@ -332,7 +346,7 @@ function toOpenAIMessages(messages: AgentMessage[], systemPrompt?: string): any[
   if (systemPrompt) out.push({ role: 'system', content: systemPrompt });
   for (const m of messages) {
     if (m.role === 'user') {
-      out.push({ role: 'user', content: m.content });
+      out.push(toOpenAIUserMessage(m));
     } else if (m.role === 'assistant') {
       const msg: any = { role: 'assistant', content: m.content || '' };
       if (m.tool_calls && m.tool_calls.length > 0) {
@@ -348,6 +362,29 @@ function toOpenAIMessages(messages: AgentMessage[], systemPrompt?: string): any[
     }
   }
   return out;
+}
+
+function toOpenAIUserMessage(message: Extract<AgentMessage, { role: 'user' }>): any {
+  const images = Array.isArray(message.images)
+    ? message.images.filter((image) => image?.dataBase64)
+    : [];
+
+  if (images.length === 0) {
+    return { role: 'user', content: message.content };
+  }
+
+  return {
+    role: 'user',
+    content: [
+      { type: 'text', text: message.content },
+      ...images.map((image) => ({
+        type: 'image_url',
+        image_url: {
+          url: `data:${image.mimeType || 'image/jpeg'};base64,${image.dataBase64}`,
+        },
+      })),
+    ],
+  };
 }
 
 // ─── Anthropic ───────────────────────────────────────────────────────
@@ -450,7 +487,21 @@ function toAnthropicMessages(messages: AgentMessage[]): any[] {
   const out: any[] = [];
   for (const m of messages) {
     if (m.role === 'user') {
-      out.push({ role: 'user', content: [{ type: 'text', text: m.content }] });
+      const content: any[] = [{ type: 'text', text: m.content }];
+      if (m.images) {
+        for (const image of m.images) {
+          if (!image?.dataBase64) continue;
+          content.push({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: image.mimeType || 'image/jpeg',
+              data: image.dataBase64,
+            },
+          });
+        }
+      }
+      out.push({ role: 'user', content });
     } else if (m.role === 'assistant') {
       const content: any[] = [];
       if (m.content) content.push({ type: 'text', text: m.content });
@@ -549,7 +600,19 @@ function toGeminiContents(messages: AgentMessage[]): any[] {
   const out: any[] = [];
   for (const m of messages) {
     if (m.role === 'user') {
-      out.push({ role: 'user', parts: [{ text: m.content }] });
+      const parts: any[] = [{ text: m.content }];
+      if (m.images) {
+        for (const image of m.images) {
+          if (!image?.dataBase64) continue;
+          parts.push({
+            inlineData: {
+              mimeType: image.mimeType || 'image/jpeg',
+              data: image.dataBase64,
+            },
+          });
+        }
+      }
+      out.push({ role: 'user', parts });
     } else if (m.role === 'assistant') {
       const parts: any[] = [];
       if (m.content) parts.push({ text: m.content });

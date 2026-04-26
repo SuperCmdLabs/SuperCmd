@@ -248,7 +248,14 @@ export function useDetachedPortalWindow(
         // when callers toggle a collapsed/expanded state.
         const isCornerAnchor =
           options.anchor === 'top-right' || options.anchor === 'bottom-right';
-        if (stored && !isCornerAnchor) {
+        if (stored && isCornerAnchor) {
+          // Keep detached corner widgets on the display where they were
+          // opened. Recomputing from window.screen during resize can choose a
+          // different monitor when the opener and popup are on different
+          // displays.
+          child.resizeTo(Math.round(options.width), Math.round(options.height));
+          child.moveTo(Math.round(stored.left), Math.round(stored.top));
+        } else if (stored) {
           // Get current dimensions to calculate center-preserving offset
           const currentWidth = (child as any).outerWidth || options.width;
           const currentHeight = (child as any).outerHeight || options.height;

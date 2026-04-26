@@ -14,6 +14,21 @@ export type AgentEvent =
   | { requestId: string; type: 'done' }
   | { requestId: string; type: 'error'; error: string };
 
+export type ScreenCapturePermissionStatus =
+  | 'granted'
+  | 'denied'
+  | 'restricted'
+  | 'not-determined'
+  | 'unknown';
+
+export interface ScreenCapturePermissionResult {
+  granted: boolean;
+  requested: boolean;
+  status: ScreenCapturePermissionStatus;
+  canPrompt: boolean;
+  error?: string;
+}
+
 export interface AgentSessionSummary {
   id: string;
   createdAt: number;
@@ -210,6 +225,7 @@ export interface AISettings {
   anthropicApiKey: string;
   geminiApiKey: string;
   elevenlabsApiKey: string;
+  mistralApiKey: string;
   supermemoryApiKey: string;
   supermemoryClient: string;
   supermemoryBaseUrl: string;
@@ -226,6 +242,7 @@ export interface AISettings {
   llmEnabled: boolean;
   whisperEnabled: boolean;
   whisperAutoClose: boolean;
+  agentVoiceScreenContextEnabled: boolean;
   readEnabled: boolean;
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
@@ -583,7 +600,7 @@ export interface ElectronAPI {
   enableFnWatcherForOnboarding: () => Promise<void>;
   disableFnWatcherForOnboarding: () => Promise<void>;
   onboardingRequestPermission: (
-    target: 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition' | 'home-folder'
+    target: 'accessibility' | 'input-monitoring' | 'microphone' | 'speech-recognition' | 'home-folder' | 'screen-recording'
   ) => Promise<{
     granted: boolean;
     requested: boolean;
@@ -842,9 +859,16 @@ export interface ElectronAPI {
   onAIStreamError: (callback: (data: { requestId: string; error: string }) => void) => (() => void);
 
   // Agent (autonomous action loop)
-  agentRun: (requestId: string, query: string, workingDir?: string, resumeFromSessionId?: string) => Promise<void>;
+  agentRun: (
+    requestId: string,
+    query: string,
+    workingDir?: string,
+    resumeFromSessionId?: string,
+    options?: { includeScreenContext?: boolean }
+  ) => Promise<void>;
   agentCancel: (requestId: string) => Promise<void>;
   agentGetContextFolder: () => Promise<string | null>;
+  agentEnsureScreenCaptureAccess: (options?: { prompt?: boolean }) => Promise<ScreenCapturePermissionResult>;
   agentListSessions: (limit?: number) => Promise<AgentSessionSummary[]>;
   agentLoadSession: (id: string) => Promise<PersistedAgentSessionWire | null>;
   agentDeleteSession: (id: string) => Promise<void>;
