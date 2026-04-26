@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, Mic } from 'lucide-react';
+import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play } from 'lucide-react';
 import supercmdLogo from '../../../supercmd.png';
 import type {
   CommandInfo,
@@ -4134,25 +4134,15 @@ const App: React.FC = () => {
               </div>
             ) : null}
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {aiAvailable && !shouldHideAskAi && (
-              <button
-                onClick={startVoiceAgent}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--soft-pill-bg)] hover:bg-[var(--soft-pill-hover-bg)] transition-colors flex-shrink-0 group"
-                title="Speak an agent instruction"
-              >
-                <Mic className="w-3 h-3 text-white/30 group-hover:text-[#55b3ff] transition-colors" />
-                <span className="text-[0.6875rem] text-white/30 group-hover:text-white/50 transition-colors">Voice Agent</span>
-              </button>
-            )}
+          <div className="flex items-center gap-3 flex-shrink-0 text-[0.6875rem] text-[var(--text-subtle)]">
             {searchQuery && aiAvailable && !shouldHideAskAi && (
               <button
                 onClick={() => startAiChat(searchQuery)}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--soft-pill-bg)] hover:bg-[var(--soft-pill-hover-bg)] transition-colors flex-shrink-0 group"
+                className="flex items-center gap-1.5 hover:text-[var(--text-muted)] transition-colors flex-shrink-0 group"
               >
-                <Sparkles className="w-3 h-3 text-white/30 group-hover:text-purple-400 transition-colors" />
-                <span className="text-[0.6875rem] text-white/30 group-hover:text-white/50 transition-colors">Ask AI</span>
-                <kbd className="text-[0.625rem] text-white/20 bg-[var(--soft-pill-bg)] px-1 py-0.5 rounded font-mono leading-none">Tab</kbd>
+                <Sparkles className="w-3 h-3 opacity-70" />
+                <span>Ask AI</span>
+                <span className="text-[0.625rem] opacity-70">Tab</span>
               </button>
             )}
             {searchQuery && aiAvailable && (
@@ -4163,12 +4153,12 @@ const App: React.FC = () => {
                   startAgent(trimmed, launcherWorkingDir);
                   window.electron.hideWindow();
                 }}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--soft-pill-bg)] hover:bg-[var(--soft-pill-hover-bg)] transition-colors flex-shrink-0 group"
+                className="flex items-center gap-1.5 hover:text-[var(--text-muted)] transition-colors flex-shrink-0 group"
                 title={t('launcher.runAgentTooltip')}
               >
-                <Play className="w-3 h-3 text-white/30 group-hover:text-[#55b3ff] transition-colors" />
-                <span className="text-[0.6875rem] text-white/30 group-hover:text-white/50 transition-colors">{t('launcher.runAgent')}</span>
-                <kbd className="text-[0.625rem] text-white/20 bg-[var(--soft-pill-bg)] px-1 py-0.5 rounded font-mono leading-none">⇧↵</kbd>
+                <Play className="w-3 h-3 opacity-70" />
+                <span>{t('launcher.runAgent')}</span>
+                <span className="text-[0.625rem] opacity-70">Shift Enter</span>
               </button>
             )}
             {searchQuery && (
