@@ -15,6 +15,7 @@ export interface AISettings {
   anthropicApiKey: string;
   geminiApiKey: string;
   elevenlabsApiKey: string;
+  mistralApiKey: string;
   supermemoryApiKey: string;
   supermemoryClient: string;
   supermemoryBaseUrl: string;
@@ -126,6 +127,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   anthropicApiKey: '',
   geminiApiKey: '',
   elevenlabsApiKey: '',
+  mistralApiKey: '',
   supermemoryApiKey: '',
   supermemoryClient: '',
   supermemoryBaseUrl: 'https://api.supermemory.ai',

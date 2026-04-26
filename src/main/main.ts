@@ -4817,6 +4817,12 @@ function getElevenLabsApiKey(settings: AppSettings): string {
   return normalizeApiKey(process.env.ELEVENLABS_API_KEY);
 }
 
+function getMistralApiKey(settings: AppSettings): string {
+  const fromSettings = normalizeApiKey(settings.ai?.mistralApiKey);
+  if (fromSettings) return fromSettings;
+  return normalizeApiKey(process.env.MISTRAL_API_KEY);
+}
+
 const DEFAULT_ELEVENLABS_TTS_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // Rachel
 
 function resolveElevenLabsTtsConfig(selectedModel: string): { modelId: string; voiceId: string } {
@@ -4938,6 +4944,98 @@ function transcribeAudioWithElevenLabs(opts: {
         }
       );
       req.on('error', reject);
+      req.write(body);
+      req.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function transcribeAudioWithMistralVoxtral(opts: {
+  audioBuffer: Buffer;
+  apiKey: string;
+  model: string;
+  language?: string;
+  mimeType?: string;
+}): Promise<string> {
+  const boundary = `----SuperCmdMistralBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+  const normalized = String(opts.mimeType || '').toLowerCase();
+  const filename = normalized.includes('mp3') || normalized.includes('mpeg') ? 'audio.mp3' : 'audio.wav';
+  const contentType = filename.endsWith('.mp3') ? 'audio/mpeg' : 'audio/wav';
+  const parts: Buffer[] = [];
+
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`
+  ));
+  parts.push(opts.audioBuffer);
+  parts.push(Buffer.from('\r\n'));
+
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n${opts.model || 'voxtral-mini-latest'}\r\n`
+  ));
+
+  if (opts.language) {
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${opts.language}\r\n`
+    ));
+  }
+
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+  const body = Buffer.concat(parts);
+
+  return new Promise<string>((resolve, reject) => {
+    try {
+      const https = require('https');
+      const req = https.request(
+        {
+          hostname: 'api.mistral.ai',
+          path: '/v1/audio/transcriptions',
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${opts.apiKey}`,
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            'Content-Length': body.length,
+          },
+        },
+        (res: any) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            const responseBody = Buffer.concat(chunks).toString('utf-8');
+            if (res.statusCode && res.statusCode >= 400) {
+              reject(new Error(`Mistral Voxtral STT HTTP ${res.statusCode}: ${responseBody.slice(0, 500)}`));
+              return;
+            }
+            try {
+              const parsed = JSON.parse(responseBody || '{}');
+              const content = parsed?.choices?.[0]?.message?.content;
+              const text = Array.isArray(content)
+                ? content
+                    .map((part: any) => typeof part === 'string' ? part : String(part?.text || ''))
+                    .join('')
+                    .trim()
+                : String(content || parsed?.text || parsed?.transcript || '').trim();
+              if (!text) {
+                reject(new Error('Mistral Voxtral STT returned an empty transcript.'));
+                return;
+              }
+              resolve(text);
+            } catch {
+              const text = responseBody.trim();
+              if (!text) {
+                reject(new Error('Mistral Voxtral STT returned an empty response.'));
+                return;
+              }
+              resolve(text);
+            }
+          });
+        }
+      );
+      req.on('error', reject);
+      req.setTimeout(60000, () => {
+        req.destroy(new Error('Mistral Voxtral STT timed out.'));
+      });
       req.write(body);
       req.end();
     } catch (error) {
@@ -15013,7 +15111,7 @@ if let tiff = image?.tiffRepresentation {
       }
 
       // Parse speechToTextModel to a concrete provider/model pair.
-      let provider: 'parakeet' | 'qwen3' | 'whispercpp' | 'openai' | 'elevenlabs' = 'whispercpp';
+      let provider: 'parakeet' | 'qwen3' | 'whispercpp' | 'openai' | 'elevenlabs' | 'mistral' = 'whispercpp';
       let model = `ggml-${WHISPERCPP_MODEL_NAME}`;
       const sttModel = s.ai.speechToTextModel || '';
       if (sttModel === 'parakeet') {
@@ -15035,6 +15133,9 @@ if let tiff = image?.tiffRepresentation {
       } else if (sttModel.startsWith('elevenlabs-')) {
         provider = 'elevenlabs';
         model = resolveElevenLabsSttModel(sttModel);
+      } else if (sttModel.startsWith('mistral-')) {
+        provider = 'mistral';
+        model = sttModel.slice('mistral-'.length) || 'voxtral-mini-latest';
       } else if (sttModel) {
         model = sttModel;
       }
@@ -15045,6 +15146,10 @@ if let tiff = image?.tiffRepresentation {
       const elevenLabsApiKey = getElevenLabsApiKey(s);
       if (provider === 'elevenlabs' && !elevenLabsApiKey) {
         throw new Error('ElevenLabs API key not configured. Set it in Settings -> AI (or ELEVENLABS_API_KEY env var).');
+      }
+      const mistralApiKey = getMistralApiKey(s);
+      if (provider === 'mistral' && !mistralApiKey) {
+        throw new Error('Mistral API key not configured. Set it in Settings -> AI (or MISTRAL_API_KEY env var).');
       }
 
       const rawLang = options?.language || s.ai.speechLanguage || 'en-US';
@@ -15081,6 +15186,14 @@ if let tiff = image?.tiffRepresentation {
                 language,
                 mimeType,
               })
+            : provider === 'mistral'
+              ? await transcribeAudioWithMistralVoxtral({
+                  audioBuffer,
+                  apiKey: mistralApiKey,
+                  model,
+                  language,
+                  mimeType,
+                })
             : await transcribeAudio({
                 audioBuffer,
                 apiKey: s.ai.openaiApiKey,
