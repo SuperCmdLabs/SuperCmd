@@ -245,8 +245,20 @@ export function getUnsetCriticalPreferences(bundle: ExtensionBundle, values?: Re
 }
 
 export function shouldOpenCommandSetup(bundle: ExtensionBundle): boolean {
-  const missingPrefs = getMissingRequiredPreferences(bundle);
-  if (missingPrefs.length > 0) return true;
+  const defs = bundle.preferenceDefinitions || [];
+  const requiredDefs = defs.filter((def) => def?.required);
+  if (requiredDefs.length > 0) {
+    const extName = bundle.extName || bundle.extensionName || '';
+    const cmdName = bundle.cmdName || bundle.commandName || '';
+    const extStored = extName ? readJsonObject(getExtPrefsKey(extName)) : {};
+    const cmdStored = extName && cmdName ? readJsonObject(getCmdPrefsKey(extName, cmdName)) : {};
+    for (const def of requiredDefs) {
+      const stored = def.scope === 'command' ? cmdStored : extStored;
+      const hasStoredValue = Object.prototype.hasOwnProperty.call(stored, def.name);
+      if (!hasStoredValue) return true;
+      if (isMissingPreferenceValue(def, stored[def.name])) return true;
+    }
+  }
 
   const missingArgs = getMissingRequiredArguments(bundle);
   // Any required argument that is still missing blocks launch.

@@ -4,8 +4,22 @@
  * Attaches all `Form.*` field primitives to the root Form component.
  */
 
-import React, { useContext } from 'react';
+import React, { useContext, useEffect, useRef } from 'react';
 import { FormContext } from './form-runtime-context';
+
+function useSeedFormDefault(id: string | undefined, defaultValue: any, controlled: boolean) {
+  const form = useContext(FormContext);
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    if (controlled) return;
+    if (!id) return;
+    if (defaultValue === undefined) return;
+    if (form.values[id] !== undefined) return;
+    seededRef.current = true;
+    form.setValue(id, defaultValue);
+  }, [id, defaultValue, controlled, form]);
+}
 
 const FORM_CONTROL_BASE_CLASS =
   'w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] outline-none transition-colors focus:border-[var(--border-strong)] focus:bg-[var(--ui-segment-bg-hover)]';
@@ -36,8 +50,9 @@ function FormFieldRow({
 }
 
 export function attachFormFields(FormComponent: any) {
-  FormComponent.TextField = ({ id, title, placeholder, value, onChange, defaultValue, error, info, autoFocus }: any) => {
+  FormComponent.TextField = ({ id, title, placeholder, value, onChange, onBlur, onFocus, defaultValue, error, info, autoFocus }: any) => {
     const form = useContext(FormContext);
+    useSeedFormDefault(id, defaultValue, value !== undefined);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
     const fieldError = error ?? form.errors[id];
 
@@ -54,6 +69,8 @@ export function attachFormFields(FormComponent: any) {
           placeholder={placeholder}
           value={fieldValue}
           onChange={handleChange}
+          onBlur={onBlur}
+          onFocus={onFocus}
           autoFocus={autoFocus}
           className={`${FORM_CONTROL_BASE_CLASS} rounded-lg px-3 py-2 text-[15px]`}
         />
@@ -61,8 +78,9 @@ export function attachFormFields(FormComponent: any) {
     );
   };
 
-  FormComponent.TextArea = ({ id, title, placeholder, value, onChange, defaultValue, error }: any) => {
+  FormComponent.TextArea = ({ id, title, placeholder, value, onChange, onBlur, onFocus, defaultValue, error }: any) => {
     const form = useContext(FormContext);
+    useSeedFormDefault(id, defaultValue, value !== undefined);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
     const fieldError = error ?? form.errors[id];
 
@@ -78,6 +96,8 @@ export function attachFormFields(FormComponent: any) {
           placeholder={placeholder}
           value={fieldValue}
           onChange={handleChange}
+          onBlur={onBlur}
+          onFocus={onFocus}
           rows={5}
           className={`${FORM_CONTROL_BASE_CLASS} min-h-[140px] rounded-lg px-4 py-3 text-[15px] resize-y`}
         />
@@ -85,8 +105,9 @@ export function attachFormFields(FormComponent: any) {
     );
   };
 
-  FormComponent.PasswordField = ({ id, title, placeholder, value, onChange, defaultValue, error, info }: any) => {
+  FormComponent.PasswordField = ({ id, title, placeholder, value, onChange, onBlur, onFocus, defaultValue, error, info }: any) => {
     const form = useContext(FormContext);
+    useSeedFormDefault(id, defaultValue, value !== undefined);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
     const fieldError = error ?? form.errors[id];
     const [showPassword, setShowPassword] = React.useState(false);
@@ -114,6 +135,8 @@ export function attachFormFields(FormComponent: any) {
             value={fieldValue}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onBlur={onBlur}
+            onFocus={onFocus}
             className={`${FORM_CONTROL_BASE_CLASS} rounded-lg px-3 py-2 pr-10 text-[15px]`}
           />
           <button
@@ -131,6 +154,7 @@ export function attachFormFields(FormComponent: any) {
 
   FormComponent.Checkbox = ({ id, title, label, value, onChange, defaultValue, error }: any) => {
     const form = useContext(FormContext);
+    useSeedFormDefault(id, defaultValue, value !== undefined);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? false;
     const fieldError = error ?? form.errors[id];
 
@@ -153,6 +177,7 @@ export function attachFormFields(FormComponent: any) {
   FormComponent.Dropdown = Object.assign(
     ({ id, title, children, value, onChange, defaultValue, error }: any) => {
       const form = useContext(FormContext);
+      useSeedFormDefault(id, defaultValue, value !== undefined);
       const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
       const fieldError = error ?? form.errors[id];
 
@@ -233,6 +258,7 @@ export function attachFormFields(FormComponent: any) {
     error,
   }: any) => {
     const form = useContext(FormContext);
+    useSeedFormDefault(id, defaultValue, value !== undefined);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? [];
     const fieldError = error ?? form.errors[id];
     const files = Array.isArray(fieldValue) ? fieldValue : fieldValue ? [fieldValue] : [];
