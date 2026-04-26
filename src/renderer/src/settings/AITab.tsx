@@ -56,6 +56,7 @@ const getWhisperSttOptions = (t: (key: string) => string) => [
   { id: 'openai-whisper-1', label: t('settings.ai.whisper.modelOptions.openaiWhisper') },
   { id: 'elevenlabs-scribe-v1', label: t('settings.ai.whisper.modelOptions.elevenlabsScribeV1') },
   { id: 'elevenlabs-scribe-v2', label: t('settings.ai.whisper.modelOptions.elevenlabsScribeV2') },
+  { id: 'mistral-voxtral-mini-latest', label: 'Mistral Voxtral Mini' },
 ];
 
 const MODELS_BY_PROVIDER: Record<string, { id: string; label: string }[]> = {
@@ -240,6 +241,7 @@ const AITab: React.FC = () => {
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [showElevenLabsKey, setShowElevenLabsKey] = useState(false);
+  const [showMistralKey, setShowMistralKey] = useState(false);
   const [showSupermemoryKey, setShowSupermemoryKey] = useState(false);
   const [showOpenAICompatibleKey, setShowOpenAICompatibleKey] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
@@ -893,6 +895,25 @@ const AITab: React.FC = () => {
                   </div>
                 </div>
 
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-secondary)] mb-1 block">Mistral API Key</label>
+                  <div className="relative">
+                    <input
+                      type={showMistralKey ? 'text' : 'password'}
+                      value={ai.mistralApiKey || ''}
+                      onChange={(e) => updateAI({ mistralApiKey: e.target.value.trim() })}
+                      placeholder="For Voxtral speech-to-text"
+                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
+                    />
+                    <button
+                      onClick={() => setShowMistralKey(!showMistralKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    >
+                      {showMistralKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
                 <div className="pt-1 border-t border-[var(--ui-divider)]">
                   <p className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.apiKeys.supermemory.title')}</p>
                   <p className="text-[0.75rem] text-[var(--text-muted)] mt-0.5 leading-snug">{t('settings.ai.apiKeys.supermemory.description')}</p>
@@ -1262,6 +1283,16 @@ const AITab: React.FC = () => {
                       : t('settings.ai.whisper.elevenlabsWarning', {
                           action: t('common.add').toLowerCase(),
                         })}
+                  </p>
+                </div>
+              )}
+
+              {whisperModelValue.startsWith('mistral-') && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-md px-2.5 py-2">
+                  <p className="text-[0.6875rem] text-amber-300">
+                    {ai.mistralApiKey
+                      ? 'Mistral Voxtral will be used for cloud speech-to-text.'
+                      : 'Add a Mistral API key in API Keys to use Voxtral speech-to-text.'}
                   </p>
                 </div>
               )}

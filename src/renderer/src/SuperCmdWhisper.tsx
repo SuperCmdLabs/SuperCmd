@@ -521,6 +521,8 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         engine = settings.ai.openaiApiKey ? 'cloud' : 'whispercpp';
       } else if (sttModel.startsWith('elevenlabs-')) {
         engine = settings.ai.elevenlabsApiKey ? 'cloud' : 'whispercpp';
+      } else if (sttModel.startsWith('mistral-')) {
+        engine = settings.ai.mistralApiKey ? 'cloud' : 'whispercpp';
       }
 
       const backend: WhisperBackend = engine === 'native' ? 'native' : 'whisper';
@@ -848,7 +850,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const sendTranscription = useCallback(async (isFinal: boolean) => {
     if (backendRef.current !== 'whisper') return;
     const engine = transcriptionEngineRef.current;
-    const chunkCount = engine === 'whispercpp'
+    const sttModel = sttModelRef.current;
+    const shouldSendWave = engine === 'whispercpp' || sttModel.startsWith('mistral-');
+    const chunkCount = shouldSendWave
       ? pcmCaptureChunksRef.current.length
       : audioChunksRef.current.length;
     if (chunkCount === 0) return;
@@ -857,7 +861,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     try {
       let arrayBuffer: ArrayBuffer;
       let mimeType: string;
-      if (engine === 'whispercpp') {
+      if (shouldSendWave) {
         const snapshot = buildLocalWaveSnapshot();
         if (!snapshot || snapshot.byteLength < 2048) {
           return;
@@ -1038,7 +1042,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           await new Promise((r) => setTimeout(r, 50));
         }
 
-        const hasBufferedAudio = engine === 'whispercpp'
+        const hasBufferedAudio = engine === 'whispercpp' || sttModelRef.current.startsWith('mistral-')
           ? pcmCaptureChunksRef.current.length > 0
           : audioChunksRef.current.length > 0;
 
