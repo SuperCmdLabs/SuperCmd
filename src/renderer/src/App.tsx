@@ -990,6 +990,29 @@ const App: React.FC = () => {
     return cleanupSelectionSnapshotUpdated;
   }, []);
 
+  // Insert whisper-transcribed text directly into the focused launcher input
+  // when dictation was triggered from within the visible launcher window.
+  useEffect(() => {
+    const dispose = window.electron.onWhisperInsertIntoLauncher((text) => {
+      const activeEl = document.activeElement as HTMLElement | null;
+      // If no input is focused or focus is on document/body, fall back to the search bar.
+      const targetEl = (activeEl && activeEl !== document.body)
+        ? activeEl
+        : inputRef.current;
+      if (targetEl) {
+        targetEl.focus();
+      }
+      // execCommand('insertText') inserts at cursor position and fires the
+      // input event that React's synthetic system picks up in Electron.
+      const inserted = document.execCommand('insertText', false, text);
+      if (!inserted && inputRef.current) {
+        // Fallback: append to search query state directly.
+        setSearchQuery((prev) => prev + text);
+      }
+    });
+    return dispose;
+  }, []);
+
   useEffect(() => {
     const cleanup = window.electron.onSettingsUpdated?.((settings: AppSettings) => {
       applyAppFontSize(settings.fontSize);
