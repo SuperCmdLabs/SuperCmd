@@ -1429,26 +1429,35 @@ const ExtensionsTab: React.FC<{
                   />
                 ) : null}
 
-                <PreferenceSection
-                  title={t('settings.extensions.extensionPreferences')}
-                  extName={selectedSchema.extName}
-                  preferences={selectedSchema.preferences}
-                  values={getPreferenceValues(selectedSchema.extName)}
-                  setPreferenceValue={setPreferenceValue}
-                  pickPathForPreference={pickPathForPreference}
-                />
-
-                {selectedCommandSchema ? (
-                  <PreferenceSection
-                    title={t('settings.extensions.commandPreferences')}
-                    extName={selectedSchema.extName}
-                    cmdName={selectedCommandSchema.name}
-                    preferences={selectedCommandSchema.preferences}
-                    values={getPreferenceValues(selectedSchema.extName, selectedCommandSchema.name)}
-                    setPreferenceValue={setPreferenceValue}
-                    pickPathForPreference={pickPathForPreference}
+                {selectedCommandInfo?.id?.startsWith(QUICK_LINK_COMMAND_PREFIX) ? (
+                  <QuickLinkEditorSection
+                    commandId={selectedCommandInfo.id}
+                    onDeleted={() => setSelected({ extName: selectedSchema.extName })}
                   />
-                ) : null}
+                ) : (
+                  <>
+                    <PreferenceSection
+                      title={t('settings.extensions.extensionPreferences')}
+                      extName={selectedSchema.extName}
+                      preferences={selectedSchema.preferences}
+                      values={getPreferenceValues(selectedSchema.extName)}
+                      setPreferenceValue={setPreferenceValue}
+                      pickPathForPreference={pickPathForPreference}
+                    />
+
+                    {selectedCommandSchema ? (
+                      <PreferenceSection
+                        title={t('settings.extensions.commandPreferences')}
+                        extName={selectedSchema.extName}
+                        cmdName={selectedCommandSchema.name}
+                        preferences={selectedCommandSchema.preferences}
+                        values={getPreferenceValues(selectedSchema.extName, selectedCommandSchema.name)}
+                        setPreferenceValue={setPreferenceValue}
+                        pickPathForPreference={pickPathForPreference}
+                      />
+                    ) : null}
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1648,6 +1657,263 @@ const PreferenceSection: React.FC<{
           </div>
         );
       })}
+    </div>
+  );
+};
+
+const QUICK_LINK_COMMAND_PREFIX = 'quicklink-';
+
+const QuickLinkEditorSection: React.FC<{
+  commandId: string;
+  onDeleted?: () => void;
+}> = ({ commandId, onDeleted }) => {
+  const { t } = useI18n();
+  const quickLinkId = commandId.startsWith(QUICK_LINK_COMMAND_PREFIX)
+    ? commandId.slice(QUICK_LINK_COMMAND_PREFIX.length)
+    : '';
+
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [name, setName] = useState('');
+  const [urlTemplate, setUrlTemplate] = useState('');
+  const [applicationPath, setApplicationPath] = useState('');
+  const [applicationName, setApplicationName] = useState('');
+  const [applicationBundleId, setApplicationBundleId] = useState('');
+  const [appIconDataUrl, setAppIconDataUrl] = useState<string | undefined>(undefined);
+  const [apps, setApps] = useState<InstalledAppEntry[]>([]);
+  const [savingState, setSavingState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [statusMessage, setStatusMessage] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const initialRef = useRef({ name: '', urlTemplate: '', applicationPath: '' });
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setNotFound(false);
+    setStatusMessage('');
+    setSavingState('idle');
+    setConfirmingDelete(false);
+    (async () => {
+      try {
+        const [all, applications] = await Promise.all([
+          window.electron.quickLinkGetAll(),
+          window.electron.getApplications(),
+        ]);
+        if (cancelled) return;
+        const link = (all || []).find((entry) => entry.id === quickLinkId);
+        if (!link) {
+          setNotFound(true);
+          setLoading(false);
+          return;
+        }
+        setName(link.name || '');
+        setUrlTemplate(link.urlTemplate || '');
+        setApplicationPath(link.applicationPath || '');
+        setApplicationName(link.applicationName || '');
+        setApplicationBundleId(link.applicationBundleId || '');
+        setAppIconDataUrl(link.appIconDataUrl);
+        initialRef.current = {
+          name: link.name || '',
+          urlTemplate: link.urlTemplate || '',
+          applicationPath: link.applicationPath || '',
+        };
+        setApps(
+          (applications || [])
+            .filter((entry) => Boolean(entry?.path))
+            .sort((a, b) => a.name.localeCompare(b.name))
+        );
+        setLoading(false);
+      } catch {
+        if (!cancelled) {
+          setNotFound(true);
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [quickLinkId]);
+
+  const dirty =
+    name !== initialRef.current.name ||
+    urlTemplate !== initialRef.current.urlTemplate ||
+    applicationPath !== initialRef.current.applicationPath;
+
+  const onSave = async () => {
+    const trimmedName = name.trim();
+    const trimmedUrl = urlTemplate.trim();
+    if (!trimmedName) {
+      setSavingState('error');
+      setStatusMessage(t('quickLinks.nameRequired'));
+      return;
+    }
+    if (!trimmedUrl) {
+      setSavingState('error');
+      setStatusMessage(t('quickLinks.urlRequired'));
+      return;
+    }
+    setSavingState('saving');
+    setStatusMessage('');
+    try {
+      const updated = await window.electron.quickLinkUpdate(quickLinkId, {
+        name: trimmedName,
+        urlTemplate: trimmedUrl,
+        applicationName: applicationName || undefined,
+        applicationPath: applicationPath || undefined,
+        applicationBundleId: applicationBundleId || undefined,
+        appIconDataUrl,
+      });
+      if (!updated) {
+        setSavingState('error');
+        setStatusMessage(t('quickLinks.saveFailed'));
+        return;
+      }
+      initialRef.current = {
+        name: trimmedName,
+        urlTemplate: trimmedUrl,
+        applicationPath: applicationPath || '',
+      };
+      setSavingState('saved');
+      setStatusMessage(t('quickLinks.saved'));
+      window.setTimeout(() => {
+        setSavingState((curr) => (curr === 'saved' ? 'idle' : curr));
+        setStatusMessage((curr) => (curr === t('quickLinks.saved') ? '' : curr));
+      }, 1800);
+    } catch (error: any) {
+      setSavingState('error');
+      setStatusMessage(error?.message || t('quickLinks.saveFailed'));
+    }
+  };
+
+  const onDelete = async () => {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await window.electron.quickLinkDelete(quickLinkId);
+      onDeleted?.();
+    } catch (error: any) {
+      setSavingState('error');
+      setStatusMessage(error?.message || t('quickLinks.deleteFailed'));
+    } finally {
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  };
+
+  const onApplicationChange = (path: string) => {
+    if (!path) {
+      setApplicationPath('');
+      setApplicationName('');
+      setApplicationBundleId('');
+      setAppIconDataUrl(undefined);
+      return;
+    }
+    const app = apps.find((entry) => entry.path === path);
+    setApplicationPath(path);
+    setApplicationName(app?.name || '');
+    setApplicationBundleId(app?.bundleId || '');
+    setAppIconDataUrl(app?.iconDataUrl);
+  };
+
+  if (!quickLinkId) return null;
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        <div className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">{t('quickLinks.edit')}</div>
+        <div className="text-xs text-[var(--text-subtle)]">{t('common.loading')}</div>
+      </div>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <div className="space-y-2">
+        <div className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">{t('quickLinks.edit')}</div>
+        <div className="text-xs text-[var(--text-subtle)]">{t('quickLinks.notFound')}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">{t('quickLinks.edit')}</div>
+
+      <div className="space-y-1">
+        <label className="text-xs text-[var(--text-secondary)] font-medium">{t('quickLinks.name')}</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs text-[var(--text-secondary)] font-medium">{t('quickLinks.url')}</label>
+        <input
+          type="text"
+          value={urlTemplate}
+          onChange={(event) => setUrlTemplate(event.target.value)}
+          placeholder="https://example.com/search?q={clipboard}"
+          className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs font-mono text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none"
+        />
+        <p className="text-[11px] text-[var(--text-subtle)]">{t('quickLinks.urlHint')}</p>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs text-[var(--text-secondary)] font-medium">{t('quickLinks.openWith')}</label>
+        <select
+          value={applicationPath}
+          onChange={(event) => onApplicationChange(event.target.value)}
+          className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs text-[var(--text-secondary)] outline-none"
+        >
+          <option value="">{t('quickLinks.defaultBrowser')}</option>
+          {apps.map((app) => (
+            <option key={app.path} value={app.path}>
+              {app.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {statusMessage ? (
+        <p
+          className={`text-[11px] ${
+            savingState === 'error' ? 'text-red-300/90' : 'text-emerald-300/90'
+          }`}
+        >
+          {statusMessage}
+        </p>
+      ) : null}
+
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!dirty || savingState === 'saving'}
+          className="px-3 py-1.5 text-xs font-medium rounded-md bg-[var(--ui-segment-active-bg)] text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] border border-[var(--ui-segment-border)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {savingState === 'saving' ? t('common.saving') : t('common.save')}
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={deleting}
+          className="px-3 py-1.5 text-xs font-medium rounded-md border border-red-400/25 bg-red-500/10 text-red-200/90 hover:bg-red-500/18 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ml-auto"
+        >
+          {deleting
+            ? t('settings.extensions.uninstall.uninstalling')
+            : confirmingDelete
+              ? t('quickLinks.confirmDelete')
+              : t('quickLinks.delete')}
+        </button>
+      </div>
     </div>
   );
 };
