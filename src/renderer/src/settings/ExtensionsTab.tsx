@@ -1662,6 +1662,20 @@ const PreferenceSection: React.FC<{
 };
 
 const QUICK_LINK_COMMAND_PREFIX = 'quicklink-';
+const QUICK_LINK_BROWSER_PROTOCOLS = new Set(['http', 'https', 'file']);
+
+function isBrowserProtocolUrlTemplate(urlTemplate: string): boolean {
+  const normalized = String(urlTemplate || '').trim();
+  if (!normalized) return false;
+  const candidate = normalized.replace(/\{[^}]+\}/g, 'placeholder');
+  try {
+    const parsed = new URL(candidate);
+    const protocol = String(parsed.protocol || '').replace(':', '').trim().toLowerCase();
+    return QUICK_LINK_BROWSER_PROTOCOLS.has(protocol);
+  } catch {
+    return false;
+  }
+}
 
 const QuickLinkEditorSection: React.FC<{
   commandId: string;
@@ -1707,16 +1721,18 @@ const QuickLinkEditorSection: React.FC<{
           setLoading(false);
           return;
         }
+        const isBrowserUrl = isBrowserProtocolUrlTemplate(link.urlTemplate || '');
+        const effectiveAppPath = isBrowserUrl ? '' : link.applicationPath || '';
         setName(link.name || '');
         setUrlTemplate(link.urlTemplate || '');
-        setApplicationPath(link.applicationPath || '');
-        setApplicationName(link.applicationName || '');
-        setApplicationBundleId(link.applicationBundleId || '');
-        setAppIconDataUrl(link.appIconDataUrl);
+        setApplicationPath(effectiveAppPath);
+        setApplicationName(isBrowserUrl ? '' : link.applicationName || '');
+        setApplicationBundleId(isBrowserUrl ? '' : link.applicationBundleId || '');
+        setAppIconDataUrl(isBrowserUrl ? undefined : link.appIconDataUrl);
         initialRef.current = {
           name: link.name || '',
           urlTemplate: link.urlTemplate || '',
-          applicationPath: link.applicationPath || '',
+          applicationPath: effectiveAppPath,
         };
         setApps(
           (applications || [])
@@ -1859,7 +1875,16 @@ const QuickLinkEditorSection: React.FC<{
         <input
           type="text"
           value={urlTemplate}
-          onChange={(event) => setUrlTemplate(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value;
+            setUrlTemplate(next);
+            if (isBrowserProtocolUrlTemplate(next) && applicationPath) {
+              setApplicationPath('');
+              setApplicationName('');
+              setApplicationBundleId('');
+              setAppIconDataUrl(undefined);
+            }
+          }}
           placeholder="https://example.com/search?q={clipboard}"
           className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs font-mono text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none"
         />
