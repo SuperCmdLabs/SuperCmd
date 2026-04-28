@@ -32,8 +32,24 @@ export interface AgentPendingApproval {
   summary: string;
 }
 
+/** A completed turn in a multi-turn session — surfaced in the UI as scroll-back. */
+export interface AgentTurn {
+  query: string;
+  message: string | null;
+  error: string | null;
+  steps: AgentTimelineStep[];
+  startedAt: number;
+  finishedAt: number;
+}
+
 export interface AgentSession {
+  /** The current event requestId — events on this id flow into `steps`/`message`. */
   id: string;
+  /**
+   * The on-disk session id used for resume. Stays constant across follow-ups
+   * so the agent loop can rebuild conversation history from disk.
+   */
+  persistentId: string;
   query: string;
   workingDir: string | null;
   steps: AgentTimelineStep[];
@@ -45,6 +61,8 @@ export interface AgentSession {
   finishedAt: number | null;
   /** Tool calls currently blocked waiting on a user approve/deny decision. */
   pendingApproval: AgentPendingApproval | null;
+  /** Prior turns (oldest first) shown as scrollback when the user follows up. */
+  turns: AgentTurn[];
 }
 
 interface UseAgentWidgetResult {
@@ -55,6 +73,7 @@ interface UseAgentWidgetResult {
     workingDirOverride?: string | null,
     options?: { includeScreenContext?: boolean },
   ) => void;
+  followUpAgent: (query: string) => void;
   cancelAgent: () => void;
   closeWidget: () => void;
   respondToApproval: (callId: string, approved: boolean) => void;
@@ -104,6 +123,7 @@ export function useAgentWidget(): UseAgentWidgetResult {
     const requestId = newRequestId();
     const next: AgentSession = {
       id: requestId,
+      persistentId: requestId,
       query: trimmed,
       workingDir: initialWorkingDir,
       steps: [],
@@ -114,6 +134,7 @@ export function useAgentWidget(): UseAgentWidgetResult {
       startedAt: Date.now(),
       finishedAt: null,
       pendingApproval: null,
+      turns: [],
     };
     setSession(next);
     setIsOpen(true);
@@ -145,6 +166,64 @@ export function useAgentWidget(): UseAgentWidgetResult {
         );
       }
     })();
+  }, []);
+
+  const followUpAgent = useCallback((query: string) => {
+    const trimmed = String(query || '').trim();
+    if (!trimmed) return;
+    const current = sessionRef.current;
+    if (!current) return;
+    // Don't overlap turns — caller (UI) should disable the input while running.
+    if (current.lifecycle === 'running') return;
+
+    const completedTurn: AgentTurn = {
+      query: current.query,
+      message: current.message,
+      error: current.error,
+      steps: current.steps,
+      startedAt: current.startedAt,
+      finishedAt: current.finishedAt ?? Date.now(),
+    };
+
+    const requestId = newRequestId();
+    const persistentId = current.persistentId;
+    const workingDir = current.workingDir;
+
+    const next: AgentSession = {
+      id: requestId,
+      persistentId,
+      query: trimmed,
+      workingDir,
+      steps: [],
+      message: null,
+      error: null,
+      lifecycle: 'running',
+      currentStep: 0,
+      startedAt: Date.now(),
+      finishedAt: null,
+      pendingApproval: null,
+      turns: [...current.turns, completedTurn],
+    };
+    setSession(next);
+
+    try {
+      void window.electron.agentRun(
+        requestId,
+        trimmed,
+        workingDir || undefined,
+        persistentId,
+        // Follow-ups never re-attach the screen — the original turn already
+        // captured visual context; tacking on a new screenshot every turn
+        // would just confuse the model.
+        { includeScreenContext: false },
+      );
+    } catch (err: any) {
+      setSession((s) =>
+        s && s.id === requestId
+          ? { ...s, lifecycle: 'error', error: err?.message || 'Failed to start follow-up', finishedAt: Date.now() }
+          : s,
+      );
+    }
   }, []);
 
   const cancelAgent = useCallback(() => {
@@ -181,7 +260,7 @@ export function useAgentWidget(): UseAgentWidgetResult {
     setSession((prev) => (prev ? { ...prev, pendingApproval: null } : prev));
   }, []);
 
-  return { session, isOpen, startAgent, cancelAgent, closeWidget, respondToApproval };
+  return { session, isOpen, startAgent, followUpAgent, cancelAgent, closeWidget, respondToApproval };
 }
 
 function reduceAgentEvent(state: AgentSession, event: AgentEvent): AgentSession {

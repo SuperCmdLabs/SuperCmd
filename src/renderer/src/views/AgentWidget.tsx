@@ -10,9 +10,9 @@
  */
 
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDetachedPortalWindow } from '../useDetachedPortalWindow';
-import type { AgentSession, AgentTimelineStep } from '../hooks/useAgentWidget';
+import type { AgentSession, AgentTimelineStep, AgentTurn } from '../hooks/useAgentWidget';
 import { useI18n } from '../i18n';
 import { AgentMarkdown } from './AgentMarkdown';
 
@@ -28,9 +28,10 @@ interface AgentWidgetProps {
   onClose: () => void;
   onApprove: (callId: string) => void;
   onDeny: (callId: string) => void;
+  onFollowUp: (query: string) => void;
 }
 
-export function AgentWidget({ session, isOpen, onCancel, onClose, onApprove, onDeny }: AgentWidgetProps) {
+export function AgentWidget({ session, isOpen, onCancel, onClose, onApprove, onDeny, onFollowUp }: AgentWidgetProps) {
   // Caller keys this component on session.id, so each new session gets a
   // fresh mount with isExpanded = false — no stale carry-over from the
   // previous run.
@@ -67,6 +68,7 @@ export function AgentWidget({ session, isOpen, onCancel, onClose, onApprove, onD
       onClose={onClose}
       onApprove={onApprove}
       onDeny={onDeny}
+      onFollowUp={onFollowUp}
     />,
     portalTarget
   );
@@ -117,9 +119,10 @@ interface SurfaceProps {
   onClose: () => void;
   onApprove: (callId: string) => void;
   onDeny: (callId: string) => void;
+  onFollowUp: (query: string) => void;
 }
 
-function AgentWidgetSurface({ session, isExpanded, onToggleExpand, onCancel, onClose, onApprove, onDeny }: SurfaceProps) {
+function AgentWidgetSurface({ session, isExpanded, onToggleExpand, onCancel, onClose, onApprove, onDeny, onFollowUp }: SurfaceProps) {
   const { t } = useI18n();
   const running = session.lifecycle === 'running';
   const accent = useMemo(() => sessionAccent(session.id), [session.id]);
@@ -234,6 +237,7 @@ function AgentWidgetSurface({ session, isExpanded, onToggleExpand, onCancel, onC
             hotkeyCloseLabel={t('agent.hotkeyClose')}
             onApprove={onApprove}
             onDeny={onDeny}
+            onFollowUp={onFollowUp}
           />
         )}
       </div>
@@ -252,6 +256,7 @@ interface ExpandedBodyProps {
   hotkeyCloseLabel: string;
   onApprove: (callId: string) => void;
   onDeny: (callId: string) => void;
+  onFollowUp: (query: string) => void;
 }
 
 function ExpandedBody({
@@ -265,6 +270,7 @@ function ExpandedBody({
   hotkeyCloseLabel,
   onApprove,
   onDeny,
+  onFollowUp,
 }: ExpandedBodyProps) {
   // Auto-expand the thinking accordion while running and on error so the user
   // can see what's happening; auto-collapse once the agent settles into a
@@ -286,6 +292,15 @@ function ExpandedBody({
   );
   const hasSteps = visibleSteps.length > 0;
   const showThinkingSection = hasSteps || running;
+
+  // When a follow-up turn begins, scroll the new query into view — otherwise
+  // the body stays scrolled to the previous answer and the user can't tell
+  // their follow-up was accepted.
+  const currentQueryRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (session.turns.length === 0) return;
+    currentQueryRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [session.id, session.turns.length]);
   const thinkingTitle = thinkingSectionTitle({
     lifecycle: session.lifecycle,
     stepCount: visibleSteps.length,
@@ -309,7 +324,17 @@ function ExpandedBody({
           gap: 12,
         }}
       >
+        {session.turns.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {session.turns.map((turn, i) => (
+              <PastTurn key={`${turn.startedAt}-${i}`} turn={turn} accent={accent} />
+            ))}
+            <TurnDivider />
+          </div>
+        )}
+
         <div
+          ref={currentQueryRef}
           style={{
             fontSize: 14,
             fontWeight: 600,
@@ -322,7 +347,7 @@ function ExpandedBody({
           {session.query}
         </div>
 
-        {session.workingDir && <CwdChip path={session.workingDir} />}
+        {session.workingDir && session.turns.length === 0 && <CwdChip path={session.workingDir} />}
 
         {session.pendingApproval && (
           <ApprovalPrompt
@@ -354,11 +379,17 @@ function ExpandedBody({
         )}
       </div>
 
+      <FollowUpComposer
+        running={running}
+        accent={accent}
+        onSubmit={onFollowUp}
+      />
+
       <div
         style={{
           position: 'relative',
           zIndex: 2,
-          padding: '8px 14px 10px',
+          padding: '6px 14px 8px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -379,6 +410,172 @@ function ExpandedBody({
         <KeyCap>{running ? hotkeyCancelLabel : hotkeyCloseLabel}</KeyCap>
       </div>
     </>
+  );
+}
+
+// ─── Past turns + follow-up composer ──────────────────────────────────
+
+function PastTurn({ turn, accent }: { turn: AgentTurn; accent: SessionAccent }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, opacity: 0.85 }}>
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          lineHeight: 1.35,
+          letterSpacing: '-0.05px',
+          color: 'rgba(247, 247, 248, 0.85)',
+          wordBreak: 'break-word',
+        }}
+      >
+        {turn.query}
+      </div>
+      {turn.error ? (
+        <ErrorBlock text={turn.error} />
+      ) : turn.message ? (
+        <Result text={turn.message} accent={accent} />
+      ) : (
+        <div
+          style={{
+            fontSize: 11,
+            color: 'rgba(244, 244, 245, 0.45)',
+            fontStyle: 'italic',
+          }}
+        >
+          (no answer)
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TurnDivider() {
+  return (
+    <div
+      style={{
+        height: 1,
+        background:
+          'linear-gradient(to right, transparent, rgba(255,255,255,0.10), transparent)',
+        margin: '2px 0',
+      }}
+    />
+  );
+}
+
+function FollowUpComposer({
+  running,
+  accent,
+  onSubmit,
+}: {
+  running: boolean;
+  accent: SessionAccent;
+  onSubmit: (query: string) => void;
+}) {
+  const [value, setValue] = useState('');
+  const [focused, setFocused] = useState(false);
+  const canSubmit = !running && value.trim().length > 0;
+
+  const submit = () => {
+    if (!canSubmit) return;
+    onSubmit(value.trim());
+    setValue('');
+  };
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        zIndex: 2,
+        padding: '8px 12px 4px',
+        display: 'flex',
+        alignItems: 'flex-end',
+        gap: 6,
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 4px 6px 10px',
+          borderRadius: 8,
+          background: 'rgba(255, 255, 255, 0.04)',
+          border: `1px solid ${focused ? tint(accent.ink, 0.5) : 'rgba(255, 255, 255, 0.10)'}`,
+          transition: 'border-color 120ms ease',
+          opacity: running ? 0.6 : 1,
+        }}
+      >
+        <textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          rows={1}
+          placeholder={running ? 'Working…' : 'Ask a follow-up…'}
+          disabled={running}
+          style={{
+            all: 'unset',
+            flex: 1,
+            minWidth: 0,
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            fontWeight: 500,
+            lineHeight: 1.45,
+            color: '#f4f4f5',
+            resize: 'none',
+            maxHeight: 96,
+            cursor: running ? 'not-allowed' : 'text',
+          }}
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!canSubmit}
+          aria-label="Send follow-up"
+          title="Send (Enter)"
+          style={{
+            all: 'unset',
+            cursor: canSubmit ? 'pointer' : 'not-allowed',
+            width: 24,
+            height: 24,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            color: canSubmit ? '#0b0b0d' : 'rgba(244, 244, 245, 0.45)',
+            background: canSubmit ? accent.ink : 'rgba(255, 255, 255, 0.06)',
+            border: `1px solid ${canSubmit ? accent.ink : 'rgba(255, 255, 255, 0.08)'}`,
+            transition: 'background 120ms ease, color 120ms ease, border-color 120ms ease',
+            flexShrink: 0,
+          } as React.CSSProperties}
+        >
+          <SendGlyph />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SendGlyph() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden>
+      <path
+        d="M2 6 L10 6 M6.5 2.5 L10 6 L6.5 9.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

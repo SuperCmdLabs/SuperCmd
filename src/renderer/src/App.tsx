@@ -516,6 +516,7 @@ const App: React.FC = () => {
     session: agentSession,
     isOpen: isAgentWidgetOpen,
     startAgent,
+    followUpAgent,
     cancelAgent,
     closeWidget: closeAgentWidget,
     respondToApproval: respondToAgentApproval,
@@ -4754,13 +4755,14 @@ const App: React.FC = () => {
       </div>
     )}
     <AgentWidget
-      key={agentSession?.id || 'agent-widget-empty'}
+      key={agentSession?.persistentId || 'agent-widget-empty'}
       session={agentSession}
       isOpen={isAgentWidgetOpen}
       onCancel={cancelAgent}
       onClose={closeAgentWidget}
       onApprove={(callId) => respondToAgentApproval(callId, true)}
       onDeny={(callId) => respondToAgentApproval(callId, false)}
+      onFollowUp={followUpAgent}
     />
     </>
   );
