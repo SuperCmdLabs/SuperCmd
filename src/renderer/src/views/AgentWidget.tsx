@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useDetachedPortalWindow } from '../useDetachedPortalWindow';
 import type { AgentSession, AgentTimelineStep } from '../hooks/useAgentWidget';
 import { useI18n } from '../i18n';
+import { AgentMarkdown } from './AgentMarkdown';
 
 const WIDGET_NAME = 'supercmd-agent-window';
 const WIDGET_WIDTH = 400;
@@ -1093,22 +1094,8 @@ function formatApprovalPreview(tool: string, args: Record<string, any>): string 
   }
 }
 
-function Result({ text }: { text: string; accent: SessionAccent }) {
-  return (
-    <div
-      style={{
-        fontSize: 14,
-        fontWeight: 500,
-        color: '#f7f7f8',
-        letterSpacing: '0.1px',
-        lineHeight: 1.5,
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}
-    >
-      {text}
-    </div>
-  );
+function Result({ text, accent }: { text: string; accent: SessionAccent }) {
+  return <AgentMarkdown text={text} accentInk={accent.ink} />;
 }
 
 function ErrorBlock({ text }: { text: string }) {

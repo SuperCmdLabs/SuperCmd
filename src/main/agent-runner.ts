@@ -604,7 +604,11 @@ function buildSystemPrompt(workingDir?: string): string {
   Notes bodies are HTML — use <br> for newlines.
 - Shell commands must be non-interactive and self-contained.
 - Keep final answers compact. Default to 1-3 short sentences unless the user explicitly asks for detail.
-- Stop after at most ${MAX_STEPS} tool calls. When you are finished, reply with plain text describing the outcome — that assistant message is the final answer the user sees.
+- Stop after at most ${MAX_STEPS} tool calls. When you are finished, reply with the final answer the user sees. The UI renders Markdown — use it sparingly:
+  - Wrap any value the user is likely to copy (IDs, invoice/order numbers, amounts, file paths, URLs, hashes, codes, command snippets) in backticks so it renders as a one-click copy chip — e.g. \`RD17676742753723162\`, \`₹152.00\`, \`~/Documents/invoices\`.
+  - Use fenced \`\`\`code blocks\`\`\` for multi-line snippets (commands, scripts, structured output).
+  - Use **bold** for the headline number/result, and ordered/unordered lists for breakdowns.
+  - Do not output raw \`##\` headings or \`**\` markers as literal text — only use markdown syntax when you actually want it rendered.
 - If a request is unsafe, overly destructive, or impossible, explain in plain text instead of refusing silently.
 
 # Context
