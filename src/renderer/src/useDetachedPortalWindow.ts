@@ -275,6 +275,15 @@ export function useDetachedPortalWindow(
     const childDoc = child.document;
     childDoc.title = options.title;
     cloneStylesIntoDocument(document, childDoc);
+    // Mirror the parent <html>/body theme classes (dark, sc-glassy,
+    // sc-native-liquid-glass, etc.) so CSS-variable lookups resolve to the
+    // same palette inside the detached window.
+    document.documentElement.classList.forEach((cls) => {
+      childDoc.documentElement.classList.add(cls);
+    });
+    document.body.classList.forEach((cls) => {
+      if (childDoc.body) childDoc.body.classList.add(cls);
+    });
     childDoc.documentElement.classList.add('sc-detached-window');
     if (childDoc.body) {
       childDoc.body.classList.add('sc-detached-window');

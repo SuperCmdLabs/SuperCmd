@@ -338,8 +338,8 @@ function CodeBlock({ code, lang, accentInk }: { code: string; lang: string; acce
     <div
       style={{
         position: 'relative',
-        background: 'rgba(0, 0, 0, 0.36)',
-        border: '1px solid rgba(255, 255, 255, 0.06)',
+        background: 'rgba(255, 255, 255, 0.05)',
+        border: '1px solid rgba(255, 255, 255, 0.10)',
         borderRadius: 8,
         overflow: 'hidden',
       }}
@@ -350,8 +350,8 @@ function CodeBlock({ code, lang, accentInk }: { code: string; lang: string; acce
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '5px 8px 5px 10px',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
-          background: 'rgba(255, 255, 255, 0.02)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.07)',
+          background: 'rgba(255, 255, 255, 0.04)',
         }}
       >
         <span
@@ -433,8 +433,8 @@ function SnippetList({ values, accentInk }: { values: string[]; accentInk: strin
   return (
     <div
       style={{
-        background: 'rgba(0, 0, 0, 0.32)',
-        border: '1px solid rgba(255, 255, 255, 0.06)',
+        background: 'rgba(255, 255, 255, 0.05)',
+        border: '1px solid rgba(255, 255, 255, 0.10)',
         borderRadius: 8,
         overflow: 'hidden',
       }}
@@ -445,8 +445,8 @@ function SnippetList({ values, accentInk }: { values: string[]; accentInk: strin
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '5px 8px 5px 10px',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
-          background: 'rgba(255, 255, 255, 0.02)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.07)',
+          background: 'rgba(255, 255, 255, 0.04)',
         }}
       >
         <span
@@ -455,7 +455,7 @@ function SnippetList({ values, accentInk }: { values: string[]; accentInk: strin
             fontWeight: 600,
             letterSpacing: '0.5px',
             textTransform: 'uppercase',
-            color: 'rgba(244, 244, 245, 0.45)',
+            color: 'rgba(244, 244, 245, 0.55)',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           }}
         >

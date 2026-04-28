@@ -343,26 +343,6 @@ function prettifyLauncherWorkingDir(absPath: string): string {
   return absPath;
 }
 
-const LauncherWorkingDirChip: React.FC<{ path: string }> = ({ path }) => (
-  <div
-    title={`Working in ${path}`}
-    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--kbd-bg)] border border-[var(--ui-divider)] max-w-[180px] shrink-0"
-    style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
-  >
-    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden className="shrink-0 text-[color:var(--text-muted)]">
-      <path
-        d="M1.5 3.25a.75.75 0 0 1 .75-.75h2.19c.2 0 .39.08.53.22l.72.72c.14.14.33.22.53.22h4.03a.75.75 0 0 1 .75.75v5.34a.75.75 0 0 1-.75.75h-8A.75.75 0 0 1 1.5 9.75z"
-        stroke="currentColor"
-        strokeWidth="1.1"
-        strokeLinejoin="round"
-      />
-    </svg>
-    <span className="text-[11px] font-medium text-[color:var(--text-muted)] truncate">
-      {prettifyLauncherWorkingDir(path)}
-    </span>
-  </div>
-);
-
 const App: React.FC = () => {
   const { t } = useI18n();
   const [commands, setCommands] = useState<CommandInfo[]>([]);
@@ -4007,13 +3987,19 @@ const App: React.FC = () => {
     >
         {/* Search header - transparent background */}
         <div className="drag-region flex h-[60px] items-center gap-2 px-4 border-b border-[var(--ui-divider)]">
-          {launcherWorkingDir && <LauncherWorkingDirChip path={launcherWorkingDir} />}
           <div ref={inlineArgumentLaneRef} className="relative min-w-0 flex-1">
             <div className="flex h-full items-center">
               <input
                 ref={inputRef}
                 type="text"
-                placeholder={aiMode ? t('launcher.aiMode.placeholder') : t('launcher.searchPlaceholder')}
+                title={launcherWorkingDir ? `Working in ${launcherWorkingDir}` : undefined}
+                placeholder={
+                  // When we render a custom overlay below for the working-dir
+                  // hint, suppress the native placeholder so they don't stack.
+                  launcherWorkingDir && searchQuery === '' && selectedInlineExtensionArgumentDefinitions.length === 0
+                    ? ''
+                    : aiMode ? t('launcher.aiMode.placeholder') : t('launcher.searchPlaceholder')
+                }
                 value={searchQuery}
                 onChange={(e) => {
                   const value = e.target.value;
@@ -4033,6 +4019,17 @@ const App: React.FC = () => {
                 className="launcher-search-input min-w-0 w-full bg-transparent border-none outline-none text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] placeholder:font-medium text-[0.9375rem] font-medium tracking-[0.005em]"
                 autoFocus
               />
+              {launcherWorkingDir &&
+                searchQuery === '' &&
+                selectedInlineExtensionArgumentDefinitions.length === 0 && (
+                  <div
+                    className="pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center overflow-hidden whitespace-nowrap text-[0.9375rem] font-medium tracking-[0.005em] text-[color:var(--text-muted)]"
+                  >
+                    <span className="opacity-50 truncate">
+                      {prettifyLauncherWorkingDir(launcherWorkingDir)}
+                    </span>
+                  </div>
+                )}
             </div>
             {selectedInlineExtensionArgumentDefinitions.length > 0 ? (
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center overflow-x-hidden overflow-y-visible">

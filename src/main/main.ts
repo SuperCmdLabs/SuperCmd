@@ -7391,11 +7391,15 @@ function createWindow(): void {
         backgroundColor: '#00000000',
         vibrancy: detachedPopupName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME
           ? 'fullscreen-ui'
+          : detachedPopupName === DETACHED_AGENT_WINDOW_NAME
+            ? 'hud'
           : useNativeVibrancyForWindowManager
             ? 'under-window'
             : undefined,
         visualEffectState:
-          detachedPopupName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME || useNativeVibrancyForWindowManager
+          detachedPopupName === DETACHED_WHISPER_ONBOARDING_WINDOW_NAME ||
+          detachedPopupName === DETACHED_AGENT_WINDOW_NAME ||
+          useNativeVibrancyForWindowManager
             ? 'active'
             : undefined,
         hasShadow: false,
@@ -7469,6 +7473,12 @@ function createWindow(): void {
       // Allow shrinking below macOS's default NSWindow minimum so the
       // collapsed bar actually renders at its target ~52px height.
       try { childWindow.setMinimumSize(80, 32); } catch {}
+      // Native frost — matches the launcher / settings look. Falls back to
+      // 'hud' vibrancy when liquid-glass isn't available.
+      applyLiquidGlassToWindow(childWindow, {
+        cornerRadius: 14,
+        fallbackVibrancy: 'hud',
+      });
     }
   });
 

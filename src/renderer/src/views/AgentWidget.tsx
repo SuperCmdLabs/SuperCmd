@@ -190,13 +190,16 @@ function AgentWidgetSurface({ session, isExpanded, onToggleExpand, onCancel, onC
           fontFeatureSettings: "'calt' on, 'kern' on, 'liga' on, 'ss03' on",
           letterSpacing: '0.1px',
           color: '#f4f4f5',
-          // Clean dark surface — flat, subtly lifted by the 1px border and a
-          // hairline of light at the top edge for a glass-card feel.
-          background: '#0d0d0f',
+          // Surface mirrors the launcher / settings `glass-effect` recipe.
+          // The actual frosted blur comes from the OS via the BrowserWindow's
+          // `vibrancy: 'hud'` material set in main.ts — this CSS layer just
+          // adds the subtle dark tint and top hairline.
+          background:
+            'linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)), rgba(var(--surface-base-rgb), 0.84)',
           borderRadius: isExpanded ? 14 : 12,
-          border: '1px solid rgba(255, 255, 255, 0.12)',
+          border: '1px solid rgba(255, 255, 255, 0.10)',
           boxShadow: [
-            'rgba(0, 0, 0, 0.55) 0px 20px 50px -20px',
+            'rgba(0, 0, 0, 0.45) 0px 20px 50px -20px',
             'rgba(255, 255, 255, 0.05) 0px 1px 0px 0px inset',
           ].join(', '),
           display: 'flex',
@@ -915,8 +918,8 @@ function StepItem({ step, accent }: { step: AgentTimelineStep; accent: SessionAc
           style={{
             margin: '2px 0 0 20px',
             padding: '7px 9px',
-            background: 'rgba(0, 0, 0, 0.32)',
-            border: '1px solid rgba(255, 255, 255, 0.04)',
+            background: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
             borderRadius: 6,
             fontFamily:
               "GeistMono, ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Monaco, monospace",
@@ -1215,8 +1218,8 @@ function ApprovalPrompt({
           style={{
             margin: 0,
             padding: '7px 9px',
-            background: 'rgba(0, 0, 0, 0.32)',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
+            background: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
             borderRadius: 6,
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
             fontSize: 11,
