@@ -21,15 +21,15 @@ export function AgentMarkdown({ text, accentInk = '#f7f7f8' }: AgentMarkdownProp
   return (
     <div
       style={{
-        fontSize: 14,
+        fontSize: 12.5,
         fontWeight: 500,
-        color: '#f7f7f8',
+        color: '#f1f1f2',
         letterSpacing: '0.1px',
-        lineHeight: 1.55,
+        lineHeight: 1.5,
         wordBreak: 'break-word',
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
+        gap: 6,
       }}
     >
       {blocks.map((block, i) => (
@@ -132,17 +132,21 @@ function parseBlocks(text: string): Block[] {
 function BlockRenderer({ block, accentInk }: { block: Block; accentInk: string }) {
   switch (block.type) {
     case 'heading': {
-      const sizes = [0, 17, 15.5, 14, 13]; // index by level
+      // Slightly bigger for h1/h2 only — h3+ collapse to body weight so the
+      // panel stays compact and doesn't blow up like a doc page.
+      const sizes = [0, 14, 13, 12.5, 12.5];
       return (
         <div
           style={{
-            fontSize: sizes[block.level] ?? 14,
+            fontSize: sizes[block.level] ?? 12.5,
             fontWeight: 700,
-            letterSpacing: '-0.1px',
+            letterSpacing: '-0.05px',
             color: '#fafafa',
-            marginTop: 2,
-            marginBottom: 2,
+            marginTop: 4,
+            marginBottom: 0,
             lineHeight: 1.3,
+            textTransform: block.level >= 3 ? 'uppercase' : undefined,
+            opacity: block.level >= 3 ? 0.75 : 1,
           }}
         >
           {renderInline(block.content, accentInk)}
@@ -158,14 +162,26 @@ function BlockRenderer({ block, accentInk }: { block: Block; accentInk: string }
     case 'code-block':
       return <CodeBlock code={block.code} lang={block.lang} accentInk={accentInk} />;
     case 'ordered-list':
+    case 'bullet-list': {
+      // If every item is just a single backtick value, collapse the whole
+      // list into one snippet block with a single Copy button — clicking
+      // 18 chips one by one is silly.
+      const pureValues = extractPureCodeList(block.items);
+      if (pureValues) {
+        return <SnippetList values={pureValues} accentInk={accentInk} />;
+      }
+      const isOrdered = block.type === 'ordered-list';
+      const Tag: any = isOrdered ? 'ol' : 'ul';
       return (
-        <ol
+        <Tag
           style={{
             margin: 0,
-            paddingLeft: 22,
+            paddingLeft: 18,
             display: 'flex',
             flexDirection: 'column',
-            gap: 3,
+            gap: 2,
+            fontSize: 12.5,
+            lineHeight: 1.45,
           }}
         >
           {block.items.map((item, i) => (
@@ -173,27 +189,22 @@ function BlockRenderer({ block, accentInk }: { block: Block; accentInk: string }
               {renderInline(item, accentInk)}
             </li>
           ))}
-        </ol>
+        </Tag>
       );
-    case 'bullet-list':
-      return (
-        <ul
-          style={{
-            margin: 0,
-            paddingLeft: 22,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 3,
-          }}
-        >
-          {block.items.map((item, i) => (
-            <li key={i} style={{ paddingLeft: 2 }}>
-              {renderInline(item, accentInk)}
-            </li>
-          ))}
-        </ul>
-      );
+    }
   }
+}
+
+/** If every list item is exactly one inline-code span, return its values. */
+function extractPureCodeList(items: string[]): string[] | null {
+  if (items.length < 2) return null;
+  const out: string[] = [];
+  for (const item of items) {
+    const m = item.trim().match(/^`([^`\n]+)`$/);
+    if (!m) return null;
+    out.push(m[1]);
+  }
+  return out;
 }
 
 // ─── Inline parsing ───────────────────────────────────────────────────
@@ -279,17 +290,17 @@ function InlineCode({ value, accentInk }: { value: string; accentInk: string }) 
         all: 'unset',
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 4,
+        gap: 3,
         cursor: 'pointer',
-        padding: '1px 6px',
+        padding: '0px 5px',
         margin: '0 1px',
-        borderRadius: 5,
+        borderRadius: 4,
         fontFamily:
           "GeistMono, ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Monaco, monospace",
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: 500,
         color: copied ? accentInk : 'rgba(244, 244, 245, 0.95)',
-        background: hovered || copied ? 'rgba(255, 255, 255, 0.10)' : 'rgba(255, 255, 255, 0.06)',
+        background: hovered || copied ? 'rgba(255, 255, 255, 0.10)' : 'rgba(255, 255, 255, 0.05)',
         border: `1px solid ${copied ? accentInk : 'rgba(255, 255, 255, 0.10)'}`,
         verticalAlign: 'baseline',
         lineHeight: 1.4,
@@ -298,7 +309,17 @@ function InlineCode({ value, accentInk }: { value: string; accentInk: string }) 
       } as React.CSSProperties}
     >
       <span style={{ wordBreak: 'break-all' }}>{value}</span>
-      <CopyGlyph copied={copied} />
+      {(hovered || copied) && (
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            color: copied ? accentInk : 'rgba(244, 244, 245, 0.6)',
+          }}
+        >
+          <CopyGlyph copied={copied} />
+        </span>
+      )}
     </button>
   );
 }
@@ -373,11 +394,11 @@ function CodeBlock({ code, lang, accentInk }: { code: string; lang: string; acce
       <pre
         style={{
           margin: 0,
-          padding: '8px 10px',
+          padding: '7px 10px',
           fontFamily:
             "GeistMono, ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Monaco, monospace",
-          fontSize: 11.5,
-          lineHeight: 1.55,
+          fontSize: 11,
+          lineHeight: 1.5,
           color: 'rgba(244, 244, 245, 0.92)',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
@@ -387,6 +408,160 @@ function CodeBlock({ code, lang, accentInk }: { code: string; lang: string; acce
       >
         {code}
       </pre>
+    </div>
+  );
+}
+
+// ─── Snippet list (collapsed code-only list) ──────────────────────────
+
+function SnippetList({ values, accentInk }: { values: string[]; accentInk: string }) {
+  const [copiedAll, setCopiedAll] = useState(false);
+  const [copiedRow, setCopiedRow] = useState<number | null>(null);
+
+  const onCopyAll = useCallback(() => {
+    copyText(values.join('\n'));
+    setCopiedAll(true);
+    window.setTimeout(() => setCopiedAll(false), 1100);
+  }, [values]);
+
+  const onCopyRow = useCallback((i: number, value: string) => {
+    copyText(value);
+    setCopiedRow(i);
+    window.setTimeout(() => setCopiedRow((cur) => (cur === i ? null : cur)), 1000);
+  }, []);
+
+  return (
+    <div
+      style={{
+        background: 'rgba(0, 0, 0, 0.32)',
+        border: '1px solid rgba(255, 255, 255, 0.06)',
+        borderRadius: 8,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '5px 8px 5px 10px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+          background: 'rgba(255, 255, 255, 0.02)',
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: '0.5px',
+            textTransform: 'uppercase',
+            color: 'rgba(244, 244, 245, 0.45)',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          }}
+        >
+          {values.length} items
+        </span>
+        <button
+          type="button"
+          onClick={onCopyAll}
+          title={copiedAll ? 'Copied' : 'Copy all to clipboard'}
+          style={{
+            all: 'unset',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '2px 7px',
+            borderRadius: 4,
+            fontSize: 10.5,
+            fontWeight: 600,
+            letterSpacing: '0.2px',
+            color: copiedAll ? accentInk : 'rgba(244, 244, 245, 0.7)',
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: `1px solid ${copiedAll ? accentInk : 'rgba(255, 255, 255, 0.08)'}`,
+            transition: 'color 120ms ease, border-color 120ms ease',
+          } as React.CSSProperties}
+        >
+          <CopyGlyph copied={copiedAll} />
+          {copiedAll ? 'Copied all' : 'Copy all'}
+        </button>
+      </div>
+      <div
+        style={{
+          maxHeight: 320,
+          overflow: 'auto',
+          padding: '4px 0',
+        }}
+      >
+        {values.map((v, i) => (
+          <SnippetRow
+            key={i}
+            value={v}
+            copied={copiedRow === i}
+            onCopy={() => onCopyRow(i, v)}
+            accentInk={accentInk}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SnippetRow({
+  value,
+  copied,
+  onCopy,
+  accentInk,
+}: {
+  value: string;
+  copied: boolean;
+  onCopy: () => void;
+  accentInk: string;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      onClick={onCopy}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      title={copied ? 'Copied' : 'Click to copy this value'}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '2px 10px',
+        cursor: 'pointer',
+        background: hovered || copied ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
+        transition: 'background 120ms ease',
+        WebkitAppRegion: 'no-drag',
+      } as React.CSSProperties}
+    >
+      <span
+        style={{
+          flex: 1,
+          minWidth: 0,
+          fontFamily:
+            "GeistMono, ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Monaco, monospace",
+          fontSize: 11,
+          lineHeight: 1.6,
+          color: 'rgba(244, 244, 245, 0.92)',
+          wordBreak: 'break-all',
+        }}
+      >
+        {value}
+      </span>
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          color: copied ? accentInk : 'rgba(244, 244, 245, 0.55)',
+          opacity: hovered || copied ? 1 : 0,
+          transition: 'opacity 120ms ease',
+          flexShrink: 0,
+        }}
+      >
+        <CopyGlyph copied={copied} />
+      </span>
     </div>
   );
 }
