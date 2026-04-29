@@ -631,10 +631,12 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   return (
     <div className={embedded ? '' : 'h-full flex flex-col'}>
       <div className="w-full h-full flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--ui-divider)]">
-          <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">{embedded ? 'Community' : 'Store'}</h2>
-          <span className="text-[12px] text-[var(--text-subtle)]">Installed extensions appear first.</span>
-        </div>
+        {embedded && (
+          <div className="flex items-baseline gap-3 px-4 py-3 border-b border-[var(--ui-divider)]">
+            <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Community</h2>
+            <span className="text-[12px] text-[var(--text-subtle)]">Installed extensions appear first.</span>
+          </div>
+        )}
 
         <div className="flex-1 min-h-0 flex flex-col">
           <div className="px-4 py-3 border-b border-[var(--ui-divider)] flex items-center gap-3">

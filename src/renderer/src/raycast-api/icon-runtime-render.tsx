@@ -9,38 +9,33 @@ import { isEmojiOrSymbol, renderTintedAssetIcon, resolveIconSrc, resolveTintColo
 
 const fileIconCache = new Map<string, string | null>();
 
-function fileIconCacheKey(filePath: string, pixelSize: number): string {
-  return `${pixelSize}:${filePath}`;
-}
-
-function FileIcon({ filePath, className, pixelSize = 20 }: { filePath: string; className: string; pixelSize?: number }) {
-  const cacheKey = fileIconCacheKey(filePath, pixelSize);
-  const [src, setSrc] = useState<string | null>(() => fileIconCache.get(cacheKey) ?? null);
+function FileIcon({ filePath, className }: { filePath: string; className: string }) {
+  const [src, setSrc] = useState<string | null>(() => fileIconCache.get(filePath) ?? null);
 
   useEffect(() => {
     let cancelled = false;
-    const cached = fileIconCache.get(cacheKey);
+    const cached = fileIconCache.get(filePath);
     if (cached !== undefined) {
       setSrc(cached);
       return;
     }
 
-    (window as any).electron?.getFileIconDataUrl?.(filePath, pixelSize)
+    (window as any).electron?.getFileIconDataUrl?.(filePath, 20)
       .then((iconSrc: string | null) => {
         if (cancelled) return;
-        fileIconCache.set(cacheKey, iconSrc || null);
+        fileIconCache.set(filePath, iconSrc || null);
         setSrc(iconSrc || null);
       })
       .catch(() => {
         if (cancelled) return;
-        fileIconCache.set(cacheKey, null);
+        fileIconCache.set(filePath, null);
         setSrc(null);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [filePath, pixelSize, cacheKey]);
+  }, [filePath]);
 
   if (src) return <img src={src} className={className + ' rounded'} alt="" />;
 
@@ -134,7 +129,7 @@ function renderResolvedImageIcon(resolved: string, className: string, tintColor?
   return <img src={resolved} className={className + ' rounded'} style={style} alt="" />;
 }
 
-export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?: string, pixelSize?: number): React.ReactNode {
+export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?: string): React.ReactNode {
   if (!icon) return null;
 
   if (typeof icon === 'string') {
@@ -151,7 +146,7 @@ export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?
 
     const absolutePath = normalizeFileIconPath(icon);
     if (absolutePath) {
-      return <FileIcon filePath={absolutePath} className={className} pixelSize={pixelSize} />;
+      return <FileIcon filePath={absolutePath} className={className} />;
     }
 
     const phosphor = renderPhosphorIcon(icon, className);
@@ -167,7 +162,7 @@ export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?
   if (typeof icon === 'object') {
     const fileIconPath = pickFileIconPath(icon);
     if (fileIconPath) {
-      return <FileIcon filePath={fileIconPath} className={className} pixelSize={pixelSize} />;
+      return <FileIcon filePath={fileIconPath} className={className} />;
     }
 
     const source = icon.source;

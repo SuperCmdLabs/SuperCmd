@@ -7266,6 +7266,11 @@ function createWindow(): void {
     vibrancy: false,
     transparent: true,
     backgroundColor: '#00000000',
+    // Without this, macOS eats the first mouse-down on the panel to activate
+    // the window — so a click only registers if the window is already key.
+    // Mouse users (e.g. Mac mini, multi-monitor) hit this constantly because
+    // the cursor often sits on another display when the launcher pops in.
+    acceptFirstMouse: true,
     ...(useDarwinLauncherPanel
       ? {
           // Use AppKit's panel-backed window on macOS for launcher semantics.
@@ -8414,6 +8419,14 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   if (shouldActivateLauncherWindow) {
     mainWindow.focus();
   } else {
+    // On macOS Tahoe (26), NSPanel.show() no longer implicitly makes the
+    // panel the key window. Without being key, the panel does not receive
+    // mouseMoved/mouseDown events (no hover, no clicks) — though scroll and
+    // webContents-focused keyboard input still work, which matches the
+    // reported symptom. Calling focus() on a non-activating panel triggers
+    // makeKeyAndOrderFront without activating the app, so the previously
+    // frontmost app stays "active" for selection capture.
+    try { mainWindow.focus(); } catch {}
     try { (mainWindow as any).focusOnWebView?.(); } catch {}
     try { mainWindow.webContents.focus(); } catch {}
   }
@@ -8445,6 +8458,9 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
       if (shouldActivateLauncherWindow) {
         mainWindow.focus();
       } else {
+        // See note above: required on macOS Tahoe to make the NSPanel key
+        // so it receives mouse-moved/mouse-down events.
+        try { mainWindow.focus(); } catch {}
         try { (mainWindow as any).focusOnWebView?.(); } catch {}
         try { mainWindow.webContents.focus(); } catch {}
       }
@@ -14331,47 +14347,16 @@ return appURL's |path|() as text`,
     }
   });
 
-  const fileIconPendingRequests = new Map<string, Promise<string | null>>();
-
-  async function computeFileIconDataUrl(filePath: string, size: number): Promise<string | null> {
-    if (size >= 48) {
-      try {
-        const thumb = await nativeImage.createThumbnailFromPath(filePath, { width: size, height: size });
-        if (thumb && !thumb.isEmpty()) {
-          return thumb.toDataURL();
-        }
-      } catch {
-        // Fall through to app.getFileIcon fallback below.
-      }
-    }
-
-    try {
-      const icon = await app.getFileIcon(filePath, {
-        size: size <= 16 ? 'small' : size >= 32 ? 'large' : 'normal',
-      });
-      if (icon && !icon.isEmpty()) {
-        return icon.toDataURL();
-      }
-    } catch {
-      // Ignore and return null below.
-    }
-    return null;
-  }
-
   ipcMain.handle('get-file-icon-data-url', async (_event: any, filePath: string, size = 20) => {
-    if (typeof filePath !== 'string' || !filePath) return null;
-    const clampedSize = Math.max(16, Math.min(256, Math.round(Number(size) || 20)));
-    const key = `${clampedSize}:${filePath}`;
-    const existing = fileIconPendingRequests.get(key);
-    if (existing) return existing;
-
-    const pending = computeFileIconDataUrl(filePath, clampedSize)
-      .catch(() => null)
-      .finally(() => {
-        fileIconPendingRequests.delete(key);
-      });
-    fileIconPendingRequests.set(key, pending);
-    return pending;
+    try {
+      const icon = await app.getFileIcon(filePath, { size: size <= 16 ? 'small' : size >= 64 ? 'large' : 'normal' });
+      if (icon && !icon.isEmpty()) {
+        return icon.resize({ width: size, height: size }).toDataURL();
+      }
+      return null;
+    } catch {
+      return null;
+    }
   });
 
   ipcMain.handle('file-search-query', async (_event: any, query: string, options?: { limit?: number }) => {

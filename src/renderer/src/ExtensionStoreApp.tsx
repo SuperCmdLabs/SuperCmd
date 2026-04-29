@@ -78,7 +78,7 @@ const ExtensionStoreApp: React.FC = () => {
   return (
     <div className="h-screen flex glass-effect text-white select-none">
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="h-11 drag-region flex-shrink-0" />
+        <div className="h-9 drag-region flex-shrink-0 border-b border-[var(--ui-divider)]" />
         <div className="flex-1 overflow-hidden">
           <StoreErrorBoundary
             errorTitle={t('store.errorBoundary.title')}

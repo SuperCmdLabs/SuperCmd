@@ -122,17 +122,6 @@ function getApplicationSortKey(app: ApplicationOption): string {
   return String(app.name || '').trim().toLowerCase();
 }
 
-function pickDefaultApplication(apps: ApplicationOption[]): ApplicationOption | null {
-  if (!apps.length) return null;
-
-  const browserHints = ['chrome', 'safari', 'firefox', 'arc', 'edge', 'brave', 'opera', 'vivaldi'];
-  const browser = apps.find((app) => {
-    const key = `${app.name} ${app.bundleId || ''}`.toLowerCase();
-    return browserHints.some((hint) => key.includes(hint));
-  });
-  return browser || apps[0] || null;
-}
-
 function pickFinderApplication(apps: ApplicationOption[]): ApplicationOption | null {
   return apps.find((app) => {
     const bundleId = String(app.bundleId || '').toLowerCase();
@@ -182,6 +171,21 @@ function buildApplicationMatchTokens(app: ApplicationOption): string[] {
   return Array.from(set);
 }
 
+const BROWSER_PROTOCOLS = new Set(['http', 'https', 'file']);
+
+function isBrowserProtocolTemplate(urlTemplate: string): boolean {
+  const normalized = String(urlTemplate || '').trim();
+  if (!normalized) return false;
+  const candidate = normalized.replace(/\{[^}]+\}/g, 'placeholder');
+  try {
+    const parsed = new URL(candidate);
+    const protocol = String(parsed.protocol || '').replace(':', '').trim().toLowerCase();
+    return BROWSER_PROTOCOLS.has(protocol);
+  } catch {
+    return false;
+  }
+}
+
 function extractQuickLinkTemplateTokens(urlTemplate: string): string[] {
   const normalized = String(urlTemplate || '').trim();
   if (!normalized) return [];
@@ -189,10 +193,14 @@ function extractQuickLinkTemplateTokens(urlTemplate: string): string[] {
   const candidate = normalized.replace(/\{[^}]+\}/g, 'placeholder');
   try {
     const parsed = new URL(candidate);
-    const tokens = new Set<string>();
-
     const protocol = String(parsed.protocol || '').replace(':', '').trim().toLowerCase();
-    if (protocol && !['http', 'https', 'file'].includes(protocol)) {
+
+    if (BROWSER_PROTOCOLS.has(protocol)) {
+      return [];
+    }
+
+    const tokens = new Set<string>();
+    if (protocol) {
       tokens.add(protocol);
     }
 
@@ -349,12 +357,6 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
         }
         return changed ? next : prev;
       });
-      if (!selectedAppPath && !quickLink?.applicationPath) {
-        const fallbackApp = pickDefaultApplication(apps);
-        if (fallbackApp) {
-          setSelectedAppPath(fallbackApp.path);
-        }
-      }
     } catch (error) {
       console.error('Failed to load quick link setup data:', error);
     }
@@ -694,9 +696,13 @@ const QuickLinkForm: React.FC<QuickLinkFormProps> = ({ quickLink, onSave, onCanc
     if (!shouldAutoSelectAppFromPaste) return;
     if (!applications.length) return;
 
-    const matchedApplication = findBestApplicationForPastedQuickLink(urlTemplate, applications);
-    if (matchedApplication?.path) {
-      setSelectedAppPath(matchedApplication.path);
+    if (isBrowserProtocolTemplate(urlTemplate)) {
+      setSelectedAppPath('');
+    } else {
+      const matchedApplication = findBestApplicationForPastedQuickLink(urlTemplate, applications);
+      if (matchedApplication?.path) {
+        setSelectedAppPath(matchedApplication.path);
+      }
     }
     setShouldAutoSelectAppFromPaste(false);
   }, [applications, shouldAutoSelectAppFromPaste, urlTemplate]);

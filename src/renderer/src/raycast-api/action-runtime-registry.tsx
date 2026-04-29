@@ -236,6 +236,17 @@ export function createActionRegistryRuntime(deps: RegistryDeps) {
           (window as any).electron?.openUrl?.(props.path, appName);
           return;
         }
+        if (props.__actionKind === 'open' && typeof props.target === 'string') {
+          const appName =
+            typeof props.application === 'string'
+              ? props.application
+              : typeof props.application?.name === 'string'
+                ? props.application.name
+                : undefined;
+          (window as any).electron?.openUrl?.(props.target, appName);
+          props.onOpen?.();
+          return;
+        }
         if (props.target && React.isValidElement(props.target)) {
           getGlobalNavigation().push(props.target);
           props.onPush?.();

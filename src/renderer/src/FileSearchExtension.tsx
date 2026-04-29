@@ -487,6 +487,7 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose, init
     if (!selectedPath) return;
     try {
       await window.electron.execCommand('open', ['-R', selectedPath]);
+      await window.electron.hideWindow();
     } catch (error) {
       console.error('Failed to reveal file:', error);
     }
