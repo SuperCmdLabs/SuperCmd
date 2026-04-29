@@ -835,16 +835,23 @@ function CwdChip({ path }: { path: string }) {
         background: 'rgba(255, 255, 255, 0.04)',
         border: '1px solid rgba(255, 255, 255, 0.06)',
         borderRadius: 5,
-        padding: '3px 7px 3px 6px',
+        padding: '4px 8px',
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
         letterSpacing: '0.1px',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
+        lineHeight: 1.2,
         whiteSpace: 'nowrap',
       }}
     >
       <FolderGlyph />
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{prettyPath(path)}</span>
+      <span
+        style={{
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          minWidth: 0,
+        }}
+      >
+        {prettyPath(path)}
+      </span>
     </div>
   );
 }
