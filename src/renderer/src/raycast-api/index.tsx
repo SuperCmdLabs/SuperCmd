@@ -1921,7 +1921,32 @@ export async function getSelectedText(): Promise<string> {
 }
 
 export async function getSelectedFinderItems(): Promise<Array<{ path: string }>> {
-  return [];
+  const electron = (window as any).electron;
+  if (!electron?.runAppleScript) return [];
+  // Newline-separated POSIX paths so we don't have to guess at AppleScript
+  // record formatting. ASCII character 10 = LF.
+  const script = `
+    tell application "Finder"
+      set theSelection to selection
+      if theSelection is {} then return ""
+      set theOutput to ""
+      repeat with anItem in theSelection
+        set theOutput to theOutput & (POSIX path of (anItem as alias)) & ASCII character 10
+      end repeat
+      return theOutput
+    end tell
+  `;
+  try {
+    const raw = String((await electron.runAppleScript(script)) || '');
+    return raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((path) => ({ path }));
+  } catch (error) {
+    console.error('[getSelectedFinderItems]', error);
+    throw new Error('Could not get selected Finder items');
+  }
 }
 
 export async function getApplications(path?: string): Promise<Application[]> {

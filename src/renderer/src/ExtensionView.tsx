@@ -3074,6 +3074,63 @@ const {
   };
 })();
 
+/**
+ * Patch Node's `Readable.fromWeb` (and the corresponding helper on
+ * `node:stream/promises` if present) to accept cross-realm ReadableStreams.
+ *
+ * In the renderer, `globalThis.ReadableStream` is the Blink-realm class; the
+ * `ReadableStream` exported from Node's `stream/web` is a different class with
+ * the same name. Extensions that do `Readable.fromWeb(fetchResponse.body)`
+ * fail Node's internal `stream instanceof ReadableStream` check — the
+ * confusing "must be an instance of ReadableStream. Received an instance of
+ * ReadableStream" error. We re-wrap foreign-realm streams in a Node-realm
+ * ReadableStream before delegating, by pumping the foreign `getReader()` into
+ * a fresh Node ReadableStream, which is what fromWeb actually wants.
+ */
+function patchReadableFromWebOnce(mod: any, getNodeReadableStream: () => any): void {
+  if (!mod || !mod.Readable || mod.Readable.__scFromWebPatched) return;
+  const Readable = mod.Readable;
+  const original = Readable.fromWeb;
+  if (typeof original !== 'function') return;
+
+  Readable.fromWeb = function patchedFromWeb(stream: any, options?: any) {
+    try {
+      return original.call(this, stream, options);
+    } catch (err: any) {
+      const NodeReadableStream = getNodeReadableStream();
+      if (!NodeReadableStream || !stream || typeof stream.getReader !== 'function') {
+        throw err;
+      }
+      const reader = stream.getReader();
+      const wrapped = new NodeReadableStream({
+        async pull(controller: any) {
+          try {
+            const { done, value } = await reader.read();
+            if (done) controller.close();
+            else controller.enqueue(value);
+          } catch (pumpErr: any) {
+            controller.error(pumpErr);
+          }
+        },
+        cancel(reason: any) {
+          try { reader.cancel(reason); } catch {}
+        },
+      });
+      return original.call(this, wrapped, options);
+    }
+  };
+  Readable.__scFromWebPatched = true;
+}
+
+function isStreamRequest(name: string): boolean {
+  return (
+    name === 'stream' ||
+    name === 'node:stream' ||
+    name === 'stream/promises' ||
+    name === 'node:stream/promises'
+  );
+}
+
 function tryRealNodeRequire(name: string): any | undefined {
   if (!USE_REAL_NODE_BUILTINS) return undefined;
   if (!isNodeBuiltinRequest(name)) return undefined;
@@ -3089,7 +3146,17 @@ function tryRealNodeRequire(name: string): any | undefined {
   const realRequire = _realNodeRequire || bridgeRequire;
   if (!realRequire) return undefined;
   try {
-    return realRequire(name);
+    const mod = realRequire(name);
+    if (isStreamRequest(name) && mod) {
+      patchReadableFromWebOnce(mod, () => {
+        try {
+          return realRequire('node:stream/web')?.ReadableStream;
+        } catch {
+          try { return realRequire('stream/web')?.ReadableStream; } catch { return undefined; }
+        }
+      });
+    }
+    return mod;
   } catch (e) {
     // Fall through to the stub path — don't let a missing-in-Node import
     // break the extension. Log once at debug level.
