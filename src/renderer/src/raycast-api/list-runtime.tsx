@@ -250,11 +250,138 @@ export function createListRuntime(deps: ListRuntimeDeps) {
       if (currentItem) prevSelectedSectionRef.current = currentItem.sectionTitle;
     }, [filteredItems, selectedIdx]);
 
-    useEffect(() => { listRef.current?.querySelector(`[data-idx="${selectedIdx}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [selectedIdx]);
     useEffect(() => { inputRef.current?.focus(); }, []);
     useEffect(() => { if (onSelectionChange && filteredItems[selectedIdx]) onSelectionChange(filteredItems[selectedIdx]?.props?.id || null); }, [filteredItems, onSelectionChange, selectedIdx]);
 
     const groupedItems = useMemo(() => groupListItems(filteredItems), [filteredItems]);
+
+    // ─── Viewport virtualization for the linear (non-grid) list ─────
+    // Brew-style extensions ship ~5k items; rendering all of them as DOM
+    // nodes is the bottleneck. We render only the slice in view (plus a
+    // small buffer) and pad the scroll container with spacer divs so the
+    // scrollbar still represents the full list.
+    const ROW_HEIGHT = 36;
+    const HEADER_HEIGHT = 24;
+    const OVERSCAN = 8;
+
+    const flatRows = useMemo(() => {
+      const rows: Array<
+        | { type: 'header'; title: string; key: string }
+        | { type: 'item'; item: typeof filteredItems[number]; globalIdx: number; key: string }
+      > = [];
+      for (let g = 0; g < groupedItems.length; g += 1) {
+        const group = groupedItems[g];
+        if (group.title) rows.push({ type: 'header', title: group.title, key: `__h_${g}` });
+        for (const entry of group.items) {
+          rows.push({ type: 'item', item: entry.item, globalIdx: entry.globalIdx, key: entry.item.id });
+        }
+      }
+      return rows;
+    }, [groupedItems]);
+
+    const rowMetrics = useMemo(() => {
+      const offsets: number[] = new Array(flatRows.length);
+      let cum = 0;
+      for (let i = 0; i < flatRows.length; i += 1) {
+        offsets[i] = cum;
+        cum += flatRows[i].type === 'header' ? HEADER_HEIGHT : ROW_HEIGHT;
+      }
+      return { offsets, totalHeight: cum };
+    }, [flatRows]);
+
+    const [scrollTop, setScrollTop] = useState(0);
+    const [containerHeight, setContainerHeight] = useState(0);
+
+    useEffect(() => {
+      const el = listRef.current;
+      if (!el) return;
+      let raf = 0;
+      // rAF-throttle the scroll updates (one per frame max), but always
+      // report the new position. Skipping updates within a row's worth of
+      // pixels left the visible window stale and made the list appear to
+      // stop scrolling; OVERSCAN already handles the "nothing changed yet"
+      // case cheaply.
+      const onScroll = () => {
+        if (raf) return;
+        raf = window.requestAnimationFrame(() => {
+          raf = 0;
+          setScrollTop(el.scrollTop);
+        });
+      };
+      el.addEventListener('scroll', onScroll, { passive: true });
+      const measure = () => setContainerHeight(el.clientHeight);
+      measure();
+      const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+      if (ro) ro.observe(el);
+      return () => {
+        el.removeEventListener('scroll', onScroll);
+        if (raf) window.cancelAnimationFrame(raf);
+        if (ro) ro.disconnect();
+      };
+    }, []);
+
+    const { visibleStart, visibleEnd } = useMemo(() => {
+      if (flatRows.length === 0) return { visibleStart: 0, visibleEnd: 0 };
+      const top = scrollTop;
+      const bottom = scrollTop + (containerHeight || 600);
+      let lo = 0;
+      let hi = flatRows.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        const rowH = flatRows[mid].type === 'header' ? HEADER_HEIGHT : ROW_HEIGHT;
+        if (rowMetrics.offsets[mid] + rowH <= top) lo = mid + 1;
+        else hi = mid;
+      }
+      const start = Math.max(0, lo - OVERSCAN);
+      let end = lo;
+      while (end < flatRows.length && rowMetrics.offsets[end] < bottom) end += 1;
+      end = Math.min(flatRows.length, end + OVERSCAN);
+      return { visibleStart: start, visibleEnd: end };
+    }, [flatRows, rowMetrics, scrollTop, containerHeight]);
+
+    // Map from filteredItems index → flat row index for scroll-into-view.
+    const itemIdxToRowIdx = useMemo(() => {
+      const map: number[] = new Array(filteredItems.length);
+      let itemSeen = -1;
+      for (let i = 0; i < flatRows.length; i += 1) {
+        if (flatRows[i].type === 'item') {
+          itemSeen += 1;
+          map[itemSeen] = i;
+        }
+      }
+      return map;
+    }, [flatRows, filteredItems.length]);
+
+    // Stable refs so the scroll-into-view effect only fires when the user
+    // moves selection — not when upstream re-renders give flatRows/rowMetrics/
+    // itemIdxToRowIdx fresh identities. Without this, scrolling the wheel
+    // triggers any unrelated re-render → effect re-runs → snaps back to
+    // selectedIdx.
+    const flatRowsRef = useRef(flatRows);
+    flatRowsRef.current = flatRows;
+    const rowMetricsRef = useRef(rowMetrics);
+    rowMetricsRef.current = rowMetrics;
+    const itemIdxToRowIdxRef = useRef(itemIdxToRowIdx);
+    itemIdxToRowIdxRef.current = itemIdxToRowIdx;
+
+    useEffect(() => {
+      const el = listRef.current;
+      if (!el) return;
+      const rowIdx = itemIdxToRowIdxRef.current[selectedIdx];
+      if (rowIdx == null) return;
+      const top = rowMetricsRef.current.offsets[rowIdx];
+      if (top == null) return;
+      const rowH = flatRowsRef.current[rowIdx]?.type === 'header' ? HEADER_HEIGHT : ROW_HEIGHT;
+      const visTop = el.scrollTop;
+      const visBottom = visTop + el.clientHeight;
+      // 'auto' (instant) — smooth scrolling queues animations that interrupt
+      // each other when arrow-down is held, producing visible jitter.
+      if (top < visTop) {
+        el.scrollTo({ top, behavior: 'auto' });
+      } else if (top + rowH > visBottom) {
+        el.scrollTo({ top: top + rowH - el.clientHeight, behavior: 'auto' });
+      }
+    }, [selectedIdx]);
 
     const extensionContext = getExtensionContext();
     const footerTitle = navigationTitle || extInfo.extensionDisplayName || extensionContext.extensionDisplayName || extensionContext.extensionName || 'Extension';
@@ -303,35 +430,57 @@ export function createListRuntime(deps: ListRuntimeDeps) {
             </div>
           ))
         ) : (
-          groupedItems.map((group, groupIndex) => (
-            <div key={groupIndex} className="mb-0">
-              {group.title && <div className="px-4 pt-0.5 pb-1 text-[11px] tracking-[0.08em] text-[var(--text-subtle)] font-medium select-none">{group.title}</div>}
-              {group.items.map(({ item, globalIdx }) => (
-                <ListItemRenderer
-                  key={item.id}
-                  {...item.props}
-                  assetsPath={extInfo.assetsPath || getExtensionContext().assetsPath}
-                  isSelected={globalIdx === selectedIdx}
-                  dataIdx={globalIdx}
-                  onSelect={() => setSelectedIdx(globalIdx)}
-                  onActivate={() => {
-                    if (globalIdx === selectedIdx) {
-                      primaryAction?.execute();
-                    } else {
-                      setSelectedIdx(globalIdx);
-                    }
-                    inputRef.current?.focus();
-                  }}
-                  onContextAction={(event: React.MouseEvent<HTMLDivElement>) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setSelectedIdx(globalIdx);
-                    setShowActions(true);
-                  }}
-                />
-              ))}
-            </div>
-          ))
+          (() => {
+            const startOffset = rowMetrics.offsets[visibleStart] || 0;
+            const endOffset = visibleEnd < rowMetrics.offsets.length
+              ? rowMetrics.offsets[visibleEnd]
+              : rowMetrics.totalHeight;
+            const bottomSpacer = Math.max(0, rowMetrics.totalHeight - endOffset);
+            return (
+              <>
+                {startOffset > 0 && <div style={{ height: startOffset }} aria-hidden="true" />}
+                {flatRows.slice(visibleStart, visibleEnd).map((row) => {
+                  if (row.type === 'header') {
+                    return (
+                      <div
+                        key={row.key}
+                        className="px-4 pt-0.5 pb-1 text-[11px] tracking-[0.08em] text-[var(--text-subtle)] font-medium select-none"
+                        style={{ height: HEADER_HEIGHT }}
+                      >
+                        {row.title}
+                      </div>
+                    );
+                  }
+                  const { item, globalIdx } = row;
+                  return (
+                    <ListItemRenderer
+                      key={item.id}
+                      {...item.props}
+                      assetsPath={extInfo.assetsPath || getExtensionContext().assetsPath}
+                      isSelected={globalIdx === selectedIdx}
+                      dataIdx={globalIdx}
+                      onSelect={() => setSelectedIdx(globalIdx)}
+                      onActivate={() => {
+                        if (globalIdx === selectedIdx) {
+                          primaryAction?.execute();
+                        } else {
+                          setSelectedIdx(globalIdx);
+                        }
+                        inputRef.current?.focus();
+                      }}
+                      onContextAction={(event: React.MouseEvent<HTMLDivElement>) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setSelectedIdx(globalIdx);
+                        setShowActions(true);
+                      }}
+                    />
+                  );
+                })}
+                {bottomSpacer > 0 && <div style={{ height: bottomSpacer }} aria-hidden="true" />}
+              </>
+            );
+          })()
         )}
       </div>
     );

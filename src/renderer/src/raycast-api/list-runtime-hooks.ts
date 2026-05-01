@@ -80,9 +80,18 @@ export function useListRegistry() {
     set(id, data) {
       const existing = registryRef.current.get(id);
       if (existing) {
+        // Hot path: an unrelated re-render (e.g. hover changing selection)
+        // re-runs every <List.Item> render even though no content actually
+        // changed. The renderOrder counter shifts uniformly so relative
+        // order is preserved; just write it through and skip the costly
+        // snapshot recompute. Only schedule an update when props identity
+        // or section actually changed.
+        const propsChanged = existing.props !== data.props;
+        const sectionChanged = existing.sectionTitle !== data.sectionTitle;
         existing.props = data.props;
         existing.sectionTitle = data.sectionTitle;
         existing.order = data.order;
+        if (!propsChanged && !sectionChanged) return;
       } else {
         registryRef.current.set(id, { id, ...data });
       }
