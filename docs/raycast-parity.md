@@ -9,107 +9,15 @@ _Shim: `src/renderer/src/raycast-api/index.tsx`._
 | Metric | Count |
 | --- | --- |
 | Spec top-level exports | 146 |
-| Shim top-level exports | 96 |
-| Missing top-level in shim (FAIL) | 93 |
-| Extra top-level in shim (info) | 43 |
+| Shim top-level exports | 190 |
+| Missing top-level in shim (FAIL) | 0 |
+| Extra top-level in shim (info) | 44 |
 | Namespaces with member gaps (FAIL) | 16 |
-| Total missing (top-level + members) | 661 |
+| Total missing (top-level + members) | 568 |
 
 ## Missing Top-Level Exports (FAIL)
 
-- `ActionPanelChildren` — *type*
-- `ActionPanelItem` — *const*
-- `ActionPanelItemProps` — *interface*
-- `ActionPanelProps` — *interface*
-- `ActionPanelSection` — *const*
-- `ActionPanelSectionChildren` — *type*
-- `ActionPanelSectionProps` — *interface*
-- `ActionPanelState` — *interface*
-- `ActionPanelSubmenu` — *const*
-- `ActionPanelSubmenuProps` — *interface*
-- `AlertActionOptions` — *interface*
-- `AlertActionStyle` — *const*
-- `AlertOptions` — *interface*
-- `ArgumentsLaunchProps` — *interface*
-- `ColorLike` — *type*
-- `CopyToClipboardAction` — *const*
-- `CopyToClipboardActionProps` — *interface*
-- `DetailProps` — *interface*
-- `DynamicColor` — *type*
-- `Environment` — *interface*
-- `FileIcon` — *interface*
-- `FormCheckbox` — *const*
-- `FormCheckboxProps` — *interface*
-- `FormDatePicker` — *const*
-- `FormDatePickerProps` — *interface*
-- `FormDropdown` — *const*
-- `FormDropdownItem` — *const*
-- `FormDropdownItemProps` — *interface*
-- `FormDropdownProps` — *interface*
-- `FormDropdownSection` — *const*
-- `FormDropdownSectionProps` — *interface*
-- `FormItemProps` — *interface*
-- `FormLaunchProps` — *interface*
-- `FormProps` — *interface*
-- `FormSeparator` — *const*
-- `FormSeparatorProps` — *interface*
-- `FormTagPicker` — *const*
-- `FormTagPickerItem` — *const*
-- `FormTagPickerItemProps` — *interface*
-- `FormTagPickerProps` — *interface*
-- `FormTextArea` — *const*
-- `FormTextAreaProps` — *interface*
-- `FormTextField` — *const*
-- `FormTextFieldProps` — *interface*
-- `FormValue` — *type*
-- `FormValues` — *interface*
-- `ImageLike` — *type*
-- `ImageMask` — *type*
-- `ImageSource` — *type*
-- `KeyEquivalent` — *type*
-- `KeyModifier` — *type*
-- `KeyboardShortcut` — *type*
-- `ListItem` — *const*
-- `ListItemProps` — *interface*
-- `ListProps` — *interface*
-- `ListSection` — *const*
-- `ListSectionProps` — *interface*
-- `LocalStorageValue` — *type*
-- `LocalStorageValues` — *interface*
-- `Navigation` — *interface*
-- `OpenAction` — *const*
-- `OpenActionProps` — *interface*
-- `OpenInBrowserAction` — *const*
-- `OpenInBrowserActionProps` — *interface*
-- `OpenWithAction` — *const*
-- `OpenWithActionProps` — *interface*
-- `PasteAction` — *const*
-- `PasteActionProps` — *interface*
-- `PushAction` — *const*
-- `PushActionProps` — *interface*
-- `ShowInFinderAction` — *const*
-- `ShowInFinderActionProps` — *interface*
-- `SubmitFormAction` — *const*
-- `SubmitFormActionProps` — *interface*
-- `ToastActionOptions` — *interface*
-- `ToastOptions` — *interface*
-- `TrashAction` — *const*
-- `TrashActionProps` — *interface*
-- `allLocalStorageItems` — *const*
-- `clearClipboard` — *const*
-- `clearLocalStorage` — *const*
-- `copyTextToClipboard` — *const*
-- `getLocalStorageItem` — *const*
-- `pasteText` — *const*
-- `randomId` — *const*
-- `removeLocalStorageItem` — *const*
-- `render` — *const*
-- `setLocalStorageItem` — *const*
-- `specialKeys` — *const*
-- `unstable_AI` — *const*
-- `useActionPanel` — *function*
-- `useId` — *const*
-- `useUnstableAI` — *const*
+_None — all top-level spec exports are present in the shim._
 
 ## Member-Level Gaps
 
@@ -428,6 +336,7 @@ Spec members: **14** · Shim members: **0**
 - `DeeplinkType`
 - `ExtensionContextType`
 - `ExtensionInfoReactContext`
+- `FormDescription`
 - `FormValidation`
 - `InternalActionPanelOverlay`
 - `LaunchContext`

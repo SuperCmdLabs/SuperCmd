@@ -2159,3 +2159,170 @@ export const LaunchProps = {} as any;
 // OAuth runtime moved to `oauth/*` modules.
 
 // getPreferenceValues already exported above
+
+// =====================================================================
+// ─── Deprecated / legacy aliases (parity with @raycast/api types) ──
+// =====================================================================
+//
+// The official @raycast/api types still export the pre-1.0 names (Action
+// component aliases like `OpenAction`, `FormCheckbox`, `clearClipboard`,
+// etc.) for backwards compatibility. We mirror the same surface so older
+// extensions in the registry keep loading. Each name points at its
+// modern equivalent at runtime; types re-export from the official
+// `@raycast/api` types so we stay byte-for-byte aligned with whatever
+// version is installed.
+//
+// The `Form.*` legacy aliases reach through `as any` because the form
+// runtime attaches sub-components via runtime mutation (see
+// `attachFormFields` in `form-runtime-fields.tsx`) and those statics
+// aren't visible to the type checker — runtime-only access is
+// intentional.
+
+import type * as Spec from '@raycast/api';
+
+// Clipboard
+export const clearClipboard = Clipboard.clear;
+export const copyTextToClipboard = Clipboard.copy;
+export const pasteText = Clipboard.paste;
+
+// LocalStorage
+export const allLocalStorageItems = LocalStorage.allItems;
+export const clearLocalStorage = LocalStorage.clear;
+export const getLocalStorageItem = LocalStorage.getItem;
+export const setLocalStorageItem = LocalStorage.setItem;
+export const removeLocalStorageItem = LocalStorage.removeItem;
+
+// Action subclass legacy aliases
+const _Action: any = Action;
+export const OpenAction = _Action.Open;
+export const OpenInBrowserAction = _Action.OpenInBrowser;
+export const OpenWithAction = _Action.OpenWith;
+export const PasteAction = _Action.Paste;
+export const PushAction = _Action.Push;
+export const ShowInFinderAction = _Action.ShowInFinder;
+export const SubmitFormAction = _Action.SubmitForm;
+export const TrashAction = _Action.Trash;
+export const CopyToClipboardAction = _Action.CopyToClipboard;
+export const ActionPanelItem = Action;
+
+// ActionPanel legacy aliases
+const _ActionPanel: any = ActionPanel;
+export const ActionPanelSection = _ActionPanel.Section;
+export const ActionPanelSubmenu = _ActionPanel.Submenu;
+
+// Form sub-component legacy aliases (runtime-attached statics)
+const _Form: any = Form;
+export const FormCheckbox = _Form.Checkbox;
+export const FormDatePicker = _Form.DatePicker;
+export const FormDescription = _Form.Description;
+export const FormDropdown = _Form.Dropdown;
+export const FormDropdownItem = _Form.Dropdown?.Item;
+export const FormDropdownSection = _Form.Dropdown?.Section;
+export const FormSeparator = _Form.Separator;
+export const FormTagPicker = _Form.TagPicker;
+export const FormTagPickerItem = _Form.TagPicker?.Item;
+export const FormTextArea = _Form.TextArea;
+export const FormTextField = _Form.TextField;
+
+// List legacy aliases
+const _List: any = List;
+export const ListItem = _List.Item;
+export const ListSection = _List.Section;
+
+// Image / Alert legacy aliases (the const side of dual type+value names)
+export const ImageMask = Image.Mask;
+export const AlertActionStyle = Alert.ActionStyle;
+
+// Misc deprecated stubs. These have no real implementation — extensions
+// using them are pre-1.0 era and the official types mark them `: any`.
+export const randomId: any = (): string => Math.random().toString(36).slice(2);
+export const useId: any = (): string => Math.random().toString(36).slice(2);
+export const render: any = (): void => { /* deprecated no-op */ };
+export const unstable_AI = AI;
+export const useUnstableAI = (): undefined => undefined;
+export function useActionPanel(): ActionPanelState {
+  return { update: () => { /* no-op */ } };
+}
+
+export const specialKeys = {
+  return: 'return',
+  delete: 'delete',
+  deleteForward: 'deleteForward',
+  tab: 'tab',
+  arrowUp: 'arrowUp',
+  arrowDown: 'arrowDown',
+  arrowLeft: 'arrowLeft',
+  arrowRight: 'arrowRight',
+  pageUp: 'pageUp',
+  pageDown: 'pageDown',
+  home: 'home',
+  end: 'end',
+  space: 'space',
+  escape: 'escape',
+  enter: 'enter',
+  backspace: 'backspace',
+};
+
+// Type aliases (legacy)
+export type ColorLike = Spec.Color.ColorLike;
+export type DynamicColor = Spec.Color.Dynamic;
+export type ImageLike = Spec.Image.ImageLike;
+export type ImageSource = Spec.Image.Source;
+export type KeyEquivalent = Spec.Keyboard.KeyEquivalent;
+export type KeyModifier = Spec.Keyboard.KeyModifier;
+export type KeyboardShortcut = Spec.Keyboard.Shortcut;
+export type LocalStorageValue = Spec.LocalStorage.Value;
+export type FormValue = Spec.Form.Value;
+export type ActionPanelChildren = Spec.ActionPanel.Children;
+export type ActionPanelSectionChildren = Spec.ActionPanel.Section.Children;
+
+// Type-export interfaces: types we expose by name but whose shape is the
+// authoritative spec type. Extensions using these names get the same
+// structural type as the real @raycast/api.
+export type { Environment, Navigation, FileIcon } from '@raycast/api';
+
+// Interface aliases (legacy *Props names → modern Y.Props shapes)
+export interface ActionPanelProps extends Spec.ActionPanel.Props {}
+export interface ActionPanelItemProps extends Spec.Action.Props {}
+export interface ActionPanelSectionProps extends Spec.ActionPanel.Section.Props {}
+export interface ActionPanelSubmenuProps extends Spec.ActionPanel.Submenu.Props {}
+export interface ActionPanelState {
+  update: (actionPanel: React.ReactNode) => void;
+}
+export interface AlertOptions extends Spec.Alert.Options {}
+export interface AlertActionOptions extends Spec.Alert.ActionOptions {}
+export interface ArgumentsLaunchProps {
+  arguments?: Record<string, unknown>;
+}
+export interface CopyToClipboardActionProps extends Spec.Action.CopyToClipboard.Props {}
+export interface DetailProps extends Spec.Detail.Props {}
+export interface FormCheckboxProps extends Spec.Form.Checkbox.Props {}
+export interface FormDatePickerProps extends Spec.Form.DatePicker.Props {}
+export interface FormDropdownProps extends Spec.Form.Dropdown.Props {}
+export interface FormDropdownItemProps extends Spec.Form.Dropdown.Item.Props {}
+export interface FormDropdownSectionProps extends Spec.Form.Dropdown.Section.Props {}
+export interface FormItemProps<V extends Spec.Form.Value> extends Spec.Form.ItemProps<V> {}
+export interface FormLaunchProps {
+  draftValues?: Spec.Form.Values;
+}
+export interface FormProps extends Spec.Form.Props {}
+export interface FormSeparatorProps extends Spec.Form.Separator.Props {}
+export interface FormTagPickerProps extends Spec.Form.TagPicker.Props {}
+export interface FormTagPickerItemProps extends Spec.Form.TagPicker.Item.Props {}
+export interface FormTextAreaProps extends Spec.Form.TextArea.Props {}
+export interface FormTextFieldProps extends Spec.Form.TextField.Props {}
+export interface FormValues extends Spec.Form.Values {}
+export interface ListItemProps extends Spec.List.Item.Props {}
+export interface ListSectionProps extends Spec.List.Section.Props {}
+export interface ListProps extends Spec.List.Props {}
+export interface LocalStorageValues extends Spec.LocalStorage.Values {}
+export interface OpenActionProps extends Spec.Action.Open.Props {}
+export interface OpenInBrowserActionProps extends Spec.Action.OpenInBrowser.Props {}
+export interface OpenWithActionProps extends Spec.Action.OpenWith.Props {}
+export interface PasteActionProps extends Spec.Action.Paste.Props {}
+export interface PushActionProps extends Spec.Action.Push.Props {}
+export interface ShowInFinderActionProps extends Spec.Action.ShowInFinder.Props {}
+export interface SubmitFormActionProps<T extends Spec.Form.Values> extends Spec.Action.SubmitForm.Props<T> {}
+export interface ToastActionOptions extends Spec.Toast.ActionOptions {}
+export interface ToastOptions extends Spec.Toast.Options {}
+export interface TrashActionProps extends Spec.Action.Trash.Props {}
