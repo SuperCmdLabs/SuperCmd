@@ -376,6 +376,11 @@ export const environment: Record<string, any> = {
       void refreshAIAvailabilityCache();
       return true;
     }
+    // SuperCmd does not implement WindowManagement or BrowserExtension yet.
+    // Well-behaved extensions branch on this check instead of calling methods
+    // and catching the rejection.
+    if (resource === WindowManagement) return false;
+    if (resource === BrowserExtension) return false;
     return true;
   },
 };

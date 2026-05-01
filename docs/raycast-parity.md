@@ -12,8 +12,8 @@ _Shim: `src/renderer/src/raycast-api/index.tsx`._
 | Shim top-level exports | 190 |
 | Missing top-level in shim (FAIL) | 0 |
 | Extra top-level in shim (info) | 44 |
-| Namespaces with member gaps (FAIL) | 15 |
-| Total missing (top-level + members) | 555 |
+| Namespaces with member gaps (FAIL) | 13 |
+| Total missing (top-level + members) | 550 |
 
 ## Missing Top-Level Exports (FAIL)
 
@@ -186,24 +186,13 @@ Spec members: **10** · Shim members: **1**
 - `source`
 - `tintColor`
 
-### `Keyboard`
-
-Spec members: **3** · Shim members: **1**
-
-**Missing in shim:**
-
-- `KeyEquivalent`
-- `KeyModifier`
-
 ### `WindowManagement`
 
-Spec members: **7** · Shim members: **4**
+Spec members: **7** · Shim members: **8**
 
-**Missing in shim:**
+**Extra in shim (informational):**
 
-- `Desktop`
-- `DesktopType`
-- `Window`
+- `SetWindowBoundsOptions`
 
 ### `BrowserExtension`
 

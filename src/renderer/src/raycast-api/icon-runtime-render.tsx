@@ -232,23 +232,41 @@ export const Image = {
 export const Keyboard = {
   Shortcut: {
     Common: {
-      CopyName: { modifiers: ['cmd'], key: '.' },
+      Copy: { modifiers: ['cmd', 'shift'], key: 'c' },
+      CopyDeeplink: { modifiers: ['cmd', 'shift'], key: 'l' },
+      CopyName: { modifiers: ['cmd', 'shift'], key: '.' },
+      CopyPath: { modifiers: ['cmd', 'shift'], key: ',' },
+      Duplicate: { modifiers: ['cmd'], key: 'd' },
+      Edit: { modifiers: ['cmd'], key: 'e' },
+      MoveDown: { modifiers: ['cmd', 'shift'], key: 'arrowDown' },
+      MoveUp: { modifiers: ['cmd', 'shift'], key: 'arrowUp' },
+      New: { modifiers: ['cmd'], key: 'n' },
       Open: { modifiers: ['cmd'], key: 'o' },
+      OpenWith: { modifiers: ['cmd'], key: 'return' },
+      Pin: { modifiers: ['cmd', 'shift'], key: 'p' },
+      Refresh: { modifiers: ['cmd'], key: 'r' },
       Remove: { modifiers: ['ctrl'], key: 'x' },
       RemoveAll: { modifiers: ['ctrl', 'shift'], key: 'x' },
-      Rename: { modifiers: ['cmd'], key: 'r' },
-      Edit: { modifiers: ['cmd'], key: 'e' },
-      New: { modifiers: ['cmd'], key: 'n' },
-      Duplicate: { modifiers: ['cmd'], key: 'd' },
-      Print: { modifiers: ['cmd'], key: 'p' },
-      Refresh: { modifiers: ['cmd'], key: 'r' },
+      Save: { modifiers: ['cmd'], key: 's' },
       ToggleQuickLook: { modifiers: ['shift'], key: 'space' },
+      // Extras kept for backwards-compat with existing SuperCmd extensions
+      // that referenced these names; spec doesn't define them.
+      Rename: { modifiers: ['cmd'], key: 'r' },
+      Print: { modifiers: ['cmd'], key: 'p' },
       EmptyTrash: { modifiers: ['cmd', 'shift'], key: 'delete' },
-      MoveUp: { modifiers: ['cmd', 'shift'], key: 'arrowUp' },
-      MoveDown: { modifiers: ['cmd', 'shift'], key: 'arrowDown' },
-      OpenWith: { modifiers: ['cmd'], key: 'return' },
     },
   },
 };
+
+// Declaration-merge namespace types so `Keyboard.KeyEquivalent` /
+// `Keyboard.KeyModifier` / `Keyboard.Shortcut` are accessible as types.
+// These mirror the spec exactly; importing from `@raycast/api` keeps us
+// in lockstep with whatever version is installed.
+export namespace Keyboard {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  export type KeyEquivalent = import('@raycast/api').Keyboard.KeyEquivalent;
+  export type KeyModifier = import('@raycast/api').Keyboard.KeyModifier;
+  export type Shortcut = import('@raycast/api').Keyboard.Shortcut;
+}
 
 export { resolveIconSrc };

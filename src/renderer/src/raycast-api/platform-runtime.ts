@@ -40,46 +40,50 @@ export type WindowManagementSetWindowBoundsOptions = {
   desktopId?: string;
 };
 
-export const WindowManagement = {
-  async getActiveWindow(): Promise<WindowManagementWindow> {
-    const electron = (window as any).electron;
-    if (electron?.getActiveWindow) {
-      const result = await electron.getActiveWindow();
-      if (!result) {
-        throw new Error('No active window found');
+// SuperCmd does not bridge to macOS window-management APIs today (planned
+// in a follow-up). Every method rejects with a stable error so extensions
+// can branch on `environment.canAccess(WindowManagement)` returning false
+// rather than crashing on a method call.
+const WM_UNAVAILABLE = 'WindowManagement is not available in SuperCmd';
+
+export const WindowManagement = Object.assign(
+  {
+    async getActiveWindow(): Promise<WindowManagementWindow> {
+      const electron = (window as any).electron;
+      if (electron?.getActiveWindow) {
+        const result = await electron.getActiveWindow();
+        if (!result) throw new Error('No active window found');
+        return result;
       }
-      return result;
-    }
-    throw new Error('WindowManagement API not available');
+      throw new Error(WM_UNAVAILABLE);
+    },
+    async getWindowsOnActiveDesktop(): Promise<WindowManagementWindow[]> {
+      throw new Error(WM_UNAVAILABLE);
+    },
+    async getDesktops(): Promise<WindowManagementDesktop[]> {
+      throw new Error(WM_UNAVAILABLE);
+    },
+    async setWindowBounds(_options: WindowManagementSetWindowBoundsOptions): Promise<void> {
+      throw new Error(WM_UNAVAILABLE);
+    },
   },
-
-  async getWindowsOnActiveDesktop(): Promise<WindowManagementWindow[]> {
-    const electron = (window as any).electron;
-    if (electron?.getWindowsOnActiveDesktop) {
-      return await electron.getWindowsOnActiveDesktop();
-    }
-    throw new Error('WindowManagement API not available');
+  {
+    DesktopType: WindowManagementDesktopType,
   },
+);
 
-  async getDesktops(): Promise<WindowManagementDesktop[]> {
-    const electron = (window as any).electron;
-    if (electron?.getDesktops) {
-      return await electron.getDesktops();
-    }
-    throw new Error('WindowManagement API not available');
-  },
+// Declaration-merge type members so the parity script and IDE both see
+// WindowManagement.{Window,Desktop,DesktopType,SetWindowBoundsOptions}
+// as namespace types — matching the spec shape.
+export namespace WindowManagement {
+  export type Window = WindowManagementWindow;
+  export type Desktop = WindowManagementDesktop;
+  export type DesktopType = WindowManagementDesktopType;
+  export type SetWindowBoundsOptions = WindowManagementSetWindowBoundsOptions;
+}
 
-  async setWindowBounds(options: WindowManagementSetWindowBoundsOptions): Promise<void> {
-    const electron = (window as any).electron;
-    if (electron?.setWindowBounds) {
-      await electron.setWindowBounds(options);
-    } else {
-      throw new Error('WindowManagement API not available');
-    }
-  },
-};
-
-(WindowManagement as any).DesktopType = WindowManagementDesktopType;
+const BROWSER_UNAVAILABLE =
+  'BrowserExtension is not available in SuperCmd (no browser extension companion is installed)';
 
 export namespace BrowserExtension {
   export interface Tab {
@@ -98,13 +102,11 @@ export namespace BrowserExtension {
 }
 
 export const BrowserExtension = {
-  async getContent(options?: BrowserExtension.ContentOptions): Promise<string> {
-    console.warn('[BrowserExtension] getContent is not available — browser extension not installed');
-    return '';
+  async getContent(_options?: BrowserExtension.ContentOptions): Promise<string> {
+    throw new Error(BROWSER_UNAVAILABLE);
   },
   async getTabs(): Promise<BrowserExtension.Tab[]> {
-    console.warn('[BrowserExtension] getTabs is not available — browser extension not installed');
-    return [];
+    throw new Error(BROWSER_UNAVAILABLE);
   },
 };
 
