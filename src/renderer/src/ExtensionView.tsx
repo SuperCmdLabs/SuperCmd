@@ -3713,6 +3713,16 @@ function loadExtensionExport(
     // We pass all the standard CJS arguments plus `process`, `Buffer`,
     // and `global` to ensure they are always in scope even when the
     // extension code references them without importing.
+    // Browser-detection bypass — the OpenAI v4 SDK (and several other
+    // "isomorphic" SDKs) refuse to start unless the caller passes
+    // `dangerouslyAllowBrowser: true`. The check is
+    //   typeof window !== 'undefined' && typeof window.document !== 'undefined' && typeof navigator !== 'undefined'
+    // Shadowing `navigator` with `undefined` in the bundle's lexical scope
+    // makes the third clause false, the SDK loads, and the extension's calls
+    // still go through our fetch proxy (which keeps the API key server-side
+    // anyway because requests are routed through the main process). Code
+    // that genuinely needs navigator can still reach it via
+    // `globalThis.navigator` or `window.navigator`.
     const fn = new Function(
       'exports',
       'require',
@@ -3731,6 +3741,7 @@ function loadExtensionExport(
       'clearTimeout',
       'requestAnimationFrame',
       'cancelAnimationFrame',
+      'navigator',
       '__scDynamicImport',
       executableCode
     );
@@ -3753,6 +3764,7 @@ function loadExtensionExport(
       trackClearTimeout,
       trackRaf,
       trackCancelRaf,
+      undefined, // navigator — see comment above
       scDynamicImport,
     );
 

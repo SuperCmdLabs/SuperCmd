@@ -157,6 +157,9 @@ const EXPLICIT_RAYCAST_TO_PHOSPHOR: Record<string, string[]> = {
   stopwatch: ['Timer'],
   wristwatch: ['Watch'],
   alarmringing: ['Alarm', 'BellRinging'],
+  // Raycast's `Temperature` doesn't exist in Phosphor; their thermometer icon
+  // is the right glyph (used by raycast/chatgpt for the temperature setting).
+  temperature: ['Thermometer'],
 };
 
 const phosphorExportKeys = Object.getOwnPropertyNames(Phosphor);

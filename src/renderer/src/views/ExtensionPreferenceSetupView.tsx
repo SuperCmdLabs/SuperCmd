@@ -72,15 +72,21 @@ export default function ExtensionPreferenceSetupView({
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Enter') return;
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-      if (hasBlockingMissing) return;
-      event.preventDefault();
-      handleContinue();
+      if (event.key === 'Enter') {
+        if (hasBlockingMissing) return;
+        event.preventDefault();
+        handleContinue();
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onBack();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [hasBlockingMissing, handleContinue]);
+  }, [hasBlockingMissing, handleContinue, onBack]);
 
   return (
     <>
