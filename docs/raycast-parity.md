@@ -13,7 +13,7 @@ _Shim: `src/renderer/src/raycast-api/index.tsx`._
 | Missing top-level in shim (FAIL) | 0 |
 | Extra top-level in shim (info) | 44 |
 | Namespaces with member gaps (FAIL) | 16 |
-| Total missing (top-level + members) | 568 |
+| Total missing (top-level + members) | 567 |
 
 ## Missing Top-Level Exports (FAIL)
 
@@ -23,11 +23,10 @@ _None — all top-level spec exports are present in the shim._
 
 ### `Action`
 
-Spec members: **16** · Shim members: **15**
+Spec members: **16** · Shim members: **16**
 
 **Missing in shim:**
 
-- `InstallMCPServer`
 - `Props`
 
 **Extra in shim (informational):**

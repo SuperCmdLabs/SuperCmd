@@ -52,7 +52,7 @@ export function createActionComponentRuntime(deps: ComponentDeps) {
   }
 
   const ActionPickDateWithType = Object.assign(createActionKindComponent('pickDate'), {
-    Type: { DateTime: 'datetime' as const, Date: 'date' as const },
+    Type: { DateTime: 'date_time' as const, Date: 'date' as const },
   });
 
   const Action = Object.assign(ActionComponent, {
@@ -62,13 +62,14 @@ export function createActionComponentRuntime(deps: ComponentDeps) {
     Push: createActionKindComponent('push'),
     SubmitForm: createActionKindComponent('submitForm'),
     Paste: createActionKindComponent('paste'),
-    ShowInFinder: ActionComponent,
+    ShowInFinder: createActionKindComponent('showInFinder'),
     OpenWith: createActionKindComponent('openWith'),
     Trash: createActionKindComponent('trash'),
     PickDate: ActionPickDateWithType,
     ToggleQuickLook: createActionKindComponent('toggleQuickLook'),
     CreateSnippet: createActionKindComponent('createSnippet'),
     CreateQuicklink: createActionKindComponent('createQuicklink'),
+    InstallMCPServer: createActionKindComponent('installMCPServer'),
     ToggleSidebar: createActionKindComponent('toggleSidebar'),
     Style: {
       Regular: 'regular' as const,

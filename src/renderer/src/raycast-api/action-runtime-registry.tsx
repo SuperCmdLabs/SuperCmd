@@ -247,6 +247,21 @@ export function createActionRegistryRuntime(deps: RegistryDeps) {
           props.onOpen?.();
           return;
         }
+        if (props.__actionKind === 'showInFinder' && props.path !== undefined) {
+          const path = Array.isArray(props.path) ? props.path[0] : props.path;
+          void (window as any).electron?.execCommand?.('open', ['-R', String(path)]);
+          props.onShow?.(props.path);
+          return;
+        }
+        if (props.__actionKind === 'installMCPServer') {
+          // SuperCmd does not host MCP servers itself. Surface a warning so
+          // extensions get clear feedback rather than silent no-ops.
+          console.warn(
+            '[supercmd] Action.InstallMCPServer is not supported. Server:',
+            props.server,
+          );
+          return;
+        }
         if (props.target && React.isValidElement(props.target)) {
           getGlobalNavigation().push(props.target);
           props.onPush?.();
@@ -296,6 +311,10 @@ export function createActionRegistryRuntime(deps: RegistryDeps) {
         return 'Create Snippet';
       case 'createQuicklink':
         return 'Create Quicklink';
+      case 'showInFinder':
+        return 'Show in Finder';
+      case 'installMCPServer':
+        return 'Install MCP Server';
       case 'toggleSidebar':
         return 'Toggle Sidebar';
       default:
