@@ -6,6 +6,9 @@
 import React, { useEffect, useState } from 'react';
 import { isRaycastIconName, renderPhosphorIcon } from './icon-runtime-phosphor';
 import { isEmojiOrSymbol, renderTintedAssetIcon, resolveIconSrc, resolveTintColor } from './icon-runtime-assets';
+import { RAYCAST_ICON_NAMES } from './raycast-icon-enum';
+
+type RaycastIconName = (typeof RAYCAST_ICON_NAMES)[number];
 
 const fileIconCache = new Map<string, string | null>();
 
@@ -50,11 +53,15 @@ function FileIcon({ filePath, className }: { filePath: string; className: string
   return <span className="text-center" style={{ fontSize: '0.875rem' }}>{isDirectory ? '📁' : '📄'}</span>;
 }
 
-export const Icon: Record<string, string> = new Proxy({} as Record<string, string>, {
+// Typed as the literal union of every Raycast icon name so consumers
+// (and the parity script) can see the keys. Runtime is still a Proxy
+// returning prop name as the value, so any future Raycast addition
+// works without an enum bump.
+export const Icon = new Proxy({} as Record<RaycastIconName, RaycastIconName>, {
   get(_target, prop: string) {
     return String(prop || '');
   },
-});
+}) as { readonly [K in RaycastIconName]: K };
 
 function isThemeAwareSourceObject(source: unknown): source is { light?: unknown; dark?: unknown } {
   return Boolean(source && typeof source === 'object' && ('light' in (source as any) || 'dark' in (source as any)));
@@ -208,26 +215,45 @@ export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?
   return renderPhosphorIcon('Circle', className) || <span className="opacity-50">•</span>;
 }
 
-export const Color: Record<string, string> = {
+export const Color = {
+  Blue: '#0A84FF',
+  Brown: '#A2845E',
+  Green: '#30D158',
+  Magenta: '#FF2D55',
+  Orange: '#FF9F0A',
+  Purple: '#BF5AF2',
+  Red: '#FF453A',
+  Yellow: '#FFD60A',
   PrimaryText: '#ffffff',
   SecondaryText: 'rgba(255,255,255,0.65)',
+  // Extras kept for SuperCmd-internal styling; not in spec.
   TertiaryText: 'rgba(255,255,255,0.45)',
   SelectionBackground: 'rgba(255,255,255,0.08)',
-  Green: '#30D158',
-  Red: '#FF453A',
-  Orange: '#FF9F0A',
-  Yellow: '#FFD60A',
-  Blue: '#0A84FF',
-  Purple: '#BF5AF2',
-  Magenta: '#FF2D55',
-};
+} as const;
+
+// Declaration-merge type members so `Color.ColorLike`, `Color.Dynamic`,
+// `Color.Raw` are addressable on the namespace, matching spec.
+export namespace Color {
+  export type ColorLike = import('@raycast/api').Color.ColorLike;
+  export type Dynamic = import('@raycast/api').Color.Dynamic;
+  export type Raw = import('@raycast/api').Color.Raw;
+}
 
 export const Image = {
   Mask: {
     Circle: 'circle',
     RoundedRectangle: 'roundedRectangle',
   },
-};
+} as const;
+
+export namespace Image {
+  export type ImageLike = import('@raycast/api').Image.ImageLike;
+  export type Source = import('@raycast/api').Image.Source;
+  export type URL = import('@raycast/api').Image.URL;
+  export type Mask = import('@raycast/api').Image.Mask;
+  export type Asset = import('@raycast/api').Image.Asset;
+  export type Fallback = import('@raycast/api').Image.Fallback;
+}
 
 export const Keyboard = {
   Shortcut: {

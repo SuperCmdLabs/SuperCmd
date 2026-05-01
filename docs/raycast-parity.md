@@ -12,8 +12,8 @@ _Shim: `src/renderer/src/raycast-api/index.tsx`._
 | Shim top-level exports | 190 |
 | Missing top-level in shim (FAIL) | 0 |
 | Extra top-level in shim (info) | 44 |
-| Namespaces with member gaps (FAIL) | 13 |
-| Total missing (top-level + members) | 550 |
+| Namespaces with member gaps (FAIL) | 1 |
+| Total missing (top-level + members) | 4 |
 
 ## Missing Top-Level Exports (FAIL)
 
@@ -23,82 +23,11 @@ _None — all top-level spec exports are present in the shim._
 
 ### `Action`
 
-Spec members: **16** · Shim members: **16**
-
-**Missing in shim:**
-
-- `Props`
+Spec members: **16** · Shim members: **17**
 
 **Extra in shim (informational):**
 
 - `ToggleSidebar`
-
-### `ActionPanel`
-
-Spec members: **5** · Shim members: **3**
-
-**Missing in shim:**
-
-- `Children`
-- `Props`
-
-### `Form`
-
-Spec members: **20** · Shim members: **0**
-
-> ⚠️ Shim type-level introspection returned 0 members. The runtime 
-> probably attaches members via mutation (e.g. `Object.assign` or 
-> `attachX(Component)`) that TS can't see at the type level. The 
-> "missing" list below is what *spec* exposes — verify against 
-> shim runtime behavior, not just types.
-
-**Missing in shim:**
-
-- `Checkbox`
-- `DatePicker`
-- `Description`
-- `Dropdown`
-- `DropdownItem`
-- `DropdownSection`
-- `Event`
-- `FilePicker`
-- `ItemProps`
-- `ItemReference`
-- `LinkAccessory`
-- `PasswordField`
-- `Props`
-- `Separator`
-- `TagPicker`
-- `TagPickerItem`
-- `TextArea`
-- `TextField`
-- `Value`
-- `Values`
-
-### `List`
-
-Spec members: **5** · Shim members: **4**
-
-**Missing in shim:**
-
-- `Props`
-
-### `Grid`
-
-Spec members: **9** · Shim members: **7**
-
-**Missing in shim:**
-
-- `AspectRatio`
-- `Props`
-
-### `Detail`
-
-Spec members: **2** · Shim members: **1**
-
-**Missing in shim:**
-
-- `Props`
 
 ### `MenuBarExtra`
 
@@ -110,77 +39,29 @@ Spec members: **6** · Shim members: **9**
 - `SectionProps`
 - `SubmenuProps`
 
-### `AI`
-
-Spec members: **4** · Shim members: **2**
-
-**Missing in shim:**
-
-- `AskOptions`
-- `Creativity`
-
 ### `Toast`
 
-Spec members: **11** · Shim members: **11**
-
-**Missing in shim:**
-
-- `ActionOptions`
+Spec members: **11** · Shim members: **12**
 
 **Extra in shim (informational):**
 
 - `dismissActive`
 
-### `OAuth`
-
-Spec members: **10** · Shim members: **4**
-
-**Missing in shim:**
-
-- `AuthorizationOptions`
-- `AuthorizationRequest`
-- `AuthorizationRequestOptions`
-- `AuthorizationRequestURLParams`
-- `AuthorizationResponse`
-- `TokenSetOptions`
-
 ### `Color`
 
-Spec members: **13** · Shim members: **0**
+Spec members: **13** · Shim members: **15**
 
-> ⚠️ Shim type-level introspection returned 0 members. The runtime 
-> probably attaches members via mutation (e.g. `Object.assign` or 
-> `attachX(Component)`) that TS can't see at the type level. The 
-> "missing" list below is what *spec* exposes — verify against 
-> shim runtime behavior, not just types.
+**Extra in shim (informational):**
 
-**Missing in shim:**
-
-- `Blue`
-- `Brown`
-- `ColorLike`
-- `Dynamic`
-- `Green`
-- `Magenta`
-- `Orange`
-- `PrimaryText`
-- `Purple`
-- `Raw`
-- `Red`
-- `SecondaryText`
-- `Yellow`
+- `SelectionBackground`
+- `TertiaryText`
 
 ### `Image`
 
-Spec members: **10** · Shim members: **1**
+Spec members: **10** · Shim members: **6**
 
 **Missing in shim:**
 
-- `Asset`
-- `Fallback`
-- `ImageLike`
-- `Source`
-- `URL`
 - `fallback`
 - `mask`
 - `source`
@@ -201,77 +82,6 @@ Spec members: **3** · Shim members: **4**
 **Extra in shim (informational):**
 
 - `ContentOptions`
-
-### `Icon`
-
-Spec members: **478** · Shim members: **0**
-
-> ⚠️ Shim type-level introspection returned 0 members. The runtime 
-> probably attaches members via mutation (e.g. `Object.assign` or 
-> `attachX(Component)`) that TS can't see at the type level. The 
-> "missing" list below is what *spec* exposes — verify against 
-> shim runtime behavior, not just types.
-
-**Missing in shim:**
-
-- `AddPerson`
-- `Airplane`
-- `AirplaneFilled`
-- `AirplaneLanding`
-- `AirplaneTakeoff`
-- `Airpods`
-- `Alarm`
-- `AlarmRinging`
-- `AlignCentre`
-- `AlignLeft`
-- `AlignRight`
-- `AmericanFootball`
-- `Anchor`
-- `AppWindow`
-- `AppWindowGrid2x2`
-- `AppWindowGrid3x3`
-- `AppWindowList`
-- `AppWindowSidebarLeft`
-- `AppWindowSidebarRight`
-- `ArrowClockwise`
-- `ArrowCounterClockwise`
-- `ArrowDown`
-- `ArrowDownCircle`
-- `ArrowDownCircleFilled`
-- `ArrowLeft`
-- `ArrowLeftCircle`
-- `ArrowLeftCircleFilled`
-- `ArrowNe`
-- `ArrowRight`
-- `ArrowRightCircle`
-- `…and 448 more`
-
-### `environment`
-
-Spec members: **14** · Shim members: **0**
-
-> ⚠️ Shim type-level introspection returned 0 members. The runtime 
-> probably attaches members via mutation (e.g. `Object.assign` or 
-> `attachX(Component)`) that TS can't see at the type level. The 
-> "missing" list below is what *spec* exposes — verify against 
-> shim runtime behavior, not just types.
-
-**Missing in shim:**
-
-- `appearance`
-- `assetsPath`
-- `canAccess`
-- `commandMode`
-- `commandName`
-- `extensionName`
-- `isDevelopment`
-- `launchContext`
-- `launchType`
-- `ownerOrAuthorName`
-- `raycastVersion`
-- `supportPath`
-- `textSize`
-- `theme`
 
 ## Extra Top-Level Exports in Shim (informational)
 

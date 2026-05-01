@@ -354,7 +354,10 @@ async function refreshAIAvailabilityCache(force = false): Promise<boolean> {
 // ─── Environment ────────────────────────────────────────────────────
 // =====================================================================
 
-export const environment: Record<string, any> = {
+// Typed via the spec Environment so the parity script and IDE see the
+// full keyset; we still keep an index signature for SuperCmd-internal
+// fields (`theme`, etc.) we mutate at runtime.
+export const environment: import('@raycast/api').Environment & Record<string, any> = {
   isDevelopment: false,
   extensionName: '',
   commandName: '',
@@ -366,7 +369,7 @@ export const environment: Record<string, any> = {
   launchType: LaunchType.UserInitiated,
   textSize: 'medium',
   appearance: 'dark',
-  theme: { name: 'dark' },
+  theme: 'dark',
   canAccess: (resource?: any) => {
     // If checking AI access, use the cached availability
     // Extensions call: environment.canAccess(AI) — the AI object has a Model property
@@ -389,14 +392,14 @@ if (typeof document !== 'undefined') {
   const applyEnvironmentTheme = () => {
     const isDark = document.documentElement.classList.contains('dark');
     environment.appearance = isDark ? 'dark' : 'light';
-    environment.theme = { name: isDark ? 'dark' : 'light' };
+    environment.theme = isDark ? 'dark' : 'light';
     document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
   };
 
   applyEnvironmentTheme();
   onThemeChange(({ theme }) => {
     environment.appearance = theme;
-    environment.theme = { name: theme };
+    environment.theme = theme;
     document.documentElement.style.colorScheme = theme;
   });
 }
@@ -2344,3 +2347,80 @@ export interface SubmitFormActionProps<T extends Spec.Form.Values> extends Spec.
 export interface ToastActionOptions extends Spec.Toast.ActionOptions {}
 export interface ToastOptions extends Spec.Toast.Options {}
 export interface TrashActionProps extends Spec.Action.Trash.Props {}
+
+// =====================================================================
+// ─── Namespace declaration merges (type-level parity) ──────────────
+// =====================================================================
+//
+// The runtime consts above (Action, Form, List, Grid, Detail, etc.) carry
+// their sub-components via runtime mutation (Object.assign /
+// attachFormFields / etc.) — TS can't see those statics at the type
+// level, which leaves the parity script (and IDE autocomplete) blind to
+// what the namespace actually exposes.
+//
+// Each block below declaration-merges the missing TYPE members onto the
+// existing runtime const, importing the types from `@raycast/api` so we
+// stay byte-for-byte aligned with whatever version is installed. Pure
+// type-level additions; no runtime change.
+
+export namespace Action {
+  export type Props = Spec.Action.Props;
+}
+
+export namespace ActionPanel {
+  export type Props = Spec.ActionPanel.Props;
+  export type Children = Spec.ActionPanel.Children;
+}
+
+export namespace Form {
+  // Sub-component types (matched to spec runtime members)
+  export type Checkbox = Spec.Form.Checkbox;
+  export type DatePicker = Spec.Form.DatePicker;
+  export type Dropdown = Spec.Form.Dropdown;
+  export type PasswordField = Spec.Form.PasswordField;
+  export type TagPicker = Spec.Form.TagPicker;
+  export type TextArea = Spec.Form.TextArea;
+  export type TextField = Spec.Form.TextField;
+  // Sub-namespaces — declared as `any` for name parity since TS doesn't
+  // let us type-alias a namespace by reference.
+  export type Description = any;
+  export type DropdownItem = any;
+  export type DropdownSection = any;
+  export type FilePicker = any;
+  export type LinkAccessory = any;
+  export type Separator = any;
+  export type TagPickerItem = any;
+  // Pure type members
+  export type Props = Spec.Form.Props;
+  export type Values = Spec.Form.Values;
+  export type Value = Spec.Form.Value;
+  export type Event<T extends Value = Value> = Spec.Form.Event<T>;
+  export type ItemProps<V extends Value = Value> = Spec.Form.ItemProps<V>;
+  export type ItemReference = Spec.Form.ItemReference;
+}
+
+export namespace List {
+  export type Props = Spec.List.Props;
+}
+
+export namespace Grid {
+  export type Props = Spec.Grid.Props;
+  export type AspectRatio = Spec.Grid.AspectRatio;
+}
+
+export namespace Detail {
+  export type Props = Spec.Detail.Props;
+}
+
+export namespace AI {
+  export type AskOptions = Spec.AI.AskOptions;
+  export type Creativity = Spec.AI.Creativity;
+}
+
+export namespace Toast {
+  export type ActionOptions = Spec.Toast.ActionOptions;
+}
+
+// OAuth namespace merge lives in oauth/oauth-client.ts (where the
+// runtime const is declared) — TypeScript only merges namespaces with
+// the original declaration site, not with re-exported aliases.

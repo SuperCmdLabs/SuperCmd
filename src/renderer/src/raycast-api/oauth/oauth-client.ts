@@ -164,3 +164,14 @@ export const OAuth = {
 export function buildDefaultRedirectUri(redirectMethod?: string, extensionName?: string): string {
   return buildOAuthRedirectUri(redirectMethod || 'web', extensionName);
 }
+
+// Declaration-merge spec namespace types onto our runtime OAuth const so
+// the parity script and IDE see the full namespace shape.
+export namespace OAuth {
+  export type AuthorizationOptions = import('@raycast/api').OAuth.AuthorizationOptions;
+  export type AuthorizationRequest = import('@raycast/api').OAuth.AuthorizationRequest;
+  export type AuthorizationRequestOptions = import('@raycast/api').OAuth.AuthorizationRequestOptions;
+  export type AuthorizationRequestURLParams = import('@raycast/api').OAuth.AuthorizationRequestURLParams;
+  export type AuthorizationResponse = import('@raycast/api').OAuth.AuthorizationResponse;
+  export type TokenSetOptions = import('@raycast/api').OAuth.TokenSetOptions;
+}
