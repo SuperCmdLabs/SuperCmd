@@ -12,8 +12,8 @@ _Shim: `src/renderer/src/raycast-api/index.tsx`._
 | Shim top-level exports | 190 |
 | Missing top-level in shim (FAIL) | 0 |
 | Extra top-level in shim (info) | 44 |
-| Namespaces with member gaps (FAIL) | 16 |
-| Total missing (top-level + members) | 567 |
+| Namespaces with member gaps (FAIL) | 15 |
+| Total missing (top-level + members) | 555 |
 
 ## Missing Top-Level Exports (FAIL)
 
@@ -121,35 +121,15 @@ Spec members: **4** · Shim members: **2**
 
 ### `Toast`
 
-Spec members: **15** · Shim members: **41**
+Spec members: **11** · Shim members: **11**
 
 **Missing in shim:**
 
 - `ActionOptions`
-- `callbacks`
-- `id`
-- `options`
-- `update`
 
 **Extra in shim (informational):**
 
-- `closeActionMenu`
 - `dismissActive`
-- `executeAction`
-- `getActionShortcutLabel`
-- `getClassName`
-- `matchesActionShortcut`
-- `normalizeStyle`
-- `openActionMenu`
-- `refresh`
-- `renderActionMenu`
-- `renderToastBody`
-- `resolveInlineHost`
-- `syncAutoHideTimer`
-- `toggleActionMenu`
-- `updateActionMenuPosition`
-- `updateActions`
-- `updateKeyboardHandler`
 
 ### `OAuth`
 
@@ -163,32 +143,6 @@ Spec members: **10** · Shim members: **4**
 - `AuthorizationRequestURLParams`
 - `AuthorizationResponse`
 - `TokenSetOptions`
-
-### `Cache`
-
-Spec members: **22** · Shim members: **22**
-
-**Missing in shim:**
-
-- `DEFAULT_CAPACITY`
-- `STORAGE_DIRECTORY_NAME`
-- `directory`
-- `journal`
-- `maintainCapacity`
-- `namespace`
-- `storage`
-- `storageDirectory`
-
-**Extra in shim (informational):**
-
-- `evictLRU`
-- `getCurrentSize`
-- `getItemKey`
-- `loadFromStorage`
-- `lruOrder`
-- `saveToStorage`
-- `storageKey`
-- `updateLRU`
 
 ### `Color`
 

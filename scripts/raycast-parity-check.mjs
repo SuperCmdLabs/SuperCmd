@@ -126,6 +126,22 @@ function isPrivateImpl(name) {
   return name.startsWith('_');
 }
 
+/**
+ * Returns true if the symbol's first declaration has TS `private` keyword.
+ * Used to skip class members marked private on the spec side (e.g. Cache's
+ * `directory`, `journal`, `storage`) — they leak through getProperties()
+ * but are not part of the public API contract.
+ */
+function isTsPrivate(sym) {
+  if (!sym) return false;
+  const decls = sym.getDeclarations() || [];
+  for (const decl of decls) {
+    const flags = ts.getCombinedModifierFlags(decl);
+    if (flags & ts.ModifierFlags.Private) return true;
+  }
+  return false;
+}
+
 const MAX_LIST_ITEMS = 30;
 function capList(items) {
   if (items.length <= MAX_LIST_ITEMS) return items;
@@ -155,7 +171,9 @@ function getMembers(sym) {
       const type = checker.getTypeOfSymbolAtLocation(s, decl);
       if (type) {
         for (const prop of type.getProperties()) {
-          if (!isNoise(prop.name)) names.add(prop.name);
+          if (isNoise(prop.name)) continue;
+          if (isTsPrivate(prop)) continue;
+          names.add(prop.name);
         }
       }
     } catch { /* ignore */ }
@@ -163,17 +181,21 @@ function getMembers(sym) {
 
   // 2. Namespace block exports (declare namespace X { export ... })
   if (s.exports) {
-    s.exports.forEach((_value, key) => {
+    s.exports.forEach((value, key) => {
       const k = String(key);
-      if (k && k !== 'default' && !isNoise(k)) names.add(k);
+      if (!k || k === 'default' || isNoise(k)) return;
+      if (isTsPrivate(value)) return;
+      names.add(k);
     });
   }
 
   // 3. Class members (instance + static via separate iteration)
   if (s.members) {
-    s.members.forEach((_value, key) => {
+    s.members.forEach((value, key) => {
       const k = String(key);
-      if (k && !isNoise(k)) names.add(k);
+      if (!k || isNoise(k)) return;
+      if (isTsPrivate(value)) return;
+      names.add(k);
     });
   }
 

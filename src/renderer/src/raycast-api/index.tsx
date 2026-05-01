@@ -1377,18 +1377,31 @@ export namespace Cache {
 }
 
 export class Cache {
+  static get STORAGE_DIRECTORY_NAME(): string {
+    return 'Cache';
+  }
+  static get DEFAULT_CAPACITY(): number {
+    return 10 * 1024 * 1024;
+  }
+
   private storageKey: string;
   private capacity: number;
   private subscribers: Set<Cache.Subscriber> = new Set();
   private lruOrder: string[] = []; // Track access order for LRU
 
   constructor(options: Cache.Options = {}) {
-    this.capacity = options.capacity ?? 10 * 1024 * 1024; // 10MB default
+    this.capacity = options.capacity ?? Cache.DEFAULT_CAPACITY;
     const namespace = options.namespace ?? 'default';
     this.storageKey = `sc-cache-${namespace}`;
 
     // Load existing cache from localStorage
     this.loadFromStorage();
+  }
+
+  // SuperCmd persists the cache through localStorage rather than disk, so
+  // the path is synthetic. Extensions only ever read this for diagnostics.
+  get storageDirectory(): string {
+    return `localStorage://${this.storageKey}`;
   }
 
   private loadFromStorage(): void {
