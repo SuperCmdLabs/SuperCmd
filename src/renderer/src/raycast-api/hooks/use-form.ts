@@ -48,14 +48,17 @@ export function useForm<T extends Record<string, any> = Record<string, any>>(opt
       const rule = options.validation[key];
       if (!rule) continue;
 
+      const v = values[key];
       let error: string | undefined | null;
       if (rule === FormValidation.Required) {
-        const v = values[key];
         if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) {
           error = 'This field is required';
         }
       } else if (typeof rule === 'function') {
-        error = rule(values[key]);
+        // Custom validators don't run against empty/optional fields — match
+        // onBlur behavior. Required-ness is expressed via FormValidation.Required.
+        if (v === undefined || v === null || v === '') continue;
+        error = rule(v);
       }
 
       if (error) {
@@ -101,14 +104,20 @@ export function useForm<T extends Record<string, any> = Record<string, any>>(opt
           const rule = options.validation?.[key as keyof T];
           if (!rule) return;
 
+          const v = values[key as keyof T];
           let err: string | undefined | null;
           if (rule === FormValidation.Required) {
-            const v = values[key as keyof T];
             if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) {
               err = 'This field is required';
             }
           } else if (typeof rule === 'function') {
-            err = rule(values[key as keyof T]);
+            // Match Raycast's behavior: don't run custom validators against
+            // empty/untouched fields on blur. Extensions like raycast/timers
+            // declare validators like `(v) => isNaN(parseInt(v)) ? ... : ...`
+            // that would falsely flag an unfilled field. Submit-time validation
+            // still runs the rule (see `validate` above).
+            if (v === undefined || v === null || v === '') return;
+            err = rule(v);
           }
 
           if (err) {

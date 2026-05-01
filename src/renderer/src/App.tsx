@@ -1066,12 +1066,9 @@ const App: React.FC = () => {
         if (hydrated.mode === 'no-view') {
           queueNoViewBundleRun(hydrated, 'background');
         }
-        return;
-      }
-
-      // Hidden menu-bar runners should not hijack the launcher by forcing
-      // view commands into the foreground (e.g. pomodoro auto transitions).
-      if (sourceMode === 'menu-bar' && hydrated.mode === 'view') {
+        // Background launches from menu-bar runners (e.g. pomodoro auto
+        // transitions) must not hijack the launcher into a view command —
+        // the user didn't ask for it. Silent drop.
         return;
       }
 
@@ -1098,7 +1095,15 @@ const App: React.FC = () => {
         return;
       }
 
+      // Bundles dispatched from a menu-bar runner (e.g. clicking a tray menu
+      // item that calls launchCommand) reach here while the launcher window
+      // is hidden. expandLauncherForDirectLaunch only resizes — it does not
+      // show the window — so we must explicitly call showWindow() for these
+      // user-initiated launches, otherwise the click silently no-ops.
+      const needsWindowShow = sourceMode === 'menu-bar' && hydrated.mode !== 'no-view';
+
       if (shouldOpenCommandSetup(hydrated)) {
+        if (needsWindowShow) void window.electron.showWindow();
         expandLauncherForDirectLaunch();
         setShowFileSearch(false);
         setExtensionPreferenceSetup({
@@ -1109,6 +1114,7 @@ const App: React.FC = () => {
       } else if (hydrated.mode === 'no-view') {
         queueNoViewBundleRun(hydrated, 'userInitiated');
       } else {
+        if (needsWindowShow) void window.electron.showWindow();
         expandLauncherForDirectLaunch();
         setShowFileSearch(false);
         setExtensionView(hydrated);

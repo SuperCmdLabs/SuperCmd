@@ -151,6 +151,12 @@ const EXPLICIT_RAYCAST_TO_PHOSPHOR: Record<string, string[]> = {
   xmarkcircle: ['XCircle'],
   xmark: ['X'],
   xmarkcirclefilled: ['XCircle'],
+  // Phosphor has no Stopwatch; its `Timer` is the stopwatch-shaped one. Without
+  // this, the fuzzy matcher resolves "Stopwatch" via its "stop" substring rule
+  // and renders the square Stop icon (the bug seen in the timers extension).
+  stopwatch: ['Timer'],
+  wristwatch: ['Watch'],
+  alarmringing: ['Alarm', 'BellRinging'],
 };
 
 const phosphorExportKeys = Object.getOwnPropertyNames(Phosphor);

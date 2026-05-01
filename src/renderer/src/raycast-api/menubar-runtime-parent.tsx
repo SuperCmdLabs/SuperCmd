@@ -100,6 +100,11 @@ export function MenuBarExtraComponent({ children, icon, title, tooltip, isLoadin
           title: item.title || '',
           subtitle: item.subtitle,
           tooltip: item.tooltip,
+          // Raycast convention: a MenuBarExtra.Item without onAction is a
+          // dimmed informational label (e.g. "Click running stopwatch to
+          // pause"). Native NSMenu renders `enabled: false` items as greyed
+          // out and non-interactive, matching that appearance.
+          disabled: !item.onAction,
           ...iconPayload,
         };
 
@@ -122,14 +127,31 @@ export function MenuBarExtraComponent({ children, icon, title, tooltip, isLoadin
 
       for (const item of allItems) {
         const sectionChanged = item.sectionId !== prevSectionId;
-        if (sectionChanged && prevSectionId != null) {
-          serialized.push({ type: 'separator' });
-        }
         if (sectionChanged && item.sectionTitle) {
+          // Section title — dimmed, non-interactive label.
           serialized.push({ type: 'item', title: item.sectionTitle, disabled: true });
+        } else if (sectionChanged && prevSectionId != null) {
+          // Untitled section boundary — plain separator.
+          serialized.push({ type: 'separator' });
         }
         prevSectionId = item.sectionId;
         serialized.push(await serializeItem(item));
+      }
+
+      // Insert a thin separator wherever a dimmed item is immediately followed
+      // by an enabled item. This produces Raycast's layout for both section
+      // titles and bare informational labels — title/label on top, divider,
+      // then the section's actionable items.
+      const dividedSerialized: any[] = [];
+      for (let i = 0; i < serialized.length; i += 1) {
+        const cur = serialized[i];
+        const next = serialized[i + 1];
+        dividedSerialized.push(cur);
+        const curIsDimmedItem = cur?.type === 'item' && cur?.disabled === true;
+        const nextIsEnabledItem = next?.type === 'item' && next?.disabled !== true;
+        if (curIsDimmedItem && nextIsEnabledItem) {
+          dividedSerialized.push({ type: 'separator' });
+        }
       }
 
       const trayIconPayload =
@@ -147,7 +169,7 @@ export function MenuBarExtraComponent({ children, icon, title, tooltip, isLoadin
         fallbackIconDataUrl: extInfo.extensionIconDataUrl || '',
         title: title || '',
         tooltip: tooltip || '',
-        items: serialized,
+        items: dividedSerialized,
       });
     };
 

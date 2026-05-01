@@ -10,6 +10,7 @@ import { attachFormFields } from './form-runtime-fields';
 import {
   FormContext,
   setCurrentFormErrors,
+  setCurrentFormPlaceholders,
   setCurrentFormValues,
 } from './form-runtime-context';
 import type { ExtractedAction } from './action-runtime';
@@ -53,6 +54,7 @@ export function createFormRuntime(deps: FormRuntimeDeps) {
     const extInfo = useContext(ExtensionInfoReactContext);
     const [values, setValues] = useState<Record<string, any>>(draftValues || {});
     const [errors, setErrors] = useState<Record<string, string>>({});
+    const [placeholders, setPlaceholders] = useState<Record<string, string>>({});
     const [showActions, setShowActions] = useState(false);
     const { pop } = useNavigation();
 
@@ -78,10 +80,20 @@ export function createFormRuntime(deps: FormRuntimeDeps) {
       });
     }, []);
 
+    const setPlaceholder = useCallback((id: string, placeholder: string) => {
+      setPlaceholders((previous) => {
+        if (previous[id] === placeholder) return previous;
+        const next = { ...previous, [id]: placeholder };
+        setCurrentFormPlaceholders(next);
+        return next;
+      });
+    }, []);
+
     useEffect(() => {
       setCurrentFormValues(values);
       setCurrentFormErrors(errors);
-    }, [values, errors]);
+      setCurrentFormPlaceholders(placeholders);
+    }, [values, errors, placeholders]);
 
     const { collectedActions: formActions, registryAPI: formActionRegistry } = useCollectedActions();
     const primaryAction = formActions[0];
@@ -120,7 +132,10 @@ export function createFormRuntime(deps: FormRuntimeDeps) {
       return () => window.removeEventListener('keydown', handler);
     }, [formActions, isMetaK, matchesShortcut, primaryAction]);
 
-    const contextValue = useMemo(() => ({ values, setValue, errors, setError }), [errors, setError, setValue, values]);
+    const contextValue = useMemo(
+      () => ({ values, setValue, errors, setError, placeholders, setPlaceholder }),
+      [errors, placeholders, setError, setPlaceholder, setValue, values],
+    );
     const handleActionExecute = useCallback((action: ExtractedAction) => {
       setShowActions(false);
       action.execute();

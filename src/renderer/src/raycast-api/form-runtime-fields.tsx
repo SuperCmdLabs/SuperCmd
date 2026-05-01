@@ -7,9 +7,29 @@
 import React, { useContext, useEffect, useRef } from 'react';
 import { FormContext } from './form-runtime-context';
 
-function useSeedFormDefault(id: string | undefined, defaultValue: any, controlled: boolean) {
+function useRegisterFormPlaceholder(id: string | undefined, placeholder: any) {
+  const form = useContext(FormContext);
+  useEffect(() => {
+    if (!id) return;
+    if (typeof placeholder !== 'string' || placeholder === '') return;
+    form.setPlaceholder?.(id, placeholder);
+  }, [id, placeholder, form]);
+}
+
+function useSeedFormDefault(
+  id: string | undefined,
+  defaultValue: any,
+  controlled: boolean,
+  onChange?: (value: any) => void,
+) {
   const form = useContext(FormContext);
   const seededRef = useRef(false);
+  // Keep the latest onChange in a ref so re-renders that pass a fresh
+  // function identity don't retrigger the seed effect.
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
   useEffect(() => {
     if (seededRef.current) return;
     if (controlled) return;
@@ -18,6 +38,11 @@ function useSeedFormDefault(id: string | undefined, defaultValue: any, controlle
     if (form.values[id] !== undefined) return;
     seededRef.current = true;
     form.setValue(id, defaultValue);
+    // Also propagate to the parent's onChange. Hooks like useForm hold their
+    // own values store; without this they never see the seeded default and
+    // their validators run against undefined (e.g. parseInt(undefined) → NaN
+    // → "must be a number" errors on fields the user never touched).
+    onChangeRef.current?.(defaultValue);
   }, [id, defaultValue, controlled, form]);
 }
 
@@ -52,7 +77,8 @@ function FormFieldRow({
 export function attachFormFields(FormComponent: any) {
   FormComponent.TextField = ({ id, title, placeholder, value, onChange, onBlur, onFocus, defaultValue, error, info, autoFocus }: any) => {
     const form = useContext(FormContext);
-    useSeedFormDefault(id, defaultValue, value !== undefined);
+    useSeedFormDefault(id, defaultValue, value !== undefined, onChange);
+    useRegisterFormPlaceholder(id, placeholder);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
     const fieldError = error ?? form.errors[id];
 
@@ -80,7 +106,8 @@ export function attachFormFields(FormComponent: any) {
 
   FormComponent.TextArea = ({ id, title, placeholder, value, onChange, onBlur, onFocus, defaultValue, error }: any) => {
     const form = useContext(FormContext);
-    useSeedFormDefault(id, defaultValue, value !== undefined);
+    useSeedFormDefault(id, defaultValue, value !== undefined, onChange);
+    useRegisterFormPlaceholder(id, placeholder);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
     const fieldError = error ?? form.errors[id];
 
@@ -107,7 +134,8 @@ export function attachFormFields(FormComponent: any) {
 
   FormComponent.PasswordField = ({ id, title, placeholder, value, onChange, onBlur, onFocus, defaultValue, error, info }: any) => {
     const form = useContext(FormContext);
-    useSeedFormDefault(id, defaultValue, value !== undefined);
+    useSeedFormDefault(id, defaultValue, value !== undefined, onChange);
+    useRegisterFormPlaceholder(id, placeholder);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
     const fieldError = error ?? form.errors[id];
     const [showPassword, setShowPassword] = React.useState(false);
@@ -154,7 +182,7 @@ export function attachFormFields(FormComponent: any) {
 
   FormComponent.Checkbox = ({ id, title, label, value, onChange, defaultValue, error }: any) => {
     const form = useContext(FormContext);
-    useSeedFormDefault(id, defaultValue, value !== undefined);
+    useSeedFormDefault(id, defaultValue, value !== undefined, onChange);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? false;
     const fieldError = error ?? form.errors[id];
 
@@ -177,7 +205,7 @@ export function attachFormFields(FormComponent: any) {
   FormComponent.Dropdown = Object.assign(
     ({ id, title, children, value, onChange, defaultValue, error }: any) => {
       const form = useContext(FormContext);
-      useSeedFormDefault(id, defaultValue, value !== undefined);
+      useSeedFormDefault(id, defaultValue, value !== undefined, onChange);
       const fieldValue = value ?? form.values[id] ?? defaultValue ?? '';
       const fieldError = error ?? form.errors[id];
 
@@ -258,7 +286,7 @@ export function attachFormFields(FormComponent: any) {
     error,
   }: any) => {
     const form = useContext(FormContext);
-    useSeedFormDefault(id, defaultValue, value !== undefined);
+    useSeedFormDefault(id, defaultValue, value !== undefined, onChange);
     const fieldValue = value ?? form.values[id] ?? defaultValue ?? [];
     const fieldError = error ?? form.errors[id];
     const files = Array.isArray(fieldValue) ? fieldValue : fieldValue ? [fieldValue] : [];

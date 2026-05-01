@@ -3296,6 +3296,31 @@ function ensureGlobals() {
 }
 
 /**
+ * Per-ExtensionView registry of timer handles created by the extension's
+ * sandboxed setInterval/setTimeout/requestAnimationFrame. Cleared on unmount
+ * so a buggy extension (e.g. raycast/timers) cannot leak timers + retained
+ * fibers into the host renderer.
+ */
+export interface TimerRegistry {
+  intervals: Set<number>;
+  timeouts: Set<number>;
+  rafs: Set<number>;
+}
+
+export function createTimerRegistry(): TimerRegistry {
+  return { intervals: new Set(), timeouts: new Set(), rafs: new Set() };
+}
+
+export function clearTimerRegistry(registry: TimerRegistry): void {
+  registry.intervals.forEach((id) => window.clearInterval(id));
+  registry.timeouts.forEach((id) => window.clearTimeout(id));
+  registry.rafs.forEach((id) => window.cancelAnimationFrame(id));
+  registry.intervals.clear();
+  registry.timeouts.clear();
+  registry.rafs.clear();
+}
+
+/**
  * Execute extension code and extract the default export.
  * Returns either a React component or a raw function (for no-view commands).
  *
@@ -3305,7 +3330,8 @@ function ensureGlobals() {
  */
 function loadExtensionExport(
   code: string,
-  extensionPath?: string
+  extensionPath?: string,
+  timerRegistry?: TimerRegistry
 ): Function | null {
   const patchSchemeDynamicImports = (sourceCode: string): string => {
     // Extension bundles may emit dynamic imports for native Raycast bridges
@@ -3577,6 +3603,45 @@ function loadExtensionExport(
       throw new Error(`Unsupported dynamic import in extension runtime: ${id}`);
     };
 
+    // Sandboxed timer APIs — passed as named parameters so the extension's
+    // bundle resolves bare `setInterval`/`setTimeout`/`requestAnimationFrame`
+    // references against this scope instead of the host `window`. Handles are
+    // tracked in `timerRegistry` so the consumer (ExtensionView) can clear
+    // anything still pending on unmount, defending against extensions that
+    // forget their own cleanup (e.g. raycast/timers).
+    const trackInterval = (cb: any, ms?: any, ...rest: any[]) => {
+      const id = window.setInterval(cb as any, ms as any, ...rest);
+      timerRegistry?.intervals.add(id);
+      return id;
+    };
+    const trackClearInterval = (id: any) => {
+      if (typeof id === 'number') timerRegistry?.intervals.delete(id);
+      window.clearInterval(id);
+    };
+    const trackTimeout = (cb: any, ms?: any, ...rest: any[]) => {
+      const id = window.setTimeout(cb as any, ms as any, ...rest);
+      timerRegistry?.timeouts.add(id);
+      return id;
+    };
+    const trackClearTimeout = (id: any) => {
+      if (typeof id === 'number') timerRegistry?.timeouts.delete(id);
+      window.clearTimeout(id);
+    };
+    const trackRaf = (cb: FrameRequestCallback) => {
+      const id = window.requestAnimationFrame(cb);
+      timerRegistry?.rafs.add(id);
+      return id;
+    };
+    const trackCancelRaf = (id: any) => {
+      if (typeof id === 'number') timerRegistry?.rafs.delete(id);
+      window.cancelAnimationFrame(id);
+    };
+    // setImmediate / clearImmediate are Node-isms not on `window` — polyfill
+    // via setTimeout(0) and route through the same registry.
+    const trackSetImmediate = (cb: Function, ...args: any[]) =>
+      trackTimeout(() => cb(...args), 0);
+    const trackClearImmediate = (id: any) => trackClearTimeout(id);
+
     // Execute the CJS bundle in a function scope.
     // We pass all the standard CJS arguments plus `process`, `Buffer`,
     // and `global` to ensure they are always in scope even when the
@@ -3593,6 +3658,12 @@ function loadExtensionExport(
       'globalThis',
       'setImmediate',
       'clearImmediate',
+      'setInterval',
+      'clearInterval',
+      'setTimeout',
+      'clearTimeout',
+      'requestAnimationFrame',
+      'cancelAnimationFrame',
       '__scDynamicImport',
       executableCode
     );
@@ -3607,8 +3678,14 @@ function loadExtensionExport(
       bundleBuffer,
       globalThis,
       globalThis,
-      (cb: Function, ...args: any[]) => setTimeout(() => cb(...args), 0),
-      clearTimeout,
+      trackSetImmediate,
+      trackClearImmediate,
+      trackInterval,
+      trackClearInterval,
+      trackTimeout,
+      trackClearTimeout,
+      trackRaf,
+      trackCancelRaf,
       scDynamicImport,
     );
 
@@ -3710,6 +3787,10 @@ const NoViewRunner: React.FC<{
           }
           setStatus('error');
           setErrorMsg(e?.message || 'Command failed');
+          // Mirror the success path — a thrown no-view command must still
+          // dismiss itself, otherwise the bundle + React subtree stay in
+          // backgroundNoViewRuns forever and accumulate on every interval tick.
+          closeTimerRef.current = window.setTimeout(() => onCloseRef.current(), 1500);
         }
       }
     })();
@@ -3845,13 +3926,30 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
     setExtensionContext(extensionCtx);
   }, [extensionCtx]);
 
+  // Per-instance timer registry: any setInterval/setTimeout/requestAnimationFrame
+  // created by the extension's bundle is recorded here. On unmount we force-clear
+  // anything still pending so a buggy extension cannot leak DOMTimers + retained
+  // React fibers into the host renderer.
+  const timerRegistryRef = useRef<TimerRegistry>();
+  if (!timerRegistryRef.current) timerRegistryRef.current = createTimerRegistry();
+  useEffect(() => {
+    return () => {
+      if (timerRegistryRef.current) clearTimerRegistry(timerRegistryRef.current);
+    };
+  }, []);
+
   // Load the extension's default export (skip if there was a build error)
   const ExtExport = useMemo(() => {
     if (buildError || !code) return null;
+    // If the bundle is being re-evaluated (deps changed), drop any timers from
+    // the prior evaluation before the new one starts producing more.
+    if (timerRegistryRef.current) clearTimerRegistry(timerRegistryRef.current);
     // Module scope code can call getPreferenceValues() immediately.
     // Load under the extension's scoped context so other async extension work
     // cannot leak a different context into this bundle.
-    return withExtensionContext(extensionCtx, () => loadExtensionExport(code, extensionPath));
+    return withExtensionContext(extensionCtx, () =>
+      loadExtensionExport(code, extensionPath, timerRegistryRef.current)
+    );
   }, [code, buildError, extensionCtx, extensionPath]);
 
   // Is this a no-view command? Trust the mode from package.json.
