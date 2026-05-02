@@ -1025,18 +1025,26 @@ export function getInstalledExtensionNames(): string[] {
  *   1. PRIMARY: Download pre-built bundle from API (no git/npm needed)
  *   2. FALLBACK: git sparse-checkout + npm install (if API returns non-2xx)
  */
-export async function installExtension(name: string): Promise<boolean> {
+export async function installExtension(
+  name: string,
+  options?: { skipBundle?: boolean },
+): Promise<boolean> {
   if (!/^[A-Za-z0-9._-]+$/.test(String(name || ''))) {
     console.error(`Invalid extension name: "${name}"`);
     return false;
   }
 
-  // 1. FASTEST: Pre-built bundle from S3 (~2-3s, no npm/bun/esbuild needed)
-  try {
-    const success = await installExtensionFromBundle(name);
-    if (success) return true;
-  } catch (bundleError: any) {
-    console.warn(`Bundle install failed for "${name}":`, bundleError?.message || bundleError);
+  // 1. FASTEST: Pre-built bundle from S3 (~2-3s, no npm/bun/esbuild needed).
+  // Callers can opt out (e.g. recovering from an incomplete bundle that
+  // installed `.sc-build/` without source) so we go straight to the source-
+  // download path on retry.
+  if (!options?.skipBundle) {
+    try {
+      const success = await installExtensionFromBundle(name);
+      if (success) return true;
+    } catch (bundleError: any) {
+      console.warn(`Bundle install failed for "${name}":`, bundleError?.message || bundleError);
+    }
   }
 
   // 2. FALLBACK: Download source + bun/npm + esbuild

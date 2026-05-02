@@ -1137,6 +1137,42 @@ export async function getExtensionBundle(
       }
     }
 
+    // Detect "incomplete bundle" scenario: an S3 pre-built bundle dropped
+    // .sc-build/ on disk for some commands but didn't ship the matching
+    // source files for others. resolveEntryFile() returns null, the build
+    // can never produce outFile, and the user is stuck. Re-run the install
+    // from the source-download path (skipBundle: true) and retry the build.
+    if (!fs.existsSync(outFile)) {
+      let entryMissing = false;
+      try {
+        const pkgPath = path.join(extPath, 'package.json');
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        const cmd = (Array.isArray(pkg?.commands) ? pkg.commands : []).find((c: any) => c?.name === cmdName);
+        if (cmd && !resolveEntryFile(extPath, cmd)) entryMissing = true;
+      } catch {}
+
+      if (entryMissing) {
+        console.log(`Source missing for ${normalizedExtName}/${cmdName}; re-installing from source to recover…`);
+        try {
+          const { installExtension } = require('./extension-registry');
+          const reinstalled = await installExtension(normalizedExtName, { skipBundle: true });
+          if (reinstalled) {
+            // Retry building now that source should be present.
+            const rebuilt = await buildSingleCommand(normalizedExtName, cmdName);
+            if (!rebuilt || !fs.existsSync(outFile)) {
+              try {
+                await buildAllCommands(normalizedExtName);
+              } catch (e) {
+                console.warn(`Post-recovery full rebuild failed for ${normalizedExtName}:`, e);
+              }
+            }
+          }
+        } catch (recoveryError) {
+          console.warn(`Source-reinstall recovery failed for ${normalizedExtName}:`, recoveryError);
+        }
+      }
+    }
+
     if (!fs.existsSync(outFile)) {
       let diagnostic = '';
       try {

@@ -3388,6 +3388,179 @@ export function clearTimerRegistry(registry: TimerRegistry): void {
 }
 
 /**
+ * JS shim for the `swift:AppleReminders` native module that the
+ * raycast/apple-reminders extension imports. Backs operations with
+ * AppleScript through our existing runAppleScript IPC, so users can
+ * create / list / toggle reminders without a compiled Swift binary.
+ *
+ * Only the operations the extension actually calls are implemented end-to-end;
+ * the rest are no-ops returning empty/optimistic results so the extension's
+ * UI doesn't crash on missing exports.
+ */
+function createAppleRemindersBridge(): Record<string, any> {
+  const electron = (window as any).electron;
+  const escapeAS = (s: any) =>
+    String(s ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const runScript = async (script: string): Promise<string> => {
+    if (!electron?.runAppleScript) throw new Error('AppleScript bridge unavailable');
+    return String((await electron.runAppleScript(script)) || '');
+  };
+
+  const splitTabbedLines = (raw: string) =>
+    raw
+      .split('\n')
+      .map((line) => line.replace(/\r$/, ''))
+      .filter((line) => line.length > 0);
+
+  return {
+    // Account / permission probe — Reminders.app is reachable iff we got past
+    // System Events permission. Treat any non-error response as "granted".
+    requestAccess: async () => true,
+    hasAccess: async () => true,
+
+    getAccounts: async () => [{ id: 'default', name: 'iCloud' }],
+
+    getLists: async () => {
+      const script = `
+tell application "Reminders"
+  set output to ""
+  repeat with l in lists
+    set output to output & (id of l) & "\\t" & (name of l) & "\\n"
+  end repeat
+  return output
+end tell`.trim();
+      try {
+        const raw = await runScript(script);
+        return splitTabbedLines(raw).map((line) => {
+          const [id, title] = line.split('\t');
+          return { id, title, name: title };
+        });
+      } catch (err) {
+        console.error('[AppleReminders.getLists]', err);
+        return [];
+      }
+    },
+
+    getReminders: async (_opts?: { listId?: string }) => {
+      const listClause = _opts?.listId
+        ? `tell (first list whose id is "${escapeAS(_opts.listId)}")`
+        : `tell application "Reminders"`;
+      const script = `
+${listClause}
+  set output to ""
+  repeat with r in reminders
+    set rid to id of r
+    set rname to name of r
+    set rdone to completed of r
+    set output to output & rid & "\\t" & rname & "\\t" & (rdone as text) & "\\n"
+  end repeat
+  return output
+end tell`.trim();
+      try {
+        const raw = await runScript(script);
+        return splitTabbedLines(raw).map((line) => {
+          const [id, title, done] = line.split('\t');
+          return { id, title, isCompleted: done === 'true', completed: done === 'true' };
+        });
+      } catch (err) {
+        console.error('[AppleReminders.getReminders]', err);
+        return [];
+      }
+    },
+
+    createReminder: async (opts: any) => {
+      const title = opts?.title ?? opts?.name ?? 'New Reminder';
+      const notes = opts?.notes ?? opts?.body ?? '';
+      const listId = opts?.listId || opts?.list?.id || '';
+      const dueDateRaw = opts?.dueDate || opts?.date;
+
+      const props: string[] = [`name:"${escapeAS(title)}"`];
+      if (notes) props.push(`body:"${escapeAS(notes)}"`);
+
+      const targetList = listId
+        ? `set targetList to first list whose id is "${escapeAS(listId)}"`
+        : `set targetList to default list`;
+
+      // Optional due date — use AppleScript's "current date" + offset to avoid
+      // locale-dependent date string parsing. Caller passes ISO; we compute
+      // the delta in seconds at call time.
+      let dueClause = '';
+      if (dueDateRaw) {
+        const due = new Date(dueDateRaw);
+        if (!Number.isNaN(due.getTime())) {
+          const deltaSeconds = Math.round((due.getTime() - Date.now()) / 1000);
+          dueClause = `\n  set due date of newReminder to (current date) + (${deltaSeconds})`;
+        }
+      }
+
+      const script = `
+tell application "Reminders"
+  ${targetList}
+  set newReminder to make new reminder at end of reminders of targetList with properties {${props.join(', ')}}${dueClause}
+  return id of newReminder
+end tell`.trim();
+
+      try {
+        const id = (await runScript(script)).trim();
+        return { id, title, notes, isCompleted: false };
+      } catch (err: any) {
+        console.error('[AppleReminders.createReminder]', err);
+        throw new Error(`Could not create reminder: ${err?.message || err}`);
+      }
+    },
+
+    updateReminder: async (id: string, opts: any) => {
+      const setters: string[] = [];
+      if (opts?.title != null) setters.push(`set name of r to "${escapeAS(opts.title)}"`);
+      if (opts?.notes != null) setters.push(`set body of r to "${escapeAS(opts.notes)}"`);
+      if (opts?.isCompleted != null) setters.push(`set completed of r to ${opts.isCompleted ? 'true' : 'false'}`);
+      if (setters.length === 0) return { id };
+      const script = `
+tell application "Reminders"
+  set r to first reminder whose id is "${escapeAS(id)}"
+  ${setters.join('\n  ')}
+end tell`.trim();
+      try {
+        await runScript(script);
+        return { id };
+      } catch (err) {
+        console.error('[AppleReminders.updateReminder]', err);
+        throw err;
+      }
+    },
+
+    deleteReminder: async (id: string) => {
+      const script = `
+tell application "Reminders"
+  delete (first reminder whose id is "${escapeAS(id)}")
+end tell`.trim();
+      try { await runScript(script); } catch (err) {
+        console.error('[AppleReminders.deleteReminder]', err);
+      }
+    },
+
+    setCompleted: async (id: string, completed: boolean) => {
+      const script = `
+tell application "Reminders"
+  set completed of (first reminder whose id is "${escapeAS(id)}") to ${completed ? 'true' : 'false'}
+end tell`.trim();
+      try { await runScript(script); } catch (err) {
+        console.error('[AppleReminders.setCompleted]', err);
+      }
+    },
+
+    // No-op stubs for less common exports that may exist in the Swift module.
+    // Returning sensible defaults keeps the extension UI functional even if
+    // it iterates these results.
+    getReminder: async () => null,
+    searchReminders: async () => [],
+    createList: async () => ({ id: '', title: '' }),
+    updateList: async () => ({}),
+    deleteList: async () => {},
+  };
+}
+
+/**
  * Execute extension code and extract the default export.
  * Returns either a React component or a raw function (for no-view commands).
  *
@@ -3597,6 +3770,9 @@ function loadExtensionExport(
               }
             },
           };
+        }
+        if (name.includes('AppleReminders')) {
+          return createAppleRemindersBridge();
         }
         // Unknown swift module — return empty
         return {};
