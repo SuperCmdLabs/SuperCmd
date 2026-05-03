@@ -561,7 +561,17 @@
         "enabledDesc": "Affiche des suggestions d'emoji lors de la saisie d'un préfixe déclencheur.",
         "triggerPrefix": "Préfixe déclencheur",
         "triggerPrefixDesc": "Caractère qui lance la recherche d'emoji (ex. :feu).",
-        "triggerPrefixPlaceholder": "ex. :"
+        "triggerPrefixPlaceholder": "ex. :",
+        "excludedApps": {
+          "title": "Applications exclues",
+          "description": "Le sélecteur d'emoji n'apparaîtra pas lorsque ces applications sont actives. Utile pour celles qui ont leur propre sélecteur (Slack, Telegram…).",
+          "add": "Ajouter une application",
+          "remove": "Supprimer",
+          "empty": "Aucune application exclue. Le sélecteur se déclenche partout.",
+          "searchPlaceholder": "Rechercher des applications…",
+          "loading": "Chargement des applications…",
+          "noApps": "Aucune application trouvée"
+        }
       }
     },
     "advanced": {

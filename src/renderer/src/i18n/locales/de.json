@@ -557,7 +557,17 @@
         "enabledDesc": "Zeigt Emoji-Vorschläge an, wenn ein Auslösezeichen eingegeben wird.",
         "triggerPrefix": "Auslösezeichen",
         "triggerPrefixDesc": "Zeichen, das die Emoji-Suche startet (z. B. :feuer).",
-        "triggerPrefixPlaceholder": "z. B. :"
+        "triggerPrefixPlaceholder": "z. B. :",
+        "excludedApps": {
+          "title": "Ausgeschlossene Apps",
+          "description": "Die Emoji-Auswahl wird nicht angezeigt, wenn diese Apps aktiv sind. Nützlich für Apps mit eigener Auswahl (Slack, Telegram …).",
+          "add": "App hinzufügen",
+          "remove": "Entfernen",
+          "empty": "Keine Apps ausgeschlossen. Die Auswahl wird in jeder App ausgelöst.",
+          "searchPlaceholder": "Apps suchen…",
+          "loading": "Apps werden geladen…",
+          "noApps": "Keine Apps gefunden"
+        }
       }
     },
     "advanced": {

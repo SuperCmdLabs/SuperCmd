@@ -557,7 +557,17 @@
         "enabledDesc": "Muestra sugerencias de emoji al escribir un prefijo desencadenador.",
         "triggerPrefix": "Prefijo desencadenador",
         "triggerPrefixDesc": "Carácter que inicia la búsqueda de emoji (ej. :fuego).",
-        "triggerPrefixPlaceholder": "ej. :"
+        "triggerPrefixPlaceholder": "ej. :",
+        "excludedApps": {
+          "title": "Aplicaciones excluidas",
+          "description": "El selector de emoji no aparecerá cuando estas aplicaciones estén activas. Útil para las que tienen su propio selector (Slack, Telegram…).",
+          "add": "Añadir aplicación",
+          "remove": "Eliminar",
+          "empty": "No hay aplicaciones excluidas. El selector se activa en todas.",
+          "searchPlaceholder": "Buscar aplicaciones…",
+          "loading": "Cargando aplicaciones…",
+          "noApps": "No se encontraron aplicaciones"
+        }
       }
     },
     "advanced": {

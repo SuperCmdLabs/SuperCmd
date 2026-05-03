@@ -113,6 +113,9 @@ export interface AppSettings {
   clipboardAppBlacklist: string[];
   emojiPickerEnabled: boolean;
   emojiPickerTriggerPrefix: string;
+  // Bundle IDs of applications where the inline emoji picker should NOT appear.
+  // Useful for apps with their own emoji pickers (Slack, Telegram, …).
+  emojiPickerExcludedAppBundleIds: string[];
 }
 
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
@@ -205,6 +208,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   clipboardAppBlacklist: [],
   emojiPickerEnabled: true,
   emojiPickerTriggerPrefix: ':',
+  emojiPickerExcludedAppBundleIds: [],
 };
 
 let settingsCache: AppSettings | null = null;
@@ -237,7 +241,7 @@ function normalizeNavigationStyle(value: any): AppNavigationStyle {
   return 'vim';
 }
 
-function normalizeClipboardAppBlacklist(value: any): string[] {
+function normalizeBundleIdList(value: any): string[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
   const out: string[] = [];
@@ -437,11 +441,12 @@ export function loadSettings(): AppSettings {
       launcherViewMode: (parsed.launcherViewMode === 'compact' ? 'compact' : 'expanded'),
       navigationStyle: normalizeNavigationStyle(parsed.navigationStyle),
       clipboardHistoryRetentionDays: normalizeClipboardHistoryRetentionDays(parsed.clipboardHistoryRetentionDays),
-      clipboardAppBlacklist: normalizeClipboardAppBlacklist(parsed.clipboardAppBlacklist),
+      clipboardAppBlacklist: normalizeBundleIdList(parsed.clipboardAppBlacklist),
       emojiPickerEnabled: typeof parsed.emojiPickerEnabled === 'boolean' ? parsed.emojiPickerEnabled : DEFAULT_SETTINGS.emojiPickerEnabled,
       emojiPickerTriggerPrefix: typeof parsed.emojiPickerTriggerPrefix === 'string' && parsed.emojiPickerTriggerPrefix.length > 0
         ? parsed.emojiPickerTriggerPrefix
         : DEFAULT_SETTINGS.emojiPickerTriggerPrefix,
+      emojiPickerExcludedAppBundleIds: normalizeBundleIdList(parsed.emojiPickerExcludedAppBundleIds),
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };
@@ -476,7 +481,7 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
         ? patch.clipboardHistoryRetentionDays
         : current.clipboardHistoryRetentionDays
     ),
-    clipboardAppBlacklist: normalizeClipboardAppBlacklist(
+    clipboardAppBlacklist: normalizeBundleIdList(
       'clipboardAppBlacklist' in patch
         ? patch.clipboardAppBlacklist
         : current.clipboardAppBlacklist
@@ -488,6 +493,11 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
       && (patch.emojiPickerTriggerPrefix ?? current.emojiPickerTriggerPrefix)!.length > 0
       ? (patch.emojiPickerTriggerPrefix ?? current.emojiPickerTriggerPrefix)!
       : DEFAULT_SETTINGS.emojiPickerTriggerPrefix,
+    emojiPickerExcludedAppBundleIds: normalizeBundleIdList(
+      'emojiPickerExcludedAppBundleIds' in patch
+        ? patch.emojiPickerExcludedAppBundleIds
+        : current.emojiPickerExcludedAppBundleIds
+    ),
   };
 
   try {

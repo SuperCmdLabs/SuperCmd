@@ -1407,6 +1407,7 @@ const ExtensionsTab: React.FC<{
                   <EmojiPickerSettingsSection
                     enabled={settings?.emojiPickerEnabled ?? true}
                     triggerPrefix={settings?.emojiPickerTriggerPrefix ?? ':'}
+                    excludedAppBundleIds={settings?.emojiPickerExcludedAppBundleIds ?? []}
                     onChange={async (patch) => {
                       await window.electron.saveSettings(patch);
                       setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -1997,15 +1998,45 @@ const ClipboardSettingsSection: React.FC<{
           </select>
         </div>
       </div>
-      <ClipboardBlacklistSection blacklist={blacklist} onChange={onBlacklistChange} />
+      <AppBundleIdBlacklistSection
+        blacklist={blacklist}
+        onChange={onBlacklistChange}
+        titleKey="settings.extensions.clipboardBlacklist.title"
+        descriptionKey="settings.extensions.clipboardBlacklist.description"
+        addLabelKey="settings.extensions.clipboardBlacklist.add"
+        removeLabelKey="settings.extensions.clipboardBlacklist.remove"
+        emptyKey="settings.extensions.clipboardBlacklist.empty"
+        searchPlaceholderKey="settings.extensions.clipboardBlacklist.searchPlaceholder"
+        loadingKey="settings.extensions.clipboardBlacklist.loading"
+        noAppsKey="settings.extensions.clipboardBlacklist.noApps"
+      />
     </div>
   );
 };
 
-const ClipboardBlacklistSection: React.FC<{
+const AppBundleIdBlacklistSection: React.FC<{
   blacklist: string[];
   onChange: (next: string[]) => Promise<void>;
-}> = ({ blacklist, onChange }) => {
+  titleKey: string;
+  descriptionKey: string;
+  addLabelKey: string;
+  removeLabelKey: string;
+  emptyKey: string;
+  searchPlaceholderKey: string;
+  loadingKey: string;
+  noAppsKey: string;
+}> = ({
+  blacklist,
+  onChange,
+  titleKey,
+  descriptionKey,
+  addLabelKey,
+  removeLabelKey,
+  emptyKey,
+  searchPlaceholderKey,
+  loadingKey,
+  noAppsKey,
+}) => {
   const { t } = useI18n();
   const [apps, setApps] = useState<InstalledAppEntry[]>([]);
   const [appsLoaded, setAppsLoaded] = useState(false);
@@ -2108,7 +2139,7 @@ const ClipboardBlacklistSection: React.FC<{
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">
-          {t('settings.extensions.clipboardBlacklist.title')}
+          {t(titleKey)}
         </div>
         <div className="relative" ref={pickerRef}>
           <button
@@ -2117,7 +2148,7 @@ const ClipboardBlacklistSection: React.FC<{
             className="inline-flex items-center gap-1 rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors"
           >
             <Plus className="w-3 h-3" />
-            {t('settings.extensions.clipboardBlacklist.add')}
+            {t(addLabelKey)}
           </button>
           {pickerOpen ? (
             <div
@@ -2135,18 +2166,18 @@ const ClipboardBlacklistSection: React.FC<{
                   ref={searchInputRef}
                   value={pickerSearch}
                   onChange={(event) => setPickerSearch(event.target.value)}
-                  placeholder={t('settings.extensions.clipboardBlacklist.searchPlaceholder')}
+                  placeholder={t(searchPlaceholderKey)}
                   className="sc-input sc-input--sm"
                 />
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
                 {!appsLoaded ? (
                   <div className="px-2.5 py-2 text-[11px] text-[var(--text-subtle)]">
-                    {t('settings.extensions.clipboardBlacklist.loading')}
+                    {t(loadingKey)}
                   </div>
                 ) : selectableApps.length === 0 ? (
                   <div className="px-2.5 py-2 text-[11px] text-[var(--text-subtle)]">
-                    {t('settings.extensions.clipboardBlacklist.noApps')}
+                    {t(noAppsKey)}
                   </div>
                 ) : (
                   selectableApps.map((entry) => (
@@ -2178,11 +2209,11 @@ const ClipboardBlacklistSection: React.FC<{
         </div>
       </div>
       <p className="text-[11px] text-[var(--text-subtle)] leading-snug">
-        {t('settings.extensions.clipboardBlacklist.description')}
+        {t(descriptionKey)}
       </p>
       {blacklistedEntries.length === 0 ? (
         <div className="rounded-md border border-dashed border-[var(--ui-divider)] px-3 py-3 text-[11px] text-[var(--text-subtle)]">
-          {t('settings.extensions.clipboardBlacklist.empty')}
+          {t(emptyKey)}
         </div>
       ) : (
         <div className="flex flex-wrap gap-1.5">
@@ -2207,8 +2238,8 @@ const ClipboardBlacklistSection: React.FC<{
                 type="button"
                 onClick={() => void handleRemove(entry.bundleId)}
                 className="p-0.5 rounded-sm text-[var(--text-subtle)] hover:text-red-300/90 hover:bg-[var(--ui-segment-hover-bg)]"
-                aria-label={t('settings.extensions.clipboardBlacklist.remove')}
-                title={t('settings.extensions.clipboardBlacklist.remove')}
+                aria-label={t(removeLabelKey)}
+                title={t(removeLabelKey)}
               >
                 <X className="w-3 h-3" />
               </button>
@@ -2223,8 +2254,13 @@ const ClipboardBlacklistSection: React.FC<{
 const EmojiPickerSettingsSection: React.FC<{
   enabled: boolean;
   triggerPrefix: string;
-  onChange: (patch: { emojiPickerEnabled?: boolean; emojiPickerTriggerPrefix?: string }) => Promise<void>;
-}> = ({ enabled, triggerPrefix, onChange }) => {
+  excludedAppBundleIds: string[];
+  onChange: (patch: {
+    emojiPickerEnabled?: boolean;
+    emojiPickerTriggerPrefix?: string;
+    emojiPickerExcludedAppBundleIds?: string[];
+  }) => Promise<void>;
+}> = ({ enabled, triggerPrefix, excludedAppBundleIds, onChange }) => {
   const { t } = useI18n();
   const [prefixDraft, setPrefixDraft] = React.useState(triggerPrefix);
 
@@ -2290,6 +2326,22 @@ const EmojiPickerSettingsSection: React.FC<{
             className="sc-input sc-input--sm w-24"
           />
         </div>
+      )}
+
+      {/* Excluded apps — only shown when enabled */}
+      {enabled && (
+        <AppBundleIdBlacklistSection
+          blacklist={excludedAppBundleIds}
+          onChange={async (next) => onChange({ emojiPickerExcludedAppBundleIds: next })}
+          titleKey="settings.extensions.emojiPicker.excludedApps.title"
+          descriptionKey="settings.extensions.emojiPicker.excludedApps.description"
+          addLabelKey="settings.extensions.emojiPicker.excludedApps.add"
+          removeLabelKey="settings.extensions.emojiPicker.excludedApps.remove"
+          emptyKey="settings.extensions.emojiPicker.excludedApps.empty"
+          searchPlaceholderKey="settings.extensions.emojiPicker.excludedApps.searchPlaceholder"
+          loadingKey="settings.extensions.emojiPicker.excludedApps.loading"
+          noAppsKey="settings.extensions.emojiPicker.excludedApps.noApps"
+        />
       )}
     </div>
   );

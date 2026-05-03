@@ -33,7 +33,16 @@ func emit(_ obj: [String: Any]) {
 
 // MARK: - Caret rect + secure-field guard
 
+// Included on every `query` event so the host process can decide whether the
+// frontmost app is on the user's exclusion list. Read here (rather than in the
+// host) because lsappinfo lookups in the host are stale for keystroke-driven
+// flows where the launcher window was never brought forward.
+func currentFrontmostBundleId() -> String {
+  return NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+}
+
 func emitQuery(_ query: String) {
+  let bundleId = currentFrontmostBundleId()
   switch AXCaretQuery.current() {
   case .secureField:
     triggerActive    = false
@@ -46,10 +55,16 @@ func emitQuery(_ query: String) {
       "type":      "query",
       "value":     query,
       "prefixLen": triggerPrefixLen,
+      "bundleId":  bundleId,
       "caret":     ["x": caret.x, "y": caret.y, "w": caret.w, "h": caret.h, "tier": caret.tier],
     ])
   case .noRect:
-    emit(["type": "query", "value": query, "prefixLen": triggerPrefixLen])
+    emit([
+      "type":      "query",
+      "value":     query,
+      "prefixLen": triggerPrefixLen,
+      "bundleId":  bundleId,
+    ])
   }
 }
 

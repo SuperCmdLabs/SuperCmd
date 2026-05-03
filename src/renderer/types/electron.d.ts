@@ -300,6 +300,7 @@ export interface AppSettings {
   clipboardAppBlacklist: string[];
   emojiPickerEnabled: boolean;
   emojiPickerTriggerPrefix: string;
+  emojiPickerExcludedAppBundleIds: string[];
 }
 
 export interface CatalogEntry {

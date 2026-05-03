@@ -594,7 +594,17 @@
         "enabledDesc": "在输入触发前缀后显示表情符号建议。",
         "triggerPrefix": "触发前缀",
         "triggerPrefixDesc": "开始表情符号搜索的字符，例如 :fire。",
-        "triggerPrefixPlaceholder": "例如 :"
+        "triggerPrefixPlaceholder": "例如 :",
+        "excludedApps": {
+          "title": "排除的应用",
+          "description": "在这些应用中不会弹出表情符号选择器。适用于自带选择器的应用（Slack、Telegram 等）。",
+          "add": "添加应用",
+          "remove": "移除",
+          "empty": "未排除任何应用。选择器会在所有应用中触发。",
+          "searchPlaceholder": "搜索应用…",
+          "loading": "正在加载应用…",
+          "noApps": "未找到应用"
+        }
       }
     },
     "advanced": {

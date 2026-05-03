@@ -594,7 +594,17 @@
         "enabledDesc": "Show emoji suggestions when typing a trigger prefix followed by a name.",
         "triggerPrefix": "Trigger Prefix",
         "triggerPrefixDesc": "Character that starts an emoji search. Type this followed by a name (e.g. :fire).",
-        "triggerPrefixPlaceholder": "e.g. :"
+        "triggerPrefixPlaceholder": "e.g. :",
+        "excludedApps": {
+          "title": "Excluded Applications",
+          "description": "The emoji picker will not appear when these apps are active. Useful for apps that have their own emoji picker (Slack, Telegram…).",
+          "add": "Add Application",
+          "remove": "Remove",
+          "empty": "No applications excluded. The picker triggers in every app.",
+          "searchPlaceholder": "Search applications…",
+          "loading": "Loading applications…",
+          "noApps": "No applications found"
+        }
       }
     },
     "advanced": {

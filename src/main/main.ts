@@ -8758,7 +8758,23 @@ function positionEmojiPickerAtCaret(
   }
 }
 
-async function renderEmojiPicker(query: string, caret: CaretRect | null, prefixLen: number): Promise<void> {
+function isEmojiPickerExcludedForApp(bundleId: string): boolean {
+  const normalized = bundleId.trim().toLowerCase();
+  if (!normalized) return false;
+  const excluded = loadSettings().emojiPickerExcludedAppBundleIds || [];
+  for (const entry of excluded) {
+    if (String(entry || '').trim().toLowerCase() === normalized) return true;
+  }
+  return false;
+}
+
+async function renderEmojiPicker(query: string, caret: CaretRect | null, prefixLen: number, bundleId: string): Promise<void> {
+  if (isEmojiPickerExcludedForApp(bundleId)) {
+    // Tell the helper to leave trigger mode so subsequent keystrokes aren't
+    // tracked. We never showed the picker, so there's nothing to hide locally.
+    writeEmojiTriggerCmd({ cmd: 'dismiss' });
+    return;
+  }
   emojiPickerCurrentQuery = query;
   emojiPickerCurrentPrefixLen = prefixLen;
   emojiPickerSelectedIdx = 0;
@@ -8942,6 +8958,7 @@ function startEmojiTriggerMonitor(triggerPrefix = ':'): void {
           value?: string;
           key?: string;
           prefixLen?: number;
+          bundleId?: string;
           caret?: { x: number; y: number; w: number; h: number; tier?: string };
         };
         if (payload.type === 'query' && typeof payload.value === 'string') {
@@ -8951,13 +8968,14 @@ function startEmojiTriggerMonitor(triggerPrefix = ':'): void {
           const prefixLen = typeof payload.prefixLen === 'number' && payload.prefixLen > 0
             ? payload.prefixLen
             : 1;
+          const bundleId = typeof payload.bundleId === 'string' ? payload.bundleId : '';
           if (process.env.NODE_ENV === 'development') {
             // Log only metadata — never the raw query text — to avoid persisting
             // typed input in application logs.
             const caretDesc = caret ? `(${Math.round(caret.x)},${Math.round(caret.y)}) tier=${payload.caret?.tier ?? '?'}` : 'null';
-            console.log(`[EmojiTrigger] queryLen=${payload.value.length} prefixLen=${prefixLen} caret=${caretDesc}`);
+            console.log(`[EmojiTrigger] queryLen=${payload.value.length} prefixLen=${prefixLen} caret=${caretDesc} bundle=${bundleId || 'unknown'}`);
           }
-          void renderEmojiPicker(payload.value, caret, prefixLen);
+          void renderEmojiPicker(payload.value, caret, prefixLen, bundleId);
         } else if (payload.type === 'dismiss') {
           hideEmojiPicker();
         } else if (payload.type === 'nav' && typeof payload.key === 'string') {
