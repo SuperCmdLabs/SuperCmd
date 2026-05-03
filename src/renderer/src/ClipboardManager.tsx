@@ -485,9 +485,16 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
           e.preventDefault();
           onClose();
           break;
+
+        case 'Backspace':
+          if (!searchQuery) {
+            e.preventDefault();
+            onClose();
+          }
+          break;
       }
     },
-    [filteredItems, selectedIndex, onClose, showActions, actions, selectedActionIndex, canSaveAsSnippet]
+    [filteredItems, selectedIndex, onClose, showActions, actions, selectedActionIndex, canSaveAsSnippet, searchQuery]
   );
 
   const formatDate = (timestamp: number): string =>

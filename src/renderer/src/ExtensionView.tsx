@@ -4315,12 +4315,26 @@ const ExtensionView: React.FC<ExtensionViewProps> = ({
 
   // Handle Escape globally for all extensions:
   // pop when nested, otherwise close extension view.
+  // Backspace behaves the same when the focused search input is empty.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
-      if (navStack.length > 0) pop();
-      else onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (navStack.length > 0) pop();
+        else onClose();
+        return;
+      }
+      if (e.key === 'Backspace') {
+        const target = e.target as HTMLElement | null;
+        const isEmptySearchInput =
+          target instanceof HTMLInputElement &&
+          target.dataset.supercmdSearchInput === 'true' &&
+          target.value === '';
+        if (!isEmptySearchInput) return;
+        e.preventDefault();
+        if (navStack.length > 0) pop();
+        else onClose();
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);

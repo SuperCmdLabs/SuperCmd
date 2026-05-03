@@ -957,9 +957,16 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
           e.preventDefault();
           onClose();
           break;
+
+        case 'Backspace':
+          if (!searchQuery) {
+            e.preventDefault();
+            onClose();
+          }
+          break;
       }
     },
-    [showActions, selectedActionIndex, actions, filteredSnippets, selectedIndex, onClose, dynamicPrompt, activeSnippet, loadSnippets, handlePaste]
+    [showActions, selectedActionIndex, actions, filteredSnippets, selectedIndex, onClose, dynamicPrompt, activeSnippet, loadSnippets, handlePaste, searchQuery]
   );
 
   // ─── Render: Create / Edit ──────────────────────────────────────
