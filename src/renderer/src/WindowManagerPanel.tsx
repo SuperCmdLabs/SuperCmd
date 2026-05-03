@@ -1734,6 +1734,11 @@ const WindowManagerPanel: React.FC<WindowManagerPanelProps> = ({ show, portalTar
         onClose();
         return;
       }
+      if (event.key === 'Backspace' && !searchQuery) {
+        event.preventDefault();
+        onClose();
+        return;
+      }
       if (event.key === 'ArrowDown') {
         if (filteredPresets.length === 0) return;
         event.preventDefault();

@@ -268,6 +268,11 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
       }
 
       if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      if (e.key === 'Backspace' && !searchQuery && !confirmDelete && !renameCanvas) {
+        e.preventDefault();
+        onClose();
+        return;
+      }
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -329,7 +334,7 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
 
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [showActions, selectedActionIndex, actions, selectedCanvas, filteredCanvases.length, onClose, openCanvas, loadCanvases, confirmDelete, renameCanvas]);
+  }, [showActions, selectedActionIndex, actions, selectedCanvas, filteredCanvases.length, onClose, openCanvas, loadCanvases, confirmDelete, renameCanvas, searchQuery]);
 
   // Scroll selected item into view
   useEffect(() => {

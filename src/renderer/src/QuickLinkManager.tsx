@@ -1772,8 +1772,14 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
         event.preventDefault();
         onClose();
         break;
+      case 'Backspace':
+        if (!searchQuery) {
+          event.preventDefault();
+          onClose();
+        }
+        break;
     }
-  }, [actions, dynamicPrompt, filteredQuickLinks.length, handleConfirmDynamicPrompt, handleDelete, handleDuplicate, handleEdit, handleOpen, onClose, selectedActionIndex, showActions]);
+  }, [actions, dynamicPrompt, filteredQuickLinks.length, handleConfirmDynamicPrompt, handleDelete, handleDuplicate, handleEdit, handleOpen, onClose, selectedActionIndex, showActions, searchQuery]);
 
   if (view === 'create' || view === 'edit') {
     return (

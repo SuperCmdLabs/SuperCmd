@@ -402,9 +402,15 @@ const ScheduleExtension: React.FC<ScheduleExtensionProps> = ({ onClose }) => {
           event.preventDefault();
           onClose();
           break;
+        case 'Backspace':
+          if (!searchQuery) {
+            event.preventDefault();
+            onClose();
+          }
+          break;
       }
     },
-    [actions, flatRows.length, onClose, openCalendarApp, permissionError, selectedActionIndex, selectedEntry, showActions]
+    [actions, flatRows.length, onClose, openCalendarApp, permissionError, selectedActionIndex, selectedEntry, showActions, searchQuery]
   );
 
   const todaySummary = todayEvents.length > 0

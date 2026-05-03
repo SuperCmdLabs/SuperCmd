@@ -655,6 +655,11 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose, init
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
+        return;
+      }
+      if (e.key === 'Backspace' && !query) {
+        e.preventDefault();
+        onClose();
       }
     },
     [
@@ -669,6 +674,7 @@ const FileSearchExtension: React.FC<FileSearchExtensionProps> = ({ onClose, init
       copySelectedFile,
       togglePinSelectedFile,
       onClose,
+      query,
     ]
   );
 

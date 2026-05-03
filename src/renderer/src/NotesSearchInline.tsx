@@ -205,6 +205,7 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
       if (confirmDelete) return; // Let confirm modal handle keys
       if (showActions) return; // Let actions overlay handle keys
       if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      if (e.key === 'Backspace' && !searchQuery) { e.preventDefault(); onClose(); return; }
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setShowActions(true); return; }
       if (e.key === 'n' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleNewNote(); return; }
       if (e.key === 'x' && e.ctrlKey && selectedNote) { e.preventDefault(); handleDelete(); return; }
@@ -214,7 +215,7 @@ const NotesSearchInline: React.FC<NotesSearchInlineProps> = ({ onClose }) => {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [notes, selectedIndex, selectedNote, showActions, confirmDelete, onClose, handleNewNote, handleOpenNote, handleDelete]);
+  }, [notes, selectedIndex, selectedNote, showActions, confirmDelete, onClose, handleNewNote, handleOpenNote, handleDelete, searchQuery]);
 
   return (
     <div className="snippet-view flex flex-col h-full">
