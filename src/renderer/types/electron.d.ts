@@ -775,6 +775,8 @@ export interface ElectronAPI {
 
   // Native helpers
   nativePickColor: () => Promise<{ red: number; green: number; blue: number; alpha: number; colorSpace: string } | null>;
+  keyboardLockStart: (durationSec: number) => Promise<{ ok: boolean; error?: string }>;
+  keyboardLockStop: () => Promise<{ ok: boolean }>;
   pickFiles: (options?: {
     allowMultipleSelection?: boolean;
     canChooseDirectories?: boolean;

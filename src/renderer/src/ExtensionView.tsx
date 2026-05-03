@@ -3774,6 +3774,21 @@ function loadExtensionExport(
         if (name.includes('AppleReminders')) {
           return createAppleRemindersBridge();
         }
+        // clean-keyboard extension uses `swift:.../MyExecutable` for the
+        // CGEventTap-based keyboard lock. Bridge to our native helper.
+        if (name.includes('MyExecutable') || name.includes('keyboard')) {
+          return {
+            handler: async (duration: number) => {
+              const result = await window.electron.keyboardLockStart(Number(duration) || 15);
+              if (!result?.ok) {
+                throw new Error(result?.error || 'Failed to lock keyboard');
+              }
+            },
+            stopHandler: async () => {
+              await window.electron.keyboardLockStop();
+            },
+          };
+        }
         // Unknown swift module — return empty
         return {};
       }
@@ -3792,6 +3807,19 @@ function loadExtensionExport(
                 console.error('Native color picker (rust bridge) failed:', e);
                 return undefined;
               }
+            },
+          };
+        }
+        if (name.includes('clean-keyboard') || name.includes('keyboard')) {
+          return {
+            handler: async (duration: number) => {
+              const result = await window.electron.keyboardLockStart(Number(duration) || 15);
+              if (!result?.ok) {
+                throw new Error(result?.error || 'Failed to lock keyboard');
+              }
+            },
+            stop_handler: async () => {
+              await window.electron.keyboardLockStop();
             },
           };
         }

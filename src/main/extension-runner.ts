@@ -702,11 +702,11 @@ export async function buildAllCommands(extName: string, extPathOverride?: string
           platform: 'node',
           outfile: outFile,
           plugins: [
-            // Mark swift: imports as external so fakeRequire can handle them at runtime
+            // Mark swift:/rust: imports as external so fakeRequire can handle them at runtime
             {
-              name: 'swift-external',
+              name: 'native-scheme-external',
               setup(build: any) {
-                build.onResolve({ filter: /^swift:/ }, (args: any) => ({
+                build.onResolve({ filter: /^(swift|rust):/ }, (args: any) => ({
                   path: args.path,
                   external: true,
                 }));
@@ -995,9 +995,9 @@ export async function buildSingleCommand(extName: string, cmdName: string): Prom
         outfile: outFile,
         plugins: [
           {
-            name: 'swift-external',
+            name: 'native-scheme-external',
             setup(build: any) {
-              build.onResolve({ filter: /^swift:/ }, (args: any) => ({
+              build.onResolve({ filter: /^(swift|rust):/ }, (args: any) => ({
                 path: args.path,
                 external: true,
               }));

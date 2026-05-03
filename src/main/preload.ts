@@ -759,6 +759,10 @@ const electronAPI = {
   // ─── Native Helpers ─────────────────────────────────────────────
   nativePickColor: (): Promise<{ red: number; green: number; blue: number; alpha: number; colorSpace: string } | null> =>
     ipcRenderer.invoke('native-pick-color'),
+  keyboardLockStart: (durationSec: number): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('keyboard-lock:start', durationSec),
+  keyboardLockStop: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('keyboard-lock:stop'),
   pickFiles: (options?: {
     allowMultipleSelection?: boolean;
     canChooseDirectories?: boolean;

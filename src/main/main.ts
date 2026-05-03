@@ -2548,6 +2548,8 @@ let emojiPickerSelectedIdx = 0;
 let nativeSpeechProcess: any = null;
 let nativeSpeechStdoutBuffer = '';
 let nativeColorPickerPromise: Promise<any> | null = null;
+let keyboardLockProcess: any = null;
+let keyboardLockReleaseResolvers: Array<() => void> = [];
 let whisperHoldWatcherProcess: any = null;
 let whisperHoldWatcherStdoutBuffer = '';
 let whisperHoldRequestSeq = 0;
@@ -15827,6 +15829,125 @@ if let tiff = image?.tiffRepresentation {
     } finally {
       nativeColorPickerPromise = null;
     }
+  });
+
+  // ─── IPC: Native Keyboard Lock (clean-keyboard extension bridge) ─
+
+  ipcMain.handle('keyboard-lock:start', async (_event: any, durationSec: number) => {
+    const fsNative = require('fs');
+    const { spawn, execFileSync } = require('child_process');
+    const binaryPath = getNativeBinaryPath('keyboard-lock');
+
+    // Build on demand in development when binary artifacts are missing.
+    if (!fsNative.existsSync(binaryPath)) {
+      try {
+        const sourceCandidates = [
+          path.join(app.getAppPath(), 'src', 'native', 'keyboard-lock.swift'),
+          path.join(process.cwd(), 'src', 'native', 'keyboard-lock.swift'),
+          path.join(__dirname, '..', '..', 'src', 'native', 'keyboard-lock.swift'),
+        ];
+        const sourcePath = sourceCandidates.find((candidate: string) => fsNative.existsSync(candidate));
+        if (!sourcePath) {
+          return { ok: false, error: 'keyboard-lock binary and source file not found' };
+        }
+        fsNative.mkdirSync(path.dirname(binaryPath), { recursive: true });
+        execFileSync('swiftc', ['-O', '-o', binaryPath, sourcePath, '-framework', 'CoreGraphics', '-framework', 'Foundation']);
+      } catch (error: any) {
+        console.error('[KeyboardLock] Failed to compile native helper:', error);
+        return { ok: false, error: String(error?.message || error) };
+      }
+    }
+
+    // If a previous lock is still running, stop it first.
+    if (keyboardLockProcess) {
+      try { keyboardLockProcess.stdin?.write('stop\n'); } catch {}
+      try { keyboardLockProcess.kill('SIGTERM'); } catch {}
+      keyboardLockProcess = null;
+    }
+
+    const safeDuration = Number.isFinite(durationSec) && durationSec > 0
+      ? Math.min(3600, Math.round(durationSec))
+      : 15;
+
+    return await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      let settled = false;
+      const child = spawn(binaryPath, [String(safeDuration)], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      keyboardLockProcess = child;
+
+      let stdoutBuffer = '';
+      let stderrBuffer = '';
+
+      child.stdout?.on('data', (chunk: Buffer) => {
+        stdoutBuffer += chunk.toString('utf8');
+        if (!settled && stdoutBuffer.includes('ready')) {
+          settled = true;
+          resolve({ ok: true });
+        }
+      });
+
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderrBuffer += chunk.toString('utf8');
+      });
+
+      child.on('exit', (code: number | null) => {
+        if (keyboardLockProcess === child) {
+          keyboardLockProcess = null;
+        }
+        // Wake any pending stop() callers.
+        const resolvers = keyboardLockReleaseResolvers.slice();
+        keyboardLockReleaseResolvers = [];
+        for (const fn of resolvers) {
+          try { fn(); } catch {}
+        }
+        if (!settled) {
+          settled = true;
+          const message = stderrBuffer.trim() || `keyboard-lock exited with code ${code}`;
+          resolve({ ok: false, error: message });
+        }
+      });
+
+      child.on('error', (error: Error) => {
+        if (!settled) {
+          settled = true;
+          resolve({ ok: false, error: error.message });
+        }
+      });
+    });
+  });
+
+  ipcMain.handle('keyboard-lock:stop', async () => {
+    const child = keyboardLockProcess;
+    if (!child) return { ok: true };
+
+    return await new Promise<{ ok: boolean }>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve({ ok: true });
+      };
+
+      keyboardLockReleaseResolvers.push(finish);
+
+      try {
+        child.stdin?.write('stop\n');
+      } catch {
+        // stdin may already be closed; SIGTERM as fallback below
+      }
+
+      // Belt-and-suspenders: if the child doesn't exit promptly, force it.
+      setTimeout(() => {
+        if (settled) return;
+        try { child.kill('SIGTERM'); } catch {}
+      }, 250);
+      setTimeout(() => {
+        if (settled) return;
+        try { child.kill('SIGKILL'); } catch {}
+        finish();
+      }, 1500);
+    });
   });
 
   // ─── IPC: Native File Picker (for Form.FilePicker) ───────────────
