@@ -1531,8 +1531,27 @@ function isGlassyUiStyleEnabled(): boolean {
   }
 }
 
+// macOS Tahoe (26) ships the real private NSGlassEffectView class that
+// `electron-liquid-glass` instantiates. That view's hit-testing eats mouse
+// events on the launcher panel even though it's added behind the WebContents
+// (see node_modules/electron-liquid-glass/src/glass_effect.mm:130). Result:
+// no hover, no click — only scroll and webview-focused keyboard input. On
+// pre-Tahoe macOS the package falls back to NSVisualEffectView, which doesn't
+// have this bug. Until the package exposes a hit-test-transparent option, we
+// skip the native overlay on Tahoe and use the vibrancy fallback instead.
+// Darwin 25 == macOS 26 (Tahoe).
+function isMacOSTahoeOrLater(): boolean {
+  if (process.platform !== 'darwin') return false;
+  try {
+    const major = Number(os.release().split('.')[0]);
+    return Number.isFinite(major) && major >= 25;
+  } catch {
+    return false;
+  }
+}
+
 function shouldUseNativeLiquidGlass(): boolean {
-  return process.platform === 'darwin' && isGlassyUiStyleEnabled() && !!getElectronLiquidGlassApi();
+  return process.platform === 'darwin' && !isMacOSTahoeOrLater() && isGlassyUiStyleEnabled() && !!getElectronLiquidGlassApi();
 }
 
 function syncNativeLiquidGlassClassOnWindow(win: any, enabled: boolean): void {
@@ -1577,7 +1596,17 @@ function applyLiquidGlassToWindow(
     return;
   }
 
-  const fallbackVibrancy = 'hud';
+  const fallbackVibrancy: 'under-window' | 'hud' | 'fullscreen-ui' =
+    options?.fallbackVibrancy ?? 'hud';
+
+  // On macOS Tahoe, NSGlassEffectView eats mouse events on the launcher
+  // panel — see isMacOSTahoeOrLater() comment. Skip the native overlay and
+  // use the vibrancy fallback so clicks work.
+  if (isMacOSTahoeOrLater()) {
+    syncNativeLiquidGlassClassOnWindow(win, false);
+    applyNativeWindowGlassFallback(win, fallbackVibrancy);
+    return;
+  }
   const cornerRadius = Number.isFinite(Number(options?.cornerRadius)) ? Number(options?.cornerRadius) : 16;
   const darkTint = String(options?.darkTint || '#10131a42');
   const lightTint = String(options?.lightTint || '#f8fbff26');
@@ -7008,10 +7037,10 @@ function createWindow(): void {
     vibrancy: false,
     transparent: true,
     backgroundColor: '#00000000',
-    // Without this, macOS eats the first mouse-down on the panel to activate
-    // the window — so a click only registers if the window is already key.
-    // Mouse users (e.g. Mac mini, multi-monitor) hit this constantly because
-    // the cursor often sits on another display when the launcher pops in.
+    // Match the detached child-popup config: deliver clicks immediately on
+    // the first mouse-down, instead of consuming it just to make the window
+    // key. Defensive on macOS where panels often aren't yet key when the
+    // user clicks.
     acceptFirstMouse: true,
     ...(useDarwinLauncherPanel
       ? {
@@ -8019,14 +8048,6 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   if (shouldActivateLauncherWindow) {
     mainWindow.focus();
   } else {
-    // On macOS Tahoe (26), NSPanel.show() no longer implicitly makes the
-    // panel the key window. Without being key, the panel does not receive
-    // mouseMoved/mouseDown events (no hover, no clicks) — though scroll and
-    // webContents-focused keyboard input still work, which matches the
-    // reported symptom. Calling focus() on a non-activating panel triggers
-    // makeKeyAndOrderFront without activating the app, so the previously
-    // frontmost app stays "active" for selection capture.
-    try { mainWindow.focus(); } catch {}
     try { (mainWindow as any).focusOnWebView?.(); } catch {}
     try { mainWindow.webContents.focus(); } catch {}
   }
@@ -8058,9 +8079,6 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
       if (shouldActivateLauncherWindow) {
         mainWindow.focus();
       } else {
-        // See note above: required on macOS Tahoe to make the NSPanel key
-        // so it receives mouse-moved/mouse-down events.
-        try { mainWindow.focus(); } catch {}
         try { (mainWindow as any).focusOnWebView?.(); } catch {}
         try { mainWindow.webContents.focus(); } catch {}
       }
