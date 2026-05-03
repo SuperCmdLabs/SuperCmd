@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { Search, Power, Settings, Puzzle, Sparkles, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Lock, Trash2, Store } from 'lucide-react';
+import { Search, Power, Settings, Puzzle, Sparkles, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Lock, Trash2, Store, Globe } from 'lucide-react';
 import type { CommandInfo, EdgeTtsVoice } from '../../types/electron';
 import supercmdLogo from '../../../../supercmd.svg';
 import IconCalendar from '../icons/Calendar';
@@ -994,6 +994,22 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     return (
       <div className="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
         <Sparkles className="w-3 h-3 text-violet-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'browser-search-action-open-url') {
+    return (
+      <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
+        <Globe className="w-3 h-3 text-sky-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'browser-search-action-perform-search') {
+    return (
+      <div className="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
+        <Search className="w-3 h-3 text-emerald-300" />
       </div>
     );
   }

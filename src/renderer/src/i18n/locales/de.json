@@ -616,6 +616,34 @@
         "label": "Einstellungen importieren",
         "description": "Einstellungen aus einer Datei importieren",
         "button": "Importieren"
+      },
+      "browserSearch": {
+        "title": "Browser-Suche",
+        "description": "Drücke ⌘↵, um deine Eingabe im Standardbrowser zu öffnen. Inline-Autovervollständigung schlägt Seiten und frühere Suchen vor.",
+        "enableLabel": "Browser-Suche aktivieren",
+        "retention": {
+          "label": "Aufbewahrungsdauer",
+          "option": {
+            "7d": "7 Tage",
+            "30d": "30 Tage",
+            "90d": "90 Tage",
+            "180d": "180 Tage",
+            "365d": "1 Jahr",
+            "forever": "Für immer"
+          }
+        },
+        "clearButton": "Browser-Suchverlauf löschen",
+        "importLabel": "Verlauf aus einem Browser importieren",
+        "import": {
+          "action": "Importieren",
+          "running": "Wird importiert…",
+          "noneFound": "Keine unterstützten Browser gefunden"
+        },
+        "status": {
+          "cleared": "Browser-Suchverlauf gelöscht.",
+          "imported": "{count} von {total} Einträgen importiert.",
+          "failed": "Aktion fehlgeschlagen."
+        }
       }
     },
     "store": {
@@ -695,6 +723,14 @@
       "preferences": "Einstellungen",
       "refresh": "Aktualisieren",
       "help": "Hilfe"
+    },
+    "browserSearch": {
+      "openUrl": "{url} öffnen",
+      "searchFor": "„{query}“ suchen",
+      "subtitle": {
+        "openUrl": "Standardbrowser",
+        "search": "Websuche"
+      }
     }
   },
   "scriptCommand": {

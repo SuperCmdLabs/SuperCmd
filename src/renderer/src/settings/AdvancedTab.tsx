@@ -1,6 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bug, FolderSearch, Keyboard, Languages, Sparkles } from 'lucide-react';
-import type { AppNavigationStyle, AppSettings, HyperKeySourceKey, HyperKeyCapsLockTapBehavior } from '../../types/electron';
+import { Bug, FolderSearch, Globe, Keyboard, Languages, Sparkles } from 'lucide-react';
+import type {
+  AppNavigationStyle,
+  AppSettings,
+  BrowserSearchImportableBrowser,
+  BrowserSearchSettings,
+  HyperKeySourceKey,
+  HyperKeyCapsLockTapBehavior,
+} from '../../types/electron';
 import { APP_LANGUAGE_OPTIONS, DEFAULT_APP_LANGUAGE, type AppLanguageSetting, useI18n } from '../i18n';
 
 type SettingsRowProps = {
@@ -59,6 +66,187 @@ const NAVIGATION_STYLE_OPTIONS: { value: AppNavigationStyle; labelKey: string }[
   { value: 'vim', labelKey: 'settings.advanced.navigationStyle.option.vim' },
   { value: 'macos', labelKey: 'settings.advanced.navigationStyle.option.macos' },
 ];
+
+const BROWSER_SEARCH_RETENTION_OPTIONS: { value: number | null; labelKey: string }[] = [
+  { value: 7, labelKey: 'settings.advanced.browserSearch.retention.option.7d' },
+  { value: 30, labelKey: 'settings.advanced.browserSearch.retention.option.30d' },
+  { value: 90, labelKey: 'settings.advanced.browserSearch.retention.option.90d' },
+  { value: 180, labelKey: 'settings.advanced.browserSearch.retention.option.180d' },
+  { value: 365, labelKey: 'settings.advanced.browserSearch.retention.option.365d' },
+  { value: null, labelKey: 'settings.advanced.browserSearch.retention.option.forever' },
+];
+
+interface BrowserSearchSectionProps {
+  settings: BrowserSearchSettings;
+  onChange: (next: BrowserSearchSettings) => void;
+}
+
+const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, onChange }) => {
+  const { t } = useI18n();
+  const [browsers, setBrowsers] = useState<BrowserSearchImportableBrowser[]>([]);
+  const [selectedBrowser, setSelectedBrowser] = useState<string>('');
+  const [importing, setImporting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string>('');
+
+  const refreshBrowsers = useCallback(async () => {
+    try {
+      const list = await window.electron.browserSearchListBrowsers();
+      setBrowsers(list);
+      const firstAvailable = list.find((b) => b.available);
+      if (firstAvailable) setSelectedBrowser(firstAvailable.id);
+    } catch {
+      setBrowsers([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshBrowsers();
+  }, [refreshBrowsers]);
+
+  useEffect(() => {
+    if (!statusMessage) return;
+    const id = window.setTimeout(() => setStatusMessage(''), 4000);
+    return () => window.clearTimeout(id);
+  }, [statusMessage]);
+
+  const handleClear = useCallback(async () => {
+    try {
+      await window.electron.browserSearchClearHistory();
+      setStatusMessage(t('settings.advanced.browserSearch.status.cleared'));
+    } catch {
+      setStatusMessage(t('settings.advanced.browserSearch.status.failed'));
+    }
+  }, [t]);
+
+  const handleImport = useCallback(async () => {
+    if (!selectedBrowser) return;
+    setImporting(true);
+    setStatusMessage('');
+    try {
+      const result = await window.electron.browserSearchImport(selectedBrowser);
+      if (result.reason) {
+        setStatusMessage(result.reason);
+      } else {
+        setStatusMessage(
+          t('settings.advanced.browserSearch.status.imported', {
+            count: String(result.imported),
+            total: String(result.total),
+          })
+        );
+      }
+    } catch (e: any) {
+      setStatusMessage(e?.message || t('settings.advanced.browserSearch.status.failed'));
+    } finally {
+      setImporting(false);
+    }
+  }, [selectedBrowser, t]);
+
+  const enabled = settings.enabled;
+  const availableBrowsers = browsers.filter((b) => b.available);
+
+  return (
+    <div className="grid gap-3 px-4 py-3.5 md:px-5 md:grid-cols-[220px_minmax(0,1fr)] border-b border-[var(--ui-divider)]">
+      <div className="flex items-start gap-2.5">
+        <div className="mt-0.5 text-[var(--text-muted)] shrink-0">
+          <Globe className="w-4 h-4" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">
+            {t('settings.advanced.browserSearch.title')}
+          </h3>
+          <p className="mt-0.5 text-[12px] text-[var(--text-muted)] leading-snug">
+            {t('settings.advanced.browserSearch.description')}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => onChange({ ...settings, enabled: e.target.checked })}
+            className="settings-checkbox"
+          />
+          {t('settings.advanced.browserSearch.enableLabel')}
+        </label>
+
+        {enabled ? (
+          <>
+            <div>
+              <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">
+                {t('settings.advanced.browserSearch.retention.label')}
+              </label>
+              <select
+                value={settings.historyRetentionDays === null ? 'forever' : String(settings.historyRetentionDays)}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const next = raw === 'forever' ? null : Number(raw);
+                  onChange({ ...settings, historyRetentionDays: next });
+                }}
+                className="sc-select max-w-[280px]"
+              >
+                {BROWSER_SEARCH_RETENTION_OPTIONS.map((opt) => (
+                  <option key={opt.labelKey} value={opt.value === null ? 'forever' : String(opt.value)}>
+                    {t(opt.labelKey)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleClear}
+                className="px-3 py-1.5 text-[12px] rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)]"
+              >
+                {t('settings.advanced.browserSearch.clearButton')}
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[0.75rem] text-[var(--text-muted)]">
+                {t('settings.advanced.browserSearch.importLabel')}
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={selectedBrowser}
+                  onChange={(e) => setSelectedBrowser(e.target.value)}
+                  className="sc-select max-w-[280px]"
+                  disabled={availableBrowsers.length === 0 || importing}
+                >
+                  {availableBrowsers.length === 0 ? (
+                    <option value="">{t('settings.advanced.browserSearch.import.noneFound')}</option>
+                  ) : (
+                    availableBrowsers.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleImport}
+                  disabled={!selectedBrowser || importing}
+                  className="px-3 py-1.5 text-[12px] rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {importing
+                    ? t('settings.advanced.browserSearch.import.running')
+                    : t('settings.advanced.browserSearch.import.action')}
+                </button>
+              </div>
+            </div>
+
+            {statusMessage ? (
+              <p className="text-[11px] text-[var(--text-muted)] leading-snug">{statusMessage}</p>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+};
 
 const AdvancedTab: React.FC = () => {
   const { t } = useI18n();
@@ -197,6 +385,13 @@ const AdvancedTab: React.FC = () => {
             </select>
           </div>
         </SettingsRow>
+
+        <BrowserSearchSection
+          settings={settings.browserSearch ?? { enabled: true, historyRetentionDays: 90 }}
+          onChange={(next) => {
+            void applySettingsPatch({ browserSearch: next });
+          }}
+        />
 
         <SettingsRow
           icon={<FolderSearch className="w-4 h-4" />}

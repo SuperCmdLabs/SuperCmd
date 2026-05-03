@@ -620,6 +620,34 @@
         "label": "Importer les paramètres",
         "description": "Importer les paramètres depuis un fichier",
         "button": "Importer"
+      },
+      "browserSearch": {
+        "title": "Recherche dans le navigateur",
+        "description": "Appuyez sur ⌘↵ pour ouvrir votre saisie dans le navigateur par défaut. La saisie semi-automatique suggère des sites et recherches passées.",
+        "enableLabel": "Activer la recherche dans le navigateur",
+        "retention": {
+          "label": "Durée de conservation de l'historique",
+          "option": {
+            "7d": "7 jours",
+            "30d": "30 jours",
+            "90d": "90 jours",
+            "180d": "180 jours",
+            "365d": "1 an",
+            "forever": "Toujours"
+          }
+        },
+        "clearButton": "Effacer l'historique de recherche du navigateur",
+        "importLabel": "Importer l'historique d'un navigateur",
+        "import": {
+          "action": "Importer",
+          "running": "Importation…",
+          "noneFound": "Aucun navigateur compatible détecté"
+        },
+        "status": {
+          "cleared": "Historique de recherche du navigateur effacé.",
+          "imported": "{count} entrées importées sur {total}.",
+          "failed": "Échec de l’action."
+        }
       }
     },
     "store": {
@@ -699,6 +727,14 @@
       "preferences": "Préférences",
       "refresh": "Actualiser",
       "help": "Aide"
+    },
+    "browserSearch": {
+      "openUrl": "Ouvrir {url}",
+      "searchFor": "Rechercher « {query} »",
+      "subtitle": {
+        "openUrl": "Navigateur par défaut",
+        "search": "Recherche web"
+      }
     }
   },
   "scriptCommand": {

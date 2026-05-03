@@ -640,11 +640,47 @@
         "title": "Debug Mode",
         "description": "Show detailed logs when extensions fail to load or build.",
         "label": "Enable debug mode"
+      },
+      "browserSearch": {
+        "title": "Browser Search",
+        "description": "Press ⌘↵ on a query to open it in your default browser. Inline autocomplete suggests sites and past searches.",
+        "enableLabel": "Enable browser search",
+        "retention": {
+          "label": "History retention",
+          "option": {
+            "7d": "7 days",
+            "30d": "30 days",
+            "90d": "90 days",
+            "180d": "180 days",
+            "365d": "1 year",
+            "forever": "Forever"
+          }
+        },
+        "clearButton": "Clear browser search history",
+        "importLabel": "Import history from a browser",
+        "import": {
+          "action": "Import",
+          "running": "Importing…",
+          "noneFound": "No supported browsers detected"
+        },
+        "status": {
+          "cleared": "Browser search history cleared.",
+          "imported": "Imported {count} of {total} entries.",
+          "failed": "Action failed."
+        }
       }
     }
   },
   "launcher": {
     "searchPlaceholder": "Search for apps, commands, or ask AI...",
+    "browserSearch": {
+      "openUrl": "Open {url}",
+      "searchFor": "Search \"{query}\"",
+      "subtitle": {
+        "openUrl": "Default browser",
+        "search": "Web search"
+      }
+    },
     "compact": {
       "showMore": "Show More"
     },

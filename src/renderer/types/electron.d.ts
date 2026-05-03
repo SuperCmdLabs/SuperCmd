@@ -265,6 +265,53 @@ export interface HyperKeySettings {
 
 export type AppNavigationStyle = 'vim' | 'macos';
 
+export interface BrowserSearchSettings {
+  enabled: boolean;
+  historyRetentionDays: number | null;
+}
+
+export type BrowserSearchEntryType = 'url' | 'search';
+
+export type BrowserSearchSource =
+  | 'user'
+  | 'chrome'
+  | 'arc'
+  | 'brave'
+  | 'edge'
+  | 'vivaldi'
+  | 'safari'
+  | 'firefox';
+
+export interface BrowserSearchEntry {
+  id: string;
+  type: BrowserSearchEntryType;
+  query: string;
+  url: string;
+  host: string;
+  lastUsedAt: number;
+  useCount: number;
+  source: BrowserSearchSource;
+}
+
+export interface BrowserSearchAutocomplete {
+  completion: string;
+  suffix: string;
+  entry: BrowserSearchEntry;
+}
+
+export interface BrowserSearchImportableBrowser {
+  id: BrowserSearchSource;
+  name: string;
+  available: boolean;
+}
+
+export interface BrowserSearchImportResult {
+  imported: number;
+  skipped: number;
+  total: number;
+  reason?: string;
+}
+
 export interface AppSettings {
   globalShortcut: string;
   openAtLogin: boolean;
@@ -301,6 +348,7 @@ export interface AppSettings {
   emojiPickerEnabled: boolean;
   emojiPickerTriggerPrefix: string;
   emojiPickerExcludedAppBundleIds: string[];
+  browserSearch: BrowserSearchSettings;
 }
 
 export interface CatalogEntry {
@@ -677,6 +725,18 @@ export interface ElectronAPI {
   clipboardSetEnabled: (enabled: boolean) => Promise<void>;
   clipboardWrite: (payload: { text?: string; html?: string; file?: string }) => Promise<boolean>;
   clipboardReadText: () => Promise<string>;
+
+  // Browser Search
+  browserSearchOpen: (input: string) => Promise<{ ok: boolean; type: BrowserSearchEntryType | null; url: string | null }>;
+  browserSearchResolve: (input: string) => Promise<{ type: BrowserSearchEntryType; url: string; host: string } | null>;
+  browserSearchListEntries: () => Promise<BrowserSearchEntry[]>;
+  browserSearchAutocomplete: (input: string) => Promise<BrowserSearchAutocomplete | null>;
+  browserSearchSuggest: (input: string) => Promise<string | null>;
+  browserSearchClearHistory: () => Promise<boolean>;
+  browserSearchListBrowsers: () => Promise<BrowserSearchImportableBrowser[]>;
+  browserSearchImport: (browserId: string) => Promise<BrowserSearchImportResult>;
+  onBrowserSearchHistoryChanged: (callback: () => void) => (() => void);
+
   getSelectedText: () => Promise<string>;
   getSelectedTextStrict: () => Promise<string>;
   memoryAdd: (payload: { text: string; userId?: string; source?: string; metadata?: Record<string, any> }) => Promise<{ success: boolean; memoryId?: string; error?: string }>;

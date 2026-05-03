@@ -640,6 +640,34 @@
         "title": "调试模式",
         "description": "当扩展加载或构建失败时显示详细日志。",
         "label": "启用调试模式"
+      },
+      "browserSearch": {
+        "title": "浏览器搜索",
+        "description": "输入内容后按 ⌘↵ 即可在默认浏览器中打开。内联自动补全会提示网站和历史搜索。",
+        "enableLabel": "启用浏览器搜索",
+        "retention": {
+          "label": "历史记录保留时间",
+          "option": {
+            "7d": "7 天",
+            "30d": "30 天",
+            "90d": "90 天",
+            "180d": "180 天",
+            "365d": "1 年",
+            "forever": "永久"
+          }
+        },
+        "clearButton": "清除浏览器搜索历史",
+        "importLabel": "从浏览器导入历史记录",
+        "import": {
+          "action": "导入",
+          "running": "正在导入…",
+          "noneFound": "未检测到支持的浏览器"
+        },
+        "status": {
+          "cleared": "浏览器搜索历史已清除。",
+          "imported": "已导入 {count} / {total} 条。",
+          "failed": "操作失败。"
+        }
       }
     }
   },
@@ -728,6 +756,14 @@
     },
     "compact": {
       "showMore": "显示更多"
+    },
+    "browserSearch": {
+      "openUrl": "打开 {url}",
+      "searchFor": "搜索 “{query}”",
+      "subtitle": {
+        "openUrl": "默认浏览器",
+        "search": "网络搜索"
+      }
     }
   },
   "scriptCommand": {

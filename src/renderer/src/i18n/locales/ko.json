@@ -640,6 +640,34 @@
         "title": "디버그 모드",
         "description": "확장 프로그램을 로드하거나 빌드하지 못한 경우 자세한 로그를 표시합니다.",
         "label": "디버그 모드 활성화"
+      },
+      "browserSearch": {
+        "title": "브라우저 검색",
+        "description": "입력 후 ⌘↵ 을 누르면 기본 브라우저에서 엽니다. 인라인 자동 완성은 사이트와 이전 검색을 제안합니다.",
+        "enableLabel": "브라우저 검색 사용",
+        "retention": {
+          "label": "기록 보관 기간",
+          "option": {
+            "7d": "7일",
+            "30d": "30일",
+            "90d": "90일",
+            "180d": "180일",
+            "365d": "1년",
+            "forever": "영구"
+          }
+        },
+        "clearButton": "브라우저 검색 기록 지우기",
+        "importLabel": "브라우저에서 기록 가져오기",
+        "import": {
+          "action": "가져오기",
+          "running": "가져오는 중…",
+          "noneFound": "지원되는 브라우저가 없습니다"
+        },
+        "status": {
+          "cleared": "브라우저 검색 기록을 지웠습니다.",
+          "imported": "{total}개 중 {count}개를 가져왔습니다.",
+          "failed": "작업에 실패했습니다."
+        }
       }
     }
   },
@@ -728,6 +756,14 @@
     },
     "compact": {
       "showMore": "더 보기"
+    },
+    "browserSearch": {
+      "openUrl": "{url} 열기",
+      "searchFor": "\"{query}\" 검색",
+      "subtitle": {
+        "openUrl": "기본 브라우저",
+        "search": "웹 검색"
+      }
     }
   },
   "scriptCommand": {

@@ -56,6 +56,13 @@ export interface HyperKeySettings {
   capsLockTapBehavior: HyperKeyCapsLockTapBehavior;
 }
 
+export interface BrowserSearchSettings {
+  /** When false, Cmd+Enter does not trigger browser search and inline ghost-text autocomplete is suppressed. */
+  enabled: boolean;
+  /** Auto-prune browser-search history older than N days. `null` = never prune. */
+  historyRetentionDays: number | null;
+}
+
 export type AppFontSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
 export type AppUiStyle = 'default' | 'glassy';
 export type LauncherViewMode = 'expanded' | 'compact';
@@ -116,6 +123,7 @@ export interface AppSettings {
   // Bundle IDs of applications where the inline emoji picker should NOT appear.
   // Useful for apps with their own emoji pickers (Slack, Telegram, …).
   emojiPickerExcludedAppBundleIds: string[];
+  browserSearch: BrowserSearchSettings;
 }
 
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
@@ -209,6 +217,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   emojiPickerEnabled: true,
   emojiPickerTriggerPrefix: ':',
   emojiPickerExcludedAppBundleIds: [],
+  browserSearch: {
+    enabled: true,
+    historyRetentionDays: 90,
+  },
 };
 
 let settingsCache: AppSettings | null = null;
@@ -265,6 +277,27 @@ function normalizeClipboardHistoryRetentionDays(value: any): number | null {
   const int = Math.trunc(num);
   if (ALLOWED_CLIPBOARD_RETENTION_DAYS.has(int)) return int;
   return DEFAULT_SETTINGS.clipboardHistoryRetentionDays;
+}
+
+const ALLOWED_BROWSER_SEARCH_RETENTION_DAYS = new Set([7, 30, 90, 180, 365]);
+
+function normalizeBrowserSearchRetentionDays(value: any): number | null {
+  if (value === null) return null;
+  if (value === undefined) return DEFAULT_SETTINGS.browserSearch.historyRetentionDays;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return DEFAULT_SETTINGS.browserSearch.historyRetentionDays;
+  const int = Math.trunc(num);
+  if (ALLOWED_BROWSER_SEARCH_RETENTION_DAYS.has(int)) return int;
+  return DEFAULT_SETTINGS.browserSearch.historyRetentionDays;
+}
+
+function normalizeBrowserSearchSettings(value: any): BrowserSearchSettings {
+  const fallback = DEFAULT_SETTINGS.browserSearch;
+  if (!value || typeof value !== 'object') return { ...fallback };
+  return {
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : fallback.enabled,
+    historyRetentionDays: normalizeBrowserSearchRetentionDays(value.historyRetentionDays),
+  };
 }
 
 function normalizeAppLanguage(value: any): AppLanguage {
@@ -447,6 +480,7 @@ export function loadSettings(): AppSettings {
         ? parsed.emojiPickerTriggerPrefix
         : DEFAULT_SETTINGS.emojiPickerTriggerPrefix,
       emojiPickerExcludedAppBundleIds: normalizeBundleIdList(parsed.emojiPickerExcludedAppBundleIds),
+      browserSearch: normalizeBrowserSearchSettings(parsed.browserSearch),
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };
@@ -497,6 +531,9 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
       'emojiPickerExcludedAppBundleIds' in patch
         ? patch.emojiPickerExcludedAppBundleIds
         : current.emojiPickerExcludedAppBundleIds
+    ),
+    browserSearch: normalizeBrowserSearchSettings(
+      'browserSearch' in patch ? patch.browserSearch : current.browserSearch
     ),
   };
 

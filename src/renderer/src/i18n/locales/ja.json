@@ -640,6 +640,34 @@
         "title": "デバッグモード",
         "description": "拡張機能の読み込みやビルドに失敗したときに詳細なログを表示します。",
         "label": "デバッグモードを有効にする"
+      },
+      "browserSearch": {
+        "title": "ブラウザ検索",
+        "description": "入力中に ⌘↵ を押すと、デフォルトブラウザでクエリを開きます。インライン補完で過去のサイトや検索を提案します。",
+        "enableLabel": "ブラウザ検索を有効にする",
+        "retention": {
+          "label": "履歴の保持期間",
+          "option": {
+            "7d": "7 日",
+            "30d": "30 日",
+            "90d": "90 日",
+            "180d": "180 日",
+            "365d": "1 年",
+            "forever": "無期限"
+          }
+        },
+        "clearButton": "ブラウザ検索履歴を消去",
+        "importLabel": "ブラウザから履歴をインポート",
+        "import": {
+          "action": "インポート",
+          "running": "インポート中…",
+          "noneFound": "対応するブラウザが見つかりません"
+        },
+        "status": {
+          "cleared": "ブラウザ検索履歴を消去しました。",
+          "imported": "{total} 件中 {count} 件をインポートしました。",
+          "failed": "操作に失敗しました。"
+        }
       }
     }
   },
@@ -728,6 +756,14 @@
       "script": "スクリプト",
       "settings": "設定",
       "quickLink": "クイックリンク"
+    },
+    "browserSearch": {
+      "openUrl": "{url} を開く",
+      "searchFor": "\"{query}\" を検索",
+      "subtitle": {
+        "openUrl": "デフォルトブラウザ",
+        "search": "ウェブ検索"
+      }
     }
   },
   "scriptCommand": {

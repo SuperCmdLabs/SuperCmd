@@ -640,6 +640,34 @@
         "title": "偵錯模式",
         "description": "當擴充功能載入或建置失敗時顯示詳細記錄。",
         "label": "啟用偵錯模式"
+      },
+      "browserSearch": {
+        "title": "瀏覽器搜尋",
+        "description": "輸入內容後按 ⌘↵ 即可在預設瀏覽器中開啟。內嵌自動補全會建議網站與歷史搜尋。",
+        "enableLabel": "啟用瀏覽器搜尋",
+        "retention": {
+          "label": "歷史紀錄保留時間",
+          "option": {
+            "7d": "7 天",
+            "30d": "30 天",
+            "90d": "90 天",
+            "180d": "180 天",
+            "365d": "1 年",
+            "forever": "永久"
+          }
+        },
+        "clearButton": "清除瀏覽器搜尋歷史",
+        "importLabel": "從瀏覽器匯入歷史",
+        "import": {
+          "action": "匯入",
+          "running": "正在匯入…",
+          "noneFound": "未偵測到支援的瀏覽器"
+        },
+        "status": {
+          "cleared": "瀏覽器搜尋歷史已清除。",
+          "imported": "已匯入 {count} / {total} 筆。",
+          "failed": "操作失敗。"
+        }
       }
     }
   },
@@ -728,6 +756,14 @@
     },
     "compact": {
       "showMore": "顯示更多"
+    },
+    "browserSearch": {
+      "openUrl": "開啟 {url}",
+      "searchFor": "搜尋「{query}」",
+      "subtitle": {
+        "openUrl": "預設瀏覽器",
+        "search": "網路搜尋"
+      }
     }
   },
   "scriptCommand": {

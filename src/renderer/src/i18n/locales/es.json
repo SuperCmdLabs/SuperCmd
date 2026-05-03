@@ -616,6 +616,34 @@
         "label": "Importar configuración",
         "description": "Importar configuración desde un archivo",
         "button": "Importar"
+      },
+      "browserSearch": {
+        "title": "Búsqueda en el navegador",
+        "description": "Pulsa ⌘↵ para abrir tu consulta en el navegador predeterminado. El autocompletado en línea sugiere sitios y búsquedas anteriores.",
+        "enableLabel": "Activar búsqueda en el navegador",
+        "retention": {
+          "label": "Retención del historial",
+          "option": {
+            "7d": "7 días",
+            "30d": "30 días",
+            "90d": "90 días",
+            "180d": "180 días",
+            "365d": "1 año",
+            "forever": "Para siempre"
+          }
+        },
+        "clearButton": "Borrar el historial de búsqueda del navegador",
+        "importLabel": "Importar historial desde un navegador",
+        "import": {
+          "action": "Importar",
+          "running": "Importando…",
+          "noneFound": "No se detectaron navegadores compatibles"
+        },
+        "status": {
+          "cleared": "Historial de búsqueda del navegador borrado.",
+          "imported": "Se importaron {count} de {total} entradas.",
+          "failed": "La acción falló."
+        }
       }
     },
     "store": {
@@ -695,6 +723,14 @@
       "preferences": "Preferencias",
       "refresh": "Actualizar",
       "help": "Ayuda"
+    },
+    "browserSearch": {
+      "openUrl": "Abrir {url}",
+      "searchFor": "Buscar «{query}»",
+      "subtitle": {
+        "openUrl": "Navegador predeterminado",
+        "search": "Búsqueda web"
+      }
     }
   },
   "scriptCommand": {

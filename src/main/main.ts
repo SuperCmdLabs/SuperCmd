@@ -96,6 +96,18 @@ import {
 } from './file-search-index';
 import { ensureCalendarAccess, getCalendarEvents } from './calendar-events';
 import {
+  openInDefaultBrowser as bsOpen,
+  resolveInput as bsResolveInput,
+  listEntries as bsListEntries,
+  clearHistory as bsClearHistory,
+  pruneByRetentionNow as bsPruneByRetention,
+  getAutocomplete as bsGetAutocomplete,
+  listImportableBrowsers as bsListImportableBrowsers,
+  importFromBrowser as bsImportFromBrowser,
+  fetchSearchSuggestion as bsFetchSearchSuggestion,
+  type BrowserSearchSource,
+} from './browser-search-history';
+import {
   initNoteStore,
   getAllNotes,
   searchNotes,
@@ -11328,6 +11340,15 @@ function broadcastCommandsUpdated(): void {
   }
 }
 
+function broadcastBrowserSearchHistoryChanged(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    try {
+      window.webContents.send('browser-search-history-changed');
+    } catch {}
+  }
+}
+
 function scheduleInstalledAppsRefresh(reason: string): void {
   if (appInstallChangeDebounceTimer) {
     clearTimeout(appInstallChangeDebounceTimer);
@@ -14418,6 +14439,69 @@ if let tiff = image?.tiffRepresentation {
       return '';
     }
   });
+
+  // ─── IPC: Browser Search ────────────────────────────────────────
+
+  ipcMain.handle('browser-search:open', async (_event: any, input: string) => {
+    const result = await bsOpen(String(input || ''));
+    if (result.ok) {
+      try {
+        broadcastBrowserSearchHistoryChanged();
+      } catch {}
+    }
+    return {
+      ok: result.ok,
+      type: result.resolved?.type ?? null,
+      url: result.resolved?.url ?? null,
+    };
+  });
+
+  ipcMain.handle('browser-search:resolve', (_event: any, input: string) => {
+    const resolved = bsResolveInput(String(input || ''));
+    if (!resolved) return null;
+    return { type: resolved.type, url: resolved.url, host: resolved.host };
+  });
+
+  ipcMain.handle('browser-search:list-entries', () => {
+    return bsListEntries();
+  });
+
+  ipcMain.handle('browser-search:autocomplete', (_event: any, input: string) => {
+    return bsGetAutocomplete(String(input || ''));
+  });
+
+  ipcMain.handle('browser-search:suggest', async (_event: any, input: string) => {
+    return await bsFetchSearchSuggestion(String(input || ''));
+  });
+
+  ipcMain.handle('browser-search:clear-history', () => {
+    bsClearHistory();
+    try {
+      broadcastBrowserSearchHistoryChanged();
+    } catch {}
+    return true;
+  });
+
+  ipcMain.handle('browser-search:list-browsers', () => {
+    return bsListImportableBrowsers().map((b) => ({
+      id: b.id,
+      name: b.name,
+      available: b.available,
+    }));
+  });
+
+  ipcMain.handle('browser-search:import', async (_event: any, browserId: BrowserSearchSource) => {
+    const result = await bsImportFromBrowser(browserId);
+    try {
+      broadcastBrowserSearchHistoryChanged();
+    } catch {}
+    return result;
+  });
+
+  // Run a retention prune on startup so out-of-window entries don't linger.
+  try {
+    bsPruneByRetention();
+  } catch {}
 
   ipcMain.handle('get-selected-text', async () => {
     const fresh = String(await getSelectedTextForSpeak() || '');

@@ -639,6 +639,34 @@
         "title": "Modalità debug",
         "description": "Mostra log dettagliati quando le estensioni non riescono a caricarsi o a compilarsi.",
         "label": "Abilita modalità debug"
+      },
+      "browserSearch": {
+        "title": "Ricerca nel browser",
+        "description": "Premi ⌘↵ per aprire la query nel browser predefinito. Il completamento automatico inline suggerisce siti e ricerche precedenti.",
+        "enableLabel": "Abilita ricerca nel browser",
+        "retention": {
+          "label": "Conservazione cronologia",
+          "option": {
+            "7d": "7 giorni",
+            "30d": "30 giorni",
+            "90d": "90 giorni",
+            "180d": "180 giorni",
+            "365d": "1 anno",
+            "forever": "Per sempre"
+          }
+        },
+        "clearButton": "Cancella cronologia ricerche del browser",
+        "importLabel": "Importa cronologia da un browser",
+        "import": {
+          "action": "Importa",
+          "running": "Importazione…",
+          "noneFound": "Nessun browser supportato rilevato"
+        },
+        "status": {
+          "cleared": "Cronologia ricerche del browser cancellata.",
+          "imported": "Importate {count} di {total} voci.",
+          "failed": "Operazione non riuscita."
+        }
       }
     }
   },
@@ -727,6 +755,14 @@
       "script": "Script",
       "settings": "Impostazioni",
       "quickLink": "Collegamento rapido"
+    },
+    "browserSearch": {
+      "openUrl": "Apri {url}",
+      "searchFor": "Cerca \"{query}\"",
+      "subtitle": {
+        "openUrl": "Browser predefinito",
+        "search": "Ricerca web"
+      }
     }
   },
   "scriptCommand": {
