@@ -428,6 +428,7 @@ const App: React.FC = () => {
     backgroundNoViewRuns, setBackgroundNoViewRuns,
     isMenuBarExtensionMounted,
     hideMenuBarExtension,
+    hideMenuBarExtensionsForExtension,
     upsertMenuBarExtension,
   } = useMenuBarExtensions();
   const [selectedTextSnapshot, setSelectedTextSnapshot] = useState('');
@@ -1125,6 +1126,24 @@ const App: React.FC = () => {
     return () => window.removeEventListener('sc-launch-extension-bundle', onLaunchBundle as EventListener);
   }, [expandLauncherForDirectLaunch, queueNoViewBundleRun, upsertMenuBarExtension]);
 
+  // Tear down per-extension renderer state whenever ANY uninstall path completes
+  // (launcher action, settings tab, store tab). Without this the in-memory bundle
+  // outlives the on-disk delete: its setInterval keeps firing, and the menu-bar
+  // tray + scheduled re-runs in useBackgroundRefresh keep re-mounting it, even
+  // though run-extension now fails with "Extension directory not found".
+  useEffect(() => {
+    const cleanup = window.electron.onExtensionUninstalled?.((extensionName: string) => {
+      hideMenuBarExtensionsForExtension(extensionName);
+      setBackgroundNoViewRuns((prev) =>
+        prev.filter((run) => {
+          const runExt = (run.bundle.extName || run.bundle.extensionName || '').trim();
+          return runExt !== extensionName;
+        })
+      );
+    });
+    return cleanup;
+  }, [hideMenuBarExtensionsForExtension, setBackgroundNoViewRuns]);
+
   useEffect(() => {
     const onRunScript = (event: Event) => {
       const custom = event as CustomEvent<{
@@ -1176,7 +1195,15 @@ const App: React.FC = () => {
     return () => window.removeEventListener('sc-run-script-command', onRunScript as EventListener);
   }, [commands, expandLauncherForDirectLaunch, fetchCommands]);
 
-  useBackgroundRefresh({ commands, fetchCommands });
+  useBackgroundRefresh({
+    commands,
+    fetchCommands,
+    isMenuBarCommandActive: useCallback(
+      (extName: string, cmdName: string) =>
+        isMenuBarExtensionMounted({ extName, cmdName }),
+      [isMenuBarExtensionMounted],
+    ),
+  });
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -1313,6 +1340,10 @@ const App: React.FC = () => {
       const separatorIndex = rawPath.indexOf('/');
       const extName = separatorIndex > 0 ? rawPath.slice(0, separatorIndex).trim() : '';
       if (!extName) return;
+      // Live menu-bar / background runner teardown happens via the
+      // `extension-uninstalled` IPC broadcast (see effect below) so it covers
+      // settings + store uninstall paths uniformly. We only need to update
+      // launcher-local pinned/recent state here.
       await window.electron.uninstallExtension(extName);
       await updatePinnedCommands(pinnedCommands.filter((id) => id !== command.id));
       const nextRecent = recentCommands.filter((id) => id !== command.id);

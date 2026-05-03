@@ -66,6 +66,10 @@ export type SerializedMenuBarIcon = {
   iconDataUrl?: string;
   iconEmoji?: string;
   iconTemplate?: boolean;
+  // The bitmap inside iconDataUrl is at this DPR. main uses scaleFactor when
+  // constructing the NativeImage so the tray displays at the logical size with
+  // a crisp retina backing instead of stretching an 18×18 bitmap to 36×36.
+  iconBitmapScale?: number;
 };
 
 export const MBRegistryContext = createContext<MBRegistryAPI | null>(null);
@@ -158,6 +162,8 @@ export function toMenuBarIconPayload(icon: any, assetsPath: string): SerializedM
     size: 18,
     color: tintColor || 'rgb(var(--backdrop-rgb))',
   });
+  // Sync path returns an SVG data URL — Electron rasterizes it on demand at the
+  // intrinsic SVG size, so iconBitmapScale doesn't apply here.
   if (dataUrl) return { iconDataUrl: dataUrl, iconTemplate: !tintColor };
 
   return undefined;
@@ -194,11 +200,24 @@ export async function toMenuBarIconPayloadAsync(icon: any, assetsPath: string): 
   }
 
   const iconToken = src.replace(/^Icon\./, '');
+  // Render at 2× the logical 18 px tray size so retina displays get a crisp
+  // 36×36 backing. main reads `iconBitmapScale` and constructs the NativeImage
+  // with the matching scale factor; without that the bitmap would be drawn at
+  // its raw 18×18 size and stretched to 36×36 by macOS, producing the blurry
+  // tray icons reported for raycast/timers and clockify.
+  const PHOSPHOR_BITMAP_SCALE = 2;
   const dataUrl = await renderPhosphorIconDataUrlForNative(iconToken, {
-    size: 18,
+    size: 18 * PHOSPHOR_BITMAP_SCALE,
     color: tintColor || 'rgb(var(--backdrop-rgb))',
   });
-  if (dataUrl) return { iconDataUrl: dataUrl, iconTemplate: !tintColor };
+  if (dataUrl) {
+    const isRasterPng = dataUrl.startsWith('data:image/png');
+    return {
+      iconDataUrl: dataUrl,
+      iconTemplate: !tintColor,
+      ...(isRasterPng ? { iconBitmapScale: PHOSPHOR_BITMAP_SCALE } : {}),
+    };
+  }
 
   return undefined;
 }

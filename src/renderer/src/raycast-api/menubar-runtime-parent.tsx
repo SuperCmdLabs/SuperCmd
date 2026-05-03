@@ -166,6 +166,7 @@ export function MenuBarExtraComponent({ children, icon, title, tooltip, isLoadin
         iconDataUrl: trayIconPayload.iconDataUrl,
         iconEmoji: trayIconPayload.iconEmoji,
         iconTemplate: trayIconPayload.iconTemplate,
+        iconBitmapScale: trayIconPayload.iconBitmapScale,
         fallbackIconDataUrl: extInfo.extensionIconDataUrl || '',
         title: title || '',
         tooltip: tooltip || '',

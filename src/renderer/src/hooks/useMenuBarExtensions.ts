@@ -44,6 +44,7 @@ export interface UseMenuBarExtensionsReturn {
   };
   isMenuBarExtensionMounted: (bundle: Partial<ExtensionBundle>) => boolean;
   hideMenuBarExtension: (bundle: Partial<ExtensionBundle>) => void;
+  hideMenuBarExtensionsForExtension: (extensionName: string) => void;
   upsertMenuBarExtension: (bundle: ExtensionBundle, options?: { remount?: boolean }) => void;
   remountMenuBarExtensionsForExtension: (extensionName: string) => void;
 }
@@ -82,6 +83,33 @@ export function useMenuBarExtensions(): UseMenuBarExtensionsReturn {
     );
     window.electron.removeMenuBar?.(extId);
   }, [getMenuBarIdentity]);
+
+  // Tear down every menu-bar runner belonging to an extension. Used by uninstall:
+  // the on-disk delete does not unload the bundle that's already been evaluated
+  // into the live <ExtensionView /> tree, so without this call the extension's
+  // setInterval keeps firing and its menu-bar item never disappears.
+  const hideMenuBarExtensionsForExtension = useCallback((extensionName: string) => {
+    const normalized = (extensionName || '').trim();
+    if (!normalized) return;
+    setMenuBarExtensions((prev) => {
+      const removed: MenuBarEntry[] = [];
+      const next = prev.filter((entry) => {
+        const entryExt = (entry.bundle.extName || entry.bundle.extensionName || '').trim();
+        if (entryExt === normalized) {
+          removed.push(entry);
+          return false;
+        }
+        return true;
+      });
+      if (removed.length === 0) return prev;
+      for (const entry of removed) {
+        const cmdName = entry.bundle.cmdName || entry.bundle.commandName || '';
+        const extId = `${normalized}/${cmdName}`;
+        window.electron.removeMenuBar?.(extId);
+      }
+      return next;
+    });
+  }, []);
 
   const upsertMenuBarExtension = useCallback((bundle: ExtensionBundle, options?: { remount?: boolean }) => {
     const remount = Boolean(options?.remount);
@@ -153,6 +181,7 @@ export function useMenuBarExtensions(): UseMenuBarExtensionsReturn {
     getMenuBarIdentity,
     isMenuBarExtensionMounted,
     hideMenuBarExtension,
+    hideMenuBarExtensionsForExtension,
     upsertMenuBarExtension,
     remountMenuBarExtensionsForExtension,
   };

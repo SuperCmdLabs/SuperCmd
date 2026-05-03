@@ -11304,6 +11304,21 @@ function broadcastExtensionsUpdated(): void {
   }
 }
 
+// Sent in addition to `extensions-updated` so listeners that need to tear down
+// per-extension state (live menu-bar runners, background no-view runs, scheduled
+// interval refreshes) can target exactly the extension that was removed without
+// re-deriving it from a stale command list.
+function broadcastExtensionUninstalled(extensionName: string): void {
+  const name = String(extensionName || '').trim();
+  if (!name) return;
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    try {
+      window.webContents.send('extension-uninstalled', { extensionName: name });
+    } catch {}
+  }
+}
+
 function broadcastCommandsUpdated(): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue;
@@ -14076,6 +14091,10 @@ return appURL's |path|() as text`,
       if (success) {
         // Invalidate command cache so removed extensions disappear
         invalidateCache();
+        // Tell the launcher renderer to tear down any live runners (menu-bar
+        // tray, background no-view loop, interval re-runner) for this
+        // extension before its bundle keeps trying to re-mount itself.
+        broadcastExtensionUninstalled(name);
         broadcastExtensionsUpdated();
       }
       return success;
@@ -16176,18 +16195,39 @@ if let tiff = image?.tiffRepresentation {
 
   // Update / create a menu-bar Tray when the renderer sends menu structure
   ipcMain.on('menubar-update', (_event: any, data: any) => {
-    const { extId, iconPath, iconDataUrl, iconEmoji, iconTemplate, fallbackIconDataUrl, title, tooltip, items } = data;
+    const { extId, iconPath, iconDataUrl, iconEmoji, iconTemplate, iconBitmapScale, fallbackIconDataUrl, title, tooltip, items } = data;
 
     let tray = menuBarTrays.get(extId);
 
-    const createNativeImageFromMenuIcon = (payload: { pathValue?: string; dataUrlValue?: string }, size: number) => {
+    const createNativeImageFromMenuIcon = (
+      payload: { pathValue?: string; dataUrlValue?: string; bitmapScale?: number },
+      size: number,
+    ) => {
       try {
         const fs = require('fs');
         let image: any;
         const dataUrlValue = String(payload?.dataUrlValue || '').trim();
         const pathValue = String(payload?.pathValue || '').trim();
+        const requestedScale = Number(payload?.bitmapScale);
+        const bitmapScale = Number.isFinite(requestedScale) && requestedScale >= 1 ? requestedScale : 1;
+
         if (dataUrlValue.startsWith('data:')) {
-          image = nativeImage.createFromDataURL(dataUrlValue);
+          // For raster PNG data URLs that the renderer pre-rasterized at higher
+          // DPR (bitmapScale > 1), reconstruct via createFromBuffer with the
+          // matching scaleFactor so the Tray treats it as a retina rep instead
+          // of stretching a low-res bitmap.
+          const isRasterPng = dataUrlValue.startsWith('data:image/png');
+          if (isRasterPng && bitmapScale > 1) {
+            const commaIdx = dataUrlValue.indexOf(',');
+            const base64Body = commaIdx >= 0 ? dataUrlValue.slice(commaIdx + 1) : '';
+            const buf = base64Body ? Buffer.from(base64Body, 'base64') : null;
+            if (buf && buf.length > 0) {
+              image = nativeImage.createFromBuffer(buf, { scaleFactor: bitmapScale });
+            }
+          }
+          if (!image || image.isEmpty?.()) {
+            image = nativeImage.createFromDataURL(dataUrlValue);
+          }
         } else {
           if (!pathValue || !fs.existsSync(pathValue)) return null;
           image = nativeImage.createFromPath(pathValue);
@@ -16198,7 +16238,14 @@ if let tiff = image?.tiffRepresentation {
           }
         }
         if (!image || image.isEmpty()) return null;
-        return image.resize({ width: size, height: size });
+
+        // When the source already carries a retina backing (scaleFactor > 1),
+        // resizing to logical px would discard the @2x rep — keep it intact.
+        const currentSize = image.getSize?.() || { width: 0, height: 0 };
+        if (bitmapScale > 1 && currentSize.width === size && currentSize.height === size) {
+          return image;
+        }
+        return image.resize({ width: size, height: size, quality: 'best' });
       } catch {
         return null;
       }
@@ -16207,7 +16254,10 @@ if let tiff = image?.tiffRepresentation {
     let lastResolvedTrayIconOk = false;
     const hasEmojiIcon = typeof iconEmoji === 'string' && iconEmoji.trim().length > 0;
     const resolveTrayIcon = () => {
-      const primaryImg = createNativeImageFromMenuIcon({ pathValue: iconPath, dataUrlValue: iconDataUrl }, 18);
+      const primaryImg = createNativeImageFromMenuIcon(
+        { pathValue: iconPath, dataUrlValue: iconDataUrl, bitmapScale: iconBitmapScale },
+        18,
+      );
       const usingPrimary = Boolean(primaryImg);
       // When the extension supplies an emoji as its tray icon (e.g. "🎉"), we render that
       // emoji as the tray title and leave the tray image empty. Falling back to the

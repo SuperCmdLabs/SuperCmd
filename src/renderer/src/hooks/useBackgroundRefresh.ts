@@ -26,10 +26,19 @@ import {
 export interface UseBackgroundRefreshOptions {
   commands: CommandInfo[];
   fetchCommands: () => Promise<void>;
+  /**
+   * Returns true when a menu-bar command is currently mounted (visible in the
+   * tray). Per Raycast's interval contract, an interval-driven re-run only
+   * fires while the menu-bar item is shown — so toggling a menu-bar command
+   * off must stop its background re-runs, otherwise the next tick re-mounts it.
+   */
+  isMenuBarCommandActive?: (extName: string, cmdName: string) => boolean;
 }
 
-export function useBackgroundRefresh({ commands, fetchCommands }: UseBackgroundRefreshOptions): void {
+export function useBackgroundRefresh({ commands, fetchCommands, isMenuBarCommandActive }: UseBackgroundRefreshOptions): void {
   const intervalTimerIdsRef = useRef<number[]>([]);
+  const isMenuBarCommandActiveRef = useRef(isMenuBarCommandActive);
+  isMenuBarCommandActiveRef.current = isMenuBarCommandActive;
 
   const parseExtensionCommandPath = (pathValue: string): { extName: string; cmdName: string } | null => {
     const rawPath = String(pathValue || '').trim();
@@ -68,6 +77,18 @@ export function useBackgroundRefresh({ commands, fetchCommands }: UseBackgroundR
 
           const hydrated = hydrateExtensionBundlePreferences(result);
           if (hydrated.mode !== 'no-view' && hydrated.mode !== 'menu-bar') return;
+
+          // Menu-bar interval re-runs only fire while the item is currently
+          // shown — otherwise toggling a menu-bar command off would be undone
+          // by the next tick re-dispatching `sc-launch-extension-bundle` →
+          // upsertMenuBarExtension and the tray icon would respawn.
+          if (
+            hydrated.mode === 'menu-bar' &&
+            isMenuBarCommandActiveRef.current &&
+            !isMenuBarCommandActiveRef.current(extName, cmdName)
+          ) {
+            return;
+          }
 
           const missingPrefs = getMissingRequiredPreferences(hydrated);
           const missingArgs = getMissingRequiredArguments(hydrated);

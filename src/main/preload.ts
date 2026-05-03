@@ -376,6 +376,16 @@ const electronAPI = {
       ipcRenderer.removeListener('extensions-updated', listener);
     };
   },
+  onExtensionUninstalled: (callback: (extensionName: string) => void): (() => void) => {
+    const listener = (_event: any, payload: { extensionName?: string }) => {
+      const name = String(payload?.extensionName || '').trim();
+      if (name) callback(name);
+    };
+    ipcRenderer.on('extension-uninstalled', listener);
+    return () => {
+      ipcRenderer.removeListener('extension-uninstalled', listener);
+    };
+  },
   onExtensionInstallStatus: (callback: (message: string) => void): (() => void) => {
     const listener = (_event: any, message: string) => callback(message);
     ipcRenderer.on('extension-install-status', listener);
