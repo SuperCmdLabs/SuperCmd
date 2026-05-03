@@ -647,14 +647,14 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                 placeholder="Search extensions..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-lg pl-10 pr-4 py-2 text-sm text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-[var(--ui-segment-border)] transition-colors"
+                className="sc-input pl-10 pr-4"
               />
             </div>
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
               disabled={availableCategories.length === 0}
-              className="px-3 py-1.5 text-xs text-[var(--text-secondary)] border border-[var(--ui-panel-border)] bg-[var(--ui-segment-bg)] hover:bg-[var(--ui-segment-hover-bg)] rounded-lg transition-colors outline-none focus:border-[var(--ui-segment-border)] disabled:opacity-40 max-w-[180px]"
+              className="sc-select sc-select--sm max-w-[180px] disabled:opacity-40"
             >
               <option value="all">All Categories</option>
               {availableCategories.map((category) => (

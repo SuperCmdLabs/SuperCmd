@@ -46,8 +46,11 @@ function useSeedFormDefault(
   }, [id, defaultValue, controlled, form]);
 }
 
-const FORM_CONTROL_BASE_CLASS =
-  'w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-segment-border)] text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] outline-none transition-colors focus:border-[var(--border-strong)] focus:bg-[var(--ui-segment-bg-hover)]';
+const FORM_CONTROL_BASE_CLASS = 'sc-form-field';
+const FORM_CONTROL_TEXT_CLASS = `${FORM_CONTROL_BASE_CLASS} sc-form-field--text`;
+const FORM_CONTROL_AREA_CLASS = `${FORM_CONTROL_BASE_CLASS} sc-form-field--area`;
+const FORM_CONTROL_SELECT_CLASS = `${FORM_CONTROL_BASE_CLASS} sc-form-field--select sc-select-chevron`;
+const FORM_CONTROL_DATE_CLASS = `${FORM_CONTROL_BASE_CLASS} sc-form-field--date`;
 
 function FormFieldRow({
   title,
@@ -61,14 +64,14 @@ function FormFieldRow({
   info?: string;
 }) {
   return (
-    <div className="flex items-center gap-3">
-      <div className="w-28 flex-shrink-0 text-right">
-        {title && <label className="text-[13px] font-medium text-[var(--text-secondary)] leading-tight">{title}</label>}
+    <div className="sc-form-row">
+      <div className="sc-form-row-label">
+        {title && <label className="sc-form-label">{title}</label>}
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="sc-form-row-control">
         {children}
-        {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
-        {info && <p className="text-[12px] text-[var(--text-subtle)] mt-1.5">{info}</p>}
+        {error && <p className="sc-form-error">{error}</p>}
+        {info && <p className="sc-form-info">{info}</p>}
       </div>
     </div>
   );
@@ -98,7 +101,7 @@ export function attachFormFields(FormComponent: any) {
           onBlur={onBlur}
           onFocus={onFocus}
           autoFocus={autoFocus}
-          className={`${FORM_CONTROL_BASE_CLASS} rounded-lg px-3 py-2 text-[15px]`}
+          className={FORM_CONTROL_TEXT_CLASS}
         />
       </FormFieldRow>
     );
@@ -126,7 +129,7 @@ export function attachFormFields(FormComponent: any) {
           onBlur={onBlur}
           onFocus={onFocus}
           rows={5}
-          className={`${FORM_CONTROL_BASE_CLASS} min-h-[140px] rounded-lg px-4 py-3 text-[15px] resize-y`}
+          className={FORM_CONTROL_AREA_CLASS}
         />
       </FormFieldRow>
     );
@@ -165,7 +168,7 @@ export function attachFormFields(FormComponent: any) {
             onKeyDown={handleKeyDown}
             onBlur={onBlur}
             onFocus={onFocus}
-            className={`${FORM_CONTROL_BASE_CLASS} rounded-lg px-3 py-2 pr-10 text-[15px]`}
+            className={`${FORM_CONTROL_TEXT_CLASS} pr-10`}
           />
           <button
             type="button"
@@ -220,7 +223,7 @@ export function attachFormFields(FormComponent: any) {
           <select
             value={fieldValue}
             onChange={handleChange}
-            className={`${FORM_CONTROL_BASE_CLASS} rounded-lg px-3 py-2 text-[15px]`}
+            className={FORM_CONTROL_SELECT_CLASS}
           >
             {children}
           </select>
@@ -240,7 +243,7 @@ export function attachFormFields(FormComponent: any) {
           type={type === 'date' ? 'date' : 'datetime-local'}
           value={value ? (value instanceof Date ? value.toISOString().slice(0, 16) : value) : ''}
           onChange={(event: any) => onChange?.(event.target.value ? new Date(event.target.value) : null)}
-          className={`${FORM_CONTROL_BASE_CLASS} rounded-lg px-3 py-2 text-[13px]`}
+          className={FORM_CONTROL_DATE_CLASS}
         />
       </FormFieldRow>
     ),

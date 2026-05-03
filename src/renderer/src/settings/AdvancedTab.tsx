@@ -35,7 +35,7 @@ const SettingsRow: React.FC<SettingsRowProps> = ({
 );
 
 const selectClassName =
-  'w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50';
+  'sc-select';
 
 const SOURCE_KEY_OPTIONS: { value: HyperKeySourceKey; label: string }[] = [
   { value: 'caps-lock', label: 'Caps Lock (⇪)' },
@@ -187,7 +187,7 @@ const AdvancedTab: React.FC = () => {
               onChange={(event) => {
                 void applySettingsPatch({ appLanguage: event.target.value as AppLanguageSetting });
               }}
-              className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+              className="sc-select"
             >
               {APP_LANGUAGE_OPTIONS.map((option) => (
                 <option key={option} value={option}>

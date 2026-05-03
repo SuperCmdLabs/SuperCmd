@@ -26,10 +26,9 @@ type SearchableDropdownProps = {
   autoFocusSearch?: boolean;
 };
 
-const DEFAULT_TRIGGER_CLASS =
-  'w-full bg-white/[0.06] border border-[var(--snippet-divider)] rounded-lg px-2.5 py-1.5 text-white/90 text-[13px] outline-none hover:border-[var(--snippet-divider-strong)] transition-colors text-left flex items-center justify-between gap-2';
+const DEFAULT_TRIGGER_CLASS = 'sc-dropdown-trigger';
 
-const DEFAULT_MENU_CLASS = 'fixed rounded-lg overflow-hidden sc-dropdown-surface';
+const DEFAULT_MENU_CLASS = 'fixed overflow-hidden sc-dropdown-surface';
 
 const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
   value,
@@ -226,6 +225,7 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
       <button
         ref={triggerRef}
         type="button"
+        aria-expanded={isOpen}
         onClick={() => {
           if (isOpen) {
             closeMenu(false);
@@ -246,14 +246,14 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
         }}
         className={triggerClassName}
       >
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1 truncate">
           {renderTriggerContent ? (
             renderTriggerContent(selectedOption)
           ) : (
             <span className="truncate">{selectedOption?.label || 'Select an option'}</span>
           )}
         </span>
-        <ChevronDown className={`w-3.5 h-3.5 text-white/55 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className="sc-dropdown-trigger-caret w-3.5 h-3.5" />
       </button>
 
       {isOpen && createPortal(
@@ -267,7 +267,7 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
           }}
           onKeyDown={handleMenuKeyDown}
         >
-          <div className="px-2 py-1.5 border-b sc-dropdown-divider">
+          <div className="sc-dropdown-search border-b sc-dropdown-divider">
             <input
               ref={searchRef}
               type="text"
@@ -287,10 +287,10 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
               }}
               onKeyDown={handleMenuKeyDown}
               placeholder={searchPlaceholder}
-              className="w-full px-1.5 py-1 bg-transparent text-[13px] text-white/75 placeholder:text-[color:var(--text-subtle)] outline-none"
+              className="sc-dropdown-search-input"
             />
           </div>
-          <div className="overflow-y-auto py-1" style={{ maxHeight: Math.min(menuPos.maxHeight, listMaxHeight) }}>
+          <div className="sc-dropdown-list overflow-y-auto" style={{ maxHeight: Math.min(menuPos.maxHeight, listMaxHeight) }}>
             {filteredOptions.map((option, index) => {
               const isHighlighted = highlightedIndex === index;
               const isSelected = option.value === value;
@@ -308,9 +308,8 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
                   onClick={() => commitSelection(index)}
                   disabled={option.disabled}
                   aria-selected={isHighlighted}
-                  className={`sc-dropdown-item w-full text-left px-2.5 py-1.5 text-[13px] outline-none focus-visible:outline-none flex items-center gap-2 ${
-                    option.disabled ? 'text-white/35 cursor-not-allowed' : 'text-white/85'
-                  }`}
+                  aria-disabled={option.disabled || undefined}
+                  className="sc-dropdown-item"
                 >
                   {renderOptionContent ? (
                     <span className="min-w-0 flex-1 flex items-center gap-2">{renderOptionContent(option)}</span>
@@ -320,12 +319,12 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
                       <span className="min-w-0 flex-1 truncate">{option.label}</span>
                     </>
                   )}
-                  {isSelected ? <Check className="w-3.5 h-3.5 text-white/65 flex-shrink-0" /> : null}
+                  {isSelected ? <Check className="w-3.5 h-3.5 text-[var(--accent)] flex-shrink-0" /> : null}
                 </button>
               );
             })}
             {filteredOptions.length === 0 ? (
-              <div className="px-2.5 py-2 text-xs text-white/35">{noResultsText}</div>
+              <div className="sc-dropdown-empty">{noResultsText}</div>
             ) : null}
           </div>
         </div>,

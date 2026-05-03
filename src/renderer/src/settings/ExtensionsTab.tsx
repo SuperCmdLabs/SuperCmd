@@ -929,7 +929,7 @@ const ExtensionsTab: React.FC<{
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={t('common.search')}
-                  className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-lg pl-9 pr-4 py-1.5 text-[13px] text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-[var(--ui-segment-border)] transition-colors"
+                  className="sc-input sc-input--sm pl-9 pr-4"
                 />
               </div>
               <div className="flex items-center gap-1">
@@ -1621,7 +1621,7 @@ const PreferenceSection: React.FC<{
                   <select
                     value={textValue}
                     onChange={(e) => setPreferenceValue(extName, pref, e.target.value, cmdName)}
-                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs text-[var(--text-secondary)] outline-none"
+                    className="sc-select sc-select--sm"
                   >
                     <option value="">{t('settings.extensions.preferences.selectOption')}</option>
                     {(pref.data || []).map((opt) => (
@@ -1637,7 +1637,7 @@ const PreferenceSection: React.FC<{
                       value={textValue}
                       placeholder={pref.placeholder || ''}
                       onChange={(e) => setPreferenceValue(extName, pref, e.target.value, cmdName)}
-                      className="flex-1 bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none"
+                      className="sc-input sc-input--sm flex-1"
                     />
                     {(type === 'file' || type === 'directory' || type === 'appPicker') && (
                       <button
@@ -1866,7 +1866,7 @@ const QuickLinkEditorSection: React.FC<{
           type="text"
           value={name}
           onChange={(event) => setName(event.target.value)}
-          className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none"
+          className="sc-input sc-input--sm"
         />
       </div>
 
@@ -1886,7 +1886,7 @@ const QuickLinkEditorSection: React.FC<{
             }
           }}
           placeholder="https://example.com/search?q={clipboard}"
-          className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs font-mono text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none"
+          className="sc-input sc-input--sm sc-input--mono"
         />
         <p className="text-[11px] text-[var(--text-subtle)]">{t('quickLinks.urlHint')}</p>
       </div>
@@ -1896,7 +1896,7 @@ const QuickLinkEditorSection: React.FC<{
         <select
           value={applicationPath}
           onChange={(event) => onApplicationChange(event.target.value)}
-          className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-panel-border)] rounded-md px-2.5 py-1.5 text-xs text-[var(--text-secondary)] outline-none"
+          className="sc-select sc-select--sm"
         >
           <option value="">{t('quickLinks.defaultBrowser')}</option>
           {apps.map((app) => (
@@ -1984,7 +1984,7 @@ const ClipboardSettingsSection: React.FC<{
               const next = raw === 'never' ? null : Number(raw);
               void onRetentionChange(next);
             }}
-            className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+            className="sc-select"
           >
             {CLIPBOARD_RETENTION_OPTIONS.map((opt) => (
               <option
@@ -2136,7 +2136,7 @@ const ClipboardBlacklistSection: React.FC<{
                   value={pickerSearch}
                   onChange={(event) => setPickerSearch(event.target.value)}
                   placeholder={t('settings.extensions.clipboardBlacklist.searchPlaceholder')}
-                  className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2 py-1 text-[12px] text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none"
+                  className="sc-input sc-input--sm"
                 />
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
@@ -2287,7 +2287,7 @@ const EmojiPickerSettingsSection: React.FC<{
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
             }}
-            className="w-24 bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-1.5 text-xs text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-blue-500/50"
+            className="sc-input sc-input--sm w-24"
           />
         </div>
       )}

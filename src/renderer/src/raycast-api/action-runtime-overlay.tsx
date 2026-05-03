@@ -201,147 +201,98 @@ export function createActionOverlayRuntime(deps: OverlayDeps) {
       document.documentElement.classList.contains('sc-native-liquid-glass') ||
       document.body.classList.contains('sc-native-liquid-glass');
 
+    const usesThemeOverride = isNativeLiquidGlass || isGlassyTheme;
+    const themeOverrideStyle = isNativeLiquidGlass
+      ? {
+          background: 'rgba(var(--surface-base-rgb), 0.72)',
+          backdropFilter: 'blur(44px) saturate(155%)',
+          WebkitBackdropFilter: 'blur(44px) saturate(155%)',
+          border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
+          boxShadow: `
+            0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26),
+            inset 0 -1px 0 0 rgba(var(--on-surface-rgb), 0.05)
+          `,
+        }
+      : isGlassyTheme
+      ? {
+          background: `
+            linear-gradient(160deg,
+              rgba(255, 255, 255, 0.16) 0%,
+              rgba(255, 255, 255, 0.035) 38%,
+              rgba(255, 255, 255, 0.07) 100%
+            ),
+            rgba(var(--surface-base-rgb), 0.58)
+          `,
+          backdropFilter: 'blur(128px) saturate(195%) contrast(107%) brightness(1.03)',
+          WebkitBackdropFilter: 'blur(128px) saturate(195%) contrast(107%) brightness(1.03)',
+          border: '1px solid rgba(255, 255, 255, 0.14)',
+          boxShadow: `
+            0 28px 58px -14px rgba(0, 0, 0, 0.42),
+            inset 0 -1px 0 0 rgba(0, 0, 0, 0.08)
+          `,
+        }
+      : undefined;
+
     return (
       <div
-        className="fixed inset-0 z-50"
+        className="sc-action-scrim"
         onClick={onClose}
         onKeyDown={handleKeyDown}
         tabIndex={-1}
-        style={{ background: 'var(--bg-scrim)' }}
       >
         <div
           ref={panelRef}
-          className={`absolute bottom-12 right-3 w-80 max-h-[65vh] overflow-hidden flex flex-col ${
-            (isNativeLiquidGlass || isGlassyTheme) ? 'rounded-3xl p-1' : 'rounded-xl shadow-2xl'
-          }`}
-          style={
-            isNativeLiquidGlass
-              ? {
-                  background: 'rgba(var(--surface-base-rgb), 0.72)',
-                  backdropFilter: 'blur(44px) saturate(155%)',
-                  WebkitBackdropFilter: 'blur(44px) saturate(155%)',
-                  border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
-                  boxShadow: `
-                    0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26),
-                    inset 0 -1px 0 0 rgba(var(--on-surface-rgb), 0.05)
-                  `,
-                }
-              : isGlassyTheme
-              ? {
-                  background: `
-                    linear-gradient(160deg,
-                      rgba(255, 255, 255, 0.16) 0%,
-                      rgba(255, 255, 255, 0.035) 38%,
-                      rgba(255, 255, 255, 0.07) 100%
-                    ),
-                    rgba(var(--surface-base-rgb), 0.58)
-                  `,
-                  backdropFilter: 'blur(128px) saturate(195%) contrast(107%) brightness(1.03)',
-                  WebkitBackdropFilter: 'blur(128px) saturate(195%) contrast(107%) brightness(1.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.14)',
-                  boxShadow: `
-                    0 28px 58px -14px rgba(0, 0, 0, 0.42),
-                    inset 0 -1px 0 0 rgba(0, 0, 0, 0.08)
-                  `,
-                }
-              : {
-                  background: 'var(--card-bg)',
-                  backdropFilter: 'blur(40px)',
-                  WebkitBackdropFilter: 'blur(40px)',
-                  border: '1px solid var(--border-primary)',
-                }
-          }
+          className={`sc-action-panel ${usesThemeOverride ? '!rounded-3xl p-1' : ''}`}
+          style={themeOverrideStyle}
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="action-overlay-scroll flex-1 overflow-y-auto py-1">
+          <div className="sc-action-list action-overlay-scroll">
             {filteredActions.length === 0 ? (
-              <div className="px-3 py-4 text-center text-white/30 text-sm">No matching actions</div>
+              <div className="sc-action-empty">No matching actions</div>
             ) : (
               groups.map((group, groupPosition) => (
-                <div key={groupPosition}>
-                  {groupPosition > 0 && <hr className="border-[var(--ui-divider)] my-0.5" />}
+                <div key={groupPosition} className="sc-action-section">
                   {group.title && (
-                    <div className="px-3 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-white/25 font-medium select-none">
-                      {group.title}
-                    </div>
+                    <div className="sc-action-section-title">{group.title}</div>
                   )}
                   {group.items.map(({ action, idx }) => {
                     const hasActionIcon = hasRenderableActionIcon(action.icon);
+                    const isSelected = idx === selectedIdx;
+                    const isDestructive = action.style === 'destructive';
+                    const itemClassName = `sc-action-item${isDestructive ? ' sc-action-item--destructive' : ''}`;
                     return (
-                    <div
-                      key={idx}
-                      data-action-idx={idx}
-                      className={`mx-1 px-2.5 py-1.5 rounded-lg border border-transparent flex items-center gap-2.5 cursor-pointer transition-colors ${
-                        idx === selectedIdx
-                          ? 'bg-[var(--action-menu-selected-bg)]'
-                          : 'hover:bg-[var(--overlay-item-hover-bg)]'
-                      }`}
-                      style={
-                        idx === selectedIdx
-                          ? {
-                              background: 'var(--action-menu-selected-bg)',
-                              borderColor: 'var(--action-menu-selected-border)',
-                              boxShadow: 'var(--action-menu-selected-shadow)',
-                            }
-                          : undefined
-                      }
-                      onClick={() => onExecute(action)}
-                      onMouseMove={() => setSelectedIdx(idx)}
-                    >
-                      {hasAnyIcons ? (
-                        <span
-                          className={`w-4 h-4 flex-shrink-0 flex items-center justify-center text-xs ${
-                            idx === selectedIdx ? 'text-white' : 'text-white/50'
-                          }`}
-                          style={
-                            isNativeLiquidGlass && action.style === 'destructive'
-                              ? { color: 'var(--status-danger-faded)' }
-                              : undefined
-                          }
-                        >
-                          {hasActionIcon ? renderIcon(action.icon, 'w-4 h-4', assetsPath) : null}
-                        </span>
-                      ) : null}
-                      <span
-                        className={`flex-1 text-[13px] truncate ${
-                          action.style === 'destructive'
-                            ? idx === selectedIdx
-                              ? 'text-white'
-                              : 'text-red-400'
-                            : idx === selectedIdx
-                              ? 'text-white'
-                              : 'text-white/80'
-                        }`}
-                        style={
-                          isNativeLiquidGlass && action.style === 'destructive'
-                            ? { color: 'var(--status-danger-faded)' }
-                            : undefined
-                        }
+                      <div
+                        key={idx}
+                        data-action-idx={idx}
+                        data-selected={isSelected || undefined}
+                        className={itemClassName}
+                        onClick={() => onExecute(action)}
+                        onMouseMove={() => setSelectedIdx(idx)}
                       >
-                        {action.title}
-                      </span>
-                      <span className={`flex items-center gap-0.5 ${idx === selectedIdx ? 'text-white/70' : 'text-white/25'}`}>
-                        {idx === 0 ? (
-                          renderShortcutKeycap('↩', 'enter')
-                        ) : (
-                          renderShortcut(action.shortcut)
-                        )}
-                      </span>
-                    </div>
+                        {hasAnyIcons ? (
+                          <span className="sc-action-item-icon">
+                            {hasActionIcon ? renderIcon(action.icon, 'w-4 h-4', assetsPath) : null}
+                          </span>
+                        ) : null}
+                        <span className="sc-action-item-title">{action.title}</span>
+                        <span className="sc-action-item-shortcut">
+                          {idx === 0 ? renderShortcutKeycap('↩', 'enter') : renderShortcut(action.shortcut)}
+                        </span>
+                      </div>
                     );
                   })}
                 </div>
               ))
             )}
           </div>
-          <div className="border-t border-[var(--ui-divider)] px-3 py-2">
+          <div className="sc-action-search-bar">
             <input
               ref={filterRef}
               type="text"
               placeholder="Search for actions…"
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
-              className="w-full bg-transparent text-sm text-white/70 placeholder-white/25 outline-none"
+              className="sc-action-search-input"
             />
           </div>
         </div>

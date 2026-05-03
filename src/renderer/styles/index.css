@@ -1995,3 +1995,818 @@ body.sc-detached-window .speak-close-button {
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent);
   }
 }
+
+/* ============================================================
+   Premium form controls — sc-input / sc-select / sc-textarea
+   Use these in place of repeated Tailwind chains for inputs.
+   ============================================================ */
+.sc-input,
+.sc-textarea,
+.sc-select {
+  width: 100%;
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  background-color: var(--ui-segment-bg);
+  border: 1px solid var(--ui-divider);
+  border-radius: 10px;
+  padding: 8px 12px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 1px 1px rgba(var(--backdrop-rgb), 0.02);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1),
+    color 160ms ease;
+}
+
+.sc-input::placeholder,
+.sc-textarea::placeholder {
+  color: var(--text-subtle);
+}
+
+.sc-input:hover:not(:disabled):not(:focus),
+.sc-textarea:hover:not(:disabled):not(:focus),
+.sc-select:hover:not(:disabled):not(:focus) {
+  border-color: var(--ui-segment-border);
+  background-color: var(--ui-segment-hover-bg);
+}
+
+.sc-input:focus,
+.sc-input:focus-visible,
+.sc-textarea:focus,
+.sc-textarea:focus-visible,
+.sc-select:focus,
+.sc-select:focus-visible {
+  border-color: var(--accent);
+  background-color: var(--ui-segment-bg);
+  box-shadow:
+    0 0 0 3px var(--accent-soft),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.sc-input:disabled,
+.sc-textarea:disabled,
+.sc-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sc-textarea {
+  min-height: 84px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.sc-input--sm,
+.sc-select--sm {
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  border-radius: 8px;
+}
+
+.sc-input--mono {
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* Custom select chevron — light theme baseline */
+.sc-select {
+  padding-right: 30px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M3 4.75L6 7.75L9 4.75' stroke='%2358616F' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+}
+
+.sc-select--sm {
+  padding-right: 26px;
+  background-position: right 8px center;
+}
+
+.sc-select::-ms-expand,
+.sc-select-chevron::-ms-expand {
+  display: none;
+}
+
+.dark .sc-select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M3 4.75L6 7.75L9 4.75' stroke='%23A8AFBC' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+/* Standalone caret for native <select> that doesn't use .sc-select chrome */
+.sc-select-chevron {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 34px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M3 4.75L6 7.75L9 4.75' stroke='%2358616F' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 12px;
+}
+
+.dark .sc-select-chevron {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M3 4.75L6 7.75L9 4.75' stroke='%23A8AFBC' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+.sc-select-chevron option {
+  background: var(--bg-overlay-strong);
+  color: var(--text-primary);
+}
+
+.sc-select option {
+  background: var(--bg-overlay-strong);
+  color: var(--text-primary);
+}
+
+/* Input group — for inputs that share space with a trailing icon button (eye toggle etc.) */
+.sc-input-group {
+  position: relative;
+  display: block;
+}
+
+.sc-input-group > .sc-input {
+  padding-right: 36px;
+}
+
+.sc-input-group > .sc-input-affix {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.sc-input-group > .sc-input-affix:hover {
+  color: var(--text-secondary);
+  background: var(--ui-segment-hover-bg);
+}
+
+.sc-input-group > .sc-input-affix:active {
+  transform: translateY(calc(-50% + 1px));
+}
+
+/* ============================================================
+   Refined checkbox
+   ============================================================ */
+.settings-checkbox {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  border: 1px solid var(--ui-segment-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0)),
+    var(--ui-segment-bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 1px rgba(var(--backdrop-rgb), 0.04);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 180ms ease,
+    transform 100ms ease;
+  cursor: pointer;
+}
+
+.settings-checkbox:hover:not(:disabled) {
+  border-color: var(--border-secondary);
+}
+
+.settings-checkbox:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.settings-checkbox:checked {
+  border-color: color-mix(in srgb, var(--accent) 80%, transparent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0)),
+    var(--accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.settings-checkbox:checked::after {
+  content: '';
+  width: 4px;
+  height: 8px;
+  border: solid rgba(255, 255, 255, 0.98);
+  border-width: 0 1.6px 1.6px 0;
+  transform: translateY(-0.5px) rotate(45deg);
+}
+
+.settings-checkbox:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px var(--accent-soft),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.settings-checkbox:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   Searchable dropdown trigger + menu polish
+   ============================================================ */
+.sc-dropdown-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px 7px 12px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  background-color: var(--ui-segment-bg);
+  border: 1px solid var(--ui-divider);
+  border-radius: 10px;
+  text-align: left;
+  outline: none;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 1px 1px rgba(var(--backdrop-rgb), 0.02);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.sc-dropdown-trigger:hover:not(:disabled) {
+  border-color: var(--ui-segment-border);
+  background-color: var(--ui-segment-hover-bg);
+}
+
+.sc-dropdown-trigger:focus-visible,
+.sc-dropdown-trigger[aria-expanded='true'] {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px var(--accent-soft),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.sc-dropdown-trigger > .sc-dropdown-trigger-caret {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 200ms cubic-bezier(0.32, 0.72, 0, 1), color 160ms ease;
+}
+
+.sc-dropdown-trigger:hover > .sc-dropdown-trigger-caret {
+  color: var(--text-secondary);
+}
+
+.sc-dropdown-trigger[aria-expanded='true'] > .sc-dropdown-trigger-caret {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+.sc-dropdown-surface {
+  border: 1px solid var(--ui-panel-border);
+  background:
+    linear-gradient(180deg, rgba(var(--on-surface-rgb), 0.03), rgba(var(--on-surface-rgb), 0)),
+    rgba(var(--surface-base-rgb), 0.62);
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
+  border-radius: 12px;
+  box-shadow:
+    0 18px 48px rgba(var(--backdrop-rgb), 0.28),
+    0 2px 8px rgba(var(--backdrop-rgb), 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: sc-dropdown-menu-in 160ms cubic-bezier(0.32, 0.72, 0, 1);
+  transform-origin: top center;
+}
+
+@keyframes sc-dropdown-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sc-dropdown-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 6px;
+}
+
+.sc-dropdown-search-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: var(--text-primary);
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.sc-dropdown-search-input::placeholder {
+  color: var(--text-subtle);
+}
+
+.sc-dropdown-divider {
+  border-color: var(--ui-divider);
+}
+
+.sc-dropdown-list {
+  padding: 4px 6px 6px;
+}
+
+.sc-dropdown-item {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 7px 10px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  border-radius: 8px;
+  outline: none;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.sc-dropdown-item:hover {
+  background: var(--overlay-item-hover-bg);
+  color: var(--text-primary);
+}
+
+.sc-dropdown-item[aria-selected='true'] {
+  background: var(--overlay-item-active-bg);
+  color: var(--text-primary);
+}
+
+.sc-dropdown-item:disabled,
+.sc-dropdown-item[aria-disabled='true'] {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.sc-dropdown-empty {
+  padding: 14px 12px;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-subtle);
+}
+
+/* ============================================================
+   Polished button utility (use sparingly; existing inline styles
+   already work — this is for new components)
+   ============================================================ */
+.sc-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background-color: var(--ui-segment-bg);
+  border: 1px solid var(--ui-divider);
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 1px rgba(var(--backdrop-rgb), 0.03);
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 180ms ease,
+    transform 80ms ease,
+    color 160ms ease;
+}
+
+.sc-button:hover:not(:disabled) {
+  background-color: var(--ui-segment-hover-bg);
+  border-color: var(--ui-segment-border);
+}
+
+.sc-button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.02),
+    0 0 0 0 transparent;
+}
+
+.sc-button:focus-visible {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px var(--accent-soft),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.sc-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sc-button--primary {
+  color: #fff;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0)),
+    var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 1px 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.sc-button--primary:hover:not(:disabled) {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0)),
+    var(--accent-hover);
+  border-color: color-mix(in srgb, var(--accent-hover) 70%, transparent);
+}
+
+.sc-button--ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+}
+
+.sc-button--ghost:hover:not(:disabled) {
+  background-color: var(--ui-segment-hover-bg);
+  color: var(--text-primary);
+  border-color: transparent;
+}
+
+/* ============================================================
+   Action menu overlay (ActionPanel command palette)
+   ============================================================ */
+.sc-action-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--bg-scrim);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: sc-action-scrim-in 140ms ease-out;
+}
+
+@keyframes sc-action-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.sc-action-panel {
+  position: absolute;
+  bottom: 48px;
+  right: 12px;
+  width: 320px;
+  max-height: 65vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(var(--on-surface-rgb), 0.04), rgba(var(--on-surface-rgb), 0)),
+    rgba(var(--surface-base-rgb), 0.78);
+  border: 1px solid var(--ui-panel-border);
+  -webkit-backdrop-filter: blur(48px) saturate(180%);
+  backdrop-filter: blur(48px) saturate(180%);
+  box-shadow:
+    0 24px 56px -16px rgba(var(--backdrop-rgb), 0.34),
+    0 4px 14px -4px rgba(var(--backdrop-rgb), 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transform-origin: bottom right;
+  animation: sc-action-panel-in 180ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes sc-action-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sc-action-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px 0 4px;
+}
+
+.sc-action-section + .sc-action-section {
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ui-divider);
+}
+
+.sc-action-section-title {
+  padding: 8px 14px 4px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  user-select: none;
+}
+
+.sc-action-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 1px 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease,
+    transform 80ms ease;
+}
+
+.sc-action-item:hover:not([data-selected='true']) {
+  background: var(--overlay-item-hover-bg);
+  color: var(--text-primary);
+}
+
+.sc-action-item[data-selected='true'] {
+  background: var(--action-menu-selected-bg);
+  border-color: var(--action-menu-selected-border);
+  color: var(--text-primary);
+  box-shadow: var(--action-menu-selected-shadow);
+}
+
+.sc-action-item:active:not([data-selected='true']) {
+  transform: scale(0.99);
+}
+
+.sc-action-item-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: color 120ms ease;
+}
+
+.sc-action-item[data-selected='true'] .sc-action-item-icon,
+.sc-action-item:hover .sc-action-item-icon {
+  color: var(--text-primary);
+}
+
+.sc-action-item-title {
+  flex: 1 1 0%;
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-action-item--destructive {
+  color: var(--status-danger);
+}
+
+.sc-action-item--destructive .sc-action-item-icon {
+  color: var(--status-danger);
+}
+
+.sc-action-item--destructive[data-selected='true'],
+.sc-action-item--destructive:hover {
+  color: var(--status-danger);
+}
+
+.sc-action-item--destructive[data-selected='true'] .sc-action-item-icon,
+.sc-action-item--destructive:hover .sc-action-item-icon {
+  color: var(--status-danger);
+}
+
+.sc-action-item-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  color: var(--text-subtle);
+  transition: color 120ms ease;
+}
+
+.sc-action-item[data-selected='true'] .sc-action-item-shortcut,
+.sc-action-item:hover .sc-action-item-shortcut {
+  color: var(--text-secondary);
+}
+
+.sc-action-empty {
+  padding: 18px 12px;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--text-subtle);
+}
+
+.sc-action-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--ui-divider);
+  background:
+    linear-gradient(180deg, rgba(var(--on-surface-rgb), 0), rgba(var(--on-surface-rgb), 0.02));
+}
+
+.sc-action-search-input {
+  flex: 1 1 auto;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  padding: 0;
+}
+
+.sc-action-search-input::placeholder {
+  color: var(--text-subtle);
+}
+
+/* ============================================================
+   Raycast Form runtime — field rows + controls
+   ============================================================ */
+.sc-form-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 16px;
+}
+
+.sc-form-row + .sc-form-row {
+  margin-top: 10px;
+}
+
+.sc-form-row-label {
+  text-align: right;
+  /* Align baseline of single-line label with first line of the field
+     (sc-form-field padding-top + line-height offset). */
+  padding-top: 6px;
+}
+
+.sc-form-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.sc-form-row-control {
+  min-width: 0;
+}
+
+.sc-form-error {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--status-danger);
+  line-height: 1.3;
+}
+
+.sc-form-info {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--text-subtle);
+  line-height: 1.4;
+}
+
+.sc-form-field {
+  width: 100%;
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  background-color: var(--ui-segment-bg);
+  border: 1px solid var(--ui-divider);
+  border-radius: 7px;
+  padding: 5px 10px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1),
+    color 160ms ease;
+}
+
+.sc-form-field::placeholder {
+  color: var(--text-subtle);
+}
+
+.sc-form-field:hover:not(:disabled):not(:focus) {
+  border-color: var(--ui-segment-border);
+  background-color: var(--ui-segment-hover-bg);
+}
+
+.sc-form-field:focus,
+.sc-form-field:focus-visible {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px var(--accent-soft);
+}
+
+.sc-form-field:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sc-form-field--area {
+  min-height: 76px;
+  padding: 6px 10px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.sc-form-field--select {
+  cursor: pointer;
+}
+
+/* Native date/datetime-local input chrome — let it follow the active theme so
+   the calendar picker icon renders in the right palette. */
+.sc-form-field--date {
+  color-scheme: light dark;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.dark .sc-form-field--date {
+  color-scheme: dark;
+}
+
+.sc-form-field--date::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.55;
+  filter: grayscale(1);
+  transition: opacity 140ms ease;
+}
+
+.sc-form-field--date:hover::-webkit-calendar-picker-indicator,
+.sc-form-field--date:focus::-webkit-calendar-picker-indicator {
+  opacity: 0.9;
+}
+
+.sc-form-field--date::-webkit-datetime-edit-text {
+  color: var(--text-subtle);
+  padding: 0 2px;
+}
+
+.sc-form-field--date::-webkit-datetime-edit-fields-wrapper {
+  color: var(--text-primary);
+}
+
+.sc-form-field--date::-webkit-datetime-edit-month-field:focus,
+.sc-form-field--date::-webkit-datetime-edit-day-field:focus,
+.sc-form-field--date::-webkit-datetime-edit-year-field:focus,
+.sc-form-field--date::-webkit-datetime-edit-hour-field:focus,
+.sc-form-field--date::-webkit-datetime-edit-minute-field:focus,
+.sc-form-field--date::-webkit-datetime-edit-ampm-field:focus {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  outline: none;
+  border-radius: 3px;
+}

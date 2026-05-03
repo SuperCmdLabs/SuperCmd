@@ -827,7 +827,7 @@ const AITab: React.FC = () => {
                       value={ai.openaiApiKey}
                       onChange={(e) => updateAI({ openaiApiKey: e.target.value.trim() })}
                       placeholder={t('settings.ai.apiKeys.openai.placeholder')}
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-input pr-9"
                     />
                     <button
                       onClick={() => setShowOpenAIKey(!showOpenAIKey)}
@@ -846,7 +846,7 @@ const AITab: React.FC = () => {
                       value={ai.anthropicApiKey}
                       onChange={(e) => updateAI({ anthropicApiKey: e.target.value.trim() })}
                       placeholder={t('settings.ai.apiKeys.anthropic.placeholder')}
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-input pr-9"
                     />
                     <button
                       onClick={() => setShowAnthropicKey(!showAnthropicKey)}
@@ -865,7 +865,7 @@ const AITab: React.FC = () => {
                       value={ai.geminiApiKey || ''}
                       onChange={(e) => updateAI({ geminiApiKey: e.target.value.trim() })}
                       placeholder={t('settings.ai.apiKeys.gemini.placeholder')}
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-input pr-9"
                     />
                     <button
                       onClick={() => setShowGeminiKey(!showGeminiKey)}
@@ -884,7 +884,7 @@ const AITab: React.FC = () => {
                       value={ai.elevenlabsApiKey || ''}
                       onChange={(e) => updateAI({ elevenlabsApiKey: e.target.value.trim() })}
                       placeholder={t('settings.ai.apiKeys.elevenlabs.placeholder')}
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-input pr-9"
                     />
                     <button
                       onClick={() => setShowElevenLabsKey(!showElevenLabsKey)}
@@ -903,7 +903,7 @@ const AITab: React.FC = () => {
                       value={ai.mistralApiKey || ''}
                       onChange={(e) => updateAI({ mistralApiKey: e.target.value.trim() })}
                       placeholder="For Voxtral speech-to-text"
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-input pr-9"
                     />
                     <button
                       onClick={() => setShowMistralKey(!showMistralKey)}
@@ -927,7 +927,7 @@ const AITab: React.FC = () => {
                       value={ai.supermemoryApiKey || ''}
                       onChange={(e) => updateAI({ supermemoryApiKey: e.target.value.trim() })}
                       placeholder={t('settings.ai.apiKeys.supermemory.apiKey.placeholder')}
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-input pr-9"
                     />
                     <button
                       onClick={() => setShowSupermemoryKey(!showSupermemoryKey)}
@@ -945,7 +945,7 @@ const AITab: React.FC = () => {
                     value={ai.supermemoryClient || ''}
                     onChange={(e) => updateAI({ supermemoryClient: e.target.value.trim() })}
                     placeholder={t('settings.ai.apiKeys.supermemory.client.placeholder')}
-                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
+                    className="sc-input"
                   />
                   <p className="text-[0.625rem] text-[var(--text-muted)] mt-1">{t('settings.ai.apiKeys.supermemory.client.hint')}</p>
                 </div>
@@ -957,7 +957,7 @@ const AITab: React.FC = () => {
                     value={ai.supermemoryBaseUrl || 'https://api.supermemory.ai'}
                     onChange={(e) => updateAI({ supermemoryBaseUrl: e.target.value.trim() })}
                     placeholder="https://api.supermemory.ai"
-                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus:outline-none focus:border-blue-500/50"
+                    className="sc-input"
                   />
                 </div>
 
@@ -1032,7 +1032,7 @@ const AITab: React.FC = () => {
                       value={ai.ollamaBaseUrl}
                       onChange={(e) => updateAI({ ollamaBaseUrl: e.target.value.trim() })}
                       placeholder="http://localhost:11434"
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-input"
                     />
                   </div>
                 )}
@@ -1046,7 +1046,7 @@ const AITab: React.FC = () => {
                         value={ai.openaiCompatibleBaseUrl}
                         onChange={(e) => updateAI({ openaiCompatibleBaseUrl: e.target.value.trim() })}
                         placeholder="https://api.openrouter.ai/v1"
-                        className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] focus:outline-none focus:border-blue-500/50"
+                        className="sc-input"
                       />
                       <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">{t('settings.ai.llm.openaiCompatible.baseUrl.hint')}</p>
                     </div>
@@ -1059,7 +1059,7 @@ const AITab: React.FC = () => {
                           value={ai.openaiCompatibleApiKey}
                           onChange={(e) => updateAI({ openaiCompatibleApiKey: e.target.value.trim() })}
                           placeholder="sk-..."
-                          className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 pr-9 text-sm text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] focus:outline-none focus:border-blue-500/50"
+                          className="sc-input pr-9"
                         />
                         <button
                           onClick={() => setShowOpenAICompatibleKey(!showOpenAICompatibleKey)}
@@ -1083,7 +1083,7 @@ const AITab: React.FC = () => {
                           });
                         }}
                         placeholder="anthropic/claude-3.5-sonnet"
-                        className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] focus:outline-none focus:border-blue-500/50"
+                        className="sc-input"
                       />
                       <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">{t('settings.ai.llm.openaiCompatible.modelName.hint')}</p>
                     </div>
@@ -1095,7 +1095,7 @@ const AITab: React.FC = () => {
                   <select
                     value={ai.defaultModel}
                     onChange={(e) => updateAI({ defaultModel: e.target.value })}
-                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                    className="sc-select"
                   >
                     <option value="">{t('settings.ai.llm.defaultModel.auto')}</option>
                     {genericModels.map((m) => (
@@ -1261,7 +1261,7 @@ const AITab: React.FC = () => {
                 <select
                   value={whisperModelValue}
                   onChange={(e) => updateAI({ speechToTextModel: e.target.value })}
-                  className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                  className="sc-select"
                 >
                   {getWhisperSttOptions(t).map((m) => (
                     <option key={m.id} value={m.id}>{m.label}</option>
@@ -1319,7 +1319,7 @@ const AITab: React.FC = () => {
                   <select
                     value={ai.speechLanguage || 'en-US'}
                     onChange={(e) => updateAI({ speechLanguage: e.target.value })}
-                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                    className="sc-select"
                   >
                     {getWhisperLanguageOptions(t).map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
@@ -1342,7 +1342,7 @@ const AITab: React.FC = () => {
                   <select
                     value={ai.speechLanguage || 'en-US'}
                     onChange={(e) => updateAI({ speechLanguage: e.target.value })}
-                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                    className="sc-select"
                   >
                     {getWhisperLanguageOptions(t).map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
@@ -1618,7 +1618,7 @@ const AITab: React.FC = () => {
                   <select
                     value={ai.speechCorrectionModel || ''}
                     onChange={(e) => updateAI({ speechCorrectionModel: e.target.value })}
-                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                    className="sc-select"
                   >
                     <option value="">{t('settings.ai.whisper.smoothingModel.useDefault')}</option>
                     {correctionModelOptions.map((m) => (
@@ -1670,7 +1670,7 @@ const AITab: React.FC = () => {
                       textToSpeechModel: buildElevenLabsSpeakModel(nextModel, selectedElevenLabsVoiceId),
                     });
                   }}
-                  className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                  className="sc-select"
                 >
                   {getSpeakTtsOptions(t).map((m) => (
                     <option key={m.id} value={m.id}>{m.label}</option>
@@ -1695,7 +1695,7 @@ const AITab: React.FC = () => {
                     <select
                       value={selectedEdgeLanguageCode}
                       onChange={(e) => handleEdgeLanguageChange(e.target.value)}
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-select"
                     >
                       {edgeLanguageOptions.map((lang) => (
                         <option key={lang.code} value={lang.code}>{lang.label}</option>
@@ -1708,7 +1708,7 @@ const AITab: React.FC = () => {
                     <select
                       value={selectedEdgeGender}
                       onChange={(e) => handleEdgeGenderChange(e.target.value as EdgeVoiceGender)}
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-select"
                     >
                       <option value="female">{t('settings.ai.speak.edgeTTS.gender.female')}</option>
                       <option value="male">{t('settings.ai.speak.edgeTTS.gender.male')}</option>
@@ -1720,7 +1720,7 @@ const AITab: React.FC = () => {
                     <select
                       value={selectedEdgeVoice.id}
                       onChange={(e) => applyEdgeVoice(e.target.value)}
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-select"
                     >
                       {(voicesForLanguageAndGender.length > 0 ? voicesForLanguageAndGender : voicesForLanguage).map((voice) => (
                         <option key={voice.id} value={voice.id}>
@@ -1765,7 +1765,7 @@ const AITab: React.FC = () => {
                         updateAI({
                           textToSpeechModel: buildElevenLabsSpeakModel(e.target.value, selectedElevenLabsVoiceId),
                         })}
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-select"
                     >
                       {getSpeakTtsOptions(t).filter((m) => m.id.startsWith('elevenlabs-')).map((m) => (
                         <option key={m.id} value={m.id}>{m.label}</option>
@@ -1792,7 +1792,7 @@ const AITab: React.FC = () => {
                         updateAI({
                           textToSpeechModel: buildElevenLabsSpeakModel(speakModelValue, e.target.value),
                         })}
-                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] rounded-md px-2.5 py-2 text-sm text-[var(--text-secondary)] focus:outline-none focus:border-blue-500/50"
+                      className="sc-select"
                     >
                       {ELEVENLABS_VOICES.length > 0 && (
                         <optgroup label={t('settings.ai.speak.elevenlabs.voice.builtIn')}>
