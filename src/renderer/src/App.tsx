@@ -2284,6 +2284,16 @@ const App: React.FC = () => {
     } catch {}
   }, [browserSearchAutoComplete, searchQuery]);
 
+  // Once the user has dismissed an autocomplete with Backspace, keep it
+  // dismissed for the rest of the typing session — only re-enable when
+  // they clear the input completely and start fresh. Mirrors how Chrome's
+  // omnibox behaves after a manual rejection.
+  useEffect(() => {
+    if (searchQuery.length === 0 && browserSearchSkipAutoComplete) {
+      setBrowserSearchSkipAutoComplete(false);
+    }
+  }, [searchQuery, browserSearchSkipAutoComplete]);
+
   const submitBrowserSearch = useCallback(
     async (input: string) => {
       const trimmed = input.trim();
@@ -4077,14 +4087,6 @@ const App: React.FC = () => {
                 value={launcherInputValue}
                 onChange={(e) => {
                   const value = e.target.value;
-                  // Insertion → re-enable autocomplete; deletion (handled by
-                  // Backspace/Delete keydown setting `skip=true`) leaves it.
-                  if (
-                    value.length > searchQuery.length ||
-                    (value.length === searchQuery.length && value !== searchQuery)
-                  ) {
-                    setBrowserSearchSkipAutoComplete(false);
-                  }
                   setSearchQuery(value);
                   if (launcherViewMode === 'compact') {
                     if (isCompactCollapsed && value.length > 0) {
