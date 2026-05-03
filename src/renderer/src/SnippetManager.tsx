@@ -953,16 +953,6 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
           }
           break;
 
-        case 'Backspace':
-        case 'Delete':
-          if (e.metaKey || e.ctrlKey) {
-            e.preventDefault();
-            if (filteredSnippets[selectedIndex]) {
-              handleDelete();
-            }
-          }
-          break;
-
         case 'Escape':
           e.preventDefault();
           onClose();

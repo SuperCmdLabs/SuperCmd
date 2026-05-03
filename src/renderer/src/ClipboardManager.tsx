@@ -473,16 +473,6 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
           }
           break;
 
-        case 'Backspace':
-        case 'Delete':
-          if (e.metaKey) {
-            e.preventDefault();
-            if (filteredItems[selectedIndex]) {
-              handleDeleteItem();
-            }
-          }
-          break;
-
         case 'Escape':
           e.preventDefault();
           onClose();
