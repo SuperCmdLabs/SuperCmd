@@ -35,6 +35,17 @@ type ClipboardStatus = {
   text: string;
 };
 
+function getSearchableText(item: ClipboardItem): string {
+  if (item.type === 'image') {
+    const title = item.metadata?.filename || 'Image';
+    const width = item.metadata?.width;
+    const height = item.metadata?.height;
+    const dimensions = width && height ? `${width}×${height} ${width} ${height}` : '';
+    return `${title} ${dimensions}`;
+  }
+  return item.content;
+}
+
 const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
   const [items, setItems] = useState<ClipboardItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<ClipboardItem[]>([]);
@@ -155,12 +166,9 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
 
     if (searchQuery.trim()) {
       const lowerQuery = searchQuery.toLowerCase();
-      filtered = filtered.filter((item) => {
-        if (item.type === 'text' || item.type === 'url' || item.type === 'file') {
-          return item.content.toLowerCase().includes(lowerQuery);
-        }
-        return false;
-      });
+      filtered = filtered.filter((item) =>
+        getSearchableText(item).toLowerCase().includes(lowerQuery)
+      );
     }
 
     setFilteredItems(filtered);
