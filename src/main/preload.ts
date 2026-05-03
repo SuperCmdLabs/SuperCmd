@@ -763,6 +763,8 @@ const electronAPI = {
     ipcRenderer.invoke('keyboard-lock:start', durationSec),
   keyboardLockStop: (): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('keyboard-lock:stop'),
+  screenOcrRun: (mode: 'recognize' | 'barcode', options: any): Promise<{ ok: boolean; text?: string; error?: string }> =>
+    ipcRenderer.invoke('screen-ocr:run', mode, options),
   pickFiles: (options?: {
     allowMultipleSelection?: boolean;
     canChooseDirectories?: boolean;

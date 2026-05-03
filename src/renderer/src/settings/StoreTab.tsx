@@ -647,7 +647,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
                 placeholder="Search extensions..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="sc-input pl-10 pr-4"
+                className="sc-input !pl-10 pr-4"
               />
             </div>
             <select

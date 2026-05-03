@@ -2076,6 +2076,17 @@ body.sc-detached-window .speak-close-button {
   letter-spacing: 0.01em;
 }
 
+/* Bare variant: no focus ring or accent border — for inline fields embedded in
+   surfaces that already have their own selected/focus chrome (e.g. search-row
+   argument inputs). */
+.sc-input--bare:focus,
+.sc-input--bare:focus-visible,
+.sc-select--bare:focus,
+.sc-select--bare:focus-visible {
+  border-color: var(--ui-segment-border);
+  box-shadow: none;
+}
+
 /* Custom select chevron — light theme baseline */
 .sc-select {
   padding-right: 30px;

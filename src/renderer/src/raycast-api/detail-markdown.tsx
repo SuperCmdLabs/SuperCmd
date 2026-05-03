@@ -3,9 +3,76 @@
  * Purpose: Lightweight markdown renderer used by Detail and List.Item.Detail.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 
 type ResolveImageSrc = (src: string) => string;
+
+/**
+ * Image with onError fallback — renders a neutral placeholder when the
+ * underlying <img> fails to load (broken URL, hotlink-blocked host that
+ * returns 0-byte responses, etc.) instead of leaking the browser's
+ * broken-image glyph.
+ */
+function MarkdownImage({
+  src,
+  alt,
+  className,
+  style,
+  placeholderHeight,
+}: {
+  src: string;
+  alt: string;
+  className: string;
+  style?: React.CSSProperties;
+  placeholderHeight: number;
+}) {
+  const [errored, setErrored] = useState(false);
+  const handleLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = event.currentTarget;
+    if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+      setErrored(true);
+    }
+  };
+  if (errored) {
+    return (
+      <div
+        className="flex items-center justify-center rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] text-[var(--text-subtle)]"
+        style={{
+          width: style?.width ?? placeholderHeight * 0.7,
+          height: placeholderHeight,
+        }}
+        aria-label={alt || 'Image unavailable'}
+        role="img"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          width="28"
+          height="28"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <circle cx="9" cy="9" r="1.5" />
+          <path d="M21 15l-5-5L5 21" />
+        </svg>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      style={style}
+      onError={() => setErrored(true)}
+      onLoad={handleLoad}
+    />
+  );
+}
 
 type ParsedHtmlImage = {
   src: string;
@@ -50,12 +117,13 @@ function renderInlineMarkdown(text: string, resolveImageSrc: ResolveImageSrc): R
       const parsed = parseHtmlImgTag(htmlImgMatch[0], resolveImageSrc);
       if (parsed) {
         parts.push(
-          <img
+          <MarkdownImage
             key={key++}
             src={parsed.src}
             alt={parsed.alt || ''}
             className="inline rounded"
             style={{ maxHeight: parsed.height || 350, ...(parsed.width ? { width: parsed.width } : {}) }}
+            placeholderHeight={parsed.height || 180}
           />
         );
         remaining = remaining.slice(htmlImgMatch[0].length);
@@ -66,7 +134,15 @@ function renderInlineMarkdown(text: string, resolveImageSrc: ResolveImageSrc): R
     const imgMatch = remaining.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
     if (imgMatch) {
       const src = resolveImageSrc(imgMatch[2]);
-      parts.push(<img key={key++} src={src} alt={imgMatch[1]} className="inline max-h-[350px] rounded" />);
+      parts.push(
+        <MarkdownImage
+          key={key++}
+          src={src}
+          alt={imgMatch[1]}
+          className="inline max-h-[350px] rounded"
+          placeholderHeight={180}
+        />
+      );
       remaining = remaining.slice(imgMatch[0].length);
       continue;
     }
@@ -173,7 +249,13 @@ export function renderSimpleMarkdown(md: string, resolveImageSrc: ResolveImageSr
       const src = resolveImageSrc(imgMatch[2]);
       elements.push(
         <div key={elements.length} className="my-2 flex justify-center">
-          <img src={src} alt={imgMatch[1]} className="max-w-full rounded-lg" style={{ maxHeight: 350 }} />
+          <MarkdownImage
+            src={src}
+            alt={imgMatch[1]}
+            className="max-w-full rounded-lg"
+            style={{ maxHeight: 350 }}
+            placeholderHeight={220}
+          />
         </div>
       );
       i += 1;
@@ -184,11 +266,12 @@ export function renderSimpleMarkdown(md: string, resolveImageSrc: ResolveImageSr
     if (htmlImg) {
       elements.push(
         <div key={elements.length} className="my-2 flex justify-center">
-          <img
+          <MarkdownImage
             src={htmlImg.src}
             alt={htmlImg.alt || ''}
             className="max-w-full rounded-lg"
             style={{ maxHeight: htmlImg.height || 350, ...(htmlImg.width ? { width: htmlImg.width } : {}) }}
+            placeholderHeight={htmlImg.height || 220}
           />
         </div>
       );

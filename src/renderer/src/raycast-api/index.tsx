@@ -1801,8 +1801,34 @@ export function getPreferenceValues<Values extends PreferenceValues = Preference
   return merged as Values;
 }
 
+// Recent open() invocations — swallows duplicate calls for the same target
+// within a short window. Defends against extensions that fire open() during
+// render (StrictMode double-invokes, re-renders that race popToRoot()'s
+// unmount, etc.). The Perplexity extension is one such case: its Command
+// component calls handleSubmit during render, which calls open(url) — without
+// this guard, every re-render spawned a new tab.
+const _recentOpenCalls = new Map<string, number>();
+const _OPEN_DEDUPE_WINDOW_MS = 1500;
+
 export async function open(target: string, application?: string | Application): Promise<void> {
   const electron = (window as any).electron;
+
+  if (typeof target === 'string') {
+    const dedupeKey = `${target}::${typeof application === 'string' ? application : application?.name || ''}`;
+    const now = Date.now();
+    const lastAt = _recentOpenCalls.get(dedupeKey) || 0;
+    if (now - lastAt < _OPEN_DEDUPE_WINDOW_MS) {
+      console.warn(`[raycast-api] Suppressed duplicate open(${target}) within ${_OPEN_DEDUPE_WINDOW_MS}ms`);
+      return;
+    }
+    _recentOpenCalls.set(dedupeKey, now);
+    // Garbage-collect old entries opportunistically so the map can't grow.
+    if (_recentOpenCalls.size > 32) {
+      for (const [key, timestamp] of _recentOpenCalls) {
+        if (now - timestamp > _OPEN_DEDUPE_WINDOW_MS) _recentOpenCalls.delete(key);
+      }
+    }
+  }
 
   // Intercept raycast://confetti deeplinks (used by the 1-click-confetti extension)
   // and map them to SuperCmd's native confetti overlay.

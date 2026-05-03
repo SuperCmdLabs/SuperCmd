@@ -118,7 +118,52 @@ function pickImageSourceValue(source: unknown): string | null {
   return selected || null;
 }
 
-function renderResolvedImageIcon(resolved: string, className: string, tintColor?: string, mask?: string): React.ReactNode {
+function RemoteImage({
+  src,
+  className,
+  style,
+  fallback,
+}: {
+  src: string;
+  className: string;
+  style?: React.CSSProperties;
+  fallback?: React.ReactNode;
+}) {
+  const [errored, setErrored] = useState(false);
+  // Detect zero-byte responses (some hosts return 200 + Content-Length: 0 for
+  // hotlink-blocked covers, which the browser treats as "loaded" but with no
+  // intrinsic size). Treat naturalWidth === 0 as a load failure.
+  const handleLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = event.currentTarget;
+    if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+      setErrored(true);
+    }
+  };
+  if (errored && fallback != null) return <>{fallback}</>;
+  if (errored) {
+    // No explicit fallback — render a generic image-placeholder icon.
+    const placeholder = renderPhosphorIcon('Image', className);
+    return placeholder ?? null;
+  }
+  return (
+    <img
+      src={src}
+      className={className + ' rounded'}
+      style={style}
+      alt=""
+      onError={() => setErrored(true)}
+      onLoad={handleLoad}
+    />
+  );
+}
+
+function renderResolvedImageIcon(
+  resolved: string,
+  className: string,
+  tintColor?: string,
+  mask?: string,
+  fallback?: React.ReactNode,
+): React.ReactNode {
   if (tintColor) return renderTintedAssetIcon(resolved, className, tintColor);
   const style: React.CSSProperties = {};
   if (mask === 'circle') {
@@ -126,7 +171,7 @@ function renderResolvedImageIcon(resolved: string, className: string, tintColor?
   } else if (mask === 'roundedRectangle') {
     style.borderRadius = '6px';
   }
-  return <img src={resolved} className={className + ' rounded'} style={style} alt="" />;
+  return <RemoteImage src={resolved} className={className} style={style} fallback={fallback} />;
 }
 
 export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?: string): React.ReactNode {
@@ -134,13 +179,13 @@ export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?
 
   if (typeof icon === 'string') {
     if (icon.startsWith('data:') || icon.startsWith('http') || icon.startsWith('sc-asset:')) {
-      return <img src={icon} className={className + ' rounded'} alt="" />;
+      return <RemoteImage src={icon} className={className} />;
     }
 
     if (/\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(icon)) {
       const resolved = resolveIconSrc(icon, assetsPathOverride);
       if (resolved) {
-        return <img src={resolved} className={className + ' rounded'} alt="" />;
+        return <RemoteImage src={resolved} className={className} />;
       }
     }
 
@@ -174,7 +219,18 @@ export function renderIcon(icon: any, className = 'w-4 h-4', assetsPathOverride?
     if (typeof sourceValue === 'string') {
       if (sourceValue.startsWith('http') || sourceValue.startsWith('data:') || sourceValue.startsWith('/') || /\.(svg|png|jpe?g|gif|webp|ico|tiff?)$/i.test(sourceValue)) {
         const resolved = resolveIconSrc(sourceValue, assetsPathOverride);
-        if (resolved) return renderResolvedImageIcon(resolved, className, tintColor, mask);
+        if (resolved) {
+          // Pre-render the fallback node so RemoteImage can show it on error.
+          let fallbackNode: React.ReactNode = null;
+          if (typeof fallback === 'string') {
+            const key = fallback.startsWith('Icon.') ? fallback.replace(/^Icon\./, '') : fallback;
+            fallbackNode = renderPhosphorIcon(key, className, tintColor)
+              || (isEmojiOrSymbol(fallback)
+                  ? <span className="text-center" style={{ fontSize: '0.875rem' }}>{fallback}</span>
+                  : null);
+          }
+          return renderResolvedImageIcon(resolved, className, tintColor, mask, fallbackNode);
+        }
       }
 
       if (sourceValue.startsWith('Icon.') || isRaycastIconName(sourceValue)) {

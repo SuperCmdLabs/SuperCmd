@@ -16,7 +16,7 @@ interface InlineArgumentFieldProps {
 }
 
 const BASE_FIELD_CLASS =
-  'sc-input sc-input--sm h-[26px] max-w-[196px] min-w-[128px] !py-0 leading-none';
+  'sc-input sc-input--sm sc-input--bare h-[26px] max-w-[196px] min-w-[128px] !py-0 leading-none';
 
 const InlineArgumentField: React.FC<InlineArgumentFieldProps> = ({
   value,
@@ -34,7 +34,7 @@ const InlineArgumentField: React.FC<InlineArgumentFieldProps> = ({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
-        className={`sc-select sc-select--sm h-[26px] max-w-[196px] min-w-[128px] !py-0 leading-none`}
+        className={`sc-select sc-select--sm sc-select--bare h-[26px] max-w-[196px] min-w-[128px] !py-0 leading-none`}
       >
         <option value="">{placeholder}</option>
         {options.map((option) => (

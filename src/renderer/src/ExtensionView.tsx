@@ -3789,6 +3789,41 @@ function loadExtensionExport(
             },
           };
         }
+        // screenocr extension imports from `swift:../swift` and exposes
+        // `recognizeText(...)` and `detectBarcode(...)`. Bridge to our
+        // native screen-ocr helper which wraps Vision framework + screencapture.
+        if (name.includes('ScreenOCR') || name.endsWith('/swift') || name.includes('screenocr')) {
+          return {
+            recognizeText: async (
+              fullscreen: boolean,
+              keepImage: boolean,
+              fast: boolean,
+              languageCorrection: boolean,
+              ignoreLineBreaks: boolean,
+              customWords: string[],
+              languages: string[],
+              playSound: boolean,
+            ) => {
+              const result = await window.electron.screenOcrRun('recognize', {
+                fullscreen, keepImage, fast, languageCorrection, ignoreLineBreaks,
+                customWords, languages, playSound,
+              });
+              if (!result?.ok) {
+                throw new Error(result?.error || 'OCR failed');
+              }
+              return result.text || '';
+            },
+            detectBarcode: async (keepImage: boolean, playSound: boolean) => {
+              const result = await window.electron.screenOcrRun('barcode', {
+                keepImage, playSound,
+              });
+              if (!result?.ok) {
+                throw new Error(result?.error || 'Barcode detection failed');
+              }
+              return result.text || '';
+            },
+          };
+        }
         // Unknown swift module — return empty
         return {};
       }

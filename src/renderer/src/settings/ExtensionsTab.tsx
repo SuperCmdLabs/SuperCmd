@@ -929,7 +929,7 @@ const ExtensionsTab: React.FC<{
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={t('common.search')}
-                  className="sc-input sc-input--sm pl-9 pr-4"
+                  className="sc-input sc-input--sm !pl-9 pr-4"
                 />
               </div>
               <div className="flex items-center gap-1">

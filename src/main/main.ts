@@ -11960,6 +11960,48 @@ app.whenReady().then(async () => {
   // Warm the worker so the first window-management action does not race spawn.
   setTimeout(() => { ensureWindowManagerWorker(); }, 0);
 
+  // Some external image hosts (e.g. libgen.bz, libgen.li, libgen.is) only
+  // serve covers when a Referer header is present — without one they return
+  // 200 OK with a zero-byte body, which the browser displays as a broken
+  // image. Electron pages loaded over file:// strip the Referer header by
+  // default, so cover thumbnails in extensions like `library-genesis` come
+  // out broken. Inject a same-origin Referer for any request that arrives
+  // without one. Only fires when no Referer was set by the renderer, so we
+  // never override an explicit value the caller chose.
+  try {
+    const { session: electronSession } = require('electron');
+    const defaultSession = electronSession?.defaultSession;
+    if (defaultSession?.webRequest?.onBeforeSendHeaders) {
+      let loggedRefererInjection = false;
+      defaultSession.webRequest.onBeforeSendHeaders(
+        { urls: ['http://*/*', 'https://*/*'] },
+        (details: any, callback: any) => {
+          const headers = { ...(details.requestHeaders || {}) };
+          const hasReferer = Boolean(headers['Referer'] || headers['referer']);
+          if (!hasReferer) {
+            try {
+              const parsed = new URL(details.url);
+              const refererValue = `${parsed.protocol}//${parsed.host}/`;
+              headers['Referer'] = refererValue;
+              if (!loggedRefererInjection) {
+                loggedRefererInjection = true;
+                console.log(
+                  `[webRequest] Injecting Referer fallback (first hit): ${refererValue} for ${details.url}`
+                );
+              }
+            } catch {}
+          }
+          callback({ requestHeaders: headers });
+        }
+      );
+      console.log('[webRequest] Referer fallback hook installed on defaultSession');
+    } else {
+      console.warn('[webRequest] defaultSession.webRequest.onBeforeSendHeaders unavailable');
+    }
+  } catch (error) {
+    console.warn('[main] Failed to install Referer fallback webRequest hook:', error);
+  }
+
   // Register the sc-asset:// protocol handler to serve extension asset files
   protocol.handle('sc-asset', (request: any) => {
     // URL format: sc-asset://ext-asset/path/to/file
@@ -15948,6 +15990,72 @@ if let tiff = image?.tiffRepresentation {
         finish();
       }, 1500);
     });
+  });
+
+  // ─── IPC: Native Screen OCR (screenocr extension bridge) ─────────
+
+  ipcMain.handle('screen-ocr:run', async (_event: any, mode: 'recognize' | 'barcode', options: any) => {
+    const fsNative = require('fs');
+    const { execFile, execFileSync } = require('child_process');
+    const binaryPath = getNativeBinaryPath('screen-ocr');
+
+    if (!fsNative.existsSync(binaryPath)) {
+      try {
+        const sourceCandidates = [
+          path.join(app.getAppPath(), 'src', 'native', 'screen-ocr.swift'),
+          path.join(process.cwd(), 'src', 'native', 'screen-ocr.swift'),
+          path.join(__dirname, '..', '..', 'src', 'native', 'screen-ocr.swift'),
+        ];
+        const sourcePath = sourceCandidates.find((candidate: string) => fsNative.existsSync(candidate));
+        if (!sourcePath) {
+          return { ok: false, error: 'screen-ocr binary and source file not found' };
+        }
+        fsNative.mkdirSync(path.dirname(binaryPath), { recursive: true });
+        execFileSync('swiftc', [
+          '-O', '-o', binaryPath, sourcePath,
+          '-framework', 'AppKit',
+          '-framework', 'CoreGraphics',
+          '-framework', 'Foundation',
+          '-framework', 'Vision',
+        ]);
+      } catch (error: any) {
+        console.error('[ScreenOCR] Failed to compile native helper:', error);
+        return { ok: false, error: String(error?.message || error) };
+      }
+    }
+
+    if (mode !== 'recognize' && mode !== 'barcode') {
+      return { ok: false, error: `unknown mode '${mode}'` };
+    }
+
+    const optionsJson = JSON.stringify(options || {});
+
+    // Keep the launcher hidden while screencapture's interactive selection is up.
+    suppressBlurHide = true;
+    try {
+      return await new Promise<{ ok: boolean; text?: string; error?: string }>((resolve) => {
+        // Use a generous buffer — recognized OCR text can be large.
+        execFile(binaryPath, [mode, optionsJson], { maxBuffer: 8 * 1024 * 1024 }, (error: any, stdout: string, stderr: string) => {
+          if (error) {
+            resolve({ ok: false, error: stderr?.trim() || error.message });
+            return;
+          }
+          const trimmed = String(stdout || '').trim();
+          if (!trimmed) {
+            resolve({ ok: false, error: 'screen-ocr returned empty output' });
+            return;
+          }
+          try {
+            const parsed = JSON.parse(trimmed);
+            resolve(parsed);
+          } catch (e: any) {
+            resolve({ ok: false, error: `failed to parse screen-ocr output: ${e?.message || e}` });
+          }
+        });
+      });
+    } finally {
+      suppressBlurHide = false;
+    }
   });
 
   // ─── IPC: Native File Picker (for Form.FilePicker) ───────────────
