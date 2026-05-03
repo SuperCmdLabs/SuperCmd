@@ -46,8 +46,8 @@ const MODEL_ROUTES: Record<string, ModelRoute> = {
   'openai-o1-mini': { provider: 'openai', modelId: 'o1-mini' },
   'openai-o3-mini': { provider: 'openai', modelId: 'o3-mini' },
   // Anthropic
-  'anthropic-claude-opus': { provider: 'anthropic', modelId: 'claude-opus-4-20250514' },
-  'anthropic-claude-sonnet': { provider: 'anthropic', modelId: 'claude-sonnet-4-20250514' },
+  'anthropic-claude-opus': { provider: 'anthropic', modelId: 'claude-opus-4-7' },
+  'anthropic-claude-sonnet': { provider: 'anthropic', modelId: 'claude-sonnet-4-6' },
   'anthropic-claude-haiku': { provider: 'anthropic', modelId: 'claude-haiku-4-5-20251001' },
   // Google Gemini
   'gemini-gemini-2.5-pro': { provider: 'gemini', modelId: 'gemini-2.5-pro' },
@@ -105,6 +105,11 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
 // reject the `temperature` parameter — they only support the default.
 function isOpenAIReasoningModel(model: string): boolean {
   return /^o\d/i.test(model.trim());
+}
+
+// Newer Anthropic models (Opus 4.7+) reject the `temperature` parameter.
+function anthropicSupportsTemperature(model: string): boolean {
+  return !/^claude-opus-4-7/i.test(model.trim());
 }
 
 // ─── Availability check ──────────────────────────────────────────────
@@ -309,7 +314,7 @@ async function* streamAnthropicChat(
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
     stream: true,
   };
-  if (temperature !== undefined) body.temperature = temperature;
+  if (temperature !== undefined && anthropicSupportsTemperature(model)) body.temperature = temperature;
   if (systemPrompt) body.system = systemPrompt;
 
   const response = await httpRequest({
@@ -525,7 +530,7 @@ async function* streamAnthropic(
     messages: [{ role: 'user', content: prompt }],
     stream: true,
   };
-  if (temperature !== undefined) body.temperature = temperature;
+  if (temperature !== undefined && anthropicSupportsTemperature(model)) body.temperature = temperature;
   if (systemPrompt) body.system = systemPrompt;
 
   const response = await httpRequest({
