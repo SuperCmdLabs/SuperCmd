@@ -8050,6 +8050,15 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   if (shouldActivateLauncherWindow) {
     mainWindow.focus();
   } else {
+    // On macOS Tahoe (26), NSPanel.show() no longer implicitly makes the
+    // panel the key window. Without being key, the panel does not receive
+    // mouseMoved/mouseDown events (no hover, no clicks) — though scroll and
+    // webContents-focused keyboard input still work, which matches the
+    // reported symptom. Calling focus() on a non-activating panel triggers
+    // makeKeyAndOrderFront without activating the app, so the previously
+    // frontmost app stays "active" for selection capture. This is independent
+    // of the NSGlassEffectView fix in applyLiquidGlassToWindow — we need both.
+    try { mainWindow.focus(); } catch {}
     try { (mainWindow as any).focusOnWebView?.(); } catch {}
     try { mainWindow.webContents.focus(); } catch {}
   }
@@ -8081,6 +8090,9 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
       if (shouldActivateLauncherWindow) {
         mainWindow.focus();
       } else {
+        // See note above: required on macOS Tahoe to make the NSPanel key
+        // so it receives mouse-moved/mouse-down events.
+        try { mainWindow.focus(); } catch {}
         try { (mainWindow as any).focusOnWebView?.(); } catch {}
         try { mainWindow.webContents.focus(); } catch {}
       }
