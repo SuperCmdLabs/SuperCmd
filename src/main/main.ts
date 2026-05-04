@@ -7045,10 +7045,47 @@ function createWindow(): void {
     },
   });
   mainWindow.setWindowButtonVisibility(true);
-  applyLiquidGlassToWindow(mainWindow, {
-    cornerRadius: 16,
-    fallbackVibrancy: 'under-window',
-  });
+  // Defer NSGlassEffectView attachment until the renderer's React tree has
+  // mounted (signalled via the 'renderer-ready' IPC from App.tsx's useEffect).
+  //
+  // Background: in 1.0.17, main.tsx switched from synchronous static imports
+  // to async dynamic import() chunks for memory savings. The launcher's App
+  // chunk loads asynchronously, so React mounts AFTER did-finish-load fires.
+  // applyLiquidGlassToWindow used to listen for did-finish-load and attach
+  // the glass view immediately — which meant on macOS Tahoe (private
+  // NSGlassEffectView) + hardened runtime (signed builds), the glass view
+  // got inserted while the WebContents view contained only the empty
+  // <div id="root">. AppKit registered the glass view in a state that
+  // suppressed mouseMoved/mouseDown delivery for the rest of the window's
+  // life. Pre-Tahoe didn't have NSGlassEffectView. Unsigned builds have
+  // looser AppKit behaviour, so they masked the bug.
+  //
+  // Waiting for 'renderer-ready' guarantees the React tree exists before
+  // glass attaches, which is the timing 1.0.16 (sync imports) had naturally.
+  let launcherGlassAttached = false;
+  const attachLauncherGlass = () => {
+    if (launcherGlassAttached) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    launcherGlassAttached = true;
+    applyLiquidGlassToWindow(mainWindow, {
+      cornerRadius: 16,
+      fallbackVibrancy: 'under-window',
+    });
+  };
+  const onAnyRendererReady = (event: any) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (event.sender !== mainWindow.webContents) {
+      // Different window's renderer — keep listening for the launcher's.
+      ipcMain.once('renderer-ready', onAnyRendererReady);
+      return;
+    }
+    attachLauncherGlass();
+  };
+  ipcMain.once('renderer-ready', onAnyRendererReady);
+  // Safety fallback: if renderer-ready never arrives (renderer crash, route
+  // change, etc.) attach glass after 5s anyway so we don't ship a glass-less
+  // launcher in edge cases.
+  setTimeout(attachLauncherGlass, 5000);
 
   // Allow renderer getUserMedia requests so Chromium can surface native prompts.
   mainWindow.webContents.session.setPermissionRequestHandler((_wc: any, permission: any, callback: any) => {
