@@ -12,6 +12,27 @@ import { contextBridge, ipcRenderer } from 'electron';
 const _homeDir = process.env.HOME || process.env.USERPROFILE || '/tmp';
 const _platform = process.platform;
 
+// macOS Tahoe (26) ships the real private NSGlassEffectView that
+// `electron-liquid-glass` instantiates. That view eats mouse events on the
+// launcher panel, so the main process skips attaching it on Tahoe. The
+// renderer needs to know that too — its .sc-glassy CSS expects a real glass
+// layer behind the window; without one it renders dark/detached. The renderer
+// uses this flag to fall back to default styling for users who prefer
+// 'glassy', preserving their stored setting for when the upstream package
+// ships a hit-test-transparent option.
+const _nativeLiquidGlassAvailable: boolean = (() => {
+  if (_platform !== 'darwin') return false;
+  try {
+    const getVer = (process as any).getSystemVersion;
+    if (typeof getVer !== 'function') return true;
+    const major = Number(String(getVer.call(process) || '').split('.')[0]);
+    if (!Number.isFinite(major)) return true;
+    return major < 26; // Tahoe and later: native glass exists but is broken
+  } catch {
+    return true;
+  }
+})();
+
 // The launcher window runs with contextIsolation: false so that Raycast
 // extensions can use real Node classes (EventEmitter, Buffer, etc.) without
 // going through contextBridge's class-mangling serialization. Other windows
@@ -32,6 +53,7 @@ const electronAPI = {
   // ─── System Info ────────────────────────────────────────────────
   homeDir: _homeDir,
   platform: _platform,
+  nativeLiquidGlassAvailable: _nativeLiquidGlassAvailable,
 
   // ─── Lifecycle ──────────────────────────────────────────────────
   /** Signal main process that the renderer React app has mounted. */
