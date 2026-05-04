@@ -585,6 +585,19 @@
           "macos": "macOS-Stil (^N, ^P, ^B, ^F)"
         }
       },
+      "popToRootSearch": {
+        "title": "Zur Stammsuche zurückkehren",
+        "description": "Wenn Sie SuperCmd erneut öffnen, kehren Sie nach dieser Verzögerung zur Stammsuche zurück. Andernfalls bleibt die zuvor geöffnete Erweiterung oder Ansicht erhalten.",
+        "option": {
+          "immediately": "Sofort",
+          "5s": "Nach 5 Sekunden",
+          "15s": "Nach 15 Sekunden",
+          "30s": "Nach 30 Sekunden",
+          "60s": "Nach 60 Sekunden",
+          "90s": "Nach 90 Sekunden",
+          "120s": "Nach 120 Sekunden"
+        }
+      },
       "developerMode": {
         "label": "Entwicklermodus",
         "description": "Debug-Funktionen für die Erweiterungsentwicklung aktivieren"

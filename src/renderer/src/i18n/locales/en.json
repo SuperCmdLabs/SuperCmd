@@ -623,6 +623,19 @@
           "macos": "macOS Style (^N, ^P, ^B, ^F)"
         }
       },
+      "popToRootSearch": {
+        "title": "Pop to Root Search",
+        "description": "When you reopen SuperCmd, return to the root search after this delay. Otherwise, the previous extension or view stays open.",
+        "option": {
+          "immediately": "Immediately",
+          "5s": "After 5 seconds",
+          "15s": "After 15 seconds",
+          "30s": "After 30 seconds",
+          "60s": "After 60 seconds",
+          "90s": "After 90 seconds",
+          "120s": "After 120 seconds"
+        }
+      },
       "clipboardRetention": {
         "title": "Clipboard History Retention",
         "description": "Auto-delete clipboard entries older than the selected duration. Pinned entries are always kept.",

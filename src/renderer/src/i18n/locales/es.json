@@ -585,6 +585,19 @@
           "macos": "Estilo macOS (^N, ^P, ^B, ^F)"
         }
       },
+      "popToRootSearch": {
+        "title": "Volver a la búsqueda raíz",
+        "description": "Al reabrir SuperCmd, vuelve a la búsqueda raíz tras este retardo. De lo contrario, la extensión o vista anterior permanece abierta.",
+        "option": {
+          "immediately": "Inmediatamente",
+          "5s": "Después de 5 segundos",
+          "15s": "Después de 15 segundos",
+          "30s": "Después de 30 segundos",
+          "60s": "Después de 60 segundos",
+          "90s": "Después de 90 segundos",
+          "120s": "Después de 120 segundos"
+        }
+      },
       "developerMode": {
         "label": "Modo desarrollador",
         "description": "Habilitar funciones de depuración para el desarrollo de extensiones"

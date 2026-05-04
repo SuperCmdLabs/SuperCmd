@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bug, FolderSearch, Keyboard, Languages, Sparkles } from 'lucide-react';
+import { Bug, FolderSearch, Keyboard, Languages, Sparkles, Undo2 } from 'lucide-react';
 import type { AppNavigationStyle, AppSettings, HyperKeySourceKey, HyperKeyCapsLockTapBehavior } from '../../types/electron';
 import { APP_LANGUAGE_OPTIONS, DEFAULT_APP_LANGUAGE, type AppLanguageSetting, useI18n } from '../i18n';
 
@@ -59,6 +59,25 @@ const NAVIGATION_STYLE_OPTIONS: { value: AppNavigationStyle; labelKey: string }[
   { value: 'vim', labelKey: 'settings.advanced.navigationStyle.option.vim' },
   { value: 'macos', labelKey: 'settings.advanced.navigationStyle.option.macos' },
 ];
+
+const POP_TO_ROOT_TIMEOUT_OPTIONS: { value: number; labelKey: string }[] = [
+  { value: 0, labelKey: 'settings.advanced.popToRootSearch.option.immediately' },
+  { value: 5, labelKey: 'settings.advanced.popToRootSearch.option.5s' },
+  { value: 15, labelKey: 'settings.advanced.popToRootSearch.option.15s' },
+  { value: 30, labelKey: 'settings.advanced.popToRootSearch.option.30s' },
+  { value: 60, labelKey: 'settings.advanced.popToRootSearch.option.60s' },
+  { value: 90, labelKey: 'settings.advanced.popToRootSearch.option.90s' },
+  { value: 120, labelKey: 'settings.advanced.popToRootSearch.option.120s' },
+];
+
+const DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS = 90;
+
+function normalizePopToRootTimeoutValue(value: unknown): number {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS;
+  const allowed = POP_TO_ROOT_TIMEOUT_OPTIONS.map((opt) => opt.value);
+  return allowed.includes(Math.trunc(num)) ? Math.trunc(num) : DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS;
+}
 
 const AdvancedTab: React.FC = () => {
   const { t } = useI18n();
@@ -230,6 +249,30 @@ const AdvancedTab: React.FC = () => {
               className={selectClassName}
             >
               {NAVIGATION_STYLE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {t(opt.labelKey)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<Undo2 className="w-4 h-4" />}
+          title={t('settings.advanced.popToRootSearch.title')}
+          description={t('settings.advanced.popToRootSearch.description')}
+        >
+          <div className="w-full max-w-[320px]">
+            <select
+              value={normalizePopToRootTimeoutValue(settings.popToRootSearchTimeoutSeconds)}
+              onChange={(event) => {
+                void applySettingsPatch({
+                  popToRootSearchTimeoutSeconds: normalizePopToRootTimeoutValue(event.target.value),
+                });
+              }}
+              className={selectClassName}
+            >
+              {POP_TO_ROOT_TIMEOUT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {t(opt.labelKey)}
                 </option>

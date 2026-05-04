@@ -622,6 +622,19 @@
           "macos": "Stile macOS (^N, ^P, ^B, ^F)"
         }
       },
+      "popToRootSearch": {
+        "title": "Torna alla ricerca principale",
+        "description": "Quando riapri SuperCmd, torna alla ricerca principale dopo questo ritardo. Altrimenti, l'estensione o la vista precedente rimane aperta.",
+        "option": {
+          "immediately": "Immediatamente",
+          "5s": "Dopo 5 secondi",
+          "15s": "Dopo 15 secondi",
+          "30s": "Dopo 30 secondi",
+          "60s": "Dopo 60 secondi",
+          "90s": "Dopo 90 secondi",
+          "120s": "Dopo 120 secondi"
+        }
+      },
       "clipboardRetention": {
         "title": "Conservazione cronologia appunti",
         "description": "Elimina automaticamente le voci degli appunti più vecchie della durata selezionata. Le voci fissate vengono sempre conservate.",

@@ -76,7 +76,7 @@ import CursorPromptView from './views/CursorPromptView';
 import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowBadge } from './components/InlineArgumentField';
 import { useI18n } from './i18n';
 
-const STALE_OVERLAY_RESET_MS = 60_000;
+const DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS = 90;
 const MAX_RECENT_SECTION_ITEMS = 5;
 const QUICK_LINK_COMMAND_PREFIX = 'quicklink-';
 const DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT = 25;
@@ -519,6 +519,25 @@ const App: React.FC = () => {
   extensionViewRef.current = extensionView;
   pinnedCommandsRef.current = pinnedCommands;
   pinnedFilesRef.current = pinnedFiles;
+  // Configurable timeout (ms) before the launcher resets to root search after
+  // it has been hidden. Synced from settings.popToRootSearchTimeoutSeconds.
+  // 0 = reset immediately on every reopen.
+  const popToRootTimeoutMsRef = useRef<number>(DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS * 1000);
+  // Tracks whether any persistable view (extension or internal view like
+  // Clipboard/Snippets/etc.) is currently active, so the window-shown handler
+  // can keep that view alive when reopened within the configured timeout.
+  const hasPersistableViewRef = useRef<boolean>(false);
+  hasPersistableViewRef.current = Boolean(
+    extensionView ||
+    showClipboardManager ||
+    showSnippetManager ||
+    showQuickLinkManager ||
+    showFileSearch ||
+    showNotesSearch ||
+    showCanvasSearch ||
+    showCamera ||
+    showSchedule
+  );
 
   const expandLauncherForDirectLaunch = useCallback(() => {
     directLaunchExpansionGuardUntilRef.current = Date.now() + DIRECT_LAUNCH_EXPANSION_GUARD_MS;
@@ -659,6 +678,8 @@ const App: React.FC = () => {
       applyUiStyle(settings.uiStyle || 'default');
       applyBaseColor(settings.baseColor || '#101113');
       setNavigationStyle(settings.navigationStyle === 'macos' ? 'macos' : 'vim');
+      const popToRootSeconds = Number(settings.popToRootSearchTimeoutSeconds);
+      popToRootTimeoutMsRef.current = (Number.isFinite(popToRootSeconds) ? Math.max(0, popToRootSeconds) : DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS) * 1000;
       const shouldShowOnboarding = !settings.hasSeenOnboarding;
       setShowOnboarding(shouldShowOnboarding);
       setOnboardingRequiresShortcutFix(shouldShowOnboarding && !shortcutStatus.ok);
@@ -917,17 +938,17 @@ const App: React.FC = () => {
       whisperSessionRef.current = false;
       setShowCursorPrompt(false);
       setShowWhisperHint(false);
-      setShowCamera(false);
-      setShowSchedule(false);
       setShowWindowManager(false);
       setMemoryFeedback(null);
       setMemoryActionLoading(false);
       setScriptCommandSetup(null);
       setScriptCommandOutput(null);
       setSelectedTextSnapshot(String(payload?.selectedTextSnapshot || '').trim());
+      const popToRootTimeoutMs = popToRootTimeoutMsRef.current;
       const shouldResetOverlays =
-        lastWindowHiddenAtRef.current > 0 &&
-        Date.now() - lastWindowHiddenAtRef.current > STALE_OVERLAY_RESET_MS;
+        popToRootTimeoutMs === 0 ||
+        (lastWindowHiddenAtRef.current > 0 &&
+          Date.now() - lastWindowHiddenAtRef.current > popToRootTimeoutMs);
 
       if (shouldResetOverlays) {
         setExtensionView(null);
@@ -936,6 +957,8 @@ const App: React.FC = () => {
         setContextMenu(null);
         setShowClipboardManager(false);
         setShowSnippetManager(null);
+        setShowNotesSearch(false);
+        setShowCanvasSearch(false);
         setShowQuickLinkManager(null);
         setShowFileSearch(false);
         setShowCursorPrompt(false);
@@ -943,12 +966,12 @@ const App: React.FC = () => {
         setShowSpeak(false);
         setShowCamera(false);
         setShowSchedule(false);
-        setShowWindowManager(false);
         setShowWhisperOnboarding(false);
       }
 
-      // If an extension is open, keep it alive — don't reset
-      if (extensionViewRef.current && !shouldResetOverlays) {
+      // If a persistable view (extension or internal view like Clipboard,
+      // Snippets, File Search, etc.) is open, keep it alive — don't reset.
+      if (hasPersistableViewRef.current && !shouldResetOverlays) {
         setIsCompactCollapsed(false);
         void window.electron.resizeLauncherWindow(true);
         return;
@@ -970,10 +993,6 @@ const App: React.FC = () => {
         setIsCompactCollapsed(true);
         exitAiMode();
       }
-      setShowClipboardManager(false);
-      setShowSnippetManager(null);
-      setShowQuickLinkManager(null);
-      setShowFileSearch(false);
       // Re-fetch commands every time the window is shown
       // so newly installed extensions appear immediately
       fetchCommands({ showLoading: false });
@@ -982,7 +1001,7 @@ const App: React.FC = () => {
       inputRef.current?.focus();
     });
     return cleanupWindowShown;
-  }, [expandLauncherForDirectLaunch, fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openSchedule, openCamera, openOnboarding, setShowCamera, setShowSchedule, setShowWindowManager]);
+  }, [expandLauncherForDirectLaunch, fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openSchedule, openCamera, openOnboarding, setShowCamera, setShowSchedule, setShowWindowManager, setShowWhisper, setShowSpeak, setShowWhisperOnboarding]);
 
   useEffect(() => {
     const cleanupSelectionSnapshotUpdated = window.electron.onSelectionSnapshotUpdated((payload) => {
@@ -1013,6 +1032,8 @@ const App: React.FC = () => {
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       setDisableFileSearchResults(Boolean(settings.disableFileSearchResults));
       setNavigationStyle(settings.navigationStyle === 'macos' ? 'macos' : 'vim');
+      const popToRootSeconds = Number(settings.popToRootSearchTimeoutSeconds);
+      popToRootTimeoutMsRef.current = (Number.isFinite(popToRootSeconds) ? Math.max(0, popToRootSeconds) : DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS) * 1000;
     });
     return cleanup;
   }, []);

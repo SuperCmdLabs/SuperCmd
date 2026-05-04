@@ -301,6 +301,7 @@ export interface AppSettings {
   emojiPickerEnabled: boolean;
   emojiPickerTriggerPrefix: string;
   emojiPickerExcludedAppBundleIds: string[];
+  popToRootSearchTimeoutSeconds: number;
 }
 
 export interface CatalogEntry {

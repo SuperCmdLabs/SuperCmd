@@ -589,6 +589,19 @@
           "macos": "Style macOS (^N, ^P, ^B, ^F)"
         }
       },
+      "popToRootSearch": {
+        "title": "Retour à la recherche racine",
+        "description": "Lorsque vous rouvrez SuperCmd, revient à la recherche racine après ce délai. Sinon, l'extension ou la vue précédente reste ouverte.",
+        "option": {
+          "immediately": "Immédiatement",
+          "5s": "Après 5 secondes",
+          "15s": "Après 15 secondes",
+          "30s": "Après 30 secondes",
+          "60s": "Après 60 secondes",
+          "90s": "Après 90 secondes",
+          "120s": "Après 120 secondes"
+        }
+      },
       "developerMode": {
         "label": "Mode développeur",
         "description": "Activer les fonctionnalités de débogage pour le développement d'extensions"
