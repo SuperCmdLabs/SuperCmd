@@ -4341,7 +4341,145 @@ let whisperEscapeRegistered = false;
 let whisperOverlayVisible = false;
 let speakOverlayVisible = false;
 let whisperChildWindow: InstanceType<typeof BrowserWindow> | null = null;
+let whisperOverlayOpeningGuardUntil = 0;
+let whisperSuperCmdTextTargetWindow: InstanceType<typeof BrowserWindow> | null = null;
 const LAUNCHER_SELECTION_SNAPSHOT_TTL_MS = 15_000;
+
+function markWhisperOverlayOpening(): void {
+  whisperOverlayOpeningGuardUntil = Date.now() + 1500;
+}
+
+function isWhisperOverlayActiveOrOpening(): boolean {
+  return whisperOverlayVisible || Date.now() < whisperOverlayOpeningGuardUntil;
+}
+
+function isWhisperSuperCmdTextTargetWindow(win: InstanceType<typeof BrowserWindow> | null | undefined): boolean {
+  if (!win || win.isDestroyed()) return false;
+  return win === mainWindow || win === notesWindow || win === canvasWindow;
+}
+
+function buildWhisperTextTargetCaptureScript(): string {
+  return `
+    (() => {
+      const editableSelector = '[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
+      const getEditableFromSelection = () => {
+        const selection = window.getSelection && window.getSelection();
+        const node = selection && selection.anchorNode;
+        const element = node instanceof HTMLElement ? node : (node && node.parentElement);
+        const editable = element && element.closest && element.closest(editableSelector);
+        return editable instanceof HTMLElement ? editable : null;
+      };
+      const dispatchInput = (element, text) => {
+        try {
+          element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+        } catch (_) {
+          element.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      };
+      const setNativeValue = (element, value) => {
+        const proto = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (descriptor && descriptor.set) descriptor.set.call(element, value);
+        else element.value = value;
+      };
+      const capture = () => {
+        const active = document.activeElement;
+        if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+          if (active.disabled || active.readOnly) return null;
+          const inputType = active instanceof HTMLInputElement ? String(active.type || 'text').toLowerCase() : 'textarea';
+          if (active instanceof HTMLInputElement && !['', 'text', 'search', 'url', 'tel', 'email', 'password', 'number'].includes(inputType)) return null;
+          return {
+            kind: 'input',
+            element: active,
+            selectionStart: active.selectionStart == null ? active.value.length : active.selectionStart,
+            selectionEnd: active.selectionEnd == null ? active.value.length : active.selectionEnd,
+          };
+        }
+        const editable = active instanceof HTMLElement && active.isContentEditable ? active : getEditableFromSelection();
+        if (!editable) return null;
+        const selection = window.getSelection && window.getSelection();
+        let range = null;
+        if (selection && selection.rangeCount > 0) {
+          const candidate = selection.getRangeAt(0);
+          if (editable.contains(candidate.commonAncestorContainer)) range = candidate.cloneRange();
+        }
+        return { kind: 'contenteditable', element: editable, range };
+      };
+      window.__supercmdWhisperTextTarget = capture();
+      window.__supercmdInsertWhisperText = (rawText) => {
+        const text = String(rawText || '');
+        const target = window.__supercmdWhisperTextTarget;
+        if (!text || !target || !target.element || !target.element.isConnected) return false;
+        try { target.element.focus({ preventScroll: true }); } catch (_) { try { target.element.focus(); } catch (_) {} }
+        if (target.kind === 'input') {
+          const value = target.element.value || '';
+          const start = Math.max(0, Math.min(value.length, target.selectionStart || 0));
+          const end = Math.max(start, Math.min(value.length, target.selectionEnd || start));
+          setNativeValue(target.element, value.slice(0, start) + text + value.slice(end));
+          const cursor = start + text.length;
+          try { target.element.setSelectionRange(cursor, cursor); } catch (_) {}
+          target.selectionStart = cursor;
+          target.selectionEnd = cursor;
+          dispatchInput(target.element, text);
+          return true;
+        }
+        const selection = window.getSelection && window.getSelection();
+        if (!selection) return false;
+        let range = target.range;
+        if (!range || !target.element.contains(range.commonAncestorContainer)) {
+          range = document.createRange();
+          range.selectNodeContents(target.element);
+          range.collapse(false);
+        }
+        selection.removeAllRanges();
+        selection.addRange(range);
+        let inserted = false;
+        try { inserted = document.execCommand('insertText', false, text); } catch (_) { inserted = false; }
+        if (!inserted) {
+          range.deleteContents();
+          const textNode = document.createTextNode(text);
+          range.insertNode(textNode);
+          range.setStartAfter(textNode);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        if (selection.rangeCount > 0) target.range = selection.getRangeAt(0).cloneRange();
+        dispatchInput(target.element, text);
+        return true;
+      };
+      return Boolean(window.__supercmdWhisperTextTarget);
+    })();
+  `;
+}
+
+function captureWhisperSuperCmdTextTarget(): void {
+  const focusedWindow = BrowserWindow.getFocusedWindow() as InstanceType<typeof BrowserWindow> | null;
+  if (!isWhisperSuperCmdTextTargetWindow(focusedWindow)) {
+    whisperSuperCmdTextTargetWindow = null;
+    return;
+  }
+  whisperSuperCmdTextTargetWindow = focusedWindow;
+  void focusedWindow.webContents.executeJavaScript(buildWhisperTextTargetCaptureScript(), true).catch(() => {
+    if (whisperSuperCmdTextTargetWindow === focusedWindow) {
+      whisperSuperCmdTextTargetWindow = null;
+    }
+  });
+}
+
+async function insertTextIntoWhisperSuperCmdTarget(text: string): Promise<boolean> {
+  const targetWindow = whisperSuperCmdTextTargetWindow;
+  if (!isWhisperSuperCmdTextTargetWindow(targetWindow)) return false;
+  const textLiteral = JSON.stringify(String(text || ''));
+  try {
+    return Boolean(await targetWindow.webContents.executeJavaScript(
+      `Boolean(window.__supercmdInsertWhisperText && window.__supercmdInsertWhisperText(${textLiteral}))`,
+      true
+    ));
+  } catch {
+    return false;
+  }
+}
 
 function registerWhisperEscapeShortcut(): void {
   if (whisperEscapeRegistered) return;
@@ -7278,6 +7416,7 @@ function createWindow(): void {
       isVisible &&
       !suppressBlurHide &&
       oauthBlurHideSuppressionDepth === 0 &&
+      !isWhisperOverlayActiveOrOpening() &&
       launcherMode !== 'whisper' &&
       launcherMode !== 'speak' &&
       launcherMode !== 'onboarding'
@@ -8187,6 +8326,13 @@ function openPreferredDevTools(): boolean {
 }
 
 async function activateLastFrontmostApp(): Promise<boolean> {
+  if (isWhisperSuperCmdTextTargetWindow(whisperSuperCmdTextTargetWindow)) {
+    try {
+      whisperSuperCmdTextTargetWindow.show();
+      whisperSuperCmdTextTargetWindow.focus();
+      return true;
+    } catch {}
+  }
   if (!lastFrontmostApp) return false;
   const { execFile } = require('child_process');
   const { promisify } = require('util');
@@ -9124,6 +9270,10 @@ async function openLauncherAndRunSystemCommand(
   }
   if (preserveFocusWhenHidden) {
     captureFrontmostAppContext();
+  }
+  if (commandId === 'system-supercmd-whisper') {
+    captureWhisperSuperCmdTextTarget();
+    markWhisperOverlayOpening();
   }
   setLauncherMode(options?.mode || 'default');
 
@@ -12335,6 +12485,7 @@ app.whenReady().then(async () => {
         lastWhisperShownAt = Date.now();
       } else {
         whisperHoldRequestSeq += 1;
+        whisperSuperCmdTextTargetWindow = null;
         stopWhisperHoldWatcher();
       }
       return;
@@ -14951,6 +15102,10 @@ if let tiff = image?.tiffRepresentation {
       return { typed: false, fallbackClipboard: false };
     }
 
+    if (await insertTextIntoWhisperSuperCmdTarget(nextText)) {
+      return { typed: true, fallbackClipboard: false };
+    }
+
     await activateLastFrontmostApp();
     await new Promise((resolve) => setTimeout(resolve, 70));
     let typed = await pasteTextToActiveApp(nextText);
@@ -16482,6 +16637,7 @@ if let tiff = image?.tiffRepresentation {
     if (focusedWindow === mainWindow) return;
     if (suppressBlurHide) return;
     if (oauthBlurHideSuppressionDepth > 0) return;
+    if (isWhisperOverlayActiveOrOpening()) return;
     if (launcherMode !== 'default') return;
     hideWindow();
   });

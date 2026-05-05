@@ -21,6 +21,18 @@ type WhisperEngine = 'cloud' | 'whispercpp' | 'native';
 type WhisperSessionConfig = { backend: WhisperBackend; engine: WhisperEngine; language: string };
 type NativeFlushReason = 'timer' | 'silence' | 'final' | 'stop' | 'ended';
 type NativeQueuedSuffix = { text: string; attempts: number; reason: NativeFlushReason };
+type LocalWhisperTextTarget =
+  | {
+      kind: 'input';
+      element: HTMLInputElement | HTMLTextAreaElement;
+      selectionStart: number;
+      selectionEnd: number;
+    }
+  | {
+      kind: 'contenteditable';
+      element: HTMLElement;
+      range: Range | null;
+    };
 
 const BAR_HEIGHT_PROFILE = [
   0.45, 0.62, 0.52, 0.58, 0.74, 0.7, 1.0, 0.7, 0.58, 0.52, 0.74, 0.62, 0.45,
@@ -168,6 +180,135 @@ function formatDeltaForAppend(previous: string, rawDelta: string): string {
   return next;
 }
 
+function getEditableElementFromSelection(): HTMLElement | null {
+  const selection = window.getSelection?.();
+  const node = selection?.anchorNode || null;
+  const element = node instanceof HTMLElement ? node : node?.parentElement || null;
+  const editable = element?.closest?.('[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]');
+  return editable instanceof HTMLElement ? editable : null;
+}
+
+function captureLocalWhisperTextTarget(): LocalWhisperTextTarget | null {
+  if (typeof document === 'undefined' || !document.hasFocus()) return null;
+
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+    if (active.disabled || active.readOnly) return null;
+    const inputType = active instanceof HTMLInputElement ? String(active.type || 'text').toLowerCase() : 'textarea';
+    const textInputTypes = new Set(['', 'text', 'search', 'url', 'tel', 'email', 'password', 'number']);
+    if (active instanceof HTMLInputElement && !textInputTypes.has(inputType)) return null;
+    return {
+      kind: 'input',
+      element: active,
+      selectionStart: active.selectionStart ?? active.value.length,
+      selectionEnd: active.selectionEnd ?? active.value.length,
+    };
+  }
+
+  const editable =
+    active instanceof HTMLElement && active.isContentEditable
+      ? active
+      : getEditableElementFromSelection();
+  if (!editable) return null;
+
+  const selection = window.getSelection?.();
+  let range: Range | null = null;
+  if (selection && selection.rangeCount > 0) {
+    const candidate = selection.getRangeAt(0);
+    if (editable.contains(candidate.commonAncestorContainer)) {
+      range = candidate.cloneRange();
+    }
+  }
+  return { kind: 'contenteditable', element: editable, range };
+}
+
+function setNativeInputValue(element: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  const prototype = element instanceof HTMLTextAreaElement
+    ? HTMLTextAreaElement.prototype
+    : HTMLInputElement.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+  if (descriptor?.set) {
+    descriptor.set.call(element, value);
+  } else {
+    element.value = value;
+  }
+}
+
+function dispatchTextInput(element: HTMLElement, text: string): void {
+  try {
+    element.dispatchEvent(new InputEvent('input', {
+      bubbles: true,
+      inputType: 'insertText',
+      data: text,
+    }));
+  } catch {
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
+function insertIntoLocalWhisperTextTarget(target: LocalWhisperTextTarget | null, text: string): boolean {
+  const nextText = String(text || '');
+  if (!target || !nextText) return false;
+  if (!target.element.isConnected) return false;
+
+  try {
+    target.element.focus({ preventScroll: true });
+  } catch {
+    try { target.element.focus(); } catch {}
+  }
+
+  if (target.kind === 'input') {
+    const value = target.element.value || '';
+    const start = Math.max(0, Math.min(value.length, target.selectionStart));
+    const end = Math.max(start, Math.min(value.length, target.selectionEnd));
+    const nextValue = `${value.slice(0, start)}${nextText}${value.slice(end)}`;
+    setNativeInputValue(target.element, nextValue);
+    const cursor = start + nextText.length;
+    try { target.element.setSelectionRange(cursor, cursor); } catch {}
+    target.selectionStart = cursor;
+    target.selectionEnd = cursor;
+    dispatchTextInput(target.element, nextText);
+    return true;
+  }
+
+  const ownerDocument = target.element.ownerDocument || document;
+  const selection = ownerDocument.getSelection?.();
+  if (!selection) return false;
+
+  let range = target.range;
+  if (!range || !target.element.contains(range.commonAncestorContainer)) {
+    range = ownerDocument.createRange();
+    range.selectNodeContents(target.element);
+    range.collapse(false);
+  }
+
+  selection.removeAllRanges();
+  selection.addRange(range);
+
+  let inserted = false;
+  try {
+    inserted = ownerDocument.execCommand('insertText', false, nextText);
+  } catch {
+    inserted = false;
+  }
+
+  if (!inserted) {
+    range.deleteContents();
+    const textNode = ownerDocument.createTextNode(nextText);
+    range.insertNode(textNode);
+    range.setStartAfter(textNode);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  if (selection.rangeCount > 0) {
+    target.range = selection.getRangeAt(0).cloneRange();
+  }
+  dispatchTextInput(target.element, nextText);
+  return true;
+}
+
 function flattenFloat32Chunks(chunks: Float32Array[]): Float32Array {
   const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const merged = new Float32Array(totalLength);
@@ -287,6 +428,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const finalizingRef = useRef(false);
   const editorFocusRestoreTimerRef = useRef<number | null>(null);
   const editorFocusRestoredRef = useRef(false);
+  const localTextTargetRef = useRef<LocalWhisperTextTarget | null>(
+    onboardingCaptureMode ? null : captureLocalWhisperTextTarget()
+  );
   const liveRefineTimerRef = useRef<number | null>(null);
   const liveRefineSeqRef = useRef(0);
   const lastDebouncedRefineInputRef = useRef('');
@@ -458,6 +602,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     // Onboarding whisper practice is intentionally in-app; never steal focus
     // to another app while the user is typing in the onboarding editor.
     if (onboardingCaptureMode) return;
+    if (localTextTargetRef.current) return;
     if (editorFocusRestoredRef.current) return;
     editorFocusRestoredRef.current = true;
     const run = () => {
@@ -543,13 +688,17 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     if (!nextText) {
       return { consumed: false, typed: false };
     }
+    if (!onboardingCaptureMode && insertIntoLocalWhisperTextTarget(localTextTargetRef.current, nextText)) {
+      setErrorText('');
+      return { consumed: true, typed: true };
+    }
     const result = await window.electron.whisperTypeTextLive(nextText);
     if (result?.typed) {
       setErrorText('');
       return { consumed: true, typed: true };
     }
     return { consumed: false, typed: false };
-  }, []);
+  }, [onboardingCaptureMode]);
 
   const autoPasteAndClose = useCallback(async (text: string) => {
     const normalized = normalizeTranscript(text);
