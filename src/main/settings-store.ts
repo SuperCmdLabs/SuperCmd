@@ -8,6 +8,30 @@
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { getSecret, setSecret, deleteSecret } from './safe-storage';
+
+// AI settings fields whose values should never live in plain text on disk.
+// Read/written through the safe-storage vault. Legacy plain-text values still
+// present in settings.json are migrated into the vault on first load.
+const SENSITIVE_AI_KEYS = [
+  'openaiApiKey',
+  'anthropicApiKey',
+  'geminiApiKey',
+  'elevenlabsApiKey',
+  'mistralApiKey',
+  'supermemoryApiKey',
+  'openaiCompatibleApiKey',
+] as const;
+
+type SensitiveAIKey = (typeof SENSITIVE_AI_KEYS)[number];
+
+function aiVaultKey(field: SensitiveAIKey): string {
+  return `ai.${field}`;
+}
+
+function oauthVaultKey(provider: string): string {
+  return `oauth.${provider}`;
+}
 
 export interface AISettings {
   provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible';
@@ -229,6 +253,27 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 let settingsCache: AppSettings | null = null;
+let didMigrateAISecrets = false;
+
+/**
+ * Merge the AI settings parsed from settings.json with the encrypted vault.
+ *
+ * Vault values win when present. If a vault value is missing but settings.json
+ * still has a plain-text value (legacy users), the plain-text value is used
+ * for this load and queued for migration into the vault.
+ *
+ * The returned object always reflects the *effective* values the app should
+ * use at runtime — never empty just because something migrated.
+ */
+function hydrateAISettings(raw: any): AISettings {
+  const merged: AISettings = { ...DEFAULT_AI_SETTINGS, ...(raw || {}) };
+  for (const field of SENSITIVE_AI_KEYS) {
+    const fromVault = getSecret(aiVaultKey(field));
+    const fromDisk = typeof merged[field] === 'string' ? (merged[field] as string) : '';
+    merged[field] = fromVault || fromDisk || '';
+  }
+  return merged;
+}
 
 function normalizeFontSize(value: any): AppFontSize {
   const normalized = String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
@@ -465,7 +510,7 @@ export function loadSettings(): AppSettings {
         parsed.disableFileSearchResults,
         DEFAULT_SETTINGS.disableFileSearchResults
       ),
-      ai: { ...DEFAULT_AI_SETTINGS, ...parsed.ai },
+      ai: hydrateAISettings(parsed.ai),
       hyperKey: { ...DEFAULT_HYPER_KEY_SETTINGS, ...parsed.hyperKey },
       commandMetadata: parsed.commandMetadata ?? {},
       debugMode: parsed.debugMode ?? DEFAULT_SETTINGS.debugMode,
@@ -505,7 +550,65 @@ export function loadSettings(): AppSettings {
     settingsCache = { ...DEFAULT_SETTINGS };
   }
 
+  migrateAISecretsToVaultIfNeeded();
   return { ...settingsCache };
+}
+
+/**
+ * One-shot migration: lift any plain-text AI keys out of settings.json into
+ * the safe-storage vault, then rewrite settings.json with empty strings for
+ * those fields. The in-memory `settingsCache` keeps the decrypted values so
+ * runtime behaviour is unchanged.
+ */
+function migrateAISecretsToVaultIfNeeded(): void {
+  if (didMigrateAISecrets) return;
+  didMigrateAISecrets = true;
+  if (!settingsCache) return;
+
+  let migrated = false;
+  for (const field of SENSITIVE_AI_KEYS) {
+    const value = settingsCache.ai[field] || '';
+    if (!value) continue;
+    if (!getSecret(aiVaultKey(field))) {
+      setSecret(aiVaultKey(field), value);
+    }
+    if (hasPlainTextAIKeyOnDisk(field)) {
+      migrated = true;
+    }
+  }
+  if (migrated) {
+    persistSettingsToDisk(settingsCache);
+  }
+}
+
+function hasPlainTextAIKeyOnDisk(field: SensitiveAIKey): boolean {
+  try {
+    const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
+    const parsed = JSON.parse(raw);
+    const value = parsed?.ai?.[field];
+    return typeof value === 'string' && value.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Write settings to disk with sensitive AI keys redacted (the values live in
+ * the vault). The in-memory `settingsCache` is unaffected.
+ */
+function persistSettingsToDisk(settings: AppSettings): void {
+  const onDisk: AppSettings = {
+    ...settings,
+    ai: { ...settings.ai },
+  };
+  for (const field of SENSITIVE_AI_KEYS) {
+    onDisk.ai[field] = '';
+  }
+  try {
+    fs.writeFileSync(getSettingsPath(), JSON.stringify(onDisk, null, 2));
+  } catch (e) {
+    console.error('Failed to save settings:', e);
+  }
 }
 
 export function saveSettings(patch: Partial<AppSettings>): AppSettings {
@@ -561,11 +664,11 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
     ),
   };
 
-  try {
-    fs.writeFileSync(getSettingsPath(), JSON.stringify(updated, null, 2));
-  } catch (e) {
-    console.error('Failed to save settings:', e);
+  for (const field of SENSITIVE_AI_KEYS) {
+    setSecret(aiVaultKey(field), updated.ai[field] || '');
   }
+
+  persistSettingsToDisk(updated);
 
   settingsCache = updated;
   return { ...updated };
@@ -576,8 +679,11 @@ export function resetSettingsCache(): void {
 }
 
 // ─── OAuth Token Store ────────────────────────────────────────────
-// Stores OAuth tokens per provider in a separate JSON file so they
-// persist across app restarts and window resets.
+// Tokens are encrypted per-provider in the safe-storage vault under
+// `oauth.<provider>`. `oauth-tokens.json` is kept as a provider-name index
+// (no secrets) so we can still enumerate providers without decrypting, and
+// so legacy plain-text token files from previous versions are automatically
+// migrated into the vault on first load.
 
 interface OAuthTokenEntry {
   accessToken: string;
@@ -588,46 +694,124 @@ interface OAuthTokenEntry {
 }
 
 let oauthTokensCache: Record<string, OAuthTokenEntry> | null = null;
+let oauthIndexCache: string[] | null = null;
 
 function getOAuthTokensPath(): string {
   return path.join(app.getPath('userData'), 'oauth-tokens.json');
 }
 
-function loadOAuthTokens(): Record<string, OAuthTokenEntry> {
-  if (oauthTokensCache) return oauthTokensCache;
+function decodeOAuthSecret(serialized: string): OAuthTokenEntry | null {
+  if (!serialized) return null;
   try {
-    const raw = fs.readFileSync(getOAuthTokensPath(), 'utf-8');
-    oauthTokensCache = JSON.parse(raw) || {};
+    const parsed = JSON.parse(serialized);
+    if (parsed && typeof parsed === 'object' && typeof parsed.accessToken === 'string') {
+      return parsed as OAuthTokenEntry;
+    }
   } catch {
-    oauthTokensCache = {};
+    // fall through
   }
-  return oauthTokensCache!;
+  return null;
 }
 
-function saveOAuthTokens(tokens: Record<string, OAuthTokenEntry>): void {
-  oauthTokensCache = tokens;
+function isLegacyPlainTextEntry(value: unknown): value is OAuthTokenEntry {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as OAuthTokenEntry).accessToken === 'string' &&
+    (value as OAuthTokenEntry).accessToken.length > 0
+  );
+}
+
+function loadOAuthTokens(): Record<string, OAuthTokenEntry> {
+  if (oauthTokensCache) return oauthTokensCache;
+
+  const tokens: Record<string, OAuthTokenEntry> = {};
+  const providers = new Set<string>();
+  let needsIndexRewrite = false;
+
+  let parsedFile: Record<string, unknown> = {};
   try {
-    fs.writeFileSync(getOAuthTokensPath(), JSON.stringify(tokens, null, 2));
+    const raw = fs.readFileSync(getOAuthTokensPath(), 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      parsedFile = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // missing file is fine
+  }
+
+  for (const [provider, value] of Object.entries(parsedFile)) {
+    if (!provider) continue;
+    if (isLegacyPlainTextEntry(value)) {
+      // Migrate plain-text token into the vault, then drop the secret from disk.
+      setSecret(oauthVaultKey(provider), JSON.stringify(value));
+      tokens[provider] = value;
+      providers.add(provider);
+      needsIndexRewrite = true;
+    } else if (value && typeof value === 'object') {
+      // New-style index entry: just remember the provider name.
+      providers.add(provider);
+    }
+  }
+
+  // Pull anything in the vault that isn't in the index (e.g. previous run
+  // wrote to vault but index file was lost) so we never silently lose a token.
+  for (const provider of providers) {
+    if (tokens[provider]) continue;
+    const decoded = decodeOAuthSecret(getSecret(oauthVaultKey(provider)));
+    if (decoded) tokens[provider] = decoded;
+  }
+
+  oauthTokensCache = tokens;
+  oauthIndexCache = [...providers];
+
+  if (needsIndexRewrite) writeOAuthIndex();
+
+  return oauthTokensCache;
+}
+
+function writeOAuthIndex(): void {
+  const providers = oauthIndexCache || [];
+  const out: Record<string, { obtainedAt?: string }> = {};
+  for (const provider of providers) {
+    const token = oauthTokensCache?.[provider];
+    out[provider] = token?.obtainedAt ? { obtainedAt: token.obtainedAt } : {};
+  }
+  try {
+    fs.writeFileSync(getOAuthTokensPath(), JSON.stringify(out, null, 2));
   } catch (e) {
-    console.error('Failed to save OAuth tokens:', e);
+    console.error('Failed to save OAuth tokens index:', e);
   }
 }
 
 export function setOAuthToken(provider: string, token: OAuthTokenEntry): void {
-  const tokens = loadOAuthTokens();
-  tokens[provider] = token;
-  saveOAuthTokens(tokens);
+  loadOAuthTokens();
+  setSecret(oauthVaultKey(provider), JSON.stringify(token));
+  oauthTokensCache![provider] = token;
+  if (!oauthIndexCache!.includes(provider)) oauthIndexCache!.push(provider);
+  writeOAuthIndex();
 }
 
 export function getOAuthToken(provider: string): OAuthTokenEntry | null {
   const tokens = loadOAuthTokens();
-  return tokens[provider] || null;
+  if (tokens[provider]) return tokens[provider];
+  const decoded = decodeOAuthSecret(getSecret(oauthVaultKey(provider)));
+  if (decoded) {
+    tokens[provider] = decoded;
+    if (!oauthIndexCache!.includes(provider)) {
+      oauthIndexCache!.push(provider);
+      writeOAuthIndex();
+    }
+  }
+  return decoded;
 }
 
 export function removeOAuthToken(provider: string): void {
-  const tokens = loadOAuthTokens();
-  delete tokens[provider];
-  saveOAuthTokens(tokens);
+  loadOAuthTokens();
+  deleteSecret(oauthVaultKey(provider));
+  delete oauthTokensCache![provider];
+  oauthIndexCache = oauthIndexCache!.filter((p) => p !== provider);
+  writeOAuthIndex();
 }
 
 // ─── Window State Store ───────────────────────────────────────────
