@@ -1829,6 +1829,16 @@ const App: React.FC = () => {
         alwaysOnTop: true,
       };
     }
+    // Search intent: suppress when there are real app/command/contextual
+    // matches — the user is more likely launching an app like "Clipboard
+    // History" than literally searching the web for "clip". Files are
+    // intentionally excluded since broad filename matches are noisy.
+    const hasAppMatch =
+      groupedCommands.contextual.length > 0 ||
+      groupedCommands.pinned.length > 0 ||
+      groupedCommands.recent.length > 0 ||
+      groupedCommands.other.length > 0;
+    if (hasAppMatch) return null;
     return {
       id: BROWSER_SEARCH_PERFORM_SEARCH_ID,
       title: t('launcher.browserSearch.searchFor', { query: subject }),
@@ -1837,7 +1847,7 @@ const App: React.FC = () => {
       keywords: [],
       alwaysOnTop: true,
     };
-  }, [browserSearch, launcherInputValue, aiMode, t]);
+  }, [browserSearch, launcherInputValue, aiMode, t, groupedCommands]);
 
   const displayCommands = useMemo(() => {
     const all = [
