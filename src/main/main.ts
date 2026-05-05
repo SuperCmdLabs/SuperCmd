@@ -2036,6 +2036,7 @@ let pendingNoteJson: string | null = null;
 let canvasWindow: InstanceType<typeof BrowserWindow> | null = null;
 let pendingCanvasJson: string | null = null;
 let isVisible = false;
+let isAppQuitting = false;
 let suppressBlurHide = false; // When true, blur won't hide the window (used during file dialogs)
 let showWindowBlurGraceUntil = 0; // Timestamp until which blur-to-hide is suppressed after show (prevents flash-close)
 let oauthBlurHideSuppressionDepth = 0; // Keep launcher alive while OAuth browser flow is in progress
@@ -2081,9 +2082,23 @@ function enterRegularMacActivationPolicy(): void {
 
 function restoreOverlayMacActivationPolicyIfPossible(): void {
   if (process.platform !== 'darwin') return;
+  if (isAppQuitting) return;
   if (launcherMode === 'onboarding') return;
   if (settingsWindow || extensionStoreWindow || canvasWindow) return;
   enterOverlayMacActivationPolicy();
+}
+
+function prepareWindowsForAppQuit(): void {
+  isAppQuitting = true;
+  if (process.platform === 'darwin') {
+    setMacActivationPolicy('regular');
+  }
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win || win.isDestroyed()) continue;
+    try { win.setClosable(true); } catch {}
+    try { win.setMinimizable(true); } catch {}
+    try { win.setMaximizable(true); } catch {}
+  }
 }
 
 function getMemoryStatusWindowHtml(): string {
@@ -11139,6 +11154,7 @@ function openCanvasWindow(mode?: 'create' | 'edit'): void {
 
   let savingBeforeClose = false;
   canvasWindow.on('close', (event: any) => {
+    if (isAppQuitting) return;
     if (savingBeforeClose) return;
     event.preventDefault();
     savingBeforeClose = true;
@@ -16567,7 +16583,12 @@ app.on('window-all-closed', () => {
   }
 });
 
+app.on('before-quit', () => {
+  prepareWindowsForAppQuit();
+});
+
 app.on('will-quit', () => {
+  prepareWindowsForAppQuit();
   stopInstalledAppsWatchers();
   globalShortcut.unregisterAll();
   if (windowManagerWorkerRestartTimer) {
