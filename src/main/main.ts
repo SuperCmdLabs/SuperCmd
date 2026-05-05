@@ -4459,12 +4459,15 @@ function captureWhisperSuperCmdTextTarget(): void {
     whisperSuperCmdTextTargetWindow = null;
     return;
   }
-  whisperSuperCmdTextTargetWindow = focusedWindow;
-  void focusedWindow.webContents.executeJavaScript(buildWhisperTextTargetCaptureScript(), true).catch(() => {
-    if (whisperSuperCmdTextTargetWindow === focusedWindow) {
-      whisperSuperCmdTextTargetWindow = null;
-    }
-  });
+  void focusedWindow.webContents.executeJavaScript(buildWhisperTextTargetCaptureScript(), true)
+    .then((captured: unknown) => {
+      whisperSuperCmdTextTargetWindow = captured ? focusedWindow : null;
+    })
+    .catch(() => {
+      if (whisperSuperCmdTextTargetWindow === focusedWindow) {
+        whisperSuperCmdTextTargetWindow = null;
+      }
+    });
 }
 
 async function insertTextIntoWhisperSuperCmdTarget(text: string): Promise<boolean> {
