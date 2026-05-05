@@ -124,6 +124,10 @@ export interface AppSettings {
   // Useful for apps with their own emoji pickers (Slack, Telegram, …).
   emojiPickerExcludedAppBundleIds: string[];
   browserSearch: BrowserSearchSettings;
+  // Number of seconds the launcher waits after closing before resetting the
+  // active view (extension or internal view like Clipboard) back to root
+  // search. `0` resets immediately on every reopen.
+  popToRootSearchTimeoutSeconds: number;
 }
 
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
@@ -221,6 +225,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     enabled: true,
     historyRetentionDays: 90,
   },
+  popToRootSearchTimeoutSeconds: 90,
 };
 
 let settingsCache: AppSettings | null = null;
@@ -268,6 +273,19 @@ function normalizeBundleIdList(value: any): string[] {
 }
 
 const ALLOWED_CLIPBOARD_RETENTION_DAYS = new Set([1, 7, 30, 90, 180, 365]);
+
+const ALLOWED_POP_TO_ROOT_TIMEOUTS = new Set([0, 5, 15, 30, 60, 90, 120]);
+
+function normalizePopToRootSearchTimeoutSeconds(value: any): number {
+  if (value === undefined || value === null) {
+    return DEFAULT_SETTINGS.popToRootSearchTimeoutSeconds;
+  }
+  const num = Number(value);
+  if (!Number.isFinite(num)) return DEFAULT_SETTINGS.popToRootSearchTimeoutSeconds;
+  const int = Math.trunc(num);
+  if (ALLOWED_POP_TO_ROOT_TIMEOUTS.has(int)) return int;
+  return DEFAULT_SETTINGS.popToRootSearchTimeoutSeconds;
+}
 
 function normalizeClipboardHistoryRetentionDays(value: any): number | null {
   if (value === null) return null;
@@ -481,6 +499,7 @@ export function loadSettings(): AppSettings {
         : DEFAULT_SETTINGS.emojiPickerTriggerPrefix,
       emojiPickerExcludedAppBundleIds: normalizeBundleIdList(parsed.emojiPickerExcludedAppBundleIds),
       browserSearch: normalizeBrowserSearchSettings(parsed.browserSearch),
+      popToRootSearchTimeoutSeconds: normalizePopToRootSearchTimeoutSeconds(parsed.popToRootSearchTimeoutSeconds),
     };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };
@@ -534,6 +553,11 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
     ),
     browserSearch: normalizeBrowserSearchSettings(
       'browserSearch' in patch ? patch.browserSearch : current.browserSearch
+    ),
+    popToRootSearchTimeoutSeconds: normalizePopToRootSearchTimeoutSeconds(
+      'popToRootSearchTimeoutSeconds' in patch
+        ? patch.popToRootSearchTimeoutSeconds
+        : current.popToRootSearchTimeoutSeconds
     ),
   };
 

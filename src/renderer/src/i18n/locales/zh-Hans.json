@@ -623,6 +623,19 @@
           "macos": "macOS 样式 (^N, ^P, ^B, ^F)"
         }
       },
+      "popToRootSearch": {
+        "title": "返回根搜索",
+        "description": "重新打开 SuperCmd 时,经过此延迟后返回根搜索;否则保留之前打开的扩展或视图。",
+        "option": {
+          "immediately": "立即",
+          "5s": "5 秒后",
+          "15s": "15 秒后",
+          "30s": "30 秒后",
+          "60s": "60 秒后",
+          "90s": "90 秒后",
+          "120s": "120 秒后"
+        }
+      },
       "clipboardRetention": {
         "title": "剪贴板历史保留期限",
         "description": "自动删除超过所选时长的剪贴板条目。已固定的条目始终保留。",

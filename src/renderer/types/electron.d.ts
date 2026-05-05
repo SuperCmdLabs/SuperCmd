@@ -349,6 +349,7 @@ export interface AppSettings {
   emojiPickerTriggerPrefix: string;
   emojiPickerExcludedAppBundleIds: string[];
   browserSearch: BrowserSearchSettings;
+  popToRootSearchTimeoutSeconds: number;
 }
 
 export interface CatalogEntry {
