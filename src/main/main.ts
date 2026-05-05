@@ -2056,6 +2056,36 @@ const OPENING_SHORTCUT_SUPPRESSION_MS = 220;
 let openingShortcutSuppressionUntil = 0;
 let openingShortcutToSuppress = '';
 
+function setMacActivationPolicy(policy: 'regular' | 'accessory' | 'prohibited'): void {
+  if (process.platform !== 'darwin') return;
+  try {
+    (app as any).setActivationPolicy?.(policy);
+  } catch {}
+}
+
+function enterOverlayMacActivationPolicy(): void {
+  if (process.platform !== 'darwin') return;
+  // AeroSpace classifies regular-app focused AX windows as workspace windows.
+  // The launcher is an overlay, so keep the app accessory while only the
+  // launcher/overlay windows are active; AeroSpace then treats the panel like
+  // a popup and doesn't bind it to the first workspace it appeared on.
+  setMacActivationPolicy('accessory');
+  try { app.dock.hide(); } catch {}
+}
+
+function enterRegularMacActivationPolicy(): void {
+  if (process.platform !== 'darwin') return;
+  setMacActivationPolicy('regular');
+  try { app.dock.show(); } catch {}
+}
+
+function restoreOverlayMacActivationPolicyIfPossible(): void {
+  if (process.platform !== 'darwin') return;
+  if (launcherMode === 'onboarding') return;
+  if (settingsWindow || extensionStoreWindow || canvasWindow) return;
+  enterOverlayMacActivationPolicy();
+}
+
 function getMemoryStatusWindowHtml(): string {
   return `<!doctype html>
 <html>
@@ -7004,6 +7034,9 @@ function createWindow(): void {
     frame: false,
     hasShadow: false,
     resizable: false,
+    minimizable: false,
+    maximizable: false,
+    closable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
@@ -7837,12 +7870,13 @@ function setLauncherMode(mode: LauncherMode): void {
       if (mode === 'onboarding') {
         // Make onboarding behave like a normal app window — visible in dock and
         // Mission Control, doesn't drop behind other windows.
+        enterRegularMacActivationPolicy();
+        try { mainWindow.setClosable(true); } catch {}
+        try { mainWindow.setMinimizable(true); } catch {}
+        try { mainWindow.setMaximizable(true); } catch {}
         mainWindow.setAlwaysOnTop(false);
         mainWindow.setSkipTaskbar(false);
         try { mainWindow.setHiddenInMissionControl(false); } catch {}
-        if (process.platform === 'darwin') {
-          try { app.dock.show(); } catch {}
-        }
         mainWindow.setVisibleOnAllWorkspaces(false, {
           visibleOnFullScreen: true,
           skipTransformProcessType: process.platform === 'darwin',
@@ -7850,10 +7884,11 @@ function setLauncherMode(mode: LauncherMode): void {
       } else {
         mainWindow.setAlwaysOnTop(true);
         mainWindow.setSkipTaskbar(true);
+        try { mainWindow.setClosable(false); } catch {}
+        try { mainWindow.setMinimizable(false); } catch {}
+        try { mainWindow.setMaximizable(false); } catch {}
         try { mainWindow.setHiddenInMissionControl(true); } catch {}
-        if (process.platform === 'darwin' && prevMode === 'onboarding') {
-          try { app.dock.hide(); } catch {}
-        }
+        restoreOverlayMacActivationPolicyIfPossible();
         setLauncherOverlayTopmost(true);
       }
     } catch {}
@@ -9088,10 +9123,9 @@ async function openLauncherFromUserEntry(): Promise<void> {
     return;
   }
 
-  // Returning user — hide dock for overlay-only behaviour, then show window.
-  if (process.platform === 'darwin') {
-    app.dock.hide();
-  }
+  // Returning user — keep the launcher as an accessory overlay so tiling WMs
+  // such as AeroSpace don't bind it to the first workspace where it appears.
+  enterOverlayMacActivationPolicy();
   setLauncherMode('default');
   await showWindow();
 }
@@ -10750,6 +10784,7 @@ function registerCloseWindowShortcut(
 }
 
 function openSettingsWindow(payload?: SettingsNavigationPayload): void {
+  enterRegularMacActivationPolicy();
   if (settingsWindow) {
     if (payload) {
       settingsWindow.webContents.send('settings-tab-changed', payload);
@@ -10757,10 +10792,6 @@ function openSettingsWindow(payload?: SettingsNavigationPayload): void {
     settingsWindow.show();
     settingsWindow.focus();
     return;
-  }
-
-  if (process.platform === 'darwin') {
-    app.dock.show();
   }
 
   const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = (() => {
@@ -10819,10 +10850,7 @@ function openSettingsWindow(payload?: SettingsNavigationPayload): void {
 
   settingsWindow.on('closed', () => {
     settingsWindow = null;
-    // Hide dock again when no settings/store/notes windows are open
-    if (process.platform === 'darwin' && !extensionStoreWindow && !notesWindow) {
-      app.dock.hide();
-    }
+    restoreOverlayMacActivationPolicyIfPossible();
   });
 }
 
@@ -10969,25 +10997,20 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
 
   notesWindow.on('closed', () => {
     notesWindow = null;
-    if (process.platform === 'darwin' && !settingsWindow && !extensionStoreWindow && !canvasWindow) {
-      app.dock.hide();
-    }
+    restoreOverlayMacActivationPolicyIfPossible();
   });
 }
 
 // ─── Canvas Window ────────────────────────────────────────────────
 
 function openCanvasWindow(mode?: 'create' | 'edit'): void {
+  enterRegularMacActivationPolicy();
   if (canvasWindow) {
     canvasWindow.webContents.send('canvas-mode-changed', { mode: mode || 'create', canvasJson: pendingCanvasJson });
     pendingCanvasJson = null;
     canvasWindow.show();
     canvasWindow.focus();
     return;
-  }
-
-  if (process.platform === 'darwin') {
-    app.dock.show();
   }
 
   const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = (() => {
@@ -11128,9 +11151,7 @@ function openCanvasWindow(mode?: 'create' | 'edit'): void {
 
   canvasWindow.on('closed', () => {
     canvasWindow = null;
-    if (process.platform === 'darwin' && !settingsWindow && !extensionStoreWindow && !notesWindow) {
-      app.dock.hide();
-    }
+    restoreOverlayMacActivationPolicyIfPossible();
   });
 }
 
@@ -11223,14 +11244,11 @@ async function installCanvasLib(sender: any): Promise<void> {
 }
 
 function openExtensionStoreWindow(): void {
+  enterRegularMacActivationPolicy();
   if (extensionStoreWindow) {
     extensionStoreWindow.show();
     extensionStoreWindow.focus();
     return;
-  }
-
-  if (process.platform === 'darwin') {
-    app.dock.show();
   }
 
   const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = (() => {
@@ -11285,9 +11303,7 @@ function openExtensionStoreWindow(): void {
 
   extensionStoreWindow.on('closed', () => {
     extensionStoreWindow = null;
-    if (process.platform === 'darwin' && !settingsWindow && !notesWindow) {
-      app.dock.hide();
-    }
+    restoreOverlayMacActivationPolicyIfPossible();
   });
 }
 
@@ -12687,9 +12703,7 @@ app.whenReady().then(async () => {
       // deferred to avoid triggering permission dialogs during onboarding.
       if (patch.hasSeenOnboarding === true) {
         fnWatcherOnboardingOverride = false;
-        if (process.platform === 'darwin') {
-          app.dock.hide();
-        }
+        enterOverlayMacActivationPolicy();
         startClipboardMonitor();
         setClipboardAppBlacklist(loadSettings().clipboardAppBlacklist);
         syncFnSpeakToggleWatcher(loadSettings().commandHotkeys);
@@ -16467,6 +16481,12 @@ if let tiff = image?.tiffRepresentation {
   }
 
   // ─── Window + Shortcuts ─────────────────────────────────────────
+
+  if (settings.hasSeenOnboarding) {
+    enterOverlayMacActivationPolicy();
+  } else {
+    enterRegularMacActivationPolicy();
+  }
 
   createWindow();
   startInstalledAppsWatchers();

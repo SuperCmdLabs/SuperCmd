@@ -11,3 +11,4 @@ extensions/*
 
 **/.build/*
 .gstack/
+**/AeroSpace-main/**
