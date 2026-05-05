@@ -619,7 +619,7 @@
       },
       "browserSearch": {
         "title": "Búsqueda en el navegador",
-        "description": "Pulsa ⌘↵ para abrir tu consulta en el navegador predeterminado. El autocompletado en línea sugiere sitios y búsquedas anteriores.",
+        "description": "Pulsa Intro para abrir tu consulta en el navegador predeterminado. El autocompletado en línea sugiere sitios de tu historial.",
         "enableLabel": "Activar búsqueda en el navegador",
         "retention": {
           "label": "Retención del historial",

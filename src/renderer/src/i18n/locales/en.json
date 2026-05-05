@@ -643,7 +643,7 @@
       },
       "browserSearch": {
         "title": "Browser Search",
-        "description": "Press ⌘↵ on a query to open it in your default browser. Inline autocomplete suggests sites and past searches.",
+        "description": "Press Enter on a query to open it in your default browser. Inline autocomplete suggests sites from your history.",
         "enableLabel": "Enable browser search",
         "retention": {
           "label": "History retention",

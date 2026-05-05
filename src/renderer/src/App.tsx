@@ -1819,9 +1819,10 @@ const App: React.FC = () => {
     const resolved = browserSearch.resolve(subject);
     if (!resolved) return null;
     if (resolved.type === 'url') {
+      const displayUrl = subject.replace(/^https?:\/\//i, '').replace(/\/+$/, '') || resolved.host || subject;
       return {
         id: BROWSER_SEARCH_OPEN_URL_ID,
-        title: t('launcher.browserSearch.openUrl', { url: resolved.host || subject }),
+        title: t('launcher.browserSearch.openUrl', { url: displayUrl }),
         subtitle: t('launcher.browserSearch.subtitle.openUrl'),
         category: 'system',
         keywords: [],
@@ -2319,18 +2320,6 @@ const App: React.FC = () => {
       }
       const target = e.target as HTMLElement | null;
       const isSearchInputTarget = target === inputRef.current;
-
-      // When the user deletes characters, suppress autocomplete on the
-      // next render so they can actually shrink the input.
-      if (
-        isSearchInputTarget &&
-        (e.key === 'Backspace' || e.key === 'Delete') &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        !e.altKey
-      ) {
-        setBrowserSearchSkipAutoComplete(true);
-      }
 
       if (e.metaKey && (e.key === 'k' || e.key === 'K') && !e.repeat) {
         e.preventDefault();
@@ -4087,6 +4076,18 @@ const App: React.FC = () => {
                 value={launcherInputValue}
                 onChange={(e) => {
                   const value = e.target.value;
+                  // If we had a suggestion and the resulting value equals the
+                  // already-typed prefix, the user just deleted the suggestion
+                  // suffix — keep searchQuery and remember to suppress autocomplete
+                  // until the input is cleared.
+                  if (
+                    browserSearchAutoComplete &&
+                    value === searchQuery &&
+                    value.length > 0
+                  ) {
+                    setBrowserSearchSkipAutoComplete(true);
+                    return;
+                  }
                   setSearchQuery(value);
                   if (launcherViewMode === 'compact') {
                     if (isCompactCollapsed && value.length > 0) {

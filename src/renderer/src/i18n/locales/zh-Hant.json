@@ -643,7 +643,7 @@
       },
       "browserSearch": {
         "title": "瀏覽器搜尋",
-        "description": "輸入內容後按 ⌘↵ 即可在預設瀏覽器中開啟。內嵌自動補全會建議網站與歷史搜尋。",
+        "description": "輸入內容後按 Enter 即可在預設瀏覽器中開啟。內嵌自動補全會根據歷史紀錄建議網站。",
         "enableLabel": "啟用瀏覽器搜尋",
         "retention": {
           "label": "歷史紀錄保留時間",

@@ -20,10 +20,9 @@ interface UseBrowserSearchResult {
   resolve: (input: string) => ResolvedBrowserInput | null;
 }
 
-export function useBrowserSearch(currentQuery: string): UseBrowserSearchResult {
+export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult {
   const [entries, setEntries] = useState<BrowserSearchEntry[]>([]);
   const [enabled, setEnabled] = useState<boolean>(true);
-  const [liveSuggestion, setLiveSuggestion] = useState<{ query: string; suggestion: string } | null>(null);
   const entriesRef = useRef<BrowserSearchEntry[]>([]);
   entriesRef.current = entries;
 
@@ -71,44 +70,6 @@ export function useBrowserSearch(currentQuery: string): UseBrowserSearchResult {
     };
   }, [enabled, refresh]);
 
-  // Debounced live-suggestion fetch from Google's suggest endpoint. Used as
-  // a fallback when there's no history match, so users see autocomplete
-  // even on queries they've never typed before.
-  useEffect(() => {
-    if (!enabled) {
-      setLiveSuggestion(null);
-      return;
-    }
-    const trimmed = currentQuery.trim();
-    if (!trimmed) {
-      setLiveSuggestion(null);
-      return;
-    }
-    let cancelled = false;
-    const handle = window.setTimeout(async () => {
-      if (cancelled) return;
-      try {
-        const result = await window.electron.browserSearchSuggest(trimmed);
-        if (cancelled) return;
-        if (
-          result &&
-          result.length > trimmed.length &&
-          result.toLowerCase().startsWith(trimmed.toLowerCase())
-        ) {
-          setLiveSuggestion({ query: trimmed, suggestion: result });
-        } else {
-          setLiveSuggestion(null);
-        }
-      } catch {
-        if (!cancelled) setLiveSuggestion(null);
-      }
-    }, 150);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, [enabled, currentQuery]);
-
   const getCompletion = useCallback((rawInput: string): BrowserSearchAutocomplete | null => {
     if (!enabled) return null;
     const input = rawInput;
@@ -119,21 +80,29 @@ export function useBrowserSearch(currentQuery: string): UseBrowserSearchResult {
     const stripped = lower.replace(/^https?:\/\//, '');
     const protocolPrefix = lower !== stripped ? input.slice(0, input.length - stripped.length) : '';
 
-    // Pass 1: URL host completion. Match host (and host without `www.` prefix).
-    let bestUrl: { entry: BrowserSearchEntry; host: string; score: number } | null = null;
+    // Pass 1: URL completion. Match against the full URL after the protocol
+    // (host + path + query), so frequent deep links like `github.com/shobhit99`
+    // surface instead of just the bare host. Also try the `www.`-stripped form.
+    let bestUrl: { entry: BrowserSearchEntry; matched: string; score: number } | null = null;
     for (const entry of list) {
-      if (entry.type !== 'url' || !entry.host) continue;
-      const candidates = entry.host.startsWith('www.') ? [entry.host, entry.host.slice(4)] : [entry.host];
-      for (const host of candidates) {
-        if (host.length > stripped.length && host.startsWith(stripped)) {
+      if (entry.type !== 'url') continue;
+      const sourceUrl = entry.url || entry.host;
+      if (!sourceUrl) continue;
+      const fullStripped = sourceUrl.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+      if (!fullStripped) continue;
+      const candidates = fullStripped.toLowerCase().startsWith('www.')
+        ? [fullStripped, fullStripped.slice(4)]
+        : [fullStripped];
+      for (const candidate of candidates) {
+        if (candidate.length > stripped.length && candidate.toLowerCase().startsWith(stripped)) {
           const score = frecency(entry);
-          if (!bestUrl || score > bestUrl.score) bestUrl = { entry, host, score };
+          if (!bestUrl || score > bestUrl.score) bestUrl = { entry, matched: candidate, score };
           break;
         }
       }
     }
     if (bestUrl) {
-      const completion = protocolPrefix + input.slice(protocolPrefix.length) + bestUrl.host.slice(stripped.length);
+      const completion = input + bestUrl.matched.slice(stripped.length);
       return {
         completion,
         suffix: completion.slice(input.length),
@@ -159,35 +128,8 @@ export function useBrowserSearch(currentQuery: string): UseBrowserSearchResult {
       };
     }
 
-    // Pass 3: live search-engine suggestion (only if the cached suggestion
-    // is keyed to *this* exact trimmed query — otherwise we'd flash a
-    // stale extension when the user keeps typing).
-    const trimmed = input.trim();
-    if (
-      liveSuggestion &&
-      liveSuggestion.query === trimmed &&
-      liveSuggestion.suggestion.length > input.length &&
-      liveSuggestion.suggestion.toLowerCase().startsWith(lower)
-    ) {
-      const completion = input + liveSuggestion.suggestion.slice(input.length);
-      return {
-        completion,
-        suffix: completion.slice(input.length),
-        entry: {
-          id: 'browser-search-live-suggestion',
-          type: 'search',
-          query: liveSuggestion.suggestion,
-          url: '',
-          host: '',
-          lastUsedAt: Date.now(),
-          useCount: 1,
-          source: 'user',
-        },
-      };
-    }
-
     return null;
-  }, [enabled, liveSuggestion]);
+  }, [enabled]);
 
   const executeBrowserSearch = useCallback(async (input: string): Promise<boolean> => {
     if (!enabled) return false;

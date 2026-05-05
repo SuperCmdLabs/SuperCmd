@@ -619,7 +619,7 @@
       },
       "browserSearch": {
         "title": "Browser-Suche",
-        "description": "Drücke ⌘↵, um deine Eingabe im Standardbrowser zu öffnen. Inline-Autovervollständigung schlägt Seiten und frühere Suchen vor.",
+        "description": "Drücke Enter, um deine Eingabe im Standardbrowser zu öffnen. Die Inline-Autovervollständigung schlägt Seiten aus deinem Verlauf vor.",
         "enableLabel": "Browser-Suche aktivieren",
         "retention": {
           "label": "Aufbewahrungsdauer",

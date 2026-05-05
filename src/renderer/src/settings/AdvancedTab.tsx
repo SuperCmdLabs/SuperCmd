@@ -160,7 +160,7 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
         </div>
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
           <input
             type="checkbox"
@@ -177,59 +177,58 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
               <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">
                 {t('settings.advanced.browserSearch.retention.label')}
               </label>
-              <select
-                value={settings.historyRetentionDays === null ? 'forever' : String(settings.historyRetentionDays)}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  const next = raw === 'forever' ? null : Number(raw);
-                  onChange({ ...settings, historyRetentionDays: next });
-                }}
-                className="sc-select max-w-[280px]"
-              >
-                {BROWSER_SEARCH_RETENTION_OPTIONS.map((opt) => (
-                  <option key={opt.labelKey} value={opt.value === null ? 'forever' : String(opt.value)}>
-                    {t(opt.labelKey)}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                <div className="w-full max-w-[320px]">
+                  <select
+                    value={settings.historyRetentionDays === null ? 'forever' : String(settings.historyRetentionDays)}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const next = raw === 'forever' ? null : Number(raw);
+                      onChange({ ...settings, historyRetentionDays: next });
+                    }}
+                    className="sc-select"
+                  >
+                    {BROWSER_SEARCH_RETENTION_OPTIONS.map((opt) => (
+                      <option key={opt.labelKey} value={opt.value === null ? 'forever' : String(opt.value)}>
+                        {t(opt.labelKey)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button type="button" onClick={handleClear} className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]">
+                  {t('settings.advanced.browserSearch.clearButton')}
+                </button>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleClear}
-                className="px-3 py-1.5 text-[12px] rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)]"
-              >
-                {t('settings.advanced.browserSearch.clearButton')}
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[0.75rem] text-[var(--text-muted)]">
+            <div>
+              <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">
                 {t('settings.advanced.browserSearch.importLabel')}
               </label>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={selectedBrowser}
-                  onChange={(e) => setSelectedBrowser(e.target.value)}
-                  className="sc-select max-w-[280px]"
-                  disabled={availableBrowsers.length === 0 || importing}
-                >
-                  {availableBrowsers.length === 0 ? (
-                    <option value="">{t('settings.advanced.browserSearch.import.noneFound')}</option>
-                  ) : (
-                    availableBrowsers.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))
-                  )}
-                </select>
+              <div className="flex items-center gap-2">
+                <div className="w-full max-w-[320px]">
+                  <select
+                    value={selectedBrowser}
+                    onChange={(e) => setSelectedBrowser(e.target.value)}
+                    className="sc-select"
+                    disabled={availableBrowsers.length === 0 || importing}
+                  >
+                    {availableBrowsers.length === 0 ? (
+                      <option value="">{t('settings.advanced.browserSearch.import.noneFound')}</option>
+                    ) : (
+                      availableBrowsers.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
                 <button
                   type="button"
                   onClick={handleImport}
                   disabled={!selectedBrowser || importing}
-                  className="px-3 py-1.5 text-[12px] rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
                 >
                   {importing
                     ? t('settings.advanced.browserSearch.import.running')

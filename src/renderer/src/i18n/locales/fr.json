@@ -623,7 +623,7 @@
       },
       "browserSearch": {
         "title": "Recherche dans le navigateur",
-        "description": "Appuyez sur ⌘↵ pour ouvrir votre saisie dans le navigateur par défaut. La saisie semi-automatique suggère des sites et recherches passées.",
+        "description": "Appuyez sur Entrée pour ouvrir votre saisie dans le navigateur par défaut. La saisie semi-automatique suggère des sites de votre historique.",
         "enableLabel": "Activer la recherche dans le navigateur",
         "retention": {
           "label": "Durée de conservation de l'historique",
