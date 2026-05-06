@@ -799,7 +799,6 @@ const App: React.FC = () => {
       if (!isOnboardingMode) {
         refreshThemeFromStorage(false);
       }
-      console.log('[WINDOW-SHOWN] fired', payload);
       const isWhisperMode = payload?.mode === 'whisper';
       const isSpeakMode = payload?.mode === 'speak';
       const isPromptMode = payload?.mode === 'prompt';

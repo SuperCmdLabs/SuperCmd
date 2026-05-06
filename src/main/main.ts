@@ -7242,6 +7242,10 @@ function createWindow(): void {
       nodeIntegration: true,
       contextIsolation: false,
       sandbox: false,
+      // Keep the renderer running at full speed even while the launcher is
+      // hidden. Otherwise Chromium throttles paint of hidden windows, so the
+      // first frame after show() is catch-up and feels sluggish.
+      backgroundThrottling: false,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
