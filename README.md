@@ -29,6 +29,7 @@ SuperCmd is an Electron + React launcher that focuses on Raycast extension compa
 ## Key Features
 
 - **Raycast extension compatibility** — `@raycast/api` and `@raycast/utils` shims; install extensions directly from the Raycast store
+- **Raycast backup import** — import encrypted `.rayconfig` backups with settings, hotkeys, extensions, scripts, quicklinks, snippets, notes, and extension prefs
 - **AI cursor prompt** — inline AI suggestions at your cursor position across any app
 - **AI chat** — chat with configurable providers (OpenAI / Anthropic / Ollama / Gemini / OpenAI-compatible)
 - **Hold-to-speak dictation** — Wispr Flow-style voice input; hold hotkey, speak, release to type (Whisper, Parakeet, or native macOS STT)
@@ -131,6 +132,31 @@ SuperCmd needs the following permissions. The app will prompt you on first use, 
 ### Auto-updates
 
 SuperCmd includes a built-in auto-updater backed by GitHub Releases. You can check for updates manually by searching "Check for Updates" in the launcher, or install a downloaded update on next launch.
+
+### Raycast Backup Import
+
+SuperCmd can import encrypted Raycast `.rayconfig` backups from the General settings tab.
+
+It currently imports:
+- Raycast settings that map cleanly to SuperCmd
+- the global launcher hotkey
+- command hotkeys
+- quicklinks
+- snippets
+- notes
+- installed Raycast extensions
+- extension preferences
+- script command folders
+- disabled script commands
+- disabled extension commands
+
+It intentionally skips or only partially maps:
+- AI chats
+- clipboard history
+- MCP server config
+- Raycast aliases, where the backup does not expose a clean first-class field
+
+The importer decrypts backups locally and prompts for the backup password before reading the file.
 
 ---
 
