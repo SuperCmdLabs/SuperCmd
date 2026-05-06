@@ -1193,36 +1193,18 @@ async function openAppByPath(appPath: string): Promise<void> {
 }
 
 async function openSettingsPane(identifier: string): Promise<void> {
-  if (identifier.startsWith('com.apple.')) {
-    try {
-      await execAsync(`open "x-apple.systempreferences:${identifier}"`);
-      return;
-    } catch { /* fall through */ }
-  }
-
-  try {
-    await execAsync(
-      `open "x-apple.systempreferences:com.apple.settings.${identifier}"`
-    );
-    return;
-  } catch { /* fall through */ }
-
-  try {
-    await execAsync(
-      `open "x-apple.systempreferences:com.apple.preference.${identifier.toLowerCase()}"`
-    );
-    return;
-  } catch { /* fall through */ }
-
-  try {
-    await execAsync('open -a "System Settings"');
-  } catch {
-    try {
-      await execAsync('open -a "System Preferences"');
-    } catch (e) {
-      console.error('Could not open System Settings:', e);
-    }
-  }
+  // Same fire-and-forget reasoning as openAppByPath: open(1) dispatches to
+  // LaunchServices but can occasionally block 1-3s, and the renderer was
+  // awaiting it — meaning the launcher hung visible while System Settings
+  // was already coming up. The previous sequential fallback chain made it
+  // worse: open(1) returns success (exit 0) for any well-formed URL even
+  // when macOS doesn't recognize it, so the chain rarely fell through.
+  // If macOS doesn't recognize the URL it opens System Settings to its
+  // default pane, which matches the previous bare-fallback behaviour.
+  const url = identifier.startsWith('com.apple.')
+    ? `x-apple.systempreferences:${identifier}`
+    : `x-apple.systempreferences:com.apple.settings.${identifier}`;
+  spawn('/usr/bin/open', [url], { detached: true, stdio: 'ignore' }).unref();
 }
 
 // ─── Public API ─────────────────────────────────────────────────────
