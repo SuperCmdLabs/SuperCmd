@@ -447,6 +447,7 @@ const App: React.FC = () => {
   const inlineQuickLinkInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const fileSearchRequestSeqRef = useRef(0);
   const commandsRef = useRef<CommandInfo[]>([]);
+  const lastCommandsFetchAtRef = useRef(0);
   const showActionsRef = useRef(false);
   const selectedCommandRef = useRef<CommandInfo | null>(null);
   commandsRef.current = commands;
@@ -719,6 +720,7 @@ const App: React.FC = () => {
     try {
       const fetchedCommands = await window.electron.getCommands();
       setCommands(fetchedCommands);
+      lastCommandsFetchAtRef.current = Date.now();
     } catch (error) {
       console.error('Failed to fetch commands:', error);
     } finally {
@@ -998,9 +1000,18 @@ const App: React.FC = () => {
         setIsCompactCollapsed(true);
         exitAiMode();
       }
-      // Re-fetch commands every time the window is shown
-      // so newly installed extensions appear immediately
-      fetchCommands({ showLoading: false });
+      // Skip the per-show fetch when commands are already loaded and recently
+      // fresh — refetching every show triggers a full ~1000-item list
+      // reconciliation that blocks the main thread (and can swallow the
+      // user's first Enter press). Newly installed extensions are still
+      // surfaced via the 'commands-updated' IPC and useBackgroundRefresh.
+      const COMMANDS_REFRESH_TTL_MS = 5 * 60_000;
+      if (
+        commandsRef.current.length === 0 ||
+        Date.now() - lastCommandsFetchAtRef.current > COMMANDS_REFRESH_TTL_MS
+      ) {
+        fetchCommands({ showLoading: false });
+      }
       loadLauncherPreferences();
       window.electron.aiIsAvailable().then(setAiAvailable);
       inputRef.current?.focus();
