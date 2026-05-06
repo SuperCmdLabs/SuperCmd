@@ -269,6 +269,18 @@ const electronAPI = {
   },
   saveSettings: (patch: any): Promise<any> =>
     ipcRenderer.invoke('save-settings', patch),
+  importRaycastConfig: (): Promise<any> =>
+    ipcRenderer.invoke('rayconfig-import'),
+  getExtensionPreferencesSnapshot: (): Promise<any> =>
+    ipcRenderer.invoke('get-extension-preferences-snapshot'),
+  getExtensionPreferences: (extName: string, cmdName?: string): Promise<Record<string, any>> =>
+    ipcRenderer.invoke('get-extension-preferences', extName, cmdName),
+  setExtensionPreference: (extName: string, preferenceName: string, value: any, cmdName?: string): Promise<Record<string, any>> =>
+    ipcRenderer.invoke('set-extension-preference', extName, preferenceName, value, cmdName),
+  setExtensionPreferences: (extName: string, values: Record<string, any>, cmdName?: string): Promise<Record<string, any>> =>
+    ipcRenderer.invoke('set-extension-preferences', extName, values, cmdName),
+  mergeExtensionPreferencesSnapshot: (snapshot: any): Promise<any> =>
+    ipcRenderer.invoke('merge-extension-preferences-snapshot', snapshot),
   getAllCommands: (): Promise<any[]> =>
     ipcRenderer.invoke('get-all-commands'),
   updateGlobalShortcut: (shortcut: string): Promise<boolean> =>
@@ -322,6 +334,13 @@ const electronAPI = {
     ipcRenderer.on('settings-updated', listener);
     return () => {
       ipcRenderer.removeListener('settings-updated', listener);
+    };
+  },
+  onExtensionPreferencesUpdated: (callback: (payload: { extensionName: string }) => void) => {
+    const listener = (_event: any, payload: { extensionName: string }) => callback(payload);
+    ipcRenderer.on('extension-preferences-updated', listener);
+    return () => {
+      ipcRenderer.removeListener('extension-preferences-updated', listener);
     };
   },
 

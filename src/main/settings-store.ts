@@ -86,6 +86,7 @@ export interface AppSettings {
   disabledCommands: string[];
   enabledCommands: string[];
   customExtensionFolders: string[];
+  scriptCommandFolders: string[];
   commandHotkeys: Record<string, string>;
   commandAliases: Record<string, string>;
   pinnedCommands: string[];
@@ -170,6 +171,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   disabledCommands: [],
   enabledCommands: [],
   customExtensionFolders: [],
+  scriptCommandFolders: [],
   commandHotkeys: {
     'system-supercmd-whisper': 'Command+Shift+W',
     'system-supercmd-whisper-speak-toggle': 'Fn',
@@ -438,6 +440,11 @@ export function loadSettings(): AppSettings {
             .map((value: any) => String(value || '').trim())
             .filter(Boolean)
         : DEFAULT_SETTINGS.customExtensionFolders,
+      scriptCommandFolders: Array.isArray(parsed.scriptCommandFolders)
+        ? parsed.scriptCommandFolders
+            .map((value: any) => String(value || '').trim())
+            .filter(Boolean)
+        : DEFAULT_SETTINGS.scriptCommandFolders,
       commandHotkeys: {
         ...DEFAULT_SETTINGS.commandHotkeys,
         ...parsedHotkeys,
@@ -513,6 +520,16 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   const updated = {
     ...current,
     ...patch,
+    customExtensionFolders: Array.isArray(patch.customExtensionFolders ?? current.customExtensionFolders)
+      ? (patch.customExtensionFolders ?? current.customExtensionFolders)
+          .map((value: any) => String(value || '').trim())
+          .filter(Boolean)
+      : [],
+    scriptCommandFolders: Array.isArray(patch.scriptCommandFolders ?? current.scriptCommandFolders)
+      ? (patch.scriptCommandFolders ?? current.scriptCommandFolders)
+          .map((value: any) => String(value || '').trim())
+          .filter(Boolean)
+      : [],
     appLanguage: normalizeAppLanguage(patch.appLanguage ?? current.appLanguage),
     launcherBackgroundImagePath: normalizeLauncherBackgroundImagePath(
       patch.launcherBackgroundImagePath ?? current.launcherBackgroundImagePath

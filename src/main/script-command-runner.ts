@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { loadSettings } from './settings-store';
 
 export type ScriptCommandMode = 'fullOutput' | 'compact' | 'silent' | 'inline';
 export type ScriptArgumentType = 'text' | 'password' | 'dropdown';
@@ -77,6 +78,9 @@ function getScriptCommandDirectories(): string[] {
     .split(path.delimiter)
     .map((v) => expandHome(v))
     .filter(Boolean);
+  const fromSettings = (loadSettings().scriptCommandFolders || [])
+    .map((v) => expandHome(v))
+    .filter(Boolean);
 
   const defaults = [
     getSuperCmdScriptsDir(),
@@ -87,7 +91,7 @@ function getScriptCommandDirectories(): string[] {
   ];
 
   const unique = new Set<string>();
-  for (const dir of [...defaults, ...fromEnv]) {
+  for (const dir of [...defaults, ...fromSettings, ...fromEnv]) {
     const normalized = path.resolve(expandHome(dir));
     unique.add(normalized);
   }

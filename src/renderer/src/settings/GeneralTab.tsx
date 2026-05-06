@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2, SlidersHorizontal, ChevronDown, ChevronUp, Power, PanelTop } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
-import type { AppSettings, AppUpdaterStatus } from '../../types/electron';
+import type { AppSettings, AppUpdaterStatus, RaycastImportResult } from '../../types/electron';
 import { applyAppFontSize, getDefaultAppFontSize } from '../utils/font-size';
 import {
   getThemePreference,
@@ -93,6 +93,8 @@ const GeneralTab: React.FC = () => {
   const [launcherViewMode, setLauncherViewMode] = useState<'expanded' | 'compact'>('expanded');
   const [launcherBackgroundBusy, setLauncherBackgroundBusy] = useState(false);
   const [launcherBackgroundControlsExpanded, setLauncherBackgroundControlsExpanded] = useState(false);
+  const [raycastImportBusy, setRaycastImportBusy] = useState(false);
+  const [raycastImportResult, setRaycastImportResult] = useState<RaycastImportResult | null>(null);
 
   useEffect(() => {
     window.electron.getSettings().then((nextSettings) => {
@@ -362,6 +364,33 @@ const GeneralTab: React.FC = () => {
       setSettings(nextSettings);
     } catch {
       setSettings((prev) => (prev ? { ...prev, [field]: previousValue } : prev));
+    }
+  };
+
+  const handleRaycastImport = async () => {
+    if (raycastImportBusy) return;
+    setRaycastImportBusy(true);
+    try {
+      const result = await window.electron.importRaycastConfig();
+      setRaycastImportResult(result);
+    } catch (error: any) {
+      setRaycastImportResult({
+        canceled: false,
+        settingsImported: false,
+        disabledCommandsImported: 0,
+        scriptCommandFoldersImported: 0,
+        commandHotkeysImported: 0,
+        commandAliasesImported: 0,
+        pinnedCommandsImported: 0,
+        quicklinks: { found: 0, imported: 0, skipped: 0, failed: 1 },
+        snippets: { found: 0, imported: 0, skipped: 0, failed: 0 },
+        notes: { found: 0, imported: 0, skipped: 0, failed: 0 },
+        extensions: { found: 0, imported: 0, skipped: 0, failed: 0 },
+        unsupported: [],
+        warnings: [String(error?.message || error || 'Raycast import failed.')],
+      });
+    } finally {
+      setRaycastImportBusy(false);
     }
   };
 
@@ -675,6 +704,86 @@ const GeneralTab: React.FC = () => {
               />
               {t('settings.general.background.useEverywhere')}
             </label>
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<Download className="w-4 h-4" />}
+          title="Import Raycast Backup"
+          description="Import settings and supported data from an encrypted Raycast .rayconfig backup."
+        >
+          <div className="w-full space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleRaycastImport()}
+                disabled={raycastImportBusy}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] text-[0.75rem] font-semibold text-[var(--text-primary)] hover:border-[var(--ui-segment-border)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+              >
+                <Download className={`w-3.5 h-3.5 ${raycastImportBusy ? 'animate-pulse' : ''}`} />
+                {raycastImportBusy ? 'Importing…' : 'Choose Backup'}
+              </button>
+              {raycastImportResult?.filePath ? (
+                <span className="text-[0.75rem] text-[var(--text-subtle)] truncate">
+                  {getFileName(raycastImportResult.filePath)}
+                </span>
+              ) : null}
+            </div>
+
+            {raycastImportResult?.canceled ? (
+              <p className="text-[0.75rem] text-[var(--text-subtle)]">
+                Import canceled.
+              </p>
+            ) : null}
+
+            {!raycastImportResult?.canceled && raycastImportResult ? (
+              <div className="space-y-1">
+                <p className="text-[0.75rem] text-[var(--text-secondary)]">
+                  {[
+                    raycastImportResult.settingsImported ? 'settings imported' : null,
+                    `${raycastImportResult.quicklinks.imported}/${raycastImportResult.quicklinks.found} quicklinks`,
+                    `${raycastImportResult.snippets.imported}/${raycastImportResult.snippets.found} snippets`,
+                    `${raycastImportResult.notes.imported}/${raycastImportResult.notes.found} notes`,
+                    `${raycastImportResult.extensions.imported}/${raycastImportResult.extensions.found} extensions`,
+                  ].filter(Boolean).join(' · ')}
+                </p>
+                {raycastImportResult.disabledCommandsImported > 0 ? (
+                  <p className="text-[0.75rem] text-[var(--text-subtle)]">
+                    Imported {raycastImportResult.disabledCommandsImported} disabled command mapping{raycastImportResult.disabledCommandsImported === 1 ? '' : 's'}.
+                  </p>
+                ) : null}
+                {raycastImportResult.commandHotkeysImported > 0 ? (
+                  <p className="text-[0.75rem] text-[var(--text-subtle)]">
+                    Imported {raycastImportResult.commandHotkeysImported} command hotkey{raycastImportResult.commandHotkeysImported === 1 ? '' : 's'}.
+                  </p>
+                ) : null}
+                {raycastImportResult.commandAliasesImported > 0 ? (
+                  <p className="text-[0.75rem] text-[var(--text-subtle)]">
+                    Imported {raycastImportResult.commandAliasesImported} alias{raycastImportResult.commandAliasesImported === 1 ? '' : 'es'}.
+                  </p>
+                ) : null}
+                {raycastImportResult.pinnedCommandsImported > 0 ? (
+                  <p className="text-[0.75rem] text-[var(--text-subtle)]">
+                    Imported {raycastImportResult.pinnedCommandsImported} favorite{raycastImportResult.pinnedCommandsImported === 1 ? '' : 's'} into pinned commands.
+                  </p>
+                ) : null}
+                {raycastImportResult.scriptCommandFoldersImported > 0 ? (
+                  <p className="text-[0.75rem] text-[var(--text-subtle)]">
+                    Imported {raycastImportResult.scriptCommandFoldersImported} script command folder path{raycastImportResult.scriptCommandFoldersImported === 1 ? '' : 's'}.
+                  </p>
+                ) : null}
+                {raycastImportResult.unsupported.length > 0 ? (
+                  <p className="text-[0.75rem] text-[var(--text-subtle)]">
+                    Skipped: {raycastImportResult.unsupported.join(', ')}.
+                  </p>
+                ) : null}
+                {raycastImportResult.warnings.length > 0 ? (
+                  <p className="text-[0.75rem] text-amber-300">
+                    {raycastImportResult.warnings[0]}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </SettingsRow>
 

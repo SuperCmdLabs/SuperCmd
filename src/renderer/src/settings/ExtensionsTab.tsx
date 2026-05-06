@@ -31,6 +31,7 @@ import type {
   AppSettings,
   CommandInfo,
   ExtensionCommandSettingsSchema,
+  ExtensionPreferencesSnapshot,
   ExtensionPreferenceSchema,
   InstalledExtensionSettingsSchema,
 } from '../../types/electron';
@@ -63,6 +64,13 @@ function readJsonObject(key: string): Record<string, any> {
 
 function writeJsonObject(key: string, value: Record<string, any>) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function mergePreferenceSources(
+  primary: Record<string, any>,
+  fallback: Record<string, any>
+): Record<string, any> {
+  return { ...fallback, ...primary };
 }
 
 function getDefaultValue(pref: ExtensionPreferenceSchema): any {
@@ -111,6 +119,11 @@ const ExtensionsTab: React.FC<{
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [schemas, setSchemas] = useState<InstalledExtensionSettingsSchema[]>([]);
   const [installedExtensionNames, setInstalledExtensionNames] = useState<Set<string>>(new Set());
+  const [extensionPreferencesSnapshot, setExtensionPreferencesSnapshot] = useState<ExtensionPreferencesSnapshot>({
+    version: 1,
+    extensions: {},
+    commands: {},
+  });
   const [search, setSearch] = useState('');
   const [activeScope, setActiveScope] = useState<'all' | 'commands'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
@@ -180,15 +193,17 @@ const ExtensionsTab: React.FC<{
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [cmds, sett, extSchemas, installedNames] = await Promise.all([
+      const [cmds, sett, extSchemas, installedNames, preferenceSnapshot] = await Promise.all([
         window.electron.getAllCommands(),
         window.electron.getSettings(),
         window.electron.getInstalledExtensionsSettingsSchema(),
         window.electron.getInstalledExtensionNames(),
+        window.electron.getExtensionPreferencesSnapshot(),
       ]);
       setCommands(cmds);
       setSettings(sett);
       setSchemas(extSchemas);
+      setExtensionPreferencesSnapshot(preferenceSnapshot);
       setInstalledExtensionNames(
         new Set(
           (installedNames || [])
@@ -219,6 +234,13 @@ const ExtensionsTab: React.FC<{
       dispose?.();
     };
   }, [loadData]);
+
+  useEffect(() => {
+    return window.electron.onExtensionPreferencesUpdated(async () => {
+      const snapshot = await window.electron.getExtensionPreferencesSnapshot();
+      setExtensionPreferencesSnapshot(snapshot);
+    });
+  }, []);
 
   const commandBySchemaKey = useMemo(() => {
     const map = new Map<string, CommandInfo>();
@@ -658,8 +680,13 @@ const ExtensionsTab: React.FC<{
   );
 
   const getPreferenceValues = (extName: string, cmdName?: string): Record<string, any> => {
-    if (!cmdName) return readJsonObject(getExtPrefsKey(extName));
-    return readJsonObject(getCmdPrefsKey(extName, cmdName));
+    const primary = !cmdName
+      ? (extensionPreferencesSnapshot.extensions[extName] || {})
+      : (extensionPreferencesSnapshot.commands[`${extName}/${cmdName}`] || {});
+    const fallback = !cmdName
+      ? readJsonObject(getExtPrefsKey(extName))
+      : readJsonObject(getCmdPrefsKey(extName, cmdName));
+    return mergePreferenceSources(primary, fallback);
   };
 
   const setPreferenceValue = (extName: string, pref: ExtensionPreferenceSchema, value: any, cmdName?: string) => {
@@ -667,6 +694,32 @@ const ExtensionsTab: React.FC<{
     const current = readJsonObject(storageKey);
     current[pref.name] = value;
     writeJsonObject(storageKey, current);
+    setExtensionPreferencesSnapshot((prev) => {
+      if (cmdName) {
+        const commandKey = `${extName}/${cmdName}`;
+        return {
+          ...prev,
+          commands: {
+            ...prev.commands,
+            [commandKey]: {
+              ...(prev.commands[commandKey] || {}),
+              [pref.name]: value,
+            },
+          },
+        };
+      }
+      return {
+        ...prev,
+        extensions: {
+          ...prev.extensions,
+          [extName]: {
+            ...(prev.extensions[extName] || {}),
+            [pref.name]: value,
+          },
+        },
+      };
+    });
+    void window.electron.setExtensionPreference(extName, pref.name, value, cmdName);
     window.dispatchEvent(new CustomEvent('sc-extension-storage-changed', { detail: { extensionName: extName } }));
     // force rerender to reflect required/filled indicators
     setSelected((prev) => (prev ? { ...prev } : prev));

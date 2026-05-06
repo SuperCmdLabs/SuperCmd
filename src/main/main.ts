@@ -36,6 +36,13 @@ import {
   uninstallExtension,
 } from './extension-registry';
 import {
+  getExtensionPreferences,
+  getExtensionPreferencesSnapshot,
+  mergeExtensionPreferencesSnapshot,
+  setExtensionPreferenceValue,
+  setExtensionPreferences,
+} from './extension-preferences-store';
+import {
   searchExtensions,
   getPopularExtensions,
   getExtensionDetails,
@@ -141,6 +148,7 @@ import {
   isCanvasLibInstalled,
   getCanvasLibDir,
 } from './canvas-store';
+import { importRaycastConfigFromFile } from './raycast-config-import';
 
 import { initialize as initAptabase, trackEvent } from "@aptabase/electron/main";
 
@@ -11562,6 +11570,17 @@ function broadcastCommandsUpdated(): void {
   }
 }
 
+function broadcastExtensionPreferencesUpdated(extensionName: string): void {
+  const normalized = String(extensionName || '').trim();
+  if (!normalized) return;
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window || window.isDestroyed()) continue;
+    try {
+      window.webContents.send('extension-preferences-updated', { extensionName: normalized });
+    } catch {}
+  }
+}
+
 function broadcastBrowserSearchHistoryChanged(): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue;
@@ -12873,6 +12892,11 @@ app.whenReady().then(async () => {
           console.error('Failed to rebuild extensions after updating custom folders:', error);
         }
       }
+      if (patch.scriptCommandFolders !== undefined) {
+        invalidateScriptCommandsCache();
+        invalidateCache();
+        broadcastCommandsUpdated();
+      }
       if (
         patch.emojiPickerEnabled !== undefined ||
         patch.emojiPickerTriggerPrefix !== undefined ||
@@ -12929,6 +12953,68 @@ app.whenReady().then(async () => {
       return result;
     }
   );
+
+  ipcMain.handle('rayconfig-import', async (event: any) => {
+    suppressBlurHide = true;
+    try {
+      const result = await importRaycastConfigFromFile(getDialogParentWindow(event));
+      if (!result.canceled) {
+        invalidateScriptCommandsCache();
+        invalidateCache();
+        broadcastCommandsUpdated();
+        const latestSettings = loadSettings();
+        const windowsToNotify = [mainWindow, settingsWindow, extensionStoreWindow, promptWindow]
+          .filter(Boolean) as Array<InstanceType<typeof BrowserWindow>>;
+        for (const win of windowsToNotify) {
+          if (win.isDestroyed()) continue;
+          try {
+            win.webContents.send('settings-updated', latestSettings);
+          } catch {}
+        }
+      }
+      return result;
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('get-extension-preferences-snapshot', () => {
+    return getExtensionPreferencesSnapshot();
+  });
+
+  ipcMain.handle('get-extension-preferences', (_event: any, extName: string, cmdName?: string) => {
+    return getExtensionPreferences(extName, cmdName);
+  });
+
+  ipcMain.handle(
+    'set-extension-preference',
+    (_event: any, extName: string, preferenceName: string, value: any, cmdName?: string) => {
+      const result = setExtensionPreferenceValue(extName, preferenceName, value, cmdName);
+      broadcastExtensionPreferencesUpdated(extName);
+      return result;
+    }
+  );
+
+  ipcMain.handle(
+    'set-extension-preferences',
+    (_event: any, extName: string, values: Record<string, any>, cmdName?: string) => {
+      const result = setExtensionPreferences(extName, values, cmdName);
+      broadcastExtensionPreferencesUpdated(extName);
+      return result;
+    }
+  );
+
+  ipcMain.handle('merge-extension-preferences-snapshot', (_event: any, snapshot: any) => {
+    const result = mergeExtensionPreferencesSnapshot(snapshot);
+    for (const extensionName of Object.keys(snapshot?.extensions || {})) {
+      broadcastExtensionPreferencesUpdated(extensionName);
+    }
+    for (const commandKey of Object.keys(snapshot?.commands || {})) {
+      const extensionName = String(commandKey || '').split('/')[0] || '';
+      if (extensionName) broadcastExtensionPreferencesUpdated(extensionName);
+    }
+    return result;
+  });
 
   ipcMain.handle('get-all-commands', async () => {
     // Return ALL commands (ignoring disabled filter) for the settings page

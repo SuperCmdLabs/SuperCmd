@@ -57,6 +57,7 @@ import {
   getShortcutDisplayParts,
 } from './utils/command-helpers';
 import {
+  collectLegacyExtensionPreferencesSnapshot,
   readJsonObject, writeJsonObject,
   getCmdArgsKey,
   getScriptCmdArgsKey,
@@ -2794,6 +2795,17 @@ const App: React.FC = () => {
   // Signal main process that the renderer is mounted and IPC listeners are
   // registered.  Main waits for this before dispatching the initial
   // window-shown / run-system-command messages so they are never lost.
+  useEffect(() => {
+    const legacySnapshot = collectLegacyExtensionPreferencesSnapshot();
+    if (
+      Object.keys(legacySnapshot.extensions).length === 0 &&
+      Object.keys(legacySnapshot.commands).length === 0
+    ) {
+      return;
+    }
+    void window.electron.mergeExtensionPreferencesSnapshot(legacySnapshot);
+  }, []);
+
   useEffect(() => {
     window.electron.rendererReady();
   }, []);

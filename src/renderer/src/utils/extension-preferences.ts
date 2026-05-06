@@ -13,7 +13,7 @@
  * Import these helpers instead of reading localStorage directly.
  */
 
-import type { ExtensionBundle, CommandInfo } from '../../types/electron';
+import type { ExtensionBundle, CommandInfo, ExtensionPreferencesSnapshot } from '../../types/electron';
 import {
   EXT_PREFS_KEY_PREFIX,
   CMD_PREFS_KEY_PREFIX,
@@ -39,6 +39,40 @@ export function readJsonObject(key: string): Record<string, any> {
 
 export function writeJsonObject(key: string, value: Record<string, any>) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+export function collectLegacyExtensionPreferencesSnapshot(): ExtensionPreferencesSnapshot {
+  const snapshot: ExtensionPreferencesSnapshot = {
+    version: 1,
+    extensions: {},
+    commands: {},
+  };
+
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key) continue;
+      if (key.startsWith(EXT_PREFS_KEY_PREFIX)) {
+        const extName = key.slice(EXT_PREFS_KEY_PREFIX.length).trim();
+        if (!extName) continue;
+        const value = readJsonObject(key);
+        if (Object.keys(value).length === 0) continue;
+        snapshot.extensions[extName] = value;
+        continue;
+      }
+      if (key.startsWith(CMD_PREFS_KEY_PREFIX)) {
+        const commandKey = key.slice(CMD_PREFS_KEY_PREFIX.length).trim();
+        if (!commandKey) continue;
+        const value = readJsonObject(key);
+        if (Object.keys(value).length === 0) continue;
+        snapshot.commands[commandKey] = value;
+      }
+    }
+  } catch {
+    // best-effort migration only
+  }
+
+  return snapshot;
 }
 
 export function getMenuBarCommandKey(extName: string, cmdName: string): string {

@@ -15,6 +15,7 @@ import { applyBaseColor } from './utils/base-color';
 import { applyUiStyle } from './utils/ui-style';
 import AdvancedTab from './settings/AdvancedTab';
 import { useI18n } from './i18n';
+import { collectLegacyExtensionPreferencesSnapshot } from './utils/extension-preferences';
 
 type Tab = 'general' | 'ai' | 'extensions' | 'advanced';
 type SettingsTarget = { extensionName?: string; commandName?: string };
@@ -99,6 +100,17 @@ const SettingsApp: React.FC = () => {
     { id: 'extensions', label: t('settings.tabs.extensions'), icon: tabDefinitions[2].icon },
     { id: 'advanced', label: t('settings.tabs.advanced'), icon: tabDefinitions[3].icon },
   ];
+
+  useEffect(() => {
+    const legacySnapshot = collectLegacyExtensionPreferencesSnapshot();
+    if (
+      Object.keys(legacySnapshot.extensions).length === 0 &&
+      Object.keys(legacySnapshot.commands).length === 0
+    ) {
+      return;
+    }
+    void window.electron.mergeExtensionPreferencesSnapshot(legacySnapshot);
+  }, []);
 
   useEffect(() => {
     (window as any).electron?.onSettingsTabChanged?.((rawPayload: any) => {

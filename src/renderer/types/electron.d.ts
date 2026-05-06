@@ -312,12 +312,44 @@ export interface BrowserSearchImportResult {
   reason?: string;
 }
 
+export interface RaycastImportBucketResult {
+  found: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface RaycastImportResult {
+  canceled: boolean;
+  filePath?: string;
+  raycastVersion?: string;
+  settingsImported: boolean;
+  disabledCommandsImported: number;
+  scriptCommandFoldersImported: number;
+  commandHotkeysImported: number;
+  commandAliasesImported: number;
+  pinnedCommandsImported: number;
+  quicklinks: RaycastImportBucketResult;
+  snippets: RaycastImportBucketResult;
+  notes: RaycastImportBucketResult;
+  extensions: RaycastImportBucketResult;
+  unsupported: string[];
+  warnings: string[];
+}
+
+export interface ExtensionPreferencesSnapshot {
+  version: 1;
+  extensions: Record<string, Record<string, any>>;
+  commands: Record<string, Record<string, any>>;
+}
+
 export interface AppSettings {
   globalShortcut: string;
   openAtLogin: boolean;
   disabledCommands: string[];
   enabledCommands: string[];
   customExtensionFolders: string[];
+  scriptCommandFolders: string[];
   commandHotkeys: Record<string, string>;
   commandAliases: Record<string, string>;
   pinnedCommands: string[];
@@ -580,6 +612,12 @@ export interface ElectronAPI {
   appUpdaterCheckAndInstall: () => Promise<{ success: boolean; error?: string; message?: string; state?: string }>;
   onAppUpdaterStatus: (callback: (status: AppUpdaterStatus) => void) => (() => void);
   saveSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+  importRaycastConfig: () => Promise<RaycastImportResult>;
+  getExtensionPreferencesSnapshot: () => Promise<ExtensionPreferencesSnapshot>;
+  getExtensionPreferences: (extName: string, cmdName?: string) => Promise<Record<string, any>>;
+  setExtensionPreference: (extName: string, preferenceName: string, value: any, cmdName?: string) => Promise<Record<string, any>>;
+  setExtensionPreferences: (extName: string, values: Record<string, any>, cmdName?: string) => Promise<Record<string, any>>;
+  mergeExtensionPreferencesSnapshot: (snapshot: ExtensionPreferencesSnapshot) => Promise<ExtensionPreferencesSnapshot>;
   getAllCommands: () => Promise<CommandInfo[]>;
   updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
   setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
@@ -625,6 +663,7 @@ export interface ElectronAPI {
     ) => void
   ) => void;
   onSettingsUpdated: (callback: (settings: AppSettings) => void) => (() => void);
+  onExtensionPreferencesUpdated: (callback: (payload: { extensionName: string }) => void) => (() => void);
 
   // Extension Runner
   runExtension: (extName: string, cmdName: string) => Promise<ExtensionBundle | null>;

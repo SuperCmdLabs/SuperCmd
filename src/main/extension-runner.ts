@@ -21,6 +21,7 @@ import {
   isCommandPlatformCompatible,
   isManifestPlatformCompatible,
 } from './extension-platform';
+import { getExtensionPreferences } from './extension-preferences-store';
 import { loadSettings } from './settings-store';
 
 /**
@@ -1257,8 +1258,10 @@ export async function getExtensionBundle(
     owner = typeof rawOwner === 'object' ? (rawOwner as any).name || '' : rawOwner;
 
     const { extensionPrefs, commandPrefs, definitions } = parsePreferences(pkg, cmdName);
-    preferences = extensionPrefs;
-    commandPreferences = commandPrefs;
+    const storedExtensionPrefs = getExtensionPreferences(normalizedExtName);
+    const storedCommandPrefs = getExtensionPreferences(normalizedExtName, cmdName);
+    preferences = { ...extensionPrefs, ...storedExtensionPrefs };
+    commandPreferences = { ...commandPrefs, ...storedCommandPrefs };
     preferenceDefinitions = definitions;
     commandArgumentDefinitions = Array.isArray(cmd?.arguments)
       ? cmd.arguments
