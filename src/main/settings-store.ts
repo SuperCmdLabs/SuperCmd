@@ -258,9 +258,15 @@ let didMigrateAISecrets = false;
 /**
  * Merge the AI settings parsed from settings.json with the encrypted vault.
  *
- * Vault values win when present. If a vault value is missing but settings.json
- * still has a plain-text value (legacy users), the plain-text value is used
- * for this load and queued for migration into the vault.
+ * Resolution rules per field:
+ *  - both empty                       → empty
+ *  - vault only                       → use vault (steady state)
+ *  - disk only                        → use disk (pending migration)
+ *  - both set, equal                  → use either
+ *  - both set, differ                 → prefer disk plaintext, since a non-empty
+ *    plaintext value is evidence that an older app version (post-redaction
+ *    downgrade) wrote it after the vault entry was created. Migration will
+ *    forward this newer value into the vault.
  *
  * The returned object always reflects the *effective* values the app should
  * use at runtime — never empty just because something migrated.
@@ -270,7 +276,11 @@ function hydrateAISettings(raw: any): AISettings {
   for (const field of SENSITIVE_AI_KEYS) {
     const fromVault = getSecret(aiVaultKey(field));
     const fromDisk = typeof merged[field] === 'string' ? (merged[field] as string) : '';
-    merged[field] = fromVault || fromDisk || '';
+    if (fromDisk && fromDisk !== fromVault) {
+      merged[field] = fromDisk;
+    } else {
+      merged[field] = fromVault || fromDisk || '';
+    }
   }
   return merged;
 }
@@ -556,53 +566,102 @@ export function loadSettings(): AppSettings {
 
 /**
  * One-shot migration: lift any plain-text AI keys out of settings.json into
- * the safe-storage vault, then rewrite settings.json with empty strings for
- * those fields. The in-memory `settingsCache` keeps the decrypted values so
- * runtime behaviour is unchanged.
+ * the safe-storage vault. Disk plaintext is only redacted *per field* once
+ * we've confirmed the vault write succeeded — a failed vault write must not
+ * destroy the only durable copy of the user's key. Any field whose vault
+ * write fails stays as plaintext on disk and will be retried next launch.
+ *
+ * If disk plaintext differs from vault for a field, disk wins and overwrites
+ * vault (downgrade-then-upgrade conflict resolution).
+ *
+ * The in-memory `settingsCache` keeps the decrypted values so runtime
+ * behaviour is unchanged.
  */
 function migrateAISecretsToVaultIfNeeded(): void {
   if (didMigrateAISecrets) return;
   didMigrateAISecrets = true;
   if (!settingsCache) return;
 
-  let migrated = false;
+  const diskValues = readSensitiveAIKeysFromDisk();
+  const safelyRedactable = new Set<SensitiveAIKey>();
+  let needsRedaction = false;
+
   for (const field of SENSITIVE_AI_KEYS) {
-    const value = settingsCache.ai[field] || '';
-    if (!value) continue;
-    if (!getSecret(aiVaultKey(field))) {
-      setSecret(aiVaultKey(field), value);
+    const fromDisk = diskValues[field] || '';
+    if (!fromDisk) continue;
+    needsRedaction = true;
+    const fromVault = getSecret(aiVaultKey(field));
+    if (fromDisk === fromVault) {
+      // Already consistent — safe to redact disk without another vault write.
+      safelyRedactable.add(field);
+      continue;
     }
-    if (hasPlainTextAIKeyOnDisk(field)) {
-      migrated = true;
+    // Disk plaintext is authoritative (newer or first-time migration).
+    if (setSecret(aiVaultKey(field), fromDisk)) {
+      settingsCache.ai[field] = fromDisk;
+      safelyRedactable.add(field);
+    } else {
+      console.warn(`safe-storage: vault write failed for ai.${field}; leaving plaintext on disk.`);
     }
   }
-  if (migrated) {
-    persistSettingsToDisk(settingsCache);
+
+  if (needsRedaction && safelyRedactable.size > 0) {
+    redactSensitiveAIKeysOnDisk(safelyRedactable);
   }
 }
 
-function hasPlainTextAIKeyOnDisk(field: SensitiveAIKey): boolean {
+function readSensitiveAIKeysFromDisk(): Partial<Record<SensitiveAIKey, string>> {
+  const out: Partial<Record<SensitiveAIKey, string>> = {};
   try {
-    const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
-    const parsed = JSON.parse(raw);
-    const value = parsed?.ai?.[field];
-    return typeof value === 'string' && value.length > 0;
+    const parsed = JSON.parse(fs.readFileSync(getSettingsPath(), 'utf-8'));
+    for (const field of SENSITIVE_AI_KEYS) {
+      const value = parsed?.ai?.[field];
+      if (typeof value === 'string' && value.length > 0) out[field] = value;
+    }
   } catch {
-    return false;
+    // missing or malformed file — nothing to migrate
+  }
+  return out;
+}
+
+/**
+ * Rewrite settings.json with the given sensitive fields blanked out. Reads
+ * the current file as-is (rather than serialising `settingsCache`) so we
+ * never overwrite unrelated fields written by a concurrent process.
+ */
+function redactSensitiveAIKeysOnDisk(fields: Set<SensitiveAIKey>): void {
+  if (fields.size === 0) return;
+  let parsed: any;
+  try {
+    parsed = JSON.parse(fs.readFileSync(getSettingsPath(), 'utf-8'));
+  } catch {
+    return;
+  }
+  if (!parsed || typeof parsed !== 'object') return;
+  parsed.ai = parsed.ai || {};
+  for (const field of fields) parsed.ai[field] = '';
+  try {
+    fs.writeFileSync(getSettingsPath(), JSON.stringify(parsed, null, 2));
+  } catch (e) {
+    console.error('Failed to redact sensitive keys on disk:', e);
   }
 }
 
 /**
- * Write settings to disk with sensitive AI keys redacted (the values live in
- * the vault). The in-memory `settingsCache` is unaffected.
+ * Write settings to disk. Sensitive AI fields whose vault writes succeeded
+ * (`safelyRedactable`) are blanked on disk; any others retain their
+ * plaintext value as a durable fallback.
  */
-function persistSettingsToDisk(settings: AppSettings): void {
+function persistSettingsToDisk(
+  settings: AppSettings,
+  safelyRedactable: Set<SensitiveAIKey>
+): void {
   const onDisk: AppSettings = {
     ...settings,
     ai: { ...settings.ai },
   };
   for (const field of SENSITIVE_AI_KEYS) {
-    onDisk.ai[field] = '';
+    if (safelyRedactable.has(field)) onDisk.ai[field] = '';
   }
   try {
     fs.writeFileSync(getSettingsPath(), JSON.stringify(onDisk, null, 2));
@@ -664,11 +723,16 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
     ),
   };
 
+  const safelyRedactable = new Set<SensitiveAIKey>();
   for (const field of SENSITIVE_AI_KEYS) {
-    setSecret(aiVaultKey(field), updated.ai[field] || '');
+    if (setSecret(aiVaultKey(field), updated.ai[field] || '')) {
+      safelyRedactable.add(field);
+    } else {
+      console.warn(`safe-storage: vault write failed for ai.${field}; keeping plaintext on disk.`);
+    }
   }
 
-  persistSettingsToDisk(updated);
+  persistSettingsToDisk(updated, safelyRedactable);
 
   settingsCache = updated;
   return { ...updated };
@@ -695,6 +759,10 @@ interface OAuthTokenEntry {
 
 let oauthTokensCache: Record<string, OAuthTokenEntry> | null = null;
 let oauthIndexCache: string[] | null = null;
+// Providers whose vault writes failed; we keep their plaintext entries on
+// disk verbatim until a future write succeeds. Callers must NOT rewrite
+// oauth-tokens.json without merging this map back in.
+let unmigratedOAuthCache: Record<string, OAuthTokenEntry> | null = null;
 
 function getOAuthTokensPath(): string {
   return path.join(app.getPath('userData'), 'oauth-tokens.json');
@@ -727,6 +795,7 @@ function loadOAuthTokens(): Record<string, OAuthTokenEntry> {
 
   const tokens: Record<string, OAuthTokenEntry> = {};
   const providers = new Set<string>();
+  const unmigrated: Record<string, OAuthTokenEntry> = {};
   let needsIndexRewrite = false;
 
   let parsedFile: Record<string, unknown> = {};
@@ -743,11 +812,18 @@ function loadOAuthTokens(): Record<string, OAuthTokenEntry> {
   for (const [provider, value] of Object.entries(parsedFile)) {
     if (!provider) continue;
     if (isLegacyPlainTextEntry(value)) {
-      // Migrate plain-text token into the vault, then drop the secret from disk.
-      setSecret(oauthVaultKey(provider), JSON.stringify(value));
+      // Plaintext on disk is authoritative — overwrite any existing vault
+      // entry (downgrade-then-upgrade conflict). Only redact disk after
+      // a confirmed vault write.
+      const ok = setSecret(oauthVaultKey(provider), JSON.stringify(value));
       tokens[provider] = value;
-      providers.add(provider);
-      needsIndexRewrite = true;
+      if (ok) {
+        providers.add(provider);
+        needsIndexRewrite = true;
+      } else {
+        console.warn(`safe-storage: vault write failed for oauth.${provider}; leaving plaintext on disk.`);
+        unmigrated[provider] = value;
+      }
     } else if (value && typeof value === 'object') {
       // New-style index entry: just remember the provider name.
       providers.add(provider);
@@ -764,18 +840,30 @@ function loadOAuthTokens(): Record<string, OAuthTokenEntry> {
 
   oauthTokensCache = tokens;
   oauthIndexCache = [...providers];
+  unmigratedOAuthCache = unmigrated;
 
   if (needsIndexRewrite) writeOAuthIndex();
 
   return oauthTokensCache;
 }
 
+/**
+ * Rewrites oauth-tokens.json. Index entries (no secrets) are written for
+ * providers whose tokens live in the vault; entries that failed migration
+ * are written verbatim as plaintext so they remain durable until the next
+ * successful vault write.
+ */
 function writeOAuthIndex(): void {
   const providers = oauthIndexCache || [];
-  const out: Record<string, { obtainedAt?: string }> = {};
+  const unmigrated = unmigratedOAuthCache || {};
+  const out: Record<string, unknown> = {};
   for (const provider of providers) {
     const token = oauthTokensCache?.[provider];
     out[provider] = token?.obtainedAt ? { obtainedAt: token.obtainedAt } : {};
+  }
+  for (const [provider, token] of Object.entries(unmigrated)) {
+    if (provider in out) continue;
+    out[provider] = token;
   }
   try {
     fs.writeFileSync(getOAuthTokensPath(), JSON.stringify(out, null, 2));
@@ -786,9 +874,18 @@ function writeOAuthIndex(): void {
 
 export function setOAuthToken(provider: string, token: OAuthTokenEntry): void {
   loadOAuthTokens();
-  setSecret(oauthVaultKey(provider), JSON.stringify(token));
   oauthTokensCache![provider] = token;
-  if (!oauthIndexCache!.includes(provider)) oauthIndexCache!.push(provider);
+  const ok = setSecret(oauthVaultKey(provider), JSON.stringify(token));
+  if (ok) {
+    if (!oauthIndexCache!.includes(provider)) oauthIndexCache!.push(provider);
+    delete unmigratedOAuthCache![provider];
+  } else {
+    // Vault write failed — preserve as plaintext on disk and keep it OUT of
+    // the index so the next loadOAuthTokens() retries the migration.
+    console.warn(`safe-storage: vault write failed for oauth.${provider}; preserving plaintext.`);
+    unmigratedOAuthCache![provider] = token;
+    oauthIndexCache = oauthIndexCache!.filter((p) => p !== provider);
+  }
   writeOAuthIndex();
 }
 
@@ -810,6 +907,7 @@ export function removeOAuthToken(provider: string): void {
   loadOAuthTokens();
   deleteSecret(oauthVaultKey(provider));
   delete oauthTokensCache![provider];
+  delete unmigratedOAuthCache![provider];
   oauthIndexCache = oauthIndexCache!.filter((p) => p !== provider);
   writeOAuthIndex();
 }
