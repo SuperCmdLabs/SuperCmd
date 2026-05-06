@@ -7040,64 +7040,48 @@ async function openTargetWithApplication(target: string, application?: string): 
   const appName = String(application || '').trim();
   const { normalizedTarget, launchTarget, externalTarget } = normalizeOpenTarget(rawTarget);
 
+  // All three branches dispatch fire-and-forget. Awaiting LaunchServices for
+  // a quicklink kept the launcher visible for the duration of the dispatch
+  // (commonly 1-3 s on macOS), which is exactly the bug we already fixed for
+  // openAppByPath / openSettingsPane. Errors are logged but no longer block.
+
   if (appName) {
-    try {
-      const { spawn } = require('child_process');
-      const exitCode = await new Promise<number>((resolve) => {
-        const proc = spawn('open', ['-a', appName, launchTarget], { shell: false });
-        let stderr = '';
-
-        proc.stderr?.on('data', (data: Buffer) => {
-          stderr += data.toString();
-        });
-
-        proc.on('close', (code: number | null) => {
-          const resolved = code ?? 1;
-          if (resolved !== 0) {
-            console.error(`Failed to open target with ${appName}: ${launchTarget}`, stderr.trim() || `exit code ${resolved}`);
-          }
-          resolve(resolved);
-        });
-
-        proc.on('error', (err: Error) => {
-          console.error(`Failed to open target with ${appName}: ${launchTarget}`, err);
-          resolve(1);
-        });
-      });
-      return exitCode === 0;
-    } catch (error) {
-      console.error(`Failed to open target with ${appName}: ${launchTarget}`, error);
-      return false;
-    }
+    const { spawn } = require('child_process');
+    const proc = spawn('/usr/bin/open', ['-a', appName, launchTarget], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    proc.on('error', (err: Error) => {
+      console.error(`Failed to open target with ${appName}: ${launchTarget}`, err);
+    });
+    proc.unref();
+    return true;
   }
 
   if (path.isAbsolute(normalizedTarget)) {
-    try {
-      const openPathError = await shell.openPath(normalizedTarget);
-      if (openPathError) {
-        console.error(`Failed to open path: ${normalizedTarget}`, openPathError);
-        return false;
-      }
-      return true;
-    } catch (error) {
-      console.error(`Failed to open path: ${normalizedTarget}`, error);
-      return false;
-    }
+    void shell
+      .openPath(normalizedTarget)
+      .then((openPathError: string) => {
+        if (openPathError) {
+          console.error(`Failed to open path: ${normalizedTarget}`, openPathError);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error(`Failed to open path: ${normalizedTarget}`, error);
+      });
+    return true;
   }
 
-  try {
-    await shell.openExternal(externalTarget);
-    return true;
-  } catch (error) {
+  void shell.openExternal(externalTarget).catch((error: unknown) => {
     if (externalTarget !== rawTarget) {
-      try {
-        await shell.openExternal(rawTarget);
-        return true;
-      } catch {}
+      void shell.openExternal(rawTarget).catch(() => {
+        console.error(`Failed to open URL: ${rawTarget}`, error);
+      });
+      return;
     }
     console.error(`Failed to open URL: ${rawTarget}`, error);
-    return false;
-  }
+  });
+  return true;
 }
 
 async function openQuickLinkById(id: string, dynamicValues?: Record<string, string>): Promise<boolean> {
@@ -10079,9 +10063,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       const created = createScriptCommandTemplate();
       invalidateScriptCommandsCache();
       invalidateCache();
-      try {
-        await shell.openPath(created.scriptPath);
-      } catch {}
+      void shell.openPath(created.scriptPath).catch(() => {});
       console.log(`[ScriptCommand] Created: ${path.basename(created.scriptPath)}`);
       if (source === 'launcher') {
         setTimeout(() => hideWindow(), 50);
@@ -10096,7 +10078,9 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
   if (commandId === 'system-open-script-commands') {
     try {
       const dir = getSuperCmdScriptCommandsDirectory();
-      await shell.openPath(dir);
+      void shell.openPath(dir).catch((error: unknown) => {
+        console.error('Failed to open script command directory:', error);
+      });
       if (source === 'launcher') {
         setTimeout(() => hideWindow(), 50);
       }
@@ -13162,7 +13146,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('open-custom-scripts-folder', async () => {
     try {
       const ensured = ensureSampleScriptCommand();
-      await shell.openPath(ensured.scriptsDir);
+      void shell.openPath(ensured.scriptsDir).catch((error: unknown) => {
+        console.error('Failed to open custom scripts folder:', error);
+      });
       return {
         success: true,
         folderPath: ensured.scriptsDir,

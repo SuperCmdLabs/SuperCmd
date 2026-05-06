@@ -192,12 +192,11 @@ export async function openInDefaultBrowser(rawInput: string): Promise<{
 }> {
   const resolved = resolveInput(rawInput);
   if (!resolved) return { ok: false, resolved: null };
-  try {
-    await shell.openExternal(resolved.url);
-  } catch (e) {
+  // Fire-and-forget: don't await LaunchServices. The renderer's IPC await
+  // would otherwise hold the launcher visible for the full dispatch window.
+  void shell.openExternal(resolved.url).catch((e) => {
     console.error('Failed to open URL in default browser:', e);
-    return { ok: false, resolved };
-  }
+  });
   recordEntry(rawInput.trim(), resolved);
   return { ok: true, resolved };
 }
