@@ -8251,20 +8251,12 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     selectedTextSnapshot: initialSelectionSnapshot,
   };
 
-  // Notify renderer before showing the window so it can finalize view state
-  // (including contextual command list) before first paint.
-  mainWindow.webContents.send('window-shown', windowShownPayload);
-
-  if (selectionSnapshotPromise) {
-    void selectionSnapshotPromise.then((snapshot) => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-      const nextSnapshot = String(snapshot || '').trim();
-      const prevSnapshot = String(initialSelectionSnapshot || '').trim();
-      if (nextSnapshot === prevSnapshot) return;
-      mainWindow.webContents.send('selection-snapshot-updated', { selectedTextSnapshot: nextSnapshot });
-    });
-  }
-
+  // Show the window FIRST, then notify the renderer. The renderer's
+  // window-shown handler does non-trivial work (state resets, focus calls,
+  // optional fetch), and doing it before show() means the user perceives
+  // the window appearing only after that work completes. With show() first,
+  // the OS paints the visible window and the renderer's reconciliation cost
+  // happens on a window the user is already looking at.
   if (shouldActivateLauncherWindow) {
     try {
       app.focus({ steal: true });
@@ -8287,6 +8279,18 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   }
   mainWindow.moveTop();
   isVisible = true;
+
+  mainWindow.webContents.send('window-shown', windowShownPayload);
+
+  if (selectionSnapshotPromise) {
+    void selectionSnapshotPromise.then((snapshot) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      const nextSnapshot = String(snapshot || '').trim();
+      const prevSnapshot = String(initialSelectionSnapshot || '').trim();
+      if (nextSnapshot === prevSnapshot) return;
+      mainWindow.webContents.send('selection-snapshot-updated', { selectedTextSnapshot: nextSnapshot });
+    });
+  }
 
   // Now that the window is visible on the current Space, confine it here
   // and re-sync AeroSpace (the pre-show move may have been a no-op for
