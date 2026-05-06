@@ -306,7 +306,7 @@ function renderPresetIcon(id: PresetId): JSX.Element {
       cells.push({ x: 4, y: 3, w: 12, h: 8 });
       break;
     case 'center-80':
-      cells.push({ x: 3, y: 2, w: 14, h: 10 });
+      cells.push({ x: 1, y: 0.5, w: 18, h: 12 });
       break;
     case 'auto-organize':
       cells.push(
@@ -981,8 +981,8 @@ function getPresetRegion(presetId: PresetId, area: ScreenArea): Rect | null {
     return { x, y, width, height };
   }
   if (presetId === 'center-80') {
-    const width = Math.max(1, Math.round(area.width * 0.8));
-    const height = Math.max(1, Math.round(area.height * 0.8));
+    const width = Math.max(1, Math.round(area.width * 0.85));
+    const height = Math.max(1, Math.round(area.height * 0.85));
     const x = area.left + Math.round((area.width - width) / 2);
     const y = area.top + Math.round((area.height - height) / 2);
     return { x, y, width, height };

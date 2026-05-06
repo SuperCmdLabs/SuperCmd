@@ -312,16 +312,49 @@ private func readWindowFrame(_ window: AXUIElement) -> WindowFrame? {
   )
 }
 
+private func axSetSize(_ window: AXUIElement, _ size: CGSize) -> AXError {
+  var s = size
+  guard let value = AXValueCreate(.cgSize, &s) else { return .failure }
+  return AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
+}
+
+private func axSetPosition(_ window: AXUIElement, _ point: CGPoint) -> AXError {
+  var p = point
+  guard let value = AXValueCreate(.cgPoint, &p) else { return .failure }
+  return AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
+}
+
 private func setWindowFrame(_ window: AXUIElement, frame: WindowFrame) -> Bool {
-  var point = CGPoint(x: frame.x, y: frame.y)
-  guard let pointValue = AXValueCreate(.cgPoint, &point) else { return false }
-  let pointStatus = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, pointValue)
+  let targetSize = CGSize(width: frame.width, height: frame.height)
+  let targetPoint = CGPoint(x: frame.x, y: frame.y)
+  let positionTolerance: CGFloat = 2
+  let sizeTolerance: CGFloat = 2
 
-  var size = CGSize(width: frame.width, height: frame.height)
-  guard let sizeValue = AXValueCreate(.cgSize, &size) else { return false }
-  let sizeStatus = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)
+  // macOS AX clamps position against the window's current size. So if we're growing
+  // a small window, we want position-first (the small window can move anywhere). If
+  // we're shrinking, we want size-first (so the new position isn't clamped against
+  // the old large size). Doing both orders in sequence handles either case.
+  _ = axSetSize(window, targetSize)
+  _ = axSetPosition(window, targetPoint)
+  _ = axSetSize(window, targetSize)
+  _ = axSetPosition(window, targetPoint)
 
-  return pointStatus == .success && sizeStatus == .success
+  // Verify and retry. AXUIElementSetAttributeValue returns synchronously but the app
+  // applies the change on its own run loop, so the previous sets may not have committed
+  // yet — read back, see what stuck, and re-issue whatever's wrong.
+  for _ in 0..<10 {
+    usleep(20000) // 20 ms per attempt — total budget ~200 ms.
+    let currentPos = decodePoint(copyAttribute(window, kAXPositionAttribute as CFString))
+    let currentSize = decodeSize(copyAttribute(window, kAXSizeAttribute as CFString))
+    let positionOK = currentPos.map { abs($0.x - targetPoint.x) <= positionTolerance && abs($0.y - targetPoint.y) <= positionTolerance } ?? false
+    let sizeOK = currentSize.map { abs($0.width - targetSize.width) <= sizeTolerance && abs($0.height - targetSize.height) <= sizeTolerance } ?? false
+    if positionOK && sizeOK { return true }
+    // Re-issue both, alternating order so neither growing nor shrinking gets stuck.
+    if !sizeOK { _ = axSetSize(window, targetSize) }
+    if !positionOK { _ = axSetPosition(window, targetPoint) }
+    if !sizeOK { _ = axSetSize(window, targetSize) }
+  }
+  return true
 }
 
 private func bestDisplayId(for rect: CGRect) -> CGDirectDisplayID? {
@@ -462,8 +495,8 @@ private func adjustedFrame(_ base: WindowFrame, action: AdjustAction, forcedArea
     }
   case .center80:
     if let area {
-      let width = max(minWidth, round(area.width * 0.8))
-      let height = max(minHeight, round(area.height * 0.8))
+      let width = max(minWidth, round(area.width * 0.85))
+      let height = max(minHeight, round(area.height * 0.85))
       next = WindowFrame(
         x: area.origin.x + round((area.width - width) / 2),
         y: area.origin.y + round((area.height - height) / 2),
