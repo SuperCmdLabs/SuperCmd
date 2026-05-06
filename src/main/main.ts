@@ -7040,10 +7040,9 @@ async function openTargetWithApplication(target: string, application?: string): 
   const appName = String(application || '').trim();
   const { normalizedTarget, launchTarget, externalTarget } = normalizeOpenTarget(rawTarget);
 
-  // All three branches dispatch fire-and-forget. Awaiting LaunchServices for
-  // a quicklink kept the launcher visible for the duration of the dispatch
-  // (commonly 1-3 s on macOS), which is exactly the bug we already fixed for
-  // openAppByPath / openSettingsPane. Errors are logged but no longer block.
+  // All three branches fire-and-forget — same reason as openAppByPath /
+  // openSettingsPane. Awaiting LaunchServices held the launcher visible
+  // for the dispatch window (1-3s on macOS).
 
   if (appName) {
     const { spawn } = require('child_process');
@@ -7226,9 +7225,8 @@ function createWindow(): void {
       nodeIntegration: true,
       contextIsolation: false,
       sandbox: false,
-      // Keep the renderer running at full speed even while the launcher is
-      // hidden. Otherwise Chromium throttles paint of hidden windows, so the
-      // first frame after show() is catch-up and feels sluggish.
+      // Without this, Chromium throttles paint of the hidden launcher,
+      // so the first frame after show() is catch-up and feels sluggish.
       backgroundThrottling: false,
       preload: path.join(__dirname, 'preload.js'),
     },
@@ -8239,12 +8237,9 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     selectedTextSnapshot: initialSelectionSnapshot,
   };
 
-  // Show the window FIRST, then notify the renderer. The renderer's
-  // window-shown handler does non-trivial work (state resets, focus calls,
-  // optional fetch), and doing it before show() means the user perceives
-  // the window appearing only after that work completes. With show() first,
-  // the OS paints the visible window and the renderer's reconciliation cost
-  // happens on a window the user is already looking at.
+  // Show first, notify second. The window-shown handler does non-trivial
+  // work (state resets, focus, optional fetch); running it before show()
+  // makes the user wait for that work before seeing the window.
   if (shouldActivateLauncherWindow) {
     try {
       app.focus({ steal: true });
@@ -10210,12 +10205,9 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     }
   }
 
-  // Hide the launcher up-front rather than waiting on executeCommand to
-  // resolve. With openAppByPath now fire-and-forget, executeCommand returns
-  // ~instantly for app/settings, but if any future code path adds a slow
-  // await, this reorder keeps the launcher feeling instantaneous. The
-  // command was selected from the list, so a "command not found" failure
-  // here is a logic error, not a normal user path.
+  // Hide up-front rather than awaiting executeCommand. App/settings paths
+  // are already fire-and-forget so this is mostly defense in depth — if a
+  // future path adds a slow await, the launcher still feels instant.
   if (source === 'launcher') {
     setTimeout(() => hideWindow(), 50);
   }

@@ -1000,13 +1000,12 @@ const App: React.FC = () => {
         setIsCompactCollapsed(true);
         exitAiMode();
       }
-      // Focus the input synchronously, BEFORE any IO. The user's first
-      // keystroke or Enter must land on a focused input even if the show
-      // event arrives back-to-back with the keypress.
+      // Focus synchronously before any IO — a keystroke arriving back-to-back
+      // with the show event must land on a focused input.
       inputRef.current?.focus();
 
-      // Run post-show housekeeping after first paint, so it doesn't compete
-      // with the user's first keystroke or list rendering.
+      // Defer housekeeping past first paint so it doesn't compete with the
+      // user's first keystroke or list rendering.
       const runDeferred = () => {
         const COMMANDS_REFRESH_TTL_MS = 5 * 60_000;
         if (

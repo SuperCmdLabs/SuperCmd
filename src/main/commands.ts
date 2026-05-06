@@ -1179,12 +1179,10 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
 // ─── Command Execution ──────────────────────────────────────────────
 
 async function openAppByPath(appPath: string): Promise<void> {
-  // open(1) on macOS dispatches the launch to LaunchServices and is supposed
-  // to return quickly, but it can block for 1-3 s on first launch (Gatekeeper
-  // signature checks, sealed-package validation, LaunchServices metadata
-  // rebuilds — Microsoft Office is a frequent offender). Awaiting it kept
-  // the launcher visible the whole time and made the launch feel slow even
-  // though the app's own startup is identical either way. Fire-and-forget.
+  // open(1) is supposed to return quickly after dispatching to
+  // LaunchServices, but can block 1-3s on first launch (Gatekeeper,
+  // sealed-package validation — Microsoft Office is a frequent offender).
+  // The launch is dispatched async either way, so fire-and-forget.
   const child = spawn('/usr/bin/open', [appPath], {
     detached: true,
     stdio: 'ignore',
@@ -1196,14 +1194,11 @@ async function openAppByPath(appPath: string): Promise<void> {
 }
 
 async function openSettingsPane(identifier: string): Promise<void> {
-  // Same fire-and-forget reasoning as openAppByPath: open(1) dispatches to
-  // LaunchServices but can occasionally block 1-3s, and the renderer was
-  // awaiting it — meaning the launcher hung visible while System Settings
-  // was already coming up. The previous sequential fallback chain made it
-  // worse: open(1) returns success (exit 0) for any well-formed URL even
-  // when macOS doesn't recognize it, so the chain rarely fell through.
-  // If macOS doesn't recognize the URL it opens System Settings to its
-  // default pane, which matches the previous bare-fallback behaviour.
+  // Fire-and-forget for the same reason as openAppByPath. The old
+  // sequential fallback chain was futile too: open(1) returns 0 for any
+  // well-formed x-apple.systempreferences URL, and macOS opens System
+  // Settings to its default pane on unknown URLs (matching the old
+  // bare fallback).
   const url = identifier.startsWith('com.apple.')
     ? `x-apple.systempreferences:${identifier}`
     : `x-apple.systempreferences:com.apple.settings.${identifier}`;
