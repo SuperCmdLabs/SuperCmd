@@ -448,6 +448,7 @@ const App: React.FC = () => {
   const fileSearchRequestSeqRef = useRef(0);
   const commandsRef = useRef<CommandInfo[]>([]);
   const lastCommandsFetchAtRef = useRef(0);
+  const executingCommandRef = useRef(false);
   const showActionsRef = useRef(false);
   const selectedCommandRef = useRef<CommandInfo | null>(null);
   commandsRef.current = commands;
@@ -3033,6 +3034,11 @@ const App: React.FC = () => {
   }, [navigationStyle]);
 
   const handleCommandExecute = async (command: CommandInfo) => {
+    // Drop a second Enter while the first command is still resolving.
+    // Without this guard, a fast double-Enter can re-fire the same command
+    // (or a different one if selection moved during the IPC roundtrip).
+    if (executingCommandRef.current) return;
+    executingCommandRef.current = true;
     try {
       // Browser-search synthetic action: open the resolved URL/search query
       // in the default browser. Bypasses recent-commands tracking — the
@@ -3187,6 +3193,8 @@ const App: React.FC = () => {
       setSelectedIndex(0);
     } catch (error) {
       console.error('Failed to execute command:', error);
+    } finally {
+      executingCommandRef.current = false;
     }
   };
   const handleCommandRowClick = useCallback(
