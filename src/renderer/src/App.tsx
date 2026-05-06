@@ -1005,8 +1005,8 @@ const App: React.FC = () => {
       // event arrives back-to-back with the keypress.
       inputRef.current?.focus();
 
-      // Defer non-critical post-show work to idle so it doesn't compete
-      // with the user's first interaction or with rendering of the list.
+      // Run post-show housekeeping after first paint, so it doesn't compete
+      // with the user's first keystroke or list rendering.
       const runDeferred = () => {
         const COMMANDS_REFRESH_TTL_MS = 5 * 60_000;
         if (
@@ -1018,11 +1018,8 @@ const App: React.FC = () => {
         loadLauncherPreferences();
         window.electron.aiIsAvailable().then(setAiAvailable);
       };
-      const ric = (window as any).requestIdleCallback as
-        | ((cb: () => void, opts?: { timeout?: number }) => number)
-        | undefined;
-      if (typeof ric === 'function') {
-        ric(runDeferred, { timeout: 200 });
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(runDeferred, { timeout: 200 });
       } else {
         setTimeout(runDeferred, 0);
       }
@@ -3033,12 +3030,12 @@ const App: React.FC = () => {
   }, [navigationStyle]);
 
   const handleCommandExecute = async (command: CommandInfo) => {
-    // Drop a second Enter while the first command is still resolving.
-    // Without this guard, a fast double-Enter can re-fire the same command
-    // (or a different one if selection moved during the IPC roundtrip).
+    // Drop a second Enter while the first command is still resolving — a
+    // fast double-press could otherwise re-fire the same command or a
+    // different one if selection moved during the IPC roundtrip.
     if (executingCommandRef.current) return;
-    executingCommandRef.current = true;
     try {
+      executingCommandRef.current = true;
       // Browser-search synthetic action: open the resolved URL/search query
       // in the default browser. Bypasses recent-commands tracking — the
       // browser-search history module records the entry itself.

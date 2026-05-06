@@ -8215,13 +8215,9 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   if (launcherMode !== 'onboarding') {
     captureFrontmostAppContext();
     launcherEntryFrontmostApp = cloneFrontmostAppContext(lastFrontmostApp);
-    // Window-management target capture is a worker IPC (~50 ms). Don't block
-    // the show path on it — fire-and-forget, then assign the launcher-entry
-    // vars when it resolves. Consumers (window-management commands) only run
-    // when the user picks a WM command from the list, which is well after
-    // 50 ms. resolveLauncherEntryTargetWindowId() also falls back to
-    // windowManagementTargetWindowId (set as a side-effect of the capture)
-    // so the data is still available if a consumer races the assignment.
+    // Capture is a worker IPC (~50 ms) — don't await it. WM consumers
+    // already fall back to windowManagementTargetWindowId, which the
+    // capture sets as a side-effect, so a racing consumer still sees data.
     launcherEntryWindowManagementTargetWindowId = null;
     launcherEntryWindowManagementTargetWorkArea = null;
     void captureWindowManagementTargetWindow()
