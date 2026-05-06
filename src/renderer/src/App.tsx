@@ -1000,21 +1000,32 @@ const App: React.FC = () => {
         setIsCompactCollapsed(true);
         exitAiMode();
       }
-      // Skip the per-show fetch when commands are already loaded and recently
-      // fresh — refetching every show triggers a full ~1000-item list
-      // reconciliation that blocks the main thread (and can swallow the
-      // user's first Enter press). Newly installed extensions are still
-      // surfaced via the 'commands-updated' IPC and useBackgroundRefresh.
-      const COMMANDS_REFRESH_TTL_MS = 5 * 60_000;
-      if (
-        commandsRef.current.length === 0 ||
-        Date.now() - lastCommandsFetchAtRef.current > COMMANDS_REFRESH_TTL_MS
-      ) {
-        fetchCommands({ showLoading: false });
-      }
-      loadLauncherPreferences();
-      window.electron.aiIsAvailable().then(setAiAvailable);
+      // Focus the input synchronously, BEFORE any IO. The user's first
+      // keystroke or Enter must land on a focused input even if the show
+      // event arrives back-to-back with the keypress.
       inputRef.current?.focus();
+
+      // Defer non-critical post-show work to idle so it doesn't compete
+      // with the user's first interaction or with rendering of the list.
+      const runDeferred = () => {
+        const COMMANDS_REFRESH_TTL_MS = 5 * 60_000;
+        if (
+          commandsRef.current.length === 0 ||
+          Date.now() - lastCommandsFetchAtRef.current > COMMANDS_REFRESH_TTL_MS
+        ) {
+          fetchCommands({ showLoading: false });
+        }
+        loadLauncherPreferences();
+        window.electron.aiIsAvailable().then(setAiAvailable);
+      };
+      const ric = (window as any).requestIdleCallback as
+        | ((cb: () => void, opts?: { timeout?: number }) => number)
+        | undefined;
+      if (typeof ric === 'function') {
+        ric(runDeferred, { timeout: 200 });
+      } else {
+        setTimeout(runDeferred, 0);
+      }
     });
     return cleanupWindowShown;
   }, [expandLauncherForDirectLaunch, fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openSchedule, openCamera, openOnboarding, setShowCamera, setShowSchedule, setShowWindowManager, setShowWhisper, setShowSpeak, setShowWhisperOnboarding]);
