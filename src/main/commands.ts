@@ -11,7 +11,7 @@
  */
 
 import { app } from 'electron';
-import { exec, execFile } from 'child_process';
+import { exec, execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -1179,7 +1179,17 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
 // ─── Command Execution ──────────────────────────────────────────────
 
 async function openAppByPath(appPath: string): Promise<void> {
-  await execAsync(`open "${appPath}"`);
+  // open(1) on macOS dispatches the launch to LaunchServices and is supposed
+  // to return quickly, but it can block for 1-3 s on first launch (Gatekeeper
+  // signature checks, sealed-package validation, LaunchServices metadata
+  // rebuilds — Microsoft Office is a frequent offender). Awaiting it kept
+  // the launcher visible the whole time and made the launch feel slow even
+  // though the app's own startup is identical either way. Fire-and-forget.
+  const child = spawn('/usr/bin/open', [appPath], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
 }
 
 async function openSettingsPane(identifier: string): Promise<void> {

@@ -10226,10 +10226,16 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     }
   }
 
-  const success = await executeCommand(commandId);
-  if (success && source === 'launcher') {
+  // Hide the launcher up-front rather than waiting on executeCommand to
+  // resolve. With openAppByPath now fire-and-forget, executeCommand returns
+  // ~instantly for app/settings, but if any future code path adds a slow
+  // await, this reorder keeps the launcher feeling instantaneous. The
+  // command was selected from the list, so a "command not found" failure
+  // here is a logic error, not a normal user path.
+  if (source === 'launcher') {
     setTimeout(() => hideWindow(), 50);
   }
+  const success = await executeCommand(commandId);
   return success;
 }
 
