@@ -1189,6 +1189,9 @@ async function openAppByPath(appPath: string): Promise<void> {
     detached: true,
     stdio: 'ignore',
   });
+  child.on('error', (err) => {
+    console.error(`Failed to open app: ${appPath}`, err);
+  });
   child.unref();
 }
 
@@ -1204,7 +1207,11 @@ async function openSettingsPane(identifier: string): Promise<void> {
   const url = identifier.startsWith('com.apple.')
     ? `x-apple.systempreferences:${identifier}`
     : `x-apple.systempreferences:com.apple.settings.${identifier}`;
-  spawn('/usr/bin/open', [url], { detached: true, stdio: 'ignore' }).unref();
+  const child = spawn('/usr/bin/open', [url], { detached: true, stdio: 'ignore' });
+  child.on('error', (err) => {
+    console.error(`Failed to open settings pane: ${url}`, err);
+  });
+  child.unref();
 }
 
 // ─── Public API ─────────────────────────────────────────────────────
