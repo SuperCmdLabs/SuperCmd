@@ -8123,6 +8123,10 @@ function resolveLauncherEntryTargetWindowId(): string | null {
   return fallback || null;
 }
 
+function resolveLauncherEntryTargetWorkArea(): { x: number; y: number; width: number; height: number } | null {
+  return cloneWorkArea(launcherEntryWindowManagementTargetWorkArea ?? windowManagementTargetWorkArea);
+}
+
 function captureFrontmostAppContext(): void {
   if (process.platform !== 'darwin') return;
   try {
@@ -9340,7 +9344,7 @@ async function openLauncherAndRunSystemCommand(
 
   if (isWindowManagementSystemCommand(commandId)) {
     const launcherTargetWindowId = resolveLauncherEntryTargetWindowId();
-    const launcherTargetWorkArea = cloneWorkArea(launcherEntryWindowManagementTargetWorkArea);
+    const launcherTargetWorkArea = resolveLauncherEntryTargetWorkArea();
     if (isVisible && (launcherTargetWindowId || launcherTargetWorkArea)) {
       windowManagementTargetWindowId = launcherTargetWindowId;
       windowManagementTargetWorkArea = launcherTargetWorkArea;
@@ -9957,7 +9961,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       ? resolveLauncherEntryTargetWindowId()
       : (String(windowManagementTargetWindowId || '').trim() || null);
     const preferredTargetWorkArea = source === 'launcher' && isVisible
-      ? cloneWorkArea(launcherEntryWindowManagementTargetWorkArea)
+      ? resolveLauncherEntryTargetWorkArea()
       : cloneWorkArea(windowManagementTargetWorkArea);
     if (source === 'launcher' && isVisible) {
       windowManagementTargetWindowId = preferredTargetWindowId;
@@ -10011,7 +10015,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       ? resolveLauncherEntryTargetWindowId()
       : (String(windowManagementTargetWindowId || '').trim() || null);
     const preferredTargetWorkArea = source === 'launcher' && isVisible
-      ? cloneWorkArea(launcherEntryWindowManagementTargetWorkArea)
+      ? resolveLauncherEntryTargetWorkArea()
       : cloneWorkArea(windowManagementTargetWorkArea);
     if (source === 'launcher' && isVisible) {
       windowManagementTargetWindowId = preferredTargetWindowId;
