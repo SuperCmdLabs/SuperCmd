@@ -65,6 +65,8 @@ import {
   shouldOpenCommandSetup,
   getMissingRequiredPreferences,
   getMissingRequiredScriptArguments, toScriptArgumentMapFromArray,
+  migrateExtensionPreferencesFromLocalStorage,
+  hydrateExtensionPreferencesFromSettings,
 } from './utils/extension-preferences';
 import { applyAppFontSize, getDefaultAppFontSize } from './utils/font-size';
 import { refreshThemeFromStorage, setForcedTheme } from './utils/theme';
@@ -688,6 +690,13 @@ const App: React.FC = () => {
       const shouldShowOnboarding = !settings.hasSeenOnboarding;
       setShowOnboarding(shouldShowOnboarding);
       setOnboardingRequiresShortcutFix(shouldShowOnboarding && !shortcutStatus.ok);
+      // Mirror localStorage extension prefs into synced settings (one-shot
+      // per machine), then hydrate localStorage from any prefs synced from
+      // another Mac. Order matters: migrate first so this Mac's existing
+      // values are pushed up before we overwrite from the merged settings.
+      void migrateExtensionPreferencesFromLocalStorage()
+        .then(() => hydrateExtensionPreferencesFromSettings(settings))
+        .catch((err) => console.warn('Extension preferences sync init failed:', err));
     } catch (e) {
       console.error('Failed to load launcher preferences:', e);
       setPinnedCommands([]);
@@ -1017,6 +1026,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const cleanup = window.electron.onSettingsUpdated?.((settings: AppSettings) => {
+      // Settings broadcasts fire for in-app saves AND for external sync
+      // changes (cloud watcher → reload → broadcast). Re-hydrate localStorage
+      // so any prefs delivered from another Mac take effect immediately.
+      hydrateExtensionPreferencesFromSettings(settings);
       applyAppFontSize(settings.fontSize);
       applyUiStyle(settings.uiStyle || 'default');
       applyBaseColor(settings.baseColor || '#101113');

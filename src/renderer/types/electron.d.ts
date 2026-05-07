@@ -350,6 +350,10 @@ export interface AppSettings {
   emojiPickerExcludedAppBundleIds: string[];
   browserSearch: BrowserSearchSettings;
   popToRootSearchTimeoutSeconds: number;
+  installedExtensions: string[];
+  extensionPreferences: Record<string, Record<string, unknown>>;
+  extensionCommandPreferences: Record<string, Record<string, unknown>>;
+  extensionCommandArguments: Record<string, Record<string, unknown>>;
 }
 
 export interface CatalogEntry {
@@ -848,6 +852,13 @@ export interface ElectronAPI {
     showHiddenFiles?: boolean;
   }) => Promise<string[]>;
   pickLauncherBackgroundImage: () => Promise<string | null>;
+  saveExtensionPreferences: (args: { extName: string; cmdName?: string; extPrefs?: Record<string, unknown>; cmdPrefs?: Record<string, unknown> }) => Promise<AppSettings>;
+  saveExtensionCommandArguments: (args: { extName: string; cmdName: string; values: Record<string, unknown> }) => Promise<AppSettings>;
+  deleteExtensionCommandArguments: (args: { extName: string; cmdName: string }) => Promise<AppSettings>;
+  getSettingsLocation: () => Promise<{ path: string | null; defaultPath: string }>;
+  pickSettingsFolder: () => Promise<{ path: string; hasExisting: boolean } | null>;
+  relocateSettings: (args: { targetDir: string; mode: 'move' | 'adopt' }) => Promise<{ ok: boolean; settings?: any; path?: string; error?: string }>;
+  resetSettingsLocation: () => Promise<{ ok: boolean; settings?: any; path?: string; error?: string }>;
   getMenuBarExtensions: () => Promise<any[]>;
   updateMenuBar: (data: any) => void;
   removeMenuBar: (extId: string) => void;

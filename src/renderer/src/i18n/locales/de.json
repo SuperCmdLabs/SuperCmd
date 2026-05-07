@@ -572,6 +572,35 @@
     },
     "advanced": {
       "title": "Erweiterte Einstellungen",
+      "settingsFolder": {
+        "title": "Einstellungsordner",
+        "description": "Synchronisiere Einstellungen und Erweiterungen zwischen Macs über iCloud Drive, Dropbox oder einen beliebigen Ordner.",
+        "defaultLabel": "Standardspeicherort",
+        "chooseButton": "Ordner wählen…",
+        "changeButton": "Ordner ändern…",
+        "resetButton": "Auf Standard zurücksetzen",
+        "conflict": {
+          "title": "In diesem Ordner sind bereits Einstellungen vorhanden",
+          "body": "In {folder} gibt es bereits eine settings.json. Welche Version möchtest du verwenden?",
+          "useExisting": "Vorhandene Einstellungen verwenden",
+          "useExistingHint": "Einstellungen dieses Macs durch die synchronisierte Kopie ersetzen.",
+          "replace": "Mit aktuellen Einstellungen ersetzen",
+          "replaceHint": "Synchronisierte Kopie mit den Einstellungen dieses Macs überschreiben.",
+          "cancel": "Abbrechen"
+        },
+        "resetConfirm": {
+          "title": "Einstellungen an den Standardspeicherort verschieben?",
+          "body": "Deine Einstellungen werden nur auf diesem Mac gespeichert. Die synchronisierte Kopie im gewählten Ordner wird nicht gelöscht.",
+          "confirm": "Auf Standard zurücksetzen",
+          "cancel": "Abbrechen"
+        },
+        "status": {
+          "moved": "Einstellungsordner aktualisiert.",
+          "adopted": "Synchronisierte Einstellungen übernommen.",
+          "reset": "Einstellungen an den Standardspeicherort verschoben.",
+          "failed": "Einstellungsordner konnte nicht aktualisiert werden."
+        }
+      },
       "disableFileSearch": {
         "title": "Datei- und Ordnersuche deaktivieren",
         "description": "Datei- und Ordnerergebnisse in der Hauptsuche des Launchers ausblenden.",

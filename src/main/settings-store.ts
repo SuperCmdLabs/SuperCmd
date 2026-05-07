@@ -6,6 +6,7 @@
  */
 
 import { app } from 'electron';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getSecret, setSecret, deleteSecret } from './safe-storage';
@@ -152,6 +153,20 @@ export interface AppSettings {
   // active view (extension or internal view like Clipboard) back to root
   // search. `0` resets immediately on every reopen.
   popToRootSearchTimeoutSeconds: number;
+  // Names (extension directory names, matching getInstalledExtensionNames())
+  // that the user has installed. Synced across Macs; the filesystem stays
+  // authoritative for "is X installed right now". On launch, missing entries
+  // are auto-installed in the background.
+  installedExtensions: string[];
+  // Per-extension preference values (from `getPreferenceValues()`).
+  // Key: extension name. Value: { prefName: value, ... }.
+  extensionPreferences: Record<string, Record<string, unknown>>;
+  // Per-command preference values, for prefs declared at command scope.
+  // Key: "extName/cmdName". Value: { prefName: value, ... }.
+  extensionCommandPreferences: Record<string, Record<string, unknown>>;
+  // Per-command argument values (from launch arguments).
+  // Key: "extName/cmdName". Value: { argName: value, ... }.
+  extensionCommandArguments: Record<string, Record<string, unknown>>;
 }
 
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
@@ -250,10 +265,18 @@ const DEFAULT_SETTINGS: AppSettings = {
     historyRetentionDays: 90,
   },
   popToRootSearchTimeoutSeconds: 90,
+  installedExtensions: [],
+  extensionPreferences: {},
+  extensionCommandPreferences: {},
+  extensionCommandArguments: {},
 };
 
 let settingsCache: AppSettings | null = null;
 let didMigrateAISecrets = false;
+// True when the most recent loadSettings could not read the synced file
+// AND the file appears to be iCloud-evicted. Blocks writes to the synced
+// file so we don't overwrite the cloud copy with defaults.
+let settingsLoadDegraded = false;
 
 /**
  * Merge the AI settings parsed from settings.json with the encrypted vault.
@@ -432,6 +455,43 @@ function normalizeBoolean(value: any, fallback: boolean): boolean {
   return fallback;
 }
 
+function normalizeInstalledExtensions(value: any): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of value) {
+    const name = String(entry || '').trim();
+    if (!name) continue;
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) continue;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
+/**
+ * Defensive shape-check for extension preferences / arguments. Returns
+ * { [extName]: { [prefName]: unknown } } shape, dropping invalid keys.
+ */
+function normalizeExtensionStorageMap(value: any): Record<string, Record<string, unknown>> {
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const [key, payload] of Object.entries(value as Record<string, unknown>)) {
+    const trimmed = String(key || '').trim();
+    if (!trimmed) continue;
+    if (!payload || typeof payload !== 'object') continue;
+    const inner: Record<string, unknown> = {};
+    for (const [prefName, prefValue] of Object.entries(payload as Record<string, unknown>)) {
+      const prefKey = String(prefName || '').trim();
+      if (!prefKey) continue;
+      inner[prefKey] = prefValue;
+    }
+    out[trimmed] = inner;
+  }
+  return out;
+}
+
 function normalizeRecentCommandLaunchCounts(value: any): Record<string, number> {
   if (!value || typeof value !== 'object') return {};
   const normalized: Record<string, number> = {};
@@ -445,16 +505,224 @@ function normalizeRecentCommandLaunchCounts(value: any): Record<string, number> 
   return normalized;
 }
 
+// ─── Settings Location Pointer ────────────────────────────────────
+// A tiny pointer file in userData that records where settings.json
+// actually lives. Empty/missing → use the userData default. This is
+// a chicken-and-egg requirement: the location of settings.json
+// cannot itself be stored inside settings.json.
+
+const SETTINGS_FILENAME = 'settings.json';
+const LOCAL_SETTINGS_FILENAME = 'settings.local.json';
+const LOCATION_FILENAME = 'settings-location.json';
+
+// Fields that must NEVER sync between Macs. They're routed to settings.local.json
+// on save and stripped from settings.json's payload — each piece of data has
+// exactly one home on disk. Reasons in code comments next to each entry below.
+const NEVER_SYNC: ReadonlySet<keyof AppSettings> = new Set<keyof AppSettings>([
+  // Absolute paths — won't resolve on the other Mac.
+  'customExtensionFolders',
+  'pinnedFiles',
+  'launcherBackgroundImagePath',
+  // Tied to a per-machine TCC (macOS file-access) permission grant.
+  'fileSearchProtectedRootsEnabled',
+  // Per-machine timing / dismissal state.
+  'appUpdaterLastCheckedAt',
+  'updateBannerDismissedAt',
+  // Extensions write per-machine state (e.g. unread counts) here.
+  'commandMetadata',
+]);
+
+let settingsLocationCache: string | null | undefined = undefined; // undefined = not loaded
+let lastSelfWriteMtimeMs = 0;
+function getLocalSettingsPath(): string {
+  return path.join(app.getPath('userData'), LOCAL_SETTINGS_FILENAME);
+}
+
+// ─── iCloud Drive coordination ─────────────────────────────────────
+// iCloud Drive's "Optimize Mac Storage" can evict the synced settings
+// file, replacing it with a tiny `.<basename>.icloud` placeholder.
+// Reading the path then either returns garbage or fails — and writing
+// defaults over the placeholder destroys the cloud copy.
+//
+// To avoid that, when we detect the settings file is in iCloud Drive
+// we shell out to a tiny Swift helper that wraps NSFileCoordinator's
+// coordinated read, which forces iCloud to materialize the file before
+// we touch it. For all other paths (Dropbox, Nextcloud, plain disk) we
+// skip the spawn entirely — those services don't evict.
+
+const MOBILE_DOCS_PREFIX = path.join(app.getPath('home'), 'Library', 'Mobile Documents');
+
+/**
+ * Detect whether `targetPath` lives inside iCloud Drive (or a per-app
+ * iCloud container). Resolves symlinks so users who symlink a sync
+ * folder into iCloud are still detected. Cheap — just a stat + string
+ * compare.
+ */
+function isPathInICloud(targetPath: string): boolean {
+  if (process.platform !== 'darwin') return false;
+  const tryResolve = (p: string): string | null => {
+    try { return fs.realpathSync(p); } catch { return null; }
+  };
+  // Try the file first; if it doesn't exist (fresh sync target), fall
+  // back to the parent directory which always does.
+  const resolved = tryResolve(targetPath) ?? tryResolve(path.dirname(targetPath));
+  if (!resolved) return false;
+  return resolved === MOBILE_DOCS_PREFIX || resolved.startsWith(MOBILE_DOCS_PREFIX + path.sep);
+}
+
+/** Returns the path of the iCloud sentinel file iCloud writes when it
+ *  evicts the real file. e.g. `.../settings.json` → `.../.settings.json.icloud`. */
+function getICloudSentinelPath(targetPath: string): string {
+  return path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.icloud`);
+}
+
+/** True if iCloud has evicted the file (sentinel exists, real file may
+ *  or may not be present in placeholder form). */
+function hasICloudSentinel(targetPath: string): boolean {
+  try {
+    return fs.existsSync(getICloudSentinelPath(targetPath));
+  } catch {
+    return false;
+  }
+}
+
+function getSettingsCoordinatorBinaryPath(): string {
+  // Mirror main.ts:getNativeBinaryPath. After build, settings-store.ts
+  // sits at dist/main/, so ../native resolves to dist/native.
+  const base = path.join(__dirname, '..', 'native', 'settings-coordinator');
+  if (app.isPackaged && base.includes('app.asar')) {
+    const unpacked = base.replace('app.asar', 'app.asar.unpacked');
+    if (fs.existsSync(unpacked)) return unpacked;
+  }
+  return base;
+}
+
+/**
+ * If `targetPath` lives in iCloud Drive, ask iCloud to materialize it
+ * (download from the cloud, evict no longer applicable) before we read.
+ * No-op for non-iCloud paths so Dropbox/Nextcloud/plain disk users pay
+ * zero spawn overhead.
+ *
+ * Returns true iff materialization is *not needed* OR succeeded. Returns
+ * false only when we tried to materialize and the helper failed — caller
+ * can use that as a signal that the read is about to fail.
+ *
+ * Synchronous by design: settings reads at startup must complete before
+ * the rest of the app runs. The 5-second timeout caps the worst case
+ * if iCloud is offline.
+ */
+function materializeICloudFileIfNeeded(targetPath: string): boolean {
+  if (!isPathInICloud(targetPath)) return true;
+  const binary = getSettingsCoordinatorBinaryPath();
+  if (!fs.existsSync(binary)) {
+    console.warn(`[Settings] iCloud helper binary not found at ${binary}; skipping materialization. Run \`npm run build:native\`.`);
+    return true;
+  }
+  try {
+    const result = spawnSync(binary, [targetPath], {
+      timeout: 5000,
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    if (result.status === 0) return true;
+    const stderr = result.stderr?.toString().trim() || '(no stderr)';
+    const exitInfo = result.signal ? `signal ${result.signal}` : `exit ${result.status}`;
+    console.warn(`[Settings] iCloud materialization failed (${exitInfo}): ${stderr}`);
+    return false;
+  } catch (e: any) {
+    console.warn(`[Settings] iCloud materialization spawn failed: ${e?.message || e}`);
+    return false;
+  }
+}
+
+/**
+ * Read the per-machine local-overrides file. Always at userData; never moves.
+ * Missing/malformed file → empty object (no overrides).
+ */
+function loadLocalSettings(): Partial<AppSettings> {
+  try {
+    const raw = fs.readFileSync(getLocalSettingsPath(), 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') return parsed as Partial<AppSettings>;
+  } catch {
+    // missing file is fine
+  }
+  return {};
+}
+
+function getSettingsLocationPath(): string {
+  return path.join(app.getPath('userData'), LOCATION_FILENAME);
+}
+
+function getDefaultSettingsDir(): string {
+  return app.getPath('userData');
+}
+
+export function getDefaultSettingsPath(): string {
+  return path.join(getDefaultSettingsDir(), SETTINGS_FILENAME);
+}
+
+export function loadSettingsLocation(): string | null {
+  if (settingsLocationCache !== undefined) return settingsLocationCache;
+  try {
+    const raw = fs.readFileSync(getSettingsLocationPath(), 'utf-8');
+    const parsed = JSON.parse(raw);
+    const candidate = typeof parsed?.path === 'string' ? parsed.path.trim() : '';
+    if (candidate && fs.existsSync(candidate)) {
+      settingsLocationCache = candidate;
+    } else {
+      if (candidate) {
+        console.warn(`settings-location: configured path missing, falling back to default: ${candidate}`);
+      }
+      settingsLocationCache = null;
+    }
+  } catch {
+    settingsLocationCache = null;
+  }
+  return settingsLocationCache ?? null;
+}
+
+function writeSettingsLocation(absoluteDir: string | null): void {
+  const target = getSettingsLocationPath();
+  if (absoluteDir) {
+    const payload = JSON.stringify({ path: absoluteDir }, null, 2);
+    fs.writeFileSync(target, payload);
+  } else {
+    try {
+      if (fs.existsSync(target)) fs.unlinkSync(target);
+    } catch (e) {
+      console.error('Failed to clear settings-location pointer:', e);
+    }
+  }
+  settingsLocationCache = absoluteDir;
+  // The degraded flag is keyed to the previous path; a location change
+  // invalidates it. The next loadSettings will re-evaluate against the
+  // new path.
+  settingsLoadDegraded = false;
+}
+
 function getSettingsPath(): string {
-  return path.join(app.getPath('userData'), 'settings.json');
+  const configured = loadSettingsLocation();
+  if (configured) return path.join(configured, SETTINGS_FILENAME);
+  return getDefaultSettingsPath();
 }
 
 export function loadSettings(): AppSettings {
   if (settingsCache) return { ...settingsCache };
 
+  const settingsPath = getSettingsPath();
+  // For iCloud paths, ask iCloud to materialize before we read.
+  // No-op for non-iCloud paths.
+  materializeICloudFileIfNeeded(settingsPath);
+
   try {
-    const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
-    const parsed = JSON.parse(raw);
+    const raw = fs.readFileSync(settingsPath, 'utf-8');
+    settingsLoadDegraded = false;
+    const parsedSync = JSON.parse(raw);
+    // Local-overrides file. Any key here wins over the synced file — both
+    // for NEVER_SYNC fields (which are routed here on save) and for any
+    // arbitrary keys a power user might add by hand.
+    const parsedLocal = loadLocalSettings();
+    const parsed: any = { ...parsedSync, ...parsedLocal };
     const parsedHotkeys = { ...(parsed.commandHotkeys || {}) };
     const parsedAliases = { ...(parsed.commandAliases || {}) } as Record<string, any>;
     const hasParsedHotkey = (key: string) => Object.prototype.hasOwnProperty.call(parsedHotkeys, key);
@@ -555,9 +823,25 @@ export function loadSettings(): AppSettings {
       emojiPickerExcludedAppBundleIds: normalizeBundleIdList(parsed.emojiPickerExcludedAppBundleIds),
       browserSearch: normalizeBrowserSearchSettings(parsed.browserSearch),
       popToRootSearchTimeoutSeconds: normalizePopToRootSearchTimeoutSeconds(parsed.popToRootSearchTimeoutSeconds),
+      installedExtensions: normalizeInstalledExtensions(parsed.installedExtensions),
+      extensionPreferences: normalizeExtensionStorageMap(parsed.extensionPreferences),
+      extensionCommandPreferences: normalizeExtensionStorageMap(parsed.extensionCommandPreferences),
+      extensionCommandArguments: normalizeExtensionStorageMap(parsed.extensionCommandArguments),
     };
   } catch {
-    settingsCache = { ...DEFAULT_SETTINGS };
+    // settings.json missing or malformed (fresh install, sync not yet
+    // delivered, iCloud evicted, etc.). Still honor settings.local.json
+    // so the user's per-machine fields aren't wiped just because the
+    // synced file is briefly absent.
+    settingsCache = { ...DEFAULT_SETTINGS, ...loadLocalSettings() };
+    // If the sync file is in iCloud Drive AND a sentinel exists, the
+    // file has been evicted (or hasn't been downloaded yet). Mark the
+    // load as degraded so persistSettingsToDisk refuses to overwrite
+    // the cloud copy with defaults.
+    settingsLoadDegraded = isPathInICloud(settingsPath) && hasICloudSentinel(settingsPath);
+    if (settingsLoadDegraded) {
+      console.warn(`[Settings] iCloud-evicted settings could not be materialized at ${settingsPath}; writes to the synced file are blocked until iCloud delivers the bytes.`);
+    }
   }
 
   migrateAISecretsToVaultIfNeeded();
@@ -641,16 +925,30 @@ function redactSensitiveAIKeysOnDisk(fields: Set<SensitiveAIKey>): void {
   parsed.ai = parsed.ai || {};
   for (const field of fields) parsed.ai[field] = '';
   try {
-    fs.writeFileSync(getSettingsPath(), JSON.stringify(parsed, null, 2));
+    const target = getSettingsPath();
+    fs.writeFileSync(target, JSON.stringify(parsed, null, 2));
+    try {
+      lastSelfWriteMtimeMs = fs.statSync(target).mtimeMs;
+    } catch {
+      // best-effort
+    }
   } catch (e) {
     console.error('Failed to redact sensitive keys on disk:', e);
   }
 }
 
 /**
- * Write settings to disk. Sensitive AI fields whose vault writes succeeded
+ * Write settings to disk, splitting NEVER_SYNC fields into a separate
+ * per-machine file. Sensitive AI fields whose vault writes succeeded
  * (`safelyRedactable`) are blanked on disk; any others retain their
  * plaintext value as a durable fallback.
+ *
+ * On-disk shape:
+ *   settings.json       – everything EXCEPT NEVER_SYNC keys (the synced file)
+ *   settings.local.json – ONLY NEVER_SYNC keys (always at userData)
+ *
+ * Each piece of data has exactly one home. Inspecting either file shows
+ * exactly what belongs there.
  */
 function persistSettingsToDisk(
   settings: AppSettings,
@@ -663,10 +961,46 @@ function persistSettingsToDisk(
   for (const field of SENSITIVE_AI_KEYS) {
     if (safelyRedactable.has(field)) onDisk.ai[field] = '';
   }
+
+  // Split into synced vs local. `syncedOnDisk` excludes NEVER_SYNC keys;
+  // `localOnDisk` contains only those keys (and only ones with defined values).
+  const syncedOnDisk: Record<string, unknown> = { ...onDisk };
+  const localOnDisk: Record<string, unknown> = {};
+  for (const key of NEVER_SYNC) {
+    if (key in syncedOnDisk) {
+      const value = (syncedOnDisk as Record<string, unknown>)[key];
+      if (value !== undefined) {
+        localOnDisk[key] = value;
+      }
+      delete syncedOnDisk[key];
+    }
+  }
+
+  // Refuse to write the synced file when the last load fell back to
+  // defaults because iCloud had evicted it. Writing now would propagate
+  // (mostly) default values to every other Mac on this iCloud account
+  // and silently overwrite the cloud copy. The local file is fine to
+  // keep updating — it's per-machine and never evicted.
+  if (settingsLoadDegraded) {
+    console.warn('[Settings] Refusing to write synced settings.json — last load was degraded (iCloud-evicted). Local overrides will still be saved.');
+  } else {
+    try {
+      const target = getSettingsPath();
+      writeFileAtomic(target, JSON.stringify(syncedOnDisk, null, 2));
+      try {
+        lastSelfWriteMtimeMs = fs.statSync(target).mtimeMs;
+      } catch {
+        // best-effort — watcher will simply not skip this write
+      }
+    } catch (e) {
+      console.error('Failed to save settings:', e);
+    }
+  }
+
   try {
-    fs.writeFileSync(getSettingsPath(), JSON.stringify(onDisk, null, 2));
+    writeFileAtomic(getLocalSettingsPath(), JSON.stringify(localOnDisk, null, 2));
   } catch (e) {
-    console.error('Failed to save settings:', e);
+    console.error('Failed to save local settings:', e);
   }
 }
 
@@ -721,6 +1055,22 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
         ? patch.popToRootSearchTimeoutSeconds
         : current.popToRootSearchTimeoutSeconds
     ),
+    installedExtensions: normalizeInstalledExtensions(
+      'installedExtensions' in patch ? patch.installedExtensions : current.installedExtensions
+    ),
+    extensionPreferences: normalizeExtensionStorageMap(
+      'extensionPreferences' in patch ? patch.extensionPreferences : current.extensionPreferences
+    ),
+    extensionCommandPreferences: normalizeExtensionStorageMap(
+      'extensionCommandPreferences' in patch
+        ? patch.extensionCommandPreferences
+        : current.extensionCommandPreferences
+    ),
+    extensionCommandArguments: normalizeExtensionStorageMap(
+      'extensionCommandArguments' in patch
+        ? patch.extensionCommandArguments
+        : current.extensionCommandArguments
+    ),
   };
 
   const safelyRedactable = new Set<SensitiveAIKey>();
@@ -740,6 +1090,276 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
 
 export function resetSettingsCache(): void {
   settingsCache = null;
+}
+
+// ─── Settings File Relocation ─────────────────────────────────────
+// Lets the user point settings.json at any directory (typically a
+// Dropbox / iCloud Drive folder). The directory containing the file
+// is what's stored in the pointer file; the filename is fixed.
+
+export type RelocateMode = 'move' | 'adopt';
+
+export interface RelocateResult {
+  ok: boolean;
+  settings?: AppSettings;
+  /** Resolved settings.json path after relocation. */
+  path?: string;
+  /** Error message suitable for display. */
+  error?: string;
+}
+
+function writeFileAtomic(target: string, contents: string): void {
+  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, contents);
+  fs.renameSync(tmp, target);
+}
+
+/**
+ * Relocate the settings file to a different directory.
+ *
+ *   move  – write current in-memory settings into targetDir, update pointer,
+ *           then delete the old file. Order matters: a crash mid-flight
+ *           leaves both copies rather than zero.
+ *   adopt – validate that targetDir already contains a parseable settings.json,
+ *           update the pointer, then re-load so cache reflects the adopted file.
+ */
+export function relocateSettingsFile(targetDir: string, mode: RelocateMode): RelocateResult {
+  const dir = String(targetDir || '').trim();
+  if (!dir) return { ok: false, error: 'No folder selected.' };
+
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(dir);
+  } catch (e: any) {
+    return { ok: false, error: `Folder is not accessible: ${e?.message || e}` };
+  }
+  if (!stat.isDirectory()) {
+    return { ok: false, error: 'Selected path is not a folder.' };
+  }
+  // Test writability up front so we surface permission errors before
+  // touching the live settings file.
+  try {
+    fs.accessSync(dir, fs.constants.W_OK);
+  } catch {
+    return { ok: false, error: 'Folder is not writable.' };
+  }
+
+  const oldPath = getSettingsPath();
+  const newPath = path.join(dir, SETTINGS_FILENAME);
+
+  if (path.resolve(oldPath) === path.resolve(newPath)) {
+    return { ok: true, settings: loadSettings(), path: newPath };
+  }
+
+  if (mode === 'adopt') {
+    let raw: string;
+    try {
+      raw = fs.readFileSync(newPath, 'utf-8');
+    } catch (e: any) {
+      return { ok: false, error: `Could not read settings.json in this folder: ${e?.message || e}` };
+    }
+    try {
+      JSON.parse(raw);
+    } catch (e: any) {
+      return { ok: false, error: `settings.json in this folder is not valid JSON: ${e?.message || e}` };
+    }
+    writeSettingsLocation(dir);
+    settingsCache = null;
+    didMigrateAISecrets = false;
+    const adopted = loadSettings();
+    rearmSettingsWatcher();
+    return { ok: true, settings: adopted, path: newPath };
+  }
+
+  // mode === 'move'
+  const current = loadSettings();
+  // Use the same on-disk shape `persistSettingsToDisk` produces so the
+  // sensitive-key redaction stays consistent. Easiest way: write through
+  // the existing pipeline by temporarily flipping the configured path.
+  const previousLocation = settingsLocationCache;
+  try {
+    writeSettingsLocation(dir);
+    // Re-persist current settings into the new location.
+    saveSettings({ ...current });
+  } catch (e: any) {
+    // Roll back the pointer if the write failed.
+    settingsLocationCache = previousLocation;
+    try {
+      writeSettingsLocation(previousLocation || null);
+    } catch {
+      // ignore
+    }
+    return { ok: false, error: `Failed to write settings to new folder: ${e?.message || e}` };
+  }
+
+  // Delete the old file last. Failure here is non-fatal: settings live
+  // in the new location; the orphan can be cleaned up manually.
+  try {
+    if (fs.existsSync(oldPath) && path.resolve(oldPath) !== path.resolve(newPath)) {
+      fs.unlinkSync(oldPath);
+    }
+  } catch (e) {
+    console.warn('Failed to delete old settings file after move:', e);
+  }
+
+  rearmSettingsWatcher();
+  return { ok: true, settings: loadSettings(), path: newPath };
+}
+
+/**
+ * Move settings back to the userData default location. Symmetric with
+ * relocateSettingsFile('move'). The synced copy in the previous folder
+ * is left in place — we never silently delete user data outside our
+ * own data directory.
+ */
+export function resetSettingsLocation(): RelocateResult {
+  const configured = loadSettingsLocation();
+  if (!configured) {
+    return { ok: true, settings: loadSettings(), path: getSettingsPath() };
+  }
+  const oldPath = getSettingsPath();
+  const current = loadSettings();
+  try {
+    writeSettingsLocation(null);
+    saveSettings({ ...current });
+  } catch (e: any) {
+    // Roll back
+    writeSettingsLocation(configured);
+    return { ok: false, error: `Failed to write settings to default location: ${e?.message || e}` };
+  }
+  // Don't touch the synced copy at oldPath — user data outside our
+  // userData folder is off-limits for automatic deletion.
+  void oldPath;
+  rearmSettingsWatcher();
+  return { ok: true, settings: loadSettings(), path: getSettingsPath() };
+}
+
+// ─── Settings File Watcher ─────────────────────────────────────────
+// Reloads in-memory settings and broadcasts to all renderer windows
+// when the settings file changes on disk (typically because a cloud
+// sync client wrote a copy from another machine).
+
+type SettingsBroadcastFn = (settings: AppSettings) => void;
+let broadcastSettingsUpdated: SettingsBroadcastFn | null = null;
+let activeSettingsWatcher: fs.FSWatcher | null = null;
+let watcherPath = '';
+let watcherDebounceTimer: NodeJS.Timeout | null = null;
+let watcherReattachTimer: NodeJS.Timeout | null = null;
+let watcherReattachAttempts = 0;
+const WATCHER_DEBOUNCE_MS = 400;
+const WATCHER_REATTACH_MAX_ATTEMPTS = 10;
+
+export function setSettingsBroadcaster(fn: SettingsBroadcastFn | null): void {
+  broadcastSettingsUpdated = fn;
+}
+
+function clearWatcherTimers(): void {
+  if (watcherDebounceTimer) {
+    clearTimeout(watcherDebounceTimer);
+    watcherDebounceTimer = null;
+  }
+  if (watcherReattachTimer) {
+    clearTimeout(watcherReattachTimer);
+    watcherReattachTimer = null;
+  }
+}
+
+function handleWatcherEvent(): void {
+  const target = watcherPath;
+  if (!target) return;
+  let mtimeMs = 0;
+  try {
+    mtimeMs = fs.statSync(target).mtimeMs;
+  } catch {
+    // file briefly missing during cloud rewrite — let debounce + reattach handle it
+  }
+  // Skip writes we just made ourselves. Allow a tiny tolerance for fs jitter.
+  if (mtimeMs && Math.abs(mtimeMs - lastSelfWriteMtimeMs) < 2) return;
+  if (watcherDebounceTimer) clearTimeout(watcherDebounceTimer);
+  watcherDebounceTimer = setTimeout(() => {
+    watcherDebounceTimer = null;
+    settingsCache = null;
+    didMigrateAISecrets = false;
+    const reloaded = loadSettings();
+    console.log(`[Settings] External change detected, reloaded from ${target}`);
+    if (broadcastSettingsUpdated) {
+      try {
+        broadcastSettingsUpdated(reloaded);
+      } catch (e) {
+        console.warn('settings-watcher: broadcast failed:', e);
+      }
+    }
+  }, WATCHER_DEBOUNCE_MS);
+}
+
+function scheduleWatcherReattach(): void {
+  if (watcherReattachTimer) return;
+  if (watcherReattachAttempts >= WATCHER_REATTACH_MAX_ATTEMPTS) {
+    console.warn(`settings-watcher: gave up reattaching after ${WATCHER_REATTACH_MAX_ATTEMPTS} attempts.`);
+    return;
+  }
+  const attempt = ++watcherReattachAttempts;
+  // Linear backoff: 500ms, 1000ms, …
+  const delay = 500 * attempt;
+  watcherReattachTimer = setTimeout(() => {
+    watcherReattachTimer = null;
+    startSettingsWatcher();
+  }, delay);
+}
+
+export function startSettingsWatcher(): void {
+  stopSettingsWatcher();
+  const target = getSettingsPath();
+  watcherPath = target;
+  // Watch the PARENT DIRECTORY rather than the file itself. macOS fs.watch
+  // attaches to the inode, so it stops receiving events when the file is
+  // replaced via rename(2) — exactly what cloud sync clients do (Nextcloud,
+  // Dropbox, iCloud all write a temp file and rename it into place). A
+  // directory watch survives rename and fires for every change inside it;
+  // we filter to events for our basename below.
+  const parentDir = path.dirname(target);
+  const watchedBasename = path.basename(target);
+  if (!fs.existsSync(parentDir)) {
+    scheduleWatcherReattach();
+    return;
+  }
+  try {
+    activeSettingsWatcher = fs.watch(parentDir, { persistent: false }, (_eventType, filename) => {
+      // `filename` is the file that changed inside the directory. Some
+      // filesystems / Electron versions can pass null — in that case we
+      // can't tell which file changed, so we conservatively trigger.
+      if (filename && filename !== watchedBasename) return;
+      handleWatcherEvent();
+    });
+    activeSettingsWatcher.on('error', (error: any) => {
+      console.warn('settings-watcher: error:', error);
+      stopSettingsWatcher();
+      scheduleWatcherReattach();
+    });
+    watcherReattachAttempts = 0;
+  } catch (error) {
+    console.warn('settings-watcher: failed to start, will retry:', error);
+    activeSettingsWatcher = null;
+    scheduleWatcherReattach();
+  }
+}
+
+export function stopSettingsWatcher(): void {
+  clearWatcherTimers();
+  if (activeSettingsWatcher) {
+    try {
+      activeSettingsWatcher.close();
+    } catch {
+      // ignore
+    }
+    activeSettingsWatcher = null;
+  }
+}
+
+function rearmSettingsWatcher(): void {
+  if (!watcherPath && !activeSettingsWatcher) return; // never started — leave it
+  watcherReattachAttempts = 0;
+  startSettingsWatcher();
 }
 
 // ─── OAuth Token Store ────────────────────────────────────────────

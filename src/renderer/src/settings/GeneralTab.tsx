@@ -143,6 +143,7 @@ const GeneralTab: React.FC = () => {
     return disposeThemeListener;
   }, []);
 
+
   const handleShortcutChange = async (newShortcut: string) => {
     if (!newShortcut) return;
     setShortcutStatus('idle');

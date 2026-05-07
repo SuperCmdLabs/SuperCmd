@@ -35,35 +35,15 @@ import type {
   InstalledExtensionSettingsSchema,
 } from '../../types/electron';
 import { useI18n } from '../i18n';
+import {
+  getExtPrefsKey,
+  getCmdPrefsKey,
+  readJsonObject,
+  writeJsonObject,
+} from '../utils/extension-preferences';
 
 type SelectedTarget = { extName: string; cmdName?: string };
 type SettingsFocusTarget = { extensionName?: string; commandName?: string };
-
-const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
-const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
-
-function getExtPrefsKey(extName: string): string {
-  return `${EXT_PREFS_KEY_PREFIX}${extName}`;
-}
-
-function getCmdPrefsKey(extName: string, cmdName: string): string {
-  return `${CMD_PREFS_KEY_PREFIX}${extName}/${cmdName}`;
-}
-
-function readJsonObject(key: string): Record<string, any> {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeJsonObject(key: string, value: Record<string, any>) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
 
 function getDefaultValue(pref: ExtensionPreferenceSchema): any {
   if (pref.default !== undefined) return pref.default;

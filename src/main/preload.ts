@@ -813,6 +813,32 @@ const electronAPI = {
   pickLauncherBackgroundImage: (): Promise<string | null> =>
     ipcRenderer.invoke('pick-launcher-background-image'),
 
+  // ─── Extension Preferences (synced) ────────────────────────────
+  saveExtensionPreferences: (
+    args: { extName: string; cmdName?: string; extPrefs?: Record<string, unknown>; cmdPrefs?: Record<string, unknown> }
+  ): Promise<any> =>
+    ipcRenderer.invoke('save-extension-preferences', args),
+  saveExtensionCommandArguments: (
+    args: { extName: string; cmdName: string; values: Record<string, unknown> }
+  ): Promise<any> =>
+    ipcRenderer.invoke('save-extension-command-arguments', args),
+  deleteExtensionCommandArguments: (
+    args: { extName: string; cmdName: string }
+  ): Promise<any> =>
+    ipcRenderer.invoke('delete-extension-command-arguments', args),
+
+  // ─── Settings Folder Location ──────────────────────────────────
+  getSettingsLocation: (): Promise<{ path: string | null; defaultPath: string }> =>
+    ipcRenderer.invoke('get-settings-location'),
+  pickSettingsFolder: (): Promise<{ path: string; hasExisting: boolean } | null> =>
+    ipcRenderer.invoke('pick-settings-folder'),
+  relocateSettings: (
+    args: { targetDir: string; mode: 'move' | 'adopt' }
+  ): Promise<{ ok: boolean; settings?: any; path?: string; error?: string }> =>
+    ipcRenderer.invoke('relocate-settings', args),
+  resetSettingsLocation: (): Promise<{ ok: boolean; settings?: any; path?: string; error?: string }> =>
+    ipcRenderer.invoke('reset-settings-location'),
+
   // ─── Menu Bar (Tray) Extensions ────────────────────────────────
   getMenuBarExtensions: (): Promise<any[]> =>
     ipcRenderer.invoke('get-menubar-extensions'),

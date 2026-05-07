@@ -610,6 +610,35 @@
     "advanced": {
       "title": "進階",
       "loading": "正在載入進階設定...",
+      "settingsFolder": {
+        "title": "設定資料夾",
+        "description": "透過 iCloud 雲碟、Dropbox 或任何資料夾，在多台 Mac 之間同步設定和擴充功能。",
+        "defaultLabel": "預設位置",
+        "chooseButton": "選擇資料夾…",
+        "changeButton": "變更資料夾…",
+        "resetButton": "重設為預設",
+        "conflict": {
+          "title": "此資料夾中已有設定",
+          "body": "{folder} 中已經有一個 settings.json。您要使用哪個版本？",
+          "useExisting": "使用現有設定",
+          "useExistingHint": "用同步的副本取代此 Mac 上的設定。",
+          "replace": "取代為目前設定",
+          "replaceHint": "用此 Mac 上的設定覆寫同步的副本。",
+          "cancel": "取消"
+        },
+        "resetConfirm": {
+          "title": "將設定移回預設位置？",
+          "body": "您的設定將只儲存在此 Mac 上。所選資料夾中同步的副本不會被刪除。",
+          "confirm": "重設為預設",
+          "cancel": "取消"
+        },
+        "status": {
+          "moved": "設定資料夾已更新。",
+          "adopted": "已採用同步的設定。",
+          "reset": "設定已移回預設位置。",
+          "failed": "無法更新設定資料夾。"
+        }
+      },
       "disableFileSearch": {
         "title": "停用檔案與資料夾搜尋",
         "description": "在主啟動器搜尋中隱藏檔案與資料夾結果。",

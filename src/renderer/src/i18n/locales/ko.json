@@ -610,6 +610,35 @@
     "advanced": {
       "title": "고급",
       "loading": "고급 설정을 불러오는 중...",
+      "settingsFolder": {
+        "title": "설정 폴더",
+        "description": "iCloud Drive, Dropbox 또는 임의의 폴더를 통해 Mac 간에 설정과 확장을 동기화하세요.",
+        "defaultLabel": "기본 위치",
+        "chooseButton": "폴더 선택…",
+        "changeButton": "폴더 변경…",
+        "resetButton": "기본값으로 재설정",
+        "conflict": {
+          "title": "이 폴더에 이미 설정이 있습니다",
+          "body": "{folder}에 이미 settings.json이 있습니다. 어떤 버전을 사용하시겠습니까?",
+          "useExisting": "기존 설정 사용",
+          "useExistingHint": "이 Mac의 설정을 동기화된 사본으로 바꿉니다.",
+          "replace": "현재 설정으로 바꾸기",
+          "replaceHint": "이 Mac의 설정으로 동기화된 사본을 덮어씁니다.",
+          "cancel": "취소"
+        },
+        "resetConfirm": {
+          "title": "설정을 기본 위치로 되돌리시겠습니까?",
+          "body": "설정이 이 Mac에만 저장됩니다. 선택한 폴더의 동기화된 사본은 삭제되지 않습니다.",
+          "confirm": "기본값으로 재설정",
+          "cancel": "취소"
+        },
+        "status": {
+          "moved": "설정 폴더가 업데이트되었습니다.",
+          "adopted": "동기화된 설정이 적용되었습니다.",
+          "reset": "설정이 기본 위치로 이동되었습니다.",
+          "failed": "설정 폴더를 업데이트할 수 없습니다."
+        }
+      },
       "disableFileSearch": {
         "title": "파일 및 폴더 검색 비활성화",
         "description": "기본 런처 검색에서 파일 및 폴더 결과를 숨깁니다.",
