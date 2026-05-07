@@ -36,6 +36,12 @@ import {
   uninstallExtension,
 } from './extension-registry';
 import {
+  deleteAiChatConversation,
+  getAiChatSnapshot,
+  mergeAiChatSnapshot,
+  upsertAiChatConversation,
+} from './ai-chat-store';
+import {
   getExtensionPreferences,
   getExtensionPreferencesSnapshot,
   mergeExtensionPreferencesSnapshot,
@@ -11581,6 +11587,15 @@ function broadcastExtensionPreferencesUpdated(extensionName: string): void {
   }
 }
 
+function broadcastAiChatsUpdated(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window || window.isDestroyed()) continue;
+    try {
+      window.webContents.send('ai-chats-updated');
+    } catch {}
+  }
+}
+
 function broadcastBrowserSearchHistoryChanged(): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue;
@@ -12965,6 +12980,9 @@ app.whenReady().then(async () => {
         for (const extensionName of result.importedExtensionPreferenceExtensions || []) {
           broadcastExtensionPreferencesUpdated(extensionName);
         }
+        if (result.aiChats.imported > 0) {
+          broadcastAiChatsUpdated();
+        }
         const latestSettings = loadSettings();
         const windowsToNotify = [mainWindow, settingsWindow, extensionStoreWindow, promptWindow]
           .filter(Boolean) as Array<InstanceType<typeof BrowserWindow>>;
@@ -12983,6 +13001,32 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('get-extension-preferences-snapshot', () => {
     return getExtensionPreferencesSnapshot();
+  });
+
+  ipcMain.handle('get-ai-chat-snapshot', () => {
+    return getAiChatSnapshot();
+  });
+
+  ipcMain.handle('upsert-ai-chat-conversation', (_event: any, conversation: any) => {
+    const result = upsertAiChatConversation(conversation);
+    if (result) {
+      broadcastAiChatsUpdated();
+    }
+    return result;
+  });
+
+  ipcMain.handle('delete-ai-chat-conversation', (_event: any, id: string) => {
+    const removed = deleteAiChatConversation(id);
+    if (removed) {
+      broadcastAiChatsUpdated();
+    }
+    return removed;
+  });
+
+  ipcMain.handle('merge-ai-chat-snapshot', (_event: any, snapshot: any) => {
+    const result = mergeAiChatSnapshot(snapshot);
+    broadcastAiChatsUpdated();
+    return result;
   });
 
   ipcMain.handle('get-extension-preferences', (_event: any, extName: string, cmdName?: string) => {

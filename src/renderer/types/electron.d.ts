@@ -319,6 +319,30 @@ export interface RaycastImportBucketResult {
   failed: number;
 }
 
+export interface AiChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number;
+  cancelled?: boolean;
+}
+
+export interface AiChatConversation {
+  id: string;
+  title: string;
+  messages: AiChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+  source?: 'local' | 'raycast';
+  sourceConversationId?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface AiChatSnapshot {
+  version: 1;
+  conversations: AiChatConversation[];
+}
+
 export interface RaycastImportResult {
   canceled: boolean;
   filePath?: string;
@@ -329,6 +353,7 @@ export interface RaycastImportResult {
   commandHotkeysImported: number;
   commandAliasesImported: number;
   pinnedCommandsImported: number;
+  aiChats: RaycastImportBucketResult;
   quicklinks: RaycastImportBucketResult;
   snippets: RaycastImportBucketResult;
   notes: RaycastImportBucketResult;
@@ -614,6 +639,10 @@ export interface ElectronAPI {
   onAppUpdaterStatus: (callback: (status: AppUpdaterStatus) => void) => (() => void);
   saveSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
   importRaycastConfig: () => Promise<RaycastImportResult>;
+  getAiChatSnapshot: () => Promise<AiChatSnapshot>;
+  upsertAiChatConversation: (conversation: AiChatConversation) => Promise<AiChatConversation | null>;
+  deleteAiChatConversation: (id: string) => Promise<boolean>;
+  mergeAiChatSnapshot: (snapshot: AiChatSnapshot) => Promise<AiChatSnapshot>;
   getExtensionPreferencesSnapshot: () => Promise<ExtensionPreferencesSnapshot>;
   getExtensionPreferences: (extName: string, cmdName?: string) => Promise<Record<string, any>>;
   setExtensionPreference: (extName: string, preferenceName: string, value: any, cmdName?: string) => Promise<Record<string, any>>;
@@ -665,6 +694,7 @@ export interface ElectronAPI {
   ) => void;
   onSettingsUpdated: (callback: (settings: AppSettings) => void) => (() => void);
   onExtensionPreferencesUpdated: (callback: (payload: { extensionName: string }) => void) => (() => void);
+  onAiChatsUpdated: (callback: () => void) => (() => void);
 
   // Extension Runner
   runExtension: (extName: string, cmdName: string) => Promise<ExtensionBundle | null>;

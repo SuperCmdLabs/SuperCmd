@@ -382,6 +382,7 @@ const GeneralTab: React.FC = () => {
         commandHotkeysImported: 0,
         commandAliasesImported: 0,
         pinnedCommandsImported: 0,
+        aiChats: { found: 0, imported: 0, skipped: 0, failed: 0 },
         quicklinks: { found: 0, imported: 0, skipped: 0, failed: 1 },
         snippets: { found: 0, imported: 0, skipped: 0, failed: 0 },
         notes: { found: 0, imported: 0, skipped: 0, failed: 0 },
@@ -742,6 +743,7 @@ const GeneralTab: React.FC = () => {
                 <p className="text-[0.75rem] text-[var(--text-secondary)]">
                   {[
                     raycastImportResult.settingsImported ? 'settings imported' : null,
+                    `${raycastImportResult.aiChats.imported}/${raycastImportResult.aiChats.found} AI chats`,
                     `${raycastImportResult.quicklinks.imported}/${raycastImportResult.quicklinks.found} quicklinks`,
                     `${raycastImportResult.snippets.imported}/${raycastImportResult.snippets.found} snippets`,
                     `${raycastImportResult.notes.imported}/${raycastImportResult.notes.found} notes`,

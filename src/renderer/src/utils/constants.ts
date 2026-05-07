@@ -9,6 +9,7 @@
  */
 
 export const LAST_EXT_KEY = 'sc-last-extension';
+export const AI_CHAT_STORAGE_KEY = 'sc.aiChat.conversations';
 export const EXT_PREFS_KEY_PREFIX = 'sc-ext-prefs:';
 export const CMD_PREFS_KEY_PREFIX = 'sc-ext-cmd-prefs:';
 export const CMD_ARGS_KEY_PREFIX = 'sc-ext-cmd-args:';

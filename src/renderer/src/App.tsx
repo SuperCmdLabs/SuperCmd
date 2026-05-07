@@ -43,7 +43,7 @@ import { useSpeakManager } from './hooks/useSpeakManager';
 import { useWhisperManager } from './hooks/useWhisperManager';
 import { useInlineArgumentAnchor } from './hooks/useInlineArgumentAnchor';
 import { useBrowserSearch } from './hooks/useBrowserSearch';
-import { LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
+import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
 import {
@@ -2804,6 +2804,22 @@ const App: React.FC = () => {
       return;
     }
     void window.electron.mergeExtensionPreferencesSnapshot(legacySnapshot);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(AI_CHAT_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed) || parsed.length === 0) return;
+      void window.electron.mergeAiChatSnapshot({
+        version: 1,
+        conversations: parsed.map((conversation: any) => ({
+          ...conversation,
+          source: conversation?.source === 'raycast' ? 'raycast' : 'local',
+        })),
+      });
+    } catch {}
   }, []);
 
   useEffect(() => {

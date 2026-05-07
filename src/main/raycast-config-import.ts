@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as zlib from 'zlib';
+import { getAiChatSnapshot, mergeAiChatSnapshot } from './ai-chat-store';
 import { getAvailableCommands, invalidateCache, type CommandInfo } from './commands';
 import { getExtensionPreferences, setExtensionPreferences } from './extension-preferences-store';
 import { getInstalledExtensionNames, installExtension } from './extension-registry';
@@ -128,6 +129,7 @@ export interface RaycastImportResult {
   commandHotkeysImported: number;
   commandAliasesImported: number;
   pinnedCommandsImported: number;
+  aiChats: RaycastImportBucketResult;
   quicklinks: RaycastImportBucketResult;
   snippets: RaycastImportBucketResult;
   notes: RaycastImportBucketResult;
@@ -455,6 +457,9 @@ function resolveRaycastCommandId(
 }
 
 function buildImportPreview(data: RaycastBackup): string {
+  const aiChats = Array.isArray(data['builtin_package_open-ai']?.aiChats)
+    ? data['builtin_package_open-ai']?.aiChats?.length || 0
+    : 0;
   const quicklinks = Array.isArray(data.builtin_package_quicklinks?.quicklinks)
     ? data.builtin_package_quicklinks?.quicklinks?.length || 0
     : 0;
@@ -469,20 +474,20 @@ function buildImportPreview(data: RaycastBackup): string {
     : 0;
   const lines = [
     `Raycast version: ${String(data.raycast_version || 'unknown')}`,
+    `AI chats: ${aiChats}`,
     `Quicklinks: ${quicklinks}`,
     `Snippets: ${snippets}`,
     `Notes: ${notes}`,
     `Extensions: ${extensions}`,
     '',
     'This import will only bring over categories that SuperCmd can map cleanly today.',
-    'It will skip Raycast AI chats, clipboard history, and MCP server config.',
+    'It will skip clipboard history and MCP server config.',
   ];
   return lines.join('\n');
 }
 
 function collectUnsupportedCategories(data: RaycastBackup): string[] {
   const unsupported: string[] = [];
-  if ((data['builtin_package_open-ai']?.aiChats?.length || 0) > 0) unsupported.push('AI chats');
   if ((data.builtin_package_clipboardHistory?.clipboardHistoryRecords?.length || 0) > 0) unsupported.push('clipboard history');
   if ((data.builtin_package_mcp?.mcpServers?.length || 0) > 0) unsupported.push('MCP servers');
   return unsupported;
@@ -490,6 +495,267 @@ function collectUnsupportedCategories(data: RaycastBackup): string[] {
 
 function createBucketResult(found = 0): RaycastImportBucketResult {
   return { found, imported: 0, skipped: 0, failed: 0 };
+}
+
+function asRecord(value: unknown): Record<string, any> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, any>;
+}
+
+function parseTimestamp(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value > 1e11) return Math.round(value);
+    if (value > 1e9) return Math.round(value * 1000);
+    if (value > 5e8) return Math.round((value + 978307200) * 1000);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) {
+      const asNumber = Number(trimmed);
+      if (Number.isFinite(asNumber)) return parseTimestamp(asNumber, fallback);
+      const asDate = Date.parse(trimmed);
+      if (Number.isFinite(asDate)) return asDate;
+    }
+  }
+  return fallback;
+}
+
+function extractTextChunks(value: unknown, depth = 0): string[] {
+  if (depth > 4 || value == null) return [];
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return [String(value)];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => extractTextChunks(entry, depth + 1));
+  }
+  const record = asRecord(value);
+  if (!record) return [];
+
+  const directKeys = [
+    'content',
+    'text',
+    'body',
+    'message',
+    'prompt',
+    'response',
+    'answer',
+    'question',
+    'markdown',
+    'output',
+    'summary',
+    'transcript',
+    'completion',
+    'value',
+  ];
+  const chunks: string[] = [];
+  for (const key of directKeys) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      chunks.push(...extractTextChunks(record[key], depth + 1));
+    }
+  }
+
+  if (chunks.length > 0) return chunks;
+
+  for (const [key, child] of Object.entries(record)) {
+    if (/^(id|uuid|title|name|createdAt|updatedAt|timestamp|date|role|type|model|metadata)$/i.test(key)) {
+      continue;
+    }
+    chunks.push(...extractTextChunks(child, depth + 1));
+  }
+
+  return chunks;
+}
+
+function uniqueText(chunks: string[]): string {
+  const seen = new Set<string>();
+  const next: string[] = [];
+  for (const chunk of chunks) {
+    const normalized = chunk.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    next.push(normalized);
+  }
+  return next.join('\n\n').trim();
+}
+
+function normalizeImportedRole(value: unknown): 'user' | 'assistant' {
+  const raw = String(value || '').trim().toLowerCase();
+  if (
+    raw === 'user' ||
+    raw === 'human' ||
+    raw === 'prompt' ||
+    raw === 'question' ||
+    raw === 'input'
+  ) {
+    return 'user';
+  }
+  return 'assistant';
+}
+
+function extractConversationArray(record: Record<string, any>): unknown[] {
+  const directKeys = [
+    'messages',
+    'turns',
+    'entries',
+    'items',
+    'chatMessages',
+    'conversationMessages',
+    'conversation',
+    'history',
+    'nodes',
+  ];
+  for (const key of directKeys) {
+    if (Array.isArray(record[key])) return record[key];
+  }
+  for (const value of Object.values(record)) {
+    if (!Array.isArray(value)) continue;
+    if (value.some((entry) => asRecord(entry))) return value;
+  }
+  return [];
+}
+
+function extractMessagesFromRaycastEntry(entry: unknown, index: number): Array<{
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number;
+}> {
+  const fallbackTs = Date.now() + index;
+  if (typeof entry === 'string') {
+    const trimmed = entry.trim();
+    return trimmed ? [{ role: 'assistant', content: trimmed, createdAt: fallbackTs }] : [];
+  }
+  const record = asRecord(entry);
+  if (!record) return [];
+
+  const pairedFields: Array<[keyof typeof record, keyof typeof record]> = [
+    ['prompt', 'response'],
+    ['question', 'answer'],
+    ['input', 'output'],
+    ['userMessage', 'assistantMessage'],
+    ['request', 'response'],
+  ];
+  for (const [userKey, assistantKey] of pairedFields) {
+    const userText = uniqueText(extractTextChunks(record[userKey]));
+    const assistantText = uniqueText(extractTextChunks(record[assistantKey]));
+    if (!userText && !assistantText) continue;
+    const createdAt = parseTimestamp(
+      record.createdAt ?? record.timestamp ?? record.date,
+      fallbackTs
+    );
+    const next: Array<{ role: 'user' | 'assistant'; content: string; createdAt: number }> = [];
+    if (userText) next.push({ role: 'user', content: userText, createdAt });
+    if (assistantText) next.push({ role: 'assistant', content: assistantText, createdAt: createdAt + 1 });
+    return next;
+  }
+
+  const content = uniqueText(extractTextChunks(record));
+  if (!content) return [];
+  const role = normalizeImportedRole(
+    record.role ?? record.type ?? record.authorRole ?? record.senderRole ?? record.author?.role ?? record.sender?.role
+  );
+  const createdAt = parseTimestamp(
+    record.createdAt ?? record.updatedAt ?? record.timestamp ?? record.date,
+    fallbackTs
+  );
+  return [{ role, content, createdAt }];
+}
+
+function normalizeRaycastConversation(chat: unknown, index: number): Record<string, any> | null {
+  const record = asRecord(chat);
+  if (!record) return null;
+  const rawMessages = extractConversationArray(record);
+  const messages = rawMessages.flatMap((entry, messageIndex) => extractMessagesFromRaycastEntry(entry, messageIndex));
+  if (messages.length === 0) {
+    const fallbackContent = uniqueText(extractTextChunks(record.preview ?? record.lastMessage ?? record.summary));
+    if (fallbackContent) {
+      messages.push({
+        role: 'assistant',
+        content: fallbackContent,
+        createdAt: parseTimestamp(record.updatedAt ?? record.createdAt, Date.now() + index),
+      });
+    }
+  }
+  if (messages.length === 0) return null;
+
+  const firstUserMessage = messages.find((message) => message.role === 'user')?.content || '';
+  const title = String(record.title || record.name || '').trim() || firstMeaningfulLine(firstUserMessage) || 'Imported Chat';
+  const sourceConversationId = String(
+    record.id ??
+    record.uuid ??
+    record.chatId ??
+    record.conversationId ??
+    record.identifier ??
+    ''
+  ).trim();
+  const createdAt = parseTimestamp(
+    record.createdAt ?? record.timestamp ?? messages[0]?.createdAt,
+    messages[0]?.createdAt || Date.now() + index
+  );
+  const updatedAt = parseTimestamp(
+    record.updatedAt ?? record.lastUpdatedAt ?? record.modifiedAt ?? messages[messages.length - 1]?.createdAt,
+    messages[messages.length - 1]?.createdAt || createdAt
+  );
+
+  const metadata: Record<string, any> = {};
+  for (const key of ['model', 'modelName', 'provider', 'temperature']) {
+    if (record[key] !== undefined) {
+      metadata[key] = record[key];
+    }
+  }
+
+  return {
+    id: sourceConversationId ? `raycast-${sourceConversationId}` : undefined,
+    title,
+    createdAt,
+    updatedAt,
+    source: 'raycast',
+    ...(sourceConversationId ? { sourceConversationId } : {}),
+    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+    messages: messages.map((message, messageIndex) => ({
+      id: `${sourceConversationId || `chat-${index}`}-msg-${messageIndex}`,
+      role: message.role,
+      content: message.content,
+      createdAt: message.createdAt,
+    })),
+  };
+}
+
+function importAiChats(data: RaycastBackup, warnings: string[]): RaycastImportBucketResult {
+  const source = Array.isArray(data['builtin_package_open-ai']?.aiChats)
+    ? data['builtin_package_open-ai']?.aiChats || []
+    : [];
+  const result = createBucketResult(source.length);
+  if (source.length === 0) return result;
+
+  const normalizedConversations = source
+    .map((chat, index) => normalizeRaycastConversation(chat, index))
+    .filter((conversation): conversation is Record<string, any> => Boolean(conversation));
+
+  result.failed = source.length - normalizedConversations.length;
+  if (result.failed > 0) {
+    warnings.push(`Skipped ${result.failed} Raycast AI chat${result.failed === 1 ? '' : 's'} that could not be mapped cleanly.`);
+  }
+  if (normalizedConversations.length === 0) return result;
+
+  const existingIds = new Set(getAiChatSnapshot().conversations.map((conversation) => conversation.id));
+  for (const conversation of normalizedConversations) {
+    const conversationId = String(conversation.id || '').trim();
+    if (conversationId && existingIds.has(conversationId)) {
+      result.skipped += 1;
+      continue;
+    }
+    result.imported += 1;
+  }
+
+  mergeAiChatSnapshot({
+    version: 1,
+    conversations: normalizedConversations as any,
+  });
+  return result;
 }
 
 function firstMeaningfulLine(text: string): string {
@@ -933,6 +1199,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
       commandHotkeysImported: 0,
       commandAliasesImported: 0,
       pinnedCommandsImported: 0,
+      aiChats: createBucketResult(),
       quicklinks: createBucketResult(),
       snippets: createBucketResult(),
       notes: createBucketResult(),
@@ -968,6 +1235,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
             commandHotkeysImported: 0,
             commandAliasesImported: 0,
             pinnedCommandsImported: 0,
+            aiChats: createBucketResult(),
             quicklinks: createBucketResult(),
             snippets: createBucketResult(),
             notes: createBucketResult(),
@@ -1021,6 +1289,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
       commandHotkeysImported: 0,
       commandAliasesImported: 0,
       pinnedCommandsImported: 0,
+      aiChats: createBucketResult(),
       quicklinks: createBucketResult(),
       snippets: createBucketResult(),
       notes: createBucketResult(),
@@ -1033,6 +1302,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
 
   const warnings: string[] = [];
   const { settingsImported, disabledCommandsImported, scriptCommandFoldersImported } = applySettingsFromBackup(backup);
+  const aiChats = importAiChats(backup, warnings);
   const quicklinks = importQuicklinks(backup);
   const snippets = importSnippets(backup);
   const notes = importNotes(backup);
@@ -1054,6 +1324,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
     commandHotkeysImported,
     commandAliasesImported,
     pinnedCommandsImported,
+    aiChats,
     quicklinks,
     snippets,
     notes,

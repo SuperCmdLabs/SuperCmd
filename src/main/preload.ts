@@ -99,6 +99,13 @@ const electronAPI = {
       ipcRenderer.removeListener('commands-updated', listener);
     };
   },
+  onAiChatsUpdated: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('ai-chats-updated', listener);
+    return () => {
+      ipcRenderer.removeListener('ai-chats-updated', listener);
+    };
+  },
   onRunSystemCommand: (callback: (commandId: string) => void) => {
     const listener = (_event: any, commandId: string) => callback(commandId);
     ipcRenderer.on('run-system-command', listener);
@@ -271,6 +278,14 @@ const electronAPI = {
     ipcRenderer.invoke('save-settings', patch),
   importRaycastConfig: (): Promise<any> =>
     ipcRenderer.invoke('rayconfig-import'),
+  getAiChatSnapshot: (): Promise<any> =>
+    ipcRenderer.invoke('get-ai-chat-snapshot'),
+  upsertAiChatConversation: (conversation: any): Promise<any> =>
+    ipcRenderer.invoke('upsert-ai-chat-conversation', conversation),
+  deleteAiChatConversation: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('delete-ai-chat-conversation', id),
+  mergeAiChatSnapshot: (snapshot: any): Promise<any> =>
+    ipcRenderer.invoke('merge-ai-chat-snapshot', snapshot),
   getExtensionPreferencesSnapshot: (): Promise<any> =>
     ipcRenderer.invoke('get-extension-preferences-snapshot'),
   getExtensionPreferences: (extName: string, cmdName?: string): Promise<Record<string, any>> =>
