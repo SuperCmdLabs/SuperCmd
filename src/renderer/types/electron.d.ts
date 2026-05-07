@@ -312,6 +312,11 @@ export interface BrowserSearchImportResult {
   reason?: string;
 }
 
+/** How to handle the situation when the chosen settings folder already
+ *  contains a settings.json. 'move' overwrites the existing file with this
+ *  Mac's settings; 'adopt' replaces this Mac's settings with the existing file. */
+export type RelocateMode = 'move' | 'adopt';
+
 export interface AppSettings {
   globalShortcut: string;
   openAtLogin: boolean;
@@ -857,7 +862,7 @@ export interface ElectronAPI {
   deleteExtensionCommandArguments: (args: { extName: string; cmdName: string }) => Promise<AppSettings>;
   getSettingsLocation: () => Promise<{ path: string | null; defaultPath: string }>;
   pickSettingsFolder: () => Promise<{ path: string; hasExisting: boolean } | null>;
-  relocateSettings: (args: { targetDir: string; mode: 'move' | 'adopt' }) => Promise<{ ok: boolean; settings?: any; path?: string; error?: string }>;
+  relocateSettings: (args: { targetDir: string; mode: RelocateMode }) => Promise<{ ok: boolean; settings?: any; path?: string; error?: string }>;
   resetSettingsLocation: () => Promise<{ ok: boolean; settings?: any; path?: string; error?: string }>;
   getMenuBarExtensions: () => Promise<any[]>;
   updateMenuBar: (data: any) => void;

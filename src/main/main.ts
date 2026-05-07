@@ -14,6 +14,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { fork, type ChildProcess } from 'child_process';
+import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster } from './settings-store';
 import type { AppSettings, RelocateMode } from './settings-store';
@@ -152,28 +153,6 @@ try {
 
 // ─── Native Binary Helpers ──────────────────────────────────────────
 
-/**
- * Resolve the path to a pre-compiled native binary in dist/native/.
- * In packaged apps the dist/native/ directory lives in app.asar.unpacked
- * (see asarUnpack in package.json), so we swap the asar path for the
- * unpacked one — child_process.spawn is not asar-aware.
- */
-function resolvePackagedUnpackedPath(candidatePath: string): string {
-  if (!app.isPackaged) return candidatePath;
-  if (!candidatePath.includes('app.asar')) return candidatePath;
-  const unpackedPath = candidatePath.replace('app.asar', 'app.asar.unpacked');
-  try {
-    if (fs.existsSync(unpackedPath)) {
-      return unpackedPath;
-    }
-  } catch {}
-  return candidatePath;
-}
-
-function getNativeBinaryPath(name: string): string {
-  const base = path.join(__dirname, '..', 'native', name);
-  return resolvePackagedUnpackedPath(base);
-}
 
 const WHISPERCPP_FRAMEWORK_VERSION = 'v1.8.3';
 const WHISPERCPP_MODEL_NAME = 'base';

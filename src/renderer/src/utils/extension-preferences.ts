@@ -425,7 +425,6 @@ export async function migrateExtensionPreferencesFromLocalStorage(): Promise<voi
     return;
   }
 
-  // Group ext prefs and cmd prefs by extension so we can issue one IPC per ext.
   const extPrefsByExt = new Map<string, Record<string, unknown>>();
   const cmdPrefsByExtCmd = new Map<string, { extName: string; cmdName: string; cmdPrefs: Record<string, unknown> }>();
   const cmdArgsByExtCmd = new Map<string, { extName: string; cmdName: string; values: Record<string, unknown> }>();

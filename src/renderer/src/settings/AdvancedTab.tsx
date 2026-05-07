@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Bug, FolderOpen, FolderSearch, FolderSync, Globe, Keyboard, Languages, RotateCcw, Sparkles, Undo2 } from 'lucide-react';
 import type {
   AppNavigationStyle,
@@ -7,6 +7,7 @@ import type {
   BrowserSearchSettings,
   HyperKeySourceKey,
   HyperKeyCapsLockTapBehavior,
+  RelocateMode,
 } from '../../types/electron';
 import { APP_LANGUAGE_OPTIONS, DEFAULT_APP_LANGUAGE, type AppLanguageSetting, useI18n } from '../i18n';
 
@@ -279,8 +280,13 @@ const AdvancedTab: React.FC = () => {
   const [settingsLocation, setSettingsLocation] = useState<{ path: string | null; defaultPath: string } | null>(null);
   const [settingsFolderBusy, setSettingsFolderBusy] = useState(false);
   const [settingsFolderStatus, setSettingsFolderStatus] = useState<{ type: 'idle' | 'success' | 'error'; text: string }>({ type: 'idle', text: '' });
-  const [settingsFolderConflict, setSettingsFolderConflict] = useState<{ targetDir: string } | null>(null);
-  const [showSettingsFolderResetConfirm, setShowSettingsFolderResetConfirm] = useState(false);
+  // The two folder modals are mutually exclusive — combined into one
+  // discriminated state to make that constraint explicit.
+  type FolderModal =
+    | { kind: 'conflict'; targetDir: string }
+    | { kind: 'reset' }
+    | null;
+  const [folderModal, setFolderModal] = useState<FolderModal>(null);
 
   useEffect(() => {
     window.electron.getSettings().then((next) => {
@@ -317,12 +323,21 @@ const AdvancedTab: React.FC = () => {
     }
   }, []);
 
+  const statusClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (statusClearTimerRef.current) clearTimeout(statusClearTimerRef.current);
+  }, []);
+
   const showSettingsFolderStatus = (type: 'success' | 'error', text: string, durationMs = 2200) => {
     setSettingsFolderStatus({ type, text });
-    setTimeout(() => setSettingsFolderStatus({ type: 'idle', text: '' }), durationMs);
+    if (statusClearTimerRef.current) clearTimeout(statusClearTimerRef.current);
+    statusClearTimerRef.current = setTimeout(() => {
+      statusClearTimerRef.current = null;
+      setSettingsFolderStatus({ type: 'idle', text: '' });
+    }, durationMs);
   };
 
-  const performRelocate = async (targetDir: string, mode: 'move' | 'adopt') => {
+  const performRelocate = async (targetDir: string, mode: RelocateMode) => {
     setSettingsFolderBusy(true);
     try {
       const result = await window.electron.relocateSettings({ targetDir, mode });
@@ -338,7 +353,7 @@ const AdvancedTab: React.FC = () => {
       showSettingsFolderStatus('error', String(error?.message || error || t('settings.advanced.settingsFolder.status.failed')));
     } finally {
       setSettingsFolderBusy(false);
-      setSettingsFolderConflict(null);
+      setFolderModal(null);
     }
   };
 
@@ -353,7 +368,7 @@ const AdvancedTab: React.FC = () => {
     }
     if (!picked || !picked.path) return;
     if (picked.hasExisting) {
-      setSettingsFolderConflict({ targetDir: picked.path });
+      setFolderModal({ kind: 'conflict', targetDir: picked.path });
       return;
     }
     await performRelocate(picked.path, 'move');
@@ -373,7 +388,7 @@ const AdvancedTab: React.FC = () => {
       showSettingsFolderStatus('error', String(error?.message || error || t('settings.advanced.settingsFolder.status.failed')));
     } finally {
       setSettingsFolderBusy(false);
-      setShowSettingsFolderResetConfirm(false);
+      setFolderModal(null);
     }
   };
 
@@ -388,8 +403,10 @@ const AdvancedTab: React.FC = () => {
   const settingsLocationTooltip = usingCustomSettingsLocation
     ? settingsLocation!.path!
     : settingsLocation?.defaultPath || '';
-  const settingsFolderConflictBaseName = settingsFolderConflict
-    ? getSettingsFolderBaseName(settingsFolderConflict.targetDir) || settingsFolderConflict.targetDir
+  const conflictModal = folderModal?.kind === 'conflict' ? folderModal : null;
+  const showResetConfirm = folderModal?.kind === 'reset';
+  const settingsFolderConflictBaseName = conflictModal
+    ? getSettingsFolderBaseName(conflictModal.targetDir) || conflictModal.targetDir
     : '';
 
   const hyperKey = settings.hyperKey ?? { enabled: false, sourceKey: 'caps-lock' as const, capsLockTapBehavior: 'escape' as const };
@@ -423,7 +440,7 @@ const AdvancedTab: React.FC = () => {
               {usingCustomSettingsLocation ? (
                 <button
                   type="button"
-                  onClick={() => setShowSettingsFolderResetConfirm(true)}
+                  onClick={() => setFolderModal({ kind: 'reset' })}
                   disabled={settingsFolderBusy}
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-[var(--ui-divider)] bg-transparent text-[12px] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                 >
@@ -643,11 +660,11 @@ const AdvancedTab: React.FC = () => {
         </SettingsRow>
       </div>
 
-      {settingsFolderConflict ? (
+      {conflictModal ? (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/12"
           onClick={() => {
-            if (!settingsFolderBusy) setSettingsFolderConflict(null);
+            if (!settingsFolderBusy) setFolderModal(null);
           }}
         >
           <div
@@ -669,7 +686,7 @@ const AdvancedTab: React.FC = () => {
               <button
                 type="button"
                 disabled={settingsFolderBusy}
-                onClick={() => void performRelocate(settingsFolderConflict.targetDir, 'adopt')}
+                onClick={() => void performRelocate(conflictModal.targetDir, 'adopt')}
                 className="w-full rounded-md border border-[var(--accent-color)]/30 bg-[var(--accent-color)]/15 px-3 py-2 text-left text-[12px] font-semibold text-[var(--text-primary)] hover:bg-[var(--accent-color)]/25 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <div>{t('settings.advanced.settingsFolder.conflict.useExisting')}</div>
@@ -681,7 +698,7 @@ const AdvancedTab: React.FC = () => {
               <button
                 type="button"
                 disabled={settingsFolderBusy}
-                onClick={() => void performRelocate(settingsFolderConflict.targetDir, 'move')}
+                onClick={() => void performRelocate(conflictModal.targetDir, 'move')}
                 className="w-full rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-3 py-2 text-left text-[12px] font-semibold text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <div>{t('settings.advanced.settingsFolder.conflict.replace')}</div>
@@ -693,7 +710,7 @@ const AdvancedTab: React.FC = () => {
               <button
                 type="button"
                 disabled={settingsFolderBusy}
-                onClick={() => setSettingsFolderConflict(null)}
+                onClick={() => setFolderModal(null)}
                 className="w-full rounded-md px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {t('settings.advanced.settingsFolder.conflict.cancel')}
@@ -703,11 +720,11 @@ const AdvancedTab: React.FC = () => {
         </div>
       ) : null}
 
-      {showSettingsFolderResetConfirm ? (
+      {showResetConfirm ? (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/12"
           onClick={() => {
-            if (!settingsFolderBusy) setShowSettingsFolderResetConfirm(false);
+            if (!settingsFolderBusy) setFolderModal(null);
           }}
         >
           <div
@@ -729,7 +746,7 @@ const AdvancedTab: React.FC = () => {
               <button
                 type="button"
                 disabled={settingsFolderBusy}
-                onClick={() => setShowSettingsFolderResetConfirm(false)}
+                onClick={() => setFolderModal(null)}
                 className="flex-1 rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {t('settings.advanced.settingsFolder.resetConfirm.cancel')}

@@ -9,6 +9,7 @@ import { app } from 'electron';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { getNativeBinaryPath } from './native-binary';
 import { getSecret, setSecret, deleteSecret } from './safe-storage';
 
 // AI settings fields whose values should never live in plain text on disk.
@@ -586,17 +587,6 @@ function hasICloudSentinel(targetPath: string): boolean {
   }
 }
 
-function getSettingsCoordinatorBinaryPath(): string {
-  // Mirror main.ts:getNativeBinaryPath. After build, settings-store.ts
-  // sits at dist/main/, so ../native resolves to dist/native.
-  const base = path.join(__dirname, '..', 'native', 'settings-coordinator');
-  if (app.isPackaged && base.includes('app.asar')) {
-    const unpacked = base.replace('app.asar', 'app.asar.unpacked');
-    if (fs.existsSync(unpacked)) return unpacked;
-  }
-  return base;
-}
-
 /**
  * If `targetPath` lives in iCloud Drive, ask iCloud to materialize it
  * (download from the cloud, evict no longer applicable) before we read.
@@ -613,7 +603,7 @@ function getSettingsCoordinatorBinaryPath(): string {
  */
 function materializeICloudFileIfNeeded(targetPath: string): boolean {
   if (!isPathInICloud(targetPath)) return true;
-  const binary = getSettingsCoordinatorBinaryPath();
+  const binary = getNativeBinaryPath('settings-coordinator');
   if (!fs.existsSync(binary)) {
     console.warn(`[Settings] iCloud helper binary not found at ${binary}; skipping materialization. Run \`npm run build:native\`.`);
     return true;
@@ -962,8 +952,6 @@ function persistSettingsToDisk(
     if (safelyRedactable.has(field)) onDisk.ai[field] = '';
   }
 
-  // Split into synced vs local. `syncedOnDisk` excludes NEVER_SYNC keys;
-  // `localOnDisk` contains only those keys (and only ones with defined values).
   const syncedOnDisk: Record<string, unknown> = { ...onDisk };
   const localOnDisk: Record<string, unknown> = {};
   for (const key of NEVER_SYNC) {
