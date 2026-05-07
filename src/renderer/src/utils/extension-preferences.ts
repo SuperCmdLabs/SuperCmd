@@ -37,8 +37,12 @@ export function readJsonObject(key: string): Record<string, any> {
   }
 }
 
-export function writeJsonObject(key: string, value: Record<string, any>) {
+function writeLocalJsonObject(key: string, value: Record<string, any>) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+export function writeJsonObject(key: string, value: Record<string, any>) {
+  writeLocalJsonObject(key, value);
   // Mirror extension preferences and command arguments into the synced
   // settings.json so they propagate to other Macs. localStorage stays
   // the synchronous read cache; this is best-effort fire-and-forget.
@@ -413,6 +417,35 @@ function emitStorageChangedFor(extensionName: string): void {
   }
 }
 
+function areJsonValuesEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (!areJsonValuesEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  if (typeof a === 'object' && typeof b === 'object') {
+    const aObject = a as Record<string, unknown>;
+    const bObject = b as Record<string, unknown>;
+    const aKeys = Object.keys(aObject);
+    const bKeys = Object.keys(bObject);
+    if (aKeys.length !== bKeys.length) return false;
+    for (const key of aKeys) {
+      if (!Object.prototype.hasOwnProperty.call(bObject, key)) return false;
+      if (!areJsonValuesEqual(aObject[key], bObject[key])) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * One-shot per machine: walk localStorage for existing extension prefs /
  * args and push them up to the synced settings file. Idempotent — gated
@@ -501,6 +534,10 @@ export async function migrateExtensionPreferencesFromLocalStorage(): Promise<voi
  * Skip-empty rule: only override localStorage when settings has a
  * non-empty value. Avoids clobbering this Mac's existing prefs with
  * empty placeholders that another Mac may have written.
+ *
+ * Hydration treats settings as the source of truth and updates only the
+ * renderer cache. Writing back through sync here can echo our own
+ * settings-updated broadcast and create a save/broadcast loop.
  */
 export function hydrateExtensionPreferencesFromSettings(settings: SyncedExtensionStorage | null | undefined): void {
   if (!settings) return;
@@ -515,13 +552,13 @@ export function hydrateExtensionPreferencesFromSettings(settings: SyncedExtensio
     for (const [k, v] of Object.entries(payload)) {
       if (v === undefined || v === null) continue;
       if (typeof v === 'string' && v === '') continue;
-      if (existing[k] !== v) {
+      if (!areJsonValuesEqual(existing[k], v)) {
         existing[k] = v;
         changed = true;
       }
     }
     if (changed) {
-      writeJsonObject(getExtPrefsKey(extName), existing);
+      writeLocalJsonObject(getExtPrefsKey(extName), existing);
       touchedExts.add(extName);
     }
   }
@@ -539,13 +576,13 @@ export function hydrateExtensionPreferencesFromSettings(settings: SyncedExtensio
     for (const [k, v] of Object.entries(payload)) {
       if (v === undefined || v === null) continue;
       if (typeof v === 'string' && v === '') continue;
-      if (existing[k] !== v) {
+      if (!areJsonValuesEqual(existing[k], v)) {
         existing[k] = v;
         changed = true;
       }
     }
     if (changed) {
-      writeJsonObject(getCmdPrefsKey(extName, cmdName), existing);
+      writeLocalJsonObject(getCmdPrefsKey(extName, cmdName), existing);
       touchedExts.add(extName);
     }
   }
@@ -563,13 +600,13 @@ export function hydrateExtensionPreferencesFromSettings(settings: SyncedExtensio
     for (const [k, v] of Object.entries(payload)) {
       if (v === undefined || v === null) continue;
       if (typeof v === 'string' && v === '') continue;
-      if (existing[k] !== v) {
+      if (!areJsonValuesEqual(existing[k], v)) {
         existing[k] = v;
         changed = true;
       }
     }
     if (changed) {
-      writeJsonObject(getCmdArgsKey(extName, cmdName), existing);
+      writeLocalJsonObject(getCmdArgsKey(extName, cmdName), existing);
       touchedExts.add(extName);
     }
   }

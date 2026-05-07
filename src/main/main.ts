@@ -16,7 +16,7 @@ import * as os from 'os';
 import { fork, type ChildProcess } from 'child_process';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
-import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster } from './settings-store';
+import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster, settingsFileExistsOrICloudPlaceholder } from './settings-store';
 import type { AppSettings, RelocateMode } from './settings-store';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
 import * as soulverCalculator from './soulver-calculator';
@@ -12717,18 +12717,22 @@ app.whenReady().then(async () => {
   });
 
   // ─── Synced Extension List Helpers ──────────────────────────────
-  // Keep settings.installedExtensions in sync with install/uninstall
-  // events. The list represents user *intent* — the filesystem stays
-  // authoritative for "is X installed right now". On first launch on
-  // another Mac, missing entries get auto-installed.
+  // Keep settings.installedExtensions in sync with install/uninstall events.
+  // The list represents user install intent. Uninstall tombstones represent
+  // synced removal intent, so another Mac with a stale extension folder does
+  // not resurrect the extension globally on launch.
 
   function addInstalledExtensionToSettings(name: string): void {
     const trimmed = String(name || '').trim();
     if (!trimmed) return;
     const current = loadSettings();
     const existing = current.installedExtensions || [];
-    if (existing.includes(trimmed)) return;
-    const updated = saveSettings({ installedExtensions: [...existing, trimmed] });
+    const extensionUninstallTombstones = { ...(current.extensionUninstallTombstones || {}) };
+    const hadTombstone = Object.prototype.hasOwnProperty.call(extensionUninstallTombstones, trimmed);
+    if (hadTombstone) delete extensionUninstallTombstones[trimmed];
+    const installedExtensions = existing.includes(trimmed) ? existing : [...existing, trimmed];
+    if (existing.includes(trimmed) && !hadTombstone) return;
+    const updated = saveSettings({ installedExtensions, extensionUninstallTombstones });
     broadcastSettingsToAllWindows(updated);
   }
 
@@ -12737,9 +12741,13 @@ app.whenReady().then(async () => {
     if (!trimmed) return;
     const current = loadSettings();
     const existing = current.installedExtensions || [];
-    if (!existing.includes(trimmed)) return;
+    const extensionUninstallTombstones = {
+      ...(current.extensionUninstallTombstones || {}),
+      [trimmed]: Date.now(),
+    };
     const updated = saveSettings({
       installedExtensions: existing.filter((entry) => entry !== trimmed),
+      extensionUninstallTombstones,
     });
     broadcastSettingsToAllWindows(updated);
   }
@@ -12750,6 +12758,8 @@ app.whenReady().then(async () => {
    *  - Filesystem-only extensions (the typical first-run state) are added
    *    to settings.installedExtensions so the user's other Macs pick them
    *    up.
+   *  - Filesystem-only extensions with synced uninstall tombstones are stale
+   *    local folders from another Mac and are removed locally, not re-added.
    *  - Settings-only entries (delivered by cloud sync from another Mac)
    *    are queued for background install. Surfaced via the memory status
    *    bar; failures are logged but don't block.
@@ -12770,11 +12780,41 @@ app.whenReady().then(async () => {
       return;
     }
     const inSettings = new Set<string>(current.installedExtensions || []);
+    const uninstallTombstones = current.extensionUninstallTombstones || {};
 
-    // 1) Reconcile: anything on disk that isn't yet in settings → add it.
+    // 1) Reconcile anything on disk that isn't yet in settings. Legacy
+    // filesystem-only installs are imported; tombstoned folders are stale.
     const extra: string[] = [];
+    const stale: string[] = [];
     for (const name of onDisk) {
-      if (!inSettings.has(name)) extra.push(name);
+      if (inSettings.has(name)) continue;
+      if (Object.prototype.hasOwnProperty.call(uninstallTombstones, name)) {
+        stale.push(name);
+      } else {
+        extra.push(name);
+      }
+    }
+    if (stale.length > 0) {
+      console.log(`[auto-install] removing ${stale.length} tombstoned extension folder(s): ${stale.join(', ')}`);
+      let removedAny = false;
+      for (const name of stale) {
+        try {
+          const ok = await uninstallExtension(name);
+          if (ok) {
+            onDisk.delete(name);
+            removedAny = true;
+            broadcastExtensionUninstalled(name);
+          } else {
+            console.warn(`[auto-install] failed to remove tombstoned extension folder: ${name}`);
+          }
+        } catch (e) {
+          console.warn(`[auto-install] error removing tombstoned extension folder ${name}:`, e);
+        }
+      }
+      if (removedAny) {
+        invalidateCache();
+        broadcastExtensionsUpdated();
+      }
     }
     if (extra.length > 0) {
       const merged = [...(current.installedExtensions || []), ...extra];
@@ -16690,7 +16730,7 @@ if let tiff = image?.tiffRepresentation {
       const candidate = path.join(selectedPath, 'settings.json');
       let hasExisting = false;
       try {
-        hasExisting = require('fs').existsSync(candidate);
+        hasExisting = settingsFileExistsOrICloudPlaceholder(candidate);
       } catch {
         hasExisting = false;
       }
@@ -16706,7 +16746,8 @@ if let tiff = image?.tiffRepresentation {
   ipcMain.handle(
     'relocate-settings',
     async (_event: any, args: { targetDir: string; mode: RelocateMode }) => {
-      const result = relocateSettingsFile(String(args?.targetDir || ''), args?.mode === 'adopt' ? 'adopt' : 'move');
+      const mode: RelocateMode = args?.mode === 'adopt' || args?.mode === 'replace' ? args.mode : 'move';
+      const result = relocateSettingsFile(String(args?.targetDir || ''), mode);
       if (result.ok && result.settings) {
         broadcastSettingsToAllWindows(result.settings);
       }

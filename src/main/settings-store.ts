@@ -159,6 +159,9 @@ export interface AppSettings {
   // authoritative for "is X installed right now". On launch, missing entries
   // are auto-installed in the background.
   installedExtensions: string[];
+  // Synced uninstall intent by extension name. Prevents another Mac that still
+  // has a stale managed extension folder from re-adding it to installedExtensions.
+  extensionUninstallTombstones: Record<string, number>;
   // Per-extension preference values (from `getPreferenceValues()`).
   // Key: extension name. Value: { prefName: value, ... }.
   extensionPreferences: Record<string, Record<string, unknown>>;
@@ -267,6 +270,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
   popToRootSearchTimeoutSeconds: 90,
   installedExtensions: [],
+  extensionUninstallTombstones: {},
   extensionPreferences: {},
   extensionCommandPreferences: {},
   extensionCommandArguments: {},
@@ -471,6 +475,20 @@ function normalizeInstalledExtensions(value: any): string[] {
   return out;
 }
 
+function normalizeExtensionUninstallTombstones(value: any): Record<string, number> {
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, number> = {};
+  for (const [key, rawTimestamp] of Object.entries(value as Record<string, unknown>)) {
+    const name = String(key || '').trim();
+    if (!name) continue;
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) continue;
+    const timestamp = Number(rawTimestamp);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) continue;
+    out[name] = Math.floor(timestamp);
+  }
+  return out;
+}
+
 /**
  * Defensive shape-check for extension preferences / arguments. Returns
  * { [extName]: { [prefName]: unknown } } shape, dropping invalid keys.
@@ -582,6 +600,14 @@ function getICloudSentinelPath(targetPath: string): string {
 function hasICloudSentinel(targetPath: string): boolean {
   try {
     return fs.existsSync(getICloudSentinelPath(targetPath));
+  } catch {
+    return false;
+  }
+}
+
+export function settingsFileExistsOrICloudPlaceholder(targetPath: string): boolean {
+  try {
+    return fs.existsSync(targetPath) || hasICloudSentinel(targetPath);
   } catch {
     return false;
   }
@@ -814,6 +840,7 @@ export function loadSettings(): AppSettings {
       browserSearch: normalizeBrowserSearchSettings(parsed.browserSearch),
       popToRootSearchTimeoutSeconds: normalizePopToRootSearchTimeoutSeconds(parsed.popToRootSearchTimeoutSeconds),
       installedExtensions: normalizeInstalledExtensions(parsed.installedExtensions),
+      extensionUninstallTombstones: normalizeExtensionUninstallTombstones(parsed.extensionUninstallTombstones),
       extensionPreferences: normalizeExtensionStorageMap(parsed.extensionPreferences),
       extensionCommandPreferences: normalizeExtensionStorageMap(parsed.extensionCommandPreferences),
       extensionCommandArguments: normalizeExtensionStorageMap(parsed.extensionCommandArguments),
@@ -940,9 +967,14 @@ function redactSensitiveAIKeysOnDisk(fields: Set<SensitiveAIKey>): void {
  * Each piece of data has exactly one home. Inspecting either file shows
  * exactly what belongs there.
  */
+interface PersistSettingsOptions {
+  throwOnSyncedWriteFailure?: boolean;
+}
+
 function persistSettingsToDisk(
   settings: AppSettings,
-  safelyRedactable: Set<SensitiveAIKey>
+  safelyRedactable: Set<SensitiveAIKey>,
+  options: PersistSettingsOptions = {}
 ): void {
   const onDisk: AppSettings = {
     ...settings,
@@ -970,7 +1002,11 @@ function persistSettingsToDisk(
   // and silently overwrite the cloud copy. The local file is fine to
   // keep updating — it's per-machine and never evicted.
   if (settingsLoadDegraded) {
-    console.warn('[Settings] Refusing to write synced settings.json — last load was degraded (iCloud-evicted). Local overrides will still be saved.');
+    const message = '[Settings] Refusing to write synced settings.json — last load was degraded (iCloud-evicted). Local overrides will still be saved.';
+    console.warn(message);
+    if (options.throwOnSyncedWriteFailure) {
+      throw new Error(message);
+    }
   } else {
     try {
       const target = getSettingsPath();
@@ -982,6 +1018,9 @@ function persistSettingsToDisk(
       }
     } catch (e) {
       console.error('Failed to save settings:', e);
+      if (options.throwOnSyncedWriteFailure) {
+        throw e;
+      }
     }
   }
 
@@ -992,7 +1031,14 @@ function persistSettingsToDisk(
   }
 }
 
-export function saveSettings(patch: Partial<AppSettings>): AppSettings {
+interface SaveSettingsOptions {
+  throwOnSyncedWriteFailure?: boolean;
+}
+
+function saveSettingsInternal(
+  patch: Partial<AppSettings>,
+  options: SaveSettingsOptions = {}
+): AppSettings {
   const current = loadSettings();
   const updated = {
     ...current,
@@ -1046,6 +1092,11 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
     installedExtensions: normalizeInstalledExtensions(
       'installedExtensions' in patch ? patch.installedExtensions : current.installedExtensions
     ),
+    extensionUninstallTombstones: normalizeExtensionUninstallTombstones(
+      'extensionUninstallTombstones' in patch
+        ? patch.extensionUninstallTombstones
+        : current.extensionUninstallTombstones
+    ),
     extensionPreferences: normalizeExtensionStorageMap(
       'extensionPreferences' in patch ? patch.extensionPreferences : current.extensionPreferences
     ),
@@ -1070,10 +1121,16 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
     }
   }
 
-  persistSettingsToDisk(updated, safelyRedactable);
+  persistSettingsToDisk(updated, safelyRedactable, {
+    throwOnSyncedWriteFailure: options.throwOnSyncedWriteFailure,
+  });
 
   settingsCache = updated;
   return { ...updated };
+}
+
+export function saveSettings(patch: Partial<AppSettings>): AppSettings {
+  return saveSettingsInternal(patch);
 }
 
 export function resetSettingsCache(): void {
@@ -1085,7 +1142,7 @@ export function resetSettingsCache(): void {
 // Dropbox / iCloud Drive folder). The directory containing the file
 // is what's stored in the pointer file; the filename is fixed.
 
-export type RelocateMode = 'move' | 'adopt';
+export type RelocateMode = 'move' | 'adopt' | 'replace';
 
 export interface RelocateResult {
   ok: boolean;
@@ -1105,11 +1162,14 @@ function writeFileAtomic(target: string, contents: string): void {
 /**
  * Relocate the settings file to a different directory.
  *
- *   move  – write current in-memory settings into targetDir, update pointer,
+ *   move  – write current in-memory settings into an empty targetDir, update pointer,
  *           then delete the old file. Order matters: a crash mid-flight
- *           leaves both copies rather than zero.
+ *           leaves both copies rather than zero. Refuses to overwrite an
+ *           existing settings.json or iCloud placeholder.
  *   adopt – validate that targetDir already contains a parseable settings.json,
  *           update the pointer, then re-load so cache reflects the adopted file.
+ *   replace – same write path as move, but explicitly allowed to overwrite an
+ *           existing settings.json or iCloud placeholder after user confirmation.
  */
 export function relocateSettingsFile(targetDir: string, mode: RelocateMode): RelocateResult {
   const dir = String(targetDir || '').trim();
@@ -1140,6 +1200,9 @@ export function relocateSettingsFile(targetDir: string, mode: RelocateMode): Rel
   }
 
   if (mode === 'adopt') {
+    if (!materializeICloudFileIfNeeded(newPath)) {
+      return { ok: false, error: 'Could not download settings.json from iCloud. Make sure iCloud Drive is online, then try again.' };
+    }
     let raw: string;
     try {
       raw = fs.readFileSync(newPath, 'utf-8');
@@ -1159,7 +1222,11 @@ export function relocateSettingsFile(targetDir: string, mode: RelocateMode): Rel
     return { ok: true, settings: adopted, path: newPath };
   }
 
-  // mode === 'move'
+  if (mode === 'move' && settingsFileExistsOrICloudPlaceholder(newPath)) {
+    return { ok: false, error: 'This folder already contains settings.json. Choose whether to use it or replace it.' };
+  }
+
+  // mode === 'move' | 'replace'
   const current = loadSettings();
   // Use the same on-disk shape `persistSettingsToDisk` produces so the
   // sensitive-key redaction stays consistent. Easiest way: write through
@@ -1168,7 +1235,7 @@ export function relocateSettingsFile(targetDir: string, mode: RelocateMode): Rel
   try {
     writeSettingsLocation(dir);
     // Re-persist current settings into the new location.
-    saveSettings({ ...current });
+    saveSettingsInternal({ ...current }, { throwOnSyncedWriteFailure: true });
   } catch (e: any) {
     // Roll back the pointer if the write failed.
     settingsLocationCache = previousLocation;
@@ -1209,7 +1276,7 @@ export function resetSettingsLocation(): RelocateResult {
   const current = loadSettings();
   try {
     writeSettingsLocation(null);
-    saveSettings({ ...current });
+    saveSettingsInternal({ ...current }, { throwOnSyncedWriteFailure: true });
   } catch (e: any) {
     // Roll back
     writeSettingsLocation(configured);

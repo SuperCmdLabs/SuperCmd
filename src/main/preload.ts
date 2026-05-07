@@ -833,7 +833,7 @@ const electronAPI = {
   pickSettingsFolder: (): Promise<{ path: string; hasExisting: boolean } | null> =>
     ipcRenderer.invoke('pick-settings-folder'),
   relocateSettings: (
-    args: { targetDir: string; mode: 'move' | 'adopt' }
+    args: { targetDir: string; mode: 'move' | 'adopt' | 'replace' }
   ): Promise<{ ok: boolean; settings?: any; path?: string; error?: string }> =>
     ipcRenderer.invoke('relocate-settings', args),
   resetSettingsLocation: (): Promise<{ ok: boolean; settings?: any; path?: string; error?: string }> =>

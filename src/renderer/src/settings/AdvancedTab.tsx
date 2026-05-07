@@ -698,7 +698,7 @@ const AdvancedTab: React.FC = () => {
               <button
                 type="button"
                 disabled={settingsFolderBusy}
-                onClick={() => void performRelocate(conflictModal.targetDir, 'move')}
+                onClick={() => void performRelocate(conflictModal.targetDir, 'replace')}
                 className="w-full rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-3 py-2 text-left text-[12px] font-semibold text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <div>{t('settings.advanced.settingsFolder.conflict.replace')}</div>

@@ -313,9 +313,10 @@ export interface BrowserSearchImportResult {
 }
 
 /** How to handle the situation when the chosen settings folder already
- *  contains a settings.json. 'move' overwrites the existing file with this
- *  Mac's settings; 'adopt' replaces this Mac's settings with the existing file. */
-export type RelocateMode = 'move' | 'adopt';
+ *  contains a settings.json. 'move' writes to an empty folder; 'replace'
+ *  overwrites the existing file with this Mac's settings; 'adopt' replaces
+ *  this Mac's settings with the existing file. */
+export type RelocateMode = 'move' | 'adopt' | 'replace';
 
 export interface AppSettings {
   globalShortcut: string;
@@ -356,6 +357,7 @@ export interface AppSettings {
   browserSearch: BrowserSearchSettings;
   popToRootSearchTimeoutSeconds: number;
   installedExtensions: string[];
+  extensionUninstallTombstones: Record<string, number>;
   extensionPreferences: Record<string, Record<string, unknown>>;
   extensionCommandPreferences: Record<string, Record<string, unknown>>;
   extensionCommandArguments: Record<string, Record<string, unknown>>;
