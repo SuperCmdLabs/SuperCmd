@@ -694,8 +694,14 @@ const App: React.FC = () => {
       // per machine), then hydrate localStorage from any prefs synced from
       // another Mac. Order matters: migrate first so this Mac's existing
       // values are pushed up before we overwrite from the merged settings.
+      // Re-fetch settings post-migration — the snapshot above is stale once
+      // migration writes back, and hydrating against it would revert local
+      // values that just won the merge.
       void migrateExtensionPreferencesFromLocalStorage()
-        .then(() => hydrateExtensionPreferencesFromSettings(settings))
+        .then(async () => {
+          const fresh = (await window.electron.getSettings()) as AppSettings;
+          hydrateExtensionPreferencesFromSettings(fresh);
+        })
         .catch((err) => console.warn('Extension preferences sync init failed:', err));
     } catch (e) {
       console.error('Failed to load launcher preferences:', e);
