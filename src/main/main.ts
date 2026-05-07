@@ -12877,17 +12877,11 @@ app.whenReady().then(async () => {
       const extensionPreferences = { ...(current.extensionPreferences || {}) };
       const extensionCommandPreferences = { ...(current.extensionCommandPreferences || {}) };
       if (args?.extPrefs && typeof args.extPrefs === 'object') {
-        extensionPreferences[extName] = {
-          ...(extensionPreferences[extName] || {}),
-          ...args.extPrefs,
-        };
+        extensionPreferences[extName] = args.extPrefs;
       }
       if (cmdName && args?.cmdPrefs && typeof args.cmdPrefs === 'object') {
         const key = `${extName}/${cmdName}`;
-        extensionCommandPreferences[key] = {
-          ...(extensionCommandPreferences[key] || {}),
-          ...args.cmdPrefs,
-        };
+        extensionCommandPreferences[key] = args.cmdPrefs;
       }
       const result = saveSettings({ extensionPreferences, extensionCommandPreferences });
       broadcastSettingsToAllWindows(result);
