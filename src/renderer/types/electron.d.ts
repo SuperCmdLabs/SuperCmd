@@ -159,7 +159,7 @@ export interface ExtensionBundle {
 }
 
 export interface AISettings {
-  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible';
+  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'lm-studio' | 'openai-compatible';
   openaiApiKey: string;
   anthropicApiKey: string;
   geminiApiKey: string;
@@ -185,6 +185,9 @@ export interface AISettings {
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
+  lmStudioBaseUrl: string;
+  lmStudioModel: string;
+  lmStudioApiKey: string;
 }
 
 export interface EdgeTtsVoice {
