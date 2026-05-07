@@ -12908,23 +12908,6 @@ app.whenReady().then(async () => {
     }
   );
 
-  ipcMain.handle(
-    'delete-extension-command-arguments',
-    async (_event: any, args: { extName: string; cmdName: string }) => {
-      const extName = String(args?.extName || '').trim();
-      const cmdName = String(args?.cmdName || '').trim();
-      if (!extName || !cmdName) return loadSettings();
-      const current = loadSettings();
-      const extensionCommandArguments = { ...(current.extensionCommandArguments || {}) };
-      const key = `${extName}/${cmdName}`;
-      if (!(key in extensionCommandArguments)) return current;
-      delete extensionCommandArguments[key];
-      const result = saveSettings({ extensionCommandArguments });
-      broadcastSettingsToAllWindows(result);
-      return result;
-    }
-  );
-
   ipcMain.handle('resize-launcher-window', (_event: any, expanded: boolean) => {
     if (!mainWindow) return;
     const curBounds = mainWindow.getBounds();

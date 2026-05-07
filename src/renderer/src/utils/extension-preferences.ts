@@ -344,7 +344,11 @@ export function clearCommandArguments(extName: string, cmdName: string) {
     // ignore storage failures
   }
   try {
-    void window.electron?.deleteExtensionCommandArguments?.({ extName, cmdName });
+    // Write an empty payload rather than deleting: hydrate uses absent
+    // keys to mean "not authoritatively set in this payload" and would
+    // skip them, leaving stale args on other Macs. Empty `{}` is the
+    // in-band sentinel for "cleared".
+    void window.electron?.saveExtensionCommandArguments?.({ extName, cmdName, values: {} });
   } catch {
     // ignore — sync is best-effort
   }
@@ -591,12 +595,22 @@ export function hydrateExtensionPreferencesFromSettings(settings: SyncedExtensio
   const cmdArgs = settings.extensionCommandArguments || {};
   for (const [slug, payload] of Object.entries(cmdArgs)) {
     if (!payload || typeof payload !== 'object') continue;
-    if (Object.keys(payload).length === 0) continue;
     const slash = slug.indexOf('/');
     if (slash <= 0) continue;
     const extName = slug.slice(0, slash);
     const cmdName = slug.slice(slash + 1);
-    const existing = readJsonObject(getCmdArgsKey(extName, cmdName));
+    const cmdArgsKey = getCmdArgsKey(extName, cmdName);
+    // Empty payload is the synced "cleared" sentinel — drop the local
+    // entry so a clear on another Mac propagates here.
+    if (Object.keys(payload).length === 0) {
+      const existing = readJsonObject(cmdArgsKey);
+      if (Object.keys(existing).length > 0) {
+        try { localStorage.removeItem(cmdArgsKey); } catch { /* ignore */ }
+        touchedExts.add(extName);
+      }
+      continue;
+    }
+    const existing = readJsonObject(cmdArgsKey);
     let changed = false;
     for (const [k, v] of Object.entries(payload)) {
       if (v === undefined || v === null) continue;
@@ -606,7 +620,7 @@ export function hydrateExtensionPreferencesFromSettings(settings: SyncedExtensio
       }
     }
     if (changed) {
-      writeLocalJsonObject(getCmdArgsKey(extName, cmdName), existing);
+      writeLocalJsonObject(cmdArgsKey, existing);
       touchedExts.add(extName);
     }
   }

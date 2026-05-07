@@ -861,7 +861,6 @@ export interface ElectronAPI {
   pickLauncherBackgroundImage: () => Promise<string | null>;
   saveExtensionPreferences: (args: { extName: string; cmdName?: string; extPrefs?: Record<string, unknown>; cmdPrefs?: Record<string, unknown> }) => Promise<AppSettings>;
   saveExtensionCommandArguments: (args: { extName: string; cmdName: string; values: Record<string, unknown> }) => Promise<AppSettings>;
-  deleteExtensionCommandArguments: (args: { extName: string; cmdName: string }) => Promise<AppSettings>;
   getSettingsLocation: () => Promise<{ path: string | null; defaultPath: string }>;
   pickSettingsFolder: () => Promise<{ path: string; hasExisting: boolean } | null>;
   relocateSettings: (args: { targetDir: string; mode: RelocateMode }) => Promise<{ ok: boolean; settings?: any; path?: string; error?: string }>;

@@ -822,10 +822,6 @@ const electronAPI = {
     args: { extName: string; cmdName: string; values: Record<string, unknown> }
   ): Promise<any> =>
     ipcRenderer.invoke('save-extension-command-arguments', args),
-  deleteExtensionCommandArguments: (
-    args: { extName: string; cmdName: string }
-  ): Promise<any> =>
-    ipcRenderer.invoke('delete-extension-command-arguments', args),
 
   // ─── Settings Folder Location ──────────────────────────────────
   getSettingsLocation: (): Promise<{ path: string | null; defaultPath: string }> =>
