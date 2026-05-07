@@ -851,13 +851,24 @@ export function loadSettings(): AppSettings {
     // so the user's per-machine fields aren't wiped just because the
     // synced file is briefly absent.
     settingsCache = { ...DEFAULT_SETTINGS, ...loadLocalSettings() };
-    // If the sync file is in iCloud Drive AND a sentinel exists, the
-    // file has been evicted (or hasn't been downloaded yet). Mark the
-    // load as degraded so persistSettingsToDisk refuses to overwrite
-    // the cloud copy with defaults.
-    settingsLoadDegraded = isPathInICloud(settingsPath) && hasICloudSentinel(settingsPath);
-    if (settingsLoadDegraded) {
+    // Decide whether the missing/unreadable file represents a genuine
+    // empty-state (fresh install at the default location) or a sync
+    // delivery gap that we must not paper over with defaults:
+    //   - iCloud + sentinel present → evicted; cloud copy is real.
+    //   - Custom sync location configured → relocateSettingsFile always
+    //     writes settings.json into the target before pointing at it,
+    //     so its later absence means the cloud client hasn't delivered
+    //     (or was uninstalled/replaced). Block writes so we don't
+    //     clobber the synced copy with defaults.
+    //   - Default userData path → no file means fresh install; defaults
+    //     are correct.
+    const inICloudWithSentinel = isPathInICloud(settingsPath) && hasICloudSentinel(settingsPath);
+    const usingCustomSyncLocation = loadSettingsLocation() !== null;
+    settingsLoadDegraded = inICloudWithSentinel || usingCustomSyncLocation;
+    if (inICloudWithSentinel) {
       console.warn(`[Settings] iCloud-evicted settings could not be materialized at ${settingsPath}; writes to the synced file are blocked until iCloud delivers the bytes.`);
+    } else if (usingCustomSyncLocation) {
+      console.warn(`[Settings] Configured sync location at ${settingsPath} has no readable settings.json; writes are blocked until the sync client delivers the file.`);
     }
   }
 
@@ -997,12 +1008,14 @@ function persistSettingsToDisk(
   }
 
   // Refuse to write the synced file when the last load fell back to
-  // defaults because iCloud had evicted it. Writing now would propagate
-  // (mostly) default values to every other Mac on this iCloud account
-  // and silently overwrite the cloud copy. The local file is fine to
-  // keep updating — it's per-machine and never evicted.
+  // defaults because the synced source wasn't readable (iCloud-evicted,
+  // or a configured sync folder whose settings.json hadn't been
+  // delivered yet). Writing now would propagate (mostly) default values
+  // to every other Mac on this sync account and silently overwrite the
+  // cloud copy. The local file is fine to keep updating — it's
+  // per-machine and never evicted.
   if (settingsLoadDegraded) {
-    const message = '[Settings] Refusing to write synced settings.json — last load was degraded (iCloud-evicted). Local overrides will still be saved.';
+    const message = '[Settings] Refusing to write synced settings.json — last load was degraded (sync source unreadable). Local overrides will still be saved.';
     console.warn(message);
     if (options.throwOnSyncedWriteFailure) {
       throw new Error(message);
@@ -1228,14 +1241,16 @@ export function relocateSettingsFile(targetDir: string, mode: RelocateMode): Rel
 
   // mode === 'move' | 'replace'
   const current = loadSettings();
-  // If the source is iCloud-evicted, `current` is DEFAULT_SETTINGS plus
-  // local overrides — not the user's actual data. Proceeding would write
-  // defaults to the new location and (in 'move') unlink the iCloud
-  // placeholder, silently destroying the cloud copy.
+  // If the source load was degraded (iCloud-evicted, or a configured
+  // sync folder whose settings.json hasn't been delivered yet),
+  // `current` is DEFAULT_SETTINGS plus local overrides — not the
+  // user's actual data. Proceeding would write defaults to the new
+  // location and (in 'move') unlink the source, silently destroying
+  // the synced copy.
   if (settingsLoadDegraded) {
     return {
       ok: false,
-      error: 'Settings could not be read from iCloud — the file appears to be evicted and was not delivered. Bring iCloud Drive online (or download settings.json from iCloud) and try again.',
+      error: 'Settings could not be read from the current sync location — the file appears to be missing or undelivered. Make sure the sync client is online and settings.json has finished syncing, then try again.',
     };
   }
   // Use the same on-disk shape `persistSettingsToDisk` produces so the
@@ -1285,11 +1300,12 @@ export function resetSettingsLocation(): RelocateResult {
   const oldPath = getSettingsPath();
   const current = loadSettings();
   // Same guard as relocateSettingsFile: a degraded load means we'd be
-  // writing DEFAULT_SETTINGS to userData and abandoning the cloud copy.
+  // writing DEFAULT_SETTINGS to userData and abandoning the synced
+  // copy in the configured sync folder.
   if (settingsLoadDegraded) {
     return {
       ok: false,
-      error: 'Settings could not be read from iCloud — the file appears to be evicted and was not delivered. Bring iCloud Drive online (or download settings.json from iCloud) and try again.',
+      error: 'Settings could not be read from the current sync location — the file appears to be missing or undelivered. Make sure the sync client is online and settings.json has finished syncing, then try again.',
     };
   }
   try {
