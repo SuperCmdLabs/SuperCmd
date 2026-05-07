@@ -304,7 +304,12 @@ const AdvancedTab: React.FC = () => {
     refreshLocation();
     // Re-pull the location on every settings broadcast so the row stays
     // accurate after a relocate/reset (which broadcasts settings-updated).
-    const cleanup = window.electron.onSettingsUpdated?.(() => refreshLocation());
+    // Also adopt the new settings payload so controls don't render stale
+    // values after "use existing settings".
+    const cleanup = window.electron.onSettingsUpdated?.((nextSettings) => {
+      if (!disposed && nextSettings) setSettings(nextSettings);
+      refreshLocation();
+    });
     return () => {
       disposed = true;
       cleanup?.();
