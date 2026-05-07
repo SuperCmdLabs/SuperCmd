@@ -531,9 +531,12 @@ export async function migrateExtensionPreferencesFromLocalStorage(): Promise<voi
  * on every settings-updated broadcast (which fires both for in-app saves
  * and for external sync changes).
  *
- * Skip-empty rule: only override localStorage when settings has a
- * non-empty value. Avoids clobbering this Mac's existing prefs with
- * empty placeholders that another Mac may have written.
+ * Empty strings are kept as authoritative values: they're how text,
+ * password, file, and directory preferences (and command arguments)
+ * represent a cleared field. Skipping them would mean a clear on one
+ * Mac never propagates to others. `undefined` and `null` are still
+ * skipped — those mean "key not authoritatively set in this payload",
+ * not "explicitly cleared".
  *
  * Hydration treats settings as the source of truth and updates only the
  * renderer cache. Writing back through sync here can echo our own
@@ -551,7 +554,6 @@ export function hydrateExtensionPreferencesFromSettings(settings: SyncedExtensio
     let changed = false;
     for (const [k, v] of Object.entries(payload)) {
       if (v === undefined || v === null) continue;
-      if (typeof v === 'string' && v === '') continue;
       if (!areJsonValuesEqual(existing[k], v)) {
         existing[k] = v;
         changed = true;
@@ -575,7 +577,6 @@ export function hydrateExtensionPreferencesFromSettings(settings: SyncedExtensio
     let changed = false;
     for (const [k, v] of Object.entries(payload)) {
       if (v === undefined || v === null) continue;
-      if (typeof v === 'string' && v === '') continue;
       if (!areJsonValuesEqual(existing[k], v)) {
         existing[k] = v;
         changed = true;
@@ -599,7 +600,6 @@ export function hydrateExtensionPreferencesFromSettings(settings: SyncedExtensio
     let changed = false;
     for (const [k, v] of Object.entries(payload)) {
       if (v === undefined || v === null) continue;
-      if (typeof v === 'string' && v === '') continue;
       if (!areJsonValuesEqual(existing[k], v)) {
         existing[k] = v;
         changed = true;
