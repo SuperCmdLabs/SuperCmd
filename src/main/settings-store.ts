@@ -1228,6 +1228,16 @@ export function relocateSettingsFile(targetDir: string, mode: RelocateMode): Rel
 
   // mode === 'move' | 'replace'
   const current = loadSettings();
+  // If the source is iCloud-evicted, `current` is DEFAULT_SETTINGS plus
+  // local overrides — not the user's actual data. Proceeding would write
+  // defaults to the new location and (in 'move') unlink the iCloud
+  // placeholder, silently destroying the cloud copy.
+  if (settingsLoadDegraded) {
+    return {
+      ok: false,
+      error: 'Settings could not be read from iCloud — the file appears to be evicted and was not delivered. Bring iCloud Drive online (or download settings.json from iCloud) and try again.',
+    };
+  }
   // Use the same on-disk shape `persistSettingsToDisk` produces so the
   // sensitive-key redaction stays consistent. Easiest way: write through
   // the existing pipeline by temporarily flipping the configured path.
@@ -1274,6 +1284,14 @@ export function resetSettingsLocation(): RelocateResult {
   }
   const oldPath = getSettingsPath();
   const current = loadSettings();
+  // Same guard as relocateSettingsFile: a degraded load means we'd be
+  // writing DEFAULT_SETTINGS to userData and abandoning the cloud copy.
+  if (settingsLoadDegraded) {
+    return {
+      ok: false,
+      error: 'Settings could not be read from iCloud — the file appears to be evicted and was not delivered. Bring iCloud Drive online (or download settings.json from iCloud) and try again.',
+    };
+  }
   try {
     writeSettingsLocation(null);
     saveSettingsInternal({ ...current }, { throwOnSyncedWriteFailure: true });
