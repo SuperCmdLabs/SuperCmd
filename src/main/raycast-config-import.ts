@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as zlib from 'zlib';
 import { getAvailableCommands, invalidateCache, type CommandInfo } from './commands';
-import { setExtensionPreferences } from './extension-preferences-store';
+import { getExtensionPreferences, setExtensionPreferences } from './extension-preferences-store';
 import { getInstalledExtensionNames, installExtension } from './extension-registry';
 import { createNote, getAllNotes, updateNote } from './notes-store';
 import { createQuickLink, getAllQuickLinks } from './quicklink-store';
@@ -793,9 +793,9 @@ function importSnippets(data: RaycastBackup): RaycastImportBucketResult {
 
   for (const snippet of source) {
     const name = String(snippet?.name || '').trim();
-    const content = String(snippet?.text || '').trim();
+    const content = typeof snippet?.text === 'string' ? snippet.text : '';
     const keyword = typeof snippet?.keyword === 'string' ? snippet.keyword.trim() : undefined;
-    if (!name || !content) {
+    if (!name || content.length === 0) {
       result.failed += 1;
       continue;
     }
@@ -900,7 +900,10 @@ function importExtensionPreferences(data: RaycastBackup): void {
       nextValues[prefName] = (pref as any).value;
     }
     if (Object.keys(nextValues).length === 0) continue;
-    setExtensionPreferences(extensionName, nextValues);
+    setExtensionPreferences(extensionName, {
+      ...getExtensionPreferences(extensionName),
+      ...nextValues,
+    });
   }
 }
 
