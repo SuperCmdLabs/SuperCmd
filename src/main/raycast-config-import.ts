@@ -132,6 +132,7 @@ export interface RaycastImportResult {
   snippets: RaycastImportBucketResult;
   notes: RaycastImportBucketResult;
   extensions: RaycastImportBucketResult;
+  importedExtensionPreferenceExtensions: string[];
   unsupported: string[];
   warnings: string[];
 }
@@ -888,7 +889,8 @@ async function importExtensions(data: RaycastBackup, warnings: string[]): Promis
   return result;
 }
 
-function importExtensionPreferences(data: RaycastBackup): void {
+function importExtensionPreferences(data: RaycastBackup): string[] {
+  const importedExtensionNames = new Set<string>();
   for (const extension of data.builtin_package_raycastExtensions?.extensions || []) {
     const extensionName = String(extension?.name || '').trim();
     if (!extensionName || !Array.isArray(extension.prefs) || extension.prefs.length === 0) continue;
@@ -904,7 +906,9 @@ function importExtensionPreferences(data: RaycastBackup): void {
       ...getExtensionPreferences(extensionName),
       ...nextValues,
     });
+    importedExtensionNames.add(extensionName);
   }
+  return [...importedExtensionNames];
 }
 
 export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow): Promise<RaycastImportResult> {
@@ -933,6 +937,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
       snippets: createBucketResult(),
       notes: createBucketResult(),
       extensions: createBucketResult(),
+      importedExtensionPreferenceExtensions: [],
       unsupported: [],
       warnings: [],
     };
@@ -967,6 +972,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
             snippets: createBucketResult(),
             notes: createBucketResult(),
             extensions: createBucketResult(),
+            importedExtensionPreferenceExtensions: [],
             unsupported: [],
             warnings: [],
           };
@@ -1019,6 +1025,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
       snippets: createBucketResult(),
       notes: createBucketResult(),
       extensions: createBucketResult(),
+      importedExtensionPreferenceExtensions: [],
       unsupported: collectUnsupportedCategories(backup),
       warnings: [],
     };
@@ -1030,7 +1037,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
   const snippets = importSnippets(backup);
   const notes = importNotes(backup);
   const extensions = await importExtensions(backup, warnings);
-  importExtensionPreferences(backup);
+  const importedExtensionPreferenceExtensions = importExtensionPreferences(backup);
   const {
     commandHotkeysImported,
     commandAliasesImported,
@@ -1051,6 +1058,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
     snippets,
     notes,
     extensions,
+    importedExtensionPreferenceExtensions,
     unsupported: collectUnsupportedCategories(backup),
     warnings,
   };

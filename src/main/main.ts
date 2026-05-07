@@ -12962,6 +12962,9 @@ app.whenReady().then(async () => {
         invalidateScriptCommandsCache();
         invalidateCache();
         broadcastCommandsUpdated();
+        for (const extensionName of result.importedExtensionPreferenceExtensions || []) {
+          broadcastExtensionPreferencesUpdated(extensionName);
+        }
         const latestSettings = loadSettings();
         const windowsToNotify = [mainWindow, settingsWindow, extensionStoreWindow, promptWindow]
           .filter(Boolean) as Array<InstanceType<typeof BrowserWindow>>;

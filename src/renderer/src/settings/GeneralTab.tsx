@@ -386,6 +386,7 @@ const GeneralTab: React.FC = () => {
         snippets: { found: 0, imported: 0, skipped: 0, failed: 0 },
         notes: { found: 0, imported: 0, skipped: 0, failed: 0 },
         extensions: { found: 0, imported: 0, skipped: 0, failed: 0 },
+        importedExtensionPreferenceExtensions: [],
         unsupported: [],
         warnings: [String(error?.message || error || 'Raycast import failed.')],
       });

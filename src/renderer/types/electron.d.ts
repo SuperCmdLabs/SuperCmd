@@ -333,6 +333,7 @@ export interface RaycastImportResult {
   snippets: RaycastImportBucketResult;
   notes: RaycastImportBucketResult;
   extensions: RaycastImportBucketResult;
+  importedExtensionPreferenceExtensions: string[];
   unsupported: string[];
   warnings: string[];
 }
