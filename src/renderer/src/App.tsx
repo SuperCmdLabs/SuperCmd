@@ -3151,7 +3151,8 @@ const App: React.FC = () => {
           command.id === 'system-restart' ||
           command.id === 'system-logout'
         ) {
-          await window.electron.executeCommand(command.id);
+          const confirmed = await window.electron.executeCommand(command.id);
+          if (!confirmed) return;
           await updateRecentCommands(command.id);
           try { await window.electron.hideWindow(); } catch {}
           setSearchQuery('');
