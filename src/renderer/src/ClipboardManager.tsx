@@ -225,6 +225,9 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     try {
       // This copies to clipboard, hides window, and simulates Cmd+V
       await window.electron.clipboardPasteItem(itemToPaste.id);
+      // Clear the clipboard manager view so the next window-shown returns
+      // to the default command palette instead of re-entering clipboard history.
+      onClose();
     } catch (e) {
       console.error('Failed to paste item:', e);
     }
@@ -234,7 +237,9 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     if (!filteredItems[selectedIndex]) return;
     try {
       await window.electron.clipboardCopyItem(filteredItems[selectedIndex].id);
-      window.electron.hideWindow();
+      // Clear the clipboard manager view so the next window-shown returns
+      // to the default command palette instead of re-entering clipboard history.
+      onClose();
     } catch (e) {
       console.error('Failed to copy item:', e);
     }

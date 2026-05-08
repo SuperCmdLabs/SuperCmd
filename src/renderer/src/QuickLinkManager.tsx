@@ -1511,7 +1511,9 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
       const opened = await window.electron.quickLinkOpen(dynamicPrompt.quickLink.id, dynamicPrompt.values);
       if (opened) {
         setDynamicPrompt(null);
-        await window.electron.hideWindow();
+        // Clear the quick link manager view so the next window-shown returns
+        // to the default command palette instead of re-entering quick links.
+        onClose();
       }
     } catch (error) {
       console.error('Failed to open quick link with dynamic values:', error);
@@ -1542,7 +1544,9 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
               delete next[target.id];
               return next;
             });
-            await window.electron.hideWindow();
+            // Clear the quick link manager view so the next window-shown returns
+            // to the default command palette instead of re-entering quick links.
+            onClose();
           }
           return;
         }
@@ -1556,7 +1560,9 @@ const QuickLinkManager: React.FC<QuickLinkManagerProps> = ({ onClose, initialVie
 
       const opened = await window.electron.quickLinkOpen(target.id);
       if (opened) {
-        await window.electron.hideWindow();
+        // Clear the quick link manager view so the next window-shown returns
+        // to the default command palette instead of re-entering quick links.
+        onClose();
       }
     } catch (error) {
       console.error('Failed to open quick link:', error);

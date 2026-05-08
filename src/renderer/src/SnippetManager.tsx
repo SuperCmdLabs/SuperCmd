@@ -609,12 +609,18 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
             delete next[s.id];
             return next;
           });
+          // Clear the snippet manager view so the next window-shown returns
+          // to the default command palette instead of re-entering snippets.
+          onClose();
           return;
         }
         setDynamicPrompt({ snippet: s, mode: 'paste', fields, values: resolvedValues });
         return;
       }
       await window.electron.snippetPaste(s.id);
+      // Clear the snippet manager view so the next window-shown returns
+      // to the default command palette instead of re-entering snippets.
+      onClose();
     } catch (e) {
       console.error('Failed to paste snippet:', e);
     }
@@ -697,6 +703,9 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, initialView })
     try {
       if (dynamicPrompt.mode === 'paste') {
         await window.electron.snippetPasteResolved(dynamicPrompt.snippet.id, dynamicPrompt.values);
+        // Clear the snippet manager view so the next window-shown returns
+        // to the default command palette instead of re-entering snippets.
+        onClose();
       } else {
         await window.electron.snippetCopyToClipboardResolved(dynamicPrompt.snippet.id, dynamicPrompt.values);
       }
