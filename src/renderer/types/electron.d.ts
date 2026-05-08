@@ -363,6 +363,59 @@ export interface RaycastImportResult {
   warnings: string[];
 }
 
+export interface RaycastImportSelections {
+  settings: boolean;
+  disabledCommands: boolean;
+  scriptCommandFolders: boolean;
+  commandHotkeys: boolean;
+  commandAliases: boolean;
+  pinnedCommands: boolean;
+  aiChats: boolean;
+  quicklinks: boolean;
+  snippets: boolean;
+  notes: boolean;
+  extensions: boolean;
+  extensionPreferences: boolean;
+}
+
+export interface RaycastImportPreview {
+  canceled: boolean;
+  sessionId?: string;
+  filePath?: string;
+  raycastVersion?: string;
+  selections: RaycastImportSelections;
+  counts: {
+    settings: number;
+    disabledCommands: number;
+    scriptCommandFolders: number;
+    commandHotkeys: number;
+    commandAliases: number;
+    pinnedCommands: number;
+    aiChats: number;
+    quicklinks: number;
+    snippets: number;
+    notes: number;
+    extensions: number;
+    extensionPreferences: number;
+  };
+  unsupported: string[];
+  warnings: string[];
+}
+
+export interface RaycastImportProgress {
+  sessionId: string;
+  stage: 'starting' | 'category' | 'extension' | 'done';
+  category?: keyof RaycastImportSelections;
+  message: string;
+  completedSteps: number;
+  totalSteps: number;
+  currentItem?: number;
+  totalItems?: number;
+  extensionName?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+}
+
 export interface ExtensionPreferencesSnapshot {
   version: 1;
   extensions: Record<string, Record<string, any>>;
@@ -638,7 +691,14 @@ export interface ElectronAPI {
   appUpdaterCheckAndInstall: () => Promise<{ success: boolean; error?: string; message?: string; state?: string }>;
   onAppUpdaterStatus: (callback: (status: AppUpdaterStatus) => void) => (() => void);
   saveSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+  previewRaycastConfigImport: () => Promise<RaycastImportPreview>;
+  applyRaycastConfigImport: (options: {
+    sessionId: string;
+    conflictMode: 'skip' | 'overwrite';
+    selections: RaycastImportSelections;
+  }) => Promise<RaycastImportResult>;
   importRaycastConfig: () => Promise<RaycastImportResult>;
+  onRaycastImportProgress: (callback: (payload: RaycastImportProgress) => void) => (() => void);
   getAiChatSnapshot: () => Promise<AiChatSnapshot>;
   upsertAiChatConversation: (conversation: AiChatConversation) => Promise<AiChatConversation | null>;
   deleteAiChatConversation: (id: string) => Promise<boolean>;

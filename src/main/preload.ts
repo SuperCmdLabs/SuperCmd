@@ -276,8 +276,19 @@ const electronAPI = {
   },
   saveSettings: (patch: any): Promise<any> =>
     ipcRenderer.invoke('save-settings', patch),
+  previewRaycastConfigImport: (): Promise<any> =>
+    ipcRenderer.invoke('rayconfig-preview'),
+  applyRaycastConfigImport: (options: any): Promise<any> =>
+    ipcRenderer.invoke('rayconfig-import-apply', options),
   importRaycastConfig: (): Promise<any> =>
     ipcRenderer.invoke('rayconfig-import'),
+  onRaycastImportProgress: (callback: (payload: any) => void) => {
+    const listener = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('rayconfig-import-progress', listener);
+    return () => {
+      ipcRenderer.removeListener('rayconfig-import-progress', listener);
+    };
+  },
   getAiChatSnapshot: (): Promise<any> =>
     ipcRenderer.invoke('get-ai-chat-snapshot'),
   upsertAiChatConversation: (conversation: any): Promise<any> =>

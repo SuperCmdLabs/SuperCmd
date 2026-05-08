@@ -139,11 +139,71 @@ export interface RaycastImportResult {
   warnings: string[];
 }
 
+export interface RaycastImportSelections {
+  settings: boolean;
+  disabledCommands: boolean;
+  scriptCommandFolders: boolean;
+  commandHotkeys: boolean;
+  commandAliases: boolean;
+  pinnedCommands: boolean;
+  aiChats: boolean;
+  quicklinks: boolean;
+  snippets: boolean;
+  notes: boolean;
+  extensions: boolean;
+  extensionPreferences: boolean;
+}
+
+export interface RaycastImportOptions {
+  sessionId: string;
+  conflictMode: 'skip' | 'overwrite';
+  selections: RaycastImportSelections;
+}
+
+export interface RaycastImportPreview {
+  canceled: boolean;
+  sessionId?: string;
+  filePath?: string;
+  raycastVersion?: string;
+  selections: RaycastImportSelections;
+  counts: {
+    settings: number;
+    disabledCommands: number;
+    scriptCommandFolders: number;
+    commandHotkeys: number;
+    commandAliases: number;
+    pinnedCommands: number;
+    aiChats: number;
+    quicklinks: number;
+    snippets: number;
+    notes: number;
+    extensions: number;
+    extensionPreferences: number;
+  };
+  unsupported: string[];
+  warnings: string[];
+}
+
+export interface RaycastImportProgress {
+  sessionId: string;
+  stage: 'starting' | 'category' | 'extension' | 'done';
+  category?: keyof RaycastImportSelections;
+  message: string;
+  completedSteps: number;
+  totalSteps: number;
+  currentItem?: number;
+  totalItems?: number;
+  extensionName?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+}
+
 const PASSWORD_PROMPT_TITLE = 'Import Raycast Backup';
 const PASSWORD_PROMPT_MESSAGE = 'Enter the password for the Raycast backup.';
 const PASSWORD_RETRY_MESSAGE = 'Password was not valid. Try again.';
 const RAYCAST_ROOT_SEARCH_PREFIX = 'extension_';
 const RAYCAST_SCRIPT_COMMAND_PREFIX = 'raycastScript_';
+const importSessions = new Map<string, { filePath: string; backup: RaycastBackup }>();
 
 const RAYCAST_BUILTIN_COMMAND_ID_MAP: Record<string, string> = {
   builtin_command_clipboardHistory: 'system-clipboard-manager',
@@ -155,6 +215,27 @@ const RAYCAST_BUILTIN_COMMAND_ID_MAP: Record<string, string> = {
   builtin_command_raycastNotes_ask: 'system-search-notes',
   builtin_command_searchEmoji: 'system-emoji-picker',
 };
+
+function createImportSessionId(): string {
+  return `ray-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createDefaultSelections(): RaycastImportSelections {
+  return {
+    settings: true,
+    disabledCommands: true,
+    scriptCommandFolders: true,
+    commandHotkeys: true,
+    commandAliases: true,
+    pinnedCommands: true,
+    aiChats: true,
+    quicklinks: true,
+    snippets: true,
+    notes: true,
+    extensions: true,
+    extensionPreferences: true,
+  };
+}
 
 const RAYCAST_KEYCODE_TO_KEY: Record<number, string> = {
   0: 'A',
@@ -486,6 +567,38 @@ function buildImportPreview(data: RaycastBackup): string {
   return lines.join('\n');
 }
 
+function countPreviewStats(data: RaycastBackup): RaycastImportPreview['counts'] {
+  const rootSearchItems = Array.isArray(data.builtin_package_rootSearch?.rootSearch)
+    ? data.builtin_package_rootSearch?.rootSearch || []
+    : [];
+  const settingsCount =
+    Number(Boolean(decodeRaycastHotkey(data.builtin_package_raycastPreferences?.preferencesGeneral?.raycastGlobalHotkey))) +
+    Number(Boolean(normalizeNavigationStyle(data.builtin_package_raycastPreferences?.preferencesAdvanced?.navigationCommandStyleIdentifierKey))) +
+    Number(Boolean(normalizeLauncherViewMode(data.builtin_package_raycastPreferences?.preferencesAppearance?.raycastPreferredWindowMode))) +
+    Number(Number.isFinite(Number(data.builtin_package_raycastPreferences?.preferencesAdvanced?.popToRootTimeout)));
+
+  return {
+    settings: settingsCount,
+    disabledCommands:
+      (data.builtin_package_scriptCommands?.disabledCommands?.length || 0) +
+      (data.builtin_package_raycastExtensions?.extensions || []).reduce((count, extension) => (
+        count + (extension.commands || []).filter((command) => command?.enabled === false).length
+      ), 0),
+    scriptCommandFolders: data.builtin_package_scriptCommands?.scriptCommandsDirectories?.length || 0,
+    commandHotkeys: rootSearchItems.filter((item) => Boolean(String(item?.hotkey || '').trim())).length,
+    commandAliases: rootSearchItems.filter((item) => Boolean(normalizeAliasCandidate(item?.searchTerms))).length,
+    pinnedCommands: data.builtin_package_navigation?.pinnedMenuItems?.length || 0,
+    aiChats: data['builtin_package_open-ai']?.aiChats?.length || 0,
+    quicklinks: data.builtin_package_quicklinks?.quicklinks?.length || 0,
+    snippets: data.builtin_package_snippets?.snippets?.length || 0,
+    notes: data.builtin_package_raycastNotes?.notes?.length || 0,
+    extensions: data.builtin_package_raycastExtensions?.extensions?.length || 0,
+    extensionPreferences: (data.builtin_package_raycastExtensions?.extensions || []).filter((extension) => (
+      Array.isArray(extension.prefs) && extension.prefs.length > 0
+    )).length,
+  };
+}
+
 function collectUnsupportedCategories(data: RaycastBackup): string[] {
   const unsupported: string[] = [];
   if ((data.builtin_package_clipboardHistory?.clipboardHistoryRecords?.length || 0) > 0) unsupported.push('clipboard history');
@@ -766,7 +879,10 @@ function firstMeaningfulLine(text: string): string {
   return line || 'Untitled';
 }
 
-function applySettingsFromBackup(data: RaycastBackup): {
+function applySettingsFromBackup(
+  data: RaycastBackup,
+  options: { includeSettings: boolean; includeDisabledCommands: boolean; includeScriptCommandFolders: boolean }
+): {
   settingsImported: boolean;
   disabledCommandsImported: number;
   scriptCommandFoldersImported: number;
@@ -774,32 +890,36 @@ function applySettingsFromBackup(data: RaycastBackup): {
   const patch: Partial<AppSettings> = {};
   const currentSettings = loadSettings();
   const preferences = data.builtin_package_raycastPreferences;
-  const globalShortcut = decodeRaycastHotkey(preferences?.preferencesGeneral?.raycastGlobalHotkey);
-  if (globalShortcut) patch.globalShortcut = globalShortcut;
+  if (options.includeSettings) {
+    const globalShortcut = decodeRaycastHotkey(preferences?.preferencesGeneral?.raycastGlobalHotkey);
+    if (globalShortcut) patch.globalShortcut = globalShortcut;
 
-  const navigationStyle = normalizeNavigationStyle(
-    preferences?.preferencesAdvanced?.navigationCommandStyleIdentifierKey
-  );
-  if (navigationStyle) patch.navigationStyle = navigationStyle;
+    const navigationStyle = normalizeNavigationStyle(
+      preferences?.preferencesAdvanced?.navigationCommandStyleIdentifierKey
+    );
+    if (navigationStyle) patch.navigationStyle = navigationStyle;
 
-  const launcherViewMode = normalizeLauncherViewMode(
-    preferences?.preferencesAppearance?.raycastPreferredWindowMode
-  );
-  if (launcherViewMode) patch.launcherViewMode = launcherViewMode;
+    const launcherViewMode = normalizeLauncherViewMode(
+      preferences?.preferencesAppearance?.raycastPreferredWindowMode
+    );
+    if (launcherViewMode) patch.launcherViewMode = launcherViewMode;
 
-  const popToRootTimeout = Number(preferences?.preferencesAdvanced?.popToRootTimeout);
-  if (Number.isFinite(popToRootTimeout) && popToRootTimeout >= 0) {
-    patch.popToRootSearchTimeoutSeconds = popToRootTimeout;
+    const popToRootTimeout = Number(preferences?.preferencesAdvanced?.popToRootTimeout);
+    if (Number.isFinite(popToRootTimeout) && popToRootTimeout >= 0) {
+      patch.popToRootSearchTimeoutSeconds = popToRootTimeout;
+    }
   }
 
   let disabledCommandsImported = 0;
   const disabledCommandIds = new Set<string>();
-  for (const extension of data.builtin_package_raycastExtensions?.extensions || []) {
-    const extensionName = String(extension?.name || '').trim();
-    if (!extensionName) continue;
-    for (const command of extension.commands || []) {
-      if (!command?.name || command.enabled !== false) continue;
-      disabledCommandIds.add(`ext-${extensionName}-${command.name}`);
+  if (options.includeDisabledCommands) {
+    for (const extension of data.builtin_package_raycastExtensions?.extensions || []) {
+      const extensionName = String(extension?.name || '').trim();
+      if (!extensionName) continue;
+      for (const command of extension.commands || []) {
+        if (!command?.name || command.enabled !== false) continue;
+        disabledCommandIds.add(`ext-${extensionName}-${command.name}`);
+      }
     }
   }
 
@@ -809,7 +929,7 @@ function applySettingsFromBackup(data: RaycastBackup): {
         .filter(Boolean)
         .map((entry) => entry.startsWith('~/') ? path.join(os.homedir(), entry.slice(2)) : entry) || []
     : [];
-  if (importedScriptCommandFolders.length > 0) {
+  if (options.includeScriptCommandFolders && importedScriptCommandFolders.length > 0) {
     const merged = new Set([
       ...(currentSettings.scriptCommandFolders || []),
       ...importedScriptCommandFolders,
@@ -821,7 +941,7 @@ function applySettingsFromBackup(data: RaycastBackup): {
     saveSettings(patch);
   }
 
-  const disabledScriptCommands = Array.isArray(data.builtin_package_scriptCommands?.disabledCommands)
+  const disabledScriptCommands = options.includeDisabledCommands && Array.isArray(data.builtin_package_scriptCommands?.disabledCommands)
     ? data.builtin_package_scriptCommands?.disabledCommands || []
     : [];
   if (disabledScriptCommands.length > 0) {
@@ -869,7 +989,13 @@ function applySettingsFromBackup(data: RaycastBackup): {
 
 async function importCommandCustomizations(
   data: RaycastBackup,
-  warnings: string[]
+  warnings: string[],
+  options: {
+    includeHotkeys: boolean;
+    includeAliases: boolean;
+    includePinnedCommands: boolean;
+    conflictMode: 'skip' | 'overwrite';
+  }
 ): Promise<{
   commandHotkeysImported: number;
   commandAliasesImported: number;
@@ -924,8 +1050,8 @@ async function importCommandCustomizations(
   let favoriteUnmappedCount = 0;
 
   for (const item of rootSearchItems) {
-    const hasHotkey = Boolean(String(item?.hotkey || '').trim());
-    const hasSearchTerms = Boolean(String(item?.searchTerms || '').trim());
+    const hasHotkey = options.includeHotkeys && Boolean(String(item?.hotkey || '').trim());
+    const hasSearchTerms = options.includeAliases && Boolean(String(item?.searchTerms || '').trim());
     if (!hasHotkey && !hasSearchTerms) continue;
 
     const commandId = resolveRaycastCommandId(item, appCommandIdByPath, scriptCommandIdByPath);
@@ -942,6 +1068,9 @@ async function importCommandCustomizations(
         if (!existingHotkey) {
           nextHotkeys[commandId] = decodedHotkey;
           commandHotkeysImported += 1;
+        } else if (existingHotkey !== decodedHotkey && options.conflictMode === 'overwrite') {
+          nextHotkeys[commandId] = decodedHotkey;
+          commandHotkeysImported += 1;
         } else if (existingHotkey !== decodedHotkey) {
           hotkeyConflictCount += 1;
         }
@@ -955,13 +1084,16 @@ async function importCommandCustomizations(
       if (!existingAlias) {
         nextAliases[commandId] = aliasCandidate;
         commandAliasesImported += 1;
+      } else if (existingAlias !== aliasCandidate && options.conflictMode === 'overwrite') {
+        nextAliases[commandId] = aliasCandidate;
+        commandAliasesImported += 1;
       } else if (existingAlias !== aliasCandidate) {
         aliasConflictCount += 1;
       }
     }
   }
 
-  for (const rawPinnedItem of pinnedMenuItems) {
+  for (const rawPinnedItem of options.includePinnedCommands ? pinnedMenuItems : []) {
     const pinnedItem = typeof rawPinnedItem === 'string'
       ? { key: rawPinnedItem }
       : rawPinnedItem;
@@ -1017,7 +1149,7 @@ async function importCommandCustomizations(
   };
 }
 
-function importQuicklinks(data: RaycastBackup): RaycastImportBucketResult {
+function importQuicklinks(data: RaycastBackup, conflictMode: 'skip' | 'overwrite'): RaycastImportBucketResult {
   const source = Array.isArray(data.builtin_package_quicklinks?.quicklinks)
     ? data.builtin_package_quicklinks?.quicklinks || []
     : [];
@@ -1035,9 +1167,16 @@ function importQuicklinks(data: RaycastBackup): RaycastImportBucketResult {
       continue;
     }
     const dedupeKey = `${name.toLowerCase()}::${url.toLowerCase()}`;
-    if (existingKeys.has(dedupeKey)) {
+    if (existingKeys.has(dedupeKey) && conflictMode !== 'overwrite') {
       result.skipped += 1;
       continue;
+    }
+    if (existingKeys.has(dedupeKey) && conflictMode === 'overwrite') {
+      const duplicate = existing.find((item) => `${item.name.trim().toLowerCase()}::${item.urlTemplate.trim().toLowerCase()}` === dedupeKey);
+      if (duplicate) {
+        result.skipped += 1;
+        continue;
+      }
     }
     createQuickLink({
       name,
@@ -1051,7 +1190,7 @@ function importQuicklinks(data: RaycastBackup): RaycastImportBucketResult {
   return result;
 }
 
-function importSnippets(data: RaycastBackup): RaycastImportBucketResult {
+function importSnippets(data: RaycastBackup, conflictMode: 'skip' | 'overwrite'): RaycastImportBucketResult {
   const source = Array.isArray(data.builtin_package_snippets?.snippets)
     ? data.builtin_package_snippets?.snippets || []
     : [];
@@ -1072,6 +1211,11 @@ function importSnippets(data: RaycastBackup): RaycastImportBucketResult {
         (keyword && item.keyword && item.keyword.trim().toLowerCase() === keyword.toLowerCase())
     );
     if (duplicate) {
+      if (conflictMode === 'overwrite') {
+        updateSnippet(duplicate.id, { name, content, keyword, pinned: Boolean(snippet?.pinned) });
+        result.imported += 1;
+        continue;
+      }
       result.skipped += 1;
       continue;
     }
@@ -1086,7 +1230,7 @@ function importSnippets(data: RaycastBackup): RaycastImportBucketResult {
   return result;
 }
 
-function importNotes(data: RaycastBackup): RaycastImportBucketResult {
+function importNotes(data: RaycastBackup, conflictMode: 'skip' | 'overwrite'): RaycastImportBucketResult {
   const source = Array.isArray(data.builtin_package_raycastNotes?.notes)
     ? data.builtin_package_raycastNotes?.notes || []
     : [];
@@ -1106,6 +1250,11 @@ function importNotes(data: RaycastBackup): RaycastImportBucketResult {
         item.content.trim() === content
     );
     if (duplicate) {
+      if (conflictMode === 'overwrite') {
+        updateNote(duplicate.id, { title, content, pinned: Boolean(note?.pinned) });
+        result.imported += 1;
+        continue;
+      }
       result.skipped += 1;
       continue;
     }
@@ -1120,42 +1269,103 @@ function importNotes(data: RaycastBackup): RaycastImportBucketResult {
   return result;
 }
 
-async function importExtensions(data: RaycastBackup, warnings: string[]): Promise<RaycastImportBucketResult> {
+async function importExtensions(
+  data: RaycastBackup,
+  warnings: string[],
+  onProgress?: (payload: {
+    message: string;
+    currentItem: number;
+    totalItems: number;
+    extensionName?: string;
+    downloadedBytes?: number;
+    totalBytes?: number;
+  }) => void
+): Promise<RaycastImportBucketResult> {
   const source = Array.isArray(data.builtin_package_raycastExtensions?.extensions)
     ? data.builtin_package_raycastExtensions?.extensions || []
     : [];
   const result = createBucketResult(source.length);
   const installed = new Set((await getInstalledExtensionNames()).map((entry) => String(entry || '').trim()));
 
-  for (const extension of source) {
+  for (let index = 0; index < source.length; index += 1) {
+    const extension = source[index];
     const extensionName = String(extension?.name || '').trim();
+    onProgress?.({
+      message: extensionName ? `Preparing extension ${extensionName}` : 'Preparing extension',
+      currentItem: index + 1,
+      totalItems: source.length,
+      extensionName: extensionName || undefined,
+    });
     if (!extensionName) {
       result.failed += 1;
       continue;
     }
     if (installed.has(extensionName)) {
+      onProgress?.({
+        message: `${extensionName} already installed`,
+        currentItem: index + 1,
+        totalItems: source.length,
+        extensionName,
+      });
       result.skipped += 1;
       continue;
     }
     try {
-      const success = await installExtension(extensionName);
+      onProgress?.({
+        message: `Installing ${extensionName}…`,
+        currentItem: index + 1,
+        totalItems: source.length,
+        extensionName,
+      });
+      const success = await installExtension(extensionName, {
+        onProgress: (payload) => {
+          onProgress?.({
+            message: payload.message,
+            currentItem: index + 1,
+            totalItems: source.length,
+            extensionName,
+            downloadedBytes: payload.downloadedBytes,
+            totalBytes: payload.totalBytes,
+          });
+        },
+      });
       if (!success) {
         result.failed += 1;
         warnings.push(`Failed to install extension "${extensionName}".`);
+        onProgress?.({
+          message: `Failed to install ${extensionName}`,
+          currentItem: index + 1,
+          totalItems: source.length,
+          extensionName,
+        });
         continue;
       }
       installed.add(extensionName);
       result.imported += 1;
+      onProgress?.({
+        message: `Installed ${extensionName}`,
+        currentItem: index + 1,
+        totalItems: source.length,
+        extensionName,
+      });
     } catch (error: any) {
       result.failed += 1;
       warnings.push(`Failed to install extension "${extensionName}": ${String(error?.message || error || 'unknown error')}`);
+      onProgress?.({
+        message: `Failed to install ${extensionName}`,
+        currentItem: index + 1,
+        totalItems: source.length,
+        extensionName,
+      });
     }
   }
 
   return result;
 }
 
-function importExtensionPreferences(data: RaycastBackup): string[] {
+type ImportProgressReporter = (payload: Omit<RaycastImportProgress, 'sessionId'>) => void;
+
+function importExtensionPreferences(data: RaycastBackup, conflictMode: 'skip' | 'overwrite'): string[] {
   const importedExtensionNames = new Set<string>();
   for (const extension of data.builtin_package_raycastExtensions?.extensions || []) {
     const extensionName = String(extension?.name || '').trim();
@@ -1168,8 +1378,17 @@ function importExtensionPreferences(data: RaycastBackup): string[] {
       nextValues[prefName] = (pref as any).value;
     }
     if (Object.keys(nextValues).length === 0) continue;
+    const currentValues = getExtensionPreferences(extensionName);
+    if (conflictMode === 'skip') {
+      for (const prefName of Object.keys(nextValues)) {
+        if (currentValues[prefName] !== undefined) {
+          delete nextValues[prefName];
+        }
+      }
+      if (Object.keys(nextValues).length === 0) continue;
+    }
     setExtensionPreferences(extensionName, {
-      ...getExtensionPreferences(extensionName),
+      ...currentValues,
       ...nextValues,
     });
     importedExtensionNames.add(extensionName);
@@ -1177,7 +1396,56 @@ function importExtensionPreferences(data: RaycastBackup): string[] {
   return [...importedExtensionNames];
 }
 
-export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow): Promise<RaycastImportResult> {
+function createEmptyImportResult(partial?: Partial<RaycastImportResult>): RaycastImportResult {
+  return {
+    canceled: false,
+    settingsImported: false,
+    disabledCommandsImported: 0,
+    scriptCommandFoldersImported: 0,
+    commandHotkeysImported: 0,
+    commandAliasesImported: 0,
+    pinnedCommandsImported: 0,
+    aiChats: createBucketResult(),
+    quicklinks: createBucketResult(),
+    snippets: createBucketResult(),
+    notes: createBucketResult(),
+    extensions: createBucketResult(),
+    importedExtensionPreferenceExtensions: [],
+    unsupported: [],
+    warnings: [],
+    ...partial,
+  };
+}
+
+function createEmptyPreview(partial?: Partial<RaycastImportPreview>): RaycastImportPreview {
+  return {
+    canceled: false,
+    selections: createDefaultSelections(),
+    counts: {
+      settings: 0,
+      disabledCommands: 0,
+      scriptCommandFolders: 0,
+      commandHotkeys: 0,
+      commandAliases: 0,
+      pinnedCommands: 0,
+      aiChats: 0,
+      quicklinks: 0,
+      snippets: 0,
+      notes: 0,
+      extensions: 0,
+      extensionPreferences: 0,
+    },
+    unsupported: [],
+    warnings: [],
+    ...partial,
+  };
+}
+
+async function selectAndLoadRaycastBackup(parentWindow?: BrowserWindow): Promise<{
+  canceled: boolean;
+  filePath?: string;
+  backup?: RaycastBackup;
+}> {
   const dialogOptions = {
     title: 'Import Raycast Backup',
     filters: [
@@ -1191,23 +1459,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
     : await dialog.showOpenDialog(dialogOptions);
 
   if (selection.canceled || selection.filePaths.length === 0) {
-    return {
-      canceled: true,
-      settingsImported: false,
-      disabledCommandsImported: 0,
-      scriptCommandFoldersImported: 0,
-      commandHotkeysImported: 0,
-      commandAliasesImported: 0,
-      pinnedCommandsImported: 0,
-      aiChats: createBucketResult(),
-      quicklinks: createBucketResult(),
-      snippets: createBucketResult(),
-      notes: createBucketResult(),
-      extensions: createBucketResult(),
-      importedExtensionPreferenceExtensions: [],
-      unsupported: [],
-      warnings: [],
-    };
+    return { canceled: true };
   }
 
   const filePath = path.resolve(selection.filePaths[0]);
@@ -1226,24 +1478,7 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
       ) {
         const promptedPassword = promptForPassword(attempt === 0 ? PASSWORD_PROMPT_MESSAGE : PASSWORD_RETRY_MESSAGE);
         if (!promptedPassword) {
-          return {
-            canceled: true,
-            filePath,
-            settingsImported: false,
-            disabledCommandsImported: 0,
-            scriptCommandFoldersImported: 0,
-            commandHotkeysImported: 0,
-            commandAliasesImported: 0,
-            pinnedCommandsImported: 0,
-            aiChats: createBucketResult(),
-            quicklinks: createBucketResult(),
-            snippets: createBucketResult(),
-            notes: createBucketResult(),
-            extensions: createBucketResult(),
-            importedExtensionPreferenceExtensions: [],
-            unsupported: [],
-            warnings: [],
-          };
+          return { canceled: true, filePath };
         }
         password = promptedPassword;
         continue;
@@ -1256,65 +1491,188 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
     throw new Error('Failed to read import data; password is not valid.');
   }
 
-  const confirm = parentWindow
-    ? await dialog.showMessageBox(parentWindow, {
-        type: 'question',
-        buttons: ['Cancel', 'Import'],
-        defaultId: 1,
-        cancelId: 0,
-        noLink: true,
-        title: 'Import Raycast Backup',
-        message: 'Review the Raycast backup before importing.',
-        detail: buildImportPreview(backup),
-      })
-    : await dialog.showMessageBox({
-        type: 'question',
-        buttons: ['Cancel', 'Import'],
-        defaultId: 1,
-        cancelId: 0,
-        noLink: true,
-        title: 'Import Raycast Backup',
-        message: 'Review the Raycast backup before importing.',
-        detail: buildImportPreview(backup),
-      });
+  return {
+    canceled: false,
+    filePath,
+    backup,
+  };
+}
 
-  if (confirm.response !== 1) {
-    return {
+export async function previewRaycastConfigImport(parentWindow?: BrowserWindow): Promise<RaycastImportPreview> {
+  const loaded = await selectAndLoadRaycastBackup(parentWindow);
+  if (loaded.canceled || !loaded.backup || !loaded.filePath) {
+    return createEmptyPreview({
       canceled: true,
-      filePath,
-      raycastVersion: backup.raycast_version,
-      settingsImported: false,
-      disabledCommandsImported: 0,
-      scriptCommandFoldersImported: 0,
-      commandHotkeysImported: 0,
-      commandAliasesImported: 0,
-      pinnedCommandsImported: 0,
-      aiChats: createBucketResult(),
-      quicklinks: createBucketResult(),
-      snippets: createBucketResult(),
-      notes: createBucketResult(),
-      extensions: createBucketResult(),
-      importedExtensionPreferenceExtensions: [],
-      unsupported: collectUnsupportedCategories(backup),
-      warnings: [],
-    };
+      filePath: loaded.filePath,
+    });
   }
 
+  const sessionId = createImportSessionId();
+  importSessions.set(sessionId, {
+    filePath: loaded.filePath,
+    backup: loaded.backup,
+  });
+
+  return createEmptyPreview({
+    canceled: false,
+    sessionId,
+    filePath: loaded.filePath,
+    raycastVersion: loaded.backup.raycast_version,
+    counts: countPreviewStats(loaded.backup),
+    unsupported: collectUnsupportedCategories(loaded.backup),
+  });
+}
+
+export async function executeRaycastConfigImport(
+  options: RaycastImportOptions,
+  reportProgress?: ImportProgressReporter
+): Promise<RaycastImportResult> {
+  const session = importSessions.get(String(options.sessionId || '').trim());
+  if (!session) {
+    throw new Error('Raycast import session expired. Choose the backup again.');
+  }
+
+  const backup = session.backup;
+  const filePath = session.filePath;
   const warnings: string[] = [];
-  const { settingsImported, disabledCommandsImported, scriptCommandFoldersImported } = applySettingsFromBackup(backup);
-  const aiChats = importAiChats(backup, warnings);
-  const quicklinks = importQuicklinks(backup);
-  const snippets = importSnippets(backup);
-  const notes = importNotes(backup);
-  const extensions = await importExtensions(backup, warnings);
-  const importedExtensionPreferenceExtensions = importExtensionPreferences(backup);
+  const previewCounts = countPreviewStats(backup);
+  const totalSteps = Math.max(
+    1,
+    Number(Boolean(options.selections.settings || options.selections.disabledCommands || options.selections.scriptCommandFolders)) +
+      Number(Boolean(options.selections.aiChats)) +
+      Number(Boolean(options.selections.quicklinks)) +
+      Number(Boolean(options.selections.snippets)) +
+      Number(Boolean(options.selections.notes)) +
+      Number(Boolean(options.selections.extensions)) +
+      Number(Boolean(options.selections.extensionPreferences)) +
+      Number(Boolean(options.selections.commandHotkeys)) +
+      Number(Boolean(options.selections.commandAliases)) +
+      Number(Boolean(options.selections.pinnedCommands))
+  );
+  let completedSteps = 0;
+  const emitCategoryProgress = (
+    category: keyof RaycastImportSelections,
+    message: string,
+    currentItem?: number,
+    totalItems?: number,
+    extensionName?: string,
+    downloadedBytes?: number,
+    totalBytes?: number,
+    stage: RaycastImportProgress['stage'] = extensionName ? 'extension' : 'category'
+  ) => {
+    reportProgress?.({
+      stage,
+      category,
+      message,
+      completedSteps,
+      totalSteps,
+      ...(currentItem !== undefined ? { currentItem } : {}),
+      ...(totalItems !== undefined ? { totalItems } : {}),
+      ...(extensionName ? { extensionName } : {}),
+      ...(downloadedBytes !== undefined ? { downloadedBytes } : {}),
+      ...(totalBytes !== undefined ? { totalBytes } : {}),
+    });
+  };
+  reportProgress?.({
+    stage: 'starting',
+    message: 'Starting Raycast import…',
+    completedSteps,
+    totalSteps,
+  });
+
+  const { settingsImported, disabledCommandsImported, scriptCommandFoldersImported } = applySettingsFromBackup(backup, {
+    includeSettings: options.selections.settings,
+    includeDisabledCommands: options.selections.disabledCommands,
+    includeScriptCommandFolders: options.selections.scriptCommandFolders,
+  });
+  if (options.selections.settings || options.selections.disabledCommands || options.selections.scriptCommandFolders) {
+    completedSteps += 1;
+    emitCategoryProgress('settings', 'Applied mapped settings and command state');
+  }
+
+  const aiChats = options.selections.aiChats ? importAiChats(backup, warnings) : createBucketResult(previewCounts.aiChats);
+  if (options.selections.aiChats) {
+    completedSteps += 1;
+    emitCategoryProgress('aiChats', `Imported ${aiChats.imported} AI chats`);
+  }
+
+  const quicklinks = options.selections.quicklinks ? importQuicklinks(backup, options.conflictMode) : createBucketResult(previewCounts.quicklinks);
+  if (options.selections.quicklinks) {
+    completedSteps += 1;
+    emitCategoryProgress('quicklinks', `Imported ${quicklinks.imported} quicklinks`);
+  }
+
+  const snippets = options.selections.snippets ? importSnippets(backup, options.conflictMode) : createBucketResult(previewCounts.snippets);
+  if (options.selections.snippets) {
+    completedSteps += 1;
+    emitCategoryProgress('snippets', `Imported ${snippets.imported} snippets`);
+  }
+
+  const notes = options.selections.notes ? importNotes(backup, options.conflictMode) : createBucketResult(previewCounts.notes);
+  if (options.selections.notes) {
+    completedSteps += 1;
+    emitCategoryProgress('notes', `Imported ${notes.imported} notes`);
+  }
+
+  const extensions = options.selections.extensions
+    ? await importExtensions(backup, warnings, (payload) => {
+        emitCategoryProgress(
+          'extensions',
+          payload.message,
+          payload.currentItem,
+          payload.totalItems,
+          payload.extensionName,
+          payload.downloadedBytes,
+          payload.totalBytes,
+          'extension'
+        );
+      })
+    : createBucketResult(previewCounts.extensions);
+  if (options.selections.extensions) {
+    completedSteps += 1;
+    emitCategoryProgress('extensions', `Processed ${extensions.found} extensions`);
+  }
+
+  const importedExtensionPreferenceExtensions = options.selections.extensionPreferences
+    ? importExtensionPreferences(backup, options.conflictMode)
+    : [];
+  if (options.selections.extensionPreferences) {
+    completedSteps += 1;
+    emitCategoryProgress('extensionPreferences', `Imported prefs for ${importedExtensionPreferenceExtensions.length} extensions`);
+  }
+
   const {
     commandHotkeysImported,
     commandAliasesImported,
     pinnedCommandsImported,
-  } = await importCommandCustomizations(backup, warnings);
+  } = await importCommandCustomizations(backup, warnings, {
+    includeHotkeys: options.selections.commandHotkeys,
+    includeAliases: options.selections.commandAliases,
+    includePinnedCommands: options.selections.pinnedCommands,
+    conflictMode: options.conflictMode,
+  });
+  if (options.selections.commandHotkeys) {
+    completedSteps += 1;
+    emitCategoryProgress('commandHotkeys', `Imported ${commandHotkeysImported} command hotkeys`);
+  }
+  if (options.selections.commandAliases) {
+    completedSteps += 1;
+    emitCategoryProgress('commandAliases', `Imported ${commandAliasesImported} aliases`);
+  }
+  if (options.selections.pinnedCommands) {
+    completedSteps += 1;
+    emitCategoryProgress('pinnedCommands', `Imported ${pinnedCommandsImported} favorites`);
+  }
 
-  return {
+  importSessions.delete(options.sessionId);
+  reportProgress?.({
+    stage: 'done',
+    message: 'Raycast import complete',
+    completedSteps: totalSteps,
+    totalSteps,
+  });
+
+  return createEmptyImportResult({
     canceled: false,
     filePath,
     raycastVersion: backup.raycast_version,
@@ -1332,5 +1690,55 @@ export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow):
     importedExtensionPreferenceExtensions,
     unsupported: collectUnsupportedCategories(backup),
     warnings,
-  };
+  });
+}
+
+export async function importRaycastConfigFromFile(parentWindow?: BrowserWindow): Promise<RaycastImportResult> {
+  const preview = await previewRaycastConfigImport(parentWindow);
+  if (preview.canceled || !preview.sessionId) {
+    return createEmptyImportResult({
+      canceled: true,
+      filePath: preview.filePath,
+      raycastVersion: preview.raycastVersion,
+      unsupported: preview.unsupported,
+    });
+  }
+
+  const confirm = parentWindow
+    ? await dialog.showMessageBox(parentWindow, {
+        type: 'question',
+        buttons: ['Cancel', 'Import'],
+        defaultId: 1,
+        cancelId: 0,
+        noLink: true,
+        title: 'Import Raycast Backup',
+        message: 'Review the Raycast backup before importing.',
+        detail: buildImportPreview(importSessions.get(preview.sessionId)?.backup || { raycast_version: preview.raycastVersion }),
+      })
+    : await dialog.showMessageBox({
+        type: 'question',
+        buttons: ['Cancel', 'Import'],
+        defaultId: 1,
+        cancelId: 0,
+        noLink: true,
+        title: 'Import Raycast Backup',
+        message: 'Review the Raycast backup before importing.',
+        detail: buildImportPreview(importSessions.get(preview.sessionId)?.backup || { raycast_version: preview.raycastVersion }),
+      });
+
+  if (confirm.response !== 1) {
+    importSessions.delete(preview.sessionId);
+    return createEmptyImportResult({
+      canceled: true,
+      filePath: preview.filePath,
+      raycastVersion: preview.raycastVersion,
+      unsupported: preview.unsupported,
+    });
+  }
+
+  return executeRaycastConfigImport({
+    sessionId: preview.sessionId,
+    conflictMode: 'skip',
+    selections: preview.selections,
+  });
 }

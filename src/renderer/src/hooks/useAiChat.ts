@@ -93,6 +93,10 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     const nextConversations = normalizeSnapshot(snapshot);
     setConversations(nextConversations);
 
+    if (aiStreamingRef.current) {
+      return;
+    }
+
     const activeId = activeConversationIdRef.current;
     if (!activeId) return;
 

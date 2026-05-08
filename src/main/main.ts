@@ -154,7 +154,12 @@ import {
   isCanvasLibInstalled,
   getCanvasLibDir,
 } from './canvas-store';
-import { importRaycastConfigFromFile } from './raycast-config-import';
+import {
+  type RaycastImportProgress,
+  executeRaycastConfigImport,
+  importRaycastConfigFromFile,
+  previewRaycastConfigImport,
+} from './raycast-config-import';
 
 import { initialize as initAptabase, trackEvent } from "@aptabase/electron/main";
 
@@ -12980,7 +12985,7 @@ app.whenReady().then(async () => {
         for (const extensionName of result.importedExtensionPreferenceExtensions || []) {
           broadcastExtensionPreferencesUpdated(extensionName);
         }
-        if (result.aiChats.imported > 0) {
+        if (result.aiChats.found > 0) {
           broadcastAiChatsUpdated();
         }
         const latestSettings = loadSettings();
@@ -12997,6 +13002,51 @@ app.whenReady().then(async () => {
     } finally {
       suppressBlurHide = false;
     }
+  });
+
+  ipcMain.handle('rayconfig-preview', async (event: any) => {
+    suppressBlurHide = true;
+    try {
+      return await previewRaycastConfigImport(getDialogParentWindow(event));
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('rayconfig-import-apply', async (_event: any, options: any) => {
+    const sender = _event.sender;
+    const reportProgress = (payload: RaycastImportProgress) => {
+      try {
+        sender.send('rayconfig-import-progress', payload);
+      } catch {}
+    };
+    const result = await executeRaycastConfigImport(options, (payload) => {
+      reportProgress({
+        sessionId: String(options?.sessionId || ''),
+        ...payload,
+      });
+    });
+    if (!result.canceled) {
+      invalidateScriptCommandsCache();
+      invalidateCache();
+      broadcastCommandsUpdated();
+      for (const extensionName of result.importedExtensionPreferenceExtensions || []) {
+        broadcastExtensionPreferencesUpdated(extensionName);
+      }
+      if (result.aiChats.found > 0) {
+        broadcastAiChatsUpdated();
+      }
+      const latestSettings = loadSettings();
+      const windowsToNotify = [mainWindow, settingsWindow, extensionStoreWindow, promptWindow]
+        .filter(Boolean) as Array<InstanceType<typeof BrowserWindow>>;
+      for (const win of windowsToNotify) {
+        if (win.isDestroyed()) continue;
+        try {
+          win.webContents.send('settings-updated', latestSettings);
+        } catch {}
+      }
+    }
+    return result;
   });
 
   ipcMain.handle('get-extension-preferences-snapshot', () => {

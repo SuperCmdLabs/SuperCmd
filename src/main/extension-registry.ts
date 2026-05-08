@@ -1027,7 +1027,10 @@ export function getInstalledExtensionNames(): string[] {
  */
 export async function installExtension(
   name: string,
-  options?: { skipBundle?: boolean },
+  options?: {
+    skipBundle?: boolean;
+    onProgress?: (payload: { message: string; downloadedBytes?: number; totalBytes?: number }) => void;
+  },
 ): Promise<boolean> {
   if (!/^[A-Za-z0-9._-]+$/.test(String(name || ''))) {
     console.error(`Invalid extension name: "${name}"`);
@@ -1040,7 +1043,7 @@ export async function installExtension(
   // download path on retry.
   if (!options?.skipBundle) {
     try {
-      const success = await installExtensionFromBundle(name);
+      const success = await installExtensionFromBundle(name, options?.onProgress);
       if (success) return true;
     } catch (bundleError: any) {
       console.warn(`Bundle install failed for "${name}":`, bundleError?.message || bundleError);
@@ -1073,7 +1076,10 @@ export async function installExtension(
  * The bundle contains package.json + assets/ + .sc-build/ (esbuild output).
  * No npm, no bun, no esbuild needed. ~2-3s total.
  */
-async function installExtensionFromBundle(name: string): Promise<boolean> {
+async function installExtensionFromBundle(
+  name: string,
+  onProgress?: (payload: { message: string; downloadedBytes?: number; totalBytes?: number }) => void
+): Promise<boolean> {
   const installPath = getInstalledPath(name);
   const hadExistingInstall = fs.existsSync(installPath);
   const backupPath = hadExistingInstall
@@ -1087,9 +1093,17 @@ async function installExtensionFromBundle(name: string): Promise<boolean> {
     // Get pre-signed S3 URL from backend
     const { url } = await getExtensionBundleUrl(name);
     console.log(`Downloading pre-built bundle for "${name}"…`);
+    onProgress?.({ message: `Downloading ${name}…` });
 
     fs.mkdirSync(tmpDir, { recursive: true });
-    await downloadAndExtractTarball(url, tmpDir);
+    await downloadAndExtractTarball(url, tmpDir, ({ downloadedBytes, totalBytes }) => {
+      onProgress?.({
+        message: `Downloading ${name}…`,
+        downloadedBytes,
+        totalBytes,
+      });
+    });
+    onProgress?.({ message: `Extracting ${name}…` });
 
     // Find the extension in the extracted directory
     const nestedPath = path.join(tmpDir, name);
@@ -1374,7 +1388,11 @@ async function installExtensionViaGit(name: string): Promise<boolean> {
  * Download a .tar.gz from a URL and extract to destDir.
  * Uses Node.js built-in https + zlib + tar-stream parsing — no npm deps.
  */
-async function downloadAndExtractTarball(url: string, destDir: string): Promise<void> {
+async function downloadAndExtractTarball(
+  url: string,
+  destDir: string,
+  onProgress?: (payload: { downloadedBytes: number; totalBytes?: number }) => void
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const makeRequest = (requestUrl: string, redirectCount = 0) => {
       if (redirectCount > 5) {
@@ -1399,7 +1417,14 @@ async function downloadAndExtractTarball(url: string, destDir: string): Promise<
         }
 
         const chunks: Buffer[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        const totalBytesHeader = Number.parseInt(String(res.headers?.['content-length'] || ''), 10);
+        const totalBytes = Number.isFinite(totalBytesHeader) && totalBytesHeader > 0 ? totalBytesHeader : undefined;
+        let downloadedBytes = 0;
+        res.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+          downloadedBytes += chunk.length;
+          onProgress?.({ downloadedBytes, ...(totalBytes !== undefined ? { totalBytes } : {}) });
+        });
         res.on('error', reject);
         res.on('end', () => {
           try {
