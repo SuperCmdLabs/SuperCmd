@@ -2334,9 +2334,6 @@ const App: React.FC = () => {
       if (ok) {
         setBrowserSearchSkipAutoComplete(false);
         try { window.electron.hideWindow(); } catch {}
-        // Don't clear searchQuery/selectedIndex — onWindowShown resets them
-        // when the window reopens. Clearing now causes a flash of the
-        // unfiltered list during the fade-out animation.
       }
       return ok;
     },
@@ -2837,9 +2834,6 @@ const App: React.FC = () => {
         await fetchCommands();
       } else if (!options?.background) {
         await window.electron.hideWindow();
-        // Don't clear searchQuery/selectedIndex — onWindowShown resets them
-        // when the window reopens. Clearing now causes a flash of the
-        // unfiltered list during the fade-out animation.
       }
 
       if (!options?.background && !options?.skipRecent) {
@@ -2888,8 +2882,6 @@ const App: React.FC = () => {
             setQuickLinkDynamicPrompt(null);
             await updateRecentCommands(command.id);
             await window.electron.hideWindow();
-            // Don't clear searchQuery/selectedIndex — onWindowShown resets
-            // them on reopen; clearing now causes a flash during fade-out.
             return true;
           }
           setShowActions(false);
@@ -2918,8 +2910,6 @@ const App: React.FC = () => {
       setQuickLinkDynamicPrompt(null);
       await updateRecentCommands(command.id);
       await window.electron.hideWindow();
-      // Don't clear searchQuery/selectedIndex — onWindowShown resets
-      // them on reopen; clearing now causes a flash during fade-out.
       return true;
     },
     [
@@ -3026,8 +3016,6 @@ const App: React.FC = () => {
       const filePath = getFileResultPathFromCommand(command);
       if (filePath) {
         await openFileResultByPath(filePath);
-        // openFileResultByPath already calls hideWindow(); don't clear
-        // searchQuery/selectedIndex here — onWindowShown resets them.
         return;
       }
 
@@ -3085,8 +3073,6 @@ const App: React.FC = () => {
               upsertMenuBarExtension(hydratedWithInlineArguments);
             }
             try { window.electron.hideWindow(); } catch {}
-            // Don't clear searchQuery/selectedIndex — onWindowShown resets
-            // them on reopen; clearing now causes a flash during fade-out.
             await updateRecentCommands(command.id);
             return;
           }
@@ -3153,8 +3139,6 @@ const App: React.FC = () => {
           if (!confirmed) return;
           await updateRecentCommands(command.id);
           try { window.electron.hideWindow(); } catch {}
-          // Don't clear searchQuery/selectedIndex — onWindowShown resets
-          // them on reopen; clearing now causes a flash during fade-out.
           return;
         }
         const ok = window.confirm(`Run "${command.title}"?`);
@@ -3164,9 +3148,6 @@ const App: React.FC = () => {
       await window.electron.executeCommand(command.id);
       await updateRecentCommands(command.id);
       try { window.electron.hideWindow(); } catch {}
-      // Don't clear searchQuery/selectedIndex — onWindowShown resets them
-      // on reopen. Clearing now causes a flash of the unfiltered list
-      // during the window's fade-out animation.
     } catch (error) {
       console.error('Failed to execute command:', error);
     }
@@ -3758,8 +3739,6 @@ const App: React.FC = () => {
             upsertMenuBarExtension(updatedBundle);
           }
           window.electron.hideWindow();
-          // Don't clear searchQuery/selectedIndex — onWindowShown resets
-          // them on reopen; clearing now causes a flash during fade-out.
           localStorage.removeItem(LAST_EXT_KEY);
         }}
         setExtensionPreferenceSetup={setExtensionPreferenceSetup}
