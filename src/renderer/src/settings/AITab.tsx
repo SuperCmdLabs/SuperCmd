@@ -44,6 +44,7 @@ const getProviderOptions = (t: (key: string) => string) => [
   { id: 'anthropic' as const, label: t('settings.ai.llm.provider.anthropic'), description: t('settings.ai.llm.providerDescriptions.anthropic') },
   { id: 'gemini' as const, label: t('settings.ai.llm.provider.gemini'), description: t('settings.ai.llm.providerDescriptions.gemini') },
   { id: 'ollama' as const, label: t('settings.ai.llm.provider.ollama'), description: t('settings.ai.llm.providerDescriptions.ollama') },
+  { id: 'lm-studio' as const, label: t('settings.ai.llm.provider.lmStudio'), description: t('settings.ai.llm.providerDescriptions.lmStudio') },
   { id: 'openai-compatible' as const, label: t('settings.ai.llm.provider.openaiCompatible'), description: t('settings.ai.llm.providerDescriptions.openaiCompatible') },
 ];
 
@@ -244,6 +245,10 @@ const AITab: React.FC = () => {
   const [showMistralKey, setShowMistralKey] = useState(false);
   const [showSupermemoryKey, setShowSupermemoryKey] = useState(false);
   const [showOpenAICompatibleKey, setShowOpenAICompatibleKey] = useState(false);
+  const [showLmStudioApiKey, setShowLmStudioApiKey] = useState(false);
+  const [lmStudioShowApiKey, setLmStudioShowApiKey] = useState(false);
+  const [lmStudioModels, setLmStudioModels] = useState<string[]>([]);
+  const lmStudioFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
   const [hotkeyStatus, setHotkeyStatus] = useState<{
     type: 'idle' | 'success' | 'error';
@@ -279,6 +284,27 @@ const AITab: React.FC = () => {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  const fetchLmStudioModels = useCallback((baseUrl: string) => {
+    if (lmStudioFetchTimerRef.current) clearTimeout(lmStudioFetchTimerRef.current);
+    lmStudioFetchTimerRef.current = setTimeout(() => {
+      const url = baseUrl.trim().replace(/\/+$/, '');
+      const modelsUrl = url.endsWith('/v1') ? `${url}/models` : `${url}/v1/models`;
+      fetch(modelsUrl)
+        .then((r) => r.json())
+        .then((json) => {
+          const ids: string[] = (json?.data ?? []).map((m: { id: string }) => m.id).filter(Boolean);
+          setLmStudioModels(ids);
+        })
+        .catch(() => setLmStudioModels([]));
+    }, 300);
+  }, []);
+
+  useEffect(() => {
+    if (settings?.ai?.provider === 'lm-studio') {
+      fetchLmStudioModels(settings.ai.lmStudioBaseUrl || 'http://127.0.0.1:1234/v1');
+    }
+  }, [settings?.ai?.provider, settings?.ai?.lmStudioBaseUrl, fetchLmStudioModels]);
 
   useEffect(() => {
     let cancelled = false;
@@ -639,7 +665,9 @@ const AITab: React.FC = () => {
           id: `openai-compatible-${ai.openaiCompatibleModel}`,
           label: ai.openaiCompatibleModel,
         }]
-      : MODELS_BY_PROVIDER[ai.provider] || [];
+      : ai.provider === 'lm-studio'
+        ? lmStudioModels.map((id) => ({ id: `lm-studio-${id}`, label: id }))
+        : MODELS_BY_PROVIDER[ai.provider] || [];
 
   const whisperModelValue = (!ai.speechToTextModel || ai.speechToTextModel === 'default')
     ? 'whispercpp'
@@ -1009,6 +1037,10 @@ const AITab: React.FC = () => {
                             updateAI({ provider: p.id, defaultModel: nextDefault });
                             return;
                           }
+                          if (p.id === 'lm-studio') {
+                            updateAI({ provider: p.id, defaultModel: '' });
+                            return;
+                          }
                           updateAI({ provider: p.id, defaultModel: '' });
                         }}
                         className={`rounded-md border px-2 py-2 text-left transition-colors ${
@@ -1034,6 +1066,58 @@ const AITab: React.FC = () => {
                       placeholder="http://localhost:11434"
                       className="sc-input"
                     />
+                  </div>
+                )}
+
+                {ai.provider === 'lm-studio' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.llm.lmStudio.baseUrl.label')}</label>
+                      <input
+                        type="text"
+                        value={ai.lmStudioBaseUrl}
+                        onChange={(e) => {
+                          const url = e.target.value.trim();
+                          updateAI({ lmStudioBaseUrl: url });
+                          fetchLmStudioModels(url || 'http://127.0.0.1:1234/v1');
+                        }}
+                        placeholder="http://127.0.0.1:1234/v1"
+                        className="sc-input"
+                      />
+                      <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">{t('settings.ai.llm.lmStudio.baseUrl.hint')}</p>
+                    </div>
+
+                    <div>
+                      <button
+                        type="button"
+                        className="text-[0.75rem] text-[var(--text-muted)] flex items-center gap-1 hover:text-[var(--text-default)] transition-colors"
+                        onClick={() => setShowLmStudioApiKey((v) => !v)}
+                      >
+                        {showLmStudioApiKey ? <EyeOff size={12} /> : <Eye size={12} />}
+                        {t('settings.ai.llm.lmStudio.apiKey.toggle')}
+                      </button>
+                      {showLmStudioApiKey && (
+                        <div className="mt-2">
+                          <div className="relative">
+                            <input
+                              type={lmStudioShowApiKey ? 'text' : 'password'}
+                              value={ai.lmStudioApiKey ?? ''}
+                              onChange={(e) => updateAI({ lmStudioApiKey: e.target.value })}
+                              placeholder={t('settings.ai.llm.lmStudio.apiKey.placeholder')}
+                              className="sc-input pr-8"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setLmStudioShowApiKey((v) => !v)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-default)]"
+                            >
+                              {lmStudioShowApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                          </div>
+                          <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">{t('settings.ai.llm.lmStudio.apiKey.hint')}</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -1077,7 +1161,7 @@ const AITab: React.FC = () => {
                         value={ai.openaiCompatibleModel}
                         onChange={(e) => {
                           const modelName = e.target.value.trim();
-                          updateAI({ 
+                          updateAI({
                             openaiCompatibleModel: modelName,
                             defaultModel: modelName ? `openai-compatible-${modelName}` : ''
                           });

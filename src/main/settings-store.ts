@@ -20,6 +20,7 @@ const SENSITIVE_AI_KEYS = [
   'elevenlabsApiKey',
   'mistralApiKey',
   'supermemoryApiKey',
+  'lmStudioApiKey',
   'openaiCompatibleApiKey',
 ] as const;
 
@@ -34,7 +35,7 @@ function oauthVaultKey(provider: string): string {
 }
 
 export interface AISettings {
-  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible';
+  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible' | 'lm-studio';
   openaiApiKey: string;
   anthropicApiKey: string;
   geminiApiKey: string;
@@ -59,6 +60,9 @@ export interface AISettings {
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
+  lmStudioBaseUrl: string;
+  lmStudioModel: string;
+  lmStudioApiKey: string;
 }
 
 export type HyperKeySourceKey =
@@ -186,6 +190,9 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   openaiCompatibleBaseUrl: '',
   openaiCompatibleApiKey: '',
   openaiCompatibleModel: '',
+  lmStudioBaseUrl: 'http://127.0.0.1:1234/v1',
+  lmStudioModel: '',
+  lmStudioApiKey: '',
 };
 
 const DEFAULT_SETTINGS: AppSettings = {

@@ -260,6 +260,7 @@
           "anthropic": "Claude",
           "gemini": "Gemini",
           "ollama": "Ollama",
+          "lmStudio": "LM Studio",
           "openaiCompatible": "Custom (OpenAI-compatible)"
         },
         "providerDescriptions": {
@@ -267,6 +268,7 @@
           "anthropic": "Anthropic Claude models",
           "gemini": "Google Gemini models",
           "ollama": "Local models",
+          "lmStudio": "Local models via LM Studio",
           "openaiCompatible": "Any OpenAI-compatible API (OpenRouter, Together, etc.)"
         },
         "ollama": {
@@ -299,6 +301,17 @@
             "gemma2": "Google open model (9B)",
             "qwen25": "Alibaba multilingual model (7B)",
             "deepseekR1": "Reasoning-focused model (7B)"
+          }
+        },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "Server URL",
+            "hint": "LM Studio's local server URL (default: http://127.0.0.1:1234/v1)"
+          },
+          "apiKey": {
+            "toggle": "Optional API Key",
+            "placeholder": "Leave empty if not required",
+            "hint": "Only needed if you have configured authentication in LM Studio."
           }
         },
         "openaiCompatible": {

@@ -260,6 +260,7 @@
           "anthropic": "Claude",
           "gemini": "Gemini",
           "ollama": "Ollama",
+          "lmStudio": "LM Studio",
           "openaiCompatible": "自定义 (OpenAI 兼容)"
         },
         "providerDescriptions": {
@@ -267,7 +268,8 @@
           "anthropic": "Anthropic Claude 模型",
           "gemini": "Google Gemini 模型",
           "ollama": "本地模型",
-          "openaiCompatible": "任意 OpenAI 兼容 API（OpenRouter、Together 等）"
+          "openaiCompatible": "任意 OpenAI 兼容 API（OpenRouter、Together 等）",
+          "lmStudio": "通过 LM Studio 使用本地模型"
         },
         "ollama": {
           "serverUrl": {
@@ -320,6 +322,17 @@
         "defaultModel": {
           "label": "默认模型",
           "auto": "自动（提供商默认）"
+        },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "服务器地址",
+            "hint": "LM Studio 本地服务器地址（默认：http://127.0.0.1:1234/v1）"
+          },
+          "apiKey": {
+            "toggle": "可选 API 密钥",
+            "placeholder": "如不需要，请留空",
+            "hint": "仅当您在 LM Studio 中配置了身份验证时才需要。"
+          }
         }
       },
       "whisper": {
