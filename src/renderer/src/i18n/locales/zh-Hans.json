@@ -738,7 +738,8 @@
       "unpinExtension": "取消固定扩展",
       "disableCommand": "禁用命令",
       "moveUp": "上移",
-      "moveDown": "下移"
+      "moveDown": "下移",
+      "uninstallApplication": "卸载应用程序"
     },
     "empty": {
       "noResults": "未找到结果",
@@ -903,6 +904,24 @@
     "notFound": "未找到快速链接。",
     "nameRequired": "请输入名称。",
     "urlRequired": "请输入网址。"
+  },
+  "appUninstall": {
+    "title": "卸载 {appName}",
+    "filesCount": "{count} 个文件",
+    "uninstallButton": "卸载应用程序",
+    "scanning": "正在扫描相关文件...",
+    "noRemnants": "未找到相关文件",
+    "confirmMessage": "将 {count} 个文件 ({size}) 移到废纸篓？",
+    "filterPlaceholder": "按名称过滤文件和文件夹...",
+    "sortByPath": "按路径排序",
+    "sortBySize": "按大小排序",
+    "markKeep": "标记保留文件",
+    "markRemove": "标记移除文件",
+    "actions": "操作",
+    "showInfo": "在访达中显示简介",
+    "trashErrors": "部分文件无法移至废纸篓：\n{errors}",
+    "uninstallSuccess": "{appName} 已卸载",
+    "uninstallError": "卸载 {appName} 失败"
   },
   "fileSearch": {
     "placeholder": "搜索文件...",

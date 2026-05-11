@@ -726,7 +726,8 @@
       "paste": "Pegar",
       "delete": "Eliminar",
       "preferences": "Preferencias",
-      "quit": "Salir"
+      "quit": "Salir",
+      "uninstallApplication": "Desinstalar aplicación"
     },
     "empty": {
       "title": "Sin resultados",
@@ -840,6 +841,24 @@
     "notFound": "Enlace rápido no encontrado.",
     "nameRequired": "El nombre es obligatorio.",
     "urlRequired": "La URL es obligatoria."
+  },
+  "appUninstall": {
+    "title": "Desinstalar {appName}",
+    "filesCount": "{count} Archivos",
+    "uninstallButton": "Desinstalar aplicación",
+    "scanning": "Buscando archivos relacionados...",
+    "noRemnants": "No se encontraron archivos relacionados",
+    "confirmMessage": "¿Mover {count} archivos ({size}) a la Papelera?",
+    "filterPlaceholder": "Filtrar archivos y carpetas por nombre...",
+    "sortByPath": "Ordenar por ruta",
+    "sortBySize": "Ordenar por tamaño",
+    "markKeep": "Marcar archivo para conservar",
+    "markRemove": "Marcar archivo para eliminar",
+    "actions": "Acciones",
+    "showInfo": "Mostrar información en Finder",
+    "trashErrors": "Algunos archivos no se pudieron mover a la papelera:\n{errors}",
+    "uninstallSuccess": "{appName} ha sido desinstalado",
+    "uninstallError": "Error al desinstalar {appName}"
   },
   "fileSearch": {
     "placeholder": "Buscar archivos...",

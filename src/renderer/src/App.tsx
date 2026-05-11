@@ -74,6 +74,7 @@ import ScriptCommandOutputView from './views/ScriptCommandOutputView';
 import ExtensionPreferenceSetupView from './views/ExtensionPreferenceSetupView';
 import AiChatView from './views/AiChatView';
 import CursorPromptView from './views/CursorPromptView';
+import AppUninstallView from './views/AppUninstallView';
 import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowBadge } from './components/InlineArgumentField';
 import { useI18n } from './i18n';
 
@@ -382,12 +383,12 @@ const App: React.FC = () => {
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
     showClipboardManager, showSnippetManager, showNotesSearch, showCanvasSearch, showQuickLinkManager, showFileSearch, showCursorPrompt,
-    showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
+    showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showAppUninstall, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
     openOnboarding, openWhisper, openClipboardManager,
-    openSnippetManager, openNotesSearch, openCanvasSearch, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openSchedule, openWindowManager,
+    openSnippetManager, openNotesSearch, openCanvasSearch, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openSchedule, openWindowManager, openAppUninstall,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
     setShowClipboardManager, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
-    setShowWhisper, setShowSpeak, setShowCamera, setShowSchedule, setShowWindowManager, setShowWhisperOnboarding, setShowWhisperHint,
+    setShowWhisper, setShowSpeak, setShowCamera, setShowSchedule, setShowWindowManager, setShowAppUninstall, setShowWhisperOnboarding, setShowWhisperHint,
     setShowOnboarding, setAiMode,
   } = useAppViewManager();
   const {
@@ -541,7 +542,8 @@ const App: React.FC = () => {
     showNotesSearch ||
     showCanvasSearch ||
     showCamera ||
-    showSchedule
+    showSchedule ||
+    showAppUninstall
   );
 
   const expandLauncherForDirectLaunch = useCallback(() => {
@@ -1438,10 +1440,10 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showNotesSearch && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showSchedule && !showWindowManager && !showOnboarding) {
+    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showNotesSearch && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showSchedule && !showWindowManager && !showAppUninstall && !showOnboarding) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, quickLinkDynamicPrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showNotesSearch, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
+  }, [showActions, contextMenu, quickLinkDynamicPrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showNotesSearch, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showAppUninstall, showOnboarding, showWhisperOnboarding, restoreLauncherFocus]);
 
   const isLauncherModeActive =
     !showActions &&
@@ -2346,6 +2348,9 @@ const App: React.FC = () => {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (showAppUninstall) {
+        return;
+      }
       if (quickLinkDynamicPrompt) {
         return;
       }
@@ -2420,6 +2425,19 @@ const App: React.FC = () => {
         if (selectedCommand?.category === 'extension') {
           e.preventDefault();
           uninstallSelectedExtension();
+          return;
+        }
+      }
+      // Ctrl+X: Uninstall Application (for app commands and .app file results)
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === 'x' || e.key === 'X')) {
+        const appPath = selectedFileResultPath?.endsWith('.app')
+          ? selectedFileResultPath
+          : (selectedCommand?.category === 'app' && selectedCommand?.path?.endsWith('.app'))
+            ? selectedCommand.path
+            : null;
+        if (appPath) {
+          e.preventDefault();
+          openAppUninstall(appPath);
           return;
         }
       }
@@ -2555,10 +2573,12 @@ const App: React.FC = () => {
       revealFileResultByPath,
       copyFileResultPath,
       pinToggleForFile,
+      openAppUninstall,
       selectedCommand,
       contextMenu,
       showActions,
       quickLinkDynamicPrompt,
+      showAppUninstall,
       launcherViewMode,
       isCompactCollapsed,
     ]
@@ -3270,6 +3290,14 @@ const App: React.FC = () => {
             icon: <Pin className="w-4 h-4" />,
             execute: () => pinToggleForFile(filePath),
           },
+          ...(filePath.endsWith('.app') ? [{
+            id: 'uninstall-app',
+            title: t('launcher.actions.uninstallApplication'),
+            shortcut: 'Ctrl+X',
+            icon: <Trash2 className="w-4 h-4" />,
+            style: 'destructive' as const,
+            execute: () => openAppUninstall(filePath),
+          }] : []),
         ];
       }
 
@@ -3374,6 +3402,15 @@ const App: React.FC = () => {
           execute: () => uninstallExtensionCommand(command),
         },
         {
+          id: 'uninstall-app',
+          title: t('launcher.actions.uninstallApplication'),
+          shortcut: 'Ctrl+X',
+          style: 'destructive' as const,
+          enabled: command.category === 'app' && Boolean(command.path?.endsWith('.app')),
+          icon: <Trash2 className="w-4 h-4" />,
+          execute: () => { try { if (command.path) openAppUninstall(command.path); } catch(e) { console.error('openAppUninstall error:', e); } },
+        },
+        {
           id: 'move-up',
           title: t('launcher.actions.moveUp'),
           shortcut: 'Cmd+Alt+Up',
@@ -3409,6 +3446,7 @@ const App: React.FC = () => {
       fetchCommands,
       openQuickLinkManager,
       setQuickLinkEditId,
+      openAppUninstall,
       t,
     ]
   );
@@ -3997,6 +4035,8 @@ const App: React.FC = () => {
   }
 
   // ─── File Search mode ─────────────────────────────────────────────
+  // ─── App Uninstall view (rendered as overlay in default return, not early-return) ─────
+
   if (showFileSearch) {
     return (
       <>
@@ -4838,6 +4878,19 @@ const App: React.FC = () => {
             ))}
           </div>
         </div>
+      </div>
+    )}
+    {showAppUninstall && (
+      <div className="absolute inset-0 z-[9999] flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+        <AppUninstallView
+          appPath={showAppUninstall}
+          onClose={() => {
+            setShowAppUninstall(null);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
       </div>
     )}
     </>

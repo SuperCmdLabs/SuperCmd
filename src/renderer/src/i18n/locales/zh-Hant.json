@@ -738,7 +738,8 @@
       "unpinExtension": "取消固定擴充功能",
       "disableCommand": "停用命令",
       "moveUp": "上移",
-      "moveDown": "下移"
+      "moveDown": "下移",
+      "uninstallApplication": "解除安裝應用程式"
     },
     "empty": {
       "noResults": "找不到結果",
@@ -903,6 +904,24 @@
     "notFound": "找不到快速連結。",
     "nameRequired": "請輸入名稱。",
     "urlRequired": "請輸入網址。"
+  },
+  "appUninstall": {
+    "title": "解除安裝 {appName}",
+    "filesCount": "{count} 個檔案",
+    "uninstallButton": "解除安裝應用程式",
+    "scanning": "正在掃描相關檔案...",
+    "noRemnants": "未找到相關檔案",
+    "confirmMessage": "將 {count} 個檔案 ({size}) 移到垃圾桶？",
+    "filterPlaceholder": "依名稱篩選檔案和資料夾...",
+    "sortByPath": "依路徑排序",
+    "sortBySize": "依大小排序",
+    "markKeep": "標記保留檔案",
+    "markRemove": "標記移除檔案",
+    "actions": "動作",
+    "showInfo": "在 Finder 中顯示簡介",
+    "trashErrors": "部分檔案無法移至垃圾桶：\n{errors}",
+    "uninstallSuccess": "{appName} 已解除安裝",
+    "uninstallError": "解除安裝 {appName} 失敗"
   },
   "fileSearch": {
     "placeholder": "搜尋檔案...",

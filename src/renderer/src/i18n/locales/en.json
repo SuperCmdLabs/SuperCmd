@@ -749,7 +749,8 @@
       "unpinExtension": "Unpin Extension",
       "disableCommand": "Disable Command",
       "moveUp": "Move Up",
-      "moveDown": "Move Down"
+      "moveDown": "Move Down",
+      "uninstallApplication": "Uninstall Application"
     },
     "empty": {
       "noResults": "No results found",
@@ -941,6 +942,24 @@
     "notFound": "Quick link not found.",
     "nameRequired": "Name is required.",
     "urlRequired": "URL is required."
+  },
+  "appUninstall": {
+    "title": "Uninstall {appName}",
+    "filesCount": "{count} Files",
+    "uninstallButton": "Uninstall Application",
+    "scanning": "Scanning for related files...",
+    "noRemnants": "No related files found",
+    "confirmMessage": "Move {count} files ({size}) to Trash?",
+    "filterPlaceholder": "Filter files and folders by name...",
+    "sortByPath": "Sort by Path",
+    "sortBySize": "Sort by Size",
+    "markKeep": "Mark File to Keep",
+    "markRemove": "Mark File to Remove",
+    "actions": "Actions",
+    "showInfo": "Show Info in Finder",
+    "trashErrors": "Some files could not be moved to Trash:\n{errors}",
+    "uninstallSuccess": "{appName} has been uninstalled",
+    "uninstallError": "Failed to uninstall {appName}"
   },
   "fileSearch": {
     "placeholder": "Search files...",

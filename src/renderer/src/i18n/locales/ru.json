@@ -127,7 +127,8 @@
       "unpinExtension": "Открепить расширение",
       "disableCommand": "Отключить команду",
       "moveUp": "Переместить вверх",
-      "moveDown": "Переместить вниз"
+      "moveDown": "Переместить вниз",
+      "uninstallApplication": "Удалить приложение"
     },
     "empty": {
       "noResults": "Ничего не найдено",
@@ -304,5 +305,23 @@
     "notFound": "Быстрая ссылка не найдена.",
     "nameRequired": "Введите название.",
     "urlRequired": "Введите URL."
+  },
+  "appUninstall": {
+    "title": "Удалить {appName}",
+    "filesCount": "{count} файлов",
+    "uninstallButton": "Удалить приложение",
+    "scanning": "Поиск связанных файлов...",
+    "noRemnants": "Связанные файлы не найдены",
+    "confirmMessage": "Переместить {count} файлов ({size}) в Корзину?",
+    "filterPlaceholder": "Фильтр файлов и папок по имени...",
+    "sortByPath": "Сортировать по пути",
+    "sortBySize": "Сортировать по размеру",
+    "markKeep": "Отметить для сохранения",
+    "markRemove": "Отметить для удаления",
+    "actions": "Действия",
+    "showInfo": "Показать информацию в Finder",
+    "trashErrors": "Не удалось переместить некоторые файлы в корзину:\n{errors}",
+    "uninstallSuccess": "{appName} удалено",
+    "uninstallError": "Не удалось удалить {appName}"
   }
 }

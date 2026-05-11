@@ -741,7 +741,8 @@
       "unpinExtension": "拡張機能のピンを外す",
       "disableCommand": "コマンドを無効にする",
       "moveUp": "上へ移動",
-      "moveDown": "下へ移動"
+      "moveDown": "下へ移動",
+      "uninstallApplication": "アプリケーションをアンインストール"
     },
     "empty": {
       "noResults": "結果が見つかりませんでした",
@@ -941,6 +942,24 @@
     "notFound": "クイックリンクが見つかりません。",
     "nameRequired": "名前を入力してください。",
     "urlRequired": "URLを入力してください。"
+  },
+  "appUninstall": {
+    "title": "{appName} をアンインストール",
+    "filesCount": "{count} ファイル",
+    "uninstallButton": "アプリケーションをアンインストール",
+    "scanning": "関連ファイルを検索中...",
+    "noRemnants": "関連ファイルが見つかりません",
+    "confirmMessage": "{count} 個のファイル ({size}) をゴミ箱に移動しますか？",
+    "filterPlaceholder": "ファイルとフォルダを名前でフィルター...",
+    "sortByPath": "パスで並べ替え",
+    "sortBySize": "サイズで並べ替え",
+    "markKeep": "ファイルを保持",
+    "markRemove": "ファイルを削除対象にする",
+    "actions": "アクション",
+    "showInfo": "Finderで情報を表示",
+    "trashErrors": "一部のファイルをゴミ箱に移動できませんでした：\n{errors}",
+    "uninstallSuccess": "{appName} をアンインストールしました",
+    "uninstallError": "{appName} のアンインストールに失敗しました"
   },
   "fileSearch": {
     "placeholder": "ファイルを検索...",

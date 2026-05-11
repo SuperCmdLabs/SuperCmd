@@ -726,7 +726,8 @@
       "paste": "Einfügen",
       "delete": "Löschen",
       "preferences": "Einstellungen",
-      "quit": "Beenden"
+      "quit": "Beenden",
+      "uninstallApplication": "Anwendung deinstallieren"
     },
     "empty": {
       "title": "Keine Ergebnisse",
@@ -840,6 +841,24 @@
     "notFound": "Schnelllink nicht gefunden.",
     "nameRequired": "Name ist erforderlich.",
     "urlRequired": "URL ist erforderlich."
+  },
+  "appUninstall": {
+    "title": "{appName} deinstallieren",
+    "filesCount": "{count} Dateien",
+    "uninstallButton": "Anwendung deinstallieren",
+    "scanning": "Nach zugehörigen Dateien suchen...",
+    "noRemnants": "Keine zugehörigen Dateien gefunden",
+    "confirmMessage": "{count} Dateien ({size}) in den Papierkorb verschieben?",
+    "filterPlaceholder": "Dateien und Ordner nach Name filtern...",
+    "sortByPath": "Nach Pfad sortieren",
+    "sortBySize": "Nach Größe sortieren",
+    "markKeep": "Datei behalten",
+    "markRemove": "Datei entfernen",
+    "actions": "Aktionen",
+    "showInfo": "Informationen im Finder anzeigen",
+    "trashErrors": "Einige Dateien konnten nicht in den Papierkorb verschoben werden:\n{errors}",
+    "uninstallSuccess": "{appName} wurde deinstalliert",
+    "uninstallError": "Deinstallation von {appName} fehlgeschlagen"
   },
   "fileSearch": {
     "placeholder": "Dateien suchen...",

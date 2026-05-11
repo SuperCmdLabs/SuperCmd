@@ -740,7 +740,8 @@
       "unpinExtension": "Rimuovi estensione dalla lista fissa",
       "disableCommand": "Disabilita comando",
       "moveUp": "Sposta su",
-      "moveDown": "Sposta giù"
+      "moveDown": "Sposta giù",
+      "uninstallApplication": "Disinstalla applicazione"
     },
     "empty": {
       "noResults": "Nessun risultato trovato",
@@ -930,6 +931,17 @@
     "url": "URL",
     "icon": "Icona",
     "save": "Salva collegamento rapido"
+  },
+  "appUninstall": {
+    "title": "Disinstalla {appName}",
+    "filesCount": "{count} File",
+    "uninstallButton": "Disinstalla applicazione",
+    "scanning": "Ricerca dei file correlati...",
+    "noRemnants": "Nessun file correlato trovato",
+    "confirmMessage": "Spostare {count} file ({size}) nel Cestino?",
+    "filterPlaceholder": "Filtra file e cartelle per nome...",
+    "sortByPath": "Ordina per percorso",
+    "sortBySize": "Ordina per dimensione"
   },
   "fileSearch": {
     "placeholder": "Cerca file...",

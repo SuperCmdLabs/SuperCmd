@@ -730,7 +730,8 @@
       "paste": "Coller",
       "delete": "Supprimer",
       "preferences": "Préférences",
-      "quit": "Quitter"
+      "quit": "Quitter",
+      "uninstallApplication": "Désinstaller l'application"
     },
     "empty": {
       "title": "Aucun résultat",
@@ -844,6 +845,24 @@
     "notFound": "Lien rapide introuvable.",
     "nameRequired": "Le nom est requis.",
     "urlRequired": "L'URL est requise."
+  },
+  "appUninstall": {
+    "title": "Désinstaller {appName}",
+    "filesCount": "{count} Fichiers",
+    "uninstallButton": "Désinstaller l'application",
+    "scanning": "Recherche des fichiers associés...",
+    "noRemnants": "Aucun fichier associé trouvé",
+    "confirmMessage": "Déplacer {count} fichiers ({size}) vers la Corbeille ?",
+    "filterPlaceholder": "Filtrer les fichiers et dossiers par nom...",
+    "sortByPath": "Trier par chemin",
+    "sortBySize": "Trier par taille",
+    "markKeep": "Marquer le fichier à conserver",
+    "markRemove": "Marquer le fichier à supprimer",
+    "actions": "Actions",
+    "showInfo": "Afficher les infos dans le Finder",
+    "trashErrors": "Certains fichiers n'ont pas pu être mis à la corbeille :\n{errors}",
+    "uninstallSuccess": "{appName} a été désinstallé",
+    "uninstallError": "Échec de la désinstallation de {appName}"
   },
   "fileSearch": {
     "placeholder": "Rechercher des fichiers...",

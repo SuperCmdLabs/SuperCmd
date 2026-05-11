@@ -493,6 +493,12 @@ const electronAPI = {
   moveToTrash: (paths: string[]): Promise<void> =>
     ipcRenderer.invoke('move-to-trash', paths),
 
+  // App uninstall
+  appUninstallScan: (appPath: string) =>
+    ipcRenderer.invoke('app-uninstall-scan', appPath),
+  appUninstallExecute: (paths: string[]) =>
+    ipcRenderer.invoke('app-uninstall-execute', paths),
+
   // Read file (for extensions that need filesystem access)
   readFile: (filePath: string): Promise<string> =>
     ipcRenderer.invoke('read-file', filePath),
