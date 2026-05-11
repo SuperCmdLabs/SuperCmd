@@ -1330,6 +1330,8 @@ export function resetSettingsLocation(): RelocateResult {
 
 type SettingsBroadcastFn = (settings: AppSettings) => void;
 let broadcastSettingsUpdated: SettingsBroadcastFn | null = null;
+type ExternalSettingsChangeFn = (settings: AppSettings) => void;
+let externalSettingsChangeHandler: ExternalSettingsChangeFn | null = null;
 let activeSettingsWatcher: fs.FSWatcher | null = null;
 let watcherPath = '';
 let watcherDebounceTimer: NodeJS.Timeout | null = null;
@@ -1340,6 +1342,15 @@ const WATCHER_REATTACH_MAX_ATTEMPTS = 10;
 
 export function setSettingsBroadcaster(fn: SettingsBroadcastFn | null): void {
   broadcastSettingsUpdated = fn;
+}
+
+// Fires only when the on-disk settings file changed externally (cloud sync
+// from another Mac), after the in-memory cache has been refreshed. Lets the
+// main process re-run side effects that were originally wired up at startup —
+// hotkey registration, extension reconciliation, etc. In-app saves bypass
+// this because handleWatcherEvent skips writes we just made ourselves.
+export function setExternalSettingsChangeHandler(fn: ExternalSettingsChangeFn | null): void {
+  externalSettingsChangeHandler = fn;
 }
 
 function clearWatcherTimers(): void {
@@ -1376,6 +1387,13 @@ function handleWatcherEvent(): void {
         broadcastSettingsUpdated(reloaded);
       } catch (e) {
         console.warn('settings-watcher: broadcast failed:', e);
+      }
+    }
+    if (externalSettingsChangeHandler) {
+      try {
+        externalSettingsChangeHandler(reloaded);
+      } catch (e) {
+        console.warn('settings-watcher: external change handler failed:', e);
       }
     }
   }, WATCHER_DEBOUNCE_MS);

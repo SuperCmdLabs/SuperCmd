@@ -16,7 +16,7 @@ import * as os from 'os';
 import { fork, type ChildProcess } from 'child_process';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
-import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster, settingsFileExistsOrICloudPlaceholder } from './settings-store';
+import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster, setExternalSettingsChangeHandler, settingsFileExistsOrICloudPlaceholder } from './settings-store';
 import type { AppSettings, RelocateMode } from './settings-store';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
 import * as soulverCalculator from './soulver-calculator';
@@ -12764,7 +12764,17 @@ app.whenReady().then(async () => {
    *    are queued for background install. Surfaced via the memory status
    *    bar; failures are logged but don't block.
    */
+  let autoInstallInFlight = false;
   async function autoInstallMissingExtensions(): Promise<void> {
+    if (autoInstallInFlight) return;
+    autoInstallInFlight = true;
+    try {
+      await runAutoInstallMissingExtensions();
+    } finally {
+      autoInstallInFlight = false;
+    }
+  }
+  async function runAutoInstallMissingExtensions(): Promise<void> {
     let current: AppSettings;
     try {
       current = loadSettings();
@@ -13000,11 +13010,34 @@ app.whenReady().then(async () => {
   // Wire the settings store so external file changes (cloud sync) can
   // also broadcast to renderer windows.
   setSettingsBroadcaster(broadcastSettingsToAllWindows);
+
+  // Re-run startup side effects when settings.json arrives from another
+  // Mac via cloud sync. Without this, synced hotkeys/extensions reach
+  // settings and the UI but the OS-level registrations never happen, so
+  // hotkeys do nothing and referenced extensions stay un-downloaded
+  // until the next app launch.
+  setExternalSettingsChangeHandler((reloaded) => {
+    try {
+      const nextShortcut = reloaded.globalShortcut || '';
+      if (nextShortcut && nextShortcut !== currentShortcut) {
+        registerGlobalShortcut(nextShortcut);
+      }
+    } catch (e) {
+      console.warn('[settings-sync] global shortcut re-register failed:', e);
+    }
+    try {
+      registerCommandHotkeys(reloaded.commandHotkeys || {});
+    } catch (e) {
+      console.warn('[settings-sync] command hotkeys re-register failed:', e);
+    }
+    void autoInstallMissingExtensions();
+  });
+
   startSettingsWatcher();
 
   // Reconcile filesystem extensions vs the synced installedExtensions list,
-  // and install anything missing in the background. Triggered only on app
-  // launch (not on live settings updates) — see plan rationale.
+  // and install anything missing in the background. Also re-runs whenever
+  // an external sync writes settings.json (see setExternalSettingsChangeHandler).
   void autoInstallMissingExtensions();
 
   ipcMain.handle(
