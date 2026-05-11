@@ -6,7 +6,7 @@ let package = Package(
     name: "parakeet-transcriber",
     platforms: [.macOS(.v14)],
     dependencies: [
-        .package(url: "https://github.com/FluidInference/FluidAudio", from: "0.12.4"),
+        .package(url: "https://github.com/FluidInference/FluidAudio", from: "0.14.4"),
     ],
     targets: [
         .executableTarget(

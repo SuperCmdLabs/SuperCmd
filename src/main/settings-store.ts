@@ -22,6 +22,7 @@ const SENSITIVE_AI_KEYS = [
   'elevenlabsApiKey',
   'mistralApiKey',
   'supermemoryApiKey',
+  'lmStudioApiKey',
   'openaiCompatibleApiKey',
 ] as const;
 
@@ -36,7 +37,7 @@ function oauthVaultKey(provider: string): string {
 }
 
 export interface AISettings {
-  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible';
+  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible' | 'lm-studio';
   openaiApiKey: string;
   anthropicApiKey: string;
   geminiApiKey: string;
@@ -61,6 +62,9 @@ export interface AISettings {
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
+  lmStudioBaseUrl: string;
+  lmStudioModel: string;
+  lmStudioApiKey: string;
 }
 
 export type HyperKeySourceKey =
@@ -112,6 +116,7 @@ export interface AppSettings {
   disabledCommands: string[];
   enabledCommands: string[];
   customExtensionFolders: string[];
+  scriptCommandFolders: string[];
   commandHotkeys: Record<string, string>;
   commandAliases: Record<string, string>;
   pinnedCommands: string[];
@@ -205,6 +210,9 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   openaiCompatibleBaseUrl: '',
   openaiCompatibleApiKey: '',
   openaiCompatibleModel: '',
+  lmStudioBaseUrl: 'http://127.0.0.1:1234/v1',
+  lmStudioModel: '',
+  lmStudioApiKey: '',
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -213,6 +221,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   disabledCommands: [],
   enabledCommands: [],
   customExtensionFolders: [],
+  scriptCommandFolders: [],
   commandHotkeys: {
     'system-supercmd-whisper': 'Command+Shift+W',
     'system-supercmd-whisper-speak-toggle': 'Fn',
@@ -777,6 +786,11 @@ export function loadSettings(): AppSettings {
             .map((value: any) => String(value || '').trim())
             .filter(Boolean)
         : DEFAULT_SETTINGS.customExtensionFolders,
+      scriptCommandFolders: Array.isArray(parsed.scriptCommandFolders)
+        ? parsed.scriptCommandFolders
+            .map((value: any) => String(value || '').trim())
+            .filter(Boolean)
+        : DEFAULT_SETTINGS.scriptCommandFolders,
       commandHotkeys: {
         ...DEFAULT_SETTINGS.commandHotkeys,
         ...parsedHotkeys,
@@ -1056,6 +1070,16 @@ function saveSettingsInternal(
   const updated = {
     ...current,
     ...patch,
+    customExtensionFolders: Array.isArray(patch.customExtensionFolders ?? current.customExtensionFolders)
+      ? (patch.customExtensionFolders ?? current.customExtensionFolders)
+          .map((value: any) => String(value || '').trim())
+          .filter(Boolean)
+      : [],
+    scriptCommandFolders: Array.isArray(patch.scriptCommandFolders ?? current.scriptCommandFolders)
+      ? (patch.scriptCommandFolders ?? current.scriptCommandFolders)
+          .map((value: any) => String(value || '').trim())
+          .filter(Boolean)
+      : [],
     appLanguage: normalizeAppLanguage(patch.appLanguage ?? current.appLanguage),
     launcherBackgroundImagePath: normalizeLauncherBackgroundImagePath(
       patch.launcherBackgroundImagePath ?? current.launcherBackgroundImagePath

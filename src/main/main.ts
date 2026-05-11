@@ -37,6 +37,19 @@ import {
   uninstallExtension,
 } from './extension-registry';
 import {
+  deleteAiChatConversation,
+  getAiChatSnapshot,
+  mergeAiChatSnapshot,
+  upsertAiChatConversation,
+} from './ai-chat-store';
+import {
+  getExtensionPreferences,
+  getExtensionPreferencesSnapshot,
+  mergeExtensionPreferencesSnapshot,
+  setExtensionPreferenceValue,
+  setExtensionPreferences,
+} from './extension-preferences-store';
+import {
   searchExtensions,
   getPopularExtensions,
   getExtensionDetails,
@@ -142,6 +155,12 @@ import {
   isCanvasLibInstalled,
   getCanvasLibDir,
 } from './canvas-store';
+import {
+  type RaycastImportProgress,
+  executeRaycastConfigImport,
+  importRaycastConfigFromFile,
+  previewRaycastConfigImport,
+} from './raycast-config-import';
 
 import { initialize as initAptabase, trackEvent } from "@aptabase/electron/main";
 
@@ -7019,64 +7038,47 @@ async function openTargetWithApplication(target: string, application?: string): 
   const appName = String(application || '').trim();
   const { normalizedTarget, launchTarget, externalTarget } = normalizeOpenTarget(rawTarget);
 
+  // All three branches fire-and-forget — same reason as openAppByPath /
+  // openSettingsPane. Awaiting LaunchServices held the launcher visible
+  // for the dispatch window (1-3s on macOS).
+
   if (appName) {
-    try {
-      const { spawn } = require('child_process');
-      const exitCode = await new Promise<number>((resolve) => {
-        const proc = spawn('open', ['-a', appName, launchTarget], { shell: false });
-        let stderr = '';
-
-        proc.stderr?.on('data', (data: Buffer) => {
-          stderr += data.toString();
-        });
-
-        proc.on('close', (code: number | null) => {
-          const resolved = code ?? 1;
-          if (resolved !== 0) {
-            console.error(`Failed to open target with ${appName}: ${launchTarget}`, stderr.trim() || `exit code ${resolved}`);
-          }
-          resolve(resolved);
-        });
-
-        proc.on('error', (err: Error) => {
-          console.error(`Failed to open target with ${appName}: ${launchTarget}`, err);
-          resolve(1);
-        });
-      });
-      return exitCode === 0;
-    } catch (error) {
-      console.error(`Failed to open target with ${appName}: ${launchTarget}`, error);
-      return false;
-    }
+    const { spawn } = require('child_process');
+    const proc = spawn('/usr/bin/open', ['-a', appName, launchTarget], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    proc.on('error', (err: Error) => {
+      console.error(`Failed to open target with ${appName}: ${launchTarget}`, err);
+    });
+    proc.unref();
+    return true;
   }
 
   if (path.isAbsolute(normalizedTarget)) {
-    try {
-      const openPathError = await shell.openPath(normalizedTarget);
-      if (openPathError) {
-        console.error(`Failed to open path: ${normalizedTarget}`, openPathError);
-        return false;
-      }
-      return true;
-    } catch (error) {
-      console.error(`Failed to open path: ${normalizedTarget}`, error);
-      return false;
-    }
+    void shell
+      .openPath(normalizedTarget)
+      .then((openPathError: string) => {
+        if (openPathError) {
+          console.error(`Failed to open path: ${normalizedTarget}`, openPathError);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error(`Failed to open path: ${normalizedTarget}`, error);
+      });
+    return true;
   }
 
-  try {
-    await shell.openExternal(externalTarget);
-    return true;
-  } catch (error) {
+  void shell.openExternal(externalTarget).catch((error: unknown) => {
     if (externalTarget !== rawTarget) {
-      try {
-        await shell.openExternal(rawTarget);
-        return true;
-      } catch {}
+      void shell.openExternal(rawTarget).catch(() => {
+        console.error(`Failed to open URL: ${rawTarget}`, error);
+      });
+      return;
     }
     console.error(`Failed to open URL: ${rawTarget}`, error);
-    return false;
-  }
+  });
+  return true;
 }
 
 async function openQuickLinkById(id: string, dynamicValues?: Record<string, string>): Promise<boolean> {
@@ -7221,6 +7223,9 @@ function createWindow(): void {
       nodeIntegration: true,
       contextIsolation: false,
       sandbox: false,
+      // Without this, Chromium throttles paint of the hidden launcher,
+      // so the first frame after show() is catch-up and feels sluggish.
+      backgroundThrottling: false,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
@@ -8098,6 +8103,10 @@ function resolveLauncherEntryTargetWindowId(): string | null {
   return fallback || null;
 }
 
+function resolveLauncherEntryTargetWorkArea(): { x: number; y: number; width: number; height: number } | null {
+  return cloneWorkArea(launcherEntryWindowManagementTargetWorkArea ?? windowManagementTargetWorkArea);
+}
+
 function captureFrontmostAppContext(): void {
   if (process.platform !== 'darwin') return;
   try {
@@ -8190,9 +8199,17 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   if (launcherMode !== 'onboarding') {
     captureFrontmostAppContext();
     launcherEntryFrontmostApp = cloneFrontmostAppContext(lastFrontmostApp);
-    await captureWindowManagementTargetWindow();
-    launcherEntryWindowManagementTargetWindowId = String(windowManagementTargetWindowId || '').trim() || null;
-    launcherEntryWindowManagementTargetWorkArea = cloneWorkArea(windowManagementTargetWorkArea);
+    // Capture is a worker IPC (~50 ms) — don't await it. WM consumers
+    // already fall back to windowManagementTargetWindowId, which the
+    // capture sets as a side-effect, so a racing consumer still sees data.
+    launcherEntryWindowManagementTargetWindowId = null;
+    launcherEntryWindowManagementTargetWorkArea = null;
+    void captureWindowManagementTargetWindow()
+      .then(() => {
+        launcherEntryWindowManagementTargetWindowId = String(windowManagementTargetWindowId || '').trim() || null;
+        launcherEntryWindowManagementTargetWorkArea = cloneWorkArea(windowManagementTargetWorkArea);
+      })
+      .catch(() => {});
     // AX-only selection capture on window open: avoid clipboard fallback
     // (synthetic Cmd+C) here because the promise is not awaited — by the
     // time the AX check completes (~50 ms osascript spawn), mainWindow.show()
@@ -8218,20 +8235,9 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     selectedTextSnapshot: initialSelectionSnapshot,
   };
 
-  // Notify renderer before showing the window so it can finalize view state
-  // (including contextual command list) before first paint.
-  mainWindow.webContents.send('window-shown', windowShownPayload);
-
-  if (selectionSnapshotPromise) {
-    void selectionSnapshotPromise.then((snapshot) => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-      const nextSnapshot = String(snapshot || '').trim();
-      const prevSnapshot = String(initialSelectionSnapshot || '').trim();
-      if (nextSnapshot === prevSnapshot) return;
-      mainWindow.webContents.send('selection-snapshot-updated', { selectedTextSnapshot: nextSnapshot });
-    });
-  }
-
+  // Show first, notify second. The window-shown handler does non-trivial
+  // work (state resets, focus, optional fetch); running it before show()
+  // makes the user wait for that work before seeing the window.
   if (shouldActivateLauncherWindow) {
     try {
       app.focus({ steal: true });
@@ -8254,6 +8260,18 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
   }
   mainWindow.moveTop();
   isVisible = true;
+
+  mainWindow.webContents.send('window-shown', windowShownPayload);
+
+  if (selectionSnapshotPromise) {
+    void selectionSnapshotPromise.then((snapshot) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      const nextSnapshot = String(snapshot || '').trim();
+      const prevSnapshot = String(initialSelectionSnapshot || '').trim();
+      if (nextSnapshot === prevSnapshot) return;
+      mainWindow.webContents.send('selection-snapshot-updated', { selectedTextSnapshot: nextSnapshot });
+    });
+  }
 
   // Now that the window is visible on the current Space, confine it here
   // and re-sync AeroSpace (the pre-show move may have been a no-op for
@@ -9303,7 +9321,7 @@ async function openLauncherAndRunSystemCommand(
 
   if (isWindowManagementSystemCommand(commandId)) {
     const launcherTargetWindowId = resolveLauncherEntryTargetWindowId();
-    const launcherTargetWorkArea = cloneWorkArea(launcherEntryWindowManagementTargetWorkArea);
+    const launcherTargetWorkArea = resolveLauncherEntryTargetWorkArea();
     if (isVisible && (launcherTargetWindowId || launcherTargetWorkArea)) {
       windowManagementTargetWindowId = launcherTargetWindowId;
       windowManagementTargetWorkArea = launcherTargetWorkArea;
@@ -9920,7 +9938,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       ? resolveLauncherEntryTargetWindowId()
       : (String(windowManagementTargetWindowId || '').trim() || null);
     const preferredTargetWorkArea = source === 'launcher' && isVisible
-      ? cloneWorkArea(launcherEntryWindowManagementTargetWorkArea)
+      ? resolveLauncherEntryTargetWorkArea()
       : cloneWorkArea(windowManagementTargetWorkArea);
     if (source === 'launcher' && isVisible) {
       windowManagementTargetWindowId = preferredTargetWindowId;
@@ -9974,7 +9992,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       ? resolveLauncherEntryTargetWindowId()
       : (String(windowManagementTargetWindowId || '').trim() || null);
     const preferredTargetWorkArea = source === 'launcher' && isVisible
-      ? cloneWorkArea(launcherEntryWindowManagementTargetWorkArea)
+      ? resolveLauncherEntryTargetWorkArea()
       : cloneWorkArea(windowManagementTargetWorkArea);
     if (source === 'launcher' && isVisible) {
       windowManagementTargetWindowId = preferredTargetWindowId;
@@ -10038,9 +10056,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       const created = createScriptCommandTemplate();
       invalidateScriptCommandsCache();
       invalidateCache();
-      try {
-        await shell.openPath(created.scriptPath);
-      } catch {}
+      void shell.openPath(created.scriptPath).catch(() => {});
       console.log(`[ScriptCommand] Created: ${path.basename(created.scriptPath)}`);
       if (source === 'launcher') {
         setTimeout(() => hideWindow(), 50);
@@ -10055,7 +10071,9 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
   if (commandId === 'system-open-script-commands') {
     try {
       const dir = getSuperCmdScriptCommandsDirectory();
-      await shell.openPath(dir);
+      void shell.openPath(dir).catch((error: unknown) => {
+        console.error('Failed to open script command directory:', error);
+      });
       if (source === 'launcher') {
         setTimeout(() => hideWindow(), 50);
       }
@@ -10185,10 +10203,13 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     }
   }
 
-  const success = await executeCommand(commandId);
-  if (success && source === 'launcher') {
+  // Hide up-front rather than awaiting executeCommand. App/settings paths
+  // are already fire-and-forget so this is mostly defense in depth — if a
+  // future path adds a slow await, the launcher still feels instant.
+  if (source === 'launcher') {
     setTimeout(() => hideWindow(), 50);
   }
+  const success = await executeCommand(commandId);
   return success;
 }
 
@@ -11541,6 +11562,26 @@ function broadcastCommandsUpdated(): void {
   }
 }
 
+function broadcastExtensionPreferencesUpdated(extensionName: string): void {
+  const normalized = String(extensionName || '').trim();
+  if (!normalized) return;
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window || window.isDestroyed()) continue;
+    try {
+      window.webContents.send('extension-preferences-updated', { extensionName: normalized });
+    } catch {}
+  }
+}
+
+function broadcastAiChatsUpdated(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window || window.isDestroyed()) continue;
+    try {
+      window.webContents.send('ai-chats-updated');
+    } catch {}
+  }
+}
+
 function broadcastBrowserSearchHistoryChanged(): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue;
@@ -12206,6 +12247,17 @@ protocol.registerSchemesAsPrivileged([
       stream: true,
     },
   },
+  {
+    scheme: 'sc-clipboard',
+    privileges: {
+      standard: true,
+      secure: true,
+      corsEnabled: true,
+      bypassCSP: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
 ]);
 
 app.whenReady().then(async () => {
@@ -12304,6 +12356,27 @@ app.whenReady().then(async () => {
 
       const { pathToFileURL } = require('url');
       // Convert via pathToFileURL so spaces/special chars are encoded correctly.
+      return net.fetch(pathToFileURL(filePath).toString());
+    } catch {
+      return new Response('Bad Request', { status: 400 });
+    }
+  });
+
+  // Register the sc-clipboard:// protocol handler to serve clipboard image
+  // files. In development the renderer is on http://localhost, so raw file://
+  // URLs are blocked by webSecurity. sc-clipboard:// is privileged and works
+  // from any origin.
+  protocol.handle('sc-clipboard', (request: any) => {
+    try {
+      const url = new URL(request.url);
+      let filePath = decodeURIComponent(url.pathname || '');
+      if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
+        filePath = filePath.slice(1);
+      }
+      if (!filePath) {
+        return new Response('Bad Request', { status: 400 });
+      }
+      const { pathToFileURL } = require('url');
       return net.fetch(pathToFileURL(filePath).toString());
     } catch {
       return new Response('Bad Request', { status: 400 });
@@ -13091,6 +13164,11 @@ app.whenReady().then(async () => {
           console.error('Failed to rebuild extensions after updating custom folders:', error);
         }
       }
+      if (patch.scriptCommandFolders !== undefined) {
+        invalidateScriptCommandsCache();
+        invalidateCache();
+        broadcastCommandsUpdated();
+      }
       if (
         patch.emojiPickerEnabled !== undefined ||
         patch.emojiPickerTriggerPrefix !== undefined ||
@@ -13147,6 +13225,145 @@ app.whenReady().then(async () => {
       return result;
     }
   );
+
+  ipcMain.handle('rayconfig-import', async (event: any) => {
+    suppressBlurHide = true;
+    try {
+      const result = await importRaycastConfigFromFile(getDialogParentWindow(event));
+      if (!result.canceled) {
+        invalidateScriptCommandsCache();
+        invalidateCache();
+        broadcastCommandsUpdated();
+        for (const extensionName of result.importedExtensionPreferenceExtensions || []) {
+          broadcastExtensionPreferencesUpdated(extensionName);
+        }
+        if (result.aiChats.found > 0) {
+          broadcastAiChatsUpdated();
+        }
+        const latestSettings = loadSettings();
+        const windowsToNotify = [mainWindow, settingsWindow, extensionStoreWindow, promptWindow]
+          .filter(Boolean) as Array<InstanceType<typeof BrowserWindow>>;
+        for (const win of windowsToNotify) {
+          if (win.isDestroyed()) continue;
+          try {
+            win.webContents.send('settings-updated', latestSettings);
+          } catch {}
+        }
+      }
+      return result;
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('rayconfig-preview', async (event: any) => {
+    suppressBlurHide = true;
+    try {
+      return await previewRaycastConfigImport(getDialogParentWindow(event));
+    } finally {
+      suppressBlurHide = false;
+    }
+  });
+
+  ipcMain.handle('rayconfig-import-apply', async (_event: any, options: any) => {
+    const sender = _event.sender;
+    const reportProgress = (payload: RaycastImportProgress) => {
+      try {
+        sender.send('rayconfig-import-progress', payload);
+      } catch {}
+    };
+    const result = await executeRaycastConfigImport(options, (payload) => {
+      reportProgress({
+        sessionId: String(options?.sessionId || ''),
+        ...payload,
+      });
+    });
+    if (!result.canceled) {
+      invalidateScriptCommandsCache();
+      invalidateCache();
+      broadcastCommandsUpdated();
+      for (const extensionName of result.importedExtensionPreferenceExtensions || []) {
+        broadcastExtensionPreferencesUpdated(extensionName);
+      }
+      if (result.aiChats.found > 0) {
+        broadcastAiChatsUpdated();
+      }
+      const latestSettings = loadSettings();
+      const windowsToNotify = [mainWindow, settingsWindow, extensionStoreWindow, promptWindow]
+        .filter(Boolean) as Array<InstanceType<typeof BrowserWindow>>;
+      for (const win of windowsToNotify) {
+        if (win.isDestroyed()) continue;
+        try {
+          win.webContents.send('settings-updated', latestSettings);
+        } catch {}
+      }
+    }
+    return result;
+  });
+
+  ipcMain.handle('get-extension-preferences-snapshot', () => {
+    return getExtensionPreferencesSnapshot();
+  });
+
+  ipcMain.handle('get-ai-chat-snapshot', () => {
+    return getAiChatSnapshot();
+  });
+
+  ipcMain.handle('upsert-ai-chat-conversation', (_event: any, conversation: any) => {
+    const result = upsertAiChatConversation(conversation);
+    if (result) {
+      broadcastAiChatsUpdated();
+    }
+    return result;
+  });
+
+  ipcMain.handle('delete-ai-chat-conversation', (_event: any, id: string) => {
+    const removed = deleteAiChatConversation(id);
+    if (removed) {
+      broadcastAiChatsUpdated();
+    }
+    return removed;
+  });
+
+  ipcMain.handle('merge-ai-chat-snapshot', (_event: any, snapshot: any) => {
+    const result = mergeAiChatSnapshot(snapshot);
+    broadcastAiChatsUpdated();
+    return result;
+  });
+
+  ipcMain.handle('get-extension-preferences', (_event: any, extName: string, cmdName?: string) => {
+    return getExtensionPreferences(extName, cmdName);
+  });
+
+  ipcMain.handle(
+    'set-extension-preference',
+    (_event: any, extName: string, preferenceName: string, value: any, cmdName?: string) => {
+      const result = setExtensionPreferenceValue(extName, preferenceName, value, cmdName);
+      broadcastExtensionPreferencesUpdated(extName);
+      return result;
+    }
+  );
+
+  ipcMain.handle(
+    'set-extension-preferences',
+    (_event: any, extName: string, values: Record<string, any>, cmdName?: string) => {
+      const result = setExtensionPreferences(extName, values, cmdName);
+      broadcastExtensionPreferencesUpdated(extName);
+      return result;
+    }
+  );
+
+  ipcMain.handle('merge-extension-preferences-snapshot', (_event: any, snapshot: any) => {
+    const result = mergeExtensionPreferencesSnapshot(snapshot);
+    for (const extensionName of Object.keys(snapshot?.extensions || {})) {
+      broadcastExtensionPreferencesUpdated(extensionName);
+    }
+    for (const commandKey of Object.keys(snapshot?.commands || {})) {
+      const extensionName = String(commandKey || '').split('/')[0] || '';
+      if (extensionName) broadcastExtensionPreferencesUpdated(extensionName);
+    }
+    return result;
+  });
 
   ipcMain.handle('get-all-commands', async () => {
     // Return ALL commands (ignoring disabled filter) for the settings page
@@ -13354,7 +13571,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('open-custom-scripts-folder', async () => {
     try {
       const ensured = ensureSampleScriptCommand();
-      await shell.openPath(ensured.scriptsDir);
+      void shell.openPath(ensured.scriptsDir).catch((error: unknown) => {
+        console.error('Failed to open custom scripts folder:', error);
+      });
       return {
         success: true,
         folderPath: ensured.scriptsDir,

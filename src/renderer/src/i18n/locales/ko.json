@@ -260,6 +260,7 @@
           "anthropic": "Claude",
           "gemini": "Gemini",
           "ollama": "Ollama",
+          "lmStudio": "LM Studio",
           "openaiCompatible": "사용자 지정(OpenAI 호환)"
         },
         "providerDescriptions": {
@@ -267,7 +268,8 @@
           "anthropic": "Claude 계열 모델",
           "gemini": "Google Gemini 모델",
           "ollama": "로컬 모델",
-          "openaiCompatible": "모든 OpenAI 호환 API(OpenRouter, Together 등)"
+          "openaiCompatible": "모든 OpenAI 호환 API(OpenRouter, Together 등)",
+          "lmStudio": "LM Studio를 통한 로컬 모델"
         },
         "ollama": {
           "serverUrl": {
@@ -320,6 +322,17 @@
         "defaultModel": {
           "label": "기본 모델",
           "auto": "자동(제공자 기본값)"
+        },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "서버 URL",
+            "hint": "LM Studio 로컬 서버 URL（기본값：http://127.0.0.1:1234/v1）"
+          },
+          "apiKey": {
+            "toggle": "선택적 API 키",
+            "placeholder": "필요하지 않으면 비워두세요",
+            "hint": "LM Studio에서 인증을 구성한 경우에만 필요합니다."
+          }
         }
       },
       "whisper": {
