@@ -789,7 +789,7 @@ const AiChatView: React.FC<AiChatViewProps> = ({
           </div>
 
           {/* Footer (launcher-style: plain text + kbd badges, no pill) */}
-          <div className="sc-glass-footer px-4 py-2.5 flex items-center justify-between text-xs">
+          <div className="sc-glass-footer sc-launcher-footer px-4 py-2.5 flex items-center justify-between text-xs">
             <div className="flex items-center gap-2">
               <img src={supercmdLogo} alt="SuperCmd" className="w-4 h-4 rounded-sm" />
               <span className="text-[12px] text-[var(--text-primary)]">Ask AI</span>

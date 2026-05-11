@@ -4087,6 +4087,28 @@ const App: React.FC = () => {
     );
   }
 
+  // ─── App Uninstall mode ────────────────────────────────────────
+  if (showAppUninstall) {
+    return (
+      <>
+        {alwaysMountedRunners}
+        <div className="w-full h-full">
+          <div className="glass-effect overflow-hidden h-full flex flex-col relative">
+            <AppUninstallView
+              appPath={showAppUninstall}
+              onClose={() => {
+                setShowAppUninstall(null);
+                setSearchQuery('');
+                setSelectedIndex(0);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
+
   // ─── Onboarding mode ───────────────────────────────────────────
   if (showOnboarding) {
     return (
@@ -4878,19 +4900,6 @@ const App: React.FC = () => {
             ))}
           </div>
         </div>
-      </div>
-    )}
-    {showAppUninstall && (
-      <div className="absolute inset-0 z-[9999] flex flex-col" style={{ background: 'var(--bg-primary)' }}>
-        <AppUninstallView
-          appPath={showAppUninstall}
-          onClose={() => {
-            setShowAppUninstall(null);
-            setSearchQuery('');
-            setSelectedIndex(0);
-            setTimeout(() => inputRef.current?.focus(), 50);
-          }}
-        />
       </div>
     )}
     </>

@@ -17,7 +17,7 @@ process.stderr?.on?.('error', () => {});
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { fork, type ChildProcess } from 'child_process';
+import { fork, execFileSync, type ChildProcess } from 'child_process';
 import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState } from './settings-store';
 import type { AppSettings } from './settings-store';
@@ -14318,6 +14318,43 @@ return appURL's |path|() as text`,
         return icon.resize({ width: size, height: size }).toDataURL();
       }
       return null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Get .app bundle icon by reading its .icns file directly (avoids template-image transparency issues)
+  ipcMain.handle('get-app-icon-data-url', async (_event: any, appPath: string, size = 32) => {
+    try {
+      const plistPath = path.join(appPath, 'Contents', 'Info.plist');
+      if (!fs.existsSync(plistPath)) return null;
+
+      let iconFileName = '';
+      try {
+        iconFileName = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIconFile', plistPath], {
+          encoding: 'utf-8',
+          timeout: 3000,
+        }).trim();
+      } catch { return null; }
+
+      if (!iconFileName) return null;
+      if (!iconFileName.endsWith('.icns')) iconFileName += '.icns';
+
+      const icnsPath = path.join(appPath, 'Contents', 'Resources', iconFileName);
+      if (!fs.existsSync(icnsPath)) return null;
+
+      // Convert .icns to PNG via sips, return as base64 data URL (avoid nativeImage crash)
+      const os = require('os');
+      const tmpPng = path.join(os.tmpdir(), `sc-icon-${Date.now()}.png`);
+      try {
+        execFileSync('/usr/bin/sips', ['-s', 'format', 'png', '-z', String(size * 2), String(size * 2), icnsPath, '--out', tmpPng], {
+          timeout: 5000,
+        });
+        const pngBuf = fs.readFileSync(tmpPng);
+        return `data:image/png;base64,${pngBuf.toString('base64')}`;
+      } finally {
+        try { fs.unlinkSync(tmpPng); } catch {}
+      }
     } catch {
       return null;
     }

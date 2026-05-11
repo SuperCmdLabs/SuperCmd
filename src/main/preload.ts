@@ -525,6 +525,8 @@ const electronAPI = {
 
   getFileIconDataUrl: (filePath: string, size = 20): Promise<string | null> =>
     ipcRenderer.invoke('get-file-icon-data-url', filePath, size),
+  getAppIconDataUrl: (appPath: string, size = 32): Promise<string | null> =>
+    ipcRenderer.invoke('get-app-icon-data-url', appPath, size),
   searchIndexedFiles: (
     query: string,
     options?: { limit?: number }

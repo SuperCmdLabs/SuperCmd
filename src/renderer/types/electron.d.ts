@@ -719,6 +719,7 @@ export interface ElectronAPI {
   fileExists: (filePath: string) => Promise<boolean>;
   readDir: (dirPath: string) => Promise<string[]>;
   getFileIconDataUrl: (filePath: string, size?: number) => Promise<string | null>;
+  getAppIconDataUrl: (appPath: string, size?: number) => Promise<string | null>;
   searchIndexedFiles: (query: string, options?: { limit?: number }) => Promise<IndexedFileSearchResult[]>;
   getFileSearchIndexStatus: () => Promise<FileSearchIndexStatus>;
   refreshFileSearchIndex: (reason?: string) => Promise<FileSearchIndexStatus>;

@@ -6,7 +6,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ArrowLeft, Check, Folder, File, ChevronDown, Trash2, Circle, Copy, FolderOpen, Info } from 'lucide-react';
 import { useI18n } from '../i18n';
-import ExtensionActionFooter from '../components/ExtensionActionFooter';
 import type { AppUninstallScanResult } from '../../types/electron';
 
 function formatSize(bytes: number): string {
@@ -34,6 +33,9 @@ interface AppUninstallViewProps {
 
 type SortMode = 'path' | 'size';
 
+const KEY_CLASS =
+  'inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-muted)] font-medium';
+
 export default function AppUninstallView({ appPath, onClose }: AppUninstallViewProps) {
   const { t } = useI18n();
   const [scanResult, setScanResult] = useState<AppUninstallScanResult | null>(null);
@@ -46,6 +48,7 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
   const [showActions, setShowActions] = useState(false);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [appIcon, setAppIcon] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -65,6 +68,15 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
     }).catch(() => {
       if (!cancelled) setLoading(false);
     });
+    return () => { cancelled = true; };
+  }, [appPath]);
+
+  // Fetch app icon (size 20 is safe — size 64 causes V8 crash)
+  useEffect(() => {
+    let cancelled = false;
+    window.electron.getAppIconDataUrl(appPath, 32).then((dataUrl) => {
+      if (!cancelled && dataUrl) setAppIcon(dataUrl);
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [appPath]);
 
@@ -176,6 +188,7 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
       // Cmd+K toggles actions
       if (e.key.toLowerCase() === 'k' && e.metaKey && !e.repeat) {
         e.preventDefault();
+        e.stopPropagation();
         setShowActions((prev) => !prev);
         setSelectedActionIndex(0);
         return;
@@ -183,6 +196,7 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
 
       // When actions overlay is open
       if (showActions) {
+        e.stopPropagation();
         if (e.key === 'ArrowDown') {
           e.preventDefault();
           setSelectedActionIndex((prev) => Math.min(prev + 1, actions.length - 1));
@@ -204,6 +218,7 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
       // Escape closes view
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         onClose();
         return;
       }
@@ -211,11 +226,13 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
       // Arrow navigation
       if (e.key === 'ArrowDown') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex((i) => Math.min(i + 1, filteredRemnants.length - 1));
         return;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex((i) => Math.max(i - 1, 0));
         return;
       }
@@ -223,6 +240,7 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
       // Cmd+Enter = toggle check on selected
       if (e.key === 'Enter' && e.metaKey) {
         e.preventDefault();
+        e.stopPropagation();
         const item = filteredRemnants[selectedIndex];
         if (item) toggleCheck(item.path);
         return;
@@ -231,6 +249,7 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
       // Enter = uninstall
       if (e.key === 'Enter' && !e.metaKey) {
         e.preventDefault();
+        e.stopPropagation();
         handleUninstall();
         return;
       }
@@ -260,8 +279,8 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
       }
     };
 
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
   }, [showActions, actions, selectedActionIndex, onClose, filteredRemnants, selectedIndex, toggleCheck, handleUninstall]);
 
   // Scroll selected into view
@@ -299,10 +318,10 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* ─── Header: back arrow + filter input + sort dropdown ─── */}
-      <div className="flex items-center gap-1 px-3 sc-glass-header" style={{ minHeight: 46 }}>
+      <div className="drag-region flex h-[60px] items-center gap-2 px-4 border-b border-[var(--ui-divider)]">
         <button
           onClick={onClose}
-          className="p-1.5 -ml-1 rounded-md hover:bg-[var(--hover-bg)] text-[var(--text-muted)] transition-colors"
+          className="p-1.5 -ml-1 rounded-md hover:bg-[var(--hover-bg)] text-[var(--text-muted)] transition-colors no-drag"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
@@ -312,9 +331,9 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
           value={filterQuery}
           onChange={(e) => { setFilterQuery(e.target.value); setSelectedIndex(0); }}
           placeholder={t('appUninstall.filterPlaceholder')}
-          className="flex-1 bg-transparent text-[15px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none py-2"
+          className="flex-1 bg-transparent text-[15px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none py-2 no-drag"
         />
-        <div className="relative">
+        <div className="relative no-drag">
           <button
             onClick={() => setShowSortDropdown(!showSortDropdown)}
             className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
@@ -352,12 +371,12 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
       </div>
 
       {/* ─── Summary bar ─── */}
-      <div className="px-4 py-1.5 text-[11px] font-medium text-[var(--text-muted)] tracking-wide uppercase">
+      <div className="px-4 py-1.5 text-[11px] font-medium text-[var(--text-muted)] tracking-wide uppercase border-b border-[var(--ui-divider)]">
         {t('appUninstall.filesCount', { count: String(filteredRemnants.length) })} &nbsp;&nbsp; {formatSize(checkedSize)}
       </div>
 
       {/* ─── Remnant list ─── */}
-      <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar px-2">
+      <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar px-1.5">
         {filteredRemnants.map((remnant, idx) => {
           const isSelected = idx === selectedIndex;
           const isChecked = checkedPaths.has(remnant.path);
@@ -373,7 +392,7 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
           return (
             <div
               key={remnant.path}
-              className={`flex items-center gap-3 px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${
+              className={`flex items-center gap-3 px-3 h-[44px] rounded-lg cursor-pointer transition-colors ${
                 isSelected
                   ? 'bg-[var(--action-menu-selected-bg)]'
                   : 'hover:bg-[var(--hover-bg)]'
@@ -395,6 +414,15 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
                 {isChecked && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
               </div>
 
+              {/* Icon */}
+              {remnant.isAppBundle && appIcon ? (
+                <img src={appIcon} alt="" className="w-6 h-6 flex-shrink-0" />
+              ) : isFile ? (
+                <File className="w-5 h-5 text-[var(--text-muted)] flex-shrink-0" />
+              ) : (
+                <Folder className="w-5 h-5 text-blue-400 flex-shrink-0" fill="currentColor" />
+              )}
+
               {/* Label + location on same line */}
               <div className="flex items-baseline gap-2.5 flex-1 min-w-0">
                 <span className="text-[13px] font-medium text-[var(--text-primary)] truncate flex-shrink-0">
@@ -405,16 +433,11 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
                 </span>
               </div>
 
-              {/* Size + file/folder icon */}
+              {/* Size */}
               <div className="flex items-center gap-2.5 flex-shrink-0">
                 <span className="text-[13px] text-[var(--text-muted)]">
                   {formatSize(remnant.sizeBytes)}
                 </span>
-                {isFile ? (
-                  <File className="w-4 h-4 text-[var(--text-muted)]" />
-                ) : (
-                  <Folder className="w-4 h-4 text-blue-400" fill="currentColor" />
-                )}
               </div>
             </div>
           );
@@ -422,26 +445,31 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
       </div>
 
       {/* ─── Footer ─── */}
-      <ExtensionActionFooter
-        leftContent={
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="truncate">
-              {t('appUninstall.title', { appName: scanResult.appName })}
-            </span>
-          </div>
-        }
-        primaryAction={{
-          label: t('appUninstall.uninstallButton'),
-          onClick: handleUninstall,
-          disabled: uninstalling || checkedPaths.size === 0,
-          shortcut: ['↩'],
-        }}
-        actionsButton={{
-          label: t('appUninstall.actions'),
-          onClick: () => { setShowActions((prev) => !prev); setSelectedActionIndex(0); },
-          shortcut: ['⌘', 'K'],
-        }}
-      />
+      <div className="sc-glass-footer sc-launcher-footer flex items-center px-4 py-2.5">
+        <div className="flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate text-[var(--text-subtle)]">
+          {appIcon && <img src={appIcon} alt="" className="w-5 h-5 flex-shrink-0" />}
+          <span className="truncate">{t('appUninstall.title', { appName: scanResult.appName })}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { if (!uninstalling && checkedPaths.size > 0) handleUninstall(); }}
+            disabled={uninstalling || checkedPaths.size === 0}
+            className="flex items-center gap-1.5 text-[var(--text-primary)] hover:text-[var(--text-secondary)] disabled:text-[var(--text-disabled)] transition-colors"
+          >
+            <span className="text-xs font-normal truncate max-w-[220px]">{t('appUninstall.uninstallButton')}</span>
+            <kbd className={KEY_CLASS}>↩</kbd>
+          </button>
+          <span className="h-5 w-px bg-[var(--ui-divider)] mx-1" />
+          <button
+            onClick={() => { setShowActions((prev) => !prev); setSelectedActionIndex(0); }}
+            className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+          >
+            <span className="text-xs font-normal">{t('appUninstall.actions')}</span>
+            <kbd className={KEY_CLASS}>⌘</kbd>
+            <kbd className={KEY_CLASS}>K</kbd>
+          </button>
+        </div>
+      </div>
 
       {/* ─── Actions overlay ─── */}
       {showActions && (
