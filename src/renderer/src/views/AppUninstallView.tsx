@@ -407,7 +407,7 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
               <div
                 className={`w-[18px] h-[18px] rounded-[5px] border-[1.5px] flex items-center justify-center flex-shrink-0 transition-colors ${
                   isChecked
-                    ? 'bg-[var(--accent-color,#3b82f6)] border-[var(--accent-color,#3b82f6)]'
+                    ? 'bg-[var(--accent)] border-[var(--accent)]'
                     : 'border-[var(--text-muted)]'
                 }`}
               >

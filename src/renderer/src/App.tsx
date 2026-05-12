@@ -449,6 +449,7 @@ const App: React.FC = () => {
   const fileSearchRequestSeqRef = useRef(0);
   const commandsRef = useRef<CommandInfo[]>([]);
   const showActionsRef = useRef(false);
+  const showAppUninstallRef = useRef<string | null>(null);
   const selectedCommandRef = useRef<CommandInfo | null>(null);
   commandsRef.current = commands;
 
@@ -1428,10 +1429,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     showActionsRef.current = showActions;
+    showAppUninstallRef.current = showAppUninstall;
     if (!showActions) {
       setActionsCommand(null);
     }
-  }, [showActions]);
+  }, [showActions, showAppUninstall]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1567,6 +1569,7 @@ const App: React.FC = () => {
     if (!isLauncherModeActive) return;
     const onWindowKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+      if (showAppUninstallRef.current) return;
       if (!e.metaKey || String(e.key || '').toLowerCase() !== 'k' || e.repeat) return;
 
       const target = e.target as HTMLElement | null;
@@ -4098,6 +4101,8 @@ const App: React.FC = () => {
               appPath={showAppUninstall}
               onClose={() => {
                 setShowAppUninstall(null);
+                setShowActions(false);
+                setContextMenu(null);
                 setSearchQuery('');
                 setSelectedIndex(0);
                 setTimeout(() => inputRef.current?.focus(), 50);
