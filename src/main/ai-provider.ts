@@ -297,9 +297,7 @@ async function* streamOpenAICompatibleChat(
   const body = JSON.stringify(payload);
 
   const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
-  const chatUrl = normalizedBaseUrl.endsWith('/v1')
-    ? `${normalizedBaseUrl}/chat/completions`
-    : `${normalizedBaseUrl}/v1/chat/completions`;
+  const chatUrl = `${normalizedBaseUrl}/chat/completions`;
   const url = new URL(chatUrl);
   const useHttps = url.protocol === 'https:';
 
@@ -505,11 +503,8 @@ async function* streamOpenAICompatible(
   if (!isOpenAIReasoningModel(model)) payload.temperature = temperature;
   const body = JSON.stringify(payload);
 
-  // Ensure baseUrl ends with /v1 and append /chat/completions
   const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
-  const chatUrl = normalizedBaseUrl.endsWith('/v1') 
-    ? `${normalizedBaseUrl}/chat/completions`
-    : `${normalizedBaseUrl}/v1/chat/completions`;
+  const chatUrl = `${normalizedBaseUrl}/chat/completions`;
   
   const url = new URL(chatUrl);
   const useHttps = url.protocol === 'https:';
