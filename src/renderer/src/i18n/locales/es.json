@@ -205,6 +205,7 @@
           "anthropic": "Anthropic",
           "ollama": "Ollama (local)",
           "gemini": "Gemini",
+          "lmStudio": "LM Studio",
           "openaiCompatible": "Personalizado (compatible con OpenAI)"
         },
         "model": {
@@ -277,6 +278,17 @@
         "defaultModel": {
           "label": "Modelo predeterminado",
           "auto": "Auto (predeterminado del proveedor)"
+        },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "URL del servidor",
+            "hint": "URL del servidor local de LM Studio (predeterminado: http://127.0.0.1:1234/v1)"
+          },
+          "apiKey": {
+            "toggle": "Clave API opcional",
+            "placeholder": "Dejar vacío si no es necesario",
+            "hint": "Solo es necesario si has configurado autenticación en LM Studio."
+          }
         }
       },
       "whisper": {
@@ -572,6 +584,35 @@
     },
     "advanced": {
       "title": "Configuración avanzada",
+      "settingsFolder": {
+        "title": "Carpeta de ajustes",
+        "description": "Sincroniza los ajustes y las extensiones entre tus Mac mediante iCloud Drive, Dropbox o cualquier carpeta.",
+        "defaultLabel": "Ubicación por defecto",
+        "chooseButton": "Elegir carpeta…",
+        "changeButton": "Cambiar carpeta…",
+        "resetButton": "Restablecer por defecto",
+        "conflict": {
+          "title": "Ya existen ajustes en esta carpeta",
+          "body": "Ya hay un archivo settings.json en {folder}. ¿Qué versión quieres usar?",
+          "useExisting": "Usar ajustes existentes",
+          "useExistingHint": "Reemplazar los ajustes de este Mac con la copia sincronizada.",
+          "replace": "Reemplazar con ajustes actuales",
+          "replaceHint": "Sobrescribir la copia sincronizada con los ajustes de este Mac.",
+          "cancel": "Cancelar"
+        },
+        "resetConfirm": {
+          "title": "¿Mover los ajustes a la ubicación por defecto?",
+          "body": "Tus ajustes se guardarán solo en este Mac. La copia sincronizada en la carpeta elegida no se eliminará.",
+          "confirm": "Restablecer por defecto",
+          "cancel": "Cancelar"
+        },
+        "status": {
+          "moved": "Carpeta de ajustes actualizada.",
+          "adopted": "Ajustes sincronizados adoptados.",
+          "reset": "Ajustes movidos a la ubicación por defecto.",
+          "failed": "No se pudo actualizar la carpeta de ajustes."
+        }
+      },
       "disableFileSearch": {
         "title": "Desactivar búsqueda de archivos y carpetas",
         "description": "Ocultar los resultados de archivos y carpetas de la búsqueda principal del lanzador.",

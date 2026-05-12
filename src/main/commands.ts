@@ -11,7 +11,7 @@
  */
 
 import { app } from 'electron';
-import { exec, execFile } from 'child_process';
+import { exec, execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -1179,40 +1179,34 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
 // ─── Command Execution ──────────────────────────────────────────────
 
 async function openAppByPath(appPath: string): Promise<void> {
-  await execAsync(`open "${appPath}"`);
+  // open(1) is supposed to return quickly after dispatching to
+  // LaunchServices, but can block 1-3s on first launch (Gatekeeper,
+  // sealed-package validation — Microsoft Office is a frequent offender).
+  // The launch is dispatched async either way, so fire-and-forget.
+  const child = spawn('/usr/bin/open', [appPath], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.on('error', (err) => {
+    console.error(`Failed to open app: ${appPath}`, err);
+  });
+  child.unref();
 }
 
 async function openSettingsPane(identifier: string): Promise<void> {
-  if (identifier.startsWith('com.apple.')) {
-    try {
-      await execAsync(`open "x-apple.systempreferences:${identifier}"`);
-      return;
-    } catch { /* fall through */ }
-  }
-
-  try {
-    await execAsync(
-      `open "x-apple.systempreferences:com.apple.settings.${identifier}"`
-    );
-    return;
-  } catch { /* fall through */ }
-
-  try {
-    await execAsync(
-      `open "x-apple.systempreferences:com.apple.preference.${identifier.toLowerCase()}"`
-    );
-    return;
-  } catch { /* fall through */ }
-
-  try {
-    await execAsync('open -a "System Settings"');
-  } catch {
-    try {
-      await execAsync('open -a "System Preferences"');
-    } catch (e) {
-      console.error('Could not open System Settings:', e);
-    }
-  }
+  // Fire-and-forget for the same reason as openAppByPath. The old
+  // sequential fallback chain was futile too: open(1) returns 0 for any
+  // well-formed x-apple.systempreferences URL, and macOS opens System
+  // Settings to its default pane on unknown URLs (matching the old
+  // bare fallback).
+  const url = identifier.startsWith('com.apple.')
+    ? `x-apple.systempreferences:${identifier}`
+    : `x-apple.systempreferences:com.apple.settings.${identifier}`;
+  const child = spawn('/usr/bin/open', [url], { detached: true, stdio: 'ignore' });
+  child.on('error', (err) => {
+    console.error(`Failed to open settings pane: ${url}`, err);
+  });
+  child.unref();
 }
 
 // ─── Public API ─────────────────────────────────────────────────────

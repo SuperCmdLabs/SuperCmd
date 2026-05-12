@@ -32,7 +32,7 @@ export interface AIChatRequestOptions {
 // ─── Model routing ────────────────────────────────────────────────────
 
 interface ModelRoute {
-  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible';
+  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'lm-studio' | 'openai-compatible';
   modelId: string;
 }
 
@@ -66,10 +66,10 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
   // If the model key is not in our routing table, strip provider prefix and route directly
   if (model) {
     // Order matters: check longer prefixes first to avoid partial matches
-    const prefixes = ['openai-compatible-', 'anthropic-', 'gemini-', 'ollama-', 'openai-'] as const;
+    const prefixes = ['openai-compatible-', 'lm-studio-', 'anthropic-', 'gemini-', 'ollama-', 'openai-'] as const;
     for (const prefix of prefixes) {
       if (model.startsWith(prefix)) {
-        return { provider: prefix.slice(0, -1) as 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible', modelId: model.slice(prefix.length) };
+        return { provider: prefix.slice(0, -1) as 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible' | 'lm-studio', modelId: model.slice(prefix.length) };
       }
     }
     return { provider: config.provider, modelId: model };
@@ -81,10 +81,10 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
     }
     // Handle dynamic model IDs (e.g. "ollama-llama3.2")
     // Order matters: check longer prefixes first to avoid partial matches
-    const prefixes = ['openai-compatible-', 'anthropic-', 'gemini-', 'ollama-', 'openai-'] as const;
+    const prefixes = ['openai-compatible-', 'lm-studio-', 'anthropic-', 'gemini-', 'ollama-', 'openai-'] as const;
     for (const prefix of prefixes) {
       if (config.defaultModel.startsWith(prefix)) {
-        return { provider: prefix.slice(0, -1) as 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible', modelId: config.defaultModel.slice(prefix.length) };
+        return { provider: prefix.slice(0, -1) as 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible' | 'lm-studio', modelId: config.defaultModel.slice(prefix.length) };
       }
     }
   }
@@ -95,6 +95,7 @@ function resolveModel(model: string | undefined, config: AISettings): ModelRoute
     gemini: 'gemini-2.5-flash',
     ollama: 'llama3',
     'openai-compatible': config.openaiCompatibleModel?.trim() || 'gpt-4o',
+    'lm-studio': config.lmStudioModel?.trim() || 'local-model',
   };
   return { provider: config.provider, modelId: defaults[config.provider] || 'gpt-4o-mini' };
 }
@@ -126,6 +127,8 @@ function hasProviderCredentials(provider: ModelRoute['provider'], config: AISett
       return !!config.ollamaBaseUrl;
     case 'openai-compatible':
       return !!(config.openaiCompatibleBaseUrl && config.openaiCompatibleApiKey);
+    case 'lm-studio':
+      return !!config.lmStudioBaseUrl;
     default:
       return false;
   }
@@ -178,6 +181,17 @@ export async function* streamAI(
         options.signal
       );
       break;
+    case 'lm-studio':
+      yield* streamOpenAICompatible(
+        config.lmStudioBaseUrl || 'http://127.0.0.1:1234/v1',
+        config.lmStudioApiKey || 'lm-studio',
+        route.modelId,
+        options.prompt,
+        temperature,
+        options.systemPrompt,
+        options.signal
+      );
+      break;
   }
 }
 
@@ -207,6 +221,17 @@ export async function* streamAIChat(
       yield* streamOpenAICompatibleChat(
         config.openaiCompatibleBaseUrl,
         config.openaiCompatibleApiKey,
+        route.modelId,
+        options.messages,
+        temperature,
+        options.systemPrompt,
+        options.signal
+      );
+      break;
+    case 'lm-studio':
+      yield* streamOpenAICompatibleChat(
+        config.lmStudioBaseUrl || 'http://127.0.0.1:1234/v1',
+        config.lmStudioApiKey || 'lm-studio',
         route.modelId,
         options.messages,
         temperature,

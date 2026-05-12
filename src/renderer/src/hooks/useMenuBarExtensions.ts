@@ -174,6 +174,14 @@ export function useMenuBarExtensions(): UseMenuBarExtensionsReturn {
     };
   }, [remountMenuBarExtensionsForExtension]);
 
+  useEffect(() => {
+    return window.electron.onExtensionPreferencesUpdated((payload) => {
+      const extensionName = String(payload?.extensionName || '').trim();
+      if (!extensionName) return;
+      remountMenuBarExtensionsForExtension(extensionName);
+    });
+  }, [remountMenuBarExtensionsForExtension]);
+
   return {
     menuBarExtensions,
     backgroundNoViewRuns,

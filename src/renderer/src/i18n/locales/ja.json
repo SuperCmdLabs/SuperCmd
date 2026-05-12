@@ -260,6 +260,7 @@
           "anthropic": "Claude",
           "gemini": "Gemini",
           "ollama": "Ollama",
+          "lmStudio": "LM Studio",
           "openaiCompatible": "カスタム（OpenAI 互換）"
         },
         "providerDescriptions": {
@@ -267,7 +268,8 @@
           "anthropic": "Anthropic Claude モデル",
           "gemini": "Google Gemini モデル",
           "ollama": "ローカルモデル",
-          "openaiCompatible": "任意の OpenAI 互換 API（OpenRouter、Together など）"
+          "openaiCompatible": "任意の OpenAI 互換 API（OpenRouter、Together など）",
+          "lmStudio": "LM Studio でローカルモデルを使用"
         },
         "ollama": {
           "serverUrl": {
@@ -320,6 +322,17 @@
         "defaultModel": {
           "label": "デフォルトモデル",
           "auto": "自動（プロバイダのデフォルト）"
+        },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "サーバー URL",
+            "hint": "LM Studio のローカルサーバー URL（デフォルト：http://127.0.0.1:1234/v1）"
+          },
+          "apiKey": {
+            "toggle": "オプションのAPIキー",
+            "placeholder": "不要な場合は空白のままにしてください",
+            "hint": "LM Studioで認証を設定している場合のみ必要です。"
+          }
         }
       },
       "whisper": {
@@ -610,6 +623,35 @@
     "advanced": {
       "title": "詳細",
       "loading": "詳細設定を読み込み中...",
+      "settingsFolder": {
+        "title": "設定フォルダ",
+        "description": "iCloud Drive、Dropbox、または任意のフォルダを使って Mac 間で設定と拡張機能を同期します。",
+        "defaultLabel": "デフォルトの場所",
+        "chooseButton": "フォルダを選択…",
+        "changeButton": "フォルダを変更…",
+        "resetButton": "デフォルトに戻す",
+        "conflict": {
+          "title": "このフォルダには既に設定があります",
+          "body": "{folder} には既に settings.json があります。どちらのバージョンを使いますか？",
+          "useExisting": "既存の設定を使う",
+          "useExistingHint": "この Mac の設定を同期されたコピーで置き換えます。",
+          "replace": "現在の設定で置き換え",
+          "replaceHint": "この Mac の設定で同期されたコピーを上書きします。",
+          "cancel": "キャンセル"
+        },
+        "resetConfirm": {
+          "title": "設定をデフォルトの場所に戻しますか？",
+          "body": "設定はこの Mac にのみ保存されます。選択したフォルダ内の同期コピーは削除されません。",
+          "confirm": "デフォルトに戻す",
+          "cancel": "キャンセル"
+        },
+        "status": {
+          "moved": "設定フォルダを更新しました。",
+          "adopted": "同期された設定を採用しました。",
+          "reset": "設定をデフォルトの場所に戻しました。",
+          "failed": "設定フォルダを更新できませんでした。"
+        }
+      },
       "disableFileSearch": {
         "title": "ファイルとフォルダ検索を無効化",
         "description": "メインランチャー検索からファイルとフォルダの結果を非表示にします。",

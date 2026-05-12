@@ -16,10 +16,11 @@ interface ClipboardManagerProps {
   onClose: () => void;
 }
 
-function fileUrl(filePath: string): string {
-  // Paths can contain spaces (e.g. /Library/Application Support/...) so use
-  // encodeURI to make a valid file:// URL while leaving path separators alone.
-  return `file://${encodeURI(filePath)}`;
+function clipboardImageUrl(filePath: string): string {
+  // In development the renderer is served on http://localhost, so raw file://
+  // URLs are blocked by webSecurity. sc-clipboard:// is a privileged custom
+  // protocol that works from any origin and is handled by the main process.
+  return `sc-clipboard://image${encodeURI(filePath)}`;
 }
 
 interface Action {
@@ -600,7 +601,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                     {item.type === 'image' ? (
                       <>
                         <img
-                          src={fileUrl(item.content)}
+                          src={clipboardImageUrl(item.content)}
                           alt="Clipboard"
                           className="w-7 h-7 object-cover rounded flex-shrink-0"
                           onError={(e) => {
@@ -608,7 +609,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                             const img = e.currentTarget;
                             if (fallback && img.dataset.fallback !== '1') {
                               img.dataset.fallback = '1';
-                              img.src = fileUrl(fallback);
+                              img.src = clipboardImageUrl(fallback);
                             }
                           }}
                         />
@@ -659,7 +660,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
               <div className="flex-1 min-h-0 overflow-auto custom-scrollbar p-3.5 flex items-center justify-center">
                 {selectedItem.type === 'image' ? (
                   <img
-                    src={fileUrl(selectedItem.content)}
+                    src={clipboardImageUrl(selectedItem.content)}
                     alt="Clipboard"
                     className="max-w-full max-h-full object-contain"
                     onError={(e) => {
@@ -667,7 +668,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
                       const img = e.currentTarget;
                       if (fallback && img.dataset.fallback !== '1') {
                         img.dataset.fallback = '1';
-                        img.src = fileUrl(fallback);
+                        img.src = clipboardImageUrl(fallback);
                       }
                     }}
                   />

@@ -3,7 +3,7 @@
  *
  * Multi-turn AI chat state with conversation history.
  * - Owns `messages` array for the active conversation
- * - Persists conversation list + bodies in localStorage
+ * - Persists conversation list + bodies in the Electron main process
  * - Streams assistant responses into the last message
  * - startAiChat(query): enter AI mode; if query present, auto-send
  * - sendMessage(text): append user msg, stream assistant reply
@@ -15,24 +15,13 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import type {
+  AiChatConversation as AiConversation,
+  AiChatMessage as AiMessage,
+  AiChatSnapshot,
+} from '../../types/electron';
 
-// ─── Types ──────────────────────────────────────────────────────────
-
-export interface AiMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  createdAt: number;
-  cancelled?: boolean;
-}
-
-export interface AiConversation {
-  id: string;
-  title: string;
-  messages: AiMessage[];
-  createdAt: number;
-  updatedAt: number;
-}
+export type { AiConversation, AiMessage };
 
 export interface UseAiChatOptions {
   onExitAiMode?: () => void;
@@ -40,7 +29,6 @@ export interface UseAiChatOptions {
 }
 
 export interface UseAiChatReturn {
-  // Active conversation
   messages: AiMessage[];
   aiStreaming: boolean;
   aiAvailable: boolean;
@@ -49,12 +37,8 @@ export interface UseAiChatReturn {
   aiInputRef: React.RefObject<HTMLInputElement>;
   aiResponseRef: React.RefObject<HTMLDivElement>;
   setAiAvailable: (value: boolean) => void;
-
-  // History
   conversations: AiConversation[];
   activeConversationId: string | null;
-
-  // Actions
   startAiChat: (searchQuery: string) => void;
   sendMessage: (text: string) => void;
   stopStreaming: () => void;
@@ -64,49 +48,25 @@ export interface UseAiChatReturn {
   exitAiMode: () => void;
 }
 
-// ─── Persistence ────────────────────────────────────────────────────
-
-const STORAGE_KEY = 'sc.aiChat.conversations';
 const MAX_CONVERSATIONS = 50;
-
-function loadConversations(): AiConversation[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (c) =>
-        c &&
-        typeof c.id === 'string' &&
-        Array.isArray(c.messages)
-    );
-  } catch {
-    return [];
-  }
-}
-
-function saveConversations(convs: AiConversation[]) {
-  try {
-    const trimmed = convs.slice(0, MAX_CONVERSATIONS);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
-  } catch {}
-}
 
 function makeTitle(text: string): string {
   const t = (text || '').trim().replace(/\s+/g, ' ');
   if (!t) return 'New Chat';
-  return t.length > 48 ? t.slice(0, 48) + '…' : t;
+  return t.length > 48 ? `${t.slice(0, 48)}…` : t;
 }
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// ─── Hook ───────────────────────────────────────────────────────────
+function normalizeSnapshot(snapshot: AiChatSnapshot | null | undefined): AiConversation[] {
+  if (!snapshot || !Array.isArray(snapshot.conversations)) return [];
+  return snapshot.conversations.slice(0, MAX_CONVERSATIONS);
+}
 
 export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiChatReturn {
-  const [conversations, setConversations] = useState<AiConversation[]>(() => loadConversations());
+  const [conversations, setConversations] = useState<AiConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [aiStreaming, setAiStreaming] = useState(false);
@@ -117,49 +77,100 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
   const aiStreamingRef = useRef(false);
   const streamingMessageIdRef = useRef<string | null>(null);
   const activeConversationIdRef = useRef<string | null>(null);
+  const messagesRef = useRef<AiMessage[]>([]);
   const aiInputRef = useRef<HTMLInputElement>(null);
   const aiResponseRef = useRef<HTMLDivElement>(null);
 
-  // Keep ref in sync
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
 
-  // Persist conversations on change
   useEffect(() => {
-    saveConversations(conversations);
-  }, [conversations]);
+    messagesRef.current = messages;
+  }, [messages]);
 
-  // ── Streaming listeners ────────────────────────────────────────
+  const applySnapshot = useCallback((snapshot: AiChatSnapshot | null | undefined) => {
+    const nextConversations = normalizeSnapshot(snapshot);
+    setConversations(nextConversations);
+
+    if (aiStreamingRef.current) {
+      return;
+    }
+
+    const activeId = activeConversationIdRef.current;
+    if (!activeId) return;
+
+    const nextActive = nextConversations.find((conversation) => conversation.id === activeId);
+    if (nextActive) {
+      setMessages(nextActive.messages);
+      return;
+    }
+
+    if (messagesRef.current.length === 0) {
+      activeConversationIdRef.current = null;
+      setActiveConversationId(null);
+    }
+  }, []);
+
+  const refreshSnapshot = useCallback(() => {
+    void window.electron.getAiChatSnapshot()
+      .then((snapshot) => {
+        applySnapshot(snapshot);
+      })
+      .catch(() => {});
+  }, [applySnapshot]);
+
+  useEffect(() => {
+    refreshSnapshot();
+  }, [refreshSnapshot]);
+
+  useEffect(() => {
+    return window.electron.onAiChatsUpdated(() => {
+      refreshSnapshot();
+    });
+  }, [refreshSnapshot]);
+
+  const persistConversation = useCallback((conversation: AiConversation) => {
+    setConversations((prev) => [
+      conversation,
+      ...prev.filter((entry) => entry.id !== conversation.id),
+    ].slice(0, MAX_CONVERSATIONS));
+    void window.electron.upsertAiChatConversation(conversation);
+  }, []);
 
   useEffect(() => {
     const appendToStreamingMessage = (chunk: string) => {
       const msgId = streamingMessageIdRef.current;
       if (!msgId) return;
       setMessages((prev) =>
-        prev.map((m) => (m.id === msgId ? { ...m, content: m.content + chunk } : m))
+        prev.map((message) => (
+          message.id === msgId
+            ? { ...message, content: message.content + chunk }
+            : message
+        ))
       );
     };
 
     const finalizeConversation = () => {
-      const convId = activeConversationIdRef.current;
-      if (!convId) return;
+      const conversationId = activeConversationIdRef.current;
+      if (!conversationId) return;
+
       setMessages((current) => {
-        setConversations((convs) => {
-          const idx = convs.findIndex((c) => c.id === convId);
-          const updated: AiConversation = {
-            id: convId,
-            title:
-              convs[idx]?.title && convs[idx].title !== 'New Chat'
-                ? convs[idx].title
-                : makeTitle(current.find((m) => m.role === 'user')?.content || 'New Chat'),
-            messages: current,
-            createdAt: convs[idx]?.createdAt ?? Date.now(),
-            updatedAt: Date.now(),
-          };
-          const rest = convs.filter((c) => c.id !== convId);
-          return [updated, ...rest];
-        });
+        const existing = conversations.find((conversation) => conversation.id === conversationId);
+        const updatedConversation: AiConversation = {
+          id: conversationId,
+          title:
+            existing?.title && existing.title !== 'New Chat'
+              ? existing.title
+              : makeTitle(current.find((message) => message.role === 'user')?.content || 'New Chat'),
+          messages: current,
+          createdAt: existing?.createdAt ?? Date.now(),
+          updatedAt: Date.now(),
+          source: existing?.source || 'local',
+          ...(existing?.sourceConversationId ? { sourceConversationId: existing.sourceConversationId } : {}),
+          ...(existing?.metadata ? { metadata: existing.metadata } : {}),
+        };
+        persistConversation(updatedConversation);
         return current;
       });
     };
@@ -169,6 +180,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
         appendToStreamingMessage(data.chunk);
       }
     };
+
     const handleDone = (data: { requestId: string }) => {
       if (data.requestId === aiRequestIdRef.current) {
         aiStreamingRef.current = false;
@@ -177,16 +189,20 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
         finalizeConversation();
       }
     };
+
     const handleError = (data: { requestId: string; error: string }) => {
       if (data.requestId === aiRequestIdRef.current) {
         aiStreamingRef.current = false;
         const msgId = streamingMessageIdRef.current;
         if (msgId) {
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === msgId
-                ? { ...m, content: m.content + (m.content ? '\n\n' : '') + `Error: ${data.error}` }
-                : m
+            prev.map((message) =>
+              message.id === msgId
+                ? {
+                    ...message,
+                    content: message.content + (message.content ? '\n\n' : '') + `Error: ${data.error}`,
+                  }
+                : message
             )
           );
         }
@@ -205,9 +221,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
       removeDone?.();
       removeError?.();
     };
-  }, []);
-
-  // ── Auto-scroll on new content ─────────────────────────────────
+  }, [conversations, persistConversation]);
 
   useEffect(() => {
     if (aiResponseRef.current) {
@@ -215,16 +229,11 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     }
   }, [messages]);
 
-  // ── Availability check ────────────────────────────────────────
-
   useEffect(() => {
     window.electron.aiIsAvailable().then(setAiAvailable);
   }, []);
 
-  // ── Internal: send a chat turn ────────────────────────────────
-
   const sendChatTurn = useCallback((allMessages: AiMessage[]) => {
-    // Cancel any in-flight
     if (aiRequestIdRef.current && aiStreamingRef.current) {
       window.electron.aiCancel(aiRequestIdRef.current);
     }
@@ -232,68 +241,63 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     aiRequestIdRef.current = requestId;
     aiStreamingRef.current = true;
     setAiStreaming(true);
-    const payload = allMessages.map((m) => ({ role: m.role, content: m.content }));
+    const payload = allMessages.map((message) => ({ role: message.role, content: message.content }));
     window.electron.aiChat(requestId, payload);
   }, []);
-
-  // ── Actions ───────────────────────────────────────────────────
 
   const sendMessage = useCallback(
     (text: string) => {
       const trimmed = text.trim();
       if (!trimmed || !aiAvailable) return;
 
-      // Ensure we have an active conversation
-      let convId = activeConversationIdRef.current;
-      if (!convId) {
-        convId = uid('conv');
-        activeConversationIdRef.current = convId;
-        setActiveConversationId(convId);
-        const newConv: AiConversation = {
-          id: convId,
+      let conversationId = activeConversationIdRef.current;
+      if (!conversationId) {
+        conversationId = uid('conv');
+        activeConversationIdRef.current = conversationId;
+        setActiveConversationId(conversationId);
+        persistConversation({
+          id: conversationId,
           title: makeTitle(trimmed),
           messages: [],
           createdAt: Date.now(),
           updatedAt: Date.now(),
-        };
-        setConversations((prev) => [newConv, ...prev]);
+          source: 'local',
+        });
       }
 
-      const userMsg: AiMessage = {
+      const userMessage: AiMessage = {
         id: uid('msg'),
         role: 'user',
         content: trimmed,
         createdAt: Date.now(),
       };
-      const assistantMsg: AiMessage = {
+      const assistantMessage: AiMessage = {
         id: uid('msg'),
         role: 'assistant',
         content: '',
         createdAt: Date.now(),
       };
-      streamingMessageIdRef.current = assistantMsg.id;
+      streamingMessageIdRef.current = assistantMessage.id;
 
       setMessages((prev) => {
-        const next = [...prev, userMsg, assistantMsg];
-        sendChatTurn([...prev, userMsg]); // assistant is empty, send context up to user msg
+        const next = [...prev, userMessage, assistantMessage];
+        sendChatTurn([...prev, userMessage]);
         return next;
       });
       setAiQuery('');
     },
-    [aiAvailable, sendChatTurn]
+    [aiAvailable, persistConversation, sendChatTurn]
   );
 
   const startAiChat = useCallback(
     (searchQuery: string) => {
       if (!aiAvailable) return;
-      // Start a fresh conversation
       activeConversationIdRef.current = null;
       setActiveConversationId(null);
       setMessages([]);
       setAiMode(true);
       const trimmed = searchQuery.trim();
       if (trimmed) {
-        // Send immediately
         setTimeout(() => sendMessage(trimmed), 0);
       } else {
         setAiQuery('');
@@ -308,10 +312,10 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     }
     aiStreamingRef.current = false;
     setAiStreaming(false);
-    const msgId = streamingMessageIdRef.current;
-    if (msgId) {
+    const messageId = streamingMessageIdRef.current;
+    if (messageId) {
       setMessages((prev) =>
-        prev.map((m) => (m.id === msgId ? { ...m, cancelled: true } : m))
+        prev.map((message) => (message.id === messageId ? { ...message, cancelled: true } : message))
       );
     }
     streamingMessageIdRef.current = null;
@@ -342,37 +346,35 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     streamingMessageIdRef.current = null;
     setAiStreaming(false);
 
-    setConversations((convs) => {
-      const conv = convs.find((c) => c.id === id);
-      if (conv) {
+    setConversations((current) => {
+      const conversation = current.find((entry) => entry.id === id);
+      if (conversation) {
         activeConversationIdRef.current = id;
         setActiveConversationId(id);
-        setMessages(conv.messages);
+        setMessages(conversation.messages);
       }
-      return convs;
+      return current;
     });
     setAiQuery('');
     setTimeout(() => aiInputRef.current?.focus(), 0);
   }, []);
 
-  const deleteConversation = useCallback(
-    (id: string) => {
-      setConversations((prev) => prev.filter((c) => c.id !== id));
-      if (activeConversationIdRef.current === id) {
-        activeConversationIdRef.current = null;
-        setActiveConversationId(null);
-        setMessages([]);
-        if (aiRequestIdRef.current && aiStreamingRef.current) {
-          window.electron.aiCancel(aiRequestIdRef.current);
-        }
-        aiRequestIdRef.current = null;
-        aiStreamingRef.current = false;
-        streamingMessageIdRef.current = null;
-        setAiStreaming(false);
+  const deleteConversation = useCallback((id: string) => {
+    setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
+    void window.electron.deleteAiChatConversation(id);
+    if (activeConversationIdRef.current === id) {
+      activeConversationIdRef.current = null;
+      setActiveConversationId(null);
+      setMessages([]);
+      if (aiRequestIdRef.current && aiStreamingRef.current) {
+        window.electron.aiCancel(aiRequestIdRef.current);
       }
-    },
-    []
-  );
+      aiRequestIdRef.current = null;
+      aiStreamingRef.current = false;
+      streamingMessageIdRef.current = null;
+      setAiStreaming(false);
+    }
+  }, []);
 
   const exitAiMode = useCallback(() => {
     if (aiRequestIdRef.current && aiStreamingRef.current) {
@@ -384,17 +386,14 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     setAiMode(false);
     setAiStreaming(false);
     setAiQuery('');
-    // Keep messages + activeConversationId so returning shows the same chat.
     onExitAiMode?.();
   }, [setAiMode, onExitAiMode]);
 
-  // ── Escape to exit AI mode (only while messages/query/streaming) ──
-
   useEffect(() => {
     if (messages.length === 0 && !aiQuery && !aiStreaming) return;
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
         exitAiMode();
       }
     };

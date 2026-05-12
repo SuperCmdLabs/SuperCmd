@@ -97,9 +97,7 @@ func parakeetServeCommand() async {
     let manager: AsrManager
     do {
         let models = try await AsrModels.loadFromCache(version: .v3)
-        let m = AsrManager()
-        try await m.initialize(models: models)
-        manager = m
+        manager = AsrManager(models: models)
         emitJSON(["ready": true])
     } catch {
         emitError("Failed to load models: \(error.localizedDescription)")
@@ -129,7 +127,8 @@ func parakeetServeCommand() async {
             }
 
             do {
-                let result = try await manager.transcribe(URL(fileURLWithPath: filePath), source: .system)
+                var decoderState = TdtDecoderState.make()
+                let result = try await manager.transcribe(URL(fileURLWithPath: filePath), decoderState: &decoderState)
                 emitJSON([
                     "text": result.text,
                     "confidence": result.confidence,
@@ -160,9 +159,9 @@ func parakeetTranscribeCommand(filePath: String, language: String?) async {
 
     do {
         let models = try await AsrModels.loadFromCache(version: .v3)
-        let manager = AsrManager()
-        try await manager.initialize(models: models)
-        let result = try await manager.transcribe(URL(fileURLWithPath: filePath), source: .system)
+        let manager = AsrManager(models: models)
+        var decoderState = TdtDecoderState.make()
+        let result = try await manager.transcribe(URL(fileURLWithPath: filePath), decoderState: &decoderState)
         emitJSON([
             "text": result.text,
             "confidence": result.confidence,

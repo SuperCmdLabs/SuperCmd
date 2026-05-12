@@ -159,7 +159,7 @@ export interface ExtensionBundle {
 }
 
 export interface AISettings {
-  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'openai-compatible';
+  provider: 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'lm-studio' | 'openai-compatible';
   openaiApiKey: string;
   anthropicApiKey: string;
   geminiApiKey: string;
@@ -185,6 +185,9 @@ export interface AISettings {
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
+  lmStudioBaseUrl: string;
+  lmStudioModel: string;
+  lmStudioApiKey: string;
 }
 
 export interface EdgeTtsVoice {
@@ -312,12 +315,129 @@ export interface BrowserSearchImportResult {
   reason?: string;
 }
 
+/** How to handle the situation when the chosen settings folder already
+ *  contains a settings.json. 'move' writes to an empty folder; 'replace'
+ *  overwrites the existing file with this Mac's settings; 'adopt' replaces
+ *  this Mac's settings with the existing file. */
+export type RelocateMode = 'move' | 'adopt' | 'replace';
+
+export interface RaycastImportBucketResult {
+  found: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface AiChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number;
+  cancelled?: boolean;
+}
+
+export interface AiChatConversation {
+  id: string;
+  title: string;
+  messages: AiChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+  source?: 'local' | 'raycast';
+  sourceConversationId?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface AiChatSnapshot {
+  version: 1;
+  conversations: AiChatConversation[];
+}
+
+export interface RaycastImportResult {
+  canceled: boolean;
+  filePath?: string;
+  raycastVersion?: string;
+  settingsImported: boolean;
+  disabledCommandsImported: number;
+  scriptCommandFoldersImported: number;
+  commandHotkeysImported: number;
+  commandAliasesImported: number;
+  pinnedCommandsImported: number;
+  aiChats: RaycastImportBucketResult;
+  quicklinks: RaycastImportBucketResult;
+  snippets: RaycastImportBucketResult;
+  notes: RaycastImportBucketResult;
+  extensions: RaycastImportBucketResult;
+  importedExtensionPreferenceExtensions: string[];
+  unsupported: string[];
+  warnings: string[];
+}
+
+export interface RaycastImportSelections {
+  settings: boolean;
+  disabledCommands: boolean;
+  scriptCommandFolders: boolean;
+  commandHotkeys: boolean;
+  commandAliases: boolean;
+  pinnedCommands: boolean;
+  aiChats: boolean;
+  quicklinks: boolean;
+  snippets: boolean;
+  notes: boolean;
+  extensions: boolean;
+  extensionPreferences: boolean;
+}
+
+export interface RaycastImportPreview {
+  canceled: boolean;
+  sessionId?: string;
+  filePath?: string;
+  raycastVersion?: string;
+  selections: RaycastImportSelections;
+  counts: {
+    settings: number;
+    disabledCommands: number;
+    scriptCommandFolders: number;
+    commandHotkeys: number;
+    commandAliases: number;
+    pinnedCommands: number;
+    aiChats: number;
+    quicklinks: number;
+    snippets: number;
+    notes: number;
+    extensions: number;
+    extensionPreferences: number;
+  };
+  unsupported: string[];
+  warnings: string[];
+}
+
+export interface RaycastImportProgress {
+  sessionId: string;
+  stage: 'starting' | 'category' | 'extension' | 'done';
+  category?: keyof RaycastImportSelections;
+  message: string;
+  completedSteps: number;
+  totalSteps: number;
+  currentItem?: number;
+  totalItems?: number;
+  extensionName?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+}
+
+export interface ExtensionPreferencesSnapshot {
+  version: 1;
+  extensions: Record<string, Record<string, any>>;
+  commands: Record<string, Record<string, any>>;
+}
+
 export interface AppSettings {
   globalShortcut: string;
   openAtLogin: boolean;
   disabledCommands: string[];
   enabledCommands: string[];
   customExtensionFolders: string[];
+  scriptCommandFolders: string[];
   commandHotkeys: Record<string, string>;
   commandAliases: Record<string, string>;
   pinnedCommands: string[];
@@ -350,6 +470,11 @@ export interface AppSettings {
   emojiPickerExcludedAppBundleIds: string[];
   browserSearch: BrowserSearchSettings;
   popToRootSearchTimeoutSeconds: number;
+  installedExtensions: string[];
+  extensionUninstallTombstones: Record<string, number>;
+  extensionPreferences: Record<string, Record<string, unknown>>;
+  extensionCommandPreferences: Record<string, Record<string, unknown>>;
+  extensionCommandArguments: Record<string, Record<string, unknown>>;
 }
 
 export interface CatalogEntry {
@@ -597,6 +722,23 @@ export interface ElectronAPI {
   appUpdaterCheckAndInstall: () => Promise<{ success: boolean; error?: string; message?: string; state?: string }>;
   onAppUpdaterStatus: (callback: (status: AppUpdaterStatus) => void) => (() => void);
   saveSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+  previewRaycastConfigImport: () => Promise<RaycastImportPreview>;
+  applyRaycastConfigImport: (options: {
+    sessionId: string;
+    conflictMode: 'skip' | 'overwrite';
+    selections: RaycastImportSelections;
+  }) => Promise<RaycastImportResult>;
+  importRaycastConfig: () => Promise<RaycastImportResult>;
+  onRaycastImportProgress: (callback: (payload: RaycastImportProgress) => void) => (() => void);
+  getAiChatSnapshot: () => Promise<AiChatSnapshot>;
+  upsertAiChatConversation: (conversation: AiChatConversation) => Promise<AiChatConversation | null>;
+  deleteAiChatConversation: (id: string) => Promise<boolean>;
+  mergeAiChatSnapshot: (snapshot: AiChatSnapshot) => Promise<AiChatSnapshot>;
+  getExtensionPreferencesSnapshot: () => Promise<ExtensionPreferencesSnapshot>;
+  getExtensionPreferences: (extName: string, cmdName?: string) => Promise<Record<string, any>>;
+  setExtensionPreference: (extName: string, preferenceName: string, value: any, cmdName?: string) => Promise<Record<string, any>>;
+  setExtensionPreferences: (extName: string, values: Record<string, any>, cmdName?: string) => Promise<Record<string, any>>;
+  mergeExtensionPreferencesSnapshot: (snapshot: ExtensionPreferencesSnapshot) => Promise<ExtensionPreferencesSnapshot>;
   getAllCommands: () => Promise<CommandInfo[]>;
   updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
   setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
@@ -642,6 +784,8 @@ export interface ElectronAPI {
     ) => void
   ) => void;
   onSettingsUpdated: (callback: (settings: AppSettings) => void) => (() => void);
+  onExtensionPreferencesUpdated: (callback: (payload: { extensionName: string }) => void) => (() => void);
+  onAiChatsUpdated: (callback: () => void) => (() => void);
 
   // Extension Runner
   runExtension: (extName: string, cmdName: string) => Promise<ExtensionBundle | null>;
@@ -868,6 +1012,12 @@ export interface ElectronAPI {
     showHiddenFiles?: boolean;
   }) => Promise<string[]>;
   pickLauncherBackgroundImage: () => Promise<string | null>;
+  saveExtensionPreferences: (args: { extName: string; cmdName?: string; extPrefs?: Record<string, unknown>; cmdPrefs?: Record<string, unknown> }) => Promise<AppSettings>;
+  saveExtensionCommandArguments: (args: { extName: string; cmdName: string; values: Record<string, unknown> }) => Promise<AppSettings>;
+  getSettingsLocation: () => Promise<{ path: string | null; defaultPath: string }>;
+  pickSettingsFolder: () => Promise<{ path: string; hasExisting: boolean } | null>;
+  relocateSettings: (args: { targetDir: string; mode: RelocateMode }) => Promise<{ ok: boolean; settings?: any; path?: string; error?: string }>;
+  resetSettingsLocation: () => Promise<{ ok: boolean; settings?: any; path?: string; error?: string }>;
   getMenuBarExtensions: () => Promise<any[]>;
   updateMenuBar: (data: any) => void;
   removeMenuBar: (extId: string) => void;

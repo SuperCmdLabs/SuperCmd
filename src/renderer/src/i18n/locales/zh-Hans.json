@@ -260,6 +260,7 @@
           "anthropic": "Claude",
           "gemini": "Gemini",
           "ollama": "Ollama",
+          "lmStudio": "LM Studio",
           "openaiCompatible": "自定义 (OpenAI 兼容)"
         },
         "providerDescriptions": {
@@ -267,7 +268,8 @@
           "anthropic": "Anthropic Claude 模型",
           "gemini": "Google Gemini 模型",
           "ollama": "本地模型",
-          "openaiCompatible": "任意 OpenAI 兼容 API（OpenRouter、Together 等）"
+          "openaiCompatible": "任意 OpenAI 兼容 API（OpenRouter、Together 等）",
+          "lmStudio": "通过 LM Studio 使用本地模型"
         },
         "ollama": {
           "serverUrl": {
@@ -320,6 +322,17 @@
         "defaultModel": {
           "label": "默认模型",
           "auto": "自动（提供商默认）"
+        },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "服务器地址",
+            "hint": "LM Studio 本地服务器地址（默认：http://127.0.0.1:1234/v1）"
+          },
+          "apiKey": {
+            "toggle": "可选 API 密钥",
+            "placeholder": "如不需要，请留空",
+            "hint": "仅当您在 LM Studio 中配置了身份验证时才需要。"
+          }
         }
       },
       "whisper": {
@@ -610,6 +623,35 @@
     "advanced": {
       "title": "高级",
       "loading": "正在加载高级设置...",
+      "settingsFolder": {
+        "title": "设置文件夹",
+        "description": "通过 iCloud Drive、Dropbox 或任何文件夹在多台 Mac 之间同步设置和扩展。",
+        "defaultLabel": "默认位置",
+        "chooseButton": "选择文件夹…",
+        "changeButton": "更改文件夹…",
+        "resetButton": "恢复默认",
+        "conflict": {
+          "title": "此文件夹中已存在设置",
+          "body": "{folder} 中已经有一个 settings.json。您要使用哪个版本？",
+          "useExisting": "使用现有设置",
+          "useExistingHint": "用同步的副本替换此 Mac 上的设置。",
+          "replace": "替换为当前设置",
+          "replaceHint": "用此 Mac 上的设置覆盖同步的副本。",
+          "cancel": "取消"
+        },
+        "resetConfirm": {
+          "title": "将设置移回默认位置？",
+          "body": "您的设置将仅存储在此 Mac 上。所选文件夹中同步的副本不会被删除。",
+          "confirm": "恢复默认",
+          "cancel": "取消"
+        },
+        "status": {
+          "moved": "设置文件夹已更新。",
+          "adopted": "已采用同步的设置。",
+          "reset": "设置已移回默认位置。",
+          "failed": "无法更新设置文件夹。"
+        }
+      },
       "disableFileSearch": {
         "title": "禁用文件和文件夹搜索",
         "description": "从主启动器搜索中隐藏文件和文件夹结果。",

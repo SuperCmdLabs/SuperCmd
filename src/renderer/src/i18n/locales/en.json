@@ -260,6 +260,7 @@
           "anthropic": "Claude",
           "gemini": "Gemini",
           "ollama": "Ollama",
+          "lmStudio": "LM Studio",
           "openaiCompatible": "Custom (OpenAI-compatible)"
         },
         "providerDescriptions": {
@@ -267,6 +268,7 @@
           "anthropic": "Anthropic Claude models",
           "gemini": "Google Gemini models",
           "ollama": "Local models",
+          "lmStudio": "Local models via LM Studio",
           "openaiCompatible": "Any OpenAI-compatible API (OpenRouter, Together, etc.)"
         },
         "ollama": {
@@ -299,6 +301,17 @@
             "gemma2": "Google open model (9B)",
             "qwen25": "Alibaba multilingual model (7B)",
             "deepseekR1": "Reasoning-focused model (7B)"
+          }
+        },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "Server URL",
+            "hint": "LM Studio's local server URL (default: http://127.0.0.1:1234/v1)"
+          },
+          "apiKey": {
+            "toggle": "Optional API Key",
+            "placeholder": "Leave empty if not required",
+            "hint": "Only needed if you have configured authentication in LM Studio."
           }
         },
         "openaiCompatible": {
@@ -610,6 +623,35 @@
     "advanced": {
       "title": "Advanced",
       "loading": "Loading advanced settings...",
+      "settingsFolder": {
+        "title": "Settings Folder",
+        "description": "Sync settings and extensions across Macs via iCloud Drive, Dropbox, or any folder.",
+        "defaultLabel": "Default location",
+        "chooseButton": "Choose Folder…",
+        "changeButton": "Change Folder…",
+        "resetButton": "Reset to Default",
+        "conflict": {
+          "title": "Settings already exist in this folder",
+          "body": "There's already a settings.json in {folder}. Which version would you like to use?",
+          "useExisting": "Use Existing Settings",
+          "useExistingHint": "Replace this Mac's settings with the synced copy.",
+          "replace": "Replace With Current Settings",
+          "replaceHint": "Overwrite the synced copy with this Mac's settings.",
+          "cancel": "Cancel"
+        },
+        "resetConfirm": {
+          "title": "Move settings back to default location?",
+          "body": "Your settings will be stored on this Mac only. The synced copy in your chosen folder won't be deleted.",
+          "confirm": "Reset to Default",
+          "cancel": "Cancel"
+        },
+        "status": {
+          "moved": "Settings folder updated.",
+          "adopted": "Synced settings adopted.",
+          "reset": "Settings moved back to default location.",
+          "failed": "Could not update settings folder."
+        }
+      },
       "disableFileSearch": {
         "title": "Disable File & Folder Search",
         "description": "Hide file and folder results from the main launcher search.",

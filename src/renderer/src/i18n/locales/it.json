@@ -259,6 +259,7 @@
           "anthropic": "Claude",
           "gemini": "Gemini",
           "ollama": "Ollama",
+          "lmStudio": "LM Studio",
           "openaiCompatible": "Personalizzato (compatibile OpenAI)"
         },
         "providerDescriptions": {
@@ -266,7 +267,8 @@
           "anthropic": "Modelli Anthropic Claude",
           "gemini": "Modelli Google Gemini",
           "ollama": "Modelli locali",
-          "openaiCompatible": "Qualsiasi API compatibile OpenAI (OpenRouter, Together, ecc.)"
+          "openaiCompatible": "Qualsiasi API compatibile OpenAI (OpenRouter, Together, ecc.)",
+          "lmStudio": "Modelli locali tramite LM Studio"
         },
         "ollama": {
           "serverUrl": {
@@ -319,6 +321,17 @@
         "defaultModel": {
           "label": "Modello predefinito",
           "auto": "Automatico (predefinito del provider)"
+        },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "URL del server",
+            "hint": "URL del server locale di LM Studio (predefinito: http://127.0.0.1:1234/v1)"
+          },
+          "apiKey": {
+            "toggle": "Chiave API opzionale",
+            "placeholder": "Lascia vuoto se non richiesto",
+            "hint": "Necessario solo se hai configurato l'autenticazione in LM Studio."
+          }
         }
       },
       "whisper": {
@@ -609,6 +622,35 @@
     "advanced": {
       "title": "Avanzate",
       "loading": "Caricamento impostazioni avanzate...",
+      "settingsFolder": {
+        "title": "Cartella delle impostazioni",
+        "description": "Sincronizza impostazioni ed estensioni tra Mac tramite iCloud Drive, Dropbox o una qualsiasi cartella.",
+        "defaultLabel": "Posizione predefinita",
+        "chooseButton": "Scegli cartella…",
+        "changeButton": "Cambia cartella…",
+        "resetButton": "Ripristina predefinita",
+        "conflict": {
+          "title": "In questa cartella esistono già delle impostazioni",
+          "body": "C'è già un file settings.json in {folder}. Quale versione vuoi usare?",
+          "useExisting": "Usa impostazioni esistenti",
+          "useExistingHint": "Sostituisci le impostazioni di questo Mac con la copia sincronizzata.",
+          "replace": "Sostituisci con le impostazioni attuali",
+          "replaceHint": "Sovrascrivi la copia sincronizzata con le impostazioni di questo Mac.",
+          "cancel": "Annulla"
+        },
+        "resetConfirm": {
+          "title": "Spostare le impostazioni nella posizione predefinita?",
+          "body": "Le tue impostazioni saranno memorizzate solo su questo Mac. La copia sincronizzata nella cartella scelta non verrà eliminata.",
+          "confirm": "Ripristina predefinita",
+          "cancel": "Annulla"
+        },
+        "status": {
+          "moved": "Cartella delle impostazioni aggiornata.",
+          "adopted": "Impostazioni sincronizzate adottate.",
+          "reset": "Impostazioni spostate nella posizione predefinita.",
+          "failed": "Impossibile aggiornare la cartella delle impostazioni."
+        }
+      },
       "disableFileSearch": {
         "title": "Disattiva ricerca di file e cartelle",
         "description": "Nascondi i risultati di file e cartelle dalla ricerca principale del launcher.",
