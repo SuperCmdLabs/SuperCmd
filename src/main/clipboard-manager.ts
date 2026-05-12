@@ -73,7 +73,9 @@ const INTERNAL_CLIPBOARD_PROBE_REGEX = /^__supercmd_[a-z0-9_]+_probe__\d+_[a-z0-
 
 let clipboardHistory: ClipboardItem[] = [];
 let lastClipboardText = '';
-let lastClipboardImage: Buffer | null = null;
+// Store a hash of the last-seen image rather than the full buffer.
+// This avoids re-hashing megabytes of PNG data on every poll tick.
+let lastClipboardImageHash = '';
 let lastClipboardFilePath = '';
 let pollInterval: NodeJS.Timeout | null = null;
 let isEnabled = true;
@@ -456,18 +458,24 @@ function clipboardLooksLikeFileCopy(): boolean {
 let lastOsascriptSignature = '';
 let lastOsascriptResult: string | null = null;
 
-function computeClipboardSignature(): string {
+// Accepts an already-read image hash to avoid re-reading/re-encoding on each poll.
+function computeClipboardSignature(knownImgHash?: string): string {
   try {
     const text = clipboard.readText();
-    const img = clipboard.readImage();
-    const imgHash = !img.isEmpty() ? hashBuffer(img.toPNG()).slice(0, 16) : '';
+    const imgHash =
+      knownImgHash !== undefined
+        ? knownImgHash
+        : (() => {
+            const img = clipboard.readImage();
+            return !img.isEmpty() ? hashBuffer(img.toPNG()).slice(0, 16) : '';
+          })();
     return `${text.length}:${text.slice(0, 64)}:${imgHash}`;
   } catch {
     return '';
   }
 }
 
-function readClipboardFilePath(): string | null {
+function readClipboardFilePath(knownImgHash?: string): string | null {
   // Fast path: try the common pasteboard UTIs directly.
   const candidateFormats = [
     'public.file-url',
@@ -495,7 +503,7 @@ function readClipboardFilePath(): string | null {
   // all macOS versions regardless of how Electron exposes pasteboard UTIs.
   // Cache the result per clipboard signature so we don't spawn a subprocess
   // on every poll when the clipboard hasn't changed.
-  const signature = computeClipboardSignature();
+  const signature = computeClipboardSignature(knownImgHash);
   if (signature && signature === lastOsascriptSignature) {
     return lastOsascriptResult;
   }
@@ -514,15 +522,77 @@ function isImageFilePath(filePath: string): boolean {
   return IMAGE_FILE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
+/**
+ * Compute a cheap fingerprint for the image currently on the clipboard WITHOUT
+ * calling toPNG() / decoding pixels.  Strategy (in priority order):
+ *
+ *   GIF  → full GIF buffer hash (GIFs are small)
+ *   PNG  → size + hash of first 4 KB of the PNG buffer (compressed, no decode)
+ *   TIFF → size + hash of first 4 KB of the TIFF buffer (raw IPC read, no encode)
+ *
+ * Reading raw format bytes is an OS IPC copy (memory-bandwidth-bound, fast).
+ * toPNG() on a large TIFF is a pixel decode + PNG encode (CPU-bound, very slow).
+ *
+ * Returns the fingerprint string and any pre-read rawGifData.
+ */
+function getClipboardImageFingerprint(): { fingerprint: string; rawGifData?: Buffer } {
+  try {
+    const formats = clipboard.availableFormats();
+    const hasGif  = formats.includes('com.compuserve.gif');
+    const hasPng  = formats.includes('public.png');
+    const hasTiff = formats.includes('public.tiff');
+
+    if (!hasGif && !hasPng && !hasTiff) return { fingerprint: '' };
+
+    if (hasGif) {
+      try {
+        const gifBuf = clipboard.readBuffer('com.compuserve.gif');
+        if (gifBuf && gifBuf.length > 4 &&
+            gifBuf[0] === 0x47 && gifBuf[1] === 0x49 && gifBuf[2] === 0x46) {
+          return {
+            fingerprint: `gif:${gifBuf.length}:${hashBuffer(gifBuf)}`,
+            rawGifData: gifBuf,
+          };
+        }
+      } catch {}
+    }
+
+    if (hasPng) {
+      try {
+        const pngBuf = clipboard.readBuffer('public.png');
+        if (pngBuf && pngBuf.length > 8) {
+          const sample = pngBuf.length <= 4096 ? pngBuf : pngBuf.slice(0, 4096);
+          return { fingerprint: `png:${pngBuf.length}:${hashBuffer(sample)}` };
+        }
+      } catch {}
+    }
+
+    if (hasTiff) {
+      try {
+        const tiffBuf = clipboard.readBuffer('public.tiff');
+        if (tiffBuf && tiffBuf.length > 8) {
+          const sample = tiffBuf.length <= 4096 ? tiffBuf : tiffBuf.slice(0, 4096);
+          return { fingerprint: `tiff:${tiffBuf.length}:${hashBuffer(sample)}` };
+        }
+      } catch {}
+    }
+  } catch {}
+  return { fingerprint: '' };
+}
+
 function pollClipboard(): void {
   if (!isEnabled) return;
 
   try {
+    // Compute image fingerprint using raw format bytes — no toPNG() / pixel decode.
+    // toPNG() is only called inside addImageItem when we actually save a new image.
+    const { fingerprint: imageFingerprint, rawGifData } = getClipboardImageFingerprint();
+
     // A file URL on the pasteboard (Finder copy) takes priority over
     // readImage() — Finder places the file's *generic icon* as the clipboard
     // image, not the actual contents, and a filename-only text representation,
     // which would otherwise produce two extra junk entries per copy.
-    const clipboardFilePath = readClipboardFilePath();
+    const clipboardFilePath = readClipboardFilePath(imageFingerprint.slice(0, 16));
     if (clipboardFilePath) {
       if (clipboardFilePath !== lastClipboardFilePath) {
         if (shouldSkipCurrentClipboard()) {
@@ -530,10 +600,7 @@ function pollClipboard(): void {
           // on every poll once the user leaves the blacklisted app.
           lastClipboardFilePath = clipboardFilePath;
           try { lastClipboardText = clipboard.readText() || ''; } catch {}
-          try {
-            const img = clipboard.readImage();
-            if (!img.isEmpty()) lastClipboardImage = img.toPNG();
-          } catch {}
+          if (imageFingerprint) lastClipboardImageHash = imageFingerprint;
           return;
         }
         console.log(`[Clipboard] File URL detected on pasteboard: ${clipboardFilePath}`);
@@ -543,10 +610,7 @@ function pollClipboard(): void {
           // Seed the image/text caches with whatever the file copy is showing
           // on the pasteboard so subsequent polls treat it as "already seen".
           try { lastClipboardText = clipboard.readText() || ''; } catch {}
-          try {
-            const img = clipboard.readImage();
-            if (!img.isEmpty()) lastClipboardImage = img.toPNG();
-          } catch {}
+          if (imageFingerprint) lastClipboardImageHash = imageFingerprint;
         }
       }
       // Whether or not this specific path was handled *this* poll, the
@@ -565,34 +629,20 @@ function pollClipboard(): void {
       return;
     }
 
-    // Check for GIF data first (clipboard.readImage loses animation)
-    let rawGifData: Buffer | undefined;
-    try {
-      const gifBuf = clipboard.readBuffer('com.compuserve.gif');
-      if (gifBuf && gifBuf.length > 4) {
-        // Verify GIF magic bytes (GIF87a or GIF89a)
-        if (gifBuf[0] === 0x47 && gifBuf[1] === 0x49 && gifBuf[2] === 0x46) {
-          rawGifData = gifBuf;
-        }
-      }
-    } catch {}
-
-    // Check for images (higher priority than text)
-    const image = clipboard.readImage();
-    if (!image.isEmpty()) {
-      const hashSource = rawGifData || image.toPNG();
-      const hash = hashBuffer(hashSource);
-
-      if (!lastClipboardImage || hashBuffer(lastClipboardImage) !== hash) {
-        if (shouldSkipCurrentClipboard()) {
-          // Seed the image cache so subsequent polls don't re-trigger.
-          lastClipboardImage = hashSource;
-          return;
-        }
-        lastClipboardImage = hashSource;
-        addImageItem(image, rawGifData);
+    // Check for images (higher priority than text).
+    // toPNG() is deferred to addImageItem — only runs when a genuinely new
+    // image is detected, not on every steady-state poll.
+    if (imageFingerprint && imageFingerprint !== lastClipboardImageHash) {
+      if (shouldSkipCurrentClipboard()) {
+        lastClipboardImageHash = imageFingerprint;
         return;
       }
+      lastClipboardImageHash = imageFingerprint;
+      const image = clipboard.readImage();
+      if (!image.isEmpty()) {
+        addImageItem(image, rawGifData);
+      }
+      return;
     }
 
     // Check for text
@@ -688,13 +738,11 @@ function handleClipboardFileCopy(filePath: string): boolean {
 export function startClipboardMonitor(): void {
   loadHistory();
   
-  // Initial read
+  // Initial read — use the same cheap fingerprint approach as pollClipboard.
   try {
     lastClipboardText = clipboard.readText();
-    const image = clipboard.readImage();
-    if (!image.isEmpty()) {
-      lastClipboardImage = image.toPNG();
-    }
+    const { fingerprint } = getClipboardImageFingerprint();
+    if (fingerprint) lastClipboardImageHash = fingerprint;
     lastClipboardFilePath = readClipboardFilePath() || '';
   } catch {}
   
@@ -824,6 +872,11 @@ export function copyItemToClipboard(id: string): boolean {
           clipboard.clear();
           clipboard.writeBuffer('com.compuserve.gif', gifData);
         }
+        // Seed the hash using the same fingerprint format as getClipboardImageFingerprint().
+        try {
+          const gifData = fs.readFileSync(item.content);
+          lastClipboardImageHash = `gif:${gifData.length}:${hashBuffer(gifData)}`;
+        } catch {}
       } else {
         const imageUtis: Record<string, string> = {
           '.png': 'public.png',
@@ -842,25 +895,34 @@ export function copyItemToClipboard(id: string): boolean {
           clipboard.clear();
           clipboard.writeBuffer(imageUti, rawData);
 
-          // Keep a PNG fallback for apps that ignore the source UTI but can
-          // still accept a standard raster image payload on paste.
-          const fallbackImage = nativeImage.createFromPath(item.content);
-          if (!fallbackImage.isEmpty()) {
-            clipboard.writeBuffer('public.png', fallbackImage.toPNG());
+          // For non-PNG formats, also write a PNG fallback so apps that only
+          // understand standard raster images can still paste.
+          // Skip this for PNG — rawData IS already the PNG bytes, so calling
+          // nativeImage.createFromPath().toPNG() would just do an expensive
+          // decode+re-encode of the same data for no benefit.
+          if (imageUti !== 'public.png') {
+            const fallbackImage = nativeImage.createFromPath(item.content);
+            if (!fallbackImage.isEmpty()) {
+              clipboard.writeBuffer('public.png', fallbackImage.toPNG());
+            }
+          }
+
+          // Seed the hash using the same fingerprint format as getClipboardImageFingerprint()
+          // so the next poll sees a matching hash and doesn't re-detect our write.
+          {
+            const sample = rawData.length <= 4096 ? rawData : rawData.slice(0, 4096);
+            const prefix = imageUti === 'public.png' ? 'png'
+              : imageUti === 'public.tiff' ? 'tiff'
+              : 'png'; // fallback to png format string
+            lastClipboardImageHash = `${prefix}:${rawData.length}:${hashBuffer(sample)}`;
           }
         } else {
           const image = nativeImage.createFromPath(item.content);
           clipboard.writeImage(image);
+          // Rare fallback path (unknown format/missing UTI). Don't call toPNG() here
+          // — the next poll will detect the write as a new image once and save it.
         }
       }
-      // Update lastClipboardImage so the next poll doesn't see a "new" image
-      // and create a duplicate entry.
-      try {
-        const img = clipboard.readImage();
-        if (!img.isEmpty()) {
-          lastClipboardImage = img.toPNG();
-        }
-      } catch {}
     } else {
       clipboard.writeText(item.content);
       lastClipboardText = item.content;
