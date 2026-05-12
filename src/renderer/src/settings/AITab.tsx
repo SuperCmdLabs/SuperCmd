@@ -1133,6 +1133,15 @@ const AITab: React.FC = () => {
                         className="sc-input"
                       />
                       <p className="text-[0.625rem] text-[var(--text-subtle)] mt-1">{t('settings.ai.llm.openaiCompatible.baseUrl.hint')}</p>
+                      <label className="inline-flex items-center gap-2 text-[0.6875rem] text-[var(--text-muted)] mt-1.5">
+                        <input
+                          type="checkbox"
+                          checked={ai.openaiCompatibleAppendV1 !== false}
+                          onChange={(e) => updateAI({ openaiCompatibleAppendV1: e.target.checked })}
+                          className="settings-checkbox"
+                        />
+                        <span>{t('settings.ai.llm.openaiCompatible.baseUrl.appendV1')}</span>
+                      </label>
                     </div>
 
                     <div>

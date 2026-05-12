@@ -307,7 +307,8 @@
           "baseUrl": {
             "label": "ベース URL",
             "placeholder": "https://api.openrouter.ai/v1",
-            "hint": "プロバイダが /v1 を使う場合は含めてください（例: https://api.openai.com/v1）"
+            "hint": "プロバイダが /v1 を使う場合は含めてください（例: https://api.openai.com/v1）",
+            "appendV1": "ベースURLに /v1 を自動追加"
           },
           "apiKey": {
             "label": "API キー",

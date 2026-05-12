@@ -282,7 +282,8 @@
           "baseUrl": {
             "label": "基礎 URL",
             "placeholder": "https://api.openrouter.ai/v1",
-            "hint": "如果您的提供者使用 /v1，請包含它（例如 https://api.openai.com/v1）"
+            "hint": "如果您的提供者使用 /v1，請包含它（例如 https://api.openai.com/v1）",
+            "appendV1": "自動在基礎 URL 後追加 /v1"
           },
           "apiKey": {
             "label": "API 金鑰",

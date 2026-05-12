@@ -178,7 +178,8 @@ export async function* streamAI(
         options.prompt,
         temperature,
         options.systemPrompt,
-        options.signal
+        options.signal,
+        config.openaiCompatibleAppendV1
       );
       break;
     case 'lm-studio':
@@ -225,7 +226,8 @@ export async function* streamAIChat(
         options.messages,
         temperature,
         options.systemPrompt,
-        options.signal
+        options.signal,
+        config.openaiCompatibleAppendV1
       );
       break;
     case 'lm-studio':
@@ -286,7 +288,8 @@ async function* streamOpenAICompatibleChat(
   messages: ChatMessage[],
   temperature: number,
   systemPrompt?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  appendV1?: boolean
 ): AsyncGenerator<string> {
   const full: any[] = [];
   if (systemPrompt) full.push({ role: 'system', content: systemPrompt });
@@ -297,7 +300,9 @@ async function* streamOpenAICompatibleChat(
   const body = JSON.stringify(payload);
 
   const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
-  const chatUrl = `${normalizedBaseUrl}/chat/completions`;
+  const chatUrl = (appendV1 !== false && !normalizedBaseUrl.endsWith('/v1'))
+    ? `${normalizedBaseUrl}/v1/chat/completions`
+    : `${normalizedBaseUrl}/chat/completions`;
   const url = new URL(chatUrl);
   const useHttps = url.protocol === 'https:';
 
@@ -493,7 +498,8 @@ async function* streamOpenAICompatible(
   prompt: string,
   temperature: number,
   systemPrompt?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  appendV1?: boolean
 ): AsyncGenerator<string> {
   const messages: any[] = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
@@ -504,7 +510,9 @@ async function* streamOpenAICompatible(
   const body = JSON.stringify(payload);
 
   const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
-  const chatUrl = `${normalizedBaseUrl}/chat/completions`;
+  const chatUrl = (appendV1 !== false && !normalizedBaseUrl.endsWith('/v1'))
+    ? `${normalizedBaseUrl}/v1/chat/completions`
+    : `${normalizedBaseUrl}/chat/completions`;
   
   const url = new URL(chatUrl);
   const useHttps = url.protocol === 'https:';

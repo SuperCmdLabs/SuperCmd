@@ -307,7 +307,8 @@
           "baseUrl": {
             "label": "기본 URL",
             "placeholder": "https://api.openrouter.ai/v1",
-            "hint": "공급자가 사용하는 경우 /v1을 포함합니다(예: https://api.openai.com/v1)."
+            "hint": "공급자가 사용하는 경우 /v1을 포함합니다(예: https://api.openai.com/v1).",
+            "appendV1": "기본 URL에 /v1 자동 추가"
           },
           "apiKey": {
             "label": "API 키",

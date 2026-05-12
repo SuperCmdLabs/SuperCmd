@@ -306,7 +306,8 @@
           "baseUrl": {
             "label": "URL base",
             "placeholder": "https://api.openrouter.ai/v1",
-            "hint": "Includi /v1 se il tuo provider lo richiede (es. https://api.openai.com/v1)"
+            "hint": "Includi /v1 se il tuo provider lo richiede (es. https://api.openai.com/v1)",
+            "appendV1": "Aggiungi automaticamente /v1 all'URL base"
           },
           "apiKey": {
             "label": "Chiave API",

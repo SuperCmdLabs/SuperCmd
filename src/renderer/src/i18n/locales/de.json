@@ -263,7 +263,8 @@
           "baseUrl": {
             "label": "Basis-URL",
             "placeholder": "https://api.openrouter.ai/v1",
-            "hint": "Fuege /v1 hinzu, falls dein Anbieter es erwartet (z. B. https://api.openai.com/v1)."
+            "hint": "Fuege /v1 hinzu, falls dein Anbieter es erwartet (z. B. https://api.openai.com/v1).",
+            "appendV1": "/v1 automatisch an Basis-URL anhaengen"
           },
           "apiKey": {
             "label": "API-Schluessel",

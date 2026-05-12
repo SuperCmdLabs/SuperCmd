@@ -182,6 +182,7 @@ export interface AISettings {
   whisperEnabled: boolean;
   whisperAutoClose: boolean;
   readEnabled: boolean;
+  openaiCompatibleAppendV1: boolean;
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;

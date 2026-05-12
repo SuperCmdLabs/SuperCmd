@@ -307,7 +307,8 @@
           "baseUrl": {
             "label": "基础 URL",
             "placeholder": "https://api.openrouter.ai/v1",
-            "hint": "如果你的提供商使用 /v1，请包含它（例如 https://api.openai.com/v1）"
+            "hint": "如果你的提供商使用 /v1，请包含它（例如 https://api.openai.com/v1）",
+            "appendV1": "自动在基础 URL 后追加 /v1"
           },
           "apiKey": {
             "label": "API 密钥",
