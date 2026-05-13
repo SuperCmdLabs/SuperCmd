@@ -178,10 +178,12 @@ function loadStore(): AiChatStoreData {
   return cache;
 }
 
+const MAX_STORED_CONVERSATIONS = 50;
+
 function saveStore(next: AiChatStoreData): void {
   cache = {
     version: 1,
-    conversations: [...next.conversations].sort((a, b) => b.updatedAt - a.updatedAt),
+    conversations: [...next.conversations].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_STORED_CONVERSATIONS),
   };
   fs.writeFileSync(getStorePath(), JSON.stringify(cache, null, 2), 'utf8');
 }

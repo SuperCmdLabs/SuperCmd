@@ -14,6 +14,7 @@
  */
 
 import { app } from 'electron';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -214,6 +215,22 @@ function resolveInstalledExtensionPath(extName: string): string | null {
 
 // ─── Icon extraction ────────────────────────────────────────────────
 
+// Session-level cache: absolute icon path → stable data URL string.
+// Prevents re-reading and re-encoding the same icon file on every getCommands() call.
+const _extensionIconCache = new Map<string, string>();
+
+function resizeIconWithSips(inputPath: string): Buffer | null {
+  const tmp = path.join(os.tmpdir(), `sc-icon-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
+  try {
+    execFileSync('/usr/bin/sips', ['-s', 'format', 'png', '-z', '64', '64', inputPath, '--out', tmp], { stdio: 'ignore' });
+    return fs.readFileSync(tmp);
+  } catch {
+    return null;
+  } finally {
+    try { fs.unlinkSync(tmp); } catch {}
+  }
+}
+
 function getExtensionIconDataUrl(
   extPath: string,
   iconFile: string
@@ -225,17 +242,26 @@ function getExtensionIconDataUrl(
 
   for (const p of candidates) {
     if (!fs.existsSync(p)) continue;
+
+    const cached = _extensionIconCache.get(p);
+    if (cached !== undefined) return cached;
+
     try {
       const ext = path.extname(p).toLowerCase();
       const data = fs.readFileSync(p);
       if (data.length < 50) continue;
-      const mime =
-        ext === '.svg'
-          ? 'image/svg+xml'
-          : ext === '.jpg' || ext === '.jpeg'
-            ? 'image/jpeg'
-            : 'image/png';
-      return `data:${mime};base64,${data.toString('base64')}`;
+
+      let result: string;
+      if (ext === '.svg') {
+        result = `data:image/svg+xml;base64,${data.toString('base64')}`;
+      } else {
+        const resized = resizeIconWithSips(p);
+        const finalData = resized ?? data;
+        result = `data:image/png;base64,${finalData.toString('base64')}`;
+      }
+
+      _extensionIconCache.set(p, result);
+      return result;
     } catch {}
   }
   return undefined;

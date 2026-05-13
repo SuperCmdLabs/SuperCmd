@@ -17379,7 +17379,6 @@ if let tiff = image?.tiffRepresentation {
 
   createWindow();
   startInstalledAppsWatchers();
-  schedulePromptWindowPrewarm();
   registerGlobalShortcut(settings.globalShortcut);
   registerCommandHotkeys(settings.commandHotkeys);
   registerDevToolsShortcut();
