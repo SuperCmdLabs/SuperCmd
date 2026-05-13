@@ -176,6 +176,13 @@
         "title": "情報",
         "description": "バージョン情報。",
         "version": "SuperCmd v{version}"
+      },
+      "autoQuit": {
+        "title": "自動終了",
+        "timeout": "デフォルトタイムアウト",
+        "description": "自動終了が有効なアプリは、この時間操作がないと終了します",
+        "minute": "分",
+        "minutes": "分"
       }
     },
     "ai": {
@@ -789,7 +796,9 @@
       "disableCommand": "コマンドを無効にする",
       "moveUp": "上へ移動",
       "moveDown": "下へ移動",
-      "uninstallApplication": "アプリケーションをアンインストール"
+      "uninstallApplication": "アプリケーションをアンインストール",
+      "enableAutoQuit": "自動終了を有効化",
+      "disableAutoQuit": "自動終了を無効化"
     },
     "empty": {
       "noResults": "結果が見つかりませんでした",

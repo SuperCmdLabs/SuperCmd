@@ -176,6 +176,13 @@
         "description": "選擇打開啟動器時的顯示方式。",
         "expanded": "展開",
         "compact": "緊湊"
+      },
+      "autoQuit": {
+        "title": "自動退出",
+        "timeout": "預設逾時",
+        "description": "啟用自動退出的應用程式將在此時間段不活動後退出",
+        "minute": "分鐘",
+        "minutes": "分鐘"
       }
     },
     "ai": {
@@ -786,7 +793,9 @@
       "disableCommand": "停用命令",
       "moveUp": "上移",
       "moveDown": "下移",
-      "uninstallApplication": "解除安裝應用程式"
+      "uninstallApplication": "解除安裝應用程式",
+      "enableAutoQuit": "啟用自動退出",
+      "disableAutoQuit": "停用自動退出"
     },
     "empty": {
       "noResults": "找不到結果",

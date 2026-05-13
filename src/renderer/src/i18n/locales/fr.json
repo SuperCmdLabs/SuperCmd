@@ -133,6 +133,13 @@
       "checkUpdates": {
         "label": "Vérifier les mises à jour automatiquement",
         "description": "Vérifier si une nouvelle version est disponible"
+      },
+      "autoQuit": {
+        "title": "Fermeture auto",
+        "timeout": "Délai par défaut",
+        "description": "Les apps avec fermeture auto activée se fermeront après cette durée d'inactivité",
+        "minute": "minute",
+        "minutes": "minutes"
       }
     },
     "ai": {
@@ -778,7 +785,9 @@
       "forceQuitApp": "Forcer à quitter {appName}",
       "failedQuitting": "Échec de la fermeture de {appName}",
       "forceQuitConfirm": "Forcer à quitter « {appName} » ? Les modifications non enregistrées seront perdues.",
-      "uninstallApplication": "Désinstaller l'application"
+      "uninstallApplication": "Désinstaller l'application",
+      "enableAutoQuit": "Activer la fermeture auto",
+      "disableAutoQuit": "Désactiver la fermeture auto"
     },
     "empty": {
       "title": "Aucun résultat",

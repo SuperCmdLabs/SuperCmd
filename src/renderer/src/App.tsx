@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, XCircle } from 'lucide-react';
+import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, XCircle, Timer } from 'lucide-react';
 import supercmdLogo from '../../../supercmd.png';
 import type {
   CommandInfo,
@@ -363,6 +363,7 @@ const App: React.FC = () => {
     DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const [autoQuitAppPaths, setAutoQuitAppPaths] = useState<Set<string>>(new Set());
   const browserSearch = useBrowserSearch(searchQuery);
   const [browserSearchSkipAutoComplete, setBrowserSearchSkipAutoComplete] = useState(false);
   const [inlineExtensionArgumentValues, setInlineExtensionArgumentValues] = useState<
@@ -695,6 +696,9 @@ const App: React.FC = () => {
       applyUiStyle(settings.uiStyle || 'default');
       applyBaseColor(settings.baseColor || '#101113');
       setNavigationStyle(settings.navigationStyle === 'macos' ? 'macos' : 'vim');
+      // Load auto-quit app paths
+      const aqApps = settings.autoQuitApps || [];
+      setAutoQuitAppPaths(new Set(aqApps.map((a: any) => a.appPath)));
       const popToRootSeconds = Number(settings.popToRootSearchTimeoutSeconds);
       popToRootTimeoutMsRef.current = (Number.isFinite(popToRootSeconds) ? Math.max(0, popToRootSeconds) : DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS) * 1000;
       const shouldShowOnboarding = !settings.hasSeenOnboarding;
@@ -3389,6 +3393,20 @@ const App: React.FC = () => {
               window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? t('launcher.actions.forceQuitApp', { appName }) : t('launcher.actions.failedQuitting', { appName }));
             },
           }, {
+            id: 'toggle-auto-quit',
+            title: autoQuitAppPaths.has(filePath) ? t('launcher.actions.disableAutoQuit') : t('launcher.actions.enableAutoQuit'),
+            icon: <Timer className="w-4 h-4" />,
+            execute: async () => {
+              if (autoQuitAppPaths.has(filePath)) {
+                await window.electron.autoQuitRemoveApp(filePath);
+                setAutoQuitAppPaths(prev => { const next = new Set(prev); next.delete(filePath); return next; });
+              } else {
+                const timeout = await window.electron.autoQuitGetDefaultTimeout();
+                await window.electron.autoQuitAddApp({ appPath: filePath, appName: command.title, timeoutSeconds: timeout });
+                setAutoQuitAppPaths(prev => new Set(prev).add(filePath));
+              }
+            },
+          }, {
             id: 'uninstall-app',
             title: t('launcher.actions.uninstallApplication'),
             shortcut: 'Ctrl+X',
@@ -3456,7 +3474,7 @@ const App: React.FC = () => {
       const pinnedIndex = pinnedCommands.indexOf(command.id);
       const hasDeeplink = Boolean(String(command.deeplink || '').trim());
       const isApp = command.category === 'app' && Boolean(command.path?.endsWith('.app'));
-      return [
+      return ([
         {
           id: 'open',
           title: t('launcher.actions.openCommand'),
@@ -3527,6 +3545,23 @@ const App: React.FC = () => {
           execute: () => uninstallExtensionCommand(command),
         },
         {
+          id: 'toggle-auto-quit',
+          title: (command.path && autoQuitAppPaths.has(command.path)) ? t('launcher.actions.disableAutoQuit') : t('launcher.actions.enableAutoQuit'),
+          enabled: command.category === 'app' && Boolean(command.path?.endsWith('.app')),
+          icon: <Timer className="w-4 h-4" />,
+          execute: async () => {
+            if (!command.path) return;
+            if (autoQuitAppPaths.has(command.path)) {
+              await window.electron.autoQuitRemoveApp(command.path);
+              setAutoQuitAppPaths(prev => { const next = new Set(prev); next.delete(command.path!); return next; });
+            } else {
+              const timeout = await window.electron.autoQuitGetDefaultTimeout();
+              await window.electron.autoQuitAddApp({ appPath: command.path, appName: command.title, timeoutSeconds: timeout });
+              setAutoQuitAppPaths(prev => new Set(prev).add(command.path!));
+            }
+          },
+        },
+        {
           id: 'uninstall-app',
           title: t('launcher.actions.uninstallApplication'),
           shortcut: 'Ctrl+X',
@@ -3536,7 +3571,6 @@ const App: React.FC = () => {
           execute: () => { try { if (command.path) openAppUninstall(command.path); } catch(e) { console.error('openAppUninstall error:', e); } },
         },
         {
-          id: 'move-up',
           title: t('launcher.actions.moveUp'),
           shortcut: 'Cmd+Alt+Up',
           enabled: isPinned && pinnedIndex > 0,
@@ -3551,7 +3585,7 @@ const App: React.FC = () => {
           icon: <ArrowDown className="w-4 h-4" />,
           execute: () => movePinnedCommand(command, 'down'),
         },
-      ].filter((action) => action.enabled !== false);
+      ] as LauncherAction[]).filter((action) => action.enabled !== false);
     },
     [
       pinnedCommands,
@@ -3573,6 +3607,7 @@ const App: React.FC = () => {
       setQuickLinkEditId,
       openAppUninstall,
       showLauncherFooterStatus,
+      autoQuitAppPaths,
       t,
     ]
   );

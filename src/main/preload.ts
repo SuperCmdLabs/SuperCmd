@@ -548,6 +548,18 @@ const electronAPI = {
   appUninstallExecute: (paths: string[]) =>
     ipcRenderer.invoke('app-uninstall-execute', paths),
 
+  // Auto Quit
+  autoQuitGetApps: (): Promise<{ bundleId: string; appName: string; timeoutSeconds: number }[]> =>
+    ipcRenderer.invoke('auto-quit-get-apps'),
+  autoQuitAddApp: (entry: { appPath: string; appName: string; timeoutSeconds: number }): Promise<string | void> =>
+    ipcRenderer.invoke('auto-quit-add-app', entry),
+  autoQuitRemoveApp: (appPath: string): Promise<void> =>
+    ipcRenderer.invoke('auto-quit-remove-app', appPath),
+  autoQuitGetDefaultTimeout: (): Promise<number> =>
+    ipcRenderer.invoke('auto-quit-get-default-timeout'),
+  autoQuitSetDefaultTimeout: (seconds: number): Promise<void> =>
+    ipcRenderer.invoke('auto-quit-set-default-timeout', seconds),
+
   // Read file (for extensions that need filesystem access)
   readFile: (filePath: string): Promise<string> =>
     ipcRenderer.invoke('read-file', filePath),

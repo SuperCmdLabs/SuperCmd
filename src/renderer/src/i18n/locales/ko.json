@@ -176,6 +176,13 @@
         "description": "런처가 열릴 때 표시되는 방식을 선택합니다.",
         "expanded": "확장",
         "compact": "컴팩트"
+      },
+      "autoQuit": {
+        "title": "자동 종료",
+        "timeout": "기본 시간 초과",
+        "description": "자동 종료가 활성화된 앱은 이 시간 동안 비활성 상태이면 종료됩니다",
+        "minute": "분",
+        "minutes": "분"
       }
     },
     "ai": {
@@ -786,7 +793,9 @@
       "disableCommand": "명령 비활성화",
       "moveUp": "위로 이동",
       "moveDown": "아래로 이동",
-      "uninstallApplication": "애플리케이션 제거"
+      "uninstallApplication": "애플리케이션 제거",
+      "enableAutoQuit": "자동 종료 활성화",
+      "disableAutoQuit": "자동 종료 비활성화"
     },
     "empty": {
       "noResults": "검색결과가 없습니다",

@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2, SlidersHorizontal, ChevronDown, ChevronUp, Power, PanelTop, X, ShieldAlert, Wand2, FileArchive, FolderTree, Command, Link2, StickyNote, Puzzle, BrainCircuit } from 'lucide-react';
+import { Keyboard, Info, RefreshCw, Download, RotateCcw, Type, Sun, Moon, SunMoon, Sparkles, Image, Trash2, SlidersHorizontal, ChevronDown, ChevronUp, Power, PanelTop, X, ShieldAlert, Wand2, FileArchive, FolderTree, Command, Link2, StickyNote, Puzzle, BrainCircuit, Timer } from 'lucide-react';
 import HotkeyRecorder from './HotkeyRecorder';
 import type { AppSettings, AppUpdaterStatus, RaycastImportPreview, RaycastImportProgress, RaycastImportResult, RaycastImportSelections } from '../../types/electron';
 import { applyAppFontSize, getDefaultAppFontSize } from '../utils/font-size';
@@ -964,6 +964,50 @@ const GeneralTab: React.FC = () => {
           <p className="text-[0.8125rem] font-semibold text-[var(--text-primary)] leading-snug">
             {t('settings.general.about.version', { version: currentVersion })}
           </p>
+        </SettingsRow>
+      </div>
+    </div>
+
+    {/* Auto Quit Settings */}
+    <div className="w-full max-w-[980px] mx-auto space-y-3 mt-6">
+      <h2 className="text-[0.9375rem] font-semibold text-[var(--text-primary)]">{t('settings.general.autoQuit.title')}</h2>
+      <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
+        <SettingsRow
+          icon={<Timer className="w-4 h-4" />}
+          title={t('settings.general.autoQuit.timeout')}
+          description={t('settings.general.autoQuit.description')}
+        >
+          <div className="inline-flex items-center gap-0.5 rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] p-0.5">
+            {[
+              { value: 60, label: '1m' },
+              { value: 120, label: '2m' },
+              { value: 180, label: '3m' },
+              { value: 300, label: '5m' },
+              { value: 600, label: '10m' },
+              { value: 900, label: '15m' },
+              { value: 1800, label: '30m' },
+            ].map((option) => {
+              const active = (settings.autoQuitDefaultTimeoutSeconds ?? 180) === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    void window.electron.autoQuitSetDefaultTimeout(option.value);
+                    void window.electron.saveSettings({ autoQuitDefaultTimeoutSeconds: option.value });
+                    setSettings({ ...settings, autoQuitDefaultTimeoutSeconds: option.value });
+                  }}
+                  className={`px-3 py-1.5 rounded-md text-[0.75rem] font-semibold transition-colors ${
+                    active
+                      ? 'bg-[var(--ui-segment-active-bg)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </SettingsRow>
       </div>
     </div>

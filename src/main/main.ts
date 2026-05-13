@@ -14719,6 +14719,63 @@ return appURL's |path|() as text`,
     return { success: errors.length === 0, errors };
   });
 
+  // ─── Auto Quit ─────────────────────────────────────────────────────────────
+  const autoQuitManager = require('./auto-quit-manager') as typeof import('./auto-quit-manager');
+
+  // Initialize auto-quit if there are apps configured
+  const initialAutoQuitApps = (loadSettings() as AppSettings).autoQuitApps || [];
+  if (initialAutoQuitApps.length > 0) {
+    autoQuitManager.startAutoQuit(initialAutoQuitApps);
+  }
+
+  ipcMain.handle('auto-quit-get-apps', () => {
+    return (loadSettings() as AppSettings).autoQuitApps || [];
+  });
+
+  ipcMain.handle('auto-quit-add-app', async (_event: any, entry: { appPath: string; appName: string; timeoutSeconds: number }) => {
+    // Resolve bundle ID from app path
+    let bundleId = '';
+    try {
+      const plistPath = path.join(entry.appPath, 'Contents', 'Info.plist');
+      bundleId = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', plistPath], {
+        encoding: 'utf-8',
+        timeout: 3000,
+      }).trim();
+    } catch {
+      // Fallback: use app name as identifier
+      bundleId = entry.appName.toLowerCase().replace(/\s+/g, '.');
+    }
+    if (!bundleId) return;
+
+    const resolved = { bundleId, appName: entry.appName, appPath: entry.appPath, timeoutSeconds: entry.timeoutSeconds };
+    const settings = loadSettings() as AppSettings;
+    const apps = [...(settings.autoQuitApps || [])];
+    const idx = apps.findIndex(a => a.bundleId === bundleId);
+    if (idx >= 0) {
+      apps[idx] = resolved;
+    } else {
+      apps.push(resolved);
+    }
+    saveSettings({ autoQuitApps: apps } as Partial<AppSettings>);
+    autoQuitManager.updateAutoQuitApps(apps);
+    return bundleId;
+  });
+
+  ipcMain.handle('auto-quit-remove-app', (_event: any, appPath: string) => {
+    const settings = loadSettings() as AppSettings;
+    const apps = (settings.autoQuitApps || []).filter((a: any) => a.appPath !== appPath);
+    saveSettings({ autoQuitApps: apps } as Partial<AppSettings>);
+    autoQuitManager.updateAutoQuitApps(apps);
+  });
+
+  ipcMain.handle('auto-quit-get-default-timeout', () => {
+    return ((loadSettings() as AppSettings).autoQuitDefaultTimeoutSeconds) ?? 180;
+  });
+
+  ipcMain.handle('auto-quit-set-default-timeout', (_event: any, seconds: number) => {
+    saveSettings({ autoQuitDefaultTimeoutSeconds: seconds } as Partial<AppSettings>);
+  });
+
   // File system operations for extensions
   const fs = require('fs');
   const fsPromises = require('fs/promises');

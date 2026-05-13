@@ -177,6 +177,10 @@ export interface AppSettings {
   // Per-command argument values (from launch arguments).
   // Key: "extName/cmdName". Value: { argName: value, ... }.
   extensionCommandArguments: Record<string, Record<string, unknown>>;
+  // Auto Quit: list of apps that should be auto-quit after inactivity
+  autoQuitApps: { bundleId: string; appName: string; appPath: string; timeoutSeconds: number }[];
+  // Auto Quit: default timeout in seconds (used when adding new apps)
+  autoQuitDefaultTimeoutSeconds: number;
 }
 
 const DEFAULT_HYPER_KEY_SETTINGS: HyperKeySettings = {
@@ -285,6 +289,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   extensionPreferences: {},
   extensionCommandPreferences: {},
   extensionCommandArguments: {},
+  autoQuitApps: [],
+  autoQuitDefaultTimeoutSeconds: 180,
 };
 
 let settingsCache: AppSettings | null = null;
@@ -860,6 +866,8 @@ export function loadSettings(): AppSettings {
       extensionPreferences: normalizeExtensionStorageMap(parsed.extensionPreferences),
       extensionCommandPreferences: normalizeExtensionStorageMap(parsed.extensionCommandPreferences),
       extensionCommandArguments: normalizeExtensionStorageMap(parsed.extensionCommandArguments),
+      autoQuitApps: Array.isArray(parsed.autoQuitApps) ? parsed.autoQuitApps : DEFAULT_SETTINGS.autoQuitApps,
+      autoQuitDefaultTimeoutSeconds: typeof parsed.autoQuitDefaultTimeoutSeconds === 'number' ? parsed.autoQuitDefaultTimeoutSeconds : DEFAULT_SETTINGS.autoQuitDefaultTimeoutSeconds,
     };
   } catch {
     // settings.json missing or malformed (fresh install, sync not yet

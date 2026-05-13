@@ -476,10 +476,11 @@ export interface AppSettings {
   extensionPreferences: Record<string, Record<string, unknown>>;
   extensionCommandPreferences: Record<string, Record<string, unknown>>;
   extensionCommandArguments: Record<string, Record<string, unknown>>;
+  autoQuitApps: AutoQuitAppEntry[];
+  autoQuitDefaultTimeoutSeconds: number;
 }
 
-export interface CatalogEntry {
-  name: string;
+export interface CatalogEntry {  name: string;
   title: string;
   description: string;
   author: string;
@@ -619,6 +620,13 @@ export interface AppUninstallScanResult {
   appIconDataUrl: string;
   remnants: AppRemnant[];
   totalSizeBytes: number;
+}
+
+export interface AutoQuitAppEntry {
+  bundleId: string;
+  appName: string;
+  appPath: string;
+  timeoutSeconds: number;
 }
 
 export interface ElectronAPI {
@@ -862,6 +870,13 @@ export interface ElectronAPI {
   moveToTrash: (paths: string[]) => Promise<void>;
   appUninstallScan: (appPath: string) => Promise<AppUninstallScanResult>;
   appUninstallExecute: (paths: string[]) => Promise<{ success: boolean; errors: string[] }>;
+
+  // Auto Quit
+  autoQuitGetApps: () => Promise<AutoQuitAppEntry[]>;
+  autoQuitAddApp: (entry: { appPath: string; appName: string; timeoutSeconds: number }) => Promise<string | void>;
+  autoQuitRemoveApp: (appPath: string) => Promise<void>;
+  autoQuitGetDefaultTimeout: () => Promise<number>;
+  autoQuitSetDefaultTimeout: (seconds: number) => Promise<void>;
   readFile: (filePath: string) => Promise<string>;
   writeFile: (filePath: string, content: string) => Promise<void>;
   fileExists: (filePath: string) => Promise<boolean>;

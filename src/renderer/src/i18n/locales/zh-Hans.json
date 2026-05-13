@@ -176,6 +176,13 @@
         "description": "选择打开启动器时的显示方式。",
         "expanded": "展开",
         "compact": "紧凑"
+      },
+      "autoQuit": {
+        "title": "自动退出",
+        "timeout": "默认超时",
+        "description": "启用自动退出的应用将在此时间段不活动后退出",
+        "minute": "分钟",
+        "minutes": "分钟"
       }
     },
     "ai": {
@@ -786,7 +793,9 @@
       "disableCommand": "禁用命令",
       "moveUp": "上移",
       "moveDown": "下移",
-      "uninstallApplication": "卸载应用程序"
+      "uninstallApplication": "卸载应用程序",
+      "enableAutoQuit": "启用自动退出",
+      "disableAutoQuit": "禁用自动退出"
     },
     "empty": {
       "noResults": "未找到结果",
