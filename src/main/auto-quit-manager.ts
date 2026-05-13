@@ -37,6 +37,7 @@ const MUSIC_BUNDLE_IDS = new Set([
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 let lastFrontmostAt = new Map<string, number>(); // bundleId → timestamp
 let autoQuitApps: AutoQuitAppEntry[] = [];
+let checking = false;
 
 /**
  * Get the frontmost app's bundle ID via AppleScript
@@ -53,10 +54,19 @@ async function getFrontmostBundleId(): Promise<string | null> {
   }
 }
 
+// Strict bundle ID validation: only allow alphanumeric, dots, and hyphens
+const BUNDLE_ID_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9.\-]*$/;
+
+function isValidBundleId(bundleId: string): boolean {
+  return BUNDLE_ID_REGEX.test(bundleId) && bundleId.length <= 255;
+}
+
 /**
  * Quit an app by bundle ID using NSWorkspace terminate
  */
 async function quitApp(bundleId: string): Promise<void> {
+  if (!isValidBundleId(bundleId)) return; // Reject malformed bundle IDs
+
   const script = `
     use framework "AppKit"
     set runningApps to current application's NSWorkspace's sharedWorkspace()'s runningApplications()
@@ -128,49 +138,62 @@ async function isMusicPlaying(): Promise<boolean> {
  * Check all tracked apps and quit those that exceeded their timeout
  */
 async function checkAndQuit(): Promise<void> {
+  if (checking) return;
   if (autoQuitApps.length === 0) return;
+  checking = true;
+  try {
+    // Pause all auto-quit if system is recording
+    const recording = await isSystemRecording();
+    if (recording) return;
 
-  // Pause all auto-quit if system is recording
-  const recording = await isSystemRecording();
-  if (recording) return;
+    const frontmostBundleId = await getFrontmostBundleId();
+    if (!frontmostBundleId) return;
 
-  const frontmostBundleId = await getFrontmostBundleId();
-  if (!frontmostBundleId) return;
+    // Check if music is playing (protect music apps)
+    const musicPlaying = await isMusicPlaying();
 
-  // Check if music is playing (protect music apps)
-  const musicPlaying = await isMusicPlaying();
+    const now = Date.now();
 
-  const now = Date.now();
+    // Update frontmost timestamp
+    lastFrontmostAt.set(frontmostBundleId, now);
 
-  // Update frontmost timestamp
-  lastFrontmostAt.set(frontmostBundleId, now);
+    // Check each auto-quit app
+    for (const entry of autoQuitApps) {
+      // Skip if this app is currently frontmost
+      if (entry.bundleId === frontmostBundleId) continue;
 
-  // Check each auto-quit app
-  for (const entry of autoQuitApps) {
-    // Skip if this app is currently frontmost
-    if (entry.bundleId === frontmostBundleId) continue;
+      // Skip protected apps
+      if (PROTECTED_BUNDLE_IDS.has(entry.bundleId)) continue;
 
-    // Skip protected apps
-    if (PROTECTED_BUNDLE_IDS.has(entry.bundleId)) continue;
+      // Skip music apps if music is playing
+      if (musicPlaying && MUSIC_BUNDLE_IDS.has(entry.bundleId)) continue;
 
-    // Skip music apps if music is playing
-    if (musicPlaying && MUSIC_BUNDLE_IDS.has(entry.bundleId)) continue;
+      const lastActive = lastFrontmostAt.get(entry.bundleId);
+      if (lastActive === undefined) {
+        // First time seeing this app — record now as baseline
+        lastFrontmostAt.set(entry.bundleId, now);
+        continue;
+      }
 
-    const lastActive = lastFrontmostAt.get(entry.bundleId);
-    if (lastActive === undefined) {
-      // First time seeing this app — record now as baseline
-      lastFrontmostAt.set(entry.bundleId, now);
-      continue;
+      const inactiveMs = now - lastActive;
+      const timeoutMs = entry.timeoutSeconds * 1000;
+
+      if (inactiveMs >= timeoutMs) {
+        await quitApp(entry.bundleId);
+        // Remove from tracking so we don't try to quit again
+        lastFrontmostAt.delete(entry.bundleId);
+      }
     }
 
-    const inactiveMs = now - lastActive;
-    const timeoutMs = entry.timeoutSeconds * 1000;
-
-    if (inactiveMs >= timeoutMs) {
-      await quitApp(entry.bundleId);
-      // Remove from tracking so we don't try to quit again
-      lastFrontmostAt.delete(entry.bundleId);
+    // Prune lastFrontmostAt entries for apps no longer tracked or frontmost
+    const trackedBundleIds = new Set(autoQuitApps.map((e) => e.bundleId));
+    for (const bundleId of lastFrontmostAt.keys()) {
+      if (!trackedBundleIds.has(bundleId) && bundleId !== frontmostBundleId) {
+        lastFrontmostAt.delete(bundleId);
+      }
     }
+  } finally {
+    checking = false;
   }
 }
 
@@ -221,6 +244,7 @@ export function updateAutoQuitApps(apps: AutoQuitAppEntry[]): void {
  */
 export function addAutoQuitApp(entry: AutoQuitAppEntry): void {
   if (PROTECTED_BUNDLE_IDS.has(entry.bundleId)) return;
+  if (!isValidBundleId(entry.bundleId)) return;
   const existing = autoQuitApps.findIndex(a => a.bundleId === entry.bundleId);
   if (existing >= 0) {
     autoQuitApps[existing] = entry;

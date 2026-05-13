@@ -14733,21 +14733,42 @@ return appURL's |path|() as text`,
   });
 
   ipcMain.handle('auto-quit-add-app', async (_event: any, entry: { appPath: string; appName: string; timeoutSeconds: number }) => {
+    // Validate inputs
+    if (!entry || typeof entry.appPath !== 'string' || typeof entry.appName !== 'string' || typeof entry.timeoutSeconds !== 'number') return;
+
+    // Validate appPath: must be absolute, end with .app, under known app directories, no traversal
+    const resolvedPath = path.resolve(entry.appPath);
+    if (resolvedPath !== entry.appPath) return; // reject relative or traversal paths
+    if (!resolvedPath.endsWith('.app')) return;
+    const allowedAppPrefixes = ['/Applications', '/System/Applications', path.join(os.homedir(), 'Applications')];
+    if (!allowedAppPrefixes.some(prefix => resolvedPath.startsWith(prefix + '/'))) return;
+
+    // Validate appName: strip anything suspicious, max 200 chars
+    const safeName = String(entry.appName).replace(/[^\w\s\-().]/g, '').slice(0, 200);
+    if (!safeName) return;
+
+    // Validate timeoutSeconds: clamp to 30–3600
+    const safeTimeout = Math.max(30, Math.min(3600, Math.floor(entry.timeoutSeconds)));
+    if (!Number.isFinite(safeTimeout)) return;
+
     // Resolve bundle ID from app path
     let bundleId = '';
     try {
-      const plistPath = path.join(entry.appPath, 'Contents', 'Info.plist');
+      const plistPath = path.join(resolvedPath, 'Contents', 'Info.plist');
       bundleId = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', plistPath], {
         encoding: 'utf-8',
         timeout: 3000,
       }).trim();
     } catch {
       // Fallback: use app name as identifier
-      bundleId = entry.appName.toLowerCase().replace(/\s+/g, '.');
+      bundleId = 'supercmd.autoquit.' + safeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     }
     if (!bundleId) return;
 
-    const resolved = { bundleId, appName: entry.appName, appPath: entry.appPath, timeoutSeconds: entry.timeoutSeconds };
+    // Validate bundle ID to prevent AppleScript injection
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9.\-]*$/.test(bundleId) || bundleId.length > 255) return;
+
+    const resolved = { bundleId, appName: safeName, appPath: resolvedPath, timeoutSeconds: safeTimeout };
     const settings = loadSettings() as AppSettings;
     const apps = [...(settings.autoQuitApps || [])];
     const idx = apps.findIndex(a => a.bundleId === bundleId);
@@ -14762,6 +14783,7 @@ return appURL's |path|() as text`,
   });
 
   ipcMain.handle('auto-quit-remove-app', (_event: any, appPath: string) => {
+    if (typeof appPath !== 'string' || !path.isAbsolute(appPath)) return;
     const settings = loadSettings() as AppSettings;
     const apps = (settings.autoQuitApps || []).filter((a: any) => a.appPath !== appPath);
     saveSettings({ autoQuitApps: apps } as Partial<AppSettings>);
@@ -14773,7 +14795,9 @@ return appURL's |path|() as text`,
   });
 
   ipcMain.handle('auto-quit-set-default-timeout', (_event: any, seconds: number) => {
-    saveSettings({ autoQuitDefaultTimeoutSeconds: seconds } as Partial<AppSettings>);
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return;
+    const clamped = Math.max(30, Math.min(3600, Math.floor(seconds)));
+    saveSettings({ autoQuitDefaultTimeoutSeconds: clamped } as Partial<AppSettings>);
   });
 
   // File system operations for extensions
