@@ -72,6 +72,8 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiAvailable, setAiAvailable] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
+  // Defers snapshot loading and IPC listeners until AI mode is first entered.
+  const [hasBeenActivated, setHasBeenActivated] = useState(false);
 
   const aiRequestIdRef = useRef<string | null>(null);
   const aiStreamingRef = useRef(false);
@@ -121,14 +123,16 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
   }, [applySnapshot]);
 
   useEffect(() => {
+    if (!hasBeenActivated) return;
     refreshSnapshot();
-  }, [refreshSnapshot]);
+  }, [hasBeenActivated, refreshSnapshot]);
 
   useEffect(() => {
+    if (!hasBeenActivated) return;
     return window.electron.onAiChatsUpdated(() => {
       refreshSnapshot();
     });
-  }, [refreshSnapshot]);
+  }, [hasBeenActivated, refreshSnapshot]);
 
   const persistConversation = useCallback((conversation: AiConversation) => {
     setConversations((prev) => [
@@ -212,6 +216,8 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
       }
     };
 
+    if (!hasBeenActivated) return;
+
     const removeChunk = window.electron.onAIStreamChunk(handleChunk);
     const removeDone = window.electron.onAIStreamDone(handleDone);
     const removeError = window.electron.onAIStreamError(handleError);
@@ -221,7 +227,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
       removeDone?.();
       removeError?.();
     };
-  }, [conversations, persistConversation]);
+  }, [hasBeenActivated, conversations, persistConversation]);
 
   useEffect(() => {
     if (aiResponseRef.current) {
@@ -292,6 +298,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
   const startAiChat = useCallback(
     (searchQuery: string) => {
       if (!aiAvailable) return;
+      setHasBeenActivated(true);
       activeConversationIdRef.current = null;
       setActiveConversationId(null);
       setMessages([]);

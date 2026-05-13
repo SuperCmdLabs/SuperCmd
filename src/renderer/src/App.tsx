@@ -341,6 +341,10 @@ function normalizeQuickLinkDynamicFields(fields: QuickLinkDynamicField[]): Quick
   return Array.from(map.values());
 }
 
+// Intern cache: commandId → stable iconDataUrl string reference.
+// Prevents duplicate base64 strings accumulating across repeated fetchCommands() IPC calls.
+const _commandIconCache = new Map<string, string>();
+
 const App: React.FC = () => {
   const { t } = useI18n();
   const [commands, setCommands] = useState<CommandInfo[]>([]);
@@ -739,6 +743,16 @@ const App: React.FC = () => {
     }
     try {
       const fetchedCommands = await window.electron.getCommands();
+      for (const cmd of fetchedCommands) {
+        if (cmd.iconDataUrl) {
+          const cached = _commandIconCache.get(cmd.id);
+          if (cached !== undefined) {
+            cmd.iconDataUrl = cached;
+          } else {
+            _commandIconCache.set(cmd.id, cmd.iconDataUrl);
+          }
+        }
+      }
       setCommands(fetchedCommands);
       lastCommandsFetchAtRef.current = Date.now();
     } catch (error) {
