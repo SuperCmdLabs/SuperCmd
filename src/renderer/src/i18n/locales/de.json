@@ -783,7 +783,9 @@
       "forceQuitConfirm": "\"{appName}\" beenden erzwingen? Nicht gesicherte Änderungen gehen verloren.",
       "uninstallApplication": "Anwendung deinstallieren",
       "enableAutoQuit": "Auto-Beenden aktivieren",
-      "disableAutoQuit": "Auto-Beenden deaktivieren"
+      "disableAutoQuit": "Auto-Beenden deaktivieren",
+      "disableApplication": "Anwendung deaktivieren",
+      "disableCommand": "Befehl deaktivieren"
     },
     "empty": {
       "title": "Keine Ergebnisse",

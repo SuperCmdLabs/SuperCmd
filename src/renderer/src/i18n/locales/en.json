@@ -806,7 +806,8 @@
       "moveDown": "Move Down",
       "uninstallApplication": "Uninstall Application",
       "enableAutoQuit": "Enable Auto Quit",
-      "disableAutoQuit": "Disable Auto Quit"
+      "disableAutoQuit": "Disable Auto Quit",
+      "disableApplication": "Disable Application"
     },
     "empty": {
       "noResults": "No results found",

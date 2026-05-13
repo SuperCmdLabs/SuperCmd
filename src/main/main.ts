@@ -13602,6 +13602,7 @@ app.whenReady().then(async () => {
       }
 
       saveSettings({ disabledCommands: disabled, enabledCommands: explicitlyEnabled });
+      broadcastCommandsUpdated();
       return true;
     }
   );

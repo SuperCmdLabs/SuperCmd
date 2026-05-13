@@ -795,7 +795,8 @@
       "moveDown": "下移",
       "uninstallApplication": "卸载应用程序",
       "enableAutoQuit": "启用自动退出",
-      "disableAutoQuit": "禁用自动退出"
+      "disableAutoQuit": "禁用自动退出",
+      "disableApplication": "禁用应用程序"
     },
     "empty": {
       "noResults": "未找到结果",

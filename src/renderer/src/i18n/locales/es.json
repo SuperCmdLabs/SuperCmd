@@ -783,7 +783,9 @@
       "forceQuitConfirm": "¿Forzar salida de \"{appName}\"? Se perderán los cambios no guardados.",
       "uninstallApplication": "Desinstalar aplicación",
       "enableAutoQuit": "Activar cierre automático",
-      "disableAutoQuit": "Desactivar cierre automático"
+      "disableAutoQuit": "Desactivar cierre automático",
+      "disableApplication": "Desactivar aplicación",
+      "disableCommand": "Desactivar comando"
     },
     "empty": {
       "title": "Sin resultados",

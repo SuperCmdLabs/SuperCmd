@@ -797,7 +797,8 @@
       "moveDown": "Sposta giù",
       "uninstallApplication": "Disinstalla applicazione",
       "enableAutoQuit": "Attiva chiusura automatica",
-      "disableAutoQuit": "Disattiva chiusura automatica"
+      "disableAutoQuit": "Disattiva chiusura automatica",
+      "disableApplication": "Disabilita applicazione"
     },
     "empty": {
       "noResults": "Nessun risultato trovato",

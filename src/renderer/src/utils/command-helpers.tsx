@@ -35,6 +35,7 @@ export interface LauncherAction {
   style?: 'default' | 'destructive';
   enabled?: boolean;
   icon?: React.ReactNode;
+  separatorBefore?: boolean;
   execute: () => void | Promise<void>;
 }
 

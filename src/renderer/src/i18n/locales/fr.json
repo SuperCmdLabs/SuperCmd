@@ -787,7 +787,9 @@
       "forceQuitConfirm": "Forcer à quitter « {appName} » ? Les modifications non enregistrées seront perdues.",
       "uninstallApplication": "Désinstaller l'application",
       "enableAutoQuit": "Activer la fermeture auto",
-      "disableAutoQuit": "Désactiver la fermeture auto"
+      "disableAutoQuit": "Désactiver la fermeture auto",
+      "disableApplication": "Désactiver l'application",
+      "disableCommand": "Désactiver la commande"
     },
     "empty": {
       "title": "Aucun résultat",

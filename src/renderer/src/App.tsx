@@ -3528,8 +3528,26 @@ const App: React.FC = () => {
           },
         }] : []),
         {
+          id: 'toggle-auto-quit',
+          title: (command.path && autoQuitAppPaths.has(command.path)) ? t('launcher.actions.disableAutoQuit') : t('launcher.actions.enableAutoQuit'),
+          enabled: command.category === 'app' && Boolean(command.path?.endsWith('.app')),
+          separatorBefore: command.category === 'app' && Boolean(command.path?.endsWith('.app')),
+          icon: <Timer className="w-4 h-4" />,
+          execute: async () => {
+            if (!command.path) return;
+            if (autoQuitAppPaths.has(command.path)) {
+              await window.electron.autoQuitRemoveApp(command.path);
+              setAutoQuitAppPaths(prev => { const next = new Set(prev); next.delete(command.path!); return next; });
+            } else {
+              const timeout = await window.electron.autoQuitGetDefaultTimeout();
+              await window.electron.autoQuitAddApp({ appPath: command.path, appName: command.title, timeoutSeconds: timeout });
+              setAutoQuitAppPaths(prev => new Set(prev).add(command.path!));
+            }
+          },
+        },
+        {
           id: 'disable',
-          title: t('launcher.actions.disableCommand'),
+          title: command.category === 'app' ? t('launcher.actions.disableApplication') : t('launcher.actions.disableCommand'),
           shortcut: 'Cmd+Shift+D',
           style: 'destructive' as const,
           icon: <EyeOff className="w-4 h-4" />,
@@ -3543,23 +3561,6 @@ const App: React.FC = () => {
           enabled: command.category === 'extension',
           icon: <Trash2 className="w-4 h-4" />,
           execute: () => uninstallExtensionCommand(command),
-        },
-        {
-          id: 'toggle-auto-quit',
-          title: (command.path && autoQuitAppPaths.has(command.path)) ? t('launcher.actions.disableAutoQuit') : t('launcher.actions.enableAutoQuit'),
-          enabled: command.category === 'app' && Boolean(command.path?.endsWith('.app')),
-          icon: <Timer className="w-4 h-4" />,
-          execute: async () => {
-            if (!command.path) return;
-            if (autoQuitAppPaths.has(command.path)) {
-              await window.electron.autoQuitRemoveApp(command.path);
-              setAutoQuitAppPaths(prev => { const next = new Set(prev); next.delete(command.path!); return next; });
-            } else {
-              const timeout = await window.electron.autoQuitGetDefaultTimeout();
-              await window.electron.autoQuitAddApp({ appPath: command.path, appName: command.title, timeoutSeconds: timeout });
-              setAutoQuitAppPaths(prev => new Set(prev).add(command.path!));
-            }
-          },
         },
         {
           id: 'uninstall-app',
@@ -4900,8 +4901,11 @@ const App: React.FC = () => {
         >
           <div className="flex-1 overflow-y-auto py-1">
             {actionsOverlayActions.map((action, idx) => (
+              <React.Fragment key={action.id}>
+                {action.separatorBefore && (
+                  <div className="mx-2.5 my-1 border-t border-[var(--ui-divider)]" />
+                )}
               <div
-                key={action.id}
                 className={`mx-1 px-2.5 py-1.5 rounded-lg border border-transparent flex items-center gap-2.5 cursor-pointer transition-colors ${
                   idx === selectedActionIndex
                     ? action.style === 'destructive'
@@ -4952,6 +4956,7 @@ const App: React.FC = () => {
                   </span>
                 )}
               </div>
+              </React.Fragment>
             ))}
           </div>
         </div>

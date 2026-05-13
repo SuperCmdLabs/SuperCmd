@@ -795,7 +795,8 @@
       "moveDown": "아래로 이동",
       "uninstallApplication": "애플리케이션 제거",
       "enableAutoQuit": "자동 종료 활성화",
-      "disableAutoQuit": "자동 종료 비활성화"
+      "disableAutoQuit": "자동 종료 비활성화",
+      "disableApplication": "애플리케이션 비활성화"
     },
     "empty": {
       "noResults": "검색결과가 없습니다",

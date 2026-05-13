@@ -216,6 +216,17 @@ const ExtensionsTab: React.FC<{
     };
   }, [loadData]);
 
+  // Refresh settings when window regains focus (e.g. after disabling an app from the launcher)
+  useEffect(() => {
+    const handleFocus = () => {
+      window.electron.getSettings().then((sett: AppSettings) => {
+        setSettings(sett);
+      }).catch(() => {});
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
   useEffect(() => {
     return window.electron.onExtensionPreferencesUpdated(async () => {
       const snapshot = await window.electron.getExtensionPreferencesSnapshot();
