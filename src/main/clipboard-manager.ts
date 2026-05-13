@@ -172,6 +172,20 @@ function hashBuffer(buf: Buffer): string {
   return crypto.createHash('md5').update(buf).digest('hex');
 }
 
+// Sample start + middle + end of a buffer so that two same-size images differing
+// only in the lower portion (e.g. same-dimension TIFF screenshots) still produce
+// different fingerprints, without reading the entire (potentially 48MB) buffer.
+function sampleBuffer(buf: Buffer): Buffer {
+  const CHUNK = 4096;
+  if (buf.length <= CHUNK * 3) return buf;
+  const mid = Math.floor((buf.length - CHUNK) / 2);
+  return Buffer.concat([buf.slice(0, CHUNK), buf.slice(mid, mid + CHUNK), buf.slice(-CHUNK)]);
+}
+
+function buildImageFingerprint(prefix: string, buf: Buffer): string {
+  return `${prefix}:${buf.length}:${hashBuffer(sampleBuffer(buf))}`;
+}
+
 function getCurrentFrontmostBundleId(): string | undefined {
   if (process.platform !== 'darwin') return undefined;
   try {
@@ -550,7 +564,7 @@ function getClipboardImageFingerprint(): { fingerprint: string; rawGifData?: Buf
         if (gifBuf && gifBuf.length > 4 &&
             gifBuf[0] === 0x47 && gifBuf[1] === 0x49 && gifBuf[2] === 0x46) {
           return {
-            fingerprint: `gif:${gifBuf.length}:${hashBuffer(gifBuf)}`,
+            fingerprint: buildImageFingerprint('gif', gifBuf),
             rawGifData: gifBuf,
           };
         }
@@ -561,8 +575,7 @@ function getClipboardImageFingerprint(): { fingerprint: string; rawGifData?: Buf
       try {
         const pngBuf = clipboard.readBuffer('public.png');
         if (pngBuf && pngBuf.length > 8) {
-          const sample = pngBuf.length <= 4096 ? pngBuf : pngBuf.slice(0, 4096);
-          return { fingerprint: `png:${pngBuf.length}:${hashBuffer(sample)}` };
+          return { fingerprint: buildImageFingerprint('png', pngBuf) };
         }
       } catch {}
     }
@@ -571,8 +584,7 @@ function getClipboardImageFingerprint(): { fingerprint: string; rawGifData?: Buf
       try {
         const tiffBuf = clipboard.readBuffer('public.tiff');
         if (tiffBuf && tiffBuf.length > 8) {
-          const sample = tiffBuf.length <= 4096 ? tiffBuf : tiffBuf.slice(0, 4096);
-          return { fingerprint: `tiff:${tiffBuf.length}:${hashBuffer(sample)}` };
+          return { fingerprint: buildImageFingerprint('tiff', tiffBuf) };
         }
       } catch {}
     }
@@ -866,17 +878,14 @@ export function copyItemToClipboard(id: string): boolean {
       if (ext === '.gif' && fs.existsSync(item.content)) {
         // Write GIF via NSPasteboard with both com.compuserve.gif (animated)
         // and public.tiff (static fallback) so GIF-aware apps get animation.
+        const gifData = fs.readFileSync(item.content);
         if (!writeGifToClipboard(item.content)) {
           // Fallback: write raw GIF buffer only
-          const gifData = fs.readFileSync(item.content);
           clipboard.clear();
           clipboard.writeBuffer('com.compuserve.gif', gifData);
         }
         // Seed the hash using the same fingerprint format as getClipboardImageFingerprint().
-        try {
-          const gifData = fs.readFileSync(item.content);
-          lastClipboardImageHash = `gif:${gifData.length}:${hashBuffer(gifData)}`;
-        } catch {}
+        lastClipboardImageHash = buildImageFingerprint('gif', gifData);
       } else {
         const imageUtis: Record<string, string> = {
           '.png': 'public.png',
@@ -897,24 +906,26 @@ export function copyItemToClipboard(id: string): boolean {
 
           // For non-PNG formats, also write a PNG fallback so apps that only
           // understand standard raster images can still paste.
-          // Skip this for PNG — rawData IS already the PNG bytes, so calling
-          // nativeImage.createFromPath().toPNG() would just do an expensive
-          // decode+re-encode of the same data for no benefit.
+          // Skip this for PNG — rawData IS already the PNG bytes.
+          //
+          // IMPORTANT: getClipboardImageFingerprint() checks PNG before TIFF, so the
+          // next poll will fingerprint public.png regardless of the primary UTI. We
+          // must seed lastClipboardImageHash from the PNG bytes (not rawData) to
+          // prevent the poll from treating our own write as a new image.
           if (imageUti !== 'public.png') {
             const fallbackImage = nativeImage.createFromPath(item.content);
             if (!fallbackImage.isEmpty()) {
-              clipboard.writeBuffer('public.png', fallbackImage.toPNG());
+              const fallbackPng = fallbackImage.toPNG();
+              clipboard.writeBuffer('public.png', fallbackPng);
+              // Seed from PNG — matches what the poll will compute.
+              lastClipboardImageHash = buildImageFingerprint('png', fallbackPng);
+            } else {
+              // No PNG written; poll will read the original UTI.
+              const prefix = imageUti === 'public.tiff' ? 'tiff' : 'png';
+              lastClipboardImageHash = buildImageFingerprint(prefix, rawData);
             }
-          }
-
-          // Seed the hash using the same fingerprint format as getClipboardImageFingerprint()
-          // so the next poll sees a matching hash and doesn't re-detect our write.
-          {
-            const sample = rawData.length <= 4096 ? rawData : rawData.slice(0, 4096);
-            const prefix = imageUti === 'public.png' ? 'png'
-              : imageUti === 'public.tiff' ? 'tiff'
-              : 'png'; // fallback to png format string
-            lastClipboardImageHash = `${prefix}:${rawData.length}:${hashBuffer(sample)}`;
+          } else {
+            lastClipboardImageHash = buildImageFingerprint('png', rawData);
           }
         } else {
           const image = nativeImage.createFromPath(item.content);
