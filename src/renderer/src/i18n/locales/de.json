@@ -770,6 +770,10 @@
       "preferences": "Einstellungen",
       "quit": "Beenden",
       "forceQuit": "Erzwungenes Beenden",
+      "quitApp": "{appName} beenden",
+      "forceQuitApp": "{appName} beenden erzwingen",
+      "failedQuitting": "Beenden von {appName} fehlgeschlagen",
+      "forceQuitConfirm": "\"{appName}\" beenden erzwingen? Nicht gesicherte Änderungen gehen verloren.",
       "uninstallApplication": "Anwendung deinstallieren"
     },
     "empty": {
