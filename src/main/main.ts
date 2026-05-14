@@ -13627,6 +13627,7 @@ app.whenReady().then(async () => {
     try {
       const appName = String(appPath).split('/').pop()?.replace('.app', '') || '';
       if (!appName) return false;
+      try { execFileSync('/usr/bin/pgrep', ['-x', appName], { encoding: 'utf8' }); } catch { return false; }
       if (force) {
         execFileSync('/usr/bin/killall', ['-9', appName], { encoding: 'utf8' });
       } else {
