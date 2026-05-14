@@ -1073,19 +1073,11 @@ async function raceWithTimeout<T>(
   ms: number,
   label: string
 ): Promise<T> {
-  const timer = setTimeout(() => {
-    _bundleGuardTimer.delete(label);
-  }, ms);
   const timeoutPromise = new Promise<never>((_, reject) => {
-    // Re-assign the actual rejection timer inside the promise so it
-    // fires before the cleanup timer above (which just cleans up state).
-    _bundleGuardTimer.set(
-      label,
-      setTimeout(() => {
-        reject(new Error(`Bundle load timed out after ${ms}ms for "${label}"`));
-      }, 0)
-    );
-    clearTimeout(timer); // cleanup timer was just a placeholder
+    const id = setTimeout(() => {
+      reject(new Error(`Bundle load timed out after ${ms}ms for "${label}"`));
+    }, ms);
+    _bundleGuardTimer.set(label, id);
   });
   try {
     return await Promise.race([promise, timeoutPromise]);
