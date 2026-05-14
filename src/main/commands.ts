@@ -1011,6 +1011,7 @@ async function discoverApplications(): Promise<CommandInfo[]> {
   const appPaths = Array.from(appPathsSet).sort((a, b) => a.localeCompare(b));
   const BATCH = 6;
   for (let i = 0; i < appPaths.length; i += BATCH) {
+    await new Promise<void>(r => setImmediate(r));
     const batch = appPaths.slice(i, i + BATCH);
     const items = await Promise.all(
       batch.map(async (appPath) => {
@@ -1096,6 +1097,7 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
 
     const BATCH = 6;
     for (let i = 0; i < allAppex.length; i += BATCH) {
+      await new Promise<void>(r => setImmediate(r));
       const batch = allAppex.slice(i, i + BATCH);
       const items = await Promise.all(
         batch.map(async (file) => {
@@ -1194,6 +1196,7 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
 
     const BATCH = 6;
     for (let i = 0; i < panePaths.length; i += BATCH) {
+      await new Promise<void>(r => setImmediate(r));
       const batch = panePaths.slice(i, i + BATCH);
       const items = await Promise.all(
         batch.map(async (panePath) => {
@@ -1280,6 +1283,8 @@ async function openSettingsPane(identifier: string): Promise<void> {
 async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
   const t0 = Date.now();
   console.log('Discovering applications and settings…');
+
+  await new Promise<void>(r => setImmediate(r));
 
   // Run discovery sequentially to reduce startup process churn.
   // On some systems, launching too many plist/icon subprocesses in parallel can
@@ -1892,6 +1897,10 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
   } catch (e) {
     console.error('Failed to discover quick links:', e);
   }
+
+  // Yield between discovery phases to drain pending I/O completions
+  // (subprocess exits, fs callbacks) before starting the next phase.
+  await new Promise<void>(r => setImmediate(r));
 
   const allCommands = [...apps, ...settings, ...extensionCommands, ...scriptCommands, ...quickLinkCommands, ...systemCommands];
 

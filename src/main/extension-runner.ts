@@ -1063,6 +1063,37 @@ export async function buildSingleCommand(extName: string, cmdName: string): Prom
   }
 }
 
+/**
+ * Race a promise against a timeout. If the timeout fires first the
+ * returned promise rejects with a descriptive error. The timer is
+ * cleaned up on settlement so no stray timers keep the process alive.
+ */
+async function raceWithTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string
+): Promise<T> {
+  const timer = setTimeout(() => {
+    _bundleGuardTimer.delete(label);
+  }, ms);
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    // Re-assign the actual rejection timer inside the promise so it
+    // fires before the cleanup timer above (which just cleans up state).
+    _bundleGuardTimer.set(
+      label,
+      setTimeout(() => {
+        reject(new Error(`Bundle load timed out after ${ms}ms for "${label}"`));
+      }, 0)
+    );
+    clearTimeout(timer); // cleanup timer was just a placeholder
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearBundleGuardTimer(label);
+  }
+}
+
 // Records the most recent build error per extension/command so that
 // getExtensionBundle can surface the real cause to the user instead of
 // the generic "On-demand build failed" message.
@@ -1133,11 +1164,89 @@ async function runEsbuildBuild(
   }
 }
 
+// ── Re-entrancy Guard ───────────────────────────────────────────────
+// Prevents the re-entrant event-loop pattern seen in the macOS hang
+// report (Event: hang, Duration: 18.24s). The crash happened because
+// V8 compilation -> tick_callback -> nested uv_run processed fs.stat
+// completions -> more JS callbacks -> loop, blocking the Cocoa event
+// loop. This guard prevents nested calls, yields to break the cycle,
+// and times out after 30s to prevent indefinite hangs.
+
+const _bundleGuardDepth = new Map<string, number>();
+const _bundleGuardTimer = new Map<string, ReturnType<typeof setTimeout>>();
+const BUNDLE_LOAD_GRACE_MS = 30_000;
+
+function enterBundleGuard(label: string): boolean {
+  const current = _bundleGuardDepth.get(label) ?? 0;
+  if (current >= 1) {
+    console.warn(`[BundleGuard] Re-entrant call blocked for "${label}"`);
+    return false;
+  }
+  _bundleGuardDepth.set(label, current + 1);
+  return true;
+}
+
+function exitBundleGuard(label: string): void {
+  const current = _bundleGuardDepth.get(label) ?? 0;
+  if (current > 0) {
+    _bundleGuardDepth.set(label, current - 1);
+  }
+}
+
+function clearBundleGuardTimer(label: string): void {
+  const timer = _bundleGuardTimer.get(label);
+  if (timer) {
+    clearTimeout(timer);
+    _bundleGuardTimer.delete(label);
+  }
+}
+
+async function yieldToEventLoop(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (typeof setImmediate !== 'undefined') {
+      setImmediate(resolve);
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}
+
 /**
- * Get a pre-built extension command bundle.
- * Falls back to on-demand building if the bundle is missing.
+ * Get a pre-built extension command bundle with re-entrancy protection,
+ * event-loop yielding, and a timeout guard.
+ *
+ *   - Re-entrancy guard prevents nested uv_run
+ *   - Yield point on conflict drains pending I/O callbacks
+ *   - 30s timeout prevents indefinite hang
  */
 export async function getExtensionBundle(
+  extName: string,
+  cmdName: string
+): Promise<ExtensionBundleResult | null> {
+  const label = `${normalizeExtensionName(extName)}/${cmdName}`;
+
+  if (!enterBundleGuard(label)) {
+    console.warn(`[BundleGuard] Re-entrant load for "${label}", yielding before retry…`);
+    await yieldToEventLoop();
+    if (!enterBundleGuard(label)) {
+      throw new Error(`[BundleGuard] Concurrent bundle load failed for "${label}"`);
+    }
+  }
+
+  try {
+    const result = await raceWithTimeout(
+      getExtensionBundleImpl(extName, cmdName),
+      BUNDLE_LOAD_GRACE_MS,
+      label
+    );
+    return result;
+  } finally {
+    exitBundleGuard(label);
+    clearBundleGuardTimer(label);
+  }
+}
+
+async function getExtensionBundleImpl(
   extName: string,
   cmdName: string
 ): Promise<ExtensionBundleResult | null> {

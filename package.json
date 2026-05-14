@@ -19,7 +19,9 @@
     "postinstall": "electron-builder install-app-deps",
     "start": "electron .",
     "package": "cross-env NODE_ENV=production npm run build && electron-builder",
-    "package:unsigned": "cross-env NODE_ENV=production CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder --mac dmg -c.mac.identity=null -c.mac.notarize=false"
+    "package:unsigned": "cross-env NODE_ENV=production CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder --mac dmg -c.mac.identity=null -c.mac.notarize=false",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "license": "ISC",
   "devDependencies": {
@@ -36,6 +38,7 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "vite": "^5.0.11",
+    "vitest": "^4.1.6",
     "wait-on": "^7.2.0"
   },
   "dependencies": {

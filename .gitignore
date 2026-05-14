@@ -11,4 +11,4 @@ extensions/*
 
 **/.build/*
 .gstack/
-**/AeroSpace-main/**
+**/AeroSpace-main/**crash.dump
