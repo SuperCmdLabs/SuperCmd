@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, Power, AlertTriangle } from 'lucide-react';
+import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, XCircle } from 'lucide-react';
 import supercmdLogo from '../../../supercmd.png';
 import type {
   CommandInfo,
@@ -3438,22 +3438,6 @@ const App: React.FC = () => {
           icon: <Play className="w-4 h-4" />,
           execute: () => handleCommandExecute(command),
         },
-        ...(isApp ? [{
-          id: 'quit-app',
-          title: t('launcher.actions.quit'),
-          shortcut: 'Ctrl+Shift+Q',
-          icon: <Power className="w-4 h-4" />,
-          execute: async () => {
-            const result = await window.electron.quitApp(command.path!);
-            if (!result.ok && result.reason === 'not_running') {
-              showLauncherFooterStatus('error', `${command.title} is not running`);
-            } else if (!result.ok) {
-              showLauncherFooterStatus('error', `Failed to quit ${command.title}`);
-            } else {
-              showLauncherFooterStatus('success', `Quit ${command.title}`);
-            }
-          },
-        }] : []),
         {
           id: 'copy-deeplink',
           title: t('launcher.actions.copyDeeplink'),
@@ -3473,6 +3457,40 @@ const App: React.FC = () => {
           icon: <Pin className="w-4 h-4" />,
           execute: () => pinToggleForCommand(command),
         },
+        ...(isApp ? [{
+          id: 'quit-app',
+          title: t('launcher.actions.quit'),
+          shortcut: 'Ctrl+Shift+Q',
+          icon: <XCircle className="w-4 h-4" />,
+          execute: async () => {
+            const result = await window.electron.quitApp(command.path!);
+            if (!result.ok && result.reason === 'not_running') {
+              showLauncherFooterStatus('error', `${command.title} is not running`);
+            } else if (!result.ok) {
+              showLauncherFooterStatus('error', `Failed to quit ${command.title}`);
+            } else {
+              showLauncherFooterStatus('success', `Quit ${command.title}`);
+            }
+          },
+        }] : []),
+        ...(isApp ? [{
+          id: 'force-quit-app',
+          title: t('launcher.actions.forceQuit'),
+          shortcut: 'Ctrl+Alt+Shift+Q',
+          icon: <XCircle className="w-4 h-4" />,
+          execute: async () => {
+            const confirmed = window.confirm(`Force quit "${command.title}"? Unsaved changes will be lost.`);
+            if (!confirmed) return;
+            const result = await window.electron.forceQuitApp(command.path!);
+            if (!result.ok && result.reason === 'not_running') {
+              showLauncherFooterStatus('error', `${command.title} is not running`);
+            } else if (!result.ok) {
+              showLauncherFooterStatus('error', `Failed to force quit ${command.title}`);
+            } else {
+              showLauncherFooterStatus('success', `Force quit ${command.title}`);
+            }
+          },
+        }] : []),
         {
           id: 'disable',
           title: t('launcher.actions.disableCommand'),
@@ -3499,25 +3517,6 @@ const App: React.FC = () => {
           icon: <Trash2 className="w-4 h-4" />,
           execute: () => { try { if (command.path) openAppUninstall(command.path); } catch(e) { console.error('openAppUninstall error:', e); } },
         },
-        ...(isApp ? [{
-          id: 'force-quit-app',
-          title: t('launcher.actions.forceQuit'),
-          shortcut: 'Ctrl+Alt+Shift+Q',
-          style: 'destructive' as const,
-          icon: <AlertTriangle className="w-4 h-4" />,
-          execute: async () => {
-            const confirmed = window.confirm(`Force quit "${command.title}"? Unsaved changes will be lost.`);
-            if (!confirmed) return;
-            const result = await window.electron.forceQuitApp(command.path!);
-            if (!result.ok && result.reason === 'not_running') {
-              showLauncherFooterStatus('error', `${command.title} is not running`);
-            } else if (!result.ok) {
-              showLauncherFooterStatus('error', `Failed to force quit ${command.title}`);
-            } else {
-              showLauncherFooterStatus('success', `Force quit ${command.title}`);
-            }
-          },
-        }] : []),
         {
           id: 'move-up',
           title: t('launcher.actions.moveUp'),
