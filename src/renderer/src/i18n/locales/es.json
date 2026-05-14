@@ -769,6 +769,7 @@
       "delete": "Eliminar",
       "preferences": "Preferencias",
       "quit": "Salir",
+      "forceQuit": "Forzar salida",
       "uninstallApplication": "Desinstalar aplicación"
     },
     "empty": {

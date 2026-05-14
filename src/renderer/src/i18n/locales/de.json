@@ -769,6 +769,7 @@
       "delete": "Löschen",
       "preferences": "Einstellungen",
       "quit": "Beenden",
+      "forceQuit": "Erzwungenes Beenden",
       "uninstallApplication": "Anwendung deinstallieren"
     },
     "empty": {

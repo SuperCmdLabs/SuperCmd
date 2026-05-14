@@ -390,6 +390,12 @@ const electronAPI = {
   updateCommandMetadata: (commandId: string, metadata: { subtitle?: string | null }): Promise<void> =>
     ipcRenderer.invoke('update-command-metadata', commandId, metadata),
 
+  // ─── App Management ────────────────────────────────────────────
+  quitApp: (appPath: string): Promise<{ ok: boolean; reason?: string; message?: string }> =>
+    ipcRenderer.invoke('quit-app', appPath),
+  forceQuitApp: (appPath: string): Promise<{ ok: boolean; reason?: string; message?: string }> =>
+    ipcRenderer.invoke('force-quit-app', appPath),
+
   // ─── Open URL (for extensions) ────────────────────────────────────
   openUrl: (url: string, application?: string): Promise<boolean> =>
     ipcRenderer.invoke('open-url', url, application),
