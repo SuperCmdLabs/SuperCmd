@@ -3372,7 +3372,7 @@ const App: React.FC = () => {
               const ok = await window.electron.quitApp(filePath);
               setShowActions(false);
               window.electron.hideWindow();
-              showLauncherFooterStatus(ok ? 'success' : 'error', ok ? `Quit ${appName}` : `Failed quitting ${appName}`);
+              window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? `Quit ${appName}` : `Failed quitting ${appName}`);
             },
           }, {
             id: 'force-quit-app',
@@ -3386,7 +3386,7 @@ const App: React.FC = () => {
               const ok = await window.electron.quitApp(filePath, true);
               setShowActions(false);
               window.electron.hideWindow();
-              showLauncherFooterStatus(ok ? 'success' : 'error', ok ? `Force quit ${appName}` : `Failed quitting ${appName}`);
+              window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? `Force quit ${appName}` : `Failed quitting ${appName}`);
             },
           }, {
             id: 'uninstall-app',
@@ -3492,7 +3492,7 @@ const App: React.FC = () => {
             const ok = await window.electron.quitApp(command.path!);
             setShowActions(false);
             window.electron.hideWindow();
-            showLauncherFooterStatus(ok ? 'success' : 'error', ok ? `Quit ${command.title}` : `Failed quitting ${command.title}`);
+            window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? `Quit ${command.title}` : `Failed quitting ${command.title}`);
           },
         }] : []),
         ...(isApp ? [{
@@ -3506,7 +3506,7 @@ const App: React.FC = () => {
             const ok = await window.electron.quitApp(command.path!, true);
             setShowActions(false);
             window.electron.hideWindow();
-            showLauncherFooterStatus(ok ? 'success' : 'error', ok ? `Force quit ${command.title}` : `Failed quitting ${command.title}`);
+            window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? `Force quit ${command.title}` : `Failed quitting ${command.title}`);
           },
         }] : []),
         {
