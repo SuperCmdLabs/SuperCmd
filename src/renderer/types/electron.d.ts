@@ -801,8 +801,7 @@ export interface ElectronAPI {
   openUrl: (url: string, application?: string) => Promise<boolean>;
 
   // App Management
-  quitApp: (appPath: string) => Promise<{ ok: boolean; reason?: string; message?: string }>;
-  forceQuitApp: (appPath: string) => Promise<{ ok: boolean; reason?: string; message?: string }>;
+  quitApp: (appPath: string, force?: boolean) => Promise<boolean>;
 
   // Store
   getCatalog: (forceRefresh?: boolean) => Promise<CatalogEntry[]>;

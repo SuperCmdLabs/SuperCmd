@@ -13621,57 +13621,20 @@ app.whenReady().then(async () => {
 
   // ─── IPC: Open URL (for extensions) ─────────────────────────────
 
-  ipcMain.handle('quit-app', async (_event: any, appPath: string) => {
-    if (!appPath) return { ok: false, reason: 'no_path' };
-    const { execFile } = require('child_process') as typeof import('child_process');
-    const { promisify } = require('util') as typeof import('util');
-    const execFileAsync = promisify(execFile);
+  ipcMain.handle('quit-app', async (_event: any, appPath: string, force?: boolean) => {
+    if (!appPath) return false;
+    const { execFileSync } = require('child_process') as typeof import('child_process');
     try {
       const appName = String(appPath).split('/').pop()?.replace('.app', '') || '';
-      if (!appName) return { ok: false, reason: 'invalid_path' };
-      await execFileAsync('/usr/bin/osascript', ['-e', `tell application "${appName}" to quit`]);
-      return { ok: true };
-    } catch (error: any) {
-      const msg = String(error?.message || error || '').toLowerCase();
-      if (msg.includes('not running') || msg.includes('-600') || msg.includes('-10810')) {
-        return { ok: false, reason: 'not_running' };
+      if (!appName) return false;
+      if (force) {
+        execFileSync('/usr/bin/killall', ['-9', appName], { encoding: 'utf8' });
+      } else {
+        execFileSync('/usr/bin/osascript', ['-e', `quit app "${appName}"`], { encoding: 'utf8' });
       }
-      return { ok: false, reason: 'error', message: String(error?.message || error) };
-    }
-  });
-
-  ipcMain.handle('force-quit-app', async (_event: any, appPath: string) => {
-    if (!appPath) return { ok: false, reason: 'no_path' };
-    const { execFile } = require('child_process') as typeof import('child_process');
-    const { promisify } = require('util') as typeof import('util');
-    const execFileAsync = promisify(execFile);
-    try {
-      const script = `
-        use framework "AppKit"
-        set targetPath to "${appPath.replace(/"/g, '\\"')}"
-        set runningApps to current application's NSWorkspace's sharedWorkspace()'s runningApplications()
-        set foundPid to 0
-        repeat with runningApp in runningApps
-          try
-            set appUrl to runningApp's bundleURL()
-            if appUrl is not missing value then
-              set appPathStr to (appUrl's |path|()) as text
-              if appPathStr is equal to targetPath then
-                set foundPid to runningApp's processIdentifier() as integer
-                exit repeat
-              end if
-            end if
-          end try
-        end repeat
-        return foundPid
-      `;
-      const { stdout } = await execFileAsync('/usr/bin/osascript', ['-l', 'AppleScript', '-e', script]);
-      const pid = parseInt(String(stdout).trim(), 10);
-      if (!pid || pid <= 0) return { ok: false, reason: 'not_running' };
-      try { process.kill(pid, 'SIGKILL'); } catch { return { ok: false, reason: 'kill_failed' }; }
-      return { ok: true };
-    } catch (error: any) {
-      return { ok: false, reason: 'error', message: String(error?.message || error) };
+      return true;
+    } catch {
+      return false;
     }
   });
 

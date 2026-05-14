@@ -3363,6 +3363,32 @@ const App: React.FC = () => {
             execute: () => pinToggleForFile(filePath),
           },
           ...(filePath.endsWith('.app') ? [{
+            id: 'quit-app',
+            title: t('launcher.actions.quit'),
+            shortcut: 'Ctrl+Shift+Q',
+            icon: <XCircle className="w-4 h-4" />,
+            execute: async () => {
+              const appName = filePath.split('/').pop()?.replace('.app', '') || '';
+              const ok = await window.electron.quitApp(filePath);
+              setShowActions(false);
+              window.electron.hideWindow();
+              showLauncherFooterStatus(ok ? 'success' : 'error', ok ? `Quit ${appName}` : `Failed quitting ${appName}`);
+            },
+          }, {
+            id: 'force-quit-app',
+            title: t('launcher.actions.forceQuit'),
+            shortcut: 'Ctrl+Alt+Shift+Q',
+            icon: <XCircle className="w-4 h-4" />,
+            execute: async () => {
+              const appName = filePath.split('/').pop()?.replace('.app', '') || '';
+              const confirmed = window.confirm(`Force quit "${appName}"? Unsaved changes will be lost.`);
+              if (!confirmed) return;
+              const ok = await window.electron.quitApp(filePath, true);
+              setShowActions(false);
+              window.electron.hideWindow();
+              showLauncherFooterStatus(ok ? 'success' : 'error', ok ? `Force quit ${appName}` : `Failed quitting ${appName}`);
+            },
+          }, {
             id: 'uninstall-app',
             title: t('launcher.actions.uninstallApplication'),
             shortcut: 'Ctrl+X',
@@ -3463,14 +3489,10 @@ const App: React.FC = () => {
           shortcut: 'Ctrl+Shift+Q',
           icon: <XCircle className="w-4 h-4" />,
           execute: async () => {
-            const result = await window.electron.quitApp(command.path!);
-            if (!result.ok && result.reason === 'not_running') {
-              showLauncherFooterStatus('error', `${command.title} is not running`);
-            } else if (!result.ok) {
-              showLauncherFooterStatus('error', `Failed to quit ${command.title}`);
-            } else {
-              showLauncherFooterStatus('success', `Quit ${command.title}`);
-            }
+            const ok = await window.electron.quitApp(command.path!);
+            setShowActions(false);
+            window.electron.hideWindow();
+            showLauncherFooterStatus(ok ? 'success' : 'error', ok ? `Quit ${command.title}` : `Failed quitting ${command.title}`);
           },
         }] : []),
         ...(isApp ? [{
@@ -3481,14 +3503,10 @@ const App: React.FC = () => {
           execute: async () => {
             const confirmed = window.confirm(`Force quit "${command.title}"? Unsaved changes will be lost.`);
             if (!confirmed) return;
-            const result = await window.electron.forceQuitApp(command.path!);
-            if (!result.ok && result.reason === 'not_running') {
-              showLauncherFooterStatus('error', `${command.title} is not running`);
-            } else if (!result.ok) {
-              showLauncherFooterStatus('error', `Failed to force quit ${command.title}`);
-            } else {
-              showLauncherFooterStatus('success', `Force quit ${command.title}`);
-            }
+            const ok = await window.electron.quitApp(command.path!, true);
+            setShowActions(false);
+            window.electron.hideWindow();
+            showLauncherFooterStatus(ok ? 'success' : 'error', ok ? `Force quit ${command.title}` : `Failed quitting ${command.title}`);
           },
         }] : []),
         {
