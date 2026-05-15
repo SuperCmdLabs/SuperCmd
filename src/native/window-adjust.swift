@@ -314,10 +314,13 @@ private func readWindowFrame(_ window: AXUIElement) -> WindowFrame? {
 
 private func setWindowFrame(_ window: AXUIElement, frame: WindowFrame) -> Bool {
   // Temporarily disable enhanced UI to suppress window resize animations in the target app.
+  // Read the original value first so we can restore it exactly rather than assuming true.
   var pid: pid_t = 0
+  var originalEnhancedUI: CFTypeRef? = nil
   let hasPid = AXUIElementGetPid(window, &pid) == .success && pid > 0
   if hasPid {
     let appRef = AXUIElementCreateApplication(pid)
+    AXUIElementCopyAttributeValue(appRef, "AXEnhancedUserInterface" as CFString, &originalEnhancedUI)
     AXUIElementSetAttributeValue(appRef, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse)
   }
 
@@ -331,7 +334,8 @@ private func setWindowFrame(_ window: AXUIElement, frame: WindowFrame) -> Bool {
 
   if hasPid {
     let appRef = AXUIElementCreateApplication(pid)
-    AXUIElementSetAttributeValue(appRef, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+    let restoreValue: CFTypeRef = originalEnhancedUI ?? kCFBooleanFalse
+    AXUIElementSetAttributeValue(appRef, "AXEnhancedUserInterface" as CFString, restoreValue)
   }
 
   return pointStatus == .success && sizeStatus == .success
