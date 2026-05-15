@@ -10,6 +10,7 @@ interface SuperCmdWhisperProps {
   onOnboardingTranscriptAppend?: (text: string) => void;
   coachmarkText?: string;
   autoClose?: boolean;
+  startToken?: number;
 }
 
 type WhisperState = 'idle' | 'listening' | 'processing' | 'error';
@@ -393,6 +394,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   onOnboardingTranscriptAppend,
   coachmarkText,
   autoClose = true,
+  startToken = 0,
 }) => {
   const { t } = useI18n();
   const idleStatus = t('whisper.status.idle');
@@ -471,6 +473,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const nativeFlushQueueRef = useRef<NativeQueuedSuffix[]>([]);
   const nativeFlushInFlightRef = useRef(false);
   const pushToTalkArmedRef = useRef(false);
+  const lastHandledStartTokenRef = useRef(0);
 
   // ─── Audio Visualizer ──────────────────────────────────────────────
 
@@ -1717,6 +1720,17 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   }, [state]);
 
   useEffect(() => {
+    if (!startToken || startToken === lastHandledStartTokenRef.current) return;
+    lastHandledStartTokenRef.current = startToken;
+    pushToTalkArmedRef.current = PUSH_TO_TALK_MODE;
+    const currentState = whisperStateRef.current;
+    if (startInFlightRef.current || currentState === 'listening' || currentState === 'processing') {
+      return;
+    }
+    void startListening();
+  }, [startListening, startToken]);
+
+  useEffect(() => {
     const keyWindow = portalTarget?.ownerDocument?.defaultView || window;
     if (!keyWindow) return;
 
@@ -1819,12 +1833,13 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
             waveBars.map((value, index) => {
               const profile = BAR_HEIGHT_PROFILE[index];
               const minHeight = dotMode ? 3 : 4 + Math.round(profile * 4);
-              const amplitude = dotMode ? 0 : 4 + Math.round(profile * 10);
+              const amplitude = dotMode ? 0 : 3 + Math.round(profile * 7);
+              const barHeight = Math.min(dotMode ? 3 : 17, minHeight + Math.round(value * amplitude));
               return (
                 <span
                   key={`bar-${index}`}
                   className="whisper-wave-bar"
-                  style={{ height: `${minHeight + Math.round(value * amplitude)}px` }}
+                  style={{ height: `${barHeight}px` }}
                 />
               );
             })

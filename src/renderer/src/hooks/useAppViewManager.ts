@@ -16,7 +16,7 @@
  * manage top-level view visibility directly.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { ExtensionBundle, CommandInfo } from '../../types/electron';
 
 export interface ExtensionPreferenceSetup {
@@ -132,6 +132,7 @@ export function useAppViewManager(): AppViewManager {
   const [showWhisperHint, setShowWhisperHint] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [aiMode, setAiMode] = useState(false);
+  const whisperHintShownCountRef = useRef(0);
 
   const resetAllViews = useCallback(() => {
     setExtensionView(null);
@@ -214,7 +215,12 @@ export function useAppViewManager(): AppViewManager {
 
   const openWhisper = useCallback(() => {
     setShowWhisper(true);
-    setShowWhisperHint(true);
+    if (whisperHintShownCountRef.current < 2) {
+      whisperHintShownCountRef.current += 1;
+      setShowWhisperHint(true);
+    } else {
+      setShowWhisperHint(false);
+    }
   }, []);
 
   const openSpeak = useCallback(() => {

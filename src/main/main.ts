@@ -6397,7 +6397,7 @@ function startFnSpeakToggleWatcher(): void {
               preserveFocusWhenHidden: launcherMode !== 'onboarding',
             });
             lastWhisperShownAt = Date.now();
-            const startDelays = [180, 340, 520];
+            const startDelays = [180, 340, 520, 800, 1200];
             startDelays.forEach((delay) => {
               setTimeout(() => {
                 if (!fnSpeakToggleIsPressed) return;
@@ -9779,7 +9779,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     lastWhisperShownAt = Date.now();
     // Opening detached whisper can race with renderer listener binding;
     // send explicit "start listening" with short retries.
-    const startDelays = [180, 340, 520];
+    const startDelays = [180, 340, 520, 800, 1200];
     startDelays.forEach((delay) => {
       setTimeout(() => {
         if (holdSeq !== whisperHoldRequestSeq) return;

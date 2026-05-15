@@ -410,6 +410,7 @@ const App: React.FC = () => {
     showWhisperOnboarding, setShowWhisperOnboarding,
     showWhisperHint, setShowWhisperHint,
   });
+  const [whisperStartToken, setWhisperStartToken] = useState(0);
   const {
     speakStatus, speakOptions,
     setConfiguredEdgeTtsVoice, setConfiguredTtsModel,
@@ -2858,6 +2859,15 @@ const App: React.FC = () => {
   }, [runLocalSystemCommand]);
 
   useEffect(() => {
+    const cleanup = window.electron.onWhisperStartListening(() => {
+      whisperSessionRef.current = true;
+      setShowWhisper(true);
+      setWhisperStartToken((value) => value + 1);
+    });
+    return cleanup;
+  }, [setShowWhisper, whisperSessionRef]);
+
+  useEffect(() => {
     const cleanup = window.electron.onOnboardingHotkeyPressed(() => {
       setOnboardingHotkeyPresses((prev) => prev + 1);
     });
@@ -3811,6 +3821,7 @@ const App: React.FC = () => {
       {showWhisper && whisperPortalTarget ? (
         <SuperCmdWhisper
           portalTarget={whisperPortalTarget}
+          startToken={whisperStartToken}
           onboardingCaptureMode={showWhisperOnboarding}
           onOnboardingTranscriptAppend={appendWhisperOnboardingPracticeText}
           coachmarkText={

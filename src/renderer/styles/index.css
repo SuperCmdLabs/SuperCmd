@@ -1361,6 +1361,7 @@ kbd {
   gap: 4px;
   background: rgba(32, 34, 38, 0.78);
   border: 1px solid rgba(196, 201, 206, 0.26);
+  overflow: hidden;
 }
 
 .whisper-widget-shell {
@@ -1516,7 +1517,7 @@ body.sc-detached-window .whisper-shortcut-hint {
   width: 88px;
   min-width: 88px;
   height: 38px;
-  padding: 7px 7px;
+  padding: 8px 7px;
 }
 
 .whisper-wave-bar {
@@ -1936,7 +1937,8 @@ body.sc-detached-window .speak-close-button {
   .whisper-wave-standalone.is-processing {
     width: 80px;
     min-width: 80px;
-    height: 20px;
+    height: 32px;
+    padding: 7px 7px;
   }
 
   .speak-widget-shell {
