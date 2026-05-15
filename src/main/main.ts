@@ -8948,6 +8948,19 @@ function getEmojiPickerWindowHtml(): string {
       -webkit-font-smoothing: antialiased;
       user-select: none; pointer-events: none; color: rgba(255,255,255,0.92);
     }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      display: flex;
+      align-items: flex-start;
+    }
+    #wrap {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
     #card {
       display: inline-flex; align-items: center; gap: 2px;
       padding: 5px 6px;
@@ -8966,10 +8979,43 @@ function getEmojiPickerWindowHtml(): string {
       transition: background 60ms ease, transform 60ms ease;
     }
     .item.sel { background: rgba(86, 140, 255, 0.95); transform: scale(1.06); }
+    #hint {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 18px;
+      padding: 0 7px;
+      border-radius: 8px;
+      background: rgba(18,18,20,0.78);
+      border: 1px solid rgba(255,255,255,0.13);
+      color: rgba(255,255,255,0.76);
+      font-size: 10.5px;
+      font-weight: 500;
+      letter-spacing: 0;
+      line-height: 18px;
+      box-shadow: 0 5px 16px rgba(0,0,0,0.30);
+    }
+    kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 14px;
+      padding: 0 4px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.14);
+      color: rgba(255,255,255,0.88);
+      font: inherit;
+      font-size: 9px;
+      line-height: 14px;
+    }
   </style>
 </head>
 <body>
-  <div id="card"></div>
+  <div id="wrap">
+    <div id="card"></div>
+    <div id="hint">Press <kbd>Esc</kbd> to close</div>
+  </div>
   <script>
     const card = document.getElementById('card');
     function render(matches, selIdx) {
@@ -8990,7 +9036,7 @@ async function ensureEmojiPickerWindow(): Promise<InstanceType<typeof BrowserWin
   if (emojiPickerWindow && !emojiPickerWindow.isDestroyed()) return emojiPickerWindow;
   emojiPickerWindow = new BrowserWindow({
     width: 340,
-    height: 48,
+    height: 80,
     // Explicit x/y so the window does NOT default to screen-center; we'll
     // setBounds to the real position before showing.
     x: 0,
