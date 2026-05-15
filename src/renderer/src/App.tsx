@@ -3367,9 +3367,24 @@ const App: React.FC = () => {
             execute: () => pinToggleForFile(filePath),
           },
           ...(filePath.endsWith('.app') ? [{
+            id: 'toggle-auto-quit',
+            title: autoQuitAppPaths.has(filePath) ? t('launcher.actions.disableAutoQuit') : t('launcher.actions.enableAutoQuit'),
+            icon: <Timer className="w-4 h-4" />,
+            execute: async () => {
+              if (autoQuitAppPaths.has(filePath)) {
+                await window.electron.autoQuitRemoveApp(filePath);
+                setAutoQuitAppPaths(prev => { const next = new Set(prev); next.delete(filePath); return next; });
+              } else {
+                const timeout = await window.electron.autoQuitGetDefaultTimeout();
+                await window.electron.autoQuitAddApp({ appPath: filePath, appName: command.title, timeoutSeconds: timeout });
+                setAutoQuitAppPaths(prev => new Set(prev).add(filePath));
+              }
+            },
+          }, {
             id: 'quit-app',
             title: t('launcher.actions.quit'),
             shortcut: 'Ctrl+Shift+Q',
+            separatorBefore: true,
             icon: <XCircle className="w-4 h-4" />,
             execute: async () => {
               const appName = filePath.split('/').pop()?.replace('.app', '') || '';
@@ -3391,20 +3406,6 @@ const App: React.FC = () => {
               setShowActions(false);
               window.electron.hideWindow();
               window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? t('launcher.actions.forceQuitApp', { appName }) : t('launcher.actions.failedQuitting', { appName }));
-            },
-          }, {
-            id: 'toggle-auto-quit',
-            title: autoQuitAppPaths.has(filePath) ? t('launcher.actions.disableAutoQuit') : t('launcher.actions.enableAutoQuit'),
-            icon: <Timer className="w-4 h-4" />,
-            execute: async () => {
-              if (autoQuitAppPaths.has(filePath)) {
-                await window.electron.autoQuitRemoveApp(filePath);
-                setAutoQuitAppPaths(prev => { const next = new Set(prev); next.delete(filePath); return next; });
-              } else {
-                const timeout = await window.electron.autoQuitGetDefaultTimeout();
-                await window.electron.autoQuitAddApp({ appPath: filePath, appName: command.title, timeoutSeconds: timeout });
-                setAutoQuitAppPaths(prev => new Set(prev).add(filePath));
-              }
             },
           }, {
             id: 'uninstall-app',
@@ -3505,6 +3506,7 @@ const App: React.FC = () => {
           id: 'quit-app',
           title: t('launcher.actions.quit'),
           shortcut: 'Ctrl+Shift+Q',
+          separatorBefore: true,
           icon: <XCircle className="w-4 h-4" />,
           execute: async () => {
             const ok = await window.electron.quitApp(command.path!);
@@ -3531,7 +3533,6 @@ const App: React.FC = () => {
           id: 'toggle-auto-quit',
           title: (command.path && autoQuitAppPaths.has(command.path)) ? t('launcher.actions.disableAutoQuit') : t('launcher.actions.enableAutoQuit'),
           enabled: command.category === 'app' && Boolean(command.path?.endsWith('.app')),
-          separatorBefore: command.category === 'app' && Boolean(command.path?.endsWith('.app')),
           icon: <Timer className="w-4 h-4" />,
           execute: async () => {
             if (!command.path) return;
@@ -3549,6 +3550,7 @@ const App: React.FC = () => {
           id: 'disable',
           title: command.category === 'app' ? t('launcher.actions.disableApplication') : t('launcher.actions.disableCommand'),
           shortcut: 'Cmd+Shift+D',
+          separatorBefore: true,
           style: 'destructive' as const,
           icon: <EyeOff className="w-4 h-4" />,
           execute: () => disableCommand(command),
