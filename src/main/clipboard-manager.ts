@@ -14,6 +14,23 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
+// Lazy-loaded native addon — provides getPasteboardChangeCount() which returns
+// NSPasteboard.general.changeCount (an integer that increments on every write).
+// Checking this is O(1) and avoids all pasteboard data reads when nothing changed.
+type FastPasteAddon = { getPasteboardChangeCount?: () => number };
+let _fastPasteAddon: FastPasteAddon | null = null;
+let _fastPasteAddonLoaded = false;
+function getFastPasteAddon(): FastPasteAddon | null {
+  if (_fastPasteAddonLoaded) return _fastPasteAddon;
+  _fastPasteAddonLoaded = true;
+  try {
+    _fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+  } catch {
+    _fastPasteAddon = null;
+  }
+  return _fastPasteAddon;
+}
+
 /**
  * Write a GIF file to macOS pasteboard with file URL + GIF data + TIFF
  * fallback via NSPasteboard so apps like Twitter/Slack treat it as a GIF
@@ -79,6 +96,10 @@ let lastClipboardImageHash = '';
 let lastClipboardFilePath = '';
 let pollInterval: NodeJS.Timeout | null = null;
 let isEnabled = true;
+// Last-seen NSPasteboard changeCount. -1 = not yet read.
+// When changeCount hasn't changed, the pasteboard is identical to the last poll
+// and we can skip all reads entirely (O(1) check via native addon).
+let lastPasteboardChangeCount = -1;
 // Bundle IDs (lower-cased) whose copies should be skipped. Kept lowercase
 // so membership checks are case-insensitive against whatever macOS reports.
 let blacklistedAppBundleIds: Set<string> = new Set();
@@ -538,14 +559,17 @@ function isImageFilePath(filePath: string): boolean {
 
 /**
  * Compute a cheap fingerprint for the image currently on the clipboard WITHOUT
- * calling toPNG() / decoding pixels.  Strategy (in priority order):
+ * calling toPNG() / decoding pixels where possible.  Strategy (in priority order):
  *
  *   GIF  → full GIF buffer hash (GIFs are small)
- *   PNG  → size + hash of first 4 KB of the PNG buffer (compressed, no decode)
- *   TIFF → size + hash of first 4 KB of the TIFF buffer (raw IPC read, no encode)
- *
- * Reading raw format bytes is an OS IPC copy (memory-bandwidth-bound, fast).
- * toPNG() on a large TIFF is a pixel decode + PNG encode (CPU-bound, very slow).
+ *   PNG  → size + hash of sampled PNG buffer (compressed, no decode)
+ *   TIFF → size + hash of sampled TIFF buffer (raw IPC read, no encode)
+ *   img  → readImage() fallback for browsers that use non-standard UTIs
+ *          (e.g. Chrome puts com.google.chrome.image-htm; Electron's readImage()
+ *           decodes it via NSImage but none of our UTI checks match).
+ *          This path calls toPNG() once, but it is only reached when the
+ *          clipboard actually changed (changeCount guard in pollClipboard), so
+ *          it is a one-time cost per copy, not a per-poll cost.
  *
  * Returns the fingerprint string and any pre-read rawGifData.
  */
@@ -555,8 +579,6 @@ function getClipboardImageFingerprint(): { fingerprint: string; rawGifData?: Buf
     const hasGif  = formats.includes('com.compuserve.gif');
     const hasPng  = formats.includes('public.png');
     const hasTiff = formats.includes('public.tiff');
-
-    if (!hasGif && !hasPng && !hasTiff) return { fingerprint: '' };
 
     if (hasGif) {
       try {
@@ -588,6 +610,20 @@ function getClipboardImageFingerprint(): { fingerprint: string; rawGifData?: Buf
         }
       } catch {}
     }
+
+    // Fallback: browser or app used a non-standard UTI (e.g. Chrome's
+    // com.google.chrome.image-htm). Electron's readImage() can decode many
+    // image formats via NSImage even when the UTI isn't one of the three above.
+    // This only runs when changeCount changed, so toPNG() is a one-time cost.
+    try {
+      const img = clipboard.readImage();
+      if (!img.isEmpty()) {
+        const png = img.toPNG();
+        if (png.length > 8) {
+          return { fingerprint: buildImageFingerprint('img', png) };
+        }
+      }
+    } catch {}
   } catch {}
   return { fingerprint: '' };
 }
@@ -596,8 +632,20 @@ function pollClipboard(): void {
   if (!isEnabled) return;
 
   try {
-    // Compute image fingerprint using raw format bytes — no toPNG() / pixel decode.
-    // toPNG() is only called inside addImageItem when we actually save a new image.
+    // Cheap pre-check: NSPasteboard.changeCount increments on every write.
+    // If it hasn't changed since the last poll, nothing is on the clipboard that
+    // we haven't already seen — skip all IPC reads entirely.
+    const addon = getFastPasteAddon();
+    if (addon?.getPasteboardChangeCount) {
+      const currentChangeCount = addon.getPasteboardChangeCount();
+      if (currentChangeCount === lastPasteboardChangeCount) return;
+      lastPasteboardChangeCount = currentChangeCount;
+    }
+
+    // Compute image fingerprint. For known UTIs (gif/png/tiff) this reads raw
+    // format bytes without decoding pixels. For non-standard UTIs (e.g. Chrome)
+    // it falls back to readImage()+toPNG() once — acceptable because changeCount
+    // already confirmed the clipboard changed, so this is not a steady-state cost.
     const { fingerprint: imageFingerprint, rawGifData } = getClipboardImageFingerprint();
 
     // A file URL on the pasteboard (Finder copy) takes priority over
@@ -749,13 +797,20 @@ function handleClipboardFileCopy(filePath: string): boolean {
 
 export function startClipboardMonitor(): void {
   loadHistory();
-  
-  // Initial read — use the same cheap fingerprint approach as pollClipboard.
+
+  // Seed state from whatever is on the clipboard right now so the first poll
+  // doesn't create spurious entries for pre-existing clipboard content.
+  // NOTE: do NOT seed lastClipboardImageHash here. The changeCount guard below
+  // prevents reprocessing of startup clipboard state. Seeding the hash would
+  // permanently block the first user copy of an image that was already on the
+  // clipboard when the app launched (fingerprint === seeded hash → skip forever).
   try {
     lastClipboardText = clipboard.readText();
-    const { fingerprint } = getClipboardImageFingerprint();
-    if (fingerprint) lastClipboardImageHash = fingerprint;
     lastClipboardFilePath = readClipboardFilePath() || '';
+    const addon = getFastPasteAddon();
+    if (addon?.getPasteboardChangeCount) {
+      lastPasteboardChangeCount = addon.getPasteboardChangeCount();
+    }
   } catch {}
   
   // Start polling
@@ -944,11 +999,21 @@ export function copyItemToClipboard(id: string): boolean {
     sortClipboardHistory();
     saveHistory();
     
+    // Seed the changeCount so the next poll recognises our write as "already seen"
+    // and doesn't create a duplicate entry. This works even if the poll fires
+    // before the isEnabled timeout below expires.
+    try {
+      const addon = getFastPasteAddon();
+      if (addon?.getPasteboardChangeCount) {
+        lastPasteboardChangeCount = addon.getPasteboardChangeCount();
+      }
+    } catch {}
+
     // Re-enable monitoring after a short delay
     setTimeout(() => {
       isEnabled = true;
     }, 500);
-    
+
     return true;
   } catch (e) {
     isEnabled = true;
