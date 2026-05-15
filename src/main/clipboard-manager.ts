@@ -14,6 +14,23 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
+// Lazy-loaded native addon — provides getPasteboardChangeCount() which returns
+// NSPasteboard.general.changeCount (an integer that increments on every write).
+// Checking this is O(1) and avoids all pasteboard data reads when nothing changed.
+type FastPasteAddon = { getPasteboardChangeCount?: () => number };
+let _fastPasteAddon: FastPasteAddon | null = null;
+let _fastPasteAddonLoaded = false;
+function getFastPasteAddon(): FastPasteAddon | null {
+  if (_fastPasteAddonLoaded) return _fastPasteAddon;
+  _fastPasteAddonLoaded = true;
+  try {
+    _fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+  } catch {
+    _fastPasteAddon = null;
+  }
+  return _fastPasteAddon;
+}
+
 /**
  * Write a GIF file to macOS pasteboard with file URL + GIF data + TIFF
  * fallback via NSPasteboard so apps like Twitter/Slack treat it as a GIF
@@ -79,6 +96,10 @@ let lastClipboardImageHash = '';
 let lastClipboardFilePath = '';
 let pollInterval: NodeJS.Timeout | null = null;
 let isEnabled = true;
+// Last-seen NSPasteboard changeCount. -1 = not yet read.
+// When changeCount hasn't changed, the pasteboard is identical to the last poll
+// and we can skip all reads entirely (O(1) check via native addon).
+let lastPasteboardChangeCount = -1;
 // Bundle IDs (lower-cased) whose copies should be skipped. Kept lowercase
 // so membership checks are case-insensitive against whatever macOS reports.
 let blacklistedAppBundleIds: Set<string> = new Set();
@@ -632,6 +653,20 @@ function getClipboardImageFingerprint(): {
         fallbackImage: image,
       };
     }
+
+    // Fallback: browser or app used a non-standard UTI (e.g. Chrome's
+    // com.google.chrome.image-htm). Electron's readImage() can decode many
+    // image formats via NSImage even when the UTI isn't one of the three above.
+    // This only runs when changeCount changed, so toPNG() is a one-time cost.
+    try {
+      const img = clipboard.readImage();
+      if (!img.isEmpty()) {
+        const png = img.toPNG();
+        if (png.length > 8) {
+          return { fingerprint: buildImageFingerprint('img', png) };
+        }
+      }
+    } catch {}
   } catch {}
   return { fingerprint: '' };
 }
@@ -793,13 +828,20 @@ function handleClipboardFileCopy(filePath: string): boolean {
 
 export function startClipboardMonitor(): void {
   loadHistory();
-  
-  // Initial read — use the same cheap fingerprint approach as pollClipboard.
+
+  // Seed state from whatever is on the clipboard right now so the first poll
+  // doesn't create spurious entries for pre-existing clipboard content.
+  // NOTE: do NOT seed lastClipboardImageHash here. The changeCount guard below
+  // prevents reprocessing of startup clipboard state. Seeding the hash would
+  // permanently block the first user copy of an image that was already on the
+  // clipboard when the app launched (fingerprint === seeded hash → skip forever).
   try {
     lastClipboardText = clipboard.readText();
-    const { fingerprint } = getClipboardImageFingerprint();
-    if (fingerprint) lastClipboardImageHash = fingerprint;
     lastClipboardFilePath = readClipboardFilePath() || '';
+    const addon = getFastPasteAddon();
+    if (addon?.getPasteboardChangeCount) {
+      lastPasteboardChangeCount = addon.getPasteboardChangeCount();
+    }
   } catch {}
   
   // Start polling
@@ -988,11 +1030,21 @@ export function copyItemToClipboard(id: string): boolean {
     sortClipboardHistory();
     saveHistory();
     
+    // Seed the changeCount so the next poll recognises our write as "already seen"
+    // and doesn't create a duplicate entry. This works even if the poll fires
+    // before the isEnabled timeout below expires.
+    try {
+      const addon = getFastPasteAddon();
+      if (addon?.getPasteboardChangeCount) {
+        lastPasteboardChangeCount = addon.getPasteboardChangeCount();
+      }
+    } catch {}
+
     // Re-enable monitoring after a short delay
     setTimeout(() => {
       isEnabled = true;
     }, 500);
-    
+
     return true;
   } catch (e) {
     isEnabled = true;
