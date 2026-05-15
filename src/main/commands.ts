@@ -106,11 +106,77 @@ export interface CommandInfo {
 // ─── Cache ──────────────────────────────────────────────────────────
 
 let cachedCommands: CommandInfo[] | null = null;
+let staleCommandsFallback: CommandInfo[] | null = null;
 let cacheTimestamp = 0;
 let inflightDiscovery: Promise<CommandInfo[]> | null = null;
 let lastStaleRefreshRequestAt = 0;
 const CACHE_TTL = 30 * 60_000; // 30 min
 const STALE_REFRESH_COOLDOWN_MS = 15_000;
+
+// ─── Commands Disk Cache ─────────────────────────────────────────────────────
+// Persists the discovered commands list across restarts so the launcher is
+// instant on the next cold start.  Icons are stored separately in icon-cache/
+// and are re-attached on load.  Bump the version when CommandInfo shape changes
+// in a breaking way.
+
+const COMMANDS_DISK_CACHE_VERSION = 1;
+let commandsDiskCachePath: string | null = null;
+
+function getCommandsDiskCachePath(): string {
+  if (!commandsDiskCachePath) {
+    commandsDiskCachePath = path.join(app.getPath('userData'), 'commands-disk-cache.json');
+  }
+  return commandsDiskCachePath;
+}
+
+function loadCommandsDiskCache(): CommandInfo[] | null {
+  try {
+    const raw = fs.readFileSync(getCommandsDiskCachePath(), 'utf-8');
+    const parsed = JSON.parse(raw) as { version: number; commands: CommandInfo[] };
+    if (parsed?.version !== COMMANDS_DISK_CACHE_VERSION) return null;
+    const cmds = parsed.commands;
+    // Re-attach icons from the per-app icon disk cache (fast file reads).
+    for (const cmd of cmds) {
+      if (cmd.path) {
+        const icon = getCachedIcon(cmd.path);
+        if (icon) cmd.iconDataUrl = icon;
+      }
+    }
+    return cmds;
+  } catch {
+    return null;
+  }
+}
+
+function saveCommandsDiskCache(commands: CommandInfo[]): void {
+  try {
+    // Strip icon data — icons are persisted separately in icon-cache/.
+    const stripped = commands.map(({ iconDataUrl: _drop, ...rest }) => rest);
+    fs.writeFileSync(
+      getCommandsDiskCachePath(),
+      JSON.stringify({ version: COMMANDS_DISK_CACHE_VERSION, commands: stripped }),
+      'utf-8'
+    );
+  } catch (error) {
+    console.warn('[Commands] Failed to save commands disk cache:', error);
+  }
+}
+
+/** Call once after app.whenReady() to pre-populate the in-memory cache from disk. */
+export function initCommandsCache(): void {
+  const cmds = loadCommandsDiskCache();
+  if (cmds) {
+    cachedCommands = cmds;
+    staleCommandsFallback = cmds;
+    cacheTimestamp = 0; // mark stale so the next getAvailableCommands() triggers a background refresh
+    console.log(`[Commands] Loaded ${cmds.length} commands from disk cache`);
+  }
+}
+
+/** Returns the current inflight background discovery promise, if any. */
+export function getInflightDiscovery(): Promise<CommandInfo[]> | null {
+  return inflightDiscovery;
+}
 
 // ─── Icon Disk Cache ────────────────────────────────────────────────
 
@@ -1900,10 +1966,14 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
 
   cachedCommands = allCommands;
   cacheTimestamp = Date.now();
+  staleCommandsFallback = allCommands;
 
   console.log(
     `Discovered ${apps.length} apps, ${settings.length} settings panes, ${extensionCommands.length} extension commands, ${scriptCommands.length} script commands, ${quickLinkCommands.length} quick links in ${Date.now() - t0}ms`
   );
+
+  // Persist to disk so the next startup can serve commands instantly.
+  saveCommandsDiskCache(allCommands);
 
   return cachedCommands;
 }
@@ -1935,6 +2005,21 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
   if (cachedCommands) {
     ensureBackgroundRefreshForStaleCache();
     return cachedCommands;
+  }
+
+  // cachedCommands was invalidated (e.g. FSWatcher fired) but staleCommandsFallback
+  // still has good data.  Return it immediately and kick off a background refresh
+  // so the launcher never blocks on discovery after an invalidation event.
+  if (staleCommandsFallback) {
+    if (!inflightDiscovery) {
+      inflightDiscovery = discoverAndBuildCommands()
+        .catch((error) => {
+          console.warn('[Commands] Background refresh failed:', error);
+          return staleCommandsFallback || [];
+        })
+        .finally(() => { inflightDiscovery = null; });
+    }
+    return staleCommandsFallback;
   }
 
   // Deduplicate concurrent cold-start calls.
@@ -1976,7 +2061,9 @@ export async function executeCommand(id: string): Promise<boolean> {
     }
   }
 
-  const commands = await getAvailableCommands();
+  // Use stale fallback when available to avoid blocking on a fresh discovery
+  // while the cache is being rebuilt in the background.
+  const commands = cachedCommands ?? staleCommandsFallback ?? await getAvailableCommands();
   const command = commands.find((c) => c.id === id);
   if (!command?.path) {
     console.error(`Command not found: ${id}`);
@@ -1997,6 +2084,9 @@ export async function executeCommand(id: string): Promise<boolean> {
 }
 
 export function invalidateCache(): void {
+  if (cachedCommands) {
+    staleCommandsFallback = cachedCommands;
+  }
   cachedCommands = null;
   cacheTimestamp = 0;
   lastStaleRefreshRequestAt = 0;

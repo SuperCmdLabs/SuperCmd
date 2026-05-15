@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { fork, execFileSync, type ChildProcess } from 'child_process';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
-import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
+import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster, setExternalSettingsChangeHandler, settingsFileExistsOrICloudPlaceholder } from './settings-store';
 import type { AppSettings, RelocateMode } from './settings-store';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
@@ -11624,7 +11624,11 @@ function startInstalledAppsWatchers(): void {
     try {
       const watcher = fs.watch(dir, { persistent: false }, (_eventType, filename) => {
         const changedName = String(filename || '').toLowerCase();
-        if (!changedName || changedName.endsWith('.app') || changedName.includes('.app/')) {
+        // Only react to top-level .app bundles being added or removed.
+        // Ignore null filenames (spurious macOS FSEvents) and changes inside
+        // an .app bundle (e.g. app writes temp files on quit) — those don't
+        // affect the set of installed applications.
+        if (changedName && changedName.endsWith('.app')) {
           scheduleInstalledAppsRefresh(`filesystem event in ${dir}`);
         }
       });
@@ -17395,7 +17399,24 @@ if let tiff = image?.tiffRepresentation {
     enterRegularMacActivationPolicy();
   }
 
+  // Load persisted commands from disk so the launcher is instant on next open.
+  // This populates cachedCommands with cacheTimestamp=0 (stale), so the first
+  // getAvailableCommands() call serves the disk cache immediately and kicks off
+  // a silent background refresh.
+  initCommandsCache();
+
   createWindow();
+
+  // Kick off background discovery right away.  When it finishes, broadcast so
+  // the renderer picks up fresh data (icons, newly-installed apps, etc.).
+  void getAvailableCommands().then(async () => {
+    const inflight = getInflightDiscovery();
+    if (inflight) {
+      try { await inflight; } catch {}
+    }
+    broadcastCommandsUpdated();
+  });
+
   startInstalledAppsWatchers();
   registerGlobalShortcut(settings.globalShortcut);
   registerCommandHotkeys(settings.commandHotkeys);
