@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play } from 'lucide-react';
+import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, XCircle } from 'lucide-react';
 import supercmdLogo from '../../../supercmd.png';
 import type {
   CommandInfo,
@@ -3363,6 +3363,32 @@ const App: React.FC = () => {
             execute: () => pinToggleForFile(filePath),
           },
           ...(filePath.endsWith('.app') ? [{
+            id: 'quit-app',
+            title: t('launcher.actions.quit'),
+            shortcut: 'Ctrl+Shift+Q',
+            icon: <XCircle className="w-4 h-4" />,
+            execute: async () => {
+              const appName = filePath.split('/').pop()?.replace('.app', '') || '';
+              const ok = await window.electron.quitApp(filePath);
+              setShowActions(false);
+              window.electron.hideWindow();
+              window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? t('launcher.actions.quitApp', { appName }) : t('launcher.actions.failedQuitting', { appName }));
+            },
+          }, {
+            id: 'force-quit-app',
+            title: t('launcher.actions.forceQuit'),
+            shortcut: 'Ctrl+Alt+Shift+Q',
+            icon: <XCircle className="w-4 h-4" />,
+            execute: async () => {
+              const appName = filePath.split('/').pop()?.replace('.app', '') || '';
+              const confirmed = window.confirm(t('launcher.actions.forceQuitConfirm', { appName }));
+              if (!confirmed) return;
+              const ok = await window.electron.quitApp(filePath, true);
+              setShowActions(false);
+              window.electron.hideWindow();
+              window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? t('launcher.actions.forceQuitApp', { appName }) : t('launcher.actions.failedQuitting', { appName }));
+            },
+          }, {
             id: 'uninstall-app',
             title: t('launcher.actions.uninstallApplication'),
             shortcut: 'Ctrl+X',
@@ -3429,6 +3455,7 @@ const App: React.FC = () => {
       const isPinned = pinnedCommands.includes(command.id);
       const pinnedIndex = pinnedCommands.indexOf(command.id);
       const hasDeeplink = Boolean(String(command.deeplink || '').trim());
+      const isApp = command.category === 'app' && Boolean(command.path?.endsWith('.app'));
       return [
         {
           id: 'open',
@@ -3456,6 +3483,32 @@ const App: React.FC = () => {
           icon: <Pin className="w-4 h-4" />,
           execute: () => pinToggleForCommand(command),
         },
+        ...(isApp ? [{
+          id: 'quit-app',
+          title: t('launcher.actions.quit'),
+          shortcut: 'Ctrl+Shift+Q',
+          icon: <XCircle className="w-4 h-4" />,
+          execute: async () => {
+            const ok = await window.electron.quitApp(command.path!);
+            setShowActions(false);
+            window.electron.hideWindow();
+            window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? t('launcher.actions.quitApp', { appName: command.title }) : t('launcher.actions.failedQuitting', { appName: command.title }));
+          },
+        }] : []),
+        ...(isApp ? [{
+          id: 'force-quit-app',
+          title: t('launcher.actions.forceQuit'),
+          shortcut: 'Ctrl+Alt+Shift+Q',
+          icon: <XCircle className="w-4 h-4" />,
+          execute: async () => {
+            const confirmed = window.confirm(t('launcher.actions.forceQuitConfirm', { appName: command.title }));
+            if (!confirmed) return;
+            const ok = await window.electron.quitApp(command.path!, true);
+            setShowActions(false);
+            window.electron.hideWindow();
+            window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? t('launcher.actions.forceQuitApp', { appName: command.title }) : t('launcher.actions.failedQuitting', { appName: command.title }));
+          },
+        }] : []),
         {
           id: 'disable',
           title: t('launcher.actions.disableCommand'),
@@ -3519,6 +3572,7 @@ const App: React.FC = () => {
       openQuickLinkManager,
       setQuickLinkEditId,
       openAppUninstall,
+      showLauncherFooterStatus,
       t,
     ]
   );

@@ -773,6 +773,11 @@
       "delete": "Supprimer",
       "preferences": "Préférences",
       "quit": "Quitter",
+      "forceQuit": "Forcer à quitter",
+      "quitApp": "Quitter {appName}",
+      "forceQuitApp": "Forcer à quitter {appName}",
+      "failedQuitting": "Échec de la fermeture de {appName}",
+      "forceQuitConfirm": "Forcer à quitter « {appName} » ? Les modifications non enregistrées seront perdues.",
       "uninstallApplication": "Désinstaller l'application"
     },
     "empty": {

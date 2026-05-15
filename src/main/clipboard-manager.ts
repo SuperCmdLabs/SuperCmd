@@ -17,18 +17,18 @@ import * as crypto from 'crypto';
 // Lazy-loaded native addon — provides getPasteboardChangeCount() which returns
 // NSPasteboard.general.changeCount (an integer that increments on every write).
 // Checking this is O(1) and avoids all pasteboard data reads when nothing changed.
-type FastPasteAddon = { getPasteboardChangeCount?: () => number };
-let _fastPasteAddon: FastPasteAddon | null = null;
-let _fastPasteAddonLoaded = false;
-function getFastPasteAddon(): FastPasteAddon | null {
-  if (_fastPasteAddonLoaded) return _fastPasteAddon;
-  _fastPasteAddonLoaded = true;
+type NativeHelpersAddon = { getPasteboardChangeCount?: () => number };
+let _nativeHelpersAddon: NativeHelpersAddon | null = null;
+let _nativeHelpersAddonLoaded = false;
+function getNativeHelpersAddon(): NativeHelpersAddon | null {
+  if (_nativeHelpersAddonLoaded) return _nativeHelpersAddon;
+  _nativeHelpersAddonLoaded = true;
   try {
-    _fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+    _nativeHelpersAddon = require(path.join(__dirname, '..', 'native', 'native_helpers.node'));
   } catch {
-    _fastPasteAddon = null;
+    _nativeHelpersAddon = null;
   }
-  return _fastPasteAddon;
+  return _nativeHelpersAddon;
 }
 
 /**
@@ -558,72 +558,102 @@ function isImageFilePath(filePath: string): boolean {
 }
 
 /**
- * Compute a cheap fingerprint for the image currently on the clipboard WITHOUT
- * calling toPNG() / decoding pixels where possible.  Strategy (in priority order):
+ * Compute a cheap fingerprint for the image currently on the clipboard without
+ * decoding pixels for the common raw clipboard formats. Strategy (in priority
+ * order):
  *
  *   GIF  → full GIF buffer hash (GIFs are small)
- *   PNG  → size + hash of sampled PNG buffer (compressed, no decode)
- *   TIFF → size + hash of sampled TIFF buffer (raw IPC read, no encode)
- *   img  → readImage() fallback for browsers that use non-standard UTIs
- *          (e.g. Chrome puts com.google.chrome.image-htm; Electron's readImage()
- *           decodes it via NSImage but none of our UTI checks match).
- *          This path calls toPNG() once, but it is only reached when the
- *          clipboard actually changed (changeCount guard in pollClipboard), so
- *          it is a one-time cost per copy, not a per-poll cost.
+ *   PNG/JPEG/WebP/HEIC/TIFF → size + sampled raw buffer hash
+ *   nativeImage fallback → PNG hash only when Electron reports an image-like
+ *                          format we do not know how to read as raw bytes
+ *
+ * Reading raw format bytes is an OS IPC copy (memory-bandwidth-bound, fast).
+ * toPNG() on a large TIFF is a pixel decode + PNG encode (CPU-bound, very slow).
  *
  * Returns the fingerprint string and any pre-read rawGifData.
  */
-function getClipboardImageFingerprint(): { fingerprint: string; rawGifData?: Buffer } {
+function readClipboardBufferForFormats(availableFormats: string[], candidates: string[]): Buffer | undefined {
+  const availableByLower = new Map(availableFormats.map((format) => [format.toLowerCase(), format]));
+  for (const candidate of candidates) {
+    const actualFormat = availableByLower.get(candidate.toLowerCase());
+    if (!actualFormat) continue;
+    try {
+      const buf = clipboard.readBuffer(actualFormat);
+      if (buf && buf.length > 0) return buf;
+    } catch {}
+  }
+  return undefined;
+}
+
+function looksLikeClipboardImageFormat(format: string): boolean {
+  const lower = format.toLowerCase();
+  return (
+    lower.startsWith('image/') ||
+    lower === 'public.png' ||
+    lower === 'public.jpeg' ||
+    lower === 'public.jpg' ||
+    lower === 'public.tiff' ||
+    lower === 'public.heic' ||
+    lower === 'public.heif' ||
+    lower === 'com.compuserve.gif' ||
+    lower === 'org.webmproject.webp'
+  );
+}
+
+function getClipboardImageFingerprint(): {
+  fingerprint: string;
+  rawGifData?: Buffer;
+  fallbackImage?: ReturnType<typeof clipboard.readImage>;
+} {
   try {
     const formats = clipboard.availableFormats();
-    const hasGif  = formats.includes('com.compuserve.gif');
-    const hasPng  = formats.includes('public.png');
-    const hasTiff = formats.includes('public.tiff');
+    if (!formats.some(looksLikeClipboardImageFormat)) return { fingerprint: '' };
 
-    if (hasGif) {
-      try {
-        const gifBuf = clipboard.readBuffer('com.compuserve.gif');
-        if (gifBuf && gifBuf.length > 4 &&
-            gifBuf[0] === 0x47 && gifBuf[1] === 0x49 && gifBuf[2] === 0x46) {
-          return {
-            fingerprint: buildImageFingerprint('gif', gifBuf),
-            rawGifData: gifBuf,
-          };
-        }
-      } catch {}
+    const gifBuf = readClipboardBufferForFormats(formats, ['com.compuserve.gif', 'image/gif']);
+    if (gifBuf && gifBuf.length > 4 &&
+        gifBuf[0] === 0x47 && gifBuf[1] === 0x49 && gifBuf[2] === 0x46) {
+      return {
+        fingerprint: buildImageFingerprint('gif', gifBuf),
+        rawGifData: gifBuf,
+      };
     }
 
-    if (hasPng) {
-      try {
-        const pngBuf = clipboard.readBuffer('public.png');
-        if (pngBuf && pngBuf.length > 8) {
-          return { fingerprint: buildImageFingerprint('png', pngBuf) };
-        }
-      } catch {}
+    const pngBuf = readClipboardBufferForFormats(formats, ['public.png', 'image/png']);
+    if (pngBuf && pngBuf.length > 8) {
+      return { fingerprint: buildImageFingerprint('png', pngBuf) };
     }
 
-    if (hasTiff) {
-      try {
-        const tiffBuf = clipboard.readBuffer('public.tiff');
-        if (tiffBuf && tiffBuf.length > 8) {
-          return { fingerprint: buildImageFingerprint('tiff', tiffBuf) };
-        }
-      } catch {}
+    const jpegBuf = readClipboardBufferForFormats(formats, ['public.jpeg', 'public.jpg', 'image/jpeg', 'image/jpg']);
+    if (jpegBuf && jpegBuf.length > 8) {
+      return { fingerprint: buildImageFingerprint('jpeg', jpegBuf) };
     }
 
-    // Fallback: browser or app used a non-standard UTI (e.g. Chrome's
-    // com.google.chrome.image-htm). Electron's readImage() can decode many
-    // image formats via NSImage even when the UTI isn't one of the three above.
-    // This only runs when changeCount changed, so toPNG() is a one-time cost.
-    try {
-      const img = clipboard.readImage();
-      if (!img.isEmpty()) {
-        const png = img.toPNG();
-        if (png.length > 8) {
-          return { fingerprint: buildImageFingerprint('img', png) };
-        }
-      }
-    } catch {}
+    const webpBuf = readClipboardBufferForFormats(formats, ['org.webmproject.webp', 'image/webp']);
+    if (webpBuf && webpBuf.length > 12) {
+      return { fingerprint: buildImageFingerprint('webp', webpBuf) };
+    }
+
+    const heicBuf = readClipboardBufferForFormats(formats, ['public.heic', 'public.heif', 'image/heic', 'image/heif']);
+    if (heicBuf && heicBuf.length > 12) {
+      return { fingerprint: buildImageFingerprint('heic', heicBuf) };
+    }
+
+    const tiffBuf = readClipboardBufferForFormats(formats, ['public.tiff', 'image/tiff']);
+    if (tiffBuf && tiffBuf.length > 8) {
+      return { fingerprint: buildImageFingerprint('tiff', tiffBuf) };
+    }
+
+    // Last-resort compatibility for Electron/platform format names we do not
+    // know yet. This keeps the CPU fix for common steady-state image polling
+    // while still preserving image history when Electron can decode the image.
+    const image = clipboard.readImage();
+    if (!image.isEmpty()) {
+      return {
+        fingerprint: buildImageFingerprint('native', image.toPNG()),
+        fallbackImage: image,
+      };
+    }
+
   } catch {}
   return { fingerprint: '' };
 }
@@ -635,18 +665,14 @@ function pollClipboard(): void {
     // Cheap pre-check: NSPasteboard.changeCount increments on every write.
     // If it hasn't changed since the last poll, nothing is on the clipboard that
     // we haven't already seen — skip all IPC reads entirely.
-    const addon = getFastPasteAddon();
+    const addon = getNativeHelpersAddon();
     if (addon?.getPasteboardChangeCount) {
       const currentChangeCount = addon.getPasteboardChangeCount();
       if (currentChangeCount === lastPasteboardChangeCount) return;
       lastPasteboardChangeCount = currentChangeCount;
     }
 
-    // Compute image fingerprint. For known UTIs (gif/png/tiff) this reads raw
-    // format bytes without decoding pixels. For non-standard UTIs (e.g. Chrome)
-    // it falls back to readImage()+toPNG() once — acceptable because changeCount
-    // already confirmed the clipboard changed, so this is not a steady-state cost.
-    const { fingerprint: imageFingerprint, rawGifData } = getClipboardImageFingerprint();
+    const { fingerprint: imageFingerprint, rawGifData, fallbackImage } = getClipboardImageFingerprint();
 
     // A file URL on the pasteboard (Finder copy) takes priority over
     // readImage() — Finder places the file's *generic icon* as the clipboard
@@ -698,7 +724,7 @@ function pollClipboard(): void {
         return;
       }
       lastClipboardImageHash = imageFingerprint;
-      const image = clipboard.readImage();
+      const image = fallbackImage || clipboard.readImage();
       if (!image.isEmpty()) {
         addImageItem(image, rawGifData);
       }
@@ -807,7 +833,7 @@ export function startClipboardMonitor(): void {
   try {
     lastClipboardText = clipboard.readText();
     lastClipboardFilePath = readClipboardFilePath() || '';
-    const addon = getFastPasteAddon();
+    const addon = getNativeHelpersAddon();
     if (addon?.getPasteboardChangeCount) {
       lastPasteboardChangeCount = addon.getPasteboardChangeCount();
     }
@@ -1003,7 +1029,7 @@ export function copyItemToClipboard(id: string): boolean {
     // and doesn't create a duplicate entry. This works even if the poll fires
     // before the isEnabled timeout below expires.
     try {
-      const addon = getFastPasteAddon();
+      const addon = getNativeHelpersAddon();
       if (addon?.getPasteboardChangeCount) {
         lastPasteboardChangeCount = addon.getPasteboardChangeCount();
       }
