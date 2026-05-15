@@ -1568,32 +1568,36 @@ function syncNativeLiquidGlassClassOnWindow(win: any, enabled: boolean): void {
   } catch {}
 }
 
-// Disable macOS native NSWindow show/hide animation for a given window.
-// macOS Tahoe (26) added a default fade/scale appear animation for panel-style
-// windows, which makes the launcher feel sluggish when toggled. The fast_paste
-// native addon exposes a one-call helper that flips animationBehavior to None
-// on the underlying NSWindow. Best-effort: silently no-op if the addon isn't
-// available (non-darwin platforms, missing build, etc.).
-let cachedFastPasteAddon: any | null = null;
-let fastPasteAddonLoadFailed = false;
-function getFastPasteAddon(): any | null {
-  if (cachedFastPasteAddon) return cachedFastPasteAddon;
-  if (fastPasteAddonLoadFailed) return null;
+// Shared loader for the native-helpers N-API addon. Currently exposes:
+//   - activateApp / postPaste / activateAndPaste (paste flow)
+//   - setWindowAnimationBehaviorNone (disable NSWindow show/hide animation)
+// Lazy + cached so a single missing/broken build doesn't spam warnings, and
+// non-darwin platforms simply get null.
+let cachedNativeHelpersAddon: any | null = null;
+let nativeHelpersAddonLoadFailed = false;
+function getNativeHelpersAddon(): any | null {
+  if (cachedNativeHelpersAddon) return cachedNativeHelpersAddon;
+  if (nativeHelpersAddonLoadFailed) return null;
   try {
-    cachedFastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
-    return cachedFastPasteAddon;
+    cachedNativeHelpersAddon = require(path.join(__dirname, '..', 'native', 'native_helpers.node'));
+    return cachedNativeHelpersAddon;
   } catch (e: any) {
-    fastPasteAddonLoadFailed = true;
-    console.warn('[disableWindowAnimation] failed to load fast_paste addon:', e?.message);
+    nativeHelpersAddonLoadFailed = true;
+    console.warn('[native-helpers] failed to load addon:', e?.message);
     return null;
   }
 }
 
+// Disable macOS native NSWindow show/hide animation for a given window.
+// macOS Tahoe (26) added a default fade/scale appear animation for panel-style
+// windows, which makes the launcher feel sluggish when toggled. The addon
+// flips animationBehavior to None on the underlying NSWindow. Best-effort:
+// silently no-op on non-darwin or when the addon isn't available.
 function disableWindowAnimation(win: any): void {
   if (process.platform !== 'darwin') return;
   if (!win || typeof win.getNativeWindowHandle !== 'function') return;
   if (typeof win.isDestroyed === 'function' && win.isDestroyed()) return;
-  const addon = getFastPasteAddon();
+  const addon = getNativeHelpersAddon();
   if (!addon || typeof addon.setWindowAnimationBehaviorNone !== 'function') return;
   try {
     const handle = win.getNativeWindowHandle();
@@ -8531,8 +8535,8 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
       const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
       if (target) {
         try {
-          const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
-          const ok = fastPasteAddon.activateAndPaste(target);
+          const nativeHelpersAddon = getNativeHelpersAddon();
+          const ok = nativeHelpersAddon?.activateAndPaste?.(target);
           if (ok) {
             signalCaller(true);
             await new Promise<void>((resolve) => setTimeout(resolve, 250));
@@ -8540,7 +8544,7 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
             return;
           }
         } catch (e: any) {
-          console.warn('[pasteTextToActiveApp] fast-paste addon failed:', e?.message);
+          console.warn('[pasteTextToActiveApp] native-helpers addon failed:', e?.message);
         }
       }
 
@@ -8688,11 +8692,11 @@ async function hideAndPaste(): Promise<boolean> {
   const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
   if (target) {
     try {
-      const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
-      const ok = fastPasteAddon.activateAndPaste(target);
+      const nativeHelpersAddon = getNativeHelpersAddon();
+      const ok = nativeHelpersAddon?.activateAndPaste?.(target);
       if (ok) return true;
     } catch (e: any) {
-      console.warn('[hideAndPaste] fast-paste addon failed:', e?.message);
+      console.warn('[hideAndPaste] native-helpers addon failed:', e?.message);
     }
   }
 

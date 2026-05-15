@@ -154,4 +154,4 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   return exports;
 }
 
-NODE_API_MODULE(fast_paste, Init)
+NODE_API_MODULE(native_helpers, Init)
