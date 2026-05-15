@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Bug, FolderOpen, FolderSearch, FolderSync, Globe, Keyboard, Languages, RotateCcw, Sparkles, Undo2 } from 'lucide-react';
+import { Bug, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, Keyboard, Languages, RotateCcw, Sparkles, Timer, Undo2 } from 'lucide-react';
 import type {
   AppNavigationStyle,
   AppSettings,
@@ -10,6 +10,7 @@ import type {
   RelocateMode,
 } from '../../types/electron';
 import { APP_LANGUAGE_OPTIONS, DEFAULT_APP_LANGUAGE, type AppLanguageSetting, useI18n } from '../i18n';
+import RaycastImportSection from './RaycastImportSection';
 
 type SettingsRowProps = {
   icon: React.ReactNode;
@@ -75,6 +76,16 @@ const BROWSER_SEARCH_RETENTION_OPTIONS: { value: number | null; labelKey: string
   { value: 180, labelKey: 'settings.advanced.browserSearch.retention.option.180d' },
   { value: 365, labelKey: 'settings.advanced.browserSearch.retention.option.365d' },
   { value: null, labelKey: 'settings.advanced.browserSearch.retention.option.forever' },
+];
+
+const AUTO_QUIT_TIMEOUT_OPTIONS: { value: number; label: string }[] = [
+  { value: 60, label: '1m' },
+  { value: 120, label: '2m' },
+  { value: 180, label: '3m' },
+  { value: 300, label: '5m' },
+  { value: 600, label: '10m' },
+  { value: 900, label: '15m' },
+  { value: 1800, label: '30m' },
 ];
 
 interface BrowserSearchSectionProps {
@@ -424,8 +435,8 @@ const AdvancedTab: React.FC = () => {
 
       <div className="overflow-hidden rounded-xl border border-[var(--ui-panel-border)] bg-[var(--settings-panel-bg)]">
         <SettingsRow
-          icon={<FolderSync className="w-4 h-4" />}
-          title={t('settings.advanced.settingsFolder.title')}
+          icon={<Cloud className="w-4 h-4" />}
+          title="Cloud Sync"
           description={t('settings.advanced.settingsFolder.description')}
         >
           <div className="w-full space-y-2">
@@ -502,7 +513,7 @@ const AdvancedTab: React.FC = () => {
 
             {hyperEnabled && (
               <>
-                <div>
+                <div className="w-full max-w-[320px]">
                   <select
                     value={hyperKey.sourceKey}
                     onChange={(event) => {
@@ -521,7 +532,7 @@ const AdvancedTab: React.FC = () => {
                 </div>
 
                 {showCapsLockTap && (
-                  <div>
+                  <div className="w-full max-w-[320px]">
                     <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">
                       Quick Press
                     </label>
@@ -644,6 +655,37 @@ const AdvancedTab: React.FC = () => {
             </select>
           </div>
         </SettingsRow>
+
+        <SettingsRow
+          icon={<Timer className="w-4 h-4" />}
+          title={t('settings.general.autoQuit.title')}
+          description={t('settings.general.autoQuit.description')}
+        >
+          <div className="inline-flex flex-wrap items-center gap-0.5 rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] p-0.5">
+            {AUTO_QUIT_TIMEOUT_OPTIONS.map((option) => {
+              const active = (settings.autoQuitDefaultTimeoutSeconds ?? 180) === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    void window.electron.autoQuitSetDefaultTimeout(option.value);
+                    setSettings({ ...settings, autoQuitDefaultTimeoutSeconds: option.value });
+                  }}
+                  className={`px-3 py-1.5 rounded-md text-[0.75rem] font-semibold transition-colors ${
+                    active
+                      ? 'bg-[var(--ui-segment-active-bg)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </SettingsRow>
+
+        <RaycastImportSection />
 
         <SettingsRow
           icon={<Bug className="w-4 h-4" />}

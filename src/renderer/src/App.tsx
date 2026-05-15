@@ -3298,6 +3298,25 @@ const App: React.FC = () => {
     ]
   );
 
+  const toggleAutoQuitForApp = useCallback(async (appPath: string, appName: string) => {
+    const isEnabled = autoQuitAppPaths.has(appPath);
+    if (isEnabled) {
+      await window.electron.autoQuitRemoveApp(appPath);
+      setAutoQuitAppPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(appPath);
+        return next;
+      });
+      showLauncherFooterStatus('success', `Auto Quit disabled for ${appName}`);
+      return;
+    }
+
+    const timeout = await window.electron.autoQuitGetDefaultTimeout();
+    await window.electron.autoQuitAddApp({ appPath, appName, timeoutSeconds: timeout });
+    setAutoQuitAppPaths((prev) => new Set(prev).add(appPath));
+    showLauncherFooterStatus('success', `Auto Quit enabled for ${appName}`);
+  }, [autoQuitAppPaths, showLauncherFooterStatus]);
+
   const getActionsForCommand = useCallback(
     (command: CommandInfo | null): LauncherAction[] => {
       if (!command) return [];
@@ -3370,16 +3389,7 @@ const App: React.FC = () => {
             id: 'toggle-auto-quit',
             title: autoQuitAppPaths.has(filePath) ? t('launcher.actions.disableAutoQuit') : t('launcher.actions.enableAutoQuit'),
             icon: <Timer className="w-4 h-4" />,
-            execute: async () => {
-              if (autoQuitAppPaths.has(filePath)) {
-                await window.electron.autoQuitRemoveApp(filePath);
-                setAutoQuitAppPaths(prev => { const next = new Set(prev); next.delete(filePath); return next; });
-              } else {
-                const timeout = await window.electron.autoQuitGetDefaultTimeout();
-                await window.electron.autoQuitAddApp({ appPath: filePath, appName: command.title, timeoutSeconds: timeout });
-                setAutoQuitAppPaths(prev => new Set(prev).add(filePath));
-              }
-            },
+            execute: () => toggleAutoQuitForApp(filePath, command.title),
           }, {
             id: 'quit-app',
             title: t('launcher.actions.quit'),
@@ -3534,16 +3544,9 @@ const App: React.FC = () => {
           title: (command.path && autoQuitAppPaths.has(command.path)) ? t('launcher.actions.disableAutoQuit') : t('launcher.actions.enableAutoQuit'),
           enabled: command.category === 'app' && Boolean(command.path?.endsWith('.app')),
           icon: <Timer className="w-4 h-4" />,
-          execute: async () => {
+          execute: () => {
             if (!command.path) return;
-            if (autoQuitAppPaths.has(command.path)) {
-              await window.electron.autoQuitRemoveApp(command.path);
-              setAutoQuitAppPaths(prev => { const next = new Set(prev); next.delete(command.path!); return next; });
-            } else {
-              const timeout = await window.electron.autoQuitGetDefaultTimeout();
-              await window.electron.autoQuitAddApp({ appPath: command.path, appName: command.title, timeoutSeconds: timeout });
-              setAutoQuitAppPaths(prev => new Set(prev).add(command.path!));
-            }
+            void toggleAutoQuitForApp(command.path, command.title);
           },
         },
         {
@@ -3611,6 +3614,7 @@ const App: React.FC = () => {
       openAppUninstall,
       showLauncherFooterStatus,
       autoQuitAppPaths,
+      toggleAutoQuitForApp,
       t,
     ]
   );
