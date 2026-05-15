@@ -313,6 +313,14 @@ private func readWindowFrame(_ window: AXUIElement) -> WindowFrame? {
 }
 
 private func setWindowFrame(_ window: AXUIElement, frame: WindowFrame) -> Bool {
+  // Temporarily disable enhanced UI to suppress window resize animations in the target app.
+  var pid: pid_t = 0
+  let hasPid = AXUIElementGetPid(window, &pid) == .success && pid > 0
+  if hasPid {
+    let appRef = AXUIElementCreateApplication(pid)
+    AXUIElementSetAttributeValue(appRef, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse)
+  }
+
   var point = CGPoint(x: frame.x, y: frame.y)
   guard let pointValue = AXValueCreate(.cgPoint, &point) else { return false }
   let pointStatus = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, pointValue)
@@ -320,6 +328,11 @@ private func setWindowFrame(_ window: AXUIElement, frame: WindowFrame) -> Bool {
   var size = CGSize(width: frame.width, height: frame.height)
   guard let sizeValue = AXValueCreate(.cgSize, &size) else { return false }
   let sizeStatus = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)
+
+  if hasPid {
+    let appRef = AXUIElementCreateApplication(pid)
+    AXUIElementSetAttributeValue(appRef, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+  }
 
   return pointStatus == .success && sizeStatus == .success
 }
@@ -462,8 +475,8 @@ private func adjustedFrame(_ base: WindowFrame, action: AdjustAction, forcedArea
     }
   case .center80:
     if let area {
-      let width = max(minWidth, round(area.width * 0.8))
-      let height = max(minHeight, round(area.height * 0.8))
+      let width = max(minWidth, round(area.width * 0.9))
+      let height = max(minHeight, round(area.height * 0.9))
       next = WindowFrame(
         x: area.origin.x + round((area.width - width) / 2),
         y: area.origin.y + round((area.height - height) / 2),

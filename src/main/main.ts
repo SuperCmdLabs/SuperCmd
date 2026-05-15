@@ -3381,12 +3381,12 @@ function computeWindowManagementLayoutBounds(
     }
     case 'system-window-management-center-80': {
       const width = clampWindowManagementFineTuneValue(
-        Math.round(area.width * 0.8),
+        Math.round(area.width * 0.9),
         WINDOW_MANAGEMENT_FINE_TUNE_MIN_WIDTH,
         area.width
       );
       const height = clampWindowManagementFineTuneValue(
-        Math.round(area.height * 0.8),
+        Math.round(area.height * 0.9),
         WINDOW_MANAGEMENT_FINE_TUNE_MIN_HEIGHT,
         area.height
       );
