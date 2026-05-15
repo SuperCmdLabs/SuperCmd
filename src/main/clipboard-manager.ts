@@ -537,56 +537,100 @@ function isImageFilePath(filePath: string): boolean {
 }
 
 /**
- * Compute a cheap fingerprint for the image currently on the clipboard WITHOUT
- * calling toPNG() / decoding pixels.  Strategy (in priority order):
+ * Compute a cheap fingerprint for the image currently on the clipboard without
+ * decoding pixels for the common raw clipboard formats. Strategy (in priority
+ * order):
  *
  *   GIF  → full GIF buffer hash (GIFs are small)
- *   PNG  → size + hash of first 4 KB of the PNG buffer (compressed, no decode)
- *   TIFF → size + hash of first 4 KB of the TIFF buffer (raw IPC read, no encode)
+ *   PNG/JPEG/WebP/HEIC/TIFF → size + sampled raw buffer hash
+ *   nativeImage fallback → PNG hash only when Electron reports an image-like
+ *                          format we do not know how to read as raw bytes
  *
  * Reading raw format bytes is an OS IPC copy (memory-bandwidth-bound, fast).
  * toPNG() on a large TIFF is a pixel decode + PNG encode (CPU-bound, very slow).
  *
  * Returns the fingerprint string and any pre-read rawGifData.
  */
-function getClipboardImageFingerprint(): { fingerprint: string; rawGifData?: Buffer } {
+function readClipboardBufferForFormats(availableFormats: string[], candidates: string[]): Buffer | undefined {
+  const availableByLower = new Map(availableFormats.map((format) => [format.toLowerCase(), format]));
+  for (const candidate of candidates) {
+    const actualFormat = availableByLower.get(candidate.toLowerCase());
+    if (!actualFormat) continue;
+    try {
+      const buf = clipboard.readBuffer(actualFormat);
+      if (buf && buf.length > 0) return buf;
+    } catch {}
+  }
+  return undefined;
+}
+
+function looksLikeClipboardImageFormat(format: string): boolean {
+  const lower = format.toLowerCase();
+  return (
+    lower.startsWith('image/') ||
+    lower === 'public.png' ||
+    lower === 'public.jpeg' ||
+    lower === 'public.jpg' ||
+    lower === 'public.tiff' ||
+    lower === 'public.heic' ||
+    lower === 'public.heif' ||
+    lower === 'com.compuserve.gif' ||
+    lower === 'org.webmproject.webp'
+  );
+}
+
+function getClipboardImageFingerprint(): {
+  fingerprint: string;
+  rawGifData?: Buffer;
+  fallbackImage?: ReturnType<typeof clipboard.readImage>;
+} {
   try {
     const formats = clipboard.availableFormats();
-    const hasGif  = formats.includes('com.compuserve.gif');
-    const hasPng  = formats.includes('public.png');
-    const hasTiff = formats.includes('public.tiff');
+    if (!formats.some(looksLikeClipboardImageFormat)) return { fingerprint: '' };
 
-    if (!hasGif && !hasPng && !hasTiff) return { fingerprint: '' };
-
-    if (hasGif) {
-      try {
-        const gifBuf = clipboard.readBuffer('com.compuserve.gif');
-        if (gifBuf && gifBuf.length > 4 &&
-            gifBuf[0] === 0x47 && gifBuf[1] === 0x49 && gifBuf[2] === 0x46) {
-          return {
-            fingerprint: buildImageFingerprint('gif', gifBuf),
-            rawGifData: gifBuf,
-          };
-        }
-      } catch {}
+    const gifBuf = readClipboardBufferForFormats(formats, ['com.compuserve.gif', 'image/gif']);
+    if (gifBuf && gifBuf.length > 4 &&
+        gifBuf[0] === 0x47 && gifBuf[1] === 0x49 && gifBuf[2] === 0x46) {
+      return {
+        fingerprint: buildImageFingerprint('gif', gifBuf),
+        rawGifData: gifBuf,
+      };
     }
 
-    if (hasPng) {
-      try {
-        const pngBuf = clipboard.readBuffer('public.png');
-        if (pngBuf && pngBuf.length > 8) {
-          return { fingerprint: buildImageFingerprint('png', pngBuf) };
-        }
-      } catch {}
+    const pngBuf = readClipboardBufferForFormats(formats, ['public.png', 'image/png']);
+    if (pngBuf && pngBuf.length > 8) {
+      return { fingerprint: buildImageFingerprint('png', pngBuf) };
     }
 
-    if (hasTiff) {
-      try {
-        const tiffBuf = clipboard.readBuffer('public.tiff');
-        if (tiffBuf && tiffBuf.length > 8) {
-          return { fingerprint: buildImageFingerprint('tiff', tiffBuf) };
-        }
-      } catch {}
+    const jpegBuf = readClipboardBufferForFormats(formats, ['public.jpeg', 'public.jpg', 'image/jpeg', 'image/jpg']);
+    if (jpegBuf && jpegBuf.length > 8) {
+      return { fingerprint: buildImageFingerprint('jpeg', jpegBuf) };
+    }
+
+    const webpBuf = readClipboardBufferForFormats(formats, ['org.webmproject.webp', 'image/webp']);
+    if (webpBuf && webpBuf.length > 12) {
+      return { fingerprint: buildImageFingerprint('webp', webpBuf) };
+    }
+
+    const heicBuf = readClipboardBufferForFormats(formats, ['public.heic', 'public.heif', 'image/heic', 'image/heif']);
+    if (heicBuf && heicBuf.length > 12) {
+      return { fingerprint: buildImageFingerprint('heic', heicBuf) };
+    }
+
+    const tiffBuf = readClipboardBufferForFormats(formats, ['public.tiff', 'image/tiff']);
+    if (tiffBuf && tiffBuf.length > 8) {
+      return { fingerprint: buildImageFingerprint('tiff', tiffBuf) };
+    }
+
+    // Last-resort compatibility for Electron/platform format names we do not
+    // know yet. This keeps the CPU fix for common steady-state image polling
+    // while still preserving image history when Electron can decode the image.
+    const image = clipboard.readImage();
+    if (!image.isEmpty()) {
+      return {
+        fingerprint: buildImageFingerprint('native', image.toPNG()),
+        fallbackImage: image,
+      };
     }
   } catch {}
   return { fingerprint: '' };
@@ -596,9 +640,9 @@ function pollClipboard(): void {
   if (!isEnabled) return;
 
   try {
-    // Compute image fingerprint using raw format bytes — no toPNG() / pixel decode.
-    // toPNG() is only called inside addImageItem when we actually save a new image.
-    const { fingerprint: imageFingerprint, rawGifData } = getClipboardImageFingerprint();
+    // Compute image fingerprint using raw format bytes where possible. toPNG()
+    // is only used for unknown image-like formats or when saving a new image.
+    const { fingerprint: imageFingerprint, rawGifData, fallbackImage } = getClipboardImageFingerprint();
 
     // A file URL on the pasteboard (Finder copy) takes priority over
     // readImage() — Finder places the file's *generic icon* as the clipboard
@@ -650,7 +694,7 @@ function pollClipboard(): void {
         return;
       }
       lastClipboardImageHash = imageFingerprint;
-      const image = clipboard.readImage();
+      const image = fallbackImage || clipboard.readImage();
       if (!image.isEmpty()) {
         addImageItem(image, rawGifData);
       }
