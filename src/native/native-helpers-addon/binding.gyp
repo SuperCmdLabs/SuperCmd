@@ -1,8 +1,8 @@
 {
   "targets": [
     {
-      "target_name": "fast_paste",
-      "sources": ["fast_paste.mm"],
+      "target_name": "native_helpers",
+      "sources": ["native_helpers.mm"],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")"
       ],

@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { fork, execFileSync, type ChildProcess } from 'child_process';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
-import { getAvailableCommands, executeCommand, invalidateCache } from './commands';
+import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster, setExternalSettingsChangeHandler, settingsFileExistsOrICloudPlaceholder } from './settings-store';
 import type { AppSettings, RelocateMode } from './settings-store';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
@@ -1568,6 +1568,45 @@ function syncNativeLiquidGlassClassOnWindow(win: any, enabled: boolean): void {
   } catch {}
 }
 
+// Shared loader for the native-helpers N-API addon. Currently exposes:
+//   - activateApp / postPaste / activateAndPaste (paste flow)
+//   - setWindowAnimationBehaviorNone (disable NSWindow show/hide animation)
+// Lazy + cached so a single missing/broken build doesn't spam warnings, and
+// non-darwin platforms simply get null.
+let cachedNativeHelpersAddon: any | null = null;
+let nativeHelpersAddonLoadFailed = false;
+function getNativeHelpersAddon(): any | null {
+  if (cachedNativeHelpersAddon) return cachedNativeHelpersAddon;
+  if (nativeHelpersAddonLoadFailed) return null;
+  try {
+    cachedNativeHelpersAddon = require(path.join(__dirname, '..', 'native', 'native_helpers.node'));
+    return cachedNativeHelpersAddon;
+  } catch (e: any) {
+    nativeHelpersAddonLoadFailed = true;
+    console.warn('[native-helpers] failed to load addon:', e?.message);
+    return null;
+  }
+}
+
+// Disable macOS native NSWindow show/hide animation for a given window.
+// macOS Tahoe (26) added a default fade/scale appear animation for panel-style
+// windows, which makes the launcher feel sluggish when toggled. The addon
+// flips animationBehavior to None on the underlying NSWindow. Best-effort:
+// silently no-op on non-darwin or when the addon isn't available.
+function disableWindowAnimation(win: any): void {
+  if (process.platform !== 'darwin') return;
+  if (!win || typeof win.getNativeWindowHandle !== 'function') return;
+  if (typeof win.isDestroyed === 'function' && win.isDestroyed()) return;
+  const addon = getNativeHelpersAddon();
+  if (!addon || typeof addon.setWindowAnimationBehaviorNone !== 'function') return;
+  try {
+    const handle = win.getNativeWindowHandle();
+    addon.setWindowAnimationBehaviorNone(handle);
+  } catch (e: any) {
+    console.warn('[disableWindowAnimation] failed:', e?.message);
+  }
+}
+
 function applyLiquidGlassToWindow(
   win: any,
   options?: {
@@ -2274,6 +2313,7 @@ async function ensureMemoryStatusWindow(): Promise<InstanceType<typeof BrowserWi
       sandbox: true,
     },
   });
+  disableWindowAnimation(memoryStatusWindow);
   try { memoryStatusWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
   try { memoryStatusWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
   // pop-up-menu level floats reliably above all normal app windows on macOS
@@ -2492,6 +2532,7 @@ async function showConfettiBurst(): Promise<void> {
         sandbox: true,
       },
     });
+    disableWindowAnimation(confettiWindow);
     try { confettiWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
     try { confettiWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
     try { confettiWindow.setAlwaysOnTop(true, 'screen-saver'); } catch {}
@@ -7235,6 +7276,7 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(mainWindow);
   mainWindow.setWindowButtonVisibility(true);
   // Defer NSGlassEffectView attachment until the renderer's React tree has
   // mounted (signalled via the 'renderer-ready' IPC from App.tsx's useEffect).
@@ -7393,6 +7435,8 @@ function createWindow(): void {
   mainWindow.webContents.on('did-create-window', (childWindow: any, details: any) => {
     const detachedPopupName = resolveDetachedPopupName(details);
     if (!detachedPopupName) return;
+
+    disableWindowAnimation(childWindow);
 
     const hideWindowButtons = () => {
       if (process.platform !== 'darwin') return;
@@ -7687,6 +7731,7 @@ function createPromptWindow(initialBounds?: { x: number; y: number; width: numbe
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(promptWindow);
   if (process.platform === 'darwin') {
     try { promptWindow.setWindowButtonVisibility(false); } catch {}
   }
@@ -8517,8 +8562,8 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
       const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
       if (target) {
         try {
-          const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
-          const ok = fastPasteAddon.activateAndPaste(target);
+          const nativeHelpersAddon = getNativeHelpersAddon();
+          const ok = nativeHelpersAddon?.activateAndPaste?.(target);
           if (ok) {
             signalCaller(true);
             await new Promise<void>((resolve) => setTimeout(resolve, 250));
@@ -8526,7 +8571,7 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
             return;
           }
         } catch (e: any) {
-          console.warn('[pasteTextToActiveApp] fast-paste addon failed:', e?.message);
+          console.warn('[pasteTextToActiveApp] native-helpers addon failed:', e?.message);
         }
       }
 
@@ -8674,11 +8719,11 @@ async function hideAndPaste(): Promise<boolean> {
   const target = lastFrontmostApp?.bundleId || lastFrontmostApp?.name;
   if (target) {
     try {
-      const fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
-      const ok = fastPasteAddon.activateAndPaste(target);
+      const nativeHelpersAddon = getNativeHelpersAddon();
+      const ok = nativeHelpersAddon?.activateAndPaste?.(target);
       if (ok) return true;
     } catch (e: any) {
-      console.warn('[hideAndPaste] fast-paste addon failed:', e?.message);
+      console.warn('[hideAndPaste] native-helpers addon failed:', e?.message);
     }
   }
 
@@ -8969,6 +9014,7 @@ async function ensureEmojiPickerWindow(): Promise<InstanceType<typeof BrowserWin
       sandbox: true,
     },
   });
+  disableWindowAnimation(emojiPickerWindow);
   try { emojiPickerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
   try { emojiPickerWindow.setIgnoreMouseEvents(true, { forward: false }); } catch {}
   try { emojiPickerWindow.setAlwaysOnTop(true, 'pop-up-menu'); } catch {}
@@ -11042,6 +11088,7 @@ function openSettingsWindow(payload?: SettingsNavigationPayload): void {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(settingsWindow);
   applyLiquidGlassToWindow(settingsWindow, {
     cornerRadius: 14,
     fallbackVibrancy: 'hud',
@@ -11156,6 +11203,7 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(notesWindow);
   // Make Notes follow the user across Desktop Spaces and overlay fullscreen
   // apps — mirrors the launcher / cursor prompt / memory status bar pattern.
   // 'pop-up-menu' level is required to sit above native macOS fullscreen apps;
@@ -11262,6 +11310,7 @@ function openCanvasWindow(mode?: 'create' | 'edit'): void {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(canvasWindow);
   applyLiquidGlassToWindow(canvasWindow, {
     cornerRadius: 14,
     fallbackVibrancy: 'hud',
@@ -11313,6 +11362,7 @@ function openCanvasWindow(mode?: 'create' | 'edit'): void {
           autoHideMenuBar: true,
           webPreferences: { contextIsolation: true, nodeIntegration: false },
         });
+        disableWindowAnimation(libWin);
         libWin.loadURL(libBrowserUrl);
 
         const maybeImport = (navUrl: string, event?: { preventDefault?: () => void }): boolean => {
@@ -11500,6 +11550,7 @@ function openExtensionStoreWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(extensionStoreWindow);
   applyLiquidGlassToWindow(extensionStoreWindow, {
     cornerRadius: 14,
     fallbackVibrancy: 'hud',
@@ -11650,7 +11701,11 @@ function startInstalledAppsWatchers(): void {
     try {
       const watcher = fs.watch(dir, { persistent: false }, (_eventType, filename) => {
         const changedName = String(filename || '').toLowerCase();
-        if (!changedName || changedName.endsWith('.app') || changedName.includes('.app/')) {
+        // Only react to top-level .app bundles being added or removed.
+        // Ignore null filenames (spurious macOS FSEvents) and changes inside
+        // an .app bundle (e.g. app writes temp files on quit) — those don't
+        // affect the set of installed applications.
+        if (changedName && changedName.endsWith('.app')) {
           scheduleInstalledAppsRefresh(`filesystem event in ${dir}`);
         }
       });
@@ -13646,6 +13701,24 @@ app.whenReady().then(async () => {
   });
 
   // ─── IPC: Open URL (for extensions) ─────────────────────────────
+
+  ipcMain.handle('quit-app', async (_event: any, appPath: string, force?: boolean) => {
+    if (!appPath) return false;
+    const { execFileSync } = require('child_process') as typeof import('child_process');
+    try {
+      const appName = String(appPath).split('/').pop()?.replace('.app', '') || '';
+      if (!appName) return false;
+      try { execFileSync('/usr/bin/pgrep', ['-x', appName], { encoding: 'utf8' }); } catch { return false; }
+      if (force) {
+        execFileSync('/usr/bin/killall', ['-9', appName], { encoding: 'utf8' });
+      } else {
+        execFileSync('/usr/bin/osascript', ['-e', `quit app "${appName}"`], { encoding: 'utf8' });
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  });
 
   ipcMain.handle('open-url', async (_event: any, target: string, application?: string) => {
     if (!target) return false;
@@ -17403,7 +17476,24 @@ if let tiff = image?.tiffRepresentation {
     enterRegularMacActivationPolicy();
   }
 
+  // Load persisted commands from disk so the launcher is instant on next open.
+  // This populates cachedCommands with cacheTimestamp=0 (stale), so the first
+  // getAvailableCommands() call serves the disk cache immediately and kicks off
+  // a silent background refresh.
+  initCommandsCache();
+
   createWindow();
+
+  // Kick off background discovery right away.  When it finishes, broadcast so
+  // the renderer picks up fresh data (icons, newly-installed apps, etc.).
+  void getAvailableCommands().then(async () => {
+    const inflight = getInflightDiscovery();
+    if (inflight) {
+      try { await inflight; } catch {}
+    }
+    broadcastCommandsUpdated();
+  });
+
   startInstalledAppsWatchers();
   registerGlobalShortcut(settings.globalShortcut);
   registerCommandHotkeys(settings.commandHotkeys);
