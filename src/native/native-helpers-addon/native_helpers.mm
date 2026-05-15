@@ -145,10 +145,21 @@ Napi::Value ActivateAndPaste(const Napi::CallbackInfo& info) {
   return PostPaste(info);
 }
 
+// Returns NSPasteboard.general.changeCount — an integer that increments
+// whenever any application writes to the system pasteboard.  Checking this
+// value is O(1) and avoids reading pasteboard data entirely when nothing has
+// changed.
+Napi::Value GetPasteboardChangeCount(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  NSInteger count = [[NSPasteboard generalPasteboard] changeCount];
+  return Napi::Number::New(env, (double)count);
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("activateApp", Napi::Function::New(env, ActivateApp));
   exports.Set("postPaste", Napi::Function::New(env, PostPaste));
   exports.Set("activateAndPaste", Napi::Function::New(env, ActivateAndPaste));
+  exports.Set("getPasteboardChangeCount", Napi::Function::New(env, GetPasteboardChangeCount));
   exports.Set("setWindowAnimationBehaviorNone",
               Napi::Function::New(env, SetWindowAnimationBehaviorNone));
   return exports;

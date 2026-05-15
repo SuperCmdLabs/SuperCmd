@@ -14,6 +14,23 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
+// Lazy-loaded native addon — provides getPasteboardChangeCount() which returns
+// NSPasteboard.general.changeCount (an integer that increments on every write).
+// Checking this is O(1) and avoids all pasteboard data reads when nothing changed.
+type NativeHelpersAddon = { getPasteboardChangeCount?: () => number };
+let _nativeHelpersAddon: NativeHelpersAddon | null = null;
+let _nativeHelpersAddonLoaded = false;
+function getNativeHelpersAddon(): NativeHelpersAddon | null {
+  if (_nativeHelpersAddonLoaded) return _nativeHelpersAddon;
+  _nativeHelpersAddonLoaded = true;
+  try {
+    _nativeHelpersAddon = require(path.join(__dirname, '..', 'native', 'native_helpers.node'));
+  } catch {
+    _nativeHelpersAddon = null;
+  }
+  return _nativeHelpersAddon;
+}
+
 /**
  * Write a GIF file to macOS pasteboard with file URL + GIF data + TIFF
  * fallback via NSPasteboard so apps like Twitter/Slack treat it as a GIF
@@ -79,6 +96,10 @@ let lastClipboardImageHash = '';
 let lastClipboardFilePath = '';
 let pollInterval: NodeJS.Timeout | null = null;
 let isEnabled = true;
+// Last-seen NSPasteboard changeCount. -1 = not yet read.
+// When changeCount hasn't changed, the pasteboard is identical to the last poll
+// and we can skip all reads entirely (O(1) check via native addon).
+let lastPasteboardChangeCount = -1;
 // Bundle IDs (lower-cased) whose copies should be skipped. Kept lowercase
 // so membership checks are case-insensitive against whatever macOS reports.
 let blacklistedAppBundleIds: Set<string> = new Set();
@@ -632,6 +653,7 @@ function getClipboardImageFingerprint(): {
         fallbackImage: image,
       };
     }
+
   } catch {}
   return { fingerprint: '' };
 }
@@ -640,8 +662,16 @@ function pollClipboard(): void {
   if (!isEnabled) return;
 
   try {
-    // Compute image fingerprint using raw format bytes where possible. toPNG()
-    // is only used for unknown image-like formats or when saving a new image.
+    // Cheap pre-check: NSPasteboard.changeCount increments on every write.
+    // If it hasn't changed since the last poll, nothing is on the clipboard that
+    // we haven't already seen — skip all IPC reads entirely.
+    const addon = getNativeHelpersAddon();
+    if (addon?.getPasteboardChangeCount) {
+      const currentChangeCount = addon.getPasteboardChangeCount();
+      if (currentChangeCount === lastPasteboardChangeCount) return;
+      lastPasteboardChangeCount = currentChangeCount;
+    }
+
     const { fingerprint: imageFingerprint, rawGifData, fallbackImage } = getClipboardImageFingerprint();
 
     // A file URL on the pasteboard (Finder copy) takes priority over
@@ -793,13 +823,20 @@ function handleClipboardFileCopy(filePath: string): boolean {
 
 export function startClipboardMonitor(): void {
   loadHistory();
-  
-  // Initial read — use the same cheap fingerprint approach as pollClipboard.
+
+  // Seed state from whatever is on the clipboard right now so the first poll
+  // doesn't create spurious entries for pre-existing clipboard content.
+  // NOTE: do NOT seed lastClipboardImageHash here. The changeCount guard below
+  // prevents reprocessing of startup clipboard state. Seeding the hash would
+  // permanently block the first user copy of an image that was already on the
+  // clipboard when the app launched (fingerprint === seeded hash → skip forever).
   try {
     lastClipboardText = clipboard.readText();
-    const { fingerprint } = getClipboardImageFingerprint();
-    if (fingerprint) lastClipboardImageHash = fingerprint;
     lastClipboardFilePath = readClipboardFilePath() || '';
+    const addon = getNativeHelpersAddon();
+    if (addon?.getPasteboardChangeCount) {
+      lastPasteboardChangeCount = addon.getPasteboardChangeCount();
+    }
   } catch {}
   
   // Start polling
@@ -988,11 +1025,21 @@ export function copyItemToClipboard(id: string): boolean {
     sortClipboardHistory();
     saveHistory();
     
+    // Seed the changeCount so the next poll recognises our write as "already seen"
+    // and doesn't create a duplicate entry. This works even if the poll fires
+    // before the isEnabled timeout below expires.
+    try {
+      const addon = getNativeHelpersAddon();
+      if (addon?.getPasteboardChangeCount) {
+        lastPasteboardChangeCount = addon.getPasteboardChangeCount();
+      }
+    } catch {}
+
     // Re-enable monitoring after a short delay
     setTimeout(() => {
       isEnabled = true;
     }, 500);
-    
+
     return true;
   } catch (e) {
     isEnabled = true;
