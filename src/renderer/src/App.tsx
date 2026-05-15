@@ -1710,11 +1710,11 @@ const App: React.FC = () => {
     () => new Set(['system-add-to-memory', 'system-cursor-prompt', 'system-emoji-picker']),
     []
   );
-  const visibleSourceCommands = useMemo(
-    () => sourceCommands.filter((cmd) => !hiddenListOnlyCommandIds.has(cmd.id)),
-    [sourceCommands, hiddenListOnlyCommandIds]
-  );
   const hasSearchQuery = searchQuery.trim().length > 0;
+  const visibleSourceCommands = useMemo(
+    () => sourceCommands.filter((cmd) => !hiddenListOnlyCommandIds.has(cmd.id) || hasSearchQuery),
+    [sourceCommands, hiddenListOnlyCommandIds, hasSearchQuery]
+  );
 
   const fileResultCommands = useMemo<CommandInfo[]>(
     () =>

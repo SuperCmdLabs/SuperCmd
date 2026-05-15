@@ -73,7 +73,7 @@ export default function CursorPromptView({
               }
             }}
             placeholder="Tell AI what to do with selected text..."
-            className="cursor-prompt-textarea w-full bg-transparent border-none outline-none text-white/95 placeholder-white/42 text-[13px] font-medium tracking-[0.003em]"
+            className="cursor-prompt-textarea w-full bg-transparent border-none outline-none text-[13px] font-medium tracking-[0.003em]"
             autoFocus
           />
           {cursorPromptStatus === 'ready' && cursorPromptResult.trim() && (

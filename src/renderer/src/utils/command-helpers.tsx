@@ -24,6 +24,7 @@ import IconLink from '../icons/QuickLinks';
 import IconCodeEditor from '../icons/Snippet';
 import IconNotes from '../icons/Notes';
 import IconPen from '../icons/Pen';
+import IconMagicWand from '../icons/MagicWand';
 import { formatShortcutForDisplay } from './hyper-key';
 import { renderQuickLinkIconGlyph } from './quicklink-icons';
 import { getTranslitVariant } from './transliterate';
@@ -992,8 +993,12 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
 
   if (commandId === 'system-cursor-prompt') {
     return (
-      <div className="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
-        <Sparkles className="w-3 h-3 text-violet-300" />
+      <div className="w-5 h-5 flex items-center justify-center">
+        <IconMagicWand
+          size="16px"
+          aria-hidden="true"
+          style={buildCoreIconStyle('#38bdf8', '#0369a1', '#bae6fdb8', '#38bdf890')}
+        />
       </div>
     );
   }
