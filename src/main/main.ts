@@ -2037,6 +2037,8 @@ function computeDetachedPopupPosition(
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let promptWindow: InstanceType<typeof BrowserWindow> | null = null;
 let promptWindowPrewarmScheduled = false;
+let promptRendererReady = false;
+let pendingPromptWindowShown: { mode: string; selectedTextSnapshot: string } | null = null;
 let memoryStatusWindow: InstanceType<typeof BrowserWindow> | null = null;
 let memoryStatusHideTimer: NodeJS.Timeout | null = null;
 let memoryStatusRenderSeq = 0;
@@ -5570,13 +5572,13 @@ async function captureSelectionSnapshotBeforeShow(options?: { allowClipboardFall
     rememberSelectionSnapshot('');
     return '';
   }
-  // Skip System Events during window-show if permission hasn't been confirmed
-  // yet, to avoid triggering the macOS Automation dialog unexpectedly.
-  if (!systemEventsPermissionConfirmed) {
+  const allowClipboardFallback = options?.allowClipboardFallback === true;
+  // Skip only the System Events fallback during window-show if permission
+  // has not been confirmed. AX selection reads do not require Automation.
+  if (allowClipboardFallback && !systemEventsPermissionConfirmed) {
     rememberSelectionSnapshot('');
     return '';
   }
-  const allowClipboardFallback = options?.allowClipboardFallback === true;
   try {
     const selected = String(
       await getSelectedTextForSpeak({ allowClipboardFallback, clipboardWaitMs: 90 }) || ''
@@ -7659,6 +7661,7 @@ function getDefaultPromptWindowBounds(): { x: number; y: number; width: number; 
 
 function createPromptWindow(initialBounds?: { x: number; y: number; width: number; height: number }): void {
   if (promptWindow && !promptWindow.isDestroyed()) return;
+  promptRendererReady = false;
   const useNativeLiquidGlass = shouldUseNativeLiquidGlass();
   const bounds = initialBounds || getDefaultPromptWindowBounds();
   promptWindow = new BrowserWindow({
@@ -7695,7 +7698,27 @@ function createPromptWindow(initialBounds?: { x: number; y: number; width: numbe
   loadWindowUrl(promptWindow, '/prompt');
   promptWindow.on('closed', () => {
     promptWindow = null;
+    promptRendererReady = false;
+    pendingPromptWindowShown = null;
   });
+
+  // Defer any queued window-shown until the React app has mounted.
+  // 'did-finish-load' fires before React mounts (dynamic import chunks), so we
+  // wait for the explicit 'renderer-ready' signal from PromptApp instead.
+  const capturedWindow = promptWindow;
+  const onPromptRendererReady = (event: Electron.IpcMainEvent) => {
+    if (!capturedWindow || capturedWindow.isDestroyed()) return;
+    if (event.sender !== capturedWindow.webContents) {
+      ipcMain.once('renderer-ready', onPromptRendererReady);
+      return;
+    }
+    promptRendererReady = true;
+    if (pendingPromptWindowShown) {
+      capturedWindow.webContents.send('window-shown', pendingPromptWindowShown);
+      pendingPromptWindowShown = null;
+    }
+  };
+  ipcMain.once('renderer-ready', onPromptRendererReady);
 }
 
 function schedulePromptWindowPrewarm(): void {
@@ -7723,10 +7746,14 @@ function showPromptWindow(
   promptWindow.moveTop();
   promptWindow.webContents.focus();
   const selectedTextSnapshot = String(getRecentSelectionSnapshot() || lastCursorPromptSelection || '').trim();
-  promptWindow.webContents.send('window-shown', {
-    mode: 'prompt',
-    selectedTextSnapshot,
-  });
+  const payload = { mode: 'prompt', selectedTextSnapshot };
+  if (promptRendererReady) {
+    promptWindow.webContents.send('window-shown', payload);
+  } else {
+    // Renderer hasn't mounted yet (first open) — the createPromptWindow
+    // ipcMain.once('renderer-ready') handler will deliver this once PromptApp mounts.
+    pendingPromptWindowShown = payload;
+  }
 }
 
 function hidePromptWindow(): void {
@@ -9712,7 +9739,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     const isLauncherPath = source === 'launcher';
     const selectionPromise = isLauncherPath
       ? Promise.resolve('')
-      : getSelectedTextForSpeak({ allowClipboardFallback: true });
+      : getSelectedTextForSpeak({ allowClipboardFallback: false });
 
     // Caret/input captures must happen synchronously before focus shifts.
     const earlyCaretRect = isLauncherPath ? null : getTypingCaretRect();
@@ -9728,10 +9755,9 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       return true;
     }
 
-    // Await the selection. For the hotkey path the AX query has typically
-    // already resolved during the ~150 ms caret capture above, so this adds
-    // no measurable delay. Cmd+C clipboard fallback also reaches the right
-    // target because the original app is still frontmost here.
+    // Await the selection. For the hotkey path the native AX query has
+    // typically resolved during the caret capture above, so this adds no
+    // measurable delay and does not touch the user's clipboard.
     const selectedBeforeOpenRaw = String(
       (await selectionPromise) || getRecentSelectionSnapshot() || lastCursorPromptSelection || ''
     );

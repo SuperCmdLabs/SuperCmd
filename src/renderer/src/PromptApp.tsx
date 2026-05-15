@@ -138,6 +138,10 @@ const PromptApp: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    window.electron.rendererReady();
+  }, []);
+
+  useEffect(() => {
     const cleanupWindowShown = window.electron.onWindowShown((payload) => {
       if (payload?.mode !== 'prompt') return;
       selectedTextSnapshotRef.current = String(payload?.selectedTextSnapshot || '');
