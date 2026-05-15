@@ -769,6 +769,11 @@
       "delete": "Eliminar",
       "preferences": "Preferencias",
       "quit": "Salir",
+      "forceQuit": "Forzar salida",
+      "quitApp": "Salir de {appName}",
+      "forceQuitApp": "Forzar salida de {appName}",
+      "failedQuitting": "Error al salir de {appName}",
+      "forceQuitConfirm": "¿Forzar salida de \"{appName}\"? Se perderán los cambios no guardados.",
       "uninstallApplication": "Desinstalar aplicación"
     },
     "empty": {

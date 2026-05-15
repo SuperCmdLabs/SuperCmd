@@ -800,6 +800,9 @@ export interface ElectronAPI {
   // Open URL
   openUrl: (url: string, application?: string) => Promise<boolean>;
 
+  // App Management
+  quitApp: (appPath: string, force?: boolean) => Promise<boolean>;
+
   // Store
   getCatalog: (forceRefresh?: boolean) => Promise<CatalogEntry[]>;
   getExtensionScreenshots: (extensionName: string) => Promise<string[]>;

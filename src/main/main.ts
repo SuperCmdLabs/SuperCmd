@@ -13621,6 +13621,24 @@ app.whenReady().then(async () => {
 
   // ─── IPC: Open URL (for extensions) ─────────────────────────────
 
+  ipcMain.handle('quit-app', async (_event: any, appPath: string, force?: boolean) => {
+    if (!appPath) return false;
+    const { execFileSync } = require('child_process') as typeof import('child_process');
+    try {
+      const appName = String(appPath).split('/').pop()?.replace('.app', '') || '';
+      if (!appName) return false;
+      try { execFileSync('/usr/bin/pgrep', ['-x', appName], { encoding: 'utf8' }); } catch { return false; }
+      if (force) {
+        execFileSync('/usr/bin/killall', ['-9', appName], { encoding: 'utf8' });
+      } else {
+        execFileSync('/usr/bin/osascript', ['-e', `quit app "${appName}"`], { encoding: 'utf8' });
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   ipcMain.handle('open-url', async (_event: any, target: string, application?: string) => {
     if (!target) return false;
     const rawTarget = String(target).trim();
