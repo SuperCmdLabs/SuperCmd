@@ -1568,6 +1568,41 @@ function syncNativeLiquidGlassClassOnWindow(win: any, enabled: boolean): void {
   } catch {}
 }
 
+// Disable macOS native NSWindow show/hide animation for a given window.
+// macOS Tahoe (26) added a default fade/scale appear animation for panel-style
+// windows, which makes the launcher feel sluggish when toggled. The fast_paste
+// native addon exposes a one-call helper that flips animationBehavior to None
+// on the underlying NSWindow. Best-effort: silently no-op if the addon isn't
+// available (non-darwin platforms, missing build, etc.).
+let cachedFastPasteAddon: any | null = null;
+let fastPasteAddonLoadFailed = false;
+function getFastPasteAddon(): any | null {
+  if (cachedFastPasteAddon) return cachedFastPasteAddon;
+  if (fastPasteAddonLoadFailed) return null;
+  try {
+    cachedFastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+    return cachedFastPasteAddon;
+  } catch (e: any) {
+    fastPasteAddonLoadFailed = true;
+    console.warn('[disableWindowAnimation] failed to load fast_paste addon:', e?.message);
+    return null;
+  }
+}
+
+function disableWindowAnimation(win: any): void {
+  if (process.platform !== 'darwin') return;
+  if (!win || typeof win.getNativeWindowHandle !== 'function') return;
+  if (typeof win.isDestroyed === 'function' && win.isDestroyed()) return;
+  const addon = getFastPasteAddon();
+  if (!addon || typeof addon.setWindowAnimationBehaviorNone !== 'function') return;
+  try {
+    const handle = win.getNativeWindowHandle();
+    addon.setWindowAnimationBehaviorNone(handle);
+  } catch (e: any) {
+    console.warn('[disableWindowAnimation] failed:', e?.message);
+  }
+}
+
 function applyLiquidGlassToWindow(
   win: any,
   options?: {
@@ -2272,6 +2307,7 @@ async function ensureMemoryStatusWindow(): Promise<InstanceType<typeof BrowserWi
       sandbox: true,
     },
   });
+  disableWindowAnimation(memoryStatusWindow);
   try { memoryStatusWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
   try { memoryStatusWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
   // pop-up-menu level floats reliably above all normal app windows on macOS
@@ -2490,6 +2526,7 @@ async function showConfettiBurst(): Promise<void> {
         sandbox: true,
       },
     });
+    disableWindowAnimation(confettiWindow);
     try { confettiWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
     try { confettiWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
     try { confettiWindow.setAlwaysOnTop(true, 'screen-saver'); } catch {}
@@ -7233,6 +7270,7 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(mainWindow);
   mainWindow.setWindowButtonVisibility(true);
   // Defer NSGlassEffectView attachment until the renderer's React tree has
   // mounted (signalled via the 'renderer-ready' IPC from App.tsx's useEffect).
@@ -7391,6 +7429,8 @@ function createWindow(): void {
   mainWindow.webContents.on('did-create-window', (childWindow: any, details: any) => {
     const detachedPopupName = resolveDetachedPopupName(details);
     if (!detachedPopupName) return;
+
+    disableWindowAnimation(childWindow);
 
     const hideWindowButtons = () => {
       if (process.platform !== 'darwin') return;
@@ -7684,6 +7724,7 @@ function createPromptWindow(initialBounds?: { x: number; y: number; width: numbe
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(promptWindow);
   if (process.platform === 'darwin') {
     try { promptWindow.setWindowButtonVisibility(false); } catch {}
   }
@@ -8942,6 +8983,7 @@ async function ensureEmojiPickerWindow(): Promise<InstanceType<typeof BrowserWin
       sandbox: true,
     },
   });
+  disableWindowAnimation(emojiPickerWindow);
   try { emojiPickerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
   try { emojiPickerWindow.setIgnoreMouseEvents(true, { forward: false }); } catch {}
   try { emojiPickerWindow.setAlwaysOnTop(true, 'pop-up-menu'); } catch {}
@@ -11016,6 +11058,7 @@ function openSettingsWindow(payload?: SettingsNavigationPayload): void {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(settingsWindow);
   applyLiquidGlassToWindow(settingsWindow, {
     cornerRadius: 14,
     fallbackVibrancy: 'hud',
@@ -11130,6 +11173,7 @@ function openNotesWindow(mode?: 'search' | 'create'): void {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(notesWindow);
   // Make Notes follow the user across Desktop Spaces and overlay fullscreen
   // apps — mirrors the launcher / cursor prompt / memory status bar pattern.
   // 'pop-up-menu' level is required to sit above native macOS fullscreen apps;
@@ -11236,6 +11280,7 @@ function openCanvasWindow(mode?: 'create' | 'edit'): void {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(canvasWindow);
   applyLiquidGlassToWindow(canvasWindow, {
     cornerRadius: 14,
     fallbackVibrancy: 'hud',
@@ -11287,6 +11332,7 @@ function openCanvasWindow(mode?: 'create' | 'edit'): void {
           autoHideMenuBar: true,
           webPreferences: { contextIsolation: true, nodeIntegration: false },
         });
+        disableWindowAnimation(libWin);
         libWin.loadURL(libBrowserUrl);
 
         const maybeImport = (navUrl: string, event?: { preventDefault?: () => void }): boolean => {
@@ -11474,6 +11520,7 @@ function openExtensionStoreWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  disableWindowAnimation(extensionStoreWindow);
   applyLiquidGlassToWindow(extensionStoreWindow, {
     cornerRadius: 14,
     fallbackVibrancy: 'hud',

@@ -87,6 +87,47 @@ Napi::Value PostPaste(const Napi::CallbackInfo& info) {
   return Napi::Boolean::New(env, true);
 }
 
+// Disable the native NSWindow appear/disappear animation for a given Electron
+// BrowserWindow. macOS Tahoe (26) animates panel-style windows on show; this
+// makes the launcher feel sluggish. Setting animationBehavior to None opts the
+// window out of those system animations.
+//
+// Argument: Buffer from BrowserWindow.getNativeWindowHandle() — on macOS this
+// is the NSView* of the content view, from which we reach the NSWindow.
+Napi::Value SetWindowAnimationBehaviorNone(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 1 || !info[0].IsBuffer()) {
+    Napi::TypeError::New(env, "Expected Buffer (native window handle)")
+        .ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  Napi::Buffer<char> handleBuf = info[0].As<Napi::Buffer<char>>();
+  if (handleBuf.Length() < sizeof(void*)) {
+    return Napi::Boolean::New(env, false);
+  }
+
+  void *raw = *reinterpret_cast<void**>(handleBuf.Data());
+  if (!raw) {
+    return Napi::Boolean::New(env, false);
+  }
+
+  id obj = (__bridge id)raw;
+  NSWindow *window = nil;
+  if ([obj isKindOfClass:[NSView class]]) {
+    window = [(NSView *)obj window];
+  } else if ([obj isKindOfClass:[NSWindow class]]) {
+    window = (NSWindow *)obj;
+  }
+  if (!window) {
+    return Napi::Boolean::New(env, false);
+  }
+
+  [window setAnimationBehavior:NSWindowAnimationBehaviorNone];
+  return Napi::Boolean::New(env, true);
+}
+
 // Activate app + post ⌘V in one call
 Napi::Value ActivateAndPaste(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
@@ -108,6 +149,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("activateApp", Napi::Function::New(env, ActivateApp));
   exports.Set("postPaste", Napi::Function::New(env, PostPaste));
   exports.Set("activateAndPaste", Napi::Function::New(env, ActivateAndPaste));
+  exports.Set("setWindowAnimationBehaviorNone",
+              Napi::Function::New(env, SetWindowAnimationBehaviorNone));
   return exports;
 }
 
