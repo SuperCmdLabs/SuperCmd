@@ -17,18 +17,18 @@ import * as crypto from 'crypto';
 // Lazy-loaded native addon — provides getPasteboardChangeCount() which returns
 // NSPasteboard.general.changeCount (an integer that increments on every write).
 // Checking this is O(1) and avoids all pasteboard data reads when nothing changed.
-type FastPasteAddon = { getPasteboardChangeCount?: () => number };
-let _fastPasteAddon: FastPasteAddon | null = null;
-let _fastPasteAddonLoaded = false;
-function getFastPasteAddon(): FastPasteAddon | null {
-  if (_fastPasteAddonLoaded) return _fastPasteAddon;
-  _fastPasteAddonLoaded = true;
+type NativeHelpersAddon = { getPasteboardChangeCount?: () => number };
+let _nativeHelpersAddon: NativeHelpersAddon | null = null;
+let _nativeHelpersAddonLoaded = false;
+function getNativeHelpersAddon(): NativeHelpersAddon | null {
+  if (_nativeHelpersAddonLoaded) return _nativeHelpersAddon;
+  _nativeHelpersAddonLoaded = true;
   try {
-    _fastPasteAddon = require(path.join(__dirname, '..', 'native', 'fast_paste.node'));
+    _nativeHelpersAddon = require(path.join(__dirname, '..', 'native', 'native_helpers.node'));
   } catch {
-    _fastPasteAddon = null;
+    _nativeHelpersAddon = null;
   }
-  return _fastPasteAddon;
+  return _nativeHelpersAddon;
 }
 
 /**
@@ -654,19 +654,6 @@ function getClipboardImageFingerprint(): {
       };
     }
 
-    // Fallback: browser or app used a non-standard UTI (e.g. Chrome's
-    // com.google.chrome.image-htm). Electron's readImage() can decode many
-    // image formats via NSImage even when the UTI isn't one of the three above.
-    // This only runs when changeCount changed, so toPNG() is a one-time cost.
-    try {
-      const img = clipboard.readImage();
-      if (!img.isEmpty()) {
-        const png = img.toPNG();
-        if (png.length > 8) {
-          return { fingerprint: buildImageFingerprint('img', png) };
-        }
-      }
-    } catch {}
   } catch {}
   return { fingerprint: '' };
 }
@@ -675,8 +662,16 @@ function pollClipboard(): void {
   if (!isEnabled) return;
 
   try {
-    // Compute image fingerprint using raw format bytes where possible. toPNG()
-    // is only used for unknown image-like formats or when saving a new image.
+    // Cheap pre-check: NSPasteboard.changeCount increments on every write.
+    // If it hasn't changed since the last poll, nothing is on the clipboard that
+    // we haven't already seen — skip all IPC reads entirely.
+    const addon = getNativeHelpersAddon();
+    if (addon?.getPasteboardChangeCount) {
+      const currentChangeCount = addon.getPasteboardChangeCount();
+      if (currentChangeCount === lastPasteboardChangeCount) return;
+      lastPasteboardChangeCount = currentChangeCount;
+    }
+
     const { fingerprint: imageFingerprint, rawGifData, fallbackImage } = getClipboardImageFingerprint();
 
     // A file URL on the pasteboard (Finder copy) takes priority over
@@ -838,12 +833,12 @@ export function startClipboardMonitor(): void {
   try {
     lastClipboardText = clipboard.readText();
     lastClipboardFilePath = readClipboardFilePath() || '';
-    const addon = getFastPasteAddon();
+    const addon = getNativeHelpersAddon();
     if (addon?.getPasteboardChangeCount) {
       lastPasteboardChangeCount = addon.getPasteboardChangeCount();
     }
   } catch {}
-  
+
   // Start polling
   if (pollInterval) {
     clearInterval(pollInterval);
@@ -1034,7 +1029,7 @@ export function copyItemToClipboard(id: string): boolean {
     // and doesn't create a duplicate entry. This works even if the poll fires
     // before the isEnabled timeout below expires.
     try {
-      const addon = getFastPasteAddon();
+      const addon = getNativeHelpersAddon();
       if (addon?.getPasteboardChangeCount) {
         lastPasteboardChangeCount = addon.getPasteboardChangeCount();
       }
