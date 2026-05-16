@@ -18,6 +18,7 @@ const PROFILE = {
 let snapshotTimer = null;
 let lastSnapshotHash = '';
 let commandLoopRunning = false;
+const windowLastFocusedAt = new Map();
 
 function scheduleSnapshot(reason) {
   if (snapshotTimer) {
@@ -31,10 +32,20 @@ function scheduleSnapshot(reason) {
 
 async function sendSnapshot(reason) {
   let tabs;
+  let windows = [];
   try {
     tabs = await chrome.tabs.query({});
+    windows = await chrome.windows.getAll({});
   } catch {
     return;
+  }
+  const now = Date.now();
+  for (const window of windows) {
+    if (window.focused) {
+      windowLastFocusedAt.set(window.id, now);
+    } else if (!windowLastFocusedAt.has(window.id)) {
+      windowLastFocusedAt.set(window.id, 0);
+    }
   }
 
   const payload = {
@@ -48,6 +59,7 @@ async function sendSnapshot(reason) {
         title: tab.title || '',
         url: tab.url || tab.pendingUrl || '',
         active: Boolean(tab.active),
+        windowLastFocusedAt: windowLastFocusedAt.get(tab.windowId) || 0,
       })),
   };
 
@@ -133,6 +145,12 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
   ) {
     scheduleSnapshot('tab-updated');
   }
+});
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) {
+    windowLastFocusedAt.set(windowId, Date.now());
+  }
+  scheduleSnapshot('window-focus-changed');
 });
 chrome.windows.onRemoved.addListener(() => scheduleSnapshot('window-removed'));
 

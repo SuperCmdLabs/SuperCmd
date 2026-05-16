@@ -887,7 +887,10 @@
         "search": "网络搜索",
         "openTabMatch": "找到已打开的标签页"
       },
-      "focusHint": "切换到标签页"
+      "focusHint": "切换到标签页",
+      "showAll": "显示所有 Browser 结果",
+      "showAllSubtitle": "{count} 个 Browser 结果",
+      "showAllPlaceholder": "搜索 Browser 结果..."
     }
   },
   "scriptCommand": {

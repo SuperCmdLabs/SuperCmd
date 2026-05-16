@@ -887,7 +887,10 @@
         "search": "網路搜尋",
         "openTabMatch": "找到已開啟的分頁"
       },
-      "focusHint": "切換到分頁"
+      "focusHint": "切換到分頁",
+      "showAll": "顯示所有 Browser 結果",
+      "showAllSubtitle": "{count} 個 Browser 結果",
+      "showAllPlaceholder": "搜尋 Browser 結果..."
     }
   },
   "scriptCommand": {

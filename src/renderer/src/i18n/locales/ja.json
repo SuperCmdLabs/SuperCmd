@@ -887,7 +887,10 @@
         "search": "ウェブ検索",
         "openTabMatch": "開いているタブが見つかりました"
       },
-      "focusHint": "タブへ移動"
+      "focusHint": "タブへ移動",
+      "showAll": "すべての Browser 結果を表示",
+      "showAllSubtitle": "{count} 件の Browser 結果",
+      "showAllPlaceholder": "Browser 結果を検索..."
     }
   },
   "scriptCommand": {
