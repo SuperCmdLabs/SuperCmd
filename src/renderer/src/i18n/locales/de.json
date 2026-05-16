@@ -1,8 +1,9 @@
 {
-  "language": {
-    "name": "Deutsch"
-  },
   "common": {
+    "actions": "Actions",
+    "loading": "Laden...",
+    "noResults": "No results",
+    "search": "Suchen",
     "save": "Speichern",
     "saving": "Speichern...",
     "cancel": "Abbrechen",
@@ -17,71 +18,60 @@
     "disable": "Deaktivieren",
     "enabled": "Aktiviert",
     "disabled": "Deaktiviert",
-    "loading": "Laden...",
-    "error": "Fehler",
     "success": "Erfolg",
+    "error": "Fehler",
     "warning": "Warnung",
     "info": "Information",
-    "confirm": "Bestätigen",
-    "apply": "Anwenden",
-    "reset": "Zurücksetzen",
-    "search": "Suchen",
-    "clear": "Löschen",
-    "refresh": "Aktualisieren",
     "copy": "Kopieren",
     "paste": "Einfügen",
     "cut": "Ausschneiden",
     "selectAll": "Alles auswählen",
     "undo": "Rückgängig",
     "redo": "Wiederholen",
+    "refresh": "Aktualisieren",
+    "reload": "Reload",
+    "apply": "Anwenden",
+    "reset": "Zurücksetzen",
+    "clear": "Löschen",
     "done": "Fertig",
-    "skip": "Überspringen",
-    "next": "Weiter",
-    "previous": "Zurück",
-    "finish": "Beenden",
-    "open": "Öffnen",
+    "ok": "OK",
+    "yes": "Ja",
+    "no": "Nein",
+    "submit": "Submit",
+    "browse": "Browse",
+    "choose": "Choose",
+    "change": "Change",
+    "update": "Aktualisieren",
     "install": "Installieren",
     "uninstall": "Deinstallieren",
-    "update": "Aktualisieren",
-    "restart": "Neustart",
-    "learnMore": "Mehr erfahren",
-    "documentation": "Dokumentation",
-    "settings": "Einstellungen",
-    "preferences": "Einstellungen",
-    "about": "Über",
-    "version": "Version",
+    "download": "Download",
+    "upload": "Upload",
+    "import": "Import",
+    "export": "Export",
+    "open": "Öffnen",
+    "create": "Create",
+    "new": "Neu",
     "unknown": "Unbekannt",
     "none": "Keine",
     "default": "Standard",
     "custom": "Benutzerdefiniert",
-    "advanced": "Erweitert",
+    "other": "Other",
+    "all": "All",
+    "required": "Erforderlich",
+    "optional": "Optional",
+    "preferences": "Einstellungen",
+    "settings": "Einstellungen",
     "general": "Allgemein",
-    "appearance": "Erscheinungsbild",
-    "behavior": "Verhalten",
-    "shortcuts": "Tastenkürzel",
-    "extensions": "Erweiterungen",
-    "security": "Sicherheit",
-    "privacy": "Datenschutz",
-    "notifications": "Benachrichtigungen",
+    "advanced": "Erweitert",
+    "about": "Über",
+    "version": "Version",
     "language": "Sprache",
+    "appearance": "Erscheinungsbild",
     "theme": "Thema",
     "light": "Hell",
     "dark": "Dunkel",
     "system": "System",
-    "auto": "Automatisch",
-    "manual": "Manuell",
-    "on": "An",
-    "off": "Aus",
-    "yes": "Ja",
-    "no": "Nein",
-    "ok": "OK",
-    "gotIt": "Verstanden",
-    "comingSoon": "Demnächst verfügbar",
-    "new": "Neu",
-    "beta": "Beta",
-    "recommended": "Empfohlen",
-    "required": "Erforderlich",
-    "optional": "Optional"
+    "auto": "Automatisch"
   },
   "settings": {
     "title": "Einstellungen",
@@ -89,10 +79,23 @@
       "general": "Allgemein",
       "ai": "KI",
       "extensions": "Erweiterungen",
-      "advanced": "Erweitert",
-      "store": "Store"
+      "advanced": "Erweitert"
     },
     "general": {
+      "title": "General",
+      "loading": "Loading settings...",
+      "launcherShortcut": {
+        "title": "Launcher Shortcut",
+        "description": "Set the global shortcut to open and close SuperCmd.",
+        "updated": "Shortcut updated",
+        "failed": "Failed. Shortcut may be used by another app."
+      },
+      "startAtLogin": {
+        "title": "Start at Login",
+        "description": "Automatically launch SuperCmd when you log in.",
+        "enabled": "Enabled",
+        "disabled": "Disabled"
+      },
       "language": {
         "title": "Sprache",
         "description": "Wählen Sie die Anzeigesprache für SuperCmd",
@@ -108,31 +111,73 @@
         "ru": "Russisch",
         "it": "Italienisch"
       },
-      "theme": {
-        "label": "Thema",
-        "description": "Passen Sie das Erscheinungsbild der App an",
-        "light": "Hell",
-        "dark": "Dunkel",
-        "system": "System"
+      "fontSize": {
+        "title": "Font Size",
+        "description": "Scale text size across the app.",
+        "extra-small": "Extra Small",
+        "small": "Small",
+        "medium": "Medium",
+        "large": "Large",
+        "extra-large": "Extra Large"
       },
-      "hotkey": {
-        "label": "Globales Tastenkürzel",
-        "description": "Tastenkürzel zum Öffnen von SuperCmd von überall",
-        "placeholder": "Tastenkürzel aufzeichnen...",
-        "conflict": "Tastenkürzel-Konflikt",
-        "conflictDescription": "Dieses Tastenkürzel wird bereits von einer anderen App verwendet"
+      "appearance": {
+        "title": "Appearance",
+        "description": "Choose Light, Dark, or follow your system preference.",
+        "light": "Light",
+        "system": "System",
+        "dark": "Dark"
       },
-      "launchAtLogin": {
-        "label": "Bei Anmeldung starten",
-        "description": "SuperCmd automatisch beim Systemstart starten"
+      "visualStyle": {
+        "title": "Visual Style",
+        "description": "Use Default look or enable a glassy macOS Tahoe-inspired style.",
+        "default": "Default",
+        "glassy": "Glassy"
       },
-      "showInMenuBar": {
-        "label": "In Menüleiste anzeigen",
-        "description": "SuperCmd-Symbol in der Menüleiste anzeigen"
+      "launcherMode": {
+        "title": "Launcher Mode",
+        "description": "Choose how the launcher appears when opened.",
+        "expanded": "Expanded",
+        "compact": "Compact"
       },
-      "checkUpdates": {
-        "label": "Automatisch nach Updates suchen",
-        "description": "Prüfen, ob eine neue Version verfügbar ist"
+      "background": {
+        "title": "Launcher Background Image",
+        "description": "Show a softly blurred, low-opacity image behind the launcher so it reads like a hint, not a full wallpaper.",
+        "empty": "No image selected. The launcher will keep using its current background.",
+        "choose": "Choose Image",
+        "change": "Change Image",
+        "remove": "Remove",
+        "appearance": "Appearance",
+        "summary": "Blur {blur}% · Opacity {opacity}%",
+        "blur": "Blur",
+        "opacity": "Opacity",
+        "useEverywhere": "Use this image in extension and core launcher views too"
+      },
+      "updates": {
+        "title": "App Updates",
+        "description": "Check for and install packaged-app updates.",
+        "defaultMessage": "Check for and install packaged-app updates.",
+        "unsupported": "Updates are only available in packaged builds.",
+        "checking": "Checking for updates...",
+        "available": "Update v{version} is available.",
+        "notAvailable": "You are already on the latest version.",
+        "downloading": "Downloading update...",
+        "downloaded": "Update downloaded. Restart to install.",
+        "restarting": "Restarting to install update...",
+        "error": "Could not complete the update action.",
+        "check": "Check for Updates",
+        "download": "Download Update",
+        "downloadingButton": "Downloading Update...",
+        "restart": "Update and Restart",
+        "restartingButton": "Restarting...",
+        "currentVersion": "Current version: v{version}",
+        "latestVersion": "Latest: v{version}",
+        "progress": "{progress}% · {transferred} / {total}",
+        "failed": "Update failed."
+      },
+      "about": {
+        "title": "About",
+        "description": "Version information.",
+        "version": "SuperCmd v{version}"
       },
       "autoQuit": {
         "title": "Auto-Beenden",
@@ -143,6 +188,30 @@
       }
     },
     "ai": {
+      "title": "KI-Einstellungen",
+      "loading": "KI-Einstellungen werden geladen...",
+      "saved": "Gespeichert",
+      "languages": {
+        "arabic": "Arabic",
+        "chineseMandarin": "Chinese (Mandarin)",
+        "englishUs": "English (US)",
+        "englishUk": "English (UK)",
+        "frenchCanada": "French (Canada)",
+        "frenchFrance": "French (France)",
+        "german": "German",
+        "hindi": "Hindi",
+        "italian": "Italian",
+        "japanese": "Japanese",
+        "korean": "Korean",
+        "portugueseBrazil": "Portuguese (Brazil)",
+        "russian": "Russian",
+        "spanishMexico": "Spanish (Mexico)",
+        "spanishSpain": "Spanish (Spain)"
+      },
+      "enableAI": {
+        "title": "KI aktivieren",
+        "description": "Hauptschalter für KI-Funktionen."
+      },
       "tabs": {
         "apiKeys": "API-Schlüssel",
         "llm": "LLM",
@@ -150,32 +219,14 @@
         "speak": "SuperCmd Read"
       },
       "apiKeys": {
-        "title": "API-Schlüssel-Einstellungen",
         "openai": {
           "label": "OpenAI API-Schlüssel",
-          "placeholder": "sk-...",
-          "description": "OpenAI API-Schlüssel für GPT-Modelle",
-          "required": "API-Schlüssel erforderlich für OpenAI-Funktionen",
-          "invalid": "Ungültiges API-Schlüssel-Format"
+          "placeholder": "sk-..."
         },
         "anthropic": {
           "label": "Anthropic API-Schlüssel",
-          "placeholder": "sk-ant-...",
-          "description": "Anthropic API-Schlüssel für Claude-Modelle",
-          "required": "API-Schlüssel erforderlich für Claude-Funktionen",
-          "invalid": "Ungültiges API-Schlüssel-Format"
+          "placeholder": "sk-ant-..."
         },
-        "ollama": {
-          "label": "Ollama URL",
-          "placeholder": "http://localhost:11434",
-          "description": "URL des lokalen Ollama-Servers",
-          "required": "URL erforderlich für Ollama-Verbindung",
-          "invalid": "Ungültiges URL-Format"
-        },
-        "testConnection": "Verbindung testen",
-        "testing": "Testen...",
-        "connectionSuccess": "Verbindung erfolgreich",
-        "connectionFailed": "Verbindung fehlgeschlagen",
         "gemini": {
           "label": "Gemini-API-Schluessel (Google)",
           "placeholder": "AIza..."
@@ -204,40 +255,6 @@
         }
       },
       "llm": {
-        "title": "Großes Sprachmodell-Einstellungen",
-        "provider": {
-          "label": "Anbieter",
-          "description": "Wählen Sie den KI-Modellanbieter",
-          "openai": "OpenAI",
-          "anthropic": "Anthropic",
-          "ollama": "Ollama (lokal)",
-          "gemini": "Gemini",
-          "lmStudio": "LM Studio",
-          "openaiCompatible": "Benutzerdefiniert (OpenAI-kompatibel)"
-        },
-        "model": {
-          "label": "Modell",
-          "description": "Wählen Sie das zu verwendende KI-Modell",
-          "placeholder": "Modell auswählen...",
-          "custom": "Benutzerdefiniertes Modell"
-        },
-        "temperature": {
-          "label": "Temperatur",
-          "description": "Steuert die Zufälligkeit der Antworten (0=deterministisch, 2=kreativ)"
-        },
-        "maxTokens": {
-          "label": "Maximale Token",
-          "description": "Maximale Länge der Antwort"
-        },
-        "systemPrompt": {
-          "label": "System-Prompt",
-          "description": "Definiert das Verhalten des KI-Assistenten",
-          "placeholder": "Sie sind ein hilfreicher Assistent..."
-        },
-        "streaming": {
-          "label": "Streaming-Antworten",
-          "description": "Antworten in Echtzeit während der Generierung anzeigen"
-        },
         "enableLLM": {
           "title": "LLM aktivieren",
           "description": "Modellbasierte KI-Funktionen ein- oder ausschalten."
@@ -245,6 +262,23 @@
         "modelSelection": {
           "title": "Allgemeine Modellauswahl",
           "description": "Wird von Erweiterungen und modellagnostischen KI-Aktionen verwendet."
+        },
+        "provider": {
+          "label": "Anbieter",
+          "openai": "OpenAI",
+          "anthropic": "Anthropic",
+          "gemini": "Gemini",
+          "ollama": "Ollama (lokal)",
+          "lmStudio": "LM Studio",
+          "openaiCompatible": "Benutzerdefiniert (OpenAI-kompatibel)"
+        },
+        "providerDescriptions": {
+          "openai": "GPT family models",
+          "anthropic": "Anthropic Claude models",
+          "gemini": "Google Gemini models",
+          "ollama": "Local models",
+          "lmStudio": "Local models via LM Studio",
+          "openaiCompatible": "Any OpenAI-compatible API (OpenRouter, Together, etc.)"
         },
         "ollama": {
           "serverUrl": {
@@ -264,7 +298,30 @@
           "downloadModel": "Herunterladen",
           "removeModel": "Entfernen",
           "downloading": "Wird heruntergeladen...",
-          "removing": "Wird entfernt..."
+          "removing": "Wird entfernt...",
+          "startingDownload": "Starting download...",
+          "deleteFailed": "Failed to delete model.",
+          "curatedDescriptions": {
+            "llama32": "Meta general-purpose (3B)",
+            "llama32_1b": "Small and fast",
+            "mistral": "Efficient general-purpose",
+            "codellama": "Code generation & completion",
+            "phi3": "Microsoft small language model",
+            "gemma2": "Google open model (9B)",
+            "qwen25": "Alibaba multilingual model (7B)",
+            "deepseekR1": "Reasoning-focused model (7B)"
+          }
+        },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "Server-URL",
+            "hint": "Lokale Server-URL von LM Studio (Standard: http://127.0.0.1:1234/v1)"
+          },
+          "apiKey": {
+            "toggle": "Optionaler API-Schlüssel",
+            "placeholder": "Leer lassen, wenn nicht benötigt",
+            "hint": "Nur erforderlich, wenn Sie in LM Studio eine Authentifizierung konfiguriert haben."
+          }
         },
         "openaiCompatible": {
           "baseUrl": {
@@ -286,79 +343,22 @@
         "defaultModel": {
           "label": "Standardmodell",
           "auto": "Automatisch (Provider-Standard)"
-        },
-        "lmStudio": {
-          "baseUrl": {
-            "label": "Server-URL",
-            "hint": "Lokale Server-URL von LM Studio (Standard: http://127.0.0.1:1234/v1)"
-          },
-          "apiKey": {
-            "toggle": "Optionaler API-Schlüssel",
-            "placeholder": "Leer lassen, wenn nicht benötigt",
-            "hint": "Nur erforderlich, wenn Sie in LM Studio eine Authentifizierung konfiguriert haben."
-          }
         }
       },
       "whisper": {
+        "enableWhisper": {
+          "title": "SuperCmd Whisper aktivieren",
+          "description": "Sprache-zu-Text-Funktionen ein- oder ausschalten."
+        },
         "title": "SuperCmd Whisper",
-        "enabled": {
-          "label": "Spracheingabe aktivieren",
-          "description": "Whisper-Spracherkennung für Sprachbefehle aktivieren"
-        },
-        "provider": {
-          "label": "Anbieter",
-          "description": "Wählen Sie den Spracherkennungsanbieter",
-          "openai": "OpenAI Whisper",
-          "local": "Lokales Whisper"
-        },
+        "description": "Sprache-zu-Text und Transkriptbereinigung.",
         "model": {
           "label": "Modell",
-          "description": "Wählen Sie das Spracherkennungsmodell",
-          "tiny": "Tiny (am schnellsten)",
-          "base": "Base",
-          "small": "Small",
-          "medium": "Medium",
-          "large": "Large (am genauesten)",
           "native": "Nativ (Standard)",
           "openaiGpt4o": "OpenAI GPT-4o Transcribe",
           "openaiWhisper": "OpenAI Whisper-1",
           "elevenlabsScribeV1": "ElevenLabs Scribe v1",
           "elevenlabsScribeV2": "ElevenLabs Scribe v2"
-        },
-        "language": {
-          "label": "Sprache",
-          "description": "Hauptsprache für die Spracherkennung",
-          "auto": "Automatische Erkennung"
-        },
-        "hotkey": {
-          "label": "Spracheingabe-Tastenkürzel",
-          "description": "Tastenkürzel zum Auslösen der Spracheingabe",
-          "placeholder": "Tastenkürzel aufzeichnen..."
-        },
-        "enableWhisper": {
-          "title": "SuperCmd Whisper aktivieren",
-          "description": "Sprache-zu-Text-Funktionen ein- oder ausschalten."
-        },
-        "description": "Sprache-zu-Text und Transkriptbereinigung.",
-        "openaiWarning": "OpenAI Whisper ausgewaehlt. Fuege den OpenAI-API-Schluessel unter API Keys hinzu.",
-        "elevenlabsWarning": "ElevenLabs-STT ausgewaehlt. {action} den ElevenLabs-API-Schluessel unter API Keys.",
-        "elevenlabsReady": "ElevenLabs-STT ausgewaehlt. Die Cloud-Transkription verwendet deinen ElevenLabs-Schluessel.",
-        "hotkeys": {
-          "title": "Whisper-Tastenkombinationen",
-          "startStop": "Sprechen starten/stoppen",
-          "setToFn": "Auf Fn setzen",
-          "fnHint": "Verwende Auf Fn setzen, um die standardmaessige Push-to-Talk-Taste wiederherzustellen.",
-          "fnHintBefore": "Use",
-          "fnHintAfter": "to restore the default hold-to-talk key."
-        },
-        "smoothOutput": {
-          "title": "Ausgabe glaetten",
-          "description": "Fuellwoerter und Selbstkorrekturen bereinigen."
-        },
-        "smoothingModel": {
-          "label": "Glaettungsmodell",
-          "useDefault": "Allgemeines Standardmodell verwenden",
-          "hint": "Verwendet die Modelle deines aktuellen Providers."
         },
         "modelOptions": {
           "whispercpp": "SuperCmd Whisper (Default)",
@@ -370,13 +370,37 @@
           "elevenlabsScribeV1": "ElevenLabs Scribe v1",
           "elevenlabsScribeV2": "ElevenLabs Scribe v2"
         },
+        "openaiWarning": "OpenAI Whisper ausgewaehlt. Fuege den OpenAI-API-Schluessel unter API Keys hinzu.",
+        "elevenlabsWarning": "ElevenLabs-STT ausgewaehlt. {action} den ElevenLabs-API-Schluessel unter API Keys.",
+        "elevenlabsReady": "ElevenLabs-STT ausgewaehlt. Die Cloud-Transkription verwendet deinen ElevenLabs-Schluessel.",
+        "recognitionLanguage": "Recognition Language",
         "providerInfo": {
           "parakeet": "Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Requires model warmup on first use. Download the model below before using dictation.",
           "qwen3": "Offline on-device transcription via Qwen3 ASR. Supports 30+ languages, requires macOS 15+, and warms up on first use.",
           "whispercpp": "Offline on-device transcription via Whisper.cpp. Download the default ggml base model below before using dictation.",
           "native": "Uses Apple Speech Recognition instead of SuperCmd Whisper."
         },
-        "recognitionLanguage": "Recognition Language",
+        "hotkeys": {
+          "title": "Whisper-Tastenkombinationen",
+          "startStop": "Sprechen starten/stoppen",
+          "setToFn": "Auf Fn setzen",
+          "fnHint": "Verwende Auf Fn setzen, um die standardmaessige Push-to-Talk-Taste wiederherzustellen.",
+          "fnHintBefore": "Use",
+          "fnHintAfter": "to restore the default hold-to-talk key."
+        },
+        "autoClose": {
+          "title": "Auto-Close After Dictation",
+          "description": "Automatically close the whisper bar when dictation finishes."
+        },
+        "smoothOutput": {
+          "title": "Ausgabe glaetten",
+          "description": "Fuellwoerter und Selbstkorrekturen bereinigen."
+        },
+        "smoothingModel": {
+          "label": "Glaettungsmodell",
+          "useDefault": "Allgemeines Standardmodell verwenden",
+          "hint": "Verwendet die Modelle deines aktuellen Providers."
+        },
         "downloadCards": {
           "modelDownloadFailed": "Model download failed.",
           "actions": {
@@ -408,39 +432,20 @@
         }
       },
       "speak": {
-        "title": "SuperCmd Read",
-        "enabled": {
-          "label": "Sprachausgabe aktivieren",
-          "description": "Text-to-Speech für KI-Antworten aktivieren"
+        "enableRead": {
+          "title": "SuperCmd Read aktivieren",
+          "description": "Text-zu-Sprache-Funktionen ein- oder ausschalten."
         },
+        "title": "SuperCmd Read",
+        "description": "Ausgewaehlten Text laut vorlesen.",
         "provider": {
           "label": "Sprachanbieter",
-          "description": "Wählen Sie den Sprachausgabeanbieter",
-          "system": "System-TTS",
-          "openai": "OpenAI TTS",
-          "elevenlabs": "ElevenLabs",
           "edgeTTS": "Edge TTS (Standard)",
           "elevenlabsMultilingual": "ElevenLabs Multilingual v2",
           "elevenlabsFlash": "ElevenLabs Flash v2.5",
           "elevenlabsTurbo": "ElevenLabs Turbo v2.5",
           "elevenlabsV3": "ElevenLabs v3 (Alpha)"
         },
-        "voice": {
-          "label": "Stimme",
-          "description": "Wählen Sie die Stimme für die Sprachausgabe",
-          "placeholder": "Stimme auswählen..."
-        },
-        "speed": {
-          "label": "Geschwindigkeit",
-          "description": "Sprachgeschwindigkeit anpassen"
-        },
-        "testVoice": "Stimme testen",
-        "testing": "Testen...",
-        "enableRead": {
-          "title": "SuperCmd Read aktivieren",
-          "description": "Text-zu-Sprache-Funktionen ein- oder ausschalten."
-        },
-        "description": "Ausgewaehlten Text laut vorlesen.",
         "edgeTTS": {
           "voice": "Edge-TTS-Stimme",
           "fetching": "Vollstaendige Stimmenliste wird abgerufen...",
@@ -467,6 +472,7 @@
           "voice": {
             "label": "ElevenLabs-Stimme",
             "fetching": "Deine Stimmen werden abgerufen...",
+            "fetchFailed": "Failed to fetch voices.",
             "builtIn": "Integrierte Stimmen",
             "premade": "Zusaetzliche vorgefertigte Stimmen",
             "custom": "Deine benutzerdefinierten Stimmen (geklont/generiert)",
@@ -488,13 +494,6 @@
           "elevenlabsVoices": "Benutzerdefinierte ElevenLabs-Stimmen (geklont/generiert) erscheinen automatisch, sobald dein API-Schluessel konfiguriert ist."
         }
       },
-      "title": "KI-Einstellungen",
-      "loading": "KI-Einstellungen werden geladen...",
-      "saved": "Gespeichert",
-      "enableAI": {
-        "title": "KI aktivieren",
-        "description": "Hauptschalter für KI-Funktionen."
-      },
       "hotkeyUpdated": "Tastenkombination aktualisiert.",
       "hotkeyRemoved": "Tastenkombination entfernt.",
       "hotkeyDuplicate": "Tastenkombination wird bereits von einem anderen SuperCmd-Befehl verwendet.",
@@ -502,16 +501,7 @@
     },
     "extensions": {
       "title": "Erweiterungs-Einstellungen",
-      "clipboardBlacklist": {
-        "title": "Ignorierte Anwendungen",
-        "description": "Zwischenablage-Inhalte, die kopiert werden, während eine dieser Apps im Vordergrund ist, werden nicht in der Zwischenablage-Historie von SuperCmd gespeichert.",
-        "add": "Anwendung hinzufügen",
-        "remove": "Entfernen",
-        "empty": "Keine Anwendungen auf der Sperrliste. Kopien aus allen Apps werden im Verlauf gespeichert.",
-        "searchPlaceholder": "Anwendungen suchen…",
-        "loading": "Anwendungen werden geladen…",
-        "noApps": "Keine Anwendungen gefunden"
-      },
+      "loading": "Loading extension settings...",
       "builtIn": {
         "superCmd": {
           "title": "SuperCmd",
@@ -531,46 +521,96 @@
           "pane": "Systemeinstellungen-Bereich"
         }
       },
-      "installed": {
-        "title": "Installierte Erweiterungen",
-        "description": "Verwalten Sie Ihre installierten Raycast-kompatiblen Erweiterungen",
-        "empty": "Keine Erweiterungen installiert",
-        "browseStore": "Store durchsuchen"
+      "search": {
+        "placeholder": "Search...",
+        "all": "All",
+        "commands": "Commands",
+        "statusAll": "All",
+        "enabled": "Enabled",
+        "disabled": "Disabled"
+      },
+      "install": {
+        "button": "Install Extension",
+        "fromStore": "Install from Store",
+        "addFolder": "Add Folder",
+        "customScript": "Custom Script"
       },
       "customFolders": {
         "title": "Benutzerdefinierte Skript-Ordner",
-        "description": "Zusätzliche Ordner für Skriptbefehle hinzufügen",
-        "addFolder": "Ordner hinzufügen",
-        "removeFolder": "Entfernen",
-        "folderPath": "Ordnerpfad",
-        "placeholder": "/pfad/zu/skripten"
+        "empty": "Add Folder from Install Extension",
+        "remove": "Remove"
       },
+      "installExtension": "Install Extension",
+      "installFromStore": "Install from Store",
+      "addFolder": "Add Folder",
+      "customScript": "Custom Script",
       "columns": {
         "name": "Name",
         "type": "Typ",
-        "version": "Version",
-        "author": "Autor",
-        "status": "Status",
-        "actions": "Aktionen"
+        "alias": "Alias",
+        "hotkey": "Hotkey",
+        "enabled": "Enabled"
       },
       "types": {
+        "builtIn": "Built-in",
+        "apps": "Apps",
+        "settings": "Settings",
+        "scripts": "Scripts",
         "extension": "Erweiterung",
-        "scriptCommand": "Skriptbefehl",
-        "builtin": "Integriert"
+        "application": "Application",
+        "command": "Command",
+        "menuBarCommand": "Menu Bar Command",
+        "quickLink": "Quick Link"
       },
       "alias": {
-        "label": "Alias",
-        "placeholder": "Benutzerdefinierter Alias..."
+        "add": "Add Alias",
+        "placeholder": "Benutzerdefinierter Alias...",
+        "edit": "Edit alias"
       },
       "hotkey": {
-        "label": "Tastenkürzel",
-        "placeholder": "Tastenkürzel aufzeichnen..."
+        "record": "Record Hotkey",
+        "duplicateWithCommand": "Hotkey already used by \"{name}\"."
       },
+      "preferences": {
+        "selectOption": "Select an option"
+      },
+      "noResults": "No matching extensions",
+      "selectExtension": "Select an extension",
+      "extensionPreferences": "Extension Preferences",
+      "commandPreferences": "Command Preferences",
+      "noPreferences": "No preferences",
+      "clipboardBlacklist": {
+        "title": "Ignorierte Anwendungen",
+        "description": "Zwischenablage-Inhalte, die kopiert werden, während eine dieser Apps im Vordergrund ist, werden nicht in der Zwischenablage-Historie von SuperCmd gespeichert.",
+        "add": "Anwendung hinzufügen",
+        "remove": "Entfernen",
+        "empty": "Keine Anwendungen auf der Sperrliste. Kopien aus allen Apps werden im Verlauf gespeichert.",
+        "searchPlaceholder": "Anwendungen suchen…",
+        "loading": "Anwendungen werden geladen…",
+        "noApps": "Keine Anwendungen gefunden"
+      },
+      "enabled": "Enabled",
+      "logout": "Logout",
+      "loggedIn": "Logged into {name}",
       "uninstall": {
         "title": "Erweiterung deinstallieren",
-        "confirm": "Sind Sie sicher, dass Sie diese Erweiterung deinstallieren möchten?",
         "description": "Diese Aktion kann nicht rückgängig gemacht werden.",
-        "button": "Deinstallieren"
+        "cancel": "Cancel",
+        "confirm": "Sind Sie sicher, dass Sie diese Erweiterung deinstallieren möchten?",
+        "uninstalling": "Uninstalling...",
+        "success": "Uninstalled \"{name}\".",
+        "failed": "Failed to uninstall \"{name}\"."
+      },
+      "folder": {
+        "added": "Extension folder added.",
+        "removed": "Extension folder removed.",
+        "failed": "Failed to {action} extension folder.",
+        "duplicate": "Folder already added."
+      },
+      "scripts": {
+        "opened": "Opened custom scripts folder with sample script.",
+        "openedExisting": "Opened custom scripts folder.",
+        "failed": "Failed to open custom scripts folder."
       },
       "emojiPicker": {
         "enabled": "Emoji-Auswahl aktivieren",
@@ -592,6 +632,7 @@
     },
     "advanced": {
       "title": "Erweiterte Einstellungen",
+      "loading": "Loading advanced settings...",
       "settingsFolder": {
         "title": "Einstellungsordner",
         "description": "Synchronisiere Einstellungen und Erweiterungen zwischen Macs über iCloud Drive, Dropbox oder einen beliebigen Ordner.",
@@ -647,37 +688,23 @@
           "120s": "Nach 120 Sekunden"
         }
       },
-      "developerMode": {
-        "label": "Entwicklermodus",
-        "description": "Debug-Funktionen für die Erweiterungsentwicklung aktivieren"
+      "clipboardRetention": {
+        "title": "Clipboard History Retention",
+        "description": "Auto-delete clipboard entries older than the selected duration. Pinned entries are always kept.",
+        "option": {
+          "1day": "1 day",
+          "7days": "7 days",
+          "1month": "1 month",
+          "3months": "3 months",
+          "6months": "6 months",
+          "1year": "1 year",
+          "never": "Never"
+        }
       },
-      "verboseLogging": {
-        "label": "Ausführliche Protokollierung",
-        "description": "Ausführliche Protokolle zur Fehlerbehebung aktivieren"
-      },
-      "resetSettings": {
-        "label": "Einstellungen zurücksetzen",
-        "description": "Alle Einstellungen auf Standardwerte zurücksetzen",
-        "button": "Zurücksetzen",
-        "confirm": "Sind Sie sicher, dass Sie alle Einstellungen zurücksetzen möchten?",
-        "warning": "Diese Aktion kann nicht rückgängig gemacht werden."
-      },
-      "clearCache": {
-        "label": "Cache löschen",
-        "description": "Cache für Erweiterungen und Symbole löschen",
-        "button": "Cache löschen",
-        "confirm": "Sind Sie sicher, dass Sie den Cache löschen möchten?",
-        "success": "Cache erfolgreich gelöscht"
-      },
-      "exportSettings": {
-        "label": "Einstellungen exportieren",
-        "description": "Einstellungen in eine Datei exportieren",
-        "button": "Exportieren"
-      },
-      "importSettings": {
-        "label": "Einstellungen importieren",
-        "description": "Einstellungen aus einer Datei importieren",
-        "button": "Importieren"
+      "debugMode": {
+        "title": "Debug Mode",
+        "description": "Show detailed logs when extensions fail to load or build.",
+        "label": "Enable debug mode"
       },
       "browserSearch": {
         "title": "Browser-Suche",
@@ -707,95 +734,10 @@
           "failed": "Aktion fehlgeschlagen."
         }
       }
-    },
-    "store": {
-      "title": "Erweiterungs-Store",
-      "search": {
-        "placeholder": "Erweiterungen suchen..."
-      },
-      "tabs": {
-        "featured": "Empfohlen",
-        "popular": "Beliebt",
-        "recent": "Neu",
-        "installed": "Installiert"
-      },
-      "categories": {
-        "all": "Alle",
-        "productivity": "Produktivität",
-        "developer": "Entwickler-Tools",
-        "system": "System",
-        "media": "Medien",
-        "communication": "Kommunikation",
-        "utilities": "Dienstprogramme"
-      },
-      "actions": {
-        "install": "Installieren",
-        "installing": "Installation...",
-        "installed": "Installiert",
-        "update": "Aktualisieren",
-        "updating": "Aktualisierung...",
-        "uninstall": "Deinstallieren",
-        "details": "Details"
-      },
-      "empty": {
-        "title": "Keine Erweiterungen gefunden",
-        "description": "Keine Erweiterungen entsprechen Ihrer Suche"
-      },
-      "error": {
-        "title": "Store konnte nicht geladen werden",
-        "description": "Verbindung zum Erweiterungs-Store nicht möglich. Bitte überprüfen Sie Ihre Internetverbindung."
-      }
     }
   },
   "launcher": {
     "searchPlaceholder": "Befehle suchen...",
-    "searchPlaceholderWithAI": "Befehle suchen oder KI fragen...",
-    "aiMode": {
-      "enabled": "KI-Modus aktiviert",
-      "disabled": "KI-Modus deaktiviert",
-      "toggle": "KI-Modus umschalten"
-    },
-    "categories": {
-      "all": "Alle",
-      "applications": "Anwendungen",
-      "extensions": "Erweiterungen",
-      "scripts": "Skripte",
-      "system": "System",
-      "files": "Dateien",
-      "bookmarks": "Lesezeichen",
-      "clipboard": "Zwischenablage",
-      "calculator": "Rechner",
-      "dictionary": "Wörterbuch",
-      "ai": "KI-Assistent"
-    },
-    "actions": {
-      "open": "Öffnen",
-      "reveal": "Im Finder anzeigen",
-      "copy": "Kopieren",
-      "paste": "Einfügen",
-      "delete": "Löschen",
-      "preferences": "Einstellungen",
-      "quit": "Anwendung beenden",
-      "forceQuit": "Anwendung erzwungen beenden",
-      "quitApp": "{appName} beenden",
-      "forceQuitApp": "{appName} beenden erzwingen",
-      "failedQuitting": "Beenden von {appName} fehlgeschlagen",
-      "forceQuitConfirm": "\"{appName}\" beenden erzwingen? Nicht gesicherte Änderungen gehen verloren.",
-      "uninstallApplication": "Anwendung deinstallieren",
-      "enableAutoQuit": "Auto-Beenden aktivieren",
-      "disableAutoQuit": "Auto-Beenden deaktivieren",
-      "disableApplication": "Anwendung deaktivieren",
-      "disableCommand": "Befehl deaktivieren"
-    },
-    "empty": {
-      "title": "Keine Ergebnisse",
-      "description": "Keine Elemente entsprechen Ihrer Suche"
-    },
-    "footer": {
-      "preferences": "Einstellungen",
-      "refresh": "Aktualisieren",
-      "help": "Hilfe"
-    },
     "browserSearch": {
       "openUrl": "{url} öffnen",
       "searchFor": "„{query}“ suchen",
@@ -803,48 +745,217 @@
         "openUrl": "Standardbrowser",
         "search": "Websuche"
       }
+    },
+    "compact": {
+      "showMore": "Show More"
+    },
+    "status": {
+      "discoveringApps": "Discovering apps...",
+      "noMatchingResults": "No matching results",
+      "results": "{count} results"
+    },
+    "aiMode": {
+      "placeholder": "Ask AI anything...",
+      "ask": "Ask",
+      "thinking": "Thinking...",
+      "streaming": "Streaming...",
+      "response": "AI Response",
+      "enterToAsk": "Ask",
+      "escToBack": "Back"
+    },
+    "categories": {
+      "recent": "Recent",
+      "applications": "Anwendungen",
+      "commands": "Commands",
+      "extensions": "Erweiterungen",
+      "scripts": "Skripte",
+      "settings": "Settings",
+      "files": "Dateien",
+      "calculator": "Rechner",
+      "quickLinks": "Quick Links"
+    },
+    "actions": {
+      "open": "Öffnen",
+      "openCommand": "Open Command",
+      "openFile": "Open File",
+      "execute": "Execute",
+      "run": "Run",
+      "copy": "Kopieren",
+      "copyPath": "Copy Path",
+      "copyDeeplink": "Copy Deeplink",
+      "copyToClipboard": "Copy to Clipboard",
+      "paste": "Einfügen",
+      "showDetails": "Show Details",
+      "showInFinder": "Show in Finder",
+      "revealInFinder": "Reveal in Finder",
+      "getInfo": "Get Info",
+      "quit": "Anwendung beenden",
+      "forceQuit": "Anwendung erzwungen beenden",
+      "quitApp": "{appName} beenden",
+      "forceQuitApp": "{appName} beenden erzwingen",
+      "failedQuitting": "Beenden von {appName} fehlgeschlagen",
+      "forceQuitConfirm": "\"{appName}\" beenden erzwingen? Nicht gesicherte Änderungen gehen verloren.",
+      "hide": "Hide",
+      "show": "Show",
+      "preferences": "Einstellungen",
+      "actions": "Actions",
+      "pinCommand": "Pin Command",
+      "unpinCommand": "Unpin Command",
+      "pinExtension": "Pin Extension",
+      "unpinExtension": "Unpin Extension",
+      "disableCommand": "Befehl deaktivieren",
+      "moveUp": "Move Up",
+      "moveDown": "Move Down",
+      "uninstallApplication": "Anwendung deinstallieren",
+      "enableAutoQuit": "Auto-Beenden aktivieren",
+      "disableAutoQuit": "Auto-Beenden deaktivieren",
+      "disableApplication": "Anwendung deaktivieren"
+    },
+    "empty": {
+      "noResults": "No results found",
+      "startTyping": "Start typing to search...",
+      "allCommands": "All your commands will appear here"
+    },
+    "footer": {
+      "actions": "Actions",
+      "select": "Select",
+      "back": "Back"
+    },
+    "sections": {
+      "selectedText": "Selected Text",
+      "pinned": "Pinned",
+      "results": "Results"
+    },
+    "calculator": {
+      "pressEnterToCopy": "Press Enter to copy",
+      "clickToCopy": "Click to copy",
+      "copy": "Copy"
+    },
+    "badges": {
+      "application": "Application",
+      "extension": "Extension",
+      "script": "Script",
+      "settings": "Settings",
+      "quickLink": "Quick Link"
     }
   },
   "scriptCommand": {
     "setup": {
       "title": "Skriptbefehl konfigurieren",
       "description": "Bitte geben Sie die erforderlichen Argumente ein, bevor Sie diesen Skriptbefehl ausführen.",
-      "arguments": "Argumente",
-      "optional": "Optional",
-      "required": "Erforderlich",
-      "run": "Ausführen",
-      "cancel": "Abbrechen"
+      "continue": "Continue"
     },
     "output": {
-      "title": "Skript-Ausgabe",
-      "stdout": "Standardausgabe",
-      "stderr": "Standardfehler",
-      "exitCode": "Exit-Code",
       "success": "Erfolg",
-      "failed": "Fehlgeschlagen",
-      "running": "Wird ausgeführt...",
-      "copyOutput": "Ausgabe kopieren",
-      "close": "Schließen",
-      "rerun": "Neu ausführen"
+      "exitCode": "Exit-Code",
+      "noOutput": "(No output)"
     }
   },
   "extension": {
     "setup": {
       "title": "{name} konfigurieren",
       "description": "Bitte konfigurieren Sie die Einstellungen, bevor Sie diese Erweiterung verwenden.",
+      "arguments": "Arguments",
       "preferences": "Einstellungen",
-      "save": "Einstellungen speichern",
-      "cancel": "Abbrechen",
-      "skip": "Überspringen"
+      "continue": "Continue",
+      "selectOption": "Select an option"
     }
   },
   "cursorPrompt": {
     "placeholder": "Fragen Sie die KI irgendetwas...",
-    "placeholderWithContext": "Fragen Sie zum ausgewählten Text...",
-    "send": "Senden",
-    "cancel": "Abbrechen",
-    "thinking": "Denkt nach...",
-    "error": "Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut."
+    "processing": "Processing...",
+    "ready": "Ready to apply",
+    "applied": "Applied in editor",
+    "close": "Close",
+    "accept": "Accept",
+    "submit": "Submit",
+    "enterToSubmit": "Enter"
+  },
+  "store": {
+    "title": "Store",
+    "community": "Community",
+    "searchPlaceholder": "Search extensions...",
+    "installedFirst": "Installed extensions appear first.",
+    "refresh": "Refresh",
+    "loading": "Loading extension catalog...",
+    "noResults": "No extensions match your search",
+    "noExtensions": "No extensions available",
+    "tryAgain": "Try a shorter query, another keyword, or a fuzzy match like part of the extension name.",
+    "refreshCatalog": "Refresh the catalog or try again in a moment.",
+    "clearSearch": "Clear Search",
+    "refreshButton": "Refresh Catalog",
+    "installed": "Installed",
+    "install": "Install Extension",
+    "update": "Update Extension",
+    "uninstall": "Uninstall Extension",
+    "openReadme": "Open README",
+    "viewSource": "View Source",
+    "installing": "Installing Extension",
+    "installedSuccess": "Extension Installed",
+    "installFailed": "Install Failed",
+    "tabs": {
+      "overview": "Overview",
+      "commands": "Commands",
+      "screenshots": "Screenshots",
+      "team": "Team"
+    },
+    "sections": {
+      "description": "Description",
+      "screenshots": "Screenshots",
+      "topCommands": "Top Commands",
+      "categories": "Categories",
+      "noDescription": "No description provided.",
+      "noScreenshots": "No screenshots declared.",
+      "noScreenshotsAvailable": "No screenshots available for this extension.",
+      "noCommands": "No commands declared.",
+      "moreCommands": "+{count} more commands",
+      "noContributors": "No contributors declared."
+    },
+    "actions": {
+      "title": "Actions"
+    },
+    "errorBoundary": {
+      "title": "Something went wrong loading the extension store.",
+      "retry": "Try Again"
+    }
+  },
+  "canvas": {
+    "searchPlaceholder": "Search canvases...",
+    "untitled": "Untitled Canvas",
+    "modified": "Modified",
+    "count": "{count} canvas{plural}",
+    "time": {
+      "justNow": "Just now"
+    },
+    "actions": {
+      "new": "New Canvas",
+      "open": "Open Canvas",
+      "rename": "Rename",
+      "duplicate": "Duplicate",
+      "copyDeeplink": "Copy Deeplink",
+      "exportJson": "Export as JSON",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "delete": "Delete Canvas"
+    },
+    "empty": {
+      "title": "No canvases yet",
+      "description": "Create your first canvas to get started",
+      "noSearchResults": "No canvases found",
+      "shortcutHint": "or press ⌘N"
+    },
+    "preview": {
+      "empty": "No preview yet — save the canvas to generate one",
+      "selectPrompt": "Select a canvas to preview"
+    },
+    "rename": {
+      "title": "Rename Canvas",
+      "placeholder": "Canvas name..."
+    },
+    "delete": {
+      "title": "Delete \"{title}\"?",
+      "description": "This action cannot be undone."
+    }
   },
   "clipboard": {
     "title": "Zwischenablage-Verlauf",
@@ -855,11 +966,7 @@
     "delete": "Löschen",
     "copy": "Kopieren",
     "paste": "Einfügen",
-    "text": "Text",
-    "image": "Bild",
-    "file": "Datei",
-    "link": "Link",
-    "code": "Code"
+    "searchPlaceholder": "Search clipboard history..."
   },
   "snippets": {
     "title": "Snippets",
@@ -867,31 +974,26 @@
     "create": "Snippet erstellen",
     "edit": "Snippet bearbeiten",
     "delete": "Snippet löschen",
+    "searchPlaceholder": "Search snippets...",
     "name": "Name",
-    "keyword": "Schlüsselwort",
     "content": "Inhalt",
-    "placeholder": {
-      "name": "Snippet-Name...",
-      "keyword": "Auslöse-Schlüsselwort...",
-      "content": "Snippet-Inhalt..."
-    }
+    "keyword": "Schlüsselwort",
+    "save": "Save Snippet"
   },
   "quickLinks": {
     "title": "Schnelllinks",
     "empty": "Keine Schnelllinks",
-    "add": "Link hinzufügen",
+    "create": "Create Quick Link",
     "edit": "Schnelllink bearbeiten",
     "delete": "Schnelllink löschen",
     "confirmDelete": "Erneut klicken zum Bestätigen",
+    "searchPlaceholder": "Search quick links...",
     "name": "Name",
     "url": "URL",
     "urlHint": "Mit {placeholder} kannst du dynamische Werte wie Zwischenablage oder Argumente einfügen.",
     "openWith": "Öffnen mit",
     "defaultBrowser": "Standardbrowser",
     "icon": "Symbol",
-    "openIn": "Öffnen in",
-    "browser": "Browser",
-    "app": "App",
     "save": "Schnelllink speichern",
     "saved": "Gespeichert",
     "saveFailed": "Schnelllink konnte nicht gespeichert werden.",
@@ -920,21 +1022,19 @@
   },
   "fileSearch": {
     "placeholder": "Dateien suchen...",
-    "filters": {
-      "all": "Alle",
-      "documents": "Dokumente",
-      "images": "Bilder",
-      "videos": "Videos",
-      "audio": "Audio",
-      "code": "Code",
-      "archives": "Archive"
-    },
     "noResults": "Keine Dateien gefunden",
-    "openFolder": "Ordner öffnen"
+    "searching": "Searching...",
+    "filters": "Filters",
+    "type": "Type",
+    "date": "Date",
+    "size": "Size"
   },
   "windowManager": {
     "title": "Fensterverwaltung",
-    "switchTo": "Wechseln zu",
+    "arrange": "Arrange Windows",
+    "resize": "Resize",
+    "move": "Move",
+    "focus": "Focus",
     "close": "Schließen",
     "minimize": "Minimieren",
     "maximize": "Maximieren",
@@ -945,31 +1045,32 @@
     "topHalf": "Obere Hälfte",
     "bottomHalf": "Untere Hälfte",
     "corners": "Ecken",
+    "displays": "Displays",
     "nextDisplay": "Nächster Bildschirm",
-    "previousDisplay": "Vorheriger Bildschirm",
-    "noWindows": "Keine geöffneten Fenster"
+    "previousDisplay": "Vorheriger Bildschirm"
   },
   "onboarding": {
-    "welcome": {
-      "title": "Willkommen bei SuperCmd",
-      "description": "Ein Raycast-kompatibler Open-Source-Launcher. Ein leistungsstarkes Tool zur Steigerung Ihrer Produktivität."
-    },
-    "steps": {
-      "hotkey": {
-        "title": "Tastenkürzel einrichten",
-        "description": "Wählen Sie ein globales Tastenkürzel zum Öffnen von SuperCmd von überall"
-      },
-      "extensions": {
-        "title": "Erweiterungen erkunden",
-        "description": "Durchsuchen und installieren Sie Erweiterungen aus dem Erweiterungs-Store"
-      },
-      "ai": {
-        "title": "KI einrichten (optional)",
-        "description": "Fügen Sie API-Schlüssel hinzu, um KI-Funktionen zu aktivieren"
-      }
-    },
+    "welcome": "Welcome to SuperCmd",
+    "description": "Your productivity launcher for macOS",
     "getStarted": "Loslegen",
     "skip": "Überspringen",
+    "next": "Next",
+    "previous": "Previous",
+    "finish": "Finish",
+    "features": {
+      "launcher": {
+        "title": "Quick Launcher",
+        "description": "Launch apps, run commands, and search files with a single shortcut."
+      },
+      "extensions": {
+        "title": "Extensions",
+        "description": "Install and use Raycast-compatible extensions to supercharge your workflow."
+      },
+      "ai": {
+        "title": "AI Integration",
+        "description": "Chat with AI, use speech-to-text, and let AI help you write and edit."
+      }
+    },
     "whisper": {
       "quick": {
         "title": "Whisper Quick Onboarding",
@@ -1083,11 +1184,13 @@
     }
   },
   "whisper": {
+    "title": "SuperCmd Whisper",
+    "description": "Speech-to-text made simple",
+    "start": "Start Speaking",
+    "stop": "Stop Speaking",
     "listening": "Hören...",
     "processing": "Verarbeitung...",
-    "speakNow": "Sprechen Sie jetzt",
-    "tapToStop": "Tippen zum Stoppen",
-    "error": "Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.",
+    "placeholder": "Speak now...",
     "close": "Close whisper",
     "coachmark": {
       "holdToTalk": "Whisper sits here. Hold {shortcut} to talk, release to type.",
@@ -1124,30 +1227,28 @@
   },
   "read": {
     "title": "Text vorlesen",
-    "play": "Wiedergabe",
-    "pause": "Pause",
+    "description": "Text-to-speech for any selected text",
+    "start": "Start Reading",
     "stop": "Stopp",
-    "speed": "Geschwindigkeit",
-    "voice": "Stimme"
+    "reading": "Reading...",
+    "noText": "No text selected"
   },
   "camera": {
     "title": "Kamera",
     "capture": "Aufnehmen",
-    "retake": "Neu aufnehmen",
-    "save": "Speichern",
-    "cancel": "Abbrechen",
+    "flip": "Flip Camera",
     "mirror": "Spiegeln",
-    "flash": "Blitz"
+    "settings": "Camera Settings"
   },
   "schedule": {
     "title": "Kalender",
-    "today": "Heute",
-    "tomorrow": "Morgen",
-    "week": "Diese Woche",
-    "month": "Dieser Monat",
-    "noEvents": "Keine anstehenden Ereignisse",
-    "addEvent": "Ereignis hinzufügen",
+    "newEvent": "New Event",
     "editEvent": "Ereignis bearbeiten",
-    "deleteEvent": "Ereignis löschen"
+    "deleteEvent": "Ereignis löschen",
+    "date": "Date",
+    "time": "Time",
+    "duration": "Duration",
+    "reminder": "Reminder",
+    "save": "Save Event"
   }
 }
