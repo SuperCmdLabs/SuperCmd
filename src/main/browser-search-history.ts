@@ -25,6 +25,7 @@ const execFileAsync = promisify(execFile);
 export type BrowserSearchEntryType = 'url' | 'search';
 export type BrowserSearchSource =
   | 'user'
+  | 'helium'
   | 'chrome'
   | 'arc'
   | 'brave'
@@ -118,6 +119,7 @@ function sanitizeEntry(raw: any): BrowserSearchEntry | null {
 
 const ALLOWED_SOURCES: Set<string> = new Set([
   'user',
+  'helium',
   'chrome',
   'arc',
   'brave',
@@ -379,6 +381,7 @@ export function listImportableBrowsers(): ImportableBrowser[] {
 
   // Chromium-family default profiles
   const chromium: { id: BrowserSearchSource; name: string; dbPath: string }[] = [
+    { id: 'helium', name: 'Helium', dbPath: path.join(home, 'Library/Application Support/net.imput.helium/Default/History') },
     { id: 'chrome', name: 'Google Chrome', dbPath: path.join(home, 'Library/Application Support/Google/Chrome/Default/History') },
     { id: 'arc', name: 'Arc', dbPath: path.join(home, 'Library/Application Support/Arc/User Data/Default/History') },
     { id: 'brave', name: 'Brave', dbPath: path.join(home, 'Library/Application Support/BraveSoftware/Brave-Browser/Default/History') },
