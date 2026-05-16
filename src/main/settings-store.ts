@@ -94,6 +94,17 @@ export interface BrowserSearchSettings {
   historyRetentionDays: number | null;
   /** Browser/profile sources enabled for SuperCmd browser history. */
   profileSourceIds: string[];
+  /** Legacy fallback for the number of rows to show per browser result group in root search. */
+  resultLimitPerGroup: number;
+  /** Ordered browser result providers and row counts for the root Browser section. */
+  resultGroups: BrowserSearchResultGroupSetting[];
+}
+
+export type BrowserSearchResultKind = 'open-tab' | 'bookmark' | 'history';
+
+export interface BrowserSearchResultGroupSetting {
+  kind: BrowserSearchResultKind;
+  limit: number;
 }
 
 export type AppFontSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
@@ -286,6 +297,12 @@ const DEFAULT_SETTINGS: AppSettings = {
     enabled: true,
     historyRetentionDays: 90,
     profileSourceIds: [],
+    resultLimitPerGroup: 2,
+    resultGroups: [
+      { kind: 'open-tab', limit: 2 },
+      { kind: 'bookmark', limit: 2 },
+      { kind: 'history', limit: 2 },
+    ],
   },
   popToRootSearchTimeoutSeconds: 90,
   installedExtensions: [],
@@ -427,13 +444,51 @@ function normalizeBrowserSearchProfileSourceIds(value: any): string[] {
   return out;
 }
 
+const BROWSER_SEARCH_RESULT_KINDS: BrowserSearchResultKind[] = ['open-tab', 'bookmark', 'history'];
+
+function normalizeBrowserSearchResultLimit(value: any, fallback: number): number {
+  const limit = Math.floor(Number(value));
+  return Number.isFinite(limit) ? Math.max(0, Math.min(8, limit)) : fallback;
+}
+
+function normalizeBrowserSearchResultGroups(value: any, legacyLimit: number): BrowserSearchResultGroupSetting[] {
+  const fallback = DEFAULT_SETTINGS.browserSearch.resultGroups;
+  const seen = new Set<BrowserSearchResultKind>();
+  const groups: BrowserSearchResultGroupSetting[] = [];
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const kind = String(item?.kind || '') as BrowserSearchResultKind;
+      if (!BROWSER_SEARCH_RESULT_KINDS.includes(kind)) continue;
+      if (seen.has(kind)) continue;
+      seen.add(kind);
+      const fallbackLimit = fallback.find((group) => group.kind === kind)?.limit ?? legacyLimit;
+      groups.push({ kind, limit: normalizeBrowserSearchResultLimit(item?.limit, fallbackLimit) });
+    }
+  }
+
+  const shouldUseLegacyLimit = groups.length === 0;
+  for (const kind of BROWSER_SEARCH_RESULT_KINDS) {
+    if (seen.has(kind)) continue;
+    const fallbackLimit = shouldUseLegacyLimit
+      ? legacyLimit
+      : fallback.find((group) => group.kind === kind)?.limit ?? legacyLimit;
+    groups.push({ kind, limit: fallbackLimit });
+  }
+
+  return groups;
+}
+
 function normalizeBrowserSearchSettings(value: any): BrowserSearchSettings {
   const fallback = DEFAULT_SETTINGS.browserSearch;
+  const resultLimit = normalizeBrowserSearchResultLimit(value?.resultLimitPerGroup, fallback.resultLimitPerGroup);
   if (!value || typeof value !== 'object') return { ...fallback };
   return {
     enabled: typeof value.enabled === 'boolean' ? value.enabled : fallback.enabled,
     historyRetentionDays: normalizeBrowserSearchRetentionDays(value.historyRetentionDays),
     profileSourceIds: normalizeBrowserSearchProfileSourceIds(value.profileSourceIds),
+    resultLimitPerGroup: resultLimit,
+    resultGroups: normalizeBrowserSearchResultGroups(value.resultGroups, resultLimit || fallback.resultLimitPerGroup),
   };
 }
 

@@ -15,6 +15,7 @@ import type {
   AppSettings,
   QuickLinkDynamicField,
   IndexedFileSearchResult,
+  BrowserSearchResultGroupSetting,
 } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
@@ -100,6 +101,12 @@ const MAX_LAUNCHER_FILE_RESULTS = 30;
 const MAX_LAUNCHER_FILE_CANDIDATE_RESULTS = 3000;
 const BROWSER_SEARCH_OPEN_URL_ID = 'browser-search-action-open-url';
 const BROWSER_SEARCH_PERFORM_SEARCH_ID = 'browser-search-action-perform-search';
+const BROWSER_SEARCH_RESULT_ID_PREFIX = 'browser-search-result:';
+const DEFAULT_BROWSER_SEARCH_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
+  { kind: 'open-tab', limit: 2 },
+  { kind: 'bookmark', limit: 2 },
+  { kind: 'history', limit: 2 },
+];
 const MAX_LAUNCHER_FILE_RESULT_ICONS = MAX_LAUNCHER_FILE_RESULTS;
 const MIN_LAUNCHER_FILE_QUERY_LENGTH = 2;
 const MAX_INLINE_EXTENSION_ARGUMENTS = 3;
@@ -231,6 +238,30 @@ function getFileResultPathFromCommand(command: CommandInfo | null | undefined): 
     }
   }
   return null;
+}
+
+function isBrowserSearchCommand(command: CommandInfo | null | undefined): boolean {
+  const id = String(command?.id || '');
+  return id === BROWSER_SEARCH_OPEN_URL_ID ||
+    id === BROWSER_SEARCH_PERFORM_SEARCH_ID ||
+    id.startsWith(BROWSER_SEARCH_RESULT_ID_PREFIX);
+}
+
+function normalizeBrowserSearchResultGroups(rawGroups: BrowserSearchResultGroupSetting[] | undefined): BrowserSearchResultGroupSetting[] {
+  const seen = new Set<string>();
+  const groups: BrowserSearchResultGroupSetting[] = [];
+  if (Array.isArray(rawGroups)) {
+    for (const group of rawGroups) {
+      if (group.kind !== 'open-tab' && group.kind !== 'bookmark' && group.kind !== 'history') continue;
+      if (seen.has(group.kind)) continue;
+      seen.add(group.kind);
+      groups.push({ kind: group.kind, limit: Math.max(0, Math.min(8, Math.floor(Number(group.limit) || 0))) });
+    }
+  }
+  for (const fallback of DEFAULT_BROWSER_SEARCH_RESULT_GROUPS) {
+    if (!seen.has(fallback.kind)) groups.push(fallback);
+  }
+  return groups;
 }
 
 function getExtensionIdentityFromCommand(
@@ -366,6 +397,9 @@ const App: React.FC = () => {
   const [autoQuitAppPaths, setAutoQuitAppPaths] = useState<Set<string>>(new Set());
   const browserSearch = useBrowserSearch(searchQuery);
   const [browserSearchSkipAutoComplete, setBrowserSearchSkipAutoComplete] = useState(false);
+  const [browserSearchResultGroups, setBrowserSearchResultGroups] = useState<BrowserSearchResultGroupSetting[]>(
+    DEFAULT_BROWSER_SEARCH_RESULT_GROUPS
+  );
   const [inlineExtensionArgumentValues, setInlineExtensionArgumentValues] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -672,6 +706,7 @@ const App: React.FC = () => {
         }, {} as Record<string, string>)
       );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
+      setBrowserSearchResultGroups(normalizeBrowserSearchResultGroups(settings.browserSearch?.resultGroups));
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
@@ -1093,6 +1128,7 @@ const App: React.FC = () => {
         )
       );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
+      setBrowserSearchResultGroups(normalizeBrowserSearchResultGroups(settings.browserSearch?.resultGroups));
       setDisableFileSearchResults(Boolean(settings.disableFileSearchResults));
       setNavigationStyle(settings.navigationStyle === 'macos' ? 'macos' : 'vim');
       const popToRootSeconds = Number(settings.popToRootSearchTimeoutSeconds);
@@ -1901,13 +1937,21 @@ const App: React.FC = () => {
     if (!resolved) return null;
     if (resolved.type === 'url') {
       const displayUrl = subject.replace(/^https?:\/\//i, '').replace(/\/+$/, '') || resolved.host || subject;
+      const browserMatchKind = browserSearch.getMatchKind(subject, browserSearchAutoComplete);
+      const hasOpenTabMatch = browserMatchKind === 'open-tab';
       return {
         id: BROWSER_SEARCH_OPEN_URL_ID,
         title: t('launcher.browserSearch.openUrl', { url: displayUrl }),
-        subtitle: t('launcher.browserSearch.subtitle.openUrl'),
+        subtitle: hasOpenTabMatch
+          ? t('launcher.browserSearch.subtitle.openTabMatch')
+          : t('launcher.browserSearch.subtitle.openUrl'),
         category: 'system',
         keywords: [],
         alwaysOnTop: true,
+        browserMatchKind,
+        browserResultKind: hasOpenTabMatch ? 'open-tab' : undefined,
+        browserActionInput: subject,
+        browserFocusAvailable: hasOpenTabMatch,
       };
     }
     // Search intent: suppress when there are real app/command/contextual
@@ -1927,11 +1971,33 @@ const App: React.FC = () => {
       category: 'system',
       keywords: [],
       alwaysOnTop: true,
+      browserMatchKind: 'search',
+      browserResultKind: 'search',
+      browserActionInput: subject,
     };
-  }, [browserSearch, launcherInputValue, aiMode, t, groupedCommands]);
+  }, [browserSearch, browserSearchAutoComplete, launcherInputValue, aiMode, t, groupedCommands]);
+
+  const browserSearchResultCommands = useMemo<CommandInfo[]>(() => {
+    if (!browserSearch.enabled) return [];
+    if (aiMode) return [];
+    const subject = searchQuery.trim();
+    if (!subject) return [];
+    return browserSearch.getResults(subject, browserSearchResultGroups).map((result, index) => ({
+      id: `${BROWSER_SEARCH_RESULT_ID_PREFIX}${result.kind}:${index}:${result.id}`,
+      title: result.title,
+      subtitle: result.subtitle,
+      category: 'system',
+      keywords: [result.title, result.subtitle, result.url],
+      browserMatchKind: result.kind === 'open-tab' ? 'open-tab' : 'history',
+      browserResultKind: result.kind,
+      browserActionInput: result.actionInput,
+      browserFocusAvailable: result.focusAvailable,
+    }));
+  }, [browserSearch, browserSearchResultGroups, searchQuery, aiMode]);
 
   const displayCommands = useMemo(() => {
     const all = [
+      ...browserSearchResultCommands,
       ...groupedCommands.contextual,
       ...groupedCommands.pinned,
       ...groupedCommands.recent,
@@ -1944,7 +2010,7 @@ const App: React.FC = () => {
     const rest = all.filter((c) => !c.alwaysOnTop);
     const ordered = [...top, ...rest];
     return browserSearchSyntheticCommand ? [browserSearchSyntheticCommand, ...ordered] : ordered;
-  }, [groupedCommands, browserSearchSyntheticCommand]);
+  }, [browserSearchResultCommands, groupedCommands, browserSearchSyntheticCommand]);
 
   useEffect(() => {
     itemRefs.current = itemRefs.current.slice(0, displayCommands.length + calcOffset);
@@ -2387,10 +2453,10 @@ const App: React.FC = () => {
   }, [searchQuery, browserSearchSkipAutoComplete]);
 
   const submitBrowserSearch = useCallback(
-    async (input: string) => {
+    async (input: string, options?: { focusExistingTab?: boolean }) => {
       const trimmed = input.trim();
       if (!trimmed) return false;
-      const ok = await browserSearch.executeBrowserSearch(trimmed);
+      const ok = await browserSearch.executeBrowserSearch(trimmed, options);
       if (ok) {
         setBrowserSearchSkipAutoComplete(false);
         try { window.electron.hideWindow(); } catch {}
@@ -2570,6 +2636,16 @@ const App: React.FC = () => {
             const selected = displayCommands[selectedIndex - calcOffset];
             if (selectedFileResultPath && e.metaKey) {
               void revealFileResultByPath(selectedFileResultPath);
+            } else if (
+              e.metaKey &&
+              !e.shiftKey &&
+              !e.ctrlKey &&
+              !e.altKey &&
+              selected &&
+              isBrowserSearchCommand(selected) &&
+              selected.browserFocusAvailable
+            ) {
+              void submitBrowserSearch(String(selected.browserActionInput || launcherInputValue).trim(), { focusExistingTab: true });
             } else if (selected) {
               handleCommandExecute(selected);
             }
@@ -3129,8 +3205,8 @@ const App: React.FC = () => {
       // Browser-search synthetic action: open the resolved URL/search query
       // in the default browser. Bypasses recent-commands tracking — the
       // browser-search history module records the entry itself.
-      if (command.id === BROWSER_SEARCH_OPEN_URL_ID || command.id === BROWSER_SEARCH_PERFORM_SEARCH_ID) {
-        const subject = launcherInputValue.trim();
+      if (isBrowserSearchCommand(command)) {
+        const subject = String(command.browserActionInput || launcherInputValue).trim();
         if (subject) {
           await submitBrowserSearch(subject);
         }
@@ -3354,6 +3430,26 @@ const App: React.FC = () => {
               await fetchCommands({ showLoading: false });
             },
           },
+        ] as LauncherAction[];
+      }
+
+      if (isBrowserSearchCommand(command)) {
+        const hasOpenTabMatch = command.browserFocusAvailable === true;
+        return [
+          {
+            id: 'open-browser-result',
+            title: t('launcher.actions.open'),
+            shortcut: 'Enter',
+            icon: <ExternalLink className="w-4 h-4" />,
+            execute: () => handleCommandExecute(command),
+          },
+          ...(hasOpenTabMatch ? [{
+            id: 'focus-existing-tab',
+            title: t('launcher.actions.focusExistingTab'),
+            shortcut: 'Cmd+Enter',
+            icon: <CornerDownLeft className="w-4 h-4" />,
+            execute: () => submitBrowserSearch(String(command.browserActionInput || launcherInputValue).trim(), { focusExistingTab: true }),
+          }] : []),
         ] as LauncherAction[];
       }
 
@@ -3630,6 +3726,8 @@ const App: React.FC = () => {
       showLauncherFooterStatus,
       autoQuitAppPaths,
       toggleAutoQuitForApp,
+      submitBrowserSearch,
+      launcherInputValue,
       t,
     ]
   );
@@ -4627,6 +4725,7 @@ const App: React.FC = () => {
                 const strip = (items: CommandInfo[]) => items.filter((c) => !topIds.has(c.id));
                 return [
                   { title: '', items: allTopItems },
+                  { title: t('launcher.categories.browser'), items: strip(browserSearchResultCommands) },
                   { title: t('launcher.sections.selectedText'), items: strip(groupedCommands.contextual) },
                   { title: t('launcher.sections.pinned'), items: strip(groupedCommands.pinned) },
                   { title: t('launcher.categories.recent'), items: strip(groupedCommands.recent) },
@@ -4657,6 +4756,9 @@ const App: React.FC = () => {
                       const commandAlias = String(commandAliases[command.id] || '').trim();
                       const commandHotkey = String(commandHotkeys[command.id] || '').trim();
                       const hotkeyParts = commandHotkey ? getShortcutDisplayParts(commandHotkey) : [];
+                      const browserFocusParts = command.browserMatchKind === 'open-tab'
+                        ? getShortcutDisplayParts('Cmd+Enter')
+                        : [];
                       acc.nodes.push(
                         <div
                           key={command.id}
@@ -4711,6 +4813,18 @@ const App: React.FC = () => {
                                 </span>
                               ) : null}
                             </div>
+                            {browserFocusParts.length > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-[0.6875rem] text-[var(--text-muted)] font-medium flex-shrink-0">
+                                <span>{t('launcher.browserSearch.focusHint')}</span>
+                                <span className="inline-flex items-center gap-0.5">
+                                  {browserFocusParts.map((part, idx) => (
+                                    <kbd key={idx} className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] px-1 text-[10px] font-medium text-[var(--text-muted)]">
+                                      {part}
+                                    </kbd>
+                                  ))}
+                                </span>
+                              </span>
+                            ) : null}
                             {typeBadgeLabel ? (
                               <div className="text-[var(--text-muted)] text-[0.6875rem] font-medium leading-none flex-shrink-0 truncate">
                                 {typeBadgeLabel}

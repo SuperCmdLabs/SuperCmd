@@ -71,6 +71,19 @@ export interface BrowserTabDurableHistoryEntry {
   url?: string;
 }
 
+interface BrowserTabFocusCommand {
+  id: string;
+  type: 'focus-tab';
+  windowId: string;
+  tabId: string;
+}
+
+interface BrowserTabCommandResult {
+  id: string;
+  ok: boolean;
+  error?: string;
+}
+
 type BrowserOpenTarget = {
   browserId: string;
   profileId: string;
@@ -79,6 +92,10 @@ type BrowserOpenTarget = {
 
 let tabsById = new Map<string, BrowserTabEntry>();
 let recentNavigationsByKey = new Map<string, BrowserTabRecentNavigation>();
+let commandSequence = 0;
+const pendingCommandsByProfile = new Map<string, BrowserTabFocusCommand[]>();
+const commandPollersByProfile = new Map<string, Array<(command: BrowserTabFocusCommand | null) => void>>();
+const commandResultWaiters = new Map<string, (result: BrowserTabCommandResult) => void>();
 let devServer: Server | null = null;
 
 export function listBrowserTabs(): BrowserTabEntry[] {
@@ -156,6 +173,24 @@ export async function openBrowserTabForInput(rawInput: string): Promise<{
   }
 }
 
+export async function focusBrowserTabForInput(rawInput: string): Promise<{
+  ok: boolean;
+  url: string | null;
+  tab: BrowserTabEntry | null;
+  reason?: string;
+}> {
+  const tab = findBrowserTabForInput(rawInput);
+  if (!tab) return { ok: false, url: null, tab: null, reason: 'No open tab match' };
+
+  try {
+    const result = await sendFocusTabCommand(tab);
+    if (result.ok) return { ok: true, url: tab.url, tab };
+    return { ok: false, url: tab.url, tab, reason: result.error || 'Failed to focus tab' };
+  } catch (e: any) {
+    return { ok: false, url: tab.url, tab, reason: e?.message || 'Failed to focus tab' };
+  }
+}
+
 export function replaceBrowserTabsForProfile(raw: BrowserTabSnapshotPayload): BrowserTabEntry[] {
   const payload = normalizeSnapshotPayload(raw);
   const now = Date.now();
@@ -178,6 +213,48 @@ export function replaceBrowserTabsForProfile(raw: BrowserTabSnapshotPayload): Br
   }
   pruneRecentNavigations();
   return nextTabs;
+}
+
+async function sendFocusTabCommand(tab: BrowserTabEntry): Promise<BrowserTabCommandResult> {
+  const command: BrowserTabFocusCommand = {
+    id: `focus-${Date.now()}-${++commandSequence}`,
+    type: 'focus-tab',
+    windowId: tab.windowId,
+    tabId: tab.tabId,
+  };
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      commandResultWaiters.delete(command.id);
+      removePendingCommand(tab.profileSourceId, command.id);
+      resolve({ id: command.id, ok: false, error: 'Timed out waiting for browser extension' });
+    }, 2000);
+
+    commandResultWaiters.set(command.id, (result) => {
+      clearTimeout(timeout);
+      resolve(result);
+    });
+
+    enqueueCommand(tab.profileSourceId, command);
+  });
+}
+
+function enqueueCommand(profileSourceId: string, command: BrowserTabFocusCommand): void {
+  const pollers = commandPollersByProfile.get(profileSourceId) || [];
+  const poller = pollers.shift();
+  if (poller) {
+    poller(command);
+    return;
+  }
+  commandPollersByProfile.set(profileSourceId, pollers);
+  const queue = pendingCommandsByProfile.get(profileSourceId) || [];
+  queue.push(command);
+  pendingCommandsByProfile.set(profileSourceId, queue.slice(-20));
+}
+
+function removePendingCommand(profileSourceId: string, commandId: string): void {
+  const queue = pendingCommandsByProfile.get(profileSourceId) || [];
+  pendingCommandsByProfile.set(profileSourceId, queue.filter((command) => command.id !== commandId));
 }
 
 function recordRecentNavigation(tab: BrowserTabEntry, previous: BrowserTabEntry | undefined): void {
@@ -214,11 +291,19 @@ function findBrowserTabForInput(rawInput: string): BrowserTabEntry | null {
     const fullStripped = url.replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase();
     const host = tab.host.toLowerCase();
     const title = tab.title.toLowerCase();
-    const matchesUrl = fullStripped.startsWith(stripped) || fullStripped.replace(/^www\./, '').startsWith(stripped);
+    const matchesUrl =
+      fullStripped.startsWith(stripped) ||
+      fullStripped.replace(/^www\./, '').startsWith(stripped) ||
+      (stripped.length >= 3 && fullStripped.includes(stripped));
     const matchesHost = host.startsWith(stripped) || host.replace(/^www\./, '').startsWith(stripped);
-    const matchesTitle = title.startsWith(lower);
+    const matchesTitle = title.startsWith(lower) || (lower.length >= 3 && title.includes(lower));
     if (!matchesUrl && !matchesHost && !matchesTitle) continue;
-    const score = (tab.active ? 100 : 0) + Math.max(0, 60 - ((Date.now() - tab.updatedAt) / 1000));
+    const score =
+      (matchesUrl ? 200 : 0) +
+      (matchesHost ? 100 : 0) +
+      (matchesTitle ? 80 : 0) +
+      (tab.active ? 100 : 0) +
+      Math.max(0, 60 - ((Date.now() - tab.updatedAt) / 1000));
     if (!best || score > best.score) best = { tab, score };
   }
 
@@ -302,7 +387,24 @@ export function startBrowserTabsDevServer(options: {
       return;
     }
 
-    if (req.method !== 'POST' || req.url !== '/browser-tabs/snapshot') {
+    const parsedUrl = parseRequestUrl(req);
+    if (req.method === 'GET' && parsedUrl.pathname === '/browser-tabs/commands') {
+      handleCommandPoll(req, res, parsedUrl);
+      return;
+    }
+
+    if (req.method === 'POST' && parsedUrl.pathname === '/browser-tabs/command-result') {
+      try {
+        const body = await readJsonBody(req, 64 * 1024);
+        handleCommandResult(body as BrowserTabCommandResult);
+        writeJson(res, 200, { ok: true });
+      } catch (e: any) {
+        writeJson(res, 400, { ok: false, error: e?.message || 'invalid_payload' });
+      }
+      return;
+    }
+
+    if (req.method !== 'POST' || parsedUrl.pathname !== '/browser-tabs/snapshot') {
       writeJson(res, 404, { ok: false, error: 'not_found' });
       return;
     }
@@ -326,6 +428,67 @@ export function startBrowserTabsDevServer(options: {
   });
 
   return devServer;
+}
+
+function handleCommandPoll(req: IncomingMessage, res: ServerResponse, parsedUrl: URL): void {
+  const profileSourceId = cleanProfileSourceId(parsedUrl.searchParams.get('profileSourceId') || '');
+  if (!profileSourceId) {
+    writeJson(res, 400, { ok: false, error: 'missing_profile_source_id' });
+    return;
+  }
+
+  const queue = pendingCommandsByProfile.get(profileSourceId) || [];
+  const command = queue.shift();
+  pendingCommandsByProfile.set(profileSourceId, queue);
+  if (command) {
+    writeJson(res, 200, { ok: true, command });
+    return;
+  }
+
+  let settled = false;
+  const complete = (nextCommand: BrowserTabFocusCommand | null) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+    removeCommandPoller(profileSourceId, complete);
+    writeJson(res, 200, { ok: true, command: nextCommand });
+  };
+  const timeout = setTimeout(() => complete(null), 25000);
+  req.on('close', () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+    removeCommandPoller(profileSourceId, complete);
+  });
+
+  const pollers = commandPollersByProfile.get(profileSourceId) || [];
+  pollers.push(complete);
+  commandPollersByProfile.set(profileSourceId, pollers);
+}
+
+function removeCommandPoller(
+  profileSourceId: string,
+  poller: (command: BrowserTabFocusCommand | null) => void
+): void {
+  const pollers = commandPollersByProfile.get(profileSourceId) || [];
+  commandPollersByProfile.set(profileSourceId, pollers.filter((candidate) => candidate !== poller));
+}
+
+function handleCommandResult(result: BrowserTabCommandResult): void {
+  const id = String(result?.id || '').trim();
+  if (!id) return;
+  const waiter = commandResultWaiters.get(id);
+  if (!waiter) return;
+  commandResultWaiters.delete(id);
+  waiter({
+    id,
+    ok: Boolean(result.ok),
+    error: typeof result.error === 'string' ? result.error : undefined,
+  });
+}
+
+function parseRequestUrl(req: IncomingMessage): URL {
+  return new URL(req.url || '/', `http://127.0.0.1:${BROWSER_TABS_DEV_SERVER_PORT}`);
 }
 
 function normalizeSnapshotPayload(raw: BrowserTabSnapshotPayload): BrowserTabSnapshotPayload {
@@ -411,7 +574,7 @@ function cleanName(value: unknown): string {
 
 function setCorsHeaders(res: ServerResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
 }

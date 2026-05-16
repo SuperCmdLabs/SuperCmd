@@ -690,6 +690,8 @@ const electronAPI = {
     ipcRenderer.invoke('browser-tabs:list'),
   browserTabsOpen: (input: string): Promise<{ ok: boolean; url: string | null; tab: any | null }> =>
     ipcRenderer.invoke('browser-tabs:open', input),
+  browserTabsFocus: (input: string): Promise<{ ok: boolean; url: string | null; tab: any | null; reason?: string }> =>
+    ipcRenderer.invoke('browser-tabs:focus', input),
   onBrowserTabsChanged: (callback: () => void): (() => void) => {
     const listener = (_event: any) => callback();
     ipcRenderer.on('browser-tabs-changed', listener);

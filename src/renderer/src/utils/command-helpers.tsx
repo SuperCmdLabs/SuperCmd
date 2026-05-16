@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { Search, Power, Settings, Puzzle, Sparkles, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Lock, Trash2, Store, Globe } from 'lucide-react';
+import { Search, Power, Settings, Puzzle, Sparkles, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Lock, Trash2, Store, Globe, PanelTop, Bookmark, Clock } from 'lucide-react';
 import type { CommandInfo, EdgeTtsVoice } from '../../types/electron';
 import supercmdLogo from '../../../../supercmd.svg';
 import IconCalendar from '../icons/Calendar';
@@ -377,6 +377,15 @@ export function getCommandAccessoryLabel(command: CommandInfo): string {
 }
 
 export function getCommandTypeBadgeLabel(command: CommandInfo, t?: Translator): string {
+  if (command.browserResultKind === 'open-tab') {
+    return t ? t('launcher.badges.openTab') : 'Open Tab';
+  }
+  if (command.browserResultKind === 'bookmark') {
+    return t ? t('launcher.badges.bookmark') : 'Bookmark';
+  }
+  if (command.browserResultKind === 'history') {
+    return t ? t('launcher.badges.history') : 'History';
+  }
   const commandId = String(command.id || '').trim();
   if (commandId.startsWith('quicklink-')) {
     return t ? t('launcher.badges.quickLink') : 'Quick Link';
@@ -959,6 +968,27 @@ export function renderCommandIcon(command: CommandInfo): React.ReactNode {
         style={{ background: 'var(--icon-neutral-bg)', color: 'var(--icon-neutral-fg)' }}
       >
         {renderQuickLinkIconGlyph(command.iconName, 'w-3.5 h-3.5')}
+      </div>
+    );
+  }
+  if (command.browserResultKind === 'open-tab') {
+    return (
+      <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
+        <PanelTop className="w-3 h-3 text-cyan-300" />
+      </div>
+    );
+  }
+  if (command.browserResultKind === 'bookmark') {
+    return (
+      <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
+        <Bookmark className="w-3 h-3 text-amber-300" />
+      </div>
+    );
+  }
+  if (command.browserResultKind === 'history') {
+    return (
+      <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
+        <Clock className="w-3 h-3 text-sky-300" />
       </div>
     );
   }

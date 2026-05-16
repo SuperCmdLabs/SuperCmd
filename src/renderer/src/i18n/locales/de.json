@@ -732,6 +732,25 @@
           "cleared": "Browserprofil-Verlauf gelöscht.",
           "imported": "{count} von {total} Einträgen aktualisiert.",
           "failed": "Aktion fehlgeschlagen."
+        },
+        "resultGroups": {
+          "label": "Priorität im Browser-Bereich",
+          "kind": {
+            "open-tab": "Offene Tabs",
+            "bookmark": "Lesezeichen",
+            "history": "Verlauf"
+          },
+          "description": {
+            "open-tab": "Live-Tabs, die in verbundenen Profilen geöffnet sind.",
+            "bookmark": "Gespeicherte Lesezeichen aus verbundenen Profilen.",
+            "history": "Besuchte Seiten aus verbundenen Profilen."
+          },
+          "option": {
+            "none": "Keine",
+            "count": "{count} Zeilen"
+          },
+          "moveUp": "Nach oben",
+          "moveDown": "Nach unten"
         }
       }
     },
@@ -793,10 +812,12 @@
       "clipboard": "Zwischenablage",
       "calculator": "Rechner",
       "dictionary": "Wörterbuch",
-      "ai": "KI-Assistent"
+      "ai": "KI-Assistent",
+      "browser": "Browser"
     },
     "actions": {
       "open": "Öffnen",
+      "focusExistingTab": "Vorhandenen Tab fokussieren",
       "reveal": "Im Finder anzeigen",
       "copy": "Kopieren",
       "paste": "Einfügen",
@@ -828,8 +849,15 @@
       "searchFor": "„{query}“ suchen",
       "subtitle": {
         "openUrl": "Standardbrowser",
-        "search": "Websuche"
-      }
+        "search": "Websuche",
+        "openTabMatch": "Offener Tab gefunden"
+      },
+      "focusHint": "Tab fokussieren"
+    },
+    "badges": {
+      "openTab": "Offener Tab",
+      "bookmark": "Lesezeichen",
+      "history": "Verlauf"
     }
   },
   "scriptCommand": {
