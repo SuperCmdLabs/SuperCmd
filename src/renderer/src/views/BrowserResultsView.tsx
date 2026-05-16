@@ -7,7 +7,7 @@ import {
   normalizeBookmarkNickname,
 } from '../utils/browser-search-commands';
 import { getQuickLinkPromptPanelStyle } from '../components/launcher-overlay-style';
-import LauncherSurface from '../components/LauncherSurface';
+import LauncherViewShell from '../components/LauncherViewShell';
 import { renderCommandIcon } from '../utils/command-helpers';
 
 export type BrowserResultsViewSection = {
@@ -101,8 +101,8 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
 }) => {
   return (
     <>
-      {alwaysMountedRunners}
-      <LauncherSurface
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
         backgroundImageUrl={backgroundImageUrl}
         showBackground={showBackground}
         backgroundBlurPercent={backgroundBlurPercent}
@@ -324,7 +324,7 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
             ) : null}
           </div>
         </div>
-      </LauncherSurface>
+      </LauncherViewShell>
       {bookmarkNicknamePrompt ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-5"

@@ -5,7 +5,7 @@ import type { LauncherAction, MemoryFeedback } from '../utils/command-helpers';
 import type { QuickLinkDynamicPromptState } from '../components/QuickLinkDynamicPromptOverlay';
 import type { LauncherContextMenuState } from '../components/LauncherContextMenuOverlay';
 import type { LauncherCommandSection } from '../components/LauncherCommandList';
-import LauncherSurface from '../components/LauncherSurface';
+import LauncherViewShell from '../components/LauncherViewShell';
 import LauncherSearchHeader from '../components/LauncherSearchHeader';
 import LauncherCompactShowMoreRow from '../components/LauncherCompactShowMoreRow';
 import LauncherCommandList from '../components/LauncherCommandList';
@@ -195,8 +195,8 @@ const LauncherMainView: React.FC<LauncherMainViewProps> = ({
   t,
 }) => (
   <>
-    {alwaysMountedRunners}
-    <LauncherSurface
+    <LauncherViewShell
+      alwaysMountedRunners={alwaysMountedRunners}
       backgroundImageUrl={backgroundImageUrl}
       showBackground={Boolean(backgroundImageUrl)}
       backgroundBlurPercent={backgroundBlurPercent}
@@ -271,7 +271,7 @@ const LauncherMainView: React.FC<LauncherMainViewProps> = ({
           t={t}
         />
       )}
-    </LauncherSurface>
+    </LauncherViewShell>
     <QuickLinkDynamicPromptOverlay
       prompt={quickLinkDynamicPrompt}
       inputRef={quickLinkDynamicInputRef}

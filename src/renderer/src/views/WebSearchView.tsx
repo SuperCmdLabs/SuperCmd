@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowLeft, Plus } from 'lucide-react';
-import LauncherSurface from '../components/LauncherSurface';
+import LauncherViewShell from '../components/LauncherViewShell';
 import { getQuickLinkPromptPanelStyle } from '../components/launcher-overlay-style';
 import { renderCommandIcon } from '../utils/command-helpers';
 import {
@@ -126,8 +126,8 @@ const WebSearchView: React.FC<WebSearchViewProps> = ({
 
   return (
     <>
-      {alwaysMountedRunners}
-      <LauncherSurface
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
         backgroundImageUrl={backgroundImageUrl}
         showBackground={showBackground}
         backgroundBlurPercent={backgroundBlurPercent}
@@ -361,7 +361,7 @@ const WebSearchView: React.FC<WebSearchViewProps> = ({
             ) : null}
           </div>
         </div>
-      </LauncherSurface>
+      </LauncherViewShell>
       {bangPrompt ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-5"
