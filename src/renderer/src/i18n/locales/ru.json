@@ -310,7 +310,7 @@
           "addedHeading": "Добавленные профили",
           "noneFound": "Поддерживаемые профили браузера не найдены",
           "noneAdded": "Профили браузера еще не добавлены",
-          "profileRowDetail": "История: URL {count} · Вкладки/закладки: еще не импортируются",
+          "profileRowDetail": "История: URL {historyCount} · Закладки: {bookmarkCount} · Вкладки: еще не импортируются",
           "profileSupportNote": "Поддержка профилей сейчас включает только браузеры Chromium. Поддержка Safari и Firefox будет добавлена позже.",
           "enabledProfiles": "Для истории браузера SuperCmd включено профилей: {count}."
         },

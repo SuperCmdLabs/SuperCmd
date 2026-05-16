@@ -201,6 +201,12 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
     counts.set(profileSourceId, (counts.get(profileSourceId) || 0) + 1);
     return counts;
   }, new Map<string, number>());
+  const bookmarkCountByProfileId = entries.reduce((counts, entry) => {
+    if (entry.type !== 'bookmark' || !entry.sourceProfileId) return counts;
+    const profileSourceId = `${entry.source}:${entry.sourceProfileId}`;
+    counts.set(profileSourceId, (counts.get(profileSourceId) || 0) + 1);
+    return counts;
+  }, new Map<string, number>());
 
   return (
     <div className="grid gap-3 px-4 py-3.5 md:px-5 md:grid-cols-[220px_minmax(0,1fr)] border-b border-[var(--ui-divider)]">
@@ -328,7 +334,8 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
                           </div>
                           <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
                             {t('settings.advanced.browserSearch.import.profileRowDetail', {
-                              count: String(historyCountByProfileId.get(profile.id) || 0),
+                              historyCount: String(historyCountByProfileId.get(profile.id) || 0),
+                              bookmarkCount: String(bookmarkCountByProfileId.get(profile.id) || 0),
                             })}
                           </div>
                         </div>

@@ -731,7 +731,7 @@
           "addedHeading": "已加入的個人檔案",
           "noneFound": "未偵測到支援的瀏覽器個人檔案",
           "noneAdded": "尚未加入瀏覽器個人檔案",
-          "profileRowDetail": "歷史記錄：{count} 個 URL · 分頁/書籤：尚未匯入",
+          "profileRowDetail": "歷史記錄：{historyCount} 個 URL · 書籤：{bookmarkCount} · 分頁：尚未匯入",
           "profileSupportNote": "個人檔案支援目前僅包含 Chromium 瀏覽器。Safari 和 Firefox 支援將於稍後加入。",
           "enabledProfiles": "已為 SuperCmd 瀏覽器歷史啟用 {count} 個個人檔案。"
         },
