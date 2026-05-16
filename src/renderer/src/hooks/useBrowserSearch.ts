@@ -85,7 +85,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     // surface instead of just the bare host. Also try the `www.`-stripped form.
     let bestUrl: { entry: BrowserSearchEntry; matched: string; score: number } | null = null;
     for (const entry of list) {
-      if (entry.type !== 'url') continue;
+      if (entry.type !== 'url' && entry.type !== 'bookmark') continue;
       const sourceUrl = entry.url || entry.host;
       if (!sourceUrl) continue;
       const fullStripped = sourceUrl.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
@@ -110,10 +110,10 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
       };
     }
 
-    // Pass 2: search query prefix.
+    // Pass 2: bookmark-title and search query prefix.
     let bestSearch: { entry: BrowserSearchEntry; score: number } | null = null;
     for (const entry of list) {
-      if (entry.type !== 'search') continue;
+      if (entry.type !== 'search' && entry.type !== 'bookmark') continue;
       if (entry.query.length <= input.length) continue;
       if (!entry.query.toLowerCase().startsWith(lower)) continue;
       const score = frecency(entry);

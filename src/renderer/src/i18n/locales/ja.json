@@ -731,7 +731,7 @@
           "addedHeading": "追加済みプロファイル",
           "noneFound": "対応するブラウザプロファイルが見つかりません",
           "noneAdded": "ブラウザプロファイルはまだ追加されていません",
-          "profileRowDetail": "履歴: {count} URL · タブ/ブックマーク: 未インポート",
+          "profileRowDetail": "履歴: {historyCount} URL · ブックマーク: {bookmarkCount} · タブ: 未インポート",
           "profileSupportNote": "プロファイル対応は現在 Chromium ブラウザのみです。Safari と Firefox は今後対応予定です。",
           "enabledProfiles": "SuperCmd のブラウザ履歴で {count} 個のプロファイルが有効です。"
         },

@@ -710,7 +710,7 @@
           "addedHeading": "Profils ajoutés",
           "noneFound": "Aucun profil de navigateur compatible détecté",
           "noneAdded": "Aucun profil de navigateur ajouté",
-          "profileRowDetail": "Historique : {count} URL · Onglets/signets : pas encore importés",
+          "profileRowDetail": "Historique : {historyCount} URL · Signets : {bookmarkCount} · Onglets : pas encore importés",
           "profileSupportNote": "La prise en charge des profils inclut actuellement uniquement les navigateurs Chromium. Safari et Firefox seront ajoutés plus tard.",
           "enabledProfiles": "{count} profil(s) activé(s) pour l'historique navigateur de SuperCmd."
         },

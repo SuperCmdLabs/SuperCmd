@@ -22,7 +22,7 @@ import { loadSettings } from './settings-store';
 
 const execFileAsync = promisify(execFile);
 
-export type BrowserSearchEntryType = 'url' | 'search';
+export type BrowserSearchEntryType = 'url' | 'search' | 'bookmark';
 export type BrowserSearchSource =
   | 'user'
   | 'chrome'
@@ -103,7 +103,11 @@ function save(): void {
 
 function sanitizeEntry(raw: any): BrowserSearchEntry | null {
   if (!raw || typeof raw !== 'object') return null;
-  const type: BrowserSearchEntryType = raw.type === 'search' ? 'search' : 'url';
+  const type: BrowserSearchEntryType = raw.type === 'search'
+    ? 'search'
+    : raw.type === 'bookmark'
+    ? 'bookmark'
+    : 'url';
   const query = String(raw.query || '').trim();
   const url = String(raw.url || '').trim();
   if (!query || !url) return null;
@@ -230,11 +234,19 @@ function findProfileEntryForInput(rawInput: string): BrowserSearchEntry | null {
   const trimmed = String(rawInput || '').trim();
   if (!trimmed) return null;
 
+  const bookmarkMatches = load().filter((entry) =>
+    entry.type === 'bookmark' &&
+    entry.sourceProfileId &&
+    Boolean(CHROMIUM_PROFILE_OPEN_APPS[entry.source]) &&
+    entry.query.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (bookmarkMatches.length > 0) return bestByFrecency(bookmarkMatches);
+
   const resolved = resolveInput(trimmed);
   if (!resolved || resolved.type !== 'url') return null;
 
   const entries = load().filter((entry) =>
-    entry.type === 'url' &&
+    (entry.type === 'url' || entry.type === 'bookmark') &&
     entry.sourceProfileId &&
     Boolean(CHROMIUM_PROFILE_OPEN_APPS[entry.source])
   );
@@ -313,8 +325,8 @@ function recordEntryUse(entry: BrowserSearchEntry): void {
 function recordEntry(query: string, resolved: ResolvedInput, source: BrowserSearchSource = 'user'): void {
   if (!query) return;
   const entries = load();
-  const dedupeKey = entryKey(resolved.type, resolved.type === 'url' ? resolved.url : query);
-  const existing = entries.find((e) => entryKey(e.type, e.type === 'url' ? e.url : e.query) === dedupeKey);
+  const dedupeKey = entryKey(resolved.type, resolved.type === 'search' ? query : resolved.url);
+  const existing = entries.find((e) => entryKey(e.type, e.type === 'search' ? e.query : e.url) === dedupeKey);
   const now = Date.now();
   if (existing) {
     existing.useCount += 1;
@@ -345,7 +357,7 @@ function entryKey(type: BrowserSearchEntryType, value: string): string {
 function importEntryKey(entry: Pick<BrowserSearchEntry, 'type' | 'url' | 'query' | 'source'> & {
   sourceProfileId?: string;
 }): string {
-  const value = entry.type === 'url' ? entry.url : entry.query;
+  const value = entry.type === 'search' ? entry.query : entry.url;
   const source = entry.source || 'user';
   const profile = entry.sourceProfileId || '';
   return `${entry.type}:${source}:${profile}:${value.toLowerCase()}`;
@@ -368,6 +380,7 @@ function pruneByRetentionInPlace(entries: BrowserSearchEntry[]): void {
   if (!days || days <= 0) return;
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].type === 'bookmark') continue;
     if (entries[i].lastUsedAt < cutoff) entries.splice(i, 1);
   }
 }
@@ -408,7 +421,7 @@ export function getAutocomplete(rawInput: string): AutocompleteSuggestion | null
 
   // Pass 1: URL-host prefix match (highest priority).
   const urlCandidates = entries
-    .filter((e) => e.type === 'url' && e.host)
+    .filter((e) => (e.type === 'url' || e.type === 'bookmark') && e.host)
     .map((e) => {
       const host = e.host;
       const fullPrefixOptions = [host];
@@ -439,9 +452,13 @@ export function getAutocomplete(rawInput: string): AutocompleteSuggestion | null
     };
   }
 
-  // Pass 2: search-query prefix match.
+  // Pass 2: bookmark-title and search-query prefix match.
   const searchCandidates = entries
-    .filter((e) => e.type === 'search' && e.query.toLowerCase().startsWith(lower) && e.query.length > input.length)
+    .filter((e) =>
+      (e.type === 'search' || e.type === 'bookmark') &&
+      e.query.toLowerCase().startsWith(lower) &&
+      e.query.length > input.length
+    )
     .map((entry) => ({ entry, score: frecency(entry) }));
 
   if (searchCandidates.length > 0) {
@@ -477,6 +494,8 @@ export interface ImportableBrowserProfile {
   profileName: string;
   /** Path to the SQLite history file. */
   dbPath: string;
+  /** Path to the Chromium bookmarks JSON file, when present. */
+  bookmarksPath?: string;
   available: boolean;
 }
 
@@ -542,6 +561,7 @@ function buildChromiumProfileSource(
 ): ImportableBrowserProfile | null {
   const dbPath = path.join(browser.rootPath, profileId, 'History');
   if (!fileExists(dbPath)) return null;
+  const bookmarksPath = path.join(browser.rootPath, profileId, 'Bookmarks');
   const profileName = typeof profileInfo?.name === 'string' && profileInfo.name.trim()
     ? profileInfo.name.trim()
     : profileLabelFromId(profileId);
@@ -552,6 +572,7 @@ function buildChromiumProfileSource(
     profileId,
     profileName,
     dbPath,
+    bookmarksPath: fileExists(bookmarksPath) ? bookmarksPath : undefined,
     available: true,
   };
 }
@@ -613,6 +634,12 @@ interface RawHistoryRow {
   title?: string;
   visitCount: number;
   lastVisit: number; // unix epoch ms
+}
+
+interface RawBookmarkRow {
+  url: string;
+  title: string;
+  dateAdded: number;
 }
 
 export async function importFromBrowser(
@@ -694,6 +721,9 @@ async function importFromSource(
   } catch (e: any) {
     return { imported: 0, skipped: 0, total: 0, reason: e?.message || 'Failed to read history' };
   }
+  const bookmarkRows = 'bookmarksPath' in browser && browser.bookmarksPath
+    ? readChromiumBookmarks(browser.bookmarksPath)
+    : [];
 
   const existingKeys = new Set(entries.map((e) => importEntryKey(e)));
   let imported = 0;
@@ -751,12 +781,51 @@ async function importFromSource(
     imported += 1;
   }
 
+  if (sourceProfileId) {
+    let removedBookmarks = 0;
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (
+        entries[i].type === 'bookmark' &&
+        entries[i].source === browserId &&
+        entries[i].sourceProfileId === sourceProfileId
+      ) {
+        existingKeys.delete(importEntryKey(entries[i]));
+        entries.splice(i, 1);
+        removedBookmarks += 1;
+      }
+    }
+    skipped += removedBookmarks;
+  }
+
+  for (const bookmark of bookmarkRows) {
+    const host = extractHost(bookmark.url);
+    if (!host) {
+      skipped += 1;
+      continue;
+    }
+    const entry = {
+      id: makeId(),
+      type: 'bookmark' as const,
+      query: bookmark.title || host,
+      url: bookmark.url,
+      host,
+      lastUsedAt: bookmark.dateAdded || Date.now(),
+      useCount: 1,
+      source: browserId,
+      sourceProfileId,
+      sourceProfileName,
+    };
+    entries.push(entry);
+    existingKeys.add(importEntryKey(entry));
+    imported += 1;
+  }
+
   pruneByRetentionInPlace(entries);
   trimToCapInPlace(entries);
   cache = entries;
   save();
 
-  return { imported, skipped, total: rows.length };
+  return { imported, skipped, total: rows.length + bookmarkRows.length };
 }
 
 function getNewestStoredVisitAt(
@@ -812,6 +881,46 @@ async function readBrowserHistoryRows(
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
     } catch {}
+  }
+}
+
+function readChromiumBookmarks(bookmarksPath: string): RawBookmarkRow[] {
+  if (!fileExists(bookmarksPath)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(bookmarksPath, 'utf-8'));
+    const rows: RawBookmarkRow[] = [];
+    collectChromiumBookmarks(parsed?.roots, rows);
+    return rows;
+  } catch (e) {
+    console.warn('Failed to read Chromium bookmarks:', e);
+    return [];
+  }
+}
+
+function collectChromiumBookmarks(node: any, rows: RawBookmarkRow[]): void {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    for (const child of node) collectChromiumBookmarks(child, rows);
+    return;
+  }
+
+  if (node.type === 'url') {
+    const url = String(node.url || '').trim();
+    if (!/^https?:\/\//i.test(url)) return;
+    const title = String(node.name || '').trim() || extractHost(url);
+    rows.push({
+      url,
+      title,
+      dateAdded: decodeTimestamp('chrome', Number(node.date_added || 0)) || Date.now(),
+    });
+    return;
+  }
+
+  if (node.children) collectChromiumBookmarks(node.children, rows);
+  for (const value of Object.values(node)) {
+    if (value && typeof value === 'object' && value !== node.children) {
+      collectChromiumBookmarks(value, rows);
+    }
   }
 }
 

@@ -275,7 +275,7 @@ export interface BrowserSearchSettings {
   profileSourceIds: string[];
 }
 
-export type BrowserSearchEntryType = 'url' | 'search';
+export type BrowserSearchEntryType = 'url' | 'search' | 'bookmark';
 
 export type BrowserSearchSource =
   | 'user'

@@ -706,7 +706,7 @@
           "addedHeading": "Hinzugefügte Profile",
           "noneFound": "Keine unterstützten Browserprofile gefunden",
           "noneAdded": "Noch keine Browserprofile hinzugefügt",
-          "profileRowDetail": "Verlauf: {count} URLs · Tabs/Lesezeichen: noch nicht importiert",
+          "profileRowDetail": "Verlauf: {historyCount} URLs · Lesezeichen: {bookmarkCount} · Tabs: noch nicht importiert",
           "profileSupportNote": "Profilunterstützung umfasst derzeit nur Chromium-Browser. Safari und Firefox werden später unterstützt.",
           "enabledProfiles": "{count} Profil(e) für den SuperCmd-Browserverlauf aktiviert."
         },
