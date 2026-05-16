@@ -373,20 +373,87 @@ function dirExists(p: string): boolean {
   }
 }
 
+/**
+ * Resolve the path to a Chromium browser's History SQLite file.
+ *
+ * Algorithm:
+ *  1. Read `Local State` JSON from the browser root dir; use `profile.last_used`
+ *     to pick the active profile directory.
+ *  2. If that profile has a History file → use it.
+ *  3. If Local State is missing or lacks the field → fall back to `Default/History`.
+ *  4. If Default doesn't exist either → scan subdirectories matching `Profile *`
+ *     and `Default`, returning the first one that contains a History file.
+ *  5. As a last resort, return the `Default/History` path (caller checks existence).
+ */
+function resolveChromiumHistoryPath(rootDir: string): { dbPath: string; profileName: string } {
+  // 1. Try Local State for the last-used profile.
+  const localStatePath = path.join(rootDir, 'Local State');
+  try {
+    const raw = fs.readFileSync(localStatePath, 'utf-8');
+    const state = JSON.parse(raw);
+    const lastUsed: string | undefined = state?.profile?.last_used;
+    if (lastUsed) {
+      const candidate = path.join(rootDir, lastUsed, 'History');
+      if (fileExists(candidate)) {
+        return { dbPath: candidate, profileName: lastUsed };
+      }
+    }
+  } catch {
+    // File missing or JSON parse error — fall through to defaults.
+  }
+
+  // 2. Fall back to Default.
+  const defaultPath = path.join(rootDir, 'Default', 'History');
+  if (fileExists(defaultPath)) {
+    return { dbPath: defaultPath, profileName: 'Default' };
+  }
+
+  // 3. Scan all profile subdirectories.
+  if (dirExists(rootDir)) {
+    try {
+      const entries = fs.readdirSync(rootDir, { withFileTypes: true });
+      // Sort so "Default" comes first, then "Profile 1", "Profile 2", …
+      const profileDirs = entries
+        .filter((e) => e.isDirectory() && (e.name === 'Default' || e.name.startsWith('Profile ')))
+        .map((e) => e.name)
+        .sort((a, b) => {
+          if (a === 'Default') return -1;
+          if (b === 'Default') return 1;
+          return a.localeCompare(b, undefined, { numeric: true });
+        });
+      for (const dir of profileDirs) {
+        const candidate = path.join(rootDir, dir, 'History');
+        if (fileExists(candidate)) {
+          return { dbPath: candidate, profileName: dir };
+        }
+      }
+    } catch {
+      // Ignore read errors.
+    }
+  }
+
+  // 4. Last-resort: return Default path even if it doesn't exist (caller checks).
+  return { dbPath: defaultPath, profileName: 'Default' };
+}
+
 export function listImportableBrowsers(): ImportableBrowser[] {
   const home = homeDir();
   const out: ImportableBrowser[] = [];
 
-  // Chromium-family default profiles
-  const chromium: { id: BrowserSearchSource; name: string; dbPath: string }[] = [
-    { id: 'chrome', name: 'Google Chrome', dbPath: path.join(home, 'Library/Application Support/Google/Chrome/Default/History') },
-    { id: 'arc', name: 'Arc', dbPath: path.join(home, 'Library/Application Support/Arc/User Data/Default/History') },
-    { id: 'brave', name: 'Brave', dbPath: path.join(home, 'Library/Application Support/BraveSoftware/Brave-Browser/Default/History') },
-    { id: 'edge', name: 'Microsoft Edge', dbPath: path.join(home, 'Library/Application Support/Microsoft Edge/Default/History') },
-    { id: 'vivaldi', name: 'Vivaldi', dbPath: path.join(home, 'Library/Application Support/Vivaldi/Default/History') },
+  // Chromium-family browsers — resolve the active profile dynamically.
+  const chromiumBrowsers: { id: BrowserSearchSource; name: string; rootDir: string }[] = [
+    { id: 'chrome', name: 'Google Chrome', rootDir: path.join(home, 'Library/Application Support/Google/Chrome') },
+    { id: 'arc', name: 'Arc', rootDir: path.join(home, 'Library/Application Support/Arc/User Data') },
+    { id: 'brave', name: 'Brave', rootDir: path.join(home, 'Library/Application Support/BraveSoftware/Brave-Browser') },
+    { id: 'edge', name: 'Microsoft Edge', rootDir: path.join(home, 'Library/Application Support/Microsoft Edge') },
+    { id: 'vivaldi', name: 'Vivaldi', rootDir: path.join(home, 'Library/Application Support/Vivaldi') },
   ];
-  for (const b of chromium) {
-    out.push({ ...b, available: fileExists(b.dbPath) });
+  for (const b of chromiumBrowsers) {
+    const resolved = resolveChromiumHistoryPath(b.rootDir);
+    const displayName = resolved.profileName !== 'Default'
+      ? `${b.name} (${resolved.profileName})`
+      : b.name;
+    out.push({ id: b.id, name: displayName, dbPath: resolved.dbPath, available: fileExists(resolved.dbPath) });
   }
 
   // Safari (sandboxed — may be unreadable without Full Disk Access)
