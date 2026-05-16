@@ -83,6 +83,15 @@ const BROWSER_SEARCH_RETENTION_OPTIONS: { value: number | null; labelKey: string
 ];
 
 const BROWSER_SEARCH_RESULT_LIMIT_OPTIONS = [0, 1, 2, 3, 4, 5, 8];
+const WEB_SEARCH_SUGGESTION_LIMIT_OPTIONS = [0, 1, 2, 3, 4, 5, 8];
+const WEB_SEARCH_DEFAULT_PROVIDER_OPTIONS = [
+  { value: 'g', label: 'Google' },
+  { value: 'ddg', label: 'DuckDuckGo' },
+  { value: 'yt', label: 'YouTube' },
+  { value: 'gh', label: 'GitHub' },
+  { value: 'img', label: 'Google Images' },
+  { value: 'wiki', label: 'Wikipedia' },
+];
 const BROWSER_SEARCH_RESULT_KIND_ORDER: BrowserSearchResultKind[] = ['bookmark', 'open-tab', 'history'];
 const DEFAULT_BROWSER_SEARCH_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
   { kind: 'bookmark', limit: 2 },
@@ -424,44 +433,45 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
             </div>
 
             <div>
-              <div className="mb-1 flex items-center justify-between gap-3">
-                <label className="text-[0.75rem] text-[var(--text-muted)] block">
-                  {t('settings.advanced.browserSearch.import.availableHeading')}
-                </label>
-                <span className="text-[11px] text-[var(--text-muted)] tabular-nums">{detectedProfiles.length}</span>
-              </div>
-              <p className="mb-2 text-[11px] text-[var(--text-muted)] leading-snug">
-                {t('settings.advanced.browserSearch.import.profileSupportNote')}
-              </p>
-              <div className="overflow-hidden rounded-md border border-[var(--ui-divider)] bg-white/[0.03]">
-                {detectedProfiles.length === 0 ? (
-                  <div className="px-3 py-2.5 text-[12px] text-[var(--text-muted)]">
-                    {t('settings.advanced.browserSearch.import.noneFound')}
+              <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">
+                {t('settings.advanced.browserSearch.webSearch.label')}
+              </label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div>
+                  <div className="mb-1 text-[11px] text-[var(--text-muted)]">
+                    {t('settings.advanced.browserSearch.webSearch.defaultProvider')}
                   </div>
-                ) : (
-                  <div className="divide-y divide-[var(--ui-divider)]">
-                    {detectedProfiles.map((profile) => (
-                      <div key={profile.id} className="grid gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                        <div className="min-w-0">
-                          <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
-                            {profile.browserName} - {profile.profileName}
-                          </div>
-                          <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">{profile.id}</div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleAddProfile(profile.id)}
-                          disabled={Boolean(busyProfileId)}
-                          className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
-                        >
-                          {busyProfileId === profile.id
-                            ? t('settings.advanced.browserSearch.import.running')
-                            : t('settings.advanced.browserSearch.import.add')}
-                        </button>
-                      </div>
+                  <select
+                    value={settings.webSearchDefaultBangKey || 'g'}
+                    onChange={(e) => onChange({ ...settings, webSearchDefaultBangKey: e.target.value })}
+                    className="sc-select !py-1 !text-[12px]"
+                  >
+                    {WEB_SEARCH_DEFAULT_PROVIDER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
+                  </select>
+                </div>
+                <div>
+                  <div className="mb-1 text-[11px] text-[var(--text-muted)]">
+                    {t('settings.advanced.browserSearch.webSearch.suggestionCount')}
                   </div>
-                )}
+                  <select
+                    value={String(settings.webSearchSuggestionLimit ?? 3)}
+                    onChange={(e) => {
+                      const nextLimit = Math.max(0, Math.min(8, Math.floor(Number(e.target.value) || 0)));
+                      onChange({ ...settings, webSearchSuggestionLimit: nextLimit });
+                    }}
+                    className="sc-select !py-1 !text-[12px]"
+                  >
+                    {WEB_SEARCH_SUGGESTION_LIMIT_OPTIONS.map((value) => (
+                      <option key={value} value={value}>
+                        {value === 0
+                          ? t('settings.advanced.browserSearch.resultGroups.option.none')
+                          : t('settings.advanced.browserSearch.resultGroups.option.count', { count: String(value) })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -518,6 +528,48 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
                             {t('settings.advanced.browserSearch.import.remove')}
                           </button>
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <label className="text-[0.75rem] text-[var(--text-muted)] block">
+                  {t('settings.advanced.browserSearch.import.availableHeading')}
+                </label>
+                <span className="text-[11px] text-[var(--text-muted)] tabular-nums">{detectedProfiles.length}</span>
+              </div>
+              <p className="mb-2 text-[11px] text-[var(--text-muted)] leading-snug">
+                {t('settings.advanced.browserSearch.import.profileSupportNote')}
+              </p>
+              <div className="overflow-hidden rounded-md border border-[var(--ui-divider)] bg-white/[0.03]">
+                {detectedProfiles.length === 0 ? (
+                  <div className="px-3 py-2.5 text-[12px] text-[var(--text-muted)]">
+                    {t('settings.advanced.browserSearch.import.noneFound')}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-[var(--ui-divider)]">
+                    {detectedProfiles.map((profile) => (
+                      <div key={profile.id} className="grid gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                        <div className="min-w-0">
+                          <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
+                            {profile.browserName} - {profile.profileName}
+                          </div>
+                          <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">{profile.id}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleAddProfile(profile.id)}
+                          disabled={Boolean(busyProfileId)}
+                          className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
+                        >
+                          {busyProfileId === profile.id
+                            ? t('settings.advanced.browserSearch.import.running')
+                            : t('settings.advanced.browserSearch.import.add')}
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -687,6 +739,22 @@ const AdvancedTab: React.FC = () => {
   if (!settings) {
     return <div className="p-6 text-[var(--text-muted)] text-[12px]">{t('settings.advanced.loading')}</div>;
   }
+
+  const browserSearchSettings = settings.browserSearch ?? {
+    enabled: true,
+    historyRetentionDays: 90,
+    profileSourceIds: [],
+    resultLimitPerGroup: 2,
+    resultGroups: DEFAULT_BROWSER_SEARCH_RESULT_GROUPS,
+    nicknames: [],
+    webSearchDefaultBangKey: 'g',
+    webSearchSuggestionLimit: 3,
+    webSearchBangOverrides: [],
+    webSearchBangUsage: {},
+    webSearchDisabledBangKeys: [],
+    webSearchBangCustomProviders: [],
+    webSearchShowHiddenBangs: false,
+  };
 
   const usingCustomSettingsLocation = Boolean(settingsLocation?.path);
   const settingsLocationDisplay = usingCustomSettingsLocation
@@ -862,13 +930,7 @@ const AdvancedTab: React.FC = () => {
         </SettingsRow>
 
         <BrowserSearchSection
-          settings={settings.browserSearch ?? {
-            enabled: true,
-            historyRetentionDays: 90,
-            profileSourceIds: [],
-            resultLimitPerGroup: 2,
-            resultGroups: DEFAULT_BROWSER_SEARCH_RESULT_GROUPS,
-          }}
+          settings={browserSearchSettings}
           onChange={(next) => {
             void applySettingsPatch({ browserSearch: next });
           }}

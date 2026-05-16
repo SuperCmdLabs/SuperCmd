@@ -127,9 +127,11 @@ import {
   importFromBrowserProfile as bsImportFromBrowserProfile,
   refreshEnabledBrowserProfiles as bsRefreshEnabledBrowserProfiles,
   fetchSearchSuggestion as bsFetchSearchSuggestion,
+  fetchSearchSuggestions as bsFetchSearchSuggestions,
   type BrowserSearchEntry,
   type BrowserSearchSource,
 } from './browser-search-history';
+import { listWebSearchBangs } from './web-search-bangs';
 import {
   clearBrowserTabRecentNavigations,
   focusBrowserTabForInput,
@@ -15784,6 +15786,14 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('browser-search:suggest', async (_event: any, input: string) => {
     return await bsFetchSearchSuggestion(String(input || ''));
+  });
+
+  ipcMain.handle('browser-search:suggest-many', async (_event: any, input: string, limit?: number, provider?: any) => {
+    return await bsFetchSearchSuggestions(String(input || ''), limit, provider);
+  });
+
+  ipcMain.handle('web-search:list-bangs', async () => {
+    return await listWebSearchBangs();
   });
 
   ipcMain.handle('browser-search:clear-history', () => {

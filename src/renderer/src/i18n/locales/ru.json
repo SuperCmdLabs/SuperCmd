@@ -99,7 +99,8 @@
       "files": "Файлы",
       "calculator": "Калькулятор",
       "quickLinks": "Быстрые ссылки",
-      "browser": "Браузер"
+      "browser": "Браузер",
+      "search": "Поиск"
     },
     "actions": {
       "open": "Открыть",
@@ -183,7 +184,33 @@
       "showAllPlaceholder": "Искать результаты Browser...",
       "openTabsPlaceholder": "Искать открытые вкладки...",
       "bookmarksPlaceholder": "Искать закладки...",
-      "historyPlaceholder": "Искать в истории..."
+      "historyPlaceholder": "Искать в истории...",
+      "setNickname": "Задать псевдоним",
+      "editNickname": "Изменить псевдоним",
+      "searchProviderFor": "Искать «{query}» в {provider}",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "Поиск по умолчанию",
+      "webSearchPlaceholder": "Искать bangs...",
+      "useBang": "Использовать bang",
+      "bangSections": {
+        "used": "Недавние bangs",
+        "common": "Популярные bangs",
+        "matching": "Подходящие bangs",
+        "all": "Все bangs A-Z",
+        "hidden": "Скрытые bangs"
+      },
+      "showHidden": "Показать скрытые",
+      "hideHidden": "Скрыть скрытые",
+      "newBang": "Новый bang",
+      "aliasHelp": "Разделяйте псевдонимы запятыми, например: !gh, !git",
+      "customBangHelp": "Создайте bang с шаблоном URL, содержащим {query}.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "Псевдонимы",
+        "name": "Название",
+        "host": "Хост",
+        "template": "Шаблон URL"
+      }
     }
   },
   "settings": {
@@ -368,6 +395,11 @@
           },
           "moveUp": "Переместить выше",
           "moveDown": "Переместить ниже"
+        },
+        "webSearch": {
+          "label": "Веб-поиск",
+          "defaultProvider": "Провайдер по умолчанию",
+          "suggestionCount": "Поисковые подсказки"
         }
       }
     },

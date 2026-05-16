@@ -98,6 +98,22 @@ export interface BrowserSearchSettings {
   resultLimitPerGroup: number;
   /** Ordered browser result providers and row counts for the root Browser section. */
   resultGroups: BrowserSearchResultGroupSetting[];
+  /** User-assigned bookmark nicknames keyed by browser/profile URL. */
+  nicknames: BrowserSearchNicknameSetting[];
+  /** Default web-search provider key, used for favicons and direct search rows. */
+  webSearchDefaultBangKey: string;
+  /** Number of web-search suggestion rows to show in root search. */
+  webSearchSuggestionLimit: number;
+  /** User overrides for bang aliases. Defaults come from the fetched catalog. */
+  webSearchBangOverrides: WebSearchBangOverrideSetting[];
+  /** Personal bang usage/frecency keyed by canonical bang key. */
+  webSearchBangUsage: Record<string, WebSearchBangUsageSetting>;
+  /** Bang keys hidden from normal root/search-web surfaces. */
+  webSearchDisabledBangKeys: string[];
+  /** User-defined bang providers that do not exist in the catalog. */
+  webSearchBangCustomProviders: WebSearchBangCustomProviderSetting[];
+  /** Whether the bang manager is currently showing hidden bangs. */
+  webSearchShowHiddenBangs?: boolean;
 }
 
 export type BrowserSearchResultKind = 'open-tab' | 'bookmark' | 'history';
@@ -105,6 +121,32 @@ export type BrowserSearchResultKind = 'open-tab' | 'bookmark' | 'history';
 export interface BrowserSearchResultGroupSetting {
   kind: BrowserSearchResultKind;
   limit: number;
+}
+
+export interface BrowserSearchNicknameSetting {
+  source: string;
+  sourceProfileId?: string;
+  url: string;
+  nickname: string;
+}
+
+export interface WebSearchBangOverrideSetting {
+  key: string;
+  aliases: string[];
+}
+
+export interface WebSearchBangUsageSetting {
+  useCount: number;
+  lastUsedAt: number;
+  frecencyScore: number;
+}
+
+export interface WebSearchBangCustomProviderSetting {
+  key: string;
+  aliases: string[];
+  name: string;
+  host: string;
+  template: string;
 }
 
 export type AppFontSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
@@ -303,6 +345,14 @@ const DEFAULT_SETTINGS: AppSettings = {
       { kind: 'open-tab', limit: 2 },
       { kind: 'history', limit: 2 },
     ],
+    nicknames: [],
+    webSearchDefaultBangKey: 'g',
+    webSearchSuggestionLimit: 3,
+    webSearchBangOverrides: [],
+    webSearchBangUsage: {},
+    webSearchDisabledBangKeys: [],
+    webSearchBangCustomProviders: [],
+    webSearchShowHiddenBangs: false,
   },
   popToRootSearchTimeoutSeconds: 90,
   installedExtensions: [],
@@ -479,6 +529,126 @@ function normalizeBrowserSearchResultGroups(value: any, legacyLimit: number): Br
   return groups;
 }
 
+function normalizeBrowserSearchNicknames(value: any): BrowserSearchNicknameSetting[] {
+  if (!Array.isArray(value)) return [];
+  const byKey = new Map<string, BrowserSearchNicknameSetting>();
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const source = String(item.source || '').trim();
+    const sourceProfileId = String(item.sourceProfileId || '').trim();
+    const url = String(item.url || '').trim();
+    const nickname = normalizeBrowserSearchNickname(item.nickname);
+    if (!source || !url || !nickname) continue;
+    const key = [source, sourceProfileId, normalizeBrowserSearchNicknameUrl(url)].join(':');
+    byKey.set(key, {
+      source,
+      sourceProfileId: sourceProfileId || undefined,
+      url,
+      nickname,
+    });
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.nickname.localeCompare(b.nickname));
+}
+
+function normalizeWebSearchDefaultBangKey(value: any): string {
+  const normalized = String(value || '').trim().toLowerCase().replace(/^!+/, '');
+  if (/^[a-z0-9][a-z0-9-]{0,31}$/.test(normalized)) return normalized;
+  return DEFAULT_SETTINGS.browserSearch.webSearchDefaultBangKey;
+}
+
+function normalizeWebSearchSuggestionLimit(value: any): number {
+  if (value === undefined || value === null) return DEFAULT_SETTINGS.browserSearch.webSearchSuggestionLimit;
+  const limit = Math.floor(Number(value));
+  return Number.isFinite(limit) ? Math.max(0, Math.min(8, limit)) : DEFAULT_SETTINGS.browserSearch.webSearchSuggestionLimit;
+}
+
+function normalizeWebSearchBangKey(value: any): string {
+  return String(value || '').trim().toLowerCase().replace(/^!+/, '').replace(/[^a-z0-9.+_-]/g, '').slice(0, 64);
+}
+
+function normalizeWebSearchBangOverrides(value: any): WebSearchBangOverrideSetting[] {
+  if (!Array.isArray(value)) return [];
+  const byKey = new Map<string, WebSearchBangOverrideSetting>();
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const key = normalizeWebSearchBangKey(item.key);
+    if (!key) continue;
+    const aliases: string[] = Array.isArray(item.aliases)
+      ? item.aliases.map((alias: unknown) => String(alias || ''))
+      : String(item.aliases || '').split(',');
+    const cleanAliases: string[] = Array.from(new Set<string>(
+      aliases
+        .map((alias) => normalizeWebSearchBangKey(alias))
+        .filter(Boolean)
+    ));
+    if (cleanAliases.length === 0) continue;
+    byKey.set(key, { key, aliases: cleanAliases });
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function normalizeWebSearchBangUsage(value: any): Record<string, WebSearchBangUsageSetting> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const result: Record<string, WebSearchBangUsageSetting> = {};
+  for (const [rawKey, rawUsage] of Object.entries(value)) {
+    const key = normalizeWebSearchBangKey(rawKey);
+    if (!key || !rawUsage || typeof rawUsage !== 'object' || Array.isArray(rawUsage)) continue;
+    const usage = rawUsage as Record<string, unknown>;
+    const useCount = Math.max(0, Math.floor(Number(usage.useCount) || 0));
+    const lastUsedAt = Math.max(0, Math.floor(Number(usage.lastUsedAt) || 0));
+    const frecencyScore = Math.max(0, Number(usage.frecencyScore) || 0);
+    if (useCount <= 0 && frecencyScore <= 0) continue;
+    result[key] = { useCount, lastUsedAt, frecencyScore };
+  }
+  return result;
+}
+
+function normalizeWebSearchDisabledBangKeys(value: any): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => normalizeWebSearchBangKey(item)).filter(Boolean))).sort();
+}
+
+function normalizeWebSearchBangTemplate(value: any): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.includes('{query}') ? raw : raw.replace(/\{\{\{s\}\}\}/g, '{query}');
+}
+
+function normalizeWebSearchBangCustomProviders(value: any): WebSearchBangCustomProviderSetting[] {
+  if (!Array.isArray(value)) return [];
+  const byKey = new Map<string, WebSearchBangCustomProviderSetting>();
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const key = normalizeWebSearchBangKey(item.key);
+    if (!key) continue;
+    const aliases: string[] = Array.isArray(item.aliases)
+      ? item.aliases.map((alias: unknown) => String(alias || ''))
+      : String(item.aliases || '').split(',');
+    const cleanAliases = Array.from(new Set(aliases.map((alias) => normalizeWebSearchBangKey(alias)).filter((alias) => alias && alias !== key)));
+    const name = String(item.name || key).trim().slice(0, 120);
+    const host = String(item.host || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '').slice(0, 200);
+    const template = normalizeWebSearchBangTemplate(item.template || item.urlTemplate);
+    if (!name || !host || !template) continue;
+    byKey.set(key, { key, aliases: cleanAliases, name, host, template });
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function normalizeBrowserSearchNickname(value: any): string {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 64);
+}
+
+function normalizeBrowserSearchNicknameUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    parsed.hash = '';
+    parsed.hostname = parsed.hostname.toLowerCase();
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return String(value || '').trim().toLowerCase().replace(/\/+$/, '');
+  }
+}
+
 function normalizeBrowserSearchSettings(value: any): BrowserSearchSettings {
   const fallback = DEFAULT_SETTINGS.browserSearch;
   const resultLimit = normalizeBrowserSearchResultLimit(value?.resultLimitPerGroup, fallback.resultLimitPerGroup);
@@ -489,6 +659,14 @@ function normalizeBrowserSearchSettings(value: any): BrowserSearchSettings {
     profileSourceIds: normalizeBrowserSearchProfileSourceIds(value.profileSourceIds),
     resultLimitPerGroup: resultLimit,
     resultGroups: normalizeBrowserSearchResultGroups(value.resultGroups, resultLimit || fallback.resultLimitPerGroup),
+    nicknames: normalizeBrowserSearchNicknames(value.nicknames),
+    webSearchDefaultBangKey: normalizeWebSearchDefaultBangKey(value.webSearchDefaultBangKey),
+    webSearchSuggestionLimit: normalizeWebSearchSuggestionLimit(value.webSearchSuggestionLimit),
+    webSearchBangOverrides: normalizeWebSearchBangOverrides(value.webSearchBangOverrides),
+    webSearchBangUsage: normalizeWebSearchBangUsage(value.webSearchBangUsage),
+    webSearchDisabledBangKeys: normalizeWebSearchDisabledBangKeys(value.webSearchDisabledBangKeys),
+    webSearchBangCustomProviders: normalizeWebSearchBangCustomProviders(value.webSearchBangCustomProviders),
+    webSearchShowHiddenBangs: Boolean(value.webSearchShowHiddenBangs),
   };
 }
 

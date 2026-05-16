@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   BrowserSearchAutocomplete,
   BrowserSearchEntry,
+  BrowserSearchNicknameSetting,
   BrowserSearchResultGroupSetting,
   BrowserSearchResultKind,
   BrowserSearchSource,
@@ -25,6 +26,8 @@ export interface BrowserSearchResult {
   actionInput: string;
   focusAvailable: boolean;
   faviconUrl?: string;
+  source?: BrowserSearchSource;
+  sourceProfileId?: string;
   browserName?: string;
   profileName?: string;
   windowId?: string;
@@ -37,6 +40,7 @@ export interface BrowserSearchResult {
   lastUsedAt?: number;
   score: number;
   completion: string;
+  nickname?: string;
 }
 
 export interface BrowserHistoryProfileOption {
@@ -68,10 +72,13 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   const [entries, setEntries] = useState<BrowserSearchEntry[]>([]);
   const [tabs, setTabs] = useState<BrowserTabEntry[]>([]);
   const [enabled, setEnabled] = useState<boolean>(true);
+  const [nicknames, setNicknames] = useState<BrowserSearchNicknameSetting[]>([]);
   const entriesRef = useRef<BrowserSearchEntry[]>([]);
   const tabsRef = useRef<BrowserTabEntry[]>([]);
+  const nicknamesRef = useRef<BrowserSearchNicknameSetting[]>([]);
   entriesRef.current = entries;
   tabsRef.current = tabs;
+  nicknamesRef.current = nicknames;
 
   const refreshEntries = useCallback(() => {
     window.electron.browserSearchListEntries()
@@ -104,6 +111,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
       .then((s) => {
         if (disposed) return;
         setEnabled(s?.browserSearch?.enabled ?? true);
+        setNicknames(Array.isArray(s?.browserSearch?.nicknames) ? s.browserSearch.nicknames : []);
       })
       .catch(() => {});
     return () => {
@@ -114,6 +122,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   useEffect(() => {
     const cleanup = window.electron.onSettingsUpdated?.((s) => {
       setEnabled(s?.browserSearch?.enabled ?? true);
+      setNicknames(Array.isArray(s?.browserSearch?.nicknames) ? s.browserSearch.nicknames : []);
     });
     return cleanup;
   }, []);
@@ -140,7 +149,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
 
   const getTopResult = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult | null => {
     if (!enabled) return null;
-    return getOrderedBrowserResults(rawInput, rawGroups, entriesRef.current, tabsRef.current, { limit: 1 })[0] || null;
+    return getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, tabsRef.current, nicknamesRef.current, MAX_TOP_BROWSER_RESULTS)[0] || null;
   }, [enabled]);
 
   const getCompletion = useCallback((
@@ -150,6 +159,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     if (!enabled) return null;
     const input = rawInput;
     if (!input.trim()) return null;
+    if (/\s$/.test(input)) return null;
     const result = getTopResult(input, rawGroups);
     if (!result?.completion) return null;
     if (result.completion === input) return null;
@@ -199,12 +209,12 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
 
   const getResults = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult[] => {
     if (!enabled) return [];
-    return getOrderedBrowserResults(rawInput, rawGroups, entriesRef.current, tabsRef.current, { useConfiguredLimits: true });
+    return getOrderedBrowserResults(rawInput, rawGroups, entriesRef.current, tabsRef.current, nicknamesRef.current, { useConfiguredLimits: true });
   }, [enabled]);
 
   const getAllResults = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult[] => {
     if (!enabled) return [];
-    return getOrderedBrowserResults(rawInput, rawGroups, entriesRef.current, tabsRef.current, { limitPerGroup: 50 });
+    return getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, tabsRef.current, nicknamesRef.current, MAX_ALL_BROWSER_RESULTS);
   }, [enabled]);
 
   const getOpenTabResults = useCallback((rawInput: string): BrowserSearchResult[] => {
@@ -215,6 +225,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     return getBrowserEntryCandidates('bookmark', rawInput, entriesRef.current, {
       preserveBookmarkOrder: !rawInput.trim(),
       limit: MAX_SCOPED_BOOKMARK_RESULTS,
+      nicknames: nicknamesRef.current,
     });
   }, []);
 
@@ -260,6 +271,9 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
 const MAX_SCOPED_HISTORY_RESULTS = 500;
 const MAX_SCOPED_BOOKMARK_RESULTS = 500;
 const MAX_SCOPED_OPEN_TAB_RESULTS = 500;
+const MAX_TOP_BROWSER_RESULTS = 1;
+const MAX_ALL_BROWSER_RESULTS = 100;
+const PROVIDER_PRIORITY_SCORE_STEP = 120;
 const URL_PROTOCOL_RE = /^[a-z][\w+.\-]*:\/\//i;
 const LOCALHOST_RE = /^localhost(:\d+)?(\/.*)?$/i;
 const IP_RE = /^\d{1,3}(?:\.\d{1,3}){3}(:\d+)?(\/.*)?$/;
@@ -289,12 +303,6 @@ function extractHost(url: string): string {
   }
 }
 
-function frecency(entry: BrowserSearchEntry): number {
-  const ageDays = Math.max(0, (Date.now() - entry.lastUsedAt) / (24 * 60 * 60 * 1000));
-  const recencyFactor = 1 / (1 + Math.log10(1 + ageDays));
-  return entry.useCount * recencyFactor;
-}
-
 function tabFrecency(tab: BrowserTabEntry): number {
   const ageSeconds = Math.max(0, (Date.now() - tab.updatedAt) / 1000);
   return 1 / (1 + Math.log10(1 + ageSeconds));
@@ -305,14 +313,17 @@ function findOpenTabMatch(rawInput: string, tabs: BrowserTabEntry[]): BrowserTab
   if (input.length < 2) return null;
   const lower = input.toLowerCase();
   const stripped = lower.replace(/^https?:\/\//, '');
+  const queryTokens = getSearchTokens(input);
   let best: { tab: BrowserTabEntry; score: number } | null = null;
   for (const tab of tabs) {
     const urlMatch = getOpenTabUrlMatch(tab, stripped, true);
     const titleScore = getOpenTabTitleMatchScore(tab, lower);
-    if (!urlMatch && titleScore === null) continue;
+    const tokenScore = getTokenMatchScore(queryTokens, getOpenTabSearchFields(tab));
+    if (!urlMatch && titleScore === null && tokenScore === null) continue;
     const score =
       (urlMatch ? 2000 : 0) +
       (titleScore || 0) +
+      (tokenScore || 0) +
       (tab.active ? 100 : 0) +
       tabFrecency(tab);
     if (!best || score > best.score) best = { tab, score };
@@ -412,12 +423,13 @@ function getOrderedBrowserResults(
   rawGroups: BrowserSearchResultGroupSetting[],
   entries: BrowserSearchEntry[],
   tabs: BrowserTabEntry[],
+  nicknames: BrowserSearchNicknameSetting[],
   options: BrowserCandidateOptions
 ): BrowserSearchResult[] {
   const input = rawInput.trim();
   if (input.length < 2) return [];
   const groups = normalizeResultGroups(rawGroups);
-  const candidates = buildBrowserCandidates(input, entries, tabs);
+  const candidates = buildBrowserCandidates(input, entries, tabs, getActiveBookmarkNicknames(rawInput, nicknames));
   const claimedUrls = new Set<string>();
   const orderedResults: BrowserSearchResult[] = [];
 
@@ -441,16 +453,66 @@ function getOrderedBrowserResults(
   return orderedResults;
 }
 
+function getRankedBrowserResults(
+  rawInput: string,
+  rawGroups: BrowserSearchResultGroupSetting[],
+  entries: BrowserSearchEntry[],
+  tabs: BrowserTabEntry[],
+  nicknames: BrowserSearchNicknameSetting[],
+  limit: number
+): BrowserSearchResult[] {
+  const input = rawInput.trim();
+  if (input.length < 2) return [];
+  const groups = normalizeResultGroups(rawGroups);
+  const candidates = buildBrowserCandidates(input, entries, tabs, getActiveBookmarkNicknames(rawInput, nicknames));
+  const priorityBoosts = getProviderPriorityBoosts(groups);
+  const bestByUrl = new Map<string, { result: BrowserSearchResult; rankScore: number }>();
+
+  for (const kind of Object.keys(candidates) as BrowserSearchResultKind[]) {
+    for (const result of candidates[kind]) {
+      const normalizedUrl = normalizeBrowserUrl(result.url) || result.id;
+      const rankScore = result.score + (priorityBoosts.get(kind) || 0);
+      const existing = bestByUrl.get(normalizedUrl);
+      if (!existing || rankScore > existing.rankScore) {
+        bestByUrl.set(normalizedUrl, { result, rankScore });
+      }
+    }
+  }
+
+  return Array.from(bestByUrl.values())
+    .sort((a, b) => {
+      if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore;
+      return compareBrowserResults(a.result, b.result);
+    })
+    .slice(0, limit)
+    .map((item) => item.result);
+}
+
+function getProviderPriorityBoosts(groups: BrowserSearchResultGroupSetting[]): Map<BrowserSearchResultKind, number> {
+  const boosts = new Map<BrowserSearchResultKind, number>();
+  groups.forEach((group, index) => {
+    boosts.set(group.kind, Math.max(0, groups.length - index - 1) * PROVIDER_PRIORITY_SCORE_STEP);
+  });
+  return boosts;
+}
+
+function getActiveBookmarkNicknames(rawInput: string, nicknames: BrowserSearchNicknameSetting[]): BrowserSearchNicknameSetting[] {
+  const value = String(rawInput || '');
+  if (/\s/.test(value.trim()) || /\s$/.test(value)) return [];
+  return nicknames;
+}
+
 function buildBrowserCandidates(
   input: string,
   entries: BrowserSearchEntry[],
-  tabs: BrowserTabEntry[]
+  tabs: BrowserTabEntry[],
+  nicknames: BrowserSearchNicknameSetting[]
 ): Record<BrowserSearchResultKind, BrowserSearchResult[]> {
   const openTabs = getOpenTabCandidates(input, tabs);
 
   return {
     'open-tab': openTabs,
-    bookmark: getBrowserEntryCandidates('bookmark', input, entries),
+    bookmark: getBrowserEntryCandidates('bookmark', input, entries, { nicknames }),
     history: getBrowserEntryCandidates('history', input, entries),
   };
 }
@@ -466,11 +528,10 @@ function getBrowserEntryCandidates(
     showHistoryProfileContext?: boolean;
     profileIds?: string[] | null;
     limit?: number;
+    nicknames?: BrowserSearchNicknameSetting[];
   } = {}
 ): BrowserSearchResult[] {
   const trimmed = input.trim();
-  const lower = trimmed.toLowerCase();
-  const stripped = lower.replace(/^https?:\/\//, '');
   const hasQuery = trimmed.length > 0;
   const entryType = kind === 'bookmark' ? 'bookmark' : 'url';
   const profileFilter = options.profileIds ? new Set(options.profileIds) : null;
@@ -478,14 +539,35 @@ function getBrowserEntryCandidates(
   for (const entry of entries) {
     if (entry.type !== entryType) continue;
     if (kind === 'history' && profileFilter && !profileFilter.has(getEntryProfileKey(entry))) continue;
-    const urlScore = hasQuery ? getUrlMatchScore(entry.url || entry.host, stripped, true) : { score: 0, completion: '' };
-    const titleScore = hasQuery ? getTitleMatchScore(entry.query, lower) : 0;
-    if (urlScore === null && titleScore === null) continue;
-    const matchScore = Math.max(urlScore?.score ?? 0, titleScore ?? 0);
-    const recencyScore = recencyBoost(entry.lastUsedAt);
-    const frequencyScore = Math.min(450, Math.log1p(Math.max(0, entry.useCount)) * 120);
+    const savedNickname = kind === 'bookmark'
+      ? findBookmarkNickname(entry, options.nicknames || [])
+      : '';
+    const nicknameMatch = kind === 'bookmark' && hasQuery && !/\s/.test(trimmed)
+      ? getBookmarkNicknameMatch(entry, trimmed, options.nicknames || [])
+      : null;
+    const searchInput = nicknameMatch ? nicknameMatch.remainingInput : trimmed;
+    const lower = searchInput.toLowerCase();
+    const stripped = lower.replace(/^https?:\/\//, '');
+    const queryTokens = getSearchTokens(searchInput);
+    const hasSearchInput = searchInput.length > 0;
+    const urlScore = hasSearchInput ? getUrlMatchScore(entry.url || entry.host, stripped, true) : { score: 0, completion: '' };
+    const titleScore = hasSearchInput ? getTitleMatchScore(entry.query, lower) : 0;
+    const tokenScore = hasSearchInput ? getTokenMatchScore(queryTokens, getBrowserEntrySearchFields(entry)) : 0;
+    if (!nicknameMatch && urlScore === null && titleScore === null && tokenScore === null) continue;
+    if (nicknameMatch?.remainingInput && urlScore === null && titleScore === null && tokenScore === null) continue;
+    const matchScore = Math.max(urlScore?.score ?? 0, titleScore ?? 0, tokenScore ?? 0);
+    const nicknameScore = nicknameMatch
+      ? nicknameMatch.remainingInput
+        ? 4200 + matchScore * 0.2
+        : 7000
+      : 0;
+    const matchQuality = getMatchQuality(urlScore?.score ?? 0, titleScore ?? 0, tokenScore ?? 0);
+    const freshnessFactor = kind === 'history' ? getHistoryFreshnessFactor(entry.lastUsedAt) : 1;
+    const adjustedMatchScore = getFreshnessAdjustedMatchScore(matchScore, matchQuality, freshnessFactor);
+    const recencyScore = kind === 'history' ? freshnessFactor * 650 : 0;
+    const frequencyScore = kind === 'history' ? getHistoryFrequencyScore(entry.useCount, freshnessFactor) : 0;
     const score =
-      matchScore +
+      Math.max(adjustedMatchScore, nicknameScore) +
       recencyScore +
       frequencyScore +
       (kind === 'bookmark' ? 250 : 0);
@@ -500,13 +582,16 @@ function getBrowserEntryCandidates(
       actionInput: entry.url,
       focusAvailable: false,
       faviconUrl: getFaviconUrlForUrl(entry.url),
+      source: entry.source,
+      sourceProfileId: entry.sourceProfileId,
       browserName: getBrowserSourceLabel(entry.source),
       profileName: entry.sourceProfileName || entry.sourceProfileId,
       bookmarkFolder: entry.bookmarkFolder,
       bookmarkOrder: entry.bookmarkOrder,
       lastUsedAt: entry.lastUsedAt,
       score,
-      completion: urlScore?.completion || '',
+      completion: nicknameMatch?.completion || urlScore?.completion || '',
+      nickname: nicknameMatch?.nickname || savedNickname,
     });
   }
   const sorted = options.preserveHistoryChronology
@@ -586,18 +671,25 @@ function getOpenTabCandidates(
   const trimmed = input.trim();
   const lower = trimmed.toLowerCase();
   const stripped = lower.replace(/^https?:\/\//, '');
+  const queryTokens = getSearchTokens(trimmed);
   const hasQuery = trimmed.length > 0;
   return tabs
     .map((tab): BrowserSearchResult | null => {
       const urlScore = hasQuery ? getUrlMatchScore(tab.url || tab.host, stripped, true) : { score: 0, completion: '' };
       const titleScore = hasQuery ? getTitleMatchScore(tab.title, lower) : 0;
-      if (urlScore === null && titleScore === null) return null;
-      const matchScore = Math.max(urlScore?.score ?? 0, titleScore ?? 0);
+      const tokenScore = hasQuery ? getTokenMatchScore(queryTokens, getOpenTabSearchFields(tab)) : 0;
+      if (urlScore === null && titleScore === null && tokenScore === null) return null;
+      const matchScore = Math.max(urlScore?.score ?? 0, titleScore ?? 0, tokenScore ?? 0);
+      const matchQuality = getMatchQuality(urlScore?.score ?? 0, titleScore ?? 0, tokenScore ?? 0);
+      const focusScore = windowFocusBoost(tab.windowLastFocusedAt);
+      const tabFreshness = tabFrecency(tab);
+      const freshnessFactor = Math.max(getOpenTabFocusFactor(tab.windowLastFocusedAt), tabFreshness);
+      const adjustedMatchScore = getFreshnessAdjustedMatchScore(matchScore, matchQuality, freshnessFactor);
       const score =
-        matchScore +
-        windowFocusBoost(tab.windowLastFocusedAt) +
+        adjustedMatchScore +
+        focusScore +
         (tab.active ? 350 : 0) +
-        tabFrecency(tab) * 140;
+        tabFreshness * 140;
       return {
         id: `browser-result-open-tab:${tab.id}`,
         kind: 'open-tab',
@@ -700,9 +792,200 @@ function getTitleMatchScore(titleValue: string, lowerInput: string): number | nu
   return null;
 }
 
-function recencyBoost(lastUsedAt: number): number {
-  const ageHours = Math.max(0, (Date.now() - lastUsedAt) / (60 * 60 * 1000));
-  return 650 / (1 + Math.log10(1 + ageHours));
+type TokenSearchField = {
+  value: string | undefined;
+  weight: number;
+};
+
+type BookmarkNicknameMatch = {
+  nickname: string;
+  completion: string;
+  remainingInput: string;
+};
+
+function getBookmarkNicknameMatch(
+  entry: BrowserSearchEntry,
+  input: string,
+  nicknames: BrowserSearchNicknameSetting[]
+): BookmarkNicknameMatch | null {
+  const parsed = parseNicknameQuery(input);
+  if (!parsed.firstToken) return null;
+  const nickname = findBookmarkNickname(entry, nicknames);
+  if (!nickname) return null;
+  const normalizedNickname = normalizeNicknameToken(nickname);
+  const normalizedToken = normalizeNicknameToken(parsed.firstToken);
+  if (!normalizedNickname.startsWith(normalizedToken)) return null;
+  return {
+    nickname,
+    completion: parsed.remainingInput ? '' : nickname,
+    remainingInput: parsed.remainingInput,
+  };
+}
+
+function findBookmarkNickname(entry: BrowserSearchEntry, nicknames: BrowserSearchNicknameSetting[]): string {
+  const entrySource = String(entry.source || '');
+  const entryProfileId = String(entry.sourceProfileId || '');
+  const entryUrl = normalizeNicknameUrl(entry.url);
+  const match = nicknames.find((item) =>
+    String(item.source || '') === entrySource &&
+    String(item.sourceProfileId || '') === entryProfileId &&
+    normalizeNicknameUrl(item.url) === entryUrl
+  );
+  return String(match?.nickname || '').trim();
+}
+
+function parseNicknameQuery(input: string): { firstToken: string; remainingInput: string } {
+  const trimmed = String(input || '').trim();
+  if (!trimmed) return { firstToken: '', remainingInput: '' };
+  const match = trimmed.match(/^(\S+)(?:\s+(.*))?$/);
+  return {
+    firstToken: match?.[1] || '',
+    remainingInput: String(match?.[2] || '').trim(),
+  };
+}
+
+function normalizeNicknameToken(value: string): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeNicknameUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    parsed.hash = '';
+    parsed.hostname = parsed.hostname.toLowerCase();
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return String(value || '').trim().toLowerCase().replace(/\/+$/, '');
+  }
+}
+
+function getBrowserEntrySearchFields(entry: BrowserSearchEntry): TokenSearchField[] {
+  return [
+    { value: entry.query, weight: 1.15 },
+    { value: entry.url, weight: 1 },
+    { value: entry.host, weight: 1 },
+    { value: entry.bookmarkFolder, weight: 0.65 },
+    { value: entry.sourceProfileName || entry.sourceProfileId, weight: 0.35 },
+    { value: getBrowserSourceLabel(entry.source), weight: 0.3 },
+  ];
+}
+
+function getOpenTabSearchFields(tab: BrowserTabEntry): TokenSearchField[] {
+  return [
+    { value: tab.title, weight: 1.15 },
+    { value: tab.url, weight: 1 },
+    { value: tab.host, weight: 1 },
+    { value: tab.profileName, weight: 0.35 },
+    { value: tab.browserName, weight: 0.3 },
+  ];
+}
+
+function getSearchTokens(input: string): string[] {
+  const normalized = normalizeForTokenSearch(input.replace(/^https?:\/\//i, ''));
+  const seen = new Set<string>();
+  const tokens: string[] = [];
+  for (const token of normalized.split(' ')) {
+    if (token.length < 2 || seen.has(token)) continue;
+    seen.add(token);
+    tokens.push(token);
+  }
+  return tokens;
+}
+
+function getTokenMatchScore(queryTokens: string[], fields: TokenSearchField[]): number | null {
+  if (queryTokens.length === 0) return null;
+  let total = 0;
+  for (const queryToken of queryTokens) {
+    let bestTokenScore = 0;
+    for (const field of fields) {
+      const fieldValue = normalizeForTokenSearch(field.value || '');
+      if (!fieldValue) continue;
+      const score = getSingleTokenMatchScore(queryToken, fieldValue);
+      const weightedScore = score * field.weight;
+      if (weightedScore > bestTokenScore) bestTokenScore = weightedScore;
+    }
+    if (bestTokenScore <= 0) return null;
+    total += bestTokenScore;
+  }
+  return Math.min(2300, total + queryTokens.length * 180);
+}
+
+function getSingleTokenMatchScore(queryToken: string, fieldValue: string): number {
+  if (fieldValue === queryToken) return 1350;
+  if (fieldValue.startsWith(`${queryToken} `)) return 1200;
+  if (fieldValue.startsWith(queryToken)) return 1050;
+  const boundaryIndex = fieldValue.indexOf(` ${queryToken}`);
+  if (boundaryIndex >= 0) {
+    const afterToken = fieldValue[boundaryIndex + queryToken.length + 1];
+    return afterToken === undefined || afterToken === ' ' ? 1000 : 800;
+  }
+  if (queryToken.length >= 3 && fieldValue.includes(queryToken)) return 620;
+  return 0;
+}
+
+function normalizeForTokenSearch(value: string): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\bwww\./g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getMatchQuality(urlScore: number, titleScore: number, tokenScore: number): number {
+  const bestScore = Math.max(urlScore, titleScore, tokenScore);
+  if (bestScore >= 3000) return 1;
+  if (bestScore >= 2400) return 0.94;
+  if (bestScore >= 2000) return 0.84;
+  if (bestScore >= 1700) return 0.74;
+  if (bestScore >= 1200) return 0.62;
+  return 0.5;
+}
+
+function getFreshnessAdjustedMatchScore(matchScore: number, matchQuality: number, freshnessFactor: number): number {
+  const freshness = clampNumber(freshnessFactor, 0.1, 1);
+  if (matchQuality >= 0.9) return matchScore;
+  const staleFloor = 0.58 + matchQuality * 0.24;
+  return matchScore * (staleFloor + (1 - staleFloor) * freshness);
+}
+
+function getHistoryFreshnessFactor(lastUsedAt: number): number {
+  if (!lastUsedAt) return 0.1;
+  const ageDays = Math.max(0, (Date.now() - lastUsedAt) / (24 * 60 * 60 * 1000));
+  if (ageDays <= 4) return 1;
+  if (ageDays <= 14) return interpolate(ageDays, 4, 14, 1, 0.7);
+  if (ageDays <= 31) return interpolate(ageDays, 14, 31, 0.7, 0.5);
+  if (ageDays <= 90) return interpolate(ageDays, 31, 90, 0.5, 0.3);
+  if (ageDays <= 365) return interpolate(ageDays, 90, 365, 0.3, 0.1);
+  return 0.1;
+}
+
+function getHistoryFrequencyScore(useCount: number, freshnessFactor: number): number {
+  const frequency = Math.max(0, useCount);
+  const recencyWeightedCount = Math.log1p(frequency) * (0.45 + 0.55 * clampNumber(freshnessFactor, 0.1, 1));
+  return Math.min(550, recencyWeightedCount * 150);
+}
+
+function getOpenTabFocusFactor(windowLastFocusedAt: number): number {
+  if (!windowLastFocusedAt) return 0.25;
+  const ageMinutes = Math.max(0, (Date.now() - windowLastFocusedAt) / (60 * 1000));
+  if (ageMinutes <= 10) return 1;
+  if (ageMinutes <= 60) return interpolate(ageMinutes, 10, 60, 1, 0.75);
+  if (ageMinutes <= 24 * 60) return interpolate(ageMinutes, 60, 24 * 60, 0.75, 0.35);
+  if (ageMinutes <= 7 * 24 * 60) return interpolate(ageMinutes, 24 * 60, 7 * 24 * 60, 0.35, 0.15);
+  return 0.15;
+}
+
+function interpolate(value: number, minValue: number, maxValue: number, minScore: number, maxScore: number): number {
+  if (maxValue <= minValue) return maxScore;
+  const progress = clampNumber((value - minValue) / (maxValue - minValue), 0, 1);
+  return minScore + (maxScore - minScore) * progress;
+}
+
+function clampNumber(value: number, minValue: number, maxValue: number): number {
+  return Math.min(maxValue, Math.max(minValue, value));
 }
 
 function windowFocusBoost(windowLastFocusedAt: number): number {

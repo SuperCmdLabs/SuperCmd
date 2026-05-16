@@ -755,6 +755,11 @@
           },
           "moveUp": "Monter",
           "moveDown": "Descendre"
+        },
+        "webSearch": {
+          "label": "Recherche Web",
+          "defaultProvider": "Fournisseur par défaut",
+          "suggestionCount": "Suggestions de recherche"
         }
       }
     },
@@ -817,7 +822,8 @@
       "calculator": "Calculatrice",
       "dictionary": "Dictionnaire",
       "ai": "Assistant IA",
-      "browser": "Navigateur"
+      "browser": "Navigateur",
+      "search": "Recherche"
     },
     "actions": {
       "open": "Ouvrir",
@@ -862,7 +868,33 @@
       "showAllPlaceholder": "Rechercher dans les résultats Browser...",
       "openTabsPlaceholder": "Rechercher les onglets ouverts...",
       "bookmarksPlaceholder": "Rechercher dans les favoris...",
-      "historyPlaceholder": "Rechercher dans l’historique..."
+      "historyPlaceholder": "Rechercher dans l’historique...",
+      "setNickname": "Définir un surnom",
+      "editNickname": "Modifier le surnom",
+      "searchProviderFor": "Rechercher « {query} » avec {provider}",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "Recherche par défaut",
+      "webSearchPlaceholder": "Rechercher des bangs...",
+      "useBang": "Utiliser le bang",
+      "bangSections": {
+        "used": "Bangs récents",
+        "common": "Bangs courants",
+        "matching": "Bangs correspondants",
+        "all": "Tous les bangs A-Z",
+        "hidden": "Bangs masqués"
+      },
+      "showHidden": "Afficher masqués",
+      "hideHidden": "Masquer masqués",
+      "newBang": "Nouveau bang",
+      "aliasHelp": "Séparez les alias par des virgules, par exemple : !gh, !git",
+      "customBangHelp": "Créez un bang avec un modèle d’URL contenant {query}.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "Alias",
+        "name": "Nom",
+        "host": "Hôte",
+        "template": "Modèle d’URL"
+      }
     },
     "badges": {
       "openTab": "Onglet ouvert",

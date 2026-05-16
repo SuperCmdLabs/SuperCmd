@@ -776,6 +776,11 @@
           },
           "moveUp": "위로 이동",
           "moveDown": "아래로 이동"
+        },
+        "webSearch": {
+          "label": "웹 검색",
+          "defaultProvider": "기본 제공자",
+          "suggestionCount": "검색 제안"
         }
       }
     }
@@ -806,7 +811,8 @@
       "files": "파일",
       "calculator": "계산자",
       "quickLinks": "빠른 링크",
-      "browser": "브라우저"
+      "browser": "브라우저",
+      "search": "검색"
     },
     "actions": {
       "open": "열기",
@@ -893,7 +899,33 @@
       "showAllPlaceholder": "Browser 결과 검색...",
       "openTabsPlaceholder": "열린 탭 검색...",
       "bookmarksPlaceholder": "북마크 검색...",
-      "historyPlaceholder": "방문 기록 검색..."
+      "historyPlaceholder": "방문 기록 검색...",
+      "setNickname": "닉네임 설정",
+      "editNickname": "닉네임 편집",
+      "searchProviderFor": "{provider}에서 \"{query}\" 검색",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "기본 검색",
+      "webSearchPlaceholder": "Bang 검색...",
+      "useBang": "Bang 사용",
+      "bangSections": {
+        "used": "최근 Bang",
+        "common": "일반 Bang",
+        "matching": "일치하는 Bang",
+        "all": "모든 Bang A-Z",
+        "hidden": "숨긴 Bang"
+      },
+      "showHidden": "숨김 표시",
+      "hideHidden": "숨김 감추기",
+      "newBang": "새 Bang",
+      "aliasHelp": "별칭은 쉼표로 구분하세요. 예: !gh, !git",
+      "customBangHelp": "{query}가 포함된 URL 템플릿으로 Bang을 만듭니다.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "별칭",
+        "name": "이름",
+        "host": "호스트",
+        "template": "URL 템플릿"
+      }
     }
   },
   "scriptCommand": {

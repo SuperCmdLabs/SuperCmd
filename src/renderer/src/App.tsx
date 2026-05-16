@@ -15,7 +15,12 @@ import type {
   AppSettings,
   QuickLinkDynamicField,
   IndexedFileSearchResult,
+  BrowserSearchNicknameSetting,
   BrowserSearchResultGroupSetting,
+  WebSearchBangCustomProviderSetting,
+  WebSearchBangEntry,
+  WebSearchBangOverrideSetting,
+  WebSearchBangUsageSetting,
 } from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
@@ -88,6 +93,11 @@ const QUICK_LINK_COMMAND_PREFIX = 'quicklink-';
 const DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT = 25;
 const DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT = 45;
 const MAX_LAUNCHER_BACKGROUND_BLUR_PX = 20;
+const WEB_SEARCH_BANG_USE_COUNTS_KEY = 'supercmd:webSearchBangUseCounts';
+const WEB_SEARCH_SUGGEST_DEBOUNCE_MS = 80;
+const WEB_SEARCH_ACTIVE_BANG_SUGGESTION_LIMIT = 24;
+const WEB_SEARCH_RECENT_BANG_LIMIT = 20;
+const WEB_SEARCH_FRECENCY_HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000;
 
 function getQuickLinkIdFromCommandId(commandId: string): string | null {
   const normalized = String(commandId || '').trim();
@@ -103,6 +113,10 @@ const BROWSER_SEARCH_OPEN_URL_ID = 'browser-search-action-open-url';
 const BROWSER_SEARCH_PERFORM_SEARCH_ID = 'browser-search-action-perform-search';
 const BROWSER_SEARCH_RESULT_ID_PREFIX = 'browser-search-result:';
 const BROWSER_SEARCH_SHOW_ALL_RESULTS_ID = 'browser-search-action-show-all';
+const WEB_SEARCH_COMMAND_ID = 'system-search-web';
+const WEB_SEARCH_ROOT_DIRECT_ID = 'web-search-root:default';
+const WEB_SEARCH_ROOT_BANG_PREFIX = 'web-search-root:bang:';
+const WEB_SEARCH_ROOT_SUGGESTION_PREFIX = 'web-search-root:suggestion:';
 const BROWSER_SEARCH_OPEN_TABS_COMMAND_ID = 'system-search-open-tabs';
 const BROWSER_SEARCH_BOOKMARKS_COMMAND_ID = 'system-search-bookmarks';
 const BROWSER_SEARCH_HISTORY_COMMAND_ID = 'system-search-history';
@@ -112,8 +126,26 @@ const DEFAULT_BROWSER_SEARCH_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = 
   { kind: 'history', limit: 2 },
 ];
 type BrowserResultsViewScope = 'all' | 'open-tabs' | 'bookmarks' | 'history';
+type WebSearchResultKind = 'search' | 'suggestion' | 'bang';
+type WebSearchResult = {
+  id: string;
+  kind: WebSearchResultKind;
+  section: 'search' | 'recent' | 'all' | 'matching' | 'hidden';
+  title: string;
+  subtitle: string;
+  query: string;
+  bangKey?: string;
+  defaultAliases?: string[];
+  customAliases?: string[];
+  isCustom?: boolean;
+  isDisabled?: boolean;
+  bang?: SearchBangDefinition;
+  faviconUrl?: string;
+};
 const MAX_LAUNCHER_FILE_RESULT_ICONS = MAX_LAUNCHER_FILE_RESULTS;
 const MIN_LAUNCHER_FILE_QUERY_LENGTH = 2;
+const WEB_SEARCH_INITIAL_VISIBLE_RESULTS = 240;
+const WEB_SEARCH_VISIBLE_RESULTS_INCREMENT = 240;
 const MAX_INLINE_EXTENSION_ARGUMENTS = 3;
 const MAX_INLINE_QUICK_LINK_ARGUMENTS = 3;
 const DIRECT_LAUNCH_EXPANSION_GUARD_MS = 700;
@@ -127,6 +159,7 @@ const DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS = new Set([
   'system-search-quicklinks',
   'system-create-quicklink',
   'system-search-files',
+  WEB_SEARCH_COMMAND_ID,
   BROWSER_SEARCH_OPEN_TABS_COMMAND_ID,
   BROWSER_SEARCH_BOOKMARKS_COMMAND_ID,
   BROWSER_SEARCH_HISTORY_COMMAND_ID,
@@ -253,6 +286,7 @@ function isBrowserSearchCommand(command: CommandInfo | null | undefined): boolea
   return id === BROWSER_SEARCH_OPEN_URL_ID ||
     id === BROWSER_SEARCH_PERFORM_SEARCH_ID ||
     id === BROWSER_SEARCH_SHOW_ALL_RESULTS_ID ||
+    id.startsWith('web-search-root:') ||
     id.startsWith(BROWSER_SEARCH_RESULT_ID_PREFIX);
 }
 
@@ -404,6 +438,399 @@ function normalizeQuickLinkDynamicFields(fields: QuickLinkDynamicField[]): Quick
   return Array.from(map.values());
 }
 
+function normalizeBookmarkNicknameUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    parsed.hash = '';
+    parsed.hostname = parsed.hostname.toLowerCase();
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return String(value || '').trim().toLowerCase().replace(/\/+$/, '');
+  }
+}
+
+function normalizeBookmarkNickname(value: string): string {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 64);
+}
+
+function getSuggestedBookmarkNickname(result: BrowserSearchResult): string {
+  const firstTitleWord = String(result.title || '').trim().split(/\s+/)[0] || '';
+  return normalizeBookmarkNickname(firstTitleWord);
+}
+
+function getBrowserResultNicknameKey(result: BrowserSearchResult): string {
+  return [
+    result.source || '',
+    result.sourceProfileId || '',
+    normalizeBookmarkNicknameUrl(result.url),
+  ].join(':');
+}
+
+function canEditBrowserResultNickname(result: BrowserSearchResult | null | undefined): result is BrowserSearchResult {
+  return Boolean(result?.kind === 'bookmark' && result.url && result.source);
+}
+
+type SearchBangDefinition = {
+  key: string;
+  aliases: string[];
+  name: string;
+  host: string;
+  template: string;
+  category?: string;
+  subcategory?: string;
+  source?: 'seed' | 'duckduckgo' | 'unduck' | 'custom';
+  rankHint?: number;
+  defaultPopularityRank?: number;
+  disabled?: boolean;
+};
+
+const SEARCH_BANGS: SearchBangDefinition[] = [
+  { key: 'g', aliases: ['google'], name: 'Google', host: 'google.com', template: 'https://www.google.com/search?q={query}', category: 'Search', source: 'seed', defaultPopularityRank: 1 },
+  { key: 'ddg', aliases: ['d', 'duckduckgo'], name: 'DuckDuckGo', host: 'duckduckgo.com', template: 'https://duckduckgo.com/?q={query}', category: 'Search', source: 'seed', defaultPopularityRank: 2 },
+  { key: 'yt', aliases: ['youtube'], name: 'YouTube', host: 'youtube.com', template: 'https://www.youtube.com/results?search_query={query}', category: 'Multimedia', source: 'seed', defaultPopularityRank: 3 },
+  { key: 'gh', aliases: ['github'], name: 'GitHub', host: 'github.com', template: 'https://github.com/search?q={query}', category: 'Programming', source: 'seed', defaultPopularityRank: 4 },
+  { key: 'npm', aliases: [], name: 'npm', host: 'npmjs.com', template: 'https://www.npmjs.com/search?q={query}', category: 'Programming', source: 'seed', defaultPopularityRank: 12 },
+  { key: 'mdn', aliases: [], name: 'MDN', host: 'developer.mozilla.org', template: 'https://developer.mozilla.org/search?q={query}', category: 'Programming', source: 'seed', defaultPopularityRank: 11 },
+  { key: 'maps', aliases: ['gm'], name: 'Google Maps', host: 'google.com', template: 'https://www.google.com/maps/search/{query}', category: 'Search', source: 'seed', defaultPopularityRank: 5 },
+  { key: 'img', aliases: ['image', 'images', 'gi', 'gim', 'gimg', 'gimages'], name: 'Google Images', host: 'google.com', template: 'https://www.google.com/search?tbm=isch&q={query}', category: 'Search', source: 'seed', defaultPopularityRank: 6 },
+  { key: 'wiki', aliases: ['w', 'wikipedia'], name: 'Wikipedia', host: 'wikipedia.org', template: 'https://en.wikipedia.org/w/index.php?search={query}', category: 'Reference', source: 'seed', defaultPopularityRank: 7 },
+  { key: 'x', aliases: ['twitter'], name: 'X', host: 'x.com', template: 'https://x.com/search?q={query}', category: 'Social', source: 'seed', defaultPopularityRank: 14 },
+];
+
+const COMMON_SEARCH_BANG_ORDER = new Map(
+  ['g', 'ddg', 'yt', 'gh', 'npm', 'mdn', 'maps', 'img', 'wiki', 'x'].map((key, index) => [key, index])
+);
+
+const DEFAULT_POPULAR_BANG_TARGETS: Array<{ rank: number; hosts: string[]; names: string[] }> = [
+  { rank: 1, hosts: ['google.com'], names: ['google'] },
+  { rank: 2, hosts: ['duckduckgo.com'], names: ['duckduckgo'] },
+  { rank: 3, hosts: ['youtube.com'], names: ['youtube'] },
+  { rank: 4, hosts: ['github.com'], names: ['github'] },
+  { rank: 5, hosts: ['google.com/maps'], names: ['google maps', 'maps'] },
+  { rank: 6, hosts: ['google.com'], names: ['google images', 'images'] },
+  { rank: 7, hosts: ['wikipedia.org'], names: ['wikipedia'] },
+  { rank: 8, hosts: ['reddit.com'], names: ['reddit'] },
+  { rank: 9, hosts: ['amazon.com'], names: ['amazon'] },
+  { rank: 10, hosts: ['stackoverflow.com'], names: ['stack overflow', 'stackoverflow'] },
+  { rank: 11, hosts: ['developer.mozilla.org'], names: ['mdn'] },
+  { rank: 12, hosts: ['npmjs.com'], names: ['npm'] },
+  { rank: 13, hosts: ['imdb.com'], names: ['imdb'] },
+  { rank: 14, hosts: ['x.com', 'twitter.com'], names: ['x', 'twitter'] },
+  { rank: 15, hosts: ['linkedin.com'], names: ['linkedin'] },
+  { rank: 16, hosts: ['spotify.com'], names: ['spotify'] },
+  { rank: 17, hosts: ['translate.google.com'], names: ['google translate', 'translate'] },
+  { rank: 18, hosts: ['mail.google.com'], names: ['gmail'] },
+  { rank: 19, hosts: ['drive.google.com'], names: ['google drive', 'drive'] },
+  { rank: 20, hosts: ['docs.google.com'], names: ['google docs', 'docs'] },
+];
+
+type BangParseState =
+  | { mode: 'none' }
+  | { mode: 'selecting'; token: string; tokenIndex: number; queryWithoutToken: string }
+  | { mode: 'active'; bang: SearchBangDefinition; query: string };
+
+const SEARCH_BANGS_BY_KEY = new Map<string, SearchBangDefinition>();
+for (const bang of SEARCH_BANGS) {
+  SEARCH_BANGS_BY_KEY.set(bang.key, bang);
+  for (const alias of bang.aliases || []) {
+    SEARCH_BANGS_BY_KEY.set(alias, bang);
+  }
+}
+
+function getFaviconUrlForHost(host: string): string {
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
+}
+
+function buildBangSearchUrl(bang: SearchBangDefinition, query: string): string {
+  return bang.template
+    .replace('{bang}', encodeURIComponent(bang.key))
+    .replace('{query}', encodeURIComponent(query.trim()));
+}
+
+function normalizeBangHost(value: string): string {
+  return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
+}
+
+function getDefaultPopularityRankForBang(bang: SearchBangDefinition): number | undefined {
+  if (bang.defaultPopularityRank) return bang.defaultPopularityRank;
+  const host = normalizeBangHost(bang.host);
+  const name = bang.name.toLowerCase();
+  for (const target of DEFAULT_POPULAR_BANG_TARGETS) {
+    if (target.hosts.some((candidate) => host.includes(candidate.toLowerCase().replace(/^www\./, '')))) return target.rank;
+    if (target.names.some((candidate) => name === candidate || name.includes(candidate))) return target.rank;
+  }
+  return undefined;
+}
+
+function normalizeBangDefinition(raw: Partial<SearchBangDefinition> & { key: string }): SearchBangDefinition {
+  const key = String(raw.key || '').trim().toLowerCase().replace(/^!+/, '').replace(/[^a-z0-9.+_-]/g, '');
+  const aliases = Array.from(new Set((raw.aliases || []).map((alias) => String(alias || '').trim().toLowerCase().replace(/^!+/, '').replace(/[^a-z0-9.+_-]/g, '')).filter((alias) => alias && alias !== key)));
+  const bang: SearchBangDefinition = {
+    key,
+    aliases,
+    name: String(raw.name || key).trim() || key,
+    host: String(raw.host || 'duckduckgo.com').trim() || 'duckduckgo.com',
+    template: String(raw.template || 'https://duckduckgo.com/?q=!{bang}%20{query}').trim() || 'https://duckduckgo.com/?q=!{bang}%20{query}',
+    category: raw.category,
+    subcategory: raw.subcategory,
+    source: raw.source || 'duckduckgo',
+    rankHint: raw.rankHint,
+    defaultPopularityRank: raw.defaultPopularityRank,
+    disabled: raw.disabled,
+  };
+  bang.defaultPopularityRank = getDefaultPopularityRankForBang(bang);
+  return bang;
+}
+
+function getBangUsageScore(usage: WebSearchBangUsageSetting | undefined): number {
+  if (!usage) return 0;
+  const elapsed = Math.max(0, Date.now() - (usage.lastUsedAt || 0));
+  const decay = Math.pow(0.5, elapsed / WEB_SEARCH_FRECENCY_HALF_LIFE_MS);
+  return Math.max(0, Number(usage.frecencyScore || 0) * decay);
+}
+
+function createUpdatedBangUsage(current: WebSearchBangUsageSetting | undefined): WebSearchBangUsageSetting {
+  const now = Date.now();
+  const elapsed = Math.max(0, now - (current?.lastUsedAt || now));
+  const decay = Math.pow(0.5, elapsed / WEB_SEARCH_FRECENCY_HALF_LIFE_MS);
+  return {
+    useCount: Math.max(0, Math.floor(Number(current?.useCount) || 0)) + 1,
+    lastUsedAt: now,
+    frecencyScore: Math.max(0, Number(current?.frecencyScore || 0) * decay) + 1,
+  };
+}
+
+function bangSearchText(bang: SearchBangDefinition): string {
+  return [
+    bang.key,
+    ...(bang.aliases || []),
+    bang.name,
+    bang.host,
+    bang.category || '',
+    bang.subcategory || '',
+  ].join(' ').toLowerCase();
+}
+
+function scoreBangMatch(bang: SearchBangDefinition, rawFilter: string): number {
+  const filter = String(rawFilter || '').trim().toLowerCase().replace(/^!+/, '');
+  if (!filter) return 1;
+  const aliases = [bang.key, ...(bang.aliases || [])];
+  if (aliases.includes(filter)) return 1000;
+  if (aliases.some((alias) => alias.startsWith(filter))) return 900;
+  const name = bang.name.toLowerCase();
+  if (name === filter) return 860;
+  if (name.startsWith(filter)) return 820;
+  const host = normalizeBangHost(bang.host);
+  if (host === filter || host.startsWith(filter) || host.includes(`.${filter}`)) return 760;
+  if (bangSearchText(bang).includes(filter)) return 620;
+  const terms = filter.split(/\s+/).filter(Boolean);
+  if (terms.length > 1 && terms.every((term) => bangSearchText(bang).includes(term))) return 580;
+  return 0;
+}
+
+function parseSearchBangState(input: string, bangs: SearchBangDefinition[]): BangParseState {
+  const raw = String(input || '');
+  const trimmed = raw.trim();
+  if (!trimmed) return { mode: 'none' };
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const map = new Map<string, SearchBangDefinition>();
+  for (const bang of bangs) {
+    if (bang.disabled) continue;
+    map.set(bang.key, bang);
+    for (const alias of bang.aliases || []) map.set(alias, bang);
+    const normalizedName = bang.name.toLowerCase().replace(/[^a-z0-9.+_-]/g, '');
+    if (normalizedName) map.set(normalizedName, bang);
+  }
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (!part.startsWith('!')) continue;
+    const token = part.slice(1).toLowerCase();
+    const bang = token ? map.get(token) : undefined;
+    const queryWithoutToken = parts.filter((_, partIndex) => partIndex !== index).join(' ');
+    const tokenHasTrailingSpace = new RegExp(`!${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s`).test(raw);
+    if (bang && (tokenHasTrailingSpace || index < parts.length - 1)) {
+      return { mode: 'active', bang, query: queryWithoutToken };
+    }
+    return { mode: 'selecting', token, tokenIndex: index, queryWithoutToken };
+  }
+  return { mode: 'none' };
+}
+
+function parseSearchBang(input: string): {
+  rawQuery: string;
+  query: string;
+  bang: SearchBangDefinition | null;
+  activeBangPrefix: string | null;
+} {
+  const rawQuery = String(input || '');
+  const parts = rawQuery.trim().split(/\s+/).filter(Boolean);
+  let bang: SearchBangDefinition | null = null;
+  let activeBangPrefix: string | null = null;
+  let bangIndex = -1;
+  let activeBangIndex = -1;
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (!part.startsWith('!')) continue;
+    if (part.length === 1) {
+      activeBangPrefix = '';
+      activeBangIndex = index;
+      continue;
+    }
+    const key = part.slice(1).toLowerCase();
+    const match = SEARCH_BANGS_BY_KEY.get(key);
+    if (match) {
+      bang = match;
+      bangIndex = index;
+      break;
+    }
+    if (/^[a-z0-9]*$/i.test(key)) {
+      activeBangPrefix = key;
+      activeBangIndex = index;
+    }
+  }
+
+  const omittedIndex = bangIndex >= 0 ? bangIndex : activeBangIndex;
+  const query = omittedIndex >= 0
+    ? parts.filter((_, index) => index !== omittedIndex).join(' ')
+    : parts.join(' ');
+  return { rawQuery, query, bang, activeBangPrefix };
+}
+
+function getSearchBangByKey(key: string | undefined): SearchBangDefinition {
+  return SEARCH_BANGS_BY_KEY.get(String(key || '').trim().toLowerCase().replace(/^!+/, '')) || SEARCH_BANGS_BY_KEY.get('g') || SEARCH_BANGS[0];
+}
+
+function getSearchBangByKeyFromList(key: string | undefined, bangs: SearchBangDefinition[]): SearchBangDefinition {
+  const normalized = String(key || '').trim().toLowerCase().replace(/^!+/, '');
+  for (const bang of bangs) {
+    if (bang.key === normalized || (bang.aliases || []).includes(normalized)) return bang;
+  }
+  return getSearchBangByKey(key);
+}
+
+function parseSearchBangFromList(input: string, bangs: SearchBangDefinition[]): {
+  rawQuery: string;
+  query: string;
+  bang: SearchBangDefinition | null;
+  activeBangPrefix: string | null;
+} {
+  const map = new Map<string, SearchBangDefinition>();
+  for (const bang of bangs) {
+    map.set(bang.key, bang);
+    for (const alias of bang.aliases || []) map.set(alias, bang);
+  }
+  const rawQuery = String(input || '');
+  const parts = rawQuery.trim().split(/\s+/).filter(Boolean);
+  let bang: SearchBangDefinition | null = null;
+  let activeBangPrefix: string | null = null;
+  let bangIndex = -1;
+  let activeBangIndex = -1;
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (!part.startsWith('!')) continue;
+    if (part.length === 1) {
+      activeBangPrefix = '';
+      activeBangIndex = index;
+      continue;
+    }
+    const key = part.slice(1).toLowerCase();
+    const match = map.get(key);
+    if (match) {
+      bang = match;
+      bangIndex = index;
+      break;
+    }
+    if (/^[a-z0-9.+_-]*$/i.test(key)) {
+      activeBangPrefix = key;
+      activeBangIndex = index;
+    }
+  }
+
+  const omittedIndex = bangIndex >= 0 ? bangIndex : activeBangIndex;
+  const query = omittedIndex >= 0
+    ? parts.filter((_, index) => index !== omittedIndex).join(' ')
+    : parts.join(' ');
+  return { rawQuery, query, bang, activeBangPrefix };
+}
+
+function getSortedSearchBangs(
+  bangs: SearchBangDefinition[],
+  prefix: string | null,
+  usage: Record<string, WebSearchBangUsageSetting>,
+  limit = bangs.length
+): SearchBangDefinition[] {
+  const normalized = String(prefix || '').toLowerCase();
+  const matches = normalized
+    ? bangs.filter((bang) => scoreBangMatch(bang, normalized) > 0)
+    : bangs;
+  return [...matches]
+    .sort((a, b) => {
+      const matchDelta = scoreBangMatch(b, normalized) - scoreBangMatch(a, normalized);
+      if (matchDelta !== 0) return matchDelta;
+      const usageDelta = getBangUsageScore(usage[b.key]) - getBangUsageScore(usage[a.key]);
+      if (Math.abs(usageDelta) > 0.0001) return usageDelta > 0 ? 1 : -1;
+      if (!normalized) {
+        const commonDelta = (a.defaultPopularityRank ?? COMMON_SEARCH_BANG_ORDER.get(a.key) ?? Number.POSITIVE_INFINITY) -
+          (b.defaultPopularityRank ?? COMMON_SEARCH_BANG_ORDER.get(b.key) ?? Number.POSITIVE_INFINITY);
+        if (commonDelta !== 0) return commonDelta;
+        const rankDelta = (a.rankHint ?? Number.POSITIVE_INFINITY) - (b.rankHint ?? Number.POSITIVE_INFINITY);
+        if (rankDelta !== 0) return rankDelta;
+      }
+      return a.key.localeCompare(b.key);
+    })
+    .slice(0, Math.max(0, limit));
+}
+
+function normalizeWebSearchBangAliasList(value: string): string[] {
+  return Array.from(new Set(
+    String(value || '')
+      .split(',')
+      .map((alias) => alias.trim().toLowerCase().replace(/^!+/, '').replace(/[^a-z0-9.+_-]/g, ''))
+      .filter(Boolean)
+  ));
+}
+
+function formatWebSearchBangAliases(aliases: string[]): string {
+  return aliases.map((alias) => `!${alias}`).join(', ');
+}
+
+function formatWebSearchBangAliasSummary(aliases: string[]): string {
+  const normalized = normalizeWebSearchBangAliasList(formatWebSearchBangAliases(aliases));
+  if (normalized.length <= 1) return '';
+  const visible = normalized.slice(0, 5).map((alias) => `!${alias}`).join(', ');
+  return normalized.length > 5 ? `${visible}, +${normalized.length - 5}` : visible;
+}
+
+function getWebSearchBangSection(
+  bang: SearchBangDefinition,
+  filter: string,
+  usage: Record<string, WebSearchBangUsageSetting>
+): WebSearchResult['section'] {
+  if (filter.trim()) return 'matching';
+  if (bang.disabled) return 'hidden';
+  if (getBangUsageScore(usage[bang.key]) > 0) return 'recent';
+  return 'all';
+}
+
+function getWebSearchBangSectionTitleKey(section: WebSearchResult['section']): string {
+  switch (section) {
+    case 'search':
+      return 'launcher.categories.search';
+    case 'recent':
+      return 'launcher.browserSearch.bangSections.used';
+    case 'matching':
+      return 'launcher.browserSearch.bangSections.matching';
+    case 'hidden':
+      return 'launcher.browserSearch.bangSections.hidden';
+    case 'all':
+    default:
+      return 'launcher.browserSearch.bangSections.all';
+  }
+}
+
 // Intern cache: commandId → stable iconDataUrl string reference.
 // Prevents duplicate base64 strings accumulating across repeated fetchCommands() IPC calls.
 const _commandIconCache = new Map<string, string>();
@@ -437,6 +864,18 @@ const App: React.FC = () => {
   const [browserResultsViewSelectedIndex, setBrowserResultsViewSelectedIndex] = useState(0);
   const [browserHistorySelectedProfileIds, setBrowserHistorySelectedProfileIds] = useState<string[] | null>(null);
   const [browserHistoryProfileMenuOpen, setBrowserHistoryProfileMenuOpen] = useState(false);
+  const [webSearchQuery, setWebSearchQuery] = useState<string | null>(null);
+  const [webSearchSelectedIndex, setWebSearchSelectedIndex] = useState(0);
+  const [rootWebSearchSuggestions, setRootWebSearchSuggestions] = useState<string[]>([]);
+  const [webSearchSuggestions, setWebSearchSuggestions] = useState<string[]>([]);
+  const [webSearchDefaultBangKey, setWebSearchDefaultBangKey] = useState('g');
+  const [webSearchSuggestionLimit, setWebSearchSuggestionLimit] = useState(3);
+  const [webSearchBangUsage, setWebSearchBangUsage] = useState<Record<string, WebSearchBangUsageSetting>>({});
+  const [webSearchBangCatalog, setWebSearchBangCatalog] = useState<SearchBangDefinition[]>([]);
+  const [webSearchBangOverrides, setWebSearchBangOverrides] = useState<WebSearchBangOverrideSetting[]>([]);
+  const [webSearchDisabledBangKeys, setWebSearchDisabledBangKeys] = useState<string[]>([]);
+  const [webSearchBangCustomProviders, setWebSearchBangCustomProviders] = useState<WebSearchBangCustomProviderSetting[]>([]);
+  const [webSearchShowHiddenBangs, setWebSearchShowHiddenBangs] = useState(false);
   const [inlineExtensionArgumentValues, setInlineExtensionArgumentValues] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -509,6 +948,22 @@ const App: React.FC = () => {
     fields: QuickLinkDynamicField[];
     values: Record<string, string>;
   } | null>(null);
+  const [bookmarkNicknamePrompt, setBookmarkNicknamePrompt] = useState<{
+    result: BrowserSearchResult;
+    value: string;
+  } | null>(null);
+  const [webSearchBangPrompt, setWebSearchBangPrompt] = useState<{
+    result: WebSearchResult;
+    value: string;
+  } | null>(null);
+  const [webSearchCustomBangPrompt, setWebSearchCustomBangPrompt] = useState<{
+    key: string;
+    aliases: string;
+    name: string;
+    host: string;
+    template: string;
+  } | null>(null);
+  const [webSearchVisibleResultCount, setWebSearchVisibleResultCount] = useState(WEB_SEARCH_INITIAL_VISIBLE_RESULTS);
   const {
     menuBarExtensions,
     backgroundNoViewRuns, setBackgroundNoViewRuns,
@@ -523,6 +978,7 @@ const App: React.FC = () => {
   const memoryFeedbackTimerRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const browserResultsViewInputRef = useRef<HTMLInputElement>(null);
+  const webSearchInputRef = useRef<HTMLInputElement>(null);
   const inlineArgumentLaneRef = useRef<HTMLDivElement>(null);
   const inlineArgumentClusterRef = useRef<HTMLDivElement>(null);
   const inlineArgumentInputRefs = useRef<Array<HTMLInputElement | HTMLSelectElement | null>>([]);
@@ -530,6 +986,8 @@ const App: React.FC = () => {
   const fileSearchRequestSeqRef = useRef(0);
   const commandsRef = useRef<CommandInfo[]>([]);
   const lastCommandsFetchAtRef = useRef(0);
+  const lastRecordedRootBangUseRef = useRef<string | null>(null);
+  const lastRecordedWebBangUseRef = useRef<string | null>(null);
   const executingCommandRef = useRef(false);
   const showActionsRef = useRef(false);
   const showAppUninstallRef = useRef<string | null>(null);
@@ -593,6 +1051,8 @@ const App: React.FC = () => {
   const actionsOverlayRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const quickLinkDynamicInputRef = useRef<HTMLInputElement>(null);
+  const bookmarkNicknameInputRef = useRef<HTMLInputElement>(null);
+  const webSearchBangInputRef = useRef<HTMLInputElement>(null);
   const windowPresetCommandQueueRef = useRef<Promise<void>>(Promise.resolve());
   const lastWindowHiddenAtRef = useRef<number>(0);
   const directLaunchExpansionGuardUntilRef = useRef<number>(0);
@@ -609,6 +1069,44 @@ const App: React.FC = () => {
   extensionViewRef.current = extensionView;
   pinnedCommandsRef.current = pinnedCommands;
   pinnedFilesRef.current = pinnedFiles;
+  const effectiveSearchBangs = useMemo(() => {
+    const byKey = new Map<string, SearchBangDefinition>();
+    const disabled = new Set(webSearchDisabledBangKeys);
+    for (const entry of webSearchBangCatalog) {
+      const normalized = normalizeBangDefinition(entry);
+      byKey.set(normalized.key, { ...normalized, disabled: disabled.has(normalized.key) });
+    }
+    for (const entry of SEARCH_BANGS) {
+      const normalized = normalizeBangDefinition(entry);
+      byKey.set(normalized.key, { ...normalized, disabled: disabled.has(normalized.key) });
+    }
+    for (const entry of webSearchBangCustomProviders) {
+      const normalized = normalizeBangDefinition({
+        key: entry.key,
+        aliases: entry.aliases,
+        name: entry.name,
+        host: entry.host,
+        template: entry.template,
+        category: 'Custom',
+        source: 'custom',
+      });
+      byKey.set(normalized.key, { ...normalized, disabled: disabled.has(normalized.key) });
+    }
+    const overrides = new Map(webSearchBangOverrides.map((override) => [override.key, override]));
+    for (const [key, override] of overrides) {
+      const current = byKey.get(key);
+      if (!current) continue;
+      byKey.set(key, {
+        ...current,
+        aliases: override.aliases.filter((alias) => alias !== key),
+      });
+    }
+    return Array.from(byKey.values());
+  }, [webSearchBangCatalog, webSearchBangOverrides, webSearchBangCustomProviders, webSearchDisabledBangKeys]);
+  const enabledSearchBangs = useMemo(
+    () => effectiveSearchBangs.filter((bang) => !bang.disabled),
+    [effectiveSearchBangs]
+  );
   // Configurable timeout (ms) before the launcher resets to root search after
   // it has been hidden. Synced from settings.popToRootSearchTimeoutSeconds.
   // 0 = reset immediately on every reopen.
@@ -626,6 +1124,7 @@ const App: React.FC = () => {
     showNotesSearch ||
     showCanvasSearch ||
     browserResultsViewQuery !== null ||
+    webSearchQuery !== null ||
     showCamera ||
     showSchedule ||
     showAppUninstall
@@ -746,6 +1245,13 @@ const App: React.FC = () => {
       );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       setBrowserSearchResultGroups(normalizeBrowserSearchResultGroups(settings.browserSearch?.resultGroups));
+      setWebSearchDefaultBangKey(String(settings.browserSearch?.webSearchDefaultBangKey || 'g'));
+      setWebSearchSuggestionLimit(Math.max(0, Math.min(8, Math.floor(Number(settings.browserSearch?.webSearchSuggestionLimit ?? 3)))));
+      setWebSearchBangOverrides(Array.isArray(settings.browserSearch?.webSearchBangOverrides) ? settings.browserSearch.webSearchBangOverrides : []);
+      setWebSearchBangUsage(settings.browserSearch?.webSearchBangUsage && typeof settings.browserSearch.webSearchBangUsage === 'object' ? settings.browserSearch.webSearchBangUsage : {});
+      setWebSearchDisabledBangKeys(Array.isArray(settings.browserSearch?.webSearchDisabledBangKeys) ? settings.browserSearch.webSearchDisabledBangKeys : []);
+      setWebSearchBangCustomProviders(Array.isArray(settings.browserSearch?.webSearchBangCustomProviders) ? settings.browserSearch.webSearchBangCustomProviders : []);
+      setWebSearchShowHiddenBangs(Boolean(settings.browserSearch?.webSearchShowHiddenBangs));
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
@@ -1176,6 +1682,54 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(WEB_SEARCH_BANG_USE_COUNTS_KEY) || '{}');
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+      setWebSearchBangUsage((current) => {
+        if (Object.keys(current).length > 0) return current;
+        return Object.entries(parsed).reduce((acc, [key, value]) => {
+          const normalizedKey = String(key || '').trim().toLowerCase();
+          const count = Math.floor(Number(value));
+          if (normalizedKey && Number.isFinite(count) && count > 0) {
+            acc[normalizedKey] = { useCount: count, lastUsedAt: Date.now(), frecencyScore: count };
+          }
+          return acc;
+        }, {} as Record<string, WebSearchBangUsageSetting>);
+      });
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electron.webSearchListBangs?.()
+      .then((entries: WebSearchBangEntry[]) => {
+        if (cancelled || !Array.isArray(entries)) return;
+        const next = entries
+          .map((entry): SearchBangDefinition | null => {
+            const key = String(entry?.key || '').trim().toLowerCase().replace(/^!+/, '');
+            if (!key) return null;
+            return {
+              key,
+              aliases: Array.isArray(entry.aliases) ? entry.aliases : [],
+              name: String(entry.name || key),
+              host: String(entry.host || 'duckduckgo.com'),
+              category: entry.category,
+              subcategory: entry.subcategory,
+              template: String(entry.urlTemplate || 'https://duckduckgo.com/?q=!{bang}%20{query}'),
+              source: entry.source || 'duckduckgo',
+              rankHint: entry.rankHint,
+            };
+          })
+          .filter((entry): entry is SearchBangDefinition => Boolean(entry));
+        setWebSearchBangCatalog(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const cleanup = window.electron.onSettingsUpdated?.((settings: AppSettings) => {
       // Settings broadcasts fire for in-app saves AND for external sync
       // changes (cloud watcher → reload → broadcast). Re-hydrate localStorage
@@ -1200,6 +1754,13 @@ const App: React.FC = () => {
       );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       setBrowserSearchResultGroups(normalizeBrowserSearchResultGroups(settings.browserSearch?.resultGroups));
+      setWebSearchDefaultBangKey(String(settings.browserSearch?.webSearchDefaultBangKey || 'g'));
+      setWebSearchSuggestionLimit(Math.max(0, Math.min(8, Math.floor(Number(settings.browserSearch?.webSearchSuggestionLimit ?? 3)))));
+      setWebSearchBangOverrides(Array.isArray(settings.browserSearch?.webSearchBangOverrides) ? settings.browserSearch.webSearchBangOverrides : []);
+      setWebSearchBangUsage(settings.browserSearch?.webSearchBangUsage && typeof settings.browserSearch.webSearchBangUsage === 'object' ? settings.browserSearch.webSearchBangUsage : {});
+      setWebSearchDisabledBangKeys(Array.isArray(settings.browserSearch?.webSearchDisabledBangKeys) ? settings.browserSearch.webSearchDisabledBangKeys : []);
+      setWebSearchBangCustomProviders(Array.isArray(settings.browserSearch?.webSearchBangCustomProviders) ? settings.browserSearch.webSearchBangCustomProviders : []);
+      setWebSearchShowHiddenBangs(Boolean(settings.browserSearch?.webSearchShowHiddenBangs));
       setDisableFileSearchResults(Boolean(settings.disableFileSearchResults));
       setNavigationStyle(settings.navigationStyle === 'macos' ? 'macos' : 'vim');
       const popToRootSeconds = Number(settings.popToRootSearchTimeoutSeconds);
@@ -1604,15 +2165,16 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showNotesSearch && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showSchedule && !showWindowManager && !showAppUninstall && !showOnboarding && browserResultsViewQuery === null) {
+    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !bookmarkNicknamePrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showNotesSearch && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showSchedule && !showWindowManager && !showAppUninstall && !showOnboarding && browserResultsViewQuery === null && webSearchQuery === null) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, quickLinkDynamicPrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showNotesSearch, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showAppUninstall, showOnboarding, showWhisperOnboarding, browserResultsViewQuery, restoreLauncherFocus]);
+  }, [showActions, contextMenu, quickLinkDynamicPrompt, bookmarkNicknamePrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showNotesSearch, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showAppUninstall, showOnboarding, showWhisperOnboarding, browserResultsViewQuery, webSearchQuery, restoreLauncherFocus]);
 
   const isLauncherModeActive =
     !showActions &&
     !contextMenu &&
     !quickLinkDynamicPrompt &&
+    !bookmarkNicknamePrompt &&
     !aiMode &&
     !extensionView &&
     !showClipboardManager &&
@@ -1620,6 +2182,7 @@ const App: React.FC = () => {
     !showNotesSearch &&
     !showCanvasSearch &&
     browserResultsViewQuery === null &&
+    webSearchQuery === null &&
     !showQuickLinkManager &&
     !showFileSearch &&
     !showCursorPrompt &&
@@ -1825,8 +2388,19 @@ const App: React.FC = () => {
   );
   const hasSearchQuery = searchQuery.trim().length > 0;
   const visibleSourceCommands = useMemo(
-    () => sourceCommands.filter((cmd) => !hiddenListOnlyCommandIds.has(cmd.id) || hasSearchQuery),
-    [sourceCommands, hiddenListOnlyCommandIds, hasSearchQuery]
+    () => sourceCommands
+      .filter((cmd) => !hiddenListOnlyCommandIds.has(cmd.id) || hasSearchQuery)
+      .map((cmd) => {
+        if (cmd.id !== WEB_SEARCH_COMMAND_ID) return cmd;
+        const provider = getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
+        return {
+          ...cmd,
+          subtitle: t('launcher.categories.search'),
+          browserResultKind: 'search',
+          browserFaviconUrl: getFaviconUrlForHost(provider.host),
+        } as CommandInfo;
+      }),
+    [sourceCommands, hiddenListOnlyCommandIds, hasSearchQuery, t, webSearchDefaultBangKey, effectiveSearchBangs]
   );
 
   const fileResultCommands = useMemo<CommandInfo[]>(
@@ -1991,22 +2565,29 @@ const App: React.FC = () => {
     if (aiMode) return null;
     if (browserSearchSkipAutoComplete) return null;
     if (!searchQuery) return null;
+    const parsedBang = parseSearchBangState(searchQuery, enabledSearchBangs);
+    if (parsedBang.mode !== 'none') return null;
     const completion = browserSearch.getCompletion(searchQuery, browserSearchResultGroups);
     if (!completion) return null;
     if (completion.completion === searchQuery) return null;
     if (!completion.completion.toLowerCase().startsWith(searchQuery.toLowerCase())) return null;
     return completion;
-  }, [browserSearch, browserSearchResultGroups, searchQuery, browserSearchSkipAutoComplete, aiMode]);
+  }, [browserSearch, browserSearchResultGroups, searchQuery, browserSearchSkipAutoComplete, aiMode, enabledSearchBangs]);
 
   const launcherInputValue = browserSearchAutoComplete?.completion ?? searchQuery;
+
+  const rootBangState = useMemo<BangParseState>(() => {
+    if (aiMode) return { mode: 'none' };
+    return parseSearchBangState(searchQuery, enabledSearchBangs);
+  }, [aiMode, searchQuery, enabledSearchBangs]);
 
   const browserSearchTopResult = useMemo<BrowserSearchResult | null>(() => {
     if (!browserSearch.enabled) return null;
     if (aiMode) return null;
-    const subject = searchQuery.trim();
-    if (!subject) return null;
-    return browserSearch.getTopResult(subject, browserSearchResultGroups);
-  }, [browserSearch, browserSearchResultGroups, searchQuery, aiMode]);
+    if (!searchQuery.trim()) return null;
+    if (rootBangState.mode !== 'none') return null;
+    return browserSearch.getTopResult(searchQuery, browserSearchResultGroups);
+  }, [browserSearch, browserSearchResultGroups, searchQuery, aiMode, rootBangState]);
 
   const browserSearchSyntheticCommand = useMemo<CommandInfo | null>(() => {
     if (!browserSearch.enabled) return null;
@@ -2049,34 +2630,15 @@ const App: React.FC = () => {
         browserFocusAvailable: hasOpenTabMatch,
       };
     }
-    // Search intent: suppress when there are real app/command/contextual
-    // matches — the user is more likely launching an app like "Clipboard
-    // History" than literally searching the web for "clip". Files are
-    // intentionally excluded since broad filename matches are noisy.
-    const hasAppMatch =
-      groupedCommands.contextual.length > 0 ||
-      groupedCommands.pinned.length > 0 ||
-      groupedCommands.recent.length > 0 ||
-      groupedCommands.other.length > 0;
-    if (hasAppMatch) return null;
-    return {
-      id: BROWSER_SEARCH_PERFORM_SEARCH_ID,
-      title: t('launcher.browserSearch.searchFor', { query: subject }),
-      subtitle: t('launcher.browserSearch.subtitle.search'),
-      category: 'system',
-      keywords: [],
-      alwaysOnTop: true,
-      browserMatchKind: 'search',
-      browserResultKind: 'search',
-      browserActionInput: subject,
-    };
+    return null;
   }, [browserSearch, browserSearchAutoComplete, browserSearchTopResult, launcherInputValue, aiMode, t, groupedCommands]);
 
   const browserSearchResultCommands = useMemo<CommandInfo[]>(() => {
     if (!browserSearch.enabled) return [];
     if (aiMode) return [];
-    const subject = searchQuery.trim();
-    if (!subject) return [];
+    if (rootBangState.mode !== 'none') return [];
+    const subject = searchQuery;
+    if (!subject.trim()) return [];
     const topUrl = browserSearchTopResult ? normalizeBrowserCommandUrl(browserSearchTopResult.url) : '';
     const limitedResults = browserSearch
       .getResults(subject, browserSearchResultGroups)
@@ -2105,11 +2667,123 @@ const App: React.FC = () => {
       });
     }
     return commands;
-  }, [browserSearch, browserSearchResultGroups, browserSearchTopResult, searchQuery, aiMode, t]);
+  }, [browserSearch, browserSearchResultGroups, browserSearchTopResult, searchQuery, aiMode, rootBangState, t]);
+
+  useEffect(() => {
+    if (aiMode) return;
+    const query = (rootBangState.mode === 'active' ? rootBangState.query : searchQuery).trim();
+    if (!query || (rootBangState.mode !== 'active' && webSearchSuggestionLimit <= 0)) {
+      setRootWebSearchSuggestions([]);
+      return;
+    }
+    const provider = rootBangState.mode === 'active' ? rootBangState.bang : undefined;
+    const limit = rootBangState.mode === 'active' ? WEB_SEARCH_ACTIVE_BANG_SUGGESTION_LIMIT : webSearchSuggestionLimit;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      window.electron.browserSearchSuggestMany(query, limit, provider ? { key: provider.key, host: provider.host, name: provider.name } : undefined)
+        .then((suggestions) => {
+          if (cancelled) return;
+          setRootWebSearchSuggestions(Array.isArray(suggestions) ? suggestions.slice(0, limit) : []);
+        })
+        .catch(() => {
+          if (!cancelled) setRootWebSearchSuggestions([]);
+        });
+    }, WEB_SEARCH_SUGGEST_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [aiMode, searchQuery, webSearchSuggestionLimit, rootBangState]);
+
+  const webSearchRootDirectCommand = useMemo<CommandInfo | null>(() => {
+    if (aiMode) return null;
+    const subject = rootBangState.mode === 'active'
+      ? rootBangState.query.trim()
+      : launcherInputValue.trim();
+    if (!subject) return null;
+    const defaultBang = getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
+    const activeBang = rootBangState.mode === 'active' ? rootBangState.bang : null;
+    const searchSubject = subject.trim();
+    if (!searchSubject) return null;
+    const provider = activeBang || defaultBang;
+    return {
+      id: WEB_SEARCH_ROOT_DIRECT_ID,
+      title: activeBang
+        ? t('launcher.browserSearch.searchProviderFor', { provider: provider.name, query: searchSubject })
+        : t('launcher.browserSearch.searchFor', { query: searchSubject }),
+      subtitle: activeBang
+        ? t('launcher.browserSearch.bangSubtitle', { bang: activeBang.key })
+        : t('launcher.browserSearch.defaultSearch'),
+      category: 'system',
+      keywords: [searchSubject, provider.name, provider.host, 'search'],
+      browserMatchKind: 'search',
+      browserResultKind: 'search',
+      browserFaviconUrl: getFaviconUrlForHost(provider.host),
+      browserActionInput: activeBang ? `${searchSubject} !${activeBang.key}` : searchSubject,
+    };
+  }, [aiMode, launcherInputValue, rootBangState, t, webSearchDefaultBangKey, effectiveSearchBangs]);
+
+  const webSearchRootSuggestionCommands = useMemo<CommandInfo[]>(() => {
+    if (aiMode) return [];
+    const subject = rootBangState.mode === 'active'
+      ? rootBangState.query.trim()
+      : launcherInputValue.trim();
+    if (!subject) return [];
+    const defaultBang = getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
+    const activeBang = rootBangState.mode === 'active' ? rootBangState.bang : null;
+    const searchSubject = subject.trim();
+    if (!searchSubject) return [];
+    const provider = activeBang || defaultBang;
+    const commands: CommandInfo[] = [];
+    for (const suggestion of rootWebSearchSuggestions) {
+      const normalized = String(suggestion || '').trim();
+      if (!normalized || normalized.toLowerCase() === searchSubject.toLowerCase()) continue;
+      commands.push({
+        id: `${WEB_SEARCH_ROOT_SUGGESTION_PREFIX}${normalized}`,
+        title: normalized,
+        subtitle: activeBang
+          ? t('launcher.browserSearch.bangSubtitle', { bang: activeBang.key })
+          : t('launcher.browserSearch.defaultSearch'),
+        category: 'system',
+        keywords: [normalized, provider.name, provider.host, 'suggestion'],
+        browserMatchKind: 'search',
+        browserResultKind: 'search',
+        browserFaviconUrl: getFaviconUrlForHost(provider.host),
+        browserActionInput: activeBang ? `${normalized} !${activeBang.key}` : normalized,
+      });
+    }
+    return commands;
+  }, [aiMode, launcherInputValue, rootBangState, rootWebSearchSuggestions, t, webSearchDefaultBangKey, effectiveSearchBangs]);
+
+  const rootBangCandidateCommands = useMemo<CommandInfo[]>(() => {
+    if (rootBangState.mode !== 'selecting') return [];
+    return getSortedSearchBangs(enabledSearchBangs, rootBangState.token, webSearchBangUsage, WEB_SEARCH_ACTIVE_BANG_SUGGESTION_LIMIT)
+      .map((bang): CommandInfo => ({
+        id: `${WEB_SEARCH_ROOT_BANG_PREFIX}${bang.key}`,
+        title: `!${bang.key} ${bang.name}`,
+        subtitle: [bang.category, bang.subcategory, bang.host].filter(Boolean).join(' - '),
+        category: 'system',
+        keywords: [bang.key, ...(bang.aliases || []), bang.name, bang.host, bang.category || '', bang.subcategory || ''],
+        browserMatchKind: 'search',
+        browserResultKind: 'search',
+        browserFaviconUrl: getFaviconUrlForHost(bang.host),
+        browserActionInput: bang.key,
+      }));
+  }, [enabledSearchBangs, rootBangState, webSearchBangUsage]);
 
   const displayCommands = useMemo(() => {
+    if (rootBangState.mode === 'selecting') {
+      return rootBangCandidateCommands;
+    }
+    if (rootBangState.mode === 'active') {
+      return [
+        ...(webSearchRootDirectCommand ? [webSearchRootDirectCommand] : []),
+        ...webSearchRootSuggestionCommands,
+      ];
+    }
     const all = [
       ...browserSearchResultCommands,
+      ...webSearchRootSuggestionCommands,
       ...groupedCommands.contextual,
       ...groupedCommands.pinned,
       ...groupedCommands.recent,
@@ -2121,8 +2795,19 @@ const App: React.FC = () => {
     const top = all.filter((c) => c.alwaysOnTop);
     const rest = all.filter((c) => !c.alwaysOnTop);
     const ordered = [...top, ...rest];
-    return browserSearchSyntheticCommand ? [browserSearchSyntheticCommand, ...ordered] : ordered;
-  }, [browserSearchResultCommands, groupedCommands, browserSearchSyntheticCommand]);
+    if (browserSearchSyntheticCommand) {
+      return [
+        browserSearchSyntheticCommand,
+        ...(webSearchRootDirectCommand ? [webSearchRootDirectCommand] : []),
+        ...ordered,
+      ];
+    }
+    if (webSearchRootDirectCommand) {
+      if (ordered.length === 0) return [webSearchRootDirectCommand];
+      return [ordered[0], webSearchRootDirectCommand, ...ordered.slice(1)];
+    }
+    return ordered;
+  }, [webSearchRootDirectCommand, webSearchRootSuggestionCommands, rootBangCandidateCommands, browserSearchResultCommands, groupedCommands, browserSearchSyntheticCommand, rootBangState]);
 
   const browserHistoryProfileOptions = useMemo(() => {
     return browserSearch.getHistoryProfiles();
@@ -2234,20 +2919,13 @@ const App: React.FC = () => {
       }
       return sections;
     }
-    const groupOrder = normalizeBrowserSearchResultGroups(browserSearchResultGroups).map((group) => group.kind);
-    return groupOrder
-      .map((kind) => ({
-        key: `browser-section-${kind}`,
-        kind,
-        title: kind === 'bookmark'
-          ? t('launcher.badges.bookmark')
-          : kind === 'open-tab'
-            ? t('launcher.badges.openTab')
-            : t('launcher.badges.history'),
-        items: browserResultsViewResults.filter((result) => result.kind === kind),
-      }))
-      .filter((section) => section.items.length > 0);
-  }, [browserSearchResultGroups, browserResultsViewResults, browserResultsViewScope, t]);
+    return [{
+      key: 'browser-section-ranked',
+      kind: 'history' as const,
+      title: t('launcher.browserSearch.showAll'),
+      items: browserResultsViewResults,
+    }];
+  }, [browserResultsViewResults, browserResultsViewScope, t]);
 
   useEffect(() => {
     setBrowserResultsViewSelectedIndex(0);
@@ -2272,6 +2950,109 @@ const App: React.FC = () => {
     );
     await openBrowserResult(result, focusExistingTab ? { focusExistingTab: true } : undefined);
   }, [browserResultsViewScope, openBrowserResult]);
+
+  const openBookmarkNicknamePrompt = useCallback((result: BrowserSearchResult | null) => {
+    if (!canEditBrowserResultNickname(result)) return;
+    setBookmarkNicknamePrompt({
+      result,
+      value: result.nickname || '',
+    });
+  }, []);
+
+  const closeBookmarkNicknamePrompt = useCallback(() => {
+    setBookmarkNicknamePrompt(null);
+    window.setTimeout(() => browserResultsViewInputRef.current?.focus(), 0);
+  }, []);
+
+  const saveBookmarkNickname = useCallback(async (result: BrowserSearchResult, rawValue: string) => {
+    if (!canEditBrowserResultNickname(result)) return;
+    const nickname = normalizeBookmarkNickname(rawValue);
+    const targetKey = getBrowserResultNicknameKey(result);
+    try {
+      const currentSettings = await window.electron.getSettings();
+      const browserSearchSettings = currentSettings.browserSearch;
+      const currentNicknames = Array.isArray(browserSearchSettings?.nicknames)
+        ? browserSearchSettings.nicknames
+        : [];
+      const nextNicknames: BrowserSearchNicknameSetting[] = currentNicknames.filter((item) => {
+        const itemKey = [
+          item.source || '',
+          item.sourceProfileId || '',
+          normalizeBookmarkNicknameUrl(item.url),
+        ].join(':');
+        return itemKey !== targetKey;
+      });
+      if (nickname) {
+        nextNicknames.push({
+          source: result.source || '',
+          sourceProfileId: result.sourceProfileId,
+          url: result.url,
+          nickname,
+        });
+      }
+      await window.electron.saveSettings({
+        browserSearch: {
+          ...browserSearchSettings,
+          nicknames: nextNicknames.sort((a, b) => a.nickname.localeCompare(b.nickname)),
+        },
+      });
+      browserSearch.refreshBrowserEntries();
+    } catch (error) {
+      console.error('Failed to save bookmark nickname:', error);
+    }
+  }, [browserSearch]);
+
+  const submitBookmarkNicknamePrompt = useCallback(async () => {
+    if (!bookmarkNicknamePrompt) return;
+    await saveBookmarkNickname(bookmarkNicknamePrompt.result, bookmarkNicknamePrompt.value);
+    closeBookmarkNicknamePrompt();
+  }, [bookmarkNicknamePrompt, closeBookmarkNicknamePrompt, saveBookmarkNickname]);
+
+  useEffect(() => {
+    if (!bookmarkNicknamePrompt) return;
+    const timer = window.setTimeout(() => {
+      void saveBookmarkNickname(bookmarkNicknamePrompt.result, bookmarkNicknamePrompt.value);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [bookmarkNicknamePrompt?.result.id, bookmarkNicknamePrompt?.value, saveBookmarkNickname]);
+
+  useEffect(() => {
+    if (!bookmarkNicknamePrompt) return;
+    const timer = window.setTimeout(() => {
+      bookmarkNicknameInputRef.current?.focus();
+      bookmarkNicknameInputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [bookmarkNicknamePrompt?.result.id]);
+
+  useEffect(() => {
+    if (!bookmarkNicknamePrompt) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const suggestion = getSuggestedBookmarkNickname(bookmarkNicknamePrompt.result);
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeBookmarkNicknamePrompt();
+        return;
+      }
+      if (event.key === 'Tab' && suggestion) {
+        event.preventDefault();
+        setBookmarkNicknamePrompt((prev) => prev ? { ...prev, value: suggestion } : prev);
+        void saveBookmarkNickname(bookmarkNicknamePrompt.result, suggestion);
+        return;
+      }
+      if (
+        (event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter') &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.shiftKey
+      ) {
+        event.preventDefault();
+        void submitBookmarkNicknamePrompt();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [bookmarkNicknamePrompt, closeBookmarkNicknamePrompt, submitBookmarkNicknamePrompt]);
 
   useEffect(() => {
     itemRefs.current = itemRefs.current.slice(0, displayCommands.length + calcOffset);
@@ -2713,10 +3494,51 @@ const App: React.FC = () => {
     }
   }, [searchQuery, browserSearchSkipAutoComplete]);
 
+  const recordWebSearchBangUse = useCallback((bangKey: string) => {
+    const normalizedKey = String(bangKey || '').trim().toLowerCase();
+    if (!normalizedKey) return;
+    setWebSearchBangUsage((current) => {
+      const next = { ...current, [normalizedKey]: createUpdatedBangUsage(current[normalizedKey]) };
+      try {
+        localStorage.setItem(WEB_SEARCH_BANG_USE_COUNTS_KEY, JSON.stringify(Object.fromEntries(
+          Object.entries(next).map(([key, value]) => [key, value.useCount])
+        )));
+      } catch {}
+      window.electron.getSettings()
+        .then((settings) => window.electron.saveSettings({
+          browserSearch: {
+            ...settings.browserSearch,
+            webSearchBangUsage: next,
+          },
+        }))
+        .catch(() => {});
+      return next;
+    });
+  }, []);
+
   const submitBrowserSearch = useCallback(
     async (input: string, options?: { focusExistingTab?: boolean }) => {
       const trimmed = input.trim();
       if (!trimmed) return false;
+      const bangState = parseSearchBangState(trimmed, enabledSearchBangs);
+      if (bangState.mode === 'active' && bangState.query) {
+        const ok = await window.electron.openUrl(buildBangSearchUrl(bangState.bang, bangState.query));
+        if (ok) {
+          setBrowserSearchSkipAutoComplete(false);
+          try { window.electron.hideWindow(); } catch {}
+        }
+        return Boolean(ok);
+      }
+      const resolved = browserSearch.resolve(trimmed);
+      if (resolved?.type === 'search') {
+        const defaultBang = getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
+        const ok = await window.electron.openUrl(buildBangSearchUrl(defaultBang, trimmed));
+        if (ok) {
+          setBrowserSearchSkipAutoComplete(false);
+          try { window.electron.hideWindow(); } catch {}
+        }
+        return Boolean(ok);
+      }
       const ok = await browserSearch.executeBrowserSearch(trimmed, options);
       if (ok) {
         setBrowserSearchSkipAutoComplete(false);
@@ -2724,8 +3546,461 @@ const App: React.FC = () => {
       }
       return ok;
     },
-    [browserSearch]
+    [browserSearch, recordWebSearchBangUse, webSearchDefaultBangKey, effectiveSearchBangs, enabledSearchBangs]
   );
+
+  useEffect(() => {
+    if (rootBangState.mode !== 'active') {
+      lastRecordedRootBangUseRef.current = null;
+      return;
+    }
+    const key = rootBangState.bang.key;
+    if (lastRecordedRootBangUseRef.current === key) return;
+    lastRecordedRootBangUseRef.current = key;
+    recordWebSearchBangUse(key);
+  }, [recordWebSearchBangUse, rootBangState]);
+
+  const closeWebSearch = useCallback(() => {
+    setWebSearchQuery(null);
+    setWebSearchSelectedIndex(0);
+    setWebSearchSuggestions([]);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
+  const openWebSearchMode = useCallback((initialQuery = '') => {
+    expandLauncherForDirectLaunch();
+    setWebSearchQuery(initialQuery);
+    setWebSearchSelectedIndex(0);
+    window.setTimeout(() => webSearchInputRef.current?.focus(), 0);
+  }, [expandLauncherForDirectLaunch]);
+
+  const webSearchBangState = useMemo<BangParseState>(() => {
+    if (webSearchQuery === null) return { mode: 'none' };
+    return parseSearchBangState(webSearchQuery, enabledSearchBangs);
+  }, [enabledSearchBangs, webSearchQuery]);
+
+  useEffect(() => {
+    if (webSearchBangState.mode !== 'active') {
+      lastRecordedWebBangUseRef.current = null;
+      return;
+    }
+    const key = webSearchBangState.bang.key;
+    if (lastRecordedWebBangUseRef.current === key) return;
+    lastRecordedWebBangUseRef.current = key;
+    recordWebSearchBangUse(key);
+  }, [recordWebSearchBangUse, webSearchBangState]);
+
+  useEffect(() => {
+    if (webSearchQuery === null) return;
+    const raw = String(webSearchQuery || '').trim();
+    const searchSubject = webSearchBangState.mode === 'active' ? webSearchBangState.query.trim() : raw;
+    const shouldFetch = Boolean(searchSubject) && (webSearchBangState.mode === 'active' || webSearchBangState.mode === 'none');
+    if (!shouldFetch || (webSearchBangState.mode !== 'active' && webSearchSuggestionLimit <= 0)) {
+      setWebSearchSuggestions([]);
+      return;
+    }
+    const provider = webSearchBangState.mode === 'active'
+      ? webSearchBangState.bang
+      : getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
+    const limit = webSearchBangState.mode === 'active'
+      ? WEB_SEARCH_ACTIVE_BANG_SUGGESTION_LIMIT
+      : webSearchSuggestionLimit;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      window.electron.browserSearchSuggestMany(searchSubject, limit, { key: provider.key, host: provider.host, name: provider.name })
+        .then((suggestions) => {
+          if (cancelled) return;
+          setWebSearchSuggestions(Array.isArray(suggestions) ? suggestions.slice(0, limit) : []);
+        })
+        .catch(() => {
+          if (!cancelled) setWebSearchSuggestions([]);
+        });
+    }, WEB_SEARCH_SUGGEST_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [effectiveSearchBangs, webSearchBangState, webSearchDefaultBangKey, webSearchQuery, webSearchSuggestionLimit]);
+
+  const webSearchResults = useMemo<WebSearchResult[]>(() => {
+    if (webSearchQuery === null) return [];
+    const raw = String(webSearchQuery || '').trim();
+    const results: WebSearchResult[] = [];
+    if (raw && (webSearchBangState.mode === 'none' || webSearchBangState.mode === 'active')) {
+      const activeBang = webSearchBangState.mode === 'active' ? webSearchBangState.bang : null;
+      const defaultBang = getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
+      const provider = activeBang || defaultBang;
+      const searchSubject = (webSearchBangState.mode === 'active' ? webSearchBangState.query : raw).trim();
+      if (!searchSubject) return [];
+      results.push({
+        id: 'web-search-mode:direct',
+        kind: 'search',
+        section: 'search',
+        title: activeBang
+          ? t('launcher.browserSearch.searchProviderFor', { provider: provider.name, query: searchSubject })
+          : t('launcher.browserSearch.searchFor', { query: searchSubject }),
+        subtitle: activeBang
+          ? t('launcher.browserSearch.bangSubtitle', { bang: activeBang.key })
+          : t('launcher.browserSearch.defaultSearch'),
+        query: activeBang ? `${searchSubject} !${activeBang.key}` : searchSubject,
+        bangKey: activeBang?.key,
+        bang: activeBang || undefined,
+        faviconUrl: getFaviconUrlForHost(provider.host),
+      });
+      for (const suggestion of webSearchSuggestions) {
+        const normalized = String(suggestion || '').trim();
+        if (!normalized || normalized.toLowerCase() === searchSubject.toLowerCase()) continue;
+        results.push({
+          id: `web-search-mode:suggestion:${normalized}`,
+          kind: 'suggestion',
+          section: 'search',
+          title: normalized,
+          subtitle: activeBang
+            ? t('launcher.browserSearch.bangSubtitle', { bang: activeBang.key })
+            : t('launcher.browserSearch.defaultSearch'),
+          query: activeBang ? `${normalized} !${activeBang.key}` : normalized,
+          bangKey: activeBang?.key,
+          bang: activeBang || undefined,
+          faviconUrl: getFaviconUrlForHost(provider.host),
+        });
+      }
+      return results;
+    }
+
+    const parsed = parseSearchBangFromList(raw, enabledSearchBangs);
+    const bangFilter = parsed.activeBangPrefix !== null
+      ? parsed.activeBangPrefix
+      : raw.replace(/^!+/, '');
+    const sectionFilter = parsed.bang && !parsed.query ? '' : bangFilter;
+    const candidateSource = webSearchShowHiddenBangs
+      ? effectiveSearchBangs.filter((bang) => bang.disabled)
+      : enabledSearchBangs;
+    const sorted = parsed.bang && !parsed.query
+      ? [parsed.bang, ...getSortedSearchBangs(candidateSource, null, webSearchBangUsage).filter((bang) => bang.key !== parsed.bang?.key)]
+      : getSortedSearchBangs(candidateSource, bangFilter, webSearchBangUsage);
+    const recentKeys = new Set<string>();
+    const recentBangs = !sectionFilter && !webSearchShowHiddenBangs
+      ? [...sorted]
+          .filter((bang) => getBangUsageScore(webSearchBangUsage[bang.key]) > 0)
+          .sort((a, b) => getBangUsageScore(webSearchBangUsage[b.key]) - getBangUsageScore(webSearchBangUsage[a.key]))
+          .slice(0, WEB_SEARCH_RECENT_BANG_LIMIT)
+      : [];
+    for (const bang of recentBangs) recentKeys.add(bang.key);
+    const matchingBangs = webSearchShowHiddenBangs
+      ? sorted
+      : sectionFilter
+        ? sorted
+        : [...recentBangs, ...sorted.filter((bang) => !recentKeys.has(bang.key))];
+    for (const bang of matchingBangs) {
+      const defaultAliases = [bang.key, ...(bang.aliases || [])];
+      const aliasSummary = formatWebSearchBangAliasSummary(defaultAliases);
+      const baseSubtitle = [bang.category, bang.subcategory, bang.host].filter(Boolean).join(' - ') || bang.host;
+      results.push({
+        id: `web-search-result:bang:${bang.key}`,
+        kind: 'bang',
+        section: webSearchShowHiddenBangs
+          ? 'hidden'
+          : recentKeys.has(bang.key) && !sectionFilter
+            ? 'recent'
+            : getWebSearchBangSection(bang, sectionFilter, webSearchBangUsage),
+        title: `!${bang.key} ${bang.name}`,
+        subtitle: aliasSummary ? `${baseSubtitle} - ${aliasSummary}` : baseSubtitle,
+        query: `!${bang.key} `,
+        bangKey: bang.key,
+        defaultAliases,
+        customAliases: webSearchBangOverrides.find((override) => override.key === bang.key)?.aliases,
+        isCustom: webSearchBangOverrides.some((override) => override.key === bang.key),
+        isDisabled: Boolean(bang.disabled),
+        bang,
+        faviconUrl: getFaviconUrlForHost(bang.host),
+      });
+    }
+    return results;
+  }, [effectiveSearchBangs, enabledSearchBangs, t, webSearchBangOverrides, webSearchBangState, webSearchBangUsage, webSearchDefaultBangKey, webSearchQuery, webSearchShowHiddenBangs, webSearchSuggestions]);
+
+  const visibleWebSearchResults = useMemo(
+    () => webSearchResults.slice(0, Math.min(webSearchVisibleResultCount, webSearchResults.length)),
+    [webSearchResults, webSearchVisibleResultCount]
+  );
+
+  const visibleWebSearchSections = useMemo(() => {
+    const sections: Array<{ key: WebSearchResult['section']; titleKey: string; items: WebSearchResult[]; startIndex: number }> = [];
+    const indexByKey = new Map<WebSearchResult['section'], number>();
+    visibleWebSearchResults.forEach((result, flatIndex) => {
+      const sectionIndex = indexByKey.get(result.section);
+      if (sectionIndex === undefined) {
+        indexByKey.set(result.section, sections.length);
+        sections.push({
+          key: result.section,
+          titleKey: getWebSearchBangSectionTitleKey(result.section),
+          items: [result],
+          startIndex: flatIndex,
+        });
+        return;
+      }
+      sections[sectionIndex].items.push(result);
+    });
+    return sections;
+  }, [visibleWebSearchResults]);
+
+  const selectedWebSearchResult = webSearchResults[webSearchSelectedIndex] || null;
+
+  useEffect(() => {
+    setWebSearchSelectedIndex(0);
+    setWebSearchVisibleResultCount(WEB_SEARCH_INITIAL_VISIBLE_RESULTS);
+  }, [webSearchQuery]);
+
+  useEffect(() => {
+    if (webSearchQuery === null) return;
+    setWebSearchSelectedIndex((index) => Math.min(index, Math.max(0, webSearchResults.length - 1)));
+  }, [webSearchQuery, webSearchResults.length]);
+
+  useEffect(() => {
+    if (webSearchQuery === null) return;
+    if (webSearchSelectedIndex < webSearchVisibleResultCount - 12) return;
+    setWebSearchVisibleResultCount((count) =>
+      Math.min(webSearchResults.length, count + WEB_SEARCH_VISIBLE_RESULTS_INCREMENT)
+    );
+  }, [webSearchQuery, webSearchResults.length, webSearchSelectedIndex, webSearchVisibleResultCount]);
+
+  useEffect(() => {
+    if (webSearchQuery === null) return;
+    window.setTimeout(() => webSearchInputRef.current?.focus(), 0);
+  }, [webSearchQuery]);
+
+  useEffect(() => {
+    if (!webSearchBangPrompt) return;
+    const timer = window.setTimeout(() => {
+      webSearchBangInputRef.current?.focus();
+      webSearchBangInputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [webSearchBangPrompt?.result.id]);
+
+  const activateWebSearchResult = useCallback(async (result: WebSearchResult | null) => {
+    if (!result) return;
+    if (result.kind === 'bang') {
+      setWebSearchQuery(null);
+      setWebSearchSelectedIndex(0);
+      setSearchQuery(result.query);
+      setSelectedIndex(0);
+      window.setTimeout(() => inputRef.current?.focus(), 0);
+      return;
+    }
+    await submitBrowserSearch(result.query);
+  }, [submitBrowserSearch]);
+
+  const openWebSearchBangPrompt = useCallback((result: WebSearchResult | null) => {
+    if (!result || result.kind !== 'bang' || !result.bangKey) return;
+    setWebSearchBangPrompt({
+      result,
+      value: formatWebSearchBangAliases(result.customAliases || result.defaultAliases || [result.bangKey]),
+    });
+  }, []);
+
+  const closeWebSearchBangPrompt = useCallback(() => {
+    setWebSearchBangPrompt(null);
+    window.setTimeout(() => webSearchInputRef.current?.focus(), 0);
+  }, []);
+
+  const saveWebSearchBangAliases = useCallback(async () => {
+    if (!webSearchBangPrompt?.result.bangKey) return;
+    const key = webSearchBangPrompt.result.bangKey;
+    const aliases = normalizeWebSearchBangAliasList(webSearchBangPrompt.value);
+    const defaultAliases = normalizeWebSearchBangAliasList(
+      formatWebSearchBangAliases(webSearchBangPrompt.result.defaultAliases || [key])
+    );
+    const changed = aliases.join(',') !== defaultAliases.join(',');
+    try {
+      const currentSettings = await window.electron.getSettings();
+      const browserSearchSettings = currentSettings.browserSearch;
+      const currentOverrides = Array.isArray(browserSearchSettings?.webSearchBangOverrides)
+        ? browserSearchSettings.webSearchBangOverrides
+        : [];
+      const nextOverrides = currentOverrides.filter((override) => override.key !== key);
+      if (changed && aliases.length > 0) {
+        nextOverrides.push({ key, aliases });
+      }
+      const sortedOverrides = nextOverrides.sort((a, b) => a.key.localeCompare(b.key));
+      await window.electron.saveSettings({
+        browserSearch: {
+          ...browserSearchSettings,
+          webSearchBangOverrides: sortedOverrides,
+        },
+      });
+      setWebSearchBangOverrides(sortedOverrides);
+    } catch (error) {
+      console.error('Failed to save web search bang aliases:', error);
+    } finally {
+      closeWebSearchBangPrompt();
+    }
+  }, [closeWebSearchBangPrompt, webSearchBangPrompt]);
+
+  const toggleWebSearchBangDisabled = useCallback(async (result: WebSearchResult | null) => {
+    if (!result?.bangKey) return;
+    const key = result.bangKey;
+    try {
+      const currentSettings = await window.electron.getSettings();
+      const browserSearchSettings = currentSettings.browserSearch;
+      const currentDisabled = Array.isArray(browserSearchSettings?.webSearchDisabledBangKeys)
+        ? browserSearchSettings.webSearchDisabledBangKeys
+        : [];
+      const disabledSet = new Set(currentDisabled);
+      if (disabledSet.has(key)) {
+        disabledSet.delete(key);
+      } else {
+        disabledSet.add(key);
+      }
+      const nextDisabled = Array.from(disabledSet).sort();
+      await window.electron.saveSettings({
+        browserSearch: {
+          ...browserSearchSettings,
+          webSearchDisabledBangKeys: nextDisabled,
+        },
+      });
+      setWebSearchDisabledBangKeys(nextDisabled);
+    } catch (error) {
+      console.error('Failed to update disabled bang:', error);
+    }
+  }, []);
+
+  const toggleWebSearchShowHidden = useCallback(async () => {
+    const next = !webSearchShowHiddenBangs;
+    setWebSearchShowHiddenBangs(next);
+    setWebSearchSelectedIndex(0);
+    try {
+      const currentSettings = await window.electron.getSettings();
+      await window.electron.saveSettings({
+        browserSearch: {
+          ...currentSettings.browserSearch,
+          webSearchShowHiddenBangs: next,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to save hidden bang visibility:', error);
+    }
+  }, [webSearchShowHiddenBangs]);
+
+  const openWebSearchCustomBangPrompt = useCallback(() => {
+    setWebSearchCustomBangPrompt({
+      key: '',
+      aliases: '',
+      name: '',
+      host: '',
+      template: 'https://example.com/search?q={query}',
+    });
+  }, []);
+
+  const closeWebSearchCustomBangPrompt = useCallback(() => {
+    setWebSearchCustomBangPrompt(null);
+    window.setTimeout(() => webSearchInputRef.current?.focus(), 0);
+  }, []);
+
+  const saveWebSearchCustomBang = useCallback(async () => {
+    if (!webSearchCustomBangPrompt) return;
+    const key = normalizeWebSearchBangAliasList(webSearchCustomBangPrompt.key)[0] || '';
+    const aliases = normalizeWebSearchBangAliasList(webSearchCustomBangPrompt.aliases).filter((alias) => alias !== key);
+    const name = webSearchCustomBangPrompt.name.trim();
+    const host = webSearchCustomBangPrompt.host.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+    const template = webSearchCustomBangPrompt.template.trim().replace(/\{\{\{s\}\}\}/g, '{query}');
+    if (!key || !name || !host || !template.includes('{query}')) return;
+    try {
+      const currentSettings = await window.electron.getSettings();
+      const browserSearchSettings = currentSettings.browserSearch;
+      const currentProviders = Array.isArray(browserSearchSettings?.webSearchBangCustomProviders)
+        ? browserSearchSettings.webSearchBangCustomProviders
+        : [];
+      const nextProviders = [
+        ...currentProviders.filter((provider) => provider.key !== key),
+        { key, aliases, name, host, template },
+      ].sort((a, b) => a.key.localeCompare(b.key));
+      await window.electron.saveSettings({
+        browserSearch: {
+          ...browserSearchSettings,
+          webSearchBangCustomProviders: nextProviders,
+        },
+      });
+      setWebSearchBangCustomProviders(nextProviders);
+      closeWebSearchCustomBangPrompt();
+    } catch (error) {
+      console.error('Failed to save custom bang:', error);
+    }
+  }, [closeWebSearchCustomBangPrompt, webSearchCustomBangPrompt]);
+
+  useEffect(() => {
+    if (!webSearchBangPrompt) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeWebSearchBangPrompt();
+        return;
+      }
+      if (
+        (event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter') &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey
+      ) {
+        event.preventDefault();
+        void saveWebSearchBangAliases();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [closeWebSearchBangPrompt, saveWebSearchBangAliases, webSearchBangPrompt]);
+
+  useEffect(() => {
+    if (!webSearchCustomBangPrompt) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeWebSearchCustomBangPrompt();
+        return;
+      }
+      if (
+        (event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter') &&
+        event.metaKey &&
+        !event.altKey &&
+        !event.ctrlKey
+      ) {
+        event.preventDefault();
+        void saveWebSearchCustomBang();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [closeWebSearchCustomBangPrompt, saveWebSearchCustomBang, webSearchCustomBangPrompt]);
+
+  useEffect(() => {
+    if (webSearchQuery === null || webSearchBangPrompt) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === 'n' || event.key === 'N')) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (selectedWebSearchResult?.kind === 'bang') {
+          openWebSearchBangPrompt(selectedWebSearchResult);
+        } else {
+          openWebSearchCustomBangPrompt();
+        }
+        return;
+      }
+      if (
+        event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        (event.key === 'd' || event.key === 'D') &&
+        selectedWebSearchResult?.kind === 'bang'
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        void toggleWebSearchBangDisabled(selectedWebSearchResult);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [openWebSearchBangPrompt, openWebSearchCustomBangPrompt, selectedWebSearchResult, toggleWebSearchBangDisabled, webSearchBangPrompt, webSearchQuery]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -2733,6 +4008,9 @@ const App: React.FC = () => {
         return;
       }
       if (quickLinkDynamicPrompt) {
+        return;
+      }
+      if (bookmarkNicknamePrompt) {
         return;
       }
       const target = e.target as HTMLElement | null;
@@ -2969,6 +4247,7 @@ const App: React.FC = () => {
       contextMenu,
       showActions,
       quickLinkDynamicPrompt,
+      bookmarkNicknamePrompt,
       showAppUninstall,
       launcherViewMode,
       isCompactCollapsed,
@@ -2983,6 +4262,7 @@ const App: React.FC = () => {
       expandLauncherForDirectLaunch();
     }
     setBrowserResultsViewQuery(null);
+    setWebSearchQuery(null);
     if (commandId === 'system-supercmd-whisper' || commandId === 'system-supercmd-speak') {
       try {
         const settings = await window.electron.getSettings();
@@ -3051,6 +4331,11 @@ const App: React.FC = () => {
     if (commandId === 'system-search-files') {
       whisperSessionRef.current = false;
       openFileSearch();
+      return true;
+    }
+    if (commandId === WEB_SEARCH_COMMAND_ID) {
+      whisperSessionRef.current = false;
+      openWebSearchMode('');
       return true;
     }
     if (commandId === BROWSER_SEARCH_OPEN_TABS_COMMAND_ID) {
@@ -3210,7 +4495,7 @@ const App: React.FC = () => {
       return true;
     }
     return false;
-  }, [expandLauncherForDirectLaunch, memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager, browserSearch]);
+  }, [expandLauncherForDirectLaunch, memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openWebSearchMode, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager, browserSearch]);
 
   useEffect(() => {
     const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {
@@ -3489,6 +4774,23 @@ const App: React.FC = () => {
       // Browser-search synthetic action: open the resolved URL/search query
       // in the default browser. Bypasses recent-commands tracking — the
       // browser-search history module records the entry itself.
+      if (command.id.startsWith(WEB_SEARCH_ROOT_BANG_PREFIX)) {
+        const bangKey = String(command.browserActionInput || command.id.slice(WEB_SEARCH_ROOT_BANG_PREFIX.length)).trim();
+        if (bangKey) {
+          setSearchQuery((current) => {
+            const state = parseSearchBangState(current, enabledSearchBangs);
+            if (state.mode === 'selecting') {
+              const parts = current.trim().split(/\s+/).filter(Boolean);
+              parts[state.tokenIndex] = `!${bangKey}`;
+              return `${parts.join(' ')} `;
+            }
+            return `!${bangKey} `;
+          });
+          setSelectedIndex(0);
+          window.setTimeout(() => inputRef.current?.focus(), 0);
+        }
+        return;
+      }
       if (isBrowserSearchCommand(command)) {
         if (command.id === BROWSER_SEARCH_SHOW_ALL_RESULTS_ID) {
           setBrowserResultsViewScope('all');
@@ -4298,6 +5600,12 @@ const App: React.FC = () => {
   );
   const launcherBackgroundImageUrl = toFileUrl(launcherBackgroundImagePath);
   const shouldUseBackgroundEverywhere = Boolean(launcherBackgroundImageUrl) && launcherBackgroundImageEverywhere;
+  const isGlassyTheme =
+    document.documentElement.classList.contains('sc-glassy') ||
+    document.body.classList.contains('sc-glassy');
+  const isNativeLiquidGlass =
+    document.documentElement.classList.contains('sc-native-liquid-glass') ||
+    document.body.classList.contains('sc-native-liquid-glass');
 
   // ─── Script Command Setup ───────────────────────────────────────
   if (scriptCommandSetup) {
@@ -4514,6 +5822,404 @@ const App: React.FC = () => {
     );
   }
 
+  // ─── Web Search mode ─────────────────────────────────────────────
+  if (webSearchQuery !== null) {
+    const parsed = parseSearchBangFromList(webSearchQuery, effectiveSearchBangs);
+    const isWebSearchBangManager = !String(webSearchQuery || '').trim() ||
+      webSearchBangState.mode === 'selecting' ||
+      webSearchShowHiddenBangs;
+    const activeWebSearchBang = webSearchBangState.mode === 'active' ? webSearchBangState.bang : null;
+    return (
+      <>
+        {alwaysMountedRunners}
+        <LauncherSurface
+          backgroundImageUrl={launcherBackgroundImageUrl}
+          showBackground={shouldUseBackgroundEverywhere}
+          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+        >
+          <div className="h-full flex flex-col">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--ui-divider)]">
+              <button
+                type="button"
+                onClick={closeWebSearch}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/[0.06]"
+                aria-label={t('common.back')}
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+	                <input
+                ref={webSearchInputRef}
+                value={webSearchQuery}
+                onChange={(event) => setWebSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (webSearchBangPrompt || webSearchCustomBangPrompt) return;
+                  if (event.key === 'Escape' || (event.key === 'Backspace' && !webSearchQuery)) {
+                    event.preventDefault();
+                    closeWebSearch();
+                    return;
+                  }
+	                  if (
+	                    event.metaKey &&
+	                    !event.ctrlKey &&
+	                    !event.altKey &&
+	                    !event.shiftKey &&
+			                    (event.key === 'n' || event.key === 'N')
+	                  ) {
+	                    if (!isWebSearchBangManager) return;
+	                    event.preventDefault();
+	                    if (selectedWebSearchResult?.kind === 'bang') {
+	                      openWebSearchBangPrompt(selectedWebSearchResult);
+	                    } else {
+	                      openWebSearchCustomBangPrompt();
+	                    }
+	                    return;
+	                  }
+	                  if (
+	                    event.metaKey &&
+	                    !event.ctrlKey &&
+	                    !event.altKey &&
+	                    !event.shiftKey &&
+	                    (event.key === 'd' || event.key === 'D') &&
+	                    selectedWebSearchResult?.kind === 'bang'
+	                  ) {
+	                    if (!isWebSearchBangManager) return;
+	                    event.preventDefault();
+	                    void toggleWebSearchBangDisabled(selectedWebSearchResult);
+	                    return;
+	                  }
+                  if (event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    setWebSearchSelectedIndex((index) => Math.min(index + 1, Math.max(0, webSearchResults.length - 1)));
+                    return;
+                  }
+                  if (event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    setWebSearchSelectedIndex((index) => Math.max(index - 1, 0));
+                    return;
+                  }
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    if (selectedWebSearchResult) {
+                      void activateWebSearchResult(selectedWebSearchResult);
+                    } else if (webSearchQuery.trim()) {
+                      void submitBrowserSearch(webSearchQuery);
+                    }
+                  }
+                }}
+                placeholder={t('launcher.browserSearch.webSearchPlaceholder')}
+                className="flex-1 bg-transparent outline-none text-[0.95rem] text-[var(--text-primary)] placeholder:text-[var(--text-subtle)]"
+              />
+	              {activeWebSearchBang ? (
+	                <div className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-2 text-xs text-[var(--text-secondary)]">
+	                  <span className="w-4 h-4 flex items-center justify-center overflow-hidden">
+	                    {renderCommandIcon({
+	                      id: `web-search-bang-active:${activeWebSearchBang.key}`,
+	                      title: activeWebSearchBang.name,
+	                      subtitle: activeWebSearchBang.host,
+	                      category: 'system',
+	                      browserResultKind: 'search',
+	                      browserFaviconUrl: getFaviconUrlForHost(activeWebSearchBang.host),
+	                    })}
+	                  </span>
+	                  <span>!{activeWebSearchBang.key}</span>
+	                </div>
+		              ) : null}
+              {isWebSearchBangManager ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={toggleWebSearchShowHidden}
+                    className={`inline-flex h-7 items-center rounded-md border px-2 text-xs ${
+                      webSearchShowHiddenBangs
+                        ? 'border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] text-[var(--text-secondary)]'
+                        : 'border-transparent text-[var(--text-muted)] hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    {webSearchShowHiddenBangs ? t('launcher.browserSearch.hideHidden') : t('launcher.browserSearch.showHidden')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openWebSearchCustomBangPrompt}
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-transparent px-2 text-xs text-[var(--text-muted)] hover:bg-white/[0.06]"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {t('launcher.browserSearch.newBang')}
+                  </button>
+                </>
+              ) : null}
+            </div>
+
+            <div
+              className="flex-1 overflow-y-auto custom-scrollbar p-1.5"
+              onScroll={(event) => {
+                const target = event.currentTarget;
+                if (target.scrollTop + target.clientHeight < target.scrollHeight - 96) return;
+                setWebSearchVisibleResultCount((count) =>
+                  Math.min(webSearchResults.length, count + WEB_SEARCH_VISIBLE_RESULTS_INCREMENT)
+                );
+              }}
+            >
+              {webSearchResults.length === 0 ? (
+                <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+                  {t('launcher.status.noMatchingResults')}
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {visibleWebSearchSections.map((section) => (
+                    <div key={section.key}>
+                      <div className="px-3 pt-2 pb-1 text-[0.6875rem] uppercase tracking-wider text-[var(--text-subtle)] font-medium">
+                        {t(section.titleKey as any)}
+                      </div>
+                      <div className="space-y-0.5">
+                        {section.items.map((result, sectionIndex) => {
+                          const flatIndex = section.startIndex + sectionIndex;
+                          const selected = flatIndex === webSearchSelectedIndex;
+                          return (
+                            <div
+                              key={result.id}
+                              className={`command-item px-3 py-2 rounded-lg cursor-pointer ${selected ? 'selected' : ''}`}
+                              onMouseEnter={() => setWebSearchSelectedIndex(flatIndex)}
+                              onClick={() => void activateWebSearchResult(result)}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                  {renderCommandIcon({
+                                    id: result.id,
+                                    title: result.title,
+                                    subtitle: result.subtitle,
+                                    category: 'system',
+                                    browserResultKind: 'search',
+                                    browserFaviconUrl: result.faviconUrl,
+                                  })}
+                                </div>
+                                <div className="min-w-0 flex-1 flex items-center gap-2">
+                                  <div className="text-[var(--text-primary)] text-[0.8125rem] font-medium truncate tracking-[0.004em]">
+                                    {result.title}
+                                  </div>
+                                  <div className="text-[var(--text-muted)] text-[0.6875rem] font-medium truncate">
+                                    {result.subtitle}
+                                  </div>
+	                                  {result.isCustom ? (
+                                    <div className="inline-flex h-5 flex-shrink-0 items-center rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[0.625rem] leading-none text-[var(--text-subtle)]">
+                                      {t('common.custom')}
+                                    </div>
+	                                  ) : null}
+	                                  {result.isDisabled ? (
+	                                    <div className="inline-flex h-5 flex-shrink-0 items-center rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[0.625rem] leading-none text-[var(--text-subtle)]">
+	                                      {t('common.disabled')}
+	                                    </div>
+	                                  ) : null}
+	                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="sc-glass-footer sc-launcher-footer flex items-center px-4 py-2.5 border-t border-[var(--ui-divider)]">
+              <div className="sc-footer-primary flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate text-[var(--text-subtle)]">
+                {selectedWebSearchResult ? (
+                  <>
+                    <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      {renderCommandIcon({
+                        id: selectedWebSearchResult.id,
+                        title: selectedWebSearchResult.title,
+                        subtitle: selectedWebSearchResult.subtitle,
+                        category: 'system',
+                        browserResultKind: 'search',
+                        browserFaviconUrl: selectedWebSearchResult.faviconUrl,
+                      })}
+                    </span>
+                    <span className="truncate">{selectedWebSearchResult.title}</span>
+                  </>
+                ) : (
+                  t('launcher.status.results', { count: webSearchResults.length })
+                )}
+              </div>
+              {selectedWebSearchResult ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-[var(--text-primary)]">
+                    {selectedWebSearchResult.kind === 'bang' && !parseSearchBangFromList(selectedWebSearchResult.query, effectiveSearchBangs).query.trim()
+                      ? t('launcher.browserSearch.useBang')
+                      : t('launcher.actions.open')}
+                  </span>
+                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">↩</kbd>
+	                  {selectedWebSearchResult.kind === 'bang' ? (
+	                    <>
+                      <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">
+                        {t('common.edit')}
+                      </span>
+                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
+	                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">N</kbd>
+	                      <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">
+	                        {selectedWebSearchResult.isDisabled ? t('common.enable') : t('common.disable')}
+	                      </span>
+	                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
+	                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">D</kbd>
+	                    </>
+	                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </LauncherSurface>
+        {webSearchBangPrompt ? (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center px-5"
+            style={{ background: 'var(--bg-scrim)' }}
+            onMouseDown={() => void saveWebSearchBangAliases()}
+          >
+            <div
+              className="w-[420px] max-w-[92vw] rounded-xl overflow-hidden p-3.5"
+              onMouseDown={(event) => event.stopPropagation()}
+              style={
+                isNativeLiquidGlass
+                  ? {
+                      background: 'rgba(var(--surface-base-rgb), 0.72)',
+                      backdropFilter: 'blur(44px) saturate(155%)',
+                      WebkitBackdropFilter: 'blur(44px) saturate(155%)',
+                      border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
+                      boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
+                    }
+                  : isGlassyTheme
+                  ? {
+                      background: 'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
+                      backdropFilter: 'blur(96px) saturate(190%)',
+                      WebkitBackdropFilter: 'blur(96px) saturate(190%)',
+                      border: '1px solid var(--ui-panel-border)',
+                    }
+                  : {
+                      background: 'var(--bg-overlay-strong)',
+                      backdropFilter: 'blur(28px)',
+                      WebkitBackdropFilter: 'blur(28px)',
+                      border: '1px solid var(--snippet-divider)',
+                    }
+              }
+            >
+              <div className="space-y-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="h-8 w-8 flex items-center justify-center flex-shrink-0 overflow-hidden rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)]">
+                    <span className="h-5 w-5 flex items-center justify-center overflow-hidden">
+                      {renderCommandIcon({
+                        id: webSearchBangPrompt.result.id,
+                        title: webSearchBangPrompt.result.title,
+                        subtitle: webSearchBangPrompt.result.subtitle,
+                        category: 'system',
+                        browserResultKind: 'search',
+                        browserFaviconUrl: webSearchBangPrompt.result.faviconUrl,
+                      })}
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+                      {webSearchBangPrompt.result.title}
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
+                      {webSearchBangPrompt.result.subtitle}
+                    </div>
+                  </div>
+                </div>
+                <input
+                  ref={webSearchBangInputRef}
+                  type="text"
+                  value={webSearchBangPrompt.value}
+                  onChange={(event) =>
+                    setWebSearchBangPrompt((prev) =>
+                      prev ? { ...prev, value: event.target.value.toLowerCase().replace(/[^a-z0-9.+_!,\-\s]/g, '') } : prev
+                    )
+                  }
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+	                  className="w-full bg-[var(--ui-segment-bg)] border border-[var(--snippet-divider)] rounded-lg px-3 py-2 text-[13px] text-[var(--text-secondary)] outline-none focus:border-[var(--snippet-divider-strong)]"
+	                />
+	                <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+	                  {t('launcher.browserSearch.aliasHelp')}
+	                </p>
+	              </div>
+	            </div>
+	          </div>
+	        ) : null}
+	        {webSearchCustomBangPrompt ? (
+	          <div
+	            className="fixed inset-0 z-50 flex items-center justify-center px-5"
+	            style={{ background: 'var(--bg-scrim)' }}
+	            onMouseDown={closeWebSearchCustomBangPrompt}
+	          >
+	            <div
+	              className="w-[460px] max-w-[92vw] rounded-xl overflow-hidden p-3.5"
+	              onMouseDown={(event) => event.stopPropagation()}
+	              style={
+	                isNativeLiquidGlass
+	                  ? {
+	                      background: 'rgba(var(--surface-base-rgb), 0.72)',
+	                      backdropFilter: 'blur(44px) saturate(155%)',
+	                      WebkitBackdropFilter: 'blur(44px) saturate(155%)',
+	                      border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
+	                      boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
+	                    }
+	                  : isGlassyTheme
+	                  ? {
+	                      background: 'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
+	                      backdropFilter: 'blur(96px) saturate(190%)',
+	                      WebkitBackdropFilter: 'blur(96px) saturate(190%)',
+	                      border: '1px solid var(--ui-panel-border)',
+	                    }
+	                  : {
+	                      background: 'var(--bg-overlay-strong)',
+	                      backdropFilter: 'blur(28px)',
+	                      WebkitBackdropFilter: 'blur(28px)',
+	                      border: '1px solid var(--snippet-divider)',
+	                    }
+	              }
+	            >
+	              <div className="space-y-3">
+	                <div>
+	                  <div className="text-[13px] font-semibold text-[var(--text-primary)]">{t('launcher.browserSearch.newBang')}</div>
+	                  <div className="mt-0.5 text-[11px] text-[var(--text-muted)]">{t('launcher.browserSearch.customBangHelp')}</div>
+	                </div>
+	                {[
+	                  ['key', t('launcher.browserSearch.customBangFields.key')],
+	                  ['aliases', t('launcher.browserSearch.customBangFields.aliases')],
+	                  ['name', t('launcher.browserSearch.customBangFields.name')],
+	                  ['host', t('launcher.browserSearch.customBangFields.host')],
+	                  ['template', t('launcher.browserSearch.customBangFields.template')],
+	                ].map(([field, label]) => (
+	                  <label key={field} className="block">
+	                    <div className="mb-1 text-[11px] text-[var(--text-muted)]">{label}</div>
+	                    <input
+	                      type="text"
+	                      value={(webSearchCustomBangPrompt as any)[field]}
+	                      onChange={(event) => setWebSearchCustomBangPrompt((prev) => prev ? { ...prev, [field]: event.target.value } : prev)}
+	                      autoCapitalize="none"
+	                      autoCorrect="off"
+	                      spellCheck={false}
+	                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--snippet-divider)] rounded-lg px-3 py-2 text-[13px] text-[var(--text-secondary)] outline-none focus:border-[var(--snippet-divider-strong)]"
+	                    />
+	                  </label>
+	                ))}
+	                <div className="flex items-center justify-end gap-2 pt-1">
+	                  <button type="button" className="sc-button !py-1.5 !px-3 !text-[12px]" onClick={closeWebSearchCustomBangPrompt}>
+	                    {t('common.cancel')}
+	                  </button>
+	                  <button type="button" className="sc-button !py-1.5 !px-3 !text-[12px]" onClick={() => void saveWebSearchCustomBang()}>
+	                    {t('common.save')}
+	                  </button>
+	                </div>
+	              </div>
+	            </div>
+	          </div>
+	        ) : null}
+	      </>
+	    );
+	  }
+
   // ─── Browser Results mode ────────────────────────────────────────
   if (browserResultsViewQuery !== null) {
     const selectedBrowserResult = browserResultsViewResults[browserResultsViewSelectedIndex] || null;
@@ -4527,6 +6233,9 @@ const App: React.FC = () => {
         : browserResultsViewScope === 'history'
           ? t('launcher.browserSearch.historyPlaceholder')
       : t('launcher.browserSearch.showAllPlaceholder');
+    const bookmarkNicknameSuggestion = bookmarkNicknamePrompt
+      ? getSuggestedBookmarkNickname(bookmarkNicknamePrompt.result)
+      : '';
     const closeBrowserResults = () => {
       setBrowserResultsViewQuery(null);
       setBrowserHistoryProfileMenuOpen(false);
@@ -4557,9 +6266,22 @@ const App: React.FC = () => {
                 value={browserResultsViewQuery}
                 onChange={(event) => setBrowserResultsViewQuery(event.target.value)}
                 onKeyDown={(event) => {
+                  if (bookmarkNicknamePrompt) return;
                   if (event.key === 'Escape' || (event.key === 'Backspace' && !browserResultsViewQuery)) {
                     event.preventDefault();
                     closeBrowserResults();
+                    return;
+                  }
+                  if (
+                    event.metaKey &&
+                    !event.ctrlKey &&
+                    !event.altKey &&
+                    !event.shiftKey &&
+                    (event.key === 'n' || event.key === 'N') &&
+                    canEditBrowserResultNickname(selectedBrowserResult)
+                  ) {
+                    event.preventDefault();
+                    openBookmarkNicknamePrompt(selectedBrowserResult);
                     return;
                   }
                   if (event.key === 'ArrowDown') {
@@ -4669,6 +6391,11 @@ const App: React.FC = () => {
                                 <div className="text-[var(--text-muted)] text-[0.6875rem] font-medium truncate">
                                   {result.subtitle}
                                 </div>
+                                {result.nickname ? (
+                                  <div className="inline-flex h-5 flex-shrink-0 items-center rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 font-mono text-[0.625rem] leading-none text-[var(--text-subtle)]">
+                                    {result.nickname}
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                           </div>
@@ -4720,11 +6447,106 @@ const App: React.FC = () => {
                       <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">↩</kbd>
                     </>
                   ) : null}
+                  {canEditBrowserResultNickname(selectedBrowserResult) ? (
+                    <>
+                      <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">
+                        {selectedBrowserResult.nickname
+                          ? t('launcher.browserSearch.editNickname')
+                          : t('launcher.browserSearch.setNickname')}
+                      </span>
+                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
+                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">N</kbd>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
             </div>
           </div>
         </LauncherSurface>
+        {bookmarkNicknamePrompt ? (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center px-5"
+            style={{ background: 'var(--bg-scrim)' }}
+            onMouseDown={closeBookmarkNicknamePrompt}
+          >
+            <div
+              className="w-[420px] max-w-[92vw] rounded-xl overflow-hidden p-3.5"
+              onMouseDown={(event) => event.stopPropagation()}
+              style={
+                isNativeLiquidGlass
+                  ? {
+                      background: 'rgba(var(--surface-base-rgb), 0.72)',
+                      backdropFilter: 'blur(44px) saturate(155%)',
+                      WebkitBackdropFilter: 'blur(44px) saturate(155%)',
+                      border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
+                      boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
+                    }
+                  : isGlassyTheme
+                  ? {
+                      background: 'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
+                      backdropFilter: 'blur(96px) saturate(190%)',
+                      WebkitBackdropFilter: 'blur(96px) saturate(190%)',
+                      border: '1px solid var(--ui-panel-border)',
+                    }
+                  : {
+                      background: 'var(--bg-overlay-strong)',
+                      backdropFilter: 'blur(28px)',
+                      WebkitBackdropFilter: 'blur(28px)',
+                      border: '1px solid var(--snippet-divider)',
+                    }
+              }
+            >
+              <div className="relative space-y-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="h-8 w-8 flex items-center justify-center flex-shrink-0 overflow-hidden rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)]">
+                    <span className="h-5 w-5 flex items-center justify-center overflow-hidden">
+                      {renderCommandIcon({
+                        id: bookmarkNicknamePrompt.result.id,
+                        title: bookmarkNicknamePrompt.result.title,
+                        subtitle: bookmarkNicknamePrompt.result.subtitle,
+                        category: 'system',
+                        browserResultKind: 'bookmark',
+                        browserFaviconUrl: bookmarkNicknamePrompt.result.faviconUrl,
+                      })}
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+                      {bookmarkNicknamePrompt.result.title}
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
+                      {bookmarkNicknamePrompt.result.subtitle}
+                    </div>
+                  </div>
+                </div>
+                <div className="relative">
+                  <input
+                    ref={bookmarkNicknameInputRef}
+                    type="text"
+                    value={bookmarkNicknamePrompt.value}
+                    onChange={(event) =>
+                      setBookmarkNicknamePrompt((prev) =>
+                        prev ? { ...prev, value: normalizeBookmarkNickname(event.target.value) } : prev
+                      )
+                    }
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="w-full bg-[var(--ui-segment-bg)] border border-[var(--snippet-divider)] rounded-lg px-3 py-2 text-[13px] text-[var(--text-secondary)] outline-none focus:border-[var(--snippet-divider-strong)]"
+                  />
+                  {bookmarkNicknameSuggestion && !bookmarkNicknamePrompt.value ? (
+                    <div className="pointer-events-none absolute inset-y-0 left-3 flex max-w-[calc(100%-24px)] items-center gap-1.5 overflow-hidden text-[13px] text-[var(--text-subtle)]">
+                      <span className="truncate font-mono">{bookmarkNicknameSuggestion}</span>
+                      <kbd className="inline-flex h-[18px] min-w-[26px] flex-shrink-0 items-center justify-center rounded border border-[var(--ui-divider)] bg-[var(--kbd-bg)] px-1.5 text-[10px] font-medium text-[var(--text-muted)]">
+                        Tab
+                      </kbd>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </>
     );
   }
@@ -4940,12 +6762,6 @@ const App: React.FC = () => {
   }
 
   // ─── Launcher mode ──────────────────────────────────────────────
-  const isGlassyTheme =
-    document.documentElement.classList.contains('sc-glassy') ||
-    document.body.classList.contains('sc-glassy');
-  const isNativeLiquidGlass =
-    document.documentElement.classList.contains('sc-native-liquid-glass') ||
-    document.body.classList.contains('sc-native-liquid-glass');
   return (
     <>
     {alwaysMountedRunners}
@@ -5235,13 +7051,35 @@ const App: React.FC = () => {
               )}
 
               {(() => {
+                if (rootBangState.mode === 'selecting') {
+                  return [
+                    { title: t('launcher.browserSearch.bangSections.matching'), items: displayCommands },
+                  ];
+                }
+                if (rootBangState.mode === 'active') {
+                  return [
+                    { title: '', items: webSearchRootDirectCommand ? [webSearchRootDirectCommand] : [] },
+                    { title: t('launcher.categories.search'), items: webSearchRootSuggestionCommands },
+                  ];
+                }
                 // Pull alwaysOnTop commands out first so they render above every section
-                const allTopItems = displayCommands.filter((c) => c.alwaysOnTop);
+                const topCommandIds = new Set(
+                  displayCommands.filter((c) => c.alwaysOnTop).map((c) => c.id)
+                );
+                const directSearchIndex = displayCommands.findIndex((c) => c.id === WEB_SEARCH_ROOT_DIRECT_ID);
+                if (directSearchIndex >= 0) {
+                  topCommandIds.add(WEB_SEARCH_ROOT_DIRECT_ID);
+                  if (directSearchIndex === 1 && displayCommands[0]) {
+                    topCommandIds.add(displayCommands[0].id);
+                  }
+                }
+                const allTopItems = displayCommands.filter((c) => topCommandIds.has(c.id));
                 const topIds = new Set(allTopItems.map((c) => c.id));
                 const strip = (items: CommandInfo[]) => items.filter((c) => !topIds.has(c.id));
                 return [
                   { title: '', items: allTopItems },
                   { title: t('launcher.categories.browser'), items: strip(browserSearchResultCommands) },
+                  { title: t('launcher.categories.search'), items: strip(webSearchRootSuggestionCommands) },
                   { title: t('launcher.sections.selectedText'), items: strip(groupedCommands.contextual) },
                   { title: t('launcher.sections.pinned'), items: strip(groupedCommands.pinned) },
                   { title: t('launcher.categories.recent'), items: strip(groupedCommands.recent) },

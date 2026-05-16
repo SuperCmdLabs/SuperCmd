@@ -776,6 +776,11 @@
           },
           "moveUp": "上移",
           "moveDown": "下移"
+        },
+        "webSearch": {
+          "label": "网页搜索",
+          "defaultProvider": "默认提供商",
+          "suggestionCount": "搜索建议"
         }
       }
     }
@@ -806,7 +811,8 @@
       "files": "文件",
       "calculator": "计算器",
       "quickLinks": "快速链接",
-      "browser": "浏览器"
+      "browser": "浏览器",
+      "search": "搜索"
     },
     "actions": {
       "open": "打开",
@@ -893,7 +899,33 @@
       "showAllPlaceholder": "搜索 Browser 结果...",
       "openTabsPlaceholder": "搜索打开的标签页...",
       "bookmarksPlaceholder": "搜索书签...",
-      "historyPlaceholder": "搜索历史记录..."
+      "historyPlaceholder": "搜索历史记录...",
+      "setNickname": "设置昵称",
+      "editNickname": "编辑昵称",
+      "searchProviderFor": "使用 {provider} 搜索“{query}”",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "默认搜索",
+      "webSearchPlaceholder": "搜索 Bang...",
+      "useBang": "使用 Bang",
+      "bangSections": {
+        "used": "最近使用的 Bangs",
+        "common": "常用 Bang",
+        "matching": "匹配的 Bang",
+        "all": "所有 Bang A-Z",
+        "hidden": "隐藏 Bangs"
+      },
+      "showHidden": "显示隐藏",
+      "hideHidden": "隐藏已隐藏",
+      "newBang": "新建 Bang",
+      "aliasHelp": "用逗号分隔别名，例如：!gh, !git",
+      "customBangHelp": "创建包含 {query} 的 URL 模板 Bang。",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "别名",
+        "name": "名称",
+        "host": "主机",
+        "template": "URL 模板"
+      }
     }
   },
   "scriptCommand": {

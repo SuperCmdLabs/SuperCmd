@@ -776,6 +776,11 @@
           },
           "moveUp": "上移",
           "moveDown": "下移"
+        },
+        "webSearch": {
+          "label": "網頁搜尋",
+          "defaultProvider": "預設提供者",
+          "suggestionCount": "搜尋建議"
         }
       }
     }
@@ -806,7 +811,8 @@
       "files": "檔案",
       "calculator": "計算機",
       "quickLinks": "快速連結",
-      "browser": "瀏覽器"
+      "browser": "瀏覽器",
+      "search": "搜尋"
     },
     "actions": {
       "open": "開啟",
@@ -893,7 +899,33 @@
       "showAllPlaceholder": "搜尋 Browser 結果...",
       "openTabsPlaceholder": "搜尋開啟的分頁...",
       "bookmarksPlaceholder": "搜尋書籤...",
-      "historyPlaceholder": "搜尋瀏覽記錄..."
+      "historyPlaceholder": "搜尋瀏覽記錄...",
+      "setNickname": "設定暱稱",
+      "editNickname": "編輯暱稱",
+      "searchProviderFor": "使用 {provider} 搜尋「{query}」",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "預設搜尋",
+      "webSearchPlaceholder": "搜尋 Bang...",
+      "useBang": "使用 Bang",
+      "bangSections": {
+        "used": "最近使用的 Bangs",
+        "common": "常用 Bang",
+        "matching": "符合的 Bang",
+        "all": "所有 Bang A-Z",
+        "hidden": "隱藏 Bangs"
+      },
+      "showHidden": "顯示隱藏",
+      "hideHidden": "隱藏已隱藏",
+      "newBang": "新增 Bang",
+      "aliasHelp": "用逗號分隔別名，例如：!gh, !git",
+      "customBangHelp": "建立包含 {query} 的 URL 範本 Bang。",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "別名",
+        "name": "名稱",
+        "host": "主機",
+        "template": "URL 範本"
+      }
     }
   },
   "scriptCommand": {

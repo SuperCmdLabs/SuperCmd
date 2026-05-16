@@ -1030,6 +1030,8 @@ function renderBrowserFaviconIcon(faviconUrl: string, kind?: CommandInfo['browse
     <PanelTop className="w-3 h-3 text-cyan-300" />
   ) : kind === 'bookmark' ? (
     <Bookmark className="w-3 h-3 text-amber-300" />
+  ) : kind === 'search' ? (
+    <Search className="w-3 h-3 text-emerald-300" />
   ) : (
     <Clock className="w-3 h-3 text-sky-300" />
   );
@@ -1090,6 +1092,14 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     return (
       <div className="w-5 h-5 rounded bg-slate-500/20 flex items-center justify-center">
         <Search className="w-3 h-3 text-slate-200" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-search-web') {
+    return (
+      <div className="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
+        <Search className="w-3 h-3 text-emerald-300" />
       </div>
     );
   }

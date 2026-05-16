@@ -1043,14 +1043,37 @@ function normalizeRow(browserId: BrowserSearchSource, raw: any): RawHistoryRow |
 // we return null and the caller will skip autocompletion.
 
 const SUGGEST_TIMEOUT_MS = 1500;
+const MAX_SEARCH_SUGGESTIONS = 30;
 
 export async function fetchSearchSuggestion(rawInput: string): Promise<string | null> {
-  const trimmed = String(rawInput || '').trim();
-  if (!trimmed) return null;
-  const url = `https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(trimmed)}`;
-  return new Promise<string | null>((resolve) => {
+  const suggestions = await fetchSearchSuggestions(rawInput, 1);
+  return suggestions[0] || null;
+}
+
+type SearchSuggestionProvider = {
+  key?: string;
+  host?: string;
+  name?: string;
+};
+
+type NormalizedSearchSuggestionProvider = {
+  key: string;
+  host: string;
+  name: string;
+};
+
+function normalizeSuggestionProvider(value: SearchSuggestionProvider | undefined): NormalizedSearchSuggestionProvider {
+  return {
+    key: String(value?.key || '').trim().toLowerCase().replace(/^!+/, ''),
+    host: String(value?.host || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, ''),
+    name: String(value?.name || '').trim().toLowerCase(),
+  };
+}
+
+function fetchJsonUrl(url: string): Promise<any> {
+  return new Promise((resolve) => {
     let settled = false;
-    const finish = (value: string | null) => {
+    const finish = (value: any) => {
       if (settled) return;
       settled = true;
       resolve(value);
@@ -1066,22 +1089,7 @@ export async function fetchSearchSuggestion(rawInput: string): Promise<string | 
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
         res.on('end', () => {
           try {
-            const body = Buffer.concat(chunks).toString('utf-8');
-            const parsed = JSON.parse(body);
-            if (!Array.isArray(parsed) || !Array.isArray(parsed[1])) {
-              finish(null);
-              return;
-            }
-            const lower = trimmed.toLowerCase();
-            for (const candidate of parsed[1]) {
-              const s = String(candidate || '').trim();
-              if (!s || s.length <= trimmed.length) continue;
-              if (s.toLowerCase().startsWith(lower)) {
-                finish(s);
-                return;
-              }
-            }
-            finish(null);
+            finish(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
           } catch {
             finish(null);
           }
@@ -1097,6 +1105,106 @@ export async function fetchSearchSuggestion(rawInput: string): Promise<string | 
       });
     } catch {
       finish(null);
+    }
+  });
+}
+
+function uniqueSuggestionList(values: unknown[], max: number): string[] {
+  const seen = new Set<string>();
+  const suggestions: string[] = [];
+  for (const candidate of values) {
+    const s = String(candidate || '').trim();
+    const key = s.toLowerCase();
+    if (!s || seen.has(key)) continue;
+    seen.add(key);
+    suggestions.push(s);
+    if (suggestions.length >= max) break;
+  }
+  return suggestions;
+}
+
+async function fetchWikipediaSuggestions(trimmed: string, max: number): Promise<string[]> {
+  const parsed = await fetchJsonUrl(`https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=${max}&search=${encodeURIComponent(trimmed)}`);
+  return Array.isArray(parsed?.[1]) ? uniqueSuggestionList(parsed[1], max) : [];
+}
+
+async function fetchNpmSuggestions(trimmed: string, max: number): Promise<string[]> {
+  const parsed = await fetchJsonUrl(`https://registry.npmjs.org/-/v1/search?size=${max}&text=${encodeURIComponent(trimmed)}`);
+  const objects = Array.isArray(parsed?.objects) ? parsed.objects : [];
+  return uniqueSuggestionList(objects.map((item: any) => item?.package?.name), max);
+}
+
+function getGoogleSuggestUrl(trimmed: string, provider: SearchSuggestionProvider): string {
+  const normalized = normalizeSuggestionProvider(provider);
+  const isYouTube = normalized.key === 'yt' ||
+    normalized.key === 'youtube' ||
+    normalized.host.includes('youtube.com') ||
+    normalized.name.includes('youtube');
+  const ds = isYouTube ? '&ds=yt' : '';
+  return `https://suggestqueries.google.com/complete/search?client=firefox${ds}&q=${encodeURIComponent(trimmed)}`;
+}
+
+export async function fetchSearchSuggestions(rawInput: string, limit = MAX_SEARCH_SUGGESTIONS, provider?: SearchSuggestionProvider): Promise<string[]> {
+  const trimmed = String(rawInput || '').trim();
+  if (!trimmed) return [];
+  const max = Math.max(1, Math.min(MAX_SEARCH_SUGGESTIONS, Math.floor(Number(limit) || MAX_SEARCH_SUGGESTIONS)));
+  const normalizedProvider = normalizeSuggestionProvider(provider);
+  const isWikipedia = normalizedProvider.key === 'wiki' ||
+    normalizedProvider.key === 'w' ||
+    normalizedProvider.host.includes('wikipedia.org') ||
+    normalizedProvider.name.includes('wikipedia');
+  if (isWikipedia) {
+    const suggestions = await fetchWikipediaSuggestions(trimmed, max);
+    if (suggestions.length > 0) return suggestions;
+  }
+  const isNpm = normalizedProvider.key === 'npm' ||
+    normalizedProvider.host.includes('npmjs.com') ||
+    normalizedProvider.name === 'npm';
+  if (isNpm) {
+    const suggestions = await fetchNpmSuggestions(trimmed, max);
+    if (suggestions.length > 0) return suggestions;
+  }
+  const url = getGoogleSuggestUrl(trimmed, normalizedProvider);
+  return new Promise<string[]>((resolve) => {
+    let settled = false;
+    const finish = (value: string[]) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    try {
+      const req = https.get(url, { timeout: SUGGEST_TIMEOUT_MS }, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          finish([]);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          try {
+            const body = Buffer.concat(chunks).toString('utf-8');
+            const parsed = JSON.parse(body);
+            if (!Array.isArray(parsed) || !Array.isArray(parsed[1])) {
+              finish([]);
+              return;
+            }
+            finish(uniqueSuggestionList(parsed[1], max));
+          } catch {
+            finish([]);
+          }
+        });
+        res.on('error', () => finish([]));
+      });
+      req.on('error', () => finish([]));
+      req.on('timeout', () => {
+        try {
+          req.destroy();
+        } catch {}
+        finish([]);
+      });
+    } catch {
+      finish([]);
     }
   });
 }

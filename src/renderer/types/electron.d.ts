@@ -287,6 +287,40 @@ export interface BrowserSearchSettings {
   profileSourceIds: string[];
   resultLimitPerGroup: number;
   resultGroups: BrowserSearchResultGroupSetting[];
+  nicknames: BrowserSearchNicknameSetting[];
+  webSearchDefaultBangKey: string;
+  webSearchSuggestionLimit: number;
+  webSearchBangOverrides: WebSearchBangOverrideSetting[];
+  webSearchBangUsage: Record<string, WebSearchBangUsageSetting>;
+  webSearchDisabledBangKeys: string[];
+  webSearchBangCustomProviders: WebSearchBangCustomProviderSetting[];
+  webSearchShowHiddenBangs?: boolean;
+}
+
+export interface BrowserSearchNicknameSetting {
+  source: string;
+  sourceProfileId?: string;
+  url: string;
+  nickname: string;
+}
+
+export interface WebSearchBangOverrideSetting {
+  key: string;
+  aliases: string[];
+}
+
+export interface WebSearchBangUsageSetting {
+  useCount: number;
+  lastUsedAt: number;
+  frecencyScore: number;
+}
+
+export interface WebSearchBangCustomProviderSetting {
+  key: string;
+  aliases: string[];
+  name: string;
+  host: string;
+  template: string;
 }
 
 export type BrowserSearchEntryType = 'url' | 'search' | 'bookmark';
@@ -320,6 +354,18 @@ export interface BrowserSearchAutocomplete {
   completion: string;
   suffix: string;
   entry: BrowserSearchEntry;
+}
+
+export interface WebSearchBangEntry {
+  key: string;
+  aliases?: string[];
+  name: string;
+  host: string;
+  category?: string;
+  subcategory?: string;
+  urlTemplate: string;
+  rankHint?: number;
+  source?: 'duckduckgo' | 'unduck' | 'seed';
 }
 
 export interface BrowserSearchImportableBrowser {
@@ -965,6 +1011,8 @@ export interface ElectronAPI {
   browserSearchListEntries: () => Promise<BrowserSearchEntry[]>;
   browserSearchAutocomplete: (input: string) => Promise<BrowserSearchAutocomplete | null>;
   browserSearchSuggest: (input: string) => Promise<string | null>;
+  browserSearchSuggestMany: (input: string, limit?: number, provider?: { key?: string; host?: string; name?: string }) => Promise<string[]>;
+  webSearchListBangs: () => Promise<WebSearchBangEntry[]>;
   browserSearchClearHistory: () => Promise<boolean>;
   browserSearchListBrowsers: () => Promise<BrowserSearchImportableBrowser[]>;
   browserSearchListProfiles: () => Promise<BrowserSearchImportableProfile[]>;

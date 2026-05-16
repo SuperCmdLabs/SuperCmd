@@ -665,6 +665,10 @@ const electronAPI = {
     ipcRenderer.invoke('browser-search:autocomplete', input),
   browserSearchSuggest: (input: string): Promise<string | null> =>
     ipcRenderer.invoke('browser-search:suggest', input),
+  browserSearchSuggestMany: (input: string, limit?: number, provider?: { key?: string; host?: string; name?: string }): Promise<string[]> =>
+    ipcRenderer.invoke('browser-search:suggest-many', input, limit, provider),
+  webSearchListBangs: (): Promise<any[]> =>
+    ipcRenderer.invoke('web-search:list-bangs'),
   browserSearchClearHistory: (): Promise<boolean> =>
     ipcRenderer.invoke('browser-search:clear-history'),
   browserSearchListBrowsers: (): Promise<{ id: string; name: string; available: boolean }[]> =>

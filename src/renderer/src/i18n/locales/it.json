@@ -775,6 +775,11 @@
           },
           "moveUp": "Sposta su",
           "moveDown": "Sposta giù"
+        },
+        "webSearch": {
+          "label": "Ricerca web",
+          "defaultProvider": "Provider predefinito",
+          "suggestionCount": "Suggerimenti di ricerca"
         }
       }
     }
@@ -808,7 +813,8 @@
       "files": "File",
       "calculator": "Calcolatrice",
       "quickLinks": "Collegamenti rapidi",
-      "browser": "Browser"
+      "browser": "Browser",
+      "search": "Cerca"
     },
     "actions": {
       "open": "Apri",
@@ -892,7 +898,33 @@
       "showAllPlaceholder": "Cerca risultati Browser...",
       "openTabsPlaceholder": "Cerca schede aperte...",
       "bookmarksPlaceholder": "Cerca segnalibri...",
-      "historyPlaceholder": "Cerca nella cronologia..."
+      "historyPlaceholder": "Cerca nella cronologia...",
+      "setNickname": "Imposta soprannome",
+      "editNickname": "Modifica soprannome",
+      "searchProviderFor": "Cerca \"{query}\" con {provider}",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "Ricerca predefinita",
+      "webSearchPlaceholder": "Cerca bang...",
+      "useBang": "Usa bang",
+      "bangSections": {
+        "used": "Bang recenti",
+        "common": "Bang comuni",
+        "matching": "Bang corrispondenti",
+        "all": "Tutti i bang A-Z",
+        "hidden": "Bang nascosti"
+      },
+      "showHidden": "Mostra nascosti",
+      "hideHidden": "Nascondi nascosti",
+      "newBang": "Nuovo bang",
+      "aliasHelp": "Separa gli alias con virgole, ad esempio: !gh, !git",
+      "customBangHelp": "Crea un bang con un modello URL che contiene {query}.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "Alias",
+        "name": "Nome",
+        "host": "Host",
+        "template": "Modello URL"
+      }
     }
   },
   "scriptCommand": {

@@ -751,6 +751,11 @@
           },
           "moveUp": "Mover arriba",
           "moveDown": "Mover abajo"
+        },
+        "webSearch": {
+          "label": "Búsqueda web",
+          "defaultProvider": "Proveedor predeterminado",
+          "suggestionCount": "Sugerencias de búsqueda"
         }
       }
     },
@@ -813,7 +818,8 @@
       "calculator": "Calculadora",
       "dictionary": "Diccionario",
       "ai": "Asistente de IA",
-      "browser": "Navegador"
+      "browser": "Navegador",
+      "search": "Buscar"
     },
     "actions": {
       "open": "Abrir",
@@ -858,7 +864,33 @@
       "showAllPlaceholder": "Buscar resultados de Browser...",
       "openTabsPlaceholder": "Buscar pestañas abiertas...",
       "bookmarksPlaceholder": "Buscar marcadores...",
-      "historyPlaceholder": "Buscar en el historial..."
+      "historyPlaceholder": "Buscar en el historial...",
+      "setNickname": "Asignar apodo",
+      "editNickname": "Editar apodo",
+      "searchProviderFor": "Buscar \"{query}\" en {provider}",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "Búsqueda predeterminada",
+      "webSearchPlaceholder": "Buscar bangs...",
+      "useBang": "Usar bang",
+      "bangSections": {
+        "used": "Bangs recientes",
+        "common": "Bangs comunes",
+        "matching": "Bangs coincidentes",
+        "all": "Todos los bangs A-Z",
+        "hidden": "Bangs ocultos"
+      },
+      "showHidden": "Mostrar ocultos",
+      "hideHidden": "Ocultar ocultos",
+      "newBang": "Nuevo bang",
+      "aliasHelp": "Separa los alias con comas, por ejemplo: !gh, !git",
+      "customBangHelp": "Crea un bang con una plantilla de URL que contenga {query}.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "Alias",
+        "name": "Nombre",
+        "host": "Host",
+        "template": "Plantilla de URL"
+      }
     },
     "badges": {
       "openTab": "Pestaña abierta",

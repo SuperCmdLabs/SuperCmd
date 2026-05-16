@@ -776,6 +776,11 @@
           },
           "moveUp": "上へ移動",
           "moveDown": "下へ移動"
+        },
+        "webSearch": {
+          "label": "Web 検索",
+          "defaultProvider": "デフォルトプロバイダー",
+          "suggestionCount": "検索候補"
         }
       }
     }
@@ -809,7 +814,8 @@
       "files": "ファイル",
       "calculator": "電卓",
       "quickLinks": "クイックリンク",
-      "browser": "ブラウザ"
+      "browser": "ブラウザ",
+      "search": "検索"
     },
     "actions": {
       "open": "開く",
@@ -893,7 +899,33 @@
       "showAllPlaceholder": "Browser 結果を検索...",
       "openTabsPlaceholder": "開いているタブを検索...",
       "bookmarksPlaceholder": "ブックマークを検索...",
-      "historyPlaceholder": "履歴を検索..."
+      "historyPlaceholder": "履歴を検索...",
+      "setNickname": "ニックネームを設定",
+      "editNickname": "ニックネームを編集",
+      "searchProviderFor": "{provider} で「{query}」を検索",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "デフォルト検索",
+      "webSearchPlaceholder": "Bang を検索...",
+      "useBang": "Bang を使用",
+      "bangSections": {
+        "used": "最近使った Bang",
+        "common": "よく使う Bang",
+        "matching": "一致する Bang",
+        "all": "すべての Bang A-Z",
+        "hidden": "非表示の Bang"
+      },
+      "showHidden": "非表示を表示",
+      "hideHidden": "非表示を隠す",
+      "newBang": "新規 Bang",
+      "aliasHelp": "エイリアスはカンマで区切ります。例: !gh, !git",
+      "customBangHelp": "{query} を含む URL テンプレートで Bang を作成します。",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "エイリアス",
+        "name": "名前",
+        "host": "ホスト",
+        "template": "URL テンプレート"
+      }
     }
   },
   "scriptCommand": {

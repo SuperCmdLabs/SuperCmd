@@ -751,6 +751,11 @@
           },
           "moveUp": "Nach oben",
           "moveDown": "Nach unten"
+        },
+        "webSearch": {
+          "label": "Websuche",
+          "defaultProvider": "Standardanbieter",
+          "suggestionCount": "Suchvorschläge"
         }
       }
     },
@@ -813,7 +818,8 @@
       "calculator": "Rechner",
       "dictionary": "Wörterbuch",
       "ai": "KI-Assistent",
-      "browser": "Browser"
+      "browser": "Browser",
+      "search": "Suche"
     },
     "actions": {
       "open": "Öffnen",
@@ -858,7 +864,33 @@
       "showAllPlaceholder": "Browser-Ergebnisse suchen...",
       "openTabsPlaceholder": "Offene Tabs suchen...",
       "bookmarksPlaceholder": "Lesezeichen suchen...",
-      "historyPlaceholder": "Verlauf suchen..."
+      "historyPlaceholder": "Verlauf suchen...",
+      "setNickname": "Spitznamen festlegen",
+      "editNickname": "Spitznamen bearbeiten",
+      "searchProviderFor": "Mit {provider} nach „{query}“ suchen",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "Standardsuche",
+      "webSearchPlaceholder": "Bangs suchen...",
+      "useBang": "Bang verwenden",
+      "bangSections": {
+        "used": "Zuletzt verwendete Bangs",
+        "common": "Häufige Bangs",
+        "matching": "Passende Bangs",
+        "all": "Alle Bangs A-Z",
+        "hidden": "Ausgeblendete Bangs"
+      },
+      "showHidden": "Ausgeblendete zeigen",
+      "hideHidden": "Ausgeblendete verbergen",
+      "newBang": "Neuer Bang",
+      "aliasHelp": "Aliasse mit Kommas trennen, zum Beispiel: !gh, !git",
+      "customBangHelp": "Erstelle einen Bang mit einer URL-Vorlage, die {query} enthält.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "Aliasse",
+        "name": "Name",
+        "host": "Host",
+        "template": "URL-Vorlage"
+      }
     },
     "badges": {
       "openTab": "Offener Tab",
