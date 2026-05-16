@@ -731,8 +731,27 @@
           "addedHeading": "已添加的个人资料",
           "noneFound": "未检测到支持的浏览器个人资料",
           "noneAdded": "尚未添加浏览器个人资料",
+          "profileRowDetail": "历史记录：{count} 个 URL · 标签页/书签：尚未导入",
           "profileSupportNote": "个人资料支持目前仅包含 Chromium 浏览器。Safari 和 Firefox 支持将在之后添加。",
           "enabledProfiles": "已为 SuperCmd 浏览器历史记录启用 {count} 个个人资料。"
+        },
+        "importedData": {
+          "heading": "已导入的数据",
+          "total": "{count} 个历史 URL",
+          "notImported": "尚未导入",
+          "history": {
+            "title": "历史记录",
+            "description": "来自已添加 Chromium 个人资料的已访问 HTTP(S) 页面。",
+            "count": "{count} 个 URL"
+          },
+          "tabs": {
+            "title": "打开的标签页",
+            "description": "实时标签页快照已规划，但还不是此导入的一部分。"
+          },
+          "bookmarks": {
+            "title": "书签",
+            "description": "书签导入已规划，但还不是此导入的一部分。"
+          }
         },
         "status": {
           "cleared": "浏览器个人资料历史已清除。",

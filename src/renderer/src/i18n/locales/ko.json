@@ -731,8 +731,27 @@
           "addedHeading": "추가된 프로필",
           "noneFound": "지원되는 브라우저 프로필이 없습니다",
           "noneAdded": "아직 추가된 브라우저 프로필이 없습니다",
+          "profileRowDetail": "기록: URL {count}개 · 탭/북마크: 아직 가져오지 않음",
           "profileSupportNote": "프로필 지원은 현재 Chromium 브라우저만 포함합니다. Safari와 Firefox 지원은 나중에 추가됩니다.",
           "enabledProfiles": "SuperCmd 브라우저 기록에 {count}개의 프로필이 활성화되어 있습니다."
+        },
+        "importedData": {
+          "heading": "가져온 데이터",
+          "total": "기록 URL {count}개",
+          "notImported": "아직 가져오지 않음",
+          "history": {
+            "title": "기록",
+            "description": "추가된 Chromium 프로필에서 방문한 HTTP(S) 페이지입니다.",
+            "count": "URL {count}개"
+          },
+          "tabs": {
+            "title": "열린 탭",
+            "description": "실시간 탭 스냅샷은 계획되어 있지만 아직 이 가져오기에 포함되지 않습니다."
+          },
+          "bookmarks": {
+            "title": "북마크",
+            "description": "북마크 가져오기는 계획되어 있지만 아직 이 가져오기에 포함되지 않습니다."
+          }
         },
         "status": {
           "cleared": "브라우저 프로필 기록을 지웠습니다.",

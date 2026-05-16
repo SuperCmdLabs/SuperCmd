@@ -731,8 +731,27 @@
           "addedHeading": "已加入的個人檔案",
           "noneFound": "未偵測到支援的瀏覽器個人檔案",
           "noneAdded": "尚未加入瀏覽器個人檔案",
+          "profileRowDetail": "歷史記錄：{count} 個 URL · 分頁/書籤：尚未匯入",
           "profileSupportNote": "個人檔案支援目前僅包含 Chromium 瀏覽器。Safari 和 Firefox 支援將於稍後加入。",
           "enabledProfiles": "已為 SuperCmd 瀏覽器歷史啟用 {count} 個個人檔案。"
+        },
+        "importedData": {
+          "heading": "已匯入的資料",
+          "total": "{count} 個歷史 URL",
+          "notImported": "尚未匯入",
+          "history": {
+            "title": "歷史記錄",
+            "description": "來自已加入 Chromium 個人檔案的已造訪 HTTP(S) 頁面。",
+            "count": "{count} 個 URL"
+          },
+          "tabs": {
+            "title": "開啟的分頁",
+            "description": "即時分頁快照已規劃，但尚未包含在此匯入中。"
+          },
+          "bookmarks": {
+            "title": "書籤",
+            "description": "書籤匯入已規劃，但尚未包含在此匯入中。"
+          }
         },
         "status": {
           "cleared": "瀏覽器個人檔案歷史已清除。",

@@ -706,8 +706,27 @@
           "addedHeading": "Perfiles añadidos",
           "noneFound": "No se detectaron perfiles de navegador compatibles",
           "noneAdded": "Aún no se han añadido perfiles de navegador",
+          "profileRowDetail": "Historial: {count} URL · Pestañas/marcadores: aún no importados",
           "profileSupportNote": "La compatibilidad con perfiles incluye actualmente solo navegadores Chromium. Safari y Firefox se añadirán más adelante.",
           "enabledProfiles": "{count} perfil(es) activado(s) para el historial de navegador de SuperCmd."
+        },
+        "importedData": {
+          "heading": "Datos importados",
+          "total": "{count} URL del historial",
+          "notImported": "Aún no importado",
+          "history": {
+            "title": "Historial",
+            "description": "Páginas HTTP(S) visitadas desde perfiles Chromium añadidos.",
+            "count": "{count} URL"
+          },
+          "tabs": {
+            "title": "Pestañas abiertas",
+            "description": "Las capturas de pestañas en vivo están previstas, pero aún no forman parte de esta importación."
+          },
+          "bookmarks": {
+            "title": "Marcadores",
+            "description": "La importación de marcadores está prevista, pero aún no forma parte de esta importación."
+          }
         },
         "status": {
           "cleared": "Historial de perfiles de navegador borrado.",

@@ -706,8 +706,27 @@
           "addedHeading": "Hinzugefügte Profile",
           "noneFound": "Keine unterstützten Browserprofile gefunden",
           "noneAdded": "Noch keine Browserprofile hinzugefügt",
+          "profileRowDetail": "Verlauf: {count} URLs · Tabs/Lesezeichen: noch nicht importiert",
           "profileSupportNote": "Profilunterstützung umfasst derzeit nur Chromium-Browser. Safari und Firefox werden später unterstützt.",
           "enabledProfiles": "{count} Profil(e) für den SuperCmd-Browserverlauf aktiviert."
+        },
+        "importedData": {
+          "heading": "Importierte Daten",
+          "total": "{count} Verlaufs-URLs",
+          "notImported": "Noch nicht importiert",
+          "history": {
+            "title": "Verlauf",
+            "description": "Besuchte HTTP(S)-Seiten aus hinzugefügten Chromium-Profilen.",
+            "count": "{count} URLs"
+          },
+          "tabs": {
+            "title": "Geöffnete Tabs",
+            "description": "Live-Tab-Snapshots sind geplant, aber noch nicht Teil dieses Imports."
+          },
+          "bookmarks": {
+            "title": "Lesezeichen",
+            "description": "Lesezeichenimport ist geplant, aber noch nicht Teil dieses Imports."
+          }
         },
         "status": {
           "cleared": "Browserprofil-Verlauf gelöscht.",
