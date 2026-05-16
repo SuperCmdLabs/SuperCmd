@@ -705,9 +705,9 @@
         "label": "启用调试模式"
       },
       "browserSearch": {
-        "title": "浏览器搜索",
-        "description": "输入内容后按回车即可在默认浏览器中打开。内联自动补全会根据历史记录提示网站。",
-        "enableLabel": "启用浏览器搜索",
+        "title": "浏览器个人资料",
+        "description": "连接浏览器个人资料，让 SuperCmd 使用其本地历史记录并持续刷新。",
+        "enableLabel": "在 SuperCmd 中使用浏览器个人资料",
         "retention": {
           "label": "历史记录保留时间",
           "option": {
@@ -719,16 +719,24 @@
             "forever": "永久"
           }
         },
-        "clearButton": "清除浏览器搜索历史",
-        "importLabel": "从浏览器导入历史记录",
+        "clearButton": "清除浏览器个人资料历史",
+        "importLabel": "检测到的浏览器个人资料",
         "import": {
-          "action": "导入",
-          "running": "正在导入…",
-          "noneFound": "未检测到支持的浏览器"
+          "action": "添加个人资料",
+          "add": "添加个人资料",
+          "refresh": "刷新",
+          "remove": "移除",
+          "running": "正在刷新…",
+          "availableHeading": "可用个人资料",
+          "addedHeading": "已添加的个人资料",
+          "noneFound": "未检测到支持的浏览器个人资料",
+          "noneAdded": "尚未添加浏览器个人资料",
+          "profileSupportNote": "个人资料支持目前仅包含 Chromium 浏览器。Safari 和 Firefox 支持将在之后添加。",
+          "enabledProfiles": "已为 SuperCmd 浏览器历史记录启用 {count} 个个人资料。"
         },
         "status": {
-          "cleared": "浏览器搜索历史已清除。",
-          "imported": "已导入 {count} / {total} 条。",
+          "cleared": "浏览器个人资料历史已清除。",
+          "imported": "已更新 {count} / {total} 条。",
           "failed": "操作失败。"
         }
       }

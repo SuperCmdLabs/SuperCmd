@@ -704,9 +704,9 @@
         "label": "Abilita modalità debug"
       },
       "browserSearch": {
-        "title": "Ricerca nel browser",
-        "description": "Premi ⌘↵ per aprire la query nel browser predefinito. Il completamento automatico inline suggerisce siti e ricerche precedenti.",
-        "enableLabel": "Abilita ricerca nel browser",
+        "title": "Profili browser",
+        "description": "Collega profili browser così SuperCmd può usare la loro cronologia locale e mantenerla aggiornata.",
+        "enableLabel": "Usa profili browser in SuperCmd",
         "retention": {
           "label": "Conservazione cronologia",
           "option": {
@@ -718,16 +718,24 @@
             "forever": "Per sempre"
           }
         },
-        "clearButton": "Cancella cronologia ricerche del browser",
-        "importLabel": "Importa cronologia da un browser",
+        "clearButton": "Cancella cronologia profili browser",
+        "importLabel": "Profili browser rilevati",
         "import": {
-          "action": "Importa",
-          "running": "Importazione…",
-          "noneFound": "Nessun browser supportato rilevato"
+          "action": "Aggiungi profilo",
+          "add": "Aggiungi profilo",
+          "refresh": "Aggiorna",
+          "remove": "Rimuovi",
+          "running": "Aggiornamento…",
+          "availableHeading": "Profili disponibili",
+          "addedHeading": "Profili aggiunti",
+          "noneFound": "Nessun profilo browser supportato rilevato",
+          "noneAdded": "Nessun profilo browser ancora aggiunto",
+          "profileSupportNote": "Il supporto dei profili attualmente include solo i browser Chromium. Safari e Firefox saranno aggiunti in seguito.",
+          "enabledProfiles": "{count} profilo/i abilitato/i per la cronologia browser di SuperCmd."
         },
         "status": {
-          "cleared": "Cronologia ricerche del browser cancellata.",
-          "imported": "Importate {count} di {total} voci.",
+          "cleared": "Cronologia profili browser cancellata.",
+          "imported": "Aggiornate {count} di {total} voci.",
           "failed": "Operazione non riuscita."
         }
       }

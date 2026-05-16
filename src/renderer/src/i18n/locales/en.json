@@ -707,9 +707,9 @@
         "label": "Enable debug mode"
       },
       "browserSearch": {
-        "title": "Browser Search",
-        "description": "Press Enter on a query to open it in your default browser. Inline autocomplete suggests sites from your history.",
-        "enableLabel": "Enable browser search",
+        "title": "Browser Profiles",
+        "description": "Connect browser profiles so SuperCmd can use their local history and keep it refreshed.",
+        "enableLabel": "Use browser profiles in SuperCmd",
         "retention": {
           "label": "History retention",
           "option": {
@@ -721,16 +721,24 @@
             "forever": "Forever"
           }
         },
-        "clearButton": "Clear browser search history",
-        "importLabel": "Import history from a browser",
+        "clearButton": "Clear browser profile history",
+        "importLabel": "Detected browser profiles",
         "import": {
-          "action": "Import",
-          "running": "Importing…",
-          "noneFound": "No supported browsers detected"
+          "action": "Add profile",
+          "add": "Add Profile",
+          "refresh": "Refresh",
+          "remove": "Remove",
+          "running": "Refreshing…",
+          "availableHeading": "Available profiles",
+          "addedHeading": "Added profiles",
+          "noneFound": "No supported browser profiles detected",
+          "noneAdded": "No browser profiles added yet",
+          "profileSupportNote": "Profile support currently includes Chromium browsers only. Safari and Firefox support will be added later.",
+          "enabledProfiles": "{count} profile(s) enabled for SuperCmd browser history."
         },
         "status": {
-          "cleared": "Browser search history cleared.",
-          "imported": "Imported {count} of {total} entries.",
+          "cleared": "Browser profile history cleared.",
+          "imported": "Updated {count} of {total} entries.",
           "failed": "Action failed."
         }
       }

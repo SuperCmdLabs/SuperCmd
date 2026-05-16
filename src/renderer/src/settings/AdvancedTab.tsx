@@ -3,7 +3,7 @@ import { Bug, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, Keyboard, Lang
 import type {
   AppNavigationStyle,
   AppSettings,
-  BrowserSearchImportableBrowser,
+  BrowserSearchImportableProfile,
   BrowserSearchSettings,
   HyperKeySourceKey,
   HyperKeyCapsLockTapBehavior,
@@ -78,6 +78,8 @@ const BROWSER_SEARCH_RETENTION_OPTIONS: { value: number | null; labelKey: string
   { value: null, labelKey: 'settings.advanced.browserSearch.retention.option.forever' },
 ];
 
+const CHROMIUM_BROWSER_IDS = new Set(['helium', 'chrome', 'arc', 'brave', 'edge', 'vivaldi']);
+
 const AUTO_QUIT_TIMEOUT_OPTIONS: { value: number; label: string }[] = [
   { value: 60, label: '1m' },
   { value: 120, label: '2m' },
@@ -95,19 +97,16 @@ interface BrowserSearchSectionProps {
 
 const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, onChange }) => {
   const { t } = useI18n();
-  const [browsers, setBrowsers] = useState<BrowserSearchImportableBrowser[]>([]);
-  const [selectedBrowser, setSelectedBrowser] = useState<string>('');
-  const [importing, setImporting] = useState(false);
+  const [profiles, setProfiles] = useState<BrowserSearchImportableProfile[]>([]);
+  const [busyProfileId, setBusyProfileId] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<string>('');
 
   const refreshBrowsers = useCallback(async () => {
     try {
-      const list = await window.electron.browserSearchListBrowsers();
-      setBrowsers(list);
-      const firstAvailable = list.find((b) => b.available);
-      if (firstAvailable) setSelectedBrowser(firstAvailable.id);
+      const profileList = await window.electron.browserSearchListProfiles();
+      setProfiles(profileList);
     } catch {
-      setBrowsers([]);
+      setProfiles([]);
     }
   }, []);
 
@@ -130,12 +129,12 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
     }
   }, [t]);
 
-  const handleImport = useCallback(async () => {
-    if (!selectedBrowser) return;
-    setImporting(true);
+  const importProfile = useCallback(async (profileId: string) => {
+    if (!profileId) return null;
+    setBusyProfileId(profileId);
     setStatusMessage('');
     try {
-      const result = await window.electron.browserSearchImport(selectedBrowser);
+      const result = await window.electron.browserSearchImportProfile(profileId);
       if (result.reason) {
         setStatusMessage(result.reason);
       } else {
@@ -146,15 +145,41 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
           })
         );
       }
+      return result;
     } catch (e: any) {
       setStatusMessage(e?.message || t('settings.advanced.browserSearch.status.failed'));
+      return null;
     } finally {
-      setImporting(false);
+      setBusyProfileId('');
     }
-  }, [selectedBrowser, t]);
+  }, [t]);
+
+  const handleAddProfile = useCallback(async (profileId: string) => {
+    const currentProfileIds = Array.isArray(settings.profileSourceIds) ? settings.profileSourceIds : [];
+    if (!currentProfileIds.includes(profileId)) {
+      onChange({ ...settings, profileSourceIds: [...currentProfileIds, profileId] });
+    }
+    await importProfile(profileId);
+  }, [importProfile, onChange, settings]);
+
+  const handleRemoveProfile = useCallback((profileId: string) => {
+    if (!profileId) return;
+    const currentProfileIds = Array.isArray(settings.profileSourceIds) ? settings.profileSourceIds : [];
+    onChange({
+      ...settings,
+      profileSourceIds: currentProfileIds.filter((id) => id !== profileId),
+    });
+  }, [onChange, settings]);
 
   const enabled = settings.enabled;
-  const availableBrowsers = browsers.filter((b) => b.available);
+  const availableProfiles = profiles.filter((profile) => profile.available);
+  const enabledProfileIds = new Set(settings.profileSourceIds || []);
+  const chromiumProfiles = availableProfiles.filter((profile) => CHROMIUM_BROWSER_IDS.has(profile.browserId));
+  const detectedProfiles = chromiumProfiles.filter((profile) => !enabledProfileIds.has(profile.id));
+  const profileById = new Map(chromiumProfiles.map((profile) => [profile.id, profile]));
+  const addedProfiles = (settings.profileSourceIds || [])
+    .map((id) => profileById.get(id))
+    .filter((profile): profile is BrowserSearchImportableProfile => Boolean(profile));
 
   return (
     <div className="grid gap-3 px-4 py-3.5 md:px-5 md:grid-cols-[220px_minmax(0,1fr)] border-b border-[var(--ui-divider)]">
@@ -214,38 +239,98 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
             </div>
 
             <div>
-              <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">
-                {t('settings.advanced.browserSearch.importLabel')}
-              </label>
-              <div className="flex items-center gap-2">
-                <div className="w-full max-w-[320px]">
-                  <select
-                    value={selectedBrowser}
-                    onChange={(e) => setSelectedBrowser(e.target.value)}
-                    className="sc-select"
-                    disabled={availableBrowsers.length === 0 || importing}
-                  >
-                    {availableBrowsers.length === 0 ? (
-                      <option value="">{t('settings.advanced.browserSearch.import.noneFound')}</option>
-                    ) : (
-                      availableBrowsers.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleImport}
-                  disabled={!selectedBrowser || importing}
-                  className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
-                >
-                  {importing
-                    ? t('settings.advanced.browserSearch.import.running')
-                    : t('settings.advanced.browserSearch.import.action')}
-                </button>
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <label className="text-[0.75rem] text-[var(--text-muted)] block">
+                  {t('settings.advanced.browserSearch.import.availableHeading')}
+                </label>
+                <span className="text-[11px] text-[var(--text-muted)] tabular-nums">{detectedProfiles.length}</span>
+              </div>
+              <p className="mb-2 text-[11px] text-[var(--text-muted)] leading-snug">
+                {t('settings.advanced.browserSearch.import.profileSupportNote')}
+              </p>
+              <div className="overflow-hidden rounded-md border border-[var(--ui-divider)] bg-white/[0.03]">
+                {detectedProfiles.length === 0 ? (
+                  <div className="px-3 py-2.5 text-[12px] text-[var(--text-muted)]">
+                    {t('settings.advanced.browserSearch.import.noneFound')}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-[var(--ui-divider)]">
+                    {detectedProfiles.map((profile) => (
+                      <div key={profile.id} className="grid gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                        <div className="min-w-0">
+                          <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
+                            {profile.browserName} - {profile.profileName}
+                          </div>
+                          <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">{profile.id}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleAddProfile(profile.id)}
+                          disabled={Boolean(busyProfileId)}
+                          className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
+                        >
+                          {busyProfileId === profile.id
+                            ? t('settings.advanced.browserSearch.import.running')
+                            : t('settings.advanced.browserSearch.import.add')}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <label className="text-[0.75rem] text-[var(--text-muted)] block">
+                  {t('settings.advanced.browserSearch.import.addedHeading')}
+                </label>
+                <span className="text-[11px] text-[var(--text-muted)] tabular-nums">{addedProfiles.length}</span>
+              </div>
+              <p className="mb-2 text-[11px] text-[var(--text-muted)] leading-snug">
+                {t('settings.advanced.browserSearch.import.enabledProfiles', {
+                  count: String(enabledProfileIds.size),
+                })}
+              </p>
+              <div className="overflow-hidden rounded-md border border-[var(--ui-divider)] bg-white/[0.03]">
+                {addedProfiles.length === 0 ? (
+                  <div className="px-3 py-2.5 text-[12px] text-[var(--text-muted)]">
+                    {t('settings.advanced.browserSearch.import.noneAdded')}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-[var(--ui-divider)]">
+                    {addedProfiles.map((profile) => (
+                      <div key={profile.id} className="grid gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                        <div className="min-w-0">
+                          <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
+                            {profile.browserName} - {profile.profileName}
+                          </div>
+                          <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">{profile.id}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => importProfile(profile.id)}
+                            disabled={Boolean(busyProfileId)}
+                            className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
+                          >
+                            {busyProfileId === profile.id
+                              ? t('settings.advanced.browserSearch.import.running')
+                              : t('settings.advanced.browserSearch.import.refresh')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveProfile(profile.id)}
+                            disabled={Boolean(busyProfileId)}
+                            className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
+                          >
+                            {t('settings.advanced.browserSearch.import.remove')}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -586,7 +671,7 @@ const AdvancedTab: React.FC = () => {
         </SettingsRow>
 
         <BrowserSearchSection
-          settings={settings.browserSearch ?? { enabled: true, historyRetentionDays: 90 }}
+          settings={settings.browserSearch ?? { enabled: true, historyRetentionDays: 90, profileSourceIds: [] }}
           onChange={(next) => {
             void applySettingsPatch({ browserSearch: next });
           }}

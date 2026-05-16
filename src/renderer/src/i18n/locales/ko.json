@@ -705,9 +705,9 @@
         "label": "디버그 모드 활성화"
       },
       "browserSearch": {
-        "title": "브라우저 검색",
-        "description": "쿼리를 입력하고 Enter를 누르면 기본 브라우저에서 엽니다. 인라인 자동 완성이 기록에서 사이트를 제안합니다.",
-        "enableLabel": "브라우저 검색 사용",
+        "title": "브라우저 프로필",
+        "description": "브라우저 프로필을 연결해 SuperCmd가 로컬 기록을 사용하고 계속 새로 고치게 합니다.",
+        "enableLabel": "SuperCmd에서 브라우저 프로필 사용",
         "retention": {
           "label": "기록 보관 기간",
           "option": {
@@ -719,16 +719,24 @@
             "forever": "영구"
           }
         },
-        "clearButton": "브라우저 검색 기록 지우기",
-        "importLabel": "브라우저에서 기록 가져오기",
+        "clearButton": "브라우저 프로필 기록 지우기",
+        "importLabel": "감지된 브라우저 프로필",
         "import": {
-          "action": "가져오기",
-          "running": "가져오는 중…",
-          "noneFound": "지원되는 브라우저가 없습니다"
+          "action": "프로필 추가",
+          "add": "프로필 추가",
+          "refresh": "새로 고침",
+          "remove": "제거",
+          "running": "새로 고치는 중…",
+          "availableHeading": "사용 가능한 프로필",
+          "addedHeading": "추가된 프로필",
+          "noneFound": "지원되는 브라우저 프로필이 없습니다",
+          "noneAdded": "아직 추가된 브라우저 프로필이 없습니다",
+          "profileSupportNote": "프로필 지원은 현재 Chromium 브라우저만 포함합니다. Safari와 Firefox 지원은 나중에 추가됩니다.",
+          "enabledProfiles": "SuperCmd 브라우저 기록에 {count}개의 프로필이 활성화되어 있습니다."
         },
         "status": {
-          "cleared": "브라우저 검색 기록을 지웠습니다.",
-          "imported": "{total}개 중 {count}개를 가져왔습니다.",
+          "cleared": "브라우저 프로필 기록을 지웠습니다.",
+          "imported": "{total}개 중 {count}개를 업데이트했습니다.",
           "failed": "작업에 실패했습니다."
         }
       }

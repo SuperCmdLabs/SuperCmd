@@ -92,6 +92,8 @@ export interface BrowserSearchSettings {
   enabled: boolean;
   /** Auto-prune browser-search history older than N days. `null` = never prune. */
   historyRetentionDays: number | null;
+  /** Browser/profile sources enabled for SuperCmd browser history. */
+  profileSourceIds: string[];
 }
 
 export type AppFontSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
@@ -283,6 +285,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   browserSearch: {
     enabled: true,
     historyRetentionDays: 90,
+    profileSourceIds: [],
   },
   popToRootSearchTimeoutSeconds: 90,
   installedExtensions: [],
@@ -410,12 +413,27 @@ function normalizeBrowserSearchRetentionDays(value: any): number | null {
   return DEFAULT_SETTINGS.browserSearch.historyRetentionDays;
 }
 
+function normalizeBrowserSearchProfileSourceIds(value: any): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of value) {
+    const id = String(item || '').trim();
+    if (!/^[a-z]+:.+$/.test(id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 function normalizeBrowserSearchSettings(value: any): BrowserSearchSettings {
   const fallback = DEFAULT_SETTINGS.browserSearch;
   if (!value || typeof value !== 'object') return { ...fallback };
   return {
     enabled: typeof value.enabled === 'boolean' ? value.enabled : fallback.enabled,
     historyRetentionDays: normalizeBrowserSearchRetentionDays(value.historyRetentionDays),
+    profileSourceIds: normalizeBrowserSearchProfileSourceIds(value.profileSourceIds),
   };
 }
 

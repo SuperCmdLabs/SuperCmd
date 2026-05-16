@@ -680,9 +680,9 @@
         "button": "Importieren"
       },
       "browserSearch": {
-        "title": "Browser-Suche",
-        "description": "Drücke Enter, um deine Eingabe im Standardbrowser zu öffnen. Die Inline-Autovervollständigung schlägt Seiten aus deinem Verlauf vor.",
-        "enableLabel": "Browser-Suche aktivieren",
+        "title": "Browserprofile",
+        "description": "Verbinde Browserprofile, damit SuperCmd deren lokalen Verlauf nutzt und aktuell hält.",
+        "enableLabel": "Browserprofile in SuperCmd verwenden",
         "retention": {
           "label": "Aufbewahrungsdauer",
           "option": {
@@ -694,16 +694,24 @@
             "forever": "Für immer"
           }
         },
-        "clearButton": "Browser-Suchverlauf löschen",
-        "importLabel": "Verlauf aus einem Browser importieren",
+        "clearButton": "Browserprofil-Verlauf löschen",
+        "importLabel": "Erkannte Browserprofile",
         "import": {
-          "action": "Importieren",
-          "running": "Wird importiert…",
-          "noneFound": "Keine unterstützten Browser gefunden"
+          "action": "Profil hinzufügen",
+          "add": "Profil hinzufügen",
+          "refresh": "Aktualisieren",
+          "remove": "Entfernen",
+          "running": "Wird aktualisiert…",
+          "availableHeading": "Verfügbare Profile",
+          "addedHeading": "Hinzugefügte Profile",
+          "noneFound": "Keine unterstützten Browserprofile gefunden",
+          "noneAdded": "Noch keine Browserprofile hinzugefügt",
+          "profileSupportNote": "Profilunterstützung umfasst derzeit nur Chromium-Browser. Safari und Firefox werden später unterstützt.",
+          "enabledProfiles": "{count} Profil(e) für den SuperCmd-Browserverlauf aktiviert."
         },
         "status": {
-          "cleared": "Browser-Suchverlauf gelöscht.",
-          "imported": "{count} von {total} Einträgen importiert.",
+          "cleared": "Browserprofil-Verlauf gelöscht.",
+          "imported": "{count} von {total} Einträgen aktualisiert.",
           "failed": "Aktion fehlgeschlagen."
         }
       }
