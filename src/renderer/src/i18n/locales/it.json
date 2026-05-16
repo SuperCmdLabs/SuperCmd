@@ -886,7 +886,10 @@
         "search": "Ricerca web",
         "openTabMatch": "Scheda aperta trovata"
       },
-      "focusHint": "Attiva scheda"
+      "focusHint": "Attiva scheda",
+      "showAll": "Mostra tutti i risultati Browser",
+      "showAllSubtitle": "{count} risultati Browser",
+      "showAllPlaceholder": "Cerca risultati Browser..."
     }
   },
   "scriptCommand": {

@@ -299,8 +299,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     profileSourceIds: [],
     resultLimitPerGroup: 2,
     resultGroups: [
-      { kind: 'open-tab', limit: 2 },
       { kind: 'bookmark', limit: 2 },
+      { kind: 'open-tab', limit: 2 },
       { kind: 'history', limit: 2 },
     ],
   },
@@ -444,7 +444,7 @@ function normalizeBrowserSearchProfileSourceIds(value: any): string[] {
   return out;
 }
 
-const BROWSER_SEARCH_RESULT_KINDS: BrowserSearchResultKind[] = ['open-tab', 'bookmark', 'history'];
+const BROWSER_SEARCH_RESULT_KINDS: BrowserSearchResultKind[] = ['bookmark', 'open-tab', 'history'];
 
 function normalizeBrowserSearchResultLimit(value: any, fallback: number): number {
   const limit = Math.floor(Number(value));

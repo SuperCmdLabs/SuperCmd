@@ -177,7 +177,10 @@
         "search": "Веб-поиск",
         "openTabMatch": "Найдена открытая вкладка"
       },
-      "focusHint": "Перейти к вкладке"
+      "focusHint": "Перейти к вкладке",
+      "showAll": "Показать все результаты Browser",
+      "showAllSubtitle": "{count} результатов Browser",
+      "showAllPlaceholder": "Искать результаты Browser..."
     }
   },
   "settings": {

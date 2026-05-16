@@ -83,10 +83,10 @@ const BROWSER_SEARCH_RETENTION_OPTIONS: { value: number | null; labelKey: string
 ];
 
 const BROWSER_SEARCH_RESULT_LIMIT_OPTIONS = [0, 1, 2, 3, 4, 5, 8];
-const BROWSER_SEARCH_RESULT_KIND_ORDER: BrowserSearchResultKind[] = ['open-tab', 'bookmark', 'history'];
+const BROWSER_SEARCH_RESULT_KIND_ORDER: BrowserSearchResultKind[] = ['bookmark', 'open-tab', 'history'];
 const DEFAULT_BROWSER_SEARCH_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
-  { kind: 'open-tab', limit: 2 },
   { kind: 'bookmark', limit: 2 },
+  { kind: 'open-tab', limit: 2 },
   { kind: 'history', limit: 2 },
 ];
 

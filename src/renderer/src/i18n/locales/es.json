@@ -852,7 +852,10 @@
         "search": "Búsqueda web",
         "openTabMatch": "Pestaña abierta encontrada"
       },
-      "focusHint": "Enfocar pestaña"
+      "focusHint": "Enfocar pestaña",
+      "showAll": "Mostrar todos los resultados de Browser",
+      "showAllSubtitle": "{count} resultados de Browser",
+      "showAllPlaceholder": "Buscar resultados de Browser..."
     },
     "badges": {
       "openTab": "Pestaña abierta",

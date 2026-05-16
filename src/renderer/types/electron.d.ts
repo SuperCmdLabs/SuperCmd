@@ -354,6 +354,7 @@ export interface BrowserTabEntry {
   url: string;
   host: string;
   active: boolean;
+  windowLastFocusedAt: number;
   updatedAt: number;
 }
 

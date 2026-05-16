@@ -856,7 +856,10 @@
         "search": "Recherche web",
         "openTabMatch": "Onglet ouvert trouvé"
       },
-      "focusHint": "Activer l’onglet"
+      "focusHint": "Activer l’onglet",
+      "showAll": "Afficher tous les résultats Browser",
+      "showAllSubtitle": "{count} résultats Browser",
+      "showAllPlaceholder": "Rechercher dans les résultats Browser..."
     },
     "badges": {
       "openTab": "Onglet ouvert",

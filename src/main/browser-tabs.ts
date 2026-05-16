@@ -24,6 +24,7 @@ export interface BrowserTabSnapshotItem {
   title?: string;
   url?: string;
   active?: boolean;
+  windowLastFocusedAt?: number;
 }
 
 export interface BrowserTabSnapshotPayload {
@@ -48,6 +49,7 @@ export interface BrowserTabEntry {
   url: string;
   host: string;
   active: boolean;
+  windowLastFocusedAt: number;
   updatedAt: number;
 }
 
@@ -537,6 +539,7 @@ function normalizeTab(
     url,
     host,
     active: Boolean(item.active),
+    windowLastFocusedAt: Number.isFinite(Number(item.windowLastFocusedAt)) ? Math.max(0, Number(item.windowLastFocusedAt)) : 0,
     updatedAt,
   };
 }

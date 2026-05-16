@@ -852,7 +852,10 @@
         "search": "Websuche",
         "openTabMatch": "Offener Tab gefunden"
       },
-      "focusHint": "Tab fokussieren"
+      "focusHint": "Tab fokussieren",
+      "showAll": "Alle Browser-Ergebnisse anzeigen",
+      "showAllSubtitle": "{count} Browser-Ergebnisse",
+      "showAllPlaceholder": "Browser-Ergebnisse suchen..."
     },
     "badges": {
       "openTab": "Offener Tab",

@@ -887,7 +887,10 @@
         "search": "웹 검색",
         "openTabMatch": "열린 탭 찾음"
       },
-      "focusHint": "탭으로 이동"
+      "focusHint": "탭으로 이동",
+      "showAll": "모든 Browser 결과 보기",
+      "showAllSubtitle": "Browser 결과 {count}개",
+      "showAllPlaceholder": "Browser 결과 검색..."
     }
   },
   "scriptCommand": {
