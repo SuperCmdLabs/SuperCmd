@@ -6,7 +6,6 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { X, Sparkles, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, XCircle, Timer } from 'lucide-react';
 import supercmdLogo from '../../../supercmd.png';
 import type {
@@ -32,9 +31,7 @@ import CameraExtension from './CameraExtension';
 import ScheduleExtension from './ScheduleExtension';
 import OnboardingExtension from './OnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
-import SuperCmdWhisper from './SuperCmdWhisper';
-import SuperCmdRead from './SuperCmdRead';
-import WindowManagerPanel, {
+import {
   executeWindowManagementPresetCommandById,
   isWindowManagementPresetCommandId,
 } from './WindowManagerPanel';
@@ -85,6 +82,10 @@ import AiChatView from './views/AiChatView';
 import CursorPromptView from './views/CursorPromptView';
 import AppUninstallView from './views/AppUninstallView';
 import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowBadge } from './components/InlineArgumentField';
+import LauncherSurface from './components/LauncherSurface';
+import HiddenExtensionRunners from './components/HiddenExtensionRunners';
+import DetachedOverlayRunners from './components/DetachedOverlayRunners';
+import LauncherViewShell from './components/LauncherViewShell';
 import { useI18n } from './i18n';
 import {
   asTildePath,
@@ -124,7 +125,6 @@ import {
   DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT,
   DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT,
   clampLauncherBackgroundPercent,
-  launcherBackgroundBlurPercentToPx,
   toFileUrl,
 } from './utils/launcher-background';
 import {
@@ -132,7 +132,6 @@ import {
   MAX_INLINE_EXTENSION_ARGUMENTS,
   MAX_INLINE_QUICK_LINK_ARGUMENTS,
   MAX_RECENT_SECTION_ITEMS,
-  NOOP_ON_CLOSE,
   formatCalcKindLabel,
   getExtensionIdentityFromCommand,
   getQuickLinkIdFromCommandId,
@@ -187,53 +186,6 @@ const DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS = new Set([
   'system-my-schedule',
   'system-camera',
 ]);
-
-type LauncherSurfaceProps = {
-  backgroundImageUrl: string;
-  showBackground: boolean;
-  backgroundBlurPercent: number;
-  backgroundOpacityPercent: number;
-  className?: string;
-  children: React.ReactNode;
-};
-
-const LauncherSurface: React.FC<LauncherSurfaceProps> = ({
-  backgroundImageUrl,
-  showBackground,
-  backgroundBlurPercent,
-  backgroundOpacityPercent,
-  className = '',
-  children,
-}) => {
-  const backgroundOpacity = clampLauncherBackgroundPercent(
-    backgroundOpacityPercent,
-    DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
-  ) / 100;
-  const backgroundBlurPx = launcherBackgroundBlurPercentToPx(backgroundBlurPercent);
-
-  return (
-    <div className="w-full h-full">
-      <div className={`glass-effect overflow-hidden h-full flex flex-col relative ${className}`.trim()}>
-        {showBackground && backgroundImageUrl ? (
-          <div className="launcher-background-media" aria-hidden="true">
-            <div
-              className="launcher-background-image"
-              style={
-                {
-                  backgroundImage: `url("${backgroundImageUrl}")`,
-                  ['--launcher-background-opacity' as any]: String(backgroundOpacity),
-                  ['--launcher-background-blur' as any]: `${backgroundBlurPx}px`,
-                } as React.CSSProperties
-              }
-            />
-            <div className="launcher-background-tint" />
-          </div>
-        ) : null}
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col">{children}</div>
-      </div>
-    </div>
-  );
-};
 
 // Intern cache: commandId → stable iconDataUrl string reference.
 // Prevents duplicate base64 strings accumulating across repeated fetchCommands() IPC calls.
@@ -4848,152 +4800,66 @@ const App: React.FC = () => {
     [contextActions, selectedContextActionIndex, restoreLauncherFocus]
   );
 
-  // ─── Hidden menu-bar extension runners (always mounted) ────────────
-  // These run "invisibly" so that menu-bar extensions produce native Tray
-  // menus via IPC even when the main window is hidden.
-  //
-  // Memoized so App.tsx re-renders (e.g. on every search-bar keystroke) do not
-  // reconcile the extension subtree. Some extensions have render-phase side
-  // effects (e.g. 1-click-confetti's Shoot() calls open() + exec() in its body);
-  // re-rendering on every keystroke would fire those effects repeatedly.
-  const menuBarRunner = useMemo(() => {
-    if (menuBarExtensions.length === 0) return null;
-    return (
-      <div style={{ display: 'none', position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-        {menuBarExtensions.map((entry) => (
-          <ExtensionView
-            key={`menubar-${entry.key}`}
-            code={entry.bundle.code}
-            title={entry.bundle.title}
-            mode="menu-bar"
-            extensionName={(entry.bundle as any).extensionName || entry.bundle.extName}
-            extensionDisplayName={(entry.bundle as any).extensionDisplayName}
-            extensionIconDataUrl={(entry.bundle as any).extensionIconDataUrl}
-            commandName={(entry.bundle as any).commandName || entry.bundle.cmdName}
-            assetsPath={(entry.bundle as any).assetsPath}
-            supportPath={(entry.bundle as any).supportPath}
-            owner={(entry.bundle as any).owner}
-            preferences={(entry.bundle as any).preferences}
-            preferenceDefinitions={(entry.bundle as any).preferenceDefinitions}
-            launchArguments={(entry.bundle as any).launchArguments}
-            launchContext={(entry.bundle as any).launchContext}
-            fallbackText={(entry.bundle as any).fallbackText}
-            launchType={(entry.bundle as any).launchType}
-            onClose={NOOP_ON_CLOSE}
-          />
-        ))}
-      </div>
-    );
-  }, [menuBarExtensions]);
-
-  const backgroundNoViewRunner = useMemo(() => {
-    if (backgroundNoViewRuns.length === 0) return null;
-    return (
-      <div style={{ display: 'none', position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-        {backgroundNoViewRuns.map((run) => (
-          <ExtensionView
-            key={`bg-no-view-${run.runId}`}
-            code={run.bundle.code}
-            title={run.bundle.title}
-            mode="no-view"
-            extensionName={(run.bundle as any).extensionName || run.bundle.extName}
-            extensionDisplayName={(run.bundle as any).extensionDisplayName}
-            extensionIconDataUrl={(run.bundle as any).extensionIconDataUrl}
-            commandName={(run.bundle as any).commandName || run.bundle.cmdName}
-            assetsPath={(run.bundle as any).assetsPath}
-            supportPath={(run.bundle as any).supportPath}
-            owner={(run.bundle as any).owner}
-            preferences={(run.bundle as any).preferences}
-            preferenceDefinitions={(run.bundle as any).preferenceDefinitions}
-            launchArguments={(run.bundle as any).launchArguments}
-            launchContext={(run.bundle as any).launchContext}
-            fallbackText={(run.bundle as any).fallbackText}
-            launchType={run.launchType}
-            reportStatus={run.reportStatus}
-            onClose={() => {
-              setBackgroundNoViewRuns((prev) => prev.filter((item) => item.runId !== run.runId));
-            }}
-          />
-        ))}
-      </div>
-    );
-  }, [backgroundNoViewRuns, setBackgroundNoViewRuns]);
-
   const hiddenExtensionRunners = (
-    <>
-      {menuBarRunner}
-      {backgroundNoViewRunner}
-    </>
+    <HiddenExtensionRunners
+      menuBarExtensions={menuBarExtensions}
+      backgroundNoViewRuns={backgroundNoViewRuns}
+      setBackgroundNoViewRuns={setBackgroundNoViewRuns}
+    />
   );
 
+  const whisperCoachmarkText =
+    showWhisperHint && whisperSpeakToggleLabel
+      ? t('whisper.coachmark.holdToTalk', { shortcut: whisperSpeakToggleLabel })
+      : undefined;
+
   const detachedOverlayRunners = (
-    <>
-      {showWhisper && whisperPortalTarget ? (
-        <SuperCmdWhisper
-          portalTarget={whisperPortalTarget}
-          startToken={whisperStartToken}
-          onboardingCaptureMode={showWhisperOnboarding}
-          onOnboardingTranscriptAppend={appendWhisperOnboardingPracticeText}
-          coachmarkText={
-            showWhisperHint && whisperSpeakToggleLabel
-              ? t('whisper.coachmark.holdToTalk', { shortcut: whisperSpeakToggleLabel })
-              : undefined
-          }
-          autoClose={whisperAutoClose}
-          onClose={() => {
-            whisperSessionRef.current = false;
-            setShowWhisper(false);
-            setShowWhisperOnboarding(false);
-            setShowWhisperHint(false);
-          }}
-        />
-      ) : null}
-      {showSpeak && speakPortalTarget ? (
-        <SuperCmdRead
-          status={speakStatus}
-          voice={speakOptions.voice}
-          voiceOptions={readVoiceOptions}
-          rate={speakOptions.rate}
-          portalTarget={speakPortalTarget}
-          onVoiceChange={handleSpeakVoiceChange}
-          onRateChange={handleSpeakRateChange}
-          onPauseToggle={handleSpeakTogglePause}
-          onPreviousParagraph={handleSpeakPreviousParagraph}
-          onNextParagraph={handleSpeakNextParagraph}
-          onClose={() => {
-            setShowSpeak(false);
-            void window.electron.speakStop();
-          }}
-        />
-      ) : null}
-      {showWindowManager && windowManagerPortalTarget ? (
-        <WindowManagerPanel
-          show={showWindowManager}
-          portalTarget={windowManagerPortalTarget}
-          onClose={() => {
-            setShowWindowManager(false);
-          }}
-        />
-      ) : null}
-      {showCursorPrompt && cursorPromptPortalTarget
-        ? createPortal(
-            <CursorPromptView
-              variant="portal"
-              cursorPromptText={cursorPromptText}
-              setCursorPromptText={setCursorPromptText}
-              cursorPromptStatus={cursorPromptStatus}
-              cursorPromptResult={cursorPromptResult}
-              cursorPromptError={cursorPromptError}
-              cursorPromptInputRef={cursorPromptInputRef}
-              aiAvailable={aiAvailable}
-              submitCursorPrompt={submitCursorPrompt}
-              closeCursorPrompt={closeCursorPrompt}
-              acceptCursorPrompt={acceptCursorPrompt}
-            />,
-            cursorPromptPortalTarget
-          )
-        : null}
-    </>
+    <DetachedOverlayRunners
+      showWhisper={showWhisper}
+      whisperPortalTarget={whisperPortalTarget}
+      whisperStartToken={whisperStartToken}
+      showWhisperOnboarding={showWhisperOnboarding}
+      appendWhisperOnboardingPracticeText={appendWhisperOnboardingPracticeText}
+      whisperCoachmarkText={whisperCoachmarkText}
+      whisperAutoClose={whisperAutoClose}
+      onWhisperClose={() => {
+        whisperSessionRef.current = false;
+        setShowWhisper(false);
+        setShowWhisperOnboarding(false);
+        setShowWhisperHint(false);
+      }}
+      showSpeak={showSpeak}
+      speakPortalTarget={speakPortalTarget}
+      speakStatus={speakStatus}
+      speakOptions={speakOptions}
+      readVoiceOptions={readVoiceOptions}
+      handleSpeakVoiceChange={handleSpeakVoiceChange}
+      handleSpeakRateChange={handleSpeakRateChange}
+      handleSpeakTogglePause={handleSpeakTogglePause}
+      handleSpeakPreviousParagraph={handleSpeakPreviousParagraph}
+      handleSpeakNextParagraph={handleSpeakNextParagraph}
+      onSpeakClose={() => {
+        setShowSpeak(false);
+        void window.electron.speakStop();
+      }}
+      showWindowManager={showWindowManager}
+      windowManagerPortalTarget={windowManagerPortalTarget}
+      onWindowManagerClose={() => {
+        setShowWindowManager(false);
+      }}
+      showCursorPrompt={showCursorPrompt}
+      cursorPromptPortalTarget={cursorPromptPortalTarget}
+      cursorPromptText={cursorPromptText}
+      setCursorPromptText={setCursorPromptText}
+      cursorPromptStatus={cursorPromptStatus}
+      cursorPromptResult={cursorPromptResult}
+      cursorPromptError={cursorPromptError}
+      cursorPromptInputRef={cursorPromptInputRef}
+      aiAvailable={aiAvailable}
+      submitCursorPrompt={submitCursorPrompt}
+      closeCursorPrompt={closeCursorPrompt}
+      acceptCursorPrompt={acceptCursorPrompt}
+    />
   );
 
   const alwaysMountedRunners = (
@@ -5097,67 +4963,63 @@ const App: React.FC = () => {
   // ─── Extension view mode ──────────────────────────────────────────
   if (extensionView) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-          className="extension-runtime-shell"
-        >
-          <ExtensionView
-            code={extensionView.code}
-            title={extensionView.title}
-            mode={extensionView.mode}
-            error={(extensionView as any).error}
-            extensionName={(extensionView as any).extensionName || extensionView.extName}
-            extensionDisplayName={(extensionView as any).extensionDisplayName}
-            extensionIconDataUrl={(extensionView as any).extensionIconDataUrl}
-            commandName={(extensionView as any).commandName || extensionView.cmdName}
-            assetsPath={(extensionView as any).assetsPath}
-            supportPath={(extensionView as any).supportPath}
-            owner={(extensionView as any).owner}
-            preferences={(extensionView as any).preferences}
-            preferenceDefinitions={(extensionView as any).preferenceDefinitions}
-            launchArguments={(extensionView as any).launchArguments}
-            launchContext={(extensionView as any).launchContext}
-            fallbackText={(extensionView as any).fallbackText}
-            launchType={(extensionView as any).launchType}
-            onClose={() => {
-              setExtensionView(null);
-              localStorage.removeItem(LAST_EXT_KEY);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+        className="extension-runtime-shell"
+      >
+        <ExtensionView
+          code={extensionView.code}
+          title={extensionView.title}
+          mode={extensionView.mode}
+          error={(extensionView as any).error}
+          extensionName={(extensionView as any).extensionName || extensionView.extName}
+          extensionDisplayName={(extensionView as any).extensionDisplayName}
+          extensionIconDataUrl={(extensionView as any).extensionIconDataUrl}
+          commandName={(extensionView as any).commandName || extensionView.cmdName}
+          assetsPath={(extensionView as any).assetsPath}
+          supportPath={(extensionView as any).supportPath}
+          owner={(extensionView as any).owner}
+          preferences={(extensionView as any).preferences}
+          preferenceDefinitions={(extensionView as any).preferenceDefinitions}
+          launchArguments={(extensionView as any).launchArguments}
+          launchContext={(extensionView as any).launchContext}
+          fallbackText={(extensionView as any).fallbackText}
+          launchType={(extensionView as any).launchType}
+          onClose={() => {
+            setExtensionView(null);
+            localStorage.removeItem(LAST_EXT_KEY);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
   // ─── Clipboard Manager mode ───────────────────────────────────────
   if (showClipboardManager) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <ClipboardManager
-            onClose={() => {
-              setShowClipboardManager(false);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <ClipboardManager
+          onClose={() => {
+            setShowClipboardManager(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
@@ -5185,24 +5047,22 @@ const App: React.FC = () => {
   // ─── Schedule mode ───────────────────────────────────────────────
   if (showSchedule) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <ScheduleExtension
-            onClose={() => {
-              setShowSchedule(false);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <ScheduleExtension
+          onClose={() => {
+            setShowSchedule(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
@@ -5958,101 +5818,93 @@ const App: React.FC = () => {
   // ─── Notes Search mode ───────────────────────────────────────────
   if (showNotesSearch) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <NotesSearchInline
-            onClose={() => {
-              setShowNotesSearch(false);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <NotesSearchInline
+          onClose={() => {
+            setShowNotesSearch(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
   // ─── Canvas Search mode ──────────────────────────────────────────
   if (showCanvasSearch) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <CanvasSearchInline
-            onClose={() => {
-              setShowCanvasSearch(false);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <CanvasSearchInline
+          onClose={() => {
+            setShowCanvasSearch(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
   // ─── Snippet Manager mode ─────────────────────────────────────────
   if (showSnippetManager) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <SnippetManager
-            initialView={showSnippetManager}
-            onClose={() => {
-              setShowSnippetManager(null);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <SnippetManager
+          initialView={showSnippetManager}
+          onClose={() => {
+            setShowSnippetManager(null);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
   // ─── Quick Link Manager mode ──────────────────────────────────────
   if (showQuickLinkManager) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <QuickLinkManager
-            initialView={showQuickLinkManager}
-            commandAliases={commandAliases}
-            initialEditId={quickLinkEditId ?? undefined}
-            onClose={() => {
-              setShowQuickLinkManager(null);
-              setQuickLinkEditId(null);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <QuickLinkManager
+          initialView={showQuickLinkManager}
+          commandAliases={commandAliases}
+          initialEditId={quickLinkEditId ?? undefined}
+          onClose={() => {
+            setShowQuickLinkManager(null);
+            setQuickLinkEditId(null);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
@@ -6061,28 +5913,26 @@ const App: React.FC = () => {
 
   if (showFileSearch) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <FileSearchExtension
-            initialDetailPath={fileSearchInitialDetailPath}
-            pinnedFiles={pinnedFiles}
-            onTogglePinFile={pinToggleForFile}
-            onClose={() => {
-              setShowFileSearch(false);
-              setFileSearchInitialDetailPath(null);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <FileSearchExtension
+          initialDetailPath={fileSearchInitialDetailPath}
+          pinnedFiles={pinnedFiles}
+          onTogglePinFile={pinToggleForFile}
+          onClose={() => {
+            setShowFileSearch(false);
+            setFileSearchInitialDetailPath(null);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
