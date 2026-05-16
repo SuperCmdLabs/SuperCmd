@@ -730,8 +730,27 @@
           "addedHeading": "Profili aggiunti",
           "noneFound": "Nessun profilo browser supportato rilevato",
           "noneAdded": "Nessun profilo browser ancora aggiunto",
+          "profileRowDetail": "Cronologia: {count} URL · Schede/segnalibri: non ancora importati",
           "profileSupportNote": "Il supporto dei profili attualmente include solo i browser Chromium. Safari e Firefox saranno aggiunti in seguito.",
           "enabledProfiles": "{count} profilo/i abilitato/i per la cronologia browser di SuperCmd."
+        },
+        "importedData": {
+          "heading": "Dati importati",
+          "total": "{count} URL cronologia",
+          "notImported": "Non ancora importato",
+          "history": {
+            "title": "Cronologia",
+            "description": "Pagine HTTP(S) visitate dai profili Chromium aggiunti.",
+            "count": "{count} URL"
+          },
+          "tabs": {
+            "title": "Schede aperte",
+            "description": "Gli snapshot live delle schede sono previsti, ma non fanno ancora parte di questa importazione."
+          },
+          "bookmarks": {
+            "title": "Segnalibri",
+            "description": "L'importazione dei segnalibri è prevista, ma non fa ancora parte di questa importazione."
+          }
         },
         "status": {
           "cleared": "Cronologia profili browser cancellata.",

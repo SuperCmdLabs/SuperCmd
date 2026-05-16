@@ -733,8 +733,27 @@
           "addedHeading": "Added profiles",
           "noneFound": "No supported browser profiles detected",
           "noneAdded": "No browser profiles added yet",
+          "profileRowDetail": "History: {count} URLs · Tabs/bookmarks: not imported yet",
           "profileSupportNote": "Profile support currently includes Chromium browsers only. Safari and Firefox support will be added later.",
           "enabledProfiles": "{count} profile(s) enabled for SuperCmd browser history."
+        },
+        "importedData": {
+          "heading": "Imported data",
+          "total": "{count} history URLs",
+          "notImported": "Not imported yet",
+          "history": {
+            "title": "History",
+            "description": "Visited HTTP(S) pages from added Chromium profiles.",
+            "count": "{count} URLs"
+          },
+          "tabs": {
+            "title": "Open tabs",
+            "description": "Live tab snapshots are planned, but not part of this import yet."
+          },
+          "bookmarks": {
+            "title": "Bookmarks",
+            "description": "Bookmark import is planned, but not part of this import yet."
+          }
         },
         "status": {
           "cleared": "Browser profile history cleared.",

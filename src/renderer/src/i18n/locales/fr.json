@@ -710,8 +710,27 @@
           "addedHeading": "Profils ajoutés",
           "noneFound": "Aucun profil de navigateur compatible détecté",
           "noneAdded": "Aucun profil de navigateur ajouté",
+          "profileRowDetail": "Historique : {count} URL · Onglets/signets : pas encore importés",
           "profileSupportNote": "La prise en charge des profils inclut actuellement uniquement les navigateurs Chromium. Safari et Firefox seront ajoutés plus tard.",
           "enabledProfiles": "{count} profil(s) activé(s) pour l'historique navigateur de SuperCmd."
+        },
+        "importedData": {
+          "heading": "Données importées",
+          "total": "{count} URL d'historique",
+          "notImported": "Pas encore importé",
+          "history": {
+            "title": "Historique",
+            "description": "Pages HTTP(S) visitées depuis les profils Chromium ajoutés.",
+            "count": "{count} URL"
+          },
+          "tabs": {
+            "title": "Onglets ouverts",
+            "description": "Les instantanés d'onglets en direct sont prévus, mais ne font pas encore partie de cet import."
+          },
+          "bookmarks": {
+            "title": "Signets",
+            "description": "L'import des signets est prévu, mais ne fait pas encore partie de cet import."
+          }
         },
         "status": {
           "cleared": "Historique des profils de navigateur effacé.",

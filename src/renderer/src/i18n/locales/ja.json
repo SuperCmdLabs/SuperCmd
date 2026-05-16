@@ -731,8 +731,27 @@
           "addedHeading": "追加済みプロファイル",
           "noneFound": "対応するブラウザプロファイルが見つかりません",
           "noneAdded": "ブラウザプロファイルはまだ追加されていません",
+          "profileRowDetail": "履歴: {count} URL · タブ/ブックマーク: 未インポート",
           "profileSupportNote": "プロファイル対応は現在 Chromium ブラウザのみです。Safari と Firefox は今後対応予定です。",
           "enabledProfiles": "SuperCmd のブラウザ履歴で {count} 個のプロファイルが有効です。"
+        },
+        "importedData": {
+          "heading": "インポート済みデータ",
+          "total": "履歴 URL {count} 件",
+          "notImported": "未インポート",
+          "history": {
+            "title": "履歴",
+            "description": "追加済み Chromium プロファイルの訪問済み HTTP(S) ページ。",
+            "count": "{count} URL"
+          },
+          "tabs": {
+            "title": "開いているタブ",
+            "description": "ライブタブのスナップショットは予定されていますが、このインポートにはまだ含まれていません。"
+          },
+          "bookmarks": {
+            "title": "ブックマーク",
+            "description": "ブックマークのインポートは予定されていますが、このインポートにはまだ含まれていません。"
+          }
         },
         "status": {
           "cleared": "ブラウザプロファイル履歴を消去しました。",

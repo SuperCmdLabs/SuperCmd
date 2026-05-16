@@ -3,6 +3,7 @@ import { Bug, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, Keyboard, Lang
 import type {
   AppNavigationStyle,
   AppSettings,
+  BrowserSearchEntry,
   BrowserSearchImportableProfile,
   BrowserSearchSettings,
   HyperKeySourceKey,
@@ -98,21 +99,33 @@ interface BrowserSearchSectionProps {
 const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, onChange }) => {
   const { t } = useI18n();
   const [profiles, setProfiles] = useState<BrowserSearchImportableProfile[]>([]);
+  const [entries, setEntries] = useState<BrowserSearchEntry[]>([]);
   const [busyProfileId, setBusyProfileId] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<string>('');
 
-  const refreshBrowsers = useCallback(async () => {
+  const refreshBrowserData = useCallback(async () => {
     try {
-      const profileList = await window.electron.browserSearchListProfiles();
+      const [profileList, entryList] = await Promise.all([
+        window.electron.browserSearchListProfiles(),
+        window.electron.browserSearchListEntries(),
+      ]);
       setProfiles(profileList);
+      setEntries(entryList);
     } catch {
       setProfiles([]);
+      setEntries([]);
     }
   }, []);
 
   useEffect(() => {
-    void refreshBrowsers();
-  }, [refreshBrowsers]);
+    void refreshBrowserData();
+  }, [refreshBrowserData]);
+
+  useEffect(() => {
+    return window.electron.onBrowserSearchHistoryChanged(() => {
+      void refreshBrowserData();
+    });
+  }, [refreshBrowserData]);
 
   useEffect(() => {
     if (!statusMessage) return;
@@ -123,11 +136,12 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
   const handleClear = useCallback(async () => {
     try {
       await window.electron.browserSearchClearHistory();
+      await refreshBrowserData();
       setStatusMessage(t('settings.advanced.browserSearch.status.cleared'));
     } catch {
       setStatusMessage(t('settings.advanced.browserSearch.status.failed'));
     }
-  }, [t]);
+  }, [refreshBrowserData, t]);
 
   const importProfile = useCallback(async (profileId: string) => {
     if (!profileId) return null;
@@ -145,6 +159,7 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
           })
         );
       }
+      await refreshBrowserData();
       return result;
     } catch (e: any) {
       setStatusMessage(e?.message || t('settings.advanced.browserSearch.status.failed'));
@@ -152,7 +167,7 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
     } finally {
       setBusyProfileId('');
     }
-  }, [t]);
+  }, [refreshBrowserData, t]);
 
   const handleAddProfile = useCallback(async (profileId: string) => {
     const currentProfileIds = Array.isArray(settings.profileSourceIds) ? settings.profileSourceIds : [];
@@ -180,6 +195,12 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
   const addedProfiles = (settings.profileSourceIds || [])
     .map((id) => profileById.get(id))
     .filter((profile): profile is BrowserSearchImportableProfile => Boolean(profile));
+  const historyCountByProfileId = entries.reduce((counts, entry) => {
+    if (entry.type !== 'url' || !entry.sourceProfileId) return counts;
+    const profileSourceId = `${entry.source}:${entry.sourceProfileId}`;
+    counts.set(profileSourceId, (counts.get(profileSourceId) || 0) + 1);
+    return counts;
+  }, new Map<string, number>());
 
   return (
     <div className="grid gap-3 px-4 py-3.5 md:px-5 md:grid-cols-[220px_minmax(0,1fr)] border-b border-[var(--ui-divider)]">
@@ -305,7 +326,11 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
                           <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
                             {profile.browserName} - {profile.profileName}
                           </div>
-                          <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">{profile.id}</div>
+                          <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
+                            {t('settings.advanced.browserSearch.import.profileRowDetail', {
+                              count: String(historyCountByProfileId.get(profile.id) || 0),
+                            })}
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
