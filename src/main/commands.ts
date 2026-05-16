@@ -1695,6 +1695,13 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-search-open-tabs',
+      title: 'Search Open Tabs',
+      subtitle: 'Browser',
+      keywords: ['browser', 'tabs', 'open tabs', 'search', 'find', 'web'],
+      category: 'system',
+    },
+    {
       id: 'system-my-schedule',
       title: 'My Schedule',
       keywords: ['calendar', 'schedule', 'agenda', 'events', 'today', 'upcoming'],

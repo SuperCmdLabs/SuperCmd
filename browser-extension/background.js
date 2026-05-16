@@ -18,6 +18,7 @@ const PROFILE = {
 let snapshotTimer = null;
 let lastSnapshotHash = '';
 let commandLoopRunning = false;
+let supercmdConnected = false;
 const windowLastFocusedAt = new Map();
 
 function scheduleSnapshot(reason) {
@@ -56,6 +57,7 @@ async function sendSnapshot(reason) {
       .map((tab) => ({
         windowId: tab.windowId,
         tabId: tab.id,
+        tabIndex: Number.isFinite(tab.index) ? tab.index : 0,
         title: tab.title || '',
         url: tab.url || tab.pendingUrl || '',
         active: Boolean(tab.active),
@@ -64,17 +66,20 @@ async function sendSnapshot(reason) {
   };
 
   const snapshotHash = JSON.stringify(payload.tabs);
-  if (snapshotHash === lastSnapshotHash) return;
-  lastSnapshotHash = snapshotHash;
+  if (supercmdConnected && snapshotHash === lastSnapshotHash) return;
 
   try {
-    await fetch(SUPERCMD_ENDPOINT, {
+    const response = await fetch(SUPERCMD_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       cache: 'no-store',
     });
+    if (!response.ok) throw new Error(`snapshot_failed_${response.status}`);
+    lastSnapshotHash = snapshotHash;
+    supercmdConnected = true;
   } catch {
+    supercmdConnected = false;
     // SuperCmd may not be running yet. The periodic repair snapshot will retry.
   }
 }
@@ -84,13 +89,22 @@ async function commandLoop() {
   commandLoopRunning = true;
   while (true) {
     try {
+      if (!supercmdConnected) {
+        scheduleSnapshot('reconnect-check');
+      }
       const url = `${SUPERCMD_COMMANDS_ENDPOINT}?profileSourceId=${encodeURIComponent(PROFILE.profileSourceId)}`;
       const response = await fetch(url, { cache: 'no-store' });
       const payload = await response.json();
+      if (!supercmdConnected) {
+        supercmdConnected = true;
+        lastSnapshotHash = '';
+        scheduleSnapshot('connected');
+      }
       if (payload && payload.command) {
         await executeCommand(payload.command);
       }
     } catch {
+      supercmdConnected = false;
       await delay(1000);
     }
   }

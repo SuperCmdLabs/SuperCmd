@@ -103,11 +103,13 @@ const BROWSER_SEARCH_OPEN_URL_ID = 'browser-search-action-open-url';
 const BROWSER_SEARCH_PERFORM_SEARCH_ID = 'browser-search-action-perform-search';
 const BROWSER_SEARCH_RESULT_ID_PREFIX = 'browser-search-result:';
 const BROWSER_SEARCH_SHOW_ALL_RESULTS_ID = 'browser-search-action-show-all';
+const BROWSER_SEARCH_OPEN_TABS_COMMAND_ID = 'system-search-open-tabs';
 const DEFAULT_BROWSER_SEARCH_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
   { kind: 'bookmark', limit: 2 },
   { kind: 'open-tab', limit: 2 },
   { kind: 'history', limit: 2 },
 ];
+type BrowserResultsViewScope = 'all' | 'open-tabs';
 const MAX_LAUNCHER_FILE_RESULT_ICONS = MAX_LAUNCHER_FILE_RESULTS;
 const MIN_LAUNCHER_FILE_QUERY_LENGTH = 2;
 const MAX_INLINE_EXTENSION_ARGUMENTS = 3;
@@ -123,6 +125,7 @@ const DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS = new Set([
   'system-search-quicklinks',
   'system-create-quicklink',
   'system-search-files',
+  BROWSER_SEARCH_OPEN_TABS_COMMAND_ID,
   'system-my-schedule',
   'system-camera',
 ]);
@@ -416,6 +419,7 @@ const App: React.FC = () => {
     DEFAULT_BROWSER_SEARCH_RESULT_GROUPS
   );
   const [browserResultsViewQuery, setBrowserResultsViewQuery] = useState<string | null>(null);
+  const [browserResultsViewScope, setBrowserResultsViewScope] = useState<BrowserResultsViewScope>('all');
   const [browserResultsViewSelectedIndex, setBrowserResultsViewSelectedIndex] = useState(0);
   const [inlineExtensionArgumentValues, setInlineExtensionArgumentValues] = useState<
     Record<string, Record<string, string>>
@@ -933,6 +937,7 @@ const App: React.FC = () => {
         setScriptCommandSetup(null);
         setScriptCommandOutput(null);
         setExtensionView(null);
+        setBrowserResultsViewQuery(null);
         localStorage.removeItem(LAST_EXT_KEY);
         exitAiMode();
         if (!isOnboardingMode) {
@@ -992,6 +997,16 @@ const App: React.FC = () => {
           setShowSnippetManager(null);
           setShowQuickLinkManager(null);
           openFileSearch();
+          return;
+        }
+        if (routedSystemCommandId === BROWSER_SEARCH_OPEN_TABS_COMMAND_ID) {
+          setShowClipboardManager(false);
+          setShowSnippetManager(null);
+          setShowQuickLinkManager(null);
+          setShowFileSearch(false);
+          browserSearch.refreshOpenTabs();
+          setBrowserResultsViewScope('open-tabs');
+          setBrowserResultsViewQuery('');
           return;
         }
         if (routedSystemCommandId === 'system-my-schedule') {
@@ -1114,7 +1129,7 @@ const App: React.FC = () => {
       }
     });
     return cleanupWindowShown;
-  }, [expandLauncherForDirectLaunch, fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openSchedule, openCamera, openOnboarding, setShowCamera, setShowSchedule, setShowWindowManager, setShowWhisper, setShowSpeak, setShowWhisperOnboarding]);
+  }, [expandLauncherForDirectLaunch, fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openSchedule, openCamera, openOnboarding, setShowCamera, setShowSchedule, setShowWindowManager, setShowWhisper, setShowSpeak, setShowWhisperOnboarding, browserSearch]);
 
   useEffect(() => {
     const cleanupSelectionSnapshotUpdated = window.electron.onSelectionSnapshotUpdated((payload) => {
@@ -2072,13 +2087,47 @@ const App: React.FC = () => {
 
   const browserResultsViewResults = useMemo(() => {
     if (browserResultsViewQuery === null) return [];
+    if (browserResultsViewScope === 'open-tabs') {
+      return browserSearch.getOpenTabResults(browserResultsViewQuery);
+    }
     return browserSearch.getAllResults(browserResultsViewQuery, browserSearchResultGroups);
-  }, [browserSearch, browserSearchResultGroups, browserResultsViewQuery]);
+  }, [browserSearch, browserSearchResultGroups, browserResultsViewQuery, browserResultsViewScope]);
 
   const browserResultsViewSections = useMemo(() => {
+    if (browserResultsViewScope === 'open-tabs') {
+      const sections: Array<{
+        key: string;
+        kind: 'open-tab';
+        title: string;
+        items: BrowserSearchResult[];
+      }> = [];
+      const sectionByWindow = new Map<string, number>();
+      for (const result of browserResultsViewResults) {
+        const windowKey = [
+          result.browserName || 'Browser',
+          result.profileName || '',
+          result.windowId || 'window',
+        ].join(':');
+        let sectionIndex = sectionByWindow.get(windowKey);
+        if (sectionIndex === undefined) {
+          sectionIndex = sections.length;
+          sectionByWindow.set(windowKey, sectionIndex);
+          const profileLabel = result.profileName ? ` - ${result.profileName}` : '';
+          sections.push({
+            key: `open-tab-window-${windowKey}`,
+            kind: 'open-tab',
+            title: `${result.browserName || t('launcher.badges.openTab')}${profileLabel} - Window ${sectionIndex + 1}`,
+            items: [],
+          });
+        }
+        sections[sectionIndex].items.push(result);
+      }
+      return sections;
+    }
     const groupOrder = normalizeBrowserSearchResultGroups(browserSearchResultGroups).map((group) => group.kind);
     return groupOrder
       .map((kind) => ({
+        key: `browser-section-${kind}`,
         kind,
         title: kind === 'bookmark'
           ? t('launcher.badges.bookmark')
@@ -2088,7 +2137,7 @@ const App: React.FC = () => {
         items: browserResultsViewResults.filter((result) => result.kind === kind),
       }))
       .filter((section) => section.items.length > 0);
-  }, [browserSearchResultGroups, browserResultsViewResults, t]);
+  }, [browserSearchResultGroups, browserResultsViewResults, browserResultsViewScope, t]);
 
   useEffect(() => {
     setBrowserResultsViewSelectedIndex(0);
@@ -2106,6 +2155,13 @@ const App: React.FC = () => {
       try { window.electron.hideWindow(); } catch {}
     }
   }, [browserSearch]);
+
+  const activateBrowserResult = useCallback(async (result: BrowserSearchResult, alternate = false) => {
+    const focusExistingTab = result.focusAvailable && (
+      browserResultsViewScope === 'open-tabs' ? !alternate : alternate
+    );
+    await openBrowserResult(result, focusExistingTab ? { focusExistingTab: true } : undefined);
+  }, [browserResultsViewScope, openBrowserResult]);
 
   useEffect(() => {
     itemRefs.current = itemRefs.current.slice(0, displayCommands.length + calcOffset);
@@ -2816,6 +2872,7 @@ const App: React.FC = () => {
     if (DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS.has(commandId)) {
       expandLauncherForDirectLaunch();
     }
+    setBrowserResultsViewQuery(null);
     if (commandId === 'system-supercmd-whisper' || commandId === 'system-supercmd-speak') {
       try {
         const settings = await window.electron.getSettings();
@@ -2884,6 +2941,13 @@ const App: React.FC = () => {
     if (commandId === 'system-search-files') {
       whisperSessionRef.current = false;
       openFileSearch();
+      return true;
+    }
+    if (commandId === BROWSER_SEARCH_OPEN_TABS_COMMAND_ID) {
+      whisperSessionRef.current = false;
+      browserSearch.refreshOpenTabs();
+      setBrowserResultsViewScope('open-tabs');
+      setBrowserResultsViewQuery('');
       return true;
     }
     if (commandId === 'system-my-schedule') {
@@ -3021,7 +3085,7 @@ const App: React.FC = () => {
       return true;
     }
     return false;
-  }, [expandLauncherForDirectLaunch, memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager]);
+  }, [expandLauncherForDirectLaunch, memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager, browserSearch]);
 
   useEffect(() => {
     const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {
@@ -3302,6 +3366,7 @@ const App: React.FC = () => {
       // browser-search history module records the entry itself.
       if (isBrowserSearchCommand(command)) {
         if (command.id === BROWSER_SEARCH_SHOW_ALL_RESULTS_ID) {
+          setBrowserResultsViewScope('all');
           setBrowserResultsViewQuery(String(command.browserActionInput || launcherInputValue).trim());
           setShowActions(false);
           return;
@@ -4327,6 +4392,9 @@ const App: React.FC = () => {
   // ─── Browser Results mode ────────────────────────────────────────
   if (browserResultsViewQuery !== null) {
     const selectedBrowserResult = browserResultsViewResults[browserResultsViewSelectedIndex] || null;
+    const browserResultsPlaceholder = browserResultsViewScope === 'open-tabs'
+      ? t('launcher.browserSearch.openTabsPlaceholder')
+      : t('launcher.browserSearch.showAllPlaceholder');
     const closeBrowserResults = () => {
       setBrowserResultsViewQuery(null);
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -4373,10 +4441,10 @@ const App: React.FC = () => {
                   }
                   if (event.key === 'Enter' && selectedBrowserResult) {
                     event.preventDefault();
-                    void openBrowserResult(selectedBrowserResult, event.metaKey && selectedBrowserResult.focusAvailable ? { focusExistingTab: true } : undefined);
+                    void activateBrowserResult(selectedBrowserResult, event.metaKey);
                   }
                 }}
-                placeholder={t('launcher.browserSearch.showAllPlaceholder')}
+                placeholder={browserResultsPlaceholder}
                 className="flex-1 bg-transparent outline-none text-[0.95rem] text-[var(--text-primary)] placeholder:text-[var(--text-subtle)]"
               />
             </div>
@@ -4392,7 +4460,7 @@ const App: React.FC = () => {
                     (acc, section) => {
                       acc.nodes.push(
                         <div
-                          key={`browser-section-${section.kind}`}
+                          key={section.key}
                           className="px-3 pt-2 pb-1 text-[0.6875rem] uppercase tracking-wider text-[var(--text-subtle)] font-medium"
                         >
                           {section.title}
@@ -4406,7 +4474,7 @@ const App: React.FC = () => {
                             key={result.id}
                             className={`command-item px-3 py-2 rounded-lg cursor-pointer ${selected ? 'selected' : ''}`}
                             onMouseEnter={() => setBrowserResultsViewSelectedIndex(flatIndex)}
-                            onClick={() => void openBrowserResult(result)}
+                            onClick={(event) => void activateBrowserResult(result, event.metaKey)}
                           >
                             <div className="flex items-center gap-2.5">
                               <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
@@ -4426,13 +4494,6 @@ const App: React.FC = () => {
                                   {result.subtitle}
                                 </div>
                               </div>
-                              {result.focusAvailable ? (
-                                <span className="inline-flex items-center gap-1 text-[0.6875rem] text-[var(--text-muted)] font-medium flex-shrink-0">
-                                  <span>{t('launcher.browserSearch.focusHint')}</span>
-                                  <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] px-1 text-[10px] font-medium text-[var(--text-muted)]">⌘</kbd>
-                                  <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] px-1 text-[10px] font-medium text-[var(--text-muted)]">↩</kbd>
-                                </span>
-                              ) : null}
                             </div>
                           </div>
                         );
@@ -4443,6 +4504,47 @@ const App: React.FC = () => {
                   ).nodes}
                 </div>
               )}
+            </div>
+            <div className="sc-glass-footer sc-launcher-footer flex items-center px-4 py-2.5 border-t border-[var(--ui-divider)]">
+              <div className="sc-footer-primary flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate text-[var(--text-subtle)]">
+                {selectedBrowserResult ? (
+                  <>
+                    <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      {renderCommandIcon({
+                        id: selectedBrowserResult.id,
+                        title: selectedBrowserResult.title,
+                        subtitle: selectedBrowserResult.subtitle,
+                        category: 'system',
+                        browserResultKind: selectedBrowserResult.kind,
+                      })}
+                    </span>
+                    <span className="truncate">{selectedBrowserResult.title}</span>
+                  </>
+                ) : (
+                  t('launcher.status.results', { count: browserResultsViewResults.length })
+                )}
+              </div>
+              {selectedBrowserResult ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-[var(--text-primary)]">
+                    {browserResultsViewScope === 'open-tabs'
+                      ? t('launcher.actions.focusExistingTab')
+                      : t('launcher.actions.open')}
+                  </span>
+                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">↩</kbd>
+                  {selectedBrowserResult.focusAvailable ? (
+                    <>
+                      <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">
+                        {browserResultsViewScope === 'open-tabs'
+                          ? t('launcher.actions.open')
+                          : t('launcher.browserSearch.focusHint')}
+                      </span>
+                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
+                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">↩</kbd>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </LauncherSurface>

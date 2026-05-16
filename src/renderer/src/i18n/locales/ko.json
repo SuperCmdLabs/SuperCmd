@@ -890,7 +890,8 @@
       "focusHint": "탭으로 이동",
       "showAll": "모든 Browser 결과 보기",
       "showAllSubtitle": "Browser 결과 {count}개",
-      "showAllPlaceholder": "Browser 결과 검색..."
+      "showAllPlaceholder": "Browser 결과 검색...",
+      "openTabsPlaceholder": "열린 탭 검색..."
     }
   },
   "scriptCommand": {

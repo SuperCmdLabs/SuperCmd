@@ -855,7 +855,8 @@
       "focusHint": "Enfocar pestaña",
       "showAll": "Mostrar todos los resultados de Browser",
       "showAllSubtitle": "{count} resultados de Browser",
-      "showAllPlaceholder": "Buscar resultados de Browser..."
+      "showAllPlaceholder": "Buscar resultados de Browser...",
+      "openTabsPlaceholder": "Buscar pestañas abiertas..."
     },
     "badges": {
       "openTab": "Pestaña abierta",

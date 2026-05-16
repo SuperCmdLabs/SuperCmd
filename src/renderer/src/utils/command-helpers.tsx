@@ -1063,6 +1063,14 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     );
   }
 
+  if (commandId === 'system-search-open-tabs') {
+    return (
+      <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
+        <PanelTop className="w-3 h-3 text-cyan-300" />
+      </div>
+    );
+  }
+
   if (commandId === 'system-add-to-memory') {
     return (
       <div className="w-5 h-5 rounded bg-fuchsia-500/20 flex items-center justify-center">

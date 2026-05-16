@@ -795,7 +795,8 @@
       "focusHint": "Focus tab",
       "showAll": "Show all browser results",
       "showAllSubtitle": "{count} browser results",
-      "showAllPlaceholder": "Search browser results..."
+      "showAllPlaceholder": "Search browser results...",
+      "openTabsPlaceholder": "Search open tabs..."
     },
     "compact": {
       "showMore": "Show More"

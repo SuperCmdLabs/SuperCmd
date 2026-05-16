@@ -889,7 +889,8 @@
       "focusHint": "Attiva scheda",
       "showAll": "Mostra tutti i risultati Browser",
       "showAllSubtitle": "{count} risultati Browser",
-      "showAllPlaceholder": "Cerca risultati Browser..."
+      "showAllPlaceholder": "Cerca risultati Browser...",
+      "openTabsPlaceholder": "Cerca schede aperte..."
     }
   },
   "scriptCommand": {

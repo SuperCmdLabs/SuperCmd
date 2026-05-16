@@ -21,6 +21,7 @@ const PROFILE_OPEN_APPS: Record<string, string> = {
 export interface BrowserTabSnapshotItem {
   windowId: string | number;
   tabId: string | number;
+  tabIndex?: number;
   title?: string;
   url?: string;
   active?: boolean;
@@ -45,6 +46,7 @@ export interface BrowserTabEntry {
   profileName: string;
   windowId: string;
   tabId: string;
+  tabIndex: number;
   title: string;
   url: string;
   host: string;
@@ -101,7 +103,7 @@ const commandResultWaiters = new Map<string, (result: BrowserTabCommandResult) =
 let devServer: Server | null = null;
 
 export function listBrowserTabs(): BrowserTabEntry[] {
-  return Array.from(tabsById.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+  return Array.from(tabsById.values()).sort(compareTabsByBrowserOrder);
 }
 
 export function getBrowserTabCountsByProfile(): Record<string, number> {
@@ -535,6 +537,7 @@ function normalizeTab(
     profileName: payload.profileName,
     windowId,
     tabId,
+    tabIndex: normalizeTabIndex(item.tabIndex),
     title: cleanName(item.title || host || url),
     url,
     host,
@@ -542,6 +545,32 @@ function normalizeTab(
     windowLastFocusedAt: Number.isFinite(Number(item.windowLastFocusedAt)) ? Math.max(0, Number(item.windowLastFocusedAt)) : 0,
     updatedAt,
   };
+}
+
+function compareTabsByBrowserOrder(a: BrowserTabEntry, b: BrowserTabEntry): number {
+  if (b.windowLastFocusedAt !== a.windowLastFocusedAt) return b.windowLastFocusedAt - a.windowLastFocusedAt;
+  const browserCompare = a.browserName.localeCompare(b.browserName);
+  if (browserCompare !== 0) return browserCompare;
+  const profileCompare = a.profileName.localeCompare(b.profileName);
+  if (profileCompare !== 0) return profileCompare;
+  const windowCompare = compareIdentifier(a.windowId, b.windowId);
+  if (windowCompare !== 0) return windowCompare;
+  if (a.tabIndex !== b.tabIndex) return a.tabIndex - b.tabIndex;
+  return compareIdentifier(a.tabId, b.tabId);
+}
+
+function compareIdentifier(a: string, b: string): number {
+  const aNumber = Number(a);
+  const bNumber = Number(b);
+  if (Number.isFinite(aNumber) && Number.isFinite(bNumber) && aNumber !== bNumber) {
+    return aNumber - bNumber;
+  }
+  return a.localeCompare(b);
+}
+
+function normalizeTabIndex(value: unknown): number {
+  const index = Number(value);
+  return Number.isFinite(index) && index >= 0 ? Math.floor(index) : 0;
 }
 
 function isSupportedTabUrl(url: string): boolean {

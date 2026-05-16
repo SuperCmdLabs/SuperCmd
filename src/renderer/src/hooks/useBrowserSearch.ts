@@ -24,6 +24,13 @@ export interface BrowserSearchResult {
   url: string;
   actionInput: string;
   focusAvailable: boolean;
+  browserName?: string;
+  profileName?: string;
+  windowId?: string;
+  tabId?: string;
+  tabIndex?: number;
+  windowLastFocusedAt?: number;
+  active?: boolean;
   score: number;
   completion: string;
 }
@@ -34,6 +41,8 @@ interface UseBrowserSearchResult {
   getTopResult: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchResult | null;
   getResults: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchResult[];
   getAllResults: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchResult[];
+  getOpenTabResults: (input: string) => BrowserSearchResult[];
+  refreshOpenTabs: () => void;
   getMatchKind: (input: string, completion?: BrowserSearchAutocomplete | null) => 'open-tab' | 'history' | 'search';
   hasOpenTabMatch: (input: string) => boolean;
   executeBrowserSearch: (input: string, options?: { focusExistingTab?: boolean }) => Promise<boolean>;
@@ -50,17 +59,27 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   entriesRef.current = entries;
   tabsRef.current = tabs;
 
-  const refresh = useCallback(() => {
-    Promise.all([
-      window.electron.browserSearchListEntries(),
-      window.electron.browserTabsList?.() ?? Promise.resolve([]),
-    ])
-      .then(([entryList, tabList]) => {
+  const refreshEntries = useCallback(() => {
+    window.electron.browserSearchListEntries()
+      .then((entryList) => {
         setEntries(Array.isArray(entryList) ? entryList : []);
-        setTabs(Array.isArray(tabList) ? tabList : []);
       })
       .catch(() => {
         setEntries([]);
+      });
+  }, []);
+
+  const refreshTabs = useCallback(() => {
+    const listTabs = window.electron.browserTabsList;
+    if (!listTabs) {
+      setTabs([]);
+      return;
+    }
+    listTabs()
+      .then((tabList) => {
+        setTabs(Array.isArray(tabList) ? tabList : []);
+      })
+      .catch(() => {
         setTabs([]);
       });
   }, []);
@@ -86,21 +105,28 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   }, []);
 
   useEffect(() => {
-    if (!enabled) {
-      setEntries([]);
-      setTabs([]);
-      return;
-    }
-    refresh();
-    const unsubscribe = window.electron.onBrowserSearchHistoryChanged?.(() => refresh());
-    const unsubscribeTabs = window.electron.onBrowserTabsChanged?.(() => refresh());
+    refreshTabs();
+    const unsubscribeTabs = window.electron.onBrowserTabsChanged?.(() => refreshTabs());
     return () => {
       try {
-        unsubscribe?.();
         unsubscribeTabs?.();
       } catch {}
     };
-  }, [enabled, refresh]);
+  }, [refreshTabs]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setEntries([]);
+      return;
+    }
+    refreshEntries();
+    const unsubscribe = window.electron.onBrowserSearchHistoryChanged?.(() => refreshEntries());
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch {}
+    };
+  }, [enabled, refreshEntries]);
 
   const getTopResult = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult | null => {
     if (!enabled) return null;
@@ -129,7 +155,6 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     input: string,
     options?: { focusExistingTab?: boolean }
   ): Promise<boolean> => {
-    if (!enabled) return false;
     const trimmed = input.trim();
     if (!trimmed) return false;
     try {
@@ -143,7 +168,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
       console.error('Browser search open failed:', e);
       return false;
     }
-  }, [enabled]);
+  }, []);
 
   const hasOpenTabMatch = useCallback((rawInput: string): boolean => {
     if (!enabled) return false;
@@ -172,9 +197,13 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     return getOrderedBrowserResults(rawInput, rawGroups, entriesRef.current, tabsRef.current, { limitPerGroup: 50 });
   }, [enabled]);
 
+  const getOpenTabResults = useCallback((rawInput: string): BrowserSearchResult[] => {
+    return getOpenTabCandidates(rawInput, tabsRef.current, { preserveBrowserOrder: true });
+  }, []);
+
   return useMemo(
-    () => ({ enabled, getCompletion, getTopResult, getResults, getAllResults, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
-    [enabled, getCompletion, getTopResult, getResults, getAllResults, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
+    () => ({ enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, refreshOpenTabs: refreshTabs, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
+    [enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, refreshTabs, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
   );
 }
 
@@ -367,31 +396,7 @@ function buildBrowserCandidates(
   const lower = input.toLowerCase();
   const stripped = lower.replace(/^https?:\/\//, '');
 
-  const openTabs = tabs
-    .map((tab): BrowserSearchResult | null => {
-      const urlScore = getUrlMatchScore(tab.url || tab.host, stripped, true);
-      const titleScore = getTitleMatchScore(tab.title, lower);
-      if (urlScore === null && titleScore === null) return null;
-      const matchScore = Math.max(urlScore?.score ?? 0, titleScore ?? 0);
-      const score =
-        matchScore +
-        windowFocusBoost(tab.windowLastFocusedAt) +
-        (tab.active ? 350 : 0) +
-        tabFrecency(tab) * 140;
-      return {
-        id: `browser-result-open-tab:${tab.id}`,
-        kind: 'open-tab',
-        title: tab.title || tab.host || tab.url,
-        subtitle: buildBrowserSubtitle(tab.browserName, tab.profileName, tab.host),
-        url: tab.url,
-        actionInput: tab.url,
-        focusAvailable: true,
-        score,
-        completion: urlScore?.completion || '',
-      };
-    })
-    .filter((result): result is BrowserSearchResult => Boolean(result))
-    .sort(compareBrowserResults);
+  const openTabs = getOpenTabCandidates(input, tabs);
 
   const collectEntries = (kind: 'bookmark' | 'history'): BrowserSearchResult[] => {
     const entryType = kind === 'bookmark' ? 'bookmark' : 'url';
@@ -429,6 +434,74 @@ function buildBrowserCandidates(
     bookmark: collectEntries('bookmark'),
     history: collectEntries('history'),
   };
+}
+
+function getOpenTabCandidates(
+  input: string,
+  tabs: BrowserTabEntry[],
+  options: { preserveBrowserOrder?: boolean } = {}
+): BrowserSearchResult[] {
+  const trimmed = input.trim();
+  const lower = trimmed.toLowerCase();
+  const stripped = lower.replace(/^https?:\/\//, '');
+  const hasQuery = trimmed.length > 0;
+  return tabs
+    .map((tab): BrowserSearchResult | null => {
+      const urlScore = hasQuery ? getUrlMatchScore(tab.url || tab.host, stripped, true) : { score: 0, completion: '' };
+      const titleScore = hasQuery ? getTitleMatchScore(tab.title, lower) : 0;
+      if (urlScore === null && titleScore === null) return null;
+      const matchScore = Math.max(urlScore?.score ?? 0, titleScore ?? 0);
+      const score =
+        matchScore +
+        windowFocusBoost(tab.windowLastFocusedAt) +
+        (tab.active ? 350 : 0) +
+        tabFrecency(tab) * 140;
+      return {
+        id: `browser-result-open-tab:${tab.id}`,
+        kind: 'open-tab',
+        title: tab.title || tab.host || tab.url,
+        subtitle: buildBrowserSubtitle(tab.browserName, tab.profileName, tab.host),
+        url: tab.url,
+        actionInput: tab.url,
+        focusAvailable: true,
+        browserName: tab.browserName,
+        profileName: tab.profileName,
+        windowId: tab.windowId,
+        tabId: tab.tabId,
+        tabIndex: tab.tabIndex,
+        windowLastFocusedAt: tab.windowLastFocusedAt,
+        active: tab.active,
+        score,
+        completion: urlScore?.completion || '',
+      };
+    })
+    .filter((result): result is BrowserSearchResult => Boolean(result))
+    .sort(options.preserveBrowserOrder ? compareOpenTabsByBrowserOrder : compareBrowserResults);
+}
+
+function compareOpenTabsByBrowserOrder(a: BrowserSearchResult, b: BrowserSearchResult): number {
+  const aFocusedAt = a.windowLastFocusedAt || 0;
+  const bFocusedAt = b.windowLastFocusedAt || 0;
+  if (bFocusedAt !== aFocusedAt) return bFocusedAt - aFocusedAt;
+  const browserCompare = String(a.browserName || '').localeCompare(String(b.browserName || ''));
+  if (browserCompare !== 0) return browserCompare;
+  const profileCompare = String(a.profileName || '').localeCompare(String(b.profileName || ''));
+  if (profileCompare !== 0) return profileCompare;
+  const windowCompare = compareIdentifier(String(a.windowId || ''), String(b.windowId || ''));
+  if (windowCompare !== 0) return windowCompare;
+  const aIndex = Number.isFinite(Number(a.tabIndex)) ? Number(a.tabIndex) : 0;
+  const bIndex = Number.isFinite(Number(b.tabIndex)) ? Number(b.tabIndex) : 0;
+  if (aIndex !== bIndex) return aIndex - bIndex;
+  return compareIdentifier(String(a.tabId || ''), String(b.tabId || ''));
+}
+
+function compareIdentifier(a: string, b: string): number {
+  const aNumber = Number(a);
+  const bNumber = Number(b);
+  if (Number.isFinite(aNumber) && Number.isFinite(bNumber) && aNumber !== bNumber) {
+    return aNumber - bNumber;
+  }
+  return a.localeCompare(b);
 }
 
 function compareBrowserResults(a: BrowserSearchResult, b: BrowserSearchResult): number {

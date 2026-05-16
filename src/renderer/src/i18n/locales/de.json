@@ -855,7 +855,8 @@
       "focusHint": "Tab fokussieren",
       "showAll": "Alle Browser-Ergebnisse anzeigen",
       "showAllSubtitle": "{count} Browser-Ergebnisse",
-      "showAllPlaceholder": "Browser-Ergebnisse suchen..."
+      "showAllPlaceholder": "Browser-Ergebnisse suchen...",
+      "openTabsPlaceholder": "Offene Tabs suchen..."
     },
     "badges": {
       "openTab": "Offener Tab",

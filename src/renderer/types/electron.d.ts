@@ -350,6 +350,7 @@ export interface BrowserTabEntry {
   profileName: string;
   windowId: string;
   tabId: string;
+  tabIndex: number;
   title: string;
   url: string;
   host: string;
