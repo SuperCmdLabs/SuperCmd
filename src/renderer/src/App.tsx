@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, XCircle, Timer } from 'lucide-react';
+import { ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, XCircle, Timer } from 'lucide-react';
 import supercmdLogo from '../../../supercmd.png';
 import type {
   CommandInfo,
@@ -51,13 +51,9 @@ import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
 import {
   type LauncherAction, type MemoryFeedback,
-  filterCommands, formatShortcutLabel, getCategoryLabel,
+  filterCommands, formatShortcutLabel,
   renderCommandIcon, getCommandDisplayTitle,
-  getCommandAccessoryLabel,
-  getCommandTypeBadgeLabel,
-  renderShortcutLabel,
   matchesLauncherShortcut,
-  getShortcutDisplayParts,
 } from './utils/command-helpers';
 import {
   collectLegacyExtensionPreferencesSnapshot,
@@ -87,8 +83,13 @@ import WebSearchView, {
   type WebSearchCustomBangPromptState,
   type WebSearchViewSection,
 } from './views/WebSearchView';
-import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowBadge } from './components/InlineArgumentField';
 import LauncherSurface from './components/LauncherSurface';
+import LauncherSearchHeader from './components/LauncherSearchHeader';
+import LauncherCompactShowMoreRow from './components/LauncherCompactShowMoreRow';
+import LauncherCommandList, {
+  type LauncherCommandSection,
+} from './components/LauncherCommandList';
+import LauncherFooter from './components/LauncherFooter';
 import HiddenExtensionRunners from './components/HiddenExtensionRunners';
 import DetachedOverlayRunners from './components/DetachedOverlayRunners';
 import LauncherViewShell from './components/LauncherViewShell';
@@ -141,7 +142,6 @@ import {
   MAX_INLINE_EXTENSION_ARGUMENTS,
   MAX_INLINE_QUICK_LINK_ARGUMENTS,
   MAX_RECENT_SECTION_ITEMS,
-  formatCalcKindLabel,
   getExtensionIdentityFromCommand,
   getQuickLinkIdFromCommandId,
   isEditableElement,
@@ -4879,6 +4879,109 @@ const App: React.FC = () => {
   const quickLinkDynamicPromptTitle = quickLinkDynamicPrompt
     ? getCommandDisplayTitle(quickLinkDynamicPrompt.command, t)
     : '';
+  const launcherCommandSections = useMemo<LauncherCommandSection[]>(() => {
+    if (rootBangState.mode === 'selecting') {
+      return [
+        { title: t('launcher.browserSearch.bangSections.matching'), items: displayCommands },
+      ];
+    }
+
+    if (rootBangState.mode === 'active') {
+      return [
+        { title: '', items: webSearchRootDirectCommand ? [webSearchRootDirectCommand] : [] },
+        { title: t('launcher.categories.search'), items: webSearchRootSuggestionCommands },
+      ].filter((section) => section.items.length > 0);
+    }
+
+    const topCommandIds = new Set(displayCommands.filter((command) => command.alwaysOnTop).map((command) => command.id));
+    const directSearchIndex = displayCommands.findIndex((command) => command.id === WEB_SEARCH_ROOT_DIRECT_ID);
+
+    if (directSearchIndex >= 0) {
+      topCommandIds.add(WEB_SEARCH_ROOT_DIRECT_ID);
+      if (directSearchIndex === 1 && displayCommands[0]) {
+        topCommandIds.add(displayCommands[0].id);
+      }
+    }
+
+    const allTopItems = displayCommands.filter((command) => topCommandIds.has(command.id));
+    const topIds = new Set(allTopItems.map((command) => command.id));
+    const strip = (items: CommandInfo[]) => items.filter((command) => !topIds.has(command.id));
+
+    return [
+      { title: '', items: allTopItems },
+      { title: t('launcher.categories.browser'), items: strip(browserSearchResultCommands) },
+      { title: t('launcher.categories.search'), items: strip(webSearchRootSuggestionCommands) },
+      { title: t('launcher.sections.selectedText'), items: strip(groupedCommands.contextual) },
+      { title: t('launcher.sections.pinned'), items: strip(groupedCommands.pinned) },
+      { title: t('launcher.categories.recent'), items: strip(groupedCommands.recent) },
+      { title: t('launcher.sections.results'), items: strip(groupedCommands.other) },
+      { title: t('launcher.categories.files'), items: strip(groupedCommands.files) },
+    ].filter((section) => section.items.length > 0);
+  }, [
+    browserSearchResultCommands,
+    displayCommands,
+    groupedCommands,
+    rootBangState,
+    t,
+    webSearchRootDirectCommand,
+    webSearchRootSuggestionCommands,
+  ]);
+  const handleLauncherInputChange = useCallback((value: string) => {
+    if (browserSearchAutoComplete && value === searchQuery && value.length > 0) {
+      setBrowserSearchSkipAutoComplete(true);
+      return;
+    }
+
+    setSearchQuery(value);
+
+    if (launcherViewMode === 'compact') {
+      if (isCompactCollapsed && value.length > 0) {
+        setIsCompactCollapsed(false);
+        window.electron.resizeLauncherWindow(true);
+      } else if (!isCompactCollapsed && value.length === 0) {
+        setIsCompactCollapsed(true);
+        window.electron.resizeLauncherWindow(false);
+      }
+    }
+  }, [browserSearchAutoComplete, isCompactCollapsed, launcherViewMode, searchQuery]);
+  const copyCalculatorResult = useCallback(() => {
+    if (!calcResult) return;
+    navigator.clipboard.writeText(calcResult.result);
+    window.electron.hideWindow();
+  }, [calcResult]);
+  const openLauncherCommandContextMenu = useCallback((
+    event: React.MouseEvent<HTMLDivElement>,
+    command: CommandInfo,
+    nextSelectedIndex: number
+  ) => {
+    event.preventDefault();
+    setSelectedIndex(nextSelectedIndex);
+    setShowActions(false);
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      command,
+    });
+  }, []);
+  const openSelectedCommandActions = useCallback(() => {
+    if (!selectedCommand) return;
+    setContextMenu(null);
+    setActionsCommand(selectedCommand);
+    setSelectedActionIndex(0);
+    setShowActions(true);
+  }, [selectedCommand]);
+  const showCompactLauncher = useCallback(() => {
+    setIsCompactCollapsed(false);
+    window.electron.resizeLauncherWindow(true);
+  }, []);
+  const handleInlineExtensionArgumentChange = useCallback((argumentName: string, value: string) => {
+    if (!selectedCommand) return;
+    updateInlineExtensionArgumentValue(selectedCommand, argumentName, value);
+  }, [selectedCommand, updateInlineExtensionArgumentValue]);
+  const handleInlineQuickLinkDynamicValueChange = useCallback((fieldKey: string, value: string) => {
+    if (!selectedQuickLinkId) return;
+    updateInlineQuickLinkDynamicValue(selectedQuickLinkId, fieldKey, value);
+  }, [selectedQuickLinkId, updateInlineQuickLinkDynamicValue]);
 
   // ─── Script Command Setup ───────────────────────────────────────
   if (scriptCommandSetup) {
@@ -5414,495 +5517,73 @@ const App: React.FC = () => {
       backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
       className="launcher-main-surface"
     >
-        {/* Search header - transparent background */}
-        <div className="drag-region flex h-[60px] items-center gap-2 px-4 border-b border-[var(--ui-divider)]">
-          <div ref={inlineArgumentLaneRef} className="relative min-w-0 flex-1">
-            <div className="flex h-full items-center">
-              <input
-                ref={inputRef}
-                type="text"
-                placeholder={aiMode ? t('launcher.aiMode.placeholder') : t('launcher.searchPlaceholder')}
-                value={launcherInputValue}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  // If we had a suggestion and the resulting value equals the
-                  // already-typed prefix, the user just deleted the suggestion
-                  // suffix — keep searchQuery and remember to suppress autocomplete
-                  // until the input is cleared.
-                  if (
-                    browserSearchAutoComplete &&
-                    value === searchQuery &&
-                    value.length > 0
-                  ) {
-                    setBrowserSearchSkipAutoComplete(true);
-                    return;
-                  }
-                  setSearchQuery(value);
-                  if (launcherViewMode === 'compact') {
-                    if (isCompactCollapsed && value.length > 0) {
-                      setIsCompactCollapsed(false);
-                      window.electron.resizeLauncherWindow(true);
-                    } else if (!isCompactCollapsed && value.length === 0) {
-                      setIsCompactCollapsed(true);
-                      window.electron.resizeLauncherWindow(false);
-                    }
-                  }
-                }}
-                onBlur={handleLauncherSearchBlur}
-                onKeyDown={handleKeyDown}
-                className="launcher-search-input min-w-0 w-full bg-transparent border-none outline-none text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] placeholder:font-medium text-[0.9375rem] font-medium tracking-[0.005em]"
-                autoFocus
-              />
-            </div>
-            {selectedInlineExtensionArgumentDefinitions.length > 0 ? (
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center overflow-x-hidden overflow-y-visible">
-                <div
-                  ref={inlineArgumentClusterRef}
-                  className="pointer-events-auto inline-flex min-w-0 items-center gap-1"
-                  style={{ marginLeft: inlineArgumentStartPx != null ? `${inlineArgumentStartPx}px` : '30%' }}
-                >
-                  {selectedInlineArgumentLeadingIcon ? (
-                    <InlineArgumentLeadingIcon>{selectedInlineArgumentLeadingIcon}</InlineArgumentLeadingIcon>
-                  ) : null}
-                  {selectedInlineExtensionArgumentDefinitions.map((definition, index) => {
-                    const value = selectedInlineExtensionArgumentValues[definition.name] || '';
-                    const placeholder = definition.placeholder || definition.title || definition.name;
-                    return (
-                      <InlineArgumentField
-                        key={`inline-arg-${definition.name}`}
-                        inputRef={(el) => {
-                          inlineArgumentInputRefs.current[index] = el;
-                        }}
-                        value={value}
-                        placeholder={placeholder}
-                        type={definition.type === 'dropdown' ? 'select' : definition.type === 'password' ? 'password' : 'text'}
-                        options={(definition.data || []).map((option) => ({
-                          value: String(option?.value || ''),
-                          label: String(option?.title || option?.value || ''),
-                        }))}
-                        onChange={(nextValue) => {
-                          if (!selectedCommand) return;
-                          updateInlineExtensionArgumentValue(selectedCommand, definition.name, nextValue);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Tab') {
-                            event.preventDefault();
-                            const total = selectedInlineExtensionArgumentDefinitions.length;
-                            const nextIndex = event.shiftKey ? index - 1 : index + 1;
-                            if (nextIndex >= 0 && nextIndex < total) {
-                              inlineArgumentInputRefs.current[nextIndex]?.focus();
-                            } else {
-                              inputRef.current?.focus();
-                            }
-                            return;
-                          }
-                          handleKeyDown(event);
-                        }}
-                      />
-                    );
-                  })}
-                  {hasSelectedExtensionOverflowArguments ? (
-                    <InlineArgumentOverflowBadge
-                      count={selectedExtensionArgumentDefinitions.length - selectedInlineExtensionArgumentDefinitions.length}
-                    />
-                  ) : null}
-                </div>
-              </div>
-            ) : selectedInlineQuickLinkDynamicFields.length > 0 ? (
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center overflow-x-hidden overflow-y-visible">
-                <div
-                  ref={inlineArgumentClusterRef}
-                  className="pointer-events-auto inline-flex min-w-0 items-center gap-1"
-                  style={{ marginLeft: inlineArgumentStartPx != null ? `${inlineArgumentStartPx}px` : '30%' }}
-                >
-                  {selectedInlineArgumentLeadingIcon ? (
-                    <InlineArgumentLeadingIcon>{selectedInlineArgumentLeadingIcon}</InlineArgumentLeadingIcon>
-                  ) : null}
-                  {selectedInlineQuickLinkDynamicFields.map((field, index) => (
-                    <InlineArgumentField
-                      key={`inline-quicklink-${selectedQuickLinkId || 'none'}-${field.key}`}
-                      inputRef={(el) => {
-                        inlineQuickLinkInputRefs.current[index] = el;
-                      }}
-                      value={selectedInlineQuickLinkDynamicValues[field.key] || ''}
-                      placeholder={field.defaultValue || field.name}
-                      onChange={(nextValue) => {
-                        if (!selectedQuickLinkId) return;
-                        updateInlineQuickLinkDynamicValue(selectedQuickLinkId, field.key, nextValue);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Tab') {
-                          event.preventDefault();
-                          const total = selectedInlineQuickLinkDynamicFields.length;
-                          const nextIndex = event.shiftKey ? index - 1 : index + 1;
-                          if (nextIndex >= 0 && nextIndex < total) {
-                            inlineQuickLinkInputRefs.current[nextIndex]?.focus();
-                          } else {
-                            inputRef.current?.focus();
-                          }
-                          return;
-                        }
-                        handleKeyDown(event);
-                      }}
-                    />
-                  ))}
-                  {hasSelectedQuickLinkOverflowDynamicFields ? (
-                    <InlineArgumentOverflowBadge
-                      count={selectedQuickLinkDynamicFields.length - selectedInlineQuickLinkDynamicFields.length}
-                    />
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {searchQuery && aiAvailable && !shouldHideAskAi && (
-              <button
-                onClick={() => startAiChat(searchQuery)}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--soft-pill-bg)] hover:bg-[var(--soft-pill-hover-bg)] transition-colors flex-shrink-0 group"
-              >
-                <Sparkles className="w-3 h-3 text-white/30 group-hover:text-purple-400 transition-colors" />
-                <span className="text-[0.6875rem] text-white/30 group-hover:text-white/50 transition-colors">Ask AI</span>
-                <kbd className="text-[0.625rem] text-white/20 bg-[var(--soft-pill-bg)] px-1 py-0.5 rounded font-mono leading-none">Tab</kbd>
-              </button>
-            )}
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors flex-shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
+        <LauncherSearchHeader
+          inlineArgumentLaneRef={inlineArgumentLaneRef}
+          inlineArgumentClusterRef={inlineArgumentClusterRef}
+          inlineArgumentInputRefs={inlineArgumentInputRefs}
+          inlineQuickLinkInputRefs={inlineQuickLinkInputRefs}
+          inputRef={inputRef}
+          placeholder={aiMode ? t('launcher.aiMode.placeholder') : t('launcher.searchPlaceholder')}
+          value={launcherInputValue}
+          onInputChange={handleLauncherInputChange}
+          onBlur={handleLauncherSearchBlur}
+          onKeyDown={handleKeyDown}
+          inlineArgumentStartPx={inlineArgumentStartPx}
+          selectedInlineArgumentLeadingIcon={selectedInlineArgumentLeadingIcon}
+          selectedInlineExtensionArgumentDefinitions={selectedInlineExtensionArgumentDefinitions}
+          selectedInlineExtensionArgumentValues={selectedInlineExtensionArgumentValues}
+          hasSelectedExtensionOverflowArguments={hasSelectedExtensionOverflowArguments}
+          selectedExtensionOverflowCount={selectedExtensionArgumentDefinitions.length - selectedInlineExtensionArgumentDefinitions.length}
+          onInlineExtensionArgumentChange={handleInlineExtensionArgumentChange}
+          selectedQuickLinkId={selectedQuickLinkId}
+          selectedInlineQuickLinkDynamicFields={selectedInlineQuickLinkDynamicFields}
+          selectedInlineQuickLinkDynamicValues={selectedInlineQuickLinkDynamicValues}
+          hasSelectedQuickLinkOverflowDynamicFields={hasSelectedQuickLinkOverflowDynamicFields}
+          selectedQuickLinkOverflowCount={selectedQuickLinkDynamicFields.length - selectedInlineQuickLinkDynamicFields.length}
+          onInlineQuickLinkDynamicValueChange={handleInlineQuickLinkDynamicValueChange}
+          searchQuery={searchQuery}
+          aiAvailable={aiAvailable}
+          shouldHideAskAi={shouldHideAskAi}
+          onAskAi={() => startAiChat(searchQuery)}
+          onClearSearch={() => setSearchQuery('')}
+          t={t}
+        />
 
-        {/* Compact mode: Show More row */}
         {launcherViewMode === 'compact' && isCompactCollapsed && (
-          <div
-            className="flex items-center justify-between px-4 py-2 cursor-pointer hover:bg-[var(--ui-segment-hover-bg)] transition-colors border-t border-[var(--ui-divider)]"
-            onClick={() => {
-              setIsCompactCollapsed(false);
-              window.electron.resizeLauncherWindow(true);
-            }}
-          >
-            <div className="flex items-center gap-2 text-[var(--text-muted)]">
-              <img src={supercmdLogo} alt="SuperCmd" className="w-4 h-4" />
-            </div>
-            <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
-              <span className="text-xs font-medium">{t('launcher.compact.showMore')}</span>
-              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-[var(--kbd-bg)] text-[var(--text-subtle)]">
-                <ArrowDown className="w-3 h-3" />
-              </kbd>
-            </div>
-          </div>
+          <LauncherCompactShowMoreRow
+            logoSrc={supercmdLogo}
+            onShowMore={showCompactLauncher}
+            t={t}
+          />
         )}
 
-        {/* Command list */}
-        <div
-          ref={listRef}
-          className="flex-1 overflow-y-auto custom-scrollbar p-1.5 list-area"
-          style={launcherViewMode === 'compact' && isCompactCollapsed ? { display: 'none' } : undefined}
-        >
-          {isLoading ? (
-            <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
-              <p className="text-sm">{t('launcher.status.discoveringApps')}</p>
-            </div>
-          ) : displayCommands.length === 0 && !calcResult ? (
-            <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
-              <p className="text-sm">{t('launcher.status.noMatchingResults')}</p>
-            </div>
-          ) : (
-            <div className="space-y-0.5">
-              {/* Calculator card */}
-              {calcResult && (
-                <div
-                  ref={(el) => (itemRefs.current[0] = el)}
-                  className={`mx-1 mt-0.5 mb-2 px-3 py-3 rounded-xl cursor-pointer transition-colors border ${
-                    selectedIndex === 0
-                      ? 'bg-[color-mix(in_srgb,var(--launcher-card-selected-bg)_60%,transparent)] border-[color-mix(in_srgb,var(--launcher-card-selected-border)_60%,transparent)]'
-                      : 'bg-transparent border-[color-mix(in_srgb,var(--launcher-card-border)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--launcher-card-hover-bg)_50%,transparent)]'
-                  }`}
-                  onClick={() => {
-                    navigator.clipboard.writeText(calcResult.result);
-                    window.electron.hideWindow();
-                  }}
-                >
-                  <div className="relative">
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="inline-flex items-center h-5 rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[0.625rem] font-medium uppercase tracking-[0.12em] text-[var(--text-subtle)] leading-none">
-                          {formatCalcKindLabel(calcResult.kind)}
-                        </div>
-                        <div className="text-[0.6875rem] text-[var(--text-muted)] leading-none">
-                          {selectedIndex === 0 ? t('launcher.calculator.pressEnterToCopy') : t('launcher.calculator.clickToCopy')}
-                        </div>
-                      </div>
-
-                      <div className="hidden sm:flex items-center gap-1 text-[0.6875rem] text-[var(--text-subtle)] flex-shrink-0 pl-2">
-                        <CornerDownLeft className="w-3.5 h-3.5" />
-                        <span>{t('launcher.calculator.copy')}</span>
-                      </div>
-                    </div>
-
-                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-8 w-8 rounded-full border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] flex items-center justify-center pointer-events-none">
-                      <ArrowRight className="w-4 h-4 text-[var(--text-muted)]" />
-                    </div>
-
-                    <div className="flex justify-center">
-                      <div className="inline-grid grid-cols-[minmax(0,240px)_auto_minmax(0,240px)] items-center gap-x-7">
-                        <div className="min-w-0 text-center">
-                          <div className="text-[0.6875rem] uppercase tracking-[0.12em] text-[var(--text-subtle)] truncate">
-                            {calcResult.inputLabel}
-                          </div>
-                          <div
-                            className="mt-1 text-[1.15rem] leading-7 font-medium text-[var(--text-secondary)] text-center whitespace-normal break-words"
-                            style={{
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            {calcResult.input}
-                          </div>
-                        </div>
-
-                        <div />
-
-                        <div className="min-w-0 text-center">
-                          <div className="text-[0.6875rem] uppercase tracking-[0.12em] text-[var(--text-subtle)] truncate">
-                            {calcResult.resultLabel}
-                          </div>
-                          <div
-                            className="mt-1 text-[1.15rem] leading-7 font-medium text-[var(--text-secondary)] text-center whitespace-normal break-words"
-                            style={{
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            {calcResult.result}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {(() => {
-                if (rootBangState.mode === 'selecting') {
-                  return [
-                    { title: t('launcher.browserSearch.bangSections.matching'), items: displayCommands },
-                  ];
-                }
-                if (rootBangState.mode === 'active') {
-                  return [
-                    { title: '', items: webSearchRootDirectCommand ? [webSearchRootDirectCommand] : [] },
-                    { title: t('launcher.categories.search'), items: webSearchRootSuggestionCommands },
-                  ];
-                }
-                // Pull alwaysOnTop commands out first so they render above every section
-                const topCommandIds = new Set(
-                  displayCommands.filter((c) => c.alwaysOnTop).map((c) => c.id)
-                );
-                const directSearchIndex = displayCommands.findIndex((c) => c.id === WEB_SEARCH_ROOT_DIRECT_ID);
-                if (directSearchIndex >= 0) {
-                  topCommandIds.add(WEB_SEARCH_ROOT_DIRECT_ID);
-                  if (directSearchIndex === 1 && displayCommands[0]) {
-                    topCommandIds.add(displayCommands[0].id);
-                  }
-                }
-                const allTopItems = displayCommands.filter((c) => topCommandIds.has(c.id));
-                const topIds = new Set(allTopItems.map((c) => c.id));
-                const strip = (items: CommandInfo[]) => items.filter((c) => !topIds.has(c.id));
-                return [
-                  { title: '', items: allTopItems },
-                  { title: t('launcher.categories.browser'), items: strip(browserSearchResultCommands) },
-                  { title: t('launcher.categories.search'), items: strip(webSearchRootSuggestionCommands) },
-                  { title: t('launcher.sections.selectedText'), items: strip(groupedCommands.contextual) },
-                  { title: t('launcher.sections.pinned'), items: strip(groupedCommands.pinned) },
-                  { title: t('launcher.categories.recent'), items: strip(groupedCommands.recent) },
-                  { title: t('launcher.sections.results'), items: strip(groupedCommands.other) },
-                  { title: t('launcher.categories.files'), items: strip(groupedCommands.files) },
-                ];
-              })()
-                .filter((section) => section.items.length > 0)
-                .map((section) => section)
-                .reduce(
-                  (acc, section) => {
-                    const startIndex = acc.index;
-                    if (section.title) {
-                      acc.nodes.push(
-                        <div
-                          key={`section-${section.title}`}
-                          className="px-3 pt-2 pb-1 text-[0.6875rem] uppercase tracking-wider text-[var(--text-subtle)] font-medium"
-                        >
-                          {section.title}
-                        </div>
-                      );
-                    }
-                    section.items.forEach((command, i) => {
-                      const flatIndex = startIndex + i;
-                      const accessoryLabel = getCommandAccessoryLabel(command);
-                      const typeBadgeLabel = getCommandTypeBadgeLabel(command, t);
-                      const fallbackCategory = getCategoryLabel(command.category, t);
-                      const commandAlias = String(commandAliases[command.id] || '').trim();
-                      const commandHotkey = String(commandHotkeys[command.id] || '').trim();
-                      const hotkeyParts = commandHotkey ? getShortcutDisplayParts(commandHotkey) : [];
-                      const browserFocusParts = command.browserMatchKind === 'open-tab'
-                        ? getShortcutDisplayParts('Cmd+Enter')
-                        : [];
-                      acc.nodes.push(
-                        <div
-                          key={command.id}
-                          ref={(el) => (itemRefs.current[flatIndex + calcOffset] = el)}
-                          className={`command-item px-3 py-2 rounded-lg cursor-pointer ${
-                            flatIndex + calcOffset === selectedIndex ? 'selected' : ''
-                          }`}
-                          onClick={() => {
-                            void handleCommandRowClick(command, flatIndex + calcOffset);
-                          }}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            setSelectedIndex(flatIndex + calcOffset);
-                            setShowActions(false);
-                            setContextMenu({
-                              x: e.clientX,
-                              y: e.clientY,
-                              command,
-                            });
-                          }}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                              {renderCommandIcon(command)}
-                            </div>
-
-                            <div className="min-w-0 flex-1 flex items-center gap-2">
-                              <div className="text-[var(--text-primary)] text-[0.8125rem] font-medium truncate tracking-[0.004em]">
-                                {getCommandDisplayTitle(command, t)}
-                              </div>
-                              {accessoryLabel ? (
-                                <div className="text-[var(--text-muted)] text-[0.75rem] font-medium truncate">
-                                  {accessoryLabel}
-                                </div>
-                              ) : (
-                                <div className="text-[var(--text-muted)] text-[0.6875rem] font-medium truncate">
-                                  {fallbackCategory}
-                                </div>
-                              )}
-                              {commandAlias ? (
-                                <div className="inline-flex items-center h-5 rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[0.625rem] font-mono text-[var(--text-subtle)] leading-none flex-shrink-0">
-                                  {commandAlias}
-                                </div>
-                              ) : null}
-                              {hotkeyParts.length > 0 ? (
-                                <span className="inline-flex items-center gap-0.5 flex-shrink-0">
-                                  {hotkeyParts.map((part, idx) => (
-                                    <kbd key={idx} className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] px-1 text-[10px] font-medium text-[var(--text-muted)]">
-                                      {part}
-                                    </kbd>
-                                  ))}
-                                </span>
-                              ) : null}
-                            </div>
-                            {browserFocusParts.length > 0 ? (
-                              <span className="inline-flex items-center gap-1 text-[0.6875rem] text-[var(--text-muted)] font-medium flex-shrink-0">
-                                <span>{t('launcher.browserSearch.focusHint')}</span>
-                                <span className="inline-flex items-center gap-0.5">
-                                  {browserFocusParts.map((part, idx) => (
-                                    <kbd key={idx} className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] px-1 text-[10px] font-medium text-[var(--text-muted)]">
-                                      {part}
-                                    </kbd>
-                                  ))}
-                                </span>
-                              </span>
-                            ) : null}
-                            {typeBadgeLabel ? (
-                              <div className="text-[var(--text-muted)] text-[0.6875rem] font-medium leading-none flex-shrink-0 truncate">
-                                {typeBadgeLabel}
-                              </div>
-                            ) : null}
-                            {flatIndex < 9 && (
-                              <span className="inline-flex items-center gap-0.5 flex-shrink-0">
-                                <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">⌘</kbd>
-                                <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">{flatIndex + 1}</kbd>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    });
-                    acc.index += section.items.length;
-                    return acc;
-                  },
-                  { nodes: [] as React.ReactNode[], index: 0 }
-                ).nodes}
-            </div>
-          )}
-        </div>
+        <LauncherCommandList
+          listRef={listRef}
+          itemRefs={itemRefs}
+          isLoading={isLoading}
+          isHidden={launcherViewMode === 'compact' && isCompactCollapsed}
+          displayCommands={displayCommands}
+          sections={launcherCommandSections}
+          calcResult={calcResult}
+          calcOffset={calcOffset}
+          selectedIndex={selectedIndex}
+          commandAliases={commandAliases}
+          commandHotkeys={commandHotkeys}
+          onCalculatorCopy={copyCalculatorResult}
+          onCommandClick={handleCommandRowClick}
+          onCommandContextMenu={openLauncherCommandContextMenu}
+          t={t}
+        />
         
-        {/* Footer actions */}
         {!isLoading && !(launcherViewMode === 'compact' && isCompactCollapsed) && (
-          <div
-            className="sc-glass-footer sc-launcher-footer absolute bottom-0 left-0 right-0 z-10 flex items-center px-4 py-2.5"
-          >
-            <div
-              className="sc-footer-primary flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate text-[var(--text-subtle)]"
-            >
-              {launcherFooterStatus ? (
-                <>
-                  {launcherFooterStatus.type === 'success' ? (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/90 shadow-[0_0_0_3px_rgba(52,211,153,0.18)] flex-shrink-0" />
-                  ) : (
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400/90 shadow-[0_0_0_3px_rgba(244,114,182,0.18)] flex-shrink-0" />
-                  )}
-                  <span className="truncate text-[var(--text-secondary)]">{launcherFooterStatus.text}</span>
-                </>
-              ) : selectedCommand ? (
-                <>
-                  <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                    {renderCommandIcon(selectedCommand)}
-                  </span>
-                  <span className="truncate">{getCommandDisplayTitle(selectedCommand, t)}</span>
-                </>
-              ) : (
-                t('launcher.status.results', { count: displayCommands.length })
-              )}
-            </div>
-            {selectedActions[0] && (
-              <div className="flex items-center gap-2 mr-3">
-                <button
-                  onClick={() => selectedActions[0].execute()}
-                  className="text-[var(--text-primary)] text-xs font-semibold hover:text-[var(--text-primary)] transition-colors"
-                >
-                  {selectedActions[0].title}
-                </button>
-                {selectedActions[0].shortcut && (
-                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">
-                    {renderShortcutLabel(selectedActions[0].shortcut)}
-                  </kbd>
-                )}
-              </div>
-            )}
-            <button
-              onClick={() => {
-                if (!selectedCommand) return;
-                setContextMenu(null);
-                setActionsCommand(selectedCommand);
-                setSelectedActionIndex(0);
-                setShowActions(true);
-              }}
-              className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-            >
-              <span className="text-xs font-normal">{t('common.actions')}</span>
-              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
-              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">K</kbd>
-            </button>
-          </div>
+          <LauncherFooter
+            status={launcherFooterStatus}
+            selectedCommand={selectedCommand}
+            selectedAction={selectedActions[0]}
+            resultCount={displayCommands.length}
+            onOpenActions={openSelectedCommandActions}
+            t={t}
+          />
         )}
     </LauncherSurface>
     <QuickLinkDynamicPromptOverlay
