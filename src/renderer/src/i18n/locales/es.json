@@ -856,7 +856,8 @@
       "showAll": "Mostrar todos los resultados de Browser",
       "showAllSubtitle": "{count} resultados de Browser",
       "showAllPlaceholder": "Buscar resultados de Browser...",
-      "openTabsPlaceholder": "Buscar pestañas abiertas..."
+      "openTabsPlaceholder": "Buscar pestañas abiertas...",
+      "bookmarksPlaceholder": "Buscar marcadores..."
     },
     "badges": {
       "openTab": "Pestaña abierta",

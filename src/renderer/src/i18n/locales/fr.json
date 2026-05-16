@@ -860,7 +860,8 @@
       "showAll": "Afficher tous les résultats Browser",
       "showAllSubtitle": "{count} résultats Browser",
       "showAllPlaceholder": "Rechercher dans les résultats Browser...",
-      "openTabsPlaceholder": "Rechercher les onglets ouverts..."
+      "openTabsPlaceholder": "Rechercher les onglets ouverts...",
+      "bookmarksPlaceholder": "Rechercher dans les favoris..."
     },
     "badges": {
       "openTab": "Onglet ouvert",

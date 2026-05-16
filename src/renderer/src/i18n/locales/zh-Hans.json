@@ -891,7 +891,8 @@
       "showAll": "显示所有 Browser 结果",
       "showAllSubtitle": "{count} 个 Browser 结果",
       "showAllPlaceholder": "搜索 Browser 结果...",
-      "openTabsPlaceholder": "搜索打开的标签页..."
+      "openTabsPlaceholder": "搜索打开的标签页...",
+      "bookmarksPlaceholder": "搜索书签..."
     }
   },
   "scriptCommand": {

@@ -891,7 +891,8 @@
       "showAll": "顯示所有 Browser 結果",
       "showAllSubtitle": "{count} 個 Browser 結果",
       "showAllPlaceholder": "搜尋 Browser 結果...",
-      "openTabsPlaceholder": "搜尋開啟的分頁..."
+      "openTabsPlaceholder": "搜尋開啟的分頁...",
+      "bookmarksPlaceholder": "搜尋書籤..."
     }
   },
   "scriptCommand": {

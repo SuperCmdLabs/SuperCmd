@@ -856,7 +856,8 @@
       "showAll": "Alle Browser-Ergebnisse anzeigen",
       "showAllSubtitle": "{count} Browser-Ergebnisse",
       "showAllPlaceholder": "Browser-Ergebnisse suchen...",
-      "openTabsPlaceholder": "Offene Tabs suchen..."
+      "openTabsPlaceholder": "Offene Tabs suchen...",
+      "bookmarksPlaceholder": "Lesezeichen suchen..."
     },
     "badges": {
       "openTab": "Offener Tab",

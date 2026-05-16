@@ -891,7 +891,8 @@
       "showAll": "すべての Browser 結果を表示",
       "showAllSubtitle": "{count} 件の Browser 結果",
       "showAllPlaceholder": "Browser 結果を検索...",
-      "openTabsPlaceholder": "開いているタブを検索..."
+      "openTabsPlaceholder": "開いているタブを検索...",
+      "bookmarksPlaceholder": "ブックマークを検索..."
     }
   },
   "scriptCommand": {

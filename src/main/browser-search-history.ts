@@ -48,6 +48,8 @@ export interface BrowserSearchEntry {
   source: BrowserSearchSource;
   sourceProfileId?: string;
   sourceProfileName?: string;
+  bookmarkFolder?: string;
+  bookmarkOrder?: number;
 }
 
 export interface AutocompleteSuggestion {
@@ -121,8 +123,14 @@ function sanitizeEntry(raw: any): BrowserSearchEntry | null {
   const sourceProfileName = typeof raw.sourceProfileName === 'string' && raw.sourceProfileName.trim()
     ? raw.sourceProfileName.trim()
     : undefined;
+  const bookmarkFolder = typeof raw.bookmarkFolder === 'string' && raw.bookmarkFolder.trim()
+    ? raw.bookmarkFolder.trim()
+    : undefined;
+  const bookmarkOrder = Number.isFinite(Number(raw.bookmarkOrder)) && Number(raw.bookmarkOrder) >= 0
+    ? Math.floor(Number(raw.bookmarkOrder))
+    : undefined;
   const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : makeId();
-  return { id, type, query, url, host, lastUsedAt, useCount, source, sourceProfileId, sourceProfileName };
+  return { id, type, query, url, host, lastUsedAt, useCount, source, sourceProfileId, sourceProfileName, bookmarkFolder, bookmarkOrder };
 }
 
 const ALLOWED_SOURCES: Set<string> = new Set([
@@ -640,6 +648,8 @@ interface RawBookmarkRow {
   url: string;
   title: string;
   dateAdded: number;
+  folder: string;
+  order: number;
 }
 
 export async function importFromBrowser(
@@ -814,6 +824,8 @@ async function importFromSource(
       source: browserId,
       sourceProfileId,
       sourceProfileName,
+      bookmarkFolder: bookmark.folder,
+      bookmarkOrder: bookmark.order,
     };
     entries.push(entry);
     existingKeys.add(importEntryKey(entry));
@@ -889,7 +901,7 @@ function readChromiumBookmarks(bookmarksPath: string): RawBookmarkRow[] {
   try {
     const parsed = JSON.parse(fs.readFileSync(bookmarksPath, 'utf-8'));
     const rows: RawBookmarkRow[] = [];
-    collectChromiumBookmarks(parsed?.roots, rows);
+    collectChromiumBookmarks(parsed?.roots, rows, []);
     return rows;
   } catch (e) {
     console.warn('Failed to read Chromium bookmarks:', e);
@@ -897,10 +909,24 @@ function readChromiumBookmarks(bookmarksPath: string): RawBookmarkRow[] {
   }
 }
 
-function collectChromiumBookmarks(node: any, rows: RawBookmarkRow[]): void {
+function collectChromiumBookmarks(node: any, rows: RawBookmarkRow[], folderPath: string[]): void {
   if (!node || typeof node !== 'object') return;
   if (Array.isArray(node)) {
-    for (const child of node) collectChromiumBookmarks(child, rows);
+    for (const child of node) collectChromiumBookmarks(child, rows, folderPath);
+    return;
+  }
+
+  if (isChromiumRootsNode(node)) {
+    for (const key of getOrderedChromiumRootKeys(node)) {
+      collectChromiumBookmarks(node[key], rows, []);
+    }
+    return;
+  }
+
+  if (node.type === 'folder') {
+    const folderName = cleanBookmarkFolderName(node.name);
+    const nextFolderPath = folderName ? [...folderPath, folderName] : folderPath;
+    if (node.children) collectChromiumBookmarks(node.children, rows, nextFolderPath);
     return;
   }
 
@@ -912,16 +938,42 @@ function collectChromiumBookmarks(node: any, rows: RawBookmarkRow[]): void {
       url,
       title,
       dateAdded: decodeTimestamp('chrome', Number(node.date_added || 0)) || Date.now(),
+      folder: folderPath.join(' - '),
+      order: rows.length,
     });
     return;
   }
 
-  if (node.children) collectChromiumBookmarks(node.children, rows);
+  if (node.children) collectChromiumBookmarks(node.children, rows, folderPath);
   for (const value of Object.values(node)) {
     if (value && typeof value === 'object' && value !== node.children) {
-      collectChromiumBookmarks(value, rows);
+      collectChromiumBookmarks(value, rows, folderPath);
     }
   }
+}
+
+function isChromiumRootsNode(node: any): boolean {
+  return Boolean(node && typeof node === 'object' && (node.bookmark_bar || node.other || node.synced));
+}
+
+function getOrderedChromiumRootKeys(node: Record<string, unknown>): string[] {
+  const preferred = ['bookmark_bar', 'other', 'synced'];
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const key of preferred) {
+    if (node[key]) {
+      ordered.push(key);
+      seen.add(key);
+    }
+  }
+  for (const key of Object.keys(node)) {
+    if (!seen.has(key)) ordered.push(key);
+  }
+  return ordered;
+}
+
+function cleanBookmarkFolderName(value: unknown): string {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 240);
 }
 
 function buildChromiumQuery(): string {

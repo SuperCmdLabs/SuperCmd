@@ -890,7 +890,8 @@
       "showAll": "Mostra tutti i risultati Browser",
       "showAllSubtitle": "{count} risultati Browser",
       "showAllPlaceholder": "Cerca risultati Browser...",
-      "openTabsPlaceholder": "Cerca schede aperte..."
+      "openTabsPlaceholder": "Cerca schede aperte...",
+      "bookmarksPlaceholder": "Cerca segnalibri..."
     }
   },
   "scriptCommand": {

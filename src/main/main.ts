@@ -4046,6 +4046,7 @@ function isWindowShownRoutedSystemCommand(commandId: string): boolean {
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
     commandId === 'system-search-open-tabs' ||
+    commandId === 'system-search-bookmarks' ||
     commandId === 'system-my-schedule' ||
     commandId === 'system-camera' ||
     commandId === 'system-open-onboarding'
@@ -10166,6 +10167,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
     commandId === 'system-search-open-tabs' ||
+    commandId === 'system-search-bookmarks' ||
     commandId === 'system-my-schedule' ||
     commandId === 'system-camera'
   ) {

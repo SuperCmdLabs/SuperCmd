@@ -32,6 +32,8 @@ export interface BrowserSearchResult {
   tabIndex?: number;
   windowLastFocusedAt?: number;
   active?: boolean;
+  bookmarkFolder?: string;
+  bookmarkOrder?: number;
   score: number;
   completion: string;
 }
@@ -43,7 +45,9 @@ interface UseBrowserSearchResult {
   getResults: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchResult[];
   getAllResults: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchResult[];
   getOpenTabResults: (input: string) => BrowserSearchResult[];
+  getBookmarkResults: (input: string) => BrowserSearchResult[];
   refreshOpenTabs: () => void;
+  refreshBrowserEntries: () => void;
   getMatchKind: (input: string, completion?: BrowserSearchAutocomplete | null) => 'open-tab' | 'history' | 'search';
   hasOpenTabMatch: (input: string) => boolean;
   executeBrowserSearch: (input: string, options?: { focusExistingTab?: boolean }) => Promise<boolean>;
@@ -116,10 +120,6 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   }, [refreshTabs]);
 
   useEffect(() => {
-    if (!enabled) {
-      setEntries([]);
-      return;
-    }
     refreshEntries();
     const unsubscribe = window.electron.onBrowserSearchHistoryChanged?.(() => refreshEntries());
     return () => {
@@ -127,7 +127,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
         unsubscribe?.();
       } catch {}
     };
-  }, [enabled, refreshEntries]);
+  }, [refreshEntries]);
 
   const getTopResult = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult | null => {
     if (!enabled) return null;
@@ -202,9 +202,13 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     return getOpenTabCandidates(rawInput, tabsRef.current, { preserveBrowserOrder: true });
   }, []);
 
+  const getBookmarkResults = useCallback((rawInput: string): BrowserSearchResult[] => {
+    return getBrowserEntryCandidates('bookmark', rawInput, entriesRef.current, { preserveBookmarkOrder: !rawInput.trim() });
+  }, []);
+
   return useMemo(
-    () => ({ enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, refreshOpenTabs: refreshTabs, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
-    [enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, refreshTabs, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
+    () => ({ enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, refreshOpenTabs: refreshTabs, refreshBrowserEntries: refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
+    [enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, refreshTabs, refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
   );
 }
 
@@ -394,48 +398,63 @@ function buildBrowserCandidates(
   entries: BrowserSearchEntry[],
   tabs: BrowserTabEntry[]
 ): Record<BrowserSearchResultKind, BrowserSearchResult[]> {
-  const lower = input.toLowerCase();
-  const stripped = lower.replace(/^https?:\/\//, '');
-
   const openTabs = getOpenTabCandidates(input, tabs);
-
-  const collectEntries = (kind: 'bookmark' | 'history'): BrowserSearchResult[] => {
-    const entryType = kind === 'bookmark' ? 'bookmark' : 'url';
-    const results: BrowserSearchResult[] = [];
-    for (const entry of entries) {
-      if (entry.type !== entryType) continue;
-      const urlScore = getUrlMatchScore(entry.url || entry.host, stripped, true);
-      const titleScore = getTitleMatchScore(entry.query, lower);
-      if (urlScore === null && titleScore === null) continue;
-      const matchScore = Math.max(urlScore?.score ?? 0, titleScore ?? 0);
-      const recencyScore = recencyBoost(entry.lastUsedAt);
-      const frequencyScore = Math.min(450, Math.log1p(Math.max(0, entry.useCount)) * 120);
-      const score =
-        matchScore +
-        recencyScore +
-        frequencyScore +
-        (kind === 'bookmark' ? 250 : 0);
-      results.push({
-        id: `browser-result-${kind}:${entry.id}`,
-        kind,
-        title: entry.query || entry.host || entry.url,
-        subtitle: buildBrowserSubtitle(entry.sourceProfileName || '', '', entry.host),
-        url: entry.url,
-        actionInput: entry.url,
-        focusAvailable: false,
-        faviconUrl: getFaviconUrlForUrl(entry.url),
-        score,
-        completion: urlScore?.completion || '',
-      });
-    }
-    return results.sort(compareBrowserResults);
-  };
 
   return {
     'open-tab': openTabs,
-    bookmark: collectEntries('bookmark'),
-    history: collectEntries('history'),
+    bookmark: getBrowserEntryCandidates('bookmark', input, entries),
+    history: getBrowserEntryCandidates('history', input, entries),
   };
+}
+
+function getBrowserEntryCandidates(
+  kind: 'bookmark' | 'history',
+  input: string,
+  entries: BrowserSearchEntry[],
+  options: { preserveBookmarkOrder?: boolean } = {}
+): BrowserSearchResult[] {
+  const trimmed = input.trim();
+  const lower = trimmed.toLowerCase();
+  const stripped = lower.replace(/^https?:\/\//, '');
+  const hasQuery = trimmed.length > 0;
+  const entryType = kind === 'bookmark' ? 'bookmark' : 'url';
+  const results: BrowserSearchResult[] = [];
+  for (const entry of entries) {
+    if (entry.type !== entryType) continue;
+    const urlScore = hasQuery ? getUrlMatchScore(entry.url || entry.host, stripped, true) : { score: 0, completion: '' };
+    const titleScore = hasQuery ? getTitleMatchScore(entry.query, lower) : 0;
+    if (urlScore === null && titleScore === null) continue;
+    const matchScore = Math.max(urlScore?.score ?? 0, titleScore ?? 0);
+    const recencyScore = recencyBoost(entry.lastUsedAt);
+    const frequencyScore = Math.min(450, Math.log1p(Math.max(0, entry.useCount)) * 120);
+    const score =
+      matchScore +
+      recencyScore +
+      frequencyScore +
+      (kind === 'bookmark' ? 250 : 0);
+    results.push({
+      id: `browser-result-${kind}:${entry.id}`,
+      kind,
+      title: entry.query || entry.host || entry.url,
+      subtitle: buildBrowserSubtitle(entry.sourceProfileName || '', '', entry.host),
+      url: entry.url,
+      actionInput: entry.url,
+      focusAvailable: false,
+      faviconUrl: getFaviconUrlForUrl(entry.url),
+      bookmarkFolder: entry.bookmarkFolder,
+      bookmarkOrder: entry.bookmarkOrder,
+      score,
+      completion: urlScore?.completion || '',
+    });
+  }
+  return results.sort(options.preserveBookmarkOrder ? compareBookmarksByBrowserOrder : compareBrowserResults);
+}
+
+function compareBookmarksByBrowserOrder(a: BrowserSearchResult, b: BrowserSearchResult): number {
+  const aOrder = Number.isFinite(Number(a.bookmarkOrder)) ? Number(a.bookmarkOrder) : Number.MAX_SAFE_INTEGER;
+  const bOrder = Number.isFinite(Number(b.bookmarkOrder)) ? Number(b.bookmarkOrder) : Number.MAX_SAFE_INTEGER;
+  if (aOrder !== bOrder) return aOrder - bOrder;
+  return a.title.localeCompare(b.title);
 }
 
 function getOpenTabCandidates(

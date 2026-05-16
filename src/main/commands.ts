@@ -1702,6 +1702,13 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-search-bookmarks',
+      title: 'Search Bookmarks',
+      subtitle: 'Browser',
+      keywords: ['browser', 'bookmarks', 'favorites', 'search', 'find', 'web'],
+      category: 'system',
+    },
+    {
       id: 'system-my-schedule',
       title: 'My Schedule',
       keywords: ['calendar', 'schedule', 'agenda', 'events', 'today', 'upcoming'],

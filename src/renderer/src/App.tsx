@@ -104,12 +104,13 @@ const BROWSER_SEARCH_PERFORM_SEARCH_ID = 'browser-search-action-perform-search';
 const BROWSER_SEARCH_RESULT_ID_PREFIX = 'browser-search-result:';
 const BROWSER_SEARCH_SHOW_ALL_RESULTS_ID = 'browser-search-action-show-all';
 const BROWSER_SEARCH_OPEN_TABS_COMMAND_ID = 'system-search-open-tabs';
+const BROWSER_SEARCH_BOOKMARKS_COMMAND_ID = 'system-search-bookmarks';
 const DEFAULT_BROWSER_SEARCH_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
   { kind: 'bookmark', limit: 2 },
   { kind: 'open-tab', limit: 2 },
   { kind: 'history', limit: 2 },
 ];
-type BrowserResultsViewScope = 'all' | 'open-tabs';
+type BrowserResultsViewScope = 'all' | 'open-tabs' | 'bookmarks';
 const MAX_LAUNCHER_FILE_RESULT_ICONS = MAX_LAUNCHER_FILE_RESULTS;
 const MIN_LAUNCHER_FILE_QUERY_LENGTH = 2;
 const MAX_INLINE_EXTENSION_ARGUMENTS = 3;
@@ -126,6 +127,7 @@ const DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS = new Set([
   'system-create-quicklink',
   'system-search-files',
   BROWSER_SEARCH_OPEN_TABS_COMMAND_ID,
+  BROWSER_SEARCH_BOOKMARKS_COMMAND_ID,
   'system-my-schedule',
   'system-camera',
 ]);
@@ -1006,6 +1008,16 @@ const App: React.FC = () => {
           setShowFileSearch(false);
           browserSearch.refreshOpenTabs();
           setBrowserResultsViewScope('open-tabs');
+          setBrowserResultsViewQuery('');
+          return;
+        }
+        if (routedSystemCommandId === BROWSER_SEARCH_BOOKMARKS_COMMAND_ID) {
+          setShowClipboardManager(false);
+          setShowSnippetManager(null);
+          setShowQuickLinkManager(null);
+          setShowFileSearch(false);
+          browserSearch.refreshBrowserEntries();
+          setBrowserResultsViewScope('bookmarks');
           setBrowserResultsViewQuery('');
           return;
         }
@@ -2092,6 +2104,9 @@ const App: React.FC = () => {
     if (browserResultsViewScope === 'open-tabs') {
       return browserSearch.getOpenTabResults(browserResultsViewQuery);
     }
+    if (browserResultsViewScope === 'bookmarks') {
+      return browserSearch.getBookmarkResults(browserResultsViewQuery);
+    }
     return browserSearch.getAllResults(browserResultsViewQuery, browserSearchResultGroups);
   }, [browserSearch, browserSearchResultGroups, browserResultsViewQuery, browserResultsViewScope]);
 
@@ -2119,6 +2134,31 @@ const App: React.FC = () => {
             key: `open-tab-window-${windowKey}`,
             kind: 'open-tab',
             title: `${result.browserName || t('launcher.badges.openTab')}${profileLabel} - Window ${sectionIndex + 1}`,
+            items: [],
+          });
+        }
+        sections[sectionIndex].items.push(result);
+      }
+      return sections;
+    }
+    if (browserResultsViewScope === 'bookmarks') {
+      const sections: Array<{
+        key: string;
+        kind: 'bookmark';
+        title: string;
+        items: BrowserSearchResult[];
+      }> = [];
+      const sectionByFolder = new Map<string, number>();
+      for (const result of browserResultsViewResults) {
+        const folder = result.bookmarkFolder || t('launcher.badges.bookmark');
+        let sectionIndex = sectionByFolder.get(folder);
+        if (sectionIndex === undefined) {
+          sectionIndex = sections.length;
+          sectionByFolder.set(folder, sectionIndex);
+          sections.push({
+            key: `bookmark-folder-${folder}`,
+            kind: 'bookmark',
+            title: folder,
             items: [],
           });
         }
@@ -2949,6 +2989,13 @@ const App: React.FC = () => {
       whisperSessionRef.current = false;
       browserSearch.refreshOpenTabs();
       setBrowserResultsViewScope('open-tabs');
+      setBrowserResultsViewQuery('');
+      return true;
+    }
+    if (commandId === BROWSER_SEARCH_BOOKMARKS_COMMAND_ID) {
+      whisperSessionRef.current = false;
+      browserSearch.refreshBrowserEntries();
+      setBrowserResultsViewScope('bookmarks');
       setBrowserResultsViewQuery('');
       return true;
     }
@@ -4396,6 +4443,8 @@ const App: React.FC = () => {
     const selectedBrowserResult = browserResultsViewResults[browserResultsViewSelectedIndex] || null;
     const browserResultsPlaceholder = browserResultsViewScope === 'open-tabs'
       ? t('launcher.browserSearch.openTabsPlaceholder')
+      : browserResultsViewScope === 'bookmarks'
+        ? t('launcher.browserSearch.bookmarksPlaceholder')
       : t('launcher.browserSearch.showAllPlaceholder');
     const closeBrowserResults = () => {
       setBrowserResultsViewQuery(null);
