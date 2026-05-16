@@ -132,6 +132,14 @@ const ALLOWED_SOURCES: Set<string> = new Set([
   'firefox',
 ]);
 
+const CHROMIUM_PROFILE_OPEN_APPS: Partial<Record<BrowserSearchSource, string>> = {
+  helium: 'Helium',
+  chrome: 'Google Chrome',
+  brave: 'Brave Browser',
+  edge: 'Microsoft Edge',
+  vivaldi: 'Vivaldi',
+};
+
 function makeId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -171,8 +179,8 @@ export function resolveInput(rawInput: string): ResolvedInput | null {
     return { type: 'url', url, host: extractHost(url) };
   }
 
-  // Default search engine intentionally hardcoded — opens in user's default
-  // browser via shell.openExternal so they still get their browser of choice.
+  // Default search engine intentionally hardcoded. Plain typed searches still
+  // open in the user's default browser via shell.openExternal.
   const url = `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
   return { type: 'search', url, host: '' };
 }
@@ -195,6 +203,18 @@ export async function openInDefaultBrowser(rawInput: string): Promise<{
   ok: boolean;
   resolved: ResolvedInput | null;
 }> {
+  const profileEntry = findProfileEntryForInput(rawInput);
+  if (profileEntry) {
+    void openEntryUrl(profileEntry).catch((e) => {
+      console.error('Failed to open browser-search entry:', e);
+    });
+    recordEntryUse(profileEntry);
+    return {
+      ok: true,
+      resolved: { type: profileEntry.type, url: profileEntry.url, host: profileEntry.host },
+    };
+  }
+
   const resolved = resolveInput(rawInput);
   if (!resolved) return { ok: false, resolved: null };
   // Fire-and-forget: don't await LaunchServices. The renderer's IPC await
@@ -204,6 +224,88 @@ export async function openInDefaultBrowser(rawInput: string): Promise<{
   });
   recordEntry(rawInput.trim(), resolved);
   return { ok: true, resolved };
+}
+
+function findProfileEntryForInput(rawInput: string): BrowserSearchEntry | null {
+  const trimmed = String(rawInput || '').trim();
+  if (!trimmed) return null;
+
+  const resolved = resolveInput(trimmed);
+  if (!resolved || resolved.type !== 'url') return null;
+
+  const entries = load().filter((entry) =>
+    entry.type === 'url' &&
+    entry.sourceProfileId &&
+    Boolean(CHROMIUM_PROFILE_OPEN_APPS[entry.source])
+  );
+  if (entries.length === 0) return null;
+
+  const normalizedTarget = normalizeUrlForMatch(resolved.url);
+  const exactMatches = entries.filter((entry) => normalizeUrlForMatch(entry.url) === normalizedTarget);
+  if (exactMatches.length > 0) return bestByFrecency(exactMatches);
+
+  const host = stripWww(resolved.host);
+  const inputWithoutProtocol = trimmed.replace(/^https?:\/\//i, '');
+  const isHostOnlyInput = !inputWithoutProtocol.includes('/') && !inputWithoutProtocol.includes('?') && !inputWithoutProtocol.includes('#');
+  if (!host || !isHostOnlyInput) return null;
+
+  const hostMatches = entries.filter((entry) => stripWww(entry.host) === host);
+  return hostMatches.length > 0 ? bestByFrecency(hostMatches) : null;
+}
+
+function bestByFrecency(entries: BrowserSearchEntry[]): BrowserSearchEntry {
+  return entries.slice().sort((a, b) => frecency(b) - frecency(a))[0];
+}
+
+function normalizeUrlForMatch(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    if (parsed.pathname === '/') parsed.pathname = '';
+    return parsed.toString().replace(/\/$/, '').toLowerCase();
+  } catch {
+    return String(url || '').trim().replace(/\/$/, '').toLowerCase();
+  }
+}
+
+function stripWww(host: string): string {
+  return String(host || '').toLowerCase().replace(/^www\./, '');
+}
+
+async function openEntryUrl(entry: BrowserSearchEntry): Promise<void> {
+  const appName = entry.sourceProfileId ? CHROMIUM_PROFILE_OPEN_APPS[entry.source] : undefined;
+  if (!appName) {
+    await shell.openExternal(entry.url);
+    return;
+  }
+
+  try {
+    await execFileAsync('/usr/bin/open', [
+      '-a',
+      appName,
+      '--args',
+      `--profile-directory=${entry.sourceProfileId}`,
+      entry.url,
+    ], { timeout: 5000 });
+  } catch (e) {
+    console.warn(`Failed to open ${entry.url} in ${appName} profile ${entry.sourceProfileId}; falling back to default browser.`, e);
+    await shell.openExternal(entry.url);
+  }
+}
+
+function recordEntryUse(entry: BrowserSearchEntry): void {
+  const entries = load();
+  const existing = entries.find((candidate) => candidate.id === entry.id) ||
+    entries.find((candidate) => importEntryKey(candidate) === importEntryKey(entry));
+  const now = Date.now();
+  if (existing) {
+    existing.useCount += 1;
+    existing.lastUsedAt = now;
+  }
+  pruneByRetentionInPlace(entries);
+  trimToCapInPlace(entries);
+  cache = entries;
+  save();
 }
 
 function recordEntry(query: string, resolved: ResolvedInput, source: BrowserSearchSource = 'user'): void {
