@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { X, Sparkles, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, XCircle, Timer } from 'lucide-react';
+import { X, Sparkles, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, XCircle, Timer } from 'lucide-react';
 import supercmdLogo from '../../../supercmd.png';
 import type {
   CommandInfo,
@@ -82,6 +82,11 @@ import AiChatView from './views/AiChatView';
 import CursorPromptView from './views/CursorPromptView';
 import AppUninstallView from './views/AppUninstallView';
 import BrowserResultsView from './views/BrowserResultsView';
+import WebSearchView, {
+  type WebSearchBangPromptState,
+  type WebSearchCustomBangPromptState,
+  type WebSearchViewSection,
+} from './views/WebSearchView';
 import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowBadge } from './components/InlineArgumentField';
 import LauncherSurface from './components/LauncherSurface';
 import HiddenExtensionRunners from './components/HiddenExtensionRunners';
@@ -312,17 +317,8 @@ const App: React.FC = () => {
     result: BrowserSearchResult;
     value: string;
   } | null>(null);
-  const [webSearchBangPrompt, setWebSearchBangPrompt] = useState<{
-    result: WebSearchResult;
-    value: string;
-  } | null>(null);
-  const [webSearchCustomBangPrompt, setWebSearchCustomBangPrompt] = useState<{
-    key: string;
-    aliases: string;
-    name: string;
-    host: string;
-    template: string;
-  } | null>(null);
+  const [webSearchBangPrompt, setWebSearchBangPrompt] = useState<WebSearchBangPromptState | null>(null);
+  const [webSearchCustomBangPrompt, setWebSearchCustomBangPrompt] = useState<WebSearchCustomBangPromptState | null>(null);
   const [webSearchVisibleResultCount, setWebSearchVisibleResultCount] = useState(WEB_SEARCH_INITIAL_VISIBLE_RESULTS);
   const {
     menuBarExtensions,
@@ -3084,7 +3080,7 @@ const App: React.FC = () => {
   );
 
   const visibleWebSearchSections = useMemo(() => {
-    const sections: Array<{ key: WebSearchResult['section']; titleKey: string; items: WebSearchResult[]; startIndex: number }> = [];
+    const sections: WebSearchViewSection[] = [];
     const indexByKey = new Map<WebSearchResult['section'], number>();
     visibleWebSearchResults.forEach((result, flatIndex) => {
       const sectionIndex = indexByKey.get(result.section);
@@ -5095,401 +5091,56 @@ const App: React.FC = () => {
 
   // ─── Web Search mode ─────────────────────────────────────────────
   if (webSearchQuery !== null) {
-    const parsed = parseSearchBangFromList(webSearchQuery, effectiveSearchBangs);
     const isWebSearchBangManager = !String(webSearchQuery || '').trim() ||
       webSearchBangState.mode === 'selecting' ||
       webSearchShowHiddenBangs;
     const activeWebSearchBang = webSearchBangState.mode === 'active' ? webSearchBangState.bang : null;
+
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <div className="h-full flex flex-col">
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--ui-divider)]">
-              <button
-                type="button"
-                onClick={closeWebSearch}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/[0.06]"
-                aria-label={t('common.back')}
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-	                <input
-                ref={webSearchInputRef}
-                value={webSearchQuery}
-                onChange={(event) => setWebSearchQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (webSearchBangPrompt || webSearchCustomBangPrompt) return;
-                  if (event.key === 'Escape' || (event.key === 'Backspace' && !webSearchQuery)) {
-                    event.preventDefault();
-                    closeWebSearch();
-                    return;
-                  }
-	                  if (
-	                    event.metaKey &&
-	                    !event.ctrlKey &&
-	                    !event.altKey &&
-	                    !event.shiftKey &&
-			                    (event.key === 'n' || event.key === 'N')
-	                  ) {
-	                    if (!isWebSearchBangManager) return;
-	                    event.preventDefault();
-	                    if (selectedWebSearchResult?.kind === 'bang') {
-	                      openWebSearchBangPrompt(selectedWebSearchResult);
-	                    } else {
-	                      openWebSearchCustomBangPrompt();
-	                    }
-	                    return;
-	                  }
-	                  if (
-	                    event.metaKey &&
-	                    !event.ctrlKey &&
-	                    !event.altKey &&
-	                    !event.shiftKey &&
-	                    (event.key === 'd' || event.key === 'D') &&
-	                    selectedWebSearchResult?.kind === 'bang'
-	                  ) {
-	                    if (!isWebSearchBangManager) return;
-	                    event.preventDefault();
-	                    void toggleWebSearchBangDisabled(selectedWebSearchResult);
-	                    return;
-	                  }
-                  if (event.key === 'ArrowDown') {
-                    event.preventDefault();
-                    setWebSearchSelectedIndex((index) => Math.min(index + 1, Math.max(0, webSearchResults.length - 1)));
-                    return;
-                  }
-                  if (event.key === 'ArrowUp') {
-                    event.preventDefault();
-                    setWebSearchSelectedIndex((index) => Math.max(index - 1, 0));
-                    return;
-                  }
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    if (selectedWebSearchResult) {
-                      void activateWebSearchResult(selectedWebSearchResult);
-                    } else if (webSearchQuery.trim()) {
-                      void submitBrowserSearch(webSearchQuery);
-                    }
-                  }
-                }}
-                placeholder={t('launcher.browserSearch.webSearchPlaceholder')}
-                className="flex-1 bg-transparent outline-none text-[0.95rem] text-[var(--text-primary)] placeholder:text-[var(--text-subtle)]"
-              />
-	              {activeWebSearchBang ? (
-	                <div className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-2 text-xs text-[var(--text-secondary)]">
-	                  <span className="w-4 h-4 flex items-center justify-center overflow-hidden">
-	                    {renderCommandIcon({
-	                      id: `web-search-bang-active:${activeWebSearchBang.key}`,
-	                      title: activeWebSearchBang.name,
-	                      subtitle: activeWebSearchBang.host,
-	                      category: 'system',
-	                      browserResultKind: 'search',
-	                      browserFaviconUrl: getFaviconUrlForHost(activeWebSearchBang.host),
-	                    })}
-	                  </span>
-	                  <span>!{activeWebSearchBang.key}</span>
-	                </div>
-		              ) : null}
-              {isWebSearchBangManager ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={toggleWebSearchShowHidden}
-                    className={`inline-flex h-7 items-center rounded-md border px-2 text-xs ${
-                      webSearchShowHiddenBangs
-                        ? 'border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] text-[var(--text-secondary)]'
-                        : 'border-transparent text-[var(--text-muted)] hover:bg-white/[0.06]'
-                    }`}
-                  >
-                    {webSearchShowHiddenBangs ? t('launcher.browserSearch.hideHidden') : t('launcher.browserSearch.showHidden')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openWebSearchCustomBangPrompt}
-                    className="inline-flex h-7 items-center gap-1 rounded-md border border-transparent px-2 text-xs text-[var(--text-muted)] hover:bg-white/[0.06]"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    {t('launcher.browserSearch.newBang')}
-                  </button>
-                </>
-              ) : null}
-            </div>
-
-            <div
-              className="flex-1 overflow-y-auto custom-scrollbar p-1.5"
-              onScroll={(event) => {
-                const target = event.currentTarget;
-                if (target.scrollTop + target.clientHeight < target.scrollHeight - 96) return;
-                setWebSearchVisibleResultCount((count) =>
-                  Math.min(webSearchResults.length, count + WEB_SEARCH_VISIBLE_RESULTS_INCREMENT)
-                );
-              }}
-            >
-              {webSearchResults.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
-                  {t('launcher.status.noMatchingResults')}
-                </div>
-              ) : (
-                <div className="space-y-0.5">
-                  {visibleWebSearchSections.map((section) => (
-                    <div key={section.key}>
-                      <div className="px-3 pt-2 pb-1 text-[0.6875rem] uppercase tracking-wider text-[var(--text-subtle)] font-medium">
-                        {t(section.titleKey as any)}
-                      </div>
-                      <div className="space-y-0.5">
-                        {section.items.map((result, sectionIndex) => {
-                          const flatIndex = section.startIndex + sectionIndex;
-                          const selected = flatIndex === webSearchSelectedIndex;
-                          return (
-                            <div
-                              key={result.id}
-                              className={`command-item px-3 py-2 rounded-lg cursor-pointer ${selected ? 'selected' : ''}`}
-                              onMouseEnter={() => setWebSearchSelectedIndex(flatIndex)}
-                              onClick={() => void activateWebSearchResult(result)}
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                  {renderCommandIcon({
-                                    id: result.id,
-                                    title: result.title,
-                                    subtitle: result.subtitle,
-                                    category: 'system',
-                                    browserResultKind: 'search',
-                                    browserFaviconUrl: result.faviconUrl,
-                                  })}
-                                </div>
-                                <div className="min-w-0 flex-1 flex items-center gap-2">
-                                  <div className="text-[var(--text-primary)] text-[0.8125rem] font-medium truncate tracking-[0.004em]">
-                                    {result.title}
-                                  </div>
-                                  <div className="text-[var(--text-muted)] text-[0.6875rem] font-medium truncate">
-                                    {result.subtitle}
-                                  </div>
-	                                  {result.isCustom ? (
-                                    <div className="inline-flex h-5 flex-shrink-0 items-center rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[0.625rem] leading-none text-[var(--text-subtle)]">
-                                      {t('common.custom')}
-                                    </div>
-	                                  ) : null}
-	                                  {result.isDisabled ? (
-	                                    <div className="inline-flex h-5 flex-shrink-0 items-center rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[0.625rem] leading-none text-[var(--text-subtle)]">
-	                                      {t('common.disabled')}
-	                                    </div>
-	                                  ) : null}
-	                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="sc-glass-footer sc-launcher-footer flex items-center px-4 py-2.5 border-t border-[var(--ui-divider)]">
-              <div className="sc-footer-primary flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate text-[var(--text-subtle)]">
-                {selectedWebSearchResult ? (
-                  <>
-                    <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      {renderCommandIcon({
-                        id: selectedWebSearchResult.id,
-                        title: selectedWebSearchResult.title,
-                        subtitle: selectedWebSearchResult.subtitle,
-                        category: 'system',
-                        browserResultKind: 'search',
-                        browserFaviconUrl: selectedWebSearchResult.faviconUrl,
-                      })}
-                    </span>
-                    <span className="truncate">{selectedWebSearchResult.title}</span>
-                  </>
-                ) : (
-                  t('launcher.status.results', { count: webSearchResults.length })
-                )}
-              </div>
-              {selectedWebSearchResult ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-[var(--text-primary)]">
-                    {selectedWebSearchResult.kind === 'bang' && !parseSearchBangFromList(selectedWebSearchResult.query, effectiveSearchBangs).query.trim()
-                      ? t('launcher.browserSearch.useBang')
-                      : t('launcher.actions.open')}
-                  </span>
-                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">↩</kbd>
-	                  {selectedWebSearchResult.kind === 'bang' ? (
-	                    <>
-                      <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">
-                        {t('common.edit')}
-                      </span>
-                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
-	                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">N</kbd>
-	                      <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">
-	                        {selectedWebSearchResult.isDisabled ? t('common.enable') : t('common.disable')}
-	                      </span>
-	                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
-	                      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">D</kbd>
-	                    </>
-	                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </LauncherSurface>
-        {webSearchBangPrompt ? (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center px-5"
-            style={{ background: 'var(--bg-scrim)' }}
-            onMouseDown={() => void saveWebSearchBangAliases()}
-          >
-            <div
-              className="w-[420px] max-w-[92vw] rounded-xl overflow-hidden p-3.5"
-              onMouseDown={(event) => event.stopPropagation()}
-              style={
-                isNativeLiquidGlass
-                  ? {
-                      background: 'rgba(var(--surface-base-rgb), 0.72)',
-                      backdropFilter: 'blur(44px) saturate(155%)',
-                      WebkitBackdropFilter: 'blur(44px) saturate(155%)',
-                      border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
-                      boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
-                    }
-                  : isGlassyTheme
-                  ? {
-                      background: 'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
-                      backdropFilter: 'blur(96px) saturate(190%)',
-                      WebkitBackdropFilter: 'blur(96px) saturate(190%)',
-                      border: '1px solid var(--ui-panel-border)',
-                    }
-                  : {
-                      background: 'var(--bg-overlay-strong)',
-                      backdropFilter: 'blur(28px)',
-                      WebkitBackdropFilter: 'blur(28px)',
-                      border: '1px solid var(--snippet-divider)',
-                    }
-              }
-            >
-              <div className="space-y-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="h-8 w-8 flex items-center justify-center flex-shrink-0 overflow-hidden rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)]">
-                    <span className="h-5 w-5 flex items-center justify-center overflow-hidden">
-                      {renderCommandIcon({
-                        id: webSearchBangPrompt.result.id,
-                        title: webSearchBangPrompt.result.title,
-                        subtitle: webSearchBangPrompt.result.subtitle,
-                        category: 'system',
-                        browserResultKind: 'search',
-                        browserFaviconUrl: webSearchBangPrompt.result.faviconUrl,
-                      })}
-                    </span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
-                      {webSearchBangPrompt.result.title}
-                    </div>
-                    <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
-                      {webSearchBangPrompt.result.subtitle}
-                    </div>
-                  </div>
-                </div>
-                <input
-                  ref={webSearchBangInputRef}
-                  type="text"
-                  value={webSearchBangPrompt.value}
-                  onChange={(event) =>
-                    setWebSearchBangPrompt((prev) =>
-                      prev ? { ...prev, value: event.target.value.toLowerCase().replace(/[^a-z0-9.+_!,\-\s]/g, '') } : prev
-                    )
-                  }
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-	                  className="w-full bg-[var(--ui-segment-bg)] border border-[var(--snippet-divider)] rounded-lg px-3 py-2 text-[13px] text-[var(--text-secondary)] outline-none focus:border-[var(--snippet-divider-strong)]"
-	                />
-	                <p className="text-[11px] leading-snug text-[var(--text-muted)]">
-	                  {t('launcher.browserSearch.aliasHelp')}
-	                </p>
-	              </div>
-	            </div>
-	          </div>
-	        ) : null}
-	        {webSearchCustomBangPrompt ? (
-	          <div
-	            className="fixed inset-0 z-50 flex items-center justify-center px-5"
-	            style={{ background: 'var(--bg-scrim)' }}
-	            onMouseDown={closeWebSearchCustomBangPrompt}
-	          >
-	            <div
-	              className="w-[460px] max-w-[92vw] rounded-xl overflow-hidden p-3.5"
-	              onMouseDown={(event) => event.stopPropagation()}
-	              style={
-	                isNativeLiquidGlass
-	                  ? {
-	                      background: 'rgba(var(--surface-base-rgb), 0.72)',
-	                      backdropFilter: 'blur(44px) saturate(155%)',
-	                      WebkitBackdropFilter: 'blur(44px) saturate(155%)',
-	                      border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
-	                      boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
-	                    }
-	                  : isGlassyTheme
-	                  ? {
-	                      background: 'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
-	                      backdropFilter: 'blur(96px) saturate(190%)',
-	                      WebkitBackdropFilter: 'blur(96px) saturate(190%)',
-	                      border: '1px solid var(--ui-panel-border)',
-	                    }
-	                  : {
-	                      background: 'var(--bg-overlay-strong)',
-	                      backdropFilter: 'blur(28px)',
-	                      WebkitBackdropFilter: 'blur(28px)',
-	                      border: '1px solid var(--snippet-divider)',
-	                    }
-	              }
-	            >
-	              <div className="space-y-3">
-	                <div>
-	                  <div className="text-[13px] font-semibold text-[var(--text-primary)]">{t('launcher.browserSearch.newBang')}</div>
-	                  <div className="mt-0.5 text-[11px] text-[var(--text-muted)]">{t('launcher.browserSearch.customBangHelp')}</div>
-	                </div>
-	                {[
-	                  ['key', t('launcher.browserSearch.customBangFields.key')],
-	                  ['aliases', t('launcher.browserSearch.customBangFields.aliases')],
-	                  ['name', t('launcher.browserSearch.customBangFields.name')],
-	                  ['host', t('launcher.browserSearch.customBangFields.host')],
-	                  ['template', t('launcher.browserSearch.customBangFields.template')],
-	                ].map(([field, label]) => (
-	                  <label key={field} className="block">
-	                    <div className="mb-1 text-[11px] text-[var(--text-muted)]">{label}</div>
-	                    <input
-	                      type="text"
-	                      value={(webSearchCustomBangPrompt as any)[field]}
-	                      onChange={(event) => setWebSearchCustomBangPrompt((prev) => prev ? { ...prev, [field]: event.target.value } : prev)}
-	                      autoCapitalize="none"
-	                      autoCorrect="off"
-	                      spellCheck={false}
-	                      className="w-full bg-[var(--ui-segment-bg)] border border-[var(--snippet-divider)] rounded-lg px-3 py-2 text-[13px] text-[var(--text-secondary)] outline-none focus:border-[var(--snippet-divider-strong)]"
-	                    />
-	                  </label>
-	                ))}
-	                <div className="flex items-center justify-end gap-2 pt-1">
-	                  <button type="button" className="sc-button !py-1.5 !px-3 !text-[12px]" onClick={closeWebSearchCustomBangPrompt}>
-	                    {t('common.cancel')}
-	                  </button>
-	                  <button type="button" className="sc-button !py-1.5 !px-3 !text-[12px]" onClick={() => void saveWebSearchCustomBang()}>
-	                    {t('common.save')}
-	                  </button>
-	                </div>
-	              </div>
-	            </div>
-	          </div>
-	        ) : null}
-	      </>
-	    );
-	  }
+      <WebSearchView
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+        query={webSearchQuery}
+        setQuery={setWebSearchQuery}
+        inputRef={webSearchInputRef}
+        onClose={closeWebSearch}
+        results={webSearchResults}
+        visibleSections={visibleWebSearchSections}
+        selectedIndex={webSearchSelectedIndex}
+        setSelectedIndex={setWebSearchSelectedIndex}
+        selectedResult={selectedWebSearchResult}
+        activateResult={activateWebSearchResult}
+        submitSearch={submitBrowserSearch}
+        loadMoreResults={() =>
+          setWebSearchVisibleResultCount((count) =>
+            Math.min(webSearchResults.length, count + WEB_SEARCH_VISIBLE_RESULTS_INCREMENT)
+          )
+        }
+        effectiveSearchBangs={effectiveSearchBangs}
+        activeBang={activeWebSearchBang}
+        isBangManager={isWebSearchBangManager}
+        showHiddenBangs={webSearchShowHiddenBangs}
+        toggleShowHidden={toggleWebSearchShowHidden}
+        bangPrompt={webSearchBangPrompt}
+        bangInputRef={webSearchBangInputRef}
+        setBangPrompt={setWebSearchBangPrompt}
+        openBangPrompt={openWebSearchBangPrompt}
+        saveBangAliases={saveWebSearchBangAliases}
+        customBangPrompt={webSearchCustomBangPrompt}
+        setCustomBangPrompt={setWebSearchCustomBangPrompt}
+        openCustomBangPrompt={openWebSearchCustomBangPrompt}
+        closeCustomBangPrompt={closeWebSearchCustomBangPrompt}
+        saveCustomBang={saveWebSearchCustomBang}
+        toggleBangDisabled={toggleWebSearchBangDisabled}
+        isNativeLiquidGlass={isNativeLiquidGlass}
+        isGlassyTheme={isGlassyTheme}
+        t={t}
+      />
+    );
+  }
 
   // ─── Browser Results mode ────────────────────────────────────────
   if (browserResultsViewQuery !== null) {
