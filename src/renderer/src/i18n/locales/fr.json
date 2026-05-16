@@ -684,9 +684,9 @@
         "button": "Importer"
       },
       "browserSearch": {
-        "title": "Recherche dans le navigateur",
-        "description": "Appuyez sur Entrée pour ouvrir votre saisie dans le navigateur par défaut. La saisie semi-automatique suggère des sites de votre historique.",
-        "enableLabel": "Activer la recherche dans le navigateur",
+        "title": "Profils de navigateur",
+        "description": "Connectez des profils de navigateur pour que SuperCmd utilise leur historique local et le garde à jour.",
+        "enableLabel": "Utiliser les profils de navigateur dans SuperCmd",
         "retention": {
           "label": "Durée de conservation de l'historique",
           "option": {
@@ -698,16 +698,24 @@
             "forever": "Toujours"
           }
         },
-        "clearButton": "Effacer l'historique de recherche du navigateur",
-        "importLabel": "Importer l'historique d'un navigateur",
+        "clearButton": "Effacer l'historique des profils de navigateur",
+        "importLabel": "Profils de navigateur détectés",
         "import": {
-          "action": "Importer",
-          "running": "Importation…",
-          "noneFound": "Aucun navigateur compatible détecté"
+          "action": "Ajouter un profil",
+          "add": "Ajouter le profil",
+          "refresh": "Actualiser",
+          "remove": "Retirer",
+          "running": "Actualisation…",
+          "availableHeading": "Profils disponibles",
+          "addedHeading": "Profils ajoutés",
+          "noneFound": "Aucun profil de navigateur compatible détecté",
+          "noneAdded": "Aucun profil de navigateur ajouté",
+          "profileSupportNote": "La prise en charge des profils inclut actuellement uniquement les navigateurs Chromium. Safari et Firefox seront ajoutés plus tard.",
+          "enabledProfiles": "{count} profil(s) activé(s) pour l'historique navigateur de SuperCmd."
         },
         "status": {
-          "cleared": "Historique de recherche du navigateur effacé.",
-          "imported": "{count} entrées importées sur {total}.",
+          "cleared": "Historique des profils de navigateur effacé.",
+          "imported": "{count} entrées mises à jour sur {total}.",
           "failed": "Échec de l’action."
         }
       }

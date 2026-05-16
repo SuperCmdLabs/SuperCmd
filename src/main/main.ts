@@ -122,7 +122,10 @@ import {
   pruneByRetentionNow as bsPruneByRetention,
   getAutocomplete as bsGetAutocomplete,
   listImportableBrowsers as bsListImportableBrowsers,
+  listImportableBrowserProfiles as bsListImportableBrowserProfiles,
   importFromBrowser as bsImportFromBrowser,
+  importFromBrowserProfile as bsImportFromBrowserProfile,
+  refreshEnabledBrowserProfiles as bsRefreshEnabledBrowserProfiles,
   fetchSearchSuggestion as bsFetchSearchSuggestion,
   type BrowserSearchSource,
 } from './browser-search-history';
@@ -8453,6 +8456,7 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     } catch {}
   }
   mainWindow.show();
+  void refreshBrowserProfiles('launcher-open', 30_000);
   if (shouldActivateLauncherWindow) {
     mainWindow.focus();
   } else {
@@ -11851,6 +11855,27 @@ function broadcastBrowserSearchHistoryChanged(): void {
     try {
       window.webContents.send('browser-search-history-changed');
     } catch {}
+  }
+}
+
+let browserProfileRefreshInFlight = false;
+let lastBrowserProfileRefreshAt = 0;
+
+async function refreshBrowserProfiles(reason: string, minIntervalMs = 0): Promise<void> {
+  const now = Date.now();
+  if (browserProfileRefreshInFlight) return;
+  if (minIntervalMs > 0 && now - lastBrowserProfileRefreshAt < minIntervalMs) return;
+  browserProfileRefreshInFlight = true;
+  lastBrowserProfileRefreshAt = now;
+  try {
+    const result = await bsRefreshEnabledBrowserProfiles();
+    if (result.imported > 0 || result.skipped > 0) {
+      broadcastBrowserSearchHistoryChanged();
+    }
+  } catch (e) {
+    console.warn(`Browser profile refresh failed (${reason}):`, e);
+  } finally {
+    browserProfileRefreshInFlight = false;
   }
 }
 
@@ -15735,8 +15760,27 @@ if let tiff = image?.tiffRepresentation {
     }));
   });
 
+  ipcMain.handle('browser-search:list-profiles', () => {
+    return bsListImportableBrowserProfiles().map((profile) => ({
+      id: profile.id,
+      browserId: profile.browserId,
+      browserName: profile.browserName,
+      profileId: profile.profileId,
+      profileName: profile.profileName,
+      available: profile.available,
+    }));
+  });
+
   ipcMain.handle('browser-search:import', async (_event: any, browserId: BrowserSearchSource) => {
     const result = await bsImportFromBrowser(browserId);
+    try {
+      broadcastBrowserSearchHistoryChanged();
+    } catch {}
+    return result;
+  });
+
+  ipcMain.handle('browser-search:import-profile', async (_event: any, profileSourceId: string) => {
+    const result = await bsImportFromBrowserProfile(String(profileSourceId || ''));
     try {
       broadcastBrowserSearchHistoryChanged();
     } catch {}
@@ -15747,6 +15791,9 @@ if let tiff = image?.tiffRepresentation {
   try {
     bsPruneByRetention();
   } catch {}
+
+  setTimeout(() => void refreshBrowserProfiles('startup'), 10_000);
+  setInterval(() => void refreshBrowserProfiles('periodic', 60_000), 5 * 60 * 1000);
 
   ipcMain.handle('get-selected-text', async () => {
     const fresh = String(await getSelectedTextForSpeak() || '');

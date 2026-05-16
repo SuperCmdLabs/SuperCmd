@@ -46,6 +46,8 @@ export interface BrowserSearchEntry {
   lastUsedAt: number;
   useCount: number;
   source: BrowserSearchSource;
+  sourceProfileId?: string;
+  sourceProfileName?: string;
 }
 
 export interface AutocompleteSuggestion {
@@ -55,9 +57,6 @@ export interface AutocompleteSuggestion {
   suffix: string;
   entry: BrowserSearchEntry;
 }
-
-const MAX_ENTRIES = 5_000;
-const MAX_IMPORT_PER_BROWSER = 2_000;
 
 let cache: BrowserSearchEntry[] | null = null;
 
@@ -112,8 +111,14 @@ function sanitizeEntry(raw: any): BrowserSearchEntry | null {
   const lastUsedAt = Number.isFinite(Number(raw.lastUsedAt)) ? Number(raw.lastUsedAt) : 0;
   const useCount = Number.isFinite(Number(raw.useCount)) ? Math.max(1, Math.floor(Number(raw.useCount))) : 1;
   const source: BrowserSearchSource = ALLOWED_SOURCES.has(raw.source) ? raw.source : 'user';
+  const sourceProfileId = typeof raw.sourceProfileId === 'string' && raw.sourceProfileId.trim()
+    ? raw.sourceProfileId.trim()
+    : undefined;
+  const sourceProfileName = typeof raw.sourceProfileName === 'string' && raw.sourceProfileName.trim()
+    ? raw.sourceProfileName.trim()
+    : undefined;
   const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : makeId();
-  return { id, type, query, url, host, lastUsedAt, useCount, source };
+  return { id, type, query, url, host, lastUsedAt, useCount, source, sourceProfileId, sourceProfileName };
 }
 
 const ALLOWED_SOURCES: Set<string> = new Set([
@@ -233,6 +238,15 @@ function entryKey(type: BrowserSearchEntryType, value: string): string {
   return `${type}:${value.toLowerCase()}`;
 }
 
+function importEntryKey(entry: Pick<BrowserSearchEntry, 'type' | 'url' | 'query' | 'source'> & {
+  sourceProfileId?: string;
+}): string {
+  const value = entry.type === 'url' ? entry.url : entry.query;
+  const source = entry.source || 'user';
+  const profile = entry.sourceProfileId || '';
+  return `${entry.type}:${source}:${profile}:${value.toLowerCase()}`;
+}
+
 export function clearHistory(): void {
   cache = [];
   save();
@@ -255,10 +269,8 @@ function pruneByRetentionInPlace(entries: BrowserSearchEntry[]): void {
 }
 
 function trimToCapInPlace(entries: BrowserSearchEntry[]): void {
-  if (entries.length <= MAX_ENTRIES) return;
-  // Keep the most recent / most-used. Sort by frecency desc and slice.
-  entries.sort((a, b) => frecency(b) - frecency(a));
-  entries.length = MAX_ENTRIES;
+  // Browser imports intentionally keep every retained row. Retention settings
+  // still prune old entries, but there is no fixed count cap.
 }
 
 function frecency(entry: BrowserSearchEntry): number {
@@ -353,6 +365,23 @@ export interface ImportableBrowser {
   available: boolean;
 }
 
+export interface ImportableBrowserProfile {
+  id: string;
+  browserId: BrowserSearchSource;
+  browserName: string;
+  profileId: string;
+  profileName: string;
+  /** Path to the SQLite history file. */
+  dbPath: string;
+  available: boolean;
+}
+
+interface ChromiumBrowserRoot {
+  id: BrowserSearchSource;
+  name: string;
+  rootPath: string;
+}
+
 function homeDir(): string {
   return os.homedir();
 }
@@ -373,20 +402,84 @@ function dirExists(p: string): boolean {
   }
 }
 
+function getChromiumBrowserRoots(): ChromiumBrowserRoot[] {
+  const home = homeDir();
+  return [
+    { id: 'chrome', name: 'Google Chrome', rootPath: path.join(home, 'Library/Application Support/Google/Chrome') },
+    { id: 'arc', name: 'Arc', rootPath: path.join(home, 'Library/Application Support/Arc/User Data') },
+    { id: 'brave', name: 'Brave', rootPath: path.join(home, 'Library/Application Support/BraveSoftware/Brave-Browser') },
+    { id: 'edge', name: 'Microsoft Edge', rootPath: path.join(home, 'Library/Application Support/Microsoft Edge') },
+    { id: 'vivaldi', name: 'Vivaldi', rootPath: path.join(home, 'Library/Application Support/Vivaldi') },
+  ];
+}
+
+function profileLabelFromId(profileId: string): string {
+  if (profileId === 'Default') return 'Default';
+  const match = /^Profile\s+(\d+)$/i.exec(profileId);
+  return match ? `Profile ${match[1]}` : profileId;
+}
+
+function readChromiumProfileInfoCache(rootPath: string): Record<string, any> {
+  const localStatePath = path.join(rootPath, 'Local State');
+  if (!fileExists(localStatePath)) return {};
+  try {
+    const parsed = JSON.parse(fs.readFileSync(localStatePath, 'utf-8'));
+    const infoCache = parsed?.profile?.info_cache;
+    return infoCache && typeof infoCache === 'object' ? infoCache : {};
+  } catch {
+    return {};
+  }
+}
+
+function buildChromiumProfileSource(
+  browser: ChromiumBrowserRoot,
+  profileId: string,
+  profileInfo?: any
+): ImportableBrowserProfile | null {
+  const dbPath = path.join(browser.rootPath, profileId, 'History');
+  if (!fileExists(dbPath)) return null;
+  const profileName = typeof profileInfo?.name === 'string' && profileInfo.name.trim()
+    ? profileInfo.name.trim()
+    : profileLabelFromId(profileId);
+  return {
+    id: `${browser.id}:${profileId}`,
+    browserId: browser.id,
+    browserName: browser.name,
+    profileId,
+    profileName,
+    dbPath,
+    available: true,
+  };
+}
+
+export function listImportableBrowserProfiles(): ImportableBrowserProfile[] {
+  const out: ImportableBrowserProfile[] = [];
+  for (const browser of getChromiumBrowserRoots()) {
+    const infoCache = readChromiumProfileInfoCache(browser.rootPath);
+    const profileIds = new Set<string>(Object.keys(infoCache));
+    profileIds.add('Default');
+    for (const profileId of profileIds) {
+      const profile = buildChromiumProfileSource(browser, profileId, infoCache[profileId]);
+      if (profile) out.push(profile);
+    }
+  }
+  return out.sort((a, b) => {
+    const browserCompare = a.browserName.localeCompare(b.browserName);
+    if (browserCompare !== 0) return browserCompare;
+    if (a.profileId === 'Default') return -1;
+    if (b.profileId === 'Default') return 1;
+    return a.profileName.localeCompare(b.profileName);
+  });
+}
+
 export function listImportableBrowsers(): ImportableBrowser[] {
   const home = homeDir();
   const out: ImportableBrowser[] = [];
 
   // Chromium-family default profiles
-  const chromium: { id: BrowserSearchSource; name: string; dbPath: string }[] = [
-    { id: 'chrome', name: 'Google Chrome', dbPath: path.join(home, 'Library/Application Support/Google/Chrome/Default/History') },
-    { id: 'arc', name: 'Arc', dbPath: path.join(home, 'Library/Application Support/Arc/User Data/Default/History') },
-    { id: 'brave', name: 'Brave', dbPath: path.join(home, 'Library/Application Support/BraveSoftware/Brave-Browser/Default/History') },
-    { id: 'edge', name: 'Microsoft Edge', dbPath: path.join(home, 'Library/Application Support/Microsoft Edge/Default/History') },
-    { id: 'vivaldi', name: 'Vivaldi', dbPath: path.join(home, 'Library/Application Support/Vivaldi/Default/History') },
-  ];
-  for (const b of chromium) {
-    out.push({ ...b, available: fileExists(b.dbPath) });
+  for (const b of getChromiumBrowserRoots()) {
+    const dbPath = path.join(b.rootPath, 'Default/History');
+    out.push({ id: b.id, name: b.name, dbPath, available: fileExists(dbPath) });
   }
 
   // Safari (sandboxed — may be unreadable without Full Disk Access)
@@ -421,20 +514,84 @@ interface RawHistoryRow {
 export async function importFromBrowser(
   browserId: BrowserSearchSource
 ): Promise<{ imported: number; skipped: number; total: number; reason?: string }> {
+  const profiles = listImportableBrowserProfiles().filter((profile) => profile.browserId === browserId);
+  if (profiles.length > 0) {
+    return importFromProfiles(profiles);
+  }
+
   const browsers = listImportableBrowsers();
   const browser = browsers.find((b) => b.id === browserId);
   if (!browser) return { imported: 0, skipped: 0, total: 0, reason: 'Unknown browser' };
   if (!browser.available) return { imported: 0, skipped: 0, total: 0, reason: 'Browser history file not found' };
 
+  return importFromSource(browser);
+}
+
+export async function importFromBrowserProfile(
+  profileSourceId: string
+): Promise<{ imported: number; skipped: number; total: number; reason?: string }> {
+  const profile = listImportableBrowserProfiles().find((candidate) => candidate.id === profileSourceId);
+  if (!profile) return { imported: 0, skipped: 0, total: 0, reason: 'Browser profile history file not found' };
+  return importFromSource(profile);
+}
+
+export async function refreshEnabledBrowserProfiles(): Promise<{
+  imported: number;
+  skipped: number;
+  total: number;
+  refreshed: number;
+  reason?: string;
+}> {
+  const settings = loadSettings().browserSearch;
+  if (!settings.enabled) return { imported: 0, skipped: 0, total: 0, refreshed: 0 };
+  const enabledIds = new Set(settings.profileSourceIds || []);
+  if (enabledIds.size === 0) return { imported: 0, skipped: 0, total: 0, refreshed: 0 };
+  const profiles = listImportableBrowserProfiles().filter((profile) => enabledIds.has(profile.id));
+  const result = await importFromProfiles(profiles);
+  return {
+    ...result,
+    refreshed: profiles.length,
+  };
+}
+
+async function importFromProfiles(
+  profiles: ImportableBrowserProfile[]
+): Promise<{ imported: number; skipped: number; total: number; reason?: string }> {
+  let imported = 0;
+  let skipped = 0;
+  let total = 0;
+  const reasons: string[] = [];
+  for (const profile of profiles) {
+    const result = await importFromSource(profile);
+    imported += result.imported;
+    skipped += result.skipped;
+    total += result.total;
+    if (result.reason) reasons.push(`${profile.browserName} ${profile.profileName}: ${result.reason}`);
+  }
+  return {
+    imported,
+    skipped,
+    total,
+    reason: imported === 0 && reasons.length > 0 ? reasons.join('; ') : undefined,
+  };
+}
+
+async function importFromSource(
+  browser: ImportableBrowser | ImportableBrowserProfile
+): Promise<{ imported: number; skipped: number; total: number; reason?: string }> {
+  const browserId = 'browserId' in browser ? browser.browserId : browser.id;
+  const sourceProfileId = 'profileId' in browser ? browser.profileId : undefined;
+  const sourceProfileName = 'profileName' in browser ? browser.profileName : undefined;
+  const entries = load();
+  const since = getNewestStoredVisitAt(entries, browserId, sourceProfileId);
   let rows: RawHistoryRow[] = [];
   try {
-    rows = await readBrowserHistoryRows(browser);
+    rows = await readBrowserHistoryRows(browser, since);
   } catch (e: any) {
     return { imported: 0, skipped: 0, total: 0, reason: e?.message || 'Failed to read history' };
   }
 
-  const entries = load();
-  const existingKeys = new Set(entries.map((e) => entryKey(e.type, e.type === 'url' ? e.url : e.query)));
+  const existingKeys = new Set(entries.map((e) => importEntryKey(e)));
   let imported = 0;
   let skipped = 0;
   for (const row of rows) {
@@ -445,13 +602,31 @@ export async function importFromBrowser(
       continue;
     }
     const query = row.title?.trim() || host;
-    const key = entryKey('url', row.url);
-    if (existingKeys.has(key)) {
+    const key = importEntryKey({
+      type: 'url',
+      url: row.url,
+      query,
+      source: browserId,
+      sourceProfileId,
+    });
+    const legacyKey = sourceProfileId
+      ? importEntryKey({
+          type: 'url',
+          url: row.url,
+          query,
+          source: browserId,
+        })
+      : key;
+    const matchedKey = existingKeys.has(key) ? key : existingKeys.has(legacyKey) ? legacyKey : null;
+    if (matchedKey) {
       // bump useCount + lastUsedAt if newer
-      const ex = entries.find((e) => entryKey(e.type, e.type === 'url' ? e.url : e.query) === key);
+      const ex = entries.find((e) => importEntryKey(e) === matchedKey);
       if (ex) {
         ex.useCount = Math.max(ex.useCount, row.visitCount);
         if (row.lastVisit > ex.lastUsedAt) ex.lastUsedAt = row.lastVisit;
+        if (sourceProfileId) ex.sourceProfileId = sourceProfileId;
+        if (sourceProfileName) ex.sourceProfileName = sourceProfileName;
+        existingKeys.add(importEntryKey(ex));
       }
       skipped += 1;
       continue;
@@ -465,6 +640,8 @@ export async function importFromBrowser(
       lastUsedAt: row.lastVisit,
       useCount: Math.max(1, row.visitCount),
       source: browserId,
+      sourceProfileId,
+      sourceProfileName,
     });
     existingKeys.add(key);
     imported += 1;
@@ -478,7 +655,25 @@ export async function importFromBrowser(
   return { imported, skipped, total: rows.length };
 }
 
-async function readBrowserHistoryRows(browser: ImportableBrowser): Promise<RawHistoryRow[]> {
+function getNewestStoredVisitAt(
+  entries: BrowserSearchEntry[],
+  source: BrowserSearchSource,
+  sourceProfileId?: string
+): number {
+  let newest = 0;
+  for (const entry of entries) {
+    if (entry.type !== 'url') continue;
+    if (entry.source !== source) continue;
+    if ((entry.sourceProfileId || '') !== (sourceProfileId || '')) continue;
+    if (entry.lastUsedAt > newest) newest = entry.lastUsedAt;
+  }
+  return newest;
+}
+
+async function readBrowserHistoryRows(
+  browser: ImportableBrowser | ImportableBrowserProfile,
+  afterVisitAt = 0
+): Promise<RawHistoryRow[]> {
   // Chromium DBs are usually locked while the browser is running. Copy first.
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sc-bh-'));
   const tempDb = path.join(tempDir, 'History.copy');
@@ -494,23 +689,20 @@ async function readBrowserHistoryRows(browser: ImportableBrowser): Promise<RawHi
       }
     }
 
-    const sql = browser.id === 'safari'
-      ? buildSafariQuery()
-      : browser.id === 'firefox'
-      ? buildFirefoxQuery()
-      : buildChromiumQuery();
+    const browserId = 'browserId' in browser ? browser.browserId : browser.id;
+    const sql = buildHistoryQuery(browserId, afterVisitAt);
 
     const { stdout } = await execFileAsync(
       'sqlite3',
       ['-json', tempDb, sql],
-      { maxBuffer: 32 * 1024 * 1024, timeout: 20_000 }
+      { maxBuffer: 256 * 1024 * 1024, timeout: 60_000 }
     );
     const trimmed = (stdout || '').trim();
     if (!trimmed) return [];
     const parsed = JSON.parse(trimmed);
     if (!Array.isArray(parsed)) return [];
     return parsed
-      .map((r: any) => normalizeRow(browser.id, r))
+      .map((r: any) => normalizeRow(browserId, r))
       .filter((r: RawHistoryRow | null): r is RawHistoryRow => r !== null);
   } finally {
     try {
@@ -520,31 +712,48 @@ async function readBrowserHistoryRows(browser: ImportableBrowser): Promise<RawHi
 }
 
 function buildChromiumQuery(): string {
-  // last_visit_time is microseconds since 1601-01-01.
-  return `SELECT url, title, visit_count AS visitCount, last_visit_time AS lastVisitRaw
-FROM urls
-WHERE last_visit_time > 0
-ORDER BY last_visit_time DESC
-LIMIT ${MAX_IMPORT_PER_BROWSER};`;
+  return buildHistoryQuery('chrome', 0);
 }
 
-function buildSafariQuery(): string {
+function buildHistoryQuery(browserId: BrowserSearchSource, afterVisitAt: number): string {
+  if (browserId === 'safari') return buildSafariQuery(afterVisitAt);
+  if (browserId === 'firefox') return buildFirefoxQuery(afterVisitAt);
+  return buildChromiumQueryAfter(afterVisitAt);
+}
+
+function buildChromiumQueryAfter(afterVisitAt: number): string {
+  // last_visit_time is microseconds since 1601-01-01.
+  const where = afterVisitAt > 0
+    ? `last_visit_time > ${Math.floor((afterVisitAt + 11_644_473_600_000) * 1000)}`
+    : 'last_visit_time > 0';
+  return `SELECT url, title, visit_count AS visitCount, last_visit_time AS lastVisitRaw
+FROM urls
+WHERE ${where}
+ORDER BY last_visit_time DESC;`;
+}
+
+function buildSafariQuery(afterVisitAt = 0): string {
   // visit_time is CFAbsoluteTime: seconds since 2001-01-01 UTC.
+  const where = afterVisitAt > 0
+    ? `WHERE v.visit_time > ${afterVisitAt / 1000 - 978_307_200}`
+    : '';
   return `SELECT i.url AS url, i.visit_count AS visitCount, MAX(v.visit_time) AS lastVisitRaw, '' AS title
 FROM history_items i
 JOIN history_visits v ON v.history_item = i.id
+${where}
 GROUP BY i.id
-ORDER BY lastVisitRaw DESC
-LIMIT ${MAX_IMPORT_PER_BROWSER};`;
+ORDER BY lastVisitRaw DESC;`;
 }
 
-function buildFirefoxQuery(): string {
+function buildFirefoxQuery(afterVisitAt = 0): string {
   // last_visit_date is microseconds since 1970-01-01.
+  const where = afterVisitAt > 0
+    ? `last_visit_date > ${Math.floor(afterVisitAt * 1000)}`
+    : 'last_visit_date IS NOT NULL';
   return `SELECT url, title, visit_count AS visitCount, last_visit_date AS lastVisitRaw
 FROM moz_places
-WHERE last_visit_date IS NOT NULL
-ORDER BY last_visit_date DESC
-LIMIT ${MAX_IMPORT_PER_BROWSER};`;
+WHERE ${where}
+ORDER BY last_visit_date DESC;`;
 }
 
 function normalizeRow(browserId: BrowserSearchSource, raw: any): RawHistoryRow | null {

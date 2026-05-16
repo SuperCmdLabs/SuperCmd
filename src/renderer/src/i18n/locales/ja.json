@@ -705,9 +705,9 @@
         "label": "デバッグモードを有効にする"
       },
       "browserSearch": {
-        "title": "ブラウザ検索",
-        "description": "クエリを入力して Enter を押すと、既定のブラウザで開きます。インライン補完が履歴からサイトを提案します。",
-        "enableLabel": "ブラウザ検索を有効にする",
+        "title": "ブラウザプロファイル",
+        "description": "ブラウザプロファイルを接続し、SuperCmd がローカル履歴を使用して継続的に更新できるようにします。",
+        "enableLabel": "SuperCmd でブラウザプロファイルを使用",
         "retention": {
           "label": "履歴の保持期間",
           "option": {
@@ -719,16 +719,24 @@
             "forever": "無期限"
           }
         },
-        "clearButton": "ブラウザ検索履歴を消去",
-        "importLabel": "ブラウザから履歴をインポート",
+        "clearButton": "ブラウザプロファイル履歴を消去",
+        "importLabel": "検出されたブラウザプロファイル",
         "import": {
-          "action": "インポート",
-          "running": "インポート中…",
-          "noneFound": "対応するブラウザが見つかりません"
+          "action": "プロファイルを追加",
+          "add": "プロファイルを追加",
+          "refresh": "更新",
+          "remove": "削除",
+          "running": "更新中…",
+          "availableHeading": "利用可能なプロファイル",
+          "addedHeading": "追加済みプロファイル",
+          "noneFound": "対応するブラウザプロファイルが見つかりません",
+          "noneAdded": "ブラウザプロファイルはまだ追加されていません",
+          "profileSupportNote": "プロファイル対応は現在 Chromium ブラウザのみです。Safari と Firefox は今後対応予定です。",
+          "enabledProfiles": "SuperCmd のブラウザ履歴で {count} 個のプロファイルが有効です。"
         },
         "status": {
-          "cleared": "ブラウザ検索履歴を消去しました。",
-          "imported": "{total} 件中 {count} 件をインポートしました。",
+          "cleared": "ブラウザプロファイル履歴を消去しました。",
+          "imported": "{total} 件中 {count} 件を更新しました。",
           "failed": "操作に失敗しました。"
         }
       }

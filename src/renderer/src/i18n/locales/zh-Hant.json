@@ -705,9 +705,9 @@
         "label": "啟用偵錯模式"
       },
       "browserSearch": {
-        "title": "瀏覽器搜尋",
-        "description": "輸入內容後按 Enter 即可在預設瀏覽器中開啟。內嵌自動補全會根據歷史紀錄建議網站。",
-        "enableLabel": "啟用瀏覽器搜尋",
+        "title": "瀏覽器個人檔案",
+        "description": "連接瀏覽器個人檔案，讓 SuperCmd 使用其本機歷史並持續重新整理。",
+        "enableLabel": "在 SuperCmd 中使用瀏覽器個人檔案",
         "retention": {
           "label": "歷史紀錄保留時間",
           "option": {
@@ -719,16 +719,24 @@
             "forever": "永久"
           }
         },
-        "clearButton": "清除瀏覽器搜尋歷史",
-        "importLabel": "從瀏覽器匯入歷史",
+        "clearButton": "清除瀏覽器個人檔案歷史",
+        "importLabel": "偵測到的瀏覽器個人檔案",
         "import": {
-          "action": "匯入",
-          "running": "正在匯入…",
-          "noneFound": "未偵測到支援的瀏覽器"
+          "action": "加入個人檔案",
+          "add": "加入個人檔案",
+          "refresh": "重新整理",
+          "remove": "移除",
+          "running": "正在重新整理…",
+          "availableHeading": "可用個人檔案",
+          "addedHeading": "已加入的個人檔案",
+          "noneFound": "未偵測到支援的瀏覽器個人檔案",
+          "noneAdded": "尚未加入瀏覽器個人檔案",
+          "profileSupportNote": "個人檔案支援目前僅包含 Chromium 瀏覽器。Safari 和 Firefox 支援將於稍後加入。",
+          "enabledProfiles": "已為 SuperCmd 瀏覽器歷史啟用 {count} 個個人檔案。"
         },
         "status": {
-          "cleared": "瀏覽器搜尋歷史已清除。",
-          "imported": "已匯入 {count} / {total} 筆。",
+          "cleared": "瀏覽器個人檔案歷史已清除。",
+          "imported": "已更新 {count} / {total} 筆。",
           "failed": "操作失敗。"
         }
       }

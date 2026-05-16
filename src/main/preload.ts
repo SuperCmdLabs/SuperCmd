@@ -669,10 +669,16 @@ const electronAPI = {
     ipcRenderer.invoke('browser-search:clear-history'),
   browserSearchListBrowsers: (): Promise<{ id: string; name: string; available: boolean }[]> =>
     ipcRenderer.invoke('browser-search:list-browsers'),
+  browserSearchListProfiles: (): Promise<any[]> =>
+    ipcRenderer.invoke('browser-search:list-profiles'),
   browserSearchImport: (
     browserId: string
   ): Promise<{ imported: number; skipped: number; total: number; reason?: string }> =>
     ipcRenderer.invoke('browser-search:import', browserId),
+  browserSearchImportProfile: (
+    profileSourceId: string
+  ): Promise<{ imported: number; skipped: number; total: number; reason?: string }> =>
+    ipcRenderer.invoke('browser-search:import-profile', profileSourceId),
   onBrowserSearchHistoryChanged: (callback: () => void): (() => void) => {
     const listener = (_event: any) => callback();
     ipcRenderer.on('browser-search-history-changed', listener);

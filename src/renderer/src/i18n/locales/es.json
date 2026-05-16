@@ -680,9 +680,9 @@
         "button": "Importar"
       },
       "browserSearch": {
-        "title": "Búsqueda en el navegador",
-        "description": "Pulsa Intro para abrir tu consulta en el navegador predeterminado. El autocompletado en línea sugiere sitios de tu historial.",
-        "enableLabel": "Activar búsqueda en el navegador",
+        "title": "Perfiles de navegador",
+        "description": "Conecta perfiles de navegador para que SuperCmd use su historial local y lo mantenga actualizado.",
+        "enableLabel": "Usar perfiles de navegador en SuperCmd",
         "retention": {
           "label": "Retención del historial",
           "option": {
@@ -694,16 +694,24 @@
             "forever": "Para siempre"
           }
         },
-        "clearButton": "Borrar el historial de búsqueda del navegador",
-        "importLabel": "Importar historial desde un navegador",
+        "clearButton": "Borrar historial de perfiles de navegador",
+        "importLabel": "Perfiles de navegador detectados",
         "import": {
-          "action": "Importar",
-          "running": "Importando…",
-          "noneFound": "No se detectaron navegadores compatibles"
+          "action": "Añadir perfil",
+          "add": "Añadir perfil",
+          "refresh": "Actualizar",
+          "remove": "Eliminar",
+          "running": "Actualizando…",
+          "availableHeading": "Perfiles disponibles",
+          "addedHeading": "Perfiles añadidos",
+          "noneFound": "No se detectaron perfiles de navegador compatibles",
+          "noneAdded": "Aún no se han añadido perfiles de navegador",
+          "profileSupportNote": "La compatibilidad con perfiles incluye actualmente solo navegadores Chromium. Safari y Firefox se añadirán más adelante.",
+          "enabledProfiles": "{count} perfil(es) activado(s) para el historial de navegador de SuperCmd."
         },
         "status": {
-          "cleared": "Historial de búsqueda del navegador borrado.",
-          "imported": "Se importaron {count} de {total} entradas.",
+          "cleared": "Historial de perfiles de navegador borrado.",
+          "imported": "Se actualizaron {count} de {total} entradas.",
           "failed": "La acción falló."
         }
       }
