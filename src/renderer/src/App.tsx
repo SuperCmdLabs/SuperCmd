@@ -86,70 +86,91 @@ import CursorPromptView from './views/CursorPromptView';
 import AppUninstallView from './views/AppUninstallView';
 import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowBadge } from './components/InlineArgumentField';
 import { useI18n } from './i18n';
+import {
+  asTildePath,
+  buildFileResultCommandId,
+  getFileBasename,
+  getFileDirname,
+  getFileResultPathFromCommand,
+  getLauncherFileSearchTerms,
+  isPathLikeLauncherFileQuery,
+  matchesLauncherFileNameTerms,
+  matchesLauncherPathQuery,
+  MAX_LAUNCHER_FILE_CANDIDATE_RESULTS,
+  MAX_LAUNCHER_FILE_RESULTS,
+  MAX_LAUNCHER_FILE_RESULT_ICONS,
+  MIN_LAUNCHER_FILE_QUERY_LENGTH,
+} from './utils/launcher-file-results';
+import {
+  BROWSER_SEARCH_BOOKMARKS_COMMAND_ID,
+  BROWSER_SEARCH_HISTORY_COMMAND_ID,
+  BROWSER_SEARCH_OPEN_TABS_COMMAND_ID,
+  BROWSER_SEARCH_OPEN_URL_ID,
+  BROWSER_SEARCH_RESULT_ID_PREFIX,
+  BROWSER_SEARCH_SHOW_ALL_RESULTS_ID,
+  type BrowserResultsViewScope,
+  canEditBrowserResultNickname,
+  DEFAULT_BROWSER_SEARCH_RESULT_GROUPS,
+  formatBrowserHistoryDateSection,
+  getBrowserResultNicknameKey,
+  getSuggestedBookmarkNickname,
+  isBrowserSearchCommand,
+  normalizeBookmarkNickname,
+  normalizeBookmarkNicknameUrl,
+  normalizeBrowserCommandUrl,
+  normalizeBrowserSearchResultGroups,
+} from './utils/browser-search-commands';
+import {
+  DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT,
+  DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT,
+  clampLauncherBackgroundPercent,
+  launcherBackgroundBlurPercentToPx,
+  toFileUrl,
+} from './utils/launcher-background';
+import {
+  DIRECT_LAUNCH_EXPANSION_GUARD_MS,
+  MAX_INLINE_EXTENSION_ARGUMENTS,
+  MAX_INLINE_QUICK_LINK_ARGUMENTS,
+  MAX_RECENT_SECTION_ITEMS,
+  NOOP_ON_CLOSE,
+  formatCalcKindLabel,
+  getExtensionIdentityFromCommand,
+  getQuickLinkIdFromCommandId,
+  isEditableElement,
+  normalizeQuickLinkDynamicFields,
+} from './utils/launcher-misc';
+import {
+  type BangParseState,
+  type SearchBangDefinition,
+  type WebSearchResult,
+  WEB_SEARCH_ACTIVE_BANG_SUGGESTION_LIMIT,
+  WEB_SEARCH_BANG_USE_COUNTS_KEY,
+  WEB_SEARCH_COMMAND_ID,
+  WEB_SEARCH_INITIAL_VISIBLE_RESULTS,
+  WEB_SEARCH_RECENT_BANG_LIMIT,
+  WEB_SEARCH_ROOT_BANG_PREFIX,
+  WEB_SEARCH_ROOT_DIRECT_ID,
+  WEB_SEARCH_ROOT_SUGGESTION_PREFIX,
+  WEB_SEARCH_SUGGEST_DEBOUNCE_MS,
+  WEB_SEARCH_VISIBLE_RESULTS_INCREMENT,
+  SEARCH_BANGS,
+  buildBangSearchUrl,
+  createUpdatedBangUsage,
+  formatWebSearchBangAliases,
+  formatWebSearchBangAliasSummary,
+  getBangUsageScore,
+  getFaviconUrlForHost,
+  getSearchBangByKeyFromList,
+  getSortedSearchBangs,
+  getWebSearchBangSection,
+  getWebSearchBangSectionTitleKey,
+  normalizeBangDefinition,
+  normalizeWebSearchBangAliasList,
+  parseSearchBangFromList,
+  parseSearchBangState,
+} from './utils/web-search-bangs';
 
 const DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS = 90;
-const MAX_RECENT_SECTION_ITEMS = 5;
-const QUICK_LINK_COMMAND_PREFIX = 'quicklink-';
-const DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT = 25;
-const DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT = 45;
-const MAX_LAUNCHER_BACKGROUND_BLUR_PX = 20;
-const WEB_SEARCH_BANG_USE_COUNTS_KEY = 'supercmd:webSearchBangUseCounts';
-const WEB_SEARCH_SUGGEST_DEBOUNCE_MS = 80;
-const WEB_SEARCH_ACTIVE_BANG_SUGGESTION_LIMIT = 24;
-const WEB_SEARCH_RECENT_BANG_LIMIT = 20;
-const WEB_SEARCH_FRECENCY_HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000;
-
-function getQuickLinkIdFromCommandId(commandId: string): string | null {
-  const normalized = String(commandId || '').trim();
-  if (!normalized.startsWith(QUICK_LINK_COMMAND_PREFIX)) return null;
-  const id = normalized.slice(QUICK_LINK_COMMAND_PREFIX.length).trim();
-  return id || null;
-}
-
-const FILE_RESULT_COMMAND_PREFIX = 'system-file-result:';
-const MAX_LAUNCHER_FILE_RESULTS = 30;
-const MAX_LAUNCHER_FILE_CANDIDATE_RESULTS = 3000;
-const BROWSER_SEARCH_OPEN_URL_ID = 'browser-search-action-open-url';
-const BROWSER_SEARCH_PERFORM_SEARCH_ID = 'browser-search-action-perform-search';
-const BROWSER_SEARCH_RESULT_ID_PREFIX = 'browser-search-result:';
-const BROWSER_SEARCH_SHOW_ALL_RESULTS_ID = 'browser-search-action-show-all';
-const WEB_SEARCH_COMMAND_ID = 'system-search-web';
-const WEB_SEARCH_ROOT_DIRECT_ID = 'web-search-root:default';
-const WEB_SEARCH_ROOT_BANG_PREFIX = 'web-search-root:bang:';
-const WEB_SEARCH_ROOT_SUGGESTION_PREFIX = 'web-search-root:suggestion:';
-const BROWSER_SEARCH_OPEN_TABS_COMMAND_ID = 'system-search-open-tabs';
-const BROWSER_SEARCH_BOOKMARKS_COMMAND_ID = 'system-search-bookmarks';
-const BROWSER_SEARCH_HISTORY_COMMAND_ID = 'system-search-history';
-const DEFAULT_BROWSER_SEARCH_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
-  { kind: 'bookmark', limit: 2 },
-  { kind: 'open-tab', limit: 2 },
-  { kind: 'history', limit: 2 },
-];
-type BrowserResultsViewScope = 'all' | 'open-tabs' | 'bookmarks' | 'history';
-type WebSearchResultKind = 'search' | 'suggestion' | 'bang';
-type WebSearchResult = {
-  id: string;
-  kind: WebSearchResultKind;
-  section: 'search' | 'recent' | 'all' | 'matching' | 'hidden';
-  title: string;
-  subtitle: string;
-  query: string;
-  bangKey?: string;
-  defaultAliases?: string[];
-  customAliases?: string[];
-  isCustom?: boolean;
-  isDisabled?: boolean;
-  bang?: SearchBangDefinition;
-  faviconUrl?: string;
-};
-const MAX_LAUNCHER_FILE_RESULT_ICONS = MAX_LAUNCHER_FILE_RESULTS;
-const MIN_LAUNCHER_FILE_QUERY_LENGTH = 2;
-const WEB_SEARCH_INITIAL_VISIBLE_RESULTS = 240;
-const WEB_SEARCH_VISIBLE_RESULTS_INCREMENT = 240;
-const MAX_INLINE_EXTENSION_ARGUMENTS = 3;
-const MAX_INLINE_QUICK_LINK_ARGUMENTS = 3;
-const DIRECT_LAUNCH_EXPANSION_GUARD_MS = 700;
-const NOOP_ON_CLOSE = () => {};
 const DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS = new Set([
   'system-clipboard-manager',
   'system-search-snippets',
@@ -166,214 +187,6 @@ const DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS = new Set([
   'system-my-schedule',
   'system-camera',
 ]);
-
-function asTildePath(filePath: string, homeDir: string): string {
-  if (!homeDir) return filePath;
-  if (filePath === homeDir) return '~';
-  if (filePath.startsWith(homeDir)) {
-    return `~${filePath.slice(homeDir.length) || '/'}`;
-  }
-  return filePath;
-}
-
-function formatCalcKindLabel(kind: 'math' | 'unit' | 'currency' | 'crypto' | 'time' | 'date'): string {
-  switch (kind) {
-    case 'math':
-      return 'Math';
-    case 'unit':
-      return 'Unit';
-    case 'currency':
-      return 'Currency';
-    case 'crypto':
-      return 'Crypto';
-    case 'time':
-      return 'Time';
-    case 'date':
-      return 'Date';
-  }
-}
-
-function buildFileResultCommandId(filePath: string): string {
-  return `${FILE_RESULT_COMMAND_PREFIX}${encodeURIComponent(filePath)}`;
-}
-
-function getFileBasename(filePath: string): string {
-  const normalized = String(filePath || '').replace(/\/$/, '');
-  const idx = normalized.lastIndexOf('/');
-  return idx >= 0 ? normalized.slice(idx + 1) : normalized;
-}
-
-function getFileDirname(filePath: string): string {
-  const normalized = String(filePath || '').replace(/\/$/, '');
-  const idx = normalized.lastIndexOf('/');
-  return idx > 0 ? normalized.slice(0, idx) : '/';
-}
-
-function normalizeLauncherFileSearchText(value: string): string {
-  return String(value || '').normalize('NFKD').toLowerCase();
-}
-
-function getLauncherFileSearchTerms(rawQuery: string): string[] {
-  return normalizeLauncherFileSearchText(rawQuery)
-    .split(/\s+/)
-    .map((term) => term.trim())
-    .filter(Boolean);
-}
-
-function normalizeLauncherPathForMatch(value: string): string {
-  return String(value || '').normalize('NFKD').toLowerCase().replace(/\\/g, '/');
-}
-
-function isPathLikeLauncherFileQuery(rawQuery: string): boolean {
-  const trimmed = String(rawQuery || '').trim();
-  return trimmed.includes('/') || trimmed.startsWith('~');
-}
-
-function matchesLauncherPathQuery(filePath: string, rawQuery: string, homeDir: string): boolean {
-  const trimmed = String(rawQuery || '').trim();
-  if (!trimmed) return true;
-  const normalizedPath = normalizeLauncherPathForMatch(filePath);
-  const normalizedRawQuery = normalizeLauncherPathForMatch(trimmed);
-  if (!normalizedRawQuery) return true;
-
-  if (normalizedPath.includes(normalizedRawQuery)) return true;
-
-  if (trimmed.startsWith('~') && homeDir) {
-    const expanded = `${homeDir}${trimmed.slice(1)}`;
-    const normalizedExpanded = normalizeLauncherPathForMatch(expanded);
-    if (normalizedExpanded && normalizedPath.includes(normalizedExpanded)) return true;
-  }
-
-  const tildePath = normalizeLauncherPathForMatch(asTildePath(filePath, homeDir));
-  return Boolean(tildePath && tildePath.includes(normalizedRawQuery));
-}
-
-function splitLauncherFileNameTokens(fileName: string): string[] {
-  return normalizeLauncherFileSearchText(fileName)
-    .split(/[^a-z0-9]+/g)
-    .map((token) => token.trim())
-    .filter(Boolean);
-}
-
-function matchesLauncherFileNameTerms(fileName: string, terms: string[]): boolean {
-  if (terms.length === 0) return true;
-  const normalizedName = normalizeLauncherFileSearchText(fileName);
-  const tokens = splitLauncherFileNameTokens(fileName);
-  return terms.every((term) => {
-    if (/[^a-z0-9]/i.test(term)) {
-      return normalizedName.includes(term);
-    }
-    return tokens.some((token) => token.startsWith(term));
-  });
-}
-
-function getFileResultPathFromCommand(command: CommandInfo | null | undefined): string | null {
-  if (!command) return null;
-  if (command.id.startsWith(FILE_RESULT_COMMAND_PREFIX)) {
-    if (command.path) return String(command.path);
-    const encoded = command.id.slice(FILE_RESULT_COMMAND_PREFIX.length);
-    try {
-      return decodeURIComponent(encoded);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-function isBrowserSearchCommand(command: CommandInfo | null | undefined): boolean {
-  const id = String(command?.id || '');
-  return id === BROWSER_SEARCH_OPEN_URL_ID ||
-    id === BROWSER_SEARCH_PERFORM_SEARCH_ID ||
-    id === BROWSER_SEARCH_SHOW_ALL_RESULTS_ID ||
-    id.startsWith('web-search-root:') ||
-    id.startsWith(BROWSER_SEARCH_RESULT_ID_PREFIX);
-}
-
-function normalizeBrowserSearchResultGroups(rawGroups: BrowserSearchResultGroupSetting[] | undefined): BrowserSearchResultGroupSetting[] {
-  const seen = new Set<string>();
-  const groups: BrowserSearchResultGroupSetting[] = [];
-  if (Array.isArray(rawGroups)) {
-    for (const group of rawGroups) {
-      if (group.kind !== 'open-tab' && group.kind !== 'bookmark' && group.kind !== 'history') continue;
-      if (seen.has(group.kind)) continue;
-      seen.add(group.kind);
-      groups.push({ kind: group.kind, limit: Math.max(0, Math.min(8, Math.floor(Number(group.limit) || 0))) });
-    }
-  }
-  for (const fallback of DEFAULT_BROWSER_SEARCH_RESULT_GROUPS) {
-    if (!seen.has(fallback.kind)) groups.push(fallback);
-  }
-  return groups;
-}
-
-function normalizeBrowserCommandUrl(url: string | undefined): string {
-  const raw = String(url || '').trim();
-  if (!raw) return '';
-  try {
-    const parsed = new URL(raw);
-    parsed.hash = '';
-    parsed.hostname = parsed.hostname.toLowerCase();
-    return parsed.toString().replace(/\/+$/, '');
-  } catch {
-    return raw.toLowerCase().replace(/#.*$/, '').replace(/\/+$/, '');
-  }
-}
-
-function formatBrowserHistoryDateSection(value: number | undefined): string {
-  const date = new Date(Number(value) || 0);
-  if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return '';
-  try {
-    return new Intl.DateTimeFormat(undefined, { dateStyle: 'full' }).format(date);
-  } catch {
-    return date.toLocaleDateString();
-  }
-}
-
-function getExtensionIdentityFromCommand(
-  command: CommandInfo | null | undefined
-): { extName: string; cmdName: string } | null {
-  if (!command || command.category !== 'extension' || !command.path) return null;
-  const rawPath = String(command.path || '').trim();
-  const separatorIndex = rawPath.indexOf('/');
-  if (separatorIndex <= 0 || separatorIndex >= rawPath.length - 1) return null;
-  const extName = rawPath.slice(0, separatorIndex).trim();
-  const cmdName = rawPath.slice(separatorIndex + 1).trim();
-  if (!extName || !cmdName) return null;
-  return { extName, cmdName };
-}
-
-function isEditableElement(element: Element | null): boolean {
-  const target = element as HTMLElement | null;
-  if (!target) return false;
-  const tagName = String(target.tagName || '').toUpperCase();
-  return (
-    target.isContentEditable ||
-    tagName === 'INPUT' ||
-    tagName === 'TEXTAREA' ||
-    tagName === 'SELECT'
-  );
-}
-
-function toFileUrl(filePath: string): string {
-  const normalizedPath = String(filePath || '').trim();
-  if (!normalizedPath) return '';
-  return `file://${encodeURI(normalizedPath)}`;
-}
-
-function clampLauncherBackgroundPercent(value: number, fallback: number): number {
-  const parsedValue = Number(value);
-  if (!Number.isFinite(parsedValue)) return fallback;
-  return Math.max(0, Math.min(100, Math.round(parsedValue)));
-}
-
-function launcherBackgroundBlurPercentToPx(value: number): number {
-  const clampedPercent = clampLauncherBackgroundPercent(
-    value,
-    DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT
-  );
-  return Number(((clampedPercent / 100) * MAX_LAUNCHER_BACKGROUND_BLUR_PX).toFixed(2));
-}
 
 type LauncherSurfaceProps = {
   backgroundImageUrl: string;
@@ -421,415 +234,6 @@ const LauncherSurface: React.FC<LauncherSurfaceProps> = ({
     </div>
   );
 };
-
-function normalizeQuickLinkDynamicFields(fields: QuickLinkDynamicField[]): QuickLinkDynamicField[] {
-  const map = new Map<string, QuickLinkDynamicField>();
-  for (const field of fields || []) {
-    const rawKey = String(field?.key || field?.name || '').trim();
-    if (!rawKey) continue;
-    const normalizedKey = rawKey.toLowerCase();
-    if (map.has(normalizedKey)) continue;
-    map.set(normalizedKey, {
-      key: rawKey,
-      name: String(field?.name || rawKey),
-      defaultValue: field?.defaultValue,
-    });
-  }
-  return Array.from(map.values());
-}
-
-function normalizeBookmarkNicknameUrl(value: string): string {
-  try {
-    const parsed = new URL(value);
-    parsed.hash = '';
-    parsed.hostname = parsed.hostname.toLowerCase();
-    return parsed.toString().replace(/\/+$/, '');
-  } catch {
-    return String(value || '').trim().toLowerCase().replace(/\/+$/, '');
-  }
-}
-
-function normalizeBookmarkNickname(value: string): string {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 64);
-}
-
-function getSuggestedBookmarkNickname(result: BrowserSearchResult): string {
-  const firstTitleWord = String(result.title || '').trim().split(/\s+/)[0] || '';
-  return normalizeBookmarkNickname(firstTitleWord);
-}
-
-function getBrowserResultNicknameKey(result: BrowserSearchResult): string {
-  return [
-    result.source || '',
-    result.sourceProfileId || '',
-    normalizeBookmarkNicknameUrl(result.url),
-  ].join(':');
-}
-
-function canEditBrowserResultNickname(result: BrowserSearchResult | null | undefined): result is BrowserSearchResult {
-  return Boolean(result?.kind === 'bookmark' && result.url && result.source);
-}
-
-type SearchBangDefinition = {
-  key: string;
-  aliases: string[];
-  name: string;
-  host: string;
-  template: string;
-  category?: string;
-  subcategory?: string;
-  source?: 'seed' | 'duckduckgo' | 'unduck' | 'custom';
-  rankHint?: number;
-  defaultPopularityRank?: number;
-  disabled?: boolean;
-};
-
-const SEARCH_BANGS: SearchBangDefinition[] = [
-  { key: 'g', aliases: ['google'], name: 'Google', host: 'google.com', template: 'https://www.google.com/search?q={query}', category: 'Search', source: 'seed', defaultPopularityRank: 1 },
-  { key: 'ddg', aliases: ['d', 'duckduckgo'], name: 'DuckDuckGo', host: 'duckduckgo.com', template: 'https://duckduckgo.com/?q={query}', category: 'Search', source: 'seed', defaultPopularityRank: 2 },
-  { key: 'yt', aliases: ['youtube'], name: 'YouTube', host: 'youtube.com', template: 'https://www.youtube.com/results?search_query={query}', category: 'Multimedia', source: 'seed', defaultPopularityRank: 3 },
-  { key: 'gh', aliases: ['github'], name: 'GitHub', host: 'github.com', template: 'https://github.com/search?q={query}', category: 'Programming', source: 'seed', defaultPopularityRank: 4 },
-  { key: 'npm', aliases: [], name: 'npm', host: 'npmjs.com', template: 'https://www.npmjs.com/search?q={query}', category: 'Programming', source: 'seed', defaultPopularityRank: 12 },
-  { key: 'mdn', aliases: [], name: 'MDN', host: 'developer.mozilla.org', template: 'https://developer.mozilla.org/search?q={query}', category: 'Programming', source: 'seed', defaultPopularityRank: 11 },
-  { key: 'maps', aliases: ['gm'], name: 'Google Maps', host: 'google.com', template: 'https://www.google.com/maps/search/{query}', category: 'Search', source: 'seed', defaultPopularityRank: 5 },
-  { key: 'img', aliases: ['image', 'images', 'gi', 'gim', 'gimg', 'gimages'], name: 'Google Images', host: 'google.com', template: 'https://www.google.com/search?tbm=isch&q={query}', category: 'Search', source: 'seed', defaultPopularityRank: 6 },
-  { key: 'wiki', aliases: ['w', 'wikipedia'], name: 'Wikipedia', host: 'wikipedia.org', template: 'https://en.wikipedia.org/w/index.php?search={query}', category: 'Reference', source: 'seed', defaultPopularityRank: 7 },
-  { key: 'x', aliases: ['twitter'], name: 'X', host: 'x.com', template: 'https://x.com/search?q={query}', category: 'Social', source: 'seed', defaultPopularityRank: 14 },
-];
-
-const COMMON_SEARCH_BANG_ORDER = new Map(
-  ['g', 'ddg', 'yt', 'gh', 'npm', 'mdn', 'maps', 'img', 'wiki', 'x'].map((key, index) => [key, index])
-);
-
-const DEFAULT_POPULAR_BANG_TARGETS: Array<{ rank: number; hosts: string[]; names: string[] }> = [
-  { rank: 1, hosts: ['google.com'], names: ['google'] },
-  { rank: 2, hosts: ['duckduckgo.com'], names: ['duckduckgo'] },
-  { rank: 3, hosts: ['youtube.com'], names: ['youtube'] },
-  { rank: 4, hosts: ['github.com'], names: ['github'] },
-  { rank: 5, hosts: ['google.com/maps'], names: ['google maps', 'maps'] },
-  { rank: 6, hosts: ['google.com'], names: ['google images', 'images'] },
-  { rank: 7, hosts: ['wikipedia.org'], names: ['wikipedia'] },
-  { rank: 8, hosts: ['reddit.com'], names: ['reddit'] },
-  { rank: 9, hosts: ['amazon.com'], names: ['amazon'] },
-  { rank: 10, hosts: ['stackoverflow.com'], names: ['stack overflow', 'stackoverflow'] },
-  { rank: 11, hosts: ['developer.mozilla.org'], names: ['mdn'] },
-  { rank: 12, hosts: ['npmjs.com'], names: ['npm'] },
-  { rank: 13, hosts: ['imdb.com'], names: ['imdb'] },
-  { rank: 14, hosts: ['x.com', 'twitter.com'], names: ['x', 'twitter'] },
-  { rank: 15, hosts: ['linkedin.com'], names: ['linkedin'] },
-  { rank: 16, hosts: ['spotify.com'], names: ['spotify'] },
-  { rank: 17, hosts: ['translate.google.com'], names: ['google translate', 'translate'] },
-  { rank: 18, hosts: ['mail.google.com'], names: ['gmail'] },
-  { rank: 19, hosts: ['drive.google.com'], names: ['google drive', 'drive'] },
-  { rank: 20, hosts: ['docs.google.com'], names: ['google docs', 'docs'] },
-];
-
-type BangParseState =
-  | { mode: 'none' }
-  | { mode: 'selecting'; token: string; tokenIndex: number; queryWithoutToken: string }
-  | { mode: 'active'; bang: SearchBangDefinition; query: string };
-
-const SEARCH_BANGS_BY_KEY = new Map<string, SearchBangDefinition>();
-for (const bang of SEARCH_BANGS) {
-  SEARCH_BANGS_BY_KEY.set(bang.key, bang);
-  for (const alias of bang.aliases || []) {
-    SEARCH_BANGS_BY_KEY.set(alias, bang);
-  }
-}
-
-function getFaviconUrlForHost(host: string): string {
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
-}
-
-function buildBangSearchUrl(bang: SearchBangDefinition, query: string): string {
-  return bang.template
-    .replace('{bang}', encodeURIComponent(bang.key))
-    .replace('{query}', encodeURIComponent(query.trim()));
-}
-
-function normalizeBangHost(value: string): string {
-  return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
-}
-
-function getDefaultPopularityRankForBang(bang: SearchBangDefinition): number | undefined {
-  if (bang.defaultPopularityRank) return bang.defaultPopularityRank;
-  const host = normalizeBangHost(bang.host);
-  const name = bang.name.toLowerCase();
-  for (const target of DEFAULT_POPULAR_BANG_TARGETS) {
-    if (target.hosts.some((candidate) => host.includes(candidate.toLowerCase().replace(/^www\./, '')))) return target.rank;
-    if (target.names.some((candidate) => name === candidate || name.includes(candidate))) return target.rank;
-  }
-  return undefined;
-}
-
-function normalizeBangDefinition(raw: Partial<SearchBangDefinition> & { key: string }): SearchBangDefinition {
-  const key = String(raw.key || '').trim().toLowerCase().replace(/^!+/, '').replace(/[^a-z0-9.+_-]/g, '');
-  const aliases = Array.from(new Set((raw.aliases || []).map((alias) => String(alias || '').trim().toLowerCase().replace(/^!+/, '').replace(/[^a-z0-9.+_-]/g, '')).filter((alias) => alias && alias !== key)));
-  const bang: SearchBangDefinition = {
-    key,
-    aliases,
-    name: String(raw.name || key).trim() || key,
-    host: String(raw.host || 'duckduckgo.com').trim() || 'duckduckgo.com',
-    template: String(raw.template || 'https://duckduckgo.com/?q=!{bang}%20{query}').trim() || 'https://duckduckgo.com/?q=!{bang}%20{query}',
-    category: raw.category,
-    subcategory: raw.subcategory,
-    source: raw.source || 'duckduckgo',
-    rankHint: raw.rankHint,
-    defaultPopularityRank: raw.defaultPopularityRank,
-    disabled: raw.disabled,
-  };
-  bang.defaultPopularityRank = getDefaultPopularityRankForBang(bang);
-  return bang;
-}
-
-function getBangUsageScore(usage: WebSearchBangUsageSetting | undefined): number {
-  if (!usage) return 0;
-  const elapsed = Math.max(0, Date.now() - (usage.lastUsedAt || 0));
-  const decay = Math.pow(0.5, elapsed / WEB_SEARCH_FRECENCY_HALF_LIFE_MS);
-  return Math.max(0, Number(usage.frecencyScore || 0) * decay);
-}
-
-function createUpdatedBangUsage(current: WebSearchBangUsageSetting | undefined): WebSearchBangUsageSetting {
-  const now = Date.now();
-  const elapsed = Math.max(0, now - (current?.lastUsedAt || now));
-  const decay = Math.pow(0.5, elapsed / WEB_SEARCH_FRECENCY_HALF_LIFE_MS);
-  return {
-    useCount: Math.max(0, Math.floor(Number(current?.useCount) || 0)) + 1,
-    lastUsedAt: now,
-    frecencyScore: Math.max(0, Number(current?.frecencyScore || 0) * decay) + 1,
-  };
-}
-
-function bangSearchText(bang: SearchBangDefinition): string {
-  return [
-    bang.key,
-    ...(bang.aliases || []),
-    bang.name,
-    bang.host,
-    bang.category || '',
-    bang.subcategory || '',
-  ].join(' ').toLowerCase();
-}
-
-function scoreBangMatch(bang: SearchBangDefinition, rawFilter: string): number {
-  const filter = String(rawFilter || '').trim().toLowerCase().replace(/^!+/, '');
-  if (!filter) return 1;
-  const aliases = [bang.key, ...(bang.aliases || [])];
-  if (aliases.includes(filter)) return 1000;
-  if (aliases.some((alias) => alias.startsWith(filter))) return 900;
-  const name = bang.name.toLowerCase();
-  if (name === filter) return 860;
-  if (name.startsWith(filter)) return 820;
-  const host = normalizeBangHost(bang.host);
-  if (host === filter || host.startsWith(filter) || host.includes(`.${filter}`)) return 760;
-  if (bangSearchText(bang).includes(filter)) return 620;
-  const terms = filter.split(/\s+/).filter(Boolean);
-  if (terms.length > 1 && terms.every((term) => bangSearchText(bang).includes(term))) return 580;
-  return 0;
-}
-
-function parseSearchBangState(input: string, bangs: SearchBangDefinition[]): BangParseState {
-  const raw = String(input || '');
-  const trimmed = raw.trim();
-  if (!trimmed) return { mode: 'none' };
-  const parts = trimmed.split(/\s+/).filter(Boolean);
-  const map = new Map<string, SearchBangDefinition>();
-  for (const bang of bangs) {
-    if (bang.disabled) continue;
-    map.set(bang.key, bang);
-    for (const alias of bang.aliases || []) map.set(alias, bang);
-    const normalizedName = bang.name.toLowerCase().replace(/[^a-z0-9.+_-]/g, '');
-    if (normalizedName) map.set(normalizedName, bang);
-  }
-
-  for (let index = 0; index < parts.length; index += 1) {
-    const part = parts[index];
-    if (!part.startsWith('!')) continue;
-    const token = part.slice(1).toLowerCase();
-    const bang = token ? map.get(token) : undefined;
-    const queryWithoutToken = parts.filter((_, partIndex) => partIndex !== index).join(' ');
-    const tokenHasTrailingSpace = new RegExp(`!${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s`).test(raw);
-    if (bang && (tokenHasTrailingSpace || index < parts.length - 1)) {
-      return { mode: 'active', bang, query: queryWithoutToken };
-    }
-    return { mode: 'selecting', token, tokenIndex: index, queryWithoutToken };
-  }
-  return { mode: 'none' };
-}
-
-function parseSearchBang(input: string): {
-  rawQuery: string;
-  query: string;
-  bang: SearchBangDefinition | null;
-  activeBangPrefix: string | null;
-} {
-  const rawQuery = String(input || '');
-  const parts = rawQuery.trim().split(/\s+/).filter(Boolean);
-  let bang: SearchBangDefinition | null = null;
-  let activeBangPrefix: string | null = null;
-  let bangIndex = -1;
-  let activeBangIndex = -1;
-
-  for (let index = 0; index < parts.length; index += 1) {
-    const part = parts[index];
-    if (!part.startsWith('!')) continue;
-    if (part.length === 1) {
-      activeBangPrefix = '';
-      activeBangIndex = index;
-      continue;
-    }
-    const key = part.slice(1).toLowerCase();
-    const match = SEARCH_BANGS_BY_KEY.get(key);
-    if (match) {
-      bang = match;
-      bangIndex = index;
-      break;
-    }
-    if (/^[a-z0-9]*$/i.test(key)) {
-      activeBangPrefix = key;
-      activeBangIndex = index;
-    }
-  }
-
-  const omittedIndex = bangIndex >= 0 ? bangIndex : activeBangIndex;
-  const query = omittedIndex >= 0
-    ? parts.filter((_, index) => index !== omittedIndex).join(' ')
-    : parts.join(' ');
-  return { rawQuery, query, bang, activeBangPrefix };
-}
-
-function getSearchBangByKey(key: string | undefined): SearchBangDefinition {
-  return SEARCH_BANGS_BY_KEY.get(String(key || '').trim().toLowerCase().replace(/^!+/, '')) || SEARCH_BANGS_BY_KEY.get('g') || SEARCH_BANGS[0];
-}
-
-function getSearchBangByKeyFromList(key: string | undefined, bangs: SearchBangDefinition[]): SearchBangDefinition {
-  const normalized = String(key || '').trim().toLowerCase().replace(/^!+/, '');
-  for (const bang of bangs) {
-    if (bang.key === normalized || (bang.aliases || []).includes(normalized)) return bang;
-  }
-  return getSearchBangByKey(key);
-}
-
-function parseSearchBangFromList(input: string, bangs: SearchBangDefinition[]): {
-  rawQuery: string;
-  query: string;
-  bang: SearchBangDefinition | null;
-  activeBangPrefix: string | null;
-} {
-  const map = new Map<string, SearchBangDefinition>();
-  for (const bang of bangs) {
-    map.set(bang.key, bang);
-    for (const alias of bang.aliases || []) map.set(alias, bang);
-  }
-  const rawQuery = String(input || '');
-  const parts = rawQuery.trim().split(/\s+/).filter(Boolean);
-  let bang: SearchBangDefinition | null = null;
-  let activeBangPrefix: string | null = null;
-  let bangIndex = -1;
-  let activeBangIndex = -1;
-
-  for (let index = 0; index < parts.length; index += 1) {
-    const part = parts[index];
-    if (!part.startsWith('!')) continue;
-    if (part.length === 1) {
-      activeBangPrefix = '';
-      activeBangIndex = index;
-      continue;
-    }
-    const key = part.slice(1).toLowerCase();
-    const match = map.get(key);
-    if (match) {
-      bang = match;
-      bangIndex = index;
-      break;
-    }
-    if (/^[a-z0-9.+_-]*$/i.test(key)) {
-      activeBangPrefix = key;
-      activeBangIndex = index;
-    }
-  }
-
-  const omittedIndex = bangIndex >= 0 ? bangIndex : activeBangIndex;
-  const query = omittedIndex >= 0
-    ? parts.filter((_, index) => index !== omittedIndex).join(' ')
-    : parts.join(' ');
-  return { rawQuery, query, bang, activeBangPrefix };
-}
-
-function getSortedSearchBangs(
-  bangs: SearchBangDefinition[],
-  prefix: string | null,
-  usage: Record<string, WebSearchBangUsageSetting>,
-  limit = bangs.length
-): SearchBangDefinition[] {
-  const normalized = String(prefix || '').toLowerCase();
-  const matches = normalized
-    ? bangs.filter((bang) => scoreBangMatch(bang, normalized) > 0)
-    : bangs;
-  return [...matches]
-    .sort((a, b) => {
-      const matchDelta = scoreBangMatch(b, normalized) - scoreBangMatch(a, normalized);
-      if (matchDelta !== 0) return matchDelta;
-      const usageDelta = getBangUsageScore(usage[b.key]) - getBangUsageScore(usage[a.key]);
-      if (Math.abs(usageDelta) > 0.0001) return usageDelta > 0 ? 1 : -1;
-      if (!normalized) {
-        const commonDelta = (a.defaultPopularityRank ?? COMMON_SEARCH_BANG_ORDER.get(a.key) ?? Number.POSITIVE_INFINITY) -
-          (b.defaultPopularityRank ?? COMMON_SEARCH_BANG_ORDER.get(b.key) ?? Number.POSITIVE_INFINITY);
-        if (commonDelta !== 0) return commonDelta;
-        const rankDelta = (a.rankHint ?? Number.POSITIVE_INFINITY) - (b.rankHint ?? Number.POSITIVE_INFINITY);
-        if (rankDelta !== 0) return rankDelta;
-      }
-      return a.key.localeCompare(b.key);
-    })
-    .slice(0, Math.max(0, limit));
-}
-
-function normalizeWebSearchBangAliasList(value: string): string[] {
-  return Array.from(new Set(
-    String(value || '')
-      .split(',')
-      .map((alias) => alias.trim().toLowerCase().replace(/^!+/, '').replace(/[^a-z0-9.+_-]/g, ''))
-      .filter(Boolean)
-  ));
-}
-
-function formatWebSearchBangAliases(aliases: string[]): string {
-  return aliases.map((alias) => `!${alias}`).join(', ');
-}
-
-function formatWebSearchBangAliasSummary(aliases: string[]): string {
-  const normalized = normalizeWebSearchBangAliasList(formatWebSearchBangAliases(aliases));
-  if (normalized.length <= 1) return '';
-  const visible = normalized.slice(0, 5).map((alias) => `!${alias}`).join(', ');
-  return normalized.length > 5 ? `${visible}, +${normalized.length - 5}` : visible;
-}
-
-function getWebSearchBangSection(
-  bang: SearchBangDefinition,
-  filter: string,
-  usage: Record<string, WebSearchBangUsageSetting>
-): WebSearchResult['section'] {
-  if (filter.trim()) return 'matching';
-  if (bang.disabled) return 'hidden';
-  if (getBangUsageScore(usage[bang.key]) > 0) return 'recent';
-  return 'all';
-}
-
-function getWebSearchBangSectionTitleKey(section: WebSearchResult['section']): string {
-  switch (section) {
-    case 'search':
-      return 'launcher.categories.search';
-    case 'recent':
-      return 'launcher.browserSearch.bangSections.used';
-    case 'matching':
-      return 'launcher.browserSearch.bangSections.matching';
-    case 'hidden':
-      return 'launcher.browserSearch.bangSections.hidden';
-    case 'all':
-    default:
-      return 'launcher.browserSearch.bangSections.all';
-  }
-}
 
 // Intern cache: commandId → stable iconDataUrl string reference.
 // Prevents duplicate base64 strings accumulating across repeated fetchCommands() IPC calls.
