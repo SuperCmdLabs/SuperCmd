@@ -83,19 +83,13 @@ import WebSearchView, {
   type WebSearchCustomBangPromptState,
   type WebSearchViewSection,
 } from './views/WebSearchView';
-import LauncherSurface from './components/LauncherSurface';
-import LauncherSearchHeader from './components/LauncherSearchHeader';
-import LauncherCompactShowMoreRow from './components/LauncherCompactShowMoreRow';
-import LauncherCommandList, {
-  type LauncherCommandSection,
-} from './components/LauncherCommandList';
-import LauncherFooter from './components/LauncherFooter';
+import LauncherMainView from './views/LauncherMainView';
+import type { LauncherCommandSection } from './components/LauncherCommandList';
 import HiddenExtensionRunners from './components/HiddenExtensionRunners';
 import DetachedOverlayRunners from './components/DetachedOverlayRunners';
 import LauncherViewShell from './components/LauncherViewShell';
-import LauncherActionsOverlay from './components/LauncherActionsOverlay';
-import LauncherContextMenuOverlay from './components/LauncherContextMenuOverlay';
-import QuickLinkDynamicPromptOverlay from './components/QuickLinkDynamicPromptOverlay';
+import type { LauncherContextMenuState } from './components/LauncherContextMenuOverlay';
+import type { QuickLinkDynamicPromptState } from './components/QuickLinkDynamicPromptOverlay';
 import { useI18n } from './i18n';
 import {
   asTildePath,
@@ -299,20 +293,12 @@ const App: React.FC = () => {
   const [whisperAutoClose, setWhisperAutoClose] = useState(true);
   const [showActions, setShowActions] = useState(false);
   const [actionsCommand, setActionsCommand] = useState<CommandInfo | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    command: CommandInfo;
-  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<LauncherContextMenuState | null>(null);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [selectedContextActionIndex, setSelectedContextActionIndex] = useState(0);
   const [quickLinkEditId, setQuickLinkEditId] = useState<string | null>(null);
-  const [quickLinkDynamicPrompt, setQuickLinkDynamicPrompt] = useState<{
-    command: CommandInfo;
-    quickLinkId: string;
-    fields: QuickLinkDynamicField[];
-    values: Record<string, string>;
-  } | null>(null);
+  const [quickLinkDynamicPrompt, setQuickLinkDynamicPrompt] =
+    useState<QuickLinkDynamicPromptState | null>(null);
   const [bookmarkNicknamePrompt, setBookmarkNicknamePrompt] = useState<{
     result: BrowserSearchResult;
     value: string;
@@ -5508,128 +5494,107 @@ const App: React.FC = () => {
 
   // ─── Launcher mode ──────────────────────────────────────────────
   return (
-    <>
-    {alwaysMountedRunners}
-    <LauncherSurface
+    <LauncherMainView
+      alwaysMountedRunners={alwaysMountedRunners}
       backgroundImageUrl={launcherBackgroundImageUrl}
-      showBackground={Boolean(launcherBackgroundImageUrl)}
       backgroundBlurPercent={launcherBackgroundImageBlurPercent}
       backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-      className="launcher-main-surface"
-    >
-        <LauncherSearchHeader
-          inlineArgumentLaneRef={inlineArgumentLaneRef}
-          inlineArgumentClusterRef={inlineArgumentClusterRef}
-          inlineArgumentInputRefs={inlineArgumentInputRefs}
-          inlineQuickLinkInputRefs={inlineQuickLinkInputRefs}
-          inputRef={inputRef}
-          placeholder={aiMode ? t('launcher.aiMode.placeholder') : t('launcher.searchPlaceholder')}
-          value={launcherInputValue}
-          onInputChange={handleLauncherInputChange}
-          onBlur={handleLauncherSearchBlur}
-          onKeyDown={handleKeyDown}
-          inlineArgumentStartPx={inlineArgumentStartPx}
-          selectedInlineArgumentLeadingIcon={selectedInlineArgumentLeadingIcon}
-          selectedInlineExtensionArgumentDefinitions={selectedInlineExtensionArgumentDefinitions}
-          selectedInlineExtensionArgumentValues={selectedInlineExtensionArgumentValues}
-          hasSelectedExtensionOverflowArguments={hasSelectedExtensionOverflowArguments}
-          selectedExtensionOverflowCount={selectedExtensionArgumentDefinitions.length - selectedInlineExtensionArgumentDefinitions.length}
-          onInlineExtensionArgumentChange={handleInlineExtensionArgumentChange}
-          selectedQuickLinkId={selectedQuickLinkId}
-          selectedInlineQuickLinkDynamicFields={selectedInlineQuickLinkDynamicFields}
-          selectedInlineQuickLinkDynamicValues={selectedInlineQuickLinkDynamicValues}
-          hasSelectedQuickLinkOverflowDynamicFields={hasSelectedQuickLinkOverflowDynamicFields}
-          selectedQuickLinkOverflowCount={selectedQuickLinkDynamicFields.length - selectedInlineQuickLinkDynamicFields.length}
-          onInlineQuickLinkDynamicValueChange={handleInlineQuickLinkDynamicValueChange}
-          searchQuery={searchQuery}
-          aiAvailable={aiAvailable}
-          shouldHideAskAi={shouldHideAskAi}
-          onAskAi={() => startAiChat(searchQuery)}
-          onClearSearch={() => setSearchQuery('')}
-          t={t}
-        />
 
-        {launcherViewMode === 'compact' && isCompactCollapsed && (
-          <LauncherCompactShowMoreRow
-            logoSrc={supercmdLogo}
-            onShowMore={showCompactLauncher}
-            t={t}
-          />
-        )}
+      inlineArgumentLaneRef={inlineArgumentLaneRef}
+      inlineArgumentClusterRef={inlineArgumentClusterRef}
+      inlineArgumentInputRefs={inlineArgumentInputRefs}
+      inlineQuickLinkInputRefs={inlineQuickLinkInputRefs}
 
-        <LauncherCommandList
-          listRef={listRef}
-          itemRefs={itemRefs}
-          isLoading={isLoading}
-          isHidden={launcherViewMode === 'compact' && isCompactCollapsed}
-          displayCommands={displayCommands}
-          sections={launcherCommandSections}
-          calcResult={calcResult}
-          calcOffset={calcOffset}
-          selectedIndex={selectedIndex}
-          commandAliases={commandAliases}
-          commandHotkeys={commandHotkeys}
-          onCalculatorCopy={copyCalculatorResult}
-          onCommandClick={handleCommandRowClick}
-          onCommandContextMenu={openLauncherCommandContextMenu}
-          t={t}
-        />
-        
-        {!isLoading && !(launcherViewMode === 'compact' && isCompactCollapsed) && (
-          <LauncherFooter
-            status={launcherFooterStatus}
-            selectedCommand={selectedCommand}
-            selectedAction={selectedActions[0]}
-            resultCount={displayCommands.length}
-            onOpenActions={openSelectedCommandActions}
-            t={t}
-          />
-        )}
-    </LauncherSurface>
-    <QuickLinkDynamicPromptOverlay
-      prompt={quickLinkDynamicPrompt}
-      inputRef={quickLinkDynamicInputRef}
-      commandTitle={quickLinkDynamicPromptTitle}
-      setPrompt={setQuickLinkDynamicPrompt}
-      onCancel={cancelQuickLinkDynamicPrompt}
-      onSubmit={submitQuickLinkDynamicPrompt}
-      isNativeLiquidGlass={isNativeLiquidGlass}
-      isGlassyTheme={isGlassyTheme}
-    />
-    {showActions && (
-      <LauncherActionsOverlay
-        actions={actionsOverlayActions}
-        selectedIndex={selectedActionIndex}
-        setSelectedIndex={setSelectedActionIndex}
-        overlayRef={actionsOverlayRef}
-        onKeyDown={handleActionsOverlayKeyDown}
-        onClose={() => setShowActions(false)}
-        onActionClick={async (action) => {
-          await Promise.resolve(action.execute());
-          setShowActions(false);
-          restoreLauncherFocus();
-        }}
-        isNativeLiquidGlass={isNativeLiquidGlass}
-        isGlassyTheme={isGlassyTheme}
-      />
-    )}
-    <LauncherContextMenuOverlay
+      inputRef={inputRef}
+      searchPlaceholder={aiMode ? t('launcher.aiMode.placeholder') : t('launcher.searchPlaceholder')}
+      launcherInputValue={launcherInputValue}
+      onInputChange={handleLauncherInputChange}
+      onSearchBlur={handleLauncherSearchBlur}
+      onSearchKeyDown={handleKeyDown}
+
+      inlineArgumentStartPx={inlineArgumentStartPx}
+      selectedInlineArgumentLeadingIcon={selectedInlineArgumentLeadingIcon}
+
+      selectedInlineExtensionArgumentDefinitions={selectedInlineExtensionArgumentDefinitions}
+      selectedInlineExtensionArgumentValues={selectedInlineExtensionArgumentValues}
+      hasSelectedExtensionOverflowArguments={hasSelectedExtensionOverflowArguments}
+      selectedExtensionOverflowCount={selectedExtensionArgumentDefinitions.length - selectedInlineExtensionArgumentDefinitions.length}
+      onInlineExtensionArgumentChange={handleInlineExtensionArgumentChange}
+
+      selectedQuickLinkId={selectedQuickLinkId}
+      selectedInlineQuickLinkDynamicFields={selectedInlineQuickLinkDynamicFields}
+      selectedInlineQuickLinkDynamicValues={selectedInlineQuickLinkDynamicValues}
+      hasSelectedQuickLinkOverflowDynamicFields={hasSelectedQuickLinkOverflowDynamicFields}
+      selectedQuickLinkOverflowCount={selectedQuickLinkDynamicFields.length - selectedInlineQuickLinkDynamicFields.length}
+      onInlineQuickLinkDynamicValueChange={handleInlineQuickLinkDynamicValueChange}
+
+      searchQuery={searchQuery}
+      aiAvailable={aiAvailable}
+      shouldHideAskAi={shouldHideAskAi}
+      onAskAi={() => startAiChat(searchQuery)}
+      onClearSearch={() => setSearchQuery('')}
+
+      launcherViewMode={launcherViewMode}
+      isCompactCollapsed={isCompactCollapsed}
+      logoSrc={supercmdLogo}
+      onShowCompactLauncher={showCompactLauncher}
+
+      listRef={listRef}
+      itemRefs={itemRefs}
+      isLoading={isLoading}
+      displayCommands={displayCommands}
+      sections={launcherCommandSections}
+      calcResult={calcResult}
+      calcOffset={calcOffset}
+      selectedIndex={selectedIndex}
+      commandAliases={commandAliases}
+      commandHotkeys={commandHotkeys}
+      onCalculatorCopy={copyCalculatorResult}
+      onCommandClick={handleCommandRowClick}
+      onCommandContextMenu={openLauncherCommandContextMenu}
+
+      launcherFooterStatus={launcherFooterStatus}
+      selectedCommand={selectedCommand}
+      selectedAction={selectedActions[0]}
+      onOpenActions={openSelectedCommandActions}
+
+      quickLinkDynamicPrompt={quickLinkDynamicPrompt}
+      quickLinkDynamicInputRef={quickLinkDynamicInputRef}
+      quickLinkDynamicPromptTitle={quickLinkDynamicPromptTitle}
+      setQuickLinkDynamicPrompt={setQuickLinkDynamicPrompt}
+      cancelQuickLinkDynamicPrompt={cancelQuickLinkDynamicPrompt}
+      submitQuickLinkDynamicPrompt={submitQuickLinkDynamicPrompt}
+
+      showActions={showActions}
+      actionsOverlayActions={actionsOverlayActions}
+      selectedActionIndex={selectedActionIndex}
+      setSelectedActionIndex={setSelectedActionIndex}
+      actionsOverlayRef={actionsOverlayRef}
+      handleActionsOverlayKeyDown={handleActionsOverlayKeyDown}
+      closeActionsOverlay={() => setShowActions(false)}
+      onActionOverlayClick={async (action) => {
+        await Promise.resolve(action.execute());
+        setShowActions(false);
+        restoreLauncherFocus();
+      }}
+
       contextMenu={contextMenu}
-      actions={contextActions}
-      selectedIndex={selectedContextActionIndex}
-      setSelectedIndex={setSelectedContextActionIndex}
-      menuRef={contextMenuRef}
-      onKeyDown={handleContextMenuKeyDown}
-      onClose={() => setContextMenu(null)}
-      onActionClick={async (action) => {
+      contextActions={contextActions}
+      selectedContextActionIndex={selectedContextActionIndex}
+      setSelectedContextActionIndex={setSelectedContextActionIndex}
+      contextMenuRef={contextMenuRef}
+      handleContextMenuKeyDown={handleContextMenuKeyDown}
+      closeContextMenu={() => setContextMenu(null)}
+      onContextMenuActionClick={async (action) => {
         await Promise.resolve(action.execute());
         setContextMenu(null);
         restoreLauncherFocus();
       }}
+
       isNativeLiquidGlass={isNativeLiquidGlass}
       isGlassyTheme={isGlassyTheme}
+      t={t}
     />
-    </>
   );
 };
 

@@ -4,7 +4,7 @@ import type { LauncherAction } from '../utils/command-helpers';
 import { getShortcutDisplayParts } from '../utils/command-helpers';
 import { getLauncherFloatingPanelStyle } from './launcher-overlay-style';
 
-type LauncherContextMenuState = {
+export type LauncherContextMenuState = {
   x: number;
   y: number;
   command: CommandInfo;
