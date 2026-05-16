@@ -58,6 +58,7 @@ async function sendSnapshot(reason) {
         windowId: tab.windowId,
         tabId: tab.id,
         tabIndex: Number.isFinite(tab.index) ? tab.index : 0,
+        favIconUrl: tab.favIconUrl || '',
         title: tab.title || '',
         url: tab.url || tab.pendingUrl || '',
         active: Boolean(tab.active),

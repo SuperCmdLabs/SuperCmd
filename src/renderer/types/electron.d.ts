@@ -20,6 +20,7 @@ export interface CommandInfo {
   alwaysOnTop?: boolean;
   browserMatchKind?: 'open-tab' | 'history' | 'search';
   browserResultKind?: 'open-tab' | 'bookmark' | 'history' | 'search';
+  browserFaviconUrl?: string;
   browserActionInput?: string;
   browserFocusAvailable?: boolean;
   commandArgumentDefinitions?: Array<{
@@ -351,6 +352,7 @@ export interface BrowserTabEntry {
   windowId: string;
   tabId: string;
   tabIndex: number;
+  favIconUrl: string;
   title: string;
   url: string;
   host: string;

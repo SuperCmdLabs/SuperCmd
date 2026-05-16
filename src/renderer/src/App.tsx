@@ -1986,6 +1986,7 @@ const App: React.FC = () => {
         alwaysOnTop: true,
         browserMatchKind: browserSearchTopResult.kind === 'open-tab' ? 'open-tab' : 'history',
         browserResultKind: browserSearchTopResult.kind,
+        browserFaviconUrl: browserSearchTopResult.faviconUrl,
         browserActionInput: browserSearchTopResult.actionInput,
         browserFocusAvailable: browserSearchTopResult.focusAvailable,
       };
@@ -2052,6 +2053,7 @@ const App: React.FC = () => {
       keywords: [result.title, result.subtitle, result.url],
       browserMatchKind: result.kind === 'open-tab' ? 'open-tab' : 'history',
       browserResultKind: result.kind,
+      browserFaviconUrl: result.faviconUrl,
       browserActionInput: result.actionInput,
       browserFocusAvailable: result.focusAvailable,
     }));
@@ -4484,6 +4486,7 @@ const App: React.FC = () => {
                                   subtitle: result.subtitle,
                                   category: 'system',
                                   browserResultKind: result.kind,
+                                  browserFaviconUrl: result.faviconUrl,
                                 })}
                               </div>
                               <div className="min-w-0 flex-1 flex items-center gap-2">
@@ -4516,6 +4519,7 @@ const App: React.FC = () => {
                         subtitle: selectedBrowserResult.subtitle,
                         category: 'system',
                         browserResultKind: selectedBrowserResult.kind,
+                        browserFaviconUrl: selectedBrowserResult.faviconUrl,
                       })}
                     </span>
                     <span className="truncate">{selectedBrowserResult.title}</span>

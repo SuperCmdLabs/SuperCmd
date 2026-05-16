@@ -22,6 +22,7 @@ export interface BrowserTabSnapshotItem {
   windowId: string | number;
   tabId: string | number;
   tabIndex?: number;
+  favIconUrl?: string;
   title?: string;
   url?: string;
   active?: boolean;
@@ -47,6 +48,7 @@ export interface BrowserTabEntry {
   windowId: string;
   tabId: string;
   tabIndex: number;
+  favIconUrl: string;
   title: string;
   url: string;
   host: string;
@@ -538,6 +540,7 @@ function normalizeTab(
     windowId,
     tabId,
     tabIndex: normalizeTabIndex(item.tabIndex),
+    favIconUrl: cleanFaviconUrl(item.favIconUrl),
     title: cleanName(item.title || host || url),
     url,
     host,
@@ -571,6 +574,13 @@ function compareIdentifier(a: string, b: string): number {
 function normalizeTabIndex(value: unknown): number {
   const index = Number(value);
   return Number.isFinite(index) && index >= 0 ? Math.floor(index) : 0;
+}
+
+function cleanFaviconUrl(value: unknown): string {
+  const url = String(value || '').trim();
+  if (!url) return '';
+  if (/^(https?:|data:image\/)/i.test(url)) return url.slice(0, 2048);
+  return '';
 }
 
 function isSupportedTabUrl(url: string): boolean {

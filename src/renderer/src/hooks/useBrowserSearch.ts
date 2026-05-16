@@ -24,6 +24,7 @@ export interface BrowserSearchResult {
   url: string;
   actionInput: string;
   focusAvailable: boolean;
+  faviconUrl?: string;
   browserName?: string;
   profileName?: string;
   windowId?: string;
@@ -422,6 +423,7 @@ function buildBrowserCandidates(
         url: entry.url,
         actionInput: entry.url,
         focusAvailable: false,
+        faviconUrl: getFaviconUrlForUrl(entry.url),
         score,
         completion: urlScore?.completion || '',
       });
@@ -464,6 +466,7 @@ function getOpenTabCandidates(
         url: tab.url,
         actionInput: tab.url,
         focusAvailable: true,
+        faviconUrl: normalizeFaviconUrl(tab.favIconUrl, tab.url),
         browserName: tab.browserName,
         profileName: tab.profileName,
         windowId: tab.windowId,
@@ -502,6 +505,21 @@ function compareIdentifier(a: string, b: string): number {
     return aNumber - bNumber;
   }
   return a.localeCompare(b);
+}
+
+function normalizeFaviconUrl(faviconUrl: string | undefined, pageUrl: string): string {
+  const clean = String(faviconUrl || '').trim();
+  if (/^(https?:|data:image\/)/i.test(clean)) return clean;
+  return getFaviconUrlForUrl(pageUrl);
+}
+
+function getFaviconUrlForUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parsed.hostname)}&sz=64`;
+  } catch {
+    return '';
+  }
 }
 
 function compareBrowserResults(a: BrowserSearchResult, b: BrowserSearchResult): number {

@@ -961,6 +961,9 @@ export function renderCommandIcon(command: CommandInfo): React.ReactNode {
       />
     );
   }
+  if (command.browserFaviconUrl) {
+    return renderBrowserFaviconIcon(command.browserFaviconUrl, command.browserResultKind);
+  }
   if (command.iconName) {
     return (
       <div
@@ -1018,6 +1021,34 @@ export function renderCommandIcon(command: CommandInfo): React.ReactNode {
       style={{ background: 'var(--icon-neutral-bg)', color: 'var(--icon-neutral-fg)' }}
     >
       <Settings className="w-3 h-3" />
+    </div>
+  );
+}
+
+function renderBrowserFaviconIcon(faviconUrl: string, kind?: CommandInfo['browserResultKind']): React.ReactNode {
+  const fallback = kind === 'open-tab' ? (
+    <PanelTop className="w-3 h-3 text-cyan-300" />
+  ) : kind === 'bookmark' ? (
+    <Bookmark className="w-3 h-3 text-amber-300" />
+  ) : (
+    <Clock className="w-3 h-3 text-sky-300" />
+  );
+
+  return (
+    <div className="relative w-5 h-5 rounded bg-white/[0.06] flex items-center justify-center overflow-hidden">
+      <div className="absolute inset-0 flex items-center justify-center">
+        {fallback}
+      </div>
+      <img
+        src={faviconUrl}
+        alt=""
+        className="relative z-10 w-4 h-4 rounded-[3px] object-contain"
+        draggable={false}
+        referrerPolicy="no-referrer"
+        onError={(event) => {
+          event.currentTarget.style.display = 'none';
+        }}
+      />
     </div>
   );
 }
