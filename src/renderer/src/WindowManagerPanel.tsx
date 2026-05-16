@@ -537,6 +537,29 @@ function getHostMetrics(hostWindow: Window | null | undefined): ScreenArea {
   };
 }
 
+async function getActiveDesktopWorkAreaFallback(): Promise<ScreenArea | null> {
+  try {
+    const desktops = (await window.electron.getDesktops?.()) || [];
+    const activeDesktop = desktops.find((desktop: any) => desktop?.active) || desktops[0];
+    const workArea = activeDesktop?.workArea;
+    const x = Number(workArea?.x);
+    const y = Number(workArea?.y);
+    const width = Number(workArea?.width);
+    const height = Number(workArea?.height);
+    if (![x, y, width, height].every((value) => Number.isFinite(value))) {
+      return null;
+    }
+    return {
+      left: Math.round(x),
+      top: Math.round(y),
+      width: Math.max(1, Math.round(width)),
+      height: Math.max(1, Math.round(height)),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function normalizeScreenArea(raw: any, fallback: ScreenArea): ScreenArea {
   const x = Number(raw?.x);
   const y = Number(raw?.y);
@@ -1201,6 +1224,7 @@ function findBestTargetWindowForArea(windows: ManagedWindow[], area: ScreenArea)
 
 async function resolveWindowManagementExecutionContext(): Promise<{ target: ManagedWindow | null; area: ScreenArea }> {
   const hostArea = getHostMetrics(window);
+  const desktopFallbackArea = await getActiveDesktopWorkAreaFallback();
   let target: ManagedWindow | null = null;
   let workAreaRaw: any = null;
   try {
@@ -1220,7 +1244,7 @@ async function resolveWindowManagementExecutionContext(): Promise<{ target: Mana
       target = (await window.electron.getActiveWindow?.()) as ManagedWindow | null;
     } catch {}
   }
-  const area = normalizeScreenArea(workAreaRaw, hostArea);
+  const area = normalizeScreenArea(workAreaRaw, desktopFallbackArea || hostArea);
 
   if (target && !isManageableWindow(target)) {
     target = null;
@@ -1448,6 +1472,7 @@ const WindowManagerPanel: React.FC<WindowManagerPanelProps> = ({ show, portalTar
     if (contextInFlightRef.current) return contextInFlightRef.current;
 
     const promise = (async () => {
+      const desktopFallbackArea = await getActiveDesktopWorkAreaFallback();
       let target: ManagedWindow | null = null;
       let workAreaRaw: any = null;
       try {
@@ -1467,7 +1492,7 @@ const WindowManagerPanel: React.FC<WindowManagerPanelProps> = ({ show, portalTar
           target = (await window.electron.getActiveWindow?.()) as ManagedWindow | null;
         } catch {}
       }
-      const area = normalizeScreenArea(workAreaRaw, hostArea);
+      const area = normalizeScreenArea(workAreaRaw, desktopFallbackArea || hostArea);
 
       if (target && !isManageableWindow(target)) {
         target = null;

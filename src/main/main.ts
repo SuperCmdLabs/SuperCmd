@@ -1814,13 +1814,16 @@ async function captureWindowManagementTargetWindow(): Promise<void> {
     if (info?.id) {
       capturedWindowId = String(info.id);
     }
-    capturedWorkArea = normalizeWindowManagementArea(info?.workArea);
-    if (!capturedWorkArea) {
-      const { screen: electronScreen } = require('electron');
-      const bounds = info?.bounds;
-      const normalizedBounds = bounds && Number.isFinite(bounds.x) && Number.isFinite(bounds.y) &&
-        Number.isFinite(bounds.width) && Number.isFinite(bounds.height) &&
-        bounds.width > 0 && bounds.height > 0
+    const { screen: electronScreen } = require('electron');
+    const bounds = info?.bounds;
+    const normalizedBounds =
+      bounds &&
+      Number.isFinite(bounds.x) &&
+      Number.isFinite(bounds.y) &&
+      Number.isFinite(bounds.width) &&
+      Number.isFinite(bounds.height) &&
+      bounds.width > 0 &&
+      bounds.height > 0
         ? {
             x: Math.round(bounds.x),
             y: Math.round(bounds.y),
@@ -1828,11 +1831,11 @@ async function captureWindowManagementTargetWindow(): Promise<void> {
             height: Math.max(1, Math.round(bounds.height)),
           }
         : null;
-      const display = normalizedBounds
-        ? electronScreen.getDisplayMatching(normalizedBounds)
-        : electronScreen.getDisplayNearestPoint(electronScreen.getCursorScreenPoint());
-      capturedWorkArea = normalizeWindowManagementArea(display?.workArea);
-    }
+    const display = normalizedBounds
+      ? electronScreen.getDisplayMatching(normalizedBounds)
+      : electronScreen.getDisplayNearestPoint(electronScreen.getCursorScreenPoint());
+    capturedWorkArea =
+      normalizeWindowManagementDisplayWorkArea(display) || normalizeWindowManagementArea(info?.workArea);
   } catch (error) {
     console.warn('[WindowManager] Failed to capture target window:', error);
     return;
@@ -2998,6 +3001,129 @@ function normalizeWindowManagementArea(
   };
 }
 
+type MacDockSettings = {
+  orientation: 'bottom' | 'left' | 'right';
+  autohide: boolean;
+  reserve: number;
+};
+
+let cachedMacDockSettings: MacDockSettings | null | undefined;
+
+function readMacDockSettings(): MacDockSettings | null {
+  if (process.platform !== 'darwin') return null;
+  if (cachedMacDockSettings !== undefined) return cachedMacDockSettings;
+
+  const readDefault = (key: string): string | null => {
+    try {
+      return String(
+        require('child_process').execFileSync('/usr/bin/defaults', ['read', 'com.apple.dock', key], {
+          encoding: 'utf8',
+          timeout: 400,
+        }) || ''
+      ).trim();
+    } catch {
+      return null;
+    }
+  };
+
+  const rawOrientation = String(readDefault('orientation') || 'bottom').trim();
+  const orientation: MacDockSettings['orientation'] =
+    rawOrientation === 'left' || rawOrientation === 'right' ? rawOrientation : 'bottom';
+  const rawAutohide = String(readDefault('autohide') || '').trim().toLowerCase();
+  const autohide = rawAutohide === '1' || rawAutohide === 'true' || rawAutohide === 'yes';
+  const rawTileSize = readDefault('tilesize');
+  const tileSize = rawTileSize == null ? NaN : Number(rawTileSize);
+  cachedMacDockSettings = {
+    orientation,
+    autohide,
+    reserve: Math.max(48, Math.round((Number.isFinite(tileSize) ? tileSize : 45) + 17)),
+  };
+  return cachedMacDockSettings;
+}
+
+function readMacDockFrame(): { x: number; y: number; width: number; height: number } | null {
+  if (process.platform !== 'darwin') return null;
+  try {
+    const raw = String(
+      require('child_process').execFileSync(
+        '/usr/bin/osascript',
+        ['-e', 'tell application "System Events" to tell process "Dock" to get {position, size} of list 1'],
+        { encoding: 'utf8', timeout: 400 }
+      ) || ''
+    ).trim();
+    const [x, y, width, height] = raw
+      .split(',')
+      .map((value) => Number(String(value || '').trim()));
+    if (![x, y, width, height].every((value) => Number.isFinite(value))) return null;
+    if (width <= 0 || height <= 0) return null;
+    return {
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.max(1, Math.round(width)),
+      height: Math.max(1, Math.round(height)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isMacDockVisibleOnDisplay(bounds: { x: number; y: number; width: number; height: number }): boolean {
+  const dockFrame = readMacDockFrame();
+  if (!dockFrame) return false;
+  const overlapWidth = Math.max(
+    0,
+    Math.min(dockFrame.x + dockFrame.width, bounds.x + bounds.width) - Math.max(dockFrame.x, bounds.x)
+  );
+  const overlapHeight = Math.max(
+    0,
+    Math.min(dockFrame.y + dockFrame.height, bounds.y + bounds.height) - Math.max(dockFrame.y, bounds.y)
+  );
+  return overlapWidth > 4 && overlapHeight > 4;
+}
+
+function reserveAutoHiddenDockSpace(
+  area: { x: number; y: number; width: number; height: number },
+  bounds: { x: number; y: number; width: number; height: number } | null
+): { x: number; y: number; width: number; height: number } {
+  const dock = readMacDockSettings();
+  if (!dock?.autohide || !bounds || !isMacDockVisibleOnDisplay(bounds)) return area;
+
+  if (dock.orientation === 'left') {
+    const leftInset = area.x - bounds.x;
+    if (leftInset >= Math.floor(dock.reserve / 2)) return area;
+    return {
+      ...area,
+      x: area.x + dock.reserve,
+      width: Math.max(1, area.width - dock.reserve),
+    };
+  }
+
+  if (dock.orientation === 'right') {
+    const rightInset = bounds.x + bounds.width - (area.x + area.width);
+    if (rightInset >= Math.floor(dock.reserve / 2)) return area;
+    return {
+      ...area,
+      width: Math.max(1, area.width - dock.reserve),
+    };
+  }
+
+  const bottomInset = bounds.y + bounds.height - (area.y + area.height);
+  if (bottomInset >= Math.floor(dock.reserve / 2)) return area;
+  return {
+    ...area,
+    height: Math.max(1, area.height - dock.reserve),
+  };
+}
+
+function normalizeWindowManagementDisplayWorkArea(
+  display: { bounds?: { x?: number; y?: number; width?: number; height?: number }; workArea?: { x?: number; y?: number; width?: number; height?: number } } | null | undefined
+): { x: number; y: number; width: number; height: number } | null {
+  const area = normalizeWindowManagementArea(display?.workArea);
+  const bounds = normalizeWindowManagementArea(display?.bounds);
+  if (!area) return null;
+  return reserveAutoHiddenDockSpace(area, bounds);
+}
+
 function getNativeWindowFineTuneAction(commandId: string): string | null {
   const normalized = String(commandId || '').trim();
   if (!normalized.startsWith(WINDOW_MANAGEMENT_FINE_TUNE_COMMAND_PREFIX)) return null;
@@ -3669,20 +3795,22 @@ async function executeWindowManagementFineTuneCommand(
     }
     windowManagementTargetWindowId = String(target.id);
 
+    const center = {
+      x: target.bounds.x + target.bounds.width / 2,
+      y: target.bounds.y + target.bounds.height / 2,
+    };
+    const targetDisplay = require('electron').screen.getDisplayMatching(target.bounds);
     let area =
+      normalizeWindowManagementDisplayWorkArea(targetDisplay) ||
       normalizeWindowManagementArea(target.workArea) ||
       normalizeWindowManagementArea(windowManagementTargetWorkArea);
     if (!area) {
-      const center = {
-        x: target.bounds.x + target.bounds.width / 2,
-        y: target.bounds.y + target.bounds.height / 2,
-      };
-      area = normalizeWindowManagementArea(screen.getDisplayNearestPoint(center)?.workArea);
+      area = normalizeWindowManagementDisplayWorkArea(screen.getDisplayNearestPoint(center));
     }
     if (!area) {
-      area = normalizeWindowManagementArea(
-        screen.getDisplayNearestPoint(screen.getCursorScreenPoint())?.workArea || screen.getPrimaryDisplay()?.workArea
-      );
+      area =
+        normalizeWindowManagementDisplayWorkArea(screen.getDisplayNearestPoint(screen.getCursorScreenPoint())) ||
+        normalizeWindowManagementDisplayWorkArea(screen.getPrimaryDisplay());
     }
     if (!area) return false;
     windowManagementTargetWorkArea = area;
@@ -3747,20 +3875,22 @@ async function executeWindowManagementLayoutCommand(
     if (!target?.id || !target.bounds) return false;
     windowManagementTargetWindowId = String(target.id);
 
+    const center = {
+      x: target.bounds.x + target.bounds.width / 2,
+      y: target.bounds.y + target.bounds.height / 2,
+    };
+    const targetDisplay = require('electron').screen.getDisplayMatching(target.bounds);
     let area =
+      normalizeWindowManagementDisplayWorkArea(targetDisplay) ||
       normalizeWindowManagementArea(target.workArea) ||
       normalizeWindowManagementArea(windowManagementTargetWorkArea);
     if (!area) {
-      const center = {
-        x: target.bounds.x + target.bounds.width / 2,
-        y: target.bounds.y + target.bounds.height / 2,
-      };
-      area = normalizeWindowManagementArea(screen.getDisplayNearestPoint(center)?.workArea);
+      area = normalizeWindowManagementDisplayWorkArea(screen.getDisplayNearestPoint(center));
     }
     if (!area) {
-      area = normalizeWindowManagementArea(
-        screen.getDisplayNearestPoint(screen.getCursorScreenPoint())?.workArea || screen.getPrimaryDisplay()?.workArea
-      );
+      area =
+        normalizeWindowManagementDisplayWorkArea(screen.getDisplayNearestPoint(screen.getCursorScreenPoint())) ||
+        normalizeWindowManagementDisplayWorkArea(screen.getPrimaryDisplay());
     }
     if (!area) return false;
     windowManagementTargetWorkArea = area;
@@ -16822,9 +16952,10 @@ if let tiff = image?.tiffRepresentation {
       const targetNode = snapshot.target;
       const target = targetNode ? toWindowManagementWindowFromNode(targetNode, true) : null;
       const { screen: electronScreen } = require('electron');
-      let workArea = normalizeWindowManagementArea(targetNode?.workArea) || cloneWorkArea(windowManagementTargetWorkArea);
       const targetBounds = targetNode?.bounds;
-      if (!workArea && targetBounds) {
+      let workArea: { x: number; y: number; width: number; height: number } | null = null;
+
+      if (targetBounds) {
         const normalizedBounds =
           Number.isFinite(targetBounds.x) &&
           Number.isFinite(targetBounds.y) &&
@@ -16840,14 +16971,19 @@ if let tiff = image?.tiffRepresentation {
               }
             : null;
         if (normalizedBounds) {
-          workArea = normalizeWindowManagementArea(
-            electronScreen.getDisplayMatching(normalizedBounds)?.workArea
+          workArea = normalizeWindowManagementDisplayWorkArea(
+            electronScreen.getDisplayMatching(normalizedBounds)
           );
         }
       }
+
+      if (!workArea) {
+        workArea = normalizeWindowManagementArea(targetNode?.workArea) || cloneWorkArea(windowManagementTargetWorkArea);
+      }
+
       if (!workArea) {
         const fallbackDisplay = electronScreen.getDisplayNearestPoint(electronScreen.getCursorScreenPoint());
-        workArea = normalizeWindowManagementArea(fallbackDisplay?.workArea);
+        workArea = normalizeWindowManagementDisplayWorkArea(fallbackDisplay);
       }
       if (targetNode?.id) {
         windowManagementTargetWindowId = String(targetNode.id);
@@ -16897,28 +17033,27 @@ if let tiff = image?.tiffRepresentation {
       const cursorPoint = screen.getCursorScreenPoint();
       const activeDisplay = screen.getDisplayNearestPoint(cursorPoint);
 
-      return displays.map((display: any, index: number) => ({
-        id: String(index + 1),
-        active: display.id === activeDisplay?.id,
-        screenId: String(display.id),
-        bounds: {
-          x: Number(display.bounds?.x || 0),
-          y: Number(display.bounds?.y || 0),
-          width: Number(display.bounds?.width || 0),
-          height: Number(display.bounds?.height || 0),
-        },
-        workArea: {
-          x: Number(display.workArea?.x || display.bounds?.x || 0),
-          y: Number(display.workArea?.y || display.bounds?.y || 0),
-          width: Number(display.workArea?.width || display.bounds?.width || 0),
-          height: Number(display.workArea?.height || display.bounds?.height || 0),
-        },
-        size: {
-          width: display.bounds.width,
-          height: display.bounds.height
-        },
-        type: 'user'
-      }));
+      return displays.map((display: any, index: number) => {
+        const bounds = normalizeWindowManagementArea(display?.bounds) || {
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+        };
+        const workArea = normalizeWindowManagementDisplayWorkArea(display) || bounds;
+        return {
+          id: String(index + 1),
+          active: display.id === activeDisplay?.id,
+          screenId: String(display.id),
+          bounds,
+          workArea,
+          size: {
+            width: workArea.width,
+            height: workArea.height
+          },
+          type: 'user'
+        };
+      });
     } catch (error) {
       console.error('Failed to get desktops:', error);
       return [];
@@ -16936,7 +17071,10 @@ if let tiff = image?.tiffRepresentation {
       if (bounds === 'fullscreen') {
         const { screen: electronScreen } = require('electron');
         const display = electronScreen.getDisplayNearestPoint(electronScreen.getCursorScreenPoint());
-        const area = display?.workArea || electronScreen.getPrimaryDisplay().workArea;
+        const area =
+          normalizeWindowManagementDisplayWorkArea(display) ||
+          normalizeWindowManagementDisplayWorkArea(electronScreen.getPrimaryDisplay()) ||
+          normalizeWindowManagementArea(display?.workArea || electronScreen.getPrimaryDisplay().workArea);
         nextEntry = {
           id: normalizedId,
           x: Math.round(Number(area?.x || 0)),
