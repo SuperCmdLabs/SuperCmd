@@ -686,6 +686,17 @@ const electronAPI = {
       ipcRenderer.removeListener('browser-search-history-changed', listener);
     };
   },
+  browserTabsList: (): Promise<any[]> =>
+    ipcRenderer.invoke('browser-tabs:list'),
+  browserTabsOpen: (input: string): Promise<{ ok: boolean; url: string | null; tab: any | null }> =>
+    ipcRenderer.invoke('browser-tabs:open', input),
+  onBrowserTabsChanged: (callback: () => void): (() => void) => {
+    const listener = (_event: any) => callback();
+    ipcRenderer.on('browser-tabs-changed', listener);
+    return () => {
+      ipcRenderer.removeListener('browser-tabs-changed', listener);
+    };
+  },
 
   getSelectedText: (): Promise<string> =>
     ipcRenderer.invoke('get-selected-text'),

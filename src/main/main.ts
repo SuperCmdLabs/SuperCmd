@@ -127,8 +127,17 @@ import {
   importFromBrowserProfile as bsImportFromBrowserProfile,
   refreshEnabledBrowserProfiles as bsRefreshEnabledBrowserProfiles,
   fetchSearchSuggestion as bsFetchSearchSuggestion,
+  type BrowserSearchEntry,
   type BrowserSearchSource,
 } from './browser-search-history';
+import {
+  clearBrowserTabRecentNavigations,
+  flushRecentNavigationsForHistoryEntries,
+  listBrowserTabs,
+  listBrowserTabRecentNavigationEntries,
+  openBrowserTabForInput,
+  startBrowserTabsDevServer,
+} from './browser-tabs';
 import {
   initNoteStore,
   getAllNotes,
@@ -11858,6 +11867,15 @@ function broadcastBrowserSearchHistoryChanged(): void {
   }
 }
 
+function broadcastBrowserTabsChanged(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    try {
+      window.webContents.send('browser-tabs-changed');
+    } catch {}
+  }
+}
+
 let browserProfileRefreshInFlight = false;
 let lastBrowserProfileRefreshAt = 0;
 
@@ -11870,13 +11888,30 @@ async function refreshBrowserProfiles(reason: string, minIntervalMs = 0): Promis
   try {
     const result = await bsRefreshEnabledBrowserProfiles();
     if (result.imported > 0 || result.skipped > 0) {
+      flushRecentNavigationsForHistoryEntries(bsListEntries());
       broadcastBrowserSearchHistoryChanged();
+      broadcastBrowserTabsChanged();
     }
   } catch (e) {
     console.warn(`Browser profile refresh failed (${reason}):`, e);
   } finally {
     browserProfileRefreshInFlight = false;
   }
+}
+
+function getCombinedBrowserSearchEntries(): BrowserSearchEntry[] {
+  const durableEntries = bsListEntries();
+  const durableKeys = new Set(
+    durableEntries
+      .filter((entry) => entry.type === 'url' && entry.sourceProfileId)
+      .map((entry) => `${entry.source}:${entry.sourceProfileId}:${entry.url.toLowerCase()}`)
+  );
+  const pendingEntries = listBrowserTabRecentNavigationEntries().filter((entry) => {
+    if (!entry.sourceProfileId) return true;
+    const key = `${entry.source}:${entry.sourceProfileId}:${entry.url.toLowerCase()}`;
+    return !durableKeys.has(key);
+  });
+  return [...durableEntries, ...pendingEntries];
 }
 
 function scheduleInstalledAppsRefresh(reason: string): void {
@@ -15733,7 +15768,7 @@ if let tiff = image?.tiffRepresentation {
   });
 
   ipcMain.handle('browser-search:list-entries', () => {
-    return bsListEntries();
+    return getCombinedBrowserSearchEntries();
   });
 
   ipcMain.handle('browser-search:autocomplete', (_event: any, input: string) => {
@@ -15746,8 +15781,10 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('browser-search:clear-history', () => {
     bsClearHistory();
+    clearBrowserTabRecentNavigations();
     try {
       broadcastBrowserSearchHistoryChanged();
+      broadcastBrowserTabsChanged();
     } catch {}
     return true;
   });
@@ -15774,7 +15811,9 @@ if let tiff = image?.tiffRepresentation {
   ipcMain.handle('browser-search:import', async (_event: any, browserId: BrowserSearchSource) => {
     const result = await bsImportFromBrowser(browserId);
     try {
+      flushRecentNavigationsForHistoryEntries(bsListEntries());
       broadcastBrowserSearchHistoryChanged();
+      broadcastBrowserTabsChanged();
     } catch {}
     return result;
   });
@@ -15782,15 +15821,36 @@ if let tiff = image?.tiffRepresentation {
   ipcMain.handle('browser-search:import-profile', async (_event: any, profileSourceId: string) => {
     const result = await bsImportFromBrowserProfile(String(profileSourceId || ''));
     try {
+      flushRecentNavigationsForHistoryEntries(bsListEntries());
       broadcastBrowserSearchHistoryChanged();
+      broadcastBrowserTabsChanged();
     } catch {}
     return result;
+  });
+
+  ipcMain.handle('browser-tabs:list', () => {
+    return listBrowserTabs();
+  });
+
+  ipcMain.handle('browser-tabs:open', async (_event: any, input: string) => {
+    const result = await openBrowserTabForInput(String(input || ''));
+    return {
+      ok: result.ok,
+      url: result.url,
+      tab: result.tab,
+    };
   });
 
   // Run a retention prune on startup so out-of-window entries don't linger.
   try {
     bsPruneByRetention();
   } catch {}
+
+  try {
+    startBrowserTabsDevServer({ onChanged: broadcastBrowserTabsChanged });
+  } catch (e) {
+    console.warn('Failed to start browser tabs dev ingest server:', e);
+  }
 
   setTimeout(() => void refreshBrowserProfiles('startup'), 10_000);
   setInterval(() => void refreshBrowserProfiles('periodic', 60_000), 5 * 60 * 1000);

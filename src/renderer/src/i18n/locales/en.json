@@ -733,7 +733,7 @@
           "addedHeading": "Added profiles",
           "noneFound": "No supported browser profiles detected",
           "noneAdded": "No browser profiles added yet",
-          "profileRowDetail": "History: {historyCount} URLs · Bookmarks: {bookmarkCount} · Tabs: not imported yet",
+          "profileRowDetail": "History: {historyCount} URLs · Bookmarks: {bookmarkCount} · Tabs: {tabCount}",
           "profileSupportNote": "Profile support currently includes Chromium browsers only. Safari and Firefox support will be added later.",
           "enabledProfiles": "{count} profile(s) enabled for SuperCmd browser history."
         },
