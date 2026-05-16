@@ -706,7 +706,7 @@
           "addedHeading": "Perfiles añadidos",
           "noneFound": "No se detectaron perfiles de navegador compatibles",
           "noneAdded": "Aún no se han añadido perfiles de navegador",
-          "profileRowDetail": "Historial: {historyCount} URL · Marcadores: {bookmarkCount} · Pestañas: aún no importadas",
+          "profileRowDetail": "Historial: {historyCount} URL · Marcadores: {bookmarkCount} · Pestañas: {tabCount}",
           "profileSupportNote": "La compatibilidad con perfiles incluye actualmente solo navegadores Chromium. Safari y Firefox se añadirán más adelante.",
           "enabledProfiles": "{count} perfil(es) activado(s) para el historial de navegador de SuperCmd."
         },

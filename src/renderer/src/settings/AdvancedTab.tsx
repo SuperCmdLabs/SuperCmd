@@ -3,6 +3,7 @@ import { Bug, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, Keyboard, Lang
 import type {
   AppNavigationStyle,
   AppSettings,
+  BrowserTabEntry,
   BrowserSearchEntry,
   BrowserSearchImportableProfile,
   BrowserSearchSettings,
@@ -100,20 +101,24 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
   const { t } = useI18n();
   const [profiles, setProfiles] = useState<BrowserSearchImportableProfile[]>([]);
   const [entries, setEntries] = useState<BrowserSearchEntry[]>([]);
+  const [tabs, setTabs] = useState<BrowserTabEntry[]>([]);
   const [busyProfileId, setBusyProfileId] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<string>('');
 
   const refreshBrowserData = useCallback(async () => {
     try {
-      const [profileList, entryList] = await Promise.all([
+      const [profileList, entryList, tabList] = await Promise.all([
         window.electron.browserSearchListProfiles(),
         window.electron.browserSearchListEntries(),
+        window.electron.browserTabsList?.() ?? Promise.resolve([]),
       ]);
       setProfiles(profileList);
       setEntries(entryList);
+      setTabs(Array.isArray(tabList) ? tabList : []);
     } catch {
       setProfiles([]);
       setEntries([]);
+      setTabs([]);
     }
   }, []);
 
@@ -125,6 +130,17 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
     return window.electron.onBrowserSearchHistoryChanged(() => {
       void refreshBrowserData();
     });
+  }, [refreshBrowserData]);
+
+  useEffect(() => {
+    const unsubscribe = window.electron.onBrowserTabsChanged?.(() => {
+      void refreshBrowserData();
+    });
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch {}
+    };
   }, [refreshBrowserData]);
 
   useEffect(() => {
@@ -205,6 +221,11 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
     if (entry.type !== 'bookmark' || !entry.sourceProfileId) return counts;
     const profileSourceId = `${entry.source}:${entry.sourceProfileId}`;
     counts.set(profileSourceId, (counts.get(profileSourceId) || 0) + 1);
+    return counts;
+  }, new Map<string, number>());
+  const tabCountByProfileId = tabs.reduce((counts, tab) => {
+    if (!tab.profileSourceId) return counts;
+    counts.set(tab.profileSourceId, (counts.get(tab.profileSourceId) || 0) + 1);
     return counts;
   }, new Map<string, number>());
 
@@ -336,6 +357,7 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
                             {t('settings.advanced.browserSearch.import.profileRowDetail', {
                               historyCount: String(historyCountByProfileId.get(profile.id) || 0),
                               bookmarkCount: String(bookmarkCountByProfileId.get(profile.id) || 0),
+                              tabCount: String(tabCountByProfileId.get(profile.id) || 0),
                             })}
                           </div>
                         </div>

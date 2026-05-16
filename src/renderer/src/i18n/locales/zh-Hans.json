@@ -731,7 +731,7 @@
           "addedHeading": "已添加的个人资料",
           "noneFound": "未检测到支持的浏览器个人资料",
           "noneAdded": "尚未添加浏览器个人资料",
-          "profileRowDetail": "历史记录：{historyCount} 个 URL · 书签：{bookmarkCount} · 标签页：尚未导入",
+          "profileRowDetail": "历史记录：{historyCount} 个 URL · 书签：{bookmarkCount} · 标签页：{tabCount} 个",
           "profileSupportNote": "个人资料支持目前仅包含 Chromium 浏览器。Safari 和 Firefox 支持将在之后添加。",
           "enabledProfiles": "已为 SuperCmd 浏览器历史记录启用 {count} 个个人资料。"
         },

@@ -730,7 +730,7 @@
           "addedHeading": "Profili aggiunti",
           "noneFound": "Nessun profilo browser supportato rilevato",
           "noneAdded": "Nessun profilo browser ancora aggiunto",
-          "profileRowDetail": "Cronologia: {historyCount} URL · Segnalibri: {bookmarkCount} · Schede: non ancora importate",
+          "profileRowDetail": "Cronologia: {historyCount} URL · Segnalibri: {bookmarkCount} · Schede: {tabCount}",
           "profileSupportNote": "Il supporto dei profili attualmente include solo i browser Chromium. Safari e Firefox saranno aggiunti in seguito.",
           "enabledProfiles": "{count} profilo/i abilitato/i per la cronologia browser di SuperCmd."
         },

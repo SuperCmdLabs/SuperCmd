@@ -328,6 +328,22 @@ export interface BrowserSearchImportResult {
   reason?: string;
 }
 
+export interface BrowserTabEntry {
+  id: string;
+  browserId: string;
+  browserName: string;
+  profileId: string;
+  profileSourceId: string;
+  profileName: string;
+  windowId: string;
+  tabId: string;
+  title: string;
+  url: string;
+  host: string;
+  active: boolean;
+  updatedAt: number;
+}
+
 /** How to handle the situation when the chosen settings folder already
  *  contains a settings.json. 'move' writes to an empty folder; 'replace'
  *  overwrites the existing file with this Mac's settings; 'adopt' replaces
@@ -936,6 +952,9 @@ export interface ElectronAPI {
   browserSearchImport: (browserId: string) => Promise<BrowserSearchImportResult>;
   browserSearchImportProfile: (profileSourceId: string) => Promise<BrowserSearchImportResult>;
   onBrowserSearchHistoryChanged: (callback: () => void) => (() => void);
+  browserTabsList: () => Promise<BrowserTabEntry[]>;
+  browserTabsOpen: (input: string) => Promise<{ ok: boolean; url: string | null; tab: BrowserTabEntry | null }>;
+  onBrowserTabsChanged: (callback: () => void) => (() => void);
 
   getSelectedText: () => Promise<string>;
   getSelectedTextStrict: () => Promise<string>;

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   BrowserSearchAutocomplete,
   BrowserSearchEntry,
+  BrowserSearchSource,
+  BrowserTabEntry,
 } from '../../types/electron';
 
 export interface ResolvedBrowserInput {
@@ -22,17 +24,25 @@ interface UseBrowserSearchResult {
 
 export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult {
   const [entries, setEntries] = useState<BrowserSearchEntry[]>([]);
+  const [tabs, setTabs] = useState<BrowserTabEntry[]>([]);
   const [enabled, setEnabled] = useState<boolean>(true);
   const entriesRef = useRef<BrowserSearchEntry[]>([]);
+  const tabsRef = useRef<BrowserTabEntry[]>([]);
   entriesRef.current = entries;
+  tabsRef.current = tabs;
 
   const refresh = useCallback(() => {
-    window.electron.browserSearchListEntries()
-      .then((list) => {
-        setEntries(Array.isArray(list) ? list : []);
+    Promise.all([
+      window.electron.browserSearchListEntries(),
+      window.electron.browserTabsList?.() ?? Promise.resolve([]),
+    ])
+      .then(([entryList, tabList]) => {
+        setEntries(Array.isArray(entryList) ? entryList : []);
+        setTabs(Array.isArray(tabList) ? tabList : []);
       })
       .catch(() => {
         setEntries([]);
+        setTabs([]);
       });
   }, []);
 
@@ -59,13 +69,16 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   useEffect(() => {
     if (!enabled) {
       setEntries([]);
+      setTabs([]);
       return;
     }
     refresh();
     const unsubscribe = window.electron.onBrowserSearchHistoryChanged?.(() => refresh());
+    const unsubscribeTabs = window.electron.onBrowserTabsChanged?.(() => refresh());
     return () => {
       try {
         unsubscribe?.();
+        unsubscribeTabs?.();
       } catch {}
     };
   }, [enabled, refresh]);
@@ -75,6 +88,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     const input = rawInput;
     if (!input.trim()) return null;
     const list = entriesRef.current;
+    const tabList = tabsRef.current;
 
     const lower = input.toLowerCase();
     const stripped = lower.replace(/^https?:\/\//, '');
@@ -84,22 +98,20 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     // (host + path + query), so frequent deep links like `github.com/shobhit99`
     // surface instead of just the bare host. Also try the `www.`-stripped form.
     let bestUrl: { entry: BrowserSearchEntry; matched: string; score: number } | null = null;
+    for (const tab of tabList) {
+      const tabEntry = tabToBrowserSearchEntry(tab);
+      const match = getUrlPrefixMatch(tabEntry, stripped);
+      if (!match) continue;
+      const score = 2000 + (tab.active ? 100 : 0) + tabFrecency(tab);
+      if (!bestUrl || score > bestUrl.score) bestUrl = { entry: tabEntry, matched: match, score };
+    }
+
     for (const entry of list) {
       if (entry.type !== 'url' && entry.type !== 'bookmark') continue;
-      const sourceUrl = entry.url || entry.host;
-      if (!sourceUrl) continue;
-      const fullStripped = sourceUrl.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-      if (!fullStripped) continue;
-      const candidates = fullStripped.toLowerCase().startsWith('www.')
-        ? [fullStripped, fullStripped.slice(4)]
-        : [fullStripped];
-      for (const candidate of candidates) {
-        if (candidate.length > stripped.length && candidate.toLowerCase().startsWith(stripped)) {
-          const score = frecency(entry);
-          if (!bestUrl || score > bestUrl.score) bestUrl = { entry, matched: candidate, score };
-          break;
-        }
-      }
+      const match = getUrlPrefixMatch(entry, stripped);
+      if (!match) continue;
+      const score = frecency(entry);
+      if (!bestUrl || score > bestUrl.score) bestUrl = { entry, matched: match, score };
     }
     if (bestUrl) {
       const completion = input + bestUrl.matched.slice(stripped.length);
@@ -112,6 +124,14 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
 
     // Pass 2: bookmark-title and search query prefix.
     let bestSearch: { entry: BrowserSearchEntry; score: number } | null = null;
+    for (const tab of tabList) {
+      if (tab.title.length <= input.length) continue;
+      if (!tab.title.toLowerCase().startsWith(lower)) continue;
+      const score = 2000 + (tab.active ? 100 : 0) + tabFrecency(tab);
+      if (!bestSearch || score > bestSearch.score) {
+        bestSearch = { entry: tabToBrowserSearchEntry(tab), score };
+      }
+    }
     for (const entry of list) {
       if (entry.type !== 'search' && entry.type !== 'bookmark') continue;
       if (entry.query.length <= input.length) continue;
@@ -136,6 +156,8 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     const trimmed = input.trim();
     if (!trimmed) return false;
     try {
+      const tabResult = await window.electron.browserTabsOpen?.(trimmed);
+      if (tabResult?.ok) return true;
       const result = await window.electron.browserSearchOpen(trimmed);
       return Boolean(result?.ok);
     } catch (e) {
@@ -183,4 +205,37 @@ function frecency(entry: BrowserSearchEntry): number {
   const ageDays = Math.max(0, (Date.now() - entry.lastUsedAt) / (24 * 60 * 60 * 1000));
   const recencyFactor = 1 / (1 + Math.log10(1 + ageDays));
   return entry.useCount * recencyFactor;
+}
+
+function tabFrecency(tab: BrowserTabEntry): number {
+  const ageSeconds = Math.max(0, (Date.now() - tab.updatedAt) / 1000);
+  return 1 / (1 + Math.log10(1 + ageSeconds));
+}
+
+function getUrlPrefixMatch(entry: BrowserSearchEntry, strippedInput: string): string | null {
+  const sourceUrl = entry.url || entry.host;
+  if (!sourceUrl) return null;
+  const fullStripped = sourceUrl.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (!fullStripped) return null;
+  const candidates = fullStripped.toLowerCase().startsWith('www.')
+    ? [fullStripped, fullStripped.slice(4)]
+    : [fullStripped];
+  return candidates.find((candidate) =>
+    candidate.length > strippedInput.length && candidate.toLowerCase().startsWith(strippedInput)
+  ) || null;
+}
+
+function tabToBrowserSearchEntry(tab: BrowserTabEntry): BrowserSearchEntry {
+  return {
+    id: `tab:${tab.id}`,
+    type: 'url',
+    query: tab.title || tab.host || tab.url,
+    url: tab.url,
+    host: tab.host,
+    lastUsedAt: tab.updatedAt,
+    useCount: tab.active ? 2 : 1,
+    source: tab.browserId as BrowserSearchSource,
+    sourceProfileId: tab.profileId,
+    sourceProfileName: tab.profileName,
+  };
 }

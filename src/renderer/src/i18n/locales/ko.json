@@ -731,7 +731,7 @@
           "addedHeading": "추가된 프로필",
           "noneFound": "지원되는 브라우저 프로필이 없습니다",
           "noneAdded": "아직 추가된 브라우저 프로필이 없습니다",
-          "profileRowDetail": "기록: URL {historyCount}개 · 북마크: {bookmarkCount}개 · 탭: 아직 가져오지 않음",
+          "profileRowDetail": "기록: URL {historyCount}개 · 북마크: {bookmarkCount}개 · 탭: {tabCount}개",
           "profileSupportNote": "프로필 지원은 현재 Chromium 브라우저만 포함합니다. Safari와 Firefox 지원은 나중에 추가됩니다.",
           "enabledProfiles": "SuperCmd 브라우저 기록에 {count}개의 프로필이 활성화되어 있습니다."
         },
