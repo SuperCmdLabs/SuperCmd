@@ -736,6 +736,25 @@
           "cleared": "Historique des profils de navigateur effacé.",
           "imported": "{count} entrées mises à jour sur {total}.",
           "failed": "Échec de l’action."
+        },
+        "resultGroups": {
+          "label": "Priorité de la section Browser",
+          "kind": {
+            "open-tab": "Onglets ouverts",
+            "bookmark": "Signets",
+            "history": "Historique"
+          },
+          "description": {
+            "open-tab": "Onglets actifs ouverts dans les profils connectés.",
+            "bookmark": "Signets enregistrés dans les profils connectés.",
+            "history": "Pages visitées dans les profils connectés."
+          },
+          "option": {
+            "none": "Aucun",
+            "count": "{count} lignes"
+          },
+          "moveUp": "Monter",
+          "moveDown": "Descendre"
         }
       }
     },
@@ -797,10 +816,12 @@
       "clipboard": "Presse-papiers",
       "calculator": "Calculatrice",
       "dictionary": "Dictionnaire",
-      "ai": "Assistant IA"
+      "ai": "Assistant IA",
+      "browser": "Navigateur"
     },
     "actions": {
       "open": "Ouvrir",
+      "focusExistingTab": "Activer l’onglet existant",
       "reveal": "Afficher dans le Finder",
       "copy": "Copier",
       "paste": "Coller",
@@ -832,8 +853,15 @@
       "searchFor": "Rechercher « {query} »",
       "subtitle": {
         "openUrl": "Navigateur par défaut",
-        "search": "Recherche web"
-      }
+        "search": "Recherche web",
+        "openTabMatch": "Onglet ouvert trouvé"
+      },
+      "focusHint": "Activer l’onglet"
+    },
+    "badges": {
+      "openTab": "Onglet ouvert",
+      "bookmark": "Signet",
+      "history": "Historique"
     }
   },
   "scriptCommand": {

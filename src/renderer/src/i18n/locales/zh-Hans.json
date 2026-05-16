@@ -757,6 +757,25 @@
           "cleared": "浏览器个人资料历史已清除。",
           "imported": "已更新 {count} / {total} 条。",
           "failed": "操作失败。"
+        },
+        "resultGroups": {
+          "label": "Browser 区域优先级",
+          "kind": {
+            "open-tab": "打开的标签页",
+            "bookmark": "书签",
+            "history": "历史记录"
+          },
+          "description": {
+            "open-tab": "已连接资料中当前打开的实时标签页。",
+            "bookmark": "来自已连接资料的已保存书签。",
+            "history": "来自已连接资料的已访问页面。"
+          },
+          "option": {
+            "none": "无",
+            "count": "{count} 行"
+          },
+          "moveUp": "上移",
+          "moveDown": "下移"
         }
       }
     }
@@ -786,10 +805,12 @@
       "settings": "设置",
       "files": "文件",
       "calculator": "计算器",
-      "quickLinks": "快速链接"
+      "quickLinks": "快速链接",
+      "browser": "浏览器"
     },
     "actions": {
       "open": "打开",
+      "focusExistingTab": "切换到现有标签页",
       "openCommand": "打开命令",
       "openFile": "打开文件",
       "execute": "执行",
@@ -850,7 +871,10 @@
       "extension": "扩展",
       "script": "脚本",
       "settings": "设置",
-      "quickLink": "快速链接"
+      "quickLink": "快速链接",
+      "openTab": "已打开标签页",
+      "bookmark": "书签",
+      "history": "历史记录"
     },
     "compact": {
       "showMore": "显示更多"
@@ -860,8 +884,10 @@
       "searchFor": "搜索 “{query}”",
       "subtitle": {
         "openUrl": "默认浏览器",
-        "search": "网络搜索"
-      }
+        "search": "网络搜索",
+        "openTabMatch": "找到已打开的标签页"
+      },
+      "focusHint": "切换到标签页"
     }
   },
   "scriptCommand": {

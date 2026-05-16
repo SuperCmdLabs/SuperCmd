@@ -18,6 +18,10 @@ export interface CommandInfo {
   needsConfirmation?: boolean;
   /** Always shown at the top of the list, even during search. */
   alwaysOnTop?: boolean;
+  browserMatchKind?: 'open-tab' | 'history' | 'search';
+  browserResultKind?: 'open-tab' | 'bookmark' | 'history' | 'search';
+  browserActionInput?: string;
+  browserFocusAvailable?: boolean;
   commandArgumentDefinitions?: Array<{
     name: string;
     required?: boolean;
@@ -269,10 +273,19 @@ export interface HyperKeySettings {
 
 export type AppNavigationStyle = 'vim' | 'macos';
 
+export type BrowserSearchResultKind = 'open-tab' | 'bookmark' | 'history';
+
+export interface BrowserSearchResultGroupSetting {
+  kind: BrowserSearchResultKind;
+  limit: number;
+}
+
 export interface BrowserSearchSettings {
   enabled: boolean;
   historyRetentionDays: number | null;
   profileSourceIds: string[];
+  resultLimitPerGroup: number;
+  resultGroups: BrowserSearchResultGroupSetting[];
 }
 
 export type BrowserSearchEntryType = 'url' | 'search' | 'bookmark';
@@ -954,6 +967,7 @@ export interface ElectronAPI {
   onBrowserSearchHistoryChanged: (callback: () => void) => (() => void);
   browserTabsList: () => Promise<BrowserTabEntry[]>;
   browserTabsOpen: (input: string) => Promise<{ ok: boolean; url: string | null; tab: BrowserTabEntry | null }>;
+  browserTabsFocus: (input: string) => Promise<{ ok: boolean; url: string | null; tab: BrowserTabEntry | null; reason?: string }>;
   onBrowserTabsChanged: (callback: () => void) => (() => void);
 
   getSelectedText: () => Promise<string>;

@@ -732,6 +732,25 @@
           "cleared": "Historial de perfiles de navegador borrado.",
           "imported": "Se actualizaron {count} de {total} entradas.",
           "failed": "La acción falló."
+        },
+        "resultGroups": {
+          "label": "Prioridad de la sección Browser",
+          "kind": {
+            "open-tab": "Pestañas abiertas",
+            "bookmark": "Marcadores",
+            "history": "Historial"
+          },
+          "description": {
+            "open-tab": "Pestañas activas abiertas en perfiles conectados.",
+            "bookmark": "Marcadores guardados de perfiles conectados.",
+            "history": "Páginas visitadas de perfiles conectados."
+          },
+          "option": {
+            "none": "Ninguno",
+            "count": "{count} filas"
+          },
+          "moveUp": "Mover arriba",
+          "moveDown": "Mover abajo"
         }
       }
     },
@@ -793,10 +812,12 @@
       "clipboard": "Portapapeles",
       "calculator": "Calculadora",
       "dictionary": "Diccionario",
-      "ai": "Asistente de IA"
+      "ai": "Asistente de IA",
+      "browser": "Navegador"
     },
     "actions": {
       "open": "Abrir",
+      "focusExistingTab": "Enfocar pestaña existente",
       "reveal": "Mostrar en Finder",
       "copy": "Copiar",
       "paste": "Pegar",
@@ -828,8 +849,15 @@
       "searchFor": "Buscar «{query}»",
       "subtitle": {
         "openUrl": "Navegador predeterminado",
-        "search": "Búsqueda web"
-      }
+        "search": "Búsqueda web",
+        "openTabMatch": "Pestaña abierta encontrada"
+      },
+      "focusHint": "Enfocar pestaña"
+    },
+    "badges": {
+      "openTab": "Pestaña abierta",
+      "bookmark": "Marcador",
+      "history": "Historial"
     }
   },
   "scriptCommand": {

@@ -757,6 +757,25 @@
           "cleared": "ブラウザプロファイル履歴を消去しました。",
           "imported": "{total} 件中 {count} 件を更新しました。",
           "failed": "操作に失敗しました。"
+        },
+        "resultGroups": {
+          "label": "Browser セクションの優先順位",
+          "kind": {
+            "open-tab": "開いているタブ",
+            "bookmark": "ブックマーク",
+            "history": "履歴"
+          },
+          "description": {
+            "open-tab": "接続済みプロファイルで現在開いているタブ。",
+            "bookmark": "接続済みプロファイルの保存済みブックマーク。",
+            "history": "接続済みプロファイルで訪問したページ。"
+          },
+          "option": {
+            "none": "なし",
+            "count": "{count} 行"
+          },
+          "moveUp": "上へ移動",
+          "moveDown": "下へ移動"
         }
       }
     }
@@ -789,10 +808,12 @@
       "settings": "設定",
       "files": "ファイル",
       "calculator": "電卓",
-      "quickLinks": "クイックリンク"
+      "quickLinks": "クイックリンク",
+      "browser": "ブラウザ"
     },
     "actions": {
       "open": "開く",
+      "focusExistingTab": "既存のタブに移動",
       "openCommand": "コマンドを開く",
       "openFile": "ファイルを開く",
       "execute": "実行",
@@ -853,15 +874,20 @@
       "extension": "拡張機能",
       "script": "スクリプト",
       "settings": "設定",
-      "quickLink": "クイックリンク"
+      "quickLink": "クイックリンク",
+      "openTab": "開いているタブ",
+      "bookmark": "ブックマーク",
+      "history": "履歴"
     },
     "browserSearch": {
       "openUrl": "{url} を開く",
       "searchFor": "\"{query}\" を検索",
       "subtitle": {
         "openUrl": "デフォルトブラウザ",
-        "search": "ウェブ検索"
-      }
+        "search": "ウェブ検索",
+        "openTabMatch": "開いているタブが見つかりました"
+      },
+      "focusHint": "タブへ移動"
     }
   },
   "scriptCommand": {

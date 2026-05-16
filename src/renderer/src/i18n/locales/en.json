@@ -759,6 +759,25 @@
           "cleared": "Browser profile history cleared.",
           "imported": "Updated {count} of {total} entries.",
           "failed": "Action failed."
+        },
+        "resultGroups": {
+          "label": "Browser section priority",
+          "kind": {
+            "open-tab": "Open tabs",
+            "bookmark": "Bookmarks",
+            "history": "History"
+          },
+          "description": {
+            "open-tab": "Live tabs currently open in connected profiles.",
+            "bookmark": "Saved bookmarks from connected profiles.",
+            "history": "Visited pages from connected profiles."
+          },
+          "option": {
+            "none": "None",
+            "count": "{count} rows"
+          },
+          "moveUp": "Move up",
+          "moveDown": "Move down"
         }
       }
     }
@@ -770,8 +789,10 @@
       "searchFor": "Search \"{query}\"",
       "subtitle": {
         "openUrl": "Default browser",
-        "search": "Web search"
-      }
+        "search": "Web search",
+        "openTabMatch": "Open tab found"
+      },
+      "focusHint": "Focus tab"
     },
     "compact": {
       "showMore": "Show More"
@@ -799,10 +820,12 @@
       "settings": "Settings",
       "files": "Files",
       "calculator": "Calculator",
-      "quickLinks": "Quick Links"
+      "quickLinks": "Quick Links",
+      "browser": "Browser"
     },
     "actions": {
       "open": "Open",
+      "focusExistingTab": "Focus Existing Tab",
       "openCommand": "Open Command",
       "openFile": "Open File",
       "execute": "Execute",
@@ -863,7 +886,10 @@
       "extension": "Extension",
       "script": "Script",
       "settings": "Settings",
-      "quickLink": "Quick Link"
+      "quickLink": "Quick Link",
+      "openTab": "Open Tab",
+      "bookmark": "Bookmark",
+      "history": "History"
     }
   },
   "scriptCommand": {

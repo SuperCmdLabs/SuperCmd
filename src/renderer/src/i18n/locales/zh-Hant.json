@@ -757,6 +757,25 @@
           "cleared": "瀏覽器個人檔案歷史已清除。",
           "imported": "已更新 {count} / {total} 筆。",
           "failed": "操作失敗。"
+        },
+        "resultGroups": {
+          "label": "Browser 區域優先順序",
+          "kind": {
+            "open-tab": "開啟的分頁",
+            "bookmark": "書籤",
+            "history": "瀏覽記錄"
+          },
+          "description": {
+            "open-tab": "已連接設定檔中目前開啟的即時分頁。",
+            "bookmark": "來自已連接設定檔的已儲存書籤。",
+            "history": "來自已連接設定檔的已瀏覽頁面。"
+          },
+          "option": {
+            "none": "無",
+            "count": "{count} 列"
+          },
+          "moveUp": "上移",
+          "moveDown": "下移"
         }
       }
     }
@@ -786,10 +805,12 @@
       "settings": "設定",
       "files": "檔案",
       "calculator": "計算機",
-      "quickLinks": "快速連結"
+      "quickLinks": "快速連結",
+      "browser": "瀏覽器"
     },
     "actions": {
       "open": "開啟",
+      "focusExistingTab": "切換到現有分頁",
       "openCommand": "開啟命令",
       "openFile": "開啟檔案",
       "execute": "執行",
@@ -850,7 +871,10 @@
       "extension": "擴充功能",
       "script": "指令碼",
       "settings": "設定",
-      "quickLink": "快速連結"
+      "quickLink": "快速連結",
+      "openTab": "已開啟分頁",
+      "bookmark": "書籤",
+      "history": "歷史記錄"
     },
     "compact": {
       "showMore": "顯示更多"
@@ -860,8 +884,10 @@
       "searchFor": "搜尋「{query}」",
       "subtitle": {
         "openUrl": "預設瀏覽器",
-        "search": "網路搜尋"
-      }
+        "search": "網路搜尋",
+        "openTabMatch": "找到已開啟的分頁"
+      },
+      "focusHint": "切換到分頁"
     }
   },
   "scriptCommand": {

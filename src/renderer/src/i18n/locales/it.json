@@ -756,6 +756,25 @@
           "cleared": "Cronologia profili browser cancellata.",
           "imported": "Aggiornate {count} di {total} voci.",
           "failed": "Operazione non riuscita."
+        },
+        "resultGroups": {
+          "label": "Priorità della sezione Browser",
+          "kind": {
+            "open-tab": "Schede aperte",
+            "bookmark": "Segnalibri",
+            "history": "Cronologia"
+          },
+          "description": {
+            "open-tab": "Schede attive aperte nei profili collegati.",
+            "bookmark": "Segnalibri salvati dai profili collegati.",
+            "history": "Pagine visitate dai profili collegati."
+          },
+          "option": {
+            "none": "Nessuno",
+            "count": "{count} righe"
+          },
+          "moveUp": "Sposta su",
+          "moveDown": "Sposta giù"
         }
       }
     }
@@ -788,10 +807,12 @@
       "settings": "Impostazioni",
       "files": "File",
       "calculator": "Calcolatrice",
-      "quickLinks": "Collegamenti rapidi"
+      "quickLinks": "Collegamenti rapidi",
+      "browser": "Browser"
     },
     "actions": {
       "open": "Apri",
+      "focusExistingTab": "Attiva scheda esistente",
       "openCommand": "Apri comando",
       "openFile": "Apri file",
       "execute": "Esegui",
@@ -852,15 +873,20 @@
       "extension": "Estensione",
       "script": "Script",
       "settings": "Impostazioni",
-      "quickLink": "Collegamento rapido"
+      "quickLink": "Collegamento rapido",
+      "openTab": "Scheda aperta",
+      "bookmark": "Segnalibro",
+      "history": "Cronologia"
     },
     "browserSearch": {
       "openUrl": "Apri {url}",
       "searchFor": "Cerca \"{query}\"",
       "subtitle": {
         "openUrl": "Browser predefinito",
-        "search": "Ricerca web"
-      }
+        "search": "Ricerca web",
+        "openTabMatch": "Scheda aperta trovata"
+      },
+      "focusHint": "Attiva scheda"
     }
   },
   "scriptCommand": {

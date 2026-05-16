@@ -132,6 +132,7 @@ import {
 } from './browser-search-history';
 import {
   clearBrowserTabRecentNavigations,
+  focusBrowserTabForInput,
   flushRecentNavigationsForHistoryEntries,
   listBrowserTabs,
   listBrowserTabRecentNavigationEntries,
@@ -15838,6 +15839,16 @@ if let tiff = image?.tiffRepresentation {
       ok: result.ok,
       url: result.url,
       tab: result.tab,
+    };
+  });
+
+  ipcMain.handle('browser-tabs:focus', async (_event: any, input: string) => {
+    const result = await focusBrowserTabForInput(String(input || ''));
+    return {
+      ok: result.ok,
+      url: result.url,
+      tab: result.tab,
+      reason: result.reason,
     };
   });
 
