@@ -280,13 +280,15 @@ async function openEntryUrl(entry: BrowserSearchEntry): Promise<void> {
   }
 
   try {
-    await execFileAsync('/usr/bin/open', [
+    const args = [
       '-a',
       appName,
-      '--args',
-      `--profile-directory=${entry.sourceProfileId}`,
       entry.url,
-    ], { timeout: 5000 });
+    ];
+    if (entry.sourceProfileId !== 'Default') {
+      args.push('--args', `--profile-directory=${entry.sourceProfileId}`);
+    }
+    await execFileAsync('/usr/bin/open', args, { timeout: 5000 });
   } catch (e) {
     console.warn(`Failed to open ${entry.url} in ${appName} profile ${entry.sourceProfileId}; falling back to default browser.`, e);
     await shell.openExternal(entry.url);
