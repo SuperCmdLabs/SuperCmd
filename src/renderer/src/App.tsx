@@ -86,6 +86,9 @@ import LauncherSurface from './components/LauncherSurface';
 import HiddenExtensionRunners from './components/HiddenExtensionRunners';
 import DetachedOverlayRunners from './components/DetachedOverlayRunners';
 import LauncherViewShell from './components/LauncherViewShell';
+import LauncherActionsOverlay from './components/LauncherActionsOverlay';
+import LauncherContextMenuOverlay from './components/LauncherContextMenuOverlay';
+import QuickLinkDynamicPromptOverlay from './components/QuickLinkDynamicPromptOverlay';
 import { useI18n } from './i18n';
 import {
   asTildePath,
@@ -4876,6 +4879,9 @@ const App: React.FC = () => {
   const isNativeLiquidGlass =
     document.documentElement.classList.contains('sc-native-liquid-glass') ||
     document.body.classList.contains('sc-native-liquid-glass');
+  const quickLinkDynamicPromptTitle = quickLinkDynamicPrompt
+    ? getCommandDisplayTitle(quickLinkDynamicPrompt.command, t)
+    : '';
 
   // ─── Script Command Setup ───────────────────────────────────────
   if (scriptCommandSetup) {
@@ -6517,301 +6523,49 @@ const App: React.FC = () => {
           </div>
         )}
     </LauncherSurface>
-    {quickLinkDynamicPrompt && (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center px-5"
-        style={{ background: 'var(--bg-scrim)' }}
-        onMouseDown={cancelQuickLinkDynamicPrompt}
-      >
-        <div
-          className="w-[520px] max-w-[92vw] rounded-xl overflow-hidden"
-          onMouseDown={(event) => event.stopPropagation()}
-          style={
-            isNativeLiquidGlass
-              ? {
-                  background: 'rgba(var(--surface-base-rgb), 0.72)',
-                  backdropFilter: 'blur(44px) saturate(155%)',
-                  WebkitBackdropFilter: 'blur(44px) saturate(155%)',
-                  border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
-                  boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
-                }
-              : isGlassyTheme
-              ? {
-                  background: 'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
-                  backdropFilter: 'blur(96px) saturate(190%)',
-                  WebkitBackdropFilter: 'blur(96px) saturate(190%)',
-                  border: '1px solid var(--ui-panel-border)',
-                }
-              : {
-                  background: 'var(--bg-overlay-strong)',
-                  backdropFilter: 'blur(28px)',
-                  WebkitBackdropFilter: 'blur(28px)',
-                  border: '1px solid var(--snippet-divider)',
-                }
-          }
-        >
-          <div className="px-4 py-3 border-b border-[var(--snippet-divider)] text-[var(--text-primary)] text-sm font-medium">
-            Fill Quick Link Arguments
-          </div>
-          <div className="px-4 pt-3 text-xs text-[var(--text-muted)]">
-            {getCommandDisplayTitle(quickLinkDynamicPrompt.command, t)}
-          </div>
-          <div className="p-4 pt-3 space-y-3">
-            {quickLinkDynamicPrompt.fields.map((field, idx) => (
-              <div key={field.key}>
-                <label className="block text-xs text-[var(--text-muted)] mb-1.5">{field.name}</label>
-                <input
-                  ref={idx === 0 ? quickLinkDynamicInputRef : undefined}
-                  type="text"
-                  value={quickLinkDynamicPrompt.values[field.key] || ''}
-                  onChange={(event) =>
-                    setQuickLinkDynamicPrompt((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            values: {
-                              ...prev.values,
-                              [field.key]: event.target.value,
-                            },
-                          }
-                        : prev
-                    )
-                  }
-                  placeholder={field.defaultValue || ''}
-                  className="w-full bg-[var(--ui-segment-bg)] border border-[var(--snippet-divider)] rounded-lg px-2.5 py-1.5 text-[13px] text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-[var(--snippet-divider-strong)]"
-                />
-              </div>
-            ))}
-          </div>
-          <div className="px-4 py-3 border-t border-[var(--snippet-divider)] flex items-center justify-end gap-2">
-            <button
-              onClick={cancelQuickLinkDynamicPrompt}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--snippet-divider)] bg-[var(--ui-segment-bg)] text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors"
-            >
-              <span>Cancel</span>
-              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-muted)] font-medium">Esc</kbd>
-            </button>
-            <button
-              onClick={() => void submitQuickLinkDynamicPrompt()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--snippet-divider-strong)] bg-[var(--ui-segment-active-bg)] text-xs text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors"
-            >
-              <span>Open Link</span>
-              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-muted)] font-medium">↩</kbd>
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
-    {showActions && actionsOverlayActions.length > 0 && (
-      <div
-        className="fixed inset-0 z-50"
-        onClick={() => setShowActions(false)}
-        style={{ background: 'var(--bg-scrim)' }}
-      >
-        <div
-          ref={actionsOverlayRef}
-          className="absolute bottom-12 right-3 w-96 max-h-[65vh] rounded-xl overflow-hidden flex flex-col shadow-2xl outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0 focus-visible:ring-0"
-          tabIndex={0}
-          onKeyDown={handleActionsOverlayKeyDown}
-          style={{
-            ...(isNativeLiquidGlass
-              ? {
-                  background: 'rgba(var(--surface-base-rgb), 0.72)',
-                  backdropFilter: 'blur(44px) saturate(155%)',
-                  WebkitBackdropFilter: 'blur(44px) saturate(155%)',
-                  border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
-                  boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
-                }
-              : isGlassyTheme
-              ? {
-                  background:
-                    'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
-                  backdropFilter: 'blur(96px) saturate(190%)',
-                  WebkitBackdropFilter: 'blur(96px) saturate(190%)',
-                  border: '1px solid rgba(var(--on-surface-rgb), 0.05)',
-                }
-              : {
-                  background: 'var(--card-bg)',
-                  backdropFilter: 'blur(40px)',
-                  WebkitBackdropFilter: 'blur(40px)',
-                  border: '1px solid var(--border-primary)',
-                }),
-            outline: 'none',
-          }}
-          onFocus={(e) => {
-            (e.currentTarget as HTMLDivElement).style.outline = 'none';
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex-1 overflow-y-auto py-1">
-            {actionsOverlayActions.map((action, idx) => (
-              <React.Fragment key={action.id}>
-                {action.separatorBefore && (
-                  <div className="mx-2.5 my-1 border-t border-[var(--ui-divider)]" />
-                )}
-              <div
-                className={`mx-1 px-2.5 py-1.5 rounded-lg border border-transparent flex items-center gap-2.5 cursor-pointer transition-colors ${
-                  idx === selectedActionIndex
-                    ? action.style === 'destructive'
-                      ? 'bg-[var(--action-menu-selected-bg)] text-[var(--status-danger-faded)]'
-                      : 'bg-[var(--action-menu-selected-bg)] text-[var(--text-primary)]'
-                    : action.style === 'destructive'
-                      ? 'hover:bg-[var(--overlay-item-hover-bg)] text-[var(--status-danger-faded)]'
-                      : 'hover:bg-[var(--overlay-item-hover-bg)] text-[var(--text-secondary)]'
-                }`}
-                style={
-                  idx === selectedActionIndex
-                    ? {
-                        background: 'var(--action-menu-selected-bg)',
-                        borderColor: 'var(--action-menu-selected-border)',
-                        boxShadow: 'var(--action-menu-selected-shadow)',
-                      }
-                    : undefined
-                }
-                onClick={async () => {
-                  await Promise.resolve(action.execute());
-                  setShowActions(false);
-                  restoreLauncherFocus();
-                }}
-                onMouseMove={() => setSelectedActionIndex(idx)}
-              >
-                {action.icon && (
-                  <span
-                    className={`shrink-0 ${
-                      action.style === 'destructive'
-                        ? 'text-[var(--status-danger-faded)]'
-                        : 'text-[var(--text-muted)]'
-                    }`}
-                  >
-                    {action.icon}
-                  </span>
-                )}
-                <span className="flex-1 text-sm truncate">{action.title}</span>
-                {action.shortcut && (
-                  <span className="flex items-center gap-0.5">
-                    {getShortcutDisplayParts(action.shortcut).map((key, keyIdx) => (
-                      <kbd
-                        key={`${action.id}-${key}-${keyIdx}`}
-                        className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] font-medium text-[var(--text-muted)]"
-                      >
-                        {key}
-                      </kbd>
-                    ))}
-                  </span>
-                )}
-              </div>
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-      </div>
-    )}
-    {contextMenu && contextActions.length > 0 && (
-      <div
-        className="fixed inset-0 z-50"
-        onClick={() => setContextMenu(null)}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setContextMenu(null);
+    <QuickLinkDynamicPromptOverlay
+      prompt={quickLinkDynamicPrompt}
+      inputRef={quickLinkDynamicInputRef}
+      commandTitle={quickLinkDynamicPromptTitle}
+      setPrompt={setQuickLinkDynamicPrompt}
+      onCancel={cancelQuickLinkDynamicPrompt}
+      onSubmit={submitQuickLinkDynamicPrompt}
+      isNativeLiquidGlass={isNativeLiquidGlass}
+      isGlassyTheme={isGlassyTheme}
+    />
+    {showActions && (
+      <LauncherActionsOverlay
+        actions={actionsOverlayActions}
+        selectedIndex={selectedActionIndex}
+        setSelectedIndex={setSelectedActionIndex}
+        overlayRef={actionsOverlayRef}
+        onKeyDown={handleActionsOverlayKeyDown}
+        onClose={() => setShowActions(false)}
+        onActionClick={async (action) => {
+          await Promise.resolve(action.execute());
+          setShowActions(false);
+          restoreLauncherFocus();
         }}
-      >
-        <div
-          ref={contextMenuRef}
-          className="absolute w-80 max-h-[60vh] rounded-xl overflow-hidden flex flex-col shadow-2xl outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0 focus-visible:ring-0"
-          tabIndex={0}
-          onKeyDown={handleContextMenuKeyDown}
-          style={{
-            left: Math.min(contextMenu.x, window.innerWidth - 340),
-            top: Math.min(contextMenu.y, window.innerHeight - 320),
-            ...(isNativeLiquidGlass
-              ? {
-                  background: 'rgba(var(--surface-base-rgb), 0.72)',
-                  backdropFilter: 'blur(44px) saturate(155%)',
-                  WebkitBackdropFilter: 'blur(44px) saturate(155%)',
-                  border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
-                  boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
-                }
-              : isGlassyTheme
-              ? {
-                  background:
-                    'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
-                  backdropFilter: 'blur(96px) saturate(190%)',
-                  WebkitBackdropFilter: 'blur(96px) saturate(190%)',
-                  border: '1px solid rgba(var(--on-surface-rgb), 0.05)',
-                }
-              : {
-                  background: 'var(--card-bg)',
-                  backdropFilter: 'blur(40px)',
-                  WebkitBackdropFilter: 'blur(40px)',
-                  border: '1px solid var(--border-primary)',
-                }),
-            outline: 'none',
-          }}
-          onFocus={(e) => {
-            (e.currentTarget as HTMLDivElement).style.outline = 'none';
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <div className="flex-1 overflow-y-auto py-1">
-            {contextActions.map((action, idx) => (
-              <div
-                key={`ctx-${action.id}`}
-                className={`mx-1 px-2.5 py-1.5 rounded-lg border border-transparent flex items-center gap-2.5 cursor-pointer transition-colors ${
-                  idx === selectedContextActionIndex
-                    ? action.style === 'destructive'
-                      ? 'bg-[var(--action-menu-selected-bg)] text-[var(--status-danger-faded)]'
-                      : 'bg-[var(--action-menu-selected-bg)] text-[var(--text-primary)]'
-                    : action.style === 'destructive'
-                      ? 'hover:bg-[var(--overlay-item-hover-bg)] text-[var(--status-danger-faded)]'
-                      : 'hover:bg-[var(--overlay-item-hover-bg)] text-[var(--text-secondary)]'
-                }`}
-                style={
-                  idx === selectedContextActionIndex
-                    ? {
-                        background: 'var(--action-menu-selected-bg)',
-                        borderColor: 'var(--action-menu-selected-border)',
-                        boxShadow: 'var(--action-menu-selected-shadow)',
-                      }
-                    : undefined
-                }
-                onClick={async () => {
-                  await Promise.resolve(action.execute());
-                  setContextMenu(null);
-                  restoreLauncherFocus();
-                }}
-                onMouseMove={() => setSelectedContextActionIndex(idx)}
-              >
-                {action.icon && (
-                  <span
-                    className={`shrink-0 ${
-                      action.style === 'destructive'
-                        ? 'text-[var(--status-danger-faded)]'
-                        : 'text-[var(--text-muted)]'
-                    }`}
-                  >
-                    {action.icon}
-                  </span>
-                )}
-                <span className="flex-1 text-sm truncate">{action.title}</span>
-                {action.shortcut && (
-                  <span className="flex items-center gap-0.5">
-                    {getShortcutDisplayParts(action.shortcut).map((key, keyIdx) => (
-                      <kbd
-                        key={`ctx-${action.id}-${key}-${keyIdx}`}
-                        className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] font-medium text-[var(--text-muted)]"
-                      >
-                        {key}
-                      </kbd>
-                    ))}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+        isNativeLiquidGlass={isNativeLiquidGlass}
+        isGlassyTheme={isGlassyTheme}
+      />
     )}
+    <LauncherContextMenuOverlay
+      contextMenu={contextMenu}
+      actions={contextActions}
+      selectedIndex={selectedContextActionIndex}
+      setSelectedIndex={setSelectedContextActionIndex}
+      menuRef={contextMenuRef}
+      onKeyDown={handleContextMenuKeyDown}
+      onClose={() => setContextMenu(null)}
+      onActionClick={async (action) => {
+        await Promise.resolve(action.execute());
+        setContextMenu(null);
+        restoreLauncherFocus();
+      }}
+      isNativeLiquidGlass={isNativeLiquidGlass}
+      isGlassyTheme={isGlassyTheme}
+    />
     </>
   );
 };
