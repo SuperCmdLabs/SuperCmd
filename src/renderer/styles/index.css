@@ -740,9 +740,11 @@ html {
 }
 
 .dark .cursor-prompt-surface {
-  background: rgba(7, 9, 13, 0.95);
-  border-color: rgba(var(--on-surface-rgb), 0.14);
-  box-shadow: none;
+  background: var(--settings-panel-bg);
+  border-color: var(--ui-panel-border);
+  box-shadow:
+    0 12px 30px rgba(var(--backdrop-rgb), 0.18),
+    inset 0 1px 0 rgba(var(--on-surface-rgb), 0.08);
 }
 
 .cursor-prompt-drag-handle {
