@@ -34,8 +34,15 @@ export interface BrowserSearchResult {
   active?: boolean;
   bookmarkFolder?: string;
   bookmarkOrder?: number;
+  lastUsedAt?: number;
   score: number;
   completion: string;
+}
+
+export interface BrowserHistoryProfileOption {
+  id: string;
+  label: string;
+  count: number;
 }
 
 interface UseBrowserSearchResult {
@@ -46,6 +53,8 @@ interface UseBrowserSearchResult {
   getAllResults: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchResult[];
   getOpenTabResults: (input: string) => BrowserSearchResult[];
   getBookmarkResults: (input: string) => BrowserSearchResult[];
+  getHistoryResults: (input: string, profileIds?: string[] | null, showProfileContext?: boolean) => BrowserSearchResult[];
+  getHistoryProfiles: () => BrowserHistoryProfileOption[];
   refreshOpenTabs: () => void;
   refreshBrowserEntries: () => void;
   getMatchKind: (input: string, completion?: BrowserSearchAutocomplete | null) => 'open-tab' | 'history' | 'search';
@@ -199,19 +208,58 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   }, [enabled]);
 
   const getOpenTabResults = useCallback((rawInput: string): BrowserSearchResult[] => {
-    return getOpenTabCandidates(rawInput, tabsRef.current, { preserveBrowserOrder: true });
+    return getOpenTabCandidates(rawInput, tabsRef.current, { preserveBrowserOrder: true }).slice(0, MAX_SCOPED_OPEN_TAB_RESULTS);
   }, []);
 
   const getBookmarkResults = useCallback((rawInput: string): BrowserSearchResult[] => {
-    return getBrowserEntryCandidates('bookmark', rawInput, entriesRef.current, { preserveBookmarkOrder: !rawInput.trim() });
+    return getBrowserEntryCandidates('bookmark', rawInput, entriesRef.current, {
+      preserveBookmarkOrder: !rawInput.trim(),
+      limit: MAX_SCOPED_BOOKMARK_RESULTS,
+    });
+  }, []);
+
+  const getHistoryResults = useCallback((
+    rawInput: string,
+    profileIds?: string[] | null,
+    showProfileContext = false
+  ): BrowserSearchResult[] => {
+    return getBrowserEntryCandidates('history', rawInput, entriesRef.current, {
+      preserveHistoryChronology: true,
+      includeHistoryTimestamp: true,
+      showHistoryProfileContext: showProfileContext,
+      profileIds,
+      limit: MAX_SCOPED_HISTORY_RESULTS,
+    });
+  }, []);
+
+  const getHistoryProfiles = useCallback((): BrowserHistoryProfileOption[] => {
+    const profileCounts = new Map<string, BrowserHistoryProfileOption>();
+    for (const entry of entriesRef.current) {
+      if (entry.type !== 'url') continue;
+      const id = getEntryProfileKey(entry);
+      const existing = profileCounts.get(id);
+      if (existing) {
+        existing.count += 1;
+        continue;
+      }
+      profileCounts.set(id, {
+        id,
+        label: getEntryProfileLabel(entry),
+        count: 1,
+      });
+    }
+    return Array.from(profileCounts.values()).sort((a, b) => a.label.localeCompare(b.label));
   }, []);
 
   return useMemo(
-    () => ({ enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, refreshOpenTabs: refreshTabs, refreshBrowserEntries: refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
-    [enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, refreshTabs, refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
+    () => ({ enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, refreshOpenTabs: refreshTabs, refreshBrowserEntries: refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
+    [enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, refreshTabs, refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
   );
 }
 
+const MAX_SCOPED_HISTORY_RESULTS = 500;
+const MAX_SCOPED_BOOKMARK_RESULTS = 500;
+const MAX_SCOPED_OPEN_TAB_RESULTS = 500;
 const URL_PROTOCOL_RE = /^[a-z][\w+.\-]*:\/\//i;
 const LOCALHOST_RE = /^localhost(:\d+)?(\/.*)?$/i;
 const IP_RE = /^\d{1,3}(?:\.\d{1,3}){3}(:\d+)?(\/.*)?$/;
@@ -411,16 +459,25 @@ function getBrowserEntryCandidates(
   kind: 'bookmark' | 'history',
   input: string,
   entries: BrowserSearchEntry[],
-  options: { preserveBookmarkOrder?: boolean } = {}
+  options: {
+    preserveBookmarkOrder?: boolean;
+    preserveHistoryChronology?: boolean;
+    includeHistoryTimestamp?: boolean;
+    showHistoryProfileContext?: boolean;
+    profileIds?: string[] | null;
+    limit?: number;
+  } = {}
 ): BrowserSearchResult[] {
   const trimmed = input.trim();
   const lower = trimmed.toLowerCase();
   const stripped = lower.replace(/^https?:\/\//, '');
   const hasQuery = trimmed.length > 0;
   const entryType = kind === 'bookmark' ? 'bookmark' : 'url';
+  const profileFilter = options.profileIds ? new Set(options.profileIds) : null;
   const results: BrowserSearchResult[] = [];
   for (const entry of entries) {
     if (entry.type !== entryType) continue;
+    if (kind === 'history' && profileFilter && !profileFilter.has(getEntryProfileKey(entry))) continue;
     const urlScore = hasQuery ? getUrlMatchScore(entry.url || entry.host, stripped, true) : { score: 0, completion: '' };
     const titleScore = hasQuery ? getTitleMatchScore(entry.query, lower) : 0;
     if (urlScore === null && titleScore === null) continue;
@@ -436,18 +493,26 @@ function getBrowserEntryCandidates(
       id: `browser-result-${kind}:${entry.id}`,
       kind,
       title: entry.query || entry.host || entry.url,
-      subtitle: buildBrowserSubtitle(entry.sourceProfileName || '', '', entry.host),
+      subtitle: options.includeHistoryTimestamp && kind === 'history'
+        ? buildHistorySubtitle(entry, Boolean(options.showHistoryProfileContext))
+        : buildBrowserSubtitle(entry.sourceProfileName || '', '', entry.host),
       url: entry.url,
       actionInput: entry.url,
       focusAvailable: false,
       faviconUrl: getFaviconUrlForUrl(entry.url),
+      browserName: getBrowserSourceLabel(entry.source),
+      profileName: entry.sourceProfileName || entry.sourceProfileId,
       bookmarkFolder: entry.bookmarkFolder,
       bookmarkOrder: entry.bookmarkOrder,
+      lastUsedAt: entry.lastUsedAt,
       score,
       completion: urlScore?.completion || '',
     });
   }
-  return results.sort(options.preserveBookmarkOrder ? compareBookmarksByBrowserOrder : compareBrowserResults);
+  const sorted = options.preserveHistoryChronology
+    ? results.sort(compareHistoryByTime)
+    : results.sort(options.preserveBookmarkOrder ? compareBookmarksByBrowserOrder : compareBrowserResults);
+  return options.limit && options.limit > 0 ? sorted.slice(0, options.limit) : sorted;
 }
 
 function compareBookmarksByBrowserOrder(a: BrowserSearchResult, b: BrowserSearchResult): number {
@@ -455,6 +520,62 @@ function compareBookmarksByBrowserOrder(a: BrowserSearchResult, b: BrowserSearch
   const bOrder = Number.isFinite(Number(b.bookmarkOrder)) ? Number(b.bookmarkOrder) : Number.MAX_SAFE_INTEGER;
   if (aOrder !== bOrder) return aOrder - bOrder;
   return a.title.localeCompare(b.title);
+}
+
+function compareHistoryByTime(a: BrowserSearchResult, b: BrowserSearchResult): number {
+  const aTime = Number.isFinite(Number(a.lastUsedAt)) ? Number(a.lastUsedAt) : 0;
+  const bTime = Number.isFinite(Number(b.lastUsedAt)) ? Number(b.lastUsedAt) : 0;
+  if (bTime !== aTime) return bTime - aTime;
+  return a.title.localeCompare(b.title);
+}
+
+function buildHistorySubtitle(entry: BrowserSearchEntry, showProfileContext: boolean): string {
+  const time = formatHistoryDateTime(entry.lastUsedAt);
+  const context = showProfileContext
+    ? buildBrowserSubtitle(entry.sourceProfileName || getBrowserSourceLabel(entry.source), '', entry.host)
+    : entry.host;
+  return context ? `${time} - ${context}` : time;
+}
+
+function formatHistoryDateTime(value: number): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(date);
+  } catch {
+    return date.toLocaleString();
+  }
+}
+
+function getBrowserSourceLabel(source: BrowserSearchSource): string {
+  switch (source) {
+    case 'helium': return 'Helium';
+    case 'chrome': return 'Google Chrome';
+    case 'arc': return 'Arc';
+    case 'brave': return 'Brave';
+    case 'edge': return 'Microsoft Edge';
+    case 'vivaldi': return 'Vivaldi';
+    case 'safari': return 'Safari';
+    case 'firefox': return 'Firefox';
+    default: return 'Browser';
+  }
+}
+
+function getEntryProfileKey(entry: BrowserSearchEntry): string {
+  return [
+    entry.source || 'user',
+    entry.sourceProfileId || entry.sourceProfileName || 'default',
+  ].join(':');
+}
+
+function getEntryProfileLabel(entry: BrowserSearchEntry): string {
+  const browserName = getBrowserSourceLabel(entry.source);
+  const profileName = entry.sourceProfileName || entry.sourceProfileId;
+  if (!profileName || profileName === 'default') return browserName;
+  return `${browserName} - ${profileName}`;
 }
 
 function getOpenTabCandidates(

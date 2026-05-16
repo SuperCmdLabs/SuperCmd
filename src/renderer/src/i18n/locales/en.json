@@ -797,7 +797,8 @@
       "showAllSubtitle": "{count} browser results",
       "showAllPlaceholder": "Search browser results...",
       "openTabsPlaceholder": "Search open tabs...",
-      "bookmarksPlaceholder": "Search bookmarks..."
+      "bookmarksPlaceholder": "Search bookmarks...",
+      "historyPlaceholder": "Search history..."
     },
     "compact": {
       "showMore": "Show More"

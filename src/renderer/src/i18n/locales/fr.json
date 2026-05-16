@@ -861,7 +861,8 @@
       "showAllSubtitle": "{count} résultats Browser",
       "showAllPlaceholder": "Rechercher dans les résultats Browser...",
       "openTabsPlaceholder": "Rechercher les onglets ouverts...",
-      "bookmarksPlaceholder": "Rechercher dans les favoris..."
+      "bookmarksPlaceholder": "Rechercher dans les favoris...",
+      "historyPlaceholder": "Rechercher dans l’historique..."
     },
     "badges": {
       "openTab": "Onglet ouvert",

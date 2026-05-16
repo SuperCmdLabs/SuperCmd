@@ -1110,6 +1110,14 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     );
   }
 
+  if (commandId === 'system-search-history') {
+    return (
+      <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
+        <Clock className="w-3 h-3 text-sky-300" />
+      </div>
+    );
+  }
+
   if (commandId === 'system-add-to-memory') {
     return (
       <div className="w-5 h-5 rounded bg-fuchsia-500/20 flex items-center justify-center">

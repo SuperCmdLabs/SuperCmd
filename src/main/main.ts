@@ -4047,6 +4047,7 @@ function isWindowShownRoutedSystemCommand(commandId: string): boolean {
     commandId === 'system-search-files' ||
     commandId === 'system-search-open-tabs' ||
     commandId === 'system-search-bookmarks' ||
+    commandId === 'system-search-history' ||
     commandId === 'system-my-schedule' ||
     commandId === 'system-camera' ||
     commandId === 'system-open-onboarding'
@@ -10168,6 +10169,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     commandId === 'system-search-files' ||
     commandId === 'system-search-open-tabs' ||
     commandId === 'system-search-bookmarks' ||
+    commandId === 'system-search-history' ||
     commandId === 'system-my-schedule' ||
     commandId === 'system-camera'
   ) {

@@ -105,12 +105,13 @@ const BROWSER_SEARCH_RESULT_ID_PREFIX = 'browser-search-result:';
 const BROWSER_SEARCH_SHOW_ALL_RESULTS_ID = 'browser-search-action-show-all';
 const BROWSER_SEARCH_OPEN_TABS_COMMAND_ID = 'system-search-open-tabs';
 const BROWSER_SEARCH_BOOKMARKS_COMMAND_ID = 'system-search-bookmarks';
+const BROWSER_SEARCH_HISTORY_COMMAND_ID = 'system-search-history';
 const DEFAULT_BROWSER_SEARCH_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
   { kind: 'bookmark', limit: 2 },
   { kind: 'open-tab', limit: 2 },
   { kind: 'history', limit: 2 },
 ];
-type BrowserResultsViewScope = 'all' | 'open-tabs' | 'bookmarks';
+type BrowserResultsViewScope = 'all' | 'open-tabs' | 'bookmarks' | 'history';
 const MAX_LAUNCHER_FILE_RESULT_ICONS = MAX_LAUNCHER_FILE_RESULTS;
 const MIN_LAUNCHER_FILE_QUERY_LENGTH = 2;
 const MAX_INLINE_EXTENSION_ARGUMENTS = 3;
@@ -128,6 +129,7 @@ const DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS = new Set([
   'system-search-files',
   BROWSER_SEARCH_OPEN_TABS_COMMAND_ID,
   BROWSER_SEARCH_BOOKMARKS_COMMAND_ID,
+  BROWSER_SEARCH_HISTORY_COMMAND_ID,
   'system-my-schedule',
   'system-camera',
 ]);
@@ -284,6 +286,16 @@ function normalizeBrowserCommandUrl(url: string | undefined): string {
   }
 }
 
+function formatBrowserHistoryDateSection(value: number | undefined): string {
+  const date = new Date(Number(value) || 0);
+  if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return '';
+  try {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'full' }).format(date);
+  } catch {
+    return date.toLocaleDateString();
+  }
+}
+
 function getExtensionIdentityFromCommand(
   command: CommandInfo | null | undefined
 ): { extName: string; cmdName: string } | null {
@@ -423,6 +435,8 @@ const App: React.FC = () => {
   const [browserResultsViewQuery, setBrowserResultsViewQuery] = useState<string | null>(null);
   const [browserResultsViewScope, setBrowserResultsViewScope] = useState<BrowserResultsViewScope>('all');
   const [browserResultsViewSelectedIndex, setBrowserResultsViewSelectedIndex] = useState(0);
+  const [browserHistorySelectedProfileIds, setBrowserHistorySelectedProfileIds] = useState<string[] | null>(null);
+  const [browserHistoryProfileMenuOpen, setBrowserHistoryProfileMenuOpen] = useState(false);
   const [inlineExtensionArgumentValues, setInlineExtensionArgumentValues] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -1018,6 +1032,17 @@ const App: React.FC = () => {
           setShowFileSearch(false);
           browserSearch.refreshBrowserEntries();
           setBrowserResultsViewScope('bookmarks');
+          setBrowserResultsViewQuery('');
+          return;
+        }
+        if (routedSystemCommandId === BROWSER_SEARCH_HISTORY_COMMAND_ID) {
+          setShowClipboardManager(false);
+          setShowSnippetManager(null);
+          setShowQuickLinkManager(null);
+          setShowFileSearch(false);
+          browserSearch.refreshBrowserEntries();
+          setBrowserHistoryProfileMenuOpen(false);
+          setBrowserResultsViewScope('history');
           setBrowserResultsViewQuery('');
           return;
         }
@@ -2099,6 +2124,17 @@ const App: React.FC = () => {
     return browserSearchSyntheticCommand ? [browserSearchSyntheticCommand, ...ordered] : ordered;
   }, [browserSearchResultCommands, groupedCommands, browserSearchSyntheticCommand]);
 
+  const browserHistoryProfileOptions = useMemo(() => {
+    return browserSearch.getHistoryProfiles();
+  }, [browserSearch]);
+
+  const effectiveBrowserHistoryProfileIds = useMemo(() => {
+    if (browserHistorySelectedProfileIds !== null) return browserHistorySelectedProfileIds;
+    return browserHistoryProfileOptions.length > 0
+      ? browserHistoryProfileOptions.map((profile) => profile.id)
+      : null;
+  }, [browserHistoryProfileOptions, browserHistorySelectedProfileIds]);
+
   const browserResultsViewResults = useMemo(() => {
     if (browserResultsViewQuery === null) return [];
     if (browserResultsViewScope === 'open-tabs') {
@@ -2107,8 +2143,15 @@ const App: React.FC = () => {
     if (browserResultsViewScope === 'bookmarks') {
       return browserSearch.getBookmarkResults(browserResultsViewQuery);
     }
+    if (browserResultsViewScope === 'history') {
+      return browserSearch.getHistoryResults(
+        browserResultsViewQuery,
+        effectiveBrowserHistoryProfileIds,
+        browserHistoryProfileOptions.length > 1
+      );
+    }
     return browserSearch.getAllResults(browserResultsViewQuery, browserSearchResultGroups);
-  }, [browserSearch, browserSearchResultGroups, browserResultsViewQuery, browserResultsViewScope]);
+  }, [browserHistoryProfileOptions.length, browserSearch, browserSearchResultGroups, browserResultsViewQuery, browserResultsViewScope, effectiveBrowserHistoryProfileIds]);
 
   const browserResultsViewSections = useMemo(() => {
     if (browserResultsViewScope === 'open-tabs') {
@@ -2159,6 +2202,31 @@ const App: React.FC = () => {
             key: `bookmark-folder-${folder}`,
             kind: 'bookmark',
             title: folder,
+            items: [],
+          });
+        }
+        sections[sectionIndex].items.push(result);
+      }
+      return sections;
+    }
+    if (browserResultsViewScope === 'history') {
+      const sections: Array<{
+        key: string;
+        kind: 'history';
+        title: string;
+        items: BrowserSearchResult[];
+      }> = [];
+      const sectionByDate = new Map<string, number>();
+      for (const result of browserResultsViewResults) {
+        const sectionTitle = formatBrowserHistoryDateSection(result.lastUsedAt) || t('launcher.badges.history');
+        let sectionIndex = sectionByDate.get(sectionTitle);
+        if (sectionIndex === undefined) {
+          sectionIndex = sections.length;
+          sectionByDate.set(sectionTitle, sectionIndex);
+          sections.push({
+            key: `history-date-${sectionTitle}`,
+            kind: 'history',
+            title: sectionTitle,
             items: [],
           });
         }
@@ -2996,6 +3064,14 @@ const App: React.FC = () => {
       whisperSessionRef.current = false;
       browserSearch.refreshBrowserEntries();
       setBrowserResultsViewScope('bookmarks');
+      setBrowserResultsViewQuery('');
+      return true;
+    }
+    if (commandId === BROWSER_SEARCH_HISTORY_COMMAND_ID) {
+      whisperSessionRef.current = false;
+      browserSearch.refreshBrowserEntries();
+      setBrowserHistoryProfileMenuOpen(false);
+      setBrowserResultsViewScope('history');
       setBrowserResultsViewQuery('');
       return true;
     }
@@ -4441,13 +4517,19 @@ const App: React.FC = () => {
   // ─── Browser Results mode ────────────────────────────────────────
   if (browserResultsViewQuery !== null) {
     const selectedBrowserResult = browserResultsViewResults[browserResultsViewSelectedIndex] || null;
+    const showHistoryProfilePicker = browserResultsViewScope === 'history' && browserHistoryProfileOptions.length > 1;
+    const selectedHistoryProfileCount = effectiveBrowserHistoryProfileIds?.length ?? browserHistoryProfileOptions.length;
+    const historyProfileFilterLabel = `${selectedHistoryProfileCount}/${browserHistoryProfileOptions.length}`;
     const browserResultsPlaceholder = browserResultsViewScope === 'open-tabs'
       ? t('launcher.browserSearch.openTabsPlaceholder')
       : browserResultsViewScope === 'bookmarks'
         ? t('launcher.browserSearch.bookmarksPlaceholder')
+        : browserResultsViewScope === 'history'
+          ? t('launcher.browserSearch.historyPlaceholder')
       : t('launcher.browserSearch.showAllPlaceholder');
     const closeBrowserResults = () => {
       setBrowserResultsViewQuery(null);
+      setBrowserHistoryProfileMenuOpen(false);
       setTimeout(() => inputRef.current?.focus(), 50);
     };
 
@@ -4498,6 +4580,48 @@ const App: React.FC = () => {
                 placeholder={browserResultsPlaceholder}
                 className="flex-1 bg-transparent outline-none text-[0.95rem] text-[var(--text-primary)] placeholder:text-[var(--text-subtle)]"
               />
+              {showHistoryProfilePicker ? (
+                <div className="relative flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setBrowserHistoryProfileMenuOpen((open) => !open)}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--ui-divider)] bg-white/[0.04] px-2.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-white/[0.07]"
+                  >
+                    <span>Profiles</span>
+                    <span className="text-[var(--text-muted)]">{historyProfileFilterLabel}</span>
+                  </button>
+                  {browserHistoryProfileMenuOpen ? (
+                    <div className="absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-panel-bg)] shadow-xl">
+                      <div className="max-h-64 overflow-y-auto p-1">
+                        {browserHistoryProfileOptions.map((profile) => {
+                          const checked = Boolean(effectiveBrowserHistoryProfileIds?.includes(profile.id));
+                          return (
+                            <button
+                              key={profile.id}
+                              type="button"
+                              onClick={() => {
+                                setBrowserHistorySelectedProfileIds((current) => {
+                                  const currentIds = current ?? browserHistoryProfileOptions.map((item) => item.id);
+                                  return currentIds.includes(profile.id)
+                                    ? currentIds.filter((id) => id !== profile.id)
+                                    : [...currentIds, profile.id];
+                                });
+                              }}
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--text-secondary)] hover:bg-white/[0.06]"
+                            >
+                              <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border text-[0.625rem] ${checked ? 'border-cyan-300 bg-cyan-400/20 text-cyan-200' : 'border-[var(--ui-divider)] text-transparent'}`}>
+                                x
+                              </span>
+                              <span className="min-w-0 flex-1 truncate">{profile.label}</span>
+                              <span className="text-[0.6875rem] text-[var(--text-muted)]">{profile.count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5">

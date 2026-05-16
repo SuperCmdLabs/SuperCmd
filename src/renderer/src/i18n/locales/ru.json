@@ -182,7 +182,8 @@
       "showAllSubtitle": "{count} результатов Browser",
       "showAllPlaceholder": "Искать результаты Browser...",
       "openTabsPlaceholder": "Искать открытые вкладки...",
-      "bookmarksPlaceholder": "Искать закладки..."
+      "bookmarksPlaceholder": "Искать закладки...",
+      "historyPlaceholder": "Искать в истории..."
     }
   },
   "settings": {

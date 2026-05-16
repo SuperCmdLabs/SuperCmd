@@ -891,7 +891,8 @@
       "showAllSubtitle": "{count} risultati Browser",
       "showAllPlaceholder": "Cerca risultati Browser...",
       "openTabsPlaceholder": "Cerca schede aperte...",
-      "bookmarksPlaceholder": "Cerca segnalibri..."
+      "bookmarksPlaceholder": "Cerca segnalibri...",
+      "historyPlaceholder": "Cerca nella cronologia..."
     }
   },
   "scriptCommand": {
