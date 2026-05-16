@@ -141,6 +141,7 @@ export interface AppSettings {
   launcherBackgroundImageOpacityPercent: number;
   appUpdaterLastCheckedAt: number;
   updateBannerDismissedAt?: number;
+  updateBannerDismissedVersion?: string;
   hyperKey: HyperKeySettings;
   launcherViewMode: LauncherViewMode;
   navigationStyle: AppNavigationStyle;
@@ -564,6 +565,7 @@ const NEVER_SYNC: ReadonlySet<keyof AppSettings> = new Set<keyof AppSettings>([
   // Per-machine timing / dismissal state.
   'appUpdaterLastCheckedAt',
   'updateBannerDismissedAt',
+  'updateBannerDismissedVersion',
   // Extensions write per-machine state (e.g. unread counts) here.
   'commandMetadata',
 ]);
@@ -850,6 +852,12 @@ export function loadSettings(): AppSettings {
       appUpdaterLastCheckedAt: Number.isFinite(Number(parsed.appUpdaterLastCheckedAt))
         ? Math.max(0, Number(parsed.appUpdaterLastCheckedAt))
         : DEFAULT_SETTINGS.appUpdaterLastCheckedAt,
+      updateBannerDismissedAt: Number.isFinite(Number(parsed.updateBannerDismissedAt))
+        ? Math.max(0, Number(parsed.updateBannerDismissedAt))
+        : undefined,
+      updateBannerDismissedVersion: typeof parsed.updateBannerDismissedVersion === 'string'
+        ? parsed.updateBannerDismissedVersion
+        : undefined,
       launcherViewMode: (parsed.launcherViewMode === 'compact' ? 'compact' : 'expanded'),
       navigationStyle: normalizeNavigationStyle(parsed.navigationStyle),
       clipboardHistoryRetentionDays: normalizeClipboardHistoryRetentionDays(parsed.clipboardHistoryRetentionDays),

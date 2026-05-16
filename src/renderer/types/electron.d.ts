@@ -235,7 +235,7 @@ export interface Qwen3ModelStatus {
 }
 
 export interface AppUpdaterStatus {
-  state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+  state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'restarting' | 'error';
   supported: boolean;
   currentVersion: string;
   latestVersion?: string;
@@ -461,6 +461,8 @@ export interface AppSettings {
   launcherBackgroundImageBlurPercent: number;
   launcherBackgroundImageOpacityPercent: number;
   appUpdaterLastCheckedAt: number;
+  updateBannerDismissedAt?: number;
+  updateBannerDismissedVersion?: string;
   hyperKey: HyperKeySettings;
   launcherViewMode: 'expanded' | 'compact';
   navigationStyle: AppNavigationStyle;

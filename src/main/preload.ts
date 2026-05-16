@@ -213,7 +213,7 @@ const electronAPI = {
     ok: boolean;
   }> => ipcRenderer.invoke('get-global-shortcut-status'),
   appUpdaterGetStatus: (): Promise<{
-    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'restarting' | 'error';
     supported: boolean;
     currentVersion: string;
     latestVersion?: string;
@@ -226,7 +226,7 @@ const electronAPI = {
     message?: string;
   }> => ipcRenderer.invoke('app-updater-get-status'),
   appUpdaterCheckForUpdates: (): Promise<{
-    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'restarting' | 'error';
     supported: boolean;
     currentVersion: string;
     latestVersion?: string;
@@ -239,7 +239,7 @@ const electronAPI = {
     message?: string;
   }> => ipcRenderer.invoke('app-updater-check-for-updates'),
   appUpdaterDownloadUpdate: (): Promise<{
-    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'restarting' | 'error';
     supported: boolean;
     currentVersion: string;
     latestVersion?: string;
@@ -256,7 +256,7 @@ const electronAPI = {
   appUpdaterCheckAndInstall: (): Promise<{ success: boolean; error?: string; message?: string; state?: string }> =>
     ipcRenderer.invoke('app-updater-check-and-install'),
   onAppUpdaterStatus: (callback: (payload: {
-    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+    state: 'idle' | 'unsupported' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'restarting' | 'error';
     supported: boolean;
     currentVersion: string;
     latestVersion?: string;

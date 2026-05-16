@@ -2833,6 +2833,11 @@ const App: React.FC = () => {
       await window.electron.appUpdaterCheckAndInstall();
       return true;
     }
+    if (commandId === 'system-update-and-reopen') {
+      await window.electron.appUpdaterQuitAndInstall();
+      try { await window.electron.hideWindow(); } catch {}
+      return true;
+    }
     if (commandId === 'system-empty-trash') {
       const ok = window.confirm('Are you sure you want to permanently delete the items in the Trash?');
       if (!ok) return true;
@@ -3335,7 +3340,7 @@ const App: React.FC = () => {
         return [
           {
             id: 'update-and-reopen',
-            title: 'Update and Reopen',
+            title: 'Update and Restart',
             shortcut: 'Enter',
             icon: <Download className="w-4 h-4" />,
             execute: () => handleCommandExecute(command),

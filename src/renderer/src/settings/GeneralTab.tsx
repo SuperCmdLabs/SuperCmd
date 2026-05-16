@@ -214,12 +214,19 @@ const GeneralTab: React.FC = () => {
 
   const handleRestartToInstall = async () => {
     setUpdaterActionError('');
+    setUpdaterStatus((prev) => prev ? {
+      ...prev,
+      state: 'restarting',
+      message: t('settings.general.updates.restarting'),
+    } : prev);
     try {
       const ok = await window.electron.appUpdaterQuitAndInstall();
       if (!ok) {
+        setUpdaterStatus((prev) => prev ? { ...prev, state: 'downloaded' } : prev);
         setUpdaterActionError(t('settings.general.updates.error'));
       }
     } catch (error: any) {
+      setUpdaterStatus((prev) => prev ? { ...prev, state: 'downloaded' } : prev);
       setUpdaterActionError(String(error?.message || error || t('settings.general.updates.failed')));
     }
   };
@@ -229,6 +236,16 @@ const GeneralTab: React.FC = () => {
   const updaterSupported = updaterStatus?.supported !== false;
   const currentVersion = updaterStatus?.currentVersion || '1.0.0';
   const updaterAction = useMemo(() => {
+    if (updaterState === 'restarting') {
+      return {
+        label: t('settings.general.updates.restartingButton'),
+        onClick: handleRestartToInstall,
+        icon: RotateCcw,
+        disabled: true,
+        className:
+          'border border-emerald-400/30 bg-[var(--ui-segment-bg)] text-emerald-200',
+      };
+    }
     if (updaterState === 'downloaded') {
       return {
         label: t('settings.general.updates.restart'),
@@ -277,6 +294,8 @@ const GeneralTab: React.FC = () => {
         return t('settings.general.updates.downloading');
       case 'downloaded':
         return t('settings.general.updates.downloaded');
+      case 'restarting':
+        return updaterStatus.message || t('settings.general.updates.restarting');
       case 'error':
         return t('settings.general.updates.error');
       default:
@@ -734,7 +753,9 @@ const GeneralTab: React.FC = () => {
                       ? 'animate-spin'
                       : updaterState === 'downloading'
                         ? 'animate-pulse'
-                        : ''
+                        : updaterState === 'restarting'
+                          ? 'animate-spin'
+                          : ''
                   }`}
                 />
                 {updaterAction.label}
