@@ -43,6 +43,7 @@ import { useLauncherInlineArguments } from './hooks/useLauncherInlineArguments';
 import { useLauncherActionModel } from './hooks/useLauncherActionModel';
 import { useLauncherLocalSystemCommands } from './hooks/useLauncherLocalSystemCommands';
 import { useLauncherCommandExecution } from './hooks/useLauncherCommandExecution';
+import { useLauncherWindowShownHandler } from './hooks/useLauncherWindowShownHandler';
 import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
@@ -97,9 +98,6 @@ import {
   MIN_LAUNCHER_FILE_QUERY_LENGTH,
 } from './utils/launcher-file-results';
 import {
-  BROWSER_SEARCH_BOOKMARKS_COMMAND_ID,
-  BROWSER_SEARCH_HISTORY_COMMAND_ID,
-  BROWSER_SEARCH_OPEN_TABS_COMMAND_ID,
   BROWSER_SEARCH_SHOW_ALL_RESULTS_ID,
   type BrowserResultsViewScope,
   canEditBrowserResultNickname,
@@ -402,11 +400,7 @@ const App: React.FC = () => {
   // it has been hidden. Synced from settings.popToRootSearchTimeoutSeconds.
   // 0 = reset immediately on every reopen.
   const popToRootTimeoutMsRef = useRef<number>(DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS * 1000);
-  // Tracks whether any persistable view (extension or internal view like
-  // Clipboard/Snippets/etc.) is currently active, so the window-shown handler
-  // can keep that view alive when reopened within the configured timeout.
-  const hasPersistableViewRef = useRef<boolean>(false);
-  hasPersistableViewRef.current = Boolean(
+  const hasPersistableView = Boolean(
     extensionView ||
     showClipboardManager ||
     showSnippetManager ||
@@ -698,272 +692,71 @@ const App: React.FC = () => {
     return cleanup;
   }, [fetchCommands]);
 
-  useEffect(() => {
-    const cleanupWindowShown = window.electron.onWindowShown((payload) => {
-      const routedSystemCommandId = String(payload?.systemCommandId || '');
-      const isOnboardingMode =
-        payload?.mode === 'onboarding' ||
-        routedSystemCommandId === 'system-open-onboarding' ||
-        routedSystemCommandId === 'system-whisper-onboarding';
+  const requestPendingInlineArgumentFocusRef = useRef<() => void>(() => {});
+  const requestPendingInlineArgumentFocus = useCallback(() => {
+    requestPendingInlineArgumentFocusRef.current();
+  }, []);
 
-      setForcedTheme(isOnboardingMode ? 'dark' : null, false);
-      if (!isOnboardingMode) {
-        refreshThemeFromStorage(false);
-      }
-      const isWhisperMode = payload?.mode === 'whisper';
-      const isSpeakMode = payload?.mode === 'speak';
-      const isPromptMode = payload?.mode === 'prompt';
-      if (isWhisperMode) {
-        whisperSessionRef.current = true;
-        setSelectedTextSnapshot('');
-        setMemoryFeedback(null);
-        setMemoryActionLoading(false);
-        openWhisper();
-        return;
-      }
-      if (isSpeakMode) {
-        whisperSessionRef.current = false;
-        setSelectedTextSnapshot('');
-        setMemoryFeedback(null);
-        setMemoryActionLoading(false);
-        openSpeak();
-        return;
-      }
-      if (isPromptMode) {
-        whisperSessionRef.current = false;
-        setSelectedTextSnapshot('');
-        setMemoryFeedback(null);
-        setMemoryActionLoading(false);
-        openCursorPrompt();
-        resetCursorPromptState();
-        return;
-      }
-      if (routedSystemCommandId) {
-        whisperSessionRef.current = false;
-        setShowCursorPrompt(false);
-        setShowWhisperHint(false);
-        setShowCamera(false);
-        setShowWindowManager(false);
-        setShowQuickLinkManager(null);
-        setMemoryFeedback(null);
-        setMemoryActionLoading(false);
-        setScriptCommandSetup(null);
-        setScriptCommandOutput(null);
-        setExtensionView(null);
-        setBrowserResultsViewQuery(null);
-        localStorage.removeItem(LAST_EXT_KEY);
-        exitAiMode();
-        if (!isOnboardingMode) {
-          expandLauncherForDirectLaunch();
-        }
-        if (routedSystemCommandId === 'system-clipboard-manager') {
-          setShowSnippetManager(null);
-          setShowFileSearch(false);
-          openClipboardManager();
-          return;
-        }
-        if (routedSystemCommandId === 'system-search-snippets') {
-          setShowClipboardManager(false);
-          setShowFileSearch(false);
-          openSnippetManager('search');
-          return;
-        }
-        if (routedSystemCommandId === 'system-create-snippet') {
-          setShowClipboardManager(false);
-          setShowFileSearch(false);
-          openSnippetManager('create');
-          return;
-        }
-        if (routedSystemCommandId === 'system-search-notes') {
-          setShowClipboardManager(false);
-          setShowSnippetManager(null);
-          setShowFileSearch(false);
-          openNotesSearch();
-          return;
-        }
-        if (routedSystemCommandId === 'system-create-note') {
-          window.electron.openNotesWindow('create');
-          return;
-        }
-        if (routedSystemCommandId === 'system-search-canvases') {
-          openCanvasSearch();
-          return;
-        }
-        if (routedSystemCommandId === 'system-create-canvas') {
-          window.electron.openCanvasWindow('create');
-          return;
-        }
-        if (routedSystemCommandId === 'system-search-quicklinks') {
-          setShowClipboardManager(false);
-          setShowFileSearch(false);
-          openQuickLinkManager('search');
-          return;
-        }
-        if (routedSystemCommandId === 'system-create-quicklink') {
-          setShowClipboardManager(false);
-          setShowFileSearch(false);
-          openQuickLinkManager('create');
-          return;
-        }
-        if (routedSystemCommandId === 'system-search-files') {
-          setShowClipboardManager(false);
-          setShowSnippetManager(null);
-          setShowQuickLinkManager(null);
-          openFileSearch();
-          return;
-        }
-        if (routedSystemCommandId === BROWSER_SEARCH_OPEN_TABS_COMMAND_ID) {
-          setShowClipboardManager(false);
-          setShowSnippetManager(null);
-          setShowQuickLinkManager(null);
-          setShowFileSearch(false);
-          browserSearch.refreshOpenTabs();
-          setBrowserResultsViewScope('open-tabs');
-          setBrowserResultsViewQuery('');
-          return;
-        }
-        if (routedSystemCommandId === BROWSER_SEARCH_BOOKMARKS_COMMAND_ID) {
-          setShowClipboardManager(false);
-          setShowSnippetManager(null);
-          setShowQuickLinkManager(null);
-          setShowFileSearch(false);
-          browserSearch.refreshBrowserEntries();
-          setBrowserResultsViewScope('bookmarks');
-          setBrowserResultsViewQuery('');
-          return;
-        }
-        if (routedSystemCommandId === BROWSER_SEARCH_HISTORY_COMMAND_ID) {
-          setShowClipboardManager(false);
-          setShowSnippetManager(null);
-          setShowQuickLinkManager(null);
-          setShowFileSearch(false);
-          browserSearch.refreshBrowserEntries();
-          setBrowserHistoryProfileMenuOpen(false);
-          setBrowserResultsViewScope('history');
-          setBrowserResultsViewQuery('');
-          return;
-        }
-        if (routedSystemCommandId === 'system-my-schedule') {
-          setShowClipboardManager(false);
-          setShowSnippetManager(null);
-          setShowQuickLinkManager(null);
-          setShowFileSearch(false);
-          openSchedule();
-          return;
-        }
-        if (routedSystemCommandId === 'system-camera') {
-          setShowClipboardManager(false);
-          setShowSnippetManager(null);
-          setShowQuickLinkManager(null);
-          setShowFileSearch(false);
-          openCamera();
-          return;
-        }
-        if (routedSystemCommandId === 'system-open-onboarding') {
-          openOnboarding();
-          return;
-        }
-        if (routedSystemCommandId === 'system-whisper-onboarding') {
-          openOnboarding();
-          return;
-        }
-      }
-
-      if (Date.now() <= directLaunchExpansionGuardUntilRef.current) {
-        whisperSessionRef.current = false;
-        setShowCursorPrompt(false);
-        setShowWhisperHint(false);
-        setMemoryFeedback(null);
-        setMemoryActionLoading(false);
-        setSelectedTextSnapshot(String(payload?.selectedTextSnapshot || '').trim());
-        exitAiMode();
-        expandLauncherForDirectLaunch();
-        return;
-      }
-
-      whisperSessionRef.current = false;
-      setShowCursorPrompt(false);
-      setShowWhisperHint(false);
-      setShowWindowManager(false);
-      setMemoryFeedback(null);
-      setMemoryActionLoading(false);
-      setScriptCommandSetup(null);
-      setScriptCommandOutput(null);
-      setSelectedTextSnapshot(String(payload?.selectedTextSnapshot || '').trim());
-      const popToRootTimeoutMs = popToRootTimeoutMsRef.current;
-      const shouldResetOverlays =
-        popToRootTimeoutMs === 0 ||
-        (lastWindowHiddenAtRef.current > 0 &&
-          Date.now() - lastWindowHiddenAtRef.current > popToRootTimeoutMs);
-
-      if (shouldResetOverlays) {
-        setExtensionView(null);
-        localStorage.removeItem(LAST_EXT_KEY);
-        setShowActions(false);
-        setContextMenu(null);
-        setShowClipboardManager(false);
-        setShowSnippetManager(null);
-        setShowNotesSearch(false);
-        setShowCanvasSearch(false);
-        setShowQuickLinkManager(null);
-        setShowFileSearch(false);
-        setShowCursorPrompt(false);
-        setShowWhisper(false);
-        setShowSpeak(false);
-        setShowCamera(false);
-        setShowSchedule(false);
-        setShowWhisperOnboarding(false);
-      }
-
-      // If a persistable view (extension or internal view like Clipboard,
-      // Snippets, File Search, etc.) is open, keep it alive — don't reset.
-      if (hasPersistableViewRef.current && !shouldResetOverlays) {
-        setIsCompactCollapsed(false);
-        void window.electron.resizeLauncherWindow(true);
-        return;
-      }
-      const pendingQuery = pendingWindowShownQueryRef.current;
-      pendingWindowShownQueryRef.current = null;
-      if (pendingQuery) {
-        setSearchQuery(pendingQuery);
-        setSelectedIndex(0);
-        requestPendingInlineArgumentFocus();
-      }
-      // When a pending query is pre-filled (e.g. hotkey-triggered no-view
-      // command with missing args), expand out of compact so results are
-      // immediately visible.
-      if (pendingQuery) {
-        exitAiMode();
-        expandLauncherForDirectLaunch();
-      } else {
-        setIsCompactCollapsed(true);
-        exitAiMode();
-      }
-      // Focus synchronously before any IO — a keystroke arriving back-to-back
-      // with the show event must land on a focused input.
-      inputRef.current?.focus();
-
-      // Defer housekeeping past first paint so it doesn't compete with the
-      // user's first keystroke or list rendering.
-      const runDeferred = () => {
-        const COMMANDS_REFRESH_TTL_MS = 5 * 60_000;
-        if (
-          commandsRef.current.length === 0 ||
-          Date.now() - lastCommandsFetchAtRef.current > COMMANDS_REFRESH_TTL_MS
-        ) {
-          fetchCommands({ showLoading: false });
-        }
-        loadLauncherPreferences();
-        window.electron.aiIsAvailable().then(setAiAvailable);
-      };
-      if (typeof window.requestIdleCallback === 'function') {
-        window.requestIdleCallback(runDeferred, { timeout: 200 });
-      } else {
-        setTimeout(runDeferred, 0);
-      }
-    });
-    return cleanupWindowShown;
-  }, [expandLauncherForDirectLaunch, fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openSchedule, openCamera, openOnboarding, setShowCamera, setShowSchedule, setShowWindowManager, setShowWhisper, setShowSpeak, setShowWhisperOnboarding, browserSearch]);
+  useLauncherWindowShownHandler({
+    hasPersistableView,
+    directLaunchExpansionGuardUntilRef,
+    pendingWindowShownQueryRef,
+    popToRootTimeoutMsRef,
+    lastWindowHiddenAtRef,
+    commandsRef,
+    lastCommandsFetchAtRef,
+    inputRef,
+    whisperSessionRef,
+    expandLauncherForDirectLaunch,
+    requestPendingInlineArgumentFocus,
+    exitAiMode,
+    resetCursorPromptState,
+    fetchCommands,
+    loadLauncherPreferences,
+    openWhisper,
+    openSpeak,
+    openCursorPrompt,
+    openClipboardManager,
+    openSnippetManager,
+    openNotesSearch,
+    openCanvasSearch,
+    openQuickLinkManager,
+    openFileSearch,
+    openSchedule,
+    openCamera,
+    openOnboarding,
+    setAiAvailable,
+    setSelectedTextSnapshot,
+    setMemoryFeedback,
+    setMemoryActionLoading,
+    setShowCursorPrompt,
+    setShowWhisperHint,
+    setShowCamera,
+    setShowWindowManager,
+    setShowQuickLinkManager,
+    setScriptCommandSetup,
+    setScriptCommandOutput,
+    setExtensionView,
+    setBrowserResultsViewQuery,
+    setShowSnippetManager,
+    setShowFileSearch,
+    setShowClipboardManager,
+    setBrowserResultsViewScope,
+    setBrowserHistoryProfileMenuOpen,
+    setShowActions,
+    setContextMenu,
+    setShowNotesSearch,
+    setShowCanvasSearch,
+    setShowWhisper,
+    setShowSpeak,
+    setShowSchedule,
+    setShowWhisperOnboarding,
+    setSearchQuery,
+    setSelectedIndex,
+    setIsCompactCollapsed,
+    refreshBrowserOpenTabs: browserSearch.refreshOpenTabs,
+    refreshBrowserEntries: browserSearch.refreshBrowserEntries,
+  });
 
   useEffect(() => {
     const cleanupSelectionSnapshotUpdated = window.electron.onSelectionSnapshotUpdated((payload) => {
@@ -1808,7 +1601,7 @@ const App: React.FC = () => {
     inlineQuickLinkDynamicFieldsById,
     inlineQuickLinkDynamicValuesById,
 
-    requestPendingInlineArgumentFocus,
+    requestPendingInlineArgumentFocus: requestPendingInlineArgumentFocusImpl,
     getDynamicFieldsForQuickLink,
     updateInlineExtensionArgumentValue,
     clearInlineExtensionArgumentsForCommand,
@@ -1822,6 +1615,7 @@ const App: React.FC = () => {
     isLauncherModeActive,
     inputRef,
   });
+  requestPendingInlineArgumentFocusRef.current = requestPendingInlineArgumentFocusImpl;
 
   const browserHistoryProfileOptions = useMemo(() => {
     return browserSearch.getHistoryProfiles();
