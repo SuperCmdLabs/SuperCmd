@@ -12,6 +12,7 @@ import {
   resolveBrowserInput,
   type BrowserInputResolution,
 } from '../utils/browser-input-resolver';
+import type { MatchKind } from '../utils/root-search-ranking';
 
 export type ResolvedBrowserInput = BrowserInputResolution;
 
@@ -39,6 +40,9 @@ export interface BrowserSearchResult {
   score: number;
   completion: string;
   nickname?: string;
+  nicknameMatch?: boolean;
+  matchKind?: MatchKind;
+  rawMatchScore?: number;
 }
 
 export interface BrowserHistoryProfileOption {
@@ -74,9 +78,11 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   const entriesRef = useRef<BrowserSearchEntry[]>([]);
   const tabsRef = useRef<BrowserTabEntry[]>([]);
   const nicknamesRef = useRef<BrowserSearchNicknameSetting[]>([]);
+  const entryIndexRef = useRef<BrowserEntryIndex | null>(null);
   entriesRef.current = entries;
   tabsRef.current = tabs;
   nicknamesRef.current = nicknames;
+  entryIndexRef.current = useMemo(() => buildBrowserEntryIndex(entries), [entries]);
 
   const refreshEntries = useCallback(() => {
     window.electron.browserSearchListEntries()
@@ -147,7 +153,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
 
   const getTopResult = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult | null => {
     if (!enabled) return null;
-    return getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, tabsRef.current, nicknamesRef.current, MAX_TOP_BROWSER_RESULTS)[0] || null;
+    return getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, MAX_TOP_BROWSER_RESULTS)[0] || null;
   }, [enabled]);
 
   const getCompletion = useCallback((
@@ -207,12 +213,12 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
 
   const getResults = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult[] => {
     if (!enabled) return [];
-    return getOrderedBrowserResults(rawInput, rawGroups, entriesRef.current, tabsRef.current, nicknamesRef.current, { useConfiguredLimits: true });
+    return getOrderedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, { useConfiguredLimits: true });
   }, [enabled]);
 
   const getAllResults = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult[] => {
     if (!enabled) return [];
-    return getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, tabsRef.current, nicknamesRef.current, MAX_ALL_BROWSER_RESULTS);
+    return getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, MAX_ALL_BROWSER_RESULTS);
   }, [enabled]);
 
   const getOpenTabResults = useCallback((rawInput: string): BrowserSearchResult[] => {
@@ -271,7 +277,6 @@ const MAX_SCOPED_BOOKMARK_RESULTS = 500;
 const MAX_SCOPED_OPEN_TAB_RESULTS = 500;
 const MAX_TOP_BROWSER_RESULTS = 1;
 const MAX_ALL_BROWSER_RESULTS = 100;
-const PROVIDER_PRIORITY_SCORE_STEP = 120;
 
 function resolveLocal(rawInput: string): ResolvedBrowserInput | null {
   return resolveBrowserInput(rawInput);
@@ -376,6 +381,123 @@ type BrowserCandidateOptions = {
   limit?: number;
 };
 
+type BrowserEntrySearchIndex = {
+  normalizedQuery: string;
+  normalizedUrl: string;
+  searchBlob: string;
+  searchFields: TokenSearchField[];
+  faviconUrl: string;
+  browserLabel: string;
+};
+
+type BrowserEntryIndex = {
+  historyPrefixToEntryIds: Map<string, number[]>;
+  bookmarkPrefixToEntryIds: Map<string, number[]>;
+  historyContainsToEntryIds: Map<string, number[]>;
+  bookmarkContainsToEntryIds: Map<string, number[]>;
+};
+
+const BROWSER_ENTRY_INDEX_MAX_PREFIX_LENGTH = 24;
+const browserEntrySearchIndexCache = new WeakMap<BrowserSearchEntry, BrowserEntrySearchIndex>();
+
+function buildBrowserEntryIndex(entries: BrowserSearchEntry[]): BrowserEntryIndex {
+  const historyPrefixToEntryIds = new Map<string, number[]>();
+  const bookmarkPrefixToEntryIds = new Map<string, number[]>();
+  const historyContainsToEntryIds = new Map<string, number[]>();
+  const bookmarkContainsToEntryIds = new Map<string, number[]>();
+  entries.forEach((entry, entryId) => {
+    if (entry.type !== 'url' && entry.type !== 'bookmark') return;
+    const prefixTarget = entry.type === 'bookmark' ? bookmarkPrefixToEntryIds : historyPrefixToEntryIds;
+    const containsTarget = entry.type === 'bookmark' ? bookmarkContainsToEntryIds : historyContainsToEntryIds;
+    const searchIndex = getBrowserEntrySearchIndex(entry);
+    const seenPrefixes = new Set<string>();
+    const seenContains = new Set<string>();
+    for (const token of searchIndex.searchBlob.split(/\s+/)) {
+      if (token.length < 2) continue;
+      const maxLength = Math.min(BROWSER_ENTRY_INDEX_MAX_PREFIX_LENGTH, token.length);
+      for (let length = 2; length <= maxLength; length += 1) {
+        seenPrefixes.add(token.slice(0, length));
+      }
+      if (token.length >= 3) {
+        for (let index = 0; index <= token.length - 3; index += 1) {
+          seenContains.add(token.slice(index, index + 3));
+        }
+      }
+    }
+    for (const key of seenPrefixes) {
+      addBrowserEntryIndexValue(prefixTarget, key, entryId);
+    }
+    for (const key of seenContains) {
+      addBrowserEntryIndexValue(containsTarget, key, entryId);
+    }
+  });
+  return { historyPrefixToEntryIds, bookmarkPrefixToEntryIds, historyContainsToEntryIds, bookmarkContainsToEntryIds };
+}
+
+function addBrowserEntryIndexValue(target: Map<string, number[]>, key: string, entryId: number): void {
+  const bucket = target.get(key);
+  if (bucket) {
+    bucket.push(entryId);
+  } else {
+    target.set(key, [entryId]);
+  }
+}
+
+function resolveBrowserEntryCandidateIds(
+  index: BrowserEntryIndex | null,
+  kind: 'bookmark' | 'history',
+  input: string
+): number[] | null {
+  if (!index) return null;
+  const tokens = getSearchTokens(input);
+  if (tokens.length === 0) return null;
+  const prefixSource = kind === 'bookmark' ? index.bookmarkPrefixToEntryIds : index.historyPrefixToEntryIds;
+  const containsSource = kind === 'bookmark' ? index.bookmarkContainsToEntryIds : index.historyContainsToEntryIds;
+  const lists: number[][] = [];
+  for (const token of tokens) {
+    const key = token.slice(0, Math.min(BROWSER_ENTRY_INDEX_MAX_PREFIX_LENGTH, token.length));
+    const prefixMatches = prefixSource.get(key) || [];
+    const containsMatches = token.length >= 3 ? containsSource.get(token.slice(0, 3)) || [] : [];
+    const matches = unionSortedBrowserEntryIds(prefixMatches, containsMatches);
+    if (!matches || matches.length === 0) return [];
+    lists.push(matches);
+  }
+  return intersectBrowserEntryIdLists(lists);
+}
+
+function unionSortedBrowserEntryIds(a: number[], b: number[]): number[] {
+  if (a.length === 0) return b;
+  if (b.length === 0) return a;
+  const seen = new Set<number>();
+  const result: number[] = [];
+  for (const value of a) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  for (const value of b) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
+function intersectBrowserEntryIdLists(lists: number[][]): number[] {
+  if (lists.length === 0) return [];
+  if (lists.length === 1) return lists[0];
+  const [first, ...rest] = [...lists].sort((a, b) => a.length - b.length);
+  const candidates = new Set(first);
+  for (const list of rest) {
+    if (candidates.size === 0) break;
+    const allowed = new Set(list);
+    for (const entryId of candidates) {
+      if (!allowed.has(entryId)) candidates.delete(entryId);
+    }
+  }
+  return [...candidates];
+}
+
 const DEFAULT_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
   { kind: 'bookmark', limit: 2 },
   { kind: 'open-tab', limit: 2 },
@@ -404,6 +526,7 @@ function getOrderedBrowserResults(
   rawInput: string,
   rawGroups: BrowserSearchResultGroupSetting[],
   entries: BrowserSearchEntry[],
+  entryIndex: BrowserEntryIndex | null,
   tabs: BrowserTabEntry[],
   nicknames: BrowserSearchNicknameSetting[],
   options: BrowserCandidateOptions
@@ -411,8 +534,10 @@ function getOrderedBrowserResults(
   const input = rawInput.trim();
   if (input.length < 2) return [];
   const groups = normalizeResultGroups(rawGroups);
-  const candidates = buildBrowserCandidates(input, entries, tabs, getActiveBookmarkNicknames(rawInput, nicknames));
-  const claimedUrls = new Set<string>();
+  const candidates = buildBrowserCandidates(input, entries, entryIndex, tabs, getActiveBookmarkNicknames(rawInput, nicknames), {
+    limitPerKind: MAX_ALL_BROWSER_RESULTS,
+  });
+  const claimedKeys = new Set<string>();
   const orderedResults: BrowserSearchResult[] = [];
 
   for (const group of groups) {
@@ -422,11 +547,11 @@ function getOrderedBrowserResults(
     if (groupLimit <= 0) continue;
     let pickedCount = 0;
     for (const result of candidates[group.kind]) {
-      const normalizedUrl = normalizeBrowserUrl(result.url);
-      if (normalizedUrl && claimedUrls.has(normalizedUrl)) continue;
+      const dedupeKey = getBrowserResultDedupeKey(result);
+      if (dedupeKey && claimedKeys.has(dedupeKey)) continue;
       orderedResults.push(result);
       pickedCount += 1;
-      if (normalizedUrl) claimedUrls.add(normalizedUrl);
+      if (dedupeKey) claimedKeys.add(dedupeKey);
       if (orderedResults.length >= (options.limit ?? Number.MAX_SAFE_INTEGER)) return orderedResults;
       if (pickedCount >= groupLimit) break;
     }
@@ -437,31 +562,39 @@ function getOrderedBrowserResults(
 
 function getRankedBrowserResults(
   rawInput: string,
-  rawGroups: BrowserSearchResultGroupSetting[],
+  _rawGroups: BrowserSearchResultGroupSetting[],
   entries: BrowserSearchEntry[],
+  entryIndex: BrowserEntryIndex | null,
   tabs: BrowserTabEntry[],
   nicknames: BrowserSearchNicknameSetting[],
   limit: number
 ): BrowserSearchResult[] {
   const input = rawInput.trim();
   if (input.length < 2) return [];
-  const groups = normalizeResultGroups(rawGroups);
-  const candidates = buildBrowserCandidates(input, entries, tabs, getActiveBookmarkNicknames(rawInput, nicknames));
-  const priorityBoosts = getProviderPriorityBoosts(groups);
-  const bestByUrl = new Map<string, { result: BrowserSearchResult; rankScore: number }>();
+  const candidates = buildBrowserCandidates(input, entries, entryIndex, tabs, getActiveBookmarkNicknames(rawInput, nicknames), {
+    limitPerKind: Math.max(200, limit * 6),
+  });
+  const bestByKey = new Map<string, { result: BrowserSearchResult; rankScore: number }>();
 
   for (const kind of Object.keys(candidates) as BrowserSearchResultKind[]) {
     for (const result of candidates[kind]) {
-      const normalizedUrl = normalizeBrowserUrl(result.url) || result.id;
-      const rankScore = result.score + (priorityBoosts.get(kind) || 0);
-      const existing = bestByUrl.get(normalizedUrl);
-      if (!existing || rankScore > existing.rankScore) {
-        bestByUrl.set(normalizedUrl, { result, rankScore });
+      const dedupeKey = getBrowserResultDedupeKey(result) || result.id;
+      const rankScore = result.score;
+      const existing = bestByKey.get(dedupeKey);
+      if (
+        !existing ||
+        getBrowserDedupeKindRank(result) > getBrowserDedupeKindRank(existing.result) ||
+        (
+          getBrowserDedupeKindRank(result) === getBrowserDedupeKindRank(existing.result) &&
+          rankScore > existing.rankScore
+        )
+      ) {
+        bestByKey.set(dedupeKey, { result, rankScore });
       }
     }
   }
 
-  return Array.from(bestByUrl.values())
+  return Array.from(bestByKey.values())
     .sort((a, b) => {
       if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore;
       return compareBrowserResults(a.result, b.result);
@@ -470,12 +603,18 @@ function getRankedBrowserResults(
     .map((item) => item.result);
 }
 
-function getProviderPriorityBoosts(groups: BrowserSearchResultGroupSetting[]): Map<BrowserSearchResultKind, number> {
-  const boosts = new Map<BrowserSearchResultKind, number>();
-  groups.forEach((group, index) => {
-    boosts.set(group.kind, Math.max(0, groups.length - index - 1) * PROVIDER_PRIORITY_SCORE_STEP);
-  });
-  return boosts;
+function getBrowserDedupeKindRank(result: BrowserSearchResult): number {
+  if (result.nicknameMatch) return 4;
+  switch (result.kind) {
+    case 'open-tab':
+      return 3;
+    case 'bookmark':
+      return 2;
+    case 'history':
+      return 1;
+    default:
+      return 0;
+  }
 }
 
 function getActiveBookmarkNicknames(rawInput: string, nicknames: BrowserSearchNicknameSetting[]): BrowserSearchNicknameSetting[] {
@@ -487,15 +626,24 @@ function getActiveBookmarkNicknames(rawInput: string, nicknames: BrowserSearchNi
 function buildBrowserCandidates(
   input: string,
   entries: BrowserSearchEntry[],
+  entryIndex: BrowserEntryIndex | null,
   tabs: BrowserTabEntry[],
-  nicknames: BrowserSearchNicknameSetting[]
+  nicknames: BrowserSearchNicknameSetting[],
+  options: { limitPerKind?: number } = {}
 ): Record<BrowserSearchResultKind, BrowserSearchResult[]> {
   const openTabs = getOpenTabCandidates(input, tabs);
 
   return {
     'open-tab': openTabs,
-    bookmark: getBrowserEntryCandidates('bookmark', input, entries, { nicknames }),
-    history: getBrowserEntryCandidates('history', input, entries),
+    bookmark: getBrowserEntryCandidates('bookmark', input, entries, {
+      candidateEntryIds: resolveBrowserEntryCandidateIds(entryIndex, 'bookmark', input),
+      nicknames,
+      limit: options.limitPerKind,
+    }),
+    history: getBrowserEntryCandidates('history', input, entries, {
+      candidateEntryIds: resolveBrowserEntryCandidateIds(entryIndex, 'history', input),
+      limit: options.limitPerKind,
+    }),
   };
 }
 
@@ -511,16 +659,26 @@ function getBrowserEntryCandidates(
     profileIds?: string[] | null;
     limit?: number;
     nicknames?: BrowserSearchNicknameSetting[];
+    candidateEntryIds?: number[] | null;
   } = {}
 ): BrowserSearchResult[] {
   const trimmed = input.trim();
   const hasQuery = trimmed.length > 0;
   const entryType = kind === 'bookmark' ? 'bookmark' : 'url';
   const profileFilter = options.profileIds ? new Set(options.profileIds) : null;
+  const lowerInput = trimmed.toLowerCase();
+  const strippedInput = lowerInput.replace(/^https?:\/\//, '');
+  const queryTokens = getSearchTokens(trimmed);
+  const shouldBoundResults = Boolean(options.limit && options.limit > 0 && !options.preserveBookmarkOrder && !options.preserveHistoryChronology);
+  const workingLimit = shouldBoundResults ? Math.max(Number(options.limit) * 3, Number(options.limit) + 80) : 0;
   const results: BrowserSearchResult[] = [];
-  for (const entry of entries) {
+  const candidateEntries = options.candidateEntryIds
+    ? options.candidateEntryIds.map((entryId) => entries[entryId]).filter((entry): entry is BrowserSearchEntry => Boolean(entry))
+    : entries;
+  for (const entry of candidateEntries) {
     if (entry.type !== entryType) continue;
     if (kind === 'history' && profileFilter && !profileFilter.has(getEntryProfileKey(entry))) continue;
+    const index = getBrowserEntrySearchIndex(entry);
     const savedNickname = kind === 'bookmark'
       ? findBookmarkNickname(entry, options.nicknames || [])
       : '';
@@ -528,16 +686,27 @@ function getBrowserEntryCandidates(
       ? getBookmarkNicknameMatch(entry, trimmed, options.nicknames || [])
       : null;
     const searchInput = nicknameMatch ? nicknameMatch.remainingInput : trimmed;
-    const lower = searchInput.toLowerCase();
-    const stripped = lower.replace(/^https?:\/\//, '');
-    const queryTokens = getSearchTokens(searchInput);
     const hasSearchInput = searchInput.length > 0;
-    const urlScore = hasSearchInput ? getUrlMatchScore(entry.url || entry.host, stripped, true) : { score: 0, completion: '' };
-    const titleScore = hasSearchInput ? getTitleMatchScore(entry.query, lower) : 0;
-    const tokenScore = hasSearchInput ? getTokenMatchScore(queryTokens, getBrowserEntrySearchFields(entry)) : 0;
+    const activeLowerInput = nicknameMatch ? searchInput.toLowerCase() : lowerInput;
+    const activeStrippedInput = nicknameMatch ? activeLowerInput.replace(/^https?:\/\//, '') : strippedInput;
+    const activeQueryTokens = nicknameMatch ? getSearchTokens(searchInput) : queryTokens;
+    if (!nicknameMatch && hasSearchInput && activeQueryTokens.length > 0) {
+      let tokenMatched = true;
+      for (const token of activeQueryTokens) {
+        if (!index.searchBlob.includes(token)) {
+          tokenMatched = false;
+          break;
+        }
+      }
+      if (!tokenMatched) continue;
+    }
+    const urlScore = hasSearchInput ? getUrlMatchScoreFromNormalized(index.normalizedUrl, activeStrippedInput, true) : { score: 0, completion: '' };
+    const titleScore = hasSearchInput ? getTitleMatchScoreFromNormalized(index.normalizedQuery, activeLowerInput) : 0;
+    const tokenScore = hasSearchInput ? getTokenMatchScoreFromNormalizedFields(activeQueryTokens, index.searchFields) : 0;
     if (!nicknameMatch && urlScore === null && titleScore === null && tokenScore === null) continue;
     if (nicknameMatch?.remainingInput && urlScore === null && titleScore === null && tokenScore === null) continue;
     const matchScore = Math.max(urlScore?.score ?? 0, titleScore ?? 0, tokenScore ?? 0);
+    const rawMatchKind = getBrowserResultMatchKind(urlScore?.score ?? 0, titleScore ?? 0, tokenScore ?? 0);
     const nicknameScore = nicknameMatch
       ? nicknameMatch.remainingInput
         ? 4200 + matchScore * 0.2
@@ -563,10 +732,10 @@ function getBrowserEntryCandidates(
       url: entry.url,
       actionInput: entry.url,
       focusAvailable: false,
-      faviconUrl: getFaviconUrlForUrl(entry.url),
+      faviconUrl: index.faviconUrl,
       source: entry.source,
       sourceProfileId: entry.sourceProfileId,
-      browserName: getBrowserSourceLabel(entry.source),
+      browserName: index.browserLabel,
       profileName: entry.sourceProfileName || entry.sourceProfileId,
       bookmarkFolder: entry.bookmarkFolder,
       bookmarkOrder: entry.bookmarkOrder,
@@ -574,7 +743,16 @@ function getBrowserEntryCandidates(
       score,
       completion: nicknameMatch?.completion || urlScore?.completion || '',
       nickname: nicknameMatch?.nickname || savedNickname,
+      nicknameMatch: Boolean(nicknameMatch),
+      matchKind: nicknameMatch && !nicknameMatch.remainingInput
+        ? (normalizeNicknameToken(nicknameMatch.nickname) === normalizeNicknameToken(trimmed) ? 'nickname-exact' : 'prefix')
+        : rawMatchKind,
+      rawMatchScore: matchScore,
     });
+    if (workingLimit && results.length > workingLimit * 2) {
+      results.sort(compareBrowserResults);
+      results.length = workingLimit;
+    }
   }
   const sorted = options.preserveHistoryChronology
     ? results.sort(compareHistoryByTime)
@@ -662,6 +840,7 @@ function getOpenTabCandidates(
       const tokenScore = hasQuery ? getTokenMatchScore(queryTokens, getOpenTabSearchFields(tab)) : 0;
       if (urlScore === null && titleScore === null && tokenScore === null) return null;
       const matchScore = Math.max(urlScore?.score ?? 0, titleScore ?? 0, tokenScore ?? 0);
+      const rawMatchKind = getBrowserResultMatchKind(urlScore?.score ?? 0, titleScore ?? 0, tokenScore ?? 0);
       const matchQuality = getMatchQuality(urlScore?.score ?? 0, titleScore ?? 0, tokenScore ?? 0);
       const focusScore = windowFocusBoost(tab.windowLastFocusedAt);
       const tabFreshness = tabFrecency(tab);
@@ -690,6 +869,8 @@ function getOpenTabCandidates(
         active: tab.active,
         score,
         completion: urlScore?.completion || '',
+        matchKind: rawMatchKind,
+        rawMatchScore: matchScore,
       };
     })
     .filter((result): result is BrowserSearchResult => Boolean(result))
@@ -743,6 +924,10 @@ function compareBrowserResults(a: BrowserSearchResult, b: BrowserSearchResult): 
 
 function getUrlMatchScore(sourceUrl: string, strippedInput: string, allowContains: boolean): { score: number; completion: string } | null {
   const fullStripped = normalizeUrlForCompletion(sourceUrl);
+  return getUrlMatchScoreFromNormalized(fullStripped, strippedInput, allowContains);
+}
+
+function getUrlMatchScoreFromNormalized(fullStripped: string, strippedInput: string, allowContains: boolean): { score: number; completion: string } | null {
   if (!fullStripped) return null;
   const lowerFull = fullStripped.toLowerCase();
   const candidates = lowerFull.startsWith('www.') ? [fullStripped, fullStripped.slice(4)] : [fullStripped];
@@ -764,6 +949,10 @@ function getUrlMatchScore(sourceUrl: string, strippedInput: string, allowContain
 
 function getTitleMatchScore(titleValue: string, lowerInput: string): number | null {
   const title = String(titleValue || '').trim().toLowerCase();
+  return getTitleMatchScoreFromNormalized(title, lowerInput);
+}
+
+function getTitleMatchScoreFromNormalized(title: string, lowerInput: string): number | null {
   if (!title) return null;
   if (title === lowerInput) return 2800;
   if (title.startsWith(lowerInput)) return 2400;
@@ -772,6 +961,24 @@ function getTitleMatchScore(titleValue: string, lowerInput: string): number | nu
   if (tokens.some((token) => token.startsWith(lowerInput))) return 2000;
   if (title.includes(lowerInput)) return 1200;
   return null;
+}
+
+function getBrowserResultMatchKind(urlScore: number, titleScore: number, tokenScore: number): MatchKind {
+  const bestScore = Math.max(urlScore, titleScore, tokenScore);
+  if (urlScore > 0 && urlScore === bestScore) {
+    if (urlScore >= 3600) return 'exact';
+    if (urlScore >= 2600) return 'url';
+    return 'contains';
+  }
+  if (titleScore > 0 && titleScore === bestScore) {
+    if (titleScore >= 2800) return 'exact';
+    if (titleScore >= 2400) return 'prefix';
+    if (titleScore >= 2000) return 'token-prefix';
+    return 'contains';
+  }
+  if (tokenScore >= 1800) return 'token-prefix';
+  if (tokenScore > 0) return 'contains';
+  return 'subsequence';
 }
 
 type TokenSearchField = {
@@ -841,15 +1048,29 @@ function normalizeNicknameUrl(value: string): string {
   }
 }
 
-function getBrowserEntrySearchFields(entry: BrowserSearchEntry): TokenSearchField[] {
-  return [
-    { value: entry.query, weight: 1.15 },
-    { value: entry.url, weight: 1 },
-    { value: entry.host, weight: 1 },
-    { value: entry.bookmarkFolder, weight: 0.65 },
-    { value: entry.sourceProfileName || entry.sourceProfileId, weight: 0.35 },
-    { value: getBrowserSourceLabel(entry.source), weight: 0.3 },
+function getBrowserEntrySearchIndex(entry: BrowserSearchEntry): BrowserEntrySearchIndex {
+  const cached = browserEntrySearchIndexCache.get(entry);
+  if (cached) return cached;
+  const browserLabel = getBrowserSourceLabel(entry.source);
+  const searchFields: TokenSearchField[] = [
+    { value: normalizeForTokenSearch(entry.query), weight: 1.15 },
+    { value: normalizeForTokenSearch(entry.url), weight: 1 },
+    { value: normalizeForTokenSearch(entry.host), weight: 1 },
+    { value: normalizeForTokenSearch(entry.bookmarkFolder), weight: 0.65 },
+    { value: normalizeForTokenSearch(entry.sourceProfileName || entry.sourceProfileId), weight: 0.35 },
+    { value: normalizeForTokenSearch(browserLabel), weight: 0.3 },
   ];
+  const searchBlob = Array.from(new Set(searchFields.map((field) => field.value).filter(Boolean))).join(' ');
+  const index: BrowserEntrySearchIndex = {
+    normalizedQuery: String(entry.query || '').trim().toLowerCase(),
+    normalizedUrl: normalizeUrlForCompletion(entry.url || entry.host),
+    searchBlob,
+    searchFields,
+    faviconUrl: getFaviconUrlForUrl(entry.url),
+    browserLabel,
+  };
+  browserEntrySearchIndexCache.set(entry, index);
+  return index;
 }
 
 function getOpenTabSearchFields(tab: BrowserTabEntry): TokenSearchField[] {
@@ -875,12 +1096,19 @@ function getSearchTokens(input: string): string[] {
 }
 
 function getTokenMatchScore(queryTokens: string[], fields: TokenSearchField[]): number | null {
+  return getTokenMatchScoreFromNormalizedFields(
+    queryTokens,
+    fields.map((field) => ({ ...field, value: normalizeForTokenSearch(field.value || '') }))
+  );
+}
+
+function getTokenMatchScoreFromNormalizedFields(queryTokens: string[], fields: TokenSearchField[]): number | null {
   if (queryTokens.length === 0) return null;
   let total = 0;
   for (const queryToken of queryTokens) {
     let bestTokenScore = 0;
     for (const field of fields) {
-      const fieldValue = normalizeForTokenSearch(field.value || '');
+      const fieldValue = field.value || '';
       if (!fieldValue) continue;
       const score = getSingleTokenMatchScore(queryToken, fieldValue);
       const weightedScore = score * field.weight;
@@ -1007,6 +1235,17 @@ function normalizeBrowserUrl(url: string): string {
   } catch {
     return raw.toLowerCase().replace(/#.*$/, '').replace(/\/+$/, '');
   }
+}
+
+function getBrowserResultDedupeKey(result: BrowserSearchResult): string {
+  const normalizedUrl = normalizeBrowserUrl(result.url);
+  let host = '';
+  try {
+    host = new URL(result.url).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {}
+  const normalizedTitle = normalizeForTokenSearch(result.title || '').replace(/\s+/g, ' ').trim();
+  if (host && normalizedTitle) return `page:${host}:${normalizedTitle}`;
+  return normalizedUrl;
 }
 
 function tabToBrowserSearchEntry(tab: BrowserTabEntry): BrowserSearchEntry {

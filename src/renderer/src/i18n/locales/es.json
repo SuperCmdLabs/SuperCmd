@@ -733,29 +733,19 @@
           "imported": "Se actualizaron {count} de {total} entradas.",
           "failed": "La acción falló."
         },
-        "resultGroups": {
-          "label": "Prioridad de la sección Browser",
-          "kind": {
-            "open-tab": "Pestañas abiertas",
-            "bookmark": "Marcadores",
-            "history": "Historial"
-          },
-          "description": {
-            "open-tab": "Pestañas activas abiertas en perfiles conectados.",
-            "bookmark": "Marcadores guardados de perfiles conectados.",
-            "history": "Páginas visitadas de perfiles conectados."
-          },
-          "option": {
-            "none": "Ninguno",
-            "count": "{count} filas"
-          },
-          "moveUp": "Mover arriba",
-          "moveDown": "Mover abajo"
-        },
         "webSearch": {
           "label": "Búsqueda web",
           "defaultProvider": "Proveedor predeterminado",
-          "suggestionCount": "Sugerencias de búsqueda"
+          "suggestionsEnabled": {
+            "label": "Mostrar sugerencias de búsqueda",
+            "description": "Muestra sugerencias web y opciones de bang/proveedor debajo de los resultados del navegador."
+          }
+        },
+        "alphaWarning": {
+          "title": "Integración de navegador alfa",
+          "description": "La búsqueda del navegador actualmente requiere la extensión de navegador de SuperCmd y solo admite navegadores basados en Chromium. Firefox y Safari llegarán más adelante.",
+          "devMode": "Para conectar un navegador ahora, abre la página de extensiones del navegador, activa el modo de desarrollador, elige Cargar descomprimida y selecciona la carpeta browser-extension.",
+          "temporary": "(Esto es temporal hasta que la extensión se publique en la tienda.)"
         }
       }
     },

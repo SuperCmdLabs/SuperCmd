@@ -29,6 +29,7 @@ type LauncherMainViewProps = {
   inputRef: React.RefObject<HTMLInputElement>;
   searchPlaceholder: string;
   launcherInputValue: string;
+  autocompleteSuffix?: string;
   onInputChange: (value: string) => void;
   onSearchBlur: () => void;
   onSearchKeyDown: (event: React.KeyboardEvent) => void;
@@ -126,6 +127,7 @@ const LauncherMainView: React.FC<LauncherMainViewProps> = ({
   inputRef,
   searchPlaceholder,
   launcherInputValue,
+  autocompleteSuffix,
   onInputChange,
   onSearchBlur,
   onSearchKeyDown,
@@ -211,6 +213,7 @@ const LauncherMainView: React.FC<LauncherMainViewProps> = ({
         inputRef={inputRef}
         placeholder={searchPlaceholder}
         value={launcherInputValue}
+        autocompleteSuffix={autocompleteSuffix}
         onInputChange={onInputChange}
         onBlur={onSearchBlur}
         onKeyDown={onSearchKeyDown}

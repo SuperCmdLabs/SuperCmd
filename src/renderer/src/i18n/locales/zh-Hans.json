@@ -758,29 +758,19 @@
           "imported": "已更新 {count} / {total} 条。",
           "failed": "操作失败。"
         },
-        "resultGroups": {
-          "label": "Browser 区域优先级",
-          "kind": {
-            "open-tab": "打开的标签页",
-            "bookmark": "书签",
-            "history": "历史记录"
-          },
-          "description": {
-            "open-tab": "已连接资料中当前打开的实时标签页。",
-            "bookmark": "来自已连接资料的已保存书签。",
-            "history": "来自已连接资料的已访问页面。"
-          },
-          "option": {
-            "none": "无",
-            "count": "{count} 行"
-          },
-          "moveUp": "上移",
-          "moveDown": "下移"
-        },
         "webSearch": {
           "label": "网页搜索",
           "defaultProvider": "默认提供商",
-          "suggestionCount": "搜索建议"
+          "suggestionsEnabled": {
+            "label": "显示搜索建议",
+            "description": "在浏览器结果下方显示网页建议和 Bang/提供商选项。"
+          }
+        },
+        "alphaWarning": {
+          "title": "Alpha 版浏览器集成",
+          "description": "浏览器搜索目前需要 SuperCmd 浏览器扩展，并且仅支持基于 Chromium 的浏览器。Firefox 和 Safari 将稍后支持。",
+          "devMode": "要立即连接浏览器，请打开浏览器的扩展程序页面，启用开发者模式，然后选择“加载已解压的扩展程序”，并选择 browser-extension 文件夹。",
+          "temporary": "（这是扩展发布到商店之前的临时步骤。）"
         }
       }
     }

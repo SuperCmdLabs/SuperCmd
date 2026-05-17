@@ -5,7 +5,7 @@
  * Shows category labels like Raycast.
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useDeferredValue } from 'react';
 import supercmdLogo from '../../../supercmd.png';
 import type {
   CommandInfo,
@@ -90,6 +90,7 @@ import {
   MAX_LAUNCHER_FILE_RESULTS,
   MAX_LAUNCHER_FILE_RESULT_ICONS,
   MIN_LAUNCHER_FILE_QUERY_LENGTH,
+  normalizeLauncherFileSearchText,
 } from './utils/launcher-file-results';
 import {
   BROWSER_SEARCH_SHOW_ALL_RESULTS_ID,
@@ -114,6 +115,10 @@ import {
   getSearchBangByKeyFromList,
   parseSearchBangState,
 } from './utils/web-search-bangs';
+import {
+  recordRootSearchLaunchInState,
+  type RootSearchRankingState,
+} from './utils/root-search-ranking';
 
 const DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS = 90;
 
@@ -139,12 +144,16 @@ const App: React.FC = () => {
     DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [autoQuitAppPaths, setAutoQuitAppPaths] = useState<Set<string>>(new Set());
   const browserSearch = useBrowserSearch(searchQuery);
-  const [browserSearchSkipAutoComplete, setBrowserSearchSkipAutoComplete] = useState(false);
+  const [, setBrowserSearchSkipAutoComplete] = useState(false);
   const [browserSearchResultGroups, setBrowserSearchResultGroups] = useState<BrowserSearchResultGroupSetting[]>(
     DEFAULT_BROWSER_SEARCH_RESULT_GROUPS
   );
+  const [webSearchSuggestionsEnabled, setWebSearchSuggestionsEnabled] = useState(true);
+  const [rootSearchRanking, setRootSearchRanking] = useState<RootSearchRankingState>({});
+  const rootSearchRankingRef = useRef<RootSearchRankingState>({});
   const [launcherFileResults, setLauncherFileResults] = useState<IndexedFileSearchResult[]>([]);
   const [disableFileSearchResults, setDisableFileSearchResults] = useState(false);
   const [launcherViewMode, setLauncherViewMode] = useState<'expanded' | 'compact'>('expanded');
@@ -159,6 +168,9 @@ const App: React.FC = () => {
   const [navigationStyle, setNavigationStyle] = useState<'vim' | 'macos'>('vim');
   const [isLoading, setIsLoading] = useState(false);
   const homeDir = String((window.electron as any).homeDir || '');
+  useEffect(() => {
+    rootSearchRankingRef.current = rootSearchRanking;
+  }, [rootSearchRanking]);
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
     showClipboardManager, showSnippetManager, showNotesSearch, showCanvasSearch, showQuickLinkManager, showFileSearch, showCursorPrompt,
@@ -365,7 +377,6 @@ const App: React.FC = () => {
     webSearchBangInputRef,
 
     webSearchDefaultBangKey,
-    webSearchSuggestionLimit,
     webSearchBangUsage,
     webSearchShowHiddenBangs,
 
@@ -406,7 +417,7 @@ const App: React.FC = () => {
     submitBrowserSearchRef,
     setLauncherSearchQuery: setSearchQuery,
     setLauncherSelectedIndex: setSelectedIndex,
-    rootSearchQuery: searchQuery,
+    rootSearchQuery: deferredSearchQuery,
     aiMode,
     t,
   });
@@ -528,6 +539,8 @@ const App: React.FC = () => {
       );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       setBrowserSearchResultGroups(normalizeBrowserSearchResultGroups(settings.browserSearch?.resultGroups));
+      setWebSearchSuggestionsEnabled(settings.browserSearch?.webSearchSuggestionsEnabled !== false);
+      setRootSearchRanking(settings.rootSearchRanking || {});
       hydrateWebSearchSettings(settings);
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
@@ -584,6 +597,8 @@ const App: React.FC = () => {
       setCommandAliases({});
       setCommandHotkeys({});
       setLauncherShortcut('Alt+Space');
+      setWebSearchSuggestionsEnabled(true);
+      setRootSearchRanking({});
       setConfiguredEdgeTtsVoice('en-US-EricNeural');
       setConfiguredTtsModel('edge-tts');
       setLauncherBackgroundImagePath('');
@@ -782,6 +797,8 @@ const App: React.FC = () => {
       );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       setBrowserSearchResultGroups(normalizeBrowserSearchResultGroups(settings.browserSearch?.resultGroups));
+      setWebSearchSuggestionsEnabled(settings.browserSearch?.webSearchSuggestionsEnabled !== false);
+      setRootSearchRanking(settings.rootSearchRanking || {});
       hydrateWebSearchSettings(settings);
       setDisableFileSearchResults(Boolean(settings.disableFileSearchResults));
       setNavigationStyle(settings.navigationStyle === 'macos' ? 'macos' : 'vim');
@@ -1266,8 +1283,17 @@ const App: React.FC = () => {
             if (!candidatePath || seenPaths.has(candidatePath)) continue;
             if (pathLikeQuery) {
               if (!matchesLauncherPathQuery(candidatePath, trimmed, homeDir)) continue;
-            } else if (!matchesLauncherFileNameTerms(String(candidate?.name || ''), terms)) {
-              continue;
+            } else {
+              const candidateName = String(candidate?.name || '');
+              if (!matchesLauncherFileNameTerms(candidateName, terms)) {
+                const normalizedCandidateText = normalizeLauncherFileSearchText([
+                  candidateName,
+                  candidatePath,
+                  String(candidate?.parentPath || ''),
+                  String(candidate?.displayPath || ''),
+                ].join(' '));
+                if (!terms.every((term) => normalizedCandidateText.includes(term))) continue;
+              }
             }
             seenPaths.add(candidatePath);
             results.push(candidate);
@@ -1424,25 +1450,6 @@ const App: React.FC = () => {
     });
   }, [launcherFileResults, pinnedFiles, fileIsDirectoryMap]);
 
-  // Chrome-style inline autocomplete: the input visually shows the full
-  // completion ("x.com") with the auto-extended portion (".com") selected,
-  // while `searchQuery` continues to hold what the user actually typed (so
-  // result filtering uses the typed prefix, not the extended URL).
-  const browserSearchAutoComplete = useMemo(() => {
-    if (!browserSearch.enabled) return null;
-    if (aiMode) return null;
-    if (browserSearchSkipAutoComplete) return null;
-    if (!searchQuery) return null;
-    if (rootBangState.mode !== 'none') return null;
-    const completion = browserSearch.getCompletion(searchQuery, browserSearchResultGroups);
-    if (!completion) return null;
-    if (completion.completion === searchQuery) return null;
-    if (!completion.completion.toLowerCase().startsWith(searchQuery.toLowerCase())) return null;
-    return completion;
-  }, [browserSearch, browserSearchResultGroups, searchQuery, browserSearchSkipAutoComplete, aiMode, rootBangState]);
-
-  const launcherInputValue = browserSearchAutoComplete?.completion ?? searchQuery;
-
   useEffect(() => {
     let disposed = false;
     void window.electron.getDefaultApplication('https://example.com')
@@ -1470,9 +1477,10 @@ const App: React.FC = () => {
     launcherCommandSections,
     selectedCommand,
     selectedFileResultPath,
+    rootSearchAutoComplete,
   } = useLauncherCommandModel({
     commands,
-    searchQuery,
+    searchQuery: deferredSearchQuery,
     commandAliases,
     homeDir,
     launcherFileResults,
@@ -1484,21 +1492,22 @@ const App: React.FC = () => {
     selectedTextSnapshot,
     browserSearch,
     browserSearchResultGroups,
-    browserSearchAutoComplete,
-    browserSearchSkipAutoComplete,
     aiMode,
+    rootSearchRanking,
+    webSearchSuggestionsEnabled,
     rootBangState,
     enabledSearchBangs,
     effectiveSearchBangs,
     webSearchDefaultBangKey,
     webSearchBangUsage,
     rootWebSearchSuggestions,
-    webSearchSuggestionLimit,
     selectedIndex,
-    launcherInputValue,
     defaultBrowserIconDataUrl,
     t,
   });
+
+  const browserSearchAutoComplete = deferredSearchQuery === searchQuery ? rootSearchAutoComplete : null;
+  const launcherInputValue = searchQuery;
 
   const {
     inlineArgumentLaneRef,
@@ -1631,31 +1640,6 @@ const App: React.FC = () => {
     [openFileSearch]
   );
 
-  // After every render where the autocomplete state changed, sync the
-  // input's selection so the auto-extended portion stays highlighted.
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    if (!browserSearchAutoComplete) return;
-    if (el.value !== browserSearchAutoComplete.completion) return;
-    const start = searchQuery.length;
-    const end = browserSearchAutoComplete.completion.length;
-    if (start >= end) return;
-    try {
-      el.setSelectionRange(start, end);
-    } catch {}
-  }, [browserSearchAutoComplete, searchQuery]);
-
-  // Once the user has dismissed an autocomplete with Backspace, keep it
-  // dismissed for the rest of the typing session — only re-enable when
-  // they clear the input completely and start fresh. Mirrors how Chrome's
-  // omnibox behaves after a manual rejection.
-  useEffect(() => {
-    if (searchQuery.length === 0 && browserSearchSkipAutoComplete) {
-      setBrowserSearchSkipAutoComplete(false);
-    }
-  }, [searchQuery, browserSearchSkipAutoComplete]);
-
   const submitBrowserSearch = useCallback(
     async (input: string, options?: { focusExistingTab?: boolean }) => {
       const trimmed = input.trim();
@@ -1690,6 +1674,27 @@ const App: React.FC = () => {
   );
 
   submitBrowserSearchRef.current = submitBrowserSearch;
+
+  const recordRootSearchLaunch = useCallback(async (command: CommandInfo, query: string) => {
+    const stableKey = String(command.rootSearchStableKey || '').trim();
+    const normalizedQuery = String(query || '').trim();
+    if (!stableKey || !normalizedQuery) return;
+    if (command.id === BROWSER_SEARCH_SHOW_ALL_RESULTS_ID) return;
+    const nextRanking = recordRootSearchLaunchInState(rootSearchRankingRef.current, stableKey, normalizedQuery);
+    rootSearchRankingRef.current = nextRanking;
+    setRootSearchRanking(nextRanking);
+    try {
+      const currentSettings = (await window.electron.getSettings()) as AppSettings;
+      const latest = recordRootSearchLaunchInState(
+        (currentSettings.rootSearchRanking || {}) as RootSearchRankingState,
+        stableKey,
+        normalizedQuery
+      );
+      await window.electron.saveSettings({ rootSearchRanking: latest } as Partial<AppSettings>);
+    } catch (error) {
+      console.warn('Failed to record root search launch:', error);
+    }
+  }, []);
 
   const { runLocalSystemCommand } = useLauncherLocalSystemCommands({
     expandLauncherForDirectLaunch,
@@ -1893,6 +1898,7 @@ const App: React.FC = () => {
     // fast double-press could otherwise re-fire the same command or a
     // different one if selection moved during the IPC roundtrip.
     if (executingCommandRef.current) return;
+    const launchQuery = searchQuery;
     try {
       executingCommandRef.current = true;
       // Browser-search synthetic action: open the resolved URL/search query
@@ -1924,7 +1930,8 @@ const App: React.FC = () => {
         }
         const subject = String(command.browserActionInput || launcherInputValue).trim();
         if (subject) {
-          await submitBrowserSearch(subject);
+          const ok = await submitBrowserSearch(subject);
+          if (ok) await recordRootSearchLaunch(command, launchQuery);
         }
         return;
       }
@@ -1932,21 +1939,25 @@ const App: React.FC = () => {
       const filePath = getFileResultPathFromCommand(command);
       if (filePath) {
         await openFileResultByPath(filePath);
+        await recordRootSearchLaunch(command, launchQuery);
         return;
       }
 
       if (await runLocalSystemCommand(command.id)) {
         await updateRecentCommands(command.id);
+        await recordRootSearchLaunch(command, launchQuery);
         return;
       }
 
       if (getQuickLinkIdFromCommandId(command.id)) {
         await executeQuickLinkCommand(command);
+        await recordRootSearchLaunch(command, launchQuery);
         return;
       }
 
       if (command.category === 'extension' && command.path) {
         await executeExtensionCommand(command);
+        await recordRootSearchLaunch(command, launchQuery);
         return;
       }
 
@@ -1966,6 +1977,7 @@ const App: React.FC = () => {
           return;
         }
         await runScriptCommand(command, storedArgs);
+        await recordRootSearchLaunch(command, launchQuery);
         return;
       }
 
@@ -1979,6 +1991,7 @@ const App: React.FC = () => {
           const confirmed = await window.electron.executeCommand(command.id);
           if (!confirmed) return;
           await updateRecentCommands(command.id);
+          await recordRootSearchLaunch(command, launchQuery);
           try { window.electron.hideWindow(); } catch {}
           return;
         }
@@ -1988,6 +2001,7 @@ const App: React.FC = () => {
 
       await window.electron.executeCommand(command.id);
       await updateRecentCommands(command.id);
+      await recordRootSearchLaunch(command, launchQuery);
       try { window.electron.hideWindow(); } catch {}
     } catch (error) {
       console.error('Failed to execute command:', error);
@@ -2212,7 +2226,6 @@ const App: React.FC = () => {
     isCompactCollapsed,
     setSearchQuery,
     setSelectedIndex,
-    setBrowserSearchSkipAutoComplete,
     setIsCompactCollapsed,
     setShowActions,
     setContextMenu,
@@ -2746,6 +2759,7 @@ const App: React.FC = () => {
       inputRef={inputRef}
       searchPlaceholder={aiMode ? t('launcher.aiMode.placeholder') : t('launcher.searchPlaceholder')}
       launcherInputValue={launcherInputValue}
+      autocompleteSuffix={browserSearchAutoComplete?.suffix || ''}
       onInputChange={handleLauncherInputChange}
       onSearchBlur={handleLauncherSearchBlur}
       onSearchKeyDown={handleKeyDown}

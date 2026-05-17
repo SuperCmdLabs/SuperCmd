@@ -248,6 +248,7 @@ function findProfileEntryForInput(rawInput: string): BrowserSearchEntry | null {
   const inputWithoutProtocol = trimmed.replace(/^https?:\/\//i, '');
   const isHostOnlyInput = !inputWithoutProtocol.includes('/') && !inputWithoutProtocol.includes('?') && !inputWithoutProtocol.includes('#');
   if (!host || !isHostOnlyInput) return null;
+  if (stripWww(inputWithoutProtocol) === host) return null;
 
   const hostMatches = entries.filter((entry) => stripWww(entry.host) === host);
   return hostMatches.length > 0 ? bestByFrecency(hostMatches) : null;

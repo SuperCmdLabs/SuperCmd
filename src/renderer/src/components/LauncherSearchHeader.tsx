@@ -12,6 +12,7 @@ type LauncherSearchHeaderProps = {
   inputRef: React.RefObject<HTMLInputElement>;
   placeholder: string;
   value: string;
+  autocompleteSuffix?: string;
   onInputChange: (value: string) => void;
   onBlur: () => void;
   onKeyDown: (event: React.KeyboardEvent) => void;
@@ -49,6 +50,7 @@ const LauncherSearchHeader: React.FC<LauncherSearchHeaderProps> = ({
   inputRef,
   placeholder,
   value,
+  autocompleteSuffix,
   onInputChange,
   onBlur,
   onKeyDown,
@@ -76,7 +78,16 @@ const LauncherSearchHeader: React.FC<LauncherSearchHeaderProps> = ({
   return (
     <div className="drag-region flex h-[60px] items-center gap-2 px-4 border-b border-[var(--ui-divider)]">
       <div ref={inlineArgumentLaneRef} className="relative min-w-0 flex-1">
-        <div className="flex h-full items-center">
+        <div className="relative flex h-full items-center">
+          {autocompleteSuffix && value ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 flex items-center min-w-0 w-full text-[0.9375rem] font-medium tracking-[0.005em] whitespace-pre overflow-hidden"
+            >
+              <span className="invisible">{value}</span>
+              <span className="text-[color:var(--text-subtle)]">{autocompleteSuffix}</span>
+            </div>
+          ) : null}
           <input
             ref={inputRef}
             type="text"

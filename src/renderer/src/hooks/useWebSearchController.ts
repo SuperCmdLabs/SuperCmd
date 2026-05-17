@@ -37,6 +37,7 @@ import {
   parseSearchBangFromList,
   parseSearchBangState,
 } from '../utils/web-search-bangs';
+import { MAX_LAUNCHER_FILE_RESULTS } from '../utils/launcher-file-results';
 
 type UseWebSearchControllerOptions = {
   launcherInputRef: React.RefObject<HTMLInputElement>;
@@ -66,7 +67,6 @@ export function useWebSearchController({
   const [rootWebSearchSuggestions, setRootWebSearchSuggestions] = useState<string[]>([]);
   const [webSearchSuggestions, setWebSearchSuggestions] = useState<string[]>([]);
   const [webSearchDefaultBangKey, setWebSearchDefaultBangKey] = useState('g');
-  const [webSearchSuggestionLimit, setWebSearchSuggestionLimit] = useState(3);
   const [webSearchBangUsage, setWebSearchBangUsage] = useState<Record<string, WebSearchBangUsageSetting>>({});
   const [webSearchBangCatalog, setWebSearchBangCatalog] = useState<SearchBangDefinition[]>([]);
   const [webSearchBangOverrides, setWebSearchBangOverrides] = useState<WebSearchBangOverrideSetting[]>([]);
@@ -84,9 +84,6 @@ export function useWebSearchController({
 
   const hydrateWebSearchSettings = useCallback((settings: AppSettings) => {
     setWebSearchDefaultBangKey(String(settings.browserSearch?.webSearchDefaultBangKey || 'g'));
-    setWebSearchSuggestionLimit(
-      Math.max(0, Math.min(8, Math.floor(Number(settings.browserSearch?.webSearchSuggestionLimit ?? 3))))
-    );
     setWebSearchBangOverrides(
       Array.isArray(settings.browserSearch?.webSearchBangOverrides)
         ? settings.browserSearch.webSearchBangOverrides
@@ -555,12 +552,12 @@ export function useWebSearchController({
       return;
     }
     const query = (rootBangState.mode === 'active' ? rootBangState.query : rootSearchQuery).trim();
-    if (!query || (rootBangState.mode !== 'active' && webSearchSuggestionLimit <= 0)) {
+    if (!query) {
       setRootWebSearchSuggestions([]);
       return;
     }
     const provider = rootBangState.mode === 'active' ? rootBangState.bang : undefined;
-    const limit = rootBangState.mode === 'active' ? WEB_SEARCH_ACTIVE_BANG_SUGGESTION_LIMIT : webSearchSuggestionLimit;
+    const limit = rootBangState.mode === 'active' ? WEB_SEARCH_ACTIVE_BANG_SUGGESTION_LIMIT : MAX_LAUNCHER_FILE_RESULTS;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       window.electron.browserSearchSuggestMany(query, limit, provider ? { key: provider.key, host: provider.host, name: provider.name } : undefined)
@@ -576,14 +573,14 @@ export function useWebSearchController({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [aiMode, rootSearchQuery, webSearchSuggestionLimit, rootBangState]);
+  }, [aiMode, rootSearchQuery, rootBangState]);
 
   useEffect(() => {
     if (webSearchQuery === null) return;
     const raw = String(webSearchQuery || '').trim();
     const searchSubject = webSearchBangState.mode === 'active' ? webSearchBangState.query.trim() : raw;
     const shouldFetch = Boolean(searchSubject) && (webSearchBangState.mode === 'active' || webSearchBangState.mode === 'none');
-    if (!shouldFetch || (webSearchBangState.mode !== 'active' && webSearchSuggestionLimit <= 0)) {
+    if (!shouldFetch) {
       setWebSearchSuggestions([]);
       return;
     }
@@ -592,7 +589,7 @@ export function useWebSearchController({
       : getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
     const limit = webSearchBangState.mode === 'active'
       ? WEB_SEARCH_ACTIVE_BANG_SUGGESTION_LIMIT
-      : webSearchSuggestionLimit;
+      : MAX_LAUNCHER_FILE_RESULTS;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       window.electron.browserSearchSuggestMany(searchSubject, limit, { key: provider.key, host: provider.host, name: provider.name })
@@ -608,7 +605,7 @@ export function useWebSearchController({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [effectiveSearchBangs, webSearchBangState, webSearchDefaultBangKey, webSearchQuery, webSearchSuggestionLimit]);
+  }, [effectiveSearchBangs, webSearchBangState, webSearchDefaultBangKey, webSearchQuery]);
 
   useEffect(() => {
     setWebSearchSelectedIndex(0);
@@ -727,7 +724,6 @@ export function useWebSearchController({
     webSearchBangInputRef,
 
     webSearchDefaultBangKey,
-    webSearchSuggestionLimit,
     webSearchBangUsage,
     webSearchShowHiddenBangs,
 

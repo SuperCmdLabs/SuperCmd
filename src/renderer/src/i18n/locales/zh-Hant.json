@@ -758,29 +758,19 @@
           "imported": "已更新 {count} / {total} 筆。",
           "failed": "操作失敗。"
         },
-        "resultGroups": {
-          "label": "Browser 區域優先順序",
-          "kind": {
-            "open-tab": "開啟的分頁",
-            "bookmark": "書籤",
-            "history": "瀏覽記錄"
-          },
-          "description": {
-            "open-tab": "已連接設定檔中目前開啟的即時分頁。",
-            "bookmark": "來自已連接設定檔的已儲存書籤。",
-            "history": "來自已連接設定檔的已瀏覽頁面。"
-          },
-          "option": {
-            "none": "無",
-            "count": "{count} 列"
-          },
-          "moveUp": "上移",
-          "moveDown": "下移"
-        },
         "webSearch": {
           "label": "網頁搜尋",
           "defaultProvider": "預設提供者",
-          "suggestionCount": "搜尋建議"
+          "suggestionsEnabled": {
+            "label": "顯示搜尋建議",
+            "description": "在瀏覽器結果下方顯示網頁建議與 Bang/提供者選項。"
+          }
+        },
+        "alphaWarning": {
+          "title": "Alpha 版瀏覽器整合",
+          "description": "瀏覽器搜尋目前需要 SuperCmd 瀏覽器擴充功能，且僅支援 Chromium 系列瀏覽器。Firefox 和 Safari 將稍後支援。",
+          "devMode": "若要立即連接瀏覽器，請開啟瀏覽器的擴充功能頁面，啟用開發人員模式，然後選擇「載入未封裝項目」，並選取 browser-extension 資料夾。",
+          "temporary": "（這是在擴充功能發佈到商店之前的臨時步驟。）"
         }
       }
     }

@@ -27,6 +27,7 @@ import IconPen from '../icons/Pen';
 import IconMagicWand from '../icons/MagicWand';
 import { formatShortcutForDisplay } from './hyper-key';
 import { renderQuickLinkIconGlyph } from './quicklink-icons';
+import { scoreRootSearchFields } from './root-search-ranking';
 import { getTranslitVariant } from './transliterate';
 
 export interface LauncherAction {
@@ -188,6 +189,11 @@ type SearchCandidate = {
   weight: number;
 };
 
+export type RankedCommand = {
+  command: CommandInfo;
+  score: number;
+};
+
 function bestTermScore(term: string, candidates: SearchCandidate[]): number {
   let best = 0;
   for (const candidate of candidates) {
@@ -331,6 +337,39 @@ export function filterCommands(
   const matchedTop = scored.filter(({ cmd }) => cmd.alwaysOnTop).map(({ cmd }) => cmd);
   const matchedRest = scored.filter(({ cmd }) => !cmd.alwaysOnTop).map(({ cmd }) => cmd);
   return [...matchedTop, ...matchedRest];
+}
+
+export function rankCommands(
+  commands: CommandInfo[],
+  query: string,
+  aliasLookup: Record<string, string> = {}
+): RankedCommand[] {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) {
+    return commands.map((command) => ({ command, score: command.alwaysOnTop ? Number.MAX_SAFE_INTEGER : 0 }));
+  }
+
+  return commands
+    .map((command): RankedCommand | null => {
+      const alias = aliasLookup[command.id] || '';
+      const scored = scoreRootSearchFields(query, [
+        { value: command.title, kind: 'label', weight: 1 },
+        { value: alias, kind: 'alias', weight: 1.06 },
+        { value: command.subtitle, kind: 'description', weight: 0.74 },
+        ...(command.keywords || []).map((keyword) => ({ value: keyword, kind: 'description' as const, weight: 0.7 })),
+      ]);
+      if (!scored.matched) return null;
+      return { command, score: scored.matchScore };
+    })
+    .filter((entry): entry is RankedCommand => entry !== null)
+    .sort((a, b) => {
+      const aAlias = normalizeSearchText(aliasLookup[a.command.id] || '') === normalizedQuery;
+      const bAlias = normalizeSearchText(aliasLookup[b.command.id] || '') === normalizedQuery;
+      if (aAlias !== bAlias) return Number(bAlias) - Number(aAlias);
+      if (a.command.alwaysOnTop !== b.command.alwaysOnTop) return a.command.alwaysOnTop ? -1 : 1;
+      if (b.score !== a.score) return b.score - a.score;
+      return a.command.title.localeCompare(b.command.title);
+    });
 }
 
 /**

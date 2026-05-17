@@ -760,29 +760,19 @@
           "imported": "Updated {count} of {total} entries.",
           "failed": "Action failed."
         },
-        "resultGroups": {
-          "label": "Browser section priority",
-          "kind": {
-            "open-tab": "Open tabs",
-            "bookmark": "Bookmarks",
-            "history": "History"
-          },
-          "description": {
-            "open-tab": "Live tabs currently open in connected profiles.",
-            "bookmark": "Saved bookmarks from connected profiles.",
-            "history": "Visited pages from connected profiles."
-          },
-          "option": {
-            "none": "None",
-            "count": "{count} rows"
-          },
-          "moveUp": "Move up",
-          "moveDown": "Move down"
-        },
         "webSearch": {
           "label": "Web search",
           "defaultProvider": "Default provider",
-          "suggestionCount": "Search suggestions"
+          "suggestionsEnabled": {
+            "label": "Show search suggestions",
+            "description": "Show web suggestions and bang/provider options below browser results."
+          }
+        },
+        "alphaWarning": {
+          "title": "Alpha browser integration",
+          "description": "Browser search currently requires the SuperCmd browser extension and only supports Chromium-based browsers. Firefox and Safari support will come later.",
+          "devMode": "To connect a browser now, open the browser extension page, enable Developer mode, then choose Load unpacked and select the browser-extension folder.",
+          "temporary": "(This is temporary until the extension is published on the store.)"
         }
       }
     }

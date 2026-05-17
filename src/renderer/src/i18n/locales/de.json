@@ -733,29 +733,19 @@
           "imported": "{count} von {total} Einträgen aktualisiert.",
           "failed": "Aktion fehlgeschlagen."
         },
-        "resultGroups": {
-          "label": "Priorität im Browser-Bereich",
-          "kind": {
-            "open-tab": "Offene Tabs",
-            "bookmark": "Lesezeichen",
-            "history": "Verlauf"
-          },
-          "description": {
-            "open-tab": "Live-Tabs, die in verbundenen Profilen geöffnet sind.",
-            "bookmark": "Gespeicherte Lesezeichen aus verbundenen Profilen.",
-            "history": "Besuchte Seiten aus verbundenen Profilen."
-          },
-          "option": {
-            "none": "Keine",
-            "count": "{count} Zeilen"
-          },
-          "moveUp": "Nach oben",
-          "moveDown": "Nach unten"
-        },
         "webSearch": {
           "label": "Websuche",
           "defaultProvider": "Standardanbieter",
-          "suggestionCount": "Suchvorschläge"
+          "suggestionsEnabled": {
+            "label": "Suchvorschläge anzeigen",
+            "description": "Zeigt Webvorschläge und Bang-/Anbieteroptionen unter Browserergebnissen an."
+          }
+        },
+        "alphaWarning": {
+          "title": "Alpha-Browserintegration",
+          "description": "Die Browsersuche benötigt derzeit die SuperCmd-Browsererweiterung und unterstützt nur Chromium-basierte Browser. Firefox und Safari folgen später.",
+          "devMode": "Um jetzt einen Browser zu verbinden, öffne die Erweiterungsseite des Browsers, aktiviere den Entwicklermodus, wähle dann „Entpackte Erweiterung laden“ und wähle den Ordner browser-extension aus.",
+          "temporary": "(Dies ist vorübergehend, bis die Erweiterung im Store veröffentlicht ist.)"
         }
       }
     },

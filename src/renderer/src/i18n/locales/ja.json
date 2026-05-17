@@ -758,29 +758,19 @@
           "imported": "{total} 件中 {count} 件を更新しました。",
           "failed": "操作に失敗しました。"
         },
-        "resultGroups": {
-          "label": "Browser セクションの優先順位",
-          "kind": {
-            "open-tab": "開いているタブ",
-            "bookmark": "ブックマーク",
-            "history": "履歴"
-          },
-          "description": {
-            "open-tab": "接続済みプロファイルで現在開いているタブ。",
-            "bookmark": "接続済みプロファイルの保存済みブックマーク。",
-            "history": "接続済みプロファイルで訪問したページ。"
-          },
-          "option": {
-            "none": "なし",
-            "count": "{count} 行"
-          },
-          "moveUp": "上へ移動",
-          "moveDown": "下へ移動"
-        },
         "webSearch": {
           "label": "Web 検索",
           "defaultProvider": "デフォルトプロバイダー",
-          "suggestionCount": "検索候補"
+          "suggestionsEnabled": {
+            "label": "検索候補を表示",
+            "description": "ブラウザ結果の下に Web 候補と Bang/プロバイダーの選択肢を表示します。"
+          }
+        },
+        "alphaWarning": {
+          "title": "アルファ版のブラウザ連携",
+          "description": "ブラウザ検索は現在 SuperCmd のブラウザ拡張機能が必要で、Chromium ベースのブラウザのみ対応しています。Firefox と Safari は後日対応予定です。",
+          "devMode": "今すぐブラウザを接続するには、ブラウザの拡張機能ページを開き、デベロッパーモードを有効にして、Load unpacked（パッケージ化されていない拡張機能を読み込む）を選び、browser-extension フォルダを選択してください。",
+          "temporary": "（これは拡張機能がストアで公開されるまでの一時的な手順です。）"
         }
       }
     }

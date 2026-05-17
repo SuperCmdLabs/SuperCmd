@@ -102,8 +102,6 @@ export interface BrowserSearchSettings {
   nicknames: BrowserSearchNicknameSetting[];
   /** Default web-search provider key, used for favicons and direct search rows. */
   webSearchDefaultBangKey: string;
-  /** Number of web-search suggestion rows to show in root search. */
-  webSearchSuggestionLimit: number;
   /** User overrides for bang aliases. Defaults come from the fetched catalog. */
   webSearchBangOverrides: WebSearchBangOverrideSetting[];
   /** Personal bang usage/frecency keyed by canonical bang key. */
@@ -114,6 +112,21 @@ export interface BrowserSearchSettings {
   webSearchBangCustomProviders: WebSearchBangCustomProviderSetting[];
   /** Whether the bang manager is currently showing hidden bangs. */
   webSearchShowHiddenBangs?: boolean;
+  /** Show web suggestions and bang/provider rows in root query-mode. */
+  webSearchSuggestionsEnabled: boolean;
+}
+
+export interface RootSearchRankingInputHistorySetting {
+  useCount: number;
+  lastUsedAt: number;
+  score: number;
+}
+
+export interface RootSearchRankingSetting {
+  useCount: number;
+  lastUsedAt: number;
+  frecencyScore: number;
+  inputHistory: Record<string, RootSearchRankingInputHistorySetting>;
 }
 
 export type BrowserSearchResultKind = 'open-tab' | 'bookmark' | 'history';
@@ -212,6 +225,7 @@ export interface AppSettings {
   // Useful for apps with their own emoji pickers (Slack, Telegram, …).
   emojiPickerExcludedAppBundleIds: string[];
   browserSearch: BrowserSearchSettings;
+  rootSearchRanking: Record<string, RootSearchRankingSetting>;
   // Number of seconds the launcher waits after closing before resetting the
   // active view (extension or internal view like Clipboard) back to root
   // search. `0` resets immediately on every reopen.
@@ -347,13 +361,14 @@ const DEFAULT_SETTINGS: AppSettings = {
     ],
     nicknames: [],
     webSearchDefaultBangKey: 'g',
-    webSearchSuggestionLimit: 3,
     webSearchBangOverrides: [],
     webSearchBangUsage: {},
     webSearchDisabledBangKeys: [],
     webSearchBangCustomProviders: [],
     webSearchShowHiddenBangs: false,
+    webSearchSuggestionsEnabled: true,
   },
+  rootSearchRanking: {},
   popToRootSearchTimeoutSeconds: 90,
   installedExtensions: [],
   extensionUninstallTombstones: {},
@@ -556,12 +571,6 @@ function normalizeWebSearchDefaultBangKey(value: any): string {
   return DEFAULT_SETTINGS.browserSearch.webSearchDefaultBangKey;
 }
 
-function normalizeWebSearchSuggestionLimit(value: any): number {
-  if (value === undefined || value === null) return DEFAULT_SETTINGS.browserSearch.webSearchSuggestionLimit;
-  const limit = Math.floor(Number(value));
-  return Number.isFinite(limit) ? Math.max(0, Math.min(8, limit)) : DEFAULT_SETTINGS.browserSearch.webSearchSuggestionLimit;
-}
-
 function normalizeWebSearchBangKey(value: any): string {
   return String(value || '').trim().toLowerCase().replace(/^!+/, '').replace(/[^a-z0-9.+_-]/g, '').slice(0, 64);
 }
@@ -661,13 +670,50 @@ function normalizeBrowserSearchSettings(value: any): BrowserSearchSettings {
     resultGroups: normalizeBrowserSearchResultGroups(value.resultGroups, resultLimit || fallback.resultLimitPerGroup),
     nicknames: normalizeBrowserSearchNicknames(value.nicknames),
     webSearchDefaultBangKey: normalizeWebSearchDefaultBangKey(value.webSearchDefaultBangKey),
-    webSearchSuggestionLimit: normalizeWebSearchSuggestionLimit(value.webSearchSuggestionLimit),
     webSearchBangOverrides: normalizeWebSearchBangOverrides(value.webSearchBangOverrides),
     webSearchBangUsage: normalizeWebSearchBangUsage(value.webSearchBangUsage),
     webSearchDisabledBangKeys: normalizeWebSearchDisabledBangKeys(value.webSearchDisabledBangKeys),
     webSearchBangCustomProviders: normalizeWebSearchBangCustomProviders(value.webSearchBangCustomProviders),
     webSearchShowHiddenBangs: Boolean(value.webSearchShowHiddenBangs),
+    webSearchSuggestionsEnabled: typeof value.webSearchSuggestionsEnabled === 'boolean'
+      ? value.webSearchSuggestionsEnabled
+      : fallback.webSearchSuggestionsEnabled,
   };
+}
+
+function normalizeRootSearchRanking(value: any): Record<string, RootSearchRankingSetting> {
+  if (!value || typeof value !== 'object') return {};
+  const now = Date.now();
+  const result: Record<string, RootSearchRankingSetting> = {};
+  for (const [rawKey, rawEntry] of Object.entries(value)) {
+    const key = String(rawKey || '').trim();
+    const entry = rawEntry as any;
+    if (!key || !entry || typeof entry !== 'object') continue;
+    const lastUsedAt = Math.max(0, Number(entry.lastUsedAt || 0));
+    const frecencyScore = Math.max(0, Number(entry.frecencyScore || 0));
+    const ageDays = lastUsedAt ? Math.max(0, (now - lastUsedAt) / (24 * 60 * 60 * 1000)) : Number.MAX_SAFE_INTEGER;
+    if (ageDays > 120 && frecencyScore < 0.05) continue;
+    const inputHistory: Record<string, RootSearchRankingInputHistorySetting> = {};
+    if (entry.inputHistory && typeof entry.inputHistory === 'object') {
+      for (const [rawInputKey, rawInput] of Object.entries(entry.inputHistory)) {
+        const inputKey = String(rawInputKey || '').trim().slice(0, 120);
+        const input = rawInput as any;
+        if (!inputKey || !input || typeof input !== 'object') continue;
+        inputHistory[inputKey] = {
+          useCount: Math.max(0, Math.floor(Number(input.useCount || 0))),
+          lastUsedAt: Math.max(0, Number(input.lastUsedAt || 0)),
+          score: Math.max(0, Number(input.score || 0)),
+        };
+      }
+    }
+    result[key] = {
+      useCount: Math.max(0, Math.floor(Number(entry.useCount || 0))),
+      lastUsedAt,
+      frecencyScore,
+      inputHistory,
+    };
+  }
+  return result;
 }
 
 function normalizeAppLanguage(value: any): AppLanguage {
@@ -1119,6 +1165,7 @@ export function loadSettings(): AppSettings {
         : DEFAULT_SETTINGS.emojiPickerTriggerPrefix,
       emojiPickerExcludedAppBundleIds: normalizeBundleIdList(parsed.emojiPickerExcludedAppBundleIds),
       browserSearch: normalizeBrowserSearchSettings(parsed.browserSearch),
+      rootSearchRanking: normalizeRootSearchRanking(parsed.rootSearchRanking),
       popToRootSearchTimeoutSeconds: normalizePopToRootSearchTimeoutSeconds(parsed.popToRootSearchTimeoutSeconds),
       installedExtensions: normalizeInstalledExtensions(parsed.installedExtensions),
       extensionUninstallTombstones: normalizeExtensionUninstallTombstones(parsed.extensionUninstallTombstones),
@@ -1389,6 +1436,9 @@ function saveSettingsInternal(
     ),
     browserSearch: normalizeBrowserSearchSettings(
       'browserSearch' in patch ? patch.browserSearch : current.browserSearch
+    ),
+    rootSearchRanking: normalizeRootSearchRanking(
+      'rootSearchRanking' in patch ? patch.rootSearchRanking : current.rootSearchRanking
     ),
     popToRootSearchTimeoutSeconds: normalizePopToRootSearchTimeoutSeconds(
       'popToRootSearchTimeoutSeconds' in patch

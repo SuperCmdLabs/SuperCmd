@@ -43,7 +43,6 @@ export type UseLauncherKeyboardControlsOptions = {
 
   setSearchQuery: React.Dispatch<React.SetStateAction<string>>;
   setSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
-  setBrowserSearchSkipAutoComplete: React.Dispatch<React.SetStateAction<boolean>>;
   setIsCompactCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   setShowActions: React.Dispatch<React.SetStateAction<boolean>>;
   setContextMenu: React.Dispatch<React.SetStateAction<LauncherContextMenuState | null>>;
@@ -123,7 +122,6 @@ export function useLauncherKeyboardControls(
     isCompactCollapsed,
     setSearchQuery,
     setSelectedIndex,
-    setBrowserSearchSkipAutoComplete,
     setIsCompactCollapsed,
     setShowActions,
     setContextMenu,
@@ -344,7 +342,6 @@ export function useLauncherKeyboardControls(
           if (isSearchInputTarget && browserSearchAutoComplete?.completion && !e.shiftKey) {
             e.preventDefault();
             const completion = browserSearchAutoComplete.completion;
-            setBrowserSearchSkipAutoComplete(true);
             setSearchQuery(completion);
             setSelectedIndex(0);
             requestAnimationFrame(() => {
@@ -485,11 +482,6 @@ export function useLauncherKeyboardControls(
   );
 
   const handleLauncherInputChange = useCallback((value: string) => {
-    if (browserSearchAutoComplete && value === searchQuery && value.length > 0) {
-      setBrowserSearchSkipAutoComplete(true);
-      return;
-    }
-
     setSearchQuery(value);
 
     if (launcherViewMode === 'compact') {
@@ -502,11 +494,8 @@ export function useLauncherKeyboardControls(
       }
     }
   }, [
-    browserSearchAutoComplete,
     isCompactCollapsed,
     launcherViewMode,
-    searchQuery,
-    setBrowserSearchSkipAutoComplete,
     setIsCompactCollapsed,
     setSearchQuery,
   ]);

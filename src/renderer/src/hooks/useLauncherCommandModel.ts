@@ -8,21 +8,20 @@ import type {
 import type { BrowserSearchResult, useBrowserSearch } from './useBrowserSearch';
 import type { CalcResult } from '../smart-calculator';
 import { tryCalculate, tryCalculateAsync } from '../smart-calculator';
-import { filterCommands } from '../utils/command-helpers';
+import { filterCommands, rankCommands } from '../utils/command-helpers';
 import {
   asTildePath,
   buildFileResultCommandId,
   getFileBasename,
   getFileDirname,
   getFileResultPathFromCommand,
+  MAX_LAUNCHER_FILE_RESULTS,
 } from '../utils/launcher-file-results';
-import { MAX_RECENT_SECTION_ITEMS } from '../utils/launcher-misc';
+import { getQuickLinkIdFromCommandId, MAX_RECENT_SECTION_ITEMS } from '../utils/launcher-misc';
 import type { BrowserInputResolution } from '../utils/browser-input-resolver';
 import {
   BROWSER_SEARCH_OPEN_URL_ID,
   BROWSER_SEARCH_RESULT_ID_PREFIX,
-  BROWSER_SEARCH_SHOW_ALL_RESULTS_ID,
-  normalizeBrowserCommandUrl,
 } from '../utils/browser-search-commands';
 import {
   type BangParseState,
@@ -36,6 +35,23 @@ import {
   getSearchBangByKeyFromList,
   getSortedSearchBangs,
 } from '../utils/web-search-bangs';
+import {
+  ROOT_SEARCH_PROMOTION_SCORE,
+  ROOT_SEARCH_RESULTS_LIMIT,
+  getRootSearchCompletion,
+  getRootSearchFrecencyBoost,
+  normalizeRootSearchText,
+  normalizeRootSearchStableValue,
+  normalizeRootSearchUrl,
+  rankRootSearchCandidates,
+  scoreRootSearchCandidate,
+  scoreRootSearchFields,
+  tokenizeRootSearchQuery,
+  type MatchKind,
+  type RootSearchCandidate,
+  type RootSearchRankingState,
+  type RootSearchSubtype,
+} from '../utils/root-search-ranking';
 import type { LauncherCommandSection } from '../components/LauncherCommandList';
 
 export type GroupedLauncherCommands = {
@@ -63,9 +79,9 @@ export type UseLauncherCommandModelParams = {
 
   browserSearch: ReturnType<typeof useBrowserSearch>;
   browserSearchResultGroups: BrowserSearchResultGroupSetting[];
-  browserSearchAutoComplete: { completion: string } | null;
-  browserSearchSkipAutoComplete: boolean;
   aiMode: boolean;
+  rootSearchRanking: RootSearchRankingState;
+  webSearchSuggestionsEnabled: boolean;
 
   rootBangState: BangParseState;
   enabledSearchBangs: SearchBangDefinition[];
@@ -73,10 +89,8 @@ export type UseLauncherCommandModelParams = {
   webSearchDefaultBangKey: string;
   webSearchBangUsage: Record<string, WebSearchBangUsageSetting>;
   rootWebSearchSuggestions: string[];
-  webSearchSuggestionLimit: number;
 
   selectedIndex: number;
-  launcherInputValue: string;
   defaultBrowserIconDataUrl: string;
 
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -97,6 +111,8 @@ export type UseLauncherCommandModelResult = {
   groupedCommands: GroupedLauncherCommands;
 
   launcherInputValue: string;
+  rootSearchAutoComplete: { completion: string; suffix: string } | null;
+  rootRankedCandidates: RootSearchCandidate[];
   browserSearchTopResult: BrowserSearchResult | null;
   browserSearchSyntheticCommand: CommandInfo | null;
   browserSearchResultCommands: CommandInfo[];
@@ -112,6 +128,186 @@ export type UseLauncherCommandModelResult = {
   selectedFileResultPath: string | null;
 };
 
+function inferCommandSubtype(command: CommandInfo): RootSearchSubtype {
+  if (command.category === 'app') return 'app';
+  if (getQuickLinkIdFromCommandId(command.id)) return 'quicklink';
+  if (command.category === 'extension') return 'extension-command';
+  if (command.category === 'script') return 'script-command';
+  return 'system-command';
+}
+
+function coerceMatchKind(value: string | undefined, fallback: MatchKind): MatchKind {
+  switch (value) {
+    case 'exact':
+    case 'alias-exact':
+    case 'nickname-exact':
+    case 'prefix':
+    case 'token-prefix':
+    case 'compact-prefix':
+    case 'word-boundary-fuzzy':
+    case 'contains':
+    case 'subsequence':
+    case 'description':
+    case 'path':
+    case 'url':
+      return value;
+    default:
+      return fallback;
+  }
+}
+
+function getFileFreshnessBoost(result: IndexedFileSearchResult): number {
+  const touched = Math.max(Number(result.mtimeMs || 0), Number(result.birthtimeMs || 0));
+  if (!touched) return 0;
+  const ageHours = Math.max(0, (Date.now() - touched) / (60 * 60 * 1000));
+  const ageDays = ageHours / 24;
+  if (ageHours <= 24) return 120;
+  if (ageDays <= 7) return 90;
+  if (ageDays <= 30) return 45;
+  if (ageDays <= 90) return 15;
+  return 0;
+}
+
+function getFileLocationBoost(result: IndexedFileSearchResult): number {
+  const topLevelRoot = String(result.topLevelRoot || '').trim();
+  const depth = Number(result.homeRelativeDepth || result.depth || 0);
+  const protectedRoot = topLevelRoot === 'Desktop' || topLevelRoot === 'Documents' || topLevelRoot === 'Downloads';
+  if (!protectedRoot) return 20;
+  return 120 - Math.min(90, Math.max(0, depth - 2) * 18);
+}
+
+function getFileDepthPenalty(result: IndexedFileSearchResult): number {
+  const depth = Math.max(0, Number(result.homeRelativeDepth || result.depth || 0));
+  if (depth <= 2) return 0;
+  if (depth <= 4) return (depth - 2) * 25;
+  return Math.min(260, 50 + (depth - 4) * 35);
+}
+
+function buildBrowserCommand(
+  result: BrowserSearchResult,
+  index: number
+): CommandInfo {
+  const normalizedUrl = normalizeRootSearchUrl(result.url);
+  const subtype: RootSearchSubtype = result.nicknameMatch ? 'nickname' : result.kind;
+  const stableKey = result.nicknameMatch
+    ? `nickname:${result.source || 'browser'}:${result.sourceProfileId || 'default'}:${normalizedUrl}:${normalizeRootSearchStableValue(result.nickname || '')}`
+    : `browser:${normalizedUrl || result.id}`;
+  return {
+    id: `${BROWSER_SEARCH_RESULT_ID_PREFIX}${result.kind}:${index}:${result.id}`,
+    title: result.title,
+    subtitle: result.subtitle,
+    category: 'system',
+    keywords: [result.title, result.subtitle, result.url, result.nickname || ''],
+    browserMatchKind: result.kind === 'open-tab' ? 'open-tab' : 'history',
+    browserResultKind: result.kind,
+    browserFaviconUrl: result.faviconUrl,
+    browserActionInput: result.actionInput,
+    browserFocusAvailable: result.focusAvailable,
+    browserNickname: result.nickname,
+    browserNicknameMatch: result.nicknameMatch,
+    rootSearchStableKey: stableKey,
+    rootSearchSource: 'browser',
+    rootSearchSubtype: subtype,
+  };
+}
+
+function isSearchEngineHistoryCandidate(candidate: RootSearchCandidate): boolean {
+  if (candidate.subtype !== 'history' || !candidate.pathOrUrl) return false;
+  try {
+    const host = new URL(candidate.pathOrUrl).hostname.replace(/^www\./i, '').toLowerCase();
+    return (
+      host === 'google.com' ||
+      host.endsWith('.google.com') ||
+      host === 'bing.com' ||
+      host.endsWith('.bing.com') ||
+      host === 'duckduckgo.com' ||
+      host.endsWith('.duckduckgo.com') ||
+      host === 'search.brave.com'
+    );
+  } catch {
+    return false;
+  }
+}
+
+const BROAD_FILE_PATH_QUERY_TERMS = new Set([
+  'desktop',
+  'documents',
+  'downloads',
+  'users',
+  'user',
+  'home',
+  'library',
+  'application',
+  'support',
+]);
+
+function isFocusedFilePathCandidate(candidate: RootSearchCandidate, query: string): boolean {
+  if (candidate.source !== 'file' || !candidate.pathOrUrl) return false;
+  if (candidate.subtype !== 'file' && candidate.subtype !== 'folder') return false;
+  const terms = tokenizeRootSearchQuery(query).filter((term) =>
+    term.length >= 3 && !BROAD_FILE_PATH_QUERY_TERMS.has(term)
+  );
+  if (terms.length < 2 && !terms.some((term) => !normalizeRootSearchText(candidate.label).includes(term))) return false;
+
+  const normalizedLabel = normalizeRootSearchText(candidate.label);
+  const normalizedPath = normalizeRootSearchText(candidate.pathOrUrl);
+  const hasPathNarrowingTerm = terms.some((term) =>
+    !normalizedLabel.includes(term) && normalizedPath.includes(term)
+  );
+  if (!hasPathNarrowingTerm) return false;
+
+  return (
+    candidate.finalScore >= 600 &&
+    candidate.depthPenalty <= 180 &&
+    candidate.noisePenalty <= 140
+  );
+}
+
+function isRootResultPromotionCandidate(candidate: RootSearchCandidate, query = ''): boolean {
+  const focusedFilePathCandidate = isFocusedFilePathCandidate(candidate, query);
+  if (candidate.finalScore < (focusedFilePathCandidate ? 600 : ROOT_SEARCH_PROMOTION_SCORE)) return false;
+
+  if (candidate.subtype === 'nickname') return true;
+
+  if (candidate.subtype === 'app' || candidate.subtype === 'quicklink') {
+    return candidate.matchKind !== 'contains' && candidate.matchKind !== 'subsequence' && candidate.matchKind !== 'description';
+  }
+
+  if (candidate.subtype === 'file' || candidate.subtype === 'folder') {
+    if (candidate.matchKind === 'exact') return true;
+    if (focusedFilePathCandidate) return true;
+    if (candidate.matchKind === 'prefix' || candidate.matchKind === 'token-prefix' || candidate.matchKind === 'compact-prefix') {
+      if (candidate.subtype === 'folder' && candidate.depthPenalty === 0 && candidate.noisePenalty === 0) return true;
+      return candidate.depthPenalty <= 60 && candidate.noisePenalty === 0 && candidate.finalScore >= 760;
+    }
+    return false;
+  }
+
+  if (candidate.subtype === 'open-tab' || candidate.subtype === 'bookmark') {
+    return candidate.finalScore >= 820 && (
+      candidate.matchKind === 'exact' ||
+      candidate.matchKind === 'prefix' ||
+      candidate.matchKind === 'token-prefix' ||
+      candidate.matchKind === 'url'
+    );
+  }
+
+  if (candidate.subtype === 'history') {
+    if (candidate.finalScore >= 620 && (candidate.matchKind === 'exact' || candidate.matchKind === 'url')) return true;
+    return candidate.finalScore >= 820 && !isSearchEngineHistoryCandidate(candidate) && (
+      candidate.matchKind === 'prefix' ||
+      candidate.matchKind === 'token-prefix'
+    );
+  }
+
+  return candidate.finalScore >= 780 && (
+    candidate.matchKind === 'exact' ||
+    candidate.matchKind === 'alias-exact' ||
+    candidate.matchKind === 'prefix' ||
+    candidate.matchKind === 'token-prefix'
+  );
+}
+
 export function useLauncherCommandModel({
   commands,
   searchQuery,
@@ -126,8 +322,9 @@ export function useLauncherCommandModel({
   selectedTextSnapshot,
   browserSearch,
   browserSearchResultGroups,
-  browserSearchAutoComplete,
   aiMode,
+  rootSearchRanking,
+  webSearchSuggestionsEnabled,
   rootBangState,
   enabledSearchBangs,
   effectiveSearchBangs,
@@ -135,7 +332,6 @@ export function useLauncherCommandModel({
   webSearchBangUsage,
   rootWebSearchSuggestions,
   selectedIndex,
-  launcherInputValue,
   defaultBrowserIconDataUrl,
   t,
 }: UseLauncherCommandModelParams): UseLauncherCommandModelResult {
@@ -217,6 +413,9 @@ export function useLauncherCommandModel({
           iconDataUrl: launcherFileIcons[result.path] || undefined,
           category: 'system',
           path: result.path,
+          rootSearchStableKey: `file:${normalizeRootSearchStableValue(result.path)}`,
+          rootSearchSource: 'file',
+          rootSearchSubtype: result.isDirectory ? 'folder' : 'file',
         };
       }),
     [launcherFileResults, launcherFileIcons, homeDir]
@@ -235,6 +434,9 @@ export function useLauncherCommandModel({
           iconDataUrl: launcherFileIcons[filePath] || undefined,
           category: 'system',
           path: filePath,
+          rootSearchStableKey: `file:${normalizeRootSearchStableValue(filePath)}`,
+          rootSearchSource: 'file',
+          rootSearchSubtype: 'file',
         };
       }),
     [pinnedFiles, launcherFileIcons, homeDir]
@@ -274,6 +476,9 @@ export function useLauncherCommandModel({
           !contextualIds.has((c as CommandInfo).id)
       )
       .sort((a, b) => {
+        const rootScoreA = getRootSearchFrecencyBoost(`command:${a.id}`, rootSearchRanking);
+        const rootScoreB = getRootSearchFrecencyBoost(`command:${b.id}`, rootSearchRanking);
+        if (Math.abs(rootScoreB - rootScoreA) >= 1) return rootScoreB - rootScoreA;
         const countA = recentCommandLaunchCounts[a.id] || 0;
         const countB = recentCommandLaunchCounts[b.id] || 0;
         if (countB !== countA) return countB - countA;
@@ -288,15 +493,9 @@ export function useLauncherCommandModel({
     );
 
     return { contextual, pinned, recent, files: fileResultCommands, other };
-  }, [hasSearchQuery, visibleSourceCommands, pinnedCommands, pinnedFileCommands, recentCommands, recentCommandLaunchCounts, selectedTextSnapshot, fileResultCommands]);
+  }, [hasSearchQuery, visibleSourceCommands, pinnedCommands, pinnedFileCommands, recentCommands, recentCommandLaunchCounts, rootSearchRanking, selectedTextSnapshot, fileResultCommands]);
 
-  const browserSearchTopResult = useMemo<BrowserSearchResult | null>(() => {
-    if (!browserSearch.enabled) return null;
-    if (aiMode) return null;
-    if (!searchQuery.trim()) return null;
-    if (rootBangState.mode !== 'none') return null;
-    return browserSearch.getTopResult(searchQuery, browserSearchResultGroups);
-  }, [browserSearch, browserSearchResultGroups, searchQuery, aiMode, rootBangState]);
+  const browserSearchTopResult = null;
 
   const rootResolvedBrowserInput = useMemo<BrowserInputResolution | null>(() => {
     if (!browserSearch.enabled) return null;
@@ -310,16 +509,14 @@ export function useLauncherCommandModel({
   const browserSearchSyntheticCommand = useMemo<CommandInfo | null>(() => {
     if (!browserSearch.enabled) return null;
     if (aiMode) return null;
-    const subject = launcherInputValue.trim();
+    const subject = searchQuery.trim();
     if (!subject) return null;
     const resolved = rootResolvedBrowserInput;
     if (resolved?.type === 'url') {
       const typedSubject = searchQuery.trim();
-      const browserMatchKind = browserSearch.getMatchKind(
-        typedSubject,
-        browserSearchAutoComplete as Parameters<typeof browserSearch.getMatchKind>[1]
-      );
+      const browserMatchKind = browserSearch.getMatchKind(typedSubject, null);
       const hasOpenTabMatch = browserMatchKind === 'open-tab';
+      const stableKey = `open-url:${normalizeRootSearchStableValue(resolved.host || resolved.url)}`;
       return {
         id: BROWSER_SEARCH_OPEN_URL_ID,
         title: t('launcher.browserSearch.openUrl', { url: resolved.display || typedSubject || subject }),
@@ -332,72 +529,201 @@ export function useLauncherCommandModel({
         browserResultKind: undefined,
         browserActionInput: typedSubject || resolved.url,
         browserFocusAvailable: hasOpenTabMatch,
-      };
-    }
-    if (browserSearchTopResult) {
-      return {
-        id: BROWSER_SEARCH_OPEN_URL_ID,
-        title: browserSearchTopResult.title,
-        subtitle: browserSearchTopResult.subtitle,
-        category: 'system',
-        keywords: [browserSearchTopResult.title, browserSearchTopResult.subtitle, browserSearchTopResult.url],
-        alwaysOnTop: true,
-        browserMatchKind: browserSearchTopResult.kind === 'open-tab' ? 'open-tab' : 'history',
-        browserResultKind: browserSearchTopResult.kind,
-        browserFaviconUrl: browserSearchTopResult.faviconUrl,
-        browserActionInput: browserSearchTopResult.actionInput,
-        browserFocusAvailable: browserSearchTopResult.focusAvailable,
+        rootSearchStableKey: stableKey,
+        rootSearchSource: 'open-url',
+        rootSearchSubtype: 'open-url',
+        rootSearchScore: 10_000,
       };
     }
     return null;
-  }, [browserSearch, browserSearchAutoComplete, browserSearchTopResult, rootResolvedBrowserInput, searchQuery, launcherInputValue, defaultBrowserIconDataUrl, aiMode, t]);
+  }, [browserSearch, rootResolvedBrowserInput, searchQuery, defaultBrowserIconDataUrl, aiMode, t]);
 
-  const browserSearchResultCommands = useMemo<CommandInfo[]>(() => {
-    if (!browserSearch.enabled) return [];
-    if (aiMode) return [];
-    if (rootBangState.mode !== 'none') return [];
-    const subject = searchQuery;
-    if (!subject.trim()) return [];
-    const topUrl = rootResolvedBrowserInput?.type === 'url'
-      ? normalizeBrowserCommandUrl(rootResolvedBrowserInput.url)
-      : browserSearchTopResult
-        ? normalizeBrowserCommandUrl(browserSearchTopResult.url)
-        : '';
-    const limitedResults = browserSearch
-      .getResults(subject, browserSearchResultGroups)
-      .filter((result) => normalizeBrowserCommandUrl(result.url) !== topUrl);
-    const allCount = browserSearch.getAllResults(subject, browserSearchResultGroups).length;
-    const commands: CommandInfo[] = limitedResults.map((result, index): CommandInfo => ({
-      id: `${BROWSER_SEARCH_RESULT_ID_PREFIX}${result.kind}:${index}:${result.id}`,
-      title: result.title,
-      subtitle: result.subtitle,
-      category: 'system',
-      keywords: [result.title, result.subtitle, result.url],
-      browserMatchKind: result.kind === 'open-tab' ? 'open-tab' : 'history',
-      browserResultKind: result.kind,
-      browserFaviconUrl: result.faviconUrl,
-      browserActionInput: result.actionInput,
-      browserFocusAvailable: result.focusAvailable,
-    }));
-    if (allCount > 0) {
-      commands.push({
-        id: BROWSER_SEARCH_SHOW_ALL_RESULTS_ID,
-        title: t('launcher.browserSearch.showAll'),
-        subtitle: t('launcher.browserSearch.showAllSubtitle', { count: String(allCount) }),
-        category: 'system',
-        keywords: [subject, 'browser', 'results'],
-        browserActionInput: subject,
-      });
-    }
-    return commands;
-  }, [browserSearch, browserSearchResultGroups, browserSearchTopResult, rootResolvedBrowserInput, searchQuery, aiMode, rootBangState, t]);
+  const browserSearchResultCommands = useMemo<CommandInfo[]>(() => [], []);
+
+  const commandCandidates = useMemo<RootSearchCandidate[]>(() => {
+    if (!hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
+    const searchableCommands = contextualCommands.filter((cmd) =>
+      cmd.id !== WEB_SEARCH_COMMAND_ID &&
+      (!hiddenListOnlyCommandIds.has(cmd.id) || hasSearchQuery)
+    );
+    return rankCommands(searchableCommands, searchQuery, commandAliases)
+      .map(({ command }) => {
+        const alias = commandAliases[command.id] || '';
+        const scored = scoreRootSearchFields(searchQuery, [
+          { value: command.title, kind: 'label', weight: 1 },
+          { value: alias, kind: 'alias', weight: 1.08 },
+          { value: command.subtitle, kind: 'description', weight: 0.74 },
+          ...(command.keywords || []).map((keyword) => ({ value: keyword, kind: 'description' as const, weight: 0.68 })),
+        ]);
+        if (!scored.matched) return null;
+        const subtype = inferCommandSubtype(command);
+        const stableKey = `command:${command.id}`;
+        return scoreRootSearchCandidate({
+          command: {
+            ...command,
+            rootSearchStableKey: stableKey,
+            rootSearchSource: 'command',
+            rootSearchSubtype: subtype,
+          },
+          source: 'command',
+          subtype,
+          stableKey,
+          label: command.title,
+          description: command.subtitle,
+          pathOrUrl: command.path,
+          matchKind: scored.matchKind,
+          matchScore: scored.matchScore,
+          sourceQualityBoost: command.alwaysOnTop ? 80 : 0,
+          freshnessBoost: 0,
+          pathLocationBoost: 0,
+          noisePenalty: 0,
+          depthPenalty: 0,
+        }, searchQuery, rootSearchRanking);
+      })
+      .filter((candidate): candidate is RootSearchCandidate => Boolean(candidate));
+  }, [hasSearchQuery, aiMode, rootBangState, contextualCommands, hiddenListOnlyCommandIds, searchQuery, commandAliases, rootSearchRanking]);
+
+  const fileCandidates = useMemo<RootSearchCandidate[]>(() => {
+    if (!hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
+    return launcherFileResults
+      .map((result) => {
+        const command = fileResultCommands.find((item) => item.path === result.path);
+        if (!command) return null;
+        const scored = scoreRootSearchFields(searchQuery, [
+          { value: result.name, kind: 'label', weight: 1 },
+          { value: result.parentPath, kind: 'path', weight: 0.72 },
+          { value: result.displayPath, kind: 'path', weight: 0.72 },
+          { value: result.path, kind: 'path', weight: 0.68 },
+        ]);
+        if (!scored.matched) return null;
+        const subtype: RootSearchSubtype = result.isDirectory ? 'folder' : 'file';
+        const matchKind = coerceMatchKind(result.matchKind, scored.matchKind);
+        const weakFolderMatch = subtype === 'folder' && (matchKind === 'contains' || matchKind === 'subsequence' || matchKind === 'path');
+        const stableKey = `file:${normalizeRootSearchStableValue(result.path)}`;
+        return scoreRootSearchCandidate({
+          command: {
+            ...command,
+            rootSearchStableKey: stableKey,
+            rootSearchSource: 'file',
+            rootSearchSubtype: subtype,
+          },
+          source: 'file',
+          subtype,
+          stableKey,
+          label: result.name,
+          description: result.displayPath,
+          pathOrUrl: result.path,
+          matchKind,
+          matchScore: scored.matchScore,
+          sourceQualityBoost: subtype === 'file' ? 8 : weakFolderMatch ? -10 : 0,
+          freshnessBoost: getFileFreshnessBoost(result),
+          pathLocationBoost: getFileLocationBoost(result),
+          noisePenalty: Math.max(0, Number(result.noisyPathSegmentCount || 0)) * 70,
+          depthPenalty: getFileDepthPenalty(result),
+        }, searchQuery, rootSearchRanking);
+      })
+      .filter((candidate): candidate is RootSearchCandidate => Boolean(candidate));
+  }, [hasSearchQuery, aiMode, rootBangState, launcherFileResults, fileResultCommands, searchQuery, rootSearchRanking]);
+
+  const browserCandidates = useMemo<RootSearchCandidate[]>(() => {
+    if (!browserSearch.enabled || !hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
+    return browserSearch.getAllResults(searchQuery, browserSearchResultGroups)
+      .map((result, index) => {
+        const command = buildBrowserCommand(result, index);
+        const nicknameMatched = Boolean(result.nicknameMatch);
+        const fields = nicknameMatched
+          ? [
+              { value: result.nickname, kind: 'nickname' as const, weight: 1.08 },
+              { value: result.title, kind: 'label' as const, weight: 0.85 },
+              { value: result.url, kind: 'url' as const, weight: 0.72 },
+            ]
+          : [
+              { value: result.title, kind: 'label' as const, weight: 1 },
+              { value: result.url, kind: 'url' as const, weight: 0.82 },
+              { value: result.subtitle, kind: 'description' as const, weight: 0.62 },
+            ];
+        const scored = scoreRootSearchFields(searchQuery, fields);
+        if (!scored.matched) return null;
+        const subtype: RootSearchSubtype = nicknameMatched ? 'nickname' : result.kind;
+        const stableKey = command.rootSearchStableKey || `browser:${normalizeRootSearchUrl(result.url) || result.id}`;
+        let sourceQualityBoost = 0;
+        let matchKind = nicknameMatched
+          ? coerceMatchKind(result.matchKind, scored.matchKind)
+          : coerceMatchKind(result.matchKind, scored.matchKind);
+
+        if (
+          !nicknameMatched &&
+          matchKind === 'contains' &&
+          searchQuery.trim().length >= 3
+        ) {
+          try {
+            const host = new URL(result.url).hostname.replace(/^www\./i, '').toLowerCase();
+            const normalizedQuery = searchQuery.trim().toLowerCase();
+            if (host === normalizedQuery || host.startsWith(`${normalizedQuery}.`) || host.startsWith(normalizedQuery)) {
+              matchKind = 'url';
+            }
+          } catch {}
+        }
+
+        if (result.kind === 'open-tab') {
+          sourceQualityBoost += 90;
+          const ageMinutes = result.windowLastFocusedAt ? Math.max(0, (Date.now() - result.windowLastFocusedAt) / 60_000) : 240;
+          sourceQualityBoost += Math.max(0, 90 - Math.log10(1 + ageMinutes) * 35);
+          if (result.active) sourceQualityBoost += 35;
+        }
+        if (result.kind === 'bookmark') sourceQualityBoost += 65;
+        sourceQualityBoost += Math.min(130, Math.log1p(Math.max(0, result.score || result.rawMatchScore || 0)) * 14);
+        let noisePenalty = 0;
+        if (result.kind === 'history' && (matchKind === 'contains' || matchKind === 'subsequence')) noisePenalty += 120;
+        if (result.kind === 'bookmark' && !nicknameMatched && (matchKind === 'contains' || matchKind === 'subsequence')) noisePenalty += 60;
+        return scoreRootSearchCandidate({
+          command: {
+            ...command,
+            rootSearchScore: result.score,
+          },
+          source: 'browser',
+          subtype,
+          stableKey,
+          label: nicknameMatched && result.nickname ? result.nickname : result.title,
+          description: result.subtitle,
+          pathOrUrl: result.url,
+          matchKind,
+          matchScore: scored.matchScore,
+          sourceQualityBoost,
+          freshnessBoost: 0,
+          pathLocationBoost: 0,
+          noisePenalty,
+          depthPenalty: 0,
+        }, searchQuery, rootSearchRanking);
+      })
+      .filter((candidate): candidate is RootSearchCandidate => Boolean(candidate));
+  }, [browserSearch, browserSearchResultGroups, hasSearchQuery, searchQuery, aiMode, rootBangState, rootSearchRanking]);
+
+  const rootRankedCandidates = useMemo<RootSearchCandidate[]>(
+    () => rankRootSearchCandidates([...commandCandidates, ...fileCandidates, ...browserCandidates]),
+    [commandCandidates, fileCandidates, browserCandidates]
+  );
+
+  const rootSearchAutoComplete = useMemo(() => {
+    if (!hasSearchQuery || aiMode || rootBangState.mode !== 'none') return null;
+    const completionCandidates = rootRankedCandidates.filter((candidate) =>
+      isRootResultPromotionCandidate(candidate, searchQuery)
+    );
+    const completion = getRootSearchCompletion(searchQuery, completionCandidates);
+    if (!completion || completion === searchQuery) return null;
+    if (!completion.toLowerCase().startsWith(searchQuery.toLowerCase())) return null;
+    const suffix = completion.slice(searchQuery.length);
+    return { completion: `${searchQuery}${suffix}`, suffix };
+  }, [hasSearchQuery, aiMode, rootBangState, searchQuery, rootRankedCandidates]);
+
+  const launcherInputValue = searchQuery;
 
   const webSearchRootDirectCommand = useMemo<CommandInfo | null>(() => {
     if (aiMode) return null;
     if (rootBangState.mode === 'none' && rootResolvedBrowserInput?.type === 'url') return null;
     const subject = rootBangState.mode === 'active'
       ? rootBangState.query.trim()
-      : launcherInputValue.trim();
+      : searchQuery.trim();
     if (!subject) return null;
     const defaultBang = getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
     const activeBang = rootBangState.mode === 'active' ? rootBangState.bang : null;
@@ -418,15 +744,18 @@ export function useLauncherCommandModel({
       browserResultKind: 'search',
       browserFaviconUrl: getFaviconUrlForHost(provider.host),
       browserActionInput: activeBang ? `${searchSubject} !${activeBang.key}` : searchSubject,
+      rootSearchStableKey: `direct-search:${provider.key}`,
+      rootSearchSource: 'direct-search',
+      rootSearchSubtype: 'direct-search',
     };
-  }, [aiMode, launcherInputValue, rootBangState, rootResolvedBrowserInput, t, webSearchDefaultBangKey, effectiveSearchBangs]);
+  }, [aiMode, searchQuery, rootBangState, rootResolvedBrowserInput, t, webSearchDefaultBangKey, effectiveSearchBangs]);
 
   const webSearchRootSuggestionCommands = useMemo<CommandInfo[]>(() => {
     if (aiMode) return [];
     if (rootBangState.mode === 'none' && rootResolvedBrowserInput?.type === 'url') return [];
     const subject = rootBangState.mode === 'active'
       ? rootBangState.query.trim()
-      : launcherInputValue.trim();
+      : searchQuery.trim();
     if (!subject) return [];
     const defaultBang = getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
     const activeBang = rootBangState.mode === 'active' ? rootBangState.bang : null;
@@ -452,7 +781,7 @@ export function useLauncherCommandModel({
       });
     }
     return commands;
-  }, [aiMode, launcherInputValue, rootBangState, rootResolvedBrowserInput, rootWebSearchSuggestions, t, webSearchDefaultBangKey, effectiveSearchBangs]);
+  }, [aiMode, searchQuery, rootBangState, rootResolvedBrowserInput, rootWebSearchSuggestions, t, webSearchDefaultBangKey, effectiveSearchBangs]);
 
   const rootBangCandidateCommands = useMemo<CommandInfo[]>(() => {
     if (rootBangState.mode !== 'selecting') return [];
@@ -470,14 +799,84 @@ export function useLauncherCommandModel({
       }));
   }, [enabledSearchBangs, rootBangState, webSearchBangUsage]);
 
+  const queryResultCommands = useMemo<CommandInfo[]>(() => {
+    if (!hasSearchQuery || rootBangState.mode !== 'none') return [];
+    if (browserSearchSyntheticCommand) {
+      const openUrlKey = browserSearchSyntheticCommand.rootSearchStableKey || browserSearchSyntheticCommand.id;
+      return [
+        browserSearchSyntheticCommand,
+        ...rootRankedCandidates
+          .filter((candidate) => candidate.stableKey !== openUrlKey)
+          .filter((candidate) => isRootResultPromotionCandidate(candidate, searchQuery))
+          .slice(0, ROOT_SEARCH_RESULTS_LIMIT - 1)
+          .map((candidate) => candidate.command),
+      ];
+    }
+
+    const resultKeys = new Set<string>();
+    const results: CommandInfo[] = [];
+    const addResult = (candidate: RootSearchCandidate) => {
+      if (resultKeys.has(candidate.stableKey)) return;
+      results.push(candidate.command);
+      resultKeys.add(candidate.stableKey);
+    };
+    const highConfidence = rootRankedCandidates
+      .filter((candidate) => isRootResultPromotionCandidate(candidate, searchQuery))
+      .slice(0, ROOT_SEARCH_RESULTS_LIMIT - (webSearchRootDirectCommand ? 1 : 0));
+    highConfidence.forEach(addResult);
+    if (webSearchRootDirectCommand) {
+      results.push(webSearchRootDirectCommand);
+    }
+    return results;
+  }, [browserSearchSyntheticCommand, hasSearchQuery, rootBangState, rootRankedCandidates, searchQuery, webSearchRootDirectCommand]);
+
+  const queryBrowserSectionCommands = useMemo<CommandInfo[]>(() => {
+    if (!hasSearchQuery || rootBangState.mode !== 'none') return [];
+    const promotedKeys = new Set(
+      queryResultCommands
+        .map((command) => command.rootSearchStableKey || command.id)
+        .filter(Boolean)
+    );
+    return rankRootSearchCandidates(browserCandidates)
+      .filter((candidate) => !promotedKeys.has(candidate.stableKey))
+      .slice(0, MAX_LAUNCHER_FILE_RESULTS)
+      .map((candidate) => candidate.command);
+  }, [browserCandidates, hasSearchQuery, queryResultCommands, rootBangState]);
+
+  const queryFileSectionCommands = useMemo<CommandInfo[]>(() => {
+    if (!hasSearchQuery || rootBangState.mode !== 'none') return [];
+    const promotedKeys = new Set(
+      queryResultCommands
+        .map((command) => command.rootSearchStableKey || command.id)
+        .filter(Boolean)
+    );
+    return rankRootSearchCandidates(fileCandidates)
+      .filter((candidate) => !promotedKeys.has(candidate.stableKey))
+      .slice(0, MAX_LAUNCHER_FILE_RESULTS)
+      .map((candidate) => candidate.command);
+  }, [fileCandidates, hasSearchQuery, queryResultCommands, rootBangState]);
+
+  const querySearchSectionCommands = useMemo<CommandInfo[]>(() => {
+    if (!hasSearchQuery || rootBangState.mode !== 'none' || !webSearchSuggestionsEnabled) return [];
+    return webSearchRootSuggestionCommands.slice(0, MAX_LAUNCHER_FILE_RESULTS);
+  }, [hasSearchQuery, rootBangState, webSearchSuggestionsEnabled, webSearchRootSuggestionCommands]);
+
   const displayCommands = useMemo(() => {
     if (rootBangState.mode === 'selecting') {
-      return rootBangCandidateCommands;
+      return webSearchSuggestionsEnabled ? rootBangCandidateCommands : [];
     }
     if (rootBangState.mode === 'active') {
       return [
         ...(webSearchRootDirectCommand ? [webSearchRootDirectCommand] : []),
-        ...webSearchRootSuggestionCommands,
+        ...(webSearchSuggestionsEnabled ? webSearchRootSuggestionCommands : []),
+      ];
+    }
+    if (hasSearchQuery) {
+      return [
+        ...queryResultCommands,
+        ...queryBrowserSectionCommands,
+        ...querySearchSectionCommands,
+        ...queryFileSectionCommands,
       ];
     }
     const all = [
@@ -506,10 +905,25 @@ export function useLauncherCommandModel({
       return [ordered[0], webSearchRootDirectCommand, ...ordered.slice(1)];
     }
     return ordered;
-  }, [webSearchRootDirectCommand, webSearchRootSuggestionCommands, rootBangCandidateCommands, browserSearchResultCommands, groupedCommands, browserSearchSyntheticCommand, rootBangState]);
+  }, [
+    webSearchRootDirectCommand,
+    webSearchRootSuggestionCommands,
+    rootBangCandidateCommands,
+    browserSearchResultCommands,
+    groupedCommands,
+    browserSearchSyntheticCommand,
+    rootBangState,
+    webSearchSuggestionsEnabled,
+    hasSearchQuery,
+    queryResultCommands,
+    queryBrowserSectionCommands,
+    querySearchSectionCommands,
+    queryFileSectionCommands,
+  ]);
 
   const launcherCommandSections = useMemo<LauncherCommandSection[]>(() => {
     if (rootBangState.mode === 'selecting') {
+      if (!webSearchSuggestionsEnabled) return [];
       return [
         { title: t('launcher.browserSearch.bangSections.matching'), items: displayCommands },
       ];
@@ -518,7 +932,16 @@ export function useLauncherCommandModel({
     if (rootBangState.mode === 'active') {
       return [
         { title: '', items: webSearchRootDirectCommand ? [webSearchRootDirectCommand] : [] },
-        { title: t('launcher.categories.search'), items: webSearchRootSuggestionCommands },
+        { title: t('launcher.categories.search'), items: webSearchSuggestionsEnabled ? webSearchRootSuggestionCommands : [] },
+      ].filter((section) => section.items.length > 0);
+    }
+
+    if (hasSearchQuery) {
+      return [
+        { title: t('launcher.sections.results'), items: queryResultCommands },
+        { title: t('launcher.categories.browser'), items: queryBrowserSectionCommands },
+        { title: t('launcher.categories.search'), items: querySearchSectionCommands },
+        { title: t('launcher.categories.files'), items: queryFileSectionCommands },
       ].filter((section) => section.items.length > 0);
     }
 
@@ -550,8 +973,14 @@ export function useLauncherCommandModel({
     browserSearchResultCommands,
     displayCommands,
     groupedCommands,
+    hasSearchQuery,
+    queryBrowserSectionCommands,
+    queryFileSectionCommands,
+    querySearchSectionCommands,
+    queryResultCommands,
     rootBangState,
     t,
+    webSearchSuggestionsEnabled,
     webSearchRootDirectCommand,
     webSearchRootSuggestionCommands,
   ]);
@@ -578,6 +1007,8 @@ export function useLauncherCommandModel({
     pinnedFileCommands,
     groupedCommands,
     launcherInputValue,
+    rootSearchAutoComplete,
+    rootRankedCandidates,
     browserSearchTopResult,
     browserSearchSyntheticCommand,
     browserSearchResultCommands,

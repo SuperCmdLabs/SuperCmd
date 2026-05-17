@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Bug, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, GripVertical, Keyboard, Languages, RotateCcw, Sparkles, Timer, Undo2 } from 'lucide-react';
+import { AlertTriangle, Bug, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, Keyboard, Languages, RotateCcw, Sparkles, Timer, Undo2 } from 'lucide-react';
 import type {
   AppNavigationStyle,
   AppSettings,
@@ -7,7 +7,6 @@ import type {
   BrowserSearchEntry,
   BrowserSearchImportableProfile,
   BrowserSearchResultGroupSetting,
-  BrowserSearchResultKind,
   BrowserSearchSettings,
   HyperKeySourceKey,
   HyperKeyCapsLockTapBehavior,
@@ -82,8 +81,6 @@ const BROWSER_SEARCH_RETENTION_OPTIONS: { value: number | null; labelKey: string
   { value: null, labelKey: 'settings.advanced.browserSearch.retention.option.forever' },
 ];
 
-const BROWSER_SEARCH_RESULT_LIMIT_OPTIONS = [0, 1, 2, 3, 4, 5, 8];
-const WEB_SEARCH_SUGGESTION_LIMIT_OPTIONS = [0, 1, 2, 3, 4, 5, 8];
 const WEB_SEARCH_DEFAULT_PROVIDER_OPTIONS = [
   { value: 'g', label: 'Google' },
   { value: 'ddg', label: 'DuckDuckGo' },
@@ -92,7 +89,6 @@ const WEB_SEARCH_DEFAULT_PROVIDER_OPTIONS = [
   { value: 'img', label: 'Google Images' },
   { value: 'wiki', label: 'Wikipedia' },
 ];
-const BROWSER_SEARCH_RESULT_KIND_ORDER: BrowserSearchResultKind[] = ['bookmark', 'open-tab', 'history'];
 const DEFAULT_BROWSER_SEARCH_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
   { kind: 'bookmark', limit: 2 },
   { kind: 'open-tab', limit: 2 },
@@ -116,26 +112,6 @@ interface BrowserSearchSectionProps {
   onChange: (next: BrowserSearchSettings) => void;
 }
 
-function normalizeBrowserResultGroups(groups: BrowserSearchResultGroupSetting[] | undefined): BrowserSearchResultGroupSetting[] {
-  const seen = new Set<BrowserSearchResultKind>();
-  const normalized: BrowserSearchResultGroupSetting[] = [];
-  if (Array.isArray(groups)) {
-    for (const group of groups) {
-      if (!BROWSER_SEARCH_RESULT_KIND_ORDER.includes(group.kind)) continue;
-      if (seen.has(group.kind)) continue;
-      seen.add(group.kind);
-      normalized.push({
-        kind: group.kind,
-        limit: Math.max(0, Math.min(8, Math.floor(Number(group.limit) || 0))),
-      });
-    }
-  }
-  for (const fallback of DEFAULT_BROWSER_SEARCH_RESULT_GROUPS) {
-    if (!seen.has(fallback.kind)) normalized.push(fallback);
-  }
-  return normalized;
-}
-
 const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, onChange }) => {
   const { t } = useI18n();
   const [profiles, setProfiles] = useState<BrowserSearchImportableProfile[]>([]);
@@ -143,7 +119,6 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
   const [tabs, setTabs] = useState<BrowserTabEntry[]>([]);
   const [busyProfileId, setBusyProfileId] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<string>('');
-  const [draggedResultKind, setDraggedResultKind] = useState<BrowserSearchResultKind | null>(null);
 
   const refreshBrowserData = useCallback(async () => {
     try {
@@ -242,43 +217,6 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
     });
   }, [onChange, settings]);
 
-  const resultGroups = normalizeBrowserResultGroups(settings.resultGroups);
-
-  const updateResultGroups = useCallback((nextGroups: BrowserSearchResultGroupSetting[]) => {
-    const normalized = normalizeBrowserResultGroups(nextGroups);
-    onChange({
-      ...settings,
-      resultLimitPerGroup: normalized[0]?.limit ?? settings.resultLimitPerGroup ?? 2,
-      resultGroups: normalized,
-    });
-  }, [onChange, settings]);
-
-  const moveResultGroup = useCallback((kind: BrowserSearchResultKind, direction: -1 | 1) => {
-    const index = resultGroups.findIndex((group) => group.kind === kind);
-    const nextIndex = index + direction;
-    if (index < 0 || nextIndex < 0 || nextIndex >= resultGroups.length) return;
-    const next = [...resultGroups];
-    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-    updateResultGroups(next);
-  }, [resultGroups, updateResultGroups]);
-
-  const dropResultGroup = useCallback((targetKind: BrowserSearchResultKind) => {
-    if (!draggedResultKind || draggedResultKind === targetKind) {
-      setDraggedResultKind(null);
-      return;
-    }
-    const current = resultGroups.filter((group) => group.kind !== draggedResultKind);
-    const dragged = resultGroups.find((group) => group.kind === draggedResultKind);
-    const targetIndex = current.findIndex((group) => group.kind === targetKind);
-    if (!dragged || targetIndex < 0) {
-      setDraggedResultKind(null);
-      return;
-    }
-    const next = [...current.slice(0, targetIndex), dragged, ...current.slice(targetIndex)];
-    updateResultGroups(next);
-    setDraggedResultKind(null);
-  }, [draggedResultKind, resultGroups, updateResultGroups]);
-
   const enabled = settings.enabled;
   const availableProfiles = profiles.filter((profile) => profile.available);
   const enabledProfileIds = new Set(settings.profileSourceIds || []);
@@ -333,6 +271,26 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
           {t('settings.advanced.browserSearch.enableLabel')}
         </label>
 
+        <div className="rounded-md border border-yellow-500/35 bg-yellow-500/10 px-3 py-2.5 text-yellow-100">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-300" />
+            <div className="min-w-0">
+              <div className="text-[12px] font-semibold text-yellow-100">
+                {t('settings.advanced.browserSearch.alphaWarning.title')}
+              </div>
+              <p className="mt-1 text-[11px] leading-snug text-yellow-100/80">
+                {t('settings.advanced.browserSearch.alphaWarning.description')}
+              </p>
+              <p className="mt-1 text-[11px] leading-snug text-yellow-100/75">
+                {t('settings.advanced.browserSearch.alphaWarning.devMode')}
+              </p>
+              <p className="mt-1 text-[11px] leading-snug text-yellow-100/65">
+                {t('settings.advanced.browserSearch.alphaWarning.temporary')}
+              </p>
+            </div>
+          </div>
+        </div>
+
         {enabled ? (
           <>
             <div>
@@ -365,114 +323,38 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
 
             <div>
               <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">
-                {t('settings.advanced.browserSearch.resultGroups.label')}
-              </label>
-              <div className="overflow-hidden rounded-md border border-[var(--ui-divider)] bg-white/[0.03]">
-                {resultGroups.map((group, index) => (
-                  <div
-                    key={group.kind}
-                    draggable
-                    onDragStart={() => setDraggedResultKind(group.kind)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => dropResultGroup(group.kind)}
-                    onDragEnd={() => setDraggedResultKind(null)}
-                    className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 border-b border-[var(--ui-divider)] px-3 py-2 last:border-b-0"
-                  >
-                    <GripVertical className="h-3.5 w-3.5 cursor-grab text-[var(--text-subtle)]" />
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
-                        {t(`settings.advanced.browserSearch.resultGroups.kind.${group.kind}`)}
-                      </div>
-                      <div className="truncate text-[11px] text-[var(--text-muted)]">
-                        {t(`settings.advanced.browserSearch.resultGroups.description.${group.kind}`)}
-                      </div>
-                    </div>
-                    <div className="w-[112px]">
-                      <select
-                        value={String(group.limit)}
-                        onChange={(e) => {
-                          const nextLimit = Math.max(0, Math.min(8, Math.floor(Number(e.target.value) || 0)));
-                          updateResultGroups(resultGroups.map((item) =>
-                            item.kind === group.kind ? { ...item, limit: nextLimit } : item
-                          ));
-                        }}
-                        className="sc-select !py-1 !text-[12px]"
-                      >
-                        {BROWSER_SEARCH_RESULT_LIMIT_OPTIONS.map((value) => (
-                          <option key={value} value={value}>
-                            {value === 0
-                              ? t('settings.advanced.browserSearch.resultGroups.option.none')
-                              : t('settings.advanced.browserSearch.resultGroups.option.count', { count: String(value) })}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => moveResultGroup(group.kind, -1)}
-                        disabled={index === 0}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--ui-divider)] bg-white/[0.04] text-[var(--text-muted)] hover:bg-white/[0.07] disabled:opacity-40"
-                        aria-label={t('settings.advanced.browserSearch.resultGroups.moveUp')}
-                      >
-                        <ArrowUp className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveResultGroup(group.kind, 1)}
-                        disabled={index === resultGroups.length - 1}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--ui-divider)] bg-white/[0.04] text-[var(--text-muted)] hover:bg-white/[0.07] disabled:opacity-40"
-                        aria-label={t('settings.advanced.browserSearch.resultGroups.moveDown')}
-                      >
-                        <ArrowDown className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">
                 {t('settings.advanced.browserSearch.webSearch.label')}
               </label>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div>
-                  <div className="mb-1 text-[11px] text-[var(--text-muted)]">
-                    {t('settings.advanced.browserSearch.webSearch.defaultProvider')}
-                  </div>
-                  <select
-                    value={settings.webSearchDefaultBangKey || 'g'}
-                    onChange={(e) => onChange({ ...settings, webSearchDefaultBangKey: e.target.value })}
-                    className="sc-select !py-1 !text-[12px]"
-                  >
-                    {WEB_SEARCH_DEFAULT_PROVIDER_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+              <div className="w-full max-w-[320px]">
+                <div className="mb-1 text-[11px] text-[var(--text-muted)]">
+                  {t('settings.advanced.browserSearch.webSearch.defaultProvider')}
                 </div>
-                <div>
-                  <div className="mb-1 text-[11px] text-[var(--text-muted)]">
-                    {t('settings.advanced.browserSearch.webSearch.suggestionCount')}
-                  </div>
-                  <select
-                    value={String(settings.webSearchSuggestionLimit ?? 3)}
-                    onChange={(e) => {
-                      const nextLimit = Math.max(0, Math.min(8, Math.floor(Number(e.target.value) || 0)));
-                      onChange({ ...settings, webSearchSuggestionLimit: nextLimit });
-                    }}
-                    className="sc-select !py-1 !text-[12px]"
-                  >
-                    {WEB_SEARCH_SUGGESTION_LIMIT_OPTIONS.map((value) => (
-                      <option key={value} value={value}>
-                        {value === 0
-                          ? t('settings.advanced.browserSearch.resultGroups.option.none')
-                          : t('settings.advanced.browserSearch.resultGroups.option.count', { count: String(value) })}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <select
+                  value={settings.webSearchDefaultBangKey || 'g'}
+                  onChange={(e) => onChange({ ...settings, webSearchDefaultBangKey: e.target.value })}
+                  className="sc-select !py-1 !text-[12px]"
+                >
+                  {WEB_SEARCH_DEFAULT_PROVIDER_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </div>
+              <label className="mt-2 inline-flex items-start gap-2.5 text-[13px] text-white/85 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.webSearchSuggestionsEnabled !== false}
+                  onChange={(e) => onChange({ ...settings, webSearchSuggestionsEnabled: e.target.checked })}
+                  className="settings-checkbox mt-0.5"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[13px] text-[var(--text-primary)]">
+                    {t('settings.advanced.browserSearch.webSearch.suggestionsEnabled.label')}
+                  </span>
+                  <span className="block text-[11px] leading-snug text-[var(--text-muted)]">
+                    {t('settings.advanced.browserSearch.webSearch.suggestionsEnabled.description')}
+                  </span>
+                </span>
+              </label>
             </div>
 
             <div>
@@ -748,12 +630,12 @@ const AdvancedTab: React.FC = () => {
     resultGroups: DEFAULT_BROWSER_SEARCH_RESULT_GROUPS,
     nicknames: [],
     webSearchDefaultBangKey: 'g',
-    webSearchSuggestionLimit: 3,
     webSearchBangOverrides: [],
     webSearchBangUsage: {},
     webSearchDisabledBangKeys: [],
     webSearchBangCustomProviders: [],
     webSearchShowHiddenBangs: false,
+    webSearchSuggestionsEnabled: true,
   };
 
   const usingCustomSettingsLocation = Boolean(settingsLocation?.path);

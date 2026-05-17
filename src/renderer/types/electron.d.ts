@@ -23,6 +23,25 @@ export interface CommandInfo {
   browserFaviconUrl?: string;
   browserActionInput?: string;
   browserFocusAvailable?: boolean;
+  rootSearchStableKey?: string;
+  rootSearchSource?: 'command' | 'file' | 'browser' | 'open-url' | 'direct-search';
+  rootSearchSubtype?:
+    | 'app'
+    | 'system-command'
+    | 'extension-command'
+    | 'script-command'
+    | 'quicklink'
+    | 'file'
+    | 'folder'
+    | 'open-tab'
+    | 'bookmark'
+    | 'history'
+    | 'nickname'
+    | 'open-url'
+    | 'direct-search';
+  rootSearchScore?: number;
+  browserNicknameMatch?: boolean;
+  browserNickname?: string;
   commandArgumentDefinitions?: Array<{
     name: string;
     required?: boolean;
@@ -41,6 +60,15 @@ export interface IndexedFileSearchResult {
   parentPath: string;
   displayPath: string;
   isDirectory: boolean;
+  score?: number;
+  matchKind?: string;
+  depth?: number;
+  homeRelativeDepth?: number;
+  topLevelRoot?: string;
+  noisyPathSegmentCount?: number;
+  mtimeMs?: number;
+  birthtimeMs?: number;
+  atimeMs?: number;
 }
 
 export interface FileSearchIndexStatus {
@@ -289,12 +317,25 @@ export interface BrowserSearchSettings {
   resultGroups: BrowserSearchResultGroupSetting[];
   nicknames: BrowserSearchNicknameSetting[];
   webSearchDefaultBangKey: string;
-  webSearchSuggestionLimit: number;
   webSearchBangOverrides: WebSearchBangOverrideSetting[];
   webSearchBangUsage: Record<string, WebSearchBangUsageSetting>;
   webSearchDisabledBangKeys: string[];
   webSearchBangCustomProviders: WebSearchBangCustomProviderSetting[];
   webSearchShowHiddenBangs?: boolean;
+  webSearchSuggestionsEnabled: boolean;
+}
+
+export interface RootSearchRankingInputHistorySetting {
+  useCount: number;
+  lastUsedAt: number;
+  score: number;
+}
+
+export interface RootSearchRankingSetting {
+  useCount: number;
+  lastUsedAt: number;
+  frecencyScore: number;
+  inputHistory: Record<string, RootSearchRankingInputHistorySetting>;
 }
 
 export interface BrowserSearchNicknameSetting {
@@ -565,6 +606,7 @@ export interface AppSettings {
   emojiPickerTriggerPrefix: string;
   emojiPickerExcludedAppBundleIds: string[];
   browserSearch: BrowserSearchSettings;
+  rootSearchRanking: Record<string, RootSearchRankingSetting>;
   popToRootSearchTimeoutSeconds: number;
   installedExtensions: string[];
   extensionUninstallTombstones: Record<string, number>;

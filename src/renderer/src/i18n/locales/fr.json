@@ -737,29 +737,19 @@
           "imported": "{count} entrées mises à jour sur {total}.",
           "failed": "Échec de l’action."
         },
-        "resultGroups": {
-          "label": "Priorité de la section Browser",
-          "kind": {
-            "open-tab": "Onglets ouverts",
-            "bookmark": "Signets",
-            "history": "Historique"
-          },
-          "description": {
-            "open-tab": "Onglets actifs ouverts dans les profils connectés.",
-            "bookmark": "Signets enregistrés dans les profils connectés.",
-            "history": "Pages visitées dans les profils connectés."
-          },
-          "option": {
-            "none": "Aucun",
-            "count": "{count} lignes"
-          },
-          "moveUp": "Monter",
-          "moveDown": "Descendre"
-        },
         "webSearch": {
           "label": "Recherche Web",
           "defaultProvider": "Fournisseur par défaut",
-          "suggestionCount": "Suggestions de recherche"
+          "suggestionsEnabled": {
+            "label": "Afficher les suggestions de recherche",
+            "description": "Affiche les suggestions Web et les options bang/fournisseur sous les résultats du navigateur."
+          }
+        },
+        "alphaWarning": {
+          "title": "Intégration navigateur alpha",
+          "description": "La recherche dans le navigateur nécessite actuellement l’extension de navigateur SuperCmd et prend uniquement en charge les navigateurs basés sur Chromium. Firefox et Safari arriveront plus tard.",
+          "devMode": "Pour connecter un navigateur maintenant, ouvrez la page des extensions du navigateur, activez le mode développeur, puis choisissez Charger l’extension non empaquetée et sélectionnez le dossier browser-extension.",
+          "temporary": "(C’est temporaire jusqu’à la publication de l’extension dans la boutique.)"
         }
       }
     },
