@@ -661,7 +661,11 @@ const electronAPI = {
     ipcRenderer.invoke('browser-search:open', input),
   browserSearchResolve: (input: string): Promise<{ type: 'url' | 'search'; url: string; host: string } | null> =>
     ipcRenderer.invoke('browser-search:resolve', input),
-  browserSearchListEntries: (): Promise<any[]> =>
+  browserSearchRevision: (): Promise<number> =>
+    ipcRenderer.invoke('browser-search:revision'),
+  browserSearchStats: (): Promise<any> =>
+    ipcRenderer.invoke('browser-search:stats'),
+  browserSearchListEntries: (): Promise<any> =>
     ipcRenderer.invoke('browser-search:list-entries'),
   browserSearchAutocomplete: (input: string): Promise<{ completion: string; suffix: string; entry: any } | null> =>
     ipcRenderer.invoke('browser-search:autocomplete', input),

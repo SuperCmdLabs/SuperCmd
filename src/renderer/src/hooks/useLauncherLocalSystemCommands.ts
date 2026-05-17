@@ -80,6 +80,7 @@ type UseLauncherLocalSystemCommandsOptions = {
 
   refreshBrowserOpenTabs: () => void | Promise<void>;
   refreshBrowserEntries: () => void | Promise<void>;
+  refreshBrowserEntriesIfStale: () => void | Promise<void>;
 };
 
 export function useLauncherLocalSystemCommands(
@@ -127,6 +128,7 @@ export function useLauncherLocalSystemCommands(
     setWebSearchQuery,
     refreshBrowserOpenTabs,
     refreshBrowserEntries,
+    refreshBrowserEntriesIfStale,
   } = options;
 
   const runLocalSystemCommand = useCallback(async (
@@ -222,17 +224,17 @@ export function useLauncherLocalSystemCommands(
     }
     if (commandId === BROWSER_SEARCH_BOOKMARKS_COMMAND_ID) {
       whisperSessionRef.current = false;
-      refreshBrowserEntries();
       setBrowserResultsViewScope('bookmarks');
       setBrowserResultsViewQuery('');
+      refreshBrowserEntriesIfStale();
       return true;
     }
     if (commandId === BROWSER_SEARCH_HISTORY_COMMAND_ID) {
       whisperSessionRef.current = false;
-      refreshBrowserEntries();
       setBrowserHistoryProfileMenuOpen(false);
       setBrowserResultsViewScope('history');
       setBrowserResultsViewQuery('');
+      refreshBrowserEntriesIfStale();
       return true;
     }
     if (commandId === 'system-my-schedule') {
@@ -407,6 +409,7 @@ export function useLauncherLocalSystemCommands(
     setWebSearchQuery,
     refreshBrowserOpenTabs,
     refreshBrowserEntries,
+    refreshBrowserEntriesIfStale,
   ]);
 
   useEffect(() => {

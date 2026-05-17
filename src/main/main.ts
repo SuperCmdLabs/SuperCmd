@@ -120,6 +120,8 @@ import {
   resolveInput as bsResolveInput,
   recordResolvedInput as bsRecordResolvedInput,
   listEntries as bsListEntries,
+  getBrowserSearchRevision as bsGetBrowserSearchRevision,
+  getBrowserSearchStats as bsGetBrowserSearchStats,
   clearHistory as bsClearHistory,
   pruneByRetentionNow as bsPruneByRetention,
   getAutocomplete as bsGetAutocomplete,
@@ -11909,8 +11911,9 @@ async function refreshBrowserProfiles(reason: string, minIntervalMs = 0): Promis
   browserProfileRefreshInFlight = true;
   lastBrowserProfileRefreshAt = now;
   try {
-    const result = await bsRefreshEnabledBrowserProfiles();
-    if (result.imported > 0 || result.skipped > 0) {
+    const beforeRevision = bsGetBrowserSearchRevision();
+    await bsRefreshEnabledBrowserProfiles();
+    if (bsGetBrowserSearchRevision() !== beforeRevision) {
       flushRecentNavigationsForHistoryEntries(bsListEntries());
       broadcastBrowserSearchHistoryChanged();
       broadcastBrowserTabsChanged();
@@ -11935,6 +11938,10 @@ function getCombinedBrowserSearchEntries(): BrowserSearchEntry[] {
     return !durableKeys.has(key);
   });
   return [...durableEntries, ...pendingEntries];
+}
+
+function getCombinedBrowserSearchRevision(): number {
+  return bsGetBrowserSearchRevision();
 }
 
 type BrowserOpenProfileEvent = {
@@ -15882,8 +15889,19 @@ if let tiff = image?.tiffRepresentation {
     return { type: resolved.type, url: resolved.url, host: resolved.host };
   });
 
+  ipcMain.handle('browser-search:revision', () => {
+    return getCombinedBrowserSearchRevision();
+  });
+
+  ipcMain.handle('browser-search:stats', () => {
+    return bsGetBrowserSearchStats();
+  });
+
   ipcMain.handle('browser-search:list-entries', () => {
-    return getCombinedBrowserSearchEntries();
+    return {
+      revision: getCombinedBrowserSearchRevision(),
+      entries: getCombinedBrowserSearchEntries(),
+    };
   });
 
   ipcMain.handle('browser-search:autocomplete', (_event: any, input: string) => {
@@ -16016,21 +16034,27 @@ if let tiff = image?.tiffRepresentation {
   });
 
   ipcMain.handle('browser-search:import', async (_event: any, browserId: BrowserSearchSource) => {
+    const beforeRevision = bsGetBrowserSearchRevision();
     const result = await bsImportFromBrowser(browserId);
     try {
-      flushRecentNavigationsForHistoryEntries(bsListEntries());
-      broadcastBrowserSearchHistoryChanged();
-      broadcastBrowserTabsChanged();
+      if (bsGetBrowserSearchRevision() !== beforeRevision) {
+        flushRecentNavigationsForHistoryEntries(bsListEntries());
+        broadcastBrowserSearchHistoryChanged();
+        broadcastBrowserTabsChanged();
+      }
     } catch {}
     return result;
   });
 
   ipcMain.handle('browser-search:import-profile', async (_event: any, profileSourceId: string) => {
+    const beforeRevision = bsGetBrowserSearchRevision();
     const result = await bsImportFromBrowserProfile(String(profileSourceId || ''));
     try {
-      flushRecentNavigationsForHistoryEntries(bsListEntries());
-      broadcastBrowserSearchHistoryChanged();
-      broadcastBrowserTabsChanged();
+      if (bsGetBrowserSearchRevision() !== beforeRevision) {
+        flushRecentNavigationsForHistoryEntries(bsListEntries());
+        broadcastBrowserSearchHistoryChanged();
+        broadcastBrowserTabsChanged();
+      }
     } catch {}
     return result;
   });

@@ -438,6 +438,22 @@ export interface BrowserSearchAutocomplete {
   entry: BrowserSearchEntry;
 }
 
+export interface BrowserSearchStats {
+  revision: number;
+  totalEntries: number;
+  historyEntries: number;
+  bookmarkEntries: number;
+  profileCountsByKind: {
+    history: Record<string, number>;
+    bookmark: Record<string, number>;
+  };
+}
+
+export interface BrowserSearchEntryListPayload {
+  revision: number;
+  entries: BrowserSearchEntry[];
+}
+
 export interface WebSearchBangEntry {
   key: string;
   aliases?: string[];
@@ -1096,7 +1112,9 @@ export interface ElectronAPI {
   // Browser Search
   browserSearchOpen: (input: string) => Promise<{ ok: boolean; type: BrowserSearchEntryType | null; url: string | null }>;
   browserSearchResolve: (input: string) => Promise<{ type: BrowserSearchEntryType; url: string; host: string } | null>;
-  browserSearchListEntries: () => Promise<BrowserSearchEntry[]>;
+  browserSearchRevision: () => Promise<number>;
+  browserSearchStats: () => Promise<BrowserSearchStats>;
+  browserSearchListEntries: () => Promise<BrowserSearchEntry[] | BrowserSearchEntryListPayload>;
   browserSearchAutocomplete: (input: string) => Promise<BrowserSearchAutocomplete | null>;
   browserSearchSuggest: (input: string) => Promise<string | null>;
   browserSearchSuggestMany: (input: string, limit?: number, provider?: { key?: string; host?: string; name?: string }) => Promise<string[]>;

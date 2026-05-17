@@ -53,6 +53,17 @@ export interface BrowserSearchEntry {
   bookmarkOrder?: number;
 }
 
+export interface BrowserSearchStats {
+  revision: number;
+  totalEntries: number;
+  historyEntries: number;
+  bookmarkEntries: number;
+  profileCountsByKind: {
+    history: Record<string, number>;
+    bookmark: Record<string, number>;
+  };
+}
+
 export interface AutocompleteSuggestion {
   /** The full text the user would end up with after accepting. */
   completion: string;
@@ -62,6 +73,7 @@ export interface AutocompleteSuggestion {
 }
 
 let cache: BrowserSearchEntry[] | null = null;
+let browserSearchRevision = 1;
 
 // ─── Paths ──────────────────────────────────────────────────────────
 
@@ -102,6 +114,10 @@ function save(): void {
   } catch (e) {
     console.error('Failed to save browser-search history:', e);
   }
+}
+
+function bumpBrowserSearchRevision(): void {
+  browserSearchRevision += 1;
 }
 
 function sanitizeEntry(raw: any): BrowserSearchEntry | null {
@@ -191,6 +207,37 @@ export function listEntries(): BrowserSearchEntry[] {
   return load().slice();
 }
 
+export function getBrowserSearchRevision(): number {
+  load();
+  return browserSearchRevision;
+}
+
+export function getBrowserSearchStats(): BrowserSearchStats {
+  const entries = load();
+  const history: Record<string, number> = {};
+  const bookmark: Record<string, number> = {};
+  let historyEntries = 0;
+  let bookmarkEntries = 0;
+  for (const entry of entries) {
+    if (entry.type !== 'url' && entry.type !== 'bookmark') continue;
+    const profileId = entry.sourceProfileId ? `${entry.source}:${entry.sourceProfileId}` : '';
+    if (entry.type === 'url') {
+      historyEntries += 1;
+      if (profileId) history[profileId] = (history[profileId] || 0) + 1;
+    } else {
+      bookmarkEntries += 1;
+      if (profileId) bookmark[profileId] = (bookmark[profileId] || 0) + 1;
+    }
+  }
+  return {
+    revision: browserSearchRevision,
+    totalEntries: entries.length,
+    historyEntries,
+    bookmarkEntries,
+    profileCountsByKind: { history, bookmark },
+  };
+}
+
 export function removeEntriesForProfile(profileSourceId: string): number {
   const [source, ...profileParts] = String(profileSourceId || '').trim().split(':');
   const profileId = profileParts.join(':');
@@ -204,6 +251,7 @@ export function removeEntriesForProfile(profileSourceId: string): number {
   });
   if (next.length === before) return 0;
   cache = next;
+  bumpBrowserSearchRevision();
   save();
   return before - next.length;
 }
@@ -325,6 +373,7 @@ function recordEntryUse(entry: BrowserSearchEntry): void {
   if (existing) {
     existing.useCount += 1;
     existing.lastUsedAt = now;
+    bumpBrowserSearchRevision();
   }
   pruneByRetentionInPlace(entries);
   trimToCapInPlace(entries);
@@ -357,6 +406,7 @@ function recordEntry(query: string, resolved: ResolvedInput, source: BrowserSear
   pruneByRetentionInPlace(entries);
   trimToCapInPlace(entries);
   cache = entries;
+  bumpBrowserSearchRevision();
   save();
 }
 
@@ -374,14 +424,18 @@ function importEntryKey(entry: Pick<BrowserSearchEntry, 'type' | 'url' | 'query'
 }
 
 export function clearHistory(): void {
+  const hadEntries = load().length > 0;
   cache = [];
+  if (hadEntries) bumpBrowserSearchRevision();
   save();
 }
 
 export function pruneByRetentionNow(): void {
   const entries = load();
+  const before = entries.length;
   pruneByRetentionInPlace(entries);
   cache = entries;
+  if (entries.length !== before) bumpBrowserSearchRevision();
   save();
 }
 
@@ -742,6 +796,7 @@ async function importFromSource(
     : [];
 
   const existingKeys = new Set(entries.map((e) => importEntryKey(e)));
+  let changed = false;
   let imported = 0;
   let skipped = 0;
   for (const row of rows) {
@@ -769,13 +824,25 @@ async function importFromSource(
       : key;
     const matchedKey = existingKeys.has(key) ? key : existingKeys.has(legacyKey) ? legacyKey : null;
     if (matchedKey) {
-      // bump useCount + lastUsedAt if newer
       const ex = entries.find((e) => importEntryKey(e) === matchedKey);
       if (ex) {
-        ex.useCount = Math.max(ex.useCount, row.visitCount);
-        if (row.lastVisit > ex.lastUsedAt) ex.lastUsedAt = row.lastVisit;
-        if (sourceProfileId) ex.sourceProfileId = sourceProfileId;
-        if (sourceProfileName) ex.sourceProfileName = sourceProfileName;
+        const nextUseCount = Math.max(ex.useCount, row.visitCount);
+        if (nextUseCount !== ex.useCount) {
+          ex.useCount = nextUseCount;
+          changed = true;
+        }
+        if (row.lastVisit > ex.lastUsedAt) {
+          ex.lastUsedAt = row.lastVisit;
+          changed = true;
+        }
+        if (sourceProfileId && ex.sourceProfileId !== sourceProfileId) {
+          ex.sourceProfileId = sourceProfileId;
+          changed = true;
+        }
+        if (sourceProfileName && ex.sourceProfileName !== sourceProfileName) {
+          ex.sourceProfileName = sourceProfileName;
+          changed = true;
+        }
         existingKeys.add(importEntryKey(ex));
       }
       skipped += 1;
@@ -795,53 +862,109 @@ async function importFromSource(
     });
     existingKeys.add(key);
     imported += 1;
+    changed = true;
   }
 
   if (sourceProfileId) {
-    let removedBookmarks = 0;
-    for (let i = entries.length - 1; i >= 0; i--) {
-      if (
-        entries[i].type === 'bookmark' &&
-        entries[i].source === browserId &&
-        entries[i].sourceProfileId === sourceProfileId
-      ) {
-        existingKeys.delete(importEntryKey(entries[i]));
-        entries.splice(i, 1);
-        removedBookmarks += 1;
+    const seenBookmarkKeys = new Set<string>();
+    const existingBookmarkByKey = new Map<string, BrowserSearchEntry>();
+    for (const entry of entries) {
+      if (entry.type !== 'bookmark') continue;
+      if (entry.source !== browserId) continue;
+      if ((entry.sourceProfileId || '') !== sourceProfileId) continue;
+      existingBookmarkByKey.set(importEntryKey(entry), entry);
+    }
+
+    for (const bookmark of bookmarkRows) {
+      const host = extractHost(bookmark.url);
+      if (!host) {
+        skipped += 1;
+        continue;
       }
+      const query = bookmark.title || host;
+      const key = importEntryKey({
+        type: 'bookmark',
+        query,
+        url: bookmark.url,
+        source: browserId,
+        sourceProfileId,
+      });
+      seenBookmarkKeys.add(key);
+      const existingBookmark = existingBookmarkByKey.get(key);
+      if (existingBookmark) {
+        const nextLastUsedAt = bookmark.dateAdded || existingBookmark.lastUsedAt || Date.now();
+        if (existingBookmark.query !== query) {
+          existingBookmark.query = query;
+          changed = true;
+        }
+        if (existingBookmark.host !== host) {
+          existingBookmark.host = host;
+          changed = true;
+        }
+        if (existingBookmark.lastUsedAt !== nextLastUsedAt) {
+          existingBookmark.lastUsedAt = nextLastUsedAt;
+          changed = true;
+        }
+        if (existingBookmark.useCount !== 1) {
+          existingBookmark.useCount = 1;
+          changed = true;
+        }
+        if (existingBookmark.sourceProfileName !== sourceProfileName) {
+          existingBookmark.sourceProfileName = sourceProfileName;
+          changed = true;
+        }
+        if (existingBookmark.bookmarkFolder !== bookmark.folder) {
+          existingBookmark.bookmarkFolder = bookmark.folder;
+          changed = true;
+        }
+        if (existingBookmark.bookmarkOrder !== bookmark.order) {
+          existingBookmark.bookmarkOrder = bookmark.order;
+          changed = true;
+        }
+        skipped += 1;
+        continue;
+      }
+      const entry = {
+        id: makeId(),
+        type: 'bookmark' as const,
+        query,
+        url: bookmark.url,
+        host,
+        lastUsedAt: bookmark.dateAdded || Date.now(),
+        useCount: 1,
+        source: browserId,
+        sourceProfileId,
+        sourceProfileName,
+        bookmarkFolder: bookmark.folder,
+        bookmarkOrder: bookmark.order,
+      };
+      entries.push(entry);
+      existingKeys.add(importEntryKey(entry));
+      imported += 1;
+      changed = true;
     }
-    skipped += removedBookmarks;
+
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      if (entry.type !== 'bookmark') continue;
+      if (entry.source !== browserId) continue;
+      if ((entry.sourceProfileId || '') !== sourceProfileId) continue;
+      if (seenBookmarkKeys.has(importEntryKey(entry))) continue;
+      existingKeys.delete(importEntryKey(entry));
+      entries.splice(i, 1);
+      changed = true;
+    }
   }
 
-  for (const bookmark of bookmarkRows) {
-    const host = extractHost(bookmark.url);
-    if (!host) {
-      skipped += 1;
-      continue;
-    }
-    const entry = {
-      id: makeId(),
-      type: 'bookmark' as const,
-      query: bookmark.title || host,
-      url: bookmark.url,
-      host,
-      lastUsedAt: bookmark.dateAdded || Date.now(),
-      useCount: 1,
-      source: browserId,
-      sourceProfileId,
-      sourceProfileName,
-      bookmarkFolder: bookmark.folder,
-      bookmarkOrder: bookmark.order,
-    };
-    entries.push(entry);
-    existingKeys.add(importEntryKey(entry));
-    imported += 1;
-  }
-
+  const beforePruneLength = entries.length;
   pruneByRetentionInPlace(entries);
   trimToCapInPlace(entries);
+  if (entries.length !== beforePruneLength) changed = true;
   cache = entries;
-  save();
+  if (changed) {
+    bumpBrowserSearchRevision();
+    save();
+  }
 
   return { imported, skipped, total: rows.length + bookmarkRows.length };
 }

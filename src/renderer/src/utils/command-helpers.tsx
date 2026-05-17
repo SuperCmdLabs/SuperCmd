@@ -1083,6 +1083,7 @@ function renderBrowserFaviconIcon(faviconUrl: string, kind?: CommandInfo['browse
       <img
         src={faviconUrl}
         alt=""
+        loading="lazy"
         className="relative z-10 w-4 h-4 rounded-[3px] object-contain"
         draggable={false}
         referrerPolicy="no-referrer"

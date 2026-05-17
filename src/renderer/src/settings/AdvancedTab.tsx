@@ -6,7 +6,7 @@ import type {
   BrowserProfileConnectionStatus,
   BrowserProfileSetting,
   BrowserTabEntry,
-  BrowserSearchEntry,
+  BrowserSearchStats,
   BrowserSearchImportableProfile,
   BrowserSearchResultGroupSetting,
   BrowserSearchSettings,
@@ -140,27 +140,27 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
   const [profiles, setProfiles] = useState<BrowserSearchImportableProfile[]>([]);
   const [profileStatuses, setProfileStatuses] = useState<BrowserProfileConnectionStatus[]>([]);
   const [dragProfileId, setDragProfileId] = useState<string>('');
-  const [entries, setEntries] = useState<BrowserSearchEntry[]>([]);
+  const [browserSearchStats, setBrowserSearchStats] = useState<BrowserSearchStats | null>(null);
   const [tabs, setTabs] = useState<BrowserTabEntry[]>([]);
   const [busyProfileId, setBusyProfileId] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<string>('');
 
   const refreshBrowserData = useCallback(async () => {
     try {
-      const [profileList, statuses, entryList, tabList] = await Promise.all([
+      const [profileList, statuses, stats, tabList] = await Promise.all([
         window.electron.browserSearchListProfiles(),
         window.electron.browserProfilesStatuses?.() ?? Promise.resolve([]),
-        window.electron.browserSearchListEntries(),
+        window.electron.browserSearchStats?.() ?? Promise.resolve(null),
         window.electron.browserTabsList?.() ?? Promise.resolve([]),
       ]);
       setProfiles(profileList);
       setProfileStatuses(Array.isArray(statuses) ? statuses : []);
-      setEntries(entryList);
+      setBrowserSearchStats(stats);
       setTabs(Array.isArray(tabList) ? tabList : []);
     } catch {
       setProfiles([]);
       setProfileStatuses([]);
-      setEntries([]);
+      setBrowserSearchStats(null);
       setTabs([]);
     }
   }, []);
@@ -301,18 +301,8 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
   const chromiumProfiles = availableProfiles.filter((profile) => CHROMIUM_BROWSER_IDS.has(profile.browserId));
   const detectedProfiles = chromiumProfiles.filter((profile) => !enabledProfileIds.has(profile.id));
   const statusByProfileId = new Map(profileStatuses.map((status) => [status.profileSourceId, status]));
-  const historyCountByProfileId = entries.reduce((counts, entry) => {
-    if (entry.type !== 'url' || !entry.sourceProfileId) return counts;
-    const profileSourceId = `${entry.source}:${entry.sourceProfileId}`;
-    counts.set(profileSourceId, (counts.get(profileSourceId) || 0) + 1);
-    return counts;
-  }, new Map<string, number>());
-  const bookmarkCountByProfileId = entries.reduce((counts, entry) => {
-    if (entry.type !== 'bookmark' || !entry.sourceProfileId) return counts;
-    const profileSourceId = `${entry.source}:${entry.sourceProfileId}`;
-    counts.set(profileSourceId, (counts.get(profileSourceId) || 0) + 1);
-    return counts;
-  }, new Map<string, number>());
+  const historyCountByProfileId = new Map(Object.entries(browserSearchStats?.profileCountsByKind?.history || {}));
+  const bookmarkCountByProfileId = new Map(Object.entries(browserSearchStats?.profileCountsByKind?.bookmark || {}));
   const tabCountByProfileId = tabs.reduce((counts, tab) => {
     if (!tab.profileSourceId) return counts;
     counts.set(tab.profileSourceId, (counts.get(tab.profileSourceId) || 0) + 1);

@@ -780,6 +780,7 @@ const App: React.FC = () => {
     setIsCompactCollapsed,
     refreshBrowserOpenTabs: browserSearch.refreshOpenTabs,
     refreshBrowserEntries: browserSearch.refreshBrowserEntries,
+    refreshBrowserEntriesIfStale: browserSearch.refreshBrowserEntriesIfStale,
   });
 
   useEffect(() => {
@@ -1802,6 +1803,7 @@ const App: React.FC = () => {
     setWebSearchQuery,
     refreshBrowserOpenTabs: browserSearch.refreshOpenTabs,
     refreshBrowserEntries: browserSearch.refreshBrowserEntries,
+    refreshBrowserEntriesIfStale: browserSearch.refreshBrowserEntriesIfStale,
   });
 
   useEffect(() => {

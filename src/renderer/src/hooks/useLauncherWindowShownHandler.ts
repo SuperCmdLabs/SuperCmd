@@ -81,6 +81,7 @@ export type UseLauncherWindowShownHandlerOptions = {
 
   refreshBrowserOpenTabs: () => void | Promise<void>;
   refreshBrowserEntries: () => void | Promise<void>;
+  refreshBrowserEntriesIfStale: () => void | Promise<void>;
 };
 
 export function useLauncherWindowShownHandler(
@@ -145,6 +146,7 @@ export function useLauncherWindowShownHandler(
     setIsCompactCollapsed,
     refreshBrowserOpenTabs,
     refreshBrowserEntries,
+    refreshBrowserEntriesIfStale,
   } = options;
 
   const hasPersistableViewRef = useRef(false);
@@ -279,9 +281,9 @@ export function useLauncherWindowShownHandler(
           setShowSnippetManager(null);
           setShowQuickLinkManager(null);
           setShowFileSearch(false);
-          refreshBrowserEntries();
           setBrowserResultsViewScope('bookmarks');
           setBrowserResultsViewQuery('');
+          refreshBrowserEntriesIfStale();
           return;
         }
         if (routedSystemCommandId === BROWSER_SEARCH_HISTORY_COMMAND_ID) {
@@ -289,10 +291,10 @@ export function useLauncherWindowShownHandler(
           setShowSnippetManager(null);
           setShowQuickLinkManager(null);
           setShowFileSearch(false);
-          refreshBrowserEntries();
           setBrowserHistoryProfileMenuOpen(false);
           setBrowserResultsViewScope('history');
           setBrowserResultsViewQuery('');
+          refreshBrowserEntriesIfStale();
           return;
         }
         if (routedSystemCommandId === 'system-my-schedule') {
@@ -440,6 +442,7 @@ export function useLauncherWindowShownHandler(
     pendingWindowShownQueryRef,
     popToRootTimeoutMsRef,
     refreshBrowserEntries,
+    refreshBrowserEntriesIfStale,
     refreshBrowserOpenTabs,
     requestPendingInlineArgumentFocus,
     resetCursorPromptState,

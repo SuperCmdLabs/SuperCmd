@@ -73,6 +73,7 @@ interface UseBrowserSearchResult {
   profileFilters: BrowserProfileFilters;
   refreshOpenTabs: () => void;
   refreshBrowserEntries: () => void;
+  refreshBrowserEntriesIfStale: () => void;
   getMatchKind: (input: string, completion?: BrowserSearchAutocomplete | null) => 'open-tab' | 'history' | 'search';
   hasOpenTabMatch: (input: string) => boolean;
   executeBrowserSearch: (input: string, options?: BrowserSearchExecuteOptions) => Promise<boolean>;
@@ -103,6 +104,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   const profilesRef = useRef<BrowserProfileSetting[]>([]);
   const profileFiltersRef = useRef<BrowserProfileFilters>({});
   const entryIndexRef = useRef<BrowserEntryIndex | null>(null);
+  const entriesRevisionRef = useRef<number | null>(null);
   entriesRef.current = entries;
   tabsRef.current = tabs;
   nicknamesRef.current = nicknames;
@@ -110,15 +112,41 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   profileFiltersRef.current = profileFilters;
   entryIndexRef.current = useMemo(() => buildBrowserEntryIndex(entries), [entries]);
 
+  const applyBrowserEntryPayload = useCallback((payload: BrowserSearchEntry[] | { revision?: number; entries?: BrowserSearchEntry[] }) => {
+    const nextRevision = Array.isArray(payload) ? null : Number(payload?.revision);
+    const nextEntries = Array.isArray(payload) ? payload : Array.isArray(payload?.entries) ? payload.entries : [];
+    if (Number.isFinite(nextRevision)) {
+      if (entriesRevisionRef.current === nextRevision) return;
+      entriesRevisionRef.current = nextRevision;
+    }
+    setEntries(nextEntries);
+  }, []);
+
   const refreshEntries = useCallback(() => {
     window.electron.browserSearchListEntries()
       .then((entryList) => {
-        setEntries(Array.isArray(entryList) ? entryList : []);
+        applyBrowserEntryPayload(entryList);
       })
       .catch(() => {
         setEntries([]);
       });
-  }, []);
+  }, [applyBrowserEntryPayload]);
+
+  const refreshEntriesIfStale = useCallback(() => {
+    const getRevision = window.electron.browserSearchRevision;
+    if (!getRevision) {
+      refreshEntries();
+      return;
+    }
+    getRevision()
+      .then((revision) => {
+        if (entriesRevisionRef.current === revision) return;
+        refreshEntries();
+      })
+      .catch(() => {
+        refreshEntries();
+      });
+  }, [refreshEntries]);
 
   const refreshTabs = useCallback(() => {
     const listTabs = window.electron.browserTabsList;
@@ -173,13 +201,13 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
 
   useEffect(() => {
     refreshEntries();
-    const unsubscribe = window.electron.onBrowserSearchHistoryChanged?.(() => refreshEntries());
+    const unsubscribe = window.electron.onBrowserSearchHistoryChanged?.(() => refreshEntriesIfStale());
     return () => {
       try {
         unsubscribe?.();
       } catch {}
     };
-  }, [refreshEntries]);
+  }, [refreshEntries, refreshEntriesIfStale]);
 
   const getTopResult = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult | null => {
     if (!enabled) return null;
@@ -293,10 +321,12 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   }, []);
 
   const getBookmarkResults = useCallback((rawInput: string, limit = MAX_SCOPED_BOOKMARK_RESULTS): BrowserSearchResult[] => {
+    const index = entryIndexRef.current;
     return filterBrowserResultsForKind('bookmark', decorateBrowserResults(getBrowserEntryCandidates('bookmark', rawInput, entriesRef.current, {
       preserveBookmarkOrder: !rawInput.trim(),
       limit,
       nicknames: nicknamesRef.current,
+      candidateEntryIds: rawInput.trim() ? undefined : index?.bookmarksByBrowserOrderEntryIds,
     }), profilesRef.current), profileFiltersRef.current, profilesRef.current);
   }, []);
 
@@ -306,23 +336,19 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     showProfileContext = false,
     limit = MAX_SCOPED_HISTORY_RESULTS
   ): BrowserSearchResult[] => {
+    const index = entryIndexRef.current;
     return filterBrowserResultsForKind('history', decorateBrowserResults(getBrowserEntryCandidates('history', rawInput, entriesRef.current, {
       preserveHistoryChronology: true,
       includeHistoryTimestamp: true,
       showHistoryProfileContext: showProfileContext,
       profileIds,
       limit,
+      candidateEntryIds: rawInput.trim() ? undefined : index?.historyByTimeEntryIds,
     }), profilesRef.current), profileFiltersRef.current, profilesRef.current);
   }, []);
 
   const getHistoryProfiles = useCallback((): BrowserHistoryProfileOption[] => {
-    const counts = new Map<string, number>();
-    for (const entry of entriesRef.current) {
-      if (entry.type !== 'url') continue;
-      if (!entry.sourceProfileId) continue;
-      const id = getEntryProfileKey(entry);
-      counts.set(id, (counts.get(id) || 0) + 1);
-    }
+    const counts = entryIndexRef.current?.profileCountsByKind.history || new Map<string, number>();
     return profilesRef.current
       .map((profile) => ({
         id: profile.id,
@@ -342,12 +368,11 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
         counts.set(tab.profileSourceId, (counts.get(tab.profileSourceId) || 0) + 1);
       }
     } else {
-      const entryType = kind === 'bookmark' ? 'bookmark' : 'url';
-      for (const entry of entriesRef.current) {
-        if (entry.type !== entryType) continue;
-        if (!entry.sourceProfileId) continue;
-        const id = getEntryProfileKey(entry);
-        counts.set(id, (counts.get(id) || 0) + 1);
+      const indexCounts = kind === 'bookmark'
+        ? entryIndexRef.current?.profileCountsByKind.bookmark
+        : entryIndexRef.current?.profileCountsByKind.history;
+      if (indexCounts) {
+        for (const [id, count] of indexCounts) counts.set(id, count);
       }
     }
     const configured: BrowserHistoryProfileOption[] = profilesRef.current.map((profile) => ({
@@ -361,8 +386,8 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   }, []);
 
   return useMemo(
-    () => ({ enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshOpenTabs: refreshTabs, refreshBrowserEntries: refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
-    [enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshTabs, refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
+    () => ({ enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshOpenTabs: refreshTabs, refreshBrowserEntries: refreshEntries, refreshBrowserEntriesIfStale: refreshEntriesIfStale, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
+    [enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshTabs, refreshEntries, refreshEntriesIfStale, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
   );
 }
 
@@ -559,18 +584,43 @@ type BrowserEntryIndex = {
   bookmarkPrefixToEntryIds: Map<string, number[]>;
   historyContainsToEntryIds: Map<string, number[]>;
   bookmarkContainsToEntryIds: Map<string, number[]>;
+  historyByTimeEntryIds: number[];
+  bookmarksByBrowserOrderEntryIds: number[];
+  profileCountsByKind: {
+    history: Map<string, number>;
+    bookmark: Map<string, number>;
+  };
 };
 
 const BROWSER_ENTRY_INDEX_MAX_PREFIX_LENGTH = 24;
-const browserEntrySearchIndexCache = new WeakMap<BrowserSearchEntry, BrowserEntrySearchIndex>();
+const BROWSER_ENTRY_INDEX_MAX_TOKEN_LENGTH = 128;
+const BROWSER_ENTRY_INDEX_MAX_URL_CHARS = 4096;
+const browserEntrySearchIndexCache = new Map<string, { fingerprint: string; index: BrowserEntrySearchIndex }>();
 
 function buildBrowserEntryIndex(entries: BrowserSearchEntry[]): BrowserEntryIndex {
   const historyPrefixToEntryIds = new Map<string, number[]>();
   const bookmarkPrefixToEntryIds = new Map<string, number[]>();
   const historyContainsToEntryIds = new Map<string, number[]>();
   const bookmarkContainsToEntryIds = new Map<string, number[]>();
+  const historyByTimeEntryIds: number[] = [];
+  const bookmarksByBrowserOrderEntryIds: number[] = [];
+  const historyProfileCounts = new Map<string, number>();
+  const bookmarkProfileCounts = new Map<string, number>();
   entries.forEach((entry, entryId) => {
     if (entry.type !== 'url' && entry.type !== 'bookmark') return;
+    if (entry.type === 'url') {
+      historyByTimeEntryIds.push(entryId);
+      if (entry.sourceProfileId) {
+        const key = getEntryProfileKey(entry);
+        historyProfileCounts.set(key, (historyProfileCounts.get(key) || 0) + 1);
+      }
+    } else {
+      bookmarksByBrowserOrderEntryIds.push(entryId);
+      if (entry.sourceProfileId) {
+        const key = getEntryProfileKey(entry);
+        bookmarkProfileCounts.set(key, (bookmarkProfileCounts.get(key) || 0) + 1);
+      }
+    }
     const prefixTarget = entry.type === 'bookmark' ? bookmarkPrefixToEntryIds : historyPrefixToEntryIds;
     const containsTarget = entry.type === 'bookmark' ? bookmarkContainsToEntryIds : historyContainsToEntryIds;
     const searchIndex = getBrowserEntrySearchIndex(entry);
@@ -595,7 +645,34 @@ function buildBrowserEntryIndex(entries: BrowserSearchEntry[]): BrowserEntryInde
       addBrowserEntryIndexValue(containsTarget, key, entryId);
     }
   });
-  return { historyPrefixToEntryIds, bookmarkPrefixToEntryIds, historyContainsToEntryIds, bookmarkContainsToEntryIds };
+  historyByTimeEntryIds.sort((a, b) => compareHistoryEntriesByTime(entries[a], entries[b]));
+  bookmarksByBrowserOrderEntryIds.sort((a, b) => compareBookmarkEntriesByBrowserOrder(entries[a], entries[b]));
+  return {
+    historyPrefixToEntryIds,
+    bookmarkPrefixToEntryIds,
+    historyContainsToEntryIds,
+    bookmarkContainsToEntryIds,
+    historyByTimeEntryIds,
+    bookmarksByBrowserOrderEntryIds,
+    profileCountsByKind: {
+      history: historyProfileCounts,
+      bookmark: bookmarkProfileCounts,
+    },
+  };
+}
+
+function compareHistoryEntriesByTime(a: BrowserSearchEntry, b: BrowserSearchEntry): number {
+  const aTime = Number.isFinite(Number(a?.lastUsedAt)) ? Number(a.lastUsedAt) : 0;
+  const bTime = Number.isFinite(Number(b?.lastUsedAt)) ? Number(b.lastUsedAt) : 0;
+  if (bTime !== aTime) return bTime - aTime;
+  return String(a?.query || '').localeCompare(String(b?.query || ''));
+}
+
+function compareBookmarkEntriesByBrowserOrder(a: BrowserSearchEntry, b: BrowserSearchEntry): number {
+  const aOrder = Number.isFinite(Number(a?.bookmarkOrder)) ? Number(a.bookmarkOrder) : Number.MAX_SAFE_INTEGER;
+  const bOrder = Number.isFinite(Number(b?.bookmarkOrder)) ? Number(b.bookmarkOrder) : Number.MAX_SAFE_INTEGER;
+  if (aOrder !== bOrder) return aOrder - bOrder;
+  return String(a?.query || '').localeCompare(String(b?.query || ''));
 }
 
 function addBrowserEntryIndexValue(target: Map<string, number[]>, key: string, entryId: number): void {
@@ -836,6 +913,48 @@ function getBrowserEntryCandidates(
   const shouldBoundResults = Boolean(options.limit && options.limit > 0 && !options.preserveBookmarkOrder && !options.preserveHistoryChronology);
   const workingLimit = shouldBoundResults ? Math.max(Number(options.limit) * 3, Number(options.limit) + 80) : 0;
   const results: BrowserSearchResult[] = [];
+  if (!hasQuery && options.limit && options.limit > 0 && options.candidateEntryIds) {
+    for (const entryId of options.candidateEntryIds) {
+      const entry = entries[entryId];
+      if (!entry) continue;
+      if (entry.type !== entryType) continue;
+      if (kind === 'history' && profileFilter && !profileFilter.has(getEntryProfileKey(entry))) continue;
+      const index = getBrowserEntrySearchIndex(entry);
+      const savedNickname = kind === 'bookmark'
+        ? findBookmarkNickname(entry, options.nicknames || [])
+        : '';
+      const freshnessFactor = kind === 'history' ? getHistoryFreshnessFactor(entry.lastUsedAt) : 1;
+      results.push({
+        id: `browser-result-${kind}:${entry.id}`,
+        kind,
+        title: entry.query || entry.host || entry.url,
+        subtitle: options.includeHistoryTimestamp && kind === 'history'
+          ? buildHistorySubtitle(entry, Boolean(options.showHistoryProfileContext))
+          : buildBrowserSubtitle(entry.sourceProfileName || '', '', entry.host),
+        url: entry.url,
+        actionInput: entry.url,
+        focusAvailable: false,
+        faviconUrl: index.faviconUrl,
+        source: entry.source,
+        sourceProfileId: entry.sourceProfileId ? getEntryProfileKey(entry) : undefined,
+        browserName: index.browserLabel,
+        profileName: entry.sourceProfileName || entry.sourceProfileId,
+        bookmarkFolder: entry.bookmarkFolder,
+        bookmarkOrder: entry.bookmarkOrder,
+        lastUsedAt: entry.lastUsedAt,
+        score: kind === 'history'
+          ? freshnessFactor * 650 + getHistoryFrequencyScore(entry.useCount, freshnessFactor)
+          : 250,
+        completion: '',
+        nickname: savedNickname,
+        nicknameMatch: false,
+        matchKind: 'subsequence',
+        rawMatchScore: 0,
+      });
+      if (results.length >= options.limit) break;
+    }
+    return results;
+  }
   const candidateEntries = options.candidateEntryIds
     ? options.candidateEntryIds.map((entryId) => entries[entryId]).filter((entry): entry is BrowserSearchEntry => Boolean(entry))
     : entries;
@@ -1219,12 +1338,14 @@ function normalizeNicknameUrl(value: string): string {
 }
 
 function getBrowserEntrySearchIndex(entry: BrowserSearchEntry): BrowserEntrySearchIndex {
-  const cached = browserEntrySearchIndexCache.get(entry);
-  if (cached) return cached;
+  const cacheKey = String(entry.id || `${entry.source}:${entry.sourceProfileId || ''}:${entry.type}:${entry.url}`);
+  const fingerprint = getBrowserEntrySearchFingerprint(entry);
+  const cached = browserEntrySearchIndexCache.get(cacheKey);
+  if (cached?.fingerprint === fingerprint) return cached.index;
   const browserLabel = getBrowserSourceLabel(entry.source);
   const searchFields: TokenSearchField[] = [
     { value: normalizeForTokenSearch(entry.query), weight: 1.15 },
-    { value: normalizeForTokenSearch(entry.url), weight: 1 },
+    { value: normalizeForTokenSearch(entry.url, BROWSER_ENTRY_INDEX_MAX_URL_CHARS), weight: 1 },
     { value: normalizeForTokenSearch(entry.host), weight: 1 },
     { value: normalizeForTokenSearch(entry.bookmarkFolder || ''), weight: 0.65 },
     { value: normalizeForTokenSearch(entry.sourceProfileName || entry.sourceProfileId || ''), weight: 0.35 },
@@ -1233,14 +1354,34 @@ function getBrowserEntrySearchIndex(entry: BrowserSearchEntry): BrowserEntrySear
   const searchBlob = Array.from(new Set(searchFields.map((field) => field.value).filter(Boolean))).join(' ');
   const index: BrowserEntrySearchIndex = {
     normalizedQuery: String(entry.query || '').trim().toLowerCase(),
-    normalizedUrl: normalizeUrlForCompletion(entry.url || entry.host),
+    normalizedUrl: normalizeUrlForCompletion(entry.url || entry.host, BROWSER_ENTRY_INDEX_MAX_URL_CHARS),
     searchBlob,
     searchFields,
     faviconUrl: getFaviconUrlForUrl(entry.url),
     browserLabel,
   };
-  browserEntrySearchIndexCache.set(entry, index);
+  browserEntrySearchIndexCache.set(cacheKey, { fingerprint, index });
   return index;
+}
+
+function getBrowserEntrySearchFingerprint(entry: BrowserSearchEntry): string {
+  return [
+    entry.type,
+    entry.source,
+    entry.sourceProfileId || '',
+    compactFingerprintPart(entry.query),
+    compactFingerprintPart(entry.url),
+    compactFingerprintPart(entry.host),
+    compactFingerprintPart(entry.bookmarkFolder || ''),
+    compactFingerprintPart(entry.sourceProfileName || ''),
+    String(entry.bookmarkOrder ?? ''),
+  ].join('\0');
+}
+
+function compactFingerprintPart(value: string | undefined): string {
+  const text = String(value || '');
+  if (text.length <= 256) return text;
+  return `${text.length}:${text.slice(0, 128)}:${text.slice(-128)}`;
 }
 
 function getOpenTabSearchFields(tab: BrowserTabEntry): TokenSearchField[] {
@@ -1303,15 +1444,19 @@ function getSingleTokenMatchScore(queryToken: string, fieldValue: string): numbe
   return 0;
 }
 
-function normalizeForTokenSearch(value: string): string {
+function normalizeForTokenSearch(value: string, maxChars = Number.MAX_SAFE_INTEGER): string {
   return String(value || '')
+    .slice(0, maxChars)
     .trim()
     .toLowerCase()
     .replace(/^https?:\/\//, '')
     .replace(/\bwww\./g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    .split(' ')
+    .filter((token) => token.length <= BROWSER_ENTRY_INDEX_MAX_TOKEN_LENGTH)
+    .join(' ');
 }
 
 function getMatchQuality(urlScore: number, titleScore: number, tokenScore: number): number {
@@ -1374,8 +1519,8 @@ function windowFocusBoost(windowLastFocusedAt: number): number {
   return 900 / (1 + Math.log10(1 + ageMinutes));
 }
 
-function normalizeUrlForCompletion(sourceUrl: string): string {
-  return String(sourceUrl || '').replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+function normalizeUrlForCompletion(sourceUrl: string, maxChars = Number.MAX_SAFE_INTEGER): string {
+  return String(sourceUrl || '').slice(0, maxChars).replace(/^https?:\/\//i, '').replace(/\/+$/, '');
 }
 
 function browserResultToEntry(result: BrowserSearchResult): BrowserSearchEntry {
