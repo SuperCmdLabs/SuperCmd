@@ -10,6 +10,7 @@ import { isEditableElement } from '../utils/launcher-misc';
 
 export type UseLauncherKeyboardControlsOptions = {
   inputRef: React.RefObject<HTMLInputElement>;
+  isLauncherModeActiveRef: React.MutableRefObject<boolean>;
   inlineArgumentInputRefs: React.MutableRefObject<(HTMLInputElement | HTMLSelectElement | null)[]>;
   inlineQuickLinkInputRefs: React.MutableRefObject<(HTMLInputElement | null)[]>;
 
@@ -95,6 +96,7 @@ export function useLauncherKeyboardControls(
 } {
   const {
     inputRef,
+    isLauncherModeActiveRef,
     inlineArgumentInputRefs,
     inlineQuickLinkInputRefs,
     displayCommands,
@@ -190,13 +192,15 @@ export function useLauncherKeyboardControls(
   );
 
   const handleLauncherSearchBlur = useCallback(() => {
+    if (!isLauncherModeActiveRef.current) return;
     requestAnimationFrame(() => {
+      if (!isLauncherModeActiveRef.current) return;
       const activeElement = document.activeElement;
       if (activeElement === inputRef.current) return;
       if (isEditableElement(activeElement)) return;
       inputRef.current?.focus();
     });
-  }, [inputRef]);
+  }, [inputRef, isLauncherModeActiveRef]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

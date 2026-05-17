@@ -275,6 +275,7 @@ const App: React.FC = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const browserResultsViewInputRef = useRef<HTMLInputElement>(null);
   const webSearchInputRef = useRef<HTMLInputElement>(null);
+  const isLauncherModeActiveRef = useRef(false);
   const fileSearchRequestSeqRef = useRef(0);
   const commandsRef = useRef<CommandInfo[]>([]);
   const lastCommandsFetchAtRef = useRef(0);
@@ -1276,6 +1277,7 @@ const App: React.FC = () => {
     !showWindowManager &&
     !showOnboarding &&
     !showWhisperOnboarding;
+  isLauncherModeActiveRef.current = isLauncherModeActive;
   const shouldKeepLauncherSearchResults =
     isLauncherModeActive || showActions || Boolean(contextMenu);
 
@@ -2974,6 +2976,7 @@ const App: React.FC = () => {
     handleInlineQuickLinkDynamicValueChange,
   } = useLauncherKeyboardControls({
     inputRef,
+    isLauncherModeActiveRef,
     inlineArgumentInputRefs,
     inlineQuickLinkInputRefs,
     displayCommands,
