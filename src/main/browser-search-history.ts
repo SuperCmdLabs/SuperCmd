@@ -18,6 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
 
+import { resolveBrowserInput } from './browser-input-resolver';
 import { loadSettings } from './settings-store';
 
 const execFileAsync = promisify(execFile);
@@ -158,12 +159,6 @@ function makeId(): string {
 
 // ─── URL detection ──────────────────────────────────────────────────
 
-const URL_PROTOCOL_RE = /^[a-z][\w+.\-]*:\/\//i;
-const LOCALHOST_RE = /^localhost(:\d+)?(\/.*)?$/i;
-const IP_RE = /^\d{1,3}(?:\.\d{1,3}){3}(:\d+)?(\/.*)?$/;
-// Liberal but cautious URL char set — anything beyond this and we treat as search.
-const URL_BODY_RE = /^[\w.\-:/?#[\]@!$&'()*+,;=%~]+$/;
-
 export interface ResolvedInput {
   type: BrowserSearchEntryType;
   /** URL to actually navigate to — for search this is a Google search URL. */
@@ -173,28 +168,13 @@ export interface ResolvedInput {
 }
 
 export function resolveInput(rawInput: string): ResolvedInput | null {
-  const trimmed = String(rawInput || '').trim();
-  if (!trimmed) return null;
-
-  if (URL_PROTOCOL_RE.test(trimmed)) {
-    return { type: 'url', url: trimmed, host: extractHost(trimmed) };
-  }
-
-  const noSpaces = !/\s/.test(trimmed);
-  const looksLikeUrl =
-    noSpaces &&
-    URL_BODY_RE.test(trimmed) &&
-    (LOCALHOST_RE.test(trimmed) || IP_RE.test(trimmed) || /^[\w-]+(\.[\w-]+)+/.test(trimmed));
-
-  if (looksLikeUrl) {
-    const url = `https://${trimmed}`;
-    return { type: 'url', url, host: extractHost(url) };
-  }
-
-  // Default search engine intentionally hardcoded. Plain typed searches still
-  // open in the user's default browser via shell.openExternal.
-  const url = `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
-  return { type: 'search', url, host: '' };
+  const resolved = resolveBrowserInput(rawInput);
+  if (!resolved) return null;
+  return {
+    type: resolved.type,
+    url: resolved.url,
+    host: resolved.host,
+  };
 }
 
 function extractHost(url: string): string {

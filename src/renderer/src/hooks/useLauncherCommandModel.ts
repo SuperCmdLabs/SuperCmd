@@ -17,6 +17,7 @@ import {
   getFileResultPathFromCommand,
 } from '../utils/launcher-file-results';
 import { MAX_RECENT_SECTION_ITEMS } from '../utils/launcher-misc';
+import type { BrowserInputResolution } from '../utils/browser-input-resolver';
 import {
   BROWSER_SEARCH_OPEN_URL_ID,
   BROWSER_SEARCH_RESULT_ID_PREFIX,
@@ -76,6 +77,7 @@ export type UseLauncherCommandModelParams = {
 
   selectedIndex: number;
   launcherInputValue: string;
+  defaultBrowserIconDataUrl: string;
 
   t: (key: string, params?: Record<string, string | number>) => string;
 };
@@ -134,6 +136,7 @@ export function useLauncherCommandModel({
   rootWebSearchSuggestions,
   selectedIndex,
   launcherInputValue,
+  defaultBrowserIconDataUrl,
   t,
 }: UseLauncherCommandModelParams): UseLauncherCommandModelResult {
   const calcRequestSeqRef = useRef(0);
@@ -295,11 +298,42 @@ export function useLauncherCommandModel({
     return browserSearch.getTopResult(searchQuery, browserSearchResultGroups);
   }, [browserSearch, browserSearchResultGroups, searchQuery, aiMode, rootBangState]);
 
+  const rootResolvedBrowserInput = useMemo<BrowserInputResolution | null>(() => {
+    if (!browserSearch.enabled) return null;
+    if (aiMode) return null;
+    if (rootBangState.mode !== 'none') return null;
+    const subject = searchQuery.trim();
+    if (!subject) return null;
+    return browserSearch.resolve(subject);
+  }, [browserSearch, searchQuery, aiMode, rootBangState]);
+
   const browserSearchSyntheticCommand = useMemo<CommandInfo | null>(() => {
     if (!browserSearch.enabled) return null;
     if (aiMode) return null;
     const subject = launcherInputValue.trim();
     if (!subject) return null;
+    const resolved = rootResolvedBrowserInput;
+    if (resolved?.type === 'url') {
+      const typedSubject = searchQuery.trim();
+      const browserMatchKind = browserSearch.getMatchKind(
+        typedSubject,
+        browserSearchAutoComplete as Parameters<typeof browserSearch.getMatchKind>[1]
+      );
+      const hasOpenTabMatch = browserMatchKind === 'open-tab';
+      return {
+        id: BROWSER_SEARCH_OPEN_URL_ID,
+        title: t('launcher.browserSearch.openUrl', { url: resolved.display || typedSubject || subject }),
+        subtitle: t('launcher.categories.browser'),
+        category: 'system',
+        keywords: [typedSubject, resolved.url, resolved.host],
+        iconDataUrl: defaultBrowserIconDataUrl || undefined,
+        alwaysOnTop: true,
+        browserMatchKind,
+        browserResultKind: undefined,
+        browserActionInput: typedSubject || resolved.url,
+        browserFocusAvailable: hasOpenTabMatch,
+      };
+    }
     if (browserSearchTopResult) {
       return {
         id: BROWSER_SEARCH_OPEN_URL_ID,
@@ -315,32 +349,8 @@ export function useLauncherCommandModel({
         browserFocusAvailable: browserSearchTopResult.focusAvailable,
       };
     }
-    const resolved = browserSearch.resolve(subject);
-    if (!resolved) return null;
-    if (resolved.type === 'url') {
-      const displayUrl = subject.replace(/^https?:\/\//i, '').replace(/\/+$/, '') || resolved.host || subject;
-      const browserMatchKind = browserSearch.getMatchKind(
-        subject,
-        browserSearchAutoComplete as Parameters<typeof browserSearch.getMatchKind>[1]
-      );
-      const hasOpenTabMatch = browserMatchKind === 'open-tab';
-      return {
-        id: BROWSER_SEARCH_OPEN_URL_ID,
-        title: t('launcher.browserSearch.openUrl', { url: displayUrl }),
-        subtitle: hasOpenTabMatch
-          ? t('launcher.browserSearch.subtitle.openTabMatch')
-          : t('launcher.browserSearch.subtitle.openUrl'),
-        category: 'system',
-        keywords: [],
-        alwaysOnTop: true,
-        browserMatchKind,
-        browserResultKind: hasOpenTabMatch ? 'open-tab' : undefined,
-        browserActionInput: subject,
-        browserFocusAvailable: hasOpenTabMatch,
-      };
-    }
     return null;
-  }, [browserSearch, browserSearchAutoComplete, browserSearchTopResult, launcherInputValue, aiMode, t, groupedCommands]);
+  }, [browserSearch, browserSearchAutoComplete, browserSearchTopResult, rootResolvedBrowserInput, searchQuery, launcherInputValue, defaultBrowserIconDataUrl, aiMode, t]);
 
   const browserSearchResultCommands = useMemo<CommandInfo[]>(() => {
     if (!browserSearch.enabled) return [];
@@ -348,7 +358,11 @@ export function useLauncherCommandModel({
     if (rootBangState.mode !== 'none') return [];
     const subject = searchQuery;
     if (!subject.trim()) return [];
-    const topUrl = browserSearchTopResult ? normalizeBrowserCommandUrl(browserSearchTopResult.url) : '';
+    const topUrl = rootResolvedBrowserInput?.type === 'url'
+      ? normalizeBrowserCommandUrl(rootResolvedBrowserInput.url)
+      : browserSearchTopResult
+        ? normalizeBrowserCommandUrl(browserSearchTopResult.url)
+        : '';
     const limitedResults = browserSearch
       .getResults(subject, browserSearchResultGroups)
       .filter((result) => normalizeBrowserCommandUrl(result.url) !== topUrl);
@@ -376,10 +390,11 @@ export function useLauncherCommandModel({
       });
     }
     return commands;
-  }, [browserSearch, browserSearchResultGroups, browserSearchTopResult, searchQuery, aiMode, rootBangState, t]);
+  }, [browserSearch, browserSearchResultGroups, browserSearchTopResult, rootResolvedBrowserInput, searchQuery, aiMode, rootBangState, t]);
 
   const webSearchRootDirectCommand = useMemo<CommandInfo | null>(() => {
     if (aiMode) return null;
+    if (rootBangState.mode === 'none' && rootResolvedBrowserInput?.type === 'url') return null;
     const subject = rootBangState.mode === 'active'
       ? rootBangState.query.trim()
       : launcherInputValue.trim();
@@ -404,10 +419,11 @@ export function useLauncherCommandModel({
       browserFaviconUrl: getFaviconUrlForHost(provider.host),
       browserActionInput: activeBang ? `${searchSubject} !${activeBang.key}` : searchSubject,
     };
-  }, [aiMode, launcherInputValue, rootBangState, t, webSearchDefaultBangKey, effectiveSearchBangs]);
+  }, [aiMode, launcherInputValue, rootBangState, rootResolvedBrowserInput, t, webSearchDefaultBangKey, effectiveSearchBangs]);
 
   const webSearchRootSuggestionCommands = useMemo<CommandInfo[]>(() => {
     if (aiMode) return [];
+    if (rootBangState.mode === 'none' && rootResolvedBrowserInput?.type === 'url') return [];
     const subject = rootBangState.mode === 'active'
       ? rootBangState.query.trim()
       : launcherInputValue.trim();
@@ -436,7 +452,7 @@ export function useLauncherCommandModel({
       });
     }
     return commands;
-  }, [aiMode, launcherInputValue, rootBangState, rootWebSearchSuggestions, t, webSearchDefaultBangKey, effectiveSearchBangs]);
+  }, [aiMode, launcherInputValue, rootBangState, rootResolvedBrowserInput, rootWebSearchSuggestions, t, webSearchDefaultBangKey, effectiveSearchBangs]);
 
   const rootBangCandidateCommands = useMemo<CommandInfo[]>(() => {
     if (rootBangState.mode !== 'selecting') return [];

@@ -8,14 +8,12 @@ import type {
   BrowserSearchSource,
   BrowserTabEntry,
 } from '../../types/electron';
+import {
+  resolveBrowserInput,
+  type BrowserInputResolution,
+} from '../utils/browser-input-resolver';
 
-export interface ResolvedBrowserInput {
-  type: 'url' | 'search';
-  /** Resolved URL we'll open (search engine URL for `search` type). */
-  url: string;
-  /** Host for URL type, empty string for search. */
-  host: string;
-}
+export type ResolvedBrowserInput = BrowserInputResolution;
 
 export interface BrowserSearchResult {
   id: string;
@@ -274,25 +272,9 @@ const MAX_SCOPED_OPEN_TAB_RESULTS = 500;
 const MAX_TOP_BROWSER_RESULTS = 1;
 const MAX_ALL_BROWSER_RESULTS = 100;
 const PROVIDER_PRIORITY_SCORE_STEP = 120;
-const URL_PROTOCOL_RE = /^[a-z][\w+.\-]*:\/\//i;
-const LOCALHOST_RE = /^localhost(:\d+)?(\/.*)?$/i;
-const IP_RE = /^\d{1,3}(?:\.\d{1,3}){3}(:\d+)?(\/.*)?$/;
-const URL_BODY_RE = /^[\w.\-:/?#[\]@!$&'()*+,;=%~]+$/;
 
 function resolveLocal(rawInput: string): ResolvedBrowserInput | null {
-  const trimmed = String(rawInput || '').trim();
-  if (!trimmed) return null;
-  if (URL_PROTOCOL_RE.test(trimmed)) return { type: 'url', url: trimmed, host: extractHost(trimmed) };
-  const noSpaces = !/\s/.test(trimmed);
-  const looksLikeUrl =
-    noSpaces &&
-    URL_BODY_RE.test(trimmed) &&
-    (LOCALHOST_RE.test(trimmed) || IP_RE.test(trimmed) || /^[\w-]+(\.[\w-]+)+/.test(trimmed));
-  if (looksLikeUrl) {
-    const url = `https://${trimmed}`;
-    return { type: 'url', url, host: extractHost(url) };
-  }
-  return { type: 'search', url: `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`, host: '' };
+  return resolveBrowserInput(rawInput);
 }
 
 function extractHost(url: string): string {

@@ -14876,11 +14876,17 @@ return appURL's |path|() as text`,
   ipcMain.handle('get-default-application', async (_event: any, filePath: string) => {
     try {
       const { execSync } = require('child_process');
+      const target = String(filePath || '').trim();
+      const escapedTarget = target.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const isUrlTarget = /^[a-z][a-z0-9+.\-]*:\/\//i.test(target);
+      const urlLine = isUrlTarget
+        ? `set targetURL to current application's NSURL's URLWithString:"${escapedTarget}"`
+        : `set targetURL to current application's NSURL's fileURLWithPath:"${escapedTarget}"`;
       // Use Launch Services via AppleScript to find default app
       const script = `
         use framework "AppKit"
-        set fileURL to current application's NSURL's fileURLWithPath:"${filePath.replace(/"/g, '\\"')}"
-        set appURL to current application's NSWorkspace's sharedWorkspace()'s URLForApplicationToOpenURL:fileURL
+        ${urlLine}
+        set appURL to current application's NSWorkspace's sharedWorkspace()'s URLForApplicationToOpenURL:targetURL
         if appURL is missing value then
           error "No default application found"
         end if

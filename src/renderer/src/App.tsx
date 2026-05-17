@@ -151,6 +151,7 @@ const App: React.FC = () => {
   const [isCompactCollapsed, setIsCompactCollapsed] = useState(true);
   const [launcherFileIcons, setLauncherFileIcons] = useState<Record<string, string>>({});
   const [fileIsDirectoryMap, setFileIsDirectoryMap] = useState<Record<string, boolean>>({});
+  const [defaultBrowserIconDataUrl, setDefaultBrowserIconDataUrl] = useState('');
   const [launcherFooterStatus, setLauncherFooterStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const launcherFooterStatusTimerRef = useRef<number | null>(null);
   const [fileSearchInitialDetailPath, setFileSearchInitialDetailPath] = useState<string | null>(null);
@@ -1442,6 +1443,26 @@ const App: React.FC = () => {
 
   const launcherInputValue = browserSearchAutoComplete?.completion ?? searchQuery;
 
+  useEffect(() => {
+    let disposed = false;
+    void window.electron.getDefaultApplication('https://example.com')
+      .then((defaultApp) => {
+        if (disposed || !defaultApp?.path) return null;
+        return window.electron.getAppIconDataUrl(defaultApp.path, 20)
+          .then((appIcon) => appIcon || window.electron.getFileIconDataUrl(defaultApp.path, 20));
+      })
+      .then((iconDataUrl) => {
+        if (disposed || !iconDataUrl) return;
+        setDefaultBrowserIconDataUrl(iconDataUrl);
+      })
+      .catch(() => {
+        if (!disposed) setDefaultBrowserIconDataUrl('');
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
   const {
     calcResult,
     calcOffset,
@@ -1475,6 +1496,7 @@ const App: React.FC = () => {
     webSearchSuggestionLimit,
     selectedIndex,
     launcherInputValue,
+    defaultBrowserIconDataUrl,
     t,
   });
 

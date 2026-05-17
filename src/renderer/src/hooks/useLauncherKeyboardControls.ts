@@ -341,6 +341,22 @@ export function useLauncherKeyboardControls(
               return;
             }
           }
+          if (isSearchInputTarget && browserSearchAutoComplete?.completion && !e.shiftKey) {
+            e.preventDefault();
+            const completion = browserSearchAutoComplete.completion;
+            setBrowserSearchSkipAutoComplete(true);
+            setSearchQuery(completion);
+            setSelectedIndex(0);
+            requestAnimationFrame(() => {
+              const el = inputRef.current;
+              if (!el) return;
+              const end = completion.length;
+              try {
+                el.setSelectionRange(end, end);
+              } catch {}
+            });
+            return;
+          }
           if (isSearchInputTarget && aiAvailable && !shouldHideAskAi) {
             e.preventDefault();
             if (launcherViewMode === 'compact') {
