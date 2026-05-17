@@ -1994,6 +1994,17 @@ function ensureBackgroundRefreshForStaleCache(): void {
     });
 }
 
+export async function refreshCommandsNow(): Promise<CommandInfo[]> {
+  if (inflightDiscovery) {
+    return inflightDiscovery;
+  }
+
+  inflightDiscovery = discoverAndBuildCommands().finally(() => {
+    inflightDiscovery = null;
+  });
+  return inflightDiscovery;
+}
+
 export async function getAvailableCommands(): Promise<CommandInfo[]> {
   const now = Date.now();
   if (cachedCommands && now - cacheTimestamp < CACHE_TTL) {
@@ -2027,10 +2038,7 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
     return inflightDiscovery;
   }
 
-  inflightDiscovery = discoverAndBuildCommands().finally(() => {
-    inflightDiscovery = null;
-  });
-  return inflightDiscovery;
+  return refreshCommandsNow();
 }
 
 

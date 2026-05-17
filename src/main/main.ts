@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { fork, execFileSync, type ChildProcess } from 'child_process';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
-import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery } from './commands';
+import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery, refreshCommandsNow } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster, setExternalSettingsChangeHandler, settingsFileExistsOrICloudPlaceholder } from './settings-store';
 import type { AppSettings, RelocateMode } from './settings-store';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
@@ -11860,9 +11860,15 @@ function scheduleInstalledAppsRefresh(reason: string): void {
   }
   appInstallChangeDebounceTimer = setTimeout(() => {
     appInstallChangeDebounceTimer = null;
-    console.log(`[Commands] Invalidating cache due to app change: ${reason}`);
+    console.log(`[Commands] Refreshing cache due to app change: ${reason}`);
     invalidateCache();
-    broadcastCommandsUpdated();
+    void refreshCommandsNow()
+      .catch((error) => {
+        console.warn(`[Commands] App change refresh failed (${reason}):`, error);
+      })
+      .finally(() => {
+        broadcastCommandsUpdated();
+      });
   }, 1200);
 }
 
