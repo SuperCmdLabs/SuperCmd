@@ -12,7 +12,6 @@ import type {
   ExtensionBundle,
   AppSettings,
   IndexedFileSearchResult,
-  BrowserSearchNicknameSetting,
   BrowserSearchResultGroupSetting,
   WebSearchBangCustomProviderSetting,
   WebSearchBangEntry,
@@ -37,7 +36,8 @@ import { useMenuBarExtensions } from './hooks/useMenuBarExtensions';
 import { useBackgroundRefresh } from './hooks/useBackgroundRefresh';
 import { useSpeakManager } from './hooks/useSpeakManager';
 import { useWhisperManager } from './hooks/useWhisperManager';
-import { useBrowserSearch, type BrowserSearchResult } from './hooks/useBrowserSearch';
+import { useBrowserSearch } from './hooks/useBrowserSearch';
+import { useBrowserResultsController } from './hooks/useBrowserResultsController';
 import { useLauncherCommandModel } from './hooks/useLauncherCommandModel';
 import { useLauncherInlineArguments } from './hooks/useLauncherInlineArguments';
 import { useLauncherActionModel } from './hooks/useLauncherActionModel';
@@ -100,15 +100,8 @@ import {
 } from './utils/launcher-file-results';
 import {
   BROWSER_SEARCH_SHOW_ALL_RESULTS_ID,
-  type BrowserResultsViewScope,
-  canEditBrowserResultNickname,
   DEFAULT_BROWSER_SEARCH_RESULT_GROUPS,
-  formatBrowserHistoryDateSection,
-  getBrowserResultNicknameKey,
-  getSuggestedBookmarkNickname,
   isBrowserSearchCommand,
-  normalizeBookmarkNickname,
-  normalizeBookmarkNicknameUrl,
   normalizeBrowserSearchResultGroups,
 } from './utils/browser-search-commands';
 import {
@@ -181,11 +174,6 @@ const App: React.FC = () => {
   const [browserSearchResultGroups, setBrowserSearchResultGroups] = useState<BrowserSearchResultGroupSetting[]>(
     DEFAULT_BROWSER_SEARCH_RESULT_GROUPS
   );
-  const [browserResultsViewQuery, setBrowserResultsViewQuery] = useState<string | null>(null);
-  const [browserResultsViewScope, setBrowserResultsViewScope] = useState<BrowserResultsViewScope>('all');
-  const [browserResultsViewSelectedIndex, setBrowserResultsViewSelectedIndex] = useState(0);
-  const [browserHistorySelectedProfileIds, setBrowserHistorySelectedProfileIds] = useState<string[] | null>(null);
-  const [browserHistoryProfileMenuOpen, setBrowserHistoryProfileMenuOpen] = useState(false);
   const [webSearchQuery, setWebSearchQuery] = useState<string | null>(null);
   const [webSearchSelectedIndex, setWebSearchSelectedIndex] = useState(0);
   const [rootWebSearchSuggestions, setRootWebSearchSuggestions] = useState<string[]>([]);
@@ -253,10 +241,6 @@ const App: React.FC = () => {
   const [quickLinkEditId, setQuickLinkEditId] = useState<string | null>(null);
   const [quickLinkDynamicPrompt, setQuickLinkDynamicPrompt] =
     useState<QuickLinkDynamicPromptState | null>(null);
-  const [bookmarkNicknamePrompt, setBookmarkNicknamePrompt] = useState<{
-    result: BrowserSearchResult;
-    value: string;
-  } | null>(null);
   const [webSearchBangPrompt, setWebSearchBangPrompt] = useState<WebSearchBangPromptState | null>(null);
   const [webSearchCustomBangPrompt, setWebSearchCustomBangPrompt] = useState<WebSearchCustomBangPromptState | null>(null);
   const [webSearchVisibleResultCount, setWebSearchVisibleResultCount] = useState(WEB_SEARCH_INITIAL_VISIBLE_RESULTS);
@@ -273,7 +257,47 @@ const App: React.FC = () => {
   const [memoryActionLoading, setMemoryActionLoading] = useState(false);
   const memoryFeedbackTimerRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const browserResultsViewInputRef = useRef<HTMLInputElement>(null);
+  const {
+    browserResultsViewQuery,
+    setBrowserResultsViewQuery,
+    browserResultsViewScope,
+    setBrowserResultsViewScope,
+    browserResultsViewSelectedIndex,
+    setBrowserResultsViewSelectedIndex,
+
+    browserResultsViewInputRef,
+    bookmarkNicknameInputRef,
+
+    browserResultsViewResults,
+    browserResultsViewSections,
+    selectedBrowserResult,
+
+    browserHistoryProfileOptions,
+    effectiveBrowserHistoryProfileIds,
+    showHistoryProfilePicker,
+    historyProfileFilterLabel,
+    browserHistoryProfileMenuOpen,
+    setBrowserHistoryProfileMenuOpen,
+    setBrowserHistorySelectedProfileIds,
+
+    browserResultsPlaceholder,
+
+    bookmarkNicknamePrompt,
+    setBookmarkNicknamePrompt,
+    bookmarkNicknameSuggestion,
+    openBookmarkNicknamePrompt,
+    closeBookmarkNicknamePrompt,
+
+    activateBrowserResult,
+    closeBrowserResults,
+
+    isBrowserResultsViewOpen,
+  } = useBrowserResultsController({
+    browserSearch,
+    resultGroups: browserSearchResultGroups,
+    launcherInputRef: inputRef,
+    t,
+  });
   const webSearchInputRef = useRef<HTMLInputElement>(null);
   const isLauncherModeActiveRef = useRef(false);
   const fileSearchRequestSeqRef = useRef(0);
@@ -344,7 +368,6 @@ const App: React.FC = () => {
   const actionsOverlayRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const quickLinkDynamicInputRef = useRef<HTMLInputElement>(null);
-  const bookmarkNicknameInputRef = useRef<HTMLInputElement>(null);
   const webSearchBangInputRef = useRef<HTMLInputElement>(null);
   const windowPresetCommandQueueRef = useRef<Promise<void>>(Promise.resolve());
   const lastWindowHiddenAtRef = useRef<number>(0);
@@ -408,7 +431,7 @@ const App: React.FC = () => {
     showFileSearch ||
     showNotesSearch ||
     showCanvasSearch ||
-    browserResultsViewQuery !== null ||
+    isBrowserResultsViewOpen ||
     webSearchQuery !== null ||
     showCamera ||
     showSchedule ||
@@ -1613,251 +1636,6 @@ const App: React.FC = () => {
     inputRef,
   });
   requestPendingInlineArgumentFocusRef.current = requestPendingInlineArgumentFocusImpl;
-
-  const browserHistoryProfileOptions = useMemo(() => {
-    return browserSearch.getHistoryProfiles();
-  }, [browserSearch]);
-
-  const effectiveBrowserHistoryProfileIds = useMemo(() => {
-    if (browserHistorySelectedProfileIds !== null) return browserHistorySelectedProfileIds;
-    return browserHistoryProfileOptions.length > 0
-      ? browserHistoryProfileOptions.map((profile) => profile.id)
-      : null;
-  }, [browserHistoryProfileOptions, browserHistorySelectedProfileIds]);
-
-  const browserResultsViewResults = useMemo(() => {
-    if (browserResultsViewQuery === null) return [];
-    if (browserResultsViewScope === 'open-tabs') {
-      return browserSearch.getOpenTabResults(browserResultsViewQuery);
-    }
-    if (browserResultsViewScope === 'bookmarks') {
-      return browserSearch.getBookmarkResults(browserResultsViewQuery);
-    }
-    if (browserResultsViewScope === 'history') {
-      return browserSearch.getHistoryResults(
-        browserResultsViewQuery,
-        effectiveBrowserHistoryProfileIds,
-        browserHistoryProfileOptions.length > 1
-      );
-    }
-    return browserSearch.getAllResults(browserResultsViewQuery, browserSearchResultGroups);
-  }, [browserHistoryProfileOptions.length, browserSearch, browserSearchResultGroups, browserResultsViewQuery, browserResultsViewScope, effectiveBrowserHistoryProfileIds]);
-
-  const browserResultsViewSections = useMemo(() => {
-    if (browserResultsViewScope === 'open-tabs') {
-      const sections: Array<{
-        key: string;
-        kind: 'open-tab';
-        title: string;
-        items: BrowserSearchResult[];
-      }> = [];
-      const sectionByWindow = new Map<string, number>();
-      for (const result of browserResultsViewResults) {
-        const windowKey = [
-          result.browserName || 'Browser',
-          result.profileName || '',
-          result.windowId || 'window',
-        ].join(':');
-        let sectionIndex = sectionByWindow.get(windowKey);
-        if (sectionIndex === undefined) {
-          sectionIndex = sections.length;
-          sectionByWindow.set(windowKey, sectionIndex);
-          const profileLabel = result.profileName ? ` - ${result.profileName}` : '';
-          sections.push({
-            key: `open-tab-window-${windowKey}`,
-            kind: 'open-tab',
-            title: `${result.browserName || t('launcher.badges.openTab')}${profileLabel} - Window ${sectionIndex + 1}`,
-            items: [],
-          });
-        }
-        sections[sectionIndex].items.push(result);
-      }
-      return sections;
-    }
-    if (browserResultsViewScope === 'bookmarks') {
-      const sections: Array<{
-        key: string;
-        kind: 'bookmark';
-        title: string;
-        items: BrowserSearchResult[];
-      }> = [];
-      const sectionByFolder = new Map<string, number>();
-      for (const result of browserResultsViewResults) {
-        const folder = result.bookmarkFolder || t('launcher.badges.bookmark');
-        let sectionIndex = sectionByFolder.get(folder);
-        if (sectionIndex === undefined) {
-          sectionIndex = sections.length;
-          sectionByFolder.set(folder, sectionIndex);
-          sections.push({
-            key: `bookmark-folder-${folder}`,
-            kind: 'bookmark',
-            title: folder,
-            items: [],
-          });
-        }
-        sections[sectionIndex].items.push(result);
-      }
-      return sections;
-    }
-    if (browserResultsViewScope === 'history') {
-      const sections: Array<{
-        key: string;
-        kind: 'history';
-        title: string;
-        items: BrowserSearchResult[];
-      }> = [];
-      const sectionByDate = new Map<string, number>();
-      for (const result of browserResultsViewResults) {
-        const sectionTitle = formatBrowserHistoryDateSection(result.lastUsedAt) || t('launcher.badges.history');
-        let sectionIndex = sectionByDate.get(sectionTitle);
-        if (sectionIndex === undefined) {
-          sectionIndex = sections.length;
-          sectionByDate.set(sectionTitle, sectionIndex);
-          sections.push({
-            key: `history-date-${sectionTitle}`,
-            kind: 'history',
-            title: sectionTitle,
-            items: [],
-          });
-        }
-        sections[sectionIndex].items.push(result);
-      }
-      return sections;
-    }
-    return [{
-      key: 'browser-section-ranked',
-      kind: 'history' as const,
-      title: t('launcher.browserSearch.showAll'),
-      items: browserResultsViewResults,
-    }];
-  }, [browserResultsViewResults, browserResultsViewScope, t]);
-
-  useEffect(() => {
-    setBrowserResultsViewSelectedIndex(0);
-  }, [browserResultsViewQuery, browserResultsViewResults.length]);
-
-  useEffect(() => {
-    if (browserResultsViewQuery === null) return;
-    window.setTimeout(() => browserResultsViewInputRef.current?.focus(), 0);
-  }, [browserResultsViewQuery]);
-
-  const openBrowserResult = useCallback(async (result: BrowserSearchResult, options?: { focusExistingTab?: boolean }) => {
-    const ok = await browserSearch.executeBrowserSearch(result.actionInput, options);
-    if (ok) {
-      setBrowserResultsViewQuery(null);
-      try { window.electron.hideWindow(); } catch {}
-    }
-  }, [browserSearch]);
-
-  const activateBrowserResult = useCallback(async (result: BrowserSearchResult, alternate = false) => {
-    const focusExistingTab = result.focusAvailable && (
-      browserResultsViewScope === 'open-tabs' ? !alternate : alternate
-    );
-    await openBrowserResult(result, focusExistingTab ? { focusExistingTab: true } : undefined);
-  }, [browserResultsViewScope, openBrowserResult]);
-
-  const openBookmarkNicknamePrompt = useCallback((result: BrowserSearchResult | null) => {
-    if (!canEditBrowserResultNickname(result)) return;
-    setBookmarkNicknamePrompt({
-      result,
-      value: result.nickname || '',
-    });
-  }, []);
-
-  const closeBookmarkNicknamePrompt = useCallback(() => {
-    setBookmarkNicknamePrompt(null);
-    window.setTimeout(() => browserResultsViewInputRef.current?.focus(), 0);
-  }, []);
-
-  const saveBookmarkNickname = useCallback(async (result: BrowserSearchResult, rawValue: string) => {
-    if (!canEditBrowserResultNickname(result)) return;
-    const nickname = normalizeBookmarkNickname(rawValue);
-    const targetKey = getBrowserResultNicknameKey(result);
-    try {
-      const currentSettings = await window.electron.getSettings();
-      const browserSearchSettings = currentSettings.browserSearch;
-      const currentNicknames = Array.isArray(browserSearchSettings?.nicknames)
-        ? browserSearchSettings.nicknames
-        : [];
-      const nextNicknames: BrowserSearchNicknameSetting[] = currentNicknames.filter((item) => {
-        const itemKey = [
-          item.source || '',
-          item.sourceProfileId || '',
-          normalizeBookmarkNicknameUrl(item.url),
-        ].join(':');
-        return itemKey !== targetKey;
-      });
-      if (nickname) {
-        nextNicknames.push({
-          source: result.source || '',
-          sourceProfileId: result.sourceProfileId,
-          url: result.url,
-          nickname,
-        });
-      }
-      await window.electron.saveSettings({
-        browserSearch: {
-          ...browserSearchSettings,
-          nicknames: nextNicknames.sort((a, b) => a.nickname.localeCompare(b.nickname)),
-        },
-      });
-      browserSearch.refreshBrowserEntries();
-    } catch (error) {
-      console.error('Failed to save bookmark nickname:', error);
-    }
-  }, [browserSearch]);
-
-  const submitBookmarkNicknamePrompt = useCallback(async () => {
-    if (!bookmarkNicknamePrompt) return;
-    await saveBookmarkNickname(bookmarkNicknamePrompt.result, bookmarkNicknamePrompt.value);
-    closeBookmarkNicknamePrompt();
-  }, [bookmarkNicknamePrompt, closeBookmarkNicknamePrompt, saveBookmarkNickname]);
-
-  useEffect(() => {
-    if (!bookmarkNicknamePrompt) return;
-    const timer = window.setTimeout(() => {
-      void saveBookmarkNickname(bookmarkNicknamePrompt.result, bookmarkNicknamePrompt.value);
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [bookmarkNicknamePrompt?.result.id, bookmarkNicknamePrompt?.value, saveBookmarkNickname]);
-
-  useEffect(() => {
-    if (!bookmarkNicknamePrompt) return;
-    const timer = window.setTimeout(() => {
-      bookmarkNicknameInputRef.current?.focus();
-      bookmarkNicknameInputRef.current?.select();
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [bookmarkNicknamePrompt?.result.id]);
-
-  useEffect(() => {
-    if (!bookmarkNicknamePrompt) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      const suggestion = getSuggestedBookmarkNickname(bookmarkNicknamePrompt.result);
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeBookmarkNicknamePrompt();
-        return;
-      }
-      if (event.key === 'Tab' && suggestion) {
-        event.preventDefault();
-        setBookmarkNicknamePrompt((prev) => prev ? { ...prev, value: suggestion } : prev);
-        void saveBookmarkNickname(bookmarkNicknamePrompt.result, suggestion);
-        return;
-      }
-      if (
-        (event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter') &&
-        !event.altKey &&
-        !event.ctrlKey &&
-        !event.shiftKey
-      ) {
-        event.preventDefault();
-        void submitBookmarkNicknamePrompt();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [bookmarkNicknamePrompt, closeBookmarkNicknamePrompt, submitBookmarkNicknamePrompt]);
 
   useEffect(() => {
     itemRefs.current = itemRefs.current.slice(0, displayCommands.length + calcOffset);
@@ -3291,26 +3069,6 @@ const App: React.FC = () => {
 
   // ─── Browser Results mode ────────────────────────────────────────
   if (browserResultsViewQuery !== null) {
-    const selectedBrowserResult = browserResultsViewResults[browserResultsViewSelectedIndex] || null;
-    const showHistoryProfilePicker = browserResultsViewScope === 'history' && browserHistoryProfileOptions.length > 1;
-    const selectedHistoryProfileCount = effectiveBrowserHistoryProfileIds?.length ?? browserHistoryProfileOptions.length;
-    const historyProfileFilterLabel = `${selectedHistoryProfileCount}/${browserHistoryProfileOptions.length}`;
-    const browserResultsPlaceholder = browserResultsViewScope === 'open-tabs'
-      ? t('launcher.browserSearch.openTabsPlaceholder')
-      : browserResultsViewScope === 'bookmarks'
-        ? t('launcher.browserSearch.bookmarksPlaceholder')
-        : browserResultsViewScope === 'history'
-          ? t('launcher.browserSearch.historyPlaceholder')
-      : t('launcher.browserSearch.showAllPlaceholder');
-    const bookmarkNicknameSuggestion = bookmarkNicknamePrompt
-      ? getSuggestedBookmarkNickname(bookmarkNicknamePrompt.result)
-      : '';
-    const closeBrowserResults = () => {
-      setBrowserResultsViewQuery(null);
-      setBrowserHistoryProfileMenuOpen(false);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    };
-
     return (
       <BrowserResultsView
         alwaysMountedRunners={alwaysMountedRunners}
