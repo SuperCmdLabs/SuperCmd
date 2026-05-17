@@ -708,6 +708,10 @@
         "title": "ブラウザプロファイル",
         "description": "ブラウザプロファイルを接続し、SuperCmd がローカル履歴を使用して継続的に更新できるようにします。",
         "enableLabel": "SuperCmd でブラウザプロファイルを使用",
+        "alphaToggle": {
+          "label": "アルファ版 Chromium ルート検索を使用",
+          "description": "プロファイル履歴、ブックマーク、開いているタブをルート検索に表示します。ブラウザ拡張機能がアルファ版の間は Chromium プロファイルでのみ有効にしてください。"
+        },
         "retention": {
           "label": "履歴の保持期間",
           "option": {

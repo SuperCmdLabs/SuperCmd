@@ -683,6 +683,10 @@
         "title": "Browserprofile",
         "description": "Verbinde Browserprofile, damit SuperCmd deren lokalen Verlauf nutzt und aktuell hält.",
         "enableLabel": "Browserprofile in SuperCmd verwenden",
+        "alphaToggle": {
+          "label": "Alpha-Chromium-Root-Suche verwenden",
+          "description": "Zeigt Profilverlauf, Lesezeichen und offene Tabs in der Root-Suche. Aktiviere dies nur fuer Chromium-Profile, solange die Browsererweiterung noch Alpha ist."
+        },
         "retention": {
           "label": "Aufbewahrungsdauer",
           "option": {

@@ -710,6 +710,10 @@
         "title": "Browser Profiles",
         "description": "Connect browser profiles so SuperCmd can use their local history and keep it refreshed.",
         "enableLabel": "Use browser profiles in SuperCmd",
+        "alphaToggle": {
+          "label": "Use alpha Chromium root search",
+          "description": "Show profile history, bookmarks, and open tabs in root search. Turn this on only for Chromium profiles while the browser extension is still in alpha."
+        },
         "retention": {
           "label": "History retention",
           "option": {

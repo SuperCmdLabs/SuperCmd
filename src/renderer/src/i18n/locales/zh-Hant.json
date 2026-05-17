@@ -708,6 +708,10 @@
         "title": "瀏覽器個人檔案",
         "description": "連接瀏覽器個人檔案，讓 SuperCmd 使用其本機歷史並持續重新整理。",
         "enableLabel": "在 SuperCmd 中使用瀏覽器個人檔案",
+        "alphaToggle": {
+          "label": "使用 Alpha 版 Chromium 根搜尋",
+          "description": "在根搜尋中顯示個人檔案歷史記錄、書籤和開啟的分頁。瀏覽器擴充功能仍處於 Alpha 階段時，僅建議為 Chromium 個人檔案開啟。"
+        },
         "retention": {
           "label": "歷史紀錄保留時間",
           "option": {

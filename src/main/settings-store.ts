@@ -90,6 +90,8 @@ export interface HyperKeySettings {
 export interface BrowserSearchSettings {
   /** When false, Cmd+Enter does not trigger browser search and inline ghost-text autocomplete is suppressed. */
   enabled: boolean;
+  /** Enables the alpha Chromium profile/root-result integration without replacing the legacy browser-search path by default. */
+  alphaChromiumRootSearchEnabled: boolean;
   /** Auto-prune browser-search history older than N days. `null` = never prune. */
   historyRetentionDays: number | null;
   /** Browser/profile sources enabled for SuperCmd browser history. */
@@ -380,6 +382,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   emojiPickerExcludedAppBundleIds: [],
   browserSearch: {
     enabled: true,
+    alphaChromiumRootSearchEnabled: false,
     historyRetentionDays: 90,
     profileSourceIds: [],
     profiles: [],
@@ -790,6 +793,9 @@ function normalizeBrowserSearchSettings(value: any): BrowserSearchSettings {
   const effectiveProfileSourceIds = profiles.map((profile) => profile.id);
   return {
     enabled: typeof value.enabled === 'boolean' ? value.enabled : fallback.enabled,
+    alphaChromiumRootSearchEnabled: typeof value.alphaChromiumRootSearchEnabled === 'boolean'
+      ? value.alphaChromiumRootSearchEnabled
+      : fallback.alphaChromiumRootSearchEnabled,
     historyRetentionDays: normalizeBrowserSearchRetentionDays(value.historyRetentionDays),
     profileSourceIds: effectiveProfileSourceIds,
     profiles,

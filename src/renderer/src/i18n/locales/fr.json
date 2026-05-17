@@ -687,6 +687,10 @@
         "title": "Profils de navigateur",
         "description": "Connectez des profils de navigateur pour que SuperCmd utilise leur historique local et le garde à jour.",
         "enableLabel": "Utiliser les profils de navigateur dans SuperCmd",
+        "alphaToggle": {
+          "label": "Utiliser la recherche racine Chromium alpha",
+          "description": "Affiche l'historique des profils, les favoris et les onglets ouverts dans la recherche racine. Activez ceci uniquement pour les profils Chromium tant que l'extension de navigateur est en alpha."
+        },
         "retention": {
           "label": "Durée de conservation de l'historique",
           "option": {

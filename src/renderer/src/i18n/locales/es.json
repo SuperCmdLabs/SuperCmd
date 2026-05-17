@@ -683,6 +683,10 @@
         "title": "Perfiles de navegador",
         "description": "Conecta perfiles de navegador para que SuperCmd use su historial local y lo mantenga actualizado.",
         "enableLabel": "Usar perfiles de navegador en SuperCmd",
+        "alphaToggle": {
+          "label": "Usar busqueda raiz alfa de Chromium",
+          "description": "Muestra historial de perfiles, marcadores y pestanas abiertas en la busqueda raiz. Activalo solo para perfiles Chromium mientras la extension del navegador sigue en alfa."
+        },
         "retention": {
           "label": "Retención del historial",
           "option": {

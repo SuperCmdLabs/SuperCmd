@@ -60,6 +60,7 @@ export interface BrowserHistoryProfileOption {
 
 interface UseBrowserSearchResult {
   enabled: boolean;
+  alphaChromiumRootSearchEnabled: boolean;
   getCompletion: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchAutocomplete | null;
   getTopResult: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchResult | null;
   getResults: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchResult[];
@@ -95,6 +96,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   const [entries, setEntries] = useState<BrowserSearchEntry[]>([]);
   const [tabs, setTabs] = useState<BrowserTabEntry[]>([]);
   const [enabled, setEnabled] = useState<boolean>(true);
+  const [alphaChromiumRootSearchEnabled, setAlphaChromiumRootSearchEnabled] = useState<boolean>(false);
   const [nicknames, setNicknames] = useState<BrowserSearchNicknameSetting[]>([]);
   const [profiles, setProfiles] = useState<BrowserProfileSetting[]>([]);
   const [profileFilters, setProfileFilters] = useState<BrowserProfileFilters>({});
@@ -169,6 +171,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
       .then((s) => {
         if (disposed) return;
         setEnabled(s?.browserSearch?.enabled ?? true);
+        setAlphaChromiumRootSearchEnabled(Boolean(s?.browserSearch?.alphaChromiumRootSearchEnabled));
         setNicknames(Array.isArray(s?.browserSearch?.nicknames) ? s.browserSearch.nicknames : []);
         setProfiles(normalizeBrowserProfiles(s?.browserSearch?.profiles));
         setProfileFilters(s?.browserSearch?.profileFilters || {});
@@ -182,6 +185,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   useEffect(() => {
     const cleanup = window.electron.onSettingsUpdated?.((s) => {
       setEnabled(s?.browserSearch?.enabled ?? true);
+      setAlphaChromiumRootSearchEnabled(Boolean(s?.browserSearch?.alphaChromiumRootSearchEnabled));
       setNicknames(Array.isArray(s?.browserSearch?.nicknames) ? s.browserSearch.nicknames : []);
       setProfiles(normalizeBrowserProfiles(s?.browserSearch?.profiles));
       setProfileFilters(s?.browserSearch?.profileFilters || {});
@@ -210,13 +214,13 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   }, [refreshEntries, refreshEntriesIfStale]);
 
   const getTopResult = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult | null => {
-    if (!enabled) return null;
+    if (!enabled || !alphaChromiumRootSearchEnabled) return null;
     return filterBrowserResults(
       decorateBrowserResults(getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, MAX_TOP_BROWSER_RESULTS), profilesRef.current),
       profileFiltersRef.current,
       profilesRef.current
     )[0] || null;
-  }, [enabled]);
+  }, [enabled, alphaChromiumRootSearchEnabled]);
 
   const getCompletion = useCallback((
     rawInput: string,
@@ -225,6 +229,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     if (!enabled) return null;
     const input = rawInput;
     if (!input.trim()) return null;
+    if (!alphaChromiumRootSearchEnabled) return getLegacyCompletion(input, entriesRef.current);
     if (/\s$/.test(input)) return null;
     const result = getTopResult(input, rawGroups);
     if (!result?.completion) return null;
@@ -235,7 +240,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
       suffix: result.completion.slice(input.length),
       entry: browserResultToEntry(result),
     };
-  }, [enabled, getTopResult]);
+  }, [enabled, alphaChromiumRootSearchEnabled, getTopResult]);
 
   const executeBrowserSearch = useCallback(async (
     input: string,
@@ -244,6 +249,10 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     const trimmed = input.trim();
     if (!trimmed) return false;
     try {
+      if (!alphaChromiumRootSearchEnabled) {
+        const result = await window.electron.browserSearchOpen(trimmed);
+        return Boolean(result?.ok);
+      }
       if (options?.focusExistingTab && options.sourceProfileId && options.windowId !== undefined && options.tabId !== undefined) {
         const focusResult = await window.electron.browserTabsFocusTarget?.({
           profileSourceId: options.sourceProfileId,
@@ -272,12 +281,12 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
       console.error('Browser search open failed:', e);
       return false;
     }
-  }, []);
+  }, [alphaChromiumRootSearchEnabled]);
 
   const hasOpenTabMatch = useCallback((rawInput: string): boolean => {
-    if (!enabled) return false;
+    if (!enabled || !alphaChromiumRootSearchEnabled) return false;
     return Boolean(findOpenTabMatch(rawInput, tabsRef.current));
-  }, [enabled]);
+  }, [enabled, alphaChromiumRootSearchEnabled]);
 
   const getMatchKind = useCallback((
     input: string,
@@ -285,29 +294,31 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   ): 'open-tab' | 'history' | 'search' => {
     if (!enabled) return 'search';
     const completionEntryId = String(completion?.entry?.id || '');
-    if (completionEntryId.startsWith('tab:')) return 'open-tab';
-    if (findOpenTabMatch(input, tabsRef.current)) return 'open-tab';
+    if (alphaChromiumRootSearchEnabled) {
+      if (completionEntryId.startsWith('tab:')) return 'open-tab';
+      if (findOpenTabMatch(input, tabsRef.current)) return 'open-tab';
+    }
     const resolved = resolveLocal(input);
     return resolved?.type === 'url' ? 'history' : 'search';
-  }, [enabled]);
+  }, [enabled, alphaChromiumRootSearchEnabled]);
 
   const getResults = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult[] => {
-    if (!enabled) return [];
+    if (!enabled || !alphaChromiumRootSearchEnabled) return [];
     return filterBrowserResults(
       decorateBrowserResults(getOrderedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, { useConfiguredLimits: true }), profilesRef.current),
       profileFiltersRef.current,
       profilesRef.current
     );
-  }, [enabled]);
+  }, [enabled, alphaChromiumRootSearchEnabled]);
 
   const getAllResults = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult[] => {
-    if (!enabled) return [];
+    if (!enabled || !alphaChromiumRootSearchEnabled) return [];
     return filterBrowserResults(
       decorateBrowserResults(getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, MAX_ALL_BROWSER_RESULTS), profilesRef.current),
       profileFiltersRef.current,
       profilesRef.current
     );
-  }, [enabled]);
+  }, [enabled, alphaChromiumRootSearchEnabled]);
 
   const getOpenTabResults = useCallback((rawInput: string, limit = MAX_SCOPED_OPEN_TAB_RESULTS): BrowserSearchResult[] => {
     const candidates = getOpenTabCandidates(rawInput, tabsRef.current, { preserveBrowserOrder: true });
@@ -386,8 +397,8 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   }, []);
 
   return useMemo(
-    () => ({ enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshOpenTabs: refreshTabs, refreshBrowserEntries: refreshEntries, refreshBrowserEntriesIfStale: refreshEntriesIfStale, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
-    [enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshTabs, refreshEntries, refreshEntriesIfStale, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
+    () => ({ enabled, alphaChromiumRootSearchEnabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshOpenTabs: refreshTabs, refreshBrowserEntries: refreshEntries, refreshBrowserEntriesIfStale: refreshEntriesIfStale, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
+    [enabled, alphaChromiumRootSearchEnabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshTabs, refreshEntries, refreshEntriesIfStale, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
   );
 }
 
@@ -407,6 +418,56 @@ function extractHost(url: string): string {
   } catch {
     return '';
   }
+}
+
+function getLegacyCompletion(rawInput: string, entries: BrowserSearchEntry[]): BrowserSearchAutocomplete | null {
+  const input = rawInput;
+  if (!input.trim()) return null;
+  const lower = input.toLowerCase();
+  const stripped = lower.replace(/^https?:\/\//, '');
+
+  let bestUrl: { entry: BrowserSearchEntry; matched: string; score: number } | null = null;
+  for (const entry of entries) {
+    if (entry.type !== 'url') continue;
+    const sourceUrl = entry.url || entry.host;
+    if (!sourceUrl) continue;
+    const fullStripped = sourceUrl.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+    if (!fullStripped) continue;
+    const candidates = fullStripped.toLowerCase().startsWith('www.')
+      ? [fullStripped, fullStripped.slice(4)]
+      : [fullStripped];
+    for (const candidate of candidates) {
+      if (candidate.length > stripped.length && candidate.toLowerCase().startsWith(stripped)) {
+        const score = frecency(entry);
+        if (!bestUrl || score > bestUrl.score) bestUrl = { entry, matched: candidate, score };
+        break;
+      }
+    }
+  }
+  if (bestUrl) {
+    const completion = input + bestUrl.matched.slice(stripped.length);
+    return {
+      completion,
+      suffix: completion.slice(input.length),
+      entry: bestUrl.entry,
+    };
+  }
+
+  let bestSearch: { entry: BrowserSearchEntry; score: number } | null = null;
+  for (const entry of entries) {
+    if (entry.type !== 'search') continue;
+    if (entry.query.length <= input.length) continue;
+    if (!entry.query.toLowerCase().startsWith(lower)) continue;
+    const score = frecency(entry);
+    if (!bestSearch || score > bestSearch.score) bestSearch = { entry, score };
+  }
+  if (!bestSearch) return null;
+  const completion = input + bestSearch.entry.query.slice(input.length);
+  return {
+    completion,
+    suffix: completion.slice(input.length),
+    entry: bestSearch.entry,
+  };
 }
 
 function tabFrecency(tab: BrowserTabEntry): number {

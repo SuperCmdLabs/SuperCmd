@@ -568,7 +568,7 @@ export function useLauncherCommandModel({
   }, [hasSearchQuery, aiMode, rootBangState, launcherFileResults, fileResultCommands, searchQuery, rootSearchRanking]);
 
   const browserCandidates = useMemo<RootSearchCandidate[]>(() => {
-    if (!browserSearch.enabled || !hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
+    if (!browserSearch.enabled || !browserSearch.alphaChromiumRootSearchEnabled || !hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
     return browserSearch.getAllResults(searchQuery, browserSearchResultGroups)
       .map((result, index) => {
         const command = buildBrowserCommand(result, index, getDefaultBrowserProfile(browserSearch), getAlternateBrowserProfile(browserSearch), browserSearch.profiles?.length || 0, browserAppIconDataUrls);
@@ -648,6 +648,15 @@ export function useLauncherCommandModel({
 
   const rootSearchAutoComplete = useMemo(() => {
     if (!hasSearchQuery || aiMode || rootBangState.mode !== 'none') return null;
+    if (browserSearch.enabled && !browserSearch.alphaChromiumRootSearchEnabled) {
+      const legacyCompletion = browserSearch.getCompletion(searchQuery, browserSearchResultGroups);
+      if (legacyCompletion?.completion && legacyCompletion.completion !== searchQuery) {
+        return {
+          completion: legacyCompletion.completion,
+          suffix: legacyCompletion.suffix,
+        };
+      }
+    }
     const completionCandidates = rootRankedCandidates.filter((candidate) =>
       isRootResultPromotionCandidate(candidate, searchQuery)
     );
@@ -656,7 +665,7 @@ export function useLauncherCommandModel({
     if (!completion.toLowerCase().startsWith(searchQuery.toLowerCase())) return null;
     const suffix = completion.slice(searchQuery.length);
     return { completion: `${searchQuery}${suffix}`, suffix };
-  }, [hasSearchQuery, aiMode, rootBangState, searchQuery, rootRankedCandidates]);
+  }, [hasSearchQuery, aiMode, rootBangState, searchQuery, rootRankedCandidates, browserSearch, browserSearchResultGroups]);
 
   const launcherInputValue = searchQuery;
 

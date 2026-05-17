@@ -707,6 +707,10 @@
         "title": "Profili browser",
         "description": "Collega profili browser così SuperCmd può usare la loro cronologia locale e mantenerla aggiornata.",
         "enableLabel": "Usa profili browser in SuperCmd",
+        "alphaToggle": {
+          "label": "Usa la ricerca root Chromium alfa",
+          "description": "Mostra cronologia dei profili, segnalibri e schede aperte nella ricerca root. Attivala solo per profili Chromium mentre l'estensione browser e ancora in alfa."
+        },
         "retention": {
           "label": "Conservazione cronologia",
           "option": {

@@ -710,6 +710,10 @@
         "title": "브라우저 프로필",
         "description": "브라우저 프로필을 연결해 SuperCmd가 로컬 기록을 사용하고 계속 새로 고치게 합니다.",
         "enableLabel": "SuperCmd에서 브라우저 프로필 사용",
+        "alphaToggle": {
+          "label": "알파 Chromium 루트 검색 사용",
+          "description": "프로필 기록, 북마크, 열린 탭을 루트 검색에 표시합니다. 브라우저 확장 프로그램이 아직 알파인 동안에는 Chromium 프로필에서만 켜세요."
+        },
         "retention": {
           "label": "기록 보관 기간",
           "option": {

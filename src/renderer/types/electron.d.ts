@@ -322,6 +322,7 @@ export interface BrowserSearchResultGroupSetting {
 
 export interface BrowserSearchSettings {
   enabled: boolean;
+  alphaChromiumRootSearchEnabled: boolean;
   historyRetentionDays: number | null;
   profileSourceIds: string[];
   profiles: BrowserProfileSetting[];

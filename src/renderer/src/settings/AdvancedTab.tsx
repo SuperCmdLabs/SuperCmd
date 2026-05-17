@@ -336,6 +336,22 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
           {t('settings.advanced.browserSearch.enableLabel')}
         </label>
 
+        <label className="inline-flex items-start gap-2.5 text-[13px] text-white/85 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={Boolean(settings.alphaChromiumRootSearchEnabled)}
+            disabled={!enabled}
+            onChange={(e) => onChange({ ...settings, alphaChromiumRootSearchEnabled: e.target.checked })}
+            className="settings-checkbox mt-0.5"
+          />
+          <span>
+            <span className="block">{t('settings.advanced.browserSearch.alphaToggle.label')}</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-[var(--text-muted)]">
+              {t('settings.advanced.browserSearch.alphaToggle.description')}
+            </span>
+          </span>
+        </label>
+
         <div className="rounded-md border border-yellow-500/35 bg-yellow-500/10 px-3 py-2.5 text-yellow-100">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-300" />
