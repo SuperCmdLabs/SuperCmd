@@ -1713,7 +1713,7 @@ const App: React.FC = () => {
       if (bangState.mode === 'active' && bangState.query) {
         const ok = await window.electron.browserTabsOpenUrlProfile?.(
           buildBangSearchUrl(bangState.bang, bangState.query),
-          { event: options?.event, sourceProfileId: options?.sourceProfileId }
+          { event: options?.event, sourceProfileId: options?.openInSourceProfile ? options.sourceProfileId : null }
         ).then((result) => result.ok).catch(() => window.electron.openUrl(buildBangSearchUrl(bangState.bang, bangState.query)));
         if (ok) {
           setBrowserSearchSkipAutoComplete(false);
@@ -1726,7 +1726,7 @@ const App: React.FC = () => {
         const defaultBang = getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
         const ok = await window.electron.browserTabsOpenUrlProfile?.(
           buildBangSearchUrl(defaultBang, trimmed),
-          { event: options?.event, sourceProfileId: options?.sourceProfileId }
+          { event: options?.event, sourceProfileId: options?.openInSourceProfile ? options.sourceProfileId : null }
         ).then((result) => result.ok).catch(() => window.electron.openUrl(buildBangSearchUrl(defaultBang, trimmed)));
         if (ok) {
           setBrowserSearchSkipAutoComplete(false);
@@ -2007,6 +2007,7 @@ const App: React.FC = () => {
             kind: command.browserResultKind,
             url: command.browserUrl,
             sourceProfileId: command.browserSourceProfileId,
+            openInSourceProfile: command.browserNicknameMatch === true,
             windowId: command.browserWindowId,
             tabId: command.browserTabId,
           });
@@ -2129,6 +2130,7 @@ const App: React.FC = () => {
             kind: command.browserResultKind,
             url: command.browserUrl,
             sourceProfileId: command.browserSourceProfileId,
+            openInSourceProfile: command.browserNicknameMatch === true,
             windowId: command.browserWindowId,
             tabId: command.browserTabId,
           });
@@ -2151,6 +2153,7 @@ const App: React.FC = () => {
             kind: command.browserResultKind,
             url: command.browserUrl,
             sourceProfileId: command.browserSourceProfileId,
+            openInSourceProfile: command.browserNicknameMatch === true,
             windowId: command.browserWindowId,
             tabId: command.browserTabId,
           });

@@ -339,6 +339,7 @@ export function useLauncherKeyboardControls(
             kind: selected.browserResultKind,
             url: selected.browserUrl,
             sourceProfileId: selected.browserSourceProfileId,
+            openInSourceProfile: selected.browserNicknameMatch === true,
             windowId: selected.browserWindowId,
             tabId: selected.browserTabId,
           });
@@ -423,6 +424,7 @@ export function useLauncherKeyboardControls(
                 kind: selected.browserResultKind,
                 url: selected.browserUrl,
                 sourceProfileId: selected.browserSourceProfileId,
+                openInSourceProfile: selected.browserNicknameMatch === true,
                 windowId: selected.browserWindowId,
                 tabId: selected.browserTabId,
               });

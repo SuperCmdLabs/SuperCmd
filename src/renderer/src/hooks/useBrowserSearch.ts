@@ -88,6 +88,7 @@ export type BrowserSearchExecuteOptions = {
   kind?: BrowserSearchResultKind | 'search' | 'url';
   url?: string;
   sourceProfileId?: string;
+  openInSourceProfile?: boolean;
   windowId?: string | number;
   tabId?: string | number;
 };
@@ -268,13 +269,13 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
       if (options?.url) {
         const result = await window.electron.browserTabsOpenUrlProfile?.(options.url, {
           event: options.event,
-          sourceProfileId: options.sourceProfileId,
+          sourceProfileId: options.openInSourceProfile ? options.sourceProfileId : null,
         });
         return Boolean(result?.ok);
       }
       const result = await window.electron.browserSearchOpenProfile?.(trimmed, {
         event: options?.event,
-        sourceProfileId: options?.sourceProfileId,
+        sourceProfileId: options?.openInSourceProfile ? options.sourceProfileId : null,
       }) ?? await window.electron.browserSearchOpen(trimmed);
       return Boolean(result?.ok);
     } catch (e) {

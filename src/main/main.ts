@@ -11988,11 +11988,24 @@ function resolveOpenProfile(
 ): BrowserProfileSetting | null {
   const ordered = listConfiguredBrowserProfiles();
   if (ordered.length === 0) return null;
+  const sourceProfileKey = String(sourceProfileId || '').trim();
+  const sourceProfile = sourceProfileKey
+    ? ordered.find((profile) =>
+        profile.id === sourceProfileKey ||
+        `${profile.browserId}:${profile.profileId}` === sourceProfileKey ||
+        profile.profileId === sourceProfileKey
+      ) || null
+    : null;
   if (!event?.altKey) {
-    return ordered[0];
+    return sourceProfile || ordered[0];
   }
   const rawNumberKey = event.numberKey === null || event.numberKey === undefined ? '' : String(event.numberKey);
-  if (!rawNumberKey) return ordered[1] ?? ordered[0];
+  if (!rawNumberKey) {
+    if (sourceProfile) {
+      return ordered[0]?.id !== sourceProfile.id ? ordered[0] : ordered[1] ?? sourceProfile;
+    }
+    return ordered[1] ?? ordered[0];
+  }
   const numeric = Number(rawNumberKey);
   if (!Number.isFinite(numeric)) return ordered[1] ?? ordered[0];
   return ordered[Math.trunc(numeric) + 1] ?? ordered[ordered.length - 1] ?? ordered[0];

@@ -184,11 +184,47 @@ function getFileDepthPenalty(result: IndexedFileSearchResult): number {
   return Math.min(260, 50 + (depth - 4) * 35);
 }
 
+type BrowserLauncherProfile = {
+  id?: string;
+  browserId?: BrowserSearchSource | string;
+  displayName: string;
+  detectedName?: string;
+  profileId: string;
+};
+
+function getBrowserProfileDisplayName(profile: BrowserLauncherProfile | null | undefined): string {
+  return profile ? (profile.displayName || profile.detectedName || profile.profileId) : '';
+}
+
+function getBrowserProfileById(
+  browserSearch: { profiles?: BrowserLauncherProfile[] },
+  profileId?: string
+): BrowserLauncherProfile | null {
+  const normalized = String(profileId || '').trim();
+  if (!normalized) return null;
+  return browserSearch.profiles?.find((profile) =>
+    profile.id === normalized ||
+    `${profile.browserId || ''}:${profile.profileId || ''}` === normalized ||
+    profile.profileId === normalized
+  ) || null;
+}
+
+function getNicknameAlternateBrowserProfile(
+  browserSearch: { profiles?: BrowserLauncherProfile[] },
+  sourceProfile: BrowserLauncherProfile | null,
+  fallbackAlternate: BrowserLauncherProfile | null
+): BrowserLauncherProfile | null {
+  if (!sourceProfile) return fallbackAlternate;
+  const defaultProfile = getDefaultBrowserProfile(browserSearch);
+  if (defaultProfile && defaultProfile.id !== sourceProfile.id) return defaultProfile;
+  return fallbackAlternate && fallbackAlternate.id !== sourceProfile.id ? fallbackAlternate : null;
+}
+
 function buildBrowserCommand(
   result: BrowserSearchResult,
   index: number,
-  defaultProfile: { browserId?: any; displayName: string; detectedName?: string; profileId: string } | null,
-  alternateProfile: { browserId?: any; displayName: string; detectedName?: string; profileId: string } | null,
+  targetProfile: BrowserLauncherProfile | null,
+  alternateProfile: BrowserLauncherProfile | null,
   profileCount: number,
   browserAppIconDataUrls: Record<string, string>
 ): CommandInfo {
@@ -209,10 +245,10 @@ function buildBrowserCommand(
     browserActionInput: result.actionInput,
     browserUrl: result.url,
     browserSourceProfileId: result.sourceProfileId,
-    browserTargetProfileLabel: defaultProfile ? (defaultProfile.displayName || defaultProfile.detectedName || defaultProfile.profileId) : '',
-    browserTargetProfileBrowserId: defaultProfile?.browserId,
-    browserTargetProfileIconDataUrl: defaultProfile?.browserId ? browserAppIconDataUrls[String(defaultProfile.browserId)] : undefined,
-    browserAlternateProfileLabel: alternateProfile ? (alternateProfile.displayName || alternateProfile.detectedName || alternateProfile.profileId) : '',
+    browserTargetProfileLabel: getBrowserProfileDisplayName(targetProfile),
+    browserTargetProfileBrowserId: targetProfile?.browserId,
+    browserTargetProfileIconDataUrl: targetProfile?.browserId ? browserAppIconDataUrls[String(targetProfile.browserId)] : undefined,
+    browserAlternateProfileLabel: getBrowserProfileDisplayName(alternateProfile),
     browserAlternateProfileBrowserId: alternateProfile?.browserId,
     browserAlternateProfileIconDataUrl: alternateProfile?.browserId ? browserAppIconDataUrls[String(alternateProfile.browserId)] : undefined,
     browserProfileCount: profileCount,
@@ -227,12 +263,12 @@ function buildBrowserCommand(
   };
 }
 
-function getDefaultBrowserProfile(browserSearch: { profiles?: Array<{ browserId?: any; browserName: string; displayName: string; detectedName?: string; profileId: string }> }) {
+function getDefaultBrowserProfile(browserSearch: { profiles?: BrowserLauncherProfile[] }) {
   const profile = browserSearch.profiles?.[0];
   return profile || null;
 }
 
-function getAlternateBrowserProfile(browserSearch: { profiles?: Array<{ browserId?: any; browserName: string; displayName: string; detectedName?: string; profileId: string }> }) {
+function getAlternateBrowserProfile(browserSearch: { profiles?: BrowserLauncherProfile[] }) {
   return browserSearch.profiles && browserSearch.profiles.length > 1 ? browserSearch.profiles[1] : null;
 }
 
@@ -571,7 +607,13 @@ export function useLauncherCommandModel({
     if (!browserSearch.enabled || !browserSearch.alphaChromiumRootSearchEnabled || !hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
     return browserSearch.getAllResults(searchQuery, browserSearchResultGroups)
       .map((result, index) => {
-        const command = buildBrowserCommand(result, index, getDefaultBrowserProfile(browserSearch), getAlternateBrowserProfile(browserSearch), browserSearch.profiles?.length || 0, browserAppIconDataUrls);
+        const defaultProfile = getDefaultBrowserProfile(browserSearch);
+        const sourceProfile = result.nicknameMatch ? getBrowserProfileById(browserSearch, result.sourceProfileId) : null;
+        const targetProfile = sourceProfile || defaultProfile;
+        const alternateProfile = result.nicknameMatch
+          ? getNicknameAlternateBrowserProfile(browserSearch, sourceProfile, getAlternateBrowserProfile(browserSearch))
+          : getAlternateBrowserProfile(browserSearch);
+        const command = buildBrowserCommand(result, index, targetProfile, alternateProfile, browserSearch.profiles?.length || 0, browserAppIconDataUrls);
         const nicknameMatched = Boolean(result.nicknameMatch);
         const fields = nicknameMatched
           ? [
