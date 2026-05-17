@@ -7492,6 +7492,14 @@ function createWindow(): void {
   // newly focused window while the key is still held.
   mainWindow.webContents.on('before-input-event', (event: any, input: any) => {
     const inputType = String(input?.type || '').toLowerCase();
+    const inputKey = String(input?.key || input?.code || '');
+    const altKey = Boolean(
+      input?.alt ||
+      (inputType === 'keydown' && /^(alt|altleft|altright|option)$/i.test(inputKey))
+    );
+    try {
+      mainWindow?.webContents.send('modifier-state-changed', { altKey });
+    } catch {}
     if (inputType !== 'keydown') return;
     if (!shouldSuppressOpeningShortcutInput(input)) return;
     event.preventDefault();
@@ -11973,11 +11981,8 @@ function resolveOpenProfile(
 ): BrowserProfileSetting | null {
   const ordered = listConfiguredBrowserProfiles();
   if (ordered.length === 0) return null;
-  const byId = new Map(ordered.map((profile) => [profile.id, profile]));
-  const sourceId = String(sourceProfileId || '').trim();
-  const normalizedSourceId = sourceId.includes(':') ? sourceId : '';
   if (!event?.altKey) {
-    return normalizedSourceId ? byId.get(normalizedSourceId) ?? ordered[0] : ordered[0];
+    return ordered[0];
   }
   const rawNumberKey = event.numberKey === null || event.numberKey === undefined ? '' : String(event.numberKey);
   if (!rawNumberKey) return ordered[1] ?? ordered[0];

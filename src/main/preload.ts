@@ -729,6 +729,13 @@ const electronAPI = {
       ipcRenderer.removeListener('browser-tabs-changed', listener);
     };
   },
+  onModifierStateChanged: (callback: (state: { altKey?: boolean }) => void): (() => void) => {
+    const listener = (_event: any, state: any) => callback(state || {});
+    ipcRenderer.on('modifier-state-changed', listener);
+    return () => {
+      ipcRenderer.removeListener('modifier-state-changed', listener);
+    };
+  },
 
   getSelectedText: (): Promise<string> =>
     ipcRenderer.invoke('get-selected-text'),

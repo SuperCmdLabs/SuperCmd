@@ -1126,6 +1126,7 @@ export interface ElectronAPI {
   browserTabsFocus: (input: string) => Promise<{ ok: boolean; url: string | null; tab: BrowserTabEntry | null; reason?: string }>;
   browserTabsFocusTarget: (input: { profileSourceId: string; windowId: string | number; tabId: string | number }) => Promise<{ ok: boolean; reason?: string }>;
   onBrowserTabsChanged: (callback: () => void) => (() => void);
+  onModifierStateChanged: (callback: (state: { altKey?: boolean }) => void) => (() => void);
 
   getSelectedText: () => Promise<string>;
   getSelectedTextStrict: () => Promise<string>;

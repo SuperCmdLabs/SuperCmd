@@ -187,6 +187,7 @@ function getFileDepthPenalty(result: IndexedFileSearchResult): number {
 function buildBrowserCommand(
   result: BrowserSearchResult,
   index: number,
+  defaultProfile: { browserId?: any; displayName: string; detectedName?: string; profileId: string } | null,
   alternateProfile: { browserId?: any; displayName: string; detectedName?: string; profileId: string } | null,
   profileCount: number,
   browserAppIconDataUrls: Record<string, string>
@@ -208,9 +209,9 @@ function buildBrowserCommand(
     browserActionInput: result.actionInput,
     browserUrl: result.url,
     browserSourceProfileId: result.sourceProfileId,
-    browserTargetProfileLabel: result.profileLabel,
-    browserTargetProfileBrowserId: result.source,
-    browserTargetProfileIconDataUrl: result.source ? browserAppIconDataUrls[String(result.source)] : undefined,
+    browserTargetProfileLabel: defaultProfile ? (defaultProfile.displayName || defaultProfile.detectedName || defaultProfile.profileId) : '',
+    browserTargetProfileBrowserId: defaultProfile?.browserId,
+    browserTargetProfileIconDataUrl: defaultProfile?.browserId ? browserAppIconDataUrls[String(defaultProfile.browserId)] : undefined,
     browserAlternateProfileLabel: alternateProfile ? (alternateProfile.displayName || alternateProfile.detectedName || alternateProfile.profileId) : '',
     browserAlternateProfileBrowserId: alternateProfile?.browserId,
     browserAlternateProfileIconDataUrl: alternateProfile?.browserId ? browserAppIconDataUrls[String(alternateProfile.browserId)] : undefined,
@@ -570,7 +571,7 @@ export function useLauncherCommandModel({
     if (!browserSearch.enabled || !hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
     return browserSearch.getAllResults(searchQuery, browserSearchResultGroups)
       .map((result, index) => {
-        const command = buildBrowserCommand(result, index, getAlternateBrowserProfile(browserSearch), browserSearch.profiles?.length || 0, browserAppIconDataUrls);
+        const command = buildBrowserCommand(result, index, getDefaultBrowserProfile(browserSearch), getAlternateBrowserProfile(browserSearch), browserSearch.profiles?.length || 0, browserAppIconDataUrls);
         const nicknameMatched = Boolean(result.nicknameMatch);
         const fields = nicknameMatched
           ? [
