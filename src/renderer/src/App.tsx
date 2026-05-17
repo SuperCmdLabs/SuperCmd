@@ -42,6 +42,7 @@ import { useLauncherCommandModel } from './hooks/useLauncherCommandModel';
 import { useLauncherInlineArguments } from './hooks/useLauncherInlineArguments';
 import { useLauncherActionModel } from './hooks/useLauncherActionModel';
 import { useLauncherLocalSystemCommands } from './hooks/useLauncherLocalSystemCommands';
+import { useLauncherCommandExecution } from './hooks/useLauncherCommandExecution';
 import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
@@ -53,7 +54,6 @@ import {
 import {
   collectLegacyExtensionPreferencesSnapshot,
   readJsonObject, writeJsonObject,
-  getCmdArgsKey,
   getScriptCmdArgsKey,
   hydrateExtensionBundlePreferences,
   shouldOpenCommandSetup,
@@ -121,7 +121,6 @@ import {
 import {
   DIRECT_LAUNCH_EXPANSION_GUARD_MS,
   MAX_INLINE_QUICK_LINK_ARGUMENTS,
-  getExtensionIdentityFromCommand,
   getQuickLinkIdFromCommandId,
   isEditableElement,
 } from './utils/launcher-misc';
@@ -3088,133 +3087,35 @@ const App: React.FC = () => {
     window.electron.rendererReady();
   }, []);
 
-  const runScriptCommand = useCallback(
-    async (
-      command: CommandInfo,
-      values?: Record<string, any>,
-      options?: { background?: boolean; skipRecent?: boolean }
-    ) => {
-      const payload = {
-        commandId: command.id,
-        arguments: values || {},
-        background: Boolean(options?.background),
-      };
-      const result = await window.electron.runScriptCommand(payload);
-
-      if (!result) return false;
-
-      if (result.needsArguments) {
-        if (!options?.background) {
-          setShowFileSearch(false);
-          setScriptCommandSetup({
-            command,
-            values: {
-              ...readJsonObject(getScriptCmdArgsKey(command.id)),
-              ...(values || {}),
-            },
-          });
-        }
-        return false;
-      }
-
-      if (result.mode === 'fullOutput') {
-        setShowFileSearch(false);
-        setScriptCommandOutput({
-          command,
-          output: String(result.output || result.stdout || result.stderr || '').trim(),
-          exitCode: Number(result.exitCode || 0),
-        });
-      } else if (result.mode === 'inline') {
-        await fetchCommands();
-      } else if (!options?.background) {
-        await window.electron.hideWindow();
-      }
-
-      if (!options?.background && !options?.skipRecent) {
-        await updateRecentCommands(command.id);
-      }
-
-      return Boolean(result.success);
-    },
-    [fetchCommands, updateRecentCommands]
-  );
-
-  const executeQuickLinkCommand = useCallback(
-    async (
-      command: CommandInfo,
-      options?: {
-        skipPrompt?: boolean;
-        dynamicValues?: Record<string, string>;
-      }
-    ): Promise<boolean> => {
-      const quickLinkId = getQuickLinkIdFromCommandId(command.id);
-      if (!quickLinkId) return false;
-
-      const fields = await getDynamicFieldsForQuickLink(quickLinkId, { forceRefresh: true });
-      const inlineValues = { ...(inlineQuickLinkDynamicValuesById[quickLinkId] || {}) };
-      if (selectedQuickLinkId === quickLinkId && selectedInlineQuickLinkDynamicFields.length > 0) {
-        selectedInlineQuickLinkDynamicFields.forEach((field, index) => {
-          const liveValue = inlineQuickLinkInputRefs.current[index]?.value;
-          if (liveValue !== undefined) {
-            inlineValues[field.key] = liveValue;
-          }
-        });
-      }
-      const resolvedValuesFromInline = fields.reduce((acc, field) => {
-        const key = String(field.key || '').trim();
-        if (!key) return acc;
-        acc[key] = String(options?.dynamicValues?.[key] ?? inlineValues[key] ?? field.defaultValue ?? '');
-        return acc;
-      }, {} as Record<string, string>);
-
-      if (!options?.skipPrompt) {
-        if (fields.length > 0) {
-          if (fields.length <= MAX_INLINE_QUICK_LINK_ARGUMENTS) {
-            const openedInline = await window.electron.quickLinkOpen(quickLinkId, resolvedValuesFromInline);
-            if (!openedInline) return false;
-            clearInlineQuickLinkDynamicValuesForId(quickLinkId);
-            setQuickLinkDynamicPrompt(null);
-            await updateRecentCommands(command.id);
-            await window.electron.hideWindow();
-            return true;
-          }
-          setShowActions(false);
-          setContextMenu(null);
-          inputRef.current?.blur();
-          setQuickLinkDynamicPrompt({
-            command,
-            quickLinkId,
-            fields,
-            values: resolvedValuesFromInline,
-          });
-          return true;
-        }
-      }
-
-      const dynamicValues =
-        options?.dynamicValues !== undefined
-          ? options.dynamicValues
-          : fields.length > 0
-            ? resolvedValuesFromInline
-            : undefined;
-      const opened = await window.electron.quickLinkOpen(quickLinkId, dynamicValues);
-      if (!opened) return false;
-
-      clearInlineQuickLinkDynamicValuesForId(quickLinkId);
-      setQuickLinkDynamicPrompt(null);
-      await updateRecentCommands(command.id);
-      await window.electron.hideWindow();
-      return true;
-    },
-    [
-      clearInlineQuickLinkDynamicValuesForId,
-      getDynamicFieldsForQuickLink,
-      inlineQuickLinkDynamicValuesById,
-      selectedQuickLinkId,
-      selectedInlineQuickLinkDynamicFields,
-      updateRecentCommands,
-    ]
-  );
+  const {
+    runScriptCommand,
+    executeQuickLinkCommand,
+    executeExtensionCommand,
+  } = useLauncherCommandExecution({
+    fetchCommands,
+    updateRecentCommands,
+    setShowFileSearch,
+    setShowActions,
+    setContextMenu,
+    setScriptCommandSetup,
+    setScriptCommandOutput,
+    setExtensionPreferenceSetup,
+    setExtensionView,
+    inputRef,
+    getDynamicFieldsForQuickLink,
+    inlineQuickLinkDynamicValuesById,
+    selectedQuickLinkId,
+    selectedInlineQuickLinkDynamicFields,
+    inlineQuickLinkInputRefs,
+    clearInlineQuickLinkDynamicValuesForId,
+    setQuickLinkDynamicPrompt,
+    getInlineExtensionArgumentsForCommand,
+    clearInlineExtensionArgumentsForCommand,
+    queueNoViewBundleRun,
+    isMenuBarExtensionMounted,
+    hideMenuBarExtension,
+    upsertMenuBarExtension,
+  });
 
   const cancelQuickLinkDynamicPrompt = useCallback(() => {
     setQuickLinkDynamicPrompt(null);
@@ -3352,82 +3253,7 @@ const App: React.FC = () => {
       }
 
       if (command.category === 'extension' && command.path) {
-        // Extension command — build and show extension view
-        const extensionIdentity = getExtensionIdentityFromCommand(command);
-        if (!extensionIdentity) return;
-        const { extName, cmdName } = extensionIdentity;
-        const result = await window.electron.runExtension(extName, cmdName);
-        if (result && result.code) {
-          const hydrated = hydrateExtensionBundlePreferences(result);
-          const inlineArguments = getInlineExtensionArgumentsForCommand(command);
-          const hydratedWithInlineArguments: ExtensionBundle = {
-            ...hydrated,
-            launchArguments: {
-              ...((hydrated as any).launchArguments || {}),
-              ...inlineArguments,
-            } as any,
-          };
-
-          if (Object.keys(inlineArguments).length > 0 && command.mode === 'no-view') {
-            writeJsonObject(
-              getCmdArgsKey(extName, cmdName),
-              { ...((hydratedWithInlineArguments as any).launchArguments || {}) }
-            );
-          }
-
-          if (shouldOpenCommandSetup(hydratedWithInlineArguments)) {
-            setShowFileSearch(false);
-            setExtensionPreferenceSetup({
-              bundle: hydratedWithInlineArguments,
-              values: { ...(hydratedWithInlineArguments.preferences || {}) },
-              argumentValues: { ...((hydratedWithInlineArguments as any).launchArguments || {}) },
-            });
-            return;
-          }
-
-          // Menu-bar commands run in the hidden tray runners, not in the overlay.
-          // Toggle behavior matches Raycast: running the same menu-bar command again hides it.
-          if (hydratedWithInlineArguments.mode === 'menu-bar') {
-            clearInlineExtensionArgumentsForCommand(command);
-            if (isMenuBarExtensionMounted(hydratedWithInlineArguments)) {
-              hideMenuBarExtension(hydratedWithInlineArguments);
-            } else {
-              upsertMenuBarExtension(hydratedWithInlineArguments);
-            }
-            try { window.electron.hideWindow(); } catch {}
-            await updateRecentCommands(command.id);
-            return;
-          }
-          if (hydratedWithInlineArguments.mode === 'no-view') {
-            queueNoViewBundleRun(hydratedWithInlineArguments, 'userInitiated');
-            localStorage.removeItem(LAST_EXT_KEY);
-            clearInlineExtensionArgumentsForCommand(command);
-            await updateRecentCommands(command.id);
-            return;
-          }
-          setShowFileSearch(false);
-          setExtensionView(hydratedWithInlineArguments);
-          clearInlineExtensionArgumentsForCommand(command);
-          if (hydratedWithInlineArguments.mode === 'view') {
-            localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
-          } else {
-            localStorage.removeItem(LAST_EXT_KEY);
-          }
-          await updateRecentCommands(command.id);
-          return;
-        }
-        const errMsg = result?.error || 'Failed to build extension';
-        console.error('Extension load failed:', errMsg);
-        // Show the error in the extension view
-        setShowFileSearch(false);
-        setExtensionView({
-          code: '',
-          title: command.title,
-          mode: 'view',
-          extName,
-          cmdName,
-          error: errMsg,
-        } as any);
+        await executeExtensionCommand(command);
         return;
       }
 
