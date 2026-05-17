@@ -15,7 +15,6 @@ import {
   getFileBasename,
   getFileDirname,
   getFileResultPathFromCommand,
-  MAX_LAUNCHER_FILE_RESULTS,
 } from '../utils/launcher-file-results';
 import { getQuickLinkIdFromCommandId, MAX_RECENT_SECTION_ITEMS } from '../utils/launcher-misc';
 import type { BrowserInputResolution } from '../utils/browser-input-resolver';
@@ -36,22 +35,22 @@ import {
   getSortedSearchBangs,
 } from '../utils/web-search-bangs';
 import {
-  ROOT_SEARCH_PROMOTION_SCORE,
-  ROOT_SEARCH_RESULTS_LIMIT,
   getRootSearchCompletion,
   getRootSearchFrecencyBoost,
-  normalizeRootSearchText,
   normalizeRootSearchStableValue,
   normalizeRootSearchUrl,
   rankRootSearchCandidates,
   scoreRootSearchCandidate,
   scoreRootSearchFields,
-  tokenizeRootSearchQuery,
   type MatchKind,
   type RootSearchCandidate,
   type RootSearchRankingState,
   type RootSearchSubtype,
 } from '../utils/root-search-ranking';
+import {
+  assembleRootSearchSections,
+  isRootResultPromotionCandidate,
+} from '../utils/root-search-sections';
 import type { LauncherCommandSection } from '../components/LauncherCommandList';
 
 export type GroupedLauncherCommands = {
@@ -209,103 +208,6 @@ function buildBrowserCommand(
     rootSearchSource: 'browser',
     rootSearchSubtype: subtype,
   };
-}
-
-function isSearchEngineHistoryCandidate(candidate: RootSearchCandidate): boolean {
-  if (candidate.subtype !== 'history' || !candidate.pathOrUrl) return false;
-  try {
-    const host = new URL(candidate.pathOrUrl).hostname.replace(/^www\./i, '').toLowerCase();
-    return (
-      host === 'google.com' ||
-      host.endsWith('.google.com') ||
-      host === 'bing.com' ||
-      host.endsWith('.bing.com') ||
-      host === 'duckduckgo.com' ||
-      host.endsWith('.duckduckgo.com') ||
-      host === 'search.brave.com'
-    );
-  } catch {
-    return false;
-  }
-}
-
-const BROAD_FILE_PATH_QUERY_TERMS = new Set([
-  'desktop',
-  'documents',
-  'downloads',
-  'users',
-  'user',
-  'home',
-  'library',
-  'application',
-  'support',
-]);
-
-function isFocusedFilePathCandidate(candidate: RootSearchCandidate, query: string): boolean {
-  if (candidate.source !== 'file' || !candidate.pathOrUrl) return false;
-  if (candidate.subtype !== 'file' && candidate.subtype !== 'folder') return false;
-  const terms = tokenizeRootSearchQuery(query).filter((term) =>
-    term.length >= 3 && !BROAD_FILE_PATH_QUERY_TERMS.has(term)
-  );
-  if (terms.length < 2 && !terms.some((term) => !normalizeRootSearchText(candidate.label).includes(term))) return false;
-
-  const normalizedLabel = normalizeRootSearchText(candidate.label);
-  const normalizedPath = normalizeRootSearchText(candidate.pathOrUrl);
-  const hasPathNarrowingTerm = terms.some((term) =>
-    !normalizedLabel.includes(term) && normalizedPath.includes(term)
-  );
-  if (!hasPathNarrowingTerm) return false;
-
-  return (
-    candidate.finalScore >= 600 &&
-    candidate.depthPenalty <= 180 &&
-    candidate.noisePenalty <= 140
-  );
-}
-
-function isRootResultPromotionCandidate(candidate: RootSearchCandidate, query = ''): boolean {
-  const focusedFilePathCandidate = isFocusedFilePathCandidate(candidate, query);
-  if (candidate.finalScore < (focusedFilePathCandidate ? 600 : ROOT_SEARCH_PROMOTION_SCORE)) return false;
-
-  if (candidate.subtype === 'nickname') return true;
-
-  if (candidate.subtype === 'app' || candidate.subtype === 'quicklink') {
-    return candidate.matchKind !== 'contains' && candidate.matchKind !== 'subsequence' && candidate.matchKind !== 'description';
-  }
-
-  if (candidate.subtype === 'file' || candidate.subtype === 'folder') {
-    if (candidate.matchKind === 'exact') return true;
-    if (focusedFilePathCandidate) return true;
-    if (candidate.matchKind === 'prefix' || candidate.matchKind === 'token-prefix' || candidate.matchKind === 'compact-prefix') {
-      if (candidate.subtype === 'folder' && candidate.depthPenalty === 0 && candidate.noisePenalty === 0) return true;
-      return candidate.depthPenalty <= 60 && candidate.noisePenalty === 0 && candidate.finalScore >= 760;
-    }
-    return false;
-  }
-
-  if (candidate.subtype === 'open-tab' || candidate.subtype === 'bookmark') {
-    return candidate.finalScore >= 820 && (
-      candidate.matchKind === 'exact' ||
-      candidate.matchKind === 'prefix' ||
-      candidate.matchKind === 'token-prefix' ||
-      candidate.matchKind === 'url'
-    );
-  }
-
-  if (candidate.subtype === 'history') {
-    if (candidate.finalScore >= 620 && (candidate.matchKind === 'exact' || candidate.matchKind === 'url')) return true;
-    return candidate.finalScore >= 820 && !isSearchEngineHistoryCandidate(candidate) && (
-      candidate.matchKind === 'prefix' ||
-      candidate.matchKind === 'token-prefix'
-    );
-  }
-
-  return candidate.finalScore >= 780 && (
-    candidate.matchKind === 'exact' ||
-    candidate.matchKind === 'alias-exact' ||
-    candidate.matchKind === 'prefix' ||
-    candidate.matchKind === 'token-prefix'
-  );
 }
 
 export function useLauncherCommandModel({
@@ -799,85 +701,46 @@ export function useLauncherCommandModel({
       }));
   }, [enabledSearchBangs, rootBangState, webSearchBangUsage]);
 
-  const queryResultCommands = useMemo<CommandInfo[]>(() => {
-    if (!hasSearchQuery || rootBangState.mode !== 'none') return [];
-    if (browserSearchSyntheticCommand) {
-      const openUrlKey = browserSearchSyntheticCommand.rootSearchStableKey || browserSearchSyntheticCommand.id;
-      return [
-        browserSearchSyntheticCommand,
-        ...rootRankedCandidates
-          .filter((candidate) => candidate.stableKey !== openUrlKey)
-          .filter((candidate) => isRootResultPromotionCandidate(candidate, searchQuery))
-          .slice(0, ROOT_SEARCH_RESULTS_LIMIT - 1)
-          .map((candidate) => candidate.command),
-      ];
-    }
+  const rootSearchSectionAssembly = useMemo(() => assembleRootSearchSections({
+    hasSearchQuery,
+    rootBangMode: rootBangState.mode,
+    browserSearchSyntheticCommand,
+    rootRankedCandidates,
+    browserCandidates,
+    fileCandidates,
+    webSearchRootDirectCommand,
+    webSearchRootSuggestionCommands,
+    rootBangCandidateCommands,
+    webSearchSuggestionsEnabled,
+    searchQuery,
+    t,
+  }), [
+    browserCandidates,
+    browserSearchSyntheticCommand,
+    fileCandidates,
+    hasSearchQuery,
+    rootBangCandidateCommands,
+    rootBangState.mode,
+    rootRankedCandidates,
+    searchQuery,
+    t,
+    webSearchRootDirectCommand,
+    webSearchRootSuggestionCommands,
+    webSearchSuggestionsEnabled,
+  ]);
 
-    const resultKeys = new Set<string>();
-    const results: CommandInfo[] = [];
-    const addResult = (candidate: RootSearchCandidate) => {
-      if (resultKeys.has(candidate.stableKey)) return;
-      results.push(candidate.command);
-      resultKeys.add(candidate.stableKey);
-    };
-    const highConfidence = rootRankedCandidates
-      .filter((candidate) => isRootResultPromotionCandidate(candidate, searchQuery))
-      .slice(0, ROOT_SEARCH_RESULTS_LIMIT - (webSearchRootDirectCommand ? 1 : 0));
-    highConfidence.forEach(addResult);
-    if (webSearchRootDirectCommand) {
-      results.push(webSearchRootDirectCommand);
-    }
-    return results;
-  }, [browserSearchSyntheticCommand, hasSearchQuery, rootBangState, rootRankedCandidates, searchQuery, webSearchRootDirectCommand]);
-
-  const queryBrowserSectionCommands = useMemo<CommandInfo[]>(() => {
-    if (!hasSearchQuery || rootBangState.mode !== 'none') return [];
-    const promotedKeys = new Set(
-      queryResultCommands
-        .map((command) => command.rootSearchStableKey || command.id)
-        .filter(Boolean)
-    );
-    return rankRootSearchCandidates(browserCandidates)
-      .filter((candidate) => !promotedKeys.has(candidate.stableKey))
-      .slice(0, MAX_LAUNCHER_FILE_RESULTS)
-      .map((candidate) => candidate.command);
-  }, [browserCandidates, hasSearchQuery, queryResultCommands, rootBangState]);
-
-  const queryFileSectionCommands = useMemo<CommandInfo[]>(() => {
-    if (!hasSearchQuery || rootBangState.mode !== 'none') return [];
-    const promotedKeys = new Set(
-      queryResultCommands
-        .map((command) => command.rootSearchStableKey || command.id)
-        .filter(Boolean)
-    );
-    return rankRootSearchCandidates(fileCandidates)
-      .filter((candidate) => !promotedKeys.has(candidate.stableKey))
-      .slice(0, MAX_LAUNCHER_FILE_RESULTS)
-      .map((candidate) => candidate.command);
-  }, [fileCandidates, hasSearchQuery, queryResultCommands, rootBangState]);
-
-  const querySearchSectionCommands = useMemo<CommandInfo[]>(() => {
-    if (!hasSearchQuery || rootBangState.mode !== 'none' || !webSearchSuggestionsEnabled) return [];
-    return webSearchRootSuggestionCommands.slice(0, MAX_LAUNCHER_FILE_RESULTS);
-  }, [hasSearchQuery, rootBangState, webSearchSuggestionsEnabled, webSearchRootSuggestionCommands]);
+  const {
+    queryResultCommands,
+    queryBrowserSectionCommands,
+    querySearchSectionCommands,
+    queryFileSectionCommands,
+  } = rootSearchSectionAssembly;
 
   const displayCommands = useMemo(() => {
-    if (rootBangState.mode === 'selecting') {
-      return webSearchSuggestionsEnabled ? rootBangCandidateCommands : [];
-    }
-    if (rootBangState.mode === 'active') {
-      return [
-        ...(webSearchRootDirectCommand ? [webSearchRootDirectCommand] : []),
-        ...(webSearchSuggestionsEnabled ? webSearchRootSuggestionCommands : []),
-      ];
-    }
+    if (rootBangState.mode === 'selecting') return rootSearchSectionAssembly.displayCommands;
+    if (rootBangState.mode === 'active') return rootSearchSectionAssembly.displayCommands;
     if (hasSearchQuery) {
-      return [
-        ...queryResultCommands,
-        ...queryBrowserSectionCommands,
-        ...querySearchSectionCommands,
-        ...queryFileSectionCommands,
-      ];
+      return rootSearchSectionAssembly.displayCommands;
     }
     const all = [
       ...browserSearchResultCommands,
@@ -908,42 +771,18 @@ export function useLauncherCommandModel({
   }, [
     webSearchRootDirectCommand,
     webSearchRootSuggestionCommands,
-    rootBangCandidateCommands,
     browserSearchResultCommands,
     groupedCommands,
     browserSearchSyntheticCommand,
-    rootBangState,
-    webSearchSuggestionsEnabled,
+    rootBangState.mode,
     hasSearchQuery,
-    queryResultCommands,
-    queryBrowserSectionCommands,
-    querySearchSectionCommands,
-    queryFileSectionCommands,
+    rootSearchSectionAssembly,
   ]);
 
   const launcherCommandSections = useMemo<LauncherCommandSection[]>(() => {
-    if (rootBangState.mode === 'selecting') {
-      if (!webSearchSuggestionsEnabled) return [];
-      return [
-        { title: t('launcher.browserSearch.bangSections.matching'), items: displayCommands },
-      ];
-    }
-
-    if (rootBangState.mode === 'active') {
-      return [
-        { title: '', items: webSearchRootDirectCommand ? [webSearchRootDirectCommand] : [] },
-        { title: t('launcher.categories.search'), items: webSearchSuggestionsEnabled ? webSearchRootSuggestionCommands : [] },
-      ].filter((section) => section.items.length > 0);
-    }
-
-    if (hasSearchQuery) {
-      return [
-        { title: t('launcher.sections.results'), items: queryResultCommands },
-        { title: t('launcher.categories.browser'), items: queryBrowserSectionCommands },
-        { title: t('launcher.categories.search'), items: querySearchSectionCommands },
-        { title: t('launcher.categories.files'), items: queryFileSectionCommands },
-      ].filter((section) => section.items.length > 0);
-    }
+    if (rootBangState.mode === 'selecting') return rootSearchSectionAssembly.launcherCommandSections;
+    if (rootBangState.mode === 'active') return rootSearchSectionAssembly.launcherCommandSections;
+    if (hasSearchQuery) return rootSearchSectionAssembly.launcherCommandSections;
 
     const topCommandIds = new Set(displayCommands.filter((command) => command.alwaysOnTop).map((command) => command.id));
     const directSearchIndex = displayCommands.findIndex((command) => command.id === WEB_SEARCH_ROOT_DIRECT_ID);
@@ -974,14 +813,9 @@ export function useLauncherCommandModel({
     displayCommands,
     groupedCommands,
     hasSearchQuery,
-    queryBrowserSectionCommands,
-    queryFileSectionCommands,
-    querySearchSectionCommands,
-    queryResultCommands,
-    rootBangState,
+    rootBangState.mode,
+    rootSearchSectionAssembly,
     t,
-    webSearchSuggestionsEnabled,
-    webSearchRootDirectCommand,
     webSearchRootSuggestionCommands,
   ]);
 

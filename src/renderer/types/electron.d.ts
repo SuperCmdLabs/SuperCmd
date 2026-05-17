@@ -856,6 +856,10 @@ export interface ElectronAPI {
 
   // Settings
   getSettings: () => Promise<AppSettings>;
+  recordRootSearchLaunch: (
+    stableKey: string,
+    query: string
+  ) => Promise<Record<string, RootSearchRankingSetting>>;
   getGlobalShortcutStatus: () => Promise<{
     requestedShortcut: string;
     activeShortcut: string;

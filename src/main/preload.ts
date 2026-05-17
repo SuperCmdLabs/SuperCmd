@@ -207,6 +207,8 @@ const electronAPI = {
 
   // ─── Settings ───────────────────────────────────────────────────
   getSettings: (): Promise<any> => ipcRenderer.invoke('get-settings'),
+  recordRootSearchLaunch: (stableKey: string, query: string): Promise<any> =>
+    ipcRenderer.invoke('record-root-search-launch', stableKey, query),
   getGlobalShortcutStatus: (): Promise<{
     requestedShortcut: string;
     activeShortcut: string;

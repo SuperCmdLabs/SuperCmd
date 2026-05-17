@@ -1684,13 +1684,12 @@ const App: React.FC = () => {
     rootSearchRankingRef.current = nextRanking;
     setRootSearchRanking(nextRanking);
     try {
-      const currentSettings = (await window.electron.getSettings()) as AppSettings;
-      const latest = recordRootSearchLaunchInState(
-        (currentSettings.rootSearchRanking || {}) as RootSearchRankingState,
+      const latest = (await window.electron.recordRootSearchLaunch(
         stableKey,
         normalizedQuery
-      );
-      await window.electron.saveSettings({ rootSearchRanking: latest } as Partial<AppSettings>);
+      )) as RootSearchRankingState;
+      rootSearchRankingRef.current = latest;
+      setRootSearchRanking(latest);
     } catch (error) {
       console.warn('Failed to record root search launch:', error);
     }

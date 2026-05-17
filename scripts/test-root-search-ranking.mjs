@@ -7,49 +7,68 @@ import assert from 'assert/strict';
 const require = createRequire(import.meta.url);
 const ts = require('typescript');
 
-const sourcePath = path.resolve('src/renderer/src/utils/root-search-ranking.ts');
-const source = fs.readFileSync(sourcePath, 'utf8');
-const transpiled = ts.transpileModule(source, {
-  compilerOptions: {
-    module: ts.ModuleKind.CommonJS,
-    target: ts.ScriptTarget.ES2022,
-    esModuleInterop: true,
-    importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
-  },
-  fileName: sourcePath,
-});
+const moduleCache = new Map();
 
-const module = { exports: {} };
-const sandbox = {
-  module,
-  exports: module.exports,
-  require,
-  console,
-  URL,
-  Date,
-  Math,
-  String,
-  Number,
-  Set,
-  Map,
-  Object,
-  Array,
-  RegExp,
-};
-vm.runInNewContext(transpiled.outputText, sandbox, { filename: sourcePath });
+function loadTsModule(filePath) {
+  const resolvedPath = path.resolve(filePath);
+  if (moduleCache.has(resolvedPath)) return moduleCache.get(resolvedPath).exports;
 
-const ranking = module.exports;
+  const source = fs.readFileSync(resolvedPath, 'utf8');
+  const transpiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      esModuleInterop: true,
+      importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
+    },
+    fileName: resolvedPath,
+  });
+
+  const module = { exports: {} };
+  moduleCache.set(resolvedPath, module);
+  const localRequire = (request) => {
+    if (request.startsWith('.')) {
+      const candidate = path.resolve(path.dirname(resolvedPath), request);
+      for (const suffix of ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx']) {
+        const nextPath = `${candidate}${suffix}`;
+        if (fs.existsSync(nextPath) && fs.statSync(nextPath).isFile()) {
+          if (nextPath.endsWith('.ts') || nextPath.endsWith('.tsx')) return loadTsModule(nextPath);
+          return require(nextPath);
+        }
+      }
+    }
+    return require(request);
+  };
+  const sandbox = {
+    module,
+    exports: module.exports,
+    require: localRequire,
+    console,
+    URL,
+    Date,
+    Math,
+    String,
+    Number,
+    Set,
+    Map,
+    Object,
+    Array,
+    RegExp,
+  };
+  vm.runInNewContext(transpiled.outputText, sandbox, { filename: resolvedPath });
+  return module.exports;
+}
+
+const ranking = loadTsModule('src/renderer/src/utils/root-search-ranking.ts');
+const sections = loadTsModule('src/renderer/src/utils/root-search-sections.ts');
 const {
-  ROOT_SEARCH_PROMOTION_SCORE,
-  ROOT_SEARCH_RESULTS_LIMIT,
   getSharedRootCompletion,
-  normalizeRootSearchText,
   rankRootSearchCandidates,
   recordRootSearchLaunchInState,
   scoreRootSearchCandidate,
   scoreRootSearchFields,
-  tokenizeRootSearchQuery,
 } = ranking;
+const { assembleRootSearchSections } = sections;
 
 const now = Date.UTC(2026, 4, 17);
 
@@ -98,105 +117,26 @@ function candidate({
   }, query, rankingState, now);
 }
 
-function assembleResults({ ranked, directSearchCommand = null, openUrlCommand = null, query = '' }) {
-  if (openUrlCommand) {
-    return [
-      openUrlCommand,
-      ...ranked
-        .filter((item) => isPromotionCandidate(item, query))
-        .slice(0, ROOT_SEARCH_RESULTS_LIMIT - 1)
-        .map((item) => item.command),
-    ];
-  }
-
-  const resultKeys = new Set();
-  const results = [];
-  const add = (item) => {
-    if (resultKeys.has(item.stableKey)) return;
-    results.push(item.command);
-    resultKeys.add(item.stableKey);
-  };
-
-  ranked
-    .filter((item) => isPromotionCandidate(item, query))
-    .slice(0, ROOT_SEARCH_RESULTS_LIMIT - (directSearchCommand ? 1 : 0))
-    .forEach(add);
-
-  if (directSearchCommand) results.push(directSearchCommand);
-  return results;
+function assembleRootSearchForTest(overrides = {}) {
+  return assembleRootSearchSections({
+    hasSearchQuery: true,
+    rootBangMode: 'none',
+    browserSearchSyntheticCommand: null,
+    rootRankedCandidates: [],
+    browserCandidates: [],
+    fileCandidates: [],
+    webSearchRootDirectCommand: null,
+    webSearchRootSuggestionCommands: [],
+    rootBangCandidateCommands: [],
+    webSearchSuggestionsEnabled: true,
+    searchQuery: '',
+    t: (key) => key,
+    ...overrides,
+  });
 }
 
-const BROAD_FILE_PATH_QUERY_TERMS = new Set([
-  'desktop',
-  'documents',
-  'downloads',
-  'users',
-  'user',
-  'home',
-  'library',
-  'application',
-  'support',
-]);
-
-function isFocusedFilePathCandidate(item, query) {
-  if (item.source !== 'file' || !item.pathOrUrl) return false;
-  if (item.subtype !== 'file' && item.subtype !== 'folder') return false;
-  const terms = tokenizeRootSearchQuery(query).filter((term) =>
-    term.length >= 3 && !BROAD_FILE_PATH_QUERY_TERMS.has(term)
-  );
-  const normalizedLabel = normalizeRootSearchText(item.label);
-  if (terms.length < 2 && !terms.some((term) => !normalizedLabel.includes(term))) return false;
-
-  const normalizedPath = normalizeRootSearchText(item.pathOrUrl);
-  const hasPathNarrowingTerm = terms.some((term) =>
-    !normalizedLabel.includes(term) && normalizedPath.includes(term)
-  );
-  if (!hasPathNarrowingTerm) return false;
-  return item.finalScore >= 600 && item.depthPenalty <= 180 && item.noisePenalty <= 140;
-}
-
-function isPromotionCandidate(item, query = '') {
-  const focusedFilePathCandidate = isFocusedFilePathCandidate(item, query);
-  if (item.finalScore < (focusedFilePathCandidate ? 600 : ROOT_SEARCH_PROMOTION_SCORE)) return false;
-  if (item.subtype === 'nickname') return true;
-  if (item.subtype === 'app' || item.subtype === 'quicklink') {
-    return !['contains', 'subsequence', 'description'].includes(item.matchKind);
-  }
-  if (item.subtype === 'file' || item.subtype === 'folder') {
-    if (item.matchKind === 'exact') return true;
-    if (focusedFilePathCandidate) return true;
-    if (['prefix', 'token-prefix', 'compact-prefix'].includes(item.matchKind)) {
-      if (item.subtype === 'folder' && item.depthPenalty === 0 && item.noisePenalty === 0) return true;
-      return item.depthPenalty <= 60 && item.noisePenalty === 0 && item.finalScore >= 760;
-    }
-    return false;
-  }
-  if (item.subtype === 'open-tab' || item.subtype === 'bookmark') {
-    return item.finalScore >= 820 && ['exact', 'prefix', 'token-prefix', 'url'].includes(item.matchKind);
-  }
-  if (item.subtype === 'history') {
-    if (item.finalScore >= 620 && ['exact', 'url'].includes(item.matchKind)) return true;
-    return item.finalScore >= 820 && !isSearchEngineHistoryCandidate(item) && ['prefix', 'token-prefix'].includes(item.matchKind);
-  }
-  return item.finalScore >= 780 && ['exact', 'alias-exact', 'prefix', 'token-prefix'].includes(item.matchKind);
-}
-
-function isSearchEngineHistoryCandidate(item) {
-  if (item.subtype !== 'history' || !item.pathOrUrl) return false;
-  try {
-    const host = new URL(item.pathOrUrl).hostname.replace(/^www\./i, '').toLowerCase();
-    return (
-      host === 'google.com' ||
-      host.endsWith('.google.com') ||
-      host === 'bing.com' ||
-      host.endsWith('.bing.com') ||
-      host === 'duckduckgo.com' ||
-      host.endsWith('.duckduckgo.com') ||
-      host === 'search.brave.com'
-    );
-  } catch {
-    return false;
-  }
+function ids(items) {
+  return Array.from(items, (item) => item.id);
 }
 
 function test(name, fn) {
@@ -314,11 +254,14 @@ test('URL open command is inserted first outside normal scoring', () => {
   const ranked = rankRootSearchCandidates([
     candidate({ query: 'twitch', id: 'history-twitch', title: 'Twitch', subtype: 'history', sourceQualityBoost: 250 }),
   ]);
-  const results = assembleResults({
-    ranked,
-    openUrlCommand: command('browser-search-action-open-url', 'Open twitch.tv'),
-  });
+  const results = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    browserSearchSyntheticCommand: command('browser-search-action-open-url', 'Open twitch.tv'),
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "twitch.tv"'),
+  }).queryResultCommands;
   assert.equal(results[0].id, 'browser-search-action-open-url');
+  assert.equal(results.some((item) => item.id === 'web-search-root-direct'), false);
 });
 
 test('direct search appears after strong promoted results', () => {
@@ -326,11 +269,12 @@ test('direct search appears after strong promoted results', () => {
   const ranked = rankRootSearchCandidates([
     candidate({ query, id: 'app-vivaldi', title: 'Vivaldi', subtype: 'app' }),
   ]);
-  const results = assembleResults({
-    ranked,
-    directSearchCommand: command('web-search-root-direct', 'Search "vivaldi"'),
-  });
-  assert.deepEqual(results.slice(0, 2).map((item) => item.id), ['app-vivaldi', 'web-search-root-direct']);
+  const results = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "vivaldi"'),
+  }).queryResultCommands;
+  assert.deepEqual(ids(results.slice(0, 2)), ['app-vivaldi', 'web-search-root-direct']);
 });
 
 test('direct search is last in Results ahead of weak deep file matches', () => {
@@ -347,11 +291,14 @@ test('direct search is last in Results ahead of weak deep file matches', () => {
       pathOrUrl: '/Users/me/Desktop/project/env/site-packages/pytz/zoneinfo/Europe/Uzhgorod',
     }),
   ]);
-  const results = assembleResults({
-    ranked,
-    directSearchCommand: command('web-search-root-direct', 'Search "uzh"'),
+  const results = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    fileCandidates: ranked.filter((item) => item.source === 'file'),
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "uzh"'),
   });
-  assert.deepEqual(results.map((item) => item.id), ['folder-uzh', 'web-search-root-direct']);
+  assert.deepEqual(ids(results.queryResultCommands), ['folder-uzh', 'web-search-root-direct']);
+  assert.equal(results.queryFileSectionCommands.some((item) => item.id === 'deep-uzhgorod'), true);
 });
 
 test('focused project path file match promotes before direct search', () => {
@@ -371,12 +318,12 @@ test('focused project path file match promotes before direct search', () => {
     depthPenalty: 50,
   });
   const ranked = rankRootSearchCandidates([nodeModules]);
-  const results = assembleResults({
-    ranked,
-    query,
-    directSearchCommand: command('web-search-root-direct', 'Search "supercmd node"'),
-  });
-  assert.deepEqual(results.map((item) => item.id), ['folder-node-modules', 'web-search-root-direct']);
+  const results = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "supercmd node"'),
+  }).queryResultCommands;
+  assert.deepEqual(ids(results), ['folder-node-modules', 'web-search-root-direct']);
 });
 
 test('broad location path match does not promote before direct search', () => {
@@ -396,12 +343,12 @@ test('broad location path match does not promote before direct search', () => {
     depthPenalty: 50,
   });
   const ranked = rankRootSearchCandidates([nodeModules]);
-  const results = assembleResults({
-    ranked,
-    query,
-    directSearchCommand: command('web-search-root-direct', 'Search "desktop node"'),
-  });
-  assert.deepEqual(results.map((item) => item.id), ['web-search-root-direct']);
+  const results = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "desktop node"'),
+  }).queryResultCommands;
+  assert.deepEqual(ids(results), ['web-search-root-direct']);
 });
 
 test('strong browser host match promotes before direct search', () => {
@@ -417,11 +364,12 @@ test('strong browser host match promotes before direct search', () => {
   });
   twitch.matchKind = 'url';
   const ranked = rankRootSearchCandidates([twitch]);
-  const results = assembleResults({
-    ranked,
-    directSearchCommand: command('web-search-root-direct', 'Search "twitch"'),
-  });
-  assert.deepEqual(results.map((item) => item.id), ['history-twitch', 'web-search-root-direct']);
+  const results = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "twitch"'),
+  }).queryResultCommands;
+  assert.deepEqual(ids(results), ['history-twitch', 'web-search-root-direct']);
 });
 
 test('exact destination history beats search-engine open tab containing query', () => {
@@ -495,11 +443,12 @@ test('strong non-search browser title prefix promotes before direct search', () 
     sourceQualityBoost: 120,
   });
   const ranked = rankRootSearchCandidates([twitch]);
-  const results = assembleResults({
-    ranked,
-    directSearchCommand: command('web-search-root-direct', 'Search "atrioc"'),
-  });
-  assert.deepEqual(results.map((item) => item.id), ['history-atrioc', 'web-search-root-direct']);
+  const results = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "atrioc"'),
+  }).queryResultCommands;
+  assert.deepEqual(ids(results), ['history-atrioc', 'web-search-root-direct']);
 });
 
 test('search engine history title prefix does not promote over direct search', () => {
@@ -513,19 +462,118 @@ test('search engine history title prefix does not promote over direct search', (
     sourceQualityBoost: 160,
   });
   const ranked = rankRootSearchCandidates([googleHistory]);
-  const results = assembleResults({
-    ranked,
-    directSearchCommand: command('web-search-root-direct', 'Search "twitch"'),
-  });
-  assert.deepEqual(results.map((item) => item.id), ['web-search-root-direct']);
+  const results = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "twitch"'),
+  }).queryResultCommands;
+  assert.deepEqual(ids(results), ['web-search-root-direct']);
 });
 
 test('search section gating hides suggestions without removing direct search', () => {
   const directSearch = command('web-search-root-direct', 'Search "vivaldi"');
-  const suggestionsEnabled = false;
-  const searchSectionItems = suggestionsEnabled ? [command('web-search-root-suggestion:vivaldi browser', 'vivaldi browser')] : [];
-  assert.equal(searchSectionItems.length, 0);
-  assert.equal(directSearch.id, 'web-search-root-direct');
+  const browser = candidate({
+    query: 'vivaldi',
+    id: 'history-vivaldi',
+    title: 'Vivaldi Browser',
+    subtype: 'history',
+    pathOrUrl: 'https://vivaldi.com/',
+  });
+  const file = candidate({
+    query: 'vivaldi',
+    id: 'file-vivaldi',
+    title: 'vivaldi-notes.txt',
+    subtype: 'file',
+    pathOrUrl: '/Users/me/Documents/vivaldi-notes.txt',
+  });
+  const assembled = assembleRootSearchForTest({
+    searchQuery: 'vivaldi',
+    rootRankedCandidates: [],
+    browserCandidates: [browser],
+    fileCandidates: [file],
+    webSearchRootDirectCommand: directSearch,
+    webSearchRootSuggestionCommands: [command('web-search-root-suggestion:vivaldi browser', 'vivaldi browser')],
+    webSearchSuggestionsEnabled: false,
+  });
+  assert.deepEqual(ids(assembled.queryResultCommands), ['web-search-root-direct']);
+  assert.equal(assembled.launcherCommandSections.some((section) => section.title === 'launcher.categories.search'), false);
+  assert.equal(assembled.queryBrowserSectionCommands[0].id, 'history-vivaldi');
+  assert.equal(assembled.queryFileSectionCommands[0].id, 'file-vivaldi');
+});
+
+test('promoted browser result is removed from Browser section', () => {
+  const query = 'atrioc';
+  const browser = candidate({
+    query,
+    id: 'history-atrioc',
+    title: 'Atrioc - Twitch',
+    subtype: 'history',
+    pathOrUrl: 'https://www.twitch.tv/atrioc',
+    sourceQualityBoost: 120,
+  });
+  const assembled = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: rankRootSearchCandidates([browser]),
+    browserCandidates: [browser],
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "atrioc"'),
+  });
+  assert.equal(assembled.queryResultCommands.some((item) => item.id === 'history-atrioc'), true);
+  assert.equal(assembled.queryBrowserSectionCommands.some((item) => item.id === 'history-atrioc'), false);
+});
+
+test('promoted file result is removed from Files section', () => {
+  const query = 'UZH';
+  const file = candidate({
+    query,
+    id: 'folder-uzh',
+    title: 'UZH',
+    subtype: 'folder',
+    pathLocationBoost: 120,
+    pathOrUrl: '/Users/me/Desktop/UZH',
+  });
+  const assembled = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: rankRootSearchCandidates([file]),
+    fileCandidates: [file],
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "UZH"'),
+  });
+  assert.equal(assembled.queryResultCommands.some((item) => item.id === 'folder-uzh'), true);
+  assert.equal(assembled.queryFileSectionCommands.some((item) => item.id === 'folder-uzh'), false);
+});
+
+test('bang selecting choices are gated by search suggestions setting', () => {
+  const bangChoice = command('web-search-root-bang:g', '!g Google');
+  const enabled = assembleRootSearchForTest({
+    rootBangMode: 'selecting',
+    rootBangCandidateCommands: [bangChoice],
+    webSearchSuggestionsEnabled: true,
+  });
+  const disabled = assembleRootSearchForTest({
+    rootBangMode: 'selecting',
+    rootBangCandidateCommands: [bangChoice],
+    webSearchSuggestionsEnabled: false,
+  });
+  assert.deepEqual(ids(enabled.displayCommands), ['web-search-root-bang:g']);
+  assert.deepEqual(Array.from(disabled.displayCommands), []);
+});
+
+test('bang active keeps direct search and gates suggestions', () => {
+  const direct = command('web-search-root-direct', 'Search Google for "raycast"');
+  const suggestion = command('web-search-root-suggestion:raycast api', 'raycast api');
+  const enabled = assembleRootSearchForTest({
+    rootBangMode: 'active',
+    webSearchRootDirectCommand: direct,
+    webSearchRootSuggestionCommands: [suggestion],
+    webSearchSuggestionsEnabled: true,
+  });
+  const disabled = assembleRootSearchForTest({
+    rootBangMode: 'active',
+    webSearchRootDirectCommand: direct,
+    webSearchRootSuggestionCommands: [suggestion],
+    webSearchSuggestionsEnabled: false,
+  });
+  assert.deepEqual(ids(enabled.displayCommands), ['web-search-root-direct', 'web-search-root-suggestion:raycast api']);
+  assert.deepEqual(ids(disabled.displayCommands), ['web-search-root-direct']);
 });
 
 test('browser URL dedupe keeps highest-ranked result for the same URL', () => {

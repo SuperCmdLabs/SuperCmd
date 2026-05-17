@@ -22,6 +22,7 @@ import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binar
 import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster, setExternalSettingsChangeHandler, settingsFileExistsOrICloudPlaceholder } from './settings-store';
 import type { AppSettings, RelocateMode } from './settings-store';
+import { recordRootSearchLaunchInState, type RootSearchRankingState } from '../shared/root-search-ranking-state';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
 import { scanAppRemnants } from './app-uninstaller';
 import * as soulverCalculator from './soulver-calculator';
@@ -13218,6 +13219,23 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('get-settings', () => {
     return loadSettings();
+  });
+
+  ipcMain.handle('record-root-search-launch', (_event: any, stableKey: string, query: string) => {
+    const cleanKey = String(stableKey || '').trim();
+    const cleanQuery = String(query || '').trim();
+    if (!cleanKey || !cleanQuery) {
+      throw new Error('A root search launch requires a stable key and query.');
+    }
+    const current = loadSettings();
+    const rootSearchRanking = recordRootSearchLaunchInState(
+      (current.rootSearchRanking || {}) as RootSearchRankingState,
+      cleanKey,
+      cleanQuery
+    );
+    const updated = saveSettings({ rootSearchRanking } as Partial<AppSettings>);
+    broadcastSettingsToAllWindows(updated);
+    return updated.rootSearchRanking;
   });
 
   // ─── Synced Extension List Helpers ──────────────────────────────
