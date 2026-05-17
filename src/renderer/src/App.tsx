@@ -12,7 +12,6 @@ import type {
   CommandInfo,
   ExtensionBundle,
   AppSettings,
-  QuickLinkDynamicField,
   IndexedFileSearchResult,
   BrowserSearchNicknameSetting,
   BrowserSearchResultGroupSetting,
@@ -43,16 +42,16 @@ import { useMenuBarExtensions } from './hooks/useMenuBarExtensions';
 import { useBackgroundRefresh } from './hooks/useBackgroundRefresh';
 import { useSpeakManager } from './hooks/useSpeakManager';
 import { useWhisperManager } from './hooks/useWhisperManager';
-import { useInlineArgumentAnchor } from './hooks/useInlineArgumentAnchor';
 import { useBrowserSearch, type BrowserSearchResult } from './hooks/useBrowserSearch';
 import { useLauncherCommandModel } from './hooks/useLauncherCommandModel';
+import { useLauncherInlineArguments } from './hooks/useLauncherInlineArguments';
 import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
 import {
   type LauncherAction, type MemoryFeedback,
   formatShortcutLabel,
-  renderCommandIcon, getCommandDisplayTitle,
+  getCommandDisplayTitle,
   matchesLauncherShortcut,
 } from './utils/command-helpers';
 import {
@@ -60,7 +59,6 @@ import {
   readJsonObject, writeJsonObject,
   getCmdArgsKey,
   getScriptCmdArgsKey,
-  clearCommandArguments,
   hydrateExtensionBundlePreferences,
   shouldOpenCommandSetup,
   getMissingRequiredPreferences,
@@ -126,12 +124,10 @@ import {
 } from './utils/launcher-background';
 import {
   DIRECT_LAUNCH_EXPANSION_GUARD_MS,
-  MAX_INLINE_EXTENSION_ARGUMENTS,
   MAX_INLINE_QUICK_LINK_ARGUMENTS,
   getExtensionIdentityFromCommand,
   getQuickLinkIdFromCommandId,
   isEditableElement,
-  normalizeQuickLinkDynamicFields,
 } from './utils/launcher-misc';
 import {
   type BangParseState,
@@ -225,15 +221,6 @@ const App: React.FC = () => {
   const [webSearchDisabledBangKeys, setWebSearchDisabledBangKeys] = useState<string[]>([]);
   const [webSearchBangCustomProviders, setWebSearchBangCustomProviders] = useState<WebSearchBangCustomProviderSetting[]>([]);
   const [webSearchShowHiddenBangs, setWebSearchShowHiddenBangs] = useState(false);
-  const [inlineExtensionArgumentValues, setInlineExtensionArgumentValues] = useState<
-    Record<string, Record<string, string>>
-  >({});
-  const [inlineQuickLinkDynamicFieldsById, setInlineQuickLinkDynamicFieldsById] = useState<
-    Record<string, QuickLinkDynamicField[]>
-  >({});
-  const [inlineQuickLinkDynamicValuesById, setInlineQuickLinkDynamicValuesById] = useState<
-    Record<string, Record<string, string>>
-  >({});
   const [launcherFileResults, setLauncherFileResults] = useState<IndexedFileSearchResult[]>([]);
   const [disableFileSearchResults, setDisableFileSearchResults] = useState(false);
   const [launcherViewMode, setLauncherViewMode] = useState<'expanded' | 'compact'>('expanded');
@@ -311,10 +298,6 @@ const App: React.FC = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const browserResultsViewInputRef = useRef<HTMLInputElement>(null);
   const webSearchInputRef = useRef<HTMLInputElement>(null);
-  const inlineArgumentLaneRef = useRef<HTMLDivElement>(null);
-  const inlineArgumentClusterRef = useRef<HTMLDivElement>(null);
-  const inlineArgumentInputRefs = useRef<Array<HTMLInputElement | HTMLSelectElement | null>>([]);
-  const inlineQuickLinkInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const fileSearchRequestSeqRef = useRef(0);
   const commandsRef = useRef<CommandInfo[]>([]);
   const lastCommandsFetchAtRef = useRef(0);
@@ -391,8 +374,6 @@ const App: React.FC = () => {
   // Holds a search query to restore after the window-shown reset, set by the
   // hotkey no-view path when it needs to open the launcher with a pre-typed query.
   const pendingWindowShownQueryRef = useRef<string | null>(null);
-  // When true, focus the first inline argument input as soon as it appears.
-  const pendingFocusInlineArgRef = useRef(false);
   const isLauncherModeActiveRef = useRef(false);
   const pinnedCommandsRef = useRef<string[]>([]);
   const pinnedFilesRef = useRef<string[]>([]);
@@ -967,7 +948,7 @@ const App: React.FC = () => {
       if (pendingQuery) {
         setSearchQuery(pendingQuery);
         setSelectedIndex(0);
-        pendingFocusInlineArgRef.current = true;
+        requestPendingInlineArgumentFocus();
       }
       // When a pending query is pre-filled (e.g. hotkey-triggered no-view
       // command with missing args), expand out of compact so results are
@@ -1823,6 +1804,46 @@ const App: React.FC = () => {
     t,
   });
 
+  const {
+    inlineArgumentLaneRef,
+    inlineArgumentClusterRef,
+    inlineArgumentInputRefs,
+    inlineQuickLinkInputRefs,
+
+    selectedExtensionArgumentDefinitions,
+    selectedInlineExtensionArgumentDefinitions,
+    selectedInlineExtensionArgumentValues,
+    hasSelectedExtensionOverflowArguments,
+
+    selectedQuickLinkId,
+    selectedQuickLinkDynamicFields,
+    selectedInlineQuickLinkDynamicFields,
+    selectedInlineQuickLinkDynamicValues,
+    hasSelectedQuickLinkOverflowDynamicFields,
+
+    isShowingInlineArgumentInputs,
+    shouldHideAskAi,
+    selectedInlineArgumentLeadingIcon,
+    inlineArgumentStartPx,
+
+    inlineQuickLinkDynamicFieldsById,
+    inlineQuickLinkDynamicValuesById,
+
+    requestPendingInlineArgumentFocus,
+    getDynamicFieldsForQuickLink,
+    updateInlineExtensionArgumentValue,
+    clearInlineExtensionArgumentsForCommand,
+    getInlineExtensionArgumentsForCommand,
+    updateInlineQuickLinkDynamicValue,
+    clearInlineQuickLinkDynamicValuesForId,
+  } = useLauncherInlineArguments({
+    selectedCommand,
+    selectedCommandId: selectedCommand?.id,
+    searchQuery,
+    isLauncherModeActive,
+    inputRef,
+  });
+
   const browserHistoryProfileOptions = useMemo(() => {
     return browserSearch.getHistoryProfiles();
   }, [browserSearch]);
@@ -2104,273 +2125,12 @@ const App: React.FC = () => {
   useEffect(() => {
     selectedCommandRef.current = selectedCommand;
   }, [selectedCommand]);
-  const selectedExtensionArgumentDefinitions = useMemo(
-    () =>
-      selectedCommand?.category === 'extension'
-        ? (selectedCommand.commandArgumentDefinitions || []).filter((definition) => definition?.name)
-        : [],
-    [selectedCommand]
-  );
-  const selectedInlineExtensionArgumentDefinitions = useMemo(
-    () => selectedExtensionArgumentDefinitions.slice(0, MAX_INLINE_EXTENSION_ARGUMENTS),
-    [selectedExtensionArgumentDefinitions]
-  );
-  const selectedInlineExtensionArgumentValues = useMemo(
-    () => (selectedCommand ? inlineExtensionArgumentValues[selectedCommand.id] || {} : {}),
-    [inlineExtensionArgumentValues, selectedCommand]
-  );
-  const hasSelectedExtensionOverflowArguments =
-    selectedExtensionArgumentDefinitions.length > selectedInlineExtensionArgumentDefinitions.length;
-  const selectedQuickLinkId = useMemo(
-    () => (selectedCommand ? getQuickLinkIdFromCommandId(selectedCommand.id) : null),
-    [selectedCommand]
-  );
-  const selectedQuickLinkDynamicFields = useMemo(
-    () => (selectedQuickLinkId ? inlineQuickLinkDynamicFieldsById[selectedQuickLinkId] || [] : []),
-    [inlineQuickLinkDynamicFieldsById, selectedQuickLinkId]
-  );
-  const selectedInlineQuickLinkDynamicFields = useMemo(
-    () => selectedQuickLinkDynamicFields.slice(0, MAX_INLINE_QUICK_LINK_ARGUMENTS),
-    [selectedQuickLinkDynamicFields]
-  );
-  const selectedInlineQuickLinkDynamicValues = useMemo(
-    () => (selectedQuickLinkId ? inlineQuickLinkDynamicValuesById[selectedQuickLinkId] || {} : {}),
-    [inlineQuickLinkDynamicValuesById, selectedQuickLinkId]
-  );
-  const hasSelectedQuickLinkOverflowDynamicFields =
-    selectedQuickLinkDynamicFields.length > selectedInlineQuickLinkDynamicFields.length;
-  const isShowingInlineArgumentInputs =
-    selectedInlineExtensionArgumentDefinitions.length > 0 || selectedInlineQuickLinkDynamicFields.length > 0;
-  const shouldHideAskAi = Boolean(selectedQuickLinkId) || isShowingInlineArgumentInputs;
-  const selectedInlineArgumentLeadingIcon = useMemo(() => {
-    if (!isShowingInlineArgumentInputs || !selectedCommand) return null;
-    return renderCommandIcon(selectedCommand);
-  }, [isShowingInlineArgumentInputs, selectedCommand]);
-  const inlineArgumentStartPx = useInlineArgumentAnchor({
-    enabled: isShowingInlineArgumentInputs,
-    query: searchQuery,
-    searchInputRef: inputRef,
-    laneRef: inlineArgumentLaneRef,
-    inlineRef: inlineArgumentClusterRef,
-    minStartRatio: 0.3,
-  });
+
   useEffect(() => {
     if (!showFileSearch && fileSearchInitialDetailPath) {
       setFileSearchInitialDetailPath(null);
     }
   }, [showFileSearch, fileSearchInitialDetailPath]);
-
-  const getDynamicFieldsForQuickLink = useCallback(
-    async (
-      quickLinkId: string,
-      options?: { forceRefresh?: boolean }
-    ): Promise<QuickLinkDynamicField[]> => {
-      const normalizedId = String(quickLinkId || '').trim();
-      if (!normalizedId) return [];
-      const cached = inlineQuickLinkDynamicFieldsById[normalizedId];
-      if (cached && !options?.forceRefresh) return cached;
-      try {
-        const fetched = await window.electron.quickLinkGetDynamicFields(normalizedId);
-        const normalizedFields = normalizeQuickLinkDynamicFields(Array.isArray(fetched) ? fetched : []);
-        setInlineQuickLinkDynamicFieldsById((prev) => ({
-          ...prev,
-          [normalizedId]: normalizedFields,
-        }));
-        return normalizedFields;
-      } catch (error) {
-        console.error('Failed to load quick link dynamic fields for launcher inline input:', error);
-        return [];
-      }
-    },
-    [inlineQuickLinkDynamicFieldsById]
-  );
-  useEffect(() => {
-    inlineArgumentInputRefs.current = inlineArgumentInputRefs.current.slice(
-      0,
-      selectedInlineExtensionArgumentDefinitions.length
-    );
-  }, [selectedInlineExtensionArgumentDefinitions.length]);
-
-  useEffect(() => {
-    inlineQuickLinkInputRefs.current = inlineQuickLinkInputRefs.current.slice(
-      0,
-      selectedInlineQuickLinkDynamicFields.length
-    );
-  }, [selectedInlineQuickLinkDynamicFields.length]);
-
-  // When a hotkey-triggered no-view command opens the launcher with a pre-typed
-  // query, focus the first inline argument input once it appears in the DOM.
-  useEffect(() => {
-    if (!pendingFocusInlineArgRef.current) return;
-    if (!isShowingInlineArgumentInputs) return;
-    pendingFocusInlineArgRef.current = false;
-    requestAnimationFrame(() => {
-      inlineArgumentInputRefs.current[0]?.focus();
-    });
-  }, [isShowingInlineArgumentInputs]);
-
-  useEffect(() => {
-    if (!isLauncherModeActive) return;
-    const extensionIdentity = getExtensionIdentityFromCommand(selectedCommand);
-    if (!selectedCommand || !extensionIdentity || selectedExtensionArgumentDefinitions.length === 0) return;
-
-    setInlineExtensionArgumentValues((prev) => {
-      if (prev[selectedCommand.id]) return prev;
-      const shouldRestoreStoredArgs = selectedCommand.mode === 'no-view';
-      const storedValues = shouldRestoreStoredArgs
-        ? readJsonObject(getCmdArgsKey(extensionIdentity.extName, extensionIdentity.cmdName))
-        : {};
-      if (!shouldRestoreStoredArgs) {
-        clearCommandArguments(extensionIdentity.extName, extensionIdentity.cmdName);
-      }
-      const initialValues = selectedExtensionArgumentDefinitions.reduce((acc, definition) => {
-        acc[definition.name] = String(storedValues[definition.name] ?? '');
-        return acc;
-      }, {} as Record<string, string>);
-      return {
-        ...prev,
-        [selectedCommand.id]: initialValues,
-      };
-    });
-  }, [isLauncherModeActive, selectedCommand, selectedExtensionArgumentDefinitions]);
-
-  useEffect(() => {
-    if (!isLauncherModeActive || !selectedQuickLinkId) return;
-    void getDynamicFieldsForQuickLink(selectedQuickLinkId, { forceRefresh: true });
-  }, [getDynamicFieldsForQuickLink, isLauncherModeActive, selectedQuickLinkId]);
-
-  useEffect(() => {
-    if (!selectedQuickLinkId || selectedQuickLinkDynamicFields.length === 0) return;
-    setInlineQuickLinkDynamicValuesById((prev) => {
-      const existing = prev[selectedQuickLinkId] || {};
-      let changed = !prev[selectedQuickLinkId];
-      const nextValues = { ...existing };
-      for (const field of selectedQuickLinkDynamicFields) {
-        const key = String(field.key || '').trim();
-        if (!key || nextValues[key] !== undefined) continue;
-        nextValues[key] = String(field.defaultValue || '');
-        changed = true;
-      }
-      if (!changed) return prev;
-      return {
-        ...prev,
-        [selectedQuickLinkId]: nextValues,
-      };
-    });
-  }, [selectedQuickLinkDynamicFields, selectedQuickLinkId]);
-
-  useEffect(() => {
-    if (!isLauncherModeActive) return;
-    const timer = window.setTimeout(() => {
-      if (document.activeElement !== inputRef.current) {
-        inputRef.current?.focus();
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [isLauncherModeActive, selectedCommand?.id, selectedInlineExtensionArgumentDefinitions.length, selectedInlineQuickLinkDynamicFields.length]);
-
-  const updateInlineExtensionArgumentValue = useCallback(
-    (command: CommandInfo, argumentName: string, value: string) => {
-      const extensionIdentity = getExtensionIdentityFromCommand(command);
-      setInlineExtensionArgumentValues((prev) => {
-        const nextCommandValues = {
-          ...(prev[command.id] || {}),
-          [argumentName]: value,
-        };
-        if (extensionIdentity && command.mode === 'no-view') {
-          writeJsonObject(getCmdArgsKey(extensionIdentity.extName, extensionIdentity.cmdName), nextCommandValues);
-        }
-        return {
-          ...prev,
-          [command.id]: nextCommandValues,
-        };
-      });
-    },
-    []
-  );
-
-  const clearInlineExtensionArgumentsForCommand = useCallback((command: CommandInfo) => {
-    const extensionIdentity = getExtensionIdentityFromCommand(command);
-    setInlineExtensionArgumentValues((prev) => {
-      if (!prev[command.id]) return prev;
-      const next = { ...prev };
-      delete next[command.id];
-      return next;
-    });
-    if (extensionIdentity && command.mode !== 'no-view') {
-      clearCommandArguments(extensionIdentity.extName, extensionIdentity.cmdName);
-    }
-  }, []);
-
-  const updateInlineQuickLinkDynamicValue = useCallback(
-    (quickLinkId: string, key: string, value: string) => {
-      const normalizedId = String(quickLinkId || '').trim();
-      const normalizedKey = String(key || '').trim();
-      if (!normalizedId || !normalizedKey) return;
-      setInlineQuickLinkDynamicValuesById((prev) => ({
-        ...prev,
-        [normalizedId]: {
-          ...(prev[normalizedId] || {}),
-          [normalizedKey]: value,
-        },
-      }));
-    },
-    []
-  );
-
-  const clearInlineQuickLinkDynamicValuesForId = useCallback((quickLinkId: string) => {
-    const normalizedId = String(quickLinkId || '').trim();
-    if (!normalizedId) return;
-    setInlineQuickLinkDynamicValuesById((prev) => {
-      if (!prev[normalizedId]) return prev;
-      const next = { ...prev };
-      delete next[normalizedId];
-      return next;
-    });
-  }, []);
-
-  const getInlineExtensionArgumentsForCommand = useCallback(
-    (command: CommandInfo): Record<string, string> => {
-      const definitions = (command.commandArgumentDefinitions || []).filter((definition) => definition?.name);
-      if (definitions.length === 0) return {};
-
-      const current = { ...(inlineExtensionArgumentValues[command.id] || {}) };
-      if (selectedCommand?.id === command.id) {
-        for (let index = 0; index < definitions.length; index += 1) {
-          const definition = definitions[index];
-          if (index >= MAX_INLINE_EXTENSION_ARGUMENTS) break;
-          const input = inlineArgumentInputRefs.current[index];
-          if (!input) continue;
-          current[definition.name] = String((input as HTMLInputElement | HTMLSelectElement).value ?? '');
-        }
-      }
-
-      const next = definitions.reduce((acc, definition) => {
-        acc[definition.name] = String(current[definition.name] ?? '');
-        return acc;
-      }, {} as Record<string, string>);
-
-      setInlineExtensionArgumentValues((prev) => {
-        const existing = prev[command.id] || {};
-        let changed = false;
-        for (const definition of definitions) {
-          const key = definition.name;
-          if (String(existing[key] ?? '') !== String(next[key] ?? '')) {
-            changed = true;
-            break;
-          }
-        }
-        if (!changed) return prev;
-        return {
-          ...prev,
-          [command.id]: next,
-        };
-      });
-
-      return next;
-    },
-    [inlineExtensionArgumentValues, selectedCommand]
-  );
 
   const openFileResultByPath = useCallback(async (targetPath: string) => {
     if (!targetPath) return;
