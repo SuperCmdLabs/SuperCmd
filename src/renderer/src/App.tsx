@@ -44,6 +44,7 @@ import { useLauncherActionModel } from './hooks/useLauncherActionModel';
 import { useLauncherLocalSystemCommands } from './hooks/useLauncherLocalSystemCommands';
 import { useLauncherCommandExecution } from './hooks/useLauncherCommandExecution';
 import { useLauncherWindowShownHandler } from './hooks/useLauncherWindowShownHandler';
+import { useLauncherKeyboardControls } from './hooks/useLauncherKeyboardControls';
 import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
@@ -120,7 +121,6 @@ import {
   DIRECT_LAUNCH_EXPANSION_GUARD_MS,
   MAX_INLINE_QUICK_LINK_ARGUMENTS,
   getQuickLinkIdFromCommandId,
-  isEditableElement,
 } from './utils/launcher-misc';
 import {
   type BangParseState,
@@ -351,7 +351,6 @@ const App: React.FC = () => {
   // Holds a search query to restore after the window-shown reset, set by the
   // hotkey no-view path when it needs to open the launcher with a pre-typed query.
   const pendingWindowShownQueryRef = useRef<string | null>(null);
-  const isLauncherModeActiveRef = useRef(false);
   const pinnedCommandsRef = useRef<string[]>([]);
   const pinnedFilesRef = useRef<string[]>([]);
   const extensionViewRef = useRef<ExtensionBundle | null>(null);
@@ -1281,10 +1280,6 @@ const App: React.FC = () => {
     isLauncherModeActive || showActions || Boolean(contextMenu);
 
   useEffect(() => {
-    isLauncherModeActiveRef.current = isLauncherModeActive;
-  }, [isLauncherModeActive]);
-
-  useEffect(() => {
     if (launcherViewMode !== 'compact' || isLauncherModeActive) return;
     setIsCompactCollapsed(false);
     void window.electron.resizeLauncherWindow(true);
@@ -1952,61 +1947,6 @@ const App: React.FC = () => {
     [openFileSearch]
   );
 
-  const togglePinSelectedCommand = useCallback(async () => {
-    if (!selectedCommand) return;
-    await pinToggleForCommand(selectedCommand);
-  }, [selectedCommand, pinToggleForCommand]);
-
-  const disableSelectedCommand = useCallback(async () => {
-    if (!selectedCommand) return;
-    await disableCommand(selectedCommand);
-  }, [selectedCommand, disableCommand]);
-
-  const uninstallSelectedExtension = useCallback(async () => {
-    if (!selectedCommand) return;
-    await uninstallExtensionCommand(selectedCommand);
-  }, [selectedCommand, uninstallExtensionCommand]);
-
-  const copyDeeplinkForSelectedCommand = useCallback(async () => {
-    if (!selectedCommand || !selectedCommand.deeplink) return;
-    await copyCommandDeeplink(selectedCommand);
-  }, [selectedCommand, copyCommandDeeplink]);
-
-  const moveSelectedPinnedCommand = useCallback(
-    async (direction: 'up' | 'down') => {
-      if (!selectedCommand) return;
-      await movePinnedCommand(selectedCommand, direction);
-    },
-    [selectedCommand, movePinnedCommand]
-  );
-
-  const moveSelection = useCallback(
-    (direction: 'up' | 'down', options: { wrap?: boolean } = {}) => {
-      const { wrap = false } = options;
-      setSelectedIndex((prev) => {
-        const max = Math.max(0, displayCommands.length + calcOffset - 1);
-        if (direction === 'down') {
-          if (prev < max) return prev + 1;
-          return wrap ? 0 : max;
-        }
-        if (prev > 0) return prev - 1;
-        return wrap ? max : 0;
-      });
-    },
-    [displayCommands.length, calcOffset]
-  );
-
-  const handleLauncherSearchBlur = useCallback(() => {
-    if (!isLauncherModeActiveRef.current) return;
-    requestAnimationFrame(() => {
-      if (!isLauncherModeActiveRef.current) return;
-      const activeElement = document.activeElement;
-      if (activeElement === inputRef.current) return;
-      if (isEditableElement(activeElement)) return;
-      inputRef.current?.focus();
-    });
-  }, []);
-
   // After every render where the autocomplete state changed, sync the
   // input's selection so the auto-extended portion stays highlighted.
   useEffect(() => {
@@ -2540,258 +2480,6 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [openWebSearchBangPrompt, openWebSearchCustomBangPrompt, selectedWebSearchResult, toggleWebSearchBangDisabled, webSearchBangPrompt, webSearchQuery]);
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (showAppUninstall) {
-        return;
-      }
-      if (quickLinkDynamicPrompt) {
-        return;
-      }
-      if (bookmarkNicknamePrompt) {
-        return;
-      }
-      const target = e.target as HTMLElement | null;
-      const isSearchInputTarget = target === inputRef.current;
-
-      if (e.metaKey && (e.key === 'k' || e.key === 'K') && !e.repeat) {
-        e.preventDefault();
-        if (showActions) {
-          setShowActions(false);
-          return;
-        }
-        if (!selectedCommand) return;
-        setContextMenu(null);
-        setActionsCommand(selectedCommand);
-        setSelectedActionIndex(0);
-        setShowActions(true);
-        return;
-      }
-
-      if (showActions || contextMenu) {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          if (showActions) setShowActions(false);
-          if (contextMenu) setContextMenu(null);
-          restoreLauncherFocus();
-        }
-        return;
-      }
-      if (selectedFileResultPath && e.metaKey && !e.shiftKey && !e.altKey && (e.key === 'd' || e.key === 'D')) {
-        e.preventDefault();
-        showFileResultDetailsByPath(selectedFileResultPath);
-        return;
-      }
-      if (selectedFileResultPath && e.metaKey && e.key === 'Enter') {
-        e.preventDefault();
-        void revealFileResultByPath(selectedFileResultPath);
-        return;
-      }
-      if (selectedFileResultPath && e.metaKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
-        e.preventDefault();
-        void copyFileResultPath(selectedFileResultPath);
-        return;
-      }
-      if (selectedFileResultPath && e.metaKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
-        e.preventDefault();
-        void pinToggleForFile(selectedFileResultPath);
-        return;
-      }
-      if (!selectedFileResultPath && e.metaKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
-        e.preventDefault();
-        togglePinSelectedCommand();
-        return;
-      }
-      if (!selectedFileResultPath && e.metaKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
-        e.preventDefault();
-        disableSelectedCommand();
-        return;
-      }
-      if (
-        !selectedFileResultPath &&
-        e.metaKey &&
-        e.shiftKey &&
-        (e.key === 'L' || e.key === 'l') &&
-        selectedCommand?.deeplink
-      ) {
-        e.preventDefault();
-        void copyDeeplinkForSelectedCommand();
-        return;
-      }
-      if (!selectedFileResultPath && e.metaKey && (e.key === 'Backspace' || e.key === 'Delete')) {
-        if (selectedCommand?.category === 'extension') {
-          e.preventDefault();
-          uninstallSelectedExtension();
-          return;
-        }
-      }
-      // Ctrl+X: Uninstall Application (for app commands and .app file results)
-      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === 'x' || e.key === 'X')) {
-        const appPath = selectedFileResultPath?.endsWith('.app')
-          ? selectedFileResultPath
-          : (selectedCommand?.category === 'app' && selectedCommand?.path?.endsWith('.app'))
-            ? selectedCommand.path
-            : null;
-        if (appPath) {
-          e.preventDefault();
-          openAppUninstall(appPath);
-          return;
-        }
-      }
-      if (!selectedFileResultPath && e.metaKey && e.altKey && e.key === 'ArrowUp') {
-        e.preventDefault();
-        moveSelectedPinnedCommand('up');
-        return;
-      }
-      if (!selectedFileResultPath && e.metaKey && e.altKey && e.key === 'ArrowDown') {
-        e.preventDefault();
-        moveSelectedPinnedCommand('down');
-        return;
-      }
-
-      // Cmd+1 through Cmd+9: quick-launch the Nth command (Alfred-style)
-      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
-        const idx = parseInt(e.key, 10) - 1;
-        const target = displayCommands[idx];
-        if (target) {
-          e.preventDefault();
-          handleCommandExecute(target);
-          return;
-        }
-      }
-
-      switch (e.key) {
-        case 'Tab':
-          if (isSearchInputTarget && isShowingInlineArgumentInputs) {
-            e.preventDefault();
-            if (selectedInlineExtensionArgumentDefinitions.length > 0) {
-              const targetIndex = e.shiftKey
-                ? selectedInlineExtensionArgumentDefinitions.length - 1
-                : 0;
-              inlineArgumentInputRefs.current[targetIndex]?.focus();
-              return;
-            }
-            if (selectedInlineQuickLinkDynamicFields.length > 0) {
-              const targetIndex = e.shiftKey
-                ? selectedInlineQuickLinkDynamicFields.length - 1
-                : 0;
-              inlineQuickLinkInputRefs.current[targetIndex]?.focus();
-              return;
-            }
-          }
-          if (isSearchInputTarget && aiAvailable && !shouldHideAskAi) {
-            e.preventDefault();
-            if (launcherViewMode === 'compact') {
-              setIsCompactCollapsed(false);
-              window.electron.resizeLauncherWindow(true);
-            }
-            startAiChat(searchQuery);
-          }
-          break;
-
-        case 'ArrowDown':
-          e.preventDefault();
-          if (launcherViewMode === 'compact' && isCompactCollapsed) {
-            setIsCompactCollapsed(false);
-            window.electron.resizeLauncherWindow(true);
-            break;
-          }
-          moveSelection('down');
-          break;
-
-        case 'ArrowUp':
-          e.preventDefault();
-          moveSelection('up');
-          break;
-
-        case 'Enter':
-          e.preventDefault();
-          if (calcResult && selectedIndex === 0) {
-            navigator.clipboard.writeText(calcResult.result);
-            window.electron.hideWindow();
-          } else if (displayCommands[selectedIndex - calcOffset]) {
-            const selected = displayCommands[selectedIndex - calcOffset];
-            if (selectedFileResultPath && e.metaKey) {
-              void revealFileResultByPath(selectedFileResultPath);
-            } else if (
-              e.metaKey &&
-              !e.shiftKey &&
-              !e.ctrlKey &&
-              !e.altKey &&
-              selected &&
-              isBrowserSearchCommand(selected) &&
-              selected.browserFocusAvailable
-            ) {
-              void submitBrowserSearch(String(selected.browserActionInput || launcherInputValue).trim(), { focusExistingTab: true });
-            } else if (selected) {
-              handleCommandExecute(selected);
-            }
-          }
-          break;
-
-        case 'Escape':
-          e.preventDefault();
-          if (contextMenu) {
-            setContextMenu(null);
-            return;
-          }
-          if (showActions) {
-            setShowActions(false);
-            return;
-          }
-          if (searchQuery.length > 0) {
-            setSearchQuery('');
-            setSelectedIndex(0);
-            if (launcherViewMode === 'compact') {
-              setIsCompactCollapsed(true);
-              window.electron.resizeLauncherWindow(false);
-            }
-            return;
-          }
-          if (launcherViewMode === 'compact' && !isCompactCollapsed) {
-            setIsCompactCollapsed(true);
-            window.electron.resizeLauncherWindow(false);
-            return;
-          }
-          window.electron.hideWindow();
-          break;
-      }
-    },
-    [
-      moveSelection,
-      displayCommands,
-      selectedIndex,
-      searchQuery,
-      aiAvailable,
-      isShowingInlineArgumentInputs,
-      selectedInlineExtensionArgumentDefinitions.length,
-      selectedInlineQuickLinkDynamicFields.length,
-      shouldHideAskAi,
-      startAiChat,
-      calcResult,
-      calcOffset,
-      togglePinSelectedCommand,
-      disableSelectedCommand,
-      uninstallSelectedExtension,
-      moveSelectedPinnedCommand,
-      copyDeeplinkForSelectedCommand,
-      selectedFileResultPath,
-      showFileResultDetailsByPath,
-      revealFileResultByPath,
-      copyFileResultPath,
-      pinToggleForFile,
-      openAppUninstall,
-      selectedCommand,
-      contextMenu,
-      showActions,
-      quickLinkDynamicPrompt,
-      bookmarkNicknamePrompt,
-      showAppUninstall,
-      launcherViewMode,
-      isCompactCollapsed,
-    ]
-  );
-
   const { runLocalSystemCommand } = useLauncherLocalSystemCommands({
     expandLauncherForDirectLaunch,
     memoryActionLoading,
@@ -3276,41 +2964,65 @@ const App: React.FC = () => {
   const quickLinkDynamicPromptTitle = quickLinkDynamicPrompt
     ? getCommandDisplayTitle(quickLinkDynamicPrompt.command, t)
     : '';
-  const handleLauncherInputChange = useCallback((value: string) => {
-    if (browserSearchAutoComplete && value === searchQuery && value.length > 0) {
-      setBrowserSearchSkipAutoComplete(true);
-      return;
-    }
-
-    setSearchQuery(value);
-
-    if (launcherViewMode === 'compact') {
-      if (isCompactCollapsed && value.length > 0) {
-        setIsCompactCollapsed(false);
-        window.electron.resizeLauncherWindow(true);
-      } else if (!isCompactCollapsed && value.length === 0) {
-        setIsCompactCollapsed(true);
-        window.electron.resizeLauncherWindow(false);
-      }
-    }
-  }, [browserSearchAutoComplete, isCompactCollapsed, launcherViewMode, searchQuery]);
-  const copyCalculatorResult = useCallback(() => {
-    if (!calcResult) return;
-    navigator.clipboard.writeText(calcResult.result);
-    window.electron.hideWindow();
-  }, [calcResult]);
-  const showCompactLauncher = useCallback(() => {
-    setIsCompactCollapsed(false);
-    window.electron.resizeLauncherWindow(true);
-  }, []);
-  const handleInlineExtensionArgumentChange = useCallback((argumentName: string, value: string) => {
-    if (!selectedCommand) return;
-    updateInlineExtensionArgumentValue(selectedCommand, argumentName, value);
-  }, [selectedCommand, updateInlineExtensionArgumentValue]);
-  const handleInlineQuickLinkDynamicValueChange = useCallback((fieldKey: string, value: string) => {
-    if (!selectedQuickLinkId) return;
-    updateInlineQuickLinkDynamicValue(selectedQuickLinkId, fieldKey, value);
-  }, [selectedQuickLinkId, updateInlineQuickLinkDynamicValue]);
+  const {
+    handleKeyDown,
+    handleLauncherSearchBlur,
+    handleLauncherInputChange,
+    copyCalculatorResult,
+    showCompactLauncher,
+    handleInlineExtensionArgumentChange,
+    handleInlineQuickLinkDynamicValueChange,
+  } = useLauncherKeyboardControls({
+    inputRef,
+    inlineArgumentInputRefs,
+    inlineQuickLinkInputRefs,
+    displayCommands,
+    selectedCommand,
+    selectedIndex,
+    selectedFileResultPath,
+    calcOffset,
+    calcResult,
+    searchQuery,
+    browserSearchAutoComplete,
+    launcherInputValue,
+    aiAvailable,
+    shouldHideAskAi,
+    isShowingInlineArgumentInputs,
+    selectedInlineExtensionArgumentDefinitions,
+    selectedInlineQuickLinkDynamicFields,
+    selectedQuickLinkId,
+    showActions,
+    contextMenu,
+    quickLinkDynamicPrompt,
+    bookmarkNicknamePrompt,
+    showAppUninstall,
+    launcherViewMode,
+    isCompactCollapsed,
+    setSearchQuery,
+    setSelectedIndex,
+    setBrowserSearchSkipAutoComplete,
+    setIsCompactCollapsed,
+    setShowActions,
+    setContextMenu,
+    setActionsCommand,
+    setSelectedActionIndex,
+    startAiChat,
+    restoreLauncherFocus,
+    handleCommandExecute,
+    submitBrowserSearch,
+    pinToggleForCommand,
+    disableCommand,
+    uninstallExtensionCommand,
+    movePinnedCommand,
+    showFileResultDetailsByPath,
+    revealFileResultByPath,
+    copyFileResultPath,
+    pinToggleForFile,
+    copyCommandDeeplink,
+    openAppUninstall,
+    updateInlineExtensionArgumentValue,
+    updateInlineQuickLinkDynamicValue,
+  });
 
   // ─── Script Command Setup ───────────────────────────────────────
   if (scriptCommandSetup) {
