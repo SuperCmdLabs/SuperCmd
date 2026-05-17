@@ -22,6 +22,17 @@ export interface CommandInfo {
   browserResultKind?: 'open-tab' | 'bookmark' | 'history' | 'search';
   browserFaviconUrl?: string;
   browserActionInput?: string;
+  browserUrl?: string;
+  browserSourceProfileId?: string;
+  browserTargetProfileLabel?: string;
+  browserTargetProfileBrowserId?: BrowserSearchSource;
+  browserTargetProfileIconDataUrl?: string;
+  browserAlternateProfileLabel?: string;
+  browserAlternateProfileBrowserId?: BrowserSearchSource;
+  browserAlternateProfileIconDataUrl?: string;
+  browserProfileCount?: number;
+  browserWindowId?: string;
+  browserTabId?: string;
   browserFocusAvailable?: boolean;
   rootSearchStableKey?: string;
   rootSearchSource?: 'command' | 'file' | 'browser' | 'open-url' | 'direct-search';
@@ -313,6 +324,8 @@ export interface BrowserSearchSettings {
   enabled: boolean;
   historyRetentionDays: number | null;
   profileSourceIds: string[];
+  profiles: BrowserProfileSetting[];
+  profileFilters: BrowserProfileFilters;
   resultLimitPerGroup: number;
   resultGroups: BrowserSearchResultGroupSetting[];
   nicknames: BrowserSearchNicknameSetting[];
@@ -323,6 +336,34 @@ export interface BrowserSearchSettings {
   webSearchBangCustomProviders: WebSearchBangCustomProviderSetting[];
   webSearchShowHiddenBangs?: boolean;
   webSearchSuggestionsEnabled: boolean;
+}
+
+export type BrowserProfileFilterKind = 'open-tab' | 'bookmark' | 'history';
+
+export type BrowserProfileFilters = Partial<Record<BrowserProfileFilterKind, string[]>>;
+
+export interface BrowserProfileSetting {
+  id: string;
+  browserId: BrowserSearchSource;
+  browserName: string;
+  profileId: string;
+  detectedName: string;
+  displayName: string;
+  order: number;
+}
+
+export interface BrowserProfileConnectionStatus {
+  profileSourceId: string;
+  connected: boolean;
+  lastSeenAt: number;
+  lastSnapshotAt: number;
+  lastError?: string;
+  tabCount: number;
+}
+
+export interface BrowserOpenProfileEvent {
+  altKey?: boolean;
+  numberKey?: string | number | null;
 }
 
 export interface RootSearchRankingInputHistorySetting {
@@ -439,6 +480,7 @@ export interface BrowserTabEntry {
   profileSourceId: string;
   profileName: string;
   windowId: string;
+  windowOrdinal: number;
   tabId: string;
   tabIndex: number;
   favIconUrl: string;
@@ -1064,10 +1106,25 @@ export interface ElectronAPI {
   browserSearchListProfiles: () => Promise<BrowserSearchImportableProfile[]>;
   browserSearchImport: (browserId: string) => Promise<BrowserSearchImportResult>;
   browserSearchImportProfile: (profileSourceId: string) => Promise<BrowserSearchImportResult>;
+  browserProfilesList: () => Promise<BrowserProfileSetting[]>;
+  browserProfilesStatuses: () => Promise<BrowserProfileConnectionStatus[]>;
+  browserProfilesAdd: (profileId: string) => Promise<BrowserProfileSetting[]>;
+  browserProfilesSaveOrder: (ids: string[]) => Promise<BrowserProfileSetting[]>;
+  browserProfilesRename: (profileId: string, displayName: string) => Promise<BrowserProfileSetting[]>;
+  browserProfilesRemove: (profileId: string) => Promise<{ ok: boolean; profiles: BrowserProfileSetting[]; removedEntries: number; removedTabs: number }>;
+  browserSearchOpenProfile: (
+    input: string,
+    options?: { event?: BrowserOpenProfileEvent; sourceProfileId?: string | null }
+  ) => Promise<{ ok: boolean; type: BrowserSearchEntryType | null; url: string | null; profile: BrowserProfileSetting | null }>;
   onBrowserSearchHistoryChanged: (callback: () => void) => (() => void);
   browserTabsList: () => Promise<BrowserTabEntry[]>;
   browserTabsOpen: (input: string) => Promise<{ ok: boolean; url: string | null; tab: BrowserTabEntry | null }>;
+  browserTabsOpenUrlProfile: (
+    url: string,
+    options?: { event?: BrowserOpenProfileEvent; sourceProfileId?: string | null }
+  ) => Promise<{ ok: boolean; url: string | null; profile: BrowserProfileSetting | null }>;
   browserTabsFocus: (input: string) => Promise<{ ok: boolean; url: string | null; tab: BrowserTabEntry | null; reason?: string }>;
+  browserTabsFocusTarget: (input: { profileSourceId: string; windowId: string | number; tabId: string | number }) => Promise<{ ok: boolean; reason?: string }>;
   onBrowserTabsChanged: (callback: () => void) => (() => void);
 
   getSelectedText: () => Promise<string>;

@@ -708,7 +708,8 @@
           "noneAdded": "Noch keine Browserprofile hinzugefügt",
           "profileRowDetail": "Verlauf: {historyCount} URLs · Lesezeichen: {bookmarkCount} · Tabs: {tabCount}",
           "profileSupportNote": "Profilunterstützung umfasst derzeit nur Chromium-Browser. Safari und Firefox werden später unterstützt.",
-          "enabledProfiles": "{count} Profil(e) für den SuperCmd-Browserverlauf aktiviert."
+          "enabledProfiles": "{count} Profil(e) für den SuperCmd-Browserverlauf aktiviert.",
+          "defaultProfile": "Standard"
         },
         "importedData": {
           "heading": "Importierte Daten",
@@ -731,7 +732,8 @@
         "status": {
           "cleared": "Browserprofil-Verlauf gelöscht.",
           "imported": "{count} von {total} Einträgen aktualisiert.",
-          "failed": "Aktion fehlgeschlagen."
+          "failed": "Aktion fehlgeschlagen.",
+          "removedProfile": "Profildaten entfernt ({count} Elemente)."
         },
         "webSearch": {
           "label": "Websuche",
@@ -880,7 +882,8 @@
         "name": "Name",
         "host": "Host",
         "template": "URL-Vorlage"
-      }
+      },
+      "profileAction": "Profil"
     },
     "badges": {
       "openTab": "Offener Tab",

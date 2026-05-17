@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  BrowserSearchSource,
   BrowserSearchResultGroupSetting,
   CommandInfo,
   IndexedFileSearchResult,
@@ -91,6 +92,7 @@ export type UseLauncherCommandModelParams = {
 
   selectedIndex: number;
   defaultBrowserIconDataUrl: string;
+  browserAppIconDataUrls: Record<string, string>;
 
   t: (key: string, params?: Record<string, string | number>) => string;
 };
@@ -184,7 +186,10 @@ function getFileDepthPenalty(result: IndexedFileSearchResult): number {
 
 function buildBrowserCommand(
   result: BrowserSearchResult,
-  index: number
+  index: number,
+  alternateProfile: { browserId?: any; displayName: string; detectedName?: string; profileId: string } | null,
+  profileCount: number,
+  browserAppIconDataUrls: Record<string, string>
 ): CommandInfo {
   const normalizedUrl = normalizeRootSearchUrl(result.url);
   const subtype: RootSearchSubtype = result.nicknameMatch ? 'nickname' : result.kind;
@@ -201,6 +206,17 @@ function buildBrowserCommand(
     browserResultKind: result.kind,
     browserFaviconUrl: result.faviconUrl,
     browserActionInput: result.actionInput,
+    browserUrl: result.url,
+    browserSourceProfileId: result.sourceProfileId,
+    browserTargetProfileLabel: result.profileLabel,
+    browserTargetProfileBrowserId: result.source,
+    browserTargetProfileIconDataUrl: result.source ? browserAppIconDataUrls[String(result.source)] : undefined,
+    browserAlternateProfileLabel: alternateProfile ? (alternateProfile.displayName || alternateProfile.detectedName || alternateProfile.profileId) : '',
+    browserAlternateProfileBrowserId: alternateProfile?.browserId,
+    browserAlternateProfileIconDataUrl: alternateProfile?.browserId ? browserAppIconDataUrls[String(alternateProfile.browserId)] : undefined,
+    browserProfileCount: profileCount,
+    browserWindowId: result.windowId,
+    browserTabId: result.tabId,
     browserFocusAvailable: result.focusAvailable,
     browserNickname: result.nickname,
     browserNicknameMatch: result.nicknameMatch,
@@ -208,6 +224,19 @@ function buildBrowserCommand(
     rootSearchSource: 'browser',
     rootSearchSubtype: subtype,
   };
+}
+
+function getDefaultBrowserProfile(browserSearch: { profiles?: Array<{ browserId?: any; browserName: string; displayName: string; detectedName?: string; profileId: string }> }) {
+  const profile = browserSearch.profiles?.[0];
+  return profile || null;
+}
+
+function getAlternateBrowserProfile(browserSearch: { profiles?: Array<{ browserId?: any; browserName: string; displayName: string; detectedName?: string; profileId: string }> }) {
+  return browserSearch.profiles && browserSearch.profiles.length > 1 ? browserSearch.profiles[1] : null;
+}
+
+function getBrowserIcon(browserAppIconDataUrls: Record<string, string>, browserId?: BrowserSearchSource | string) {
+  return browserId ? browserAppIconDataUrls[String(browserId)] : undefined;
 }
 
 export function useLauncherCommandModel({
@@ -235,6 +264,7 @@ export function useLauncherCommandModel({
   rootWebSearchSuggestions,
   selectedIndex,
   defaultBrowserIconDataUrl,
+  browserAppIconDataUrls,
   t,
 }: UseLauncherCommandModelParams): UseLauncherCommandModelResult {
   const calcRequestSeqRef = useRef(0);
@@ -418,6 +448,8 @@ export function useLauncherCommandModel({
       const typedSubject = searchQuery.trim();
       const browserMatchKind = browserSearch.getMatchKind(typedSubject, null);
       const hasOpenTabMatch = browserMatchKind === 'open-tab';
+      const defaultProfile = getDefaultBrowserProfile(browserSearch);
+      const alternateProfile = getAlternateBrowserProfile(browserSearch);
       const stableKey = `open-url:${normalizeRootSearchStableValue(resolved.host || resolved.url)}`;
       return {
         id: BROWSER_SEARCH_OPEN_URL_ID,
@@ -431,6 +463,13 @@ export function useLauncherCommandModel({
         browserResultKind: undefined,
         browserActionInput: typedSubject || resolved.url,
         browserFocusAvailable: hasOpenTabMatch,
+        browserTargetProfileLabel: defaultProfile ? (defaultProfile.displayName || defaultProfile.detectedName || defaultProfile.profileId) : '',
+        browserTargetProfileBrowserId: defaultProfile?.browserId,
+        browserTargetProfileIconDataUrl: getBrowserIcon(browserAppIconDataUrls, defaultProfile?.browserId) || defaultBrowserIconDataUrl || undefined,
+        browserAlternateProfileLabel: alternateProfile?.displayName || alternateProfile?.detectedName || alternateProfile?.profileId || '',
+        browserAlternateProfileBrowserId: alternateProfile?.browserId,
+        browserAlternateProfileIconDataUrl: getBrowserIcon(browserAppIconDataUrls, alternateProfile?.browserId) || defaultBrowserIconDataUrl || undefined,
+        browserProfileCount: browserSearch.profiles?.length || 0,
         rootSearchStableKey: stableKey,
         rootSearchSource: 'open-url',
         rootSearchSubtype: 'open-url',
@@ -438,7 +477,7 @@ export function useLauncherCommandModel({
       };
     }
     return null;
-  }, [browserSearch, rootResolvedBrowserInput, searchQuery, defaultBrowserIconDataUrl, aiMode, t]);
+  }, [browserSearch, rootResolvedBrowserInput, searchQuery, defaultBrowserIconDataUrl, browserAppIconDataUrls, aiMode, t]);
 
   const browserSearchResultCommands = useMemo<CommandInfo[]>(() => [], []);
 
@@ -531,7 +570,7 @@ export function useLauncherCommandModel({
     if (!browserSearch.enabled || !hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
     return browserSearch.getAllResults(searchQuery, browserSearchResultGroups)
       .map((result, index) => {
-        const command = buildBrowserCommand(result, index);
+        const command = buildBrowserCommand(result, index, getAlternateBrowserProfile(browserSearch), browserSearch.profiles?.length || 0, browserAppIconDataUrls);
         const nicknameMatched = Boolean(result.nicknameMatch);
         const fields = nicknameMatched
           ? [
@@ -599,7 +638,7 @@ export function useLauncherCommandModel({
         }, searchQuery, rootSearchRanking);
       })
       .filter((candidate): candidate is RootSearchCandidate => Boolean(candidate));
-  }, [browserSearch, browserSearchResultGroups, hasSearchQuery, searchQuery, aiMode, rootBangState, rootSearchRanking]);
+  }, [browserSearch, browserSearchResultGroups, hasSearchQuery, searchQuery, aiMode, rootBangState, rootSearchRanking, browserAppIconDataUrls]);
 
   const rootRankedCandidates = useMemo<RootSearchCandidate[]>(
     () => rankRootSearchCandidates([...commandCandidates, ...fileCandidates, ...browserCandidates]),
@@ -632,6 +671,8 @@ export function useLauncherCommandModel({
     const searchSubject = subject.trim();
     if (!searchSubject) return null;
     const provider = activeBang || defaultBang;
+    const defaultProfile = getDefaultBrowserProfile(browserSearch);
+    const alternateProfile = getAlternateBrowserProfile(browserSearch);
     return {
       id: WEB_SEARCH_ROOT_DIRECT_ID,
       title: activeBang
@@ -646,11 +687,18 @@ export function useLauncherCommandModel({
       browserResultKind: 'search',
       browserFaviconUrl: getFaviconUrlForHost(provider.host),
       browserActionInput: activeBang ? `${searchSubject} !${activeBang.key}` : searchSubject,
+      browserTargetProfileLabel: defaultProfile ? (defaultProfile.displayName || defaultProfile.detectedName || defaultProfile.profileId) : '',
+      browserTargetProfileBrowserId: defaultProfile?.browserId,
+      browserTargetProfileIconDataUrl: getBrowserIcon(browserAppIconDataUrls, defaultProfile?.browserId) || defaultBrowserIconDataUrl || undefined,
+      browserAlternateProfileLabel: alternateProfile?.displayName || alternateProfile?.detectedName || alternateProfile?.profileId || '',
+      browserAlternateProfileBrowserId: alternateProfile?.browserId,
+      browserAlternateProfileIconDataUrl: getBrowserIcon(browserAppIconDataUrls, alternateProfile?.browserId) || defaultBrowserIconDataUrl || undefined,
+      browserProfileCount: browserSearch.profiles?.length || 0,
       rootSearchStableKey: `direct-search:${provider.key}`,
       rootSearchSource: 'direct-search',
       rootSearchSubtype: 'direct-search',
     };
-  }, [aiMode, searchQuery, rootBangState, rootResolvedBrowserInput, t, webSearchDefaultBangKey, effectiveSearchBangs]);
+  }, [aiMode, searchQuery, rootBangState, rootResolvedBrowserInput, t, webSearchDefaultBangKey, effectiveSearchBangs, browserSearch, browserAppIconDataUrls, defaultBrowserIconDataUrl]);
 
   const webSearchRootSuggestionCommands = useMemo<CommandInfo[]>(() => {
     if (aiMode) return [];
@@ -664,6 +712,8 @@ export function useLauncherCommandModel({
     const searchSubject = subject.trim();
     if (!searchSubject) return [];
     const provider = activeBang || defaultBang;
+    const defaultProfile = getDefaultBrowserProfile(browserSearch);
+    const alternateProfile = getAlternateBrowserProfile(browserSearch);
     const commands: CommandInfo[] = [];
     for (const suggestion of rootWebSearchSuggestions) {
       const normalized = String(suggestion || '').trim();
@@ -680,10 +730,17 @@ export function useLauncherCommandModel({
         browserResultKind: 'search',
         browserFaviconUrl: getFaviconUrlForHost(provider.host),
         browserActionInput: activeBang ? `${normalized} !${activeBang.key}` : normalized,
+        browserTargetProfileLabel: defaultProfile ? (defaultProfile.displayName || defaultProfile.detectedName || defaultProfile.profileId) : '',
+        browserTargetProfileBrowserId: defaultProfile?.browserId,
+        browserTargetProfileIconDataUrl: getBrowserIcon(browserAppIconDataUrls, defaultProfile?.browserId) || defaultBrowserIconDataUrl || undefined,
+        browserAlternateProfileLabel: alternateProfile?.displayName || alternateProfile?.detectedName || alternateProfile?.profileId || '',
+        browserAlternateProfileBrowserId: alternateProfile?.browserId,
+        browserAlternateProfileIconDataUrl: getBrowserIcon(browserAppIconDataUrls, alternateProfile?.browserId) || defaultBrowserIconDataUrl || undefined,
+        browserProfileCount: browserSearch.profiles?.length || 0,
       });
     }
     return commands;
-  }, [aiMode, searchQuery, rootBangState, rootResolvedBrowserInput, rootWebSearchSuggestions, t, webSearchDefaultBangKey, effectiveSearchBangs]);
+  }, [aiMode, searchQuery, rootBangState, rootResolvedBrowserInput, rootWebSearchSuggestions, t, webSearchDefaultBangKey, effectiveSearchBangs, browserSearch, browserAppIconDataUrls, defaultBrowserIconDataUrl]);
 
   const rootBangCandidateCommands = useMemo<CommandInfo[]>(() => {
     if (rootBangState.mode !== 'selecting') return [];

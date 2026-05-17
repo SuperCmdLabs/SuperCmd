@@ -712,7 +712,8 @@
           "noneAdded": "Aucun profil de navigateur ajouté",
           "profileRowDetail": "Historique : {historyCount} URL · Signets : {bookmarkCount} · Onglets : {tabCount}",
           "profileSupportNote": "La prise en charge des profils inclut actuellement uniquement les navigateurs Chromium. Safari et Firefox seront ajoutés plus tard.",
-          "enabledProfiles": "{count} profil(s) activé(s) pour l'historique navigateur de SuperCmd."
+          "enabledProfiles": "{count} profil(s) activé(s) pour l'historique navigateur de SuperCmd.",
+          "defaultProfile": "Par defaut"
         },
         "importedData": {
           "heading": "Données importées",
@@ -735,7 +736,8 @@
         "status": {
           "cleared": "Historique des profils de navigateur effacé.",
           "imported": "{count} entrées mises à jour sur {total}.",
-          "failed": "Échec de l’action."
+          "failed": "Échec de l’action.",
+          "removedProfile": "Donnees du profil supprimees ({count} elements)."
         },
         "webSearch": {
           "label": "Recherche Web",
@@ -884,7 +886,8 @@
         "name": "Nom",
         "host": "Hôte",
         "template": "Modèle d’URL"
-      }
+      },
+      "profileAction": "Profil"
     },
     "badges": {
       "openTab": "Onglet ouvert",

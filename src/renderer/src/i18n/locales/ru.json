@@ -210,7 +210,8 @@
         "name": "Название",
         "host": "Хост",
         "template": "Шаблон URL"
-      }
+      },
+      "profileAction": "Профиль"
     }
   },
   "settings": {
@@ -352,7 +353,8 @@
           "noneAdded": "Профили браузера еще не добавлены",
           "profileRowDetail": "История: URL {historyCount} · Закладки: {bookmarkCount} · Вкладки: {tabCount}",
           "profileSupportNote": "Поддержка профилей сейчас включает только браузеры Chromium. Поддержка Safari и Firefox будет добавлена позже.",
-          "enabledProfiles": "Для истории браузера SuperCmd включено профилей: {count}."
+          "enabledProfiles": "Для истории браузера SuperCmd включено профилей: {count}.",
+          "defaultProfile": "По умолчанию"
         },
         "importedData": {
           "heading": "Импортированные данные",
@@ -375,7 +377,8 @@
         "status": {
           "cleared": "История профилей браузера очищена.",
           "imported": "Обновлено {count} из {total} записей.",
-          "failed": "Не удалось выполнить."
+          "failed": "Не удалось выполнить.",
+          "removedProfile": "Данные профиля удалены ({count} элементов)."
         },
         "webSearch": {
           "label": "Веб-поиск",

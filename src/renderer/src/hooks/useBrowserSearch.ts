@@ -3,6 +3,9 @@ import type {
   BrowserSearchAutocomplete,
   BrowserSearchEntry,
   BrowserSearchNicknameSetting,
+  BrowserOpenProfileEvent,
+  BrowserProfileFilters,
+  BrowserProfileSetting,
   BrowserSearchResultGroupSetting,
   BrowserSearchResultKind,
   BrowserSearchSource,
@@ -30,6 +33,7 @@ export interface BrowserSearchResult {
   browserName?: string;
   profileName?: string;
   windowId?: string;
+  windowOrdinal?: number;
   tabId?: string;
   tabIndex?: number;
   windowLastFocusedAt?: number;
@@ -41,6 +45,7 @@ export interface BrowserSearchResult {
   completion: string;
   nickname?: string;
   nicknameMatch?: boolean;
+  profileLabel?: string;
   matchKind?: MatchKind;
   rawMatchScore?: number;
 }
@@ -48,6 +53,8 @@ export interface BrowserSearchResult {
 export interface BrowserHistoryProfileOption {
   id: string;
   label: string;
+  browserName?: string;
+  browserId?: BrowserSearchSource;
   count: number;
 }
 
@@ -57,31 +64,50 @@ interface UseBrowserSearchResult {
   getTopResult: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchResult | null;
   getResults: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchResult[];
   getAllResults: (input: string, resultGroups: BrowserSearchResultGroupSetting[]) => BrowserSearchResult[];
-  getOpenTabResults: (input: string) => BrowserSearchResult[];
-  getBookmarkResults: (input: string) => BrowserSearchResult[];
-  getHistoryResults: (input: string, profileIds?: string[] | null, showProfileContext?: boolean) => BrowserSearchResult[];
+  getOpenTabResults: (input: string, limit?: number) => BrowserSearchResult[];
+  getBookmarkResults: (input: string, limit?: number) => BrowserSearchResult[];
+  getHistoryResults: (input: string, profileIds?: string[] | null, showProfileContext?: boolean, limit?: number) => BrowserSearchResult[];
   getHistoryProfiles: () => BrowserHistoryProfileOption[];
+  getProfileFilterOptions: (kind: BrowserSearchResultKind) => BrowserHistoryProfileOption[];
+  profiles: BrowserProfileSetting[];
+  profileFilters: BrowserProfileFilters;
   refreshOpenTabs: () => void;
   refreshBrowserEntries: () => void;
   getMatchKind: (input: string, completion?: BrowserSearchAutocomplete | null) => 'open-tab' | 'history' | 'search';
   hasOpenTabMatch: (input: string) => boolean;
-  executeBrowserSearch: (input: string, options?: { focusExistingTab?: boolean }) => Promise<boolean>;
+  executeBrowserSearch: (input: string, options?: BrowserSearchExecuteOptions) => Promise<boolean>;
   /** Synchronous URL/search detection — returns null for empty input. */
   resolve: (input: string) => ResolvedBrowserInput | null;
 }
+
+export type BrowserSearchExecuteOptions = {
+  focusExistingTab?: boolean;
+  event?: BrowserOpenProfileEvent;
+  kind?: BrowserSearchResultKind | 'search' | 'url';
+  url?: string;
+  sourceProfileId?: string;
+  windowId?: string | number;
+  tabId?: string | number;
+};
 
 export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult {
   const [entries, setEntries] = useState<BrowserSearchEntry[]>([]);
   const [tabs, setTabs] = useState<BrowserTabEntry[]>([]);
   const [enabled, setEnabled] = useState<boolean>(true);
   const [nicknames, setNicknames] = useState<BrowserSearchNicknameSetting[]>([]);
+  const [profiles, setProfiles] = useState<BrowserProfileSetting[]>([]);
+  const [profileFilters, setProfileFilters] = useState<BrowserProfileFilters>({});
   const entriesRef = useRef<BrowserSearchEntry[]>([]);
   const tabsRef = useRef<BrowserTabEntry[]>([]);
   const nicknamesRef = useRef<BrowserSearchNicknameSetting[]>([]);
+  const profilesRef = useRef<BrowserProfileSetting[]>([]);
+  const profileFiltersRef = useRef<BrowserProfileFilters>({});
   const entryIndexRef = useRef<BrowserEntryIndex | null>(null);
   entriesRef.current = entries;
   tabsRef.current = tabs;
   nicknamesRef.current = nicknames;
+  profilesRef.current = profiles;
+  profileFiltersRef.current = profileFilters;
   entryIndexRef.current = useMemo(() => buildBrowserEntryIndex(entries), [entries]);
 
   const refreshEntries = useCallback(() => {
@@ -116,6 +142,8 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
         if (disposed) return;
         setEnabled(s?.browserSearch?.enabled ?? true);
         setNicknames(Array.isArray(s?.browserSearch?.nicknames) ? s.browserSearch.nicknames : []);
+        setProfiles(normalizeBrowserProfiles(s?.browserSearch?.profiles));
+        setProfileFilters(s?.browserSearch?.profileFilters || {});
       })
       .catch(() => {});
     return () => {
@@ -127,6 +155,8 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
     const cleanup = window.electron.onSettingsUpdated?.((s) => {
       setEnabled(s?.browserSearch?.enabled ?? true);
       setNicknames(Array.isArray(s?.browserSearch?.nicknames) ? s.browserSearch.nicknames : []);
+      setProfiles(normalizeBrowserProfiles(s?.browserSearch?.profiles));
+      setProfileFilters(s?.browserSearch?.profileFilters || {});
     });
     return cleanup;
   }, []);
@@ -153,7 +183,11 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
 
   const getTopResult = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult | null => {
     if (!enabled) return null;
-    return getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, MAX_TOP_BROWSER_RESULTS)[0] || null;
+    return filterBrowserResults(
+      decorateBrowserResults(getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, MAX_TOP_BROWSER_RESULTS), profilesRef.current),
+      profileFiltersRef.current,
+      profilesRef.current
+    )[0] || null;
   }, [enabled]);
 
   const getCompletion = useCallback((
@@ -177,16 +211,34 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
 
   const executeBrowserSearch = useCallback(async (
     input: string,
-    options?: { focusExistingTab?: boolean }
+    options?: BrowserSearchExecuteOptions
   ): Promise<boolean> => {
     const trimmed = input.trim();
     if (!trimmed) return false;
     try {
+      if (options?.focusExistingTab && options.sourceProfileId && options.windowId !== undefined && options.tabId !== undefined) {
+        const focusResult = await window.electron.browserTabsFocusTarget?.({
+          profileSourceId: options.sourceProfileId,
+          windowId: options.windowId,
+          tabId: options.tabId,
+        });
+        if (focusResult?.ok) return true;
+      }
       if (options?.focusExistingTab) {
         const focusResult = await window.electron.browserTabsFocus?.(trimmed);
         if (focusResult?.ok) return true;
       }
-      const result = await window.electron.browserSearchOpen(trimmed);
+      if (options?.url) {
+        const result = await window.electron.browserTabsOpenUrlProfile?.(options.url, {
+          event: options.event,
+          sourceProfileId: options.sourceProfileId,
+        });
+        return Boolean(result?.ok);
+      }
+      const result = await window.electron.browserSearchOpenProfile?.(trimmed, {
+        event: options?.event,
+        sourceProfileId: options?.sourceProfileId,
+      }) ?? await window.electron.browserSearchOpen(trimmed);
       return Boolean(result?.ok);
     } catch (e) {
       console.error('Browser search open failed:', e);
@@ -213,70 +265,112 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
 
   const getResults = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult[] => {
     if (!enabled) return [];
-    return getOrderedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, { useConfiguredLimits: true });
+    return filterBrowserResults(
+      decorateBrowserResults(getOrderedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, { useConfiguredLimits: true }), profilesRef.current),
+      profileFiltersRef.current,
+      profilesRef.current
+    );
   }, [enabled]);
 
   const getAllResults = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult[] => {
     if (!enabled) return [];
-    return getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, MAX_ALL_BROWSER_RESULTS);
+    return filterBrowserResults(
+      decorateBrowserResults(getRankedBrowserResults(rawInput, rawGroups, entriesRef.current, entryIndexRef.current, tabsRef.current, nicknamesRef.current, MAX_ALL_BROWSER_RESULTS), profilesRef.current),
+      profileFiltersRef.current,
+      profilesRef.current
+    );
   }, [enabled]);
 
-  const getOpenTabResults = useCallback((rawInput: string): BrowserSearchResult[] => {
-    return getOpenTabCandidates(rawInput, tabsRef.current, { preserveBrowserOrder: true }).slice(0, MAX_SCOPED_OPEN_TAB_RESULTS);
+  const getOpenTabResults = useCallback((rawInput: string, limit = MAX_SCOPED_OPEN_TAB_RESULTS): BrowserSearchResult[] => {
+    const candidates = getOpenTabCandidates(rawInput, tabsRef.current, { preserveBrowserOrder: true });
+    const boundedCandidates = limit > 0 ? candidates.slice(0, limit) : candidates;
+    return filterBrowserResultsForKind(
+      'open-tab',
+      decorateBrowserResults(boundedCandidates, profilesRef.current),
+      profileFiltersRef.current,
+      profilesRef.current
+    );
   }, []);
 
-  const getBookmarkResults = useCallback((rawInput: string): BrowserSearchResult[] => {
-    return getBrowserEntryCandidates('bookmark', rawInput, entriesRef.current, {
+  const getBookmarkResults = useCallback((rawInput: string, limit = MAX_SCOPED_BOOKMARK_RESULTS): BrowserSearchResult[] => {
+    return filterBrowserResultsForKind('bookmark', decorateBrowserResults(getBrowserEntryCandidates('bookmark', rawInput, entriesRef.current, {
       preserveBookmarkOrder: !rawInput.trim(),
-      limit: MAX_SCOPED_BOOKMARK_RESULTS,
+      limit,
       nicknames: nicknamesRef.current,
-    });
+    }), profilesRef.current), profileFiltersRef.current, profilesRef.current);
   }, []);
 
   const getHistoryResults = useCallback((
     rawInput: string,
     profileIds?: string[] | null,
-    showProfileContext = false
+    showProfileContext = false,
+    limit = MAX_SCOPED_HISTORY_RESULTS
   ): BrowserSearchResult[] => {
-    return getBrowserEntryCandidates('history', rawInput, entriesRef.current, {
+    return filterBrowserResultsForKind('history', decorateBrowserResults(getBrowserEntryCandidates('history', rawInput, entriesRef.current, {
       preserveHistoryChronology: true,
       includeHistoryTimestamp: true,
       showHistoryProfileContext: showProfileContext,
       profileIds,
-      limit: MAX_SCOPED_HISTORY_RESULTS,
-    });
+      limit,
+    }), profilesRef.current), profileFiltersRef.current, profilesRef.current);
   }, []);
 
   const getHistoryProfiles = useCallback((): BrowserHistoryProfileOption[] => {
-    const profileCounts = new Map<string, BrowserHistoryProfileOption>();
+    const counts = new Map<string, number>();
     for (const entry of entriesRef.current) {
       if (entry.type !== 'url') continue;
+      if (!entry.sourceProfileId) continue;
       const id = getEntryProfileKey(entry);
-      const existing = profileCounts.get(id);
-      if (existing) {
-        existing.count += 1;
-        continue;
-      }
-      profileCounts.set(id, {
-        id,
-        label: getEntryProfileLabel(entry),
-        count: 1,
-      });
+      counts.set(id, (counts.get(id) || 0) + 1);
     }
-    return Array.from(profileCounts.values()).sort((a, b) => a.label.localeCompare(b.label));
+    return profilesRef.current
+      .map((profile) => ({
+        id: profile.id,
+        label: getProfileLabel(profile),
+        browserName: profile.browserName,
+        browserId: profile.browserId,
+        count: counts.get(profile.id) || 0,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, []);
+
+  const getProfileFilterOptions = useCallback((kind: BrowserSearchResultKind): BrowserHistoryProfileOption[] => {
+    const counts = new Map<string, number>();
+    if (kind === 'open-tab') {
+      for (const tab of tabsRef.current) {
+        if (!tab.profileSourceId) continue;
+        counts.set(tab.profileSourceId, (counts.get(tab.profileSourceId) || 0) + 1);
+      }
+    } else {
+      const entryType = kind === 'bookmark' ? 'bookmark' : 'url';
+      for (const entry of entriesRef.current) {
+        if (entry.type !== entryType) continue;
+        if (!entry.sourceProfileId) continue;
+        const id = getEntryProfileKey(entry);
+        counts.set(id, (counts.get(id) || 0) + 1);
+      }
+    }
+    const configured: BrowserHistoryProfileOption[] = profilesRef.current.map((profile) => ({
+      id: profile.id,
+      label: getProfileLabel(profile),
+      browserName: profile.browserName,
+      browserId: profile.browserId,
+      count: counts.get(profile.id) || 0,
+    }));
+    return configured.sort((a, b) => a.label.localeCompare(b.label));
   }, []);
 
   return useMemo(
-    () => ({ enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, refreshOpenTabs: refreshTabs, refreshBrowserEntries: refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
-    [enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, refreshTabs, refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
+    () => ({ enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshOpenTabs: refreshTabs, refreshBrowserEntries: refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
+    [enabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshTabs, refreshEntries, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
   );
 }
 
-const MAX_SCOPED_HISTORY_RESULTS = 500;
-const MAX_SCOPED_BOOKMARK_RESULTS = 500;
-const MAX_SCOPED_OPEN_TAB_RESULTS = 500;
+const MAX_SCOPED_HISTORY_RESULTS = 160;
+const MAX_SCOPED_BOOKMARK_RESULTS = 160;
+const MAX_SCOPED_OPEN_TAB_RESULTS = 160;
 const MAX_TOP_BROWSER_RESULTS = 1;
-const MAX_ALL_BROWSER_RESULTS = 100;
+const MAX_ALL_BROWSER_RESULTS = 60;
 
 function resolveLocal(rawInput: string): ResolvedBrowserInput | null {
   return resolveBrowserInput(rawInput);
@@ -373,6 +467,76 @@ function getEntryQueryMatchScore(entry: BrowserSearchEntry, lowerInput: string):
 
 function buildBrowserSubtitle(partA: string, partB: string, host: string): string {
   return [partA, partB, host].map((part) => String(part || '').trim()).filter(Boolean).join(' - ');
+}
+
+function normalizeBrowserProfiles(profiles: BrowserProfileSetting[] | undefined): BrowserProfileSetting[] {
+  return Array.isArray(profiles)
+    ? profiles.slice().sort((a, b) => a.order - b.order || a.displayName.localeCompare(b.displayName))
+    : [];
+}
+
+function getProfileLabel(profile: BrowserProfileSetting): string {
+  return profile.displayName || profile.detectedName || profile.profileId;
+}
+
+function getProfileById(id: string | undefined, profiles: BrowserProfileSetting[]): BrowserProfileSetting | undefined {
+  if (!id) return undefined;
+  return profiles.find((candidate) => candidate.id === id);
+}
+
+function getProfileLabelById(id: string | undefined, profiles: BrowserProfileSetting[]): string {
+  const profile = getProfileById(id, profiles);
+  return profile ? getProfileLabel(profile) : '';
+}
+
+function getEnabledProfileIds(
+  kind: BrowserSearchResultKind,
+  filters: BrowserProfileFilters,
+  profiles: BrowserProfileSetting[]
+): string[] {
+  const saved = filters?.[kind];
+  return saved === undefined ? profiles.map((profile) => profile.id) : saved;
+}
+
+function filterBrowserResults(
+  results: BrowserSearchResult[],
+  filters: BrowserProfileFilters,
+  profiles: BrowserProfileSetting[]
+): BrowserSearchResult[] {
+  return results.filter((result) => {
+    if (!result.sourceProfileId) return true;
+    const enabled = new Set(getEnabledProfileIds(result.kind, filters, profiles));
+    return enabled.has(result.sourceProfileId);
+  });
+}
+
+function filterBrowserResultsForKind(
+  kind: BrowserSearchResultKind,
+  results: BrowserSearchResult[],
+  filters: BrowserProfileFilters,
+  profiles: BrowserProfileSetting[]
+): BrowserSearchResult[] {
+  const enabled = new Set(getEnabledProfileIds(kind, filters, profiles));
+  return results.filter((result) =>
+    !result.sourceProfileId ||
+    enabled.has(result.sourceProfileId)
+  );
+}
+
+function decorateBrowserResults(results: BrowserSearchResult[], profiles: BrowserProfileSetting[]): BrowserSearchResult[] {
+  return results.map((result) => {
+    const profileLabel = getProfileLabelById(result.sourceProfileId, profiles) || result.profileLabel || '';
+    if (!profileLabel) return result;
+    const host = extractHost(result.url);
+    const subtitle = result.kind === 'history' && result.lastUsedAt
+      ? [formatHistoryDateTime(result.lastUsedAt), profileLabel, host].filter(Boolean).join(' - ')
+      : buildBrowserSubtitle(profileLabel, '', host);
+    return {
+      ...result,
+      profileLabel,
+      subtitle,
+    };
+  });
 }
 
 type BrowserCandidateOptions = {
@@ -734,7 +898,7 @@ function getBrowserEntryCandidates(
       focusAvailable: false,
       faviconUrl: index.faviconUrl,
       source: entry.source,
-      sourceProfileId: entry.sourceProfileId,
+      sourceProfileId: entry.sourceProfileId ? getEntryProfileKey(entry) : undefined,
       browserName: index.browserLabel,
       profileName: entry.sourceProfileName || entry.sourceProfileId,
       bookmarkFolder: entry.bookmarkFolder,
@@ -810,9 +974,11 @@ function getBrowserSourceLabel(source: BrowserSearchSource): string {
 }
 
 function getEntryProfileKey(entry: BrowserSearchEntry): string {
+  const profile = String(entry.sourceProfileId || entry.sourceProfileName || 'default');
+  if (profile.includes(':')) return profile;
   return [
     entry.source || 'user',
-    entry.sourceProfileId || entry.sourceProfileName || 'default',
+    profile,
   ].join(':');
 }
 
@@ -860,9 +1026,12 @@ function getOpenTabCandidates(
         actionInput: tab.url,
         focusAvailable: true,
         faviconUrl: normalizeFaviconUrl(tab.favIconUrl, tab.url),
+        source: tab.browserId as BrowserSearchSource,
+        sourceProfileId: tab.profileSourceId,
         browserName: tab.browserName,
         profileName: tab.profileName,
         windowId: tab.windowId,
+        windowOrdinal: tab.windowOrdinal,
         tabId: tab.tabId,
         tabIndex: tab.tabIndex,
         windowLastFocusedAt: tab.windowLastFocusedAt,
@@ -1014,10 +1183,11 @@ function getBookmarkNicknameMatch(
 function findBookmarkNickname(entry: BrowserSearchEntry, nicknames: BrowserSearchNicknameSetting[]): string {
   const entrySource = String(entry.source || '');
   const entryProfileId = String(entry.sourceProfileId || '');
+  const entryFullProfileId = getEntryProfileKey(entry);
   const entryUrl = normalizeNicknameUrl(entry.url);
   const match = nicknames.find((item) =>
     String(item.source || '') === entrySource &&
-    String(item.sourceProfileId || '') === entryProfileId &&
+    (String(item.sourceProfileId || '') === entryProfileId || String(item.sourceProfileId || '') === entryFullProfileId) &&
     normalizeNicknameUrl(item.url) === entryUrl
   );
   return String(match?.nickname || '').trim();
@@ -1056,8 +1226,8 @@ function getBrowserEntrySearchIndex(entry: BrowserSearchEntry): BrowserEntrySear
     { value: normalizeForTokenSearch(entry.query), weight: 1.15 },
     { value: normalizeForTokenSearch(entry.url), weight: 1 },
     { value: normalizeForTokenSearch(entry.host), weight: 1 },
-    { value: normalizeForTokenSearch(entry.bookmarkFolder), weight: 0.65 },
-    { value: normalizeForTokenSearch(entry.sourceProfileName || entry.sourceProfileId), weight: 0.35 },
+    { value: normalizeForTokenSearch(entry.bookmarkFolder || ''), weight: 0.65 },
+    { value: normalizeForTokenSearch(entry.sourceProfileName || entry.sourceProfileId || ''), weight: 0.35 },
     { value: normalizeForTokenSearch(browserLabel), weight: 0.3 },
   ];
   const searchBlob = Array.from(new Set(searchFields.map((field) => field.value).filter(Boolean))).join(' ');

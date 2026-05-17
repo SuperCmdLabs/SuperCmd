@@ -1,5 +1,5 @@
 import React from 'react';
-import type { CommandInfo, QuickLinkDynamicField } from '../../types/electron';
+import type { BrowserProfileSetting, CommandInfo, QuickLinkDynamicField } from '../../types/electron';
 import type { CalcResult } from '../smart-calculator';
 import type { LauncherAction, MemoryFeedback } from '../utils/command-helpers';
 import type { QuickLinkDynamicPromptState } from '../components/QuickLinkDynamicPromptOverlay';
@@ -72,7 +72,7 @@ type LauncherMainViewProps = {
   commandAliases: Record<string, string>;
   commandHotkeys: Record<string, string>;
   onCalculatorCopy: () => void;
-  onCommandClick: (command: CommandInfo, selectedIndex: number) => void | Promise<void>;
+  onCommandClick: (command: CommandInfo, selectedIndex: number, event?: React.MouseEvent<HTMLDivElement>) => void | Promise<void>;
   onCommandContextMenu: (
     event: React.MouseEvent<HTMLDivElement>,
     command: CommandInfo,
@@ -82,6 +82,7 @@ type LauncherMainViewProps = {
   launcherFooterStatus: MemoryFeedback;
   selectedCommand: CommandInfo | null;
   selectedAction: LauncherAction | undefined;
+  browserProfiles: BrowserProfileSetting[];
   onOpenActions: () => void;
 
   quickLinkDynamicPrompt: QuickLinkDynamicPromptState | null;
@@ -169,6 +170,7 @@ const LauncherMainView: React.FC<LauncherMainViewProps> = ({
   launcherFooterStatus,
   selectedCommand,
   selectedAction,
+  browserProfiles,
   onOpenActions,
   quickLinkDynamicPrompt,
   quickLinkDynamicInputRef,
@@ -269,6 +271,7 @@ const LauncherMainView: React.FC<LauncherMainViewProps> = ({
           status={launcherFooterStatus}
           selectedCommand={selectedCommand}
           selectedAction={selectedAction}
+          browserProfiles={browserProfiles}
           resultCount={displayCommands.length}
           onOpenActions={onOpenActions}
           t={t}

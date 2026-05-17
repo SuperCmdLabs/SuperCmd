@@ -22,7 +22,7 @@ type LauncherCommandListProps = {
   commandAliases: Record<string, string>;
   commandHotkeys: Record<string, string>;
   onCalculatorCopy: () => void;
-  onCommandClick: (command: CommandInfo, selectedIndex: number) => void | Promise<void>;
+  onCommandClick: (command: CommandInfo, selectedIndex: number, event?: React.MouseEvent<HTMLDivElement>) => void | Promise<void>;
   onCommandContextMenu: (
     event: React.MouseEvent<HTMLDivElement>,
     command: CommandInfo,
@@ -100,8 +100,8 @@ const LauncherCommandList: React.FC<LauncherCommandListProps> = ({
                   itemRef={(el) => (itemRefs.current[absoluteIndex] = el)}
                   commandAlias={commandAlias}
                   commandHotkey={commandHotkey}
-                  onClick={() => {
-                    void onCommandClick(command, absoluteIndex);
+                  onClick={(event) => {
+                    void onCommandClick(command, absoluteIndex, event);
                   }}
                   onContextMenu={(event) => onCommandContextMenu(event, command, absoluteIndex)}
                   t={t}

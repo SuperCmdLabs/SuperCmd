@@ -3,7 +3,7 @@
   "name": "SuperCmd Browser Tabs",
   "description": "Sends live browser tab snapshots to SuperCmd during local development.",
   "version": "0.1.0",
-  "permissions": ["tabs", "alarms"],
+  "permissions": ["tabs", "alarms", "storage"],
   "host_permissions": ["http://127.0.0.1:17373/*"],
   "background": {
     "service_worker": "background.js"

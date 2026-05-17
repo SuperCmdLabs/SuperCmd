@@ -59,8 +59,16 @@ export type UseLauncherActionModelOptions = {
   handleCommandExecute: (command: CommandInfo) => void | Promise<void>;
   submitBrowserSearch: (
     rawQuery: string,
-    options?: { focusExistingTab?: boolean }
-  ) => void | Promise<void>;
+    options?: {
+      focusExistingTab?: boolean;
+      event?: { altKey?: boolean; numberKey?: string | number | null };
+      kind?: CommandInfo['browserResultKind'];
+      url?: string;
+      sourceProfileId?: string;
+      windowId?: string | number;
+      tabId?: string | number;
+    }
+  ) => void | Promise<void | boolean>;
 
   openFileResultByPath: (targetPath: string) => void | Promise<void>;
   showFileResultDetailsByPath: (targetPath: string) => void | Promise<void>;
@@ -185,9 +193,16 @@ export function useLauncherActionModel(options: UseLauncherActionModelOptions): 
           ...(hasOpenTabMatch ? [{
             id: 'focus-existing-tab',
             title: t('launcher.actions.focusExistingTab'),
-            shortcut: 'Cmd+Enter',
+            shortcut: 'Command+Enter',
             icon: <CornerDownLeft className="w-4 h-4" />,
-            execute: () => submitBrowserSearch(String(command.browserActionInput || launcherInputValue).trim(), { focusExistingTab: true }),
+            execute: () => submitBrowserSearch(String(command.browserActionInput || launcherInputValue).trim(), {
+              focusExistingTab: true,
+              kind: command.browserResultKind,
+              url: command.browserUrl,
+              sourceProfileId: command.browserSourceProfileId,
+              windowId: command.browserWindowId,
+              tabId: command.browserTabId,
+            }),
           }] : []),
         ] as LauncherAction[];
       }

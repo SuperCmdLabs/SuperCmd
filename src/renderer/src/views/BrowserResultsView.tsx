@@ -1,6 +1,7 @@
-import React from 'react';
-import { ArrowLeft } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowLeft, Check } from 'lucide-react';
 import type { BrowserSearchResult, BrowserHistoryProfileOption } from '../hooks/useBrowserSearch';
+import type { BrowserProfileSetting } from '../../types/electron';
 import type { BrowserResultsViewScope } from '../utils/browser-search-commands';
 import {
   canEditBrowserResultNickname,
@@ -41,12 +42,17 @@ type BrowserResultsViewProps = {
   selectedIndex: number;
   setSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
   selectedResult: BrowserSearchResult | null;
-  activateResult: (result: BrowserSearchResult, alternate?: boolean) => void | Promise<void>;
+  activateResult: (result: BrowserSearchResult, event?: { altKey?: boolean; metaKey?: boolean; numberKey?: string | number | null }) => void | Promise<void>;
+  loadMoreResults: () => void;
 
   showHistoryProfilePicker: boolean;
   historyProfileOptions: BrowserHistoryProfileOption[];
   effectiveHistoryProfileIds: string[] | null;
   historyProfileFilterLabel: string;
+  browserAlternateProfileLabel: string;
+  browserAlternateProfileBrowserId?: string;
+  browserProfiles: BrowserProfileSetting[];
+  browserAppIconDataUrls: Record<string, string>;
   historyProfileMenuOpen: boolean;
   setHistoryProfileMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setHistorySelectedProfileIds: React.Dispatch<React.SetStateAction<string[] | null>>;
@@ -82,10 +88,15 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
   setSelectedIndex,
   selectedResult,
   activateResult,
+  loadMoreResults,
   showHistoryProfilePicker,
   historyProfileOptions,
   effectiveHistoryProfileIds,
   historyProfileFilterLabel,
+  browserAlternateProfileLabel,
+  browserAlternateProfileBrowserId,
+  browserProfiles,
+  browserAppIconDataUrls,
   historyProfileMenuOpen,
   setHistoryProfileMenuOpen,
   setHistorySelectedProfileIds,
@@ -99,6 +110,25 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
   isGlassyTheme,
   t,
 }) => {
+  const [optionHeld, setOptionHeld] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey) setOptionHeld(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'Alt' || !event.altKey) setOptionHeld(false);
+    };
+    const onBlur = () => setOptionHeld(false);
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keyup', onKeyUp, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keyup', onKeyUp, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+  const showProfileHint = browserProfiles.length > 1 && Boolean(browserAlternateProfileLabel);
   return (
     <>
       <LauncherViewShell
@@ -158,7 +188,13 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
 
                 if (event.key === 'Enter' && selectedResult) {
                   event.preventDefault();
-                  void activateResult(selectedResult, event.metaKey);
+                  void activateResult(selectedResult, { altKey: event.altKey, metaKey: event.metaKey, numberKey: null });
+                  return;
+                }
+
+                if (event.altKey && /^[1-9]$/.test(event.key) && selectedResult) {
+                  event.preventDefault();
+                  void activateResult(selectedResult, { altKey: true, metaKey: event.metaKey, numberKey: event.key });
                 }
               }}
               placeholder={placeholder}
@@ -175,7 +211,10 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
                   <span className="text-[var(--text-muted)]">{historyProfileFilterLabel}</span>
                 </button>
                 {historyProfileMenuOpen ? (
-                  <div className="absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg border border-[var(--ui-divider)] bg-[var(--ui-panel-bg)] shadow-xl">
+                  <div
+                    className="absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg p-1 shadow-xl"
+                    style={getQuickLinkPromptPanelStyle(isNativeLiquidGlass, isGlassyTheme)}
+                  >
                     <div className="max-h-64 overflow-y-auto p-1">
                       {historyProfileOptions.map((profile) => {
                         const checked = Boolean(effectiveHistoryProfileIds?.includes(profile.id));
@@ -191,11 +230,12 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
                                   : [...currentIds, profile.id];
                               });
                             }}
-                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--text-secondary)] hover:bg-white/[0.06]"
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-[var(--text-secondary)] hover:bg-white/[0.08]"
                           >
-                            <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border text-[0.625rem] ${checked ? 'border-cyan-300 bg-cyan-400/20 text-cyan-200' : 'border-[var(--ui-divider)] text-transparent'}`}>
-                              x
+                            <span className={`flex h-4 w-4 items-center justify-center rounded border ${checked ? 'border-white bg-white text-black' : 'border-[var(--ui-divider)] text-transparent'}`}>
+                              <Check className="h-3 w-3" />
                             </span>
+                            <BrowserAppIcon iconDataUrl={profile.browserId ? browserAppIconDataUrls[String(profile.browserId)] : undefined} />
                             <span className="min-w-0 flex-1 truncate">{profile.label}</span>
                             <span className="text-[0.6875rem] text-[var(--text-muted)]">{profile.count}</span>
                           </button>
@@ -208,7 +248,15 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
             ) : null}
           </div>
 
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5">
+          <div
+            className="flex-1 overflow-y-auto custom-scrollbar p-1.5"
+            onScroll={(event) => {
+              const el = event.currentTarget;
+              if (el.scrollHeight - el.scrollTop - el.clientHeight < 220) {
+                loadMoreResults();
+              }
+            }}
+          >
             {results.length === 0 ? (
               <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
                 {t('launcher.status.noMatchingResults')}
@@ -233,7 +281,7 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
                           key={result.id}
                           className={`command-item px-3 py-2 rounded-lg cursor-pointer ${selected ? 'selected' : ''}`}
                           onMouseEnter={() => setSelectedIndex(flatIndex)}
-                          onClick={(event) => void activateResult(result, event.metaKey)}
+                          onClick={(event) => void activateResult(result, { altKey: event.altKey, metaKey: event.metaKey, numberKey: null })}
                         >
                           <div className="flex items-center gap-2.5">
                             <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
@@ -270,7 +318,7 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
               </div>
             )}
           </div>
-          <div className="sc-glass-footer sc-launcher-footer flex items-center px-4 py-2.5 border-t border-[var(--ui-divider)]">
+          <div className="sc-glass-footer sc-launcher-footer relative flex items-center px-4 py-2.5 border-t border-[var(--ui-divider)]">
             <div className="sc-footer-primary flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate text-[var(--text-subtle)]">
               {selectedResult ? (
                 <>
@@ -290,20 +338,37 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
                 t('launcher.status.results', { count: results.length })
               )}
             </div>
+            {selectedResult && showProfileHint ? (
+              <div className="pointer-events-none absolute bottom-2.5 left-1/2 z-10 flex max-w-[34vw] -translate-x-1/2 items-center gap-2 whitespace-nowrap">
+                <span className="text-xs font-normal text-[var(--text-muted)]">
+                  {t('launcher.browserSearch.profileAction')}
+                </span>
+                <kbd className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded bg-[var(--kbd-bg)] px-1.5 text-[0.6875rem] font-medium text-[var(--text-subtle)]">⌥</kbd>
+                <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                  <BrowserAppIcon iconDataUrl={browserAlternateProfileBrowserId ? browserAppIconDataUrls[String(browserAlternateProfileBrowserId)] : undefined} />
+                  <span className="truncate">{browserAlternateProfileLabel}</span>
+                </span>
+                {optionHeld ? (
+                  <BrowserProfileMenu profiles={browserProfiles} browserAppIconDataUrls={browserAppIconDataUrls} />
+                ) : null}
+              </div>
+            ) : null}
             {selectedResult ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-[var(--text-primary)]">
-                  {scope === 'open-tabs'
-                    ? t('launcher.actions.focusExistingTab')
-                    : t('launcher.actions.open')}
+                  {t('launcher.actions.open')}
                 </span>
+                {selectedResult.profileLabel ? (
+                  <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                    <BrowserAppIcon iconDataUrl={selectedResult.source ? browserAppIconDataUrls[String(selectedResult.source)] : undefined} />
+                    <span className="max-w-[120px] truncate">{selectedResult.profileLabel}</span>
+                  </span>
+                ) : null}
                 <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">↩</kbd>
-                {selectedResult.focusAvailable ? (
+                {scope === 'open-tabs' && selectedResult.focusAvailable ? (
                   <>
                     <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">
-                      {scope === 'open-tabs'
-                        ? t('launcher.actions.open')
-                        : t('launcher.browserSearch.focusHint')}
+                      {t('launcher.actions.focusExistingTab')}
                     </span>
                     <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
                     <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">↩</kbd>
@@ -392,3 +457,37 @@ const BrowserResultsView: React.FC<BrowserResultsViewProps> = ({
 };
 
 export default BrowserResultsView;
+
+const BrowserAppIcon: React.FC<{ iconDataUrl?: string }> = ({ iconDataUrl }) => {
+  return (
+    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-sm bg-white/10">
+      {iconDataUrl ? (
+        <img src={iconDataUrl} alt="" className="h-4 w-4 object-contain" draggable={false} />
+      ) : null}
+    </span>
+  );
+};
+
+const BrowserProfileMenu: React.FC<{
+  profiles: BrowserProfileSetting[];
+  browserAppIconDataUrls: Record<string, string>;
+}> = ({ profiles, browserAppIconDataUrls }) => {
+  const alternates = profiles.slice(1);
+  if (alternates.length === 0) return null;
+  return (
+    <div className="absolute bottom-11 right-4 z-20 min-w-[220px] overflow-hidden rounded-lg border border-[var(--ui-divider)] bg-[var(--settings-panel-bg)] p-1 shadow-xl">
+      {alternates.map((profile, index) => (
+        <div
+          key={profile.id}
+          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-[var(--text-secondary)]"
+        >
+          <BrowserAppIcon iconDataUrl={browserAppIconDataUrls[String(profile.browserId)]} />
+          <span className="min-w-0 flex-1 truncate">{profile.displayName || profile.detectedName || profile.profileId}</span>
+          <kbd className="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded bg-[var(--kbd-bg)] px-1.5 text-[0.65rem] text-[var(--text-subtle)]">
+            {index === 0 ? '⌥' : `⌥${index}`}
+          </kbd>
+        </div>
+      ))}
+    </div>
+  );
+};

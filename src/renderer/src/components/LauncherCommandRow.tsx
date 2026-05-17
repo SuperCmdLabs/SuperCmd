@@ -16,7 +16,7 @@ type LauncherCommandRowProps = {
   itemRef: (el: HTMLDivElement | null) => void;
   commandAlias: string;
   commandHotkey: string;
-  onClick: () => void;
+  onClick: (event: React.MouseEvent<HTMLDivElement>) => void;
   onContextMenu: (event: React.MouseEvent<HTMLDivElement>) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 };
@@ -36,10 +36,6 @@ const LauncherCommandRow: React.FC<LauncherCommandRowProps> = ({
   const typeBadgeLabel = getCommandTypeBadgeLabel(command, t);
   const fallbackCategory = getCategoryLabel(command.category, t);
   const hotkeyParts = commandHotkey ? getShortcutDisplayParts(commandHotkey) : [];
-  const browserFocusParts =
-    command.browserMatchKind === 'open-tab'
-      ? getShortcutDisplayParts('Cmd+Enter')
-      : [];
 
   return (
     <div
@@ -83,18 +79,6 @@ const LauncherCommandRow: React.FC<LauncherCommandRowProps> = ({
             </span>
           ) : null}
         </div>
-        {browserFocusParts.length > 0 ? (
-          <span className="inline-flex items-center gap-1 text-[0.6875rem] text-[var(--text-muted)] font-medium flex-shrink-0">
-            <span>{t('launcher.browserSearch.focusHint')}</span>
-            <span className="inline-flex items-center gap-0.5">
-              {browserFocusParts.map((part, idx) => (
-                <kbd key={idx} className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] px-1 text-[10px] font-medium text-[var(--text-muted)]">
-                  {part}
-                </kbd>
-              ))}
-            </span>
-          </span>
-        ) : null}
         {typeBadgeLabel ? (
           <div className="text-[var(--text-muted)] text-[0.6875rem] font-medium leading-none flex-shrink-0 truncate">
             {typeBadgeLabel}

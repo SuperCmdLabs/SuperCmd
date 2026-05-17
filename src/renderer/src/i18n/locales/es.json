@@ -708,7 +708,8 @@
           "noneAdded": "Aún no se han añadido perfiles de navegador",
           "profileRowDetail": "Historial: {historyCount} URL · Marcadores: {bookmarkCount} · Pestañas: {tabCount}",
           "profileSupportNote": "La compatibilidad con perfiles incluye actualmente solo navegadores Chromium. Safari y Firefox se añadirán más adelante.",
-          "enabledProfiles": "{count} perfil(es) activado(s) para el historial de navegador de SuperCmd."
+          "enabledProfiles": "{count} perfil(es) activado(s) para el historial de navegador de SuperCmd.",
+          "defaultProfile": "Predeterminado"
         },
         "importedData": {
           "heading": "Datos importados",
@@ -731,7 +732,8 @@
         "status": {
           "cleared": "Historial de perfiles de navegador borrado.",
           "imported": "Se actualizaron {count} de {total} entradas.",
-          "failed": "La acción falló."
+          "failed": "La acción falló.",
+          "removedProfile": "Datos del perfil eliminados ({count} elementos)."
         },
         "webSearch": {
           "label": "Búsqueda web",
@@ -880,7 +882,8 @@
         "name": "Nombre",
         "host": "Host",
         "template": "Plantilla de URL"
-      }
+      },
+      "profileAction": "Perfil"
     },
     "badges": {
       "openTab": "Pestaña abierta",

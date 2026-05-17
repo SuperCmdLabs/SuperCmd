@@ -1,5 +1,5 @@
-import React from 'react';
-import type { CommandInfo } from '../../types/electron';
+import React, { useEffect, useState } from 'react';
+import type { BrowserProfileSetting, CommandInfo } from '../../types/electron';
 import {
   getCommandDisplayTitle,
   type LauncherAction,
@@ -12,6 +12,7 @@ type LauncherFooterProps = {
   status: MemoryFeedback;
   selectedCommand: CommandInfo | null;
   selectedAction: LauncherAction | undefined;
+  browserProfiles: BrowserProfileSetting[];
   resultCount: number;
   onOpenActions: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -21,10 +22,44 @@ const LauncherFooter: React.FC<LauncherFooterProps> = ({
   status,
   selectedCommand,
   selectedAction,
+  browserProfiles,
   resultCount,
   onOpenActions,
   t,
-}) => (
+}) => {
+  const isBrowserProfileAction = Boolean(
+    selectedCommand?.browserActionInput ||
+    selectedCommand?.browserUrl ||
+    selectedCommand?.browserMatchKind ||
+    selectedCommand?.browserResultKind ||
+    selectedCommand?.rootSearchSource === 'browser' ||
+    selectedCommand?.rootSearchSource === 'open-url' ||
+    selectedCommand?.rootSearchSource === 'direct-search'
+  );
+  const targetProfileLabel = selectedCommand?.browserTargetProfileLabel || '';
+  const alternateProfileLabel = selectedCommand?.browserAlternateProfileLabel || '';
+  const profileCount = Math.max(selectedCommand?.browserProfileCount || 0, browserProfiles.length);
+  const showProfileHint = profileCount > 1 && Boolean(alternateProfileLabel);
+  const showFocusHint = selectedCommand?.browserResultKind === 'open-tab' && selectedCommand.browserFocusAvailable === true;
+  const [optionHeld, setOptionHeld] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey) setOptionHeld(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'Alt' || !event.altKey) setOptionHeld(false);
+    };
+    const onBlur = () => setOptionHeld(false);
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keyup', onKeyUp, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keyup', onKeyUp, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+  return (
   <div
     className="sc-glass-footer sc-launcher-footer absolute bottom-0 left-0 right-0 z-10 flex items-center px-4 py-2.5"
   >
@@ -51,7 +86,55 @@ const LauncherFooter: React.FC<LauncherFooterProps> = ({
         t('launcher.status.results', { count: resultCount })
       )}
     </div>
-    {selectedAction && (
+    {showProfileHint && selectedCommand ? (
+      <div className="pointer-events-none absolute bottom-2.5 left-1/2 z-10 flex max-w-[34vw] -translate-x-1/2 items-center gap-2 whitespace-nowrap">
+        <span className="text-xs text-[var(--text-muted)]">{t('launcher.browserSearch.profileAction')}</span>
+        <kbd className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded bg-[var(--kbd-bg)] px-1.5 text-[0.6875rem] font-medium text-[var(--text-subtle)]">⌥</kbd>
+        <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-[var(--text-muted)]">
+          <BrowserAppIcon iconDataUrl={selectedCommand.browserAlternateProfileIconDataUrl} />
+          <span className="truncate">{alternateProfileLabel}</span>
+        </span>
+        {optionHeld ? (
+          <BrowserProfileMenu
+            profiles={browserProfiles}
+            iconForBrowserId={(browserId) =>
+              browserId === selectedCommand.browserTargetProfileBrowserId
+                ? selectedCommand.browserTargetProfileIconDataUrl
+                : browserId === selectedCommand.browserAlternateProfileBrowserId
+                  ? selectedCommand.browserAlternateProfileIconDataUrl
+                  : undefined
+            }
+          />
+        ) : null}
+      </div>
+    ) : null}
+    {selectedAction && isBrowserProfileAction && selectedCommand ? (
+      <div className="flex items-center gap-2 mr-3">
+        <button
+          type="button"
+          onClick={() => selectedAction.execute()}
+          className="text-[var(--text-primary)] text-xs font-semibold hover:text-[var(--text-primary)] transition-colors"
+        >
+          {selectedAction.title}
+        </button>
+        <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">
+          ↩
+        </kbd>
+        {targetProfileLabel ? (
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            <BrowserAppIcon iconDataUrl={selectedCommand.browserTargetProfileIconDataUrl} />
+            <span className="max-w-[120px] truncate">{targetProfileLabel}</span>
+          </span>
+        ) : null}
+        {showFocusHint ? (
+          <>
+            <span className="ml-2 text-xs text-[var(--text-muted)]">{t('launcher.actions.focusExistingTab')}</span>
+            <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
+            <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">↩</kbd>
+          </>
+        ) : null}
+      </div>
+    ) : selectedAction ? (
       <div className="flex items-center gap-2 mr-3">
         <button
           onClick={() => selectedAction.execute()}
@@ -65,16 +148,53 @@ const LauncherFooter: React.FC<LauncherFooterProps> = ({
           </kbd>
         )}
       </div>
-    )}
-    <button
-      onClick={onOpenActions}
-      className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-    >
-      <span className="text-xs font-normal">{t('common.actions')}</span>
-      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
-      <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">K</kbd>
-    </button>
+    ) : null}
+    {!isBrowserProfileAction ? (
+      <button
+        onClick={onOpenActions}
+        className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+      >
+        <span className="text-xs font-normal">{t('common.actions')}</span>
+        <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
+        <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">K</kbd>
+      </button>
+    ) : null}
   </div>
-);
+  );
+};
+
+const BrowserAppIcon: React.FC<{ iconDataUrl?: string }> = ({ iconDataUrl }) => {
+  return (
+    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-sm bg-white/10">
+      {iconDataUrl ? (
+        <img src={iconDataUrl} alt="" className="h-4 w-4 object-contain" draggable={false} />
+      ) : null}
+    </span>
+  );
+};
+
+const BrowserProfileMenu: React.FC<{
+  profiles: BrowserProfileSetting[];
+  iconForBrowserId: (browserId: string) => string | undefined;
+}> = ({ profiles, iconForBrowserId }) => {
+  const alternates = profiles.slice(1);
+  if (alternates.length === 0) return null;
+  return (
+    <div className="absolute bottom-11 right-4 z-20 min-w-[220px] overflow-hidden rounded-lg border border-[var(--ui-divider)] bg-[var(--settings-panel-bg)] p-1 shadow-xl">
+      {alternates.map((profile, index) => (
+        <div
+          key={profile.id}
+          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-[var(--text-secondary)]"
+        >
+          <BrowserAppIcon iconDataUrl={iconForBrowserId(profile.browserId)} />
+          <span className="min-w-0 flex-1 truncate">{profile.displayName || profile.detectedName || profile.profileId}</span>
+          <kbd className="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded bg-[var(--kbd-bg)] px-1.5 text-[0.65rem] text-[var(--text-subtle)]">
+            {index === 0 ? '⌥' : `⌥${index}`}
+          </kbd>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 export default LauncherFooter;

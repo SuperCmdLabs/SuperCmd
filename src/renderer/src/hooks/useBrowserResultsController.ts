@@ -2,6 +2,8 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BrowserSearchResult, BrowserHistoryProfileOption } from './useBrowserSearch';
 import type {
+  BrowserProfileFilterKind,
+  BrowserProfileSetting,
   BrowserSearchNicknameSetting,
   BrowserSearchResultGroupSetting,
 } from '../../types/electron';
@@ -21,24 +23,38 @@ type UseBrowserResultsControllerOptions = {
       input: string,
       resultGroups: BrowserSearchResultGroupSetting[]
     ) => BrowserSearchResult[];
-    getOpenTabResults: (input: string) => BrowserSearchResult[];
-    getBookmarkResults: (input: string) => BrowserSearchResult[];
+    getOpenTabResults: (input: string, limit?: number) => BrowserSearchResult[];
+    getBookmarkResults: (input: string, limit?: number) => BrowserSearchResult[];
     getHistoryResults: (
       input: string,
       profileIds?: string[] | null,
-      showProfileContext?: boolean
+      showProfileContext?: boolean,
+      limit?: number
     ) => BrowserSearchResult[];
     getHistoryProfiles: () => BrowserHistoryProfileOption[];
+    getProfileFilterOptions: (kind: BrowserProfileFilterKind) => BrowserHistoryProfileOption[];
+    profileFilters: Partial<Record<BrowserProfileFilterKind, string[]>>;
+    profiles: BrowserProfileSetting[];
     executeBrowserSearch: (
       input: string,
-      options?: { focusExistingTab?: boolean }
+      options?: any
     ) => Promise<boolean>;
+    refreshOpenTabs: () => void;
     refreshBrowserEntries: () => void;
   };
   resultGroups: BrowserSearchResultGroupSetting[];
   launcherInputRef: React.RefObject<HTMLInputElement>;
   t: (key: string, params?: Record<string, string | number>) => string;
 };
+
+function scopeToFilterKind(scope: BrowserResultsViewScope): BrowserProfileFilterKind | null {
+  if (scope === 'open-tabs') return 'open-tab';
+  if (scope === 'bookmarks') return 'bookmark';
+  if (scope === 'history') return 'history';
+  return null;
+}
+
+const BROWSER_RESULTS_PAGE_SIZE = 160;
 
 export function useBrowserResultsController({
   browserSearch,
@@ -49,8 +65,9 @@ export function useBrowserResultsController({
   const [browserResultsViewQuery, setBrowserResultsViewQuery] = useState<string | null>(null);
   const [browserResultsViewScope, setBrowserResultsViewScope] = useState<BrowserResultsViewScope>('all');
   const [browserResultsViewSelectedIndex, setBrowserResultsViewSelectedIndex] = useState(0);
-  const [browserHistorySelectedProfileIds, setBrowserHistorySelectedProfileIds] = useState<string[] | null>(null);
+  const [browserResultsViewLimit, setBrowserResultsViewLimit] = useState(BROWSER_RESULTS_PAGE_SIZE);
   const [browserHistoryProfileMenuOpen, setBrowserHistoryProfileMenuOpen] = useState(false);
+  const [browserProfileFilterOverrides, setBrowserProfileFilterOverrides] = useState<Partial<Record<BrowserProfileFilterKind, string[]>>>({});
   const [bookmarkNicknamePrompt, setBookmarkNicknamePrompt] = useState<{
     result: BrowserSearchResult;
     value: string;
@@ -60,33 +77,46 @@ export function useBrowserResultsController({
   const bookmarkNicknameInputRef = useRef<HTMLInputElement>(null);
 
   const browserHistoryProfileOptions = useMemo(() => {
+    const filterKind = scopeToFilterKind(browserResultsViewScope);
+    if (filterKind) return browserSearch.getProfileFilterOptions(filterKind);
     return browserSearch.getHistoryProfiles();
-  }, [browserSearch]);
+  }, [browserSearch, browserResultsViewScope]);
 
   const effectiveBrowserHistoryProfileIds = useMemo(() => {
-    if (browserHistorySelectedProfileIds !== null) return browserHistorySelectedProfileIds;
-    return browserHistoryProfileOptions.length > 0
-      ? browserHistoryProfileOptions.map((profile) => profile.id)
-      : null;
-  }, [browserHistoryProfileOptions, browserHistorySelectedProfileIds]);
+    const filterKind = scopeToFilterKind(browserResultsViewScope);
+    if (!filterKind) return null;
+    const allProfileIds = browserHistoryProfileOptions.map((profile) => profile.id);
+    const allProfileIdSet = new Set(allProfileIds);
+    const override = browserProfileFilterOverrides[filterKind];
+    if (override) return override.filter((id) => allProfileIdSet.has(id));
+    const saved = browserSearch.profileFilters?.[filterKind];
+    return saved === undefined ? allProfileIds : saved.filter((id) => allProfileIdSet.has(id));
+  }, [browserHistoryProfileOptions, browserResultsViewScope, browserSearch.profileFilters, browserProfileFilterOverrides]);
 
   const browserResultsViewResults = useMemo(() => {
     if (browserResultsViewQuery === null) return [];
     if (browserResultsViewScope === 'open-tabs') {
-      return browserSearch.getOpenTabResults(browserResultsViewQuery);
+      const enabled = effectiveBrowserHistoryProfileIds ? new Set(effectiveBrowserHistoryProfileIds) : null;
+      return browserSearch.getOpenTabResults(browserResultsViewQuery, browserResultsViewLimit).filter((result) =>
+        !enabled || !result.sourceProfileId || enabled.has(result.sourceProfileId)
+      );
     }
     if (browserResultsViewScope === 'bookmarks') {
-      return browserSearch.getBookmarkResults(browserResultsViewQuery);
+      const enabled = effectiveBrowserHistoryProfileIds ? new Set(effectiveBrowserHistoryProfileIds) : null;
+      return browserSearch.getBookmarkResults(browserResultsViewQuery, browserResultsViewLimit).filter((result) =>
+        !enabled || !result.sourceProfileId || enabled.has(result.sourceProfileId)
+      );
     }
     if (browserResultsViewScope === 'history') {
       return browserSearch.getHistoryResults(
         browserResultsViewQuery,
         effectiveBrowserHistoryProfileIds,
-        browserHistoryProfileOptions.length > 1
+        browserHistoryProfileOptions.length > 1,
+        browserResultsViewLimit
       );
     }
     return browserSearch.getAllResults(browserResultsViewQuery, resultGroups);
-  }, [browserHistoryProfileOptions.length, browserSearch, resultGroups, browserResultsViewQuery, browserResultsViewScope, effectiveBrowserHistoryProfileIds]);
+  }, [browserHistoryProfileOptions.length, browserSearch, resultGroups, browserResultsViewLimit, browserResultsViewQuery, browserResultsViewScope, effectiveBrowserHistoryProfileIds]);
 
   const browserResultsViewSections = useMemo(() => {
     if (browserResultsViewScope === 'open-tabs') {
@@ -94,28 +124,34 @@ export function useBrowserResultsController({
         key: string;
         kind: 'open-tab';
         title: string;
+        profileLabel: string;
+        windowLabel: string | number;
         items: BrowserSearchResult[];
       }> = [];
       const sectionByWindow = new Map<string, number>();
       for (const result of browserResultsViewResults) {
-        const windowKey = [
-          result.browserName || 'Browser',
-          result.profileName || '',
-          result.windowId || 'window',
-        ].join(':');
+        const profileLabel = result.profileLabel || result.profileName || result.browserName || t('launcher.badges.openTab');
+        const windowIdentity = result.windowId || (result.windowOrdinal ? `ordinal-${result.windowOrdinal}` : `tab-${result.tabId || result.id}`);
+        const windowKey = [result.sourceProfileId || profileLabel, windowIdentity].join(':');
         let sectionIndex = sectionByWindow.get(windowKey);
         if (sectionIndex === undefined) {
           sectionIndex = sections.length;
           sectionByWindow.set(windowKey, sectionIndex);
-          const profileLabel = result.profileName ? ` - ${result.profileName}` : '';
+          const windowLabel = result.windowOrdinal && result.windowOrdinal > 0
+            ? result.windowOrdinal
+            : sectionIndex + 1;
           sections.push({
             key: `open-tab-window-${windowKey}`,
             kind: 'open-tab',
-            title: `${result.browserName || t('launcher.badges.openTab')}${profileLabel} - Window ${sectionIndex + 1}`,
+            title: `${profileLabel} - Window ${windowLabel} - 0 Tabs`,
+            profileLabel,
+            windowLabel,
             items: [],
           });
         }
-        sections[sectionIndex].items.push(result);
+        const section = sections[sectionIndex];
+        section.items.push(result);
+        section.title = `${section.profileLabel} - Window ${section.windowLabel} - ${section.items.length} ${section.items.length === 1 ? 'Tab' : 'Tabs'}`;
       }
       return sections;
     }
@@ -128,15 +164,17 @@ export function useBrowserResultsController({
       }> = [];
       const sectionByFolder = new Map<string, number>();
       for (const result of browserResultsViewResults) {
+        const profileLabel = result.profileLabel || result.profileName || t('launcher.badges.bookmark');
         const folder = result.bookmarkFolder || t('launcher.badges.bookmark');
-        let sectionIndex = sectionByFolder.get(folder);
+        const sectionKey = `${result.sourceProfileId || profileLabel}:${folder}`;
+        let sectionIndex = sectionByFolder.get(sectionKey);
         if (sectionIndex === undefined) {
           sectionIndex = sections.length;
-          sectionByFolder.set(folder, sectionIndex);
+          sectionByFolder.set(sectionKey, sectionIndex);
           sections.push({
-            key: `bookmark-folder-${folder}`,
+            key: `bookmark-folder-${sectionKey}`,
             kind: 'bookmark',
-            title: folder,
+            title: `${profileLabel} - ${folder}`,
             items: [],
           });
         }
@@ -178,9 +216,12 @@ export function useBrowserResultsController({
   }, [browserResultsViewResults, browserResultsViewScope, t]);
 
   const selectedBrowserResult = browserResultsViewResults[browserResultsViewSelectedIndex] || null;
-  const showHistoryProfilePicker = browserResultsViewScope === 'history' && browserHistoryProfileOptions.length > 1;
+  const showHistoryProfilePicker = (browserResultsViewScope === 'open-tabs' || browserResultsViewScope === 'bookmarks' || browserResultsViewScope === 'history') && browserHistoryProfileOptions.length > 1;
   const selectedHistoryProfileCount = effectiveBrowserHistoryProfileIds?.length ?? browserHistoryProfileOptions.length;
   const historyProfileFilterLabel = `${selectedHistoryProfileCount}/${browserHistoryProfileOptions.length}`;
+  const browserAlternateProfile = browserSearch.profiles && browserSearch.profiles.length > 1
+    ? browserSearch.profiles[1]
+    : null;
   const browserResultsPlaceholder = browserResultsViewScope === 'open-tabs'
     ? t('launcher.browserSearch.openTabsPlaceholder')
     : browserResultsViewScope === 'bookmarks'
@@ -194,27 +235,58 @@ export function useBrowserResultsController({
 
   useEffect(() => {
     setBrowserResultsViewSelectedIndex(0);
-  }, [browserResultsViewQuery, browserResultsViewResults.length]);
+  }, [browserResultsViewQuery, browserResultsViewScope, effectiveBrowserHistoryProfileIds?.join('|')]);
+
+  useEffect(() => {
+    setBrowserResultsViewLimit(BROWSER_RESULTS_PAGE_SIZE);
+  }, [browserResultsViewQuery, browserResultsViewScope, effectiveBrowserHistoryProfileIds?.join('|')]);
+
+  const loadMoreBrowserResults = useCallback(() => {
+    if (browserResultsViewScope === 'all') return;
+    setBrowserResultsViewLimit((limit) => limit + BROWSER_RESULTS_PAGE_SIZE);
+  }, [browserResultsViewScope]);
 
   useEffect(() => {
     if (browserResultsViewQuery === null) return;
     window.setTimeout(() => browserResultsViewInputRef.current?.focus(), 0);
   }, [browserResultsViewQuery]);
 
-  const openBrowserResult = useCallback(async (result: BrowserSearchResult, options?: { focusExistingTab?: boolean }) => {
-    const ok = await browserSearch.executeBrowserSearch(result.actionInput, options);
-    if (ok) {
-      setBrowserResultsViewQuery(null);
-      try { window.electron.hideWindow(); } catch {}
-    }
+  const openBrowserResult = useCallback(async (result: BrowserSearchResult, options?: any) => {
+    setBrowserResultsViewQuery(null);
+    try { window.electron.hideWindow(); } catch {}
+    const ok = await browserSearch.executeBrowserSearch(result.actionInput, {
+      ...options,
+      kind: result.kind,
+      url: result.url,
+      sourceProfileId: result.sourceProfileId,
+      windowId: result.windowId,
+      tabId: result.tabId,
+    });
+    if (!ok) setBrowserResultsViewQuery('');
   }, [browserSearch]);
 
-  const activateBrowserResult = useCallback(async (result: BrowserSearchResult, alternate = false) => {
-    const focusExistingTab = result.focusAvailable && (
-      browserResultsViewScope === 'open-tabs' ? !alternate : alternate
-    );
-    await openBrowserResult(result, focusExistingTab ? { focusExistingTab: true } : undefined);
+  const activateBrowserResult = useCallback(async (result: BrowserSearchResult, event?: { altKey?: boolean; metaKey?: boolean; numberKey?: string | number | null }) => {
+    const focusExistingTab = result.kind === 'open-tab' && event?.metaKey === true && event?.altKey !== true;
+    await openBrowserResult(result, { focusExistingTab, event });
   }, [browserResultsViewScope, openBrowserResult]);
+
+  const setBrowserProfileFilterIds = useCallback(async (kind: BrowserProfileFilterKind, ids: string[]) => {
+    setBrowserProfileFilterOverrides((prev) => ({ ...prev, [kind]: ids }));
+    try {
+      const currentSettings = await window.electron.getSettings();
+      await window.electron.saveSettings({
+        browserSearch: {
+          ...currentSettings.browserSearch,
+          profileFilters: {
+            ...(currentSettings.browserSearch.profileFilters || {}),
+            [kind]: ids,
+          },
+        },
+      });
+    } catch (error) {
+      console.error('Failed to save browser profile filter:', error);
+    }
+  }, []);
 
   const openBookmarkNicknamePrompt = useCallback((result: BrowserSearchResult | null) => {
     if (!canEditBrowserResultNickname(result)) return;
@@ -325,6 +397,15 @@ export function useBrowserResultsController({
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [bookmarkNicknamePrompt, closeBookmarkNicknamePrompt, submitBookmarkNicknamePrompt]);
 
+  useEffect(() => {
+    if (browserResultsViewQuery === null || browserResultsViewScope !== 'open-tabs') return;
+    browserSearch.refreshOpenTabs();
+    const id = window.setInterval(() => {
+      browserSearch.refreshOpenTabs();
+    }, 2500);
+    return () => window.clearInterval(id);
+  }, [browserResultsViewQuery, browserResultsViewScope, browserSearch]);
+
   return {
     browserResultsViewQuery,
     setBrowserResultsViewQuery,
@@ -344,9 +425,19 @@ export function useBrowserResultsController({
     effectiveBrowserHistoryProfileIds,
     showHistoryProfilePicker,
     historyProfileFilterLabel,
+    browserAlternateProfileLabel: browserAlternateProfile
+      ? (browserAlternateProfile.displayName || browserAlternateProfile.detectedName || browserAlternateProfile.profileId)
+      : '',
+    browserAlternateProfileBrowserId: browserAlternateProfile?.browserId,
     browserHistoryProfileMenuOpen,
     setBrowserHistoryProfileMenuOpen,
-    setBrowserHistorySelectedProfileIds,
+    setBrowserHistorySelectedProfileIds: (updater: React.SetStateAction<string[] | null>) => {
+      const filterKind = scopeToFilterKind(browserResultsViewScope);
+      if (!filterKind) return;
+      const current = effectiveBrowserHistoryProfileIds ?? browserHistoryProfileOptions.map((item) => item.id);
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      void setBrowserProfileFilterIds(filterKind, next ?? browserHistoryProfileOptions.map((item) => item.id));
+    },
 
     browserResultsPlaceholder,
 
@@ -357,6 +448,7 @@ export function useBrowserResultsController({
     closeBookmarkNicknamePrompt,
 
     activateBrowserResult,
+    loadMoreBrowserResults,
     closeBrowserResults,
 
     isBrowserResultsViewOpen: browserResultsViewQuery !== null,

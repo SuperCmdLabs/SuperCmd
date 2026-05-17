@@ -733,7 +733,8 @@
           "noneAdded": "尚未加入瀏覽器個人檔案",
           "profileRowDetail": "歷史記錄：{historyCount} 個 URL · 書籤：{bookmarkCount} · 分頁：{tabCount} 個",
           "profileSupportNote": "個人檔案支援目前僅包含 Chromium 瀏覽器。Safari 和 Firefox 支援將於稍後加入。",
-          "enabledProfiles": "已為 SuperCmd 瀏覽器歷史啟用 {count} 個個人檔案。"
+          "enabledProfiles": "已為 SuperCmd 瀏覽器歷史啟用 {count} 個個人檔案。",
+          "defaultProfile": "預設"
         },
         "importedData": {
           "heading": "已匯入的資料",
@@ -756,7 +757,8 @@
         "status": {
           "cleared": "瀏覽器個人檔案歷史已清除。",
           "imported": "已更新 {count} / {total} 筆。",
-          "failed": "操作失敗。"
+          "failed": "操作失敗。",
+          "removedProfile": "已移除個人檔案資料（{count} 項）。"
         },
         "webSearch": {
           "label": "網頁搜尋",
@@ -915,7 +917,8 @@
         "name": "名稱",
         "host": "主機",
         "template": "URL 範本"
-      }
+      },
+      "profileAction": "個人檔案"
     }
   },
   "scriptCommand": {

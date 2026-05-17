@@ -94,6 +94,10 @@ export interface BrowserSearchSettings {
   historyRetentionDays: number | null;
   /** Browser/profile sources enabled for SuperCmd browser history. */
   profileSourceIds: string[];
+  /** Ordered Chromium profiles used for browser search and profile-aware opens. */
+  profiles: BrowserProfileSetting[];
+  /** Persisted per-category source profile filters. Undefined means all profiles are enabled. */
+  profileFilters: BrowserProfileFilters;
   /** Legacy fallback for the number of rows to show per browser result group in root search. */
   resultLimitPerGroup: number;
   /** Ordered browser result providers and row counts for the root Browser section. */
@@ -116,6 +120,20 @@ export interface BrowserSearchSettings {
   webSearchSuggestionsEnabled: boolean;
 }
 
+export type BrowserProfileFilterKind = 'open-tab' | 'bookmark' | 'history';
+
+export type BrowserProfileFilters = Partial<Record<BrowserProfileFilterKind, string[]>>;
+
+export interface BrowserProfileSetting {
+  id: string;
+  browserId: BrowserSearchSource;
+  browserName: string;
+  profileId: string;
+  detectedName: string;
+  displayName: string;
+  order: number;
+}
+
 export interface RootSearchRankingInputHistorySetting {
   useCount: number;
   lastUsedAt: number;
@@ -130,6 +148,17 @@ export interface RootSearchRankingSetting {
 }
 
 export type BrowserSearchResultKind = 'open-tab' | 'bookmark' | 'history';
+
+export type BrowserSearchSource =
+  | 'user'
+  | 'helium'
+  | 'chrome'
+  | 'arc'
+  | 'brave'
+  | 'edge'
+  | 'vivaldi'
+  | 'safari'
+  | 'firefox';
 
 export interface BrowserSearchResultGroupSetting {
   kind: BrowserSearchResultKind;
@@ -353,6 +382,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     enabled: true,
     historyRetentionDays: 90,
     profileSourceIds: [],
+    profiles: [],
+    profileFilters: {},
     resultLimitPerGroup: 2,
     resultGroups: [
       { kind: 'bookmark', limit: 2 },
@@ -505,6 +536,97 @@ function normalizeBrowserSearchProfileSourceIds(value: any): string[] {
     if (seen.has(id)) continue;
     seen.add(id);
     out.push(id);
+  }
+  return out;
+}
+
+const BROWSER_SEARCH_SOURCE_NAMES: Record<BrowserSearchSource, string> = {
+  user: 'Browser',
+  helium: 'Helium',
+  chrome: 'Google Chrome',
+  arc: 'Arc',
+  brave: 'Brave Browser',
+  edge: 'Microsoft Edge',
+  vivaldi: 'Vivaldi',
+  safari: 'Safari',
+  firefox: 'Firefox',
+};
+
+function normalizeBrowserSearchSource(value: any): BrowserSearchSource | null {
+  const id = String(value || '').trim().toLowerCase() as BrowserSearchSource;
+  return id in BROWSER_SEARCH_SOURCE_NAMES ? id : null;
+}
+
+function profileLabelFromId(profileId: string): string {
+  if (profileId === 'Default') return 'Default';
+  const match = /^Profile\s+(\d+)$/i.exec(profileId);
+  return match ? `Profile ${match[1]}` : profileId;
+}
+
+function normalizeBrowserSearchProfiles(value: any, legacyProfileSourceIds: string[]): BrowserProfileSetting[] {
+  const byId = new Map<string, BrowserProfileSetting>();
+  const addProfile = (raw: any, fallbackOrder: number) => {
+    if (!raw || typeof raw !== 'object') return;
+    const rawId = String(raw.id || '').trim();
+    const browserId = normalizeBrowserSearchSource(raw.browserId || rawId.split(':')[0]);
+    const profileId = String(raw.profileId || rawId.split(':').slice(1).join(':') || '').trim();
+    if (!browserId || !profileId || browserId === 'user') return;
+    const id = `${browserId}:${profileId}`;
+    if (!/^[a-z]+:.+$/.test(id) || byId.has(id)) return;
+    const browserName = String(raw.browserName || BROWSER_SEARCH_SOURCE_NAMES[browserId]).trim() || BROWSER_SEARCH_SOURCE_NAMES[browserId];
+    const detectedName = String(raw.detectedName || raw.profileName || profileLabelFromId(profileId)).trim() || profileLabelFromId(profileId);
+    const displayName = String(raw.displayName || detectedName).replace(/\s+/g, ' ').trim().slice(0, 120) || detectedName;
+    const order = Number.isFinite(Number(raw.order)) ? Math.max(0, Math.floor(Number(raw.order))) : fallbackOrder;
+    byId.set(id, {
+      id,
+      browserId,
+      browserName,
+      profileId,
+      detectedName,
+      displayName,
+      order,
+    });
+  };
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => addProfile(item, index));
+  }
+
+  if (byId.size === 0) {
+    legacyProfileSourceIds.forEach((id, index) => {
+      const [browserId, ...profileParts] = String(id || '').split(':');
+      const source = normalizeBrowserSearchSource(browserId);
+      const profileId = profileParts.join(':').trim();
+      if (!source || !profileId || source === 'user') return;
+      const detectedName = profileLabelFromId(profileId);
+      addProfile({
+        id: `${source}:${profileId}`,
+        browserId: source,
+        browserName: BROWSER_SEARCH_SOURCE_NAMES[source],
+        profileId,
+        detectedName,
+        displayName: detectedName,
+        order: index,
+      }, index);
+    });
+  }
+
+  return Array.from(byId.values()).sort((a, b) => a.order - b.order || a.browserName.localeCompare(b.browserName) || a.displayName.localeCompare(b.displayName))
+    .map((profile, index) => ({ ...profile, order: index }));
+}
+
+function normalizeBrowserProfileFilterIds(value: any): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids = normalizeBrowserSearchProfileSourceIds(value);
+  return ids;
+}
+
+function normalizeBrowserProfileFilters(value: any): BrowserProfileFilters {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out: BrowserProfileFilters = {};
+  for (const kind of ['open-tab', 'bookmark', 'history'] as BrowserProfileFilterKind[]) {
+    const ids = normalizeBrowserProfileFilterIds(value[kind]);
+    if (ids !== undefined) out[kind] = ids;
   }
   return out;
 }
@@ -662,10 +784,16 @@ function normalizeBrowserSearchSettings(value: any): BrowserSearchSettings {
   const fallback = DEFAULT_SETTINGS.browserSearch;
   const resultLimit = normalizeBrowserSearchResultLimit(value?.resultLimitPerGroup, fallback.resultLimitPerGroup);
   if (!value || typeof value !== 'object') return { ...fallback };
+  const profileSourceIds = normalizeBrowserSearchProfileSourceIds(value.profileSourceIds);
+  const hasProfilesField = Array.isArray(value.profiles);
+  const profiles = normalizeBrowserSearchProfiles(value.profiles, hasProfilesField ? [] : profileSourceIds);
+  const effectiveProfileSourceIds = profiles.map((profile) => profile.id);
   return {
     enabled: typeof value.enabled === 'boolean' ? value.enabled : fallback.enabled,
     historyRetentionDays: normalizeBrowserSearchRetentionDays(value.historyRetentionDays),
-    profileSourceIds: normalizeBrowserSearchProfileSourceIds(value.profileSourceIds),
+    profileSourceIds: effectiveProfileSourceIds,
+    profiles,
+    profileFilters: normalizeBrowserProfileFilters(value.profileFilters),
     resultLimitPerGroup: resultLimit,
     resultGroups: normalizeBrowserSearchResultGroups(value.resultGroups, resultLimit || fallback.resultLimitPerGroup),
     nicknames: normalizeBrowserSearchNicknames(value.nicknames),

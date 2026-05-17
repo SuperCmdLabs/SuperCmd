@@ -191,6 +191,23 @@ export function listEntries(): BrowserSearchEntry[] {
   return load().slice();
 }
 
+export function removeEntriesForProfile(profileSourceId: string): number {
+  const [source, ...profileParts] = String(profileSourceId || '').trim().split(':');
+  const profileId = profileParts.join(':');
+  if (!source || !profileId) return 0;
+  const entries = load();
+  const before = entries.length;
+  const next = entries.filter((entry) => {
+    if (entry.source !== source) return true;
+    const entryProfile = String(entry.sourceProfileId || '');
+    return entryProfile !== profileId && entryProfile !== profileSourceId;
+  });
+  if (next.length === before) return 0;
+  cache = next;
+  save();
+  return before - next.length;
+}
+
 export async function openInDefaultBrowser(rawInput: string): Promise<{
   ok: boolean;
   resolved: ResolvedInput | null;
@@ -216,6 +233,10 @@ export async function openInDefaultBrowser(rawInput: string): Promise<{
   });
   recordEntry(rawInput.trim(), resolved);
   return { ok: true, resolved };
+}
+
+export function recordResolvedInput(rawInput: string, resolved: ResolvedInput): void {
+  recordEntry(String(rawInput || '').trim(), resolved);
 }
 
 function findProfileEntryForInput(rawInput: string): BrowserSearchEntry | null {
@@ -286,9 +307,9 @@ async function openEntryUrl(entry: BrowserSearchEntry): Promise<void> {
       appName,
       entry.url,
     ];
-    if (entry.sourceProfileId !== 'Default') {
-      args.push('--args', `--profile-directory=${entry.sourceProfileId}`);
-    }
+  if (entry.sourceProfileId && entry.sourceProfileId !== 'Default') {
+    args.push('--args', `--profile-directory=${entry.sourceProfileId}`);
+  }
     await execFileAsync('/usr/bin/open', args, { timeout: 5000 });
   } catch (e) {
     console.warn(`Failed to open ${entry.url} in ${appName} profile ${entry.sourceProfileId}; falling back to default browser.`, e);
@@ -666,7 +687,11 @@ export async function refreshEnabledBrowserProfiles(): Promise<{
 }> {
   const settings = loadSettings().browserSearch;
   if (!settings.enabled) return { imported: 0, skipped: 0, total: 0, refreshed: 0 };
-  const enabledIds = new Set(settings.profileSourceIds || []);
+  const enabledIds = new Set(
+    (Array.isArray(settings.profiles) && settings.profiles.length > 0
+      ? settings.profiles.map((profile) => profile.id)
+      : settings.profileSourceIds) || []
+  );
   if (enabledIds.size === 0) return { imported: 0, skipped: 0, total: 0, refreshed: 0 };
   const profiles = listImportableBrowserProfiles().filter((profile) => enabledIds.has(profile.id));
   const result = await importFromProfiles(profiles);

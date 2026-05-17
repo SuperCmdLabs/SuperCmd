@@ -12,6 +12,7 @@ import type {
   ExtensionBundle,
   AppSettings,
   IndexedFileSearchResult,
+  BrowserSearchSource,
   BrowserSearchResultGroupSetting,
 } from '../types/electron';
 import ExtensionView from './ExtensionView';
@@ -120,6 +121,18 @@ import {
   type RootSearchRankingState,
 } from './utils/root-search-ranking';
 
+const BROWSER_APP_PATHS: Partial<Record<BrowserSearchSource, string[]>> = {
+  chrome: [
+    '/Applications/Google Chrome.app',
+    '/System/Applications/Google Chrome.app',
+  ],
+  brave: ['/Applications/Brave Browser.app'],
+  edge: ['/Applications/Microsoft Edge.app'],
+  vivaldi: ['/Applications/Vivaldi.app'],
+  helium: ['/Applications/Helium.app'],
+  arc: ['/Applications/Arc.app'],
+};
+
 const DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS = 90;
 
 // Intern cache: commandId → stable iconDataUrl string reference.
@@ -161,6 +174,7 @@ const App: React.FC = () => {
   const [launcherFileIcons, setLauncherFileIcons] = useState<Record<string, string>>({});
   const [fileIsDirectoryMap, setFileIsDirectoryMap] = useState<Record<string, boolean>>({});
   const [defaultBrowserIconDataUrl, setDefaultBrowserIconDataUrl] = useState('');
+  const [browserAppIconDataUrls, setBrowserAppIconDataUrls] = useState<Record<string, string>>({});
   const [launcherFooterStatus, setLauncherFooterStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const launcherFooterStatusTimerRef = useRef<number | null>(null);
   const [fileSearchInitialDetailPath, setFileSearchInitialDetailPath] = useState<string | null>(null);
@@ -245,6 +259,8 @@ const App: React.FC = () => {
     effectiveBrowserHistoryProfileIds,
     showHistoryProfilePicker,
     historyProfileFilterLabel,
+    browserAlternateProfileLabel,
+    browserAlternateProfileBrowserId,
     browserHistoryProfileMenuOpen,
     setBrowserHistoryProfileMenuOpen,
     setBrowserHistorySelectedProfileIds,
@@ -258,6 +274,7 @@ const App: React.FC = () => {
     closeBookmarkNicknamePrompt,
 
     activateBrowserResult,
+    loadMoreBrowserResults,
     closeBrowserResults,
 
     isBrowserResultsViewOpen,
@@ -268,8 +285,8 @@ const App: React.FC = () => {
     t,
   });
   const submitBrowserSearchRef = useRef<
-    (query: string, options?: { focusExistingTab?: boolean }) => void | Promise<boolean>
-  >(() => false);
+    (query: string, options?: Parameters<typeof browserSearch.executeBrowserSearch>[1]) => void | Promise<boolean>
+  >(() => Promise.resolve(false));
   const isLauncherModeActiveRef = useRef(false);
   const fileSearchRequestSeqRef = useRef(0);
   const commandsRef = useRef<CommandInfo[]>([]);
@@ -1470,6 +1487,52 @@ const App: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const browserIds = Array.from(
+      new Set(
+        (browserSearch.profiles || [])
+          .map((profile) => profile.browserId)
+          .filter((browserId): browserId is BrowserSearchSource => Boolean(browserId))
+      )
+    ).filter((browserId) => !browserAppIconDataUrls[String(browserId)]);
+    if (browserIds.length === 0) return;
+
+    let disposed = false;
+    const timer = window.setTimeout(() => {
+      void Promise.all(
+        browserIds.map(async (browserId) => {
+          const paths = BROWSER_APP_PATHS[browserId] || [];
+          for (const appPath of paths) {
+            const appIcon = await window.electron.getAppIconDataUrl(appPath, 20).catch(() => null);
+            const icon = appIcon || await window.electron.getFileIconDataUrl(appPath, 20).catch(() => null);
+            if (icon) return [String(browserId), icon] as const;
+          }
+          return null;
+        })
+      ).then((entries) => {
+        if (disposed) return;
+        const nextEntries = entries.filter((entry): entry is readonly [string, string] => Boolean(entry));
+        if (nextEntries.length === 0) return;
+        setBrowserAppIconDataUrls((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          for (const [browserId, icon] of nextEntries) {
+            if (next[browserId] !== icon) {
+              next[browserId] = icon;
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      });
+    }, 450);
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, [browserSearch.profiles, browserAppIconDataUrls]);
+
   const {
     calcResult,
     calcOffset,
@@ -1503,6 +1566,7 @@ const App: React.FC = () => {
     rootWebSearchSuggestions,
     selectedIndex,
     defaultBrowserIconDataUrl,
+    browserAppIconDataUrls,
     t,
   });
 
@@ -1641,12 +1705,15 @@ const App: React.FC = () => {
   );
 
   const submitBrowserSearch = useCallback(
-    async (input: string, options?: { focusExistingTab?: boolean }) => {
+    async (input: string, options?: Parameters<typeof browserSearch.executeBrowserSearch>[1]) => {
       const trimmed = input.trim();
       if (!trimmed) return false;
       const bangState = parseSearchBangState(trimmed, enabledSearchBangs);
       if (bangState.mode === 'active' && bangState.query) {
-        const ok = await window.electron.openUrl(buildBangSearchUrl(bangState.bang, bangState.query));
+        const ok = await window.electron.browserTabsOpenUrlProfile?.(
+          buildBangSearchUrl(bangState.bang, bangState.query),
+          { event: options?.event, sourceProfileId: options?.sourceProfileId }
+        ).then((result) => result.ok).catch(() => window.electron.openUrl(buildBangSearchUrl(bangState.bang, bangState.query)));
         if (ok) {
           setBrowserSearchSkipAutoComplete(false);
           try { window.electron.hideWindow(); } catch {}
@@ -1656,7 +1723,10 @@ const App: React.FC = () => {
       const resolved = browserSearch.resolve(trimmed);
       if (resolved?.type === 'search') {
         const defaultBang = getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
-        const ok = await window.electron.openUrl(buildBangSearchUrl(defaultBang, trimmed));
+        const ok = await window.electron.browserTabsOpenUrlProfile?.(
+          buildBangSearchUrl(defaultBang, trimmed),
+          { event: options?.event, sourceProfileId: options?.sourceProfileId }
+        ).then((result) => result.ok).catch(() => window.electron.openUrl(buildBangSearchUrl(defaultBang, trimmed)));
         if (ok) {
           setBrowserSearchSkipAutoComplete(false);
           try { window.electron.hideWindow(); } catch {}
@@ -1929,7 +1999,15 @@ const App: React.FC = () => {
         }
         const subject = String(command.browserActionInput || launcherInputValue).trim();
         if (subject) {
-          const ok = await submitBrowserSearch(subject);
+          try { window.electron.hideWindow(); } catch {}
+          const ok = await submitBrowserSearch(subject, {
+            focusExistingTab: false,
+            kind: command.browserResultKind,
+            url: command.browserUrl,
+            sourceProfileId: command.browserSourceProfileId,
+            windowId: command.browserWindowId,
+            tabId: command.browserTabId,
+          });
           if (ok) await recordRootSearchLaunch(command, launchQuery);
         }
         return;
@@ -2009,7 +2087,7 @@ const App: React.FC = () => {
     }
   };
   const handleCommandRowClick = useCallback(
-    async (command: CommandInfo, absoluteIndex: number) => {
+    async (command: CommandInfo, absoluteIndex: number, event?: React.MouseEvent<HTMLDivElement>) => {
       const isAlreadySelected = absoluteIndex === selectedIndex;
 
       const hasInlineExtensionArguments =
@@ -2033,13 +2111,60 @@ const App: React.FC = () => {
         }
       }
 
+      if (
+        event?.metaKey &&
+        !event.altKey &&
+        isBrowserSearchCommand(command) &&
+        command.browserResultKind === 'open-tab' &&
+        command.id !== BROWSER_SEARCH_SHOW_ALL_RESULTS_ID &&
+        !command.id.startsWith(WEB_SEARCH_ROOT_BANG_PREFIX)
+      ) {
+        const subject = String(command.browserActionInput || launcherInputValue).trim();
+        if (subject) {
+          try { window.electron.hideWindow(); } catch {}
+          void submitBrowserSearch(subject, {
+            focusExistingTab: true,
+            kind: command.browserResultKind,
+            url: command.browserUrl,
+            sourceProfileId: command.browserSourceProfileId,
+            windowId: command.browserWindowId,
+            tabId: command.browserTabId,
+          });
+        }
+        return;
+      }
+
+      if (
+        event?.altKey &&
+        isBrowserSearchCommand(command) &&
+        command.id !== BROWSER_SEARCH_SHOW_ALL_RESULTS_ID &&
+        !command.id.startsWith(WEB_SEARCH_ROOT_BANG_PREFIX)
+      ) {
+        const subject = String(command.browserActionInput || launcherInputValue).trim();
+        if (subject) {
+          try { window.electron.hideWindow(); } catch {}
+          void submitBrowserSearch(subject, {
+            focusExistingTab: false,
+            event: { altKey: true, numberKey: null },
+            kind: command.browserResultKind,
+            url: command.browserUrl,
+            sourceProfileId: command.browserSourceProfileId,
+            windowId: command.browserWindowId,
+            tabId: command.browserTabId,
+          });
+        }
+        return;
+      }
+
       void handleCommandExecute(command);
     },
     [
+      launcherInputValue,
       getDynamicFieldsForQuickLink,
       handleCommandExecute,
       inlineQuickLinkDynamicFieldsById,
       selectedIndex,
+      submitBrowserSearch,
     ]
   );
 
@@ -2476,7 +2601,7 @@ const App: React.FC = () => {
         setSelectedIndex={setWebSearchSelectedIndex}
         selectedResult={selectedWebSearchResult}
         activateResult={activateWebSearchResult}
-        submitSearch={submitBrowserSearch}
+        submitSearch={(query) => { void submitBrowserSearch(query); }}
         loadMoreResults={loadMoreWebSearchResults}
         effectiveSearchBangs={effectiveSearchBangs}
         activeBang={activeWebSearchBang}
@@ -2522,10 +2647,15 @@ const App: React.FC = () => {
         setSelectedIndex={setBrowserResultsViewSelectedIndex}
         selectedResult={selectedBrowserResult}
         activateResult={activateBrowserResult}
+        loadMoreResults={loadMoreBrowserResults}
         showHistoryProfilePicker={showHistoryProfilePicker}
         historyProfileOptions={browserHistoryProfileOptions}
         effectiveHistoryProfileIds={effectiveBrowserHistoryProfileIds}
         historyProfileFilterLabel={historyProfileFilterLabel}
+        browserAlternateProfileLabel={browserAlternateProfileLabel}
+        browserAlternateProfileBrowserId={browserAlternateProfileBrowserId}
+        browserProfiles={browserSearch.profiles}
+        browserAppIconDataUrls={browserAppIconDataUrls}
         historyProfileMenuOpen={browserHistoryProfileMenuOpen}
         setHistoryProfileMenuOpen={setBrowserHistoryProfileMenuOpen}
         setHistorySelectedProfileIds={setBrowserHistorySelectedProfileIds}
@@ -2807,6 +2937,7 @@ const App: React.FC = () => {
       launcherFooterStatus={launcherFooterStatus}
       selectedCommand={selectedCommand}
       selectedAction={selectedActions[0]}
+      browserProfiles={browserSearch.profiles}
       onOpenActions={openSelectedCommandActions}
 
       quickLinkDynamicPrompt={quickLinkDynamicPrompt}

@@ -21,7 +21,7 @@ import { fork, execFileSync, type ChildProcess } from 'child_process';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
 import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster, setExternalSettingsChangeHandler, settingsFileExistsOrICloudPlaceholder } from './settings-store';
-import type { AppSettings, RelocateMode } from './settings-store';
+import type { AppSettings, BrowserProfileSetting, BrowserProfileFilters, BrowserProfileFilterKind, RelocateMode } from './settings-store';
 import { recordRootSearchLaunchInState, type RootSearchRankingState } from '../shared/root-search-ranking-state';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
 import { scanAppRemnants } from './app-uninstaller';
@@ -118,6 +118,7 @@ import { ensureCalendarAccess, getCalendarEvents } from './calendar-events';
 import {
   openInDefaultBrowser as bsOpen,
   resolveInput as bsResolveInput,
+  recordResolvedInput as bsRecordResolvedInput,
   listEntries as bsListEntries,
   clearHistory as bsClearHistory,
   pruneByRetentionNow as bsPruneByRetention,
@@ -126,6 +127,7 @@ import {
   listImportableBrowserProfiles as bsListImportableBrowserProfiles,
   importFromBrowser as bsImportFromBrowser,
   importFromBrowserProfile as bsImportFromBrowserProfile,
+  removeEntriesForProfile as bsRemoveEntriesForProfile,
   refreshEnabledBrowserProfiles as bsRefreshEnabledBrowserProfiles,
   fetchSearchSuggestion as bsFetchSearchSuggestion,
   fetchSearchSuggestions as bsFetchSearchSuggestions,
@@ -135,10 +137,14 @@ import {
 import { listWebSearchBangs } from './web-search-bangs';
 import {
   clearBrowserTabRecentNavigations,
+  clearBrowserTabsForProfile,
   focusBrowserTabForInput,
+  focusBrowserTabTarget,
   flushRecentNavigationsForHistoryEntries,
+  listBrowserProfileConnectionStatuses,
   listBrowserTabs,
   listBrowserTabRecentNavigationEntries,
+  openUrlInProfile,
   openBrowserTabForInput,
   startBrowserTabsDevServer,
 } from './browser-tabs';
@@ -8472,7 +8478,6 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     } catch {}
   }
   mainWindow.show();
-  void refreshBrowserProfiles('launcher-open', 30_000);
   if (shouldActivateLauncherWindow) {
     mainWindow.focus();
   } else {
@@ -11922,6 +11927,78 @@ function getCombinedBrowserSearchEntries(): BrowserSearchEntry[] {
     return !durableKeys.has(key);
   });
   return [...durableEntries, ...pendingEntries];
+}
+
+type BrowserOpenProfileEvent = {
+  altKey?: boolean;
+  numberKey?: string | number | null;
+};
+
+function listConfiguredBrowserProfiles(): BrowserProfileSetting[] {
+  const settings = loadSettings().browserSearch;
+  const detectedById = new Map(bsListImportableBrowserProfiles().map((profile) => [profile.id, profile]));
+  const configured = Array.isArray(settings.profiles) ? settings.profiles : [];
+  const rawProfiles = configured;
+
+  return rawProfiles
+    .filter((profile) => profile?.id && profile.browserId && profile.profileId)
+    .map((profile) => {
+      const detected = detectedById.get(profile.id);
+      return {
+        ...profile,
+        browserName: detected?.browserName || profile.browserName,
+        detectedName: detected?.profileName || profile.detectedName || profile.profileId,
+        displayName: profile.displayName || detected?.profileName || profile.detectedName || profile.profileId,
+      };
+    })
+    .sort((a, b) => a.order - b.order || a.browserName.localeCompare(b.browserName) || a.displayName.localeCompare(b.displayName))
+    .map((profile, index) => ({ ...profile, order: index }));
+}
+
+function saveConfiguredBrowserProfiles(profiles: BrowserProfileSetting[], profileFilters?: BrowserProfileFilters): AppSettings {
+  const current = loadSettings();
+  return saveSettings({
+    browserSearch: {
+      ...current.browserSearch,
+      profiles: profiles.map((profile, index) => ({ ...profile, order: index })),
+      profileSourceIds: profiles.map((profile) => profile.id),
+      profileFilters: profileFilters ?? current.browserSearch.profileFilters ?? {},
+    },
+  } as Partial<AppSettings>);
+}
+
+function resolveOpenProfile(
+  event: BrowserOpenProfileEvent | null | undefined,
+  sourceProfileId?: string | null
+): BrowserProfileSetting | null {
+  const ordered = listConfiguredBrowserProfiles();
+  if (ordered.length === 0) return null;
+  const byId = new Map(ordered.map((profile) => [profile.id, profile]));
+  const sourceId = String(sourceProfileId || '').trim();
+  const normalizedSourceId = sourceId.includes(':') ? sourceId : '';
+  if (!event?.altKey) {
+    return normalizedSourceId ? byId.get(normalizedSourceId) ?? ordered[0] : ordered[0];
+  }
+  const rawNumberKey = event.numberKey === null || event.numberKey === undefined ? '' : String(event.numberKey);
+  if (!rawNumberKey) return ordered[1] ?? ordered[0];
+  const numeric = Number(rawNumberKey);
+  if (!Number.isFinite(numeric)) return ordered[1] ?? ordered[0];
+  return ordered[Math.trunc(numeric) + 1] ?? ordered[ordered.length - 1] ?? ordered[0];
+}
+
+async function openUrlWithResolvedProfile(
+  url: string,
+  event?: BrowserOpenProfileEvent | null,
+  sourceProfileId?: string | null
+): Promise<{ ok: boolean; profile: BrowserProfileSetting | null }> {
+  const profile = resolveOpenProfile(event, sourceProfileId);
+  try {
+    await openUrlInProfile(url, profile);
+    return { ok: true, profile };
+  } catch (e) {
+    console.warn('Failed to open URL with browser profile:', e);
+    return { ok: false, profile };
+  }
 }
 
 function scheduleInstalledAppsRefresh(reason: string): void {
@@ -15849,6 +15926,90 @@ if let tiff = image?.tiffRepresentation {
     }));
   });
 
+  ipcMain.handle('browserProfiles:list', () => {
+    return listConfiguredBrowserProfiles();
+  });
+
+  ipcMain.handle('browserProfiles:statuses', () => {
+    return listBrowserProfileConnectionStatuses();
+  });
+
+  ipcMain.handle('browserProfiles:add', (_event: any, profileSourceId: string) => {
+    const targetId = String(profileSourceId || '').trim();
+    if (!targetId) return listConfiguredBrowserProfiles();
+    const detected = bsListImportableBrowserProfiles().find((profile) => profile.id === targetId);
+    const current = listConfiguredBrowserProfiles();
+    if (current.some((profile) => profile.id === targetId)) return current;
+    const [browserId, ...profileParts] = targetId.split(':');
+    const profileId = profileParts.join(':');
+    if (!detected && (!browserId || !profileId)) return current;
+    const next: BrowserProfileSetting[] = [
+      ...current,
+      {
+        id: detected?.id || targetId,
+        browserId: (detected?.browserId || browserId) as BrowserSearchSource,
+        browserName: detected?.browserName || browserId,
+        profileId: detected?.profileId || profileId,
+        detectedName: detected?.profileName || profileId,
+        displayName: detected?.profileName || profileId,
+        order: current.length,
+      },
+    ];
+    const updated = saveConfiguredBrowserProfiles(next);
+    broadcastSettingsToAllWindows(updated);
+    return listConfiguredBrowserProfiles();
+  });
+
+  ipcMain.handle('browserProfiles:saveOrder', (_event: any, ids: string[]) => {
+    const order = Array.isArray(ids) ? ids.map((id) => String(id || '').trim()).filter(Boolean) : [];
+    const current = listConfiguredBrowserProfiles();
+    const byId = new Map(current.map((profile) => [profile.id, profile]));
+    const next: BrowserProfileSetting[] = [];
+    for (const id of order) {
+      const profile = byId.get(id);
+      if (!profile) continue;
+      next.push(profile);
+      byId.delete(id);
+    }
+    next.push(...Array.from(byId.values()).sort((a, b) => a.order - b.order));
+    const updated = saveConfiguredBrowserProfiles(next);
+    broadcastSettingsToAllWindows(updated);
+    return listConfiguredBrowserProfiles();
+  });
+
+  ipcMain.handle('browserProfiles:rename', (_event: any, profileId: string, displayName: string) => {
+    const targetId = String(profileId || '').trim();
+    const name = String(displayName || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const next = listConfiguredBrowserProfiles().map((profile) =>
+      profile.id === targetId ? { ...profile, displayName: name || profile.detectedName || profile.profileId } : profile
+    );
+    const updated = saveConfiguredBrowserProfiles(next);
+    broadcastSettingsToAllWindows(updated);
+    return listConfiguredBrowserProfiles();
+  });
+
+  ipcMain.handle('browserProfiles:remove', (_event: any, profileId: string) => {
+    const targetId = String(profileId || '').trim();
+    if (!targetId) return { ok: false, profiles: listConfiguredBrowserProfiles(), removedEntries: 0, removedTabs: 0 };
+    const current = loadSettings();
+    const nextProfiles = listConfiguredBrowserProfiles().filter((profile) => profile.id !== targetId);
+    const nextFilters: BrowserProfileFilters = { ...(current.browserSearch.profileFilters || {}) };
+    for (const kind of ['open-tab', 'bookmark', 'history'] as BrowserProfileFilterKind[]) {
+      if (Array.isArray(nextFilters[kind])) {
+        nextFilters[kind] = nextFilters[kind]!.filter((id) => id !== targetId);
+      }
+    }
+    const updated = saveConfiguredBrowserProfiles(nextProfiles, nextFilters);
+    const removedEntries = bsRemoveEntriesForProfile(targetId);
+    const removedTabs = clearBrowserTabsForProfile(targetId);
+    try {
+      broadcastSettingsToAllWindows(updated);
+      broadcastBrowserSearchHistoryChanged();
+      broadcastBrowserTabsChanged();
+    } catch {}
+    return { ok: true, profiles: listConfiguredBrowserProfiles(), removedEntries, removedTabs };
+  });
+
   ipcMain.handle('browser-search:import', async (_event: any, browserId: BrowserSearchSource) => {
     const result = await bsImportFromBrowser(browserId);
     try {
@@ -15873,6 +16034,35 @@ if let tiff = image?.tiffRepresentation {
     return listBrowserTabs();
   });
 
+  ipcMain.handle('browser-search:open-profile', async (_event: any, input: string, options?: any) => {
+    const resolved = bsResolveInput(String(input || ''));
+    if (!resolved) return { ok: false, type: null, url: null, profile: null };
+    const result = await openUrlWithResolvedProfile(
+      resolved.url,
+      options?.event || null,
+      typeof options?.sourceProfileId === 'string' ? options.sourceProfileId : null
+    );
+    if (result.ok) {
+      bsRecordResolvedInput(String(input || '').trim(), resolved);
+      try { broadcastBrowserSearchHistoryChanged(); } catch {}
+    }
+    return {
+      ok: result.ok,
+      type: resolved.type,
+      url: resolved.url,
+      profile: result.profile,
+    };
+  });
+
+  ipcMain.handle('browser-tabs:open-url-profile', async (_event: any, url: string, options?: any) => {
+    const result = await openUrlWithResolvedProfile(
+      String(url || ''),
+      options?.event || null,
+      typeof options?.sourceProfileId === 'string' ? options.sourceProfileId : null
+    );
+    return { ok: result.ok, url: String(url || ''), profile: result.profile };
+  });
+
   ipcMain.handle('browser-tabs:open', async (_event: any, input: string) => {
     const result = await openBrowserTabForInput(String(input || ''));
     return {
@@ -15890,6 +16080,14 @@ if let tiff = image?.tiffRepresentation {
       tab: result.tab,
       reason: result.reason,
     };
+  });
+
+  ipcMain.handle('browser-tabs:focus-target', async (_event: any, input: any) => {
+    return focusBrowserTabTarget({
+      profileSourceId: String(input?.profileSourceId || ''),
+      windowId: input?.windowId ?? '',
+      tabId: input?.tabId ?? '',
+    });
   });
 
   // Run a retention prune on startup so out-of-window entries don't linger.

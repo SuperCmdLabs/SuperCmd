@@ -6,6 +6,7 @@ import type { CalcResult } from '../smart-calculator';
 import type { LauncherContextMenuState } from '../components/LauncherContextMenuOverlay';
 import type { QuickLinkDynamicPromptState } from '../components/QuickLinkDynamicPromptOverlay';
 import { isBrowserSearchCommand } from '../utils/browser-search-commands';
+import { WEB_SEARCH_ROOT_BANG_PREFIX } from '../utils/web-search-bangs';
 import { isEditableElement } from '../utils/launcher-misc';
 
 export type UseLauncherKeyboardControlsOptions = {
@@ -55,7 +56,15 @@ export type UseLauncherKeyboardControlsOptions = {
   handleCommandExecute: (command: CommandInfo) => void | Promise<void>;
   submitBrowserSearch: (
     input: string,
-    options?: { focusExistingTab?: boolean }
+    options?: {
+      focusExistingTab?: boolean;
+      event?: { altKey?: boolean; numberKey?: string | number | null };
+      kind?: CommandInfo['browserResultKind'];
+      url?: string;
+      sourceProfileId?: string;
+      windowId?: string | number;
+      tabId?: string | number;
+    }
   ) => void | Promise<boolean>;
 
   pinToggleForCommand: (command: CommandInfo) => void | Promise<void>;
@@ -320,6 +329,23 @@ export function useLauncherKeyboardControls(
         }
       }
 
+      if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
+        const selected = displayCommands[selectedIndex - calcOffset];
+        if (selected && isBrowserSearchCommand(selected) && !selected.id.startsWith(WEB_SEARCH_ROOT_BANG_PREFIX)) {
+          e.preventDefault();
+          void submitBrowserSearch(String(selected.browserActionInput || launcherInputValue).trim(), {
+            focusExistingTab: false,
+            event: { altKey: true, numberKey: e.key },
+            kind: selected.browserResultKind,
+            url: selected.browserUrl,
+            sourceProfileId: selected.browserSourceProfileId,
+            windowId: selected.browserWindowId,
+            tabId: selected.browserTabId,
+          });
+          return;
+        }
+      }
+
       switch (e.key) {
         case 'Tab':
           if (isSearchInputTarget && isShowingInlineArgumentInputs) {
@@ -388,16 +414,18 @@ export function useLauncherKeyboardControls(
             const selected = displayCommands[selectedIndex - calcOffset];
             if (selectedFileResultPath && e.metaKey) {
               void revealFileResultByPath(selectedFileResultPath);
-            } else if (
-              e.metaKey &&
-              !e.shiftKey &&
-              !e.ctrlKey &&
-              !e.altKey &&
-              selected &&
-              isBrowserSearchCommand(selected) &&
-              selected.browserFocusAvailable
-            ) {
-              void submitBrowserSearch(String(selected.browserActionInput || launcherInputValue).trim(), { focusExistingTab: true });
+            } else if (selected && isBrowserSearchCommand(selected) && selected.id !== 'browser-search-action-show-all' && !selected.id.startsWith(WEB_SEARCH_ROOT_BANG_PREFIX)) {
+              const numberKey = e.altKey && /^[1-9]$/.test(e.key) ? e.key : null;
+              const focusExistingTab = selected.browserResultKind === 'open-tab' && e.metaKey && !e.altKey;
+              void submitBrowserSearch(String(selected.browserActionInput || launcherInputValue).trim(), {
+                focusExistingTab,
+                event: { altKey: e.altKey, numberKey },
+                kind: selected.browserResultKind,
+                url: selected.browserUrl,
+                sourceProfileId: selected.browserSourceProfileId,
+                windowId: selected.browserWindowId,
+                tabId: selected.browserTabId,
+              });
             } else if (selected) {
               handleCommandExecute(selected);
             }

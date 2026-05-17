@@ -732,7 +732,8 @@
           "noneAdded": "Nessun profilo browser ancora aggiunto",
           "profileRowDetail": "Cronologia: {historyCount} URL · Segnalibri: {bookmarkCount} · Schede: {tabCount}",
           "profileSupportNote": "Il supporto dei profili attualmente include solo i browser Chromium. Safari e Firefox saranno aggiunti in seguito.",
-          "enabledProfiles": "{count} profilo/i abilitato/i per la cronologia browser di SuperCmd."
+          "enabledProfiles": "{count} profilo/i abilitato/i per la cronologia browser di SuperCmd.",
+          "defaultProfile": "Predefinito"
         },
         "importedData": {
           "heading": "Dati importati",
@@ -755,7 +756,8 @@
         "status": {
           "cleared": "Cronologia profili browser cancellata.",
           "imported": "Aggiornate {count} di {total} voci.",
-          "failed": "Operazione non riuscita."
+          "failed": "Operazione non riuscita.",
+          "removedProfile": "Dati del profilo rimossi ({count} elementi)."
         },
         "webSearch": {
           "label": "Ricerca web",
@@ -914,7 +916,8 @@
         "name": "Nome",
         "host": "Host",
         "template": "Modello URL"
-      }
+      },
+      "profileAction": "Profilo"
     }
   },
   "scriptCommand": {

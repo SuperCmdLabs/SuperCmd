@@ -735,7 +735,8 @@
           "noneAdded": "아직 추가된 브라우저 프로필이 없습니다",
           "profileRowDetail": "기록: URL {historyCount}개 · 북마크: {bookmarkCount}개 · 탭: {tabCount}개",
           "profileSupportNote": "프로필 지원은 현재 Chromium 브라우저만 포함합니다. Safari와 Firefox 지원은 나중에 추가됩니다.",
-          "enabledProfiles": "SuperCmd 브라우저 기록에 {count}개의 프로필이 활성화되어 있습니다."
+          "enabledProfiles": "SuperCmd 브라우저 기록에 {count}개의 프로필이 활성화되어 있습니다.",
+          "defaultProfile": "기본값"
         },
         "importedData": {
           "heading": "가져온 데이터",
@@ -758,7 +759,8 @@
         "status": {
           "cleared": "브라우저 프로필 기록을 지웠습니다.",
           "imported": "{total}개 중 {count}개를 업데이트했습니다.",
-          "failed": "작업에 실패했습니다."
+          "failed": "작업에 실패했습니다.",
+          "removedProfile": "프로필 데이터가 제거되었습니다({count}개 항목)."
         },
         "webSearch": {
           "label": "웹 검색",
@@ -917,7 +919,8 @@
         "name": "이름",
         "host": "호스트",
         "template": "URL 템플릿"
-      }
+      },
+      "profileAction": "프로필"
     }
   },
   "scriptCommand": {

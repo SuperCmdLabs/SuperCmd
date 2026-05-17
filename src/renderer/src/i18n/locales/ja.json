@@ -733,7 +733,8 @@
           "noneAdded": "ブラウザプロファイルはまだ追加されていません",
           "profileRowDetail": "履歴: {historyCount} URL · ブックマーク: {bookmarkCount} · タブ: {tabCount}",
           "profileSupportNote": "プロファイル対応は現在 Chromium ブラウザのみです。Safari と Firefox は今後対応予定です。",
-          "enabledProfiles": "SuperCmd のブラウザ履歴で {count} 個のプロファイルが有効です。"
+          "enabledProfiles": "SuperCmd のブラウザ履歴で {count} 個のプロファイルが有効です。",
+          "defaultProfile": "デフォルト"
         },
         "importedData": {
           "heading": "インポート済みデータ",
@@ -756,7 +757,8 @@
         "status": {
           "cleared": "ブラウザプロファイル履歴を消去しました。",
           "imported": "{total} 件中 {count} 件を更新しました。",
-          "failed": "操作に失敗しました。"
+          "failed": "操作に失敗しました。",
+          "removedProfile": "プロファイルデータを削除しました（{count} 件）。"
         },
         "webSearch": {
           "label": "Web 検索",
@@ -915,7 +917,8 @@
         "name": "名前",
         "host": "ホスト",
         "template": "URL テンプレート"
-      }
+      },
+      "profileAction": "プロファイル"
     }
   },
   "scriptCommand": {

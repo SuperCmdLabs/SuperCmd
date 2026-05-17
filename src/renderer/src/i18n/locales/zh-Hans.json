@@ -733,7 +733,8 @@
           "noneAdded": "尚未添加浏览器个人资料",
           "profileRowDetail": "历史记录：{historyCount} 个 URL · 书签：{bookmarkCount} · 标签页：{tabCount} 个",
           "profileSupportNote": "个人资料支持目前仅包含 Chromium 浏览器。Safari 和 Firefox 支持将在之后添加。",
-          "enabledProfiles": "已为 SuperCmd 浏览器历史记录启用 {count} 个个人资料。"
+          "enabledProfiles": "已为 SuperCmd 浏览器历史记录启用 {count} 个个人资料。",
+          "defaultProfile": "默认"
         },
         "importedData": {
           "heading": "已导入的数据",
@@ -756,7 +757,8 @@
         "status": {
           "cleared": "浏览器个人资料历史已清除。",
           "imported": "已更新 {count} / {total} 条。",
-          "failed": "操作失败。"
+          "failed": "操作失败。",
+          "removedProfile": "已移除个人资料数据（{count} 项）。"
         },
         "webSearch": {
           "label": "网页搜索",
@@ -915,7 +917,8 @@
         "name": "名称",
         "host": "主机",
         "template": "URL 模板"
-      }
+      },
+      "profileAction": "个人资料"
     }
   },
   "scriptCommand": {
