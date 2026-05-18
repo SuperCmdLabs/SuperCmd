@@ -133,6 +133,12 @@
         "default": "默认",
         "glassy": "玻璃态"
       },
+      "launcherMode": {
+        "title": "启动器模式",
+        "description": "选择打开启动器时的显示方式。",
+        "expanded": "展开",
+        "compact": "紧凑"
+      },
       "background": {
         "title": "启动器背景图",
         "description": "在启动器后面显示一张低透明度、轻微模糊的背景图，让它更像氛围提示而不是完整壁纸。",
@@ -156,11 +162,13 @@
         "notAvailable": "你已经是最新版本。",
         "downloading": "正在下载更新...",
         "downloaded": "更新已下载，重启后即可安装。",
+        "restarting": "正在重启以安装更新...",
         "error": "无法完成更新操作。",
         "check": "检查更新",
         "download": "下载更新",
         "downloadingButton": "正在下载更新...",
         "restart": "重启并更新",
+        "restartingButton": "正在重启...",
         "currentVersion": "当前版本：v{version}",
         "latestVersion": "最新版本：v{version}",
         "progress": "{progress}% · {transferred} / {total}",
@@ -170,12 +178,6 @@
         "title": "关于",
         "description": "版本信息。",
         "version": "SuperCmd v{version}"
-      },
-      "launcherMode": {
-        "title": "启动器模式",
-        "description": "选择打开启动器时的显示方式。",
-        "expanded": "展开",
-        "compact": "紧凑"
       },
       "autoQuit": {
         "title": "自动退出",
@@ -275,8 +277,8 @@
           "anthropic": "Anthropic Claude 模型",
           "gemini": "Google Gemini 模型",
           "ollama": "本地模型",
-          "openaiCompatible": "任意 OpenAI 兼容 API（OpenRouter、Together 等）",
-          "lmStudio": "通过 LM Studio 使用本地模型"
+          "lmStudio": "通过 LM Studio 使用本地模型",
+          "openaiCompatible": "任意 OpenAI 兼容 API（OpenRouter、Together 等）"
         },
         "ollama": {
           "serverUrl": {
@@ -310,6 +312,17 @@
             "deepseekR1": "偏推理能力的模型（7B）"
           }
         },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "服务器地址",
+            "hint": "LM Studio 本地服务器地址（默认：http://127.0.0.1:1234/v1）"
+          },
+          "apiKey": {
+            "toggle": "可选 API 密钥",
+            "placeholder": "如不需要，请留空",
+            "hint": "仅当您在 LM Studio 中配置了身份验证时才需要。"
+          }
+        },
         "openaiCompatible": {
           "baseUrl": {
             "label": "基础 URL",
@@ -330,17 +343,6 @@
         "defaultModel": {
           "label": "默认模型",
           "auto": "自动（提供商默认）"
-        },
-        "lmStudio": {
-          "baseUrl": {
-            "label": "服务器地址",
-            "hint": "LM Studio 本地服务器地址（默认：http://127.0.0.1:1234/v1）"
-          },
-          "apiKey": {
-            "toggle": "可选 API 密钥",
-            "placeholder": "如不需要，请留空",
-            "hint": "仅当您在 LM Studio 中配置了身份验证时才需要。"
-          }
         }
       },
       "whisper": {
@@ -386,6 +388,10 @@
           "fnHintBefore": "使用",
           "fnHintAfter": "可恢复默认的按住说话快捷键。"
         },
+        "autoClose": {
+          "title": "听写后自动关闭",
+          "description": "听写完成后自动关闭 Whisper 条。"
+        },
         "smoothOutput": {
           "title": "平滑输出",
           "description": "清理填充词和自我纠正。"
@@ -423,10 +429,6 @@
             "downloading": "正在下载 SuperCmd Whisper",
             "notDownloaded": "模型尚未下载。现在下载后即可使用 SuperCmd Whisper 听写。"
           }
-        },
-        "autoClose": {
-          "title": "听写后自动关闭",
-          "description": "听写完成后自动关闭 Whisper 条。"
         }
       },
       "speak": {
@@ -736,6 +738,17 @@
   },
   "launcher": {
     "searchPlaceholder": "搜索应用、命令，或向 AI 提问...",
+    "browserSearch": {
+      "openUrl": "打开 {url}",
+      "searchFor": "搜索 “{query}”",
+      "subtitle": {
+        "openUrl": "默认浏览器",
+        "search": "网络搜索"
+      }
+    },
+    "compact": {
+      "showMore": "显示更多"
+    },
     "status": {
       "discoveringApps": "正在发现应用...",
       "noMatchingResults": "没有匹配的结果",
@@ -824,17 +837,6 @@
       "script": "脚本",
       "settings": "设置",
       "quickLink": "快速链接"
-    },
-    "compact": {
-      "showMore": "显示更多"
-    },
-    "browserSearch": {
-      "openUrl": "打开 {url}",
-      "searchFor": "搜索 “{query}”",
-      "subtitle": {
-        "openUrl": "默认浏览器",
-        "search": "网络搜索"
-      }
     }
   },
   "scriptCommand": {
@@ -915,6 +917,44 @@
     "errorBoundary": {
       "title": "加载扩展商店时出错。",
       "retry": "重试"
+    }
+  },
+  "canvas": {
+    "searchPlaceholder": "搜索画布...",
+    "untitled": "未命名画布",
+    "modified": "修改时间",
+    "count": "{count} 个画布{plural}",
+    "time": {
+      "justNow": "刚刚"
+    },
+    "actions": {
+      "new": "新建画布",
+      "open": "打开画布",
+      "rename": "重命名",
+      "duplicate": "复制",
+      "copyDeeplink": "复制深层链接",
+      "exportJson": "导出为 JSON",
+      "pin": "置顶",
+      "unpin": "取消置顶",
+      "delete": "删除画布"
+    },
+    "empty": {
+      "title": "还没有画布",
+      "description": "创建你的第一个画布开始使用",
+      "noSearchResults": "没有找到画布",
+      "shortcutHint": "或按 ⌘N"
+    },
+    "preview": {
+      "empty": "暂无预览 — 保存画布以生成预览",
+      "selectPrompt": "选择一个画布以预览"
+    },
+    "rename": {
+      "title": "重命名画布",
+      "placeholder": "画布名称..."
+    },
+    "delete": {
+      "title": "删除 \"{title}\" ?",
+      "description": "此操作无法撤销。"
     }
   },
   "clipboard": {
@@ -1210,43 +1250,5 @@
     "duration": "时长",
     "reminder": "提醒",
     "save": "保存事件"
-  },
-  "canvas": {
-    "searchPlaceholder": "搜索画布...",
-    "untitled": "未命名画布",
-    "modified": "修改时间",
-    "count": "{count} 个画布{plural}",
-    "time": {
-      "justNow": "刚刚"
-    },
-    "actions": {
-      "new": "新建画布",
-      "open": "打开画布",
-      "rename": "重命名",
-      "duplicate": "复制",
-      "copyDeeplink": "复制深层链接",
-      "exportJson": "导出为 JSON",
-      "pin": "置顶",
-      "unpin": "取消置顶",
-      "delete": "删除画布"
-    },
-    "empty": {
-      "title": "还没有画布",
-      "description": "创建你的第一个画布开始使用",
-      "noSearchResults": "没有找到画布",
-      "shortcutHint": "或按 ⌘N"
-    },
-    "preview": {
-      "empty": "暂无预览 — 保存画布以生成预览",
-      "selectPrompt": "选择一个画布以预览"
-    },
-    "rename": {
-      "title": "重命名画布",
-      "placeholder": "画布名称..."
-    },
-    "delete": {
-      "title": "删除 \"{title}\" ?",
-      "description": "此操作无法撤销。"
-    }
   }
 }

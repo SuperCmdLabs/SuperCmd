@@ -162,11 +162,13 @@
         "notAvailable": "すでに最新バージョンです。",
         "downloading": "アップデートをダウンロード中...",
         "downloaded": "アップデートをダウンロードしました。再起動してインストールしてください。",
+        "restarting": "更新をインストールするため再起動しています...",
         "error": "アップデート処理を完了できませんでした。",
         "check": "アップデートを確認",
         "download": "アップデートをダウンロード",
         "downloadingButton": "アップデートをダウンロード中...",
         "restart": "再起動してアップデート",
+        "restartingButton": "再起動しています...",
         "currentVersion": "現在のバージョン: v{version}",
         "latestVersion": "最新: v{version}",
         "progress": "{progress}% · {transferred} / {total}",
@@ -275,8 +277,8 @@
           "anthropic": "Anthropic Claude モデル",
           "gemini": "Google Gemini モデル",
           "ollama": "ローカルモデル",
-          "openaiCompatible": "任意の OpenAI 互換 API（OpenRouter、Together など）",
-          "lmStudio": "LM Studio でローカルモデルを使用"
+          "lmStudio": "LM Studio でローカルモデルを使用",
+          "openaiCompatible": "任意の OpenAI 互換 API（OpenRouter、Together など）"
         },
         "ollama": {
           "serverUrl": {
@@ -310,6 +312,17 @@
             "deepseekR1": "推論重視モデル（7B）"
           }
         },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "サーバー URL",
+            "hint": "LM Studio のローカルサーバー URL（デフォルト：http://127.0.0.1:1234/v1）"
+          },
+          "apiKey": {
+            "toggle": "オプションのAPIキー",
+            "placeholder": "不要な場合は空白のままにしてください",
+            "hint": "LM Studioで認証を設定している場合のみ必要です。"
+          }
+        },
         "openaiCompatible": {
           "baseUrl": {
             "label": "ベース URL",
@@ -330,17 +343,6 @@
         "defaultModel": {
           "label": "デフォルトモデル",
           "auto": "自動（プロバイダのデフォルト）"
-        },
-        "lmStudio": {
-          "baseUrl": {
-            "label": "サーバー URL",
-            "hint": "LM Studio のローカルサーバー URL（デフォルト：http://127.0.0.1:1234/v1）"
-          },
-          "apiKey": {
-            "toggle": "オプションのAPIキー",
-            "placeholder": "不要な場合は空白のままにしてください",
-            "hint": "LM Studioで認証を設定している場合のみ必要です。"
-          }
         }
       },
       "whisper": {
@@ -736,6 +738,14 @@
   },
   "launcher": {
     "searchPlaceholder": "アプリ、コマンドを検索、または AI に質問...",
+    "browserSearch": {
+      "openUrl": "{url} を開く",
+      "searchFor": "\"{query}\" を検索",
+      "subtitle": {
+        "openUrl": "デフォルトブラウザ",
+        "search": "ウェブ検索"
+      }
+    },
     "compact": {
       "showMore": "もっと見る"
     },
@@ -827,14 +837,6 @@
       "script": "スクリプト",
       "settings": "設定",
       "quickLink": "クイックリンク"
-    },
-    "browserSearch": {
-      "openUrl": "{url} を開く",
-      "searchFor": "\"{query}\" を検索",
-      "subtitle": {
-        "openUrl": "デフォルトブラウザ",
-        "search": "ウェブ検索"
-      }
     }
   },
   "scriptCommand": {

@@ -5,6 +5,7 @@
     "noResults": "Nessun risultato",
     "search": "Cerca...",
     "save": "Salva",
+    "saving": "Salvataggio in corso...",
     "cancel": "Annulla",
     "close": "Chiudi",
     "continue": "Continua",
@@ -161,11 +162,13 @@
         "notAvailable": "Stai già usando l'ultima versione.",
         "downloading": "Download dell'aggiornamento in corso...",
         "downloaded": "Aggiornamento scaricato. Riavvia per installarlo.",
+        "restarting": "Riavvio per installare l'aggiornamento...",
         "error": "Impossibile completare l'operazione di aggiornamento.",
         "check": "Verifica aggiornamenti",
         "download": "Scarica aggiornamento",
         "downloadingButton": "Download aggiornamento...",
         "restart": "Riavvia per aggiornare",
+        "restartingButton": "Riavvio in corso...",
         "currentVersion": "Versione attuale: v{version}",
         "latestVersion": "Ultima: v{version}",
         "progress": "{progress}% · {transferred} / {total}",
@@ -274,8 +277,8 @@
           "anthropic": "Modelli Anthropic Claude",
           "gemini": "Modelli Google Gemini",
           "ollama": "Modelli locali",
-          "openaiCompatible": "Qualsiasi API compatibile OpenAI (OpenRouter, Together, ecc.)",
-          "lmStudio": "Modelli locali tramite LM Studio"
+          "lmStudio": "Modelli locali tramite LM Studio",
+          "openaiCompatible": "Qualsiasi API compatibile OpenAI (OpenRouter, Together, ecc.)"
         },
         "ollama": {
           "serverUrl": {
@@ -309,6 +312,17 @@
             "deepseekR1": "Modello orientato al ragionamento (7B)"
           }
         },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "URL del server",
+            "hint": "URL del server locale di LM Studio (predefinito: http://127.0.0.1:1234/v1)"
+          },
+          "apiKey": {
+            "toggle": "Chiave API opzionale",
+            "placeholder": "Lascia vuoto se non richiesto",
+            "hint": "Necessario solo se hai configurato l'autenticazione in LM Studio."
+          }
+        },
         "openaiCompatible": {
           "baseUrl": {
             "label": "URL base",
@@ -329,17 +343,6 @@
         "defaultModel": {
           "label": "Modello predefinito",
           "auto": "Automatico (predefinito del provider)"
-        },
-        "lmStudio": {
-          "baseUrl": {
-            "label": "URL del server",
-            "hint": "URL del server locale di LM Studio (predefinito: http://127.0.0.1:1234/v1)"
-          },
-          "apiKey": {
-            "toggle": "Chiave API opzionale",
-            "placeholder": "Lascia vuoto se non richiesto",
-            "hint": "Necessario solo se hai configurato l'autenticazione in LM Studio."
-          }
         }
       },
       "whisper": {
@@ -735,6 +738,14 @@
   },
   "launcher": {
     "searchPlaceholder": "Cerca app, comandi o chiedi all'AI...",
+    "browserSearch": {
+      "openUrl": "Apri {url}",
+      "searchFor": "Cerca \"{query}\"",
+      "subtitle": {
+        "openUrl": "Browser predefinito",
+        "search": "Ricerca web"
+      }
+    },
     "compact": {
       "showMore": "Mostra di più"
     },
@@ -826,14 +837,6 @@
       "script": "Script",
       "settings": "Impostazioni",
       "quickLink": "Collegamento rapido"
-    },
-    "browserSearch": {
-      "openUrl": "Apri {url}",
-      "searchFor": "Cerca \"{query}\"",
-      "subtitle": {
-        "openUrl": "Browser predefinito",
-        "search": "Ricerca web"
-      }
     }
   },
   "scriptCommand": {
@@ -844,7 +847,7 @@
     },
     "output": {
       "success": "Completato",
-      "exitCode": "Exit {code}",
+      "exitCode": "Uscita {code}",
       "noOutput": "(Nessun output)"
     }
   },
@@ -983,11 +986,21 @@
     "create": "Crea collegamento rapido",
     "edit": "Modifica collegamento rapido",
     "delete": "Elimina collegamento rapido",
+    "confirmDelete": "Clicca di nuovo per confermare",
     "searchPlaceholder": "Cerca collegamenti rapidi...",
     "name": "Nome",
     "url": "URL",
+    "urlHint": "Usa {placeholder} per aggiungere valori dinamici come clipboard o parametri.",
+    "openWith": "Apri con",
+    "defaultBrowser": "Browser predefinito",
     "icon": "Icona",
-    "save": "Salva collegamento rapido"
+    "save": "Salva collegamento rapido",
+    "saved": "Salvato",
+    "saveFailed": "Impossibile salvare il collegamento rapido.",
+    "deleteFailed": "Impossibile eliminare il collegamento rapido.",
+    "notFound": "Collegamento rapido non trovato.",
+    "nameRequired": "Il nome obbligatorio.",
+    "urlRequired": "L'URL obbligatorio."
   },
   "appUninstall": {
     "title": "Disinstalla {appName}",
@@ -998,7 +1011,14 @@
     "confirmMessage": "Spostare {count} file ({size}) nel Cestino?",
     "filterPlaceholder": "Filtra file e cartelle per nome...",
     "sortByPath": "Ordina per percorso",
-    "sortBySize": "Ordina per dimensione"
+    "sortBySize": "Ordina per dimensione",
+    "markKeep": "Segna come da conservare",
+    "markRemove": "Segna come da rimuovere",
+    "actions": "Azioni",
+    "showInfo": "Mostra info in Finder",
+    "trashErrors": "Alcuni file non possono essere spostati nel Cestino:\n{errors}",
+    "uninstallSuccess": "{appName} stato disinstallato",
+    "uninstallError": "Impossibile disinstallare {appName}"
   },
   "fileSearch": {
     "placeholder": "Cerca file...",

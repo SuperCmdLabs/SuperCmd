@@ -133,6 +133,12 @@
         "default": "기본",
         "glassy": "글래시"
       },
+      "launcherMode": {
+        "title": "런처 모드",
+        "description": "런처가 열릴 때 표시되는 방식을 선택합니다.",
+        "expanded": "확장",
+        "compact": "컴팩트"
+      },
       "background": {
         "title": "런처 배경 이미지",
         "description": "런처 뒤에 부드럽게 흐릿하고 불투명도가 낮은 이미지를 표시하여 전체 배경화면이 아닌 힌트처럼 읽혀지게 합니다.",
@@ -156,11 +162,13 @@
         "notAvailable": "이미 최신 버전을 사용하고 있습니다.",
         "downloading": "업데이트 다운로드 중...",
         "downloaded": "업데이트가 다운로드되었습니다. 다시 시작하면 설치됩니다.",
+        "restarting": "업데이트를 설치하기 위해 재시작 중...",
         "error": "업데이트 작업을 완료할 수 없습니다.",
         "check": "업데이트 확인",
         "download": "업데이트 다운로드",
         "downloadingButton": "업데이트 다운로드 중...",
         "restart": "다시 시작 후 업데이트",
+        "restartingButton": "재시작 중...",
         "currentVersion": "현재 버전: v{version}",
         "latestVersion": "최신: v{version}",
         "progress": "{progress}% · {transferred} / {total}",
@@ -170,12 +178,6 @@
         "title": "정보",
         "description": "버전 정보.",
         "version": "SuperCmd v{version}"
-      },
-      "launcherMode": {
-        "title": "런처 모드",
-        "description": "런처가 열릴 때 표시되는 방식을 선택합니다.",
-        "expanded": "확장",
-        "compact": "컴팩트"
       },
       "autoQuit": {
         "title": "자동 종료",
@@ -275,8 +277,8 @@
           "anthropic": "Claude 계열 모델",
           "gemini": "Google Gemini 모델",
           "ollama": "로컬 모델",
-          "openaiCompatible": "모든 OpenAI 호환 API(OpenRouter, Together 등)",
-          "lmStudio": "LM Studio를 통한 로컬 모델"
+          "lmStudio": "LM Studio를 통한 로컬 모델",
+          "openaiCompatible": "모든 OpenAI 호환 API(OpenRouter, Together 등)"
         },
         "ollama": {
           "serverUrl": {
@@ -310,6 +312,17 @@
             "deepseekR1": "추론 중심 모델(7B)"
           }
         },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "서버 URL",
+            "hint": "LM Studio 로컬 서버 URL（기본값：http://127.0.0.1:1234/v1）"
+          },
+          "apiKey": {
+            "toggle": "선택적 API 키",
+            "placeholder": "필요하지 않으면 비워두세요",
+            "hint": "LM Studio에서 인증을 구성한 경우에만 필요합니다."
+          }
+        },
         "openaiCompatible": {
           "baseUrl": {
             "label": "기본 URL",
@@ -330,17 +343,6 @@
         "defaultModel": {
           "label": "기본 모델",
           "auto": "자동(제공자 기본값)"
-        },
-        "lmStudio": {
-          "baseUrl": {
-            "label": "서버 URL",
-            "hint": "LM Studio 로컬 서버 URL（기본값：http://127.0.0.1:1234/v1）"
-          },
-          "apiKey": {
-            "toggle": "선택적 API 키",
-            "placeholder": "필요하지 않으면 비워두세요",
-            "hint": "LM Studio에서 인증을 구성한 경우에만 필요합니다."
-          }
         }
       },
       "whisper": {
@@ -386,6 +388,10 @@
           "fnHintBefore": "사용",
           "fnHintAfter": "하여 기본 길게 눌러 말하기 키로 복원하세요."
         },
+        "autoClose": {
+          "title": "받아쓰기 후 자동 닫기",
+          "description": "받아쓰기가 끝나면 Whisper 바를 자동으로 닫습니다."
+        },
         "smoothOutput": {
           "title": "부드러운 출력",
           "description": "군더더기 표현과 자기 수정 표현을 정리합니다."
@@ -423,10 +429,6 @@
             "downloading": "SuperCmd Whisper 다운로드 중",
             "notDownloaded": "모델이 아직 다운로드되지 않았습니다. SuperCmd Whisper 받아쓰기를 사용하려면 지금 다운로드하세요."
           }
-        },
-        "autoClose": {
-          "title": "받아쓰기 후 자동 닫기",
-          "description": "받아쓰기가 끝나면 Whisper 바를 자동으로 닫습니다."
         }
       },
       "speak": {
@@ -736,6 +738,17 @@
   },
   "launcher": {
     "searchPlaceholder": "앱, 명령을 검색하거나 AI에게 물어보세요...",
+    "browserSearch": {
+      "openUrl": "{url} 열기",
+      "searchFor": "\"{query}\" 검색",
+      "subtitle": {
+        "openUrl": "기본 브라우저",
+        "search": "웹 검색"
+      }
+    },
+    "compact": {
+      "showMore": "더 보기"
+    },
     "status": {
       "discoveringApps": "앱 검색 중...",
       "noMatchingResults": "일치하는 결과가 없습니다",
@@ -824,17 +837,6 @@
       "script": "스크립트",
       "settings": "설정",
       "quickLink": "빠른 링크"
-    },
-    "compact": {
-      "showMore": "더 보기"
-    },
-    "browserSearch": {
-      "openUrl": "{url} 열기",
-      "searchFor": "\"{query}\" 검색",
-      "subtitle": {
-        "openUrl": "기본 브라우저",
-        "search": "웹 검색"
-      }
     }
   },
   "scriptCommand": {
@@ -915,6 +917,44 @@
     "errorBoundary": {
       "title": "확장 스토어를 불러오는 중 문제가 발생했습니다.",
       "retry": "다시 시도"
+    }
+  },
+  "canvas": {
+    "searchPlaceholder": "캔버스 검색...",
+    "untitled": "제목 없는 캔버스",
+    "modified": "수정됨",
+    "count": "캔버스 {count}개",
+    "time": {
+      "justNow": "방금 전"
+    },
+    "actions": {
+      "new": "새 캔버스",
+      "open": "캔버스 열기",
+      "rename": "이름 바꾸기",
+      "duplicate": "복제",
+      "copyDeeplink": "딥링크 복사",
+      "exportJson": "JSON으로 내보내기",
+      "pin": "고정",
+      "unpin": "고정 해제",
+      "delete": "캔버스 삭제"
+    },
+    "empty": {
+      "title": "아직 캔버스가 없습니다",
+      "description": "첫 번째 캔버스를 만들어 시작하세요",
+      "noSearchResults": "일치하는 캔버스를 찾지 못했습니다",
+      "shortcutHint": "또는 ⌘N을 누르세요"
+    },
+    "preview": {
+      "empty": "아직 미리보기가 없습니다. 캔버스를 저장하면 생성됩니다.",
+      "selectPrompt": "미리보려면 캔버스를 선택하세요"
+    },
+    "rename": {
+      "title": "캔버스 이름 바꾸기",
+      "placeholder": "캔버스 이름..."
+    },
+    "delete": {
+      "title": "\"{title}\"을(를) 삭제할까요?",
+      "description": "이 작업은 되돌릴 수 없습니다."
     }
   },
   "clipboard": {
@@ -1210,43 +1250,5 @@
     "duration": "기간",
     "reminder": "알림",
     "save": "이벤트 저장"
-  },
-  "canvas": {
-    "searchPlaceholder": "캔버스 검색...",
-    "untitled": "제목 없는 캔버스",
-    "modified": "수정됨",
-    "count": "캔버스 {count}개",
-    "time": {
-      "justNow": "방금 전"
-    },
-    "actions": {
-      "new": "새 캔버스",
-      "open": "캔버스 열기",
-      "rename": "이름 바꾸기",
-      "duplicate": "복제",
-      "copyDeeplink": "딥링크 복사",
-      "exportJson": "JSON으로 내보내기",
-      "pin": "고정",
-      "unpin": "고정 해제",
-      "delete": "캔버스 삭제"
-    },
-    "empty": {
-      "title": "아직 캔버스가 없습니다",
-      "description": "첫 번째 캔버스를 만들어 시작하세요",
-      "noSearchResults": "일치하는 캔버스를 찾지 못했습니다",
-      "shortcutHint": "또는 ⌘N을 누르세요"
-    },
-    "preview": {
-      "empty": "아직 미리보기가 없습니다. 캔버스를 저장하면 생성됩니다.",
-      "selectPrompt": "미리보려면 캔버스를 선택하세요"
-    },
-    "rename": {
-      "title": "캔버스 이름 바꾸기",
-      "placeholder": "캔버스 이름..."
-    },
-    "delete": {
-      "title": "\"{title}\"을(를) 삭제할까요?",
-      "description": "이 작업은 되돌릴 수 없습니다."
-    }
   }
 }

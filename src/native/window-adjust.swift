@@ -90,6 +90,82 @@ private func clamp(_ value: CGFloat, _ minValue: CGFloat, _ maxValue: CGFloat) -
   return max(minValue, min(maxValue, value))
 }
 
+private func dockSettings() -> (orientation: String, reserve: CGFloat, autohide: Bool) {
+  let defaults = UserDefaults(suiteName: "com.apple.dock")
+  let rawOrientation = defaults?.string(forKey: "orientation") ?? "bottom"
+  let orientation: String
+  switch rawOrientation {
+  case "left", "right":
+    orientation = rawOrientation
+  default:
+    orientation = "bottom"
+  }
+
+  let tileSize = CGFloat((defaults?.object(forKey: "tilesize") as? NSNumber)?.doubleValue ?? 45)
+  return (orientation, max(48, tileSize + 17), defaults?.bool(forKey: "autohide") ?? false)
+}
+
+private func dockListFrame() -> CGRect? {
+  guard let dockApp = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else {
+    return nil
+  }
+  let dockElement = AXUIElementCreateApplication(dockApp.processIdentifier)
+  guard let childrenRaw = copyAttribute(dockElement, kAXChildrenAttribute as CFString),
+        let children = childrenRaw as? [AXUIElement] else {
+    return nil
+  }
+
+  for child in children {
+    guard attributeString(child, kAXRoleAttribute as CFString) == kAXListRole as String,
+          let position = decodePoint(copyAttribute(child, kAXPositionAttribute as CFString)),
+          let size = decodeSize(copyAttribute(child, kAXSizeAttribute as CFString)),
+          size.width > 0,
+          size.height > 0 else {
+      continue
+    }
+    return CGRect(x: position.x, y: position.y, width: size.width, height: size.height)
+  }
+  return nil
+}
+
+private func dockIsVisible(on displayBounds: CGRect) -> Bool {
+  guard let dockFrame = dockListFrame() else { return false }
+  let intersection = dockFrame.intersection(displayBounds)
+  guard !intersection.isNull, !intersection.isInfinite else { return false }
+  return intersection.width > 4 && intersection.height > 4
+}
+
+private func reserveAutoHiddenDockSpace(
+  in visibleArea: CGRect,
+  displayBounds: CGRect,
+  screenFrame: CGRect,
+  visibleFrame: CGRect
+) -> CGRect {
+  let dock = dockSettings()
+  guard dock.autohide, dockIsVisible(on: displayBounds) else { return visibleArea }
+
+  var area = visibleArea
+  switch dock.orientation {
+  case "left":
+    let leftInset = visibleFrame.minX - screenFrame.minX
+    if leftInset < 1 {
+      area.origin.x += dock.reserve
+      area.size.width = max(1, area.width - dock.reserve)
+    }
+  case "right":
+    let rightInset = screenFrame.maxX - visibleFrame.maxX
+    if rightInset < 1 {
+      area.size.width = max(1, area.width - dock.reserve)
+    }
+  default:
+    let bottomInset = visibleFrame.minY - screenFrame.minY
+    if bottomInset < 1 {
+      area.size.height = max(1, area.height - dock.reserve)
+    }
+  }
+  return area
+}
+
 private func copyAttribute(_ element: AXUIElement, _ attribute: CFString) -> CFTypeRef? {
   var value: CFTypeRef?
   let status = AXUIElementCopyAttributeValue(element, attribute, &value)
@@ -375,21 +451,46 @@ private func bestDisplayId(for rect: CGRect) -> CGDirectDisplayID? {
   return bestDisplay
 }
 
-private func displayBounds(for rect: CGRect) -> CGRect? {
+private func visibleBounds(forDisplayId displayId: CGDirectDisplayID) -> CGRect? {
+  let displayBounds = CGDisplayBounds(displayId)
+  guard displayBounds.width > 0, displayBounds.height > 0 else { return nil }
+
+  let screen = NSScreen.screens.first { screen in
+    guard let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+      return false
+    }
+    return CGDirectDisplayID(screenNumber.uint32Value) == displayId
+  }
+  guard let screen = screen else { return displayBounds }
+  let screenFrame = screen.frame
+  let visibleFrame = screen.visibleFrame
+
+  let visibleLeft = displayBounds.origin.x + (visibleFrame.origin.x - screenFrame.origin.x)
+  let visibleTop = displayBounds.origin.y + (screenFrame.origin.y + screenFrame.height - (visibleFrame.origin.y + visibleFrame.height))
+  let visibleArea = CGRect(
+    x: visibleLeft,
+    y: visibleTop,
+    width: visibleFrame.width,
+    height: visibleFrame.height
+  )
+  return reserveAutoHiddenDockSpace(
+    in: visibleArea,
+    displayBounds: displayBounds,
+    screenFrame: screenFrame,
+    visibleFrame: visibleFrame
+  )
+}
+
+private func visibleBounds(for rect: CGRect) -> CGRect? {
   if let displayId = bestDisplayId(for: rect) {
-    return CGDisplayBounds(displayId)
+    return visibleBounds(forDisplayId: displayId)
   }
-  let mainDisplay = CGMainDisplayID()
-  let bounds = CGDisplayBounds(mainDisplay)
-  if bounds.width > 0, bounds.height > 0 {
-    return bounds
-  }
-  return nil
+  return visibleBounds(forDisplayId: CGMainDisplayID())
 }
 
 private func screenVisibleArea(for frame: WindowFrame) -> CGRect? {
   let rect = CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
-  return displayBounds(for: rect)
+  return visibleBounds(for: rect)
 }
 
 private func visibleArea(forWindowId windowId: Int) -> CGRect? {
@@ -407,7 +508,7 @@ private func visibleArea(forWindowId windowId: Int) -> CGRect? {
         let windowBounds = CGRect(dictionaryRepresentation: boundsDict) else {
     return nil
   }
-  return displayBounds(for: windowBounds)
+  return visibleBounds(for: windowBounds)
 }
 
 private func adjustedFrame(_ base: WindowFrame, action: AdjustAction, forcedArea: CGRect?, preferredWindowId: Int?) -> WindowFrame {
