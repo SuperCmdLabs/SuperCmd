@@ -173,12 +173,12 @@ const App: React.FC = () => {
   }, [rootSearchRanking]);
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
-    showClipboardManager, showSnippetManager, showNotesSearch, showCanvasSearch, showQuickLinkManager, showFileSearch, showCursorPrompt,
+    showClipboardManager, clipboardManagerOpenedViaShortcut, showSnippetManager, showNotesSearch, showCanvasSearch, showQuickLinkManager, showFileSearch, showCursorPrompt,
     showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showAppUninstall, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
     openOnboarding, openWhisper, openClipboardManager,
     openSnippetManager, openNotesSearch, openCanvasSearch, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openSchedule, openWindowManager, openAppUninstall,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
-    setShowClipboardManager, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
+    setShowClipboardManager, setClipboardManagerOpenedViaShortcut, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
     setShowWhisper, setShowSpeak, setShowCamera, setShowSchedule, setShowWindowManager, setShowAppUninstall, setShowWhisperOnboarding, setShowWhisperHint,
     setShowOnboarding, setAiMode,
   } = useAppViewManager();
@@ -2384,9 +2384,17 @@ const App: React.FC = () => {
       >
         <ClipboardManager
           onClose={() => {
+            const openedViaShortcut = clipboardManagerOpenedViaShortcut;
             setShowClipboardManager(false);
+            setClipboardManagerOpenedViaShortcut(false);
             setSearchQuery('');
             setSelectedIndex(0);
+            if (openedViaShortcut) {
+              // Opened directly via global shortcut; there is no launcher
+              // list to fall back to, so one Escape dismisses the window (#407).
+              window.electron.hideWindow();
+              return;
+            }
             setTimeout(() => inputRef.current?.focus(), 50);
           }}
         />

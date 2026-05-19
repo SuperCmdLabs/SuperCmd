@@ -43,6 +43,7 @@ export interface AppViewManager {
   scriptCommandSetup: ScriptCommandSetup | null;
   scriptCommandOutput: ScriptCommandOutput | null;
   showClipboardManager: boolean;
+  clipboardManagerOpenedViaShortcut: boolean;
   showSnippetManager: 'search' | 'create' | null;
   showNotesSearch: boolean;
   showCanvasSearch: boolean;
@@ -68,7 +69,7 @@ export interface AppViewManager {
   openExtensionPreferenceSetup: (setup: ExtensionPreferenceSetup) => void;
   openScriptCommandSetup: (setup: ScriptCommandSetup) => void;
   openScriptCommandOutput: (output: ScriptCommandOutput) => void;
-  openClipboardManager: () => void;
+  openClipboardManager: (openedViaShortcut?: boolean) => void;
   openSnippetManager: (mode: 'search' | 'create') => void;
   openNotesSearch: () => void;
   openCanvasSearch: () => void;
@@ -92,6 +93,7 @@ export interface AppViewManager {
   setScriptCommandSetup: React.Dispatch<React.SetStateAction<ScriptCommandSetup | null>>;
   setScriptCommandOutput: React.Dispatch<React.SetStateAction<ScriptCommandOutput | null>>;
   setShowClipboardManager: React.Dispatch<React.SetStateAction<boolean>>;
+  setClipboardManagerOpenedViaShortcut: React.Dispatch<React.SetStateAction<boolean>>;
   setShowSnippetManager: React.Dispatch<React.SetStateAction<'search' | 'create' | null>>;
   setShowNotesSearch: React.Dispatch<React.SetStateAction<boolean>>;
   setShowCanvasSearch: React.Dispatch<React.SetStateAction<boolean>>;
@@ -116,6 +118,7 @@ export function useAppViewManager(): AppViewManager {
   const [scriptCommandSetup, setScriptCommandSetup] = useState<ScriptCommandSetup | null>(null);
   const [scriptCommandOutput, setScriptCommandOutput] = useState<ScriptCommandOutput | null>(null);
   const [showClipboardManager, setShowClipboardManager] = useState(false);
+  const [clipboardManagerOpenedViaShortcut, setClipboardManagerOpenedViaShortcut] = useState(false);
   const [showSnippetManager, setShowSnippetManager] = useState<'search' | 'create' | null>(null);
   const [showNotesSearch, setShowNotesSearch] = useState(false);
   const [showCanvasSearch, setShowCanvasSearch] = useState(false);
@@ -140,6 +143,7 @@ export function useAppViewManager(): AppViewManager {
     setScriptCommandSetup(null);
     setScriptCommandOutput(null);
     setShowClipboardManager(false);
+    setClipboardManagerOpenedViaShortcut(false);
     setShowSnippetManager(null);
     setShowNotesSearch(false);
     setShowCanvasSearch(false);
@@ -178,9 +182,10 @@ export function useAppViewManager(): AppViewManager {
     setScriptCommandOutput(output);
   }, [resetAllViews]);
 
-  const openClipboardManager = useCallback(() => {
+  const openClipboardManager = useCallback((openedViaShortcut = false) => {
     resetAllViews();
     setShowClipboardManager(true);
+    setClipboardManagerOpenedViaShortcut(openedViaShortcut);
   }, [resetAllViews]);
 
   const openSnippetManager = useCallback((mode: 'search' | 'create') => {
@@ -274,6 +279,7 @@ export function useAppViewManager(): AppViewManager {
     scriptCommandSetup,
     scriptCommandOutput,
     showClipboardManager,
+    clipboardManagerOpenedViaShortcut,
     showSnippetManager,
     showNotesSearch,
     showCanvasSearch,
@@ -320,6 +326,7 @@ export function useAppViewManager(): AppViewManager {
     setScriptCommandSetup,
     setScriptCommandOutput,
     setShowClipboardManager,
+    setClipboardManagerOpenedViaShortcut,
     setShowSnippetManager,
     setShowNotesSearch,
     setShowCanvasSearch,

@@ -26,6 +26,7 @@ const execFileAsync = promisify(execFile);
 export type BrowserSearchEntryType = 'url' | 'search' | 'bookmark';
 export type BrowserSearchSource =
   | 'user'
+  | 'helium'
   | 'chrome'
   | 'arc'
   | 'brave'
@@ -136,6 +137,7 @@ function sanitizeEntry(raw: any): BrowserSearchEntry | null {
 
 const ALLOWED_SOURCES: Set<string> = new Set([
   'user',
+  'helium',
   'chrome',
   'arc',
   'brave',
@@ -517,6 +519,7 @@ function dirExists(p: string): boolean {
 function getChromiumBrowserRoots(): ChromiumBrowserRoot[] {
   const home = homeDir();
   return [
+    { id: 'helium', name: 'Helium', rootPath: path.join(home, 'Library/Application Support/net.imput.helium') },
     { id: 'chrome', name: 'Google Chrome', rootPath: path.join(home, 'Library/Application Support/Google/Chrome') },
     { id: 'arc', name: 'Arc', rootPath: path.join(home, 'Library/Application Support/Arc/User Data') },
     { id: 'brave', name: 'Brave', rootPath: path.join(home, 'Library/Application Support/BraveSoftware/Brave-Browser') },

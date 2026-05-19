@@ -368,6 +368,7 @@ export type BrowserSearchEntryType = 'url' | 'search' | 'bookmark';
 
 export type BrowserSearchSource =
   | 'user'
+  | 'helium'
   | 'chrome'
   | 'arc'
   | 'brave'
