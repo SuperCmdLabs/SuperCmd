@@ -710,6 +710,10 @@
         "title": "Profili browser",
         "description": "Collega profili browser così SuperCmd può usare la loro cronologia locale e mantenerla aggiornata.",
         "enableLabel": "Usa profili browser in SuperCmd",
+        "alphaToggle": {
+          "label": "Usa la ricerca root Chromium alfa",
+          "description": "Mostra cronologia dei profili, segnalibri e schede aperte nella ricerca root. Attivala solo per profili Chromium mentre l'estensione browser e ancora in alfa."
+        },
         "retention": {
           "label": "Conservazione cronologia",
           "option": {
@@ -735,7 +739,8 @@
           "noneAdded": "Nessun profilo browser ancora aggiunto",
           "profileRowDetail": "Cronologia: {historyCount} URL · Segnalibri: {bookmarkCount} · Schede: {tabCount}",
           "profileSupportNote": "Il supporto dei profili attualmente include solo i browser Chromium. Safari e Firefox saranno aggiunti in seguito.",
-          "enabledProfiles": "{count} profilo/i abilitato/i per la cronologia browser di SuperCmd."
+          "enabledProfiles": "{count} profilo/i abilitato/i per la cronologia browser di SuperCmd.",
+          "defaultProfile": "Predefinito"
         },
         "importedData": {
           "heading": "Dati importati",
@@ -758,26 +763,22 @@
         "status": {
           "cleared": "Cronologia profili browser cancellata.",
           "imported": "Aggiornate {count} di {total} voci.",
-          "failed": "Operazione non riuscita."
+          "failed": "Operazione non riuscita.",
+          "removedProfile": "Dati del profilo rimossi ({count} elementi)."
         },
-        "resultGroups": {
-          "label": "Priorità della sezione Browser",
-          "kind": {
-            "open-tab": "Schede aperte",
-            "bookmark": "Segnalibri",
-            "history": "Cronologia"
-          },
-          "description": {
-            "open-tab": "Schede attive aperte nei profili collegati.",
-            "bookmark": "Segnalibri salvati dai profili collegati.",
-            "history": "Pagine visitate dai profili collegati."
-          },
-          "option": {
-            "none": "Nessuno",
-            "count": "{count} righe"
-          },
-          "moveUp": "Sposta su",
-          "moveDown": "Sposta giù"
+        "webSearch": {
+          "label": "Ricerca web",
+          "defaultProvider": "Provider predefinito",
+          "suggestionsEnabled": {
+            "label": "Mostra suggerimenti di ricerca",
+            "description": "Mostra suggerimenti web e opzioni bang/provider sotto i risultati del browser."
+          }
+        },
+        "alphaWarning": {
+          "title": "Integrazione browser alfa",
+          "description": "La ricerca nel browser attualmente richiede l’estensione browser di SuperCmd e supporta solo browser basati su Chromium. Firefox e Safari arriveranno più avanti.",
+          "devMode": "Per collegare un browser ora, apri la pagina delle estensioni del browser, abilita la modalità sviluppatore, poi scegli Carica estensione non pacchettizzata e seleziona la cartella browser-extension.",
+          "temporary": "(È temporaneo finché l’estensione non sarà pubblicata nello store.)"
         }
       }
     }
@@ -795,7 +796,37 @@
       "focusHint": "Attiva scheda",
       "showAll": "Mostra tutti i risultati Browser",
       "showAllSubtitle": "{count} risultati Browser",
-      "showAllPlaceholder": "Cerca risultati Browser..."
+      "showAllPlaceholder": "Cerca risultati Browser...",
+      "openTabsPlaceholder": "Cerca schede aperte...",
+      "bookmarksPlaceholder": "Cerca segnalibri...",
+      "historyPlaceholder": "Cerca nella cronologia...",
+      "setNickname": "Imposta soprannome",
+      "editNickname": "Modifica soprannome",
+      "searchProviderFor": "Cerca \"{query}\" con {provider}",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "Ricerca predefinita",
+      "webSearchPlaceholder": "Cerca bang...",
+      "useBang": "Usa bang",
+      "bangSections": {
+        "used": "Bang recenti",
+        "common": "Bang comuni",
+        "matching": "Bang corrispondenti",
+        "all": "Tutti i bang A-Z",
+        "hidden": "Bang nascosti"
+      },
+      "showHidden": "Mostra nascosti",
+      "hideHidden": "Nascondi nascosti",
+      "newBang": "Nuovo bang",
+      "aliasHelp": "Separa gli alias con virgole, ad esempio: !gh, !git",
+      "customBangHelp": "Crea un bang con un modello URL che contiene {query}.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "Alias",
+        "name": "Nome",
+        "host": "Host",
+        "template": "Modello URL"
+      },
+      "profileAction": "Profilo"
     },
     "compact": {
       "showMore": "Mostra di più"
@@ -824,7 +855,8 @@
       "files": "File",
       "calculator": "Calcolatrice",
       "quickLinks": "Collegamenti rapidi",
-      "browser": "Browser"
+      "browser": "Browser",
+      "search": "Cerca"
     },
     "actions": {
       "open": "Apri",

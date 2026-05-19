@@ -710,6 +710,10 @@
         "title": "Perfiles de navegador",
         "description": "Conecta perfiles de navegador para que SuperCmd use su historial local y lo mantenga actualizado.",
         "enableLabel": "Usar perfiles de navegador en SuperCmd",
+        "alphaToggle": {
+          "label": "Usar busqueda raiz alfa de Chromium",
+          "description": "Muestra historial de perfiles, marcadores y pestanas abiertas en la busqueda raiz. Activalo solo para perfiles Chromium mientras la extension del navegador sigue en alfa."
+        },
         "retention": {
           "label": "Retención del historial",
           "option": {
@@ -735,7 +739,8 @@
           "noneAdded": "Aún no se han añadido perfiles de navegador",
           "profileRowDetail": "Historial: {historyCount} URL · Marcadores: {bookmarkCount} · Pestañas: {tabCount}",
           "profileSupportNote": "La compatibilidad con perfiles incluye actualmente solo navegadores Chromium. Safari y Firefox se añadirán más adelante.",
-          "enabledProfiles": "{count} perfil(es) activado(s) para el historial de navegador de SuperCmd."
+          "enabledProfiles": "{count} perfil(es) activado(s) para el historial de navegador de SuperCmd.",
+          "defaultProfile": "Predeterminado"
         },
         "importedData": {
           "heading": "Datos importados",
@@ -758,26 +763,22 @@
         "status": {
           "cleared": "Historial de perfiles de navegador borrado.",
           "imported": "Se actualizaron {count} de {total} entradas.",
-          "failed": "La acción falló."
+          "failed": "La acción falló.",
+          "removedProfile": "Datos del perfil eliminados ({count} elementos)."
         },
-        "resultGroups": {
-          "label": "Prioridad de la sección Browser",
-          "kind": {
-            "open-tab": "Pestañas abiertas",
-            "bookmark": "Marcadores",
-            "history": "Historial"
-          },
-          "description": {
-            "open-tab": "Pestañas activas abiertas en perfiles conectados.",
-            "bookmark": "Marcadores guardados de perfiles conectados.",
-            "history": "Páginas visitadas de perfiles conectados."
-          },
-          "option": {
-            "none": "Ninguno",
-            "count": "{count} filas"
-          },
-          "moveUp": "Mover arriba",
-          "moveDown": "Mover abajo"
+        "webSearch": {
+          "label": "Búsqueda web",
+          "defaultProvider": "Proveedor predeterminado",
+          "suggestionsEnabled": {
+            "label": "Mostrar sugerencias de búsqueda",
+            "description": "Muestra sugerencias web y opciones de bang/proveedor debajo de los resultados del navegador."
+          }
+        },
+        "alphaWarning": {
+          "title": "Integración de navegador alfa",
+          "description": "La búsqueda del navegador actualmente requiere la extensión de navegador de SuperCmd y solo admite navegadores basados en Chromium. Firefox y Safari llegarán más adelante.",
+          "devMode": "Para conectar un navegador ahora, abre la página de extensiones del navegador, activa el modo de desarrollador, elige Cargar descomprimida y selecciona la carpeta browser-extension.",
+          "temporary": "(Esto es temporal hasta que la extensión se publique en la tienda.)"
         }
       }
     }
@@ -795,7 +796,37 @@
       "focusHint": "Enfocar pestaña",
       "showAll": "Mostrar todos los resultados de Browser",
       "showAllSubtitle": "{count} resultados de Browser",
-      "showAllPlaceholder": "Buscar resultados de Browser..."
+      "showAllPlaceholder": "Buscar resultados de Browser...",
+      "openTabsPlaceholder": "Buscar pestañas abiertas...",
+      "bookmarksPlaceholder": "Buscar marcadores...",
+      "historyPlaceholder": "Buscar en el historial...",
+      "setNickname": "Asignar apodo",
+      "editNickname": "Editar apodo",
+      "searchProviderFor": "Buscar \"{query}\" en {provider}",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "Búsqueda predeterminada",
+      "webSearchPlaceholder": "Buscar bangs...",
+      "useBang": "Usar bang",
+      "bangSections": {
+        "used": "Bangs recientes",
+        "common": "Bangs comunes",
+        "matching": "Bangs coincidentes",
+        "all": "Todos los bangs A-Z",
+        "hidden": "Bangs ocultos"
+      },
+      "showHidden": "Mostrar ocultos",
+      "hideHidden": "Ocultar ocultos",
+      "newBang": "Nuevo bang",
+      "aliasHelp": "Separa los alias con comas, por ejemplo: !gh, !git",
+      "customBangHelp": "Crea un bang con una plantilla de URL que contenga {query}.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "Alias",
+        "name": "Nombre",
+        "host": "Host",
+        "template": "Plantilla de URL"
+      },
+      "profileAction": "Perfil"
     },
     "compact": {
       "showMore": "Show More"
@@ -824,7 +855,8 @@
       "files": "Archivos",
       "calculator": "Calculadora",
       "quickLinks": "Quick Links",
-      "browser": "Navegador"
+      "browser": "Navegador",
+      "search": "Buscar"
     },
     "actions": {
       "open": "Abrir",

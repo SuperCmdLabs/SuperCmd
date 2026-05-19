@@ -710,6 +710,10 @@
         "title": "瀏覽器個人檔案",
         "description": "連接瀏覽器個人檔案，讓 SuperCmd 使用其本機歷史並持續重新整理。",
         "enableLabel": "在 SuperCmd 中使用瀏覽器個人檔案",
+        "alphaToggle": {
+          "label": "使用 Alpha 版 Chromium 根搜尋",
+          "description": "在根搜尋中顯示個人檔案歷史記錄、書籤和開啟的分頁。瀏覽器擴充功能仍處於 Alpha 階段時，僅建議為 Chromium 個人檔案開啟。"
+        },
         "retention": {
           "label": "歷史紀錄保留時間",
           "option": {
@@ -735,7 +739,8 @@
           "noneAdded": "尚未加入瀏覽器個人檔案",
           "profileRowDetail": "歷史記錄：{historyCount} 個 URL · 書籤：{bookmarkCount} · 分頁：{tabCount} 個",
           "profileSupportNote": "個人檔案支援目前僅包含 Chromium 瀏覽器。Safari 和 Firefox 支援將於稍後加入。",
-          "enabledProfiles": "已為 SuperCmd 瀏覽器歷史啟用 {count} 個個人檔案。"
+          "enabledProfiles": "已為 SuperCmd 瀏覽器歷史啟用 {count} 個個人檔案。",
+          "defaultProfile": "預設"
         },
         "importedData": {
           "heading": "已匯入的資料",
@@ -758,26 +763,22 @@
         "status": {
           "cleared": "瀏覽器個人檔案歷史已清除。",
           "imported": "已更新 {count} / {total} 筆。",
-          "failed": "操作失敗。"
+          "failed": "操作失敗。",
+          "removedProfile": "已移除個人檔案資料（{count} 項）。"
         },
-        "resultGroups": {
-          "label": "Browser 區域優先順序",
-          "kind": {
-            "open-tab": "開啟的分頁",
-            "bookmark": "書籤",
-            "history": "瀏覽記錄"
-          },
-          "description": {
-            "open-tab": "已連接設定檔中目前開啟的即時分頁。",
-            "bookmark": "來自已連接設定檔的已儲存書籤。",
-            "history": "來自已連接設定檔的已瀏覽頁面。"
-          },
-          "option": {
-            "none": "無",
-            "count": "{count} 列"
-          },
-          "moveUp": "上移",
-          "moveDown": "下移"
+        "webSearch": {
+          "label": "網頁搜尋",
+          "defaultProvider": "預設提供者",
+          "suggestionsEnabled": {
+            "label": "顯示搜尋建議",
+            "description": "在瀏覽器結果下方顯示網頁建議與 Bang/提供者選項。"
+          }
+        },
+        "alphaWarning": {
+          "title": "Alpha 版瀏覽器整合",
+          "description": "瀏覽器搜尋目前需要 SuperCmd 瀏覽器擴充功能，且僅支援 Chromium 系列瀏覽器。Firefox 和 Safari 將稍後支援。",
+          "devMode": "若要立即連接瀏覽器，請開啟瀏覽器的擴充功能頁面，啟用開發人員模式，然後選擇「載入未封裝項目」，並選取 browser-extension 資料夾。",
+          "temporary": "（這是在擴充功能發佈到商店之前的臨時步驟。）"
         }
       }
     }
@@ -795,7 +796,37 @@
       "focusHint": "切換到分頁",
       "showAll": "顯示所有 Browser 結果",
       "showAllSubtitle": "{count} 個 Browser 結果",
-      "showAllPlaceholder": "搜尋 Browser 結果..."
+      "showAllPlaceholder": "搜尋 Browser 結果...",
+      "openTabsPlaceholder": "搜尋開啟的分頁...",
+      "bookmarksPlaceholder": "搜尋書籤...",
+      "historyPlaceholder": "搜尋瀏覽記錄...",
+      "setNickname": "設定暱稱",
+      "editNickname": "編輯暱稱",
+      "searchProviderFor": "使用 {provider} 搜尋「{query}」",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "預設搜尋",
+      "webSearchPlaceholder": "搜尋 Bang...",
+      "useBang": "使用 Bang",
+      "bangSections": {
+        "used": "最近使用的 Bangs",
+        "common": "常用 Bang",
+        "matching": "符合的 Bang",
+        "all": "所有 Bang A-Z",
+        "hidden": "隱藏 Bangs"
+      },
+      "showHidden": "顯示隱藏",
+      "hideHidden": "隱藏已隱藏",
+      "newBang": "新增 Bang",
+      "aliasHelp": "用逗號分隔別名，例如：!gh, !git",
+      "customBangHelp": "建立包含 {query} 的 URL 範本 Bang。",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "別名",
+        "name": "名稱",
+        "host": "主機",
+        "template": "URL 範本"
+      },
+      "profileAction": "個人檔案"
     },
     "compact": {
       "showMore": "顯示更多"
@@ -824,7 +855,8 @@
       "files": "檔案",
       "calculator": "計算機",
       "quickLinks": "快速連結",
-      "browser": "瀏覽器"
+      "browser": "瀏覽器",
+      "search": "搜尋"
     },
     "actions": {
       "open": "開啟",

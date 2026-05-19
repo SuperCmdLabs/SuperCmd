@@ -710,6 +710,10 @@
         "title": "Профили браузера",
         "description": "Подключите профили браузера, чтобы SuperCmd использовал их локальную историю и поддерживал ее актуальной.",
         "enableLabel": "Использовать профили браузера в SuperCmd",
+        "alphaToggle": {
+          "label": "Use alpha Chromium root search",
+          "description": "Show profile history, bookmarks, and open tabs in root search. Turn this on only for Chromium profiles while the browser extension is still in alpha."
+        },
         "retention": {
           "label": "Срок хранения истории",
           "option": {
@@ -735,7 +739,8 @@
           "noneAdded": "Профили браузера еще не добавлены",
           "profileRowDetail": "История: URL {historyCount} · Закладки: {bookmarkCount} · Вкладки: {tabCount}",
           "profileSupportNote": "Поддержка профилей сейчас включает только браузеры Chromium. Поддержка Safari и Firefox будет добавлена позже.",
-          "enabledProfiles": "Для истории браузера SuperCmd включено профилей: {count}."
+          "enabledProfiles": "Для истории браузера SuperCmd включено профилей: {count}.",
+          "defaultProfile": "По умолчанию"
         },
         "importedData": {
           "heading": "Импортированные данные",
@@ -758,26 +763,22 @@
         "status": {
           "cleared": "История профилей браузера очищена.",
           "imported": "Обновлено {count} из {total} записей.",
-          "failed": "Не удалось выполнить."
+          "failed": "Не удалось выполнить.",
+          "removedProfile": "Данные профиля удалены ({count} элементов)."
         },
-        "resultGroups": {
-          "label": "Приоритет раздела Browser",
-          "kind": {
-            "open-tab": "Открытые вкладки",
-            "bookmark": "Закладки",
-            "history": "История"
-          },
-          "description": {
-            "open-tab": "Текущие вкладки, открытые в подключенных профилях.",
-            "bookmark": "Сохраненные закладки из подключенных профилей.",
-            "history": "Посещенные страницы из подключенных профилей."
-          },
-          "option": {
-            "none": "Нет",
-            "count": "{count} строки"
-          },
-          "moveUp": "Переместить выше",
-          "moveDown": "Переместить ниже"
+        "webSearch": {
+          "label": "Веб-поиск",
+          "defaultProvider": "Провайдер по умолчанию",
+          "suggestionsEnabled": {
+            "label": "Показывать поисковые подсказки",
+            "description": "Показывать веб-подсказки и варианты bang/провайдеров под результатами браузера."
+          }
+        },
+        "alphaWarning": {
+          "title": "Альфа-интеграция браузера",
+          "description": "Поиск в браузере сейчас требует расширение SuperCmd и поддерживает только браузеры на базе Chromium. Поддержка Firefox и Safari появится позже.",
+          "devMode": "Чтобы подключить браузер сейчас, откройте страницу расширений браузера, включите режим разработчика, затем выберите загрузку распакованного расширения и укажите папку browser-extension.",
+          "temporary": "(Это временно, пока расширение не опубликовано в магазине.)"
         }
       }
     }
@@ -795,7 +796,37 @@
       "focusHint": "Перейти к вкладке",
       "showAll": "Показать все результаты Browser",
       "showAllSubtitle": "{count} результатов Browser",
-      "showAllPlaceholder": "Искать результаты Browser..."
+      "showAllPlaceholder": "Искать результаты Browser...",
+      "openTabsPlaceholder": "Искать открытые вкладки...",
+      "bookmarksPlaceholder": "Искать закладки...",
+      "historyPlaceholder": "Искать в истории...",
+      "setNickname": "Задать псевдоним",
+      "editNickname": "Изменить псевдоним",
+      "searchProviderFor": "Искать «{query}» в {provider}",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "Поиск по умолчанию",
+      "webSearchPlaceholder": "Искать bangs...",
+      "useBang": "Использовать bang",
+      "bangSections": {
+        "used": "Недавние bangs",
+        "common": "Популярные bangs",
+        "matching": "Подходящие bangs",
+        "all": "Все bangs A-Z",
+        "hidden": "Скрытые bangs"
+      },
+      "showHidden": "Показать скрытые",
+      "hideHidden": "Скрыть скрытые",
+      "newBang": "Новый bang",
+      "aliasHelp": "Разделяйте псевдонимы запятыми, например: !gh, !git",
+      "customBangHelp": "Создайте bang с шаблоном URL, содержащим {query}.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "Псевдонимы",
+        "name": "Название",
+        "host": "Хост",
+        "template": "Шаблон URL"
+      },
+      "profileAction": "Профиль"
     },
     "compact": {
       "showMore": "Show More"
@@ -824,7 +855,8 @@
       "files": "Файлы",
       "calculator": "Калькулятор",
       "quickLinks": "Быстрые ссылки",
-      "browser": "Браузер"
+      "browser": "Браузер",
+      "search": "Поиск"
     },
     "actions": {
       "open": "Открыть",

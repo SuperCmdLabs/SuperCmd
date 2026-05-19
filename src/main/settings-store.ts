@@ -90,21 +90,107 @@ export interface HyperKeySettings {
 export interface BrowserSearchSettings {
   /** When false, Cmd+Enter does not trigger browser search and inline ghost-text autocomplete is suppressed. */
   enabled: boolean;
+  /** Enables the alpha Chromium profile/root-result integration without replacing the legacy browser-search path by default. */
+  alphaChromiumRootSearchEnabled: boolean;
   /** Auto-prune browser-search history older than N days. `null` = never prune. */
   historyRetentionDays: number | null;
   /** Browser/profile sources enabled for SuperCmd browser history. */
   profileSourceIds: string[];
+  /** Ordered Chromium profiles used for browser search and profile-aware opens. */
+  profiles: BrowserProfileSetting[];
+  /** Persisted per-category source profile filters. Undefined means all profiles are enabled. */
+  profileFilters: BrowserProfileFilters;
   /** Legacy fallback for the number of rows to show per browser result group in root search. */
   resultLimitPerGroup: number;
   /** Ordered browser result providers and row counts for the root Browser section. */
   resultGroups: BrowserSearchResultGroupSetting[];
+  /** User-assigned bookmark nicknames keyed by browser/profile URL. */
+  nicknames: BrowserSearchNicknameSetting[];
+  /** Default web-search provider key, used for favicons and direct search rows. */
+  webSearchDefaultBangKey: string;
+  /** User overrides for bang aliases. Defaults come from the fetched catalog. */
+  webSearchBangOverrides: WebSearchBangOverrideSetting[];
+  /** Personal bang usage/frecency keyed by canonical bang key. */
+  webSearchBangUsage: Record<string, WebSearchBangUsageSetting>;
+  /** Bang keys hidden from normal root/search-web surfaces. */
+  webSearchDisabledBangKeys: string[];
+  /** User-defined bang providers that do not exist in the catalog. */
+  webSearchBangCustomProviders: WebSearchBangCustomProviderSetting[];
+  /** Whether the bang manager is currently showing hidden bangs. */
+  webSearchShowHiddenBangs?: boolean;
+  /** Show web suggestions and bang/provider rows in root query-mode. */
+  webSearchSuggestionsEnabled: boolean;
+}
+
+export type BrowserProfileFilterKind = 'open-tab' | 'bookmark' | 'history';
+
+export type BrowserProfileFilters = Partial<Record<BrowserProfileFilterKind, string[]>>;
+
+export interface BrowserProfileSetting {
+  id: string;
+  browserId: BrowserSearchSource;
+  browserName: string;
+  profileId: string;
+  detectedName: string;
+  displayName: string;
+  order: number;
+}
+
+export interface RootSearchRankingInputHistorySetting {
+  useCount: number;
+  lastUsedAt: number;
+  score: number;
+}
+
+export interface RootSearchRankingSetting {
+  useCount: number;
+  lastUsedAt: number;
+  frecencyScore: number;
+  inputHistory: Record<string, RootSearchRankingInputHistorySetting>;
 }
 
 export type BrowserSearchResultKind = 'open-tab' | 'bookmark' | 'history';
 
+export type BrowserSearchSource =
+  | 'user'
+  | 'helium'
+  | 'chrome'
+  | 'arc'
+  | 'brave'
+  | 'edge'
+  | 'vivaldi'
+  | 'safari'
+  | 'firefox';
+
 export interface BrowserSearchResultGroupSetting {
   kind: BrowserSearchResultKind;
   limit: number;
+}
+
+export interface BrowserSearchNicknameSetting {
+  source: string;
+  sourceProfileId?: string;
+  url: string;
+  nickname: string;
+}
+
+export interface WebSearchBangOverrideSetting {
+  key: string;
+  aliases: string[];
+}
+
+export interface WebSearchBangUsageSetting {
+  useCount: number;
+  lastUsedAt: number;
+  frecencyScore: number;
+}
+
+export interface WebSearchBangCustomProviderSetting {
+  key: string;
+  aliases: string[];
+  name: string;
+  host: string;
+  template: string;
 }
 
 export type AppFontSize = 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
@@ -170,6 +256,7 @@ export interface AppSettings {
   // Useful for apps with their own emoji pickers (Slack, Telegram, …).
   emojiPickerExcludedAppBundleIds: string[];
   browserSearch: BrowserSearchSettings;
+  rootSearchRanking: Record<string, RootSearchRankingSetting>;
   // Number of seconds the launcher waits after closing before resetting the
   // active view (extension or internal view like Clipboard) back to root
   // search. `0` resets immediately on every reopen.
@@ -295,15 +382,27 @@ const DEFAULT_SETTINGS: AppSettings = {
   emojiPickerExcludedAppBundleIds: [],
   browserSearch: {
     enabled: true,
+    alphaChromiumRootSearchEnabled: false,
     historyRetentionDays: 90,
     profileSourceIds: [],
+    profiles: [],
+    profileFilters: {},
     resultLimitPerGroup: 2,
     resultGroups: [
       { kind: 'bookmark', limit: 2 },
       { kind: 'open-tab', limit: 2 },
       { kind: 'history', limit: 2 },
     ],
+    nicknames: [],
+    webSearchDefaultBangKey: 'g',
+    webSearchBangOverrides: [],
+    webSearchBangUsage: {},
+    webSearchDisabledBangKeys: [],
+    webSearchBangCustomProviders: [],
+    webSearchShowHiddenBangs: false,
+    webSearchSuggestionsEnabled: true,
   },
+  rootSearchRanking: {},
   popToRootSearchTimeoutSeconds: 90,
   installedExtensions: [],
   extensionUninstallTombstones: {},
@@ -444,6 +543,97 @@ function normalizeBrowserSearchProfileSourceIds(value: any): string[] {
   return out;
 }
 
+const BROWSER_SEARCH_SOURCE_NAMES: Record<BrowserSearchSource, string> = {
+  user: 'Browser',
+  helium: 'Helium',
+  chrome: 'Google Chrome',
+  arc: 'Arc',
+  brave: 'Brave Browser',
+  edge: 'Microsoft Edge',
+  vivaldi: 'Vivaldi',
+  safari: 'Safari',
+  firefox: 'Firefox',
+};
+
+function normalizeBrowserSearchSource(value: any): BrowserSearchSource | null {
+  const id = String(value || '').trim().toLowerCase() as BrowserSearchSource;
+  return id in BROWSER_SEARCH_SOURCE_NAMES ? id : null;
+}
+
+function profileLabelFromId(profileId: string): string {
+  if (profileId === 'Default') return 'Default';
+  const match = /^Profile\s+(\d+)$/i.exec(profileId);
+  return match ? `Profile ${match[1]}` : profileId;
+}
+
+function normalizeBrowserSearchProfiles(value: any, legacyProfileSourceIds: string[]): BrowserProfileSetting[] {
+  const byId = new Map<string, BrowserProfileSetting>();
+  const addProfile = (raw: any, fallbackOrder: number) => {
+    if (!raw || typeof raw !== 'object') return;
+    const rawId = String(raw.id || '').trim();
+    const browserId = normalizeBrowserSearchSource(raw.browserId || rawId.split(':')[0]);
+    const profileId = String(raw.profileId || rawId.split(':').slice(1).join(':') || '').trim();
+    if (!browserId || !profileId || browserId === 'user') return;
+    const id = `${browserId}:${profileId}`;
+    if (!/^[a-z]+:.+$/.test(id) || byId.has(id)) return;
+    const browserName = String(raw.browserName || BROWSER_SEARCH_SOURCE_NAMES[browserId]).trim() || BROWSER_SEARCH_SOURCE_NAMES[browserId];
+    const detectedName = String(raw.detectedName || raw.profileName || profileLabelFromId(profileId)).trim() || profileLabelFromId(profileId);
+    const displayName = String(raw.displayName || detectedName).replace(/\s+/g, ' ').trim().slice(0, 120) || detectedName;
+    const order = Number.isFinite(Number(raw.order)) ? Math.max(0, Math.floor(Number(raw.order))) : fallbackOrder;
+    byId.set(id, {
+      id,
+      browserId,
+      browserName,
+      profileId,
+      detectedName,
+      displayName,
+      order,
+    });
+  };
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => addProfile(item, index));
+  }
+
+  if (byId.size === 0) {
+    legacyProfileSourceIds.forEach((id, index) => {
+      const [browserId, ...profileParts] = String(id || '').split(':');
+      const source = normalizeBrowserSearchSource(browserId);
+      const profileId = profileParts.join(':').trim();
+      if (!source || !profileId || source === 'user') return;
+      const detectedName = profileLabelFromId(profileId);
+      addProfile({
+        id: `${source}:${profileId}`,
+        browserId: source,
+        browserName: BROWSER_SEARCH_SOURCE_NAMES[source],
+        profileId,
+        detectedName,
+        displayName: detectedName,
+        order: index,
+      }, index);
+    });
+  }
+
+  return Array.from(byId.values()).sort((a, b) => a.order - b.order || a.browserName.localeCompare(b.browserName) || a.displayName.localeCompare(b.displayName))
+    .map((profile, index) => ({ ...profile, order: index }));
+}
+
+function normalizeBrowserProfileFilterIds(value: any): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids = normalizeBrowserSearchProfileSourceIds(value);
+  return ids;
+}
+
+function normalizeBrowserProfileFilters(value: any): BrowserProfileFilters {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out: BrowserProfileFilters = {};
+  for (const kind of ['open-tab', 'bookmark', 'history'] as BrowserProfileFilterKind[]) {
+    const ids = normalizeBrowserProfileFilterIds(value[kind]);
+    if (ids !== undefined) out[kind] = ids;
+  }
+  return out;
+}
+
 const BROWSER_SEARCH_RESULT_KINDS: BrowserSearchResultKind[] = ['bookmark', 'open-tab', 'history'];
 
 function normalizeBrowserSearchResultLimit(value: any, fallback: number): number {
@@ -479,17 +669,185 @@ function normalizeBrowserSearchResultGroups(value: any, legacyLimit: number): Br
   return groups;
 }
 
+function normalizeBrowserSearchNicknames(value: any): BrowserSearchNicknameSetting[] {
+  if (!Array.isArray(value)) return [];
+  const byKey = new Map<string, BrowserSearchNicknameSetting>();
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const source = String(item.source || '').trim();
+    const sourceProfileId = String(item.sourceProfileId || '').trim();
+    const url = String(item.url || '').trim();
+    const nickname = normalizeBrowserSearchNickname(item.nickname);
+    if (!source || !url || !nickname) continue;
+    const key = [source, sourceProfileId, normalizeBrowserSearchNicknameUrl(url)].join(':');
+    byKey.set(key, {
+      source,
+      sourceProfileId: sourceProfileId || undefined,
+      url,
+      nickname,
+    });
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.nickname.localeCompare(b.nickname));
+}
+
+function normalizeWebSearchDefaultBangKey(value: any): string {
+  const normalized = String(value || '').trim().toLowerCase().replace(/^!+/, '');
+  if (/^[a-z0-9][a-z0-9-]{0,31}$/.test(normalized)) return normalized;
+  return DEFAULT_SETTINGS.browserSearch.webSearchDefaultBangKey;
+}
+
+function normalizeWebSearchBangKey(value: any): string {
+  return String(value || '').trim().toLowerCase().replace(/^!+/, '').replace(/[^a-z0-9.+_-]/g, '').slice(0, 64);
+}
+
+function normalizeWebSearchBangOverrides(value: any): WebSearchBangOverrideSetting[] {
+  if (!Array.isArray(value)) return [];
+  const byKey = new Map<string, WebSearchBangOverrideSetting>();
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const key = normalizeWebSearchBangKey(item.key);
+    if (!key) continue;
+    const aliases: string[] = Array.isArray(item.aliases)
+      ? item.aliases.map((alias: unknown) => String(alias || ''))
+      : String(item.aliases || '').split(',');
+    const cleanAliases: string[] = Array.from(new Set<string>(
+      aliases
+        .map((alias) => normalizeWebSearchBangKey(alias))
+        .filter(Boolean)
+    ));
+    if (cleanAliases.length === 0) continue;
+    byKey.set(key, { key, aliases: cleanAliases });
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function normalizeWebSearchBangUsage(value: any): Record<string, WebSearchBangUsageSetting> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const result: Record<string, WebSearchBangUsageSetting> = {};
+  for (const [rawKey, rawUsage] of Object.entries(value)) {
+    const key = normalizeWebSearchBangKey(rawKey);
+    if (!key || !rawUsage || typeof rawUsage !== 'object' || Array.isArray(rawUsage)) continue;
+    const usage = rawUsage as Record<string, unknown>;
+    const useCount = Math.max(0, Math.floor(Number(usage.useCount) || 0));
+    const lastUsedAt = Math.max(0, Math.floor(Number(usage.lastUsedAt) || 0));
+    const frecencyScore = Math.max(0, Number(usage.frecencyScore) || 0);
+    if (useCount <= 0 && frecencyScore <= 0) continue;
+    result[key] = { useCount, lastUsedAt, frecencyScore };
+  }
+  return result;
+}
+
+function normalizeWebSearchDisabledBangKeys(value: any): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => normalizeWebSearchBangKey(item)).filter(Boolean))).sort();
+}
+
+function normalizeWebSearchBangTemplate(value: any): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.includes('{query}') ? raw : raw.replace(/\{\{\{s\}\}\}/g, '{query}');
+}
+
+function normalizeWebSearchBangCustomProviders(value: any): WebSearchBangCustomProviderSetting[] {
+  if (!Array.isArray(value)) return [];
+  const byKey = new Map<string, WebSearchBangCustomProviderSetting>();
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const key = normalizeWebSearchBangKey(item.key);
+    if (!key) continue;
+    const aliases: string[] = Array.isArray(item.aliases)
+      ? item.aliases.map((alias: unknown) => String(alias || ''))
+      : String(item.aliases || '').split(',');
+    const cleanAliases = Array.from(new Set(aliases.map((alias) => normalizeWebSearchBangKey(alias)).filter((alias) => alias && alias !== key)));
+    const name = String(item.name || key).trim().slice(0, 120);
+    const host = String(item.host || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '').slice(0, 200);
+    const template = normalizeWebSearchBangTemplate(item.template || item.urlTemplate);
+    if (!name || !host || !template) continue;
+    byKey.set(key, { key, aliases: cleanAliases, name, host, template });
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function normalizeBrowserSearchNickname(value: any): string {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 64);
+}
+
+function normalizeBrowserSearchNicknameUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    parsed.hash = '';
+    parsed.hostname = parsed.hostname.toLowerCase();
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return String(value || '').trim().toLowerCase().replace(/\/+$/, '');
+  }
+}
+
 function normalizeBrowserSearchSettings(value: any): BrowserSearchSettings {
   const fallback = DEFAULT_SETTINGS.browserSearch;
   const resultLimit = normalizeBrowserSearchResultLimit(value?.resultLimitPerGroup, fallback.resultLimitPerGroup);
   if (!value || typeof value !== 'object') return { ...fallback };
+  const profileSourceIds = normalizeBrowserSearchProfileSourceIds(value.profileSourceIds);
+  const hasProfilesField = Array.isArray(value.profiles);
+  const profiles = normalizeBrowserSearchProfiles(value.profiles, hasProfilesField ? [] : profileSourceIds);
+  const effectiveProfileSourceIds = profiles.map((profile) => profile.id);
   return {
     enabled: typeof value.enabled === 'boolean' ? value.enabled : fallback.enabled,
+    alphaChromiumRootSearchEnabled: typeof value.alphaChromiumRootSearchEnabled === 'boolean'
+      ? value.alphaChromiumRootSearchEnabled
+      : fallback.alphaChromiumRootSearchEnabled,
     historyRetentionDays: normalizeBrowserSearchRetentionDays(value.historyRetentionDays),
-    profileSourceIds: normalizeBrowserSearchProfileSourceIds(value.profileSourceIds),
+    profileSourceIds: effectiveProfileSourceIds,
+    profiles,
+    profileFilters: normalizeBrowserProfileFilters(value.profileFilters),
     resultLimitPerGroup: resultLimit,
     resultGroups: normalizeBrowserSearchResultGroups(value.resultGroups, resultLimit || fallback.resultLimitPerGroup),
+    nicknames: normalizeBrowserSearchNicknames(value.nicknames),
+    webSearchDefaultBangKey: normalizeWebSearchDefaultBangKey(value.webSearchDefaultBangKey),
+    webSearchBangOverrides: normalizeWebSearchBangOverrides(value.webSearchBangOverrides),
+    webSearchBangUsage: normalizeWebSearchBangUsage(value.webSearchBangUsage),
+    webSearchDisabledBangKeys: normalizeWebSearchDisabledBangKeys(value.webSearchDisabledBangKeys),
+    webSearchBangCustomProviders: normalizeWebSearchBangCustomProviders(value.webSearchBangCustomProviders),
+    webSearchShowHiddenBangs: Boolean(value.webSearchShowHiddenBangs),
+    webSearchSuggestionsEnabled: typeof value.webSearchSuggestionsEnabled === 'boolean'
+      ? value.webSearchSuggestionsEnabled
+      : fallback.webSearchSuggestionsEnabled,
   };
+}
+
+function normalizeRootSearchRanking(value: any): Record<string, RootSearchRankingSetting> {
+  if (!value || typeof value !== 'object') return {};
+  const now = Date.now();
+  const result: Record<string, RootSearchRankingSetting> = {};
+  for (const [rawKey, rawEntry] of Object.entries(value)) {
+    const key = String(rawKey || '').trim();
+    const entry = rawEntry as any;
+    if (!key || !entry || typeof entry !== 'object') continue;
+    const lastUsedAt = Math.max(0, Number(entry.lastUsedAt || 0));
+    const frecencyScore = Math.max(0, Number(entry.frecencyScore || 0));
+    const ageDays = lastUsedAt ? Math.max(0, (now - lastUsedAt) / (24 * 60 * 60 * 1000)) : Number.MAX_SAFE_INTEGER;
+    if (ageDays > 120 && frecencyScore < 0.05) continue;
+    const inputHistory: Record<string, RootSearchRankingInputHistorySetting> = {};
+    if (entry.inputHistory && typeof entry.inputHistory === 'object') {
+      for (const [rawInputKey, rawInput] of Object.entries(entry.inputHistory)) {
+        const inputKey = String(rawInputKey || '').trim().slice(0, 120);
+        const input = rawInput as any;
+        if (!inputKey || !input || typeof input !== 'object') continue;
+        inputHistory[inputKey] = {
+          useCount: Math.max(0, Math.floor(Number(input.useCount || 0))),
+          lastUsedAt: Math.max(0, Number(input.lastUsedAt || 0)),
+          score: Math.max(0, Number(input.score || 0)),
+        };
+      }
+    }
+    result[key] = {
+      useCount: Math.max(0, Math.floor(Number(entry.useCount || 0))),
+      lastUsedAt,
+      frecencyScore,
+      inputHistory,
+    };
+  }
+  return result;
 }
 
 function normalizeAppLanguage(value: any): AppLanguage {
@@ -941,6 +1299,7 @@ export function loadSettings(): AppSettings {
         : DEFAULT_SETTINGS.emojiPickerTriggerPrefix,
       emojiPickerExcludedAppBundleIds: normalizeBundleIdList(parsed.emojiPickerExcludedAppBundleIds),
       browserSearch: normalizeBrowserSearchSettings(parsed.browserSearch),
+      rootSearchRanking: normalizeRootSearchRanking(parsed.rootSearchRanking),
       popToRootSearchTimeoutSeconds: normalizePopToRootSearchTimeoutSeconds(parsed.popToRootSearchTimeoutSeconds),
       installedExtensions: normalizeInstalledExtensions(parsed.installedExtensions),
       extensionUninstallTombstones: normalizeExtensionUninstallTombstones(parsed.extensionUninstallTombstones),
@@ -1211,6 +1570,9 @@ function saveSettingsInternal(
     ),
     browserSearch: normalizeBrowserSearchSettings(
       'browserSearch' in patch ? patch.browserSearch : current.browserSearch
+    ),
+    rootSearchRanking: normalizeRootSearchRanking(
+      'rootSearchRanking' in patch ? patch.rootSearchRanking : current.rootSearchRanking
     ),
     popToRootSearchTimeoutSeconds: normalizePopToRootSearchTimeoutSeconds(
       'popToRootSearchTimeoutSeconds' in patch

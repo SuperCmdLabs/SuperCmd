@@ -710,6 +710,10 @@
         "title": "浏览器个人资料",
         "description": "连接浏览器个人资料，让 SuperCmd 使用其本地历史记录并持续刷新。",
         "enableLabel": "在 SuperCmd 中使用浏览器个人资料",
+        "alphaToggle": {
+          "label": "使用 Alpha 版 Chromium 根搜索",
+          "description": "在根搜索中显示个人资料历史记录、书签和打开的标签页。浏览器扩展仍处于 Alpha 阶段时，仅建议为 Chromium 个人资料开启。"
+        },
         "retention": {
           "label": "历史记录保留时间",
           "option": {
@@ -735,7 +739,8 @@
           "noneAdded": "尚未添加浏览器个人资料",
           "profileRowDetail": "历史记录：{historyCount} 个 URL · 书签：{bookmarkCount} · 标签页：{tabCount} 个",
           "profileSupportNote": "个人资料支持目前仅包含 Chromium 浏览器。Safari 和 Firefox 支持将在之后添加。",
-          "enabledProfiles": "已为 SuperCmd 浏览器历史记录启用 {count} 个个人资料。"
+          "enabledProfiles": "已为 SuperCmd 浏览器历史记录启用 {count} 个个人资料。",
+          "defaultProfile": "默认"
         },
         "importedData": {
           "heading": "已导入的数据",
@@ -758,26 +763,22 @@
         "status": {
           "cleared": "浏览器个人资料历史已清除。",
           "imported": "已更新 {count} / {total} 条。",
-          "failed": "操作失败。"
+          "failed": "操作失败。",
+          "removedProfile": "已移除个人资料数据（{count} 项）。"
         },
-        "resultGroups": {
-          "label": "Browser 区域优先级",
-          "kind": {
-            "open-tab": "打开的标签页",
-            "bookmark": "书签",
-            "history": "历史记录"
-          },
-          "description": {
-            "open-tab": "已连接资料中当前打开的实时标签页。",
-            "bookmark": "来自已连接资料的已保存书签。",
-            "history": "来自已连接资料的已访问页面。"
-          },
-          "option": {
-            "none": "无",
-            "count": "{count} 行"
-          },
-          "moveUp": "上移",
-          "moveDown": "下移"
+        "webSearch": {
+          "label": "网页搜索",
+          "defaultProvider": "默认提供商",
+          "suggestionsEnabled": {
+            "label": "显示搜索建议",
+            "description": "在浏览器结果下方显示网页建议和 Bang/提供商选项。"
+          }
+        },
+        "alphaWarning": {
+          "title": "Alpha 版浏览器集成",
+          "description": "浏览器搜索目前需要 SuperCmd 浏览器扩展，并且仅支持基于 Chromium 的浏览器。Firefox 和 Safari 将稍后支持。",
+          "devMode": "要立即连接浏览器，请打开浏览器的扩展程序页面，启用开发者模式，然后选择“加载已解压的扩展程序”，并选择 browser-extension 文件夹。",
+          "temporary": "（这是扩展发布到商店之前的临时步骤。）"
         }
       }
     }
@@ -795,7 +796,37 @@
       "focusHint": "切换到标签页",
       "showAll": "显示所有 Browser 结果",
       "showAllSubtitle": "{count} 个 Browser 结果",
-      "showAllPlaceholder": "搜索 Browser 结果..."
+      "showAllPlaceholder": "搜索 Browser 结果...",
+      "openTabsPlaceholder": "搜索打开的标签页...",
+      "bookmarksPlaceholder": "搜索书签...",
+      "historyPlaceholder": "搜索历史记录...",
+      "setNickname": "设置昵称",
+      "editNickname": "编辑昵称",
+      "searchProviderFor": "使用 {provider} 搜索“{query}”",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "默认搜索",
+      "webSearchPlaceholder": "搜索 Bang...",
+      "useBang": "使用 Bang",
+      "bangSections": {
+        "used": "最近使用的 Bangs",
+        "common": "常用 Bang",
+        "matching": "匹配的 Bang",
+        "all": "所有 Bang A-Z",
+        "hidden": "隐藏 Bangs"
+      },
+      "showHidden": "显示隐藏",
+      "hideHidden": "隐藏已隐藏",
+      "newBang": "新建 Bang",
+      "aliasHelp": "用逗号分隔别名，例如：!gh, !git",
+      "customBangHelp": "创建包含 {query} 的 URL 模板 Bang。",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "别名",
+        "name": "名称",
+        "host": "主机",
+        "template": "URL 模板"
+      },
+      "profileAction": "个人资料"
     },
     "compact": {
       "showMore": "显示更多"
@@ -824,7 +855,8 @@
       "files": "文件",
       "calculator": "计算器",
       "quickLinks": "快速链接",
-      "browser": "浏览器"
+      "browser": "浏览器",
+      "search": "搜索"
     },
     "actions": {
       "open": "打开",

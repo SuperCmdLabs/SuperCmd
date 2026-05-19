@@ -3,6 +3,8 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { shell } from 'electron';
 import type { BrowserSearchEntry, BrowserSearchSource } from './browser-search-history';
+import type { BrowserProfileSetting } from './settings-store';
+import { loadSettings } from './settings-store';
 
 export const BROWSER_TABS_DEV_SERVER_PORT = 17373;
 
@@ -20,7 +22,10 @@ const PROFILE_OPEN_APPS: Record<string, string> = {
 
 export interface BrowserTabSnapshotItem {
   windowId: string | number;
+  windowOrdinal?: number;
   tabId: string | number;
+  tabIndex?: number;
+  favIconUrl?: string;
   title?: string;
   url?: string;
   active?: boolean;
@@ -44,7 +49,10 @@ export interface BrowserTabEntry {
   profileSourceId: string;
   profileName: string;
   windowId: string;
+  windowOrdinal: number;
   tabId: string;
+  tabIndex: number;
+  favIconUrl: string;
   title: string;
   url: string;
   host: string;
@@ -86,6 +94,15 @@ interface BrowserTabCommandResult {
   error?: string;
 }
 
+export interface BrowserProfileConnectionStatus {
+  profileSourceId: string;
+  connected: boolean;
+  lastSeenAt: number;
+  lastSnapshotAt: number;
+  lastError?: string;
+  tabCount: number;
+}
+
 type BrowserOpenTarget = {
   browserId: string;
   profileId: string;
@@ -99,9 +116,10 @@ const pendingCommandsByProfile = new Map<string, BrowserTabFocusCommand[]>();
 const commandPollersByProfile = new Map<string, Array<(command: BrowserTabFocusCommand | null) => void>>();
 const commandResultWaiters = new Map<string, (result: BrowserTabCommandResult) => void>();
 let devServer: Server | null = null;
+const connectionByProfileId = new Map<string, Omit<BrowserProfileConnectionStatus, 'connected'>>();
 
 export function listBrowserTabs(): BrowserTabEntry[] {
-  return Array.from(tabsById.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+  return Array.from(tabsById.values()).sort(compareTabsByBrowserOrder);
 }
 
 export function getBrowserTabCountsByProfile(): Record<string, number> {
@@ -110,6 +128,40 @@ export function getBrowserTabCountsByProfile(): Record<string, number> {
     counts[tab.profileSourceId] = (counts[tab.profileSourceId] || 0) + 1;
   }
   return counts;
+}
+
+export function listBrowserProfileConnectionStatuses(): BrowserProfileConnectionStatus[] {
+  const now = Date.now();
+  const tabCounts = getBrowserTabCountsByProfile();
+  try {
+    for (const profile of loadSettings().browserSearch.profiles || []) {
+      if (!profile?.id || connectionByProfileId.has(profile.id)) continue;
+      connectionByProfileId.set(profile.id, {
+        profileSourceId: profile.id,
+        lastSeenAt: 0,
+        lastSnapshotAt: 0,
+        tabCount: tabCounts[profile.id] || 0,
+      });
+    }
+  } catch {}
+  for (const [profileSourceId, tabCount] of Object.entries(tabCounts)) {
+    const existing = connectionByProfileId.get(profileSourceId);
+    if (existing) {
+      existing.tabCount = tabCount;
+    } else {
+      connectionByProfileId.set(profileSourceId, {
+        profileSourceId,
+        lastSeenAt: 0,
+        lastSnapshotAt: 0,
+        tabCount,
+      });
+    }
+  }
+  return Array.from(connectionByProfileId.values()).map((status) => ({
+    ...status,
+    tabCount: tabCounts[status.profileSourceId] ?? status.tabCount ?? 0,
+    connected: now - status.lastSeenAt < 45_000,
+  }));
 }
 
 export function listBrowserTabRecentNavigations(): BrowserTabRecentNavigation[] {
@@ -134,6 +186,28 @@ export function listBrowserTabRecentNavigationEntries(): BrowserSearchEntry[] {
 
 export function clearBrowserTabRecentNavigations(): void {
   recentNavigationsByKey.clear();
+}
+
+export function clearBrowserTabsForProfile(profileSourceId: string): number {
+  const id = cleanProfileSourceId(profileSourceId);
+  if (!id) return 0;
+  let removed = 0;
+  for (const tabId of Array.from(tabsById.keys())) {
+    if (tabsById.get(tabId)?.profileSourceId === id) {
+      tabsById.delete(tabId);
+      removed += 1;
+    }
+  }
+  for (const key of Array.from(recentNavigationsByKey.keys())) {
+    if (recentNavigationsByKey.get(key)?.profileSourceId === id) {
+      recentNavigationsByKey.delete(key);
+      removed += 1;
+    }
+  }
+  pendingCommandsByProfile.delete(id);
+  commandPollersByProfile.delete(id);
+  connectionByProfileId.delete(id);
+  return removed;
 }
 
 export function flushRecentNavigationsForHistoryEntries(entries: BrowserTabDurableHistoryEntry[]): number {
@@ -193,9 +267,57 @@ export async function focusBrowserTabForInput(rawInput: string): Promise<{
   }
 }
 
+export async function focusBrowserTabTarget(payload: {
+  profileSourceId: string;
+  windowId: string | number;
+  tabId: string | number;
+}): Promise<{ ok: boolean; reason?: string }> {
+  const profileSourceId = cleanProfileSourceId(payload.profileSourceId);
+  const windowId = cleanIdentifier(payload.windowId);
+  const tabId = cleanIdentifier(payload.tabId);
+  if (!profileSourceId || !windowId || !tabId) return { ok: false, reason: 'Missing tab target' };
+  const tab = tabsById.get(`${profileSourceId}:${windowId}:${tabId}`);
+  const target: BrowserTabEntry = tab || {
+    id: `${profileSourceId}:${windowId}:${tabId}`,
+    browserId: profileSourceId.split(':')[0] || '',
+    browserName: '',
+    profileId: profileSourceId.split(':').slice(1).join(':') || '',
+    profileSourceId,
+    profileName: '',
+    windowId,
+    windowOrdinal: 0,
+    tabId,
+    tabIndex: 0,
+    favIconUrl: '',
+    title: '',
+    url: '',
+    host: '',
+    active: false,
+    windowLastFocusedAt: 0,
+    updatedAt: Date.now(),
+  };
+  try {
+    const result = await sendFocusTabCommand(target);
+    return result.ok ? { ok: true } : { ok: false, reason: result.error || 'Failed to focus tab' };
+  } catch (e: any) {
+    return { ok: false, reason: e?.message || 'Failed to focus tab' };
+  }
+}
+
 export function replaceBrowserTabsForProfile(raw: BrowserTabSnapshotPayload): BrowserTabEntry[] {
-  const payload = normalizeSnapshotPayload(raw);
+  const rawPayload = normalizeSnapshotPayload(raw);
+  const payload = canonicalizeBrowserTabPayload(rawPayload);
+  if (!payload) {
+    clearBrowserTabsForProfile(rawPayload.profileSourceId);
+    return [];
+  }
   const now = Date.now();
+  markProfileConnection(payload.profileSourceId, {
+    lastSeenAt: now,
+    lastSnapshotAt: now,
+    lastError: undefined,
+    tabCount: payload.tabs.length,
+  });
   const previousTabs = new Map<string, BrowserTabEntry>();
   for (const [id, tab] of tabsById) {
     if (tab.profileSourceId === payload.profileSourceId) {
@@ -337,16 +459,39 @@ function findBrowserNavigationForInput(rawInput: string): BrowserTabRecentNaviga
 }
 
 async function openInSourceProfile(target: BrowserOpenTarget): Promise<void> {
-  const appName = PROFILE_OPEN_APPS[target.browserId];
+  const appName = getChromiumAppName(target.browserId);
+  await openUrlInProfile(target.url, appName ? {
+    id: `${target.browserId}:${target.profileId}`,
+    browserId: target.browserId as BrowserSearchSource,
+    browserName: appName,
+    profileId: target.profileId,
+    detectedName: target.profileId,
+    displayName: target.profileId,
+    order: 0,
+  } : null);
+}
+
+export function getChromiumAppName(browserId: string): string {
+  return PROFILE_OPEN_APPS[browserId] || '';
+}
+
+export async function openUrlInProfile(url: string, profile: BrowserProfileSetting | null | undefined): Promise<void> {
+  const targetUrl = String(url || '').trim();
+  if (!targetUrl) return;
+  const appName = profile ? getChromiumAppName(profile.browserId) : '';
   if (!appName) {
-    await shell.openExternal(target.url);
+    await shell.openExternal(targetUrl);
     return;
   }
-  const args = ['-a', appName, target.url];
-  if (target.profileId && target.profileId !== 'Default') {
-    args.push('--args', `--profile-directory=${target.profileId}`);
+  const args = ['-a', appName, targetUrl];
+  if (profile?.profileId && profile.profileId !== 'Default') {
+    args.push('--args', `--profile-directory=${profile.profileId}`);
   }
-  await execFileAsync('/usr/bin/open', args);
+  try {
+    await execFileAsync('/usr/bin/open', args, { timeout: 5000 });
+  } catch {
+    await shell.openExternal(targetUrl);
+  }
 }
 
 function recentNavigationKey(profileSourceId: string, url: string): string {
@@ -390,8 +535,37 @@ export function startBrowserTabsDevServer(options: {
     }
 
     const parsedUrl = parseRequestUrl(req);
+    if (req.method === 'POST' && parsedUrl.pathname === '/browser-tabs/hello') {
+      try {
+        const body = await readJsonBody(req, 64 * 1024);
+        const identity = normalizeProfileIdentity(body);
+        const configuredProfile = resolveConfiguredBrowserProfile(identity.profileSourceId);
+        if (!configuredProfile) {
+          clearBrowserTabsForProfile(identity.profileSourceId);
+          writeJson(res, 200, { ok: true, disabled: true, profileSourceId: identity.profileSourceId });
+          return;
+        }
+        markProfileConnection(configuredProfile.id, {
+          lastSeenAt: Date.now(),
+          lastSnapshotAt: connectionByProfileId.get(configuredProfile.id)?.lastSnapshotAt || 0,
+          lastError: undefined,
+          tabCount: connectionByProfileId.get(configuredProfile.id)?.tabCount || 0,
+        });
+        options.onChanged?.();
+        writeJson(res, 200, { ok: true, profileSourceId: configuredProfile.id });
+      } catch (e: any) {
+        writeJson(res, 400, { ok: false, error: e?.message || 'invalid_payload' });
+      }
+      return;
+    }
+
     if (req.method === 'GET' && parsedUrl.pathname === '/browser-tabs/commands') {
-      handleCommandPoll(req, res, parsedUrl);
+      handleCommandPoll(req, res, parsedUrl, options.onChanged);
+      return;
+    }
+
+    if (req.method === 'GET' && parsedUrl.pathname === '/browser-tabs/status') {
+      writeJson(res, 200, { ok: true, profiles: listBrowserProfileConnectionStatuses() });
       return;
     }
 
@@ -432,16 +606,37 @@ export function startBrowserTabsDevServer(options: {
   return devServer;
 }
 
-function handleCommandPoll(req: IncomingMessage, res: ServerResponse, parsedUrl: URL): void {
+function handleCommandPoll(
+  req: IncomingMessage,
+  res: ServerResponse,
+  parsedUrl: URL,
+  onChanged?: () => void
+): void {
   const profileSourceId = cleanProfileSourceId(parsedUrl.searchParams.get('profileSourceId') || '');
   if (!profileSourceId) {
     writeJson(res, 400, { ok: false, error: 'missing_profile_source_id' });
     return;
   }
+  const configuredProfile = resolveConfiguredBrowserProfile(profileSourceId);
+  if (!configuredProfile) {
+    writeJson(res, 200, { ok: true, command: null, disabled: true, profileSourceId });
+    return;
+  }
+  const canonicalProfileSourceId = configuredProfile.id;
+  const existing = connectionByProfileId.get(canonicalProfileSourceId);
+  markProfileConnection(canonicalProfileSourceId, {
+    lastSeenAt: Date.now(),
+    lastSnapshotAt: existing?.lastSnapshotAt || 0,
+    lastError: undefined,
+    tabCount: existing?.tabCount || 0,
+  });
+  if (!existing || Date.now() - existing.lastSeenAt >= 45_000) {
+    onChanged?.();
+  }
 
-  const queue = pendingCommandsByProfile.get(profileSourceId) || [];
+  const queue = pendingCommandsByProfile.get(canonicalProfileSourceId) || [];
   const command = queue.shift();
-  pendingCommandsByProfile.set(profileSourceId, queue);
+  pendingCommandsByProfile.set(canonicalProfileSourceId, queue);
   if (command) {
     writeJson(res, 200, { ok: true, command });
     return;
@@ -452,7 +647,7 @@ function handleCommandPoll(req: IncomingMessage, res: ServerResponse, parsedUrl:
     if (settled) return;
     settled = true;
     clearTimeout(timeout);
-    removeCommandPoller(profileSourceId, complete);
+    removeCommandPoller(canonicalProfileSourceId, complete);
     writeJson(res, 200, { ok: true, command: nextCommand });
   };
   const timeout = setTimeout(() => complete(null), 25000);
@@ -460,12 +655,91 @@ function handleCommandPoll(req: IncomingMessage, res: ServerResponse, parsedUrl:
     if (settled) return;
     settled = true;
     clearTimeout(timeout);
-    removeCommandPoller(profileSourceId, complete);
+    removeCommandPoller(canonicalProfileSourceId, complete);
   });
 
-  const pollers = commandPollersByProfile.get(profileSourceId) || [];
+  const pollers = commandPollersByProfile.get(canonicalProfileSourceId) || [];
   pollers.push(complete);
-  commandPollersByProfile.set(profileSourceId, pollers);
+  commandPollersByProfile.set(canonicalProfileSourceId, pollers);
+}
+
+function isConfiguredBrowserProfile(profileSourceId: string): boolean {
+  return Boolean(resolveConfiguredBrowserProfile(profileSourceId));
+}
+
+function getConfiguredBrowserProfiles(): BrowserProfileSetting[] {
+  try {
+    const browserSearch = loadSettings().browserSearch;
+    if (Array.isArray(browserSearch.profiles) && browserSearch.profiles.length > 0) {
+      return browserSearch.profiles.filter((profile) => profile?.id && profile.profileId);
+    }
+    return (browserSearch.profileSourceIds || [])
+      .map((id, index): BrowserProfileSetting | null => {
+        const profileSourceId = cleanProfileSourceId(id);
+        const [browserId, ...profileParts] = profileSourceId.split(':');
+        const profileId = profileParts.join(':');
+        if (!browserId || !profileId) return null;
+        return {
+          id: profileSourceId,
+          browserId: browserId as BrowserSearchSource,
+          browserName: browserId,
+          profileId,
+          detectedName: profileId,
+          displayName: profileId,
+          order: index,
+        };
+      })
+      .filter((profile): profile is BrowserProfileSetting => Boolean(profile));
+  } catch {
+    return [];
+  }
+}
+
+function resolveConfiguredBrowserProfile(profileSourceId: string): BrowserProfileSetting | null {
+  const id = cleanProfileSourceId(profileSourceId);
+  if (!id) return null;
+  const configured = getConfiguredBrowserProfiles();
+  const exact = configured.find((profile) => profile.id === id);
+  if (exact) return exact;
+  if (configured.length === 1) return configured[0];
+  const [, ...profileParts] = id.split(':');
+  const reportedProfileId = profileParts.join(':');
+  if (!reportedProfileId) return null;
+  const profileMatches = configured.filter((profile) => profile.profileId === reportedProfileId);
+  return profileMatches.length === 1 ? profileMatches[0] : null;
+}
+
+function canonicalizeBrowserTabPayload(payload: BrowserTabSnapshotPayload): BrowserTabSnapshotPayload | null {
+  const configuredProfile = resolveConfiguredBrowserProfile(payload.profileSourceId);
+  if (!configuredProfile) return null;
+  return {
+    ...payload,
+    browserId: configuredProfile.browserId,
+    browserName: configuredProfile.browserName,
+    profileId: configuredProfile.profileId,
+    profileSourceId: configuredProfile.id,
+    profileName: configuredProfile.displayName || configuredProfile.detectedName || configuredProfile.profileId,
+  };
+}
+
+function markProfileConnection(
+  profileSourceId: string,
+  patch: Partial<Omit<BrowserProfileConnectionStatus, 'connected' | 'profileSourceId'>>
+): void {
+  const id = cleanProfileSourceId(profileSourceId);
+  if (!id) return;
+  const existing = connectionByProfileId.get(id);
+  connectionByProfileId.set(id, {
+    profileSourceId: id,
+    lastSeenAt: patch.lastSeenAt ?? existing?.lastSeenAt ?? 0,
+    lastSnapshotAt: patch.lastSnapshotAt ?? existing?.lastSnapshotAt ?? 0,
+    lastError: patch.lastError ?? existing?.lastError,
+    tabCount: patch.tabCount ?? existing?.tabCount ?? 0,
+  });
+}
+
+function normalizeProfileIdentity(raw: any): Pick<BrowserTabSnapshotPayload, 'browserId' | 'browserName' | 'profileId' | 'profileSourceId' | 'profileName'> {
+  return normalizeSnapshotPayload({ ...(raw || {}), tabs: [] });
 }
 
 function removeCommandPoller(
@@ -534,7 +808,10 @@ function normalizeTab(
     profileSourceId: payload.profileSourceId,
     profileName: payload.profileName,
     windowId,
+    windowOrdinal: normalizeWindowOrdinal(item.windowOrdinal),
     tabId,
+    tabIndex: normalizeTabIndex(item.tabIndex),
+    favIconUrl: cleanFaviconUrl(item.favIconUrl),
     title: cleanName(item.title || host || url),
     url,
     host,
@@ -542,6 +819,44 @@ function normalizeTab(
     windowLastFocusedAt: Number.isFinite(Number(item.windowLastFocusedAt)) ? Math.max(0, Number(item.windowLastFocusedAt)) : 0,
     updatedAt,
   };
+}
+
+function compareTabsByBrowserOrder(a: BrowserTabEntry, b: BrowserTabEntry): number {
+  if (b.windowLastFocusedAt !== a.windowLastFocusedAt) return b.windowLastFocusedAt - a.windowLastFocusedAt;
+  const browserCompare = a.browserName.localeCompare(b.browserName);
+  if (browserCompare !== 0) return browserCompare;
+  const profileCompare = a.profileName.localeCompare(b.profileName);
+  if (profileCompare !== 0) return profileCompare;
+  const windowCompare = compareIdentifier(a.windowId, b.windowId);
+  if (windowCompare !== 0) return windowCompare;
+  if (a.tabIndex !== b.tabIndex) return a.tabIndex - b.tabIndex;
+  return compareIdentifier(a.tabId, b.tabId);
+}
+
+function normalizeWindowOrdinal(value: unknown): number {
+  const ordinal = Number(value);
+  return Number.isFinite(ordinal) && ordinal > 0 ? Math.floor(ordinal) : 0;
+}
+
+function compareIdentifier(a: string, b: string): number {
+  const aNumber = Number(a);
+  const bNumber = Number(b);
+  if (Number.isFinite(aNumber) && Number.isFinite(bNumber) && aNumber !== bNumber) {
+    return aNumber - bNumber;
+  }
+  return a.localeCompare(b);
+}
+
+function normalizeTabIndex(value: unknown): number {
+  const index = Number(value);
+  return Number.isFinite(index) && index >= 0 ? Math.floor(index) : 0;
+}
+
+function cleanFaviconUrl(value: unknown): string {
+  const url = String(value || '').trim();
+  if (!url) return '';
+  if (/^(https?:|data:image\/)/i.test(url)) return url.slice(0, 2048);
+  return '';
 }
 
 function isSupportedTabUrl(url: string): boolean {

@@ -710,6 +710,10 @@
         "title": "Browserprofile",
         "description": "Verbinde Browserprofile, damit SuperCmd deren lokalen Verlauf nutzt und aktuell hält.",
         "enableLabel": "Browserprofile in SuperCmd verwenden",
+        "alphaToggle": {
+          "label": "Alpha-Chromium-Root-Suche verwenden",
+          "description": "Zeigt Profilverlauf, Lesezeichen und offene Tabs in der Root-Suche. Aktiviere dies nur fuer Chromium-Profile, solange die Browsererweiterung noch Alpha ist."
+        },
         "retention": {
           "label": "Aufbewahrungsdauer",
           "option": {
@@ -735,7 +739,8 @@
           "noneAdded": "Noch keine Browserprofile hinzugefügt",
           "profileRowDetail": "Verlauf: {historyCount} URLs · Lesezeichen: {bookmarkCount} · Tabs: {tabCount}",
           "profileSupportNote": "Profilunterstützung umfasst derzeit nur Chromium-Browser. Safari und Firefox werden später unterstützt.",
-          "enabledProfiles": "{count} Profil(e) für den SuperCmd-Browserverlauf aktiviert."
+          "enabledProfiles": "{count} Profil(e) für den SuperCmd-Browserverlauf aktiviert.",
+          "defaultProfile": "Standard"
         },
         "importedData": {
           "heading": "Importierte Daten",
@@ -758,26 +763,22 @@
         "status": {
           "cleared": "Browserprofil-Verlauf gelöscht.",
           "imported": "{count} von {total} Einträgen aktualisiert.",
-          "failed": "Aktion fehlgeschlagen."
+          "failed": "Aktion fehlgeschlagen.",
+          "removedProfile": "Profildaten entfernt ({count} Elemente)."
         },
-        "resultGroups": {
-          "label": "Priorität im Browser-Bereich",
-          "kind": {
-            "open-tab": "Offene Tabs",
-            "bookmark": "Lesezeichen",
-            "history": "Verlauf"
-          },
-          "description": {
-            "open-tab": "Live-Tabs, die in verbundenen Profilen geöffnet sind.",
-            "bookmark": "Gespeicherte Lesezeichen aus verbundenen Profilen.",
-            "history": "Besuchte Seiten aus verbundenen Profilen."
-          },
-          "option": {
-            "none": "Keine",
-            "count": "{count} Zeilen"
-          },
-          "moveUp": "Nach oben",
-          "moveDown": "Nach unten"
+        "webSearch": {
+          "label": "Websuche",
+          "defaultProvider": "Standardanbieter",
+          "suggestionsEnabled": {
+            "label": "Suchvorschläge anzeigen",
+            "description": "Zeigt Webvorschläge und Bang-/Anbieteroptionen unter Browserergebnissen an."
+          }
+        },
+        "alphaWarning": {
+          "title": "Alpha-Browserintegration",
+          "description": "Die Browsersuche benötigt derzeit die SuperCmd-Browsererweiterung und unterstützt nur Chromium-basierte Browser. Firefox und Safari folgen später.",
+          "devMode": "Um jetzt einen Browser zu verbinden, öffne die Erweiterungsseite des Browsers, aktiviere den Entwicklermodus, wähle dann „Entpackte Erweiterung laden“ und wähle den Ordner browser-extension aus.",
+          "temporary": "(Dies ist vorübergehend, bis die Erweiterung im Store veröffentlicht ist.)"
         }
       }
     }
@@ -795,7 +796,37 @@
       "focusHint": "Tab fokussieren",
       "showAll": "Alle Browser-Ergebnisse anzeigen",
       "showAllSubtitle": "{count} Browser-Ergebnisse",
-      "showAllPlaceholder": "Browser-Ergebnisse suchen..."
+      "showAllPlaceholder": "Browser-Ergebnisse suchen...",
+      "openTabsPlaceholder": "Offene Tabs suchen...",
+      "bookmarksPlaceholder": "Lesezeichen suchen...",
+      "historyPlaceholder": "Verlauf suchen...",
+      "setNickname": "Spitznamen festlegen",
+      "editNickname": "Spitznamen bearbeiten",
+      "searchProviderFor": "Mit {provider} nach „{query}“ suchen",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "Standardsuche",
+      "webSearchPlaceholder": "Bangs suchen...",
+      "useBang": "Bang verwenden",
+      "bangSections": {
+        "used": "Zuletzt verwendete Bangs",
+        "common": "Häufige Bangs",
+        "matching": "Passende Bangs",
+        "all": "Alle Bangs A-Z",
+        "hidden": "Ausgeblendete Bangs"
+      },
+      "showHidden": "Ausgeblendete zeigen",
+      "hideHidden": "Ausgeblendete verbergen",
+      "newBang": "Neuer Bang",
+      "aliasHelp": "Aliasse mit Kommas trennen, zum Beispiel: !gh, !git",
+      "customBangHelp": "Erstelle einen Bang mit einer URL-Vorlage, die {query} enthält.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "Aliasse",
+        "name": "Name",
+        "host": "Host",
+        "template": "URL-Vorlage"
+      },
+      "profileAction": "Profil"
     },
     "compact": {
       "showMore": "Show More"
@@ -824,7 +855,8 @@
       "files": "Dateien",
       "calculator": "Rechner",
       "quickLinks": "Quick Links",
-      "browser": "Browser"
+      "browser": "Browser",
+      "search": "Suche"
     },
     "actions": {
       "open": "Öffnen",

@@ -1695,6 +1695,34 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-search-web',
+      title: 'Search Web',
+      subtitle: 'Search',
+      keywords: ['web', 'search', 'google', 'duckduckgo', 'bang'],
+      category: 'system',
+    },
+    {
+      id: 'system-search-open-tabs',
+      title: 'Search Open Tabs',
+      subtitle: 'Browser',
+      keywords: ['browser', 'tabs', 'open tabs', 'search', 'find', 'web'],
+      category: 'system',
+    },
+    {
+      id: 'system-search-bookmarks',
+      title: 'Search Bookmarks',
+      subtitle: 'Browser',
+      keywords: ['browser', 'bookmarks', 'favorites', 'search', 'find', 'web'],
+      category: 'system',
+    },
+    {
+      id: 'system-search-history',
+      title: 'Search History',
+      subtitle: 'Browser',
+      keywords: ['browser', 'history', 'visited', 'search', 'find', 'web'],
+      category: 'system',
+    },
+    {
       id: 'system-my-schedule',
       title: 'My Schedule',
       keywords: ['calendar', 'schedule', 'agenda', 'events', 'today', 'upcoming'],
@@ -1994,6 +2022,17 @@ function ensureBackgroundRefreshForStaleCache(): void {
     });
 }
 
+export async function refreshCommandsNow(): Promise<CommandInfo[]> {
+  if (inflightDiscovery) {
+    return inflightDiscovery;
+  }
+
+  inflightDiscovery = discoverAndBuildCommands().finally(() => {
+    inflightDiscovery = null;
+  });
+  return inflightDiscovery;
+}
+
 export async function getAvailableCommands(): Promise<CommandInfo[]> {
   const now = Date.now();
   if (cachedCommands && now - cacheTimestamp < CACHE_TTL) {
@@ -2027,10 +2066,7 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
     return inflightDiscovery;
   }
 
-  inflightDiscovery = discoverAndBuildCommands().finally(() => {
-    inflightDiscovery = null;
-  });
-  return inflightDiscovery;
+  return refreshCommandsNow();
 }
 
 

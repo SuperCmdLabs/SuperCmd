@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Bug, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, GripVertical, Keyboard, Languages, RotateCcw, Sparkles, Timer, Undo2 } from 'lucide-react';
+import { AlertTriangle, Bug, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, GripVertical, Keyboard, Languages, RotateCcw, Sparkles, Timer, Undo2 } from 'lucide-react';
 import type {
   AppNavigationStyle,
   AppSettings,
+  BrowserProfileConnectionStatus,
+  BrowserProfileSetting,
   BrowserTabEntry,
-  BrowserSearchEntry,
+  BrowserSearchStats,
   BrowserSearchImportableProfile,
   BrowserSearchResultGroupSetting,
-  BrowserSearchResultKind,
   BrowserSearchSettings,
   HyperKeySourceKey,
   HyperKeyCapsLockTapBehavior,
@@ -82,8 +83,14 @@ const BROWSER_SEARCH_RETENTION_OPTIONS: { value: number | null; labelKey: string
   { value: null, labelKey: 'settings.advanced.browserSearch.retention.option.forever' },
 ];
 
-const BROWSER_SEARCH_RESULT_LIMIT_OPTIONS = [0, 1, 2, 3, 4, 5, 8];
-const BROWSER_SEARCH_RESULT_KIND_ORDER: BrowserSearchResultKind[] = ['bookmark', 'open-tab', 'history'];
+const WEB_SEARCH_DEFAULT_PROVIDER_OPTIONS = [
+  { value: 'g', label: 'Google' },
+  { value: 'ddg', label: 'DuckDuckGo' },
+  { value: 'yt', label: 'YouTube' },
+  { value: 'gh', label: 'GitHub' },
+  { value: 'img', label: 'Google Images' },
+  { value: 'wiki', label: 'Wikipedia' },
+];
 const DEFAULT_BROWSER_SEARCH_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
   { kind: 'bookmark', limit: 2 },
   { kind: 'open-tab', limit: 2 },
@@ -104,51 +111,56 @@ const AUTO_QUIT_TIMEOUT_OPTIONS: { value: number; label: string }[] = [
 
 interface BrowserSearchSectionProps {
   settings: BrowserSearchSettings;
-  onChange: (next: BrowserSearchSettings) => void;
+  onChange: (next: BrowserSearchSettings) => void | Promise<void>;
 }
 
-function normalizeBrowserResultGroups(groups: BrowserSearchResultGroupSetting[] | undefined): BrowserSearchResultGroupSetting[] {
-  const seen = new Set<BrowserSearchResultKind>();
-  const normalized: BrowserSearchResultGroupSetting[] = [];
-  if (Array.isArray(groups)) {
-    for (const group of groups) {
-      if (!BROWSER_SEARCH_RESULT_KIND_ORDER.includes(group.kind)) continue;
-      if (seen.has(group.kind)) continue;
-      seen.add(group.kind);
-      normalized.push({
-        kind: group.kind,
-        limit: Math.max(0, Math.min(8, Math.floor(Number(group.limit) || 0))),
-      });
-    }
-  }
-  for (const fallback of DEFAULT_BROWSER_SEARCH_RESULT_GROUPS) {
-    if (!seen.has(fallback.kind)) normalized.push(fallback);
-  }
-  return normalized;
+function normalizeConfiguredProfiles(
+  configured: BrowserProfileSetting[] | undefined,
+  detected: BrowserSearchImportableProfile[]
+): BrowserProfileSetting[] {
+  const detectedById = new Map(detected.map((profile) => [profile.id, profile]));
+  return (Array.isArray(configured) ? configured : [])
+    .filter((profile) => profile?.id)
+    .map((profile, index) => {
+      const detectedProfile = detectedById.get(profile.id);
+      return {
+        ...profile,
+        browserName: detectedProfile?.browserName || profile.browserName,
+        detectedName: detectedProfile?.profileName || profile.detectedName || profile.profileId,
+        displayName: profile.displayName || detectedProfile?.profileName || profile.detectedName || profile.profileId,
+        order: Number.isFinite(Number(profile.order)) ? Number(profile.order) : index,
+      };
+    })
+    .sort((a, b) => a.order - b.order)
+    .map((profile, index) => ({ ...profile, order: index }));
 }
 
 const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, onChange }) => {
   const { t } = useI18n();
   const [profiles, setProfiles] = useState<BrowserSearchImportableProfile[]>([]);
-  const [entries, setEntries] = useState<BrowserSearchEntry[]>([]);
+  const [profileStatuses, setProfileStatuses] = useState<BrowserProfileConnectionStatus[]>([]);
+  const [dragProfileId, setDragProfileId] = useState<string>('');
+  const [browserSearchStats, setBrowserSearchStats] = useState<BrowserSearchStats | null>(null);
   const [tabs, setTabs] = useState<BrowserTabEntry[]>([]);
   const [busyProfileId, setBusyProfileId] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<string>('');
-  const [draggedResultKind, setDraggedResultKind] = useState<BrowserSearchResultKind | null>(null);
 
   const refreshBrowserData = useCallback(async () => {
     try {
-      const [profileList, entryList, tabList] = await Promise.all([
+      const [profileList, statuses, stats, tabList] = await Promise.all([
         window.electron.browserSearchListProfiles(),
-        window.electron.browserSearchListEntries(),
+        window.electron.browserProfilesStatuses?.() ?? Promise.resolve([]),
+        window.electron.browserSearchStats?.() ?? Promise.resolve(null),
         window.electron.browserTabsList?.() ?? Promise.resolve([]),
       ]);
       setProfiles(profileList);
-      setEntries(entryList);
+      setProfileStatuses(Array.isArray(statuses) ? statuses : []);
+      setBrowserSearchStats(stats);
       setTabs(Array.isArray(tabList) ? tabList : []);
     } catch {
       setProfiles([]);
-      setEntries([]);
+      setProfileStatuses([]);
+      setBrowserSearchStats(null);
       setTabs([]);
     }
   }, []);
@@ -156,6 +168,14 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
   useEffect(() => {
     void refreshBrowserData();
   }, [refreshBrowserData]);
+
+  useEffect(() => {
+    if (!settings.enabled) return;
+    const id = window.setInterval(() => {
+      void refreshBrowserData();
+    }, 10_000);
+    return () => window.clearInterval(id);
+  }, [refreshBrowserData, settings.enabled]);
 
   useEffect(() => {
     return window.electron.onBrowserSearchHistoryChanged(() => {
@@ -217,80 +237,72 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
   }, [refreshBrowserData, t]);
 
   const handleAddProfile = useCallback(async (profileId: string) => {
-    const currentProfileIds = Array.isArray(settings.profileSourceIds) ? settings.profileSourceIds : [];
-    if (!currentProfileIds.includes(profileId)) {
-      onChange({ ...settings, profileSourceIds: [...currentProfileIds, profileId] });
-    }
-    await importProfile(profileId);
-  }, [importProfile, onChange, settings]);
-
-  const handleRemoveProfile = useCallback((profileId: string) => {
     if (!profileId) return;
-    const currentProfileIds = Array.isArray(settings.profileSourceIds) ? settings.profileSourceIds : [];
-    onChange({
-      ...settings,
-      profileSourceIds: currentProfileIds.filter((id) => id !== profileId),
-    });
-  }, [onChange, settings]);
-
-  const resultGroups = normalizeBrowserResultGroups(settings.resultGroups);
-
-  const updateResultGroups = useCallback((nextGroups: BrowserSearchResultGroupSetting[]) => {
-    const normalized = normalizeBrowserResultGroups(nextGroups);
-    onChange({
-      ...settings,
-      resultLimitPerGroup: normalized[0]?.limit ?? settings.resultLimitPerGroup ?? 2,
-      resultGroups: normalized,
-    });
-  }, [onChange, settings]);
-
-  const moveResultGroup = useCallback((kind: BrowserSearchResultKind, direction: -1 | 1) => {
-    const index = resultGroups.findIndex((group) => group.kind === kind);
-    const nextIndex = index + direction;
-    if (index < 0 || nextIndex < 0 || nextIndex >= resultGroups.length) return;
-    const next = [...resultGroups];
-    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-    updateResultGroups(next);
-  }, [resultGroups, updateResultGroups]);
-
-  const dropResultGroup = useCallback((targetKind: BrowserSearchResultKind) => {
-    if (!draggedResultKind || draggedResultKind === targetKind) {
-      setDraggedResultKind(null);
-      return;
+    setBusyProfileId(profileId);
+    setStatusMessage('');
+    try {
+      const nextProfiles = await window.electron.browserProfilesAdd(profileId);
+      const normalized = normalizeConfiguredProfiles(nextProfiles, profiles);
+      await onChange({ ...settings, profiles: normalized, profileSourceIds: normalized.map((profile) => profile.id) });
+      setBusyProfileId('');
+      await importProfile(profileId);
+      await refreshBrowserData();
+    } catch (error: any) {
+      setStatusMessage(error?.message || t('settings.advanced.browserSearch.status.failed'));
+      setBusyProfileId('');
     }
-    const current = resultGroups.filter((group) => group.kind !== draggedResultKind);
-    const dragged = resultGroups.find((group) => group.kind === draggedResultKind);
-    const targetIndex = current.findIndex((group) => group.kind === targetKind);
-    if (!dragged || targetIndex < 0) {
-      setDraggedResultKind(null);
-      return;
+  }, [importProfile, onChange, profiles, refreshBrowserData, settings, t]);
+
+  const handleRemoveProfile = useCallback(async (profileId: string) => {
+    if (!profileId) return;
+    setBusyProfileId(profileId);
+    try {
+      const result = await window.electron.browserProfilesRemove(profileId);
+      const nextProfiles = Array.isArray(result?.profiles) ? result.profiles : normalizeConfiguredProfiles(settings.profiles, profiles).filter((profile) => profile.id !== profileId);
+      const nextFilters = { ...(settings.profileFilters || {}) };
+      for (const kind of ['open-tab', 'bookmark', 'history'] as const) {
+        if (Array.isArray(nextFilters[kind])) nextFilters[kind] = nextFilters[kind]!.filter((id) => id !== profileId);
+      }
+      await onChange({ ...settings, profiles: nextProfiles, profileSourceIds: nextProfiles.map((profile) => profile.id), profileFilters: nextFilters });
+      await refreshBrowserData();
+      setStatusMessage(
+        t('settings.advanced.browserSearch.status.removedProfile', {
+          count: String((result?.removedEntries || 0) + (result?.removedTabs || 0)),
+        })
+      );
+    } catch (error: any) {
+      setStatusMessage(error?.message || t('settings.advanced.browserSearch.status.failed'));
+    } finally {
+      setBusyProfileId('');
     }
-    const next = [...current.slice(0, targetIndex), dragged, ...current.slice(targetIndex)];
-    updateResultGroups(next);
-    setDraggedResultKind(null);
-  }, [draggedResultKind, resultGroups, updateResultGroups]);
+  }, [onChange, profiles, refreshBrowserData, settings, t]);
+
+  const handleRenameProfile = useCallback((profileId: string, displayName: string) => {
+    const nextProfiles = normalizeConfiguredProfiles(settings.profiles, profiles).map((profile) =>
+      profile.id === profileId ? { ...profile, displayName } : profile
+    );
+    onChange({ ...settings, profiles: nextProfiles, profileSourceIds: nextProfiles.map((profile) => profile.id) });
+  }, [onChange, profiles, settings]);
+
+  const handleMoveProfile = useCallback((fromIndex: number, toIndex: number) => {
+    const currentProfiles = normalizeConfiguredProfiles(settings.profiles, profiles);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= currentProfiles.length || toIndex >= currentProfiles.length) return;
+    const nextProfiles = currentProfiles.slice();
+    const [moved] = nextProfiles.splice(fromIndex, 1);
+    nextProfiles.splice(toIndex, 0, moved);
+    const ordered = nextProfiles.map((profile, index) => ({ ...profile, order: index }));
+    onChange({ ...settings, profiles: ordered, profileSourceIds: ordered.map((profile) => profile.id) });
+  }, [onChange, profiles, settings]);
 
   const enabled = settings.enabled;
   const availableProfiles = profiles.filter((profile) => profile.available);
-  const enabledProfileIds = new Set(settings.profileSourceIds || []);
+  const addedProfiles = normalizeConfiguredProfiles(settings.profiles, profiles);
+  const enabledProfileIds = new Set(addedProfiles.map((profile) => profile.id));
   const chromiumProfiles = availableProfiles.filter((profile) => CHROMIUM_BROWSER_IDS.has(profile.browserId));
   const detectedProfiles = chromiumProfiles.filter((profile) => !enabledProfileIds.has(profile.id));
-  const profileById = new Map(chromiumProfiles.map((profile) => [profile.id, profile]));
-  const addedProfiles = (settings.profileSourceIds || [])
-    .map((id) => profileById.get(id))
-    .filter((profile): profile is BrowserSearchImportableProfile => Boolean(profile));
-  const historyCountByProfileId = entries.reduce((counts, entry) => {
-    if (entry.type !== 'url' || !entry.sourceProfileId) return counts;
-    const profileSourceId = `${entry.source}:${entry.sourceProfileId}`;
-    counts.set(profileSourceId, (counts.get(profileSourceId) || 0) + 1);
-    return counts;
-  }, new Map<string, number>());
-  const bookmarkCountByProfileId = entries.reduce((counts, entry) => {
-    if (entry.type !== 'bookmark' || !entry.sourceProfileId) return counts;
-    const profileSourceId = `${entry.source}:${entry.sourceProfileId}`;
-    counts.set(profileSourceId, (counts.get(profileSourceId) || 0) + 1);
-    return counts;
-  }, new Map<string, number>());
+  const statusByProfileId = new Map(profileStatuses.map((status) => [status.profileSourceId, status]));
+  const historyCountByProfileId = new Map(Object.entries(browserSearchStats?.profileCountsByKind?.history || {}));
+  const bookmarkCountByProfileId = new Map(Object.entries(browserSearchStats?.profileCountsByKind?.bookmark || {}));
   const tabCountByProfileId = tabs.reduce((counts, tab) => {
     if (!tab.profileSourceId) return counts;
     counts.set(tab.profileSourceId, (counts.get(tab.profileSourceId) || 0) + 1);
@@ -324,6 +336,42 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
           {t('settings.advanced.browserSearch.enableLabel')}
         </label>
 
+        <label className="inline-flex items-start gap-2.5 text-[13px] text-white/85 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={Boolean(settings.alphaChromiumRootSearchEnabled)}
+            disabled={!enabled}
+            onChange={(e) => onChange({ ...settings, alphaChromiumRootSearchEnabled: e.target.checked })}
+            className="settings-checkbox mt-0.5"
+          />
+          <span>
+            <span className="block">{t('settings.advanced.browserSearch.alphaToggle.label')}</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-[var(--text-muted)]">
+              {t('settings.advanced.browserSearch.alphaToggle.description')}
+            </span>
+          </span>
+        </label>
+
+        <div className="rounded-md border border-yellow-500/35 bg-yellow-500/10 px-3 py-2.5 text-yellow-100">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-300" />
+            <div className="min-w-0">
+              <div className="text-[12px] font-semibold text-yellow-100">
+                {t('settings.advanced.browserSearch.alphaWarning.title')}
+              </div>
+              <p className="mt-1 text-[11px] leading-snug text-yellow-100/80">
+                {t('settings.advanced.browserSearch.alphaWarning.description')}
+              </p>
+              <p className="mt-1 text-[11px] leading-snug text-yellow-100/75">
+                {t('settings.advanced.browserSearch.alphaWarning.devMode')}
+              </p>
+              <p className="mt-1 text-[11px] leading-snug text-yellow-100/65">
+                {t('settings.advanced.browserSearch.alphaWarning.temporary')}
+              </p>
+            </div>
+          </div>
+        </div>
+
         {enabled ? (
           <>
             <div>
@@ -356,70 +404,143 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
 
             <div>
               <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">
-                {t('settings.advanced.browserSearch.resultGroups.label')}
+                {t('settings.advanced.browserSearch.webSearch.label')}
               </label>
+              <div className="w-full max-w-[320px]">
+                <div className="mb-1 text-[11px] text-[var(--text-muted)]">
+                  {t('settings.advanced.browserSearch.webSearch.defaultProvider')}
+                </div>
+                <select
+                  value={settings.webSearchDefaultBangKey || 'g'}
+                  onChange={(e) => onChange({ ...settings, webSearchDefaultBangKey: e.target.value })}
+                  className="sc-select !py-1 !text-[12px]"
+                >
+                  {WEB_SEARCH_DEFAULT_PROVIDER_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+              <label className="mt-2 inline-flex items-start gap-2.5 text-[13px] text-white/85 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.webSearchSuggestionsEnabled !== false}
+                  onChange={(e) => onChange({ ...settings, webSearchSuggestionsEnabled: e.target.checked })}
+                  className="settings-checkbox mt-0.5"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[13px] text-[var(--text-primary)]">
+                    {t('settings.advanced.browserSearch.webSearch.suggestionsEnabled.label')}
+                  </span>
+                  <span className="block text-[11px] leading-snug text-[var(--text-muted)]">
+                    {t('settings.advanced.browserSearch.webSearch.suggestionsEnabled.description')}
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <div>
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <label className="text-[0.75rem] text-[var(--text-muted)] block">
+                  {t('settings.advanced.browserSearch.import.addedHeading')}
+                </label>
+                <span className="text-[11px] text-[var(--text-muted)] tabular-nums">{addedProfiles.length}</span>
+              </div>
+              <p className="mb-2 text-[11px] text-[var(--text-muted)] leading-snug">
+                {t('settings.advanced.browserSearch.import.enabledProfiles', {
+                  count: String(enabledProfileIds.size),
+                })}
+              </p>
               <div className="overflow-hidden rounded-md border border-[var(--ui-divider)] bg-white/[0.03]">
-                {resultGroups.map((group, index) => (
-                  <div
-                    key={group.kind}
-                    draggable
-                    onDragStart={() => setDraggedResultKind(group.kind)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => dropResultGroup(group.kind)}
-                    onDragEnd={() => setDraggedResultKind(null)}
-                    className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 border-b border-[var(--ui-divider)] px-3 py-2 last:border-b-0"
-                  >
-                    <GripVertical className="h-3.5 w-3.5 cursor-grab text-[var(--text-subtle)]" />
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
-                        {t(`settings.advanced.browserSearch.resultGroups.kind.${group.kind}`)}
-                      </div>
-                      <div className="truncate text-[11px] text-[var(--text-muted)]">
-                        {t(`settings.advanced.browserSearch.resultGroups.description.${group.kind}`)}
-                      </div>
-                    </div>
-                    <div className="w-[112px]">
-                      <select
-                        value={String(group.limit)}
-                        onChange={(e) => {
-                          const nextLimit = Math.max(0, Math.min(8, Math.floor(Number(e.target.value) || 0)));
-                          updateResultGroups(resultGroups.map((item) =>
-                            item.kind === group.kind ? { ...item, limit: nextLimit } : item
-                          ));
-                        }}
-                        className="sc-select !py-1 !text-[12px]"
-                      >
-                        {BROWSER_SEARCH_RESULT_LIMIT_OPTIONS.map((value) => (
-                          <option key={value} value={value}>
-                            {value === 0
-                              ? t('settings.advanced.browserSearch.resultGroups.option.none')
-                              : t('settings.advanced.browserSearch.resultGroups.option.count', { count: String(value) })}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => moveResultGroup(group.kind, -1)}
-                        disabled={index === 0}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--ui-divider)] bg-white/[0.04] text-[var(--text-muted)] hover:bg-white/[0.07] disabled:opacity-40"
-                        aria-label={t('settings.advanced.browserSearch.resultGroups.moveUp')}
-                      >
-                        <ArrowUp className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveResultGroup(group.kind, 1)}
-                        disabled={index === resultGroups.length - 1}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--ui-divider)] bg-white/[0.04] text-[var(--text-muted)] hover:bg-white/[0.07] disabled:opacity-40"
-                        aria-label={t('settings.advanced.browserSearch.resultGroups.moveDown')}
-                      >
-                        <ArrowDown className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                {addedProfiles.length === 0 ? (
+                  <div className="px-3 py-2.5 text-[12px] text-[var(--text-muted)]">
+                    {t('settings.advanced.browserSearch.import.noneAdded')}
                   </div>
-                ))}
+                ) : (
+                  <div className="divide-y divide-[var(--ui-divider)]">
+                    {addedProfiles.map((profile, index) => {
+                      const status = statusByProfileId.get(profile.id);
+                      const connected = Boolean(status?.connected);
+                      return (
+                      <div
+                        key={profile.id}
+                        draggable
+                        onDragStart={() => setDragProfileId(profile.id)}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={() => {
+                          const from = addedProfiles.findIndex((item) => item.id === dragProfileId);
+                          handleMoveProfile(from, index);
+                          setDragProfileId('');
+                        }}
+                        className="grid gap-2 px-3 py-2.5 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center"
+                      >
+                        <div className="hidden sm:flex items-center gap-2 text-[var(--text-muted)]">
+                          <GripVertical className="h-4 w-4" />
+                          <span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <input
+                              value={profile.displayName}
+                              onChange={(event) => handleRenameProfile(profile.id, event.target.value)}
+                              className="min-w-0 flex-1 rounded border border-[var(--ui-divider)] bg-white/[0.04] px-2 py-1 text-[13px] font-medium text-[var(--text-primary)] outline-none focus:border-[var(--ui-segment-border)]"
+                            />
+                            {index === 0 ? (
+                              <span className="shrink-0 rounded border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-200">
+                                {t('settings.advanced.browserSearch.import.defaultProfile')}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="mt-1 truncate text-[11px] text-[var(--text-muted)]">
+                            {profile.browserName} - {profile.detectedName}
+                          </div>
+                          <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
+                            {t('settings.advanced.browserSearch.import.profileRowDetail', {
+                              historyCount: String(historyCountByProfileId.get(profile.id) || 0),
+                              bookmarkCount: String(bookmarkCountByProfileId.get(profile.id) || 0),
+                              tabCount: String(tabCountByProfileId.get(profile.id) || 0),
+                            })}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => importProfile(profile.id)}
+                            disabled={Boolean(busyProfileId)}
+                            className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
+                          >
+                            {busyProfileId === profile.id
+                              ? t('settings.advanced.browserSearch.import.running')
+                              : t('settings.advanced.browserSearch.import.refresh')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveProfile(index, Math.max(0, index - 1))}
+                            disabled={Boolean(busyProfileId) || index === 0}
+                            className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
+                          >
+                            Up
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveProfile(index, Math.min(addedProfiles.length - 1, index + 1))}
+                            disabled={Boolean(busyProfileId) || index === addedProfiles.length - 1}
+                            className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
+                          >
+                            Down
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveProfile(profile.id)}
+                            disabled={Boolean(busyProfileId)}
+                            className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
+                          >
+                            {t('settings.advanced.browserSearch.import.remove')}
+                          </button>
+                        </div>
+                      </div>
+                    )})}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -458,66 +579,6 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
                             ? t('settings.advanced.browserSearch.import.running')
                             : t('settings.advanced.browserSearch.import.add')}
                         </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-1 flex items-center justify-between gap-3">
-                <label className="text-[0.75rem] text-[var(--text-muted)] block">
-                  {t('settings.advanced.browserSearch.import.addedHeading')}
-                </label>
-                <span className="text-[11px] text-[var(--text-muted)] tabular-nums">{addedProfiles.length}</span>
-              </div>
-              <p className="mb-2 text-[11px] text-[var(--text-muted)] leading-snug">
-                {t('settings.advanced.browserSearch.import.enabledProfiles', {
-                  count: String(enabledProfileIds.size),
-                })}
-              </p>
-              <div className="overflow-hidden rounded-md border border-[var(--ui-divider)] bg-white/[0.03]">
-                {addedProfiles.length === 0 ? (
-                  <div className="px-3 py-2.5 text-[12px] text-[var(--text-muted)]">
-                    {t('settings.advanced.browserSearch.import.noneAdded')}
-                  </div>
-                ) : (
-                  <div className="divide-y divide-[var(--ui-divider)]">
-                    {addedProfiles.map((profile) => (
-                      <div key={profile.id} className="grid gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                        <div className="min-w-0">
-                          <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
-                            {profile.browserName} - {profile.profileName}
-                          </div>
-                          <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
-                            {t('settings.advanced.browserSearch.import.profileRowDetail', {
-                              historyCount: String(historyCountByProfileId.get(profile.id) || 0),
-                              bookmarkCount: String(bookmarkCountByProfileId.get(profile.id) || 0),
-                              tabCount: String(tabCountByProfileId.get(profile.id) || 0),
-                            })}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => importProfile(profile.id)}
-                            disabled={Boolean(busyProfileId)}
-                            className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
-                          >
-                            {busyProfileId === profile.id
-                              ? t('settings.advanced.browserSearch.import.running')
-                              : t('settings.advanced.browserSearch.import.refresh')}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveProfile(profile.id)}
-                            disabled={Boolean(busyProfileId)}
-                            className="sc-button shrink-0 !py-1 !px-2.5 !text-[12px]"
-                          >
-                            {t('settings.advanced.browserSearch.import.remove')}
-                          </button>
-                        </div>
                       </div>
                     ))}
                   </div>
@@ -687,6 +748,24 @@ const AdvancedTab: React.FC = () => {
   if (!settings) {
     return <div className="p-6 text-[var(--text-muted)] text-[12px]">{t('settings.advanced.loading')}</div>;
   }
+
+  const browserSearchSettings = settings.browserSearch ?? {
+    enabled: true,
+    historyRetentionDays: 90,
+    profileSourceIds: [],
+    profiles: [],
+    profileFilters: {},
+    resultLimitPerGroup: 2,
+    resultGroups: DEFAULT_BROWSER_SEARCH_RESULT_GROUPS,
+    nicknames: [],
+    webSearchDefaultBangKey: 'g',
+    webSearchBangOverrides: [],
+    webSearchBangUsage: {},
+    webSearchDisabledBangKeys: [],
+    webSearchBangCustomProviders: [],
+    webSearchShowHiddenBangs: false,
+    webSearchSuggestionsEnabled: true,
+  };
 
   const usingCustomSettingsLocation = Boolean(settingsLocation?.path);
   const settingsLocationDisplay = usingCustomSettingsLocation
@@ -862,15 +941,9 @@ const AdvancedTab: React.FC = () => {
         </SettingsRow>
 
         <BrowserSearchSection
-          settings={settings.browserSearch ?? {
-            enabled: true,
-            historyRetentionDays: 90,
-            profileSourceIds: [],
-            resultLimitPerGroup: 2,
-            resultGroups: DEFAULT_BROWSER_SEARCH_RESULT_GROUPS,
-          }}
+          settings={browserSearchSettings}
           onChange={(next) => {
-            void applySettingsPatch({ browserSearch: next });
+            return applySettingsPatch({ browserSearch: next });
           }}
         />
 

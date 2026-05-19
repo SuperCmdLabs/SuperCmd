@@ -162,13 +162,13 @@
         "notAvailable": "이미 최신 버전을 사용하고 있습니다.",
         "downloading": "업데이트 다운로드 중...",
         "downloaded": "업데이트가 다운로드되었습니다. 다시 시작하면 설치됩니다.",
-        "restarting": "Restarting to install update...",
+        "restarting": "업데이트 설치를 위해 다시 시작하는 중...",
         "error": "업데이트 작업을 완료할 수 없습니다.",
         "check": "업데이트 확인",
         "download": "업데이트 다운로드",
         "downloadingButton": "업데이트 다운로드 중...",
         "restart": "다시 시작 후 업데이트",
-        "restartingButton": "Restarting...",
+        "restartingButton": "다시 시작하는 중...",
         "currentVersion": "현재 버전: v{version}",
         "latestVersion": "최신: v{version}",
         "progress": "{progress}% · {transferred} / {total}",
@@ -710,6 +710,10 @@
         "title": "브라우저 프로필",
         "description": "브라우저 프로필을 연결해 SuperCmd가 로컬 기록을 사용하고 계속 새로 고치게 합니다.",
         "enableLabel": "SuperCmd에서 브라우저 프로필 사용",
+        "alphaToggle": {
+          "label": "알파 Chromium 루트 검색 사용",
+          "description": "프로필 기록, 북마크, 열린 탭을 루트 검색에 표시합니다. 브라우저 확장 프로그램이 아직 알파인 동안에는 Chromium 프로필에서만 켜세요."
+        },
         "retention": {
           "label": "기록 보관 기간",
           "option": {
@@ -735,7 +739,8 @@
           "noneAdded": "아직 추가된 브라우저 프로필이 없습니다",
           "profileRowDetail": "기록: URL {historyCount}개 · 북마크: {bookmarkCount}개 · 탭: {tabCount}개",
           "profileSupportNote": "프로필 지원은 현재 Chromium 브라우저만 포함합니다. Safari와 Firefox 지원은 나중에 추가됩니다.",
-          "enabledProfiles": "SuperCmd 브라우저 기록에 {count}개의 프로필이 활성화되어 있습니다."
+          "enabledProfiles": "SuperCmd 브라우저 기록에 {count}개의 프로필이 활성화되어 있습니다.",
+          "defaultProfile": "기본값"
         },
         "importedData": {
           "heading": "가져온 데이터",
@@ -758,26 +763,22 @@
         "status": {
           "cleared": "브라우저 프로필 기록을 지웠습니다.",
           "imported": "{total}개 중 {count}개를 업데이트했습니다.",
-          "failed": "작업에 실패했습니다."
+          "failed": "작업에 실패했습니다.",
+          "removedProfile": "프로필 데이터가 제거되었습니다({count}개 항목)."
         },
-        "resultGroups": {
-          "label": "Browser 섹션 우선순위",
-          "kind": {
-            "open-tab": "열린 탭",
-            "bookmark": "북마크",
-            "history": "기록"
-          },
-          "description": {
-            "open-tab": "연결된 프로필에서 현재 열려 있는 탭입니다.",
-            "bookmark": "연결된 프로필의 저장된 북마크입니다.",
-            "history": "연결된 프로필에서 방문한 페이지입니다."
-          },
-          "option": {
-            "none": "없음",
-            "count": "{count}개 행"
-          },
-          "moveUp": "위로 이동",
-          "moveDown": "아래로 이동"
+        "webSearch": {
+          "label": "웹 검색",
+          "defaultProvider": "기본 제공자",
+          "suggestionsEnabled": {
+            "label": "검색 제안 표시",
+            "description": "브라우저 결과 아래에 웹 제안과 Bang/제공자 옵션을 표시합니다."
+          }
+        },
+        "alphaWarning": {
+          "title": "알파 브라우저 연동",
+          "description": "브라우저 검색은 현재 SuperCmd 브라우저 확장 프로그램이 필요하며 Chromium 기반 브라우저만 지원합니다. Firefox와 Safari 지원은 나중에 제공됩니다.",
+          "devMode": "지금 브라우저를 연결하려면 브라우저 확장 프로그램 페이지를 열고 개발자 모드를 켠 다음 압축해제된 확장 프로그램 로드를 선택하고 browser-extension 폴더를 선택하세요.",
+          "temporary": "(확장 프로그램이 스토어에 게시될 때까지 임시로 필요한 절차입니다.)"
         }
       }
     }
@@ -795,7 +796,37 @@
       "focusHint": "탭으로 이동",
       "showAll": "모든 Browser 결과 보기",
       "showAllSubtitle": "Browser 결과 {count}개",
-      "showAllPlaceholder": "Browser 결과 검색..."
+      "showAllPlaceholder": "Browser 결과 검색...",
+      "openTabsPlaceholder": "열린 탭 검색...",
+      "bookmarksPlaceholder": "북마크 검색...",
+      "historyPlaceholder": "방문 기록 검색...",
+      "setNickname": "닉네임 설정",
+      "editNickname": "닉네임 편집",
+      "searchProviderFor": "{provider}에서 \"{query}\" 검색",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "기본 검색",
+      "webSearchPlaceholder": "Bang 검색...",
+      "useBang": "Bang 사용",
+      "bangSections": {
+        "used": "최근 Bang",
+        "common": "일반 Bang",
+        "matching": "일치하는 Bang",
+        "all": "모든 Bang A-Z",
+        "hidden": "숨긴 Bang"
+      },
+      "showHidden": "숨김 표시",
+      "hideHidden": "숨김 감추기",
+      "newBang": "새 Bang",
+      "aliasHelp": "별칭은 쉼표로 구분하세요. 예: !gh, !git",
+      "customBangHelp": "{query}가 포함된 URL 템플릿으로 Bang을 만듭니다.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "별칭",
+        "name": "이름",
+        "host": "호스트",
+        "template": "URL 템플릿"
+      },
+      "profileAction": "프로필"
     },
     "compact": {
       "showMore": "더 보기"
@@ -824,7 +855,8 @@
       "files": "파일",
       "calculator": "계산자",
       "quickLinks": "빠른 링크",
-      "browser": "브라우저"
+      "browser": "브라우저",
+      "search": "검색"
     },
     "actions": {
       "open": "열기",

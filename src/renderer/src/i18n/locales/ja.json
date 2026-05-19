@@ -710,6 +710,10 @@
         "title": "ブラウザプロファイル",
         "description": "ブラウザプロファイルを接続し、SuperCmd がローカル履歴を使用して継続的に更新できるようにします。",
         "enableLabel": "SuperCmd でブラウザプロファイルを使用",
+        "alphaToggle": {
+          "label": "アルファ版 Chromium ルート検索を使用",
+          "description": "プロファイル履歴、ブックマーク、開いているタブをルート検索に表示します。ブラウザ拡張機能がアルファ版の間は Chromium プロファイルでのみ有効にしてください。"
+        },
         "retention": {
           "label": "履歴の保持期間",
           "option": {
@@ -735,7 +739,8 @@
           "noneAdded": "ブラウザプロファイルはまだ追加されていません",
           "profileRowDetail": "履歴: {historyCount} URL · ブックマーク: {bookmarkCount} · タブ: {tabCount}",
           "profileSupportNote": "プロファイル対応は現在 Chromium ブラウザのみです。Safari と Firefox は今後対応予定です。",
-          "enabledProfiles": "SuperCmd のブラウザ履歴で {count} 個のプロファイルが有効です。"
+          "enabledProfiles": "SuperCmd のブラウザ履歴で {count} 個のプロファイルが有効です。",
+          "defaultProfile": "デフォルト"
         },
         "importedData": {
           "heading": "インポート済みデータ",
@@ -758,26 +763,22 @@
         "status": {
           "cleared": "ブラウザプロファイル履歴を消去しました。",
           "imported": "{total} 件中 {count} 件を更新しました。",
-          "failed": "操作に失敗しました。"
+          "failed": "操作に失敗しました。",
+          "removedProfile": "プロファイルデータを削除しました（{count} 件）。"
         },
-        "resultGroups": {
-          "label": "Browser セクションの優先順位",
-          "kind": {
-            "open-tab": "開いているタブ",
-            "bookmark": "ブックマーク",
-            "history": "履歴"
-          },
-          "description": {
-            "open-tab": "接続済みプロファイルで現在開いているタブ。",
-            "bookmark": "接続済みプロファイルの保存済みブックマーク。",
-            "history": "接続済みプロファイルで訪問したページ。"
-          },
-          "option": {
-            "none": "なし",
-            "count": "{count} 行"
-          },
-          "moveUp": "上へ移動",
-          "moveDown": "下へ移動"
+        "webSearch": {
+          "label": "Web 検索",
+          "defaultProvider": "デフォルトプロバイダー",
+          "suggestionsEnabled": {
+            "label": "検索候補を表示",
+            "description": "ブラウザ結果の下に Web 候補と Bang/プロバイダーの選択肢を表示します。"
+          }
+        },
+        "alphaWarning": {
+          "title": "アルファ版のブラウザ連携",
+          "description": "ブラウザ検索は現在 SuperCmd のブラウザ拡張機能が必要で、Chromium ベースのブラウザのみ対応しています。Firefox と Safari は後日対応予定です。",
+          "devMode": "今すぐブラウザを接続するには、ブラウザの拡張機能ページを開き、デベロッパーモードを有効にして、Load unpacked（パッケージ化されていない拡張機能を読み込む）を選び、browser-extension フォルダを選択してください。",
+          "temporary": "（これは拡張機能がストアで公開されるまでの一時的な手順です。）"
         }
       }
     }
@@ -795,7 +796,37 @@
       "focusHint": "タブへ移動",
       "showAll": "すべての Browser 結果を表示",
       "showAllSubtitle": "{count} 件の Browser 結果",
-      "showAllPlaceholder": "Browser 結果を検索..."
+      "showAllPlaceholder": "Browser 結果を検索...",
+      "openTabsPlaceholder": "開いているタブを検索...",
+      "bookmarksPlaceholder": "ブックマークを検索...",
+      "historyPlaceholder": "履歴を検索...",
+      "setNickname": "ニックネームを設定",
+      "editNickname": "ニックネームを編集",
+      "searchProviderFor": "{provider} で「{query}」を検索",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "デフォルト検索",
+      "webSearchPlaceholder": "Bang を検索...",
+      "useBang": "Bang を使用",
+      "bangSections": {
+        "used": "最近使った Bang",
+        "common": "よく使う Bang",
+        "matching": "一致する Bang",
+        "all": "すべての Bang A-Z",
+        "hidden": "非表示の Bang"
+      },
+      "showHidden": "非表示を表示",
+      "hideHidden": "非表示を隠す",
+      "newBang": "新規 Bang",
+      "aliasHelp": "エイリアスはカンマで区切ります。例: !gh, !git",
+      "customBangHelp": "{query} を含む URL テンプレートで Bang を作成します。",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "エイリアス",
+        "name": "名前",
+        "host": "ホスト",
+        "template": "URL テンプレート"
+      },
+      "profileAction": "プロファイル"
     },
     "compact": {
       "showMore": "もっと見る"
@@ -824,7 +855,8 @@
       "files": "ファイル",
       "calculator": "電卓",
       "quickLinks": "クイックリンク",
-      "browser": "ブラウザ"
+      "browser": "ブラウザ",
+      "search": "検索"
     },
     "actions": {
       "open": "開く",

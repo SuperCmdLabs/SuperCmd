@@ -18,6 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
 
+import { resolveBrowserInput } from './browser-input-resolver';
 import { loadSettings } from './settings-store';
 
 const execFileAsync = promisify(execFile);
@@ -49,6 +50,19 @@ export interface BrowserSearchEntry {
   source: BrowserSearchSource;
   sourceProfileId?: string;
   sourceProfileName?: string;
+  bookmarkFolder?: string;
+  bookmarkOrder?: number;
+}
+
+export interface BrowserSearchStats {
+  revision: number;
+  totalEntries: number;
+  historyEntries: number;
+  bookmarkEntries: number;
+  profileCountsByKind: {
+    history: Record<string, number>;
+    bookmark: Record<string, number>;
+  };
 }
 
 export interface AutocompleteSuggestion {
@@ -60,6 +74,7 @@ export interface AutocompleteSuggestion {
 }
 
 let cache: BrowserSearchEntry[] | null = null;
+let browserSearchRevision = 1;
 
 // ─── Paths ──────────────────────────────────────────────────────────
 
@@ -102,6 +117,10 @@ function save(): void {
   }
 }
 
+function bumpBrowserSearchRevision(): void {
+  browserSearchRevision += 1;
+}
+
 function sanitizeEntry(raw: any): BrowserSearchEntry | null {
   if (!raw || typeof raw !== 'object') return null;
   const type: BrowserSearchEntryType = raw.type === 'search'
@@ -122,8 +141,14 @@ function sanitizeEntry(raw: any): BrowserSearchEntry | null {
   const sourceProfileName = typeof raw.sourceProfileName === 'string' && raw.sourceProfileName.trim()
     ? raw.sourceProfileName.trim()
     : undefined;
+  const bookmarkFolder = typeof raw.bookmarkFolder === 'string' && raw.bookmarkFolder.trim()
+    ? raw.bookmarkFolder.trim()
+    : undefined;
+  const bookmarkOrder = Number.isFinite(Number(raw.bookmarkOrder)) && Number(raw.bookmarkOrder) >= 0
+    ? Math.floor(Number(raw.bookmarkOrder))
+    : undefined;
   const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : makeId();
-  return { id, type, query, url, host, lastUsedAt, useCount, source, sourceProfileId, sourceProfileName };
+  return { id, type, query, url, host, lastUsedAt, useCount, source, sourceProfileId, sourceProfileName, bookmarkFolder, bookmarkOrder };
 }
 
 const ALLOWED_SOURCES: Set<string> = new Set([
@@ -152,12 +177,6 @@ function makeId(): string {
 
 // ─── URL detection ──────────────────────────────────────────────────
 
-const URL_PROTOCOL_RE = /^[a-z][\w+.\-]*:\/\//i;
-const LOCALHOST_RE = /^localhost(:\d+)?(\/.*)?$/i;
-const IP_RE = /^\d{1,3}(?:\.\d{1,3}){3}(:\d+)?(\/.*)?$/;
-// Liberal but cautious URL char set — anything beyond this and we treat as search.
-const URL_BODY_RE = /^[\w.\-:/?#[\]@!$&'()*+,;=%~]+$/;
-
 export interface ResolvedInput {
   type: BrowserSearchEntryType;
   /** URL to actually navigate to — for search this is a Google search URL. */
@@ -167,28 +186,13 @@ export interface ResolvedInput {
 }
 
 export function resolveInput(rawInput: string): ResolvedInput | null {
-  const trimmed = String(rawInput || '').trim();
-  if (!trimmed) return null;
-
-  if (URL_PROTOCOL_RE.test(trimmed)) {
-    return { type: 'url', url: trimmed, host: extractHost(trimmed) };
-  }
-
-  const noSpaces = !/\s/.test(trimmed);
-  const looksLikeUrl =
-    noSpaces &&
-    URL_BODY_RE.test(trimmed) &&
-    (LOCALHOST_RE.test(trimmed) || IP_RE.test(trimmed) || /^[\w-]+(\.[\w-]+)+/.test(trimmed));
-
-  if (looksLikeUrl) {
-    const url = `https://${trimmed}`;
-    return { type: 'url', url, host: extractHost(url) };
-  }
-
-  // Default search engine intentionally hardcoded. Plain typed searches still
-  // open in the user's default browser via shell.openExternal.
-  const url = `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
-  return { type: 'search', url, host: '' };
+  const resolved = resolveBrowserInput(rawInput);
+  if (!resolved) return null;
+  return {
+    type: resolved.type,
+    url: resolved.url,
+    host: resolved.host,
+  };
 }
 
 function extractHost(url: string): string {
@@ -203,6 +207,55 @@ function extractHost(url: string): string {
 
 export function listEntries(): BrowserSearchEntry[] {
   return load().slice();
+}
+
+export function getBrowserSearchRevision(): number {
+  load();
+  return browserSearchRevision;
+}
+
+export function getBrowserSearchStats(): BrowserSearchStats {
+  const entries = load();
+  const history: Record<string, number> = {};
+  const bookmark: Record<string, number> = {};
+  let historyEntries = 0;
+  let bookmarkEntries = 0;
+  for (const entry of entries) {
+    if (entry.type !== 'url' && entry.type !== 'bookmark') continue;
+    const profileId = entry.sourceProfileId ? `${entry.source}:${entry.sourceProfileId}` : '';
+    if (entry.type === 'url') {
+      historyEntries += 1;
+      if (profileId) history[profileId] = (history[profileId] || 0) + 1;
+    } else {
+      bookmarkEntries += 1;
+      if (profileId) bookmark[profileId] = (bookmark[profileId] || 0) + 1;
+    }
+  }
+  return {
+    revision: browserSearchRevision,
+    totalEntries: entries.length,
+    historyEntries,
+    bookmarkEntries,
+    profileCountsByKind: { history, bookmark },
+  };
+}
+
+export function removeEntriesForProfile(profileSourceId: string): number {
+  const [source, ...profileParts] = String(profileSourceId || '').trim().split(':');
+  const profileId = profileParts.join(':');
+  if (!source || !profileId) return 0;
+  const entries = load();
+  const before = entries.length;
+  const next = entries.filter((entry) => {
+    if (entry.source !== source) return true;
+    const entryProfile = String(entry.sourceProfileId || '');
+    return entryProfile !== profileId && entryProfile !== profileSourceId;
+  });
+  if (next.length === before) return 0;
+  cache = next;
+  bumpBrowserSearchRevision();
+  save();
+  return before - next.length;
 }
 
 export async function openInDefaultBrowser(rawInput: string): Promise<{
@@ -230,6 +283,10 @@ export async function openInDefaultBrowser(rawInput: string): Promise<{
   });
   recordEntry(rawInput.trim(), resolved);
   return { ok: true, resolved };
+}
+
+export function recordResolvedInput(rawInput: string, resolved: ResolvedInput): void {
+  recordEntry(String(rawInput || '').trim(), resolved);
 }
 
 function findProfileEntryForInput(rawInput: string): BrowserSearchEntry | null {
@@ -262,6 +319,7 @@ function findProfileEntryForInput(rawInput: string): BrowserSearchEntry | null {
   const inputWithoutProtocol = trimmed.replace(/^https?:\/\//i, '');
   const isHostOnlyInput = !inputWithoutProtocol.includes('/') && !inputWithoutProtocol.includes('?') && !inputWithoutProtocol.includes('#');
   if (!host || !isHostOnlyInput) return null;
+  if (stripWww(inputWithoutProtocol) === host) return null;
 
   const hostMatches = entries.filter((entry) => stripWww(entry.host) === host);
   return hostMatches.length > 0 ? bestByFrecency(hostMatches) : null;
@@ -299,9 +357,9 @@ async function openEntryUrl(entry: BrowserSearchEntry): Promise<void> {
       appName,
       entry.url,
     ];
-    if (entry.sourceProfileId !== 'Default') {
-      args.push('--args', `--profile-directory=${entry.sourceProfileId}`);
-    }
+  if (entry.sourceProfileId && entry.sourceProfileId !== 'Default') {
+    args.push('--args', `--profile-directory=${entry.sourceProfileId}`);
+  }
     await execFileAsync('/usr/bin/open', args, { timeout: 5000 });
   } catch (e) {
     console.warn(`Failed to open ${entry.url} in ${appName} profile ${entry.sourceProfileId}; falling back to default browser.`, e);
@@ -317,6 +375,7 @@ function recordEntryUse(entry: BrowserSearchEntry): void {
   if (existing) {
     existing.useCount += 1;
     existing.lastUsedAt = now;
+    bumpBrowserSearchRevision();
   }
   pruneByRetentionInPlace(entries);
   trimToCapInPlace(entries);
@@ -349,6 +408,7 @@ function recordEntry(query: string, resolved: ResolvedInput, source: BrowserSear
   pruneByRetentionInPlace(entries);
   trimToCapInPlace(entries);
   cache = entries;
+  bumpBrowserSearchRevision();
   save();
 }
 
@@ -366,14 +426,18 @@ function importEntryKey(entry: Pick<BrowserSearchEntry, 'type' | 'url' | 'query'
 }
 
 export function clearHistory(): void {
+  const hadEntries = load().length > 0;
   cache = [];
+  if (hadEntries) bumpBrowserSearchRevision();
   save();
 }
 
 export function pruneByRetentionNow(): void {
   const entries = load();
+  const before = entries.length;
   pruneByRetentionInPlace(entries);
   cache = entries;
+  if (entries.length !== before) bumpBrowserSearchRevision();
   save();
 }
 
@@ -643,6 +707,8 @@ interface RawBookmarkRow {
   url: string;
   title: string;
   dateAdded: number;
+  folder: string;
+  order: number;
 }
 
 export async function importFromBrowser(
@@ -678,7 +744,11 @@ export async function refreshEnabledBrowserProfiles(): Promise<{
 }> {
   const settings = loadSettings().browserSearch;
   if (!settings.enabled) return { imported: 0, skipped: 0, total: 0, refreshed: 0 };
-  const enabledIds = new Set(settings.profileSourceIds || []);
+  const enabledIds = new Set(
+    (Array.isArray(settings.profiles) && settings.profiles.length > 0
+      ? settings.profiles.map((profile) => profile.id)
+      : settings.profileSourceIds) || []
+  );
   if (enabledIds.size === 0) return { imported: 0, skipped: 0, total: 0, refreshed: 0 };
   const profiles = listImportableBrowserProfiles().filter((profile) => enabledIds.has(profile.id));
   const result = await importFromProfiles(profiles);
@@ -729,6 +799,7 @@ async function importFromSource(
     : [];
 
   const existingKeys = new Set(entries.map((e) => importEntryKey(e)));
+  let changed = false;
   let imported = 0;
   let skipped = 0;
   for (const row of rows) {
@@ -756,13 +827,25 @@ async function importFromSource(
       : key;
     const matchedKey = existingKeys.has(key) ? key : existingKeys.has(legacyKey) ? legacyKey : null;
     if (matchedKey) {
-      // bump useCount + lastUsedAt if newer
       const ex = entries.find((e) => importEntryKey(e) === matchedKey);
       if (ex) {
-        ex.useCount = Math.max(ex.useCount, row.visitCount);
-        if (row.lastVisit > ex.lastUsedAt) ex.lastUsedAt = row.lastVisit;
-        if (sourceProfileId) ex.sourceProfileId = sourceProfileId;
-        if (sourceProfileName) ex.sourceProfileName = sourceProfileName;
+        const nextUseCount = Math.max(ex.useCount, row.visitCount);
+        if (nextUseCount !== ex.useCount) {
+          ex.useCount = nextUseCount;
+          changed = true;
+        }
+        if (row.lastVisit > ex.lastUsedAt) {
+          ex.lastUsedAt = row.lastVisit;
+          changed = true;
+        }
+        if (sourceProfileId && ex.sourceProfileId !== sourceProfileId) {
+          ex.sourceProfileId = sourceProfileId;
+          changed = true;
+        }
+        if (sourceProfileName && ex.sourceProfileName !== sourceProfileName) {
+          ex.sourceProfileName = sourceProfileName;
+          changed = true;
+        }
         existingKeys.add(importEntryKey(ex));
       }
       skipped += 1;
@@ -782,51 +865,109 @@ async function importFromSource(
     });
     existingKeys.add(key);
     imported += 1;
+    changed = true;
   }
 
   if (sourceProfileId) {
-    let removedBookmarks = 0;
-    for (let i = entries.length - 1; i >= 0; i--) {
-      if (
-        entries[i].type === 'bookmark' &&
-        entries[i].source === browserId &&
-        entries[i].sourceProfileId === sourceProfileId
-      ) {
-        existingKeys.delete(importEntryKey(entries[i]));
-        entries.splice(i, 1);
-        removedBookmarks += 1;
+    const seenBookmarkKeys = new Set<string>();
+    const existingBookmarkByKey = new Map<string, BrowserSearchEntry>();
+    for (const entry of entries) {
+      if (entry.type !== 'bookmark') continue;
+      if (entry.source !== browserId) continue;
+      if ((entry.sourceProfileId || '') !== sourceProfileId) continue;
+      existingBookmarkByKey.set(importEntryKey(entry), entry);
+    }
+
+    for (const bookmark of bookmarkRows) {
+      const host = extractHost(bookmark.url);
+      if (!host) {
+        skipped += 1;
+        continue;
       }
+      const query = bookmark.title || host;
+      const key = importEntryKey({
+        type: 'bookmark',
+        query,
+        url: bookmark.url,
+        source: browserId,
+        sourceProfileId,
+      });
+      seenBookmarkKeys.add(key);
+      const existingBookmark = existingBookmarkByKey.get(key);
+      if (existingBookmark) {
+        const nextLastUsedAt = bookmark.dateAdded || existingBookmark.lastUsedAt || Date.now();
+        if (existingBookmark.query !== query) {
+          existingBookmark.query = query;
+          changed = true;
+        }
+        if (existingBookmark.host !== host) {
+          existingBookmark.host = host;
+          changed = true;
+        }
+        if (existingBookmark.lastUsedAt !== nextLastUsedAt) {
+          existingBookmark.lastUsedAt = nextLastUsedAt;
+          changed = true;
+        }
+        if (existingBookmark.useCount !== 1) {
+          existingBookmark.useCount = 1;
+          changed = true;
+        }
+        if (existingBookmark.sourceProfileName !== sourceProfileName) {
+          existingBookmark.sourceProfileName = sourceProfileName;
+          changed = true;
+        }
+        if (existingBookmark.bookmarkFolder !== bookmark.folder) {
+          existingBookmark.bookmarkFolder = bookmark.folder;
+          changed = true;
+        }
+        if (existingBookmark.bookmarkOrder !== bookmark.order) {
+          existingBookmark.bookmarkOrder = bookmark.order;
+          changed = true;
+        }
+        skipped += 1;
+        continue;
+      }
+      const entry = {
+        id: makeId(),
+        type: 'bookmark' as const,
+        query,
+        url: bookmark.url,
+        host,
+        lastUsedAt: bookmark.dateAdded || Date.now(),
+        useCount: 1,
+        source: browserId,
+        sourceProfileId,
+        sourceProfileName,
+        bookmarkFolder: bookmark.folder,
+        bookmarkOrder: bookmark.order,
+      };
+      entries.push(entry);
+      existingKeys.add(importEntryKey(entry));
+      imported += 1;
+      changed = true;
     }
-    skipped += removedBookmarks;
+
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      if (entry.type !== 'bookmark') continue;
+      if (entry.source !== browserId) continue;
+      if ((entry.sourceProfileId || '') !== sourceProfileId) continue;
+      if (seenBookmarkKeys.has(importEntryKey(entry))) continue;
+      existingKeys.delete(importEntryKey(entry));
+      entries.splice(i, 1);
+      changed = true;
+    }
   }
 
-  for (const bookmark of bookmarkRows) {
-    const host = extractHost(bookmark.url);
-    if (!host) {
-      skipped += 1;
-      continue;
-    }
-    const entry = {
-      id: makeId(),
-      type: 'bookmark' as const,
-      query: bookmark.title || host,
-      url: bookmark.url,
-      host,
-      lastUsedAt: bookmark.dateAdded || Date.now(),
-      useCount: 1,
-      source: browserId,
-      sourceProfileId,
-      sourceProfileName,
-    };
-    entries.push(entry);
-    existingKeys.add(importEntryKey(entry));
-    imported += 1;
-  }
-
+  const beforePruneLength = entries.length;
   pruneByRetentionInPlace(entries);
   trimToCapInPlace(entries);
+  if (entries.length !== beforePruneLength) changed = true;
   cache = entries;
-  save();
+  if (changed) {
+    bumpBrowserSearchRevision();
+    save();
+  }
 
   return { imported, skipped, total: rows.length + bookmarkRows.length };
 }
@@ -892,7 +1033,7 @@ function readChromiumBookmarks(bookmarksPath: string): RawBookmarkRow[] {
   try {
     const parsed = JSON.parse(fs.readFileSync(bookmarksPath, 'utf-8'));
     const rows: RawBookmarkRow[] = [];
-    collectChromiumBookmarks(parsed?.roots, rows);
+    collectChromiumBookmarks(parsed?.roots, rows, []);
     return rows;
   } catch (e) {
     console.warn('Failed to read Chromium bookmarks:', e);
@@ -900,10 +1041,24 @@ function readChromiumBookmarks(bookmarksPath: string): RawBookmarkRow[] {
   }
 }
 
-function collectChromiumBookmarks(node: any, rows: RawBookmarkRow[]): void {
+function collectChromiumBookmarks(node: any, rows: RawBookmarkRow[], folderPath: string[]): void {
   if (!node || typeof node !== 'object') return;
   if (Array.isArray(node)) {
-    for (const child of node) collectChromiumBookmarks(child, rows);
+    for (const child of node) collectChromiumBookmarks(child, rows, folderPath);
+    return;
+  }
+
+  if (isChromiumRootsNode(node)) {
+    for (const key of getOrderedChromiumRootKeys(node)) {
+      collectChromiumBookmarks(node[key], rows, []);
+    }
+    return;
+  }
+
+  if (node.type === 'folder') {
+    const folderName = cleanBookmarkFolderName(node.name);
+    const nextFolderPath = folderName ? [...folderPath, folderName] : folderPath;
+    if (node.children) collectChromiumBookmarks(node.children, rows, nextFolderPath);
     return;
   }
 
@@ -915,16 +1070,42 @@ function collectChromiumBookmarks(node: any, rows: RawBookmarkRow[]): void {
       url,
       title,
       dateAdded: decodeTimestamp('chrome', Number(node.date_added || 0)) || Date.now(),
+      folder: folderPath.join(' - '),
+      order: rows.length,
     });
     return;
   }
 
-  if (node.children) collectChromiumBookmarks(node.children, rows);
+  if (node.children) collectChromiumBookmarks(node.children, rows, folderPath);
   for (const value of Object.values(node)) {
     if (value && typeof value === 'object' && value !== node.children) {
-      collectChromiumBookmarks(value, rows);
+      collectChromiumBookmarks(value, rows, folderPath);
     }
   }
+}
+
+function isChromiumRootsNode(node: any): boolean {
+  return Boolean(node && typeof node === 'object' && (node.bookmark_bar || node.other || node.synced));
+}
+
+function getOrderedChromiumRootKeys(node: Record<string, unknown>): string[] {
+  const preferred = ['bookmark_bar', 'other', 'synced'];
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const key of preferred) {
+    if (node[key]) {
+      ordered.push(key);
+      seen.add(key);
+    }
+  }
+  for (const key of Object.keys(node)) {
+    if (!seen.has(key)) ordered.push(key);
+  }
+  return ordered;
+}
+
+function cleanBookmarkFolderName(value: unknown): string {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 240);
 }
 
 function buildChromiumQuery(): string {
@@ -994,14 +1175,37 @@ function normalizeRow(browserId: BrowserSearchSource, raw: any): RawHistoryRow |
 // we return null and the caller will skip autocompletion.
 
 const SUGGEST_TIMEOUT_MS = 1500;
+const MAX_SEARCH_SUGGESTIONS = 30;
 
 export async function fetchSearchSuggestion(rawInput: string): Promise<string | null> {
-  const trimmed = String(rawInput || '').trim();
-  if (!trimmed) return null;
-  const url = `https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(trimmed)}`;
-  return new Promise<string | null>((resolve) => {
+  const suggestions = await fetchSearchSuggestions(rawInput, 1);
+  return suggestions[0] || null;
+}
+
+type SearchSuggestionProvider = {
+  key?: string;
+  host?: string;
+  name?: string;
+};
+
+type NormalizedSearchSuggestionProvider = {
+  key: string;
+  host: string;
+  name: string;
+};
+
+function normalizeSuggestionProvider(value: SearchSuggestionProvider | undefined): NormalizedSearchSuggestionProvider {
+  return {
+    key: String(value?.key || '').trim().toLowerCase().replace(/^!+/, ''),
+    host: String(value?.host || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, ''),
+    name: String(value?.name || '').trim().toLowerCase(),
+  };
+}
+
+function fetchJsonUrl(url: string): Promise<any> {
+  return new Promise((resolve) => {
     let settled = false;
-    const finish = (value: string | null) => {
+    const finish = (value: any) => {
       if (settled) return;
       settled = true;
       resolve(value);
@@ -1017,22 +1221,7 @@ export async function fetchSearchSuggestion(rawInput: string): Promise<string | 
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
         res.on('end', () => {
           try {
-            const body = Buffer.concat(chunks).toString('utf-8');
-            const parsed = JSON.parse(body);
-            if (!Array.isArray(parsed) || !Array.isArray(parsed[1])) {
-              finish(null);
-              return;
-            }
-            const lower = trimmed.toLowerCase();
-            for (const candidate of parsed[1]) {
-              const s = String(candidate || '').trim();
-              if (!s || s.length <= trimmed.length) continue;
-              if (s.toLowerCase().startsWith(lower)) {
-                finish(s);
-                return;
-              }
-            }
-            finish(null);
+            finish(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
           } catch {
             finish(null);
           }
@@ -1048,6 +1237,106 @@ export async function fetchSearchSuggestion(rawInput: string): Promise<string | 
       });
     } catch {
       finish(null);
+    }
+  });
+}
+
+function uniqueSuggestionList(values: unknown[], max: number): string[] {
+  const seen = new Set<string>();
+  const suggestions: string[] = [];
+  for (const candidate of values) {
+    const s = String(candidate || '').trim();
+    const key = s.toLowerCase();
+    if (!s || seen.has(key)) continue;
+    seen.add(key);
+    suggestions.push(s);
+    if (suggestions.length >= max) break;
+  }
+  return suggestions;
+}
+
+async function fetchWikipediaSuggestions(trimmed: string, max: number): Promise<string[]> {
+  const parsed = await fetchJsonUrl(`https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=${max}&search=${encodeURIComponent(trimmed)}`);
+  return Array.isArray(parsed?.[1]) ? uniqueSuggestionList(parsed[1], max) : [];
+}
+
+async function fetchNpmSuggestions(trimmed: string, max: number): Promise<string[]> {
+  const parsed = await fetchJsonUrl(`https://registry.npmjs.org/-/v1/search?size=${max}&text=${encodeURIComponent(trimmed)}`);
+  const objects = Array.isArray(parsed?.objects) ? parsed.objects : [];
+  return uniqueSuggestionList(objects.map((item: any) => item?.package?.name), max);
+}
+
+function getGoogleSuggestUrl(trimmed: string, provider: SearchSuggestionProvider): string {
+  const normalized = normalizeSuggestionProvider(provider);
+  const isYouTube = normalized.key === 'yt' ||
+    normalized.key === 'youtube' ||
+    normalized.host.includes('youtube.com') ||
+    normalized.name.includes('youtube');
+  const ds = isYouTube ? '&ds=yt' : '';
+  return `https://suggestqueries.google.com/complete/search?client=firefox${ds}&q=${encodeURIComponent(trimmed)}`;
+}
+
+export async function fetchSearchSuggestions(rawInput: string, limit = MAX_SEARCH_SUGGESTIONS, provider?: SearchSuggestionProvider): Promise<string[]> {
+  const trimmed = String(rawInput || '').trim();
+  if (!trimmed) return [];
+  const max = Math.max(1, Math.min(MAX_SEARCH_SUGGESTIONS, Math.floor(Number(limit) || MAX_SEARCH_SUGGESTIONS)));
+  const normalizedProvider = normalizeSuggestionProvider(provider);
+  const isWikipedia = normalizedProvider.key === 'wiki' ||
+    normalizedProvider.key === 'w' ||
+    normalizedProvider.host.includes('wikipedia.org') ||
+    normalizedProvider.name.includes('wikipedia');
+  if (isWikipedia) {
+    const suggestions = await fetchWikipediaSuggestions(trimmed, max);
+    if (suggestions.length > 0) return suggestions;
+  }
+  const isNpm = normalizedProvider.key === 'npm' ||
+    normalizedProvider.host.includes('npmjs.com') ||
+    normalizedProvider.name === 'npm';
+  if (isNpm) {
+    const suggestions = await fetchNpmSuggestions(trimmed, max);
+    if (suggestions.length > 0) return suggestions;
+  }
+  const url = getGoogleSuggestUrl(trimmed, normalizedProvider);
+  return new Promise<string[]>((resolve) => {
+    let settled = false;
+    const finish = (value: string[]) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    try {
+      const req = https.get(url, { timeout: SUGGEST_TIMEOUT_MS }, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          finish([]);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          try {
+            const body = Buffer.concat(chunks).toString('utf-8');
+            const parsed = JSON.parse(body);
+            if (!Array.isArray(parsed) || !Array.isArray(parsed[1])) {
+              finish([]);
+              return;
+            }
+            finish(uniqueSuggestionList(parsed[1], max));
+          } catch {
+            finish([]);
+          }
+        });
+        res.on('error', () => finish([]));
+      });
+      req.on('error', () => finish([]));
+      req.on('timeout', () => {
+        try {
+          req.destroy();
+        } catch {}
+        finish([]);
+      });
+    } catch {
+      finish([]);
     }
   });
 }

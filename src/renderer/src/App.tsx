@@ -5,16 +5,14 @@
  * Shows category labels like Raycast.
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
-import { X, Sparkles, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, CornerDownLeft, ExternalLink, Plus, Pencil, Files, Trash2, Download, BellOff, Info, FolderOpen, Copy, Pin, Link, EyeOff, Play, XCircle, Timer } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useDeferredValue } from 'react';
 import supercmdLogo from '../../../supercmd.png';
 import type {
   CommandInfo,
   ExtensionBundle,
   AppSettings,
-  QuickLinkDynamicField,
   IndexedFileSearchResult,
+  BrowserSearchSource,
   BrowserSearchResultGroupSetting,
 } from '../types/electron';
 import ExtensionView from './ExtensionView';
@@ -27,13 +25,6 @@ import CameraExtension from './CameraExtension';
 import ScheduleExtension from './ScheduleExtension';
 import OnboardingExtension from './OnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
-import SuperCmdWhisper from './SuperCmdWhisper';
-import SuperCmdRead from './SuperCmdRead';
-import WindowManagerPanel, {
-  executeWindowManagementPresetCommandById,
-  isWindowManagementPresetCommandId,
-} from './WindowManagerPanel';
-import { tryCalculate, tryCalculateAsync } from './smart-calculator';
 import { useDetachedPortalWindow } from './useDetachedPortalWindow';
 import { useAppViewManager } from './hooks/useAppViewManager';
 import { useAiChat } from './hooks/useAiChat';
@@ -42,27 +33,28 @@ import { useMenuBarExtensions } from './hooks/useMenuBarExtensions';
 import { useBackgroundRefresh } from './hooks/useBackgroundRefresh';
 import { useSpeakManager } from './hooks/useSpeakManager';
 import { useWhisperManager } from './hooks/useWhisperManager';
-import { useInlineArgumentAnchor } from './hooks/useInlineArgumentAnchor';
-import { useBrowserSearch, type BrowserSearchResult } from './hooks/useBrowserSearch';
+import { useBrowserSearch } from './hooks/useBrowserSearch';
+import { useBrowserResultsController } from './hooks/useBrowserResultsController';
+import { useWebSearchController } from './hooks/useWebSearchController';
+import { useLauncherCommandModel } from './hooks/useLauncherCommandModel';
+import { useLauncherInlineArguments } from './hooks/useLauncherInlineArguments';
+import { useLauncherActionModel } from './hooks/useLauncherActionModel';
+import { useLauncherLocalSystemCommands } from './hooks/useLauncherLocalSystemCommands';
+import { useLauncherCommandExecution } from './hooks/useLauncherCommandExecution';
+import { useLauncherWindowShownHandler } from './hooks/useLauncherWindowShownHandler';
+import { useLauncherKeyboardControls } from './hooks/useLauncherKeyboardControls';
 import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
 import {
-  type LauncherAction, type MemoryFeedback,
-  filterCommands, formatShortcutLabel, getCategoryLabel,
-  renderCommandIcon, getCommandDisplayTitle,
-  getCommandAccessoryLabel,
-  getCommandTypeBadgeLabel,
-  renderShortcutLabel,
-  matchesLauncherShortcut,
-  getShortcutDisplayParts,
+  type MemoryFeedback,
+  formatShortcutLabel,
+  getCommandDisplayTitle,
 } from './utils/command-helpers';
 import {
   collectLegacyExtensionPreferencesSnapshot,
   readJsonObject, writeJsonObject,
-  getCmdArgsKey,
   getScriptCmdArgsKey,
-  clearCommandArguments,
   hydrateExtensionBundlePreferences,
   shouldOpenCommandSetup,
   getMissingRequiredPreferences,
@@ -79,313 +71,69 @@ import ExtensionPreferenceSetupView from './views/ExtensionPreferenceSetupView';
 import AiChatView from './views/AiChatView';
 import CursorPromptView from './views/CursorPromptView';
 import AppUninstallView from './views/AppUninstallView';
-import InlineArgumentField, { InlineArgumentLeadingIcon, InlineArgumentOverflowBadge } from './components/InlineArgumentField';
+import BrowserResultsView from './views/BrowserResultsView';
+import WebSearchView from './views/WebSearchView';
+import LauncherMainView from './views/LauncherMainView';
+import HiddenExtensionRunners from './components/HiddenExtensionRunners';
+import DetachedOverlayRunners from './components/DetachedOverlayRunners';
+import LauncherViewShell from './components/LauncherViewShell';
+import type { LauncherContextMenuState } from './components/LauncherContextMenuOverlay';
+import type { QuickLinkDynamicPromptState } from './components/QuickLinkDynamicPromptOverlay';
 import { useI18n } from './i18n';
+import {
+  getFileBasename,
+  getFileResultPathFromCommand,
+  getLauncherFileSearchTerms,
+  isPathLikeLauncherFileQuery,
+  matchesLauncherFileNameTerms,
+  matchesLauncherPathQuery,
+  MAX_LAUNCHER_FILE_CANDIDATE_RESULTS,
+  MAX_LAUNCHER_FILE_RESULTS,
+  MAX_LAUNCHER_FILE_RESULT_ICONS,
+  MIN_LAUNCHER_FILE_QUERY_LENGTH,
+  normalizeLauncherFileSearchText,
+} from './utils/launcher-file-results';
+import {
+  BROWSER_SEARCH_SHOW_ALL_RESULTS_ID,
+  DEFAULT_BROWSER_SEARCH_RESULT_GROUPS,
+  isBrowserSearchCommand,
+  normalizeBrowserSearchResultGroups,
+} from './utils/browser-search-commands';
+import {
+  DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT,
+  DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT,
+  clampLauncherBackgroundPercent,
+  toFileUrl,
+} from './utils/launcher-background';
+import {
+  DIRECT_LAUNCH_EXPANSION_GUARD_MS,
+  MAX_INLINE_QUICK_LINK_ARGUMENTS,
+  getQuickLinkIdFromCommandId,
+} from './utils/launcher-misc';
+import {
+  WEB_SEARCH_ROOT_BANG_PREFIX,
+  buildBangSearchUrl,
+  getSearchBangByKeyFromList,
+  parseSearchBangState,
+} from './utils/web-search-bangs';
+import {
+  recordRootSearchLaunchInState,
+  type RootSearchRankingState,
+} from './utils/root-search-ranking';
+
+const BROWSER_APP_PATHS: Partial<Record<BrowserSearchSource, string[]>> = {
+  chrome: [
+    '/Applications/Google Chrome.app',
+    '/System/Applications/Google Chrome.app',
+  ],
+  brave: ['/Applications/Brave Browser.app'],
+  edge: ['/Applications/Microsoft Edge.app'],
+  vivaldi: ['/Applications/Vivaldi.app'],
+  helium: ['/Applications/Helium.app'],
+  arc: ['/Applications/Arc.app'],
+};
 
 const DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS = 90;
-const MAX_RECENT_SECTION_ITEMS = 5;
-const QUICK_LINK_COMMAND_PREFIX = 'quicklink-';
-const DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT = 25;
-const DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT = 45;
-const MAX_LAUNCHER_BACKGROUND_BLUR_PX = 20;
-
-function getQuickLinkIdFromCommandId(commandId: string): string | null {
-  const normalized = String(commandId || '').trim();
-  if (!normalized.startsWith(QUICK_LINK_COMMAND_PREFIX)) return null;
-  const id = normalized.slice(QUICK_LINK_COMMAND_PREFIX.length).trim();
-  return id || null;
-}
-
-const FILE_RESULT_COMMAND_PREFIX = 'system-file-result:';
-const MAX_LAUNCHER_FILE_RESULTS = 30;
-const MAX_LAUNCHER_FILE_CANDIDATE_RESULTS = 3000;
-const BROWSER_SEARCH_OPEN_URL_ID = 'browser-search-action-open-url';
-const BROWSER_SEARCH_PERFORM_SEARCH_ID = 'browser-search-action-perform-search';
-const BROWSER_SEARCH_RESULT_ID_PREFIX = 'browser-search-result:';
-const BROWSER_SEARCH_SHOW_ALL_RESULTS_ID = 'browser-search-action-show-all';
-const DEFAULT_BROWSER_SEARCH_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
-  { kind: 'bookmark', limit: 2 },
-  { kind: 'open-tab', limit: 2 },
-  { kind: 'history', limit: 2 },
-];
-const MAX_LAUNCHER_FILE_RESULT_ICONS = MAX_LAUNCHER_FILE_RESULTS;
-const MIN_LAUNCHER_FILE_QUERY_LENGTH = 2;
-const MAX_INLINE_EXTENSION_ARGUMENTS = 3;
-const MAX_INLINE_QUICK_LINK_ARGUMENTS = 3;
-const DIRECT_LAUNCH_EXPANSION_GUARD_MS = 700;
-const NOOP_ON_CLOSE = () => {};
-const DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS = new Set([
-  'system-clipboard-manager',
-  'system-search-snippets',
-  'system-create-snippet',
-  'system-search-notes',
-  'system-search-canvases',
-  'system-search-quicklinks',
-  'system-create-quicklink',
-  'system-search-files',
-  'system-my-schedule',
-  'system-camera',
-]);
-
-function asTildePath(filePath: string, homeDir: string): string {
-  if (!homeDir) return filePath;
-  if (filePath === homeDir) return '~';
-  if (filePath.startsWith(homeDir)) {
-    return `~${filePath.slice(homeDir.length) || '/'}`;
-  }
-  return filePath;
-}
-
-function formatCalcKindLabel(kind: 'math' | 'unit' | 'currency' | 'crypto' | 'time' | 'date'): string {
-  switch (kind) {
-    case 'math':
-      return 'Math';
-    case 'unit':
-      return 'Unit';
-    case 'currency':
-      return 'Currency';
-    case 'crypto':
-      return 'Crypto';
-    case 'time':
-      return 'Time';
-    case 'date':
-      return 'Date';
-  }
-}
-
-function buildFileResultCommandId(filePath: string): string {
-  return `${FILE_RESULT_COMMAND_PREFIX}${encodeURIComponent(filePath)}`;
-}
-
-function getFileBasename(filePath: string): string {
-  const normalized = String(filePath || '').replace(/\/$/, '');
-  const idx = normalized.lastIndexOf('/');
-  return idx >= 0 ? normalized.slice(idx + 1) : normalized;
-}
-
-function getFileDirname(filePath: string): string {
-  const normalized = String(filePath || '').replace(/\/$/, '');
-  const idx = normalized.lastIndexOf('/');
-  return idx > 0 ? normalized.slice(0, idx) : '/';
-}
-
-function normalizeLauncherFileSearchText(value: string): string {
-  return String(value || '').normalize('NFKD').toLowerCase();
-}
-
-function getLauncherFileSearchTerms(rawQuery: string): string[] {
-  return normalizeLauncherFileSearchText(rawQuery)
-    .split(/\s+/)
-    .map((term) => term.trim())
-    .filter(Boolean);
-}
-
-function normalizeLauncherPathForMatch(value: string): string {
-  return String(value || '').normalize('NFKD').toLowerCase().replace(/\\/g, '/');
-}
-
-function isPathLikeLauncherFileQuery(rawQuery: string): boolean {
-  const trimmed = String(rawQuery || '').trim();
-  return trimmed.includes('/') || trimmed.startsWith('~');
-}
-
-function matchesLauncherPathQuery(filePath: string, rawQuery: string, homeDir: string): boolean {
-  const trimmed = String(rawQuery || '').trim();
-  if (!trimmed) return true;
-  const normalizedPath = normalizeLauncherPathForMatch(filePath);
-  const normalizedRawQuery = normalizeLauncherPathForMatch(trimmed);
-  if (!normalizedRawQuery) return true;
-
-  if (normalizedPath.includes(normalizedRawQuery)) return true;
-
-  if (trimmed.startsWith('~') && homeDir) {
-    const expanded = `${homeDir}${trimmed.slice(1)}`;
-    const normalizedExpanded = normalizeLauncherPathForMatch(expanded);
-    if (normalizedExpanded && normalizedPath.includes(normalizedExpanded)) return true;
-  }
-
-  const tildePath = normalizeLauncherPathForMatch(asTildePath(filePath, homeDir));
-  return Boolean(tildePath && tildePath.includes(normalizedRawQuery));
-}
-
-function splitLauncherFileNameTokens(fileName: string): string[] {
-  return normalizeLauncherFileSearchText(fileName)
-    .split(/[^a-z0-9]+/g)
-    .map((token) => token.trim())
-    .filter(Boolean);
-}
-
-function matchesLauncherFileNameTerms(fileName: string, terms: string[]): boolean {
-  if (terms.length === 0) return true;
-  const normalizedName = normalizeLauncherFileSearchText(fileName);
-  const tokens = splitLauncherFileNameTokens(fileName);
-  return terms.every((term) => {
-    if (/[^a-z0-9]/i.test(term)) {
-      return normalizedName.includes(term);
-    }
-    return tokens.some((token) => token.startsWith(term));
-  });
-}
-
-function getFileResultPathFromCommand(command: CommandInfo | null | undefined): string | null {
-  if (!command) return null;
-  if (command.id.startsWith(FILE_RESULT_COMMAND_PREFIX)) {
-    if (command.path) return String(command.path);
-    const encoded = command.id.slice(FILE_RESULT_COMMAND_PREFIX.length);
-    try {
-      return decodeURIComponent(encoded);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-function isBrowserSearchCommand(command: CommandInfo | null | undefined): boolean {
-  const id = String(command?.id || '');
-  return id === BROWSER_SEARCH_OPEN_URL_ID ||
-    id === BROWSER_SEARCH_PERFORM_SEARCH_ID ||
-    id === BROWSER_SEARCH_SHOW_ALL_RESULTS_ID ||
-    id.startsWith(BROWSER_SEARCH_RESULT_ID_PREFIX);
-}
-
-function normalizeBrowserSearchResultGroups(rawGroups: BrowserSearchResultGroupSetting[] | undefined): BrowserSearchResultGroupSetting[] {
-  const seen = new Set<string>();
-  const groups: BrowserSearchResultGroupSetting[] = [];
-  if (Array.isArray(rawGroups)) {
-    for (const group of rawGroups) {
-      if (group.kind !== 'open-tab' && group.kind !== 'bookmark' && group.kind !== 'history') continue;
-      if (seen.has(group.kind)) continue;
-      seen.add(group.kind);
-      groups.push({ kind: group.kind, limit: Math.max(0, Math.min(8, Math.floor(Number(group.limit) || 0))) });
-    }
-  }
-  for (const fallback of DEFAULT_BROWSER_SEARCH_RESULT_GROUPS) {
-    if (!seen.has(fallback.kind)) groups.push(fallback);
-  }
-  return groups;
-}
-
-function normalizeBrowserCommandUrl(url: string | undefined): string {
-  const raw = String(url || '').trim();
-  if (!raw) return '';
-  try {
-    const parsed = new URL(raw);
-    parsed.hash = '';
-    parsed.hostname = parsed.hostname.toLowerCase();
-    return parsed.toString().replace(/\/+$/, '');
-  } catch {
-    return raw.toLowerCase().replace(/#.*$/, '').replace(/\/+$/, '');
-  }
-}
-
-function getExtensionIdentityFromCommand(
-  command: CommandInfo | null | undefined
-): { extName: string; cmdName: string } | null {
-  if (!command || command.category !== 'extension' || !command.path) return null;
-  const rawPath = String(command.path || '').trim();
-  const separatorIndex = rawPath.indexOf('/');
-  if (separatorIndex <= 0 || separatorIndex >= rawPath.length - 1) return null;
-  const extName = rawPath.slice(0, separatorIndex).trim();
-  const cmdName = rawPath.slice(separatorIndex + 1).trim();
-  if (!extName || !cmdName) return null;
-  return { extName, cmdName };
-}
-
-function isEditableElement(element: Element | null): boolean {
-  const target = element as HTMLElement | null;
-  if (!target) return false;
-  const tagName = String(target.tagName || '').toUpperCase();
-  return (
-    target.isContentEditable ||
-    tagName === 'INPUT' ||
-    tagName === 'TEXTAREA' ||
-    tagName === 'SELECT'
-  );
-}
-
-function toFileUrl(filePath: string): string {
-  const normalizedPath = String(filePath || '').trim();
-  if (!normalizedPath) return '';
-  return `file://${encodeURI(normalizedPath)}`;
-}
-
-function clampLauncherBackgroundPercent(value: number, fallback: number): number {
-  const parsedValue = Number(value);
-  if (!Number.isFinite(parsedValue)) return fallback;
-  return Math.max(0, Math.min(100, Math.round(parsedValue)));
-}
-
-function launcherBackgroundBlurPercentToPx(value: number): number {
-  const clampedPercent = clampLauncherBackgroundPercent(
-    value,
-    DEFAULT_LAUNCHER_BACKGROUND_BLUR_PERCENT
-  );
-  return Number(((clampedPercent / 100) * MAX_LAUNCHER_BACKGROUND_BLUR_PX).toFixed(2));
-}
-
-type LauncherSurfaceProps = {
-  backgroundImageUrl: string;
-  showBackground: boolean;
-  backgroundBlurPercent: number;
-  backgroundOpacityPercent: number;
-  className?: string;
-  children: React.ReactNode;
-};
-
-const LauncherSurface: React.FC<LauncherSurfaceProps> = ({
-  backgroundImageUrl,
-  showBackground,
-  backgroundBlurPercent,
-  backgroundOpacityPercent,
-  className = '',
-  children,
-}) => {
-  const backgroundOpacity = clampLauncherBackgroundPercent(
-    backgroundOpacityPercent,
-    DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
-  ) / 100;
-  const backgroundBlurPx = launcherBackgroundBlurPercentToPx(backgroundBlurPercent);
-
-  return (
-    <div className="w-full h-full">
-      <div className={`glass-effect overflow-hidden h-full flex flex-col relative ${className}`.trim()}>
-        {showBackground && backgroundImageUrl ? (
-          <div className="launcher-background-media" aria-hidden="true">
-            <div
-              className="launcher-background-image"
-              style={
-                {
-                  backgroundImage: `url("${backgroundImageUrl}")`,
-                  ['--launcher-background-opacity' as any]: String(backgroundOpacity),
-                  ['--launcher-background-blur' as any]: `${backgroundBlurPx}px`,
-                } as React.CSSProperties
-              }
-            />
-            <div className="launcher-background-tint" />
-          </div>
-        ) : null}
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col">{children}</div>
-      </div>
-    </div>
-  );
-};
-
-function normalizeQuickLinkDynamicFields(fields: QuickLinkDynamicField[]): QuickLinkDynamicField[] {
-  const map = new Map<string, QuickLinkDynamicField>();
-  for (const field of fields || []) {
-    const rawKey = String(field?.key || field?.name || '').trim();
-    if (!rawKey) continue;
-    const normalizedKey = rawKey.toLowerCase();
-    if (map.has(normalizedKey)) continue;
-    map.set(normalizedKey, {
-      key: rawKey,
-      name: String(field?.name || rawKey),
-      defaultValue: field?.defaultValue,
-    });
-  }
-  return Array.from(map.values());
-}
 
 // Intern cache: commandId → stable iconDataUrl string reference.
 // Prevents duplicate base64 strings accumulating across repeated fetchCommands() IPC calls.
@@ -409,29 +157,24 @@ const App: React.FC = () => {
     DEFAULT_LAUNCHER_BACKGROUND_OPACITY_PERCENT
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [autoQuitAppPaths, setAutoQuitAppPaths] = useState<Set<string>>(new Set());
   const browserSearch = useBrowserSearch(searchQuery);
-  const [browserSearchSkipAutoComplete, setBrowserSearchSkipAutoComplete] = useState(false);
+  const [, setBrowserSearchSkipAutoComplete] = useState(false);
   const [browserSearchResultGroups, setBrowserSearchResultGroups] = useState<BrowserSearchResultGroupSetting[]>(
     DEFAULT_BROWSER_SEARCH_RESULT_GROUPS
   );
-  const [browserResultsViewQuery, setBrowserResultsViewQuery] = useState<string | null>(null);
-  const [browserResultsViewSelectedIndex, setBrowserResultsViewSelectedIndex] = useState(0);
-  const [inlineExtensionArgumentValues, setInlineExtensionArgumentValues] = useState<
-    Record<string, Record<string, string>>
-  >({});
-  const [inlineQuickLinkDynamicFieldsById, setInlineQuickLinkDynamicFieldsById] = useState<
-    Record<string, QuickLinkDynamicField[]>
-  >({});
-  const [inlineQuickLinkDynamicValuesById, setInlineQuickLinkDynamicValuesById] = useState<
-    Record<string, Record<string, string>>
-  >({});
+  const [webSearchSuggestionsEnabled, setWebSearchSuggestionsEnabled] = useState(true);
+  const [rootSearchRanking, setRootSearchRanking] = useState<RootSearchRankingState>({});
+  const rootSearchRankingRef = useRef<RootSearchRankingState>({});
   const [launcherFileResults, setLauncherFileResults] = useState<IndexedFileSearchResult[]>([]);
   const [disableFileSearchResults, setDisableFileSearchResults] = useState(false);
   const [launcherViewMode, setLauncherViewMode] = useState<'expanded' | 'compact'>('expanded');
   const [isCompactCollapsed, setIsCompactCollapsed] = useState(true);
   const [launcherFileIcons, setLauncherFileIcons] = useState<Record<string, string>>({});
   const [fileIsDirectoryMap, setFileIsDirectoryMap] = useState<Record<string, boolean>>({});
+  const [defaultBrowserIconDataUrl, setDefaultBrowserIconDataUrl] = useState('');
+  const [browserAppIconDataUrls, setBrowserAppIconDataUrls] = useState<Record<string, string>>({});
   const [launcherFooterStatus, setLauncherFooterStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const launcherFooterStatusTimerRef = useRef<number | null>(null);
   const [fileSearchInitialDetailPath, setFileSearchInitialDetailPath] = useState<string | null>(null);
@@ -439,6 +182,9 @@ const App: React.FC = () => {
   const [navigationStyle, setNavigationStyle] = useState<'vim' | 'macos'>('vim');
   const [isLoading, setIsLoading] = useState(false);
   const homeDir = String((window.electron as any).homeDir || '');
+  useEffect(() => {
+    rootSearchRankingRef.current = rootSearchRanking;
+  }, [rootSearchRanking]);
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
     showClipboardManager, clipboardManagerOpenedViaShortcut, showSnippetManager, showNotesSearch, showCanvasSearch, showQuickLinkManager, showFileSearch, showCursorPrompt,
@@ -475,20 +221,12 @@ const App: React.FC = () => {
   const [whisperAutoClose, setWhisperAutoClose] = useState(true);
   const [showActions, setShowActions] = useState(false);
   const [actionsCommand, setActionsCommand] = useState<CommandInfo | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    command: CommandInfo;
-  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<LauncherContextMenuState | null>(null);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [selectedContextActionIndex, setSelectedContextActionIndex] = useState(0);
   const [quickLinkEditId, setQuickLinkEditId] = useState<string | null>(null);
-  const [quickLinkDynamicPrompt, setQuickLinkDynamicPrompt] = useState<{
-    command: CommandInfo;
-    quickLinkId: string;
-    fields: QuickLinkDynamicField[];
-    values: Record<string, string>;
-  } | null>(null);
+  const [quickLinkDynamicPrompt, setQuickLinkDynamicPrompt] =
+    useState<QuickLinkDynamicPromptState | null>(null);
   const {
     menuBarExtensions,
     backgroundNoViewRuns, setBackgroundNoViewRuns,
@@ -502,11 +240,54 @@ const App: React.FC = () => {
   const [memoryActionLoading, setMemoryActionLoading] = useState(false);
   const memoryFeedbackTimerRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const browserResultsViewInputRef = useRef<HTMLInputElement>(null);
-  const inlineArgumentLaneRef = useRef<HTMLDivElement>(null);
-  const inlineArgumentClusterRef = useRef<HTMLDivElement>(null);
-  const inlineArgumentInputRefs = useRef<Array<HTMLInputElement | HTMLSelectElement | null>>([]);
-  const inlineQuickLinkInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const {
+    browserResultsViewQuery,
+    setBrowserResultsViewQuery,
+    browserResultsViewScope,
+    setBrowserResultsViewScope,
+    browserResultsViewSelectedIndex,
+    setBrowserResultsViewSelectedIndex,
+
+    browserResultsViewInputRef,
+    bookmarkNicknameInputRef,
+
+    browserResultsViewResults,
+    browserResultsViewSections,
+    selectedBrowserResult,
+
+    browserHistoryProfileOptions,
+    effectiveBrowserHistoryProfileIds,
+    showHistoryProfilePicker,
+    historyProfileFilterLabel,
+    browserAlternateProfileLabel,
+    browserAlternateProfileBrowserId,
+    browserHistoryProfileMenuOpen,
+    setBrowserHistoryProfileMenuOpen,
+    setBrowserHistorySelectedProfileIds,
+
+    browserResultsPlaceholder,
+
+    bookmarkNicknamePrompt,
+    setBookmarkNicknamePrompt,
+    bookmarkNicknameSuggestion,
+    openBookmarkNicknamePrompt,
+    closeBookmarkNicknamePrompt,
+
+    activateBrowserResult,
+    loadMoreBrowserResults,
+    closeBrowserResults,
+
+    isBrowserResultsViewOpen,
+  } = useBrowserResultsController({
+    browserSearch,
+    resultGroups: browserSearchResultGroups,
+    launcherInputRef: inputRef,
+    t,
+  });
+  const submitBrowserSearchRef = useRef<
+    (query: string, options?: Parameters<typeof browserSearch.executeBrowserSearch>[1]) => void | Promise<boolean>
+  >(() => Promise.resolve(false));
+  const isLauncherModeActiveRef = useRef(false);
   const fileSearchRequestSeqRef = useRef(0);
   const commandsRef = useRef<CommandInfo[]>([]);
   const lastCommandsFetchAtRef = useRef(0);
@@ -579,37 +360,12 @@ const App: React.FC = () => {
   // Holds a search query to restore after the window-shown reset, set by the
   // hotkey no-view path when it needs to open the launcher with a pre-typed query.
   const pendingWindowShownQueryRef = useRef<string | null>(null);
-  // When true, focus the first inline argument input as soon as it appears.
-  const pendingFocusInlineArgRef = useRef(false);
-  const calcRequestSeqRef = useRef(0);
-  const isLauncherModeActiveRef = useRef(false);
   const pinnedCommandsRef = useRef<string[]>([]);
   const pinnedFilesRef = useRef<string[]>([]);
   const extensionViewRef = useRef<ExtensionBundle | null>(null);
   extensionViewRef.current = extensionView;
   pinnedCommandsRef.current = pinnedCommands;
   pinnedFilesRef.current = pinnedFiles;
-  // Configurable timeout (ms) before the launcher resets to root search after
-  // it has been hidden. Synced from settings.popToRootSearchTimeoutSeconds.
-  // 0 = reset immediately on every reopen.
-  const popToRootTimeoutMsRef = useRef<number>(DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS * 1000);
-  // Tracks whether any persistable view (extension or internal view like
-  // Clipboard/Snippets/etc.) is currently active, so the window-shown handler
-  // can keep that view alive when reopened within the configured timeout.
-  const hasPersistableViewRef = useRef<boolean>(false);
-  hasPersistableViewRef.current = Boolean(
-    extensionView ||
-    showClipboardManager ||
-    showSnippetManager ||
-    showQuickLinkManager ||
-    showFileSearch ||
-    showNotesSearch ||
-    showCanvasSearch ||
-    browserResultsViewQuery !== null ||
-    showCamera ||
-    showSchedule ||
-    showAppUninstall
-  );
 
   const expandLauncherForDirectLaunch = useCallback(() => {
     directLaunchExpansionGuardUntilRef.current = Date.now() + DIRECT_LAUNCH_EXPANSION_GUARD_MS;
@@ -627,6 +383,80 @@ const App: React.FC = () => {
       }, delayMs);
     });
   }, []);
+
+  const {
+    webSearchQuery,
+    setWebSearchQuery,
+    webSearchSelectedIndex,
+    setWebSearchSelectedIndex,
+
+    webSearchInputRef,
+    webSearchBangInputRef,
+
+    webSearchDefaultBangKey,
+    webSearchBangUsage,
+    webSearchShowHiddenBangs,
+
+    effectiveSearchBangs,
+    enabledSearchBangs,
+    rootBangState,
+    rootWebSearchSuggestions,
+
+    webSearchResults,
+    visibleWebSearchSections,
+    selectedWebSearchResult,
+    isWebSearchBangManager,
+    activeWebSearchBang,
+
+    webSearchBangPrompt,
+    setWebSearchBangPrompt,
+    webSearchCustomBangPrompt,
+    setWebSearchCustomBangPrompt,
+
+    openWebSearchMode,
+    closeWebSearch,
+    activateWebSearchResult,
+    loadMoreWebSearchResults,
+
+    openWebSearchBangPrompt,
+    saveWebSearchBangAliases,
+    toggleWebSearchBangDisabled,
+    toggleWebSearchShowHidden,
+
+    openWebSearchCustomBangPrompt,
+    closeWebSearchCustomBangPrompt,
+    saveWebSearchCustomBang,
+
+    hydrateWebSearchSettings,
+  } = useWebSearchController({
+    launcherInputRef: inputRef,
+    expandLauncherForDirectLaunch,
+    submitBrowserSearchRef,
+    setLauncherSearchQuery: setSearchQuery,
+    setLauncherSelectedIndex: setSelectedIndex,
+    rootSearchQuery: deferredSearchQuery,
+    aiMode,
+    t,
+  });
+
+  // Configurable timeout (ms) before the launcher resets to root search after
+  // it has been hidden. Synced from settings.popToRootSearchTimeoutSeconds.
+  // 0 = reset immediately on every reopen.
+  const popToRootTimeoutMsRef = useRef<number>(DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS * 1000);
+  const hasPersistableView = Boolean(
+    extensionView ||
+    showClipboardManager ||
+    showSnippetManager ||
+    showQuickLinkManager ||
+    showFileSearch ||
+    showNotesSearch ||
+    showCanvasSearch ||
+    isBrowserResultsViewOpen ||
+    webSearchQuery !== null ||
+    showCamera ||
+    showSchedule ||
+    showAppUninstall
+  );
 
 
   const cursorPromptPortalTarget = useDetachedPortalWindow(showCursorPrompt, {
@@ -726,6 +556,9 @@ const App: React.FC = () => {
       );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       setBrowserSearchResultGroups(normalizeBrowserSearchResultGroups(settings.browserSearch?.resultGroups));
+      setWebSearchSuggestionsEnabled(settings.browserSearch?.webSearchSuggestionsEnabled !== false);
+      setRootSearchRanking(settings.rootSearchRanking || {});
+      hydrateWebSearchSettings(settings);
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '';
       setWhisperSpeakToggleLabel(formatShortcutLabel(speakToggleHotkey));
       setConfiguredEdgeTtsVoice(String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural'));
@@ -781,6 +614,8 @@ const App: React.FC = () => {
       setCommandAliases({});
       setCommandHotkeys({});
       setLauncherShortcut('Alt+Space');
+      setWebSearchSuggestionsEnabled(true);
+      setRootSearchRanking({});
       setConfiguredEdgeTtsVoice('en-US-EricNeural');
       setConfiguredTtsModel('edge-tts');
       setLauncherBackgroundImagePath('');
@@ -793,7 +628,7 @@ const App: React.FC = () => {
       setShowOnboarding(false);
       setOnboardingRequiresShortcutFix(false);
     }
-  }, []);
+  }, [hydrateWebSearchSettings]);
 
   const fetchCommands = useCallback(async (options?: { showLoading?: boolean }) => {
     const shouldShowLoading = options?.showLoading ?? commandsRef.current.length === 0;
@@ -881,240 +716,72 @@ const App: React.FC = () => {
     return cleanup;
   }, [fetchCommands]);
 
-  useEffect(() => {
-    const cleanupWindowShown = window.electron.onWindowShown((payload) => {
-      const routedSystemCommandId = String(payload?.systemCommandId || '');
-      const isOnboardingMode =
-        payload?.mode === 'onboarding' ||
-        routedSystemCommandId === 'system-open-onboarding' ||
-        routedSystemCommandId === 'system-whisper-onboarding';
+  const requestPendingInlineArgumentFocusRef = useRef<() => void>(() => {});
+  const requestPendingInlineArgumentFocus = useCallback(() => {
+    requestPendingInlineArgumentFocusRef.current();
+  }, []);
 
-      setForcedTheme(isOnboardingMode ? 'dark' : null, false);
-      if (!isOnboardingMode) {
-        refreshThemeFromStorage(false);
-      }
-      const isWhisperMode = payload?.mode === 'whisper';
-      const isSpeakMode = payload?.mode === 'speak';
-      const isPromptMode = payload?.mode === 'prompt';
-      if (isWhisperMode) {
-        whisperSessionRef.current = true;
-        setSelectedTextSnapshot('');
-        setMemoryFeedback(null);
-        setMemoryActionLoading(false);
-        openWhisper();
-        return;
-      }
-      if (isSpeakMode) {
-        whisperSessionRef.current = false;
-        setSelectedTextSnapshot('');
-        setMemoryFeedback(null);
-        setMemoryActionLoading(false);
-        openSpeak();
-        return;
-      }
-      if (isPromptMode) {
-        whisperSessionRef.current = false;
-        setSelectedTextSnapshot('');
-        setMemoryFeedback(null);
-        setMemoryActionLoading(false);
-        openCursorPrompt();
-        resetCursorPromptState();
-        return;
-      }
-      if (routedSystemCommandId) {
-        whisperSessionRef.current = false;
-        setShowCursorPrompt(false);
-        setShowWhisperHint(false);
-        setShowCamera(false);
-        setShowWindowManager(false);
-        setShowQuickLinkManager(null);
-        setMemoryFeedback(null);
-        setMemoryActionLoading(false);
-        setScriptCommandSetup(null);
-        setScriptCommandOutput(null);
-        setExtensionView(null);
-        localStorage.removeItem(LAST_EXT_KEY);
-        exitAiMode();
-        if (!isOnboardingMode) {
-          expandLauncherForDirectLaunch();
-        }
-        if (routedSystemCommandId === 'system-clipboard-manager') {
-          setShowSnippetManager(null);
-          setShowFileSearch(false);
-          openClipboardManager(true);
-          return;
-        }
-        if (routedSystemCommandId === 'system-search-snippets') {
-          setShowClipboardManager(false);
-          setShowFileSearch(false);
-          openSnippetManager('search');
-          return;
-        }
-        if (routedSystemCommandId === 'system-create-snippet') {
-          setShowClipboardManager(false);
-          setShowFileSearch(false);
-          openSnippetManager('create');
-          return;
-        }
-        if (routedSystemCommandId === 'system-search-notes') {
-          setShowClipboardManager(false);
-          setShowSnippetManager(null);
-          setShowFileSearch(false);
-          openNotesSearch();
-          return;
-        }
-        if (routedSystemCommandId === 'system-create-note') {
-          window.electron.openNotesWindow('create');
-          return;
-        }
-        if (routedSystemCommandId === 'system-search-canvases') {
-          openCanvasSearch();
-          return;
-        }
-        if (routedSystemCommandId === 'system-create-canvas') {
-          window.electron.openCanvasWindow('create');
-          return;
-        }
-        if (routedSystemCommandId === 'system-search-quicklinks') {
-          setShowClipboardManager(false);
-          setShowFileSearch(false);
-          openQuickLinkManager('search');
-          return;
-        }
-        if (routedSystemCommandId === 'system-create-quicklink') {
-          setShowClipboardManager(false);
-          setShowFileSearch(false);
-          openQuickLinkManager('create');
-          return;
-        }
-        if (routedSystemCommandId === 'system-search-files') {
-          setShowClipboardManager(false);
-          setShowSnippetManager(null);
-          setShowQuickLinkManager(null);
-          openFileSearch();
-          return;
-        }
-        if (routedSystemCommandId === 'system-my-schedule') {
-          setShowClipboardManager(false);
-          setShowSnippetManager(null);
-          setShowQuickLinkManager(null);
-          setShowFileSearch(false);
-          openSchedule();
-          return;
-        }
-        if (routedSystemCommandId === 'system-camera') {
-          setShowClipboardManager(false);
-          setShowSnippetManager(null);
-          setShowQuickLinkManager(null);
-          setShowFileSearch(false);
-          openCamera();
-          return;
-        }
-        if (routedSystemCommandId === 'system-open-onboarding') {
-          openOnboarding();
-          return;
-        }
-        if (routedSystemCommandId === 'system-whisper-onboarding') {
-          openOnboarding();
-          return;
-        }
-      }
-
-      if (Date.now() <= directLaunchExpansionGuardUntilRef.current) {
-        whisperSessionRef.current = false;
-        setShowCursorPrompt(false);
-        setShowWhisperHint(false);
-        setMemoryFeedback(null);
-        setMemoryActionLoading(false);
-        setSelectedTextSnapshot(String(payload?.selectedTextSnapshot || '').trim());
-        exitAiMode();
-        expandLauncherForDirectLaunch();
-        return;
-      }
-
-      whisperSessionRef.current = false;
-      setShowCursorPrompt(false);
-      setShowWhisperHint(false);
-      setShowWindowManager(false);
-      setMemoryFeedback(null);
-      setMemoryActionLoading(false);
-      setScriptCommandSetup(null);
-      setScriptCommandOutput(null);
-      setSelectedTextSnapshot(String(payload?.selectedTextSnapshot || '').trim());
-      const popToRootTimeoutMs = popToRootTimeoutMsRef.current;
-      const shouldResetOverlays =
-        popToRootTimeoutMs === 0 ||
-        (lastWindowHiddenAtRef.current > 0 &&
-          Date.now() - lastWindowHiddenAtRef.current > popToRootTimeoutMs);
-
-      if (shouldResetOverlays) {
-        setExtensionView(null);
-        localStorage.removeItem(LAST_EXT_KEY);
-        setShowActions(false);
-        setContextMenu(null);
-        setShowClipboardManager(false);
-        setShowSnippetManager(null);
-        setShowNotesSearch(false);
-        setShowCanvasSearch(false);
-        setShowQuickLinkManager(null);
-        setShowFileSearch(false);
-        setShowCursorPrompt(false);
-        setShowWhisper(false);
-        setShowSpeak(false);
-        setShowCamera(false);
-        setShowSchedule(false);
-        setShowWhisperOnboarding(false);
-      }
-
-      // If a persistable view (extension or internal view like Clipboard,
-      // Snippets, File Search, etc.) is open, keep it alive — don't reset.
-      if (hasPersistableViewRef.current && !shouldResetOverlays) {
-        setIsCompactCollapsed(false);
-        void window.electron.resizeLauncherWindow(true);
-        return;
-      }
-      const pendingQuery = pendingWindowShownQueryRef.current;
-      pendingWindowShownQueryRef.current = null;
-      if (pendingQuery) {
-        setSearchQuery(pendingQuery);
-        setSelectedIndex(0);
-        pendingFocusInlineArgRef.current = true;
-      }
-      // When a pending query is pre-filled (e.g. hotkey-triggered no-view
-      // command with missing args), expand out of compact so results are
-      // immediately visible.
-      if (pendingQuery) {
-        exitAiMode();
-        expandLauncherForDirectLaunch();
-      } else {
-        setIsCompactCollapsed(true);
-        exitAiMode();
-      }
-      // Focus synchronously before any IO — a keystroke arriving back-to-back
-      // with the show event must land on a focused input.
-      inputRef.current?.focus();
-
-      // Defer housekeeping past first paint so it doesn't compete with the
-      // user's first keystroke or list rendering.
-      const runDeferred = () => {
-        const COMMANDS_REFRESH_TTL_MS = 5 * 60_000;
-        if (
-          commandsRef.current.length === 0 ||
-          Date.now() - lastCommandsFetchAtRef.current > COMMANDS_REFRESH_TTL_MS
-        ) {
-          fetchCommands({ showLoading: false });
-        }
-        loadLauncherPreferences();
-        window.electron.aiIsAvailable().then(setAiAvailable);
-      };
-      if (typeof window.requestIdleCallback === 'function') {
-        window.requestIdleCallback(runDeferred, { timeout: 200 });
-      } else {
-        setTimeout(runDeferred, 0);
-      }
-    });
-    return cleanupWindowShown;
-  }, [expandLauncherForDirectLaunch, fetchCommands, loadLauncherPreferences, refreshSelectedTextSnapshot, openWhisper, openSpeak, openCursorPrompt, resetCursorPromptState, exitAiMode, setShowCursorPrompt, setShowWhisperHint, setMemoryFeedback, setMemoryActionLoading, setScriptCommandSetup, setScriptCommandOutput, setExtensionView, setSearchQuery, setSelectedIndex, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, openClipboardManager, setShowClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openSchedule, openCamera, openOnboarding, setShowCamera, setShowSchedule, setShowWindowManager, setShowWhisper, setShowSpeak, setShowWhisperOnboarding]);
+  useLauncherWindowShownHandler({
+    hasPersistableView,
+    directLaunchExpansionGuardUntilRef,
+    pendingWindowShownQueryRef,
+    popToRootTimeoutMsRef,
+    lastWindowHiddenAtRef,
+    commandsRef,
+    lastCommandsFetchAtRef,
+    inputRef,
+    whisperSessionRef,
+    expandLauncherForDirectLaunch,
+    requestPendingInlineArgumentFocus,
+    exitAiMode,
+    resetCursorPromptState,
+    fetchCommands,
+    loadLauncherPreferences,
+    openWhisper,
+    openSpeak,
+    openCursorPrompt,
+    openClipboardManager,
+    openSnippetManager,
+    openNotesSearch,
+    openCanvasSearch,
+    openQuickLinkManager,
+    openFileSearch,
+    openSchedule,
+    openCamera,
+    openOnboarding,
+    setAiAvailable,
+    setSelectedTextSnapshot,
+    setMemoryFeedback,
+    setMemoryActionLoading,
+    setShowCursorPrompt,
+    setShowWhisperHint,
+    setShowCamera,
+    setShowWindowManager,
+    setShowQuickLinkManager,
+    setScriptCommandSetup,
+    setScriptCommandOutput,
+    setExtensionView,
+    setBrowserResultsViewQuery,
+    setShowSnippetManager,
+    setShowFileSearch,
+    setShowClipboardManager,
+    setBrowserResultsViewScope,
+    setBrowserHistoryProfileMenuOpen,
+    setShowActions,
+    setContextMenu,
+    setShowNotesSearch,
+    setShowCanvasSearch,
+    setShowWhisper,
+    setShowSpeak,
+    setShowSchedule,
+    setShowWhisperOnboarding,
+    setSearchQuery,
+    setSelectedIndex,
+    setIsCompactCollapsed,
+    refreshBrowserOpenTabs: browserSearch.refreshOpenTabs,
+    refreshBrowserEntries: browserSearch.refreshBrowserEntries,
+    refreshBrowserEntriesIfStale: browserSearch.refreshBrowserEntriesIfStale,
+  });
 
   useEffect(() => {
     const cleanupSelectionSnapshotUpdated = window.electron.onSelectionSnapshotUpdated((payload) => {
@@ -1148,13 +815,16 @@ const App: React.FC = () => {
       );
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       setBrowserSearchResultGroups(normalizeBrowserSearchResultGroups(settings.browserSearch?.resultGroups));
+      setWebSearchSuggestionsEnabled(settings.browserSearch?.webSearchSuggestionsEnabled !== false);
+      setRootSearchRanking(settings.rootSearchRanking || {});
+      hydrateWebSearchSettings(settings);
       setDisableFileSearchResults(Boolean(settings.disableFileSearchResults));
       setNavigationStyle(settings.navigationStyle === 'macos' ? 'macos' : 'vim');
       const popToRootSeconds = Number(settings.popToRootSearchTimeoutSeconds);
       popToRootTimeoutMsRef.current = (Number.isFinite(popToRootSeconds) ? Math.max(0, popToRootSeconds) : DEFAULT_POP_TO_ROOT_TIMEOUT_SECONDS) * 1000;
     });
     return cleanup;
-  }, []);
+  }, [hydrateWebSearchSettings]);
 
   // Onboarding is intentionally always shown in dark mode for consistent
   // contrast and readability, independent of the user's regular theme.
@@ -1552,15 +1222,16 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showNotesSearch && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showSchedule && !showWindowManager && !showAppUninstall && !showOnboarding && browserResultsViewQuery === null) {
+    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !bookmarkNicknamePrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showNotesSearch && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showSchedule && !showWindowManager && !showAppUninstall && !showOnboarding && browserResultsViewQuery === null && webSearchQuery === null) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, quickLinkDynamicPrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showNotesSearch, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showAppUninstall, showOnboarding, showWhisperOnboarding, browserResultsViewQuery, restoreLauncherFocus]);
+  }, [showActions, contextMenu, quickLinkDynamicPrompt, bookmarkNicknamePrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showNotesSearch, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showAppUninstall, showOnboarding, showWhisperOnboarding, browserResultsViewQuery, webSearchQuery, restoreLauncherFocus]);
 
   const isLauncherModeActive =
     !showActions &&
     !contextMenu &&
     !quickLinkDynamicPrompt &&
+    !bookmarkNicknamePrompt &&
     !aiMode &&
     !extensionView &&
     !showClipboardManager &&
@@ -1568,6 +1239,7 @@ const App: React.FC = () => {
     !showNotesSearch &&
     !showCanvasSearch &&
     browserResultsViewQuery === null &&
+    webSearchQuery === null &&
     !showQuickLinkManager &&
     !showFileSearch &&
     !showCursorPrompt &&
@@ -1578,12 +1250,9 @@ const App: React.FC = () => {
     !showWindowManager &&
     !showOnboarding &&
     !showWhisperOnboarding;
+  isLauncherModeActiveRef.current = isLauncherModeActive;
   const shouldKeepLauncherSearchResults =
     isLauncherModeActive || showActions || Boolean(contextMenu);
-
-  useEffect(() => {
-    isLauncherModeActiveRef.current = isLauncherModeActive;
-  }, [isLauncherModeActive]);
 
   useEffect(() => {
     if (launcherViewMode !== 'compact' || isLauncherModeActive) return;
@@ -1632,8 +1301,17 @@ const App: React.FC = () => {
             if (!candidatePath || seenPaths.has(candidatePath)) continue;
             if (pathLikeQuery) {
               if (!matchesLauncherPathQuery(candidatePath, trimmed, homeDir)) continue;
-            } else if (!matchesLauncherFileNameTerms(String(candidate?.name || ''), terms)) {
-              continue;
+            } else {
+              const candidateName = String(candidate?.name || '');
+              if (!matchesLauncherFileNameTerms(candidateName, terms)) {
+                const normalizedCandidateText = normalizeLauncherFileSearchText([
+                  candidateName,
+                  candidatePath,
+                  String(candidate?.parentPath || ''),
+                  String(candidate?.displayPath || ''),
+                ].join(' '));
+                if (!terms.every((term) => normalizedCandidateText.includes(term))) continue;
+              }
             }
             seenPaths.add(candidatePath);
             results.push(candidate);
@@ -1722,96 +1400,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const syncCalcResult = useMemo(() => {
-    return searchQuery ? tryCalculate(searchQuery) : null;
-  }, [searchQuery]);
-  const [asyncCalcResult, setAsyncCalcResult] =
-    useState<Awaited<ReturnType<typeof tryCalculateAsync>>>(null);
-  useEffect(() => {
-    calcRequestSeqRef.current += 1;
-    const requestSeq = calcRequestSeqRef.current;
-
-    if (!searchQuery || syncCalcResult) {
-      setAsyncCalcResult(null);
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      void tryCalculateAsync(searchQuery)
-        .then((result) => {
-          if (calcRequestSeqRef.current !== requestSeq) return;
-          setAsyncCalcResult(result);
-        })
-        .catch(() => {
-          if (calcRequestSeqRef.current !== requestSeq) return;
-          setAsyncCalcResult(null);
-        });
-    }, 200);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [searchQuery, syncCalcResult]);
-  const calcResult = syncCalcResult ?? asyncCalcResult;
-  const calcOffset = calcResult ? 1 : 0;
-  const contextualCommands = commands;
-  const filteredCommands = useMemo(
-    () => filterCommands(contextualCommands, searchQuery, commandAliases),
-    [contextualCommands, searchQuery, commandAliases]
-  );
-
-  // When calculator is showing but no commands match, show unfiltered list below.
-  // alwaysOnTop commands are always present in filteredCommands regardless of query,
-  // so exclude them from the "nothing matched" check.
-  const sourceCommands =
-    calcResult && filteredCommands.filter((c) => !c.alwaysOnTop).length === 0
-      ? contextualCommands
-      : filteredCommands;
-  const hiddenListOnlyCommandIds = useMemo(
-    () => new Set(['system-add-to-memory', 'system-cursor-prompt', 'system-emoji-picker']),
-    []
-  );
-  const hasSearchQuery = searchQuery.trim().length > 0;
-  const visibleSourceCommands = useMemo(
-    () => sourceCommands.filter((cmd) => !hiddenListOnlyCommandIds.has(cmd.id) || hasSearchQuery),
-    [sourceCommands, hiddenListOnlyCommandIds, hasSearchQuery]
-  );
-
-  const fileResultCommands = useMemo<CommandInfo[]>(
-    () =>
-      launcherFileResults.map((result) => {
-        const displayParent = result.displayPath || asTildePath(result.parentPath, homeDir);
-        return {
-          id: buildFileResultCommandId(result.path),
-          title: result.name,
-          subtitle: displayParent,
-          keywords: [result.name, result.parentPath, result.displayPath],
-          iconDataUrl: launcherFileIcons[result.path] || undefined,
-          category: 'system',
-          path: result.path,
-        };
-      }),
-    [launcherFileResults, launcherFileIcons, homeDir]
-  );
-
-  const pinnedFileCommands = useMemo<CommandInfo[]>(
-    () =>
-      pinnedFiles.map((filePath) => {
-        const name = getFileBasename(filePath);
-        const parentPath = getFileDirname(filePath);
-        return {
-          id: buildFileResultCommandId(filePath),
-          title: name || filePath,
-          subtitle: asTildePath(parentPath, homeDir),
-          keywords: [name, parentPath, filePath],
-          iconDataUrl: launcherFileIcons[filePath] || undefined,
-          category: 'system',
-          path: filePath,
-        };
-      }),
-    [pinnedFiles, launcherFileIcons, homeDir]
-  );
-
   useEffect(() => {
     if (pinnedFiles.length === 0) return;
     let cancelled = false;
@@ -1880,232 +1468,152 @@ const App: React.FC = () => {
     });
   }, [launcherFileResults, pinnedFiles, fileIsDirectoryMap]);
 
-  const groupedCommands = useMemo(() => {
-    if (hasSearchQuery) {
-      return {
-        contextual: [] as CommandInfo[],
-        pinned: [] as CommandInfo[],
-        recent: [] as CommandInfo[],
-        other: visibleSourceCommands,
-        files: fileResultCommands,
-      };
-    }
-
-    const sourceMap = new Map(visibleSourceCommands.map((cmd) => [cmd.id, cmd]));
-    const hasSelection = selectedTextSnapshot.trim().length > 0;
-    const contextual = hasSelection
-      ? (sourceMap.get('system-add-to-memory') ? [sourceMap.get('system-add-to-memory') as CommandInfo] : [])
-      : [];
-    const contextualIds = new Set(contextual.map((c) => c.id));
-
-    const pinnedFromCommands = pinnedCommands
-      .map((id) => sourceMap.get(id))
-      .filter((cmd): cmd is CommandInfo => Boolean(cmd) && !contextualIds.has((cmd as CommandInfo).id));
-    const pinned = [...pinnedFromCommands, ...pinnedFileCommands];
-    const pinnedSet = new Set(pinned.map((c) => c.id));
-
-    const recentRecencyRank = new Map(recentCommands.map((id, index) => [id, index]));
-    const recent = recentCommands
-      .map((id) => sourceMap.get(id))
-      .filter(
-        (c): c is CommandInfo =>
-          Boolean(c) &&
-          !pinnedSet.has((c as CommandInfo).id) &&
-          !contextualIds.has((c as CommandInfo).id)
-      )
-      .sort((a, b) => {
-        const countA = recentCommandLaunchCounts[a.id] || 0;
-        const countB = recentCommandLaunchCounts[b.id] || 0;
-        if (countB !== countA) return countB - countA;
-        return (recentRecencyRank.get(a.id) ?? Number.MAX_SAFE_INTEGER)
-          - (recentRecencyRank.get(b.id) ?? Number.MAX_SAFE_INTEGER);
+  useEffect(() => {
+    let disposed = false;
+    void window.electron.getDefaultApplication('https://example.com')
+      .then((defaultApp) => {
+        if (disposed || !defaultApp?.path) return null;
+        return window.electron.getAppIconDataUrl(defaultApp.path, 20)
+          .then((appIcon) => appIcon || window.electron.getFileIconDataUrl(defaultApp.path, 20));
       })
-      .slice(0, MAX_RECENT_SECTION_ITEMS);
-    const recentSet = new Set(recent.map((c) => c.id));
-
-    const other = visibleSourceCommands.filter(
-      (c) => !pinnedSet.has(c.id) && !recentSet.has(c.id) && !contextualIds.has(c.id)
-    );
-
-    return { contextual, pinned, recent, files: fileResultCommands, other };
-  }, [hasSearchQuery, visibleSourceCommands, pinnedCommands, pinnedFileCommands, recentCommands, recentCommandLaunchCounts, selectedTextSnapshot, fileResultCommands]);
-
-  // Chrome-style inline autocomplete: the input visually shows the full
-  // completion ("x.com") with the auto-extended portion (".com") selected,
-  // while `searchQuery` continues to hold what the user actually typed (so
-  // result filtering uses the typed prefix, not the extended URL).
-  const browserSearchAutoComplete = useMemo(() => {
-    if (!browserSearch.enabled) return null;
-    if (aiMode) return null;
-    if (browserSearchSkipAutoComplete) return null;
-    if (!searchQuery) return null;
-    const completion = browserSearch.getCompletion(searchQuery, browserSearchResultGroups);
-    if (!completion) return null;
-    if (completion.completion === searchQuery) return null;
-    if (!completion.completion.toLowerCase().startsWith(searchQuery.toLowerCase())) return null;
-    return completion;
-  }, [browserSearch, browserSearchResultGroups, searchQuery, browserSearchSkipAutoComplete, aiMode]);
-
-  const launcherInputValue = browserSearchAutoComplete?.completion ?? searchQuery;
-
-  const browserSearchTopResult = useMemo<BrowserSearchResult | null>(() => {
-    if (!browserSearch.enabled) return null;
-    if (aiMode) return null;
-    const subject = searchQuery.trim();
-    if (!subject) return null;
-    return browserSearch.getTopResult(subject, browserSearchResultGroups);
-  }, [browserSearch, browserSearchResultGroups, searchQuery, aiMode]);
-
-  const browserSearchSyntheticCommand = useMemo<CommandInfo | null>(() => {
-    if (!browserSearch.enabled) return null;
-    if (aiMode) return null;
-    const subject = launcherInputValue.trim();
-    if (!subject) return null;
-    if (browserSearchTopResult) {
-      return {
-        id: BROWSER_SEARCH_OPEN_URL_ID,
-        title: browserSearchTopResult.title,
-        subtitle: browserSearchTopResult.subtitle,
-        category: 'system',
-        keywords: [browserSearchTopResult.title, browserSearchTopResult.subtitle, browserSearchTopResult.url],
-        alwaysOnTop: true,
-        browserMatchKind: browserSearchTopResult.kind === 'open-tab' ? 'open-tab' : 'history',
-        browserResultKind: browserSearchTopResult.kind,
-        browserActionInput: browserSearchTopResult.actionInput,
-        browserFocusAvailable: browserSearchTopResult.focusAvailable,
-      };
-    }
-    const resolved = browserSearch.resolve(subject);
-    if (!resolved) return null;
-    if (resolved.type === 'url') {
-      const displayUrl = subject.replace(/^https?:\/\//i, '').replace(/\/+$/, '') || resolved.host || subject;
-      const browserMatchKind = browserSearch.getMatchKind(subject, browserSearchAutoComplete);
-      const hasOpenTabMatch = browserMatchKind === 'open-tab';
-      return {
-        id: BROWSER_SEARCH_OPEN_URL_ID,
-        title: t('launcher.browserSearch.openUrl', { url: displayUrl }),
-        subtitle: hasOpenTabMatch
-          ? t('launcher.browserSearch.subtitle.openTabMatch')
-          : t('launcher.browserSearch.subtitle.openUrl'),
-        category: 'system',
-        keywords: [],
-        alwaysOnTop: true,
-        browserMatchKind,
-        browserResultKind: hasOpenTabMatch ? 'open-tab' : undefined,
-        browserActionInput: subject,
-        browserFocusAvailable: hasOpenTabMatch,
-      };
-    }
-    // Search intent: suppress when there are real app/command/contextual
-    // matches — the user is more likely launching an app like "Clipboard
-    // History" than literally searching the web for "clip". Files are
-    // intentionally excluded since broad filename matches are noisy.
-    const hasAppMatch =
-      groupedCommands.contextual.length > 0 ||
-      groupedCommands.pinned.length > 0 ||
-      groupedCommands.recent.length > 0 ||
-      groupedCommands.other.length > 0;
-    if (hasAppMatch) return null;
-    return {
-      id: BROWSER_SEARCH_PERFORM_SEARCH_ID,
-      title: t('launcher.browserSearch.searchFor', { query: subject }),
-      subtitle: t('launcher.browserSearch.subtitle.search'),
-      category: 'system',
-      keywords: [],
-      alwaysOnTop: true,
-      browserMatchKind: 'search',
-      browserResultKind: 'search',
-      browserActionInput: subject,
-    };
-  }, [browserSearch, browserSearchAutoComplete, browserSearchTopResult, launcherInputValue, aiMode, t, groupedCommands]);
-
-  const browserSearchResultCommands = useMemo<CommandInfo[]>(() => {
-    if (!browserSearch.enabled) return [];
-    if (aiMode) return [];
-    const subject = searchQuery.trim();
-    if (!subject) return [];
-    const topUrl = browserSearchTopResult ? normalizeBrowserCommandUrl(browserSearchTopResult.url) : '';
-    const limitedResults = browserSearch
-      .getResults(subject, browserSearchResultGroups)
-      .filter((result) => normalizeBrowserCommandUrl(result.url) !== topUrl);
-    const allCount = browserSearch.getAllResults(subject, browserSearchResultGroups).length;
-    const commands: CommandInfo[] = limitedResults.map((result, index): CommandInfo => ({
-      id: `${BROWSER_SEARCH_RESULT_ID_PREFIX}${result.kind}:${index}:${result.id}`,
-      title: result.title,
-      subtitle: result.subtitle,
-      category: 'system',
-      keywords: [result.title, result.subtitle, result.url],
-      browserMatchKind: result.kind === 'open-tab' ? 'open-tab' : 'history',
-      browserResultKind: result.kind,
-      browserActionInput: result.actionInput,
-      browserFocusAvailable: result.focusAvailable,
-    }));
-    if (allCount > 0) {
-      commands.push({
-        id: BROWSER_SEARCH_SHOW_ALL_RESULTS_ID,
-        title: t('launcher.browserSearch.showAll'),
-        subtitle: t('launcher.browserSearch.showAllSubtitle', { count: String(allCount) }),
-        category: 'system',
-        keywords: [subject, 'browser', 'results'],
-        browserActionInput: subject,
+      .then((iconDataUrl) => {
+        if (disposed || !iconDataUrl) return;
+        setDefaultBrowserIconDataUrl(iconDataUrl);
+      })
+      .catch(() => {
+        if (!disposed) setDefaultBrowserIconDataUrl('');
       });
-    }
-    return commands;
-  }, [browserSearch, browserSearchResultGroups, browserSearchTopResult, searchQuery, aiMode, t]);
-
-  const displayCommands = useMemo(() => {
-    const all = [
-      ...browserSearchResultCommands,
-      ...groupedCommands.contextual,
-      ...groupedCommands.pinned,
-      ...groupedCommands.recent,
-      ...groupedCommands.other,
-      ...groupedCommands.files,
-    ];
-    // alwaysOnTop commands (e.g. update banner) must be the very first items,
-    // above pinned, contextual, and everything else.
-    const top = all.filter((c) => c.alwaysOnTop);
-    const rest = all.filter((c) => !c.alwaysOnTop);
-    const ordered = [...top, ...rest];
-    return browserSearchSyntheticCommand ? [browserSearchSyntheticCommand, ...ordered] : ordered;
-  }, [browserSearchResultCommands, groupedCommands, browserSearchSyntheticCommand]);
-
-  const browserResultsViewResults = useMemo(() => {
-    if (browserResultsViewQuery === null) return [];
-    return browserSearch.getAllResults(browserResultsViewQuery, browserSearchResultGroups);
-  }, [browserSearch, browserSearchResultGroups, browserResultsViewQuery]);
-
-  const browserResultsViewSections = useMemo(() => {
-    const groupOrder = normalizeBrowserSearchResultGroups(browserSearchResultGroups).map((group) => group.kind);
-    return groupOrder
-      .map((kind) => ({
-        kind,
-        title: kind === 'bookmark'
-          ? t('launcher.badges.bookmark')
-          : kind === 'open-tab'
-            ? t('launcher.badges.openTab')
-            : t('launcher.badges.history'),
-        items: browserResultsViewResults.filter((result) => result.kind === kind),
-      }))
-      .filter((section) => section.items.length > 0);
-  }, [browserSearchResultGroups, browserResultsViewResults, t]);
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   useEffect(() => {
-    setBrowserResultsViewSelectedIndex(0);
-  }, [browserResultsViewQuery, browserResultsViewResults.length]);
+    const browserIds = Array.from(
+      new Set(
+        (browserSearch.profiles || [])
+          .map((profile) => profile.browserId)
+          .filter((browserId): browserId is BrowserSearchSource => Boolean(browserId))
+      )
+    ).filter((browserId) => !browserAppIconDataUrls[String(browserId)]);
+    if (browserIds.length === 0) return;
 
-  useEffect(() => {
-    if (browserResultsViewQuery === null) return;
-    window.setTimeout(() => browserResultsViewInputRef.current?.focus(), 0);
-  }, [browserResultsViewQuery]);
+    let disposed = false;
+    const timer = window.setTimeout(() => {
+      void Promise.all(
+        browserIds.map(async (browserId) => {
+          const paths = BROWSER_APP_PATHS[browserId] || [];
+          for (const appPath of paths) {
+            const appIcon = await window.electron.getAppIconDataUrl(appPath, 20).catch(() => null);
+            const icon = appIcon || await window.electron.getFileIconDataUrl(appPath, 20).catch(() => null);
+            if (icon) return [String(browserId), icon] as const;
+          }
+          return null;
+        })
+      ).then((entries) => {
+        if (disposed) return;
+        const nextEntries = entries.filter((entry): entry is readonly [string, string] => Boolean(entry));
+        if (nextEntries.length === 0) return;
+        setBrowserAppIconDataUrls((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          for (const [browserId, icon] of nextEntries) {
+            if (next[browserId] !== icon) {
+              next[browserId] = icon;
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      });
+    }, 450);
 
-  const openBrowserResult = useCallback(async (result: BrowserSearchResult, options?: { focusExistingTab?: boolean }) => {
-    const ok = await browserSearch.executeBrowserSearch(result.actionInput, options);
-    if (ok) {
-      setBrowserResultsViewQuery(null);
-      try { window.electron.hideWindow(); } catch {}
-    }
-  }, [browserSearch]);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, [browserSearch.profiles, browserAppIconDataUrls]);
+
+  const {
+    calcResult,
+    calcOffset,
+    displayCommands,
+    launcherCommandSections,
+    selectedCommand,
+    selectedFileResultPath,
+    rootSearchAutoComplete,
+  } = useLauncherCommandModel({
+    commands,
+    searchQuery: deferredSearchQuery,
+    commandAliases,
+    homeDir,
+    launcherFileResults,
+    launcherFileIcons,
+    pinnedFiles,
+    pinnedCommands,
+    recentCommands,
+    recentCommandLaunchCounts,
+    selectedTextSnapshot,
+    browserSearch,
+    browserSearchResultGroups,
+    aiMode,
+    rootSearchRanking,
+    webSearchSuggestionsEnabled,
+    rootBangState,
+    enabledSearchBangs,
+    effectiveSearchBangs,
+    webSearchDefaultBangKey,
+    webSearchBangUsage,
+    rootWebSearchSuggestions,
+    selectedIndex,
+    defaultBrowserIconDataUrl,
+    browserAppIconDataUrls,
+    t,
+  });
+
+  const browserSearchAutoComplete = deferredSearchQuery === searchQuery ? rootSearchAutoComplete : null;
+  const launcherInputValue = searchQuery;
+
+  const {
+    inlineArgumentLaneRef,
+    inlineArgumentClusterRef,
+    inlineArgumentInputRefs,
+    inlineQuickLinkInputRefs,
+
+    selectedExtensionArgumentDefinitions,
+    selectedInlineExtensionArgumentDefinitions,
+    selectedInlineExtensionArgumentValues,
+    hasSelectedExtensionOverflowArguments,
+
+    selectedQuickLinkId,
+    selectedQuickLinkDynamicFields,
+    selectedInlineQuickLinkDynamicFields,
+    selectedInlineQuickLinkDynamicValues,
+    hasSelectedQuickLinkOverflowDynamicFields,
+
+    isShowingInlineArgumentInputs,
+    shouldHideAskAi,
+    selectedInlineArgumentLeadingIcon,
+    inlineArgumentStartPx,
+
+    inlineQuickLinkDynamicFieldsById,
+    inlineQuickLinkDynamicValuesById,
+
+    requestPendingInlineArgumentFocus: requestPendingInlineArgumentFocusImpl,
+    getDynamicFieldsForQuickLink,
+    updateInlineExtensionArgumentValue,
+    clearInlineExtensionArgumentsForCommand,
+    getInlineExtensionArgumentsForCommand,
+    updateInlineQuickLinkDynamicValue,
+    clearInlineQuickLinkDynamicValuesForId,
+  } = useLauncherInlineArguments({
+    selectedCommand,
+    selectedCommandId: selectedCommand?.id,
+    searchQuery,
+    isLauncherModeActive,
+    inputRef,
+  });
+  requestPendingInlineArgumentFocusRef.current = requestPendingInlineArgumentFocusImpl;
 
   useEffect(() => {
     itemRefs.current = itemRefs.current.slice(0, displayCommands.length + calcOffset);
@@ -2140,285 +1648,15 @@ const App: React.FC = () => {
     setSelectedIndex((prev) => (prev > max ? max : prev));
   }, [displayCommands.length, calcOffset]);
 
-  const selectedCommand =
-    selectedIndex >= calcOffset
-      ? displayCommands[selectedIndex - calcOffset]
-      : null;
   useEffect(() => {
     selectedCommandRef.current = selectedCommand;
   }, [selectedCommand]);
-  const selectedExtensionArgumentDefinitions = useMemo(
-    () =>
-      selectedCommand?.category === 'extension'
-        ? (selectedCommand.commandArgumentDefinitions || []).filter((definition) => definition?.name)
-        : [],
-    [selectedCommand]
-  );
-  const selectedInlineExtensionArgumentDefinitions = useMemo(
-    () => selectedExtensionArgumentDefinitions.slice(0, MAX_INLINE_EXTENSION_ARGUMENTS),
-    [selectedExtensionArgumentDefinitions]
-  );
-  const selectedInlineExtensionArgumentValues = useMemo(
-    () => (selectedCommand ? inlineExtensionArgumentValues[selectedCommand.id] || {} : {}),
-    [inlineExtensionArgumentValues, selectedCommand]
-  );
-  const hasSelectedExtensionOverflowArguments =
-    selectedExtensionArgumentDefinitions.length > selectedInlineExtensionArgumentDefinitions.length;
-  const selectedQuickLinkId = useMemo(
-    () => (selectedCommand ? getQuickLinkIdFromCommandId(selectedCommand.id) : null),
-    [selectedCommand]
-  );
-  const selectedQuickLinkDynamicFields = useMemo(
-    () => (selectedQuickLinkId ? inlineQuickLinkDynamicFieldsById[selectedQuickLinkId] || [] : []),
-    [inlineQuickLinkDynamicFieldsById, selectedQuickLinkId]
-  );
-  const selectedInlineQuickLinkDynamicFields = useMemo(
-    () => selectedQuickLinkDynamicFields.slice(0, MAX_INLINE_QUICK_LINK_ARGUMENTS),
-    [selectedQuickLinkDynamicFields]
-  );
-  const selectedInlineQuickLinkDynamicValues = useMemo(
-    () => (selectedQuickLinkId ? inlineQuickLinkDynamicValuesById[selectedQuickLinkId] || {} : {}),
-    [inlineQuickLinkDynamicValuesById, selectedQuickLinkId]
-  );
-  const hasSelectedQuickLinkOverflowDynamicFields =
-    selectedQuickLinkDynamicFields.length > selectedInlineQuickLinkDynamicFields.length;
-  const isShowingInlineArgumentInputs =
-    selectedInlineExtensionArgumentDefinitions.length > 0 || selectedInlineQuickLinkDynamicFields.length > 0;
-  const shouldHideAskAi = Boolean(selectedQuickLinkId) || isShowingInlineArgumentInputs;
-  const selectedInlineArgumentLeadingIcon = useMemo(() => {
-    if (!isShowingInlineArgumentInputs || !selectedCommand) return null;
-    return renderCommandIcon(selectedCommand);
-  }, [isShowingInlineArgumentInputs, selectedCommand]);
-  const inlineArgumentStartPx = useInlineArgumentAnchor({
-    enabled: isShowingInlineArgumentInputs,
-    query: searchQuery,
-    searchInputRef: inputRef,
-    laneRef: inlineArgumentLaneRef,
-    inlineRef: inlineArgumentClusterRef,
-    minStartRatio: 0.3,
-  });
-  const selectedFileResultPath = useMemo(
-    () => getFileResultPathFromCommand(selectedCommand),
-    [selectedCommand]
-  );
 
   useEffect(() => {
     if (!showFileSearch && fileSearchInitialDetailPath) {
       setFileSearchInitialDetailPath(null);
     }
   }, [showFileSearch, fileSearchInitialDetailPath]);
-
-  const getDynamicFieldsForQuickLink = useCallback(
-    async (
-      quickLinkId: string,
-      options?: { forceRefresh?: boolean }
-    ): Promise<QuickLinkDynamicField[]> => {
-      const normalizedId = String(quickLinkId || '').trim();
-      if (!normalizedId) return [];
-      const cached = inlineQuickLinkDynamicFieldsById[normalizedId];
-      if (cached && !options?.forceRefresh) return cached;
-      try {
-        const fetched = await window.electron.quickLinkGetDynamicFields(normalizedId);
-        const normalizedFields = normalizeQuickLinkDynamicFields(Array.isArray(fetched) ? fetched : []);
-        setInlineQuickLinkDynamicFieldsById((prev) => ({
-          ...prev,
-          [normalizedId]: normalizedFields,
-        }));
-        return normalizedFields;
-      } catch (error) {
-        console.error('Failed to load quick link dynamic fields for launcher inline input:', error);
-        return [];
-      }
-    },
-    [inlineQuickLinkDynamicFieldsById]
-  );
-  useEffect(() => {
-    inlineArgumentInputRefs.current = inlineArgumentInputRefs.current.slice(
-      0,
-      selectedInlineExtensionArgumentDefinitions.length
-    );
-  }, [selectedInlineExtensionArgumentDefinitions.length]);
-
-  useEffect(() => {
-    inlineQuickLinkInputRefs.current = inlineQuickLinkInputRefs.current.slice(
-      0,
-      selectedInlineQuickLinkDynamicFields.length
-    );
-  }, [selectedInlineQuickLinkDynamicFields.length]);
-
-  // When a hotkey-triggered no-view command opens the launcher with a pre-typed
-  // query, focus the first inline argument input once it appears in the DOM.
-  useEffect(() => {
-    if (!pendingFocusInlineArgRef.current) return;
-    if (!isShowingInlineArgumentInputs) return;
-    pendingFocusInlineArgRef.current = false;
-    requestAnimationFrame(() => {
-      inlineArgumentInputRefs.current[0]?.focus();
-    });
-  }, [isShowingInlineArgumentInputs]);
-
-  useEffect(() => {
-    if (!isLauncherModeActive) return;
-    const extensionIdentity = getExtensionIdentityFromCommand(selectedCommand);
-    if (!selectedCommand || !extensionIdentity || selectedExtensionArgumentDefinitions.length === 0) return;
-
-    setInlineExtensionArgumentValues((prev) => {
-      if (prev[selectedCommand.id]) return prev;
-      const shouldRestoreStoredArgs = selectedCommand.mode === 'no-view';
-      const storedValues = shouldRestoreStoredArgs
-        ? readJsonObject(getCmdArgsKey(extensionIdentity.extName, extensionIdentity.cmdName))
-        : {};
-      if (!shouldRestoreStoredArgs) {
-        clearCommandArguments(extensionIdentity.extName, extensionIdentity.cmdName);
-      }
-      const initialValues = selectedExtensionArgumentDefinitions.reduce((acc, definition) => {
-        acc[definition.name] = String(storedValues[definition.name] ?? '');
-        return acc;
-      }, {} as Record<string, string>);
-      return {
-        ...prev,
-        [selectedCommand.id]: initialValues,
-      };
-    });
-  }, [isLauncherModeActive, selectedCommand, selectedExtensionArgumentDefinitions]);
-
-  useEffect(() => {
-    if (!isLauncherModeActive || !selectedQuickLinkId) return;
-    void getDynamicFieldsForQuickLink(selectedQuickLinkId, { forceRefresh: true });
-  }, [getDynamicFieldsForQuickLink, isLauncherModeActive, selectedQuickLinkId]);
-
-  useEffect(() => {
-    if (!selectedQuickLinkId || selectedQuickLinkDynamicFields.length === 0) return;
-    setInlineQuickLinkDynamicValuesById((prev) => {
-      const existing = prev[selectedQuickLinkId] || {};
-      let changed = !prev[selectedQuickLinkId];
-      const nextValues = { ...existing };
-      for (const field of selectedQuickLinkDynamicFields) {
-        const key = String(field.key || '').trim();
-        if (!key || nextValues[key] !== undefined) continue;
-        nextValues[key] = String(field.defaultValue || '');
-        changed = true;
-      }
-      if (!changed) return prev;
-      return {
-        ...prev,
-        [selectedQuickLinkId]: nextValues,
-      };
-    });
-  }, [selectedQuickLinkDynamicFields, selectedQuickLinkId]);
-
-  useEffect(() => {
-    if (!isLauncherModeActive) return;
-    const timer = window.setTimeout(() => {
-      if (document.activeElement !== inputRef.current) {
-        inputRef.current?.focus();
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [isLauncherModeActive, selectedCommand?.id, selectedInlineExtensionArgumentDefinitions.length, selectedInlineQuickLinkDynamicFields.length]);
-
-  const updateInlineExtensionArgumentValue = useCallback(
-    (command: CommandInfo, argumentName: string, value: string) => {
-      const extensionIdentity = getExtensionIdentityFromCommand(command);
-      setInlineExtensionArgumentValues((prev) => {
-        const nextCommandValues = {
-          ...(prev[command.id] || {}),
-          [argumentName]: value,
-        };
-        if (extensionIdentity && command.mode === 'no-view') {
-          writeJsonObject(getCmdArgsKey(extensionIdentity.extName, extensionIdentity.cmdName), nextCommandValues);
-        }
-        return {
-          ...prev,
-          [command.id]: nextCommandValues,
-        };
-      });
-    },
-    []
-  );
-
-  const clearInlineExtensionArgumentsForCommand = useCallback((command: CommandInfo) => {
-    const extensionIdentity = getExtensionIdentityFromCommand(command);
-    setInlineExtensionArgumentValues((prev) => {
-      if (!prev[command.id]) return prev;
-      const next = { ...prev };
-      delete next[command.id];
-      return next;
-    });
-    if (extensionIdentity && command.mode !== 'no-view') {
-      clearCommandArguments(extensionIdentity.extName, extensionIdentity.cmdName);
-    }
-  }, []);
-
-  const updateInlineQuickLinkDynamicValue = useCallback(
-    (quickLinkId: string, key: string, value: string) => {
-      const normalizedId = String(quickLinkId || '').trim();
-      const normalizedKey = String(key || '').trim();
-      if (!normalizedId || !normalizedKey) return;
-      setInlineQuickLinkDynamicValuesById((prev) => ({
-        ...prev,
-        [normalizedId]: {
-          ...(prev[normalizedId] || {}),
-          [normalizedKey]: value,
-        },
-      }));
-    },
-    []
-  );
-
-  const clearInlineQuickLinkDynamicValuesForId = useCallback((quickLinkId: string) => {
-    const normalizedId = String(quickLinkId || '').trim();
-    if (!normalizedId) return;
-    setInlineQuickLinkDynamicValuesById((prev) => {
-      if (!prev[normalizedId]) return prev;
-      const next = { ...prev };
-      delete next[normalizedId];
-      return next;
-    });
-  }, []);
-
-  const getInlineExtensionArgumentsForCommand = useCallback(
-    (command: CommandInfo): Record<string, string> => {
-      const definitions = (command.commandArgumentDefinitions || []).filter((definition) => definition?.name);
-      if (definitions.length === 0) return {};
-
-      const current = { ...(inlineExtensionArgumentValues[command.id] || {}) };
-      if (selectedCommand?.id === command.id) {
-        for (let index = 0; index < definitions.length; index += 1) {
-          const definition = definitions[index];
-          if (index >= MAX_INLINE_EXTENSION_ARGUMENTS) break;
-          const input = inlineArgumentInputRefs.current[index];
-          if (!input) continue;
-          current[definition.name] = String((input as HTMLInputElement | HTMLSelectElement).value ?? '');
-        }
-      }
-
-      const next = definitions.reduce((acc, definition) => {
-        acc[definition.name] = String(current[definition.name] ?? '');
-        return acc;
-      }, {} as Record<string, string>);
-
-      setInlineExtensionArgumentValues((prev) => {
-        const existing = prev[command.id] || {};
-        let changed = false;
-        for (const definition of definitions) {
-          const key = definition.name;
-          if (String(existing[key] ?? '') !== String(next[key] ?? '')) {
-            changed = true;
-            break;
-          }
-        }
-        if (!changed) return prev;
-        return {
-          ...prev,
-          [command.id]: next,
-        };
-      });
-
-      return next;
-    },
-    [inlineExtensionArgumentValues, selectedCommand]
-  );
 
   const openFileResultByPath = useCallback(async (targetPath: string) => {
     if (!targetPath) return;
@@ -2467,90 +1705,35 @@ const App: React.FC = () => {
     [openFileSearch]
   );
 
-  const togglePinSelectedCommand = useCallback(async () => {
-    if (!selectedCommand) return;
-    await pinToggleForCommand(selectedCommand);
-  }, [selectedCommand, pinToggleForCommand]);
-
-  const disableSelectedCommand = useCallback(async () => {
-    if (!selectedCommand) return;
-    await disableCommand(selectedCommand);
-  }, [selectedCommand, disableCommand]);
-
-  const uninstallSelectedExtension = useCallback(async () => {
-    if (!selectedCommand) return;
-    await uninstallExtensionCommand(selectedCommand);
-  }, [selectedCommand, uninstallExtensionCommand]);
-
-  const copyDeeplinkForSelectedCommand = useCallback(async () => {
-    if (!selectedCommand || !selectedCommand.deeplink) return;
-    await copyCommandDeeplink(selectedCommand);
-  }, [selectedCommand, copyCommandDeeplink]);
-
-  const moveSelectedPinnedCommand = useCallback(
-    async (direction: 'up' | 'down') => {
-      if (!selectedCommand) return;
-      await movePinnedCommand(selectedCommand, direction);
-    },
-    [selectedCommand, movePinnedCommand]
-  );
-
-  const moveSelection = useCallback(
-    (direction: 'up' | 'down', options: { wrap?: boolean } = {}) => {
-      const { wrap = false } = options;
-      setSelectedIndex((prev) => {
-        const max = Math.max(0, displayCommands.length + calcOffset - 1);
-        if (direction === 'down') {
-          if (prev < max) return prev + 1;
-          return wrap ? 0 : max;
-        }
-        if (prev > 0) return prev - 1;
-        return wrap ? max : 0;
-      });
-    },
-    [displayCommands.length, calcOffset]
-  );
-
-  const handleLauncherSearchBlur = useCallback(() => {
-    if (!isLauncherModeActiveRef.current) return;
-    requestAnimationFrame(() => {
-      if (!isLauncherModeActiveRef.current) return;
-      const activeElement = document.activeElement;
-      if (activeElement === inputRef.current) return;
-      if (isEditableElement(activeElement)) return;
-      inputRef.current?.focus();
-    });
-  }, []);
-
-  // After every render where the autocomplete state changed, sync the
-  // input's selection so the auto-extended portion stays highlighted.
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    if (!browserSearchAutoComplete) return;
-    if (el.value !== browserSearchAutoComplete.completion) return;
-    const start = searchQuery.length;
-    const end = browserSearchAutoComplete.completion.length;
-    if (start >= end) return;
-    try {
-      el.setSelectionRange(start, end);
-    } catch {}
-  }, [browserSearchAutoComplete, searchQuery]);
-
-  // Once the user has dismissed an autocomplete with Backspace, keep it
-  // dismissed for the rest of the typing session — only re-enable when
-  // they clear the input completely and start fresh. Mirrors how Chrome's
-  // omnibox behaves after a manual rejection.
-  useEffect(() => {
-    if (searchQuery.length === 0 && browserSearchSkipAutoComplete) {
-      setBrowserSearchSkipAutoComplete(false);
-    }
-  }, [searchQuery, browserSearchSkipAutoComplete]);
-
   const submitBrowserSearch = useCallback(
-    async (input: string, options?: { focusExistingTab?: boolean }) => {
+    async (input: string, options?: Parameters<typeof browserSearch.executeBrowserSearch>[1]) => {
       const trimmed = input.trim();
       if (!trimmed) return false;
+      const bangState = parseSearchBangState(trimmed, enabledSearchBangs);
+      if (bangState.mode === 'active' && bangState.query) {
+        const ok = await window.electron.browserTabsOpenUrlProfile?.(
+          buildBangSearchUrl(bangState.bang, bangState.query),
+          { event: options?.event, sourceProfileId: options?.openInSourceProfile ? options.sourceProfileId : null }
+        ).then((result) => result.ok).catch(() => window.electron.openUrl(buildBangSearchUrl(bangState.bang, bangState.query)));
+        if (ok) {
+          setBrowserSearchSkipAutoComplete(false);
+          try { window.electron.hideWindow(); } catch {}
+        }
+        return Boolean(ok);
+      }
+      const resolved = browserSearch.resolve(trimmed);
+      if (resolved?.type === 'search') {
+        const defaultBang = getSearchBangByKeyFromList(webSearchDefaultBangKey, effectiveSearchBangs);
+        const ok = await window.electron.browserTabsOpenUrlProfile?.(
+          buildBangSearchUrl(defaultBang, trimmed),
+          { event: options?.event, sourceProfileId: options?.openInSourceProfile ? options.sourceProfileId : null }
+        ).then((result) => result.ok).catch(() => window.electron.openUrl(buildBangSearchUrl(defaultBang, trimmed)));
+        if (ok) {
+          setBrowserSearchSkipAutoComplete(false);
+          try { window.electron.hideWindow(); } catch {}
+        }
+        return Boolean(ok);
+      }
       const ok = await browserSearch.executeBrowserSearch(trimmed, options);
       if (ok) {
         setBrowserSearchSkipAutoComplete(false);
@@ -2558,484 +1741,70 @@ const App: React.FC = () => {
       }
       return ok;
     },
-    [browserSearch]
+    [browserSearch, webSearchDefaultBangKey, effectiveSearchBangs, enabledSearchBangs]
   );
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (showAppUninstall) {
-        return;
-      }
-      if (quickLinkDynamicPrompt) {
-        return;
-      }
-      const target = e.target as HTMLElement | null;
-      const isSearchInputTarget = target === inputRef.current;
+  submitBrowserSearchRef.current = submitBrowserSearch;
 
-      if (e.metaKey && (e.key === 'k' || e.key === 'K') && !e.repeat) {
-        e.preventDefault();
-        if (showActions) {
-          setShowActions(false);
-          return;
-        }
-        if (!selectedCommand) return;
-        setContextMenu(null);
-        setActionsCommand(selectedCommand);
-        setSelectedActionIndex(0);
-        setShowActions(true);
-        return;
-      }
+  const recordRootSearchLaunch = useCallback(async (command: CommandInfo, query: string) => {
+    const stableKey = String(command.rootSearchStableKey || '').trim();
+    const normalizedQuery = String(query || '').trim();
+    if (!stableKey || !normalizedQuery) return;
+    if (command.id === BROWSER_SEARCH_SHOW_ALL_RESULTS_ID) return;
+    const nextRanking = recordRootSearchLaunchInState(rootSearchRankingRef.current, stableKey, normalizedQuery);
+    rootSearchRankingRef.current = nextRanking;
+    setRootSearchRanking(nextRanking);
+    try {
+      const latest = (await window.electron.recordRootSearchLaunch(
+        stableKey,
+        normalizedQuery
+      )) as RootSearchRankingState;
+      rootSearchRankingRef.current = latest;
+      setRootSearchRanking(latest);
+    } catch (error) {
+      console.warn('Failed to record root search launch:', error);
+    }
+  }, []);
 
-      if (showActions || contextMenu) {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          if (showActions) setShowActions(false);
-          if (contextMenu) setContextMenu(null);
-          restoreLauncherFocus();
-        }
-        return;
-      }
-      if (selectedFileResultPath && e.metaKey && !e.shiftKey && !e.altKey && (e.key === 'd' || e.key === 'D')) {
-        e.preventDefault();
-        showFileResultDetailsByPath(selectedFileResultPath);
-        return;
-      }
-      if (selectedFileResultPath && e.metaKey && e.key === 'Enter') {
-        e.preventDefault();
-        void revealFileResultByPath(selectedFileResultPath);
-        return;
-      }
-      if (selectedFileResultPath && e.metaKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
-        e.preventDefault();
-        void copyFileResultPath(selectedFileResultPath);
-        return;
-      }
-      if (selectedFileResultPath && e.metaKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
-        e.preventDefault();
-        void pinToggleForFile(selectedFileResultPath);
-        return;
-      }
-      if (!selectedFileResultPath && e.metaKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
-        e.preventDefault();
-        togglePinSelectedCommand();
-        return;
-      }
-      if (!selectedFileResultPath && e.metaKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
-        e.preventDefault();
-        disableSelectedCommand();
-        return;
-      }
-      if (
-        !selectedFileResultPath &&
-        e.metaKey &&
-        e.shiftKey &&
-        (e.key === 'L' || e.key === 'l') &&
-        selectedCommand?.deeplink
-      ) {
-        e.preventDefault();
-        void copyDeeplinkForSelectedCommand();
-        return;
-      }
-      if (!selectedFileResultPath && e.metaKey && (e.key === 'Backspace' || e.key === 'Delete')) {
-        if (selectedCommand?.category === 'extension') {
-          e.preventDefault();
-          uninstallSelectedExtension();
-          return;
-        }
-      }
-      // Ctrl+X: Uninstall Application (for app commands and .app file results)
-      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === 'x' || e.key === 'X')) {
-        const appPath = selectedFileResultPath?.endsWith('.app')
-          ? selectedFileResultPath
-          : (selectedCommand?.category === 'app' && selectedCommand?.path?.endsWith('.app'))
-            ? selectedCommand.path
-            : null;
-        if (appPath) {
-          e.preventDefault();
-          openAppUninstall(appPath);
-          return;
-        }
-      }
-      if (!selectedFileResultPath && e.metaKey && e.altKey && e.key === 'ArrowUp') {
-        e.preventDefault();
-        moveSelectedPinnedCommand('up');
-        return;
-      }
-      if (!selectedFileResultPath && e.metaKey && e.altKey && e.key === 'ArrowDown') {
-        e.preventDefault();
-        moveSelectedPinnedCommand('down');
-        return;
-      }
-
-      // Cmd+1 through Cmd+9: quick-launch the Nth command (Alfred-style)
-      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
-        const idx = parseInt(e.key, 10) - 1;
-        const target = displayCommands[idx];
-        if (target) {
-          e.preventDefault();
-          handleCommandExecute(target);
-          return;
-        }
-      }
-
-      switch (e.key) {
-        case 'Tab':
-          if (isSearchInputTarget && isShowingInlineArgumentInputs) {
-            e.preventDefault();
-            if (selectedInlineExtensionArgumentDefinitions.length > 0) {
-              const targetIndex = e.shiftKey
-                ? selectedInlineExtensionArgumentDefinitions.length - 1
-                : 0;
-              inlineArgumentInputRefs.current[targetIndex]?.focus();
-              return;
-            }
-            if (selectedInlineQuickLinkDynamicFields.length > 0) {
-              const targetIndex = e.shiftKey
-                ? selectedInlineQuickLinkDynamicFields.length - 1
-                : 0;
-              inlineQuickLinkInputRefs.current[targetIndex]?.focus();
-              return;
-            }
-          }
-          if (isSearchInputTarget && aiAvailable && !shouldHideAskAi) {
-            e.preventDefault();
-            if (launcherViewMode === 'compact') {
-              setIsCompactCollapsed(false);
-              window.electron.resizeLauncherWindow(true);
-            }
-            startAiChat(searchQuery);
-          }
-          break;
-
-        case 'ArrowDown':
-          e.preventDefault();
-          if (launcherViewMode === 'compact' && isCompactCollapsed) {
-            setIsCompactCollapsed(false);
-            window.electron.resizeLauncherWindow(true);
-            break;
-          }
-          moveSelection('down');
-          break;
-
-        case 'ArrowUp':
-          e.preventDefault();
-          moveSelection('up');
-          break;
-
-        case 'Enter':
-          e.preventDefault();
-          if (calcResult && selectedIndex === 0) {
-            navigator.clipboard.writeText(calcResult.result);
-            window.electron.hideWindow();
-          } else if (displayCommands[selectedIndex - calcOffset]) {
-            const selected = displayCommands[selectedIndex - calcOffset];
-            if (selectedFileResultPath && e.metaKey) {
-              void revealFileResultByPath(selectedFileResultPath);
-            } else if (
-              e.metaKey &&
-              !e.shiftKey &&
-              !e.ctrlKey &&
-              !e.altKey &&
-              selected &&
-              isBrowserSearchCommand(selected) &&
-              selected.browserFocusAvailable
-            ) {
-              void submitBrowserSearch(String(selected.browserActionInput || launcherInputValue).trim(), { focusExistingTab: true });
-            } else if (selected) {
-              handleCommandExecute(selected);
-            }
-          }
-          break;
-
-        case 'Escape':
-          e.preventDefault();
-          if (contextMenu) {
-            setContextMenu(null);
-            return;
-          }
-          if (showActions) {
-            setShowActions(false);
-            return;
-          }
-          if (searchQuery.length > 0) {
-            setSearchQuery('');
-            setSelectedIndex(0);
-            if (launcherViewMode === 'compact') {
-              setIsCompactCollapsed(true);
-              window.electron.resizeLauncherWindow(false);
-            }
-            return;
-          }
-          if (launcherViewMode === 'compact' && !isCompactCollapsed) {
-            setIsCompactCollapsed(true);
-            window.electron.resizeLauncherWindow(false);
-            return;
-          }
-          window.electron.hideWindow();
-          break;
-      }
-    },
-    [
-      moveSelection,
-      displayCommands,
-      selectedIndex,
-      searchQuery,
-      aiAvailable,
-      isShowingInlineArgumentInputs,
-      selectedInlineExtensionArgumentDefinitions.length,
-      selectedInlineQuickLinkDynamicFields.length,
-      shouldHideAskAi,
-      startAiChat,
-      calcResult,
-      calcOffset,
-      togglePinSelectedCommand,
-      disableSelectedCommand,
-      uninstallSelectedExtension,
-      moveSelectedPinnedCommand,
-      copyDeeplinkForSelectedCommand,
-      selectedFileResultPath,
-      showFileResultDetailsByPath,
-      revealFileResultByPath,
-      copyFileResultPath,
-      pinToggleForFile,
-      openAppUninstall,
-      selectedCommand,
-      contextMenu,
-      showActions,
-      quickLinkDynamicPrompt,
-      showAppUninstall,
-      launcherViewMode,
-      isCompactCollapsed,
-    ]
-  );
-
-  const runLocalSystemCommand = useCallback(async (
-    commandId: string,
-    options?: { fromMainEvent?: boolean }
-  ): Promise<boolean> => {
-    if (DIRECT_LAUNCH_EXPANDED_SYSTEM_COMMAND_IDS.has(commandId)) {
-      expandLauncherForDirectLaunch();
-    }
-    if (commandId === 'system-supercmd-whisper' || commandId === 'system-supercmd-speak') {
-      try {
-        const settings = await window.electron.getSettings();
-        if (settings.ai?.enabled === false) {
-          return true;
-        }
-      } catch {}
-    }
-    if (commandId === 'system-open-onboarding') {
-      await window.electron.setLauncherMode('onboarding');
-      whisperSessionRef.current = false;
-      openOnboarding();
-      return true;
-    }
-    if (commandId === 'system-whisper-onboarding') {
-      await window.electron.setLauncherMode('onboarding');
-      whisperSessionRef.current = false;
-      openOnboarding();
-      return true;
-    }
-    if (commandId === 'system-clipboard-manager') {
-      whisperSessionRef.current = false;
-      // fromMainEvent ⇒ delivered by the global-shortcut dispatch
-      // (window-shown + the 180ms run-system-command fallback in main.ts).
-      // Launcher-list selection (handleCommandExecute) passes no options.
-      openClipboardManager(options?.fromMainEvent === true);
-      return true;
-    }
-    if (commandId === 'system-search-snippets') {
-      whisperSessionRef.current = false;
-      openSnippetManager('search');
-      return true;
-    }
-    if (commandId === 'system-create-snippet') {
-      whisperSessionRef.current = false;
-      openSnippetManager('create');
-      return true;
-    }
-    if (commandId === 'system-search-notes') {
-      whisperSessionRef.current = false;
-      openNotesSearch();
-      return true;
-    }
-    if (commandId === 'system-create-note') {
-      whisperSessionRef.current = false;
-      window.electron.openNotesWindow('create');
-      return true;
-    }
-    if (commandId === 'system-search-canvases') {
-      whisperSessionRef.current = false;
-      openCanvasSearch();
-      return true;
-    }
-    if (commandId === 'system-create-canvas') {
-      whisperSessionRef.current = false;
-      window.electron.openCanvasWindow('create');
-      return true;
-    }
-    if (commandId === 'system-search-quicklinks') {
-      whisperSessionRef.current = false;
-      openQuickLinkManager('search');
-      return true;
-    }
-    if (commandId === 'system-create-quicklink') {
-      whisperSessionRef.current = false;
-      openQuickLinkManager('create');
-      return true;
-    }
-    if (commandId === 'system-search-files') {
-      whisperSessionRef.current = false;
-      openFileSearch();
-      return true;
-    }
-    if (commandId === 'system-my-schedule') {
-      whisperSessionRef.current = false;
-      openSchedule();
-      return true;
-    }
-    if (commandId === 'system-camera') {
-      whisperSessionRef.current = false;
-      openCamera();
-      return true;
-    }
-    if (isWindowManagementPresetCommandId(commandId)) {
-      whisperSessionRef.current = false;
-      // For launcher-initiated execution, route through main first so it can
-      // capture the real frontmost target window before running the preset.
-      if (!options?.fromMainEvent) {
-        await window.electron.executeCommand(commandId);
-        return true;
-      }
-      const queued = windowPresetCommandQueueRef.current.then(async () => {
-        const result = await executeWindowManagementPresetCommandById(commandId);
-        if (result.success && document.hasFocus()) {
-          try {
-            await window.electron.hideWindow();
-          } catch {}
-        }
-      });
-      windowPresetCommandQueueRef.current = queued.then(() => undefined, () => undefined);
-      await queued;
-      return true;
-    }
-    if (commandId === 'system-window-management') {
-      whisperSessionRef.current = false;
-      if (showWindowManager) {
-        setShowWindowManager(false);
-        return true;
-      }
-      openWindowManager();
-      setSearchQuery('');
-      setSelectedIndex(0);
-      // Only hide when launcher is the actively focused window (launcher-invoked flow).
-      // For global-hotkey/background invocation, forcing hide can cause focus churn
-      // that immediately blurs and closes the detached window manager panel.
-      if (document.hasFocus()) {
-        try {
-          await window.electron.hideWindow();
-        } catch {}
-      }
-      return true;
-    }
-    if (commandId === 'system-add-to-memory') {
-      if (memoryActionLoading) return true;
-      setMemoryActionLoading(true);
-      setMemoryFeedback(null);
-      const selectedText = String(
-        await window.electron.getSelectedTextStrict() || selectedTextSnapshot || ''
-      ).trim();
-      if (!selectedText) {
-        setSelectedTextSnapshot('');
-        setMemoryActionLoading(false);
-        return true;
-      }
-      try {
-        const result = await window.electron.memoryAdd({
-          text: selectedText,
-          source: 'launcher-selection',
-        });
-        if (!result.success) {
-          console.error('[Supermemory] Failed to add memory:', result.error || 'Unknown error');
-          return true;
-        }
-        setSelectedTextSnapshot('');
-        setSearchQuery('');
-        setSelectedIndex(0);
-      } finally {
-        setMemoryActionLoading(false);
-      }
-      return true;
-    }
-    if (commandId === 'system-cursor-prompt') {
-      await window.electron.executeCommand(commandId);
-      return true;
-    }
-    if (commandId === 'system-supercmd-whisper') {
-      whisperSessionRef.current = true;
-      if (showOnboarding) {
-        setShowWhisper(true);
-        setShowWhisperOnboarding(true);
-        setShowWhisperHint(true);
-        return true;
-      }
-      openWhisper();
-      return true;
-    }
-    if (commandId === 'system-supercmd-speak') {
-      whisperSessionRef.current = false;
-      if (showOnboarding) {
-        setShowSpeak(true);
-        return true;
-      }
-      openSpeak();
-      return true;
-    }
-    if (commandId === 'system-supercmd-speak-close') {
-      setShowSpeak(false);
-      return true;
-    }
-    if (commandId === 'system-import-snippets') {
-      await window.electron.snippetImport();
-      return true;
-    }
-    if (commandId === 'system-export-snippets') {
-      await window.electron.snippetExport();
-      return true;
-    }
-    if (commandId === 'system-check-for-updates') {
-      await window.electron.appUpdaterCheckAndInstall();
-      return true;
-    }
-    if (commandId === 'system-update-and-reopen') {
-      await window.electron.appUpdaterQuitAndInstall();
-      try { await window.electron.hideWindow(); } catch {}
-      return true;
-    }
-    if (commandId === 'system-empty-trash') {
-      const ok = window.confirm('Are you sure you want to permanently delete the items in the Trash?');
-      if (!ok) return true;
-      await window.electron.executeCommand('system-empty-trash');
-      return true;
-    }
-    if (commandId === 'system-reset-launcher-position') {
-      await window.electron.resetLauncherPosition();
-      await window.electron.hideWindow();
-      return true;
-    }
-    return false;
-  }, [expandLauncherForDirectLaunch, memoryActionLoading, selectedTextSnapshot, showMemoryFeedback, showOnboarding, showWindowManager, openOnboarding, openWhisper, setShowWhisper, setShowWhisperOnboarding, setShowWhisperHint, openClipboardManager, openSnippetManager, openQuickLinkManager, openFileSearch, openCamera, openSpeak, openWindowManager, setShowSpeak, setShowWindowManager]);
-
-  useEffect(() => {
-    const cleanup = window.electron.onRunSystemCommand(async (commandId: string) => {
-      try {
-        await runLocalSystemCommand(commandId, { fromMainEvent: true });
-      } catch (error) {
-        console.error('Failed to run system command from main process:', error);
-      }
-    });
-    return cleanup;
-  }, [runLocalSystemCommand]);
+  const { runLocalSystemCommand } = useLauncherLocalSystemCommands({
+    expandLauncherForDirectLaunch,
+    memoryActionLoading,
+    selectedTextSnapshot,
+    setSelectedTextSnapshot,
+    setMemoryActionLoading,
+    setMemoryFeedback,
+    showOnboarding,
+    showWindowManager,
+    whisperSessionRef,
+    windowPresetCommandQueueRef,
+    openOnboarding,
+    openWhisper,
+    openClipboardManager,
+    openSnippetManager,
+    openNotesSearch,
+    openCanvasSearch,
+    openQuickLinkManager,
+    openFileSearch,
+    openWebSearchMode,
+    openCamera,
+    openSpeak,
+    openWindowManager,
+    openSchedule,
+    setShowWhisper,
+    setShowWhisperOnboarding,
+    setShowWhisperHint,
+    setShowSpeak,
+    setShowWindowManager,
+    setSearchQuery,
+    setSelectedIndex,
+    setBrowserResultsViewQuery,
+    setBrowserResultsViewScope,
+    setBrowserHistoryProfileMenuOpen,
+    setWebSearchQuery,
+    refreshBrowserOpenTabs: browserSearch.refreshOpenTabs,
+    refreshBrowserEntries: browserSearch.refreshBrowserEntries,
+    refreshBrowserEntriesIfStale: browserSearch.refreshBrowserEntriesIfStale,
+  });
 
   useEffect(() => {
     const cleanup = window.electron.onWhisperStartListening(() => {
@@ -3087,133 +1856,35 @@ const App: React.FC = () => {
     window.electron.rendererReady();
   }, []);
 
-  const runScriptCommand = useCallback(
-    async (
-      command: CommandInfo,
-      values?: Record<string, any>,
-      options?: { background?: boolean; skipRecent?: boolean }
-    ) => {
-      const payload = {
-        commandId: command.id,
-        arguments: values || {},
-        background: Boolean(options?.background),
-      };
-      const result = await window.electron.runScriptCommand(payload);
-
-      if (!result) return false;
-
-      if (result.needsArguments) {
-        if (!options?.background) {
-          setShowFileSearch(false);
-          setScriptCommandSetup({
-            command,
-            values: {
-              ...readJsonObject(getScriptCmdArgsKey(command.id)),
-              ...(values || {}),
-            },
-          });
-        }
-        return false;
-      }
-
-      if (result.mode === 'fullOutput') {
-        setShowFileSearch(false);
-        setScriptCommandOutput({
-          command,
-          output: String(result.output || result.stdout || result.stderr || '').trim(),
-          exitCode: Number(result.exitCode || 0),
-        });
-      } else if (result.mode === 'inline') {
-        await fetchCommands();
-      } else if (!options?.background) {
-        await window.electron.hideWindow();
-      }
-
-      if (!options?.background && !options?.skipRecent) {
-        await updateRecentCommands(command.id);
-      }
-
-      return Boolean(result.success);
-    },
-    [fetchCommands, updateRecentCommands]
-  );
-
-  const executeQuickLinkCommand = useCallback(
-    async (
-      command: CommandInfo,
-      options?: {
-        skipPrompt?: boolean;
-        dynamicValues?: Record<string, string>;
-      }
-    ): Promise<boolean> => {
-      const quickLinkId = getQuickLinkIdFromCommandId(command.id);
-      if (!quickLinkId) return false;
-
-      const fields = await getDynamicFieldsForQuickLink(quickLinkId, { forceRefresh: true });
-      const inlineValues = { ...(inlineQuickLinkDynamicValuesById[quickLinkId] || {}) };
-      if (selectedQuickLinkId === quickLinkId && selectedInlineQuickLinkDynamicFields.length > 0) {
-        selectedInlineQuickLinkDynamicFields.forEach((field, index) => {
-          const liveValue = inlineQuickLinkInputRefs.current[index]?.value;
-          if (liveValue !== undefined) {
-            inlineValues[field.key] = liveValue;
-          }
-        });
-      }
-      const resolvedValuesFromInline = fields.reduce((acc, field) => {
-        const key = String(field.key || '').trim();
-        if (!key) return acc;
-        acc[key] = String(options?.dynamicValues?.[key] ?? inlineValues[key] ?? field.defaultValue ?? '');
-        return acc;
-      }, {} as Record<string, string>);
-
-      if (!options?.skipPrompt) {
-        if (fields.length > 0) {
-          if (fields.length <= MAX_INLINE_QUICK_LINK_ARGUMENTS) {
-            const openedInline = await window.electron.quickLinkOpen(quickLinkId, resolvedValuesFromInline);
-            if (!openedInline) return false;
-            clearInlineQuickLinkDynamicValuesForId(quickLinkId);
-            setQuickLinkDynamicPrompt(null);
-            await updateRecentCommands(command.id);
-            await window.electron.hideWindow();
-            return true;
-          }
-          setShowActions(false);
-          setContextMenu(null);
-          inputRef.current?.blur();
-          setQuickLinkDynamicPrompt({
-            command,
-            quickLinkId,
-            fields,
-            values: resolvedValuesFromInline,
-          });
-          return true;
-        }
-      }
-
-      const dynamicValues =
-        options?.dynamicValues !== undefined
-          ? options.dynamicValues
-          : fields.length > 0
-            ? resolvedValuesFromInline
-            : undefined;
-      const opened = await window.electron.quickLinkOpen(quickLinkId, dynamicValues);
-      if (!opened) return false;
-
-      clearInlineQuickLinkDynamicValuesForId(quickLinkId);
-      setQuickLinkDynamicPrompt(null);
-      await updateRecentCommands(command.id);
-      await window.electron.hideWindow();
-      return true;
-    },
-    [
-      clearInlineQuickLinkDynamicValuesForId,
-      getDynamicFieldsForQuickLink,
-      inlineQuickLinkDynamicValuesById,
-      selectedQuickLinkId,
-      selectedInlineQuickLinkDynamicFields,
-      updateRecentCommands,
-    ]
-  );
+  const {
+    runScriptCommand,
+    executeQuickLinkCommand,
+    executeExtensionCommand,
+  } = useLauncherCommandExecution({
+    fetchCommands,
+    updateRecentCommands,
+    setShowFileSearch,
+    setShowActions,
+    setContextMenu,
+    setScriptCommandSetup,
+    setScriptCommandOutput,
+    setExtensionPreferenceSetup,
+    setExtensionView,
+    inputRef,
+    getDynamicFieldsForQuickLink,
+    inlineQuickLinkDynamicValuesById,
+    selectedQuickLinkId,
+    selectedInlineQuickLinkDynamicFields,
+    inlineQuickLinkInputRefs,
+    clearInlineQuickLinkDynamicValuesForId,
+    setQuickLinkDynamicPrompt,
+    getInlineExtensionArgumentsForCommand,
+    clearInlineExtensionArgumentsForCommand,
+    queueNoViewBundleRun,
+    isMenuBarExtensionMounted,
+    hideMenuBarExtension,
+    upsertMenuBarExtension,
+  });
 
   const cancelQuickLinkDynamicPrompt = useCallback(() => {
     setQuickLinkDynamicPrompt(null);
@@ -3298,20 +1969,49 @@ const App: React.FC = () => {
     // fast double-press could otherwise re-fire the same command or a
     // different one if selection moved during the IPC roundtrip.
     if (executingCommandRef.current) return;
+    const launchQuery = searchQuery;
     try {
       executingCommandRef.current = true;
       // Browser-search synthetic action: open the resolved URL/search query
       // in the default browser. Bypasses recent-commands tracking — the
       // browser-search history module records the entry itself.
+      if (command.id.startsWith(WEB_SEARCH_ROOT_BANG_PREFIX)) {
+        const bangKey = String(command.browserActionInput || command.id.slice(WEB_SEARCH_ROOT_BANG_PREFIX.length)).trim();
+        if (bangKey) {
+          setSearchQuery((current) => {
+            const state = parseSearchBangState(current, enabledSearchBangs);
+            if (state.mode === 'selecting') {
+              const parts = current.trim().split(/\s+/).filter(Boolean);
+              parts[state.tokenIndex] = `!${bangKey}`;
+              return `${parts.join(' ')} `;
+            }
+            return `!${bangKey} `;
+          });
+          setSelectedIndex(0);
+          window.setTimeout(() => inputRef.current?.focus(), 0);
+        }
+        return;
+      }
       if (isBrowserSearchCommand(command)) {
         if (command.id === BROWSER_SEARCH_SHOW_ALL_RESULTS_ID) {
+          setBrowserResultsViewScope('all');
           setBrowserResultsViewQuery(String(command.browserActionInput || launcherInputValue).trim());
           setShowActions(false);
           return;
         }
         const subject = String(command.browserActionInput || launcherInputValue).trim();
         if (subject) {
-          await submitBrowserSearch(subject);
+          try { window.electron.hideWindow(); } catch {}
+          const ok = await submitBrowserSearch(subject, {
+            focusExistingTab: false,
+            kind: command.browserResultKind,
+            url: command.browserUrl,
+            sourceProfileId: command.browserSourceProfileId,
+            openInSourceProfile: command.browserNicknameMatch === true,
+            windowId: command.browserWindowId,
+            tabId: command.browserTabId,
+          });
+          if (ok) await recordRootSearchLaunch(command, launchQuery);
         }
         return;
       }
@@ -3319,96 +2019,25 @@ const App: React.FC = () => {
       const filePath = getFileResultPathFromCommand(command);
       if (filePath) {
         await openFileResultByPath(filePath);
+        await recordRootSearchLaunch(command, launchQuery);
         return;
       }
 
       if (await runLocalSystemCommand(command.id)) {
         await updateRecentCommands(command.id);
+        await recordRootSearchLaunch(command, launchQuery);
         return;
       }
 
       if (getQuickLinkIdFromCommandId(command.id)) {
         await executeQuickLinkCommand(command);
+        await recordRootSearchLaunch(command, launchQuery);
         return;
       }
 
       if (command.category === 'extension' && command.path) {
-        // Extension command — build and show extension view
-        const extensionIdentity = getExtensionIdentityFromCommand(command);
-        if (!extensionIdentity) return;
-        const { extName, cmdName } = extensionIdentity;
-        const result = await window.electron.runExtension(extName, cmdName);
-        if (result && result.code) {
-          const hydrated = hydrateExtensionBundlePreferences(result);
-          const inlineArguments = getInlineExtensionArgumentsForCommand(command);
-          const hydratedWithInlineArguments: ExtensionBundle = {
-            ...hydrated,
-            launchArguments: {
-              ...((hydrated as any).launchArguments || {}),
-              ...inlineArguments,
-            } as any,
-          };
-
-          if (Object.keys(inlineArguments).length > 0 && command.mode === 'no-view') {
-            writeJsonObject(
-              getCmdArgsKey(extName, cmdName),
-              { ...((hydratedWithInlineArguments as any).launchArguments || {}) }
-            );
-          }
-
-          if (shouldOpenCommandSetup(hydratedWithInlineArguments)) {
-            setShowFileSearch(false);
-            setExtensionPreferenceSetup({
-              bundle: hydratedWithInlineArguments,
-              values: { ...(hydratedWithInlineArguments.preferences || {}) },
-              argumentValues: { ...((hydratedWithInlineArguments as any).launchArguments || {}) },
-            });
-            return;
-          }
-
-          // Menu-bar commands run in the hidden tray runners, not in the overlay.
-          // Toggle behavior matches Raycast: running the same menu-bar command again hides it.
-          if (hydratedWithInlineArguments.mode === 'menu-bar') {
-            clearInlineExtensionArgumentsForCommand(command);
-            if (isMenuBarExtensionMounted(hydratedWithInlineArguments)) {
-              hideMenuBarExtension(hydratedWithInlineArguments);
-            } else {
-              upsertMenuBarExtension(hydratedWithInlineArguments);
-            }
-            try { window.electron.hideWindow(); } catch {}
-            await updateRecentCommands(command.id);
-            return;
-          }
-          if (hydratedWithInlineArguments.mode === 'no-view') {
-            queueNoViewBundleRun(hydratedWithInlineArguments, 'userInitiated');
-            localStorage.removeItem(LAST_EXT_KEY);
-            clearInlineExtensionArgumentsForCommand(command);
-            await updateRecentCommands(command.id);
-            return;
-          }
-          setShowFileSearch(false);
-          setExtensionView(hydratedWithInlineArguments);
-          clearInlineExtensionArgumentsForCommand(command);
-          if (hydratedWithInlineArguments.mode === 'view') {
-            localStorage.setItem(LAST_EXT_KEY, JSON.stringify({ extName, cmdName }));
-          } else {
-            localStorage.removeItem(LAST_EXT_KEY);
-          }
-          await updateRecentCommands(command.id);
-          return;
-        }
-        const errMsg = result?.error || 'Failed to build extension';
-        console.error('Extension load failed:', errMsg);
-        // Show the error in the extension view
-        setShowFileSearch(false);
-        setExtensionView({
-          code: '',
-          title: command.title,
-          mode: 'view',
-          extName,
-          cmdName,
-          error: errMsg,
-        } as any);
+        await executeExtensionCommand(command);
+        await recordRootSearchLaunch(command, launchQuery);
         return;
       }
 
@@ -3428,6 +2057,7 @@ const App: React.FC = () => {
           return;
         }
         await runScriptCommand(command, storedArgs);
+        await recordRootSearchLaunch(command, launchQuery);
         return;
       }
 
@@ -3441,6 +2071,7 @@ const App: React.FC = () => {
           const confirmed = await window.electron.executeCommand(command.id);
           if (!confirmed) return;
           await updateRecentCommands(command.id);
+          await recordRootSearchLaunch(command, launchQuery);
           try { window.electron.hideWindow(); } catch {}
           return;
         }
@@ -3450,6 +2081,7 @@ const App: React.FC = () => {
 
       await window.electron.executeCommand(command.id);
       await updateRecentCommands(command.id);
+      await recordRootSearchLaunch(command, launchQuery);
       try { window.electron.hideWindow(); } catch {}
     } catch (error) {
       console.error('Failed to execute command:', error);
@@ -3458,7 +2090,7 @@ const App: React.FC = () => {
     }
   };
   const handleCommandRowClick = useCallback(
-    async (command: CommandInfo, absoluteIndex: number) => {
+    async (command: CommandInfo, absoluteIndex: number, event?: React.MouseEvent<HTMLDivElement>) => {
       const isAlreadySelected = absoluteIndex === selectedIndex;
 
       const hasInlineExtensionArguments =
@@ -3482,13 +2114,62 @@ const App: React.FC = () => {
         }
       }
 
+      if (
+        event?.metaKey &&
+        !event.altKey &&
+        isBrowserSearchCommand(command) &&
+        command.browserResultKind === 'open-tab' &&
+        command.id !== BROWSER_SEARCH_SHOW_ALL_RESULTS_ID &&
+        !command.id.startsWith(WEB_SEARCH_ROOT_BANG_PREFIX)
+      ) {
+        const subject = String(command.browserActionInput || launcherInputValue).trim();
+        if (subject) {
+          try { window.electron.hideWindow(); } catch {}
+          void submitBrowserSearch(subject, {
+            focusExistingTab: true,
+            kind: command.browserResultKind,
+            url: command.browserUrl,
+            sourceProfileId: command.browserSourceProfileId,
+            openInSourceProfile: command.browserNicknameMatch === true,
+            windowId: command.browserWindowId,
+            tabId: command.browserTabId,
+          });
+        }
+        return;
+      }
+
+      if (
+        event?.altKey &&
+        isBrowserSearchCommand(command) &&
+        command.id !== BROWSER_SEARCH_SHOW_ALL_RESULTS_ID &&
+        !command.id.startsWith(WEB_SEARCH_ROOT_BANG_PREFIX)
+      ) {
+        const subject = String(command.browserActionInput || launcherInputValue).trim();
+        if (subject) {
+          try { window.electron.hideWindow(); } catch {}
+          void submitBrowserSearch(subject, {
+            focusExistingTab: false,
+            event: { altKey: true, numberKey: null },
+            kind: command.browserResultKind,
+            url: command.browserUrl,
+            sourceProfileId: command.browserSourceProfileId,
+            openInSourceProfile: command.browserNicknameMatch === true,
+            windowId: command.browserWindowId,
+            tabId: command.browserTabId,
+          });
+        }
+        return;
+      }
+
       void handleCommandExecute(command);
     },
     [
+      launcherInputValue,
       getDynamicFieldsForQuickLink,
       handleCommandExecute,
       inlineQuickLinkDynamicFieldsById,
       selectedIndex,
+      submitBrowserSearch,
     ]
   );
 
@@ -3511,596 +2192,113 @@ const App: React.FC = () => {
     showLauncherFooterStatus('success', `Auto Quit enabled for ${appName}`);
   }, [autoQuitAppPaths, showLauncherFooterStatus]);
 
-  const getActionsForCommand = useCallback(
-    (command: CommandInfo | null): LauncherAction[] => {
-      if (!command) return [];
-
-      if (command.id === 'system-update-and-reopen') {
-        return [
-          {
-            id: 'update-and-reopen',
-            title: 'Update and Restart',
-            shortcut: 'Enter',
-            icon: <Download className="w-4 h-4" />,
-            execute: () => handleCommandExecute(command),
-          },
-          {
-            id: 'dismiss-update-banner',
-            title: 'Dismiss for 3 Days',
-            icon: <BellOff className="w-4 h-4" />,
-            execute: async () => {
-              await window.electron.dismissUpdateBanner();
-              await fetchCommands({ showLoading: false });
-            },
-          },
-        ] as LauncherAction[];
-      }
-
-      if (isBrowserSearchCommand(command)) {
-        if (command.id === BROWSER_SEARCH_SHOW_ALL_RESULTS_ID) {
-          return [
-            {
-              id: 'show-all-browser-results',
-              title: t('launcher.browserSearch.showAll'),
-              shortcut: 'Enter',
-              icon: <ArrowRight className="w-4 h-4" />,
-              execute: () => handleCommandExecute(command),
-            },
-          ] as LauncherAction[];
-        }
-        const hasOpenTabMatch = command.browserFocusAvailable === true;
-        return [
-          {
-            id: 'open-browser-result',
-            title: t('launcher.actions.open'),
-            shortcut: 'Enter',
-            icon: <ExternalLink className="w-4 h-4" />,
-            execute: () => handleCommandExecute(command),
-          },
-          ...(hasOpenTabMatch ? [{
-            id: 'focus-existing-tab',
-            title: t('launcher.actions.focusExistingTab'),
-            shortcut: 'Cmd+Enter',
-            icon: <CornerDownLeft className="w-4 h-4" />,
-            execute: () => submitBrowserSearch(String(command.browserActionInput || launcherInputValue).trim(), { focusExistingTab: true }),
-          }] : []),
-        ] as LauncherAction[];
-      }
-
-      const filePath = getFileResultPathFromCommand(command);
-      if (filePath) {
-        const isPinnedFile = pinnedFiles.includes(filePath);
-        const isDirectory = Boolean(fileIsDirectoryMap[filePath]);
-        const pinActionTitle = isDirectory
-          ? (isPinnedFile ? 'Unpin Folder' : 'Pin Folder')
-          : (isPinnedFile ? 'Unpin File' : 'Pin File');
-        return [
-          {
-            id: 'open-file',
-            title: t('launcher.actions.openFile'),
-            shortcut: 'Enter',
-            icon: <CornerDownLeft className="w-4 h-4" />,
-            execute: () => openFileResultByPath(filePath),
-          },
-          {
-            id: 'show-file-details',
-            title: t('launcher.actions.showDetails'),
-            shortcut: 'Cmd+D',
-            icon: <Info className="w-4 h-4" />,
-            execute: () => showFileResultDetailsByPath(filePath),
-          },
-          {
-            id: 'reveal-file',
-            title: t('launcher.actions.revealInFinder'),
-            shortcut: 'Cmd+Enter',
-            icon: <FolderOpen className="w-4 h-4" />,
-            execute: () => revealFileResultByPath(filePath),
-          },
-          {
-            id: 'copy-file-path',
-            title: t('launcher.actions.copyPath'),
-            shortcut: 'Cmd+Shift+C',
-            icon: <Copy className="w-4 h-4" />,
-            execute: () => copyFileResultPath(filePath),
-          },
-          {
-            id: 'pin-file',
-            title: pinActionTitle,
-            shortcut: 'Cmd+Shift+P',
-            icon: <Pin className="w-4 h-4" />,
-            execute: () => pinToggleForFile(filePath),
-          },
-          ...(filePath.endsWith('.app') ? [{
-            id: 'toggle-auto-quit',
-            title: autoQuitAppPaths.has(filePath) ? t('launcher.actions.disableAutoQuit') : t('launcher.actions.enableAutoQuit'),
-            icon: <Timer className="w-4 h-4" />,
-            execute: () => toggleAutoQuitForApp(filePath, command.title),
-          }, {
-            id: 'quit-app',
-            title: t('launcher.actions.quit'),
-            shortcut: 'Ctrl+Shift+Q',
-            separatorBefore: true,
-            icon: <XCircle className="w-4 h-4" />,
-            execute: async () => {
-              const appName = filePath.split('/').pop()?.replace('.app', '') || '';
-              const ok = await window.electron.quitApp(filePath);
-              setShowActions(false);
-              window.electron.hideWindow();
-              window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? t('launcher.actions.quitApp', { appName }) : t('launcher.actions.failedQuitting', { appName }));
-            },
-          }, {
-            id: 'force-quit-app',
-            title: t('launcher.actions.forceQuit'),
-            shortcut: 'Ctrl+Alt+Shift+Q',
-            icon: <XCircle className="w-4 h-4" />,
-            execute: async () => {
-              const appName = filePath.split('/').pop()?.replace('.app', '') || '';
-              const confirmed = window.confirm(t('launcher.actions.forceQuitConfirm', { appName }));
-              if (!confirmed) return;
-              const ok = await window.electron.quitApp(filePath, true);
-              setShowActions(false);
-              window.electron.hideWindow();
-              window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? t('launcher.actions.forceQuitApp', { appName }) : t('launcher.actions.failedQuitting', { appName }));
-            },
-          }, {
-            id: 'uninstall-app',
-            title: t('launcher.actions.uninstallApplication'),
-            shortcut: 'Ctrl+X',
-            icon: <Trash2 className="w-4 h-4" />,
-            style: 'destructive' as const,
-            execute: () => openAppUninstall(filePath),
-          }] : []),
-        ];
-      }
-
-      const quickLinkId = getQuickLinkIdFromCommandId(command.id);
-      if (quickLinkId) {
-        return [
-          {
-            id: 'open-quick-link',
-            title: 'Open Quick Link',
-            shortcut: 'Enter',
-            icon: <ExternalLink className="w-4 h-4" />,
-            execute: () => handleCommandExecute(command),
-          },
-          {
-            id: 'create-quick-link',
-            title: 'Create Quick Link',
-            shortcut: 'Cmd+N',
-            icon: <Plus className="w-4 h-4" />,
-            execute: () => openQuickLinkManager('create'),
-          },
-          {
-            id: 'edit-quick-link',
-            title: 'Edit Quick Link',
-            shortcut: 'Cmd+E',
-            icon: <Pencil className="w-4 h-4" />,
-            execute: () => {
-              setQuickLinkEditId(quickLinkId);
-              openQuickLinkManager('search');
-            },
-          },
-          {
-            id: 'duplicate-quick-link',
-            title: 'Duplicate Quick Link',
-            shortcut: 'Cmd+D',
-            icon: <Files className="w-4 h-4" />,
-            execute: async () => {
-              await window.electron.quickLinkDuplicate(quickLinkId);
-              await fetchCommands({ showLoading: false });
-            },
-          },
-          {
-            id: 'delete-quick-link',
-            title: 'Delete Quick Link',
-            shortcut: 'Ctrl+X',
-            icon: <Trash2 className="w-4 h-4" />,
-            style: 'destructive' as const,
-            execute: async () => {
-              await window.electron.quickLinkDelete(quickLinkId);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              await fetchCommands({ showLoading: false });
-            },
-          },
-        ];
-      }
-
-      const isPinned = pinnedCommands.includes(command.id);
-      const pinnedIndex = pinnedCommands.indexOf(command.id);
-      const hasDeeplink = Boolean(String(command.deeplink || '').trim());
-      const isApp = command.category === 'app' && Boolean(command.path?.endsWith('.app'));
-      return ([
-        {
-          id: 'open',
-          title: t('launcher.actions.openCommand'),
-          shortcut: 'Enter',
-          icon: <Play className="w-4 h-4" />,
-          execute: () => handleCommandExecute(command),
-        },
-        {
-          id: 'copy-deeplink',
-          title: t('launcher.actions.copyDeeplink'),
-          shortcut: 'Cmd+Shift+L',
-          enabled: hasDeeplink,
-          icon: <Link className="w-4 h-4" />,
-          execute: () => copyCommandDeeplink(command),
-        },
-        {
-          id: 'pin',
-          title: isPinned
-            ? t(command.category === 'extension' ? 'launcher.actions.unpinExtension' : 'launcher.actions.unpinCommand')
-            : command.category === 'extension'
-              ? t('launcher.actions.pinExtension')
-              : t('launcher.actions.pinCommand'),
-          shortcut: 'Cmd+Shift+P',
-          icon: <Pin className="w-4 h-4" />,
-          execute: () => pinToggleForCommand(command),
-        },
-        ...(isApp ? [{
-          id: 'quit-app',
-          title: t('launcher.actions.quit'),
-          shortcut: 'Ctrl+Shift+Q',
-          separatorBefore: true,
-          icon: <XCircle className="w-4 h-4" />,
-          execute: async () => {
-            const ok = await window.electron.quitApp(command.path!);
-            setShowActions(false);
-            window.electron.hideWindow();
-            window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? t('launcher.actions.quitApp', { appName: command.title }) : t('launcher.actions.failedQuitting', { appName: command.title }));
-          },
-        }] : []),
-        ...(isApp ? [{
-          id: 'force-quit-app',
-          title: t('launcher.actions.forceQuit'),
-          shortcut: 'Ctrl+Alt+Shift+Q',
-          icon: <XCircle className="w-4 h-4" />,
-          execute: async () => {
-            const confirmed = window.confirm(t('launcher.actions.forceQuitConfirm', { appName: command.title }));
-            if (!confirmed) return;
-            const ok = await window.electron.quitApp(command.path!, true);
-            setShowActions(false);
-            window.electron.hideWindow();
-            window.electron.reportNoViewStatus(ok ? 'success' : 'error', ok ? t('launcher.actions.forceQuitApp', { appName: command.title }) : t('launcher.actions.failedQuitting', { appName: command.title }));
-          },
-        }] : []),
-        {
-          id: 'toggle-auto-quit',
-          title: (command.path && autoQuitAppPaths.has(command.path)) ? t('launcher.actions.disableAutoQuit') : t('launcher.actions.enableAutoQuit'),
-          enabled: command.category === 'app' && Boolean(command.path?.endsWith('.app')),
-          icon: <Timer className="w-4 h-4" />,
-          execute: () => {
-            if (!command.path) return;
-            void toggleAutoQuitForApp(command.path, command.title);
-          },
-        },
-        {
-          id: 'disable',
-          title: command.category === 'app' ? t('launcher.actions.disableApplication') : t('launcher.actions.disableCommand'),
-          shortcut: 'Cmd+Shift+D',
-          separatorBefore: true,
-          style: 'destructive' as const,
-          icon: <EyeOff className="w-4 h-4" />,
-          execute: () => disableCommand(command),
-        },
-        {
-          id: 'uninstall',
-          title: 'Uninstall',
-          shortcut: 'Cmd+Delete',
-          style: 'destructive' as const,
-          enabled: command.category === 'extension',
-          icon: <Trash2 className="w-4 h-4" />,
-          execute: () => uninstallExtensionCommand(command),
-        },
-        {
-          id: 'uninstall-app',
-          title: t('launcher.actions.uninstallApplication'),
-          shortcut: 'Ctrl+X',
-          style: 'destructive' as const,
-          enabled: command.category === 'app' && Boolean(command.path?.endsWith('.app')),
-          icon: <Trash2 className="w-4 h-4" />,
-          execute: () => { try { if (command.path) openAppUninstall(command.path); } catch(e) { console.error('openAppUninstall error:', e); } },
-        },
-        {
-          title: t('launcher.actions.moveUp'),
-          shortcut: 'Cmd+Alt+Up',
-          enabled: isPinned && pinnedIndex > 0,
-          icon: <ArrowUp className="w-4 h-4" />,
-          execute: () => movePinnedCommand(command, 'up'),
-        },
-        {
-          id: 'move-down',
-          title: t('launcher.actions.moveDown'),
-          shortcut: 'Cmd+Alt+Down',
-          enabled: isPinned && pinnedIndex >= 0 && pinnedIndex < pinnedCommands.length - 1,
-          icon: <ArrowDown className="w-4 h-4" />,
-          execute: () => movePinnedCommand(command, 'down'),
-        },
-      ] as LauncherAction[]).filter((action) => action.enabled !== false);
-    },
-    [
-      pinnedCommands,
-      pinnedFiles,
-      fileIsDirectoryMap,
-      pinToggleForFile,
-      handleCommandExecute,
-      pinToggleForCommand,
-      disableCommand,
-      uninstallExtensionCommand,
-      movePinnedCommand,
-      openFileResultByPath,
-      showFileResultDetailsByPath,
-      revealFileResultByPath,
-      copyFileResultPath,
-      copyCommandDeeplink,
-      fetchCommands,
-      openQuickLinkManager,
-      setQuickLinkEditId,
-      openAppUninstall,
-      showLauncherFooterStatus,
-      autoQuitAppPaths,
-      toggleAutoQuitForApp,
-      submitBrowserSearch,
-      launcherInputValue,
-      t,
-    ]
-  );
-
-  const selectedActions = useMemo(
-    () => getActionsForCommand(selectedCommand),
-    [getActionsForCommand, selectedCommand]
-  );
-  const actionsOverlayActions = useMemo(
-    () => getActionsForCommand(actionsCommand),
-    [actionsCommand, getActionsForCommand]
-  );
-
-  const contextCommand = useMemo(
-    () => (contextMenu ? contextMenu.command : null),
-    [contextMenu]
-  );
-
-  const contextActions = useMemo(
-    () => getActionsForCommand(contextCommand),
-    [getActionsForCommand, contextCommand]
-  );
-
-  const handleActionsOverlayKeyDown = useCallback(
-    async (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (actionsOverlayActions.length === 0) return;
-
-      // Match modifier shortcuts (Cmd+N, Ctrl+X, etc.) to actions
-      if (!e.repeat && (e.metaKey || e.ctrlKey || e.altKey)) {
-        for (const action of actionsOverlayActions) {
-          if (!action.shortcut || action.shortcut === 'Enter') continue;
-          if (matchesLauncherShortcut(e, action.shortcut)) {
-            e.preventDefault();
-            await Promise.resolve(action.execute());
-            setShowActions(false);
-            restoreLauncherFocus();
-            return;
-          }
-        }
-      }
-
-      switch (e.key) {
-        case 'ArrowDown':
-          e.preventDefault();
-          setSelectedActionIndex((prev) =>
-            Math.min(prev + 1, actionsOverlayActions.length - 1)
-          );
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          setSelectedActionIndex((prev) => Math.max(prev - 1, 0));
-          break;
-        case 'Enter':
-          e.preventDefault();
-          await Promise.resolve(actionsOverlayActions[selectedActionIndex]?.execute());
-          setShowActions(false);
-          restoreLauncherFocus();
-          break;
-        case 'Escape':
-          e.preventDefault();
-          setShowActions(false);
-          restoreLauncherFocus();
-          break;
-      }
-    },
-    [actionsOverlayActions, selectedActionIndex, restoreLauncherFocus]
-  );
-
-  const handleContextMenuKeyDown = useCallback(
-    async (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (contextActions.length === 0) return;
-
-      // Match modifier shortcuts to actions
-      if (!e.repeat && (e.metaKey || e.ctrlKey || e.altKey)) {
-        for (const action of contextActions) {
-          if (!action.shortcut || action.shortcut === 'Enter') continue;
-          if (matchesLauncherShortcut(e, action.shortcut)) {
-            e.preventDefault();
-            await Promise.resolve(action.execute());
-            setContextMenu(null);
-            restoreLauncherFocus();
-            return;
-          }
-        }
-      }
-
-      switch (e.key) {
-        case 'ArrowDown':
-          e.preventDefault();
-          setSelectedContextActionIndex((prev) =>
-            Math.min(prev + 1, contextActions.length - 1)
-          );
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          setSelectedContextActionIndex((prev) => Math.max(prev - 1, 0));
-          break;
-        case 'Enter':
-          e.preventDefault();
-          await Promise.resolve(contextActions[selectedContextActionIndex]?.execute());
-          setContextMenu(null);
-          restoreLauncherFocus();
-          break;
-        case 'Escape':
-          e.preventDefault();
-          setContextMenu(null);
-          restoreLauncherFocus();
-          break;
-      }
-    },
-    [contextActions, selectedContextActionIndex, restoreLauncherFocus]
-  );
-
-  // ─── Hidden menu-bar extension runners (always mounted) ────────────
-  // These run "invisibly" so that menu-bar extensions produce native Tray
-  // menus via IPC even when the main window is hidden.
-  //
-  // Memoized so App.tsx re-renders (e.g. on every search-bar keystroke) do not
-  // reconcile the extension subtree. Some extensions have render-phase side
-  // effects (e.g. 1-click-confetti's Shoot() calls open() + exec() in its body);
-  // re-rendering on every keystroke would fire those effects repeatedly.
-  const menuBarRunner = useMemo(() => {
-    if (menuBarExtensions.length === 0) return null;
-    return (
-      <div style={{ display: 'none', position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-        {menuBarExtensions.map((entry) => (
-          <ExtensionView
-            key={`menubar-${entry.key}`}
-            code={entry.bundle.code}
-            title={entry.bundle.title}
-            mode="menu-bar"
-            extensionName={(entry.bundle as any).extensionName || entry.bundle.extName}
-            extensionDisplayName={(entry.bundle as any).extensionDisplayName}
-            extensionIconDataUrl={(entry.bundle as any).extensionIconDataUrl}
-            commandName={(entry.bundle as any).commandName || entry.bundle.cmdName}
-            assetsPath={(entry.bundle as any).assetsPath}
-            supportPath={(entry.bundle as any).supportPath}
-            owner={(entry.bundle as any).owner}
-            preferences={(entry.bundle as any).preferences}
-            preferenceDefinitions={(entry.bundle as any).preferenceDefinitions}
-            launchArguments={(entry.bundle as any).launchArguments}
-            launchContext={(entry.bundle as any).launchContext}
-            fallbackText={(entry.bundle as any).fallbackText}
-            launchType={(entry.bundle as any).launchType}
-            onClose={NOOP_ON_CLOSE}
-          />
-        ))}
-      </div>
-    );
-  }, [menuBarExtensions]);
-
-  const backgroundNoViewRunner = useMemo(() => {
-    if (backgroundNoViewRuns.length === 0) return null;
-    return (
-      <div style={{ display: 'none', position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-        {backgroundNoViewRuns.map((run) => (
-          <ExtensionView
-            key={`bg-no-view-${run.runId}`}
-            code={run.bundle.code}
-            title={run.bundle.title}
-            mode="no-view"
-            extensionName={(run.bundle as any).extensionName || run.bundle.extName}
-            extensionDisplayName={(run.bundle as any).extensionDisplayName}
-            extensionIconDataUrl={(run.bundle as any).extensionIconDataUrl}
-            commandName={(run.bundle as any).commandName || run.bundle.cmdName}
-            assetsPath={(run.bundle as any).assetsPath}
-            supportPath={(run.bundle as any).supportPath}
-            owner={(run.bundle as any).owner}
-            preferences={(run.bundle as any).preferences}
-            preferenceDefinitions={(run.bundle as any).preferenceDefinitions}
-            launchArguments={(run.bundle as any).launchArguments}
-            launchContext={(run.bundle as any).launchContext}
-            fallbackText={(run.bundle as any).fallbackText}
-            launchType={run.launchType}
-            reportStatus={run.reportStatus}
-            onClose={() => {
-              setBackgroundNoViewRuns((prev) => prev.filter((item) => item.runId !== run.runId));
-            }}
-          />
-        ))}
-      </div>
-    );
-  }, [backgroundNoViewRuns, setBackgroundNoViewRuns]);
+  const {
+    selectedActions,
+    actionsOverlayActions,
+    contextActions,
+    handleActionsOverlayKeyDown,
+    handleContextMenuKeyDown,
+    openLauncherCommandContextMenu,
+    openSelectedCommandActions,
+  } = useLauncherActionModel({
+    selectedCommand,
+    actionsCommand,
+    contextMenu,
+    selectedActionIndex,
+    selectedContextActionIndex,
+    setSearchQuery,
+    setSelectedIndex,
+    setShowActions,
+    setActionsCommand,
+    setContextMenu,
+    setSelectedActionIndex,
+    setSelectedContextActionIndex,
+    pinnedCommands,
+    pinnedFiles,
+    fileIsDirectoryMap,
+    autoQuitAppPaths,
+    launcherInputValue,
+    handleCommandExecute,
+    submitBrowserSearch,
+    openFileResultByPath,
+    showFileResultDetailsByPath,
+    revealFileResultByPath,
+    copyFileResultPath,
+    pinToggleForFile,
+    copyCommandDeeplink,
+    pinToggleForCommand,
+    disableCommand,
+    uninstallExtensionCommand,
+    movePinnedCommand,
+    fetchCommands,
+    openQuickLinkManager,
+    setQuickLinkEditId,
+    openAppUninstall,
+    toggleAutoQuitForApp,
+    restoreLauncherFocus,
+    t,
+  });
 
   const hiddenExtensionRunners = (
-    <>
-      {menuBarRunner}
-      {backgroundNoViewRunner}
-    </>
+    <HiddenExtensionRunners
+      menuBarExtensions={menuBarExtensions}
+      backgroundNoViewRuns={backgroundNoViewRuns}
+      setBackgroundNoViewRuns={setBackgroundNoViewRuns}
+    />
   );
 
+  const whisperCoachmarkText =
+    showWhisperHint && whisperSpeakToggleLabel
+      ? t('whisper.coachmark.holdToTalk', { shortcut: whisperSpeakToggleLabel })
+      : undefined;
+
   const detachedOverlayRunners = (
-    <>
-      {showWhisper && whisperPortalTarget ? (
-        <SuperCmdWhisper
-          portalTarget={whisperPortalTarget}
-          startToken={whisperStartToken}
-          onboardingCaptureMode={showWhisperOnboarding}
-          onOnboardingTranscriptAppend={appendWhisperOnboardingPracticeText}
-          coachmarkText={
-            showWhisperHint && whisperSpeakToggleLabel
-              ? t('whisper.coachmark.holdToTalk', { shortcut: whisperSpeakToggleLabel })
-              : undefined
-          }
-          autoClose={whisperAutoClose}
-          onClose={() => {
-            whisperSessionRef.current = false;
-            setShowWhisper(false);
-            setShowWhisperOnboarding(false);
-            setShowWhisperHint(false);
-          }}
-        />
-      ) : null}
-      {showSpeak && speakPortalTarget ? (
-        <SuperCmdRead
-          status={speakStatus}
-          voice={speakOptions.voice}
-          voiceOptions={readVoiceOptions}
-          rate={speakOptions.rate}
-          portalTarget={speakPortalTarget}
-          onVoiceChange={handleSpeakVoiceChange}
-          onRateChange={handleSpeakRateChange}
-          onPauseToggle={handleSpeakTogglePause}
-          onPreviousParagraph={handleSpeakPreviousParagraph}
-          onNextParagraph={handleSpeakNextParagraph}
-          onClose={() => {
-            setShowSpeak(false);
-            void window.electron.speakStop();
-          }}
-        />
-      ) : null}
-      {showWindowManager && windowManagerPortalTarget ? (
-        <WindowManagerPanel
-          show={showWindowManager}
-          portalTarget={windowManagerPortalTarget}
-          onClose={() => {
-            setShowWindowManager(false);
-          }}
-        />
-      ) : null}
-      {showCursorPrompt && cursorPromptPortalTarget
-        ? createPortal(
-            <CursorPromptView
-              variant="portal"
-              cursorPromptText={cursorPromptText}
-              setCursorPromptText={setCursorPromptText}
-              cursorPromptStatus={cursorPromptStatus}
-              cursorPromptResult={cursorPromptResult}
-              cursorPromptError={cursorPromptError}
-              cursorPromptInputRef={cursorPromptInputRef}
-              aiAvailable={aiAvailable}
-              submitCursorPrompt={submitCursorPrompt}
-              closeCursorPrompt={closeCursorPrompt}
-              acceptCursorPrompt={acceptCursorPrompt}
-            />,
-            cursorPromptPortalTarget
-          )
-        : null}
-    </>
+    <DetachedOverlayRunners
+      showWhisper={showWhisper}
+      whisperPortalTarget={whisperPortalTarget}
+      whisperStartToken={whisperStartToken}
+      showWhisperOnboarding={showWhisperOnboarding}
+      appendWhisperOnboardingPracticeText={appendWhisperOnboardingPracticeText}
+      whisperCoachmarkText={whisperCoachmarkText}
+      whisperAutoClose={whisperAutoClose}
+      onWhisperClose={() => {
+        whisperSessionRef.current = false;
+        setShowWhisper(false);
+        setShowWhisperOnboarding(false);
+        setShowWhisperHint(false);
+      }}
+      showSpeak={showSpeak}
+      speakPortalTarget={speakPortalTarget}
+      speakStatus={speakStatus}
+      speakOptions={speakOptions}
+      readVoiceOptions={readVoiceOptions}
+      handleSpeakVoiceChange={handleSpeakVoiceChange}
+      handleSpeakRateChange={handleSpeakRateChange}
+      handleSpeakTogglePause={handleSpeakTogglePause}
+      handleSpeakPreviousParagraph={handleSpeakPreviousParagraph}
+      handleSpeakNextParagraph={handleSpeakNextParagraph}
+      onSpeakClose={() => {
+        setShowSpeak(false);
+        void window.electron.speakStop();
+      }}
+      showWindowManager={showWindowManager}
+      windowManagerPortalTarget={windowManagerPortalTarget}
+      onWindowManagerClose={() => {
+        setShowWindowManager(false);
+      }}
+      showCursorPrompt={showCursorPrompt}
+      cursorPromptPortalTarget={cursorPromptPortalTarget}
+      cursorPromptText={cursorPromptText}
+      setCursorPromptText={setCursorPromptText}
+      cursorPromptStatus={cursorPromptStatus}
+      cursorPromptResult={cursorPromptResult}
+      cursorPromptError={cursorPromptError}
+      cursorPromptInputRef={cursorPromptInputRef}
+      aiAvailable={aiAvailable}
+      submitCursorPrompt={submitCursorPrompt}
+      closeCursorPrompt={closeCursorPrompt}
+      acceptCursorPrompt={acceptCursorPrompt}
+    />
   );
 
   const alwaysMountedRunners = (
@@ -4111,6 +2309,74 @@ const App: React.FC = () => {
   );
   const launcherBackgroundImageUrl = toFileUrl(launcherBackgroundImagePath);
   const shouldUseBackgroundEverywhere = Boolean(launcherBackgroundImageUrl) && launcherBackgroundImageEverywhere;
+  const isGlassyTheme =
+    document.documentElement.classList.contains('sc-glassy') ||
+    document.body.classList.contains('sc-glassy');
+  const isNativeLiquidGlass =
+    document.documentElement.classList.contains('sc-native-liquid-glass') ||
+    document.body.classList.contains('sc-native-liquid-glass');
+  const quickLinkDynamicPromptTitle = quickLinkDynamicPrompt
+    ? getCommandDisplayTitle(quickLinkDynamicPrompt.command, t)
+    : '';
+  const {
+    handleKeyDown,
+    handleLauncherSearchBlur,
+    handleLauncherInputChange,
+    copyCalculatorResult,
+    showCompactLauncher,
+    handleInlineExtensionArgumentChange,
+    handleInlineQuickLinkDynamicValueChange,
+  } = useLauncherKeyboardControls({
+    inputRef,
+    isLauncherModeActiveRef,
+    inlineArgumentInputRefs,
+    inlineQuickLinkInputRefs,
+    displayCommands,
+    selectedCommand,
+    selectedIndex,
+    selectedFileResultPath,
+    calcOffset,
+    calcResult,
+    searchQuery,
+    browserSearchAutoComplete,
+    launcherInputValue,
+    aiAvailable,
+    shouldHideAskAi,
+    isShowingInlineArgumentInputs,
+    selectedInlineExtensionArgumentDefinitions,
+    selectedInlineQuickLinkDynamicFields,
+    selectedQuickLinkId,
+    showActions,
+    contextMenu,
+    quickLinkDynamicPrompt,
+    bookmarkNicknamePrompt,
+    showAppUninstall,
+    launcherViewMode,
+    isCompactCollapsed,
+    setSearchQuery,
+    setSelectedIndex,
+    setIsCompactCollapsed,
+    setShowActions,
+    setContextMenu,
+    setActionsCommand,
+    setSelectedActionIndex,
+    startAiChat,
+    restoreLauncherFocus,
+    handleCommandExecute,
+    submitBrowserSearch,
+    pinToggleForCommand,
+    disableCommand,
+    uninstallExtensionCommand,
+    movePinnedCommand,
+    showFileResultDetailsByPath,
+    revealFileResultByPath,
+    copyFileResultPath,
+    pinToggleForFile,
+    copyCommandDeeplink,
+    openAppUninstall,
+    updateInlineExtensionArgumentValue,
+    updateInlineQuickLinkDynamicValue,
+  });
 
   // ─── Script Command Setup ───────────────────────────────────────
   if (scriptCommandSetup) {
@@ -4198,75 +2464,71 @@ const App: React.FC = () => {
   // ─── Extension view mode ──────────────────────────────────────────
   if (extensionView) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-          className="extension-runtime-shell"
-        >
-          <ExtensionView
-            code={extensionView.code}
-            title={extensionView.title}
-            mode={extensionView.mode}
-            error={(extensionView as any).error}
-            extensionName={(extensionView as any).extensionName || extensionView.extName}
-            extensionDisplayName={(extensionView as any).extensionDisplayName}
-            extensionIconDataUrl={(extensionView as any).extensionIconDataUrl}
-            commandName={(extensionView as any).commandName || extensionView.cmdName}
-            assetsPath={(extensionView as any).assetsPath}
-            supportPath={(extensionView as any).supportPath}
-            owner={(extensionView as any).owner}
-            preferences={(extensionView as any).preferences}
-            preferenceDefinitions={(extensionView as any).preferenceDefinitions}
-            launchArguments={(extensionView as any).launchArguments}
-            launchContext={(extensionView as any).launchContext}
-            fallbackText={(extensionView as any).fallbackText}
-            launchType={(extensionView as any).launchType}
-            onClose={() => {
-              setExtensionView(null);
-              localStorage.removeItem(LAST_EXT_KEY);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+        className="extension-runtime-shell"
+      >
+        <ExtensionView
+          code={extensionView.code}
+          title={extensionView.title}
+          mode={extensionView.mode}
+          error={(extensionView as any).error}
+          extensionName={(extensionView as any).extensionName || extensionView.extName}
+          extensionDisplayName={(extensionView as any).extensionDisplayName}
+          extensionIconDataUrl={(extensionView as any).extensionIconDataUrl}
+          commandName={(extensionView as any).commandName || extensionView.cmdName}
+          assetsPath={(extensionView as any).assetsPath}
+          supportPath={(extensionView as any).supportPath}
+          owner={(extensionView as any).owner}
+          preferences={(extensionView as any).preferences}
+          preferenceDefinitions={(extensionView as any).preferenceDefinitions}
+          launchArguments={(extensionView as any).launchArguments}
+          launchContext={(extensionView as any).launchContext}
+          fallbackText={(extensionView as any).fallbackText}
+          launchType={(extensionView as any).launchType}
+          onClose={() => {
+            setExtensionView(null);
+            localStorage.removeItem(LAST_EXT_KEY);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
   // ─── Clipboard Manager mode ───────────────────────────────────────
   if (showClipboardManager) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <ClipboardManager
-            onClose={() => {
-              const openedViaShortcut = clipboardManagerOpenedViaShortcut;
-              setShowClipboardManager(false);
-              setClipboardManagerOpenedViaShortcut(false);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              if (openedViaShortcut) {
-                // Opened directly via global shortcut — there is no launcher
-                // list to fall back to, so one Escape dismisses the window (#407).
-                window.electron.hideWindow();
-                return;
-              }
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <ClipboardManager
+          onClose={() => {
+            const openedViaShortcut = clipboardManagerOpenedViaShortcut;
+            setShowClipboardManager(false);
+            setClipboardManagerOpenedViaShortcut(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            if (openedViaShortcut) {
+              // Opened directly via global shortcut; there is no launcher
+              // list to fall back to, so one Escape dismisses the window (#407).
+              window.electron.hideWindow();
+              return;
+            }
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
@@ -4294,24 +2556,22 @@ const App: React.FC = () => {
   // ─── Schedule mode ───────────────────────────────────────────────
   if (showSchedule) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <ScheduleExtension
-            onClose={() => {
-              setShowSchedule(false);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <ScheduleExtension
+          onClose={() => {
+            setShowSchedule(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
@@ -4335,230 +2595,186 @@ const App: React.FC = () => {
     );
   }
 
+  // ─── Web Search mode ─────────────────────────────────────────────
+  if (webSearchQuery !== null) {
+    return (
+      <WebSearchView
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+        query={webSearchQuery}
+        setQuery={setWebSearchQuery}
+        inputRef={webSearchInputRef}
+        onClose={closeWebSearch}
+        results={webSearchResults}
+        visibleSections={visibleWebSearchSections}
+        selectedIndex={webSearchSelectedIndex}
+        setSelectedIndex={setWebSearchSelectedIndex}
+        selectedResult={selectedWebSearchResult}
+        activateResult={activateWebSearchResult}
+        submitSearch={(query) => { void submitBrowserSearch(query); }}
+        loadMoreResults={loadMoreWebSearchResults}
+        effectiveSearchBangs={effectiveSearchBangs}
+        activeBang={activeWebSearchBang}
+        isBangManager={isWebSearchBangManager}
+        showHiddenBangs={webSearchShowHiddenBangs}
+        toggleShowHidden={toggleWebSearchShowHidden}
+        bangPrompt={webSearchBangPrompt}
+        bangInputRef={webSearchBangInputRef}
+        setBangPrompt={setWebSearchBangPrompt}
+        openBangPrompt={openWebSearchBangPrompt}
+        saveBangAliases={saveWebSearchBangAliases}
+        customBangPrompt={webSearchCustomBangPrompt}
+        setCustomBangPrompt={setWebSearchCustomBangPrompt}
+        openCustomBangPrompt={openWebSearchCustomBangPrompt}
+        closeCustomBangPrompt={closeWebSearchCustomBangPrompt}
+        saveCustomBang={saveWebSearchCustomBang}
+        toggleBangDisabled={toggleWebSearchBangDisabled}
+        isNativeLiquidGlass={isNativeLiquidGlass}
+        isGlassyTheme={isGlassyTheme}
+        t={t}
+      />
+    );
+  }
+
   // ─── Browser Results mode ────────────────────────────────────────
   if (browserResultsViewQuery !== null) {
-    const selectedBrowserResult = browserResultsViewResults[browserResultsViewSelectedIndex] || null;
-    const closeBrowserResults = () => {
-      setBrowserResultsViewQuery(null);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    };
-
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <div className="h-full flex flex-col">
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--ui-divider)]">
-              <button
-                type="button"
-                onClick={closeBrowserResults}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/[0.06]"
-                aria-label={t('common.back')}
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-              <input
-                ref={browserResultsViewInputRef}
-                value={browserResultsViewQuery}
-                onChange={(event) => setBrowserResultsViewQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape' || (event.key === 'Backspace' && !browserResultsViewQuery)) {
-                    event.preventDefault();
-                    closeBrowserResults();
-                    return;
-                  }
-                  if (event.key === 'ArrowDown') {
-                    event.preventDefault();
-                    setBrowserResultsViewSelectedIndex((index) => Math.min(index + 1, browserResultsViewResults.length - 1));
-                    return;
-                  }
-                  if (event.key === 'ArrowUp') {
-                    event.preventDefault();
-                    setBrowserResultsViewSelectedIndex((index) => Math.max(index - 1, 0));
-                    return;
-                  }
-                  if (event.key === 'Enter' && selectedBrowserResult) {
-                    event.preventDefault();
-                    void openBrowserResult(selectedBrowserResult, event.metaKey && selectedBrowserResult.focusAvailable ? { focusExistingTab: true } : undefined);
-                  }
-                }}
-                placeholder={t('launcher.browserSearch.showAllPlaceholder')}
-                className="flex-1 bg-transparent outline-none text-[0.95rem] text-[var(--text-primary)] placeholder:text-[var(--text-subtle)]"
-              />
-            </div>
-
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5">
-              {browserResultsViewResults.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
-                  {t('launcher.status.noMatchingResults')}
-                </div>
-              ) : (
-                <div className="space-y-0.5">
-                  {browserResultsViewSections.reduce(
-                    (acc, section) => {
-                      acc.nodes.push(
-                        <div
-                          key={`browser-section-${section.kind}`}
-                          className="px-3 pt-2 pb-1 text-[0.6875rem] uppercase tracking-wider text-[var(--text-subtle)] font-medium"
-                        >
-                          {section.title}
-                        </div>
-                      );
-                      section.items.forEach((result) => {
-                        const flatIndex = acc.index++;
-                        const selected = flatIndex === browserResultsViewSelectedIndex;
-                        acc.nodes.push(
-                          <div
-                            key={result.id}
-                            className={`command-item px-3 py-2 rounded-lg cursor-pointer ${selected ? 'selected' : ''}`}
-                            onMouseEnter={() => setBrowserResultsViewSelectedIndex(flatIndex)}
-                            onClick={() => void openBrowserResult(result)}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                {renderCommandIcon({
-                                  id: result.id,
-                                  title: result.title,
-                                  subtitle: result.subtitle,
-                                  category: 'system',
-                                  browserResultKind: result.kind,
-                                })}
-                              </div>
-                              <div className="min-w-0 flex-1 flex items-center gap-2">
-                                <div className="text-[var(--text-primary)] text-[0.8125rem] font-medium truncate tracking-[0.004em]">
-                                  {result.title}
-                                </div>
-                                <div className="text-[var(--text-muted)] text-[0.6875rem] font-medium truncate">
-                                  {result.subtitle}
-                                </div>
-                              </div>
-                              {result.focusAvailable ? (
-                                <span className="inline-flex items-center gap-1 text-[0.6875rem] text-[var(--text-muted)] font-medium flex-shrink-0">
-                                  <span>{t('launcher.browserSearch.focusHint')}</span>
-                                  <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] px-1 text-[10px] font-medium text-[var(--text-muted)]">⌘</kbd>
-                                  <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] px-1 text-[10px] font-medium text-[var(--text-muted)]">↩</kbd>
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      });
-                      return acc;
-                    },
-                    { nodes: [] as React.ReactNode[], index: 0 }
-                  ).nodes}
-                </div>
-              )}
-            </div>
-          </div>
-        </LauncherSurface>
-      </>
+      <BrowserResultsView
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+        query={browserResultsViewQuery}
+        setQuery={setBrowserResultsViewQuery}
+        inputRef={browserResultsViewInputRef}
+        placeholder={browserResultsPlaceholder}
+        onClose={closeBrowserResults}
+        scope={browserResultsViewScope}
+        results={browserResultsViewResults}
+        sections={browserResultsViewSections}
+        selectedIndex={browserResultsViewSelectedIndex}
+        setSelectedIndex={setBrowserResultsViewSelectedIndex}
+        selectedResult={selectedBrowserResult}
+        activateResult={activateBrowserResult}
+        loadMoreResults={loadMoreBrowserResults}
+        showHistoryProfilePicker={showHistoryProfilePicker}
+        historyProfileOptions={browserHistoryProfileOptions}
+        effectiveHistoryProfileIds={effectiveBrowserHistoryProfileIds}
+        historyProfileFilterLabel={historyProfileFilterLabel}
+        browserAlternateProfileLabel={browserAlternateProfileLabel}
+        browserAlternateProfileBrowserId={browserAlternateProfileBrowserId}
+        browserProfiles={browserSearch.profiles}
+        browserAppIconDataUrls={browserAppIconDataUrls}
+        historyProfileMenuOpen={browserHistoryProfileMenuOpen}
+        setHistoryProfileMenuOpen={setBrowserHistoryProfileMenuOpen}
+        setHistorySelectedProfileIds={setBrowserHistorySelectedProfileIds}
+        bookmarkNicknamePrompt={bookmarkNicknamePrompt}
+        bookmarkNicknameSuggestion={bookmarkNicknameSuggestion}
+        bookmarkNicknameInputRef={bookmarkNicknameInputRef}
+        setBookmarkNicknamePrompt={setBookmarkNicknamePrompt}
+        openBookmarkNicknamePrompt={openBookmarkNicknamePrompt}
+        closeBookmarkNicknamePrompt={closeBookmarkNicknamePrompt}
+        isNativeLiquidGlass={isNativeLiquidGlass}
+        isGlassyTheme={isGlassyTheme}
+        t={t}
+      />
     );
   }
 
   // ─── Notes Search mode ───────────────────────────────────────────
   if (showNotesSearch) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <NotesSearchInline
-            onClose={() => {
-              setShowNotesSearch(false);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <NotesSearchInline
+          onClose={() => {
+            setShowNotesSearch(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
   // ─── Canvas Search mode ──────────────────────────────────────────
   if (showCanvasSearch) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <CanvasSearchInline
-            onClose={() => {
-              setShowCanvasSearch(false);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <CanvasSearchInline
+          onClose={() => {
+            setShowCanvasSearch(false);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
   // ─── Snippet Manager mode ─────────────────────────────────────────
   if (showSnippetManager) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <SnippetManager
-            initialView={showSnippetManager}
-            onClose={() => {
-              setShowSnippetManager(null);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <SnippetManager
+          initialView={showSnippetManager}
+          onClose={() => {
+            setShowSnippetManager(null);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
   // ─── Quick Link Manager mode ──────────────────────────────────────
   if (showQuickLinkManager) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <QuickLinkManager
-            initialView={showQuickLinkManager}
-            commandAliases={commandAliases}
-            initialEditId={quickLinkEditId ?? undefined}
-            onClose={() => {
-              setShowQuickLinkManager(null);
-              setQuickLinkEditId(null);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <QuickLinkManager
+          initialView={showQuickLinkManager}
+          commandAliases={commandAliases}
+          initialEditId={quickLinkEditId ?? undefined}
+          onClose={() => {
+            setShowQuickLinkManager(null);
+            setQuickLinkEditId(null);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
@@ -4567,28 +2783,26 @@ const App: React.FC = () => {
 
   if (showFileSearch) {
     return (
-      <>
-        {alwaysMountedRunners}
-        <LauncherSurface
-          backgroundImageUrl={launcherBackgroundImageUrl}
-          showBackground={shouldUseBackgroundEverywhere}
-          backgroundBlurPercent={launcherBackgroundImageBlurPercent}
-          backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-        >
-          <FileSearchExtension
-            initialDetailPath={fileSearchInitialDetailPath}
-            pinnedFiles={pinnedFiles}
-            onTogglePinFile={pinToggleForFile}
-            onClose={() => {
-              setShowFileSearch(false);
-              setFileSearchInitialDetailPath(null);
-              setSearchQuery('');
-              setSelectedIndex(0);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-          />
-        </LauncherSurface>
-      </>
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <FileSearchExtension
+          initialDetailPath={fileSearchInitialDetailPath}
+          pinnedFiles={pinnedFiles}
+          onTogglePinFile={pinToggleForFile}
+          onClose={() => {
+            setShowFileSearch(false);
+            setFileSearchInitialDetailPath(null);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
     );
   }
 
@@ -4672,787 +2886,110 @@ const App: React.FC = () => {
   }
 
   // ─── Launcher mode ──────────────────────────────────────────────
-  const isGlassyTheme =
-    document.documentElement.classList.contains('sc-glassy') ||
-    document.body.classList.contains('sc-glassy');
-  const isNativeLiquidGlass =
-    document.documentElement.classList.contains('sc-native-liquid-glass') ||
-    document.body.classList.contains('sc-native-liquid-glass');
   return (
-    <>
-    {alwaysMountedRunners}
-    <LauncherSurface
+    <LauncherMainView
+      alwaysMountedRunners={alwaysMountedRunners}
       backgroundImageUrl={launcherBackgroundImageUrl}
-      showBackground={Boolean(launcherBackgroundImageUrl)}
       backgroundBlurPercent={launcherBackgroundImageBlurPercent}
       backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
-      className="launcher-main-surface"
-    >
-        {/* Search header - transparent background */}
-        <div className="drag-region flex h-[60px] items-center gap-2 px-4 border-b border-[var(--ui-divider)]">
-          <div ref={inlineArgumentLaneRef} className="relative min-w-0 flex-1">
-            <div className="flex h-full items-center">
-              <input
-                ref={inputRef}
-                type="text"
-                placeholder={aiMode ? t('launcher.aiMode.placeholder') : t('launcher.searchPlaceholder')}
-                value={launcherInputValue}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  // If we had a suggestion and the resulting value equals the
-                  // already-typed prefix, the user just deleted the suggestion
-                  // suffix — keep searchQuery and remember to suppress autocomplete
-                  // until the input is cleared.
-                  if (
-                    browserSearchAutoComplete &&
-                    value === searchQuery &&
-                    value.length > 0
-                  ) {
-                    setBrowserSearchSkipAutoComplete(true);
-                    return;
-                  }
-                  setSearchQuery(value);
-                  if (launcherViewMode === 'compact') {
-                    if (isCompactCollapsed && value.length > 0) {
-                      setIsCompactCollapsed(false);
-                      window.electron.resizeLauncherWindow(true);
-                    } else if (!isCompactCollapsed && value.length === 0) {
-                      setIsCompactCollapsed(true);
-                      window.electron.resizeLauncherWindow(false);
-                    }
-                  }
-                }}
-                onBlur={handleLauncherSearchBlur}
-                onKeyDown={handleKeyDown}
-                className="launcher-search-input min-w-0 w-full bg-transparent border-none outline-none text-[var(--text-primary)] placeholder:text-[color:var(--text-muted)] placeholder:font-medium text-[0.9375rem] font-medium tracking-[0.005em]"
-                autoFocus
-              />
-            </div>
-            {selectedInlineExtensionArgumentDefinitions.length > 0 ? (
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center overflow-x-hidden overflow-y-visible">
-                <div
-                  ref={inlineArgumentClusterRef}
-                  className="pointer-events-auto inline-flex min-w-0 items-center gap-1"
-                  style={{ marginLeft: inlineArgumentStartPx != null ? `${inlineArgumentStartPx}px` : '30%' }}
-                >
-                  {selectedInlineArgumentLeadingIcon ? (
-                    <InlineArgumentLeadingIcon>{selectedInlineArgumentLeadingIcon}</InlineArgumentLeadingIcon>
-                  ) : null}
-                  {selectedInlineExtensionArgumentDefinitions.map((definition, index) => {
-                    const value = selectedInlineExtensionArgumentValues[definition.name] || '';
-                    const placeholder = definition.placeholder || definition.title || definition.name;
-                    return (
-                      <InlineArgumentField
-                        key={`inline-arg-${definition.name}`}
-                        inputRef={(el) => {
-                          inlineArgumentInputRefs.current[index] = el;
-                        }}
-                        value={value}
-                        placeholder={placeholder}
-                        type={definition.type === 'dropdown' ? 'select' : definition.type === 'password' ? 'password' : 'text'}
-                        options={(definition.data || []).map((option) => ({
-                          value: String(option?.value || ''),
-                          label: String(option?.title || option?.value || ''),
-                        }))}
-                        onChange={(nextValue) => {
-                          if (!selectedCommand) return;
-                          updateInlineExtensionArgumentValue(selectedCommand, definition.name, nextValue);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Tab') {
-                            event.preventDefault();
-                            const total = selectedInlineExtensionArgumentDefinitions.length;
-                            const nextIndex = event.shiftKey ? index - 1 : index + 1;
-                            if (nextIndex >= 0 && nextIndex < total) {
-                              inlineArgumentInputRefs.current[nextIndex]?.focus();
-                            } else {
-                              inputRef.current?.focus();
-                            }
-                            return;
-                          }
-                          handleKeyDown(event);
-                        }}
-                      />
-                    );
-                  })}
-                  {hasSelectedExtensionOverflowArguments ? (
-                    <InlineArgumentOverflowBadge
-                      count={selectedExtensionArgumentDefinitions.length - selectedInlineExtensionArgumentDefinitions.length}
-                    />
-                  ) : null}
-                </div>
-              </div>
-            ) : selectedInlineQuickLinkDynamicFields.length > 0 ? (
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center overflow-x-hidden overflow-y-visible">
-                <div
-                  ref={inlineArgumentClusterRef}
-                  className="pointer-events-auto inline-flex min-w-0 items-center gap-1"
-                  style={{ marginLeft: inlineArgumentStartPx != null ? `${inlineArgumentStartPx}px` : '30%' }}
-                >
-                  {selectedInlineArgumentLeadingIcon ? (
-                    <InlineArgumentLeadingIcon>{selectedInlineArgumentLeadingIcon}</InlineArgumentLeadingIcon>
-                  ) : null}
-                  {selectedInlineQuickLinkDynamicFields.map((field, index) => (
-                    <InlineArgumentField
-                      key={`inline-quicklink-${selectedQuickLinkId || 'none'}-${field.key}`}
-                      inputRef={(el) => {
-                        inlineQuickLinkInputRefs.current[index] = el;
-                      }}
-                      value={selectedInlineQuickLinkDynamicValues[field.key] || ''}
-                      placeholder={field.defaultValue || field.name}
-                      onChange={(nextValue) => {
-                        if (!selectedQuickLinkId) return;
-                        updateInlineQuickLinkDynamicValue(selectedQuickLinkId, field.key, nextValue);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Tab') {
-                          event.preventDefault();
-                          const total = selectedInlineQuickLinkDynamicFields.length;
-                          const nextIndex = event.shiftKey ? index - 1 : index + 1;
-                          if (nextIndex >= 0 && nextIndex < total) {
-                            inlineQuickLinkInputRefs.current[nextIndex]?.focus();
-                          } else {
-                            inputRef.current?.focus();
-                          }
-                          return;
-                        }
-                        handleKeyDown(event);
-                      }}
-                    />
-                  ))}
-                  {hasSelectedQuickLinkOverflowDynamicFields ? (
-                    <InlineArgumentOverflowBadge
-                      count={selectedQuickLinkDynamicFields.length - selectedInlineQuickLinkDynamicFields.length}
-                    />
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {searchQuery && aiAvailable && !shouldHideAskAi && (
-              <button
-                onClick={() => startAiChat(searchQuery)}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--soft-pill-bg)] hover:bg-[var(--soft-pill-hover-bg)] transition-colors flex-shrink-0 group"
-              >
-                <Sparkles className="w-3 h-3 text-white/30 group-hover:text-purple-400 transition-colors" />
-                <span className="text-[0.6875rem] text-white/30 group-hover:text-white/50 transition-colors">Ask AI</span>
-                <kbd className="text-[0.625rem] text-white/20 bg-[var(--soft-pill-bg)] px-1 py-0.5 rounded font-mono leading-none">Tab</kbd>
-              </button>
-            )}
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="text-[var(--text-subtle)] hover:text-[var(--text-muted)] transition-colors flex-shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
 
-        {/* Compact mode: Show More row */}
-        {launcherViewMode === 'compact' && isCompactCollapsed && (
-          <div
-            className="flex items-center justify-between px-4 py-2 cursor-pointer hover:bg-[var(--ui-segment-hover-bg)] transition-colors border-t border-[var(--ui-divider)]"
-            onClick={() => {
-              setIsCompactCollapsed(false);
-              window.electron.resizeLauncherWindow(true);
-            }}
-          >
-            <div className="flex items-center gap-2 text-[var(--text-muted)]">
-              <img src={supercmdLogo} alt="SuperCmd" className="w-4 h-4" />
-            </div>
-            <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
-              <span className="text-xs font-medium">{t('launcher.compact.showMore')}</span>
-              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-[var(--kbd-bg)] text-[var(--text-subtle)]">
-                <ArrowDown className="w-3 h-3" />
-              </kbd>
-            </div>
-          </div>
-        )}
+      inlineArgumentLaneRef={inlineArgumentLaneRef}
+      inlineArgumentClusterRef={inlineArgumentClusterRef}
+      inlineArgumentInputRefs={inlineArgumentInputRefs}
+      inlineQuickLinkInputRefs={inlineQuickLinkInputRefs}
 
-        {/* Command list */}
-        <div
-          ref={listRef}
-          className="flex-1 overflow-y-auto custom-scrollbar p-1.5 list-area"
-          style={launcherViewMode === 'compact' && isCompactCollapsed ? { display: 'none' } : undefined}
-        >
-          {isLoading ? (
-            <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
-              <p className="text-sm">{t('launcher.status.discoveringApps')}</p>
-            </div>
-          ) : displayCommands.length === 0 && !calcResult ? (
-            <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
-              <p className="text-sm">{t('launcher.status.noMatchingResults')}</p>
-            </div>
-          ) : (
-            <div className="space-y-0.5">
-              {/* Calculator card */}
-              {calcResult && (
-                <div
-                  ref={(el) => (itemRefs.current[0] = el)}
-                  className={`mx-1 mt-0.5 mb-2 px-3 py-3 rounded-xl cursor-pointer transition-colors border ${
-                    selectedIndex === 0
-                      ? 'bg-[color-mix(in_srgb,var(--launcher-card-selected-bg)_60%,transparent)] border-[color-mix(in_srgb,var(--launcher-card-selected-border)_60%,transparent)]'
-                      : 'bg-transparent border-[color-mix(in_srgb,var(--launcher-card-border)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--launcher-card-hover-bg)_50%,transparent)]'
-                  }`}
-                  onClick={() => {
-                    navigator.clipboard.writeText(calcResult.result);
-                    window.electron.hideWindow();
-                  }}
-                >
-                  <div className="relative">
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="inline-flex items-center h-5 rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[0.625rem] font-medium uppercase tracking-[0.12em] text-[var(--text-subtle)] leading-none">
-                          {formatCalcKindLabel(calcResult.kind)}
-                        </div>
-                        <div className="text-[0.6875rem] text-[var(--text-muted)] leading-none">
-                          {selectedIndex === 0 ? t('launcher.calculator.pressEnterToCopy') : t('launcher.calculator.clickToCopy')}
-                        </div>
-                      </div>
+      inputRef={inputRef}
+      searchPlaceholder={aiMode ? t('launcher.aiMode.placeholder') : t('launcher.searchPlaceholder')}
+      launcherInputValue={launcherInputValue}
+      autocompleteSuffix={browserSearchAutoComplete?.suffix || ''}
+      onInputChange={handleLauncherInputChange}
+      onSearchBlur={handleLauncherSearchBlur}
+      onSearchKeyDown={handleKeyDown}
 
-                      <div className="hidden sm:flex items-center gap-1 text-[0.6875rem] text-[var(--text-subtle)] flex-shrink-0 pl-2">
-                        <CornerDownLeft className="w-3.5 h-3.5" />
-                        <span>{t('launcher.calculator.copy')}</span>
-                      </div>
-                    </div>
+      inlineArgumentStartPx={inlineArgumentStartPx}
+      selectedInlineArgumentLeadingIcon={selectedInlineArgumentLeadingIcon}
 
-                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-8 w-8 rounded-full border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] flex items-center justify-center pointer-events-none">
-                      <ArrowRight className="w-4 h-4 text-[var(--text-muted)]" />
-                    </div>
+      selectedInlineExtensionArgumentDefinitions={selectedInlineExtensionArgumentDefinitions}
+      selectedInlineExtensionArgumentValues={selectedInlineExtensionArgumentValues}
+      hasSelectedExtensionOverflowArguments={hasSelectedExtensionOverflowArguments}
+      selectedExtensionOverflowCount={selectedExtensionArgumentDefinitions.length - selectedInlineExtensionArgumentDefinitions.length}
+      onInlineExtensionArgumentChange={handleInlineExtensionArgumentChange}
 
-                    <div className="flex justify-center">
-                      <div className="inline-grid grid-cols-[minmax(0,240px)_auto_minmax(0,240px)] items-center gap-x-7">
-                        <div className="min-w-0 text-center">
-                          <div className="text-[0.6875rem] uppercase tracking-[0.12em] text-[var(--text-subtle)] truncate">
-                            {calcResult.inputLabel}
-                          </div>
-                          <div
-                            className="mt-1 text-[1.15rem] leading-7 font-medium text-[var(--text-secondary)] text-center whitespace-normal break-words"
-                            style={{
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            {calcResult.input}
-                          </div>
-                        </div>
+      selectedQuickLinkId={selectedQuickLinkId}
+      selectedInlineQuickLinkDynamicFields={selectedInlineQuickLinkDynamicFields}
+      selectedInlineQuickLinkDynamicValues={selectedInlineQuickLinkDynamicValues}
+      hasSelectedQuickLinkOverflowDynamicFields={hasSelectedQuickLinkOverflowDynamicFields}
+      selectedQuickLinkOverflowCount={selectedQuickLinkDynamicFields.length - selectedInlineQuickLinkDynamicFields.length}
+      onInlineQuickLinkDynamicValueChange={handleInlineQuickLinkDynamicValueChange}
 
-                        <div />
+      searchQuery={searchQuery}
+      aiAvailable={aiAvailable}
+      shouldHideAskAi={shouldHideAskAi}
+      onAskAi={() => startAiChat(searchQuery)}
+      onClearSearch={() => setSearchQuery('')}
 
-                        <div className="min-w-0 text-center">
-                          <div className="text-[0.6875rem] uppercase tracking-[0.12em] text-[var(--text-subtle)] truncate">
-                            {calcResult.resultLabel}
-                          </div>
-                          <div
-                            className="mt-1 text-[1.15rem] leading-7 font-medium text-[var(--text-secondary)] text-center whitespace-normal break-words"
-                            style={{
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            {calcResult.result}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+      launcherViewMode={launcherViewMode}
+      isCompactCollapsed={isCompactCollapsed}
+      logoSrc={supercmdLogo}
+      onShowCompactLauncher={showCompactLauncher}
 
-              {(() => {
-                // Pull alwaysOnTop commands out first so they render above every section
-                const allTopItems = displayCommands.filter((c) => c.alwaysOnTop);
-                const topIds = new Set(allTopItems.map((c) => c.id));
-                const strip = (items: CommandInfo[]) => items.filter((c) => !topIds.has(c.id));
-                return [
-                  { title: '', items: allTopItems },
-                  { title: t('launcher.categories.browser'), items: strip(browserSearchResultCommands) },
-                  { title: t('launcher.sections.selectedText'), items: strip(groupedCommands.contextual) },
-                  { title: t('launcher.sections.pinned'), items: strip(groupedCommands.pinned) },
-                  { title: t('launcher.categories.recent'), items: strip(groupedCommands.recent) },
-                  { title: t('launcher.sections.results'), items: strip(groupedCommands.other) },
-                  { title: t('launcher.categories.files'), items: strip(groupedCommands.files) },
-                ];
-              })()
-                .filter((section) => section.items.length > 0)
-                .map((section) => section)
-                .reduce(
-                  (acc, section) => {
-                    const startIndex = acc.index;
-                    if (section.title) {
-                      acc.nodes.push(
-                        <div
-                          key={`section-${section.title}`}
-                          className="px-3 pt-2 pb-1 text-[0.6875rem] uppercase tracking-wider text-[var(--text-subtle)] font-medium"
-                        >
-                          {section.title}
-                        </div>
-                      );
-                    }
-                    section.items.forEach((command, i) => {
-                      const flatIndex = startIndex + i;
-                      const accessoryLabel = getCommandAccessoryLabel(command);
-                      const typeBadgeLabel = getCommandTypeBadgeLabel(command, t);
-                      const fallbackCategory = getCategoryLabel(command.category, t);
-                      const commandAlias = String(commandAliases[command.id] || '').trim();
-                      const commandHotkey = String(commandHotkeys[command.id] || '').trim();
-                      const hotkeyParts = commandHotkey ? getShortcutDisplayParts(commandHotkey) : [];
-                      const browserFocusParts = command.browserMatchKind === 'open-tab'
-                        ? getShortcutDisplayParts('Cmd+Enter')
-                        : [];
-                      acc.nodes.push(
-                        <div
-                          key={command.id}
-                          ref={(el) => (itemRefs.current[flatIndex + calcOffset] = el)}
-                          className={`command-item px-3 py-2 rounded-lg cursor-pointer ${
-                            flatIndex + calcOffset === selectedIndex ? 'selected' : ''
-                          }`}
-                          onClick={() => {
-                            void handleCommandRowClick(command, flatIndex + calcOffset);
-                          }}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            setSelectedIndex(flatIndex + calcOffset);
-                            setShowActions(false);
-                            setContextMenu({
-                              x: e.clientX,
-                              y: e.clientY,
-                              command,
-                            });
-                          }}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                              {renderCommandIcon(command)}
-                            </div>
+      listRef={listRef}
+      itemRefs={itemRefs}
+      isLoading={isLoading}
+      displayCommands={displayCommands}
+      sections={launcherCommandSections}
+      calcResult={calcResult}
+      calcOffset={calcOffset}
+      selectedIndex={selectedIndex}
+      commandAliases={commandAliases}
+      commandHotkeys={commandHotkeys}
+      onCalculatorCopy={copyCalculatorResult}
+      onCommandClick={handleCommandRowClick}
+      onCommandContextMenu={openLauncherCommandContextMenu}
 
-                            <div className="min-w-0 flex-1 flex items-center gap-2">
-                              <div className="text-[var(--text-primary)] text-[0.8125rem] font-medium truncate tracking-[0.004em]">
-                                {getCommandDisplayTitle(command, t)}
-                              </div>
-                              {accessoryLabel ? (
-                                <div className="text-[var(--text-muted)] text-[0.75rem] font-medium truncate">
-                                  {accessoryLabel}
-                                </div>
-                              ) : (
-                                <div className="text-[var(--text-muted)] text-[0.6875rem] font-medium truncate">
-                                  {fallbackCategory}
-                                </div>
-                              )}
-                              {commandAlias ? (
-                                <div className="inline-flex items-center h-5 rounded-md border border-[var(--launcher-chip-border)] bg-[var(--launcher-chip-bg)] px-1.5 text-[0.625rem] font-mono text-[var(--text-subtle)] leading-none flex-shrink-0">
-                                  {commandAlias}
-                                </div>
-                              ) : null}
-                              {hotkeyParts.length > 0 ? (
-                                <span className="inline-flex items-center gap-0.5 flex-shrink-0">
-                                  {hotkeyParts.map((part, idx) => (
-                                    <kbd key={idx} className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] px-1 text-[10px] font-medium text-[var(--text-muted)]">
-                                      {part}
-                                    </kbd>
-                                  ))}
-                                </span>
-                              ) : null}
-                            </div>
-                            {browserFocusParts.length > 0 ? (
-                              <span className="inline-flex items-center gap-1 text-[0.6875rem] text-[var(--text-muted)] font-medium flex-shrink-0">
-                                <span>{t('launcher.browserSearch.focusHint')}</span>
-                                <span className="inline-flex items-center gap-0.5">
-                                  {browserFocusParts.map((part, idx) => (
-                                    <kbd key={idx} className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] px-1 text-[10px] font-medium text-[var(--text-muted)]">
-                                      {part}
-                                    </kbd>
-                                  ))}
-                                </span>
-                              </span>
-                            ) : null}
-                            {typeBadgeLabel ? (
-                              <div className="text-[var(--text-muted)] text-[0.6875rem] font-medium leading-none flex-shrink-0 truncate">
-                                {typeBadgeLabel}
-                              </div>
-                            ) : null}
-                            {flatIndex < 9 && (
-                              <span className="inline-flex items-center gap-0.5 flex-shrink-0">
-                                <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">⌘</kbd>
-                                <kbd className="inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-[var(--kbd-bg)] text-[10px] font-medium text-[var(--text-muted)]">{flatIndex + 1}</kbd>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    });
-                    acc.index += section.items.length;
-                    return acc;
-                  },
-                  { nodes: [] as React.ReactNode[], index: 0 }
-                ).nodes}
-            </div>
-          )}
-        </div>
-        
-        {/* Footer actions */}
-        {!isLoading && !(launcherViewMode === 'compact' && isCompactCollapsed) && (
-          <div
-            className="sc-glass-footer sc-launcher-footer absolute bottom-0 left-0 right-0 z-10 flex items-center px-4 py-2.5"
-          >
-            <div
-              className="sc-footer-primary flex items-center gap-2 text-xs flex-1 min-w-0 font-normal truncate text-[var(--text-subtle)]"
-            >
-              {launcherFooterStatus ? (
-                <>
-                  {launcherFooterStatus.type === 'success' ? (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/90 shadow-[0_0_0_3px_rgba(52,211,153,0.18)] flex-shrink-0" />
-                  ) : (
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400/90 shadow-[0_0_0_3px_rgba(244,114,182,0.18)] flex-shrink-0" />
-                  )}
-                  <span className="truncate text-[var(--text-secondary)]">{launcherFooterStatus.text}</span>
-                </>
-              ) : selectedCommand ? (
-                <>
-                  <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                    {renderCommandIcon(selectedCommand)}
-                  </span>
-                  <span className="truncate">{getCommandDisplayTitle(selectedCommand, t)}</span>
-                </>
-              ) : (
-                t('launcher.status.results', { count: displayCommands.length })
-              )}
-            </div>
-            {selectedActions[0] && (
-              <div className="flex items-center gap-2 mr-3">
-                <button
-                  onClick={() => selectedActions[0].execute()}
-                  className="text-[var(--text-primary)] text-xs font-semibold hover:text-[var(--text-primary)] transition-colors"
-                >
-                  {selectedActions[0].title}
-                </button>
-                {selectedActions[0].shortcut && (
-                  <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">
-                    {renderShortcutLabel(selectedActions[0].shortcut)}
-                  </kbd>
-                )}
-              </div>
-            )}
-            <button
-              onClick={() => {
-                if (!selectedCommand) return;
-                setContextMenu(null);
-                setActionsCommand(selectedCommand);
-                setSelectedActionIndex(0);
-                setShowActions(true);
-              }}
-              className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-            >
-              <span className="text-xs font-normal">{t('common.actions')}</span>
-              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">⌘</kbd>
-              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[0.6875rem] text-[var(--text-subtle)] font-medium">K</kbd>
-            </button>
-          </div>
-        )}
-    </LauncherSurface>
-    {quickLinkDynamicPrompt && (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center px-5"
-        style={{ background: 'var(--bg-scrim)' }}
-        onMouseDown={cancelQuickLinkDynamicPrompt}
-      >
-        <div
-          className="w-[520px] max-w-[92vw] rounded-xl overflow-hidden"
-          onMouseDown={(event) => event.stopPropagation()}
-          style={
-            isNativeLiquidGlass
-              ? {
-                  background: 'rgba(var(--surface-base-rgb), 0.72)',
-                  backdropFilter: 'blur(44px) saturate(155%)',
-                  WebkitBackdropFilter: 'blur(44px) saturate(155%)',
-                  border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
-                  boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
-                }
-              : isGlassyTheme
-              ? {
-                  background: 'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
-                  backdropFilter: 'blur(96px) saturate(190%)',
-                  WebkitBackdropFilter: 'blur(96px) saturate(190%)',
-                  border: '1px solid var(--ui-panel-border)',
-                }
-              : {
-                  background: 'var(--bg-overlay-strong)',
-                  backdropFilter: 'blur(28px)',
-                  WebkitBackdropFilter: 'blur(28px)',
-                  border: '1px solid var(--snippet-divider)',
-                }
-          }
-        >
-          <div className="px-4 py-3 border-b border-[var(--snippet-divider)] text-[var(--text-primary)] text-sm font-medium">
-            Fill Quick Link Arguments
-          </div>
-          <div className="px-4 pt-3 text-xs text-[var(--text-muted)]">
-            {getCommandDisplayTitle(quickLinkDynamicPrompt.command, t)}
-          </div>
-          <div className="p-4 pt-3 space-y-3">
-            {quickLinkDynamicPrompt.fields.map((field, idx) => (
-              <div key={field.key}>
-                <label className="block text-xs text-[var(--text-muted)] mb-1.5">{field.name}</label>
-                <input
-                  ref={idx === 0 ? quickLinkDynamicInputRef : undefined}
-                  type="text"
-                  value={quickLinkDynamicPrompt.values[field.key] || ''}
-                  onChange={(event) =>
-                    setQuickLinkDynamicPrompt((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            values: {
-                              ...prev.values,
-                              [field.key]: event.target.value,
-                            },
-                          }
-                        : prev
-                    )
-                  }
-                  placeholder={field.defaultValue || ''}
-                  className="w-full bg-[var(--ui-segment-bg)] border border-[var(--snippet-divider)] rounded-lg px-2.5 py-1.5 text-[13px] text-[var(--text-secondary)] placeholder:text-[color:var(--text-subtle)] outline-none focus:border-[var(--snippet-divider-strong)]"
-                />
-              </div>
-            ))}
-          </div>
-          <div className="px-4 py-3 border-t border-[var(--snippet-divider)] flex items-center justify-end gap-2">
-            <button
-              onClick={cancelQuickLinkDynamicPrompt}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--snippet-divider)] bg-[var(--ui-segment-bg)] text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors"
-            >
-              <span>Cancel</span>
-              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-muted)] font-medium">Esc</kbd>
-            </button>
-            <button
-              onClick={() => void submitQuickLinkDynamicPrompt()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--snippet-divider-strong)] bg-[var(--ui-segment-active-bg)] text-xs text-[var(--text-primary)] hover:bg-[var(--ui-segment-hover-bg)] transition-colors"
-            >
-              <span>Open Link</span>
-              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] text-[var(--text-muted)] font-medium">↩</kbd>
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
-    {showActions && actionsOverlayActions.length > 0 && (
-      <div
-        className="fixed inset-0 z-50"
-        onClick={() => setShowActions(false)}
-        style={{ background: 'var(--bg-scrim)' }}
-      >
-        <div
-          ref={actionsOverlayRef}
-          className="absolute bottom-12 right-3 w-96 max-h-[65vh] rounded-xl overflow-hidden flex flex-col shadow-2xl outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0 focus-visible:ring-0"
-          tabIndex={0}
-          onKeyDown={handleActionsOverlayKeyDown}
-          style={{
-            ...(isNativeLiquidGlass
-              ? {
-                  background: 'rgba(var(--surface-base-rgb), 0.72)',
-                  backdropFilter: 'blur(44px) saturate(155%)',
-                  WebkitBackdropFilter: 'blur(44px) saturate(155%)',
-                  border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
-                  boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
-                }
-              : isGlassyTheme
-              ? {
-                  background:
-                    'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
-                  backdropFilter: 'blur(96px) saturate(190%)',
-                  WebkitBackdropFilter: 'blur(96px) saturate(190%)',
-                  border: '1px solid rgba(var(--on-surface-rgb), 0.05)',
-                }
-              : {
-                  background: 'var(--card-bg)',
-                  backdropFilter: 'blur(40px)',
-                  WebkitBackdropFilter: 'blur(40px)',
-                  border: '1px solid var(--border-primary)',
-                }),
-            outline: 'none',
-          }}
-          onFocus={(e) => {
-            (e.currentTarget as HTMLDivElement).style.outline = 'none';
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex-1 overflow-y-auto py-1">
-            {actionsOverlayActions.map((action, idx) => (
-              <React.Fragment key={action.id}>
-                {action.separatorBefore && (
-                  <div className="mx-2.5 my-1 border-t border-[var(--ui-divider)]" />
-                )}
-              <div
-                className={`mx-1 px-2.5 py-1.5 rounded-lg border border-transparent flex items-center gap-2.5 cursor-pointer transition-colors ${
-                  idx === selectedActionIndex
-                    ? action.style === 'destructive'
-                      ? 'bg-[var(--action-menu-selected-bg)] text-[var(--status-danger-faded)]'
-                      : 'bg-[var(--action-menu-selected-bg)] text-[var(--text-primary)]'
-                    : action.style === 'destructive'
-                      ? 'hover:bg-[var(--overlay-item-hover-bg)] text-[var(--status-danger-faded)]'
-                      : 'hover:bg-[var(--overlay-item-hover-bg)] text-[var(--text-secondary)]'
-                }`}
-                style={
-                  idx === selectedActionIndex
-                    ? {
-                        background: 'var(--action-menu-selected-bg)',
-                        borderColor: 'var(--action-menu-selected-border)',
-                        boxShadow: 'var(--action-menu-selected-shadow)',
-                      }
-                    : undefined
-                }
-                onClick={async () => {
-                  await Promise.resolve(action.execute());
-                  setShowActions(false);
-                  restoreLauncherFocus();
-                }}
-                onMouseMove={() => setSelectedActionIndex(idx)}
-              >
-                {action.icon && (
-                  <span
-                    className={`shrink-0 ${
-                      action.style === 'destructive'
-                        ? 'text-[var(--status-danger-faded)]'
-                        : 'text-[var(--text-muted)]'
-                    }`}
-                  >
-                    {action.icon}
-                  </span>
-                )}
-                <span className="flex-1 text-sm truncate">{action.title}</span>
-                {action.shortcut && (
-                  <span className="flex items-center gap-0.5">
-                    {getShortcutDisplayParts(action.shortcut).map((key, keyIdx) => (
-                      <kbd
-                        key={`${action.id}-${key}-${keyIdx}`}
-                        className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] font-medium text-[var(--text-muted)]"
-                      >
-                        {key}
-                      </kbd>
-                    ))}
-                  </span>
-                )}
-              </div>
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-      </div>
-    )}
-    {contextMenu && contextActions.length > 0 && (
-      <div
-        className="fixed inset-0 z-50"
-        onClick={() => setContextMenu(null)}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setContextMenu(null);
-        }}
-      >
-        <div
-          ref={contextMenuRef}
-          className="absolute w-80 max-h-[60vh] rounded-xl overflow-hidden flex flex-col shadow-2xl outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0 focus-visible:ring-0"
-          tabIndex={0}
-          onKeyDown={handleContextMenuKeyDown}
-          style={{
-            left: Math.min(contextMenu.x, window.innerWidth - 340),
-            top: Math.min(contextMenu.y, window.innerHeight - 320),
-            ...(isNativeLiquidGlass
-              ? {
-                  background: 'rgba(var(--surface-base-rgb), 0.72)',
-                  backdropFilter: 'blur(44px) saturate(155%)',
-                  WebkitBackdropFilter: 'blur(44px) saturate(155%)',
-                  border: '1px solid rgba(var(--on-surface-rgb), 0.22)',
-                  boxShadow: '0 18px 38px -12px rgba(var(--backdrop-rgb), 0.26)',
-                }
-              : isGlassyTheme
-              ? {
-                  background:
-                    'linear-gradient(160deg, rgba(var(--on-surface-rgb), 0.08), rgba(var(--on-surface-rgb), 0.01)), rgba(var(--surface-base-rgb), 0.42)',
-                  backdropFilter: 'blur(96px) saturate(190%)',
-                  WebkitBackdropFilter: 'blur(96px) saturate(190%)',
-                  border: '1px solid rgba(var(--on-surface-rgb), 0.05)',
-                }
-              : {
-                  background: 'var(--card-bg)',
-                  backdropFilter: 'blur(40px)',
-                  WebkitBackdropFilter: 'blur(40px)',
-                  border: '1px solid var(--border-primary)',
-                }),
-            outline: 'none',
-          }}
-          onFocus={(e) => {
-            (e.currentTarget as HTMLDivElement).style.outline = 'none';
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <div className="flex-1 overflow-y-auto py-1">
-            {contextActions.map((action, idx) => (
-              <div
-                key={`ctx-${action.id}`}
-                className={`mx-1 px-2.5 py-1.5 rounded-lg border border-transparent flex items-center gap-2.5 cursor-pointer transition-colors ${
-                  idx === selectedContextActionIndex
-                    ? action.style === 'destructive'
-                      ? 'bg-[var(--action-menu-selected-bg)] text-[var(--status-danger-faded)]'
-                      : 'bg-[var(--action-menu-selected-bg)] text-[var(--text-primary)]'
-                    : action.style === 'destructive'
-                      ? 'hover:bg-[var(--overlay-item-hover-bg)] text-[var(--status-danger-faded)]'
-                      : 'hover:bg-[var(--overlay-item-hover-bg)] text-[var(--text-secondary)]'
-                }`}
-                style={
-                  idx === selectedContextActionIndex
-                    ? {
-                        background: 'var(--action-menu-selected-bg)',
-                        borderColor: 'var(--action-menu-selected-border)',
-                        boxShadow: 'var(--action-menu-selected-shadow)',
-                      }
-                    : undefined
-                }
-                onClick={async () => {
-                  await Promise.resolve(action.execute());
-                  setContextMenu(null);
-                  restoreLauncherFocus();
-                }}
-                onMouseMove={() => setSelectedContextActionIndex(idx)}
-              >
-                {action.icon && (
-                  <span
-                    className={`shrink-0 ${
-                      action.style === 'destructive'
-                        ? 'text-[var(--status-danger-faded)]'
-                        : 'text-[var(--text-muted)]'
-                    }`}
-                  >
-                    {action.icon}
-                  </span>
-                )}
-                <span className="flex-1 text-sm truncate">{action.title}</span>
-                {action.shortcut && (
-                  <span className="flex items-center gap-0.5">
-                    {getShortcutDisplayParts(action.shortcut).map((key, keyIdx) => (
-                      <kbd
-                        key={`ctx-${action.id}-${key}-${keyIdx}`}
-                        className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded bg-[var(--kbd-bg)] text-[11px] font-medium text-[var(--text-muted)]"
-                      >
-                        {key}
-                      </kbd>
-                    ))}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )}
-    </>
+      launcherFooterStatus={launcherFooterStatus}
+      selectedCommand={selectedCommand}
+      selectedAction={selectedActions[0]}
+      browserProfiles={browserSearch.profiles}
+      onOpenActions={openSelectedCommandActions}
+
+      quickLinkDynamicPrompt={quickLinkDynamicPrompt}
+      quickLinkDynamicInputRef={quickLinkDynamicInputRef}
+      quickLinkDynamicPromptTitle={quickLinkDynamicPromptTitle}
+      setQuickLinkDynamicPrompt={setQuickLinkDynamicPrompt}
+      cancelQuickLinkDynamicPrompt={cancelQuickLinkDynamicPrompt}
+      submitQuickLinkDynamicPrompt={submitQuickLinkDynamicPrompt}
+
+      showActions={showActions}
+      actionsOverlayActions={actionsOverlayActions}
+      selectedActionIndex={selectedActionIndex}
+      setSelectedActionIndex={setSelectedActionIndex}
+      actionsOverlayRef={actionsOverlayRef}
+      handleActionsOverlayKeyDown={handleActionsOverlayKeyDown}
+      closeActionsOverlay={() => setShowActions(false)}
+      onActionOverlayClick={async (action) => {
+        await Promise.resolve(action.execute());
+        setShowActions(false);
+        restoreLauncherFocus();
+      }}
+
+      contextMenu={contextMenu}
+      contextActions={contextActions}
+      selectedContextActionIndex={selectedContextActionIndex}
+      setSelectedContextActionIndex={setSelectedContextActionIndex}
+      contextMenuRef={contextMenuRef}
+      handleContextMenuKeyDown={handleContextMenuKeyDown}
+      closeContextMenu={() => setContextMenu(null)}
+      onContextMenuActionClick={async (action) => {
+        await Promise.resolve(action.execute());
+        setContextMenu(null);
+        restoreLauncherFocus();
+      }}
+
+      isNativeLiquidGlass={isNativeLiquidGlass}
+      isGlassyTheme={isGlassyTheme}
+      t={t}
+    />
   );
 };
 

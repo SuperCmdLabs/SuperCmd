@@ -710,6 +710,10 @@
         "title": "Browser Profiles",
         "description": "Connect browser profiles so SuperCmd can use their local history and keep it refreshed.",
         "enableLabel": "Use browser profiles in SuperCmd",
+        "alphaToggle": {
+          "label": "Use alpha Chromium root search",
+          "description": "Show profile history, bookmarks, and open tabs in root search. Turn this on only for Chromium profiles while the browser extension is still in alpha."
+        },
         "retention": {
           "label": "History retention",
           "option": {
@@ -735,7 +739,8 @@
           "noneAdded": "No browser profiles added yet",
           "profileRowDetail": "History: {historyCount} URLs · Bookmarks: {bookmarkCount} · Tabs: {tabCount}",
           "profileSupportNote": "Profile support currently includes Chromium browsers only. Safari and Firefox support will be added later.",
-          "enabledProfiles": "{count} profile(s) enabled for SuperCmd browser history."
+          "enabledProfiles": "{count} profile(s) enabled for SuperCmd browser history.",
+          "defaultProfile": "Default"
         },
         "importedData": {
           "heading": "Imported data",
@@ -758,26 +763,22 @@
         "status": {
           "cleared": "Browser profile history cleared.",
           "imported": "Updated {count} of {total} entries.",
-          "failed": "Action failed."
+          "failed": "Action failed.",
+          "removedProfile": "Removed profile data ({count} items)."
         },
-        "resultGroups": {
-          "label": "Browser section priority",
-          "kind": {
-            "open-tab": "Open tabs",
-            "bookmark": "Bookmarks",
-            "history": "History"
-          },
-          "description": {
-            "open-tab": "Live tabs currently open in connected profiles.",
-            "bookmark": "Saved bookmarks from connected profiles.",
-            "history": "Visited pages from connected profiles."
-          },
-          "option": {
-            "none": "None",
-            "count": "{count} rows"
-          },
-          "moveUp": "Move up",
-          "moveDown": "Move down"
+        "webSearch": {
+          "label": "Web search",
+          "defaultProvider": "Default provider",
+          "suggestionsEnabled": {
+            "label": "Show search suggestions",
+            "description": "Show web suggestions and bang/provider options below browser results."
+          }
+        },
+        "alphaWarning": {
+          "title": "Alpha browser integration",
+          "description": "Browser search currently requires the SuperCmd browser extension and only supports Chromium-based browsers. Firefox and Safari support will come later.",
+          "devMode": "To connect a browser now, open the browser extension page, enable Developer mode, then choose Load unpacked and select the browser-extension folder.",
+          "temporary": "(This is temporary until the extension is published on the store.)"
         }
       }
     }
@@ -795,7 +796,37 @@
       "focusHint": "Focus tab",
       "showAll": "Show all browser results",
       "showAllSubtitle": "{count} browser results",
-      "showAllPlaceholder": "Search browser results..."
+      "showAllPlaceholder": "Search browser results...",
+      "openTabsPlaceholder": "Search open tabs...",
+      "bookmarksPlaceholder": "Search bookmarks...",
+      "historyPlaceholder": "Search history...",
+      "setNickname": "Set nickname",
+      "editNickname": "Edit nickname",
+      "searchProviderFor": "Search {provider} for \"{query}\"",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "Default search",
+      "webSearchPlaceholder": "Search bangs...",
+      "useBang": "Use bang",
+      "bangSections": {
+        "used": "Recent Bangs",
+        "common": "Common Bangs",
+        "matching": "Matching Bangs",
+        "all": "All Bangs",
+        "hidden": "Hidden Bangs"
+      },
+      "showHidden": "Show Hidden",
+      "hideHidden": "Hide Hidden",
+      "newBang": "New Bang",
+      "aliasHelp": "Separate aliases with commas, for example: !gh, !git",
+      "customBangHelp": "Create a bang with a URL template that contains {query}.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "Aliases",
+        "name": "Name",
+        "host": "Host",
+        "template": "URL template"
+      },
+      "profileAction": "Profile"
     },
     "compact": {
       "showMore": "Show More"
@@ -824,7 +855,8 @@
       "files": "Files",
       "calculator": "Calculator",
       "quickLinks": "Quick Links",
-      "browser": "Browser"
+      "browser": "Browser",
+      "search": "Search"
     },
     "actions": {
       "open": "Open",

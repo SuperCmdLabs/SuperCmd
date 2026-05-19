@@ -10,6 +10,15 @@ export type IndexedFileSearchResult = {
   parentPath: string;
   displayPath: string;
   isDirectory: boolean;
+  score?: number;
+  matchKind?: string;
+  depth?: number;
+  homeRelativeDepth?: number;
+  topLevelRoot?: string;
+  noisyPathSegmentCount?: number;
+  mtimeMs?: number;
+  birthtimeMs?: number;
+  atimeMs?: number;
 };
 
 export type FileSearchIndexStatus = {
@@ -34,6 +43,7 @@ type IndexedEntry = {
   normalizedPath: string;
   compactName: string;
   tokens: string[];
+  pathTokens: string[];
   isDirectory: boolean;
   deleted?: boolean;
 };
@@ -50,23 +60,22 @@ const MAX_PREFIX_LENGTH = 12;
 const MAX_INDEX_ENTRIES = 1_200_000;
 const DEFAULT_MAX_RESULTS = 80;
 const MAX_QUERY_RESULTS = 5_000;
+const MAX_FILE_METADATA_STAT_RESULTS = 240;
 const MIN_REBUILD_GAP_MS = 45_000;
 const DEFAULT_REFRESH_INTERVAL_MS = 8 * 60_000;
 const WATCH_EVENT_DEBOUNCE_MS = 500;
 const MAX_SPOTLIGHT_CANDIDATES = 10_000;
 const SPOTLIGHT_SEARCH_TIMEOUT_MS = 2_400;
+const INDEX_SCAN_YIELD_EVERY_DIRECTORIES = 80;
+const INDEX_SCAN_PAUSE_MS = 6;
 
 const execFileAsync = promisify(execFile);
 
-// Explicitly skip noisy/unhelpful build and dependency folders.
-export const FILE_SEARCH_INDEX_EXCLUDED_DIRECTORY_NAMES = [
+export const FILE_SEARCH_INDEX_NOISY_DIRECTORY_NAMES = [
   'node_modules',
   'dist',
   'build',
   'out',
-  '.git',
-  '.hg',
-  '.svn',
   '.next',
   '.nuxt',
   '.turbo',
@@ -83,9 +92,17 @@ export const FILE_SEARCH_INDEX_EXCLUDED_DIRECTORY_NAMES = [
   'log',
   'deriveddata',
   '.terraform',
-  '.yarn',
   '.pnpm-store',
   '.npm',
+] as const;
+
+// Skip VCS internals and high-churn generated/dependency trees. The file
+// search index starts at launch, so walking node_modules/build output can pin
+// the Electron main process on developer machines.
+export const FILE_SEARCH_INDEX_EXCLUDED_DIRECTORY_NAMES = [
+  '.git',
+  '.hg',
+  '.svn',
 ] as const;
 
 // Keep indexing inside user content areas and avoid macOS/system-heavy trees.
@@ -104,6 +121,9 @@ export const FILE_SEARCH_INDEX_PROTECTED_HOME_TOP_LEVEL_DIRECTORIES = [
 
 const EXCLUDED_DIRECTORY_NAME_SET = new Set(
   FILE_SEARCH_INDEX_EXCLUDED_DIRECTORY_NAMES.map((name) => name.toLowerCase())
+);
+const NOISY_DIRECTORY_NAME_SET = new Set(
+  FILE_SEARCH_INDEX_NOISY_DIRECTORY_NAMES.map((name) => name.toLowerCase())
 );
 const EXCLUDED_TOP_LEVEL_SET = new Set(
   FILE_SEARCH_INDEX_EXCLUDED_HOME_TOP_LEVEL_DIRECTORIES.map((name) => name.toLowerCase())
@@ -187,10 +207,12 @@ function isSubsequenceMatch(needle: string, haystack: string): boolean {
 function shouldSkipDirectory(absolutePath: string, dirName: string, homeDir: string): boolean {
   const trimmedName = String(dirName || '').trim();
   if (!trimmedName) return true;
-  if (trimmedName.startsWith('.')) return true;
 
   const lowerName = trimmedName.toLowerCase();
   if (EXCLUDED_DIRECTORY_NAME_SET.has(lowerName)) return true;
+  if (NOISY_DIRECTORY_NAME_SET.has(lowerName)) return true;
+  if (lowerName === '.trash') return true;
+  if (trimmedName.startsWith('.')) return true;
 
   const relative = path.relative(homeDir, absolutePath);
   if (!relative || relative.startsWith('..')) return true;
@@ -206,9 +228,26 @@ function shouldSkipDirectory(absolutePath: string, dirName: string, homeDir: str
 function shouldSkipFile(fileName: string): boolean {
   const trimmedName = String(fileName || '').trim();
   if (!trimmedName) return true;
-  if (trimmedName.startsWith('.')) return true;
+  if (trimmedName === '.DS_Store') return true;
   const extension = path.extname(trimmedName).toLowerCase();
   if (EXCLUDED_FILE_EXTENSIONS.has(extension)) return true;
+  return false;
+}
+
+function shouldSkipPathForSearch(candidatePath: string, homeDir: string): boolean {
+  if (!isPathWithinRoot(candidatePath, homeDir)) return true;
+  const relative = path.relative(homeDir, candidatePath);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return true;
+  const segments = relative.split(path.sep).filter(Boolean);
+  if (segments.length === 0) return true;
+  if (EXCLUDED_TOP_LEVEL_SET.has(segments[0].toLowerCase())) return true;
+  if (PROTECTED_TOP_LEVEL_SET.has(segments[0].toLowerCase()) && !includeProtectedHomeRoots) return true;
+  for (const segment of segments) {
+    const lowerSegment = segment.toLowerCase();
+    if (EXCLUDED_DIRECTORY_NAME_SET.has(lowerSegment)) return true;
+    if (NOISY_DIRECTORY_NAME_SET.has(lowerSegment)) return true;
+    if (segment.startsWith('.')) return true;
+  }
   return false;
 }
 
@@ -224,7 +263,7 @@ function addPrefixIndexValue(prefixToEntryIds: Map<string, number[]>, key: strin
 
 function indexEntry(
   snapshot: IndexSnapshot,
-  entry: Omit<IndexedEntry, 'normalizedName' | 'normalizedPath' | 'compactName' | 'tokens' | 'deleted'>
+  entry: Omit<IndexedEntry, 'normalizedName' | 'normalizedPath' | 'compactName' | 'tokens' | 'pathTokens' | 'deleted'>
 ): void {
   const normalizedName = normalizeSearchText(entry.name);
   if (!normalizedName) return;
@@ -245,6 +284,7 @@ function indexEntry(
   if (snapshot.entries.length >= MAX_INDEX_ENTRIES) return;
 
   const tokens = tokenizeSearchText(entry.name);
+  const pathTokens = tokenizeSearchText(entry.path);
   const compactName = normalizedName.replace(/\s+/g, '');
   const entryId = snapshot.entries.length;
 
@@ -254,6 +294,7 @@ function indexEntry(
     normalizedPath,
     compactName,
     tokens,
+    pathTokens,
   };
   snapshot.entries.push(nextEntry);
   snapshot.pathToEntryId.set(entry.path, entryId);
@@ -263,6 +304,13 @@ function indexEntry(
     if (!token) continue;
     const maxLen = Math.min(MAX_PREFIX_LENGTH, token.length);
     for (let length = 1; length <= maxLen; length += 1) {
+      seenIndexKeys.add(token.slice(0, length));
+    }
+  }
+  for (const token of pathTokens) {
+    if (!token) continue;
+    const maxLen = Math.min(MAX_PREFIX_LENGTH, token.length);
+    for (let length = 2; length <= maxLen; length += 1) {
       seenIndexKeys.add(token.slice(0, length));
     }
   }
@@ -396,8 +444,8 @@ async function buildIndexSnapshot(homeDir: string): Promise<IndexSnapshot> {
     }
 
     scannedDirectories += 1;
-    if (scannedDirectories % 120 === 0) {
-      await new Promise<void>((resolve) => setImmediate(resolve));
+    if (scannedDirectories % INDEX_SCAN_YIELD_EVERY_DIRECTORIES === 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, INDEX_SCAN_PAUSE_MS));
     }
   }
 
@@ -424,6 +472,12 @@ function scoreEntryMatch(entry: IndexedEntry, normalizedQuery: string, queryTerm
       termScore = 88;
     } else if (entry.normalizedName.includes(term)) {
       termScore = 70;
+    } else if (entry.pathTokens.includes(term)) {
+      termScore = 64;
+    } else if (entry.pathTokens.some((token) => token.startsWith(term))) {
+      termScore = 58;
+    } else if (entry.normalizedPath.includes(term)) {
+      termScore = 48;
     } else if (isSubsequenceMatch(term, entry.compactName)) {
       termScore = 44;
     } else {
@@ -448,6 +502,62 @@ function scoreEntryMatch(entry: IndexedEntry, normalizedQuery: string, queryTerm
 
   score += Math.max(0, 20 - Math.max(0, entry.name.length - normalizedQuery.length));
   return score;
+}
+
+function getEntryMatchKind(entry: IndexedEntry, normalizedQuery: string, queryTerms: string[]): string {
+  if (entry.normalizedName === normalizedQuery) return 'exact';
+  if (entry.normalizedName.startsWith(normalizedQuery)) return 'prefix';
+  if (entry.compactName.startsWith(normalizedQuery.replace(/\s+/g, ''))) return 'compact-prefix';
+  if (queryTerms.some((term) => entry.tokens.some((token) => token.startsWith(term)))) return 'token-prefix';
+  if (entry.normalizedName.includes(normalizedQuery)) return 'contains';
+  if (queryTerms.some((term) => entry.pathTokens.some((token) => token.startsWith(term)) || entry.normalizedPath.includes(term))) return 'path';
+  return 'subsequence';
+}
+
+function getFilePathRankingMetadata(filePath: string, stats: fs.Stats | null, homeDir: string) {
+  const relative = path.relative(homeDir, filePath);
+  const segments = relative && !relative.startsWith('..') && !path.isAbsolute(relative)
+    ? relative.split(path.sep).filter(Boolean)
+    : filePath.split(path.sep).filter(Boolean);
+  const topLevelRoot = segments[0] || '';
+  const noisyPathSegmentCount = segments.reduce((count, segment) =>
+    count + (NOISY_DIRECTORY_NAME_SET.has(segment.toLowerCase()) ? 1 : 0), 0);
+  return {
+    depth: segments.length,
+    homeRelativeDepth: segments.length,
+    topLevelRoot,
+    noisyPathSegmentCount,
+    mtimeMs: stats?.mtimeMs,
+    birthtimeMs: stats?.birthtimeMs,
+    atimeMs: stats?.atimeMs,
+  };
+}
+
+async function statPathForMetadata(filePath: string): Promise<fs.Stats | null> {
+  try {
+    return await fs.promises.stat(filePath);
+  } catch {
+    return null;
+  }
+}
+
+async function buildFileSearchResult(
+  entry: Pick<IndexedEntry, 'path' | 'name' | 'parentPath' | 'isDirectory'>,
+  score: number,
+  matchKind: string,
+  includeStatMetadata = true
+): Promise<IndexedFileSearchResult> {
+  const stats = includeStatMetadata ? await statPathForMetadata(entry.path) : null;
+  return {
+    path: entry.path,
+    name: entry.name,
+    parentPath: entry.parentPath,
+    displayPath: asTildePath(entry.parentPath, configuredHomeDir),
+    isDirectory: entry.isDirectory,
+    score,
+    matchKind,
+    ...getFilePathRankingMetadata(entry.path, stats, configuredHomeDir),
+  };
 }
 
 function intersectCandidates(lists: number[][]): number[] {
@@ -569,8 +679,10 @@ function isWatchablePath(absolutePath: string): boolean {
 
   for (const segment of segments) {
     if (!segment) continue;
+    const lowerSegment = segment.toLowerCase();
+    if (EXCLUDED_DIRECTORY_NAME_SET.has(lowerSegment)) return false;
+    if (NOISY_DIRECTORY_NAME_SET.has(lowerSegment)) return false;
     if (segment.startsWith('.')) return false;
-    if (EXCLUDED_DIRECTORY_NAME_SET.has(segment.toLowerCase())) return false;
   }
   return true;
 }
@@ -825,13 +937,11 @@ export async function searchIndexedFiles(
         });
 
         indexedResults.push(
-          ...scored.slice(0, limit).map(({ entry }) => ({
-            path: entry.path,
-            name: entry.name,
-            parentPath: entry.parentPath,
-            displayPath: asTildePath(entry.parentPath, configuredHomeDir),
-            isDirectory: entry.isDirectory,
-          }))
+          ...(await Promise.all(
+            scored.slice(0, limit).map(({ entry, score }, index) =>
+              buildFileSearchResult(entry, score, 'path', index < MAX_FILE_METADATA_STAT_RESULTS)
+            )
+          ))
         );
       }
     } else {
@@ -852,13 +962,16 @@ export async function searchIndexedFiles(
         });
 
         indexedResults.push(
-          ...scored.slice(0, limit).map(({ entry }) => ({
-            path: entry.path,
-            name: entry.name,
-            parentPath: entry.parentPath,
-            displayPath: asTildePath(entry.parentPath, configuredHomeDir),
-            isDirectory: entry.isDirectory,
-          }))
+          ...(await Promise.all(
+            scored.slice(0, limit).map(({ entry, score }, index) =>
+              buildFileSearchResult(
+                entry,
+                score,
+                getEntryMatchKind(entry, normalizedQuery, terms),
+                index < MAX_FILE_METADATA_STAT_RESULTS
+              )
+            )
+          ))
         );
       }
     }
@@ -917,7 +1030,7 @@ export async function searchIndexedFiles(
 
     const candidatePath = path.resolve(candidateRawPath);
     if (existingPaths.has(candidatePath)) continue;
-    if (!isPathWithinRoot(candidatePath, configuredHomeDir)) continue;
+    if (shouldSkipPathForSearch(candidatePath, configuredHomeDir)) continue;
 
     const candidateName = path.basename(candidatePath);
     if (!candidateName) continue;
@@ -948,6 +1061,7 @@ export async function searchIndexedFiles(
         normalizedPath: normalizePathSearchText(candidatePath),
         compactName: normalizedName.replace(/\s+/g, ''),
         tokens: tokenizeSearchText(candidateName),
+        pathTokens: tokenizeSearchText(candidatePath),
         isDirectory: false,
       };
       score = scoreEntryMatch(pseudoEntry, normalizedQuery, terms);
@@ -972,13 +1086,12 @@ export async function searchIndexedFiles(
   for (const candidate of spotlightScored) {
     if (merged.length >= limit) break;
     const parentPath = path.dirname(candidate.path);
-    merged.push({
+    merged.push(await buildFileSearchResult({
       path: candidate.path,
       name: path.basename(candidate.path),
       parentPath,
-      displayPath: asTildePath(parentPath, configuredHomeDir),
       isDirectory: false,
-    });
+    }, candidate.score, pathLikeQuery ? 'path' : 'contains', merged.length < MAX_FILE_METADATA_STAT_RESULTS));
   }
 
   return merged;
