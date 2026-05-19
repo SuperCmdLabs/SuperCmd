@@ -53,7 +53,7 @@ type UseLauncherLocalSystemCommandsOptions = {
 
   openOnboarding: () => void;
   openWhisper: () => void;
-  openClipboardManager: () => void;
+  openClipboardManager: (openedViaShortcut?: boolean) => void;
   openSnippetManager: (mode: 'search' | 'create') => void;
   openNotesSearch: () => void;
   openCanvasSearch: () => void;
@@ -162,7 +162,7 @@ export function useLauncherLocalSystemCommands(
     }
     if (commandId === 'system-clipboard-manager') {
       whisperSessionRef.current = false;
-      openClipboardManager();
+      openClipboardManager(options?.fromMainEvent === true);
       return true;
     }
     if (commandId === 'system-search-snippets') {

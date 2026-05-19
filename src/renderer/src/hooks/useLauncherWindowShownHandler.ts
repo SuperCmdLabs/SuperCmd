@@ -39,7 +39,7 @@ export type UseLauncherWindowShownHandlerOptions = {
   openWhisper: () => void;
   openSpeak: () => void;
   openCursorPrompt: () => void;
-  openClipboardManager: () => void;
+  openClipboardManager: (openedViaShortcut?: boolean) => void;
   openSnippetManager: (mode: 'search' | 'create') => void;
   openNotesSearch: () => void;
   openCanvasSearch: () => void;
@@ -213,7 +213,7 @@ export function useLauncherWindowShownHandler(
         if (routedSystemCommandId === 'system-clipboard-manager') {
           setShowSnippetManager(null);
           setShowFileSearch(false);
-          openClipboardManager();
+          openClipboardManager(true);
           return;
         }
         if (routedSystemCommandId === 'system-search-snippets') {
