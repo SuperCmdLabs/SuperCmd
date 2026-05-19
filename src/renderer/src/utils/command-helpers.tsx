@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { Search, Power, Settings, Puzzle, Sparkles, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Lock, Trash2, Store, Globe } from 'lucide-react';
+import { Search, Power, Settings, Puzzle, Sparkles, FileText, Mic, Volume2, Brain, TerminalSquare, RefreshCw, LayoutGrid, Lock, Trash2, Store, Globe, PanelTop, Bookmark, Clock } from 'lucide-react';
 import type { CommandInfo, EdgeTtsVoice } from '../../types/electron';
 import supercmdLogo from '../../../../supercmd.svg';
 import IconCalendar from '../icons/Calendar';
@@ -27,6 +27,7 @@ import IconPen from '../icons/Pen';
 import IconMagicWand from '../icons/MagicWand';
 import { formatShortcutForDisplay } from './hyper-key';
 import { renderQuickLinkIconGlyph } from './quicklink-icons';
+import { scoreRootSearchFields } from './root-search-ranking';
 import { getTranslitVariant } from './transliterate';
 
 export interface LauncherAction {
@@ -188,6 +189,11 @@ type SearchCandidate = {
   weight: number;
 };
 
+export type RankedCommand = {
+  command: CommandInfo;
+  score: number;
+};
+
 function bestTermScore(term: string, candidates: SearchCandidate[]): number {
   let best = 0;
   for (const candidate of candidates) {
@@ -333,6 +339,39 @@ export function filterCommands(
   return [...matchedTop, ...matchedRest];
 }
 
+export function rankCommands(
+  commands: CommandInfo[],
+  query: string,
+  aliasLookup: Record<string, string> = {}
+): RankedCommand[] {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) {
+    return commands.map((command) => ({ command, score: command.alwaysOnTop ? Number.MAX_SAFE_INTEGER : 0 }));
+  }
+
+  return commands
+    .map((command): RankedCommand | null => {
+      const alias = aliasLookup[command.id] || '';
+      const scored = scoreRootSearchFields(query, [
+        { value: command.title, kind: 'label', weight: 1 },
+        { value: alias, kind: 'alias', weight: 1.06 },
+        { value: command.subtitle, kind: 'description', weight: 0.74 },
+        ...(command.keywords || []).map((keyword) => ({ value: keyword, kind: 'description' as const, weight: 0.7 })),
+      ]);
+      if (!scored.matched) return null;
+      return { command, score: scored.matchScore };
+    })
+    .filter((entry): entry is RankedCommand => entry !== null)
+    .sort((a, b) => {
+      const aAlias = normalizeSearchText(aliasLookup[a.command.id] || '') === normalizedQuery;
+      const bAlias = normalizeSearchText(aliasLookup[b.command.id] || '') === normalizedQuery;
+      if (aAlias !== bAlias) return Number(bAlias) - Number(aAlias);
+      if (a.command.alwaysOnTop !== b.command.alwaysOnTop) return a.command.alwaysOnTop ? -1 : 1;
+      if (b.score !== a.score) return b.score - a.score;
+      return a.command.title.localeCompare(b.command.title);
+    });
+}
+
 /**
  * Get category display label
  */
@@ -377,6 +416,15 @@ export function getCommandAccessoryLabel(command: CommandInfo): string {
 }
 
 export function getCommandTypeBadgeLabel(command: CommandInfo, t?: Translator): string {
+  if (command.browserResultKind === 'open-tab') {
+    return t ? t('launcher.badges.openTab') : 'Open Tab';
+  }
+  if (command.browserResultKind === 'bookmark') {
+    return t ? t('launcher.badges.bookmark') : 'Bookmark';
+  }
+  if (command.browserResultKind === 'history') {
+    return t ? t('launcher.badges.history') : 'History';
+  }
   const commandId = String(command.id || '').trim();
   if (commandId.startsWith('quicklink-')) {
     return t ? t('launcher.badges.quickLink') : 'Quick Link';
@@ -952,6 +1000,9 @@ export function renderCommandIcon(command: CommandInfo): React.ReactNode {
       />
     );
   }
+  if (command.browserFaviconUrl) {
+    return renderBrowserFaviconIcon(command.browserFaviconUrl, command.browserResultKind);
+  }
   if (command.iconName) {
     return (
       <div
@@ -959,6 +1010,27 @@ export function renderCommandIcon(command: CommandInfo): React.ReactNode {
         style={{ background: 'var(--icon-neutral-bg)', color: 'var(--icon-neutral-fg)' }}
       >
         {renderQuickLinkIconGlyph(command.iconName, 'w-3.5 h-3.5')}
+      </div>
+    );
+  }
+  if (command.browserResultKind === 'open-tab') {
+    return (
+      <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
+        <PanelTop className="w-3 h-3 text-cyan-300" />
+      </div>
+    );
+  }
+  if (command.browserResultKind === 'bookmark') {
+    return (
+      <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
+        <Bookmark className="w-3 h-3 text-amber-300" />
+      </div>
+    );
+  }
+  if (command.browserResultKind === 'history') {
+    return (
+      <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
+        <Clock className="w-3 h-3 text-sky-300" />
       </div>
     );
   }
@@ -992,6 +1064,37 @@ export function renderCommandIcon(command: CommandInfo): React.ReactNode {
   );
 }
 
+function renderBrowserFaviconIcon(faviconUrl: string, kind?: CommandInfo['browserResultKind']): React.ReactNode {
+  const fallback = kind === 'open-tab' ? (
+    <PanelTop className="w-3 h-3 text-cyan-300" />
+  ) : kind === 'bookmark' ? (
+    <Bookmark className="w-3 h-3 text-amber-300" />
+  ) : kind === 'search' ? (
+    <Search className="w-3 h-3 text-emerald-300" />
+  ) : (
+    <Clock className="w-3 h-3 text-sky-300" />
+  );
+
+  return (
+    <div className="relative w-5 h-5 rounded bg-white/[0.06] flex items-center justify-center overflow-hidden">
+      <div className="absolute inset-0 flex items-center justify-center">
+        {fallback}
+      </div>
+      <img
+        src={faviconUrl}
+        alt=""
+        loading="lazy"
+        className="relative z-10 w-4 h-4 rounded-[3px] object-contain"
+        draggable={false}
+        referrerPolicy="no-referrer"
+        onError={(event) => {
+          event.currentTarget.style.display = 'none';
+        }}
+      />
+    </div>
+  );
+}
+
 export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode {
   if (isSuperCmdSystemCommand(commandId)) {
     return renderSuperCmdLogoIcon();
@@ -1021,6 +1124,46 @@ export function getSystemCommandFallbackIcon(commandId: string): React.ReactNode
     return (
       <div className="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
         <Search className="w-3 h-3 text-emerald-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'browser-search-action-show-all') {
+    return (
+      <div className="w-5 h-5 rounded bg-slate-500/20 flex items-center justify-center">
+        <Search className="w-3 h-3 text-slate-200" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-search-web') {
+    return (
+      <div className="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
+        <Search className="w-3 h-3 text-emerald-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-search-open-tabs') {
+    return (
+      <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
+        <PanelTop className="w-3 h-3 text-cyan-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-search-bookmarks') {
+    return (
+      <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
+        <Bookmark className="w-3 h-3 text-amber-300" />
+      </div>
+    );
+  }
+
+  if (commandId === 'system-search-history') {
+    return (
+      <div className="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
+        <Clock className="w-3 h-3 text-sky-300" />
       </div>
     );
   }

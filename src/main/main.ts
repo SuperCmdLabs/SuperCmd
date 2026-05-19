@@ -21,7 +21,8 @@ import { fork, execFileSync, type ChildProcess } from 'child_process';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
 import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery, refreshCommandsNow } from './commands';
 import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster, setExternalSettingsChangeHandler, settingsFileExistsOrICloudPlaceholder } from './settings-store';
-import type { AppSettings, RelocateMode } from './settings-store';
+import type { AppSettings, BrowserProfileSetting, BrowserProfileFilters, BrowserProfileFilterKind, RelocateMode } from './settings-store';
+import { recordRootSearchLaunchInState, type RootSearchRankingState } from '../shared/root-search-ranking-state';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
 import { scanAppRemnants } from './app-uninstaller';
 import * as soulverCalculator from './soulver-calculator';
@@ -117,15 +118,38 @@ import { ensureCalendarAccess, getCalendarEvents } from './calendar-events';
 import {
   openInDefaultBrowser as bsOpen,
   resolveInput as bsResolveInput,
+  recordResolvedInput as bsRecordResolvedInput,
   listEntries as bsListEntries,
+  getBrowserSearchRevision as bsGetBrowserSearchRevision,
+  getBrowserSearchStats as bsGetBrowserSearchStats,
   clearHistory as bsClearHistory,
   pruneByRetentionNow as bsPruneByRetention,
   getAutocomplete as bsGetAutocomplete,
   listImportableBrowsers as bsListImportableBrowsers,
+  listImportableBrowserProfiles as bsListImportableBrowserProfiles,
   importFromBrowser as bsImportFromBrowser,
+  importFromBrowserProfile as bsImportFromBrowserProfile,
+  removeEntriesForProfile as bsRemoveEntriesForProfile,
+  refreshEnabledBrowserProfiles as bsRefreshEnabledBrowserProfiles,
   fetchSearchSuggestion as bsFetchSearchSuggestion,
+  fetchSearchSuggestions as bsFetchSearchSuggestions,
+  type BrowserSearchEntry,
   type BrowserSearchSource,
 } from './browser-search-history';
+import { listWebSearchBangs } from './web-search-bangs';
+import {
+  clearBrowserTabRecentNavigations,
+  clearBrowserTabsForProfile,
+  focusBrowserTabForInput,
+  focusBrowserTabTarget,
+  flushRecentNavigationsForHistoryEntries,
+  listBrowserProfileConnectionStatuses,
+  listBrowserTabs,
+  listBrowserTabRecentNavigationEntries,
+  openUrlInProfile,
+  openBrowserTabForInput,
+  startBrowserTabsDevServer,
+} from './browser-tabs';
 import {
   initNoteStore,
   getAllNotes,
@@ -4032,6 +4056,9 @@ function isWindowShownRoutedSystemCommand(commandId: string): boolean {
     commandId === 'system-search-quicklinks' ||
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
+    commandId === 'system-search-open-tabs' ||
+    commandId === 'system-search-bookmarks' ||
+    commandId === 'system-search-history' ||
     commandId === 'system-my-schedule' ||
     commandId === 'system-camera' ||
     commandId === 'system-open-onboarding'
@@ -7467,6 +7494,14 @@ function createWindow(): void {
   // newly focused window while the key is still held.
   mainWindow.webContents.on('before-input-event', (event: any, input: any) => {
     const inputType = String(input?.type || '').toLowerCase();
+    const inputKey = String(input?.key || input?.code || '');
+    const altKey = Boolean(
+      input?.alt ||
+      (inputType === 'keydown' && /^(alt|altleft|altright|option)$/i.test(inputKey))
+    );
+    try {
+      mainWindow?.webContents.send('modifier-state-changed', { altKey });
+    } catch {}
     if (inputType !== 'keydown') return;
     if (!shouldSuppressOpeningShortcutInput(input)) return;
     event.preventDefault();
@@ -10150,6 +10185,9 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     commandId === 'system-search-quicklinks' ||
     commandId === 'system-create-quicklink' ||
     commandId === 'system-search-files' ||
+    commandId === 'system-search-open-tabs' ||
+    commandId === 'system-search-bookmarks' ||
+    commandId === 'system-search-history' ||
     commandId === 'system-my-schedule' ||
     commandId === 'system-camera'
   ) {
@@ -11854,6 +11892,140 @@ function broadcastBrowserSearchHistoryChanged(): void {
   }
 }
 
+function broadcastBrowserTabsChanged(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    try {
+      window.webContents.send('browser-tabs-changed');
+    } catch {}
+  }
+}
+
+let browserProfileRefreshInFlight = false;
+let lastBrowserProfileRefreshAt = 0;
+
+async function refreshBrowserProfiles(reason: string, minIntervalMs = 0): Promise<void> {
+  const now = Date.now();
+  if (browserProfileRefreshInFlight) return;
+  if (minIntervalMs > 0 && now - lastBrowserProfileRefreshAt < minIntervalMs) return;
+  browserProfileRefreshInFlight = true;
+  lastBrowserProfileRefreshAt = now;
+  try {
+    const beforeRevision = bsGetBrowserSearchRevision();
+    await bsRefreshEnabledBrowserProfiles();
+    if (bsGetBrowserSearchRevision() !== beforeRevision) {
+      flushRecentNavigationsForHistoryEntries(bsListEntries());
+      broadcastBrowserSearchHistoryChanged();
+      broadcastBrowserTabsChanged();
+    }
+  } catch (e) {
+    console.warn(`Browser profile refresh failed (${reason}):`, e);
+  } finally {
+    browserProfileRefreshInFlight = false;
+  }
+}
+
+function getCombinedBrowserSearchEntries(): BrowserSearchEntry[] {
+  const durableEntries = bsListEntries();
+  const durableKeys = new Set(
+    durableEntries
+      .filter((entry) => entry.type === 'url' && entry.sourceProfileId)
+      .map((entry) => `${entry.source}:${entry.sourceProfileId}:${entry.url.toLowerCase()}`)
+  );
+  const pendingEntries = listBrowserTabRecentNavigationEntries().filter((entry) => {
+    if (!entry.sourceProfileId) return true;
+    const key = `${entry.source}:${entry.sourceProfileId}:${entry.url.toLowerCase()}`;
+    return !durableKeys.has(key);
+  });
+  return [...durableEntries, ...pendingEntries];
+}
+
+function getCombinedBrowserSearchRevision(): number {
+  return bsGetBrowserSearchRevision();
+}
+
+type BrowserOpenProfileEvent = {
+  altKey?: boolean;
+  numberKey?: string | number | null;
+};
+
+function listConfiguredBrowserProfiles(): BrowserProfileSetting[] {
+  const settings = loadSettings().browserSearch;
+  const detectedById = new Map(bsListImportableBrowserProfiles().map((profile) => [profile.id, profile]));
+  const configured = Array.isArray(settings.profiles) ? settings.profiles : [];
+  const rawProfiles = configured;
+
+  return rawProfiles
+    .filter((profile) => profile?.id && profile.browserId && profile.profileId)
+    .map((profile) => {
+      const detected = detectedById.get(profile.id);
+      return {
+        ...profile,
+        browserName: detected?.browserName || profile.browserName,
+        detectedName: detected?.profileName || profile.detectedName || profile.profileId,
+        displayName: profile.displayName || detected?.profileName || profile.detectedName || profile.profileId,
+      };
+    })
+    .sort((a, b) => a.order - b.order || a.browserName.localeCompare(b.browserName) || a.displayName.localeCompare(b.displayName))
+    .map((profile, index) => ({ ...profile, order: index }));
+}
+
+function saveConfiguredBrowserProfiles(profiles: BrowserProfileSetting[], profileFilters?: BrowserProfileFilters): AppSettings {
+  const current = loadSettings();
+  return saveSettings({
+    browserSearch: {
+      ...current.browserSearch,
+      profiles: profiles.map((profile, index) => ({ ...profile, order: index })),
+      profileSourceIds: profiles.map((profile) => profile.id),
+      profileFilters: profileFilters ?? current.browserSearch.profileFilters ?? {},
+    },
+  } as Partial<AppSettings>);
+}
+
+function resolveOpenProfile(
+  event: BrowserOpenProfileEvent | null | undefined,
+  sourceProfileId?: string | null
+): BrowserProfileSetting | null {
+  const ordered = listConfiguredBrowserProfiles();
+  if (ordered.length === 0) return null;
+  const sourceProfileKey = String(sourceProfileId || '').trim();
+  const sourceProfile = sourceProfileKey
+    ? ordered.find((profile) =>
+        profile.id === sourceProfileKey ||
+        `${profile.browserId}:${profile.profileId}` === sourceProfileKey ||
+        profile.profileId === sourceProfileKey
+      ) || null
+    : null;
+  if (!event?.altKey) {
+    return sourceProfile || ordered[0];
+  }
+  const rawNumberKey = event.numberKey === null || event.numberKey === undefined ? '' : String(event.numberKey);
+  if (!rawNumberKey) {
+    if (sourceProfile) {
+      return ordered[0]?.id !== sourceProfile.id ? ordered[0] : ordered[1] ?? sourceProfile;
+    }
+    return ordered[1] ?? ordered[0];
+  }
+  const numeric = Number(rawNumberKey);
+  if (!Number.isFinite(numeric)) return ordered[1] ?? ordered[0];
+  return ordered[Math.trunc(numeric) + 1] ?? ordered[ordered.length - 1] ?? ordered[0];
+}
+
+async function openUrlWithResolvedProfile(
+  url: string,
+  event?: BrowserOpenProfileEvent | null,
+  sourceProfileId?: string | null
+): Promise<{ ok: boolean; profile: BrowserProfileSetting | null }> {
+  const profile = resolveOpenProfile(event, sourceProfileId);
+  try {
+    await openUrlInProfile(url, profile);
+    return { ok: true, profile };
+  } catch (e) {
+    console.warn('Failed to open URL with browser profile:', e);
+    return { ok: false, profile };
+  }
+}
+
 function scheduleInstalledAppsRefresh(reason: string): void {
   if (appInstallChangeDebounceTimer) {
     clearTimeout(appInstallChangeDebounceTimer);
@@ -13155,6 +13327,23 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('get-settings', () => {
     return loadSettings();
+  });
+
+  ipcMain.handle('record-root-search-launch', (_event: any, stableKey: string, query: string) => {
+    const cleanKey = String(stableKey || '').trim();
+    const cleanQuery = String(query || '').trim();
+    if (!cleanKey || !cleanQuery) {
+      throw new Error('A root search launch requires a stable key and query.');
+    }
+    const current = loadSettings();
+    const rootSearchRanking = recordRootSearchLaunchInState(
+      (current.rootSearchRanking || {}) as RootSearchRankingState,
+      cleanKey,
+      cleanQuery
+    );
+    const updated = saveSettings({ rootSearchRanking } as Partial<AppSettings>);
+    broadcastSettingsToAllWindows(updated);
+    return updated.rootSearchRanking;
   });
 
   // ─── Synced Extension List Helpers ──────────────────────────────
@@ -14813,11 +15002,17 @@ return appURL's |path|() as text`,
   ipcMain.handle('get-default-application', async (_event: any, filePath: string) => {
     try {
       const { execSync } = require('child_process');
+      const target = String(filePath || '').trim();
+      const escapedTarget = target.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const isUrlTarget = /^[a-z][a-z0-9+.\-]*:\/\//i.test(target);
+      const urlLine = isUrlTarget
+        ? `set targetURL to current application's NSURL's URLWithString:"${escapedTarget}"`
+        : `set targetURL to current application's NSURL's fileURLWithPath:"${escapedTarget}"`;
       // Use Launch Services via AppleScript to find default app
       const script = `
         use framework "AppKit"
-        set fileURL to current application's NSURL's fileURLWithPath:"${filePath.replace(/"/g, '\\"')}"
-        set appURL to current application's NSWorkspace's sharedWorkspace()'s URLForApplicationToOpenURL:fileURL
+        ${urlLine}
+        set appURL to current application's NSWorkspace's sharedWorkspace()'s URLForApplicationToOpenURL:targetURL
         if appURL is missing value then
           error "No default application found"
         end if
@@ -15713,8 +15908,19 @@ if let tiff = image?.tiffRepresentation {
     return { type: resolved.type, url: resolved.url, host: resolved.host };
   });
 
+  ipcMain.handle('browser-search:revision', () => {
+    return getCombinedBrowserSearchRevision();
+  });
+
+  ipcMain.handle('browser-search:stats', () => {
+    return bsGetBrowserSearchStats();
+  });
+
   ipcMain.handle('browser-search:list-entries', () => {
-    return bsListEntries();
+    return {
+      revision: getCombinedBrowserSearchRevision(),
+      entries: getCombinedBrowserSearchEntries(),
+    };
   });
 
   ipcMain.handle('browser-search:autocomplete', (_event: any, input: string) => {
@@ -15725,10 +15931,20 @@ if let tiff = image?.tiffRepresentation {
     return await bsFetchSearchSuggestion(String(input || ''));
   });
 
+  ipcMain.handle('browser-search:suggest-many', async (_event: any, input: string, limit?: number, provider?: any) => {
+    return await bsFetchSearchSuggestions(String(input || ''), limit, provider);
+  });
+
+  ipcMain.handle('web-search:list-bangs', async () => {
+    return await listWebSearchBangs();
+  });
+
   ipcMain.handle('browser-search:clear-history', () => {
     bsClearHistory();
+    clearBrowserTabRecentNavigations();
     try {
       broadcastBrowserSearchHistoryChanged();
+      broadcastBrowserTabsChanged();
     } catch {}
     return true;
   });
@@ -15741,18 +15957,200 @@ if let tiff = image?.tiffRepresentation {
     }));
   });
 
+  ipcMain.handle('browser-search:list-profiles', () => {
+    return bsListImportableBrowserProfiles().map((profile) => ({
+      id: profile.id,
+      browserId: profile.browserId,
+      browserName: profile.browserName,
+      profileId: profile.profileId,
+      profileName: profile.profileName,
+      available: profile.available,
+    }));
+  });
+
+  ipcMain.handle('browserProfiles:list', () => {
+    return listConfiguredBrowserProfiles();
+  });
+
+  ipcMain.handle('browserProfiles:statuses', () => {
+    return listBrowserProfileConnectionStatuses();
+  });
+
+  ipcMain.handle('browserProfiles:add', (_event: any, profileSourceId: string) => {
+    const targetId = String(profileSourceId || '').trim();
+    if (!targetId) return listConfiguredBrowserProfiles();
+    const detected = bsListImportableBrowserProfiles().find((profile) => profile.id === targetId);
+    const current = listConfiguredBrowserProfiles();
+    if (current.some((profile) => profile.id === targetId)) return current;
+    const [browserId, ...profileParts] = targetId.split(':');
+    const profileId = profileParts.join(':');
+    if (!detected && (!browserId || !profileId)) return current;
+    const next: BrowserProfileSetting[] = [
+      ...current,
+      {
+        id: detected?.id || targetId,
+        browserId: (detected?.browserId || browserId) as BrowserSearchSource,
+        browserName: detected?.browserName || browserId,
+        profileId: detected?.profileId || profileId,
+        detectedName: detected?.profileName || profileId,
+        displayName: detected?.profileName || profileId,
+        order: current.length,
+      },
+    ];
+    const updated = saveConfiguredBrowserProfiles(next);
+    broadcastSettingsToAllWindows(updated);
+    return listConfiguredBrowserProfiles();
+  });
+
+  ipcMain.handle('browserProfiles:saveOrder', (_event: any, ids: string[]) => {
+    const order = Array.isArray(ids) ? ids.map((id) => String(id || '').trim()).filter(Boolean) : [];
+    const current = listConfiguredBrowserProfiles();
+    const byId = new Map(current.map((profile) => [profile.id, profile]));
+    const next: BrowserProfileSetting[] = [];
+    for (const id of order) {
+      const profile = byId.get(id);
+      if (!profile) continue;
+      next.push(profile);
+      byId.delete(id);
+    }
+    next.push(...Array.from(byId.values()).sort((a, b) => a.order - b.order));
+    const updated = saveConfiguredBrowserProfiles(next);
+    broadcastSettingsToAllWindows(updated);
+    return listConfiguredBrowserProfiles();
+  });
+
+  ipcMain.handle('browserProfiles:rename', (_event: any, profileId: string, displayName: string) => {
+    const targetId = String(profileId || '').trim();
+    const name = String(displayName || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const next = listConfiguredBrowserProfiles().map((profile) =>
+      profile.id === targetId ? { ...profile, displayName: name || profile.detectedName || profile.profileId } : profile
+    );
+    const updated = saveConfiguredBrowserProfiles(next);
+    broadcastSettingsToAllWindows(updated);
+    return listConfiguredBrowserProfiles();
+  });
+
+  ipcMain.handle('browserProfiles:remove', (_event: any, profileId: string) => {
+    const targetId = String(profileId || '').trim();
+    if (!targetId) return { ok: false, profiles: listConfiguredBrowserProfiles(), removedEntries: 0, removedTabs: 0 };
+    const current = loadSettings();
+    const nextProfiles = listConfiguredBrowserProfiles().filter((profile) => profile.id !== targetId);
+    const nextFilters: BrowserProfileFilters = { ...(current.browserSearch.profileFilters || {}) };
+    for (const kind of ['open-tab', 'bookmark', 'history'] as BrowserProfileFilterKind[]) {
+      if (Array.isArray(nextFilters[kind])) {
+        nextFilters[kind] = nextFilters[kind]!.filter((id) => id !== targetId);
+      }
+    }
+    const updated = saveConfiguredBrowserProfiles(nextProfiles, nextFilters);
+    const removedEntries = bsRemoveEntriesForProfile(targetId);
+    const removedTabs = clearBrowserTabsForProfile(targetId);
+    try {
+      broadcastSettingsToAllWindows(updated);
+      broadcastBrowserSearchHistoryChanged();
+      broadcastBrowserTabsChanged();
+    } catch {}
+    return { ok: true, profiles: listConfiguredBrowserProfiles(), removedEntries, removedTabs };
+  });
+
   ipcMain.handle('browser-search:import', async (_event: any, browserId: BrowserSearchSource) => {
+    const beforeRevision = bsGetBrowserSearchRevision();
     const result = await bsImportFromBrowser(browserId);
     try {
-      broadcastBrowserSearchHistoryChanged();
+      if (bsGetBrowserSearchRevision() !== beforeRevision) {
+        flushRecentNavigationsForHistoryEntries(bsListEntries());
+        broadcastBrowserSearchHistoryChanged();
+        broadcastBrowserTabsChanged();
+      }
     } catch {}
     return result;
+  });
+
+  ipcMain.handle('browser-search:import-profile', async (_event: any, profileSourceId: string) => {
+    const beforeRevision = bsGetBrowserSearchRevision();
+    const result = await bsImportFromBrowserProfile(String(profileSourceId || ''));
+    try {
+      if (bsGetBrowserSearchRevision() !== beforeRevision) {
+        flushRecentNavigationsForHistoryEntries(bsListEntries());
+        broadcastBrowserSearchHistoryChanged();
+        broadcastBrowserTabsChanged();
+      }
+    } catch {}
+    return result;
+  });
+
+  ipcMain.handle('browser-tabs:list', () => {
+    return listBrowserTabs();
+  });
+
+  ipcMain.handle('browser-search:open-profile', async (_event: any, input: string, options?: any) => {
+    const resolved = bsResolveInput(String(input || ''));
+    if (!resolved) return { ok: false, type: null, url: null, profile: null };
+    const result = await openUrlWithResolvedProfile(
+      resolved.url,
+      options?.event || null,
+      typeof options?.sourceProfileId === 'string' ? options.sourceProfileId : null
+    );
+    if (result.ok) {
+      bsRecordResolvedInput(String(input || '').trim(), resolved);
+      try { broadcastBrowserSearchHistoryChanged(); } catch {}
+    }
+    return {
+      ok: result.ok,
+      type: resolved.type,
+      url: resolved.url,
+      profile: result.profile,
+    };
+  });
+
+  ipcMain.handle('browser-tabs:open-url-profile', async (_event: any, url: string, options?: any) => {
+    const result = await openUrlWithResolvedProfile(
+      String(url || ''),
+      options?.event || null,
+      typeof options?.sourceProfileId === 'string' ? options.sourceProfileId : null
+    );
+    return { ok: result.ok, url: String(url || ''), profile: result.profile };
+  });
+
+  ipcMain.handle('browser-tabs:open', async (_event: any, input: string) => {
+    const result = await openBrowserTabForInput(String(input || ''));
+    return {
+      ok: result.ok,
+      url: result.url,
+      tab: result.tab,
+    };
+  });
+
+  ipcMain.handle('browser-tabs:focus', async (_event: any, input: string) => {
+    const result = await focusBrowserTabForInput(String(input || ''));
+    return {
+      ok: result.ok,
+      url: result.url,
+      tab: result.tab,
+      reason: result.reason,
+    };
+  });
+
+  ipcMain.handle('browser-tabs:focus-target', async (_event: any, input: any) => {
+    return focusBrowserTabTarget({
+      profileSourceId: String(input?.profileSourceId || ''),
+      windowId: input?.windowId ?? '',
+      tabId: input?.tabId ?? '',
+    });
   });
 
   // Run a retention prune on startup so out-of-window entries don't linger.
   try {
     bsPruneByRetention();
   } catch {}
+
+  try {
+    startBrowserTabsDevServer({ onChanged: broadcastBrowserTabsChanged });
+  } catch (e) {
+    console.warn('Failed to start browser tabs dev ingest server:', e);
+  }
+
+  setTimeout(() => void refreshBrowserProfiles('startup'), 10_000);
+  setInterval(() => void refreshBrowserProfiles('periodic', 60_000), 5 * 60 * 1000);
 
   ipcMain.handle('get-selected-text', async () => {
     const fresh = String(await getSelectedTextForSpeak() || '');

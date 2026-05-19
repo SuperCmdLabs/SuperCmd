@@ -707,9 +707,13 @@
         "label": "Enable debug mode"
       },
       "browserSearch": {
-        "title": "Browser Search",
-        "description": "Press Enter on a query to open it in your default browser. Inline autocomplete suggests sites from your history.",
-        "enableLabel": "Enable browser search",
+        "title": "Browser Profiles",
+        "description": "Connect browser profiles so SuperCmd can use their local history and keep it refreshed.",
+        "enableLabel": "Use browser profiles in SuperCmd",
+        "alphaToggle": {
+          "label": "Use alpha Chromium root search",
+          "description": "Show profile history, bookmarks, and open tabs in root search. Turn this on only for Chromium profiles while the browser extension is still in alpha."
+        },
         "retention": {
           "label": "History retention",
           "option": {
@@ -721,17 +725,60 @@
             "forever": "Forever"
           }
         },
-        "clearButton": "Clear browser search history",
-        "importLabel": "Import history from a browser",
+        "clearButton": "Clear browser profile history",
+        "importLabel": "Detected browser profiles",
         "import": {
-          "action": "Import",
-          "running": "Importing…",
-          "noneFound": "No supported browsers detected"
+          "action": "Add profile",
+          "add": "Add Profile",
+          "refresh": "Refresh",
+          "remove": "Remove",
+          "running": "Refreshing…",
+          "availableHeading": "Available profiles",
+          "addedHeading": "Added profiles",
+          "noneFound": "No supported browser profiles detected",
+          "noneAdded": "No browser profiles added yet",
+          "profileRowDetail": "History: {historyCount} URLs · Bookmarks: {bookmarkCount} · Tabs: {tabCount}",
+          "profileSupportNote": "Profile support currently includes Chromium browsers only. Safari and Firefox support will be added later.",
+          "enabledProfiles": "{count} profile(s) enabled for SuperCmd browser history.",
+          "defaultProfile": "Default"
+        },
+        "importedData": {
+          "heading": "Imported data",
+          "total": "{count} history URLs",
+          "notImported": "Not imported yet",
+          "history": {
+            "title": "History",
+            "description": "Visited HTTP(S) pages from added Chromium profiles.",
+            "count": "{count} URLs"
+          },
+          "tabs": {
+            "title": "Open tabs",
+            "description": "Live tab snapshots are planned, but not part of this import yet."
+          },
+          "bookmarks": {
+            "title": "Bookmarks",
+            "description": "Bookmark import is planned, but not part of this import yet."
+          }
         },
         "status": {
-          "cleared": "Browser search history cleared.",
-          "imported": "Imported {count} of {total} entries.",
-          "failed": "Action failed."
+          "cleared": "Browser profile history cleared.",
+          "imported": "Updated {count} of {total} entries.",
+          "failed": "Action failed.",
+          "removedProfile": "Removed profile data ({count} items)."
+        },
+        "webSearch": {
+          "label": "Web search",
+          "defaultProvider": "Default provider",
+          "suggestionsEnabled": {
+            "label": "Show search suggestions",
+            "description": "Show web suggestions and bang/provider options below browser results."
+          }
+        },
+        "alphaWarning": {
+          "title": "Alpha browser integration",
+          "description": "Browser search currently requires the SuperCmd browser extension and only supports Chromium-based browsers. Firefox and Safari support will come later.",
+          "devMode": "To connect a browser now, open the browser extension page, enable Developer mode, then choose Load unpacked and select the browser-extension folder.",
+          "temporary": "(This is temporary until the extension is published on the store.)"
         }
       }
     }
@@ -743,8 +790,43 @@
       "searchFor": "Search \"{query}\"",
       "subtitle": {
         "openUrl": "Default browser",
-        "search": "Web search"
-      }
+        "search": "Web search",
+        "openTabMatch": "Open tab found"
+      },
+      "focusHint": "Focus tab",
+      "showAll": "Show all browser results",
+      "showAllSubtitle": "{count} browser results",
+      "showAllPlaceholder": "Search browser results...",
+      "openTabsPlaceholder": "Search open tabs...",
+      "bookmarksPlaceholder": "Search bookmarks...",
+      "historyPlaceholder": "Search history...",
+      "setNickname": "Set nickname",
+      "editNickname": "Edit nickname",
+      "searchProviderFor": "Search {provider} for \"{query}\"",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "Default search",
+      "webSearchPlaceholder": "Search bangs...",
+      "useBang": "Use bang",
+      "bangSections": {
+        "used": "Recent Bangs",
+        "common": "Common Bangs",
+        "matching": "Matching Bangs",
+        "all": "All Bangs",
+        "hidden": "Hidden Bangs"
+      },
+      "showHidden": "Show Hidden",
+      "hideHidden": "Hide Hidden",
+      "newBang": "New Bang",
+      "aliasHelp": "Separate aliases with commas, for example: !gh, !git",
+      "customBangHelp": "Create a bang with a URL template that contains {query}.",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "Aliases",
+        "name": "Name",
+        "host": "Host",
+        "template": "URL template"
+      },
+      "profileAction": "Profile"
     },
     "compact": {
       "showMore": "Show More"
@@ -772,10 +854,13 @@
       "settings": "Settings",
       "files": "Files",
       "calculator": "Calculator",
-      "quickLinks": "Quick Links"
+      "quickLinks": "Quick Links",
+      "browser": "Browser",
+      "search": "Search"
     },
     "actions": {
       "open": "Open",
+      "focusExistingTab": "Focus Existing Tab",
       "openCommand": "Open Command",
       "openFile": "Open File",
       "execute": "Execute",
@@ -836,7 +921,10 @@
       "extension": "Extension",
       "script": "Script",
       "settings": "Settings",
-      "quickLink": "Quick Link"
+      "quickLink": "Quick Link",
+      "openTab": "Open Tab",
+      "bookmark": "Bookmark",
+      "history": "History"
     }
   },
   "scriptCommand": {

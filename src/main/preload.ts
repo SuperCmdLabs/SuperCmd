@@ -207,6 +207,8 @@ const electronAPI = {
 
   // ─── Settings ───────────────────────────────────────────────────
   getSettings: (): Promise<any> => ipcRenderer.invoke('get-settings'),
+  recordRootSearchLaunch: (stableKey: string, query: string): Promise<any> =>
+    ipcRenderer.invoke('record-root-search-launch', stableKey, query),
   getGlobalShortcutStatus: (): Promise<{
     requestedShortcut: string;
     activeShortcut: string;
@@ -655,29 +657,87 @@ const electronAPI = {
     ipcRenderer.invoke('clipboard-read-text'),
 
   // ─── Browser Search ───────────────────────────────────────────────
-  browserSearchOpen: (input: string): Promise<{ ok: boolean; type: 'url' | 'search' | null; url: string | null }> =>
+  browserSearchOpen: (input: string): Promise<{ ok: boolean; type: 'url' | 'search' | 'bookmark' | null; url: string | null }> =>
     ipcRenderer.invoke('browser-search:open', input),
   browserSearchResolve: (input: string): Promise<{ type: 'url' | 'search'; url: string; host: string } | null> =>
     ipcRenderer.invoke('browser-search:resolve', input),
-  browserSearchListEntries: (): Promise<any[]> =>
+  browserSearchRevision: (): Promise<number> =>
+    ipcRenderer.invoke('browser-search:revision'),
+  browserSearchStats: (): Promise<any> =>
+    ipcRenderer.invoke('browser-search:stats'),
+  browserSearchListEntries: (): Promise<any> =>
     ipcRenderer.invoke('browser-search:list-entries'),
   browserSearchAutocomplete: (input: string): Promise<{ completion: string; suffix: string; entry: any } | null> =>
     ipcRenderer.invoke('browser-search:autocomplete', input),
   browserSearchSuggest: (input: string): Promise<string | null> =>
     ipcRenderer.invoke('browser-search:suggest', input),
+  browserSearchSuggestMany: (input: string, limit?: number, provider?: { key?: string; host?: string; name?: string }): Promise<string[]> =>
+    ipcRenderer.invoke('browser-search:suggest-many', input, limit, provider),
+  webSearchListBangs: (): Promise<any[]> =>
+    ipcRenderer.invoke('web-search:list-bangs'),
   browserSearchClearHistory: (): Promise<boolean> =>
     ipcRenderer.invoke('browser-search:clear-history'),
   browserSearchListBrowsers: (): Promise<{ id: string; name: string; available: boolean }[]> =>
     ipcRenderer.invoke('browser-search:list-browsers'),
+  browserSearchListProfiles: (): Promise<any[]> =>
+    ipcRenderer.invoke('browser-search:list-profiles'),
   browserSearchImport: (
     browserId: string
   ): Promise<{ imported: number; skipped: number; total: number; reason?: string }> =>
     ipcRenderer.invoke('browser-search:import', browserId),
+  browserSearchImportProfile: (
+    profileSourceId: string
+  ): Promise<{ imported: number; skipped: number; total: number; reason?: string }> =>
+    ipcRenderer.invoke('browser-search:import-profile', profileSourceId),
+  browserProfilesList: (): Promise<any[]> =>
+    ipcRenderer.invoke('browserProfiles:list'),
+  browserProfilesStatuses: (): Promise<any[]> =>
+    ipcRenderer.invoke('browserProfiles:statuses'),
+  browserProfilesAdd: (profileId: string): Promise<any[]> =>
+    ipcRenderer.invoke('browserProfiles:add', profileId),
+  browserProfilesSaveOrder: (ids: string[]): Promise<any[]> =>
+    ipcRenderer.invoke('browserProfiles:saveOrder', ids),
+  browserProfilesRename: (profileId: string, displayName: string): Promise<any[]> =>
+    ipcRenderer.invoke('browserProfiles:rename', profileId, displayName),
+  browserProfilesRemove: (profileId: string): Promise<{ ok: boolean; profiles: any[]; removedEntries: number; removedTabs: number }> =>
+    ipcRenderer.invoke('browserProfiles:remove', profileId),
+  browserSearchOpenProfile: (
+    input: string,
+    options?: { event?: { altKey?: boolean; numberKey?: string | number | null }; sourceProfileId?: string | null }
+  ): Promise<{ ok: boolean; type: 'url' | 'search' | 'bookmark' | null; url: string | null; profile: any | null }> =>
+    ipcRenderer.invoke('browser-search:open-profile', input, options),
   onBrowserSearchHistoryChanged: (callback: () => void): (() => void) => {
     const listener = (_event: any) => callback();
     ipcRenderer.on('browser-search-history-changed', listener);
     return () => {
       ipcRenderer.removeListener('browser-search-history-changed', listener);
+    };
+  },
+  browserTabsList: (): Promise<any[]> =>
+    ipcRenderer.invoke('browser-tabs:list'),
+  browserTabsOpen: (input: string): Promise<{ ok: boolean; url: string | null; tab: any | null }> =>
+    ipcRenderer.invoke('browser-tabs:open', input),
+  browserTabsOpenUrlProfile: (
+    url: string,
+    options?: { event?: { altKey?: boolean; numberKey?: string | number | null }; sourceProfileId?: string | null }
+  ): Promise<{ ok: boolean; url: string | null; profile: any | null }> =>
+    ipcRenderer.invoke('browser-tabs:open-url-profile', url, options),
+  browserTabsFocus: (input: string): Promise<{ ok: boolean; url: string | null; tab: any | null; reason?: string }> =>
+    ipcRenderer.invoke('browser-tabs:focus', input),
+  browserTabsFocusTarget: (input: { profileSourceId: string; windowId: string | number; tabId: string | number }): Promise<{ ok: boolean; reason?: string }> =>
+    ipcRenderer.invoke('browser-tabs:focus-target', input),
+  onBrowserTabsChanged: (callback: () => void): (() => void) => {
+    const listener = (_event: any) => callback();
+    ipcRenderer.on('browser-tabs-changed', listener);
+    return () => {
+      ipcRenderer.removeListener('browser-tabs-changed', listener);
+    };
+  },
+  onModifierStateChanged: (callback: (state: { altKey?: boolean }) => void): (() => void) => {
+    const listener = (_event: any, state: any) => callback(state || {});
+    ipcRenderer.on('modifier-state-changed', listener);
+    return () => {
+      ipcRenderer.removeListener('modifier-state-changed', listener);
     };
   },
 

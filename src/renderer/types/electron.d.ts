@@ -18,6 +18,41 @@ export interface CommandInfo {
   needsConfirmation?: boolean;
   /** Always shown at the top of the list, even during search. */
   alwaysOnTop?: boolean;
+  browserMatchKind?: 'open-tab' | 'history' | 'search';
+  browserResultKind?: 'open-tab' | 'bookmark' | 'history' | 'search';
+  browserFaviconUrl?: string;
+  browserActionInput?: string;
+  browserUrl?: string;
+  browserSourceProfileId?: string;
+  browserTargetProfileLabel?: string;
+  browserTargetProfileBrowserId?: BrowserSearchSource;
+  browserTargetProfileIconDataUrl?: string;
+  browserAlternateProfileLabel?: string;
+  browserAlternateProfileBrowserId?: BrowserSearchSource;
+  browserAlternateProfileIconDataUrl?: string;
+  browserProfileCount?: number;
+  browserWindowId?: string;
+  browserTabId?: string;
+  browserFocusAvailable?: boolean;
+  rootSearchStableKey?: string;
+  rootSearchSource?: 'command' | 'file' | 'browser' | 'open-url' | 'direct-search';
+  rootSearchSubtype?:
+    | 'app'
+    | 'system-command'
+    | 'extension-command'
+    | 'script-command'
+    | 'quicklink'
+    | 'file'
+    | 'folder'
+    | 'open-tab'
+    | 'bookmark'
+    | 'history'
+    | 'nickname'
+    | 'open-url'
+    | 'direct-search';
+  rootSearchScore?: number;
+  browserNicknameMatch?: boolean;
+  browserNickname?: string;
   commandArgumentDefinitions?: Array<{
     name: string;
     required?: boolean;
@@ -36,6 +71,15 @@ export interface IndexedFileSearchResult {
   parentPath: string;
   displayPath: string;
   isDirectory: boolean;
+  score?: number;
+  matchKind?: string;
+  depth?: number;
+  homeRelativeDepth?: number;
+  topLevelRoot?: string;
+  noisyPathSegmentCount?: number;
+  mtimeMs?: number;
+  birthtimeMs?: number;
+  atimeMs?: number;
 }
 
 export interface FileSearchIndexStatus {
@@ -269,15 +313,104 @@ export interface HyperKeySettings {
 
 export type AppNavigationStyle = 'vim' | 'macos';
 
-export interface BrowserSearchSettings {
-  enabled: boolean;
-  historyRetentionDays: number | null;
+export type BrowserSearchResultKind = 'open-tab' | 'bookmark' | 'history';
+
+export interface BrowserSearchResultGroupSetting {
+  kind: BrowserSearchResultKind;
+  limit: number;
 }
 
-export type BrowserSearchEntryType = 'url' | 'search';
+export interface BrowserSearchSettings {
+  enabled: boolean;
+  alphaChromiumRootSearchEnabled: boolean;
+  historyRetentionDays: number | null;
+  profileSourceIds: string[];
+  profiles: BrowserProfileSetting[];
+  profileFilters: BrowserProfileFilters;
+  resultLimitPerGroup: number;
+  resultGroups: BrowserSearchResultGroupSetting[];
+  nicknames: BrowserSearchNicknameSetting[];
+  webSearchDefaultBangKey: string;
+  webSearchBangOverrides: WebSearchBangOverrideSetting[];
+  webSearchBangUsage: Record<string, WebSearchBangUsageSetting>;
+  webSearchDisabledBangKeys: string[];
+  webSearchBangCustomProviders: WebSearchBangCustomProviderSetting[];
+  webSearchShowHiddenBangs?: boolean;
+  webSearchSuggestionsEnabled: boolean;
+}
+
+export type BrowserProfileFilterKind = 'open-tab' | 'bookmark' | 'history';
+
+export type BrowserProfileFilters = Partial<Record<BrowserProfileFilterKind, string[]>>;
+
+export interface BrowserProfileSetting {
+  id: string;
+  browserId: BrowserSearchSource;
+  browserName: string;
+  profileId: string;
+  detectedName: string;
+  displayName: string;
+  order: number;
+}
+
+export interface BrowserProfileConnectionStatus {
+  profileSourceId: string;
+  connected: boolean;
+  lastSeenAt: number;
+  lastSnapshotAt: number;
+  lastError?: string;
+  tabCount: number;
+}
+
+export interface BrowserOpenProfileEvent {
+  altKey?: boolean;
+  numberKey?: string | number | null;
+}
+
+export interface RootSearchRankingInputHistorySetting {
+  useCount: number;
+  lastUsedAt: number;
+  score: number;
+}
+
+export interface RootSearchRankingSetting {
+  useCount: number;
+  lastUsedAt: number;
+  frecencyScore: number;
+  inputHistory: Record<string, RootSearchRankingInputHistorySetting>;
+}
+
+export interface BrowserSearchNicknameSetting {
+  source: string;
+  sourceProfileId?: string;
+  url: string;
+  nickname: string;
+}
+
+export interface WebSearchBangOverrideSetting {
+  key: string;
+  aliases: string[];
+}
+
+export interface WebSearchBangUsageSetting {
+  useCount: number;
+  lastUsedAt: number;
+  frecencyScore: number;
+}
+
+export interface WebSearchBangCustomProviderSetting {
+  key: string;
+  aliases: string[];
+  name: string;
+  host: string;
+  template: string;
+}
+
+export type BrowserSearchEntryType = 'url' | 'search' | 'bookmark';
 
 export type BrowserSearchSource =
   | 'user'
+  | 'helium'
   | 'chrome'
   | 'arc'
   | 'brave'
@@ -295,6 +428,10 @@ export interface BrowserSearchEntry {
   lastUsedAt: number;
   useCount: number;
   source: BrowserSearchSource;
+  sourceProfileId?: string;
+  sourceProfileName?: string;
+  bookmarkFolder?: string;
+  bookmarkOrder?: number;
 }
 
 export interface BrowserSearchAutocomplete {
@@ -303,9 +440,46 @@ export interface BrowserSearchAutocomplete {
   entry: BrowserSearchEntry;
 }
 
+export interface BrowserSearchStats {
+  revision: number;
+  totalEntries: number;
+  historyEntries: number;
+  bookmarkEntries: number;
+  profileCountsByKind: {
+    history: Record<string, number>;
+    bookmark: Record<string, number>;
+  };
+}
+
+export interface BrowserSearchEntryListPayload {
+  revision: number;
+  entries: BrowserSearchEntry[];
+}
+
+export interface WebSearchBangEntry {
+  key: string;
+  aliases?: string[];
+  name: string;
+  host: string;
+  category?: string;
+  subcategory?: string;
+  urlTemplate: string;
+  rankHint?: number;
+  source?: 'duckduckgo' | 'unduck' | 'seed';
+}
+
 export interface BrowserSearchImportableBrowser {
   id: BrowserSearchSource;
   name: string;
+  available: boolean;
+}
+
+export interface BrowserSearchImportableProfile {
+  id: string;
+  browserId: BrowserSearchSource;
+  browserName: string;
+  profileId: string;
+  profileName: string;
   available: boolean;
 }
 
@@ -314,6 +488,26 @@ export interface BrowserSearchImportResult {
   skipped: number;
   total: number;
   reason?: string;
+}
+
+export interface BrowserTabEntry {
+  id: string;
+  browserId: string;
+  browserName: string;
+  profileId: string;
+  profileSourceId: string;
+  profileName: string;
+  windowId: string;
+  windowOrdinal: number;
+  tabId: string;
+  tabIndex: number;
+  favIconUrl: string;
+  title: string;
+  url: string;
+  host: string;
+  active: boolean;
+  windowLastFocusedAt: number;
+  updatedAt: number;
 }
 
 /** How to handle the situation when the chosen settings folder already
@@ -472,6 +666,7 @@ export interface AppSettings {
   emojiPickerTriggerPrefix: string;
   emojiPickerExcludedAppBundleIds: string[];
   browserSearch: BrowserSearchSettings;
+  rootSearchRanking: Record<string, RootSearchRankingSetting>;
   popToRootSearchTimeoutSeconds: number;
   installedExtensions: string[];
   extensionUninstallTombstones: Record<string, number>;
@@ -721,6 +916,10 @@ export interface ElectronAPI {
 
   // Settings
   getSettings: () => Promise<AppSettings>;
+  recordRootSearchLaunch: (
+    stableKey: string,
+    query: string
+  ) => Promise<Record<string, RootSearchRankingSetting>>;
   getGlobalShortcutStatus: () => Promise<{
     requestedShortcut: string;
     activeShortcut: string;
@@ -915,13 +1114,39 @@ export interface ElectronAPI {
   // Browser Search
   browserSearchOpen: (input: string) => Promise<{ ok: boolean; type: BrowserSearchEntryType | null; url: string | null }>;
   browserSearchResolve: (input: string) => Promise<{ type: BrowserSearchEntryType; url: string; host: string } | null>;
-  browserSearchListEntries: () => Promise<BrowserSearchEntry[]>;
+  browserSearchRevision: () => Promise<number>;
+  browserSearchStats: () => Promise<BrowserSearchStats>;
+  browserSearchListEntries: () => Promise<BrowserSearchEntry[] | BrowserSearchEntryListPayload>;
   browserSearchAutocomplete: (input: string) => Promise<BrowserSearchAutocomplete | null>;
   browserSearchSuggest: (input: string) => Promise<string | null>;
+  browserSearchSuggestMany: (input: string, limit?: number, provider?: { key?: string; host?: string; name?: string }) => Promise<string[]>;
+  webSearchListBangs: () => Promise<WebSearchBangEntry[]>;
   browserSearchClearHistory: () => Promise<boolean>;
   browserSearchListBrowsers: () => Promise<BrowserSearchImportableBrowser[]>;
+  browserSearchListProfiles: () => Promise<BrowserSearchImportableProfile[]>;
   browserSearchImport: (browserId: string) => Promise<BrowserSearchImportResult>;
+  browserSearchImportProfile: (profileSourceId: string) => Promise<BrowserSearchImportResult>;
+  browserProfilesList: () => Promise<BrowserProfileSetting[]>;
+  browserProfilesStatuses: () => Promise<BrowserProfileConnectionStatus[]>;
+  browserProfilesAdd: (profileId: string) => Promise<BrowserProfileSetting[]>;
+  browserProfilesSaveOrder: (ids: string[]) => Promise<BrowserProfileSetting[]>;
+  browserProfilesRename: (profileId: string, displayName: string) => Promise<BrowserProfileSetting[]>;
+  browserProfilesRemove: (profileId: string) => Promise<{ ok: boolean; profiles: BrowserProfileSetting[]; removedEntries: number; removedTabs: number }>;
+  browserSearchOpenProfile: (
+    input: string,
+    options?: { event?: BrowserOpenProfileEvent; sourceProfileId?: string | null }
+  ) => Promise<{ ok: boolean; type: BrowserSearchEntryType | null; url: string | null; profile: BrowserProfileSetting | null }>;
   onBrowserSearchHistoryChanged: (callback: () => void) => (() => void);
+  browserTabsList: () => Promise<BrowserTabEntry[]>;
+  browserTabsOpen: (input: string) => Promise<{ ok: boolean; url: string | null; tab: BrowserTabEntry | null }>;
+  browserTabsOpenUrlProfile: (
+    url: string,
+    options?: { event?: BrowserOpenProfileEvent; sourceProfileId?: string | null }
+  ) => Promise<{ ok: boolean; url: string | null; profile: BrowserProfileSetting | null }>;
+  browserTabsFocus: (input: string) => Promise<{ ok: boolean; url: string | null; tab: BrowserTabEntry | null; reason?: string }>;
+  browserTabsFocusTarget: (input: { profileSourceId: string; windowId: string | number; tabId: string | number }) => Promise<{ ok: boolean; reason?: string }>;
+  onBrowserTabsChanged: (callback: () => void) => (() => void);
+  onModifierStateChanged: (callback: (state: { altKey?: boolean }) => void) => (() => void);
 
   getSelectedText: () => Promise<string>;
   getSelectedTextStrict: () => Promise<string>;

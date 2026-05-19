@@ -133,6 +133,12 @@
         "default": "默认",
         "glassy": "玻璃态"
       },
+      "launcherMode": {
+        "title": "启动器模式",
+        "description": "选择打开启动器时的显示方式。",
+        "expanded": "展开",
+        "compact": "紧凑"
+      },
       "background": {
         "title": "启动器背景图",
         "description": "在启动器后面显示一张低透明度、轻微模糊的背景图，让它更像氛围提示而不是完整壁纸。",
@@ -156,11 +162,13 @@
         "notAvailable": "你已经是最新版本。",
         "downloading": "正在下载更新...",
         "downloaded": "更新已下载，重启后即可安装。",
+        "restarting": "Restarting to install update...",
         "error": "无法完成更新操作。",
         "check": "检查更新",
         "download": "下载更新",
         "downloadingButton": "正在下载更新...",
         "restart": "重启并更新",
+        "restartingButton": "Restarting...",
         "currentVersion": "当前版本：v{version}",
         "latestVersion": "最新版本：v{version}",
         "progress": "{progress}% · {transferred} / {total}",
@@ -170,12 +178,6 @@
         "title": "关于",
         "description": "版本信息。",
         "version": "SuperCmd v{version}"
-      },
-      "launcherMode": {
-        "title": "启动器模式",
-        "description": "选择打开启动器时的显示方式。",
-        "expanded": "展开",
-        "compact": "紧凑"
       },
       "autoQuit": {
         "title": "自动退出",
@@ -275,8 +277,8 @@
           "anthropic": "Anthropic Claude 模型",
           "gemini": "Google Gemini 模型",
           "ollama": "本地模型",
-          "openaiCompatible": "任意 OpenAI 兼容 API（OpenRouter、Together 等）",
-          "lmStudio": "通过 LM Studio 使用本地模型"
+          "lmStudio": "通过 LM Studio 使用本地模型",
+          "openaiCompatible": "任意 OpenAI 兼容 API（OpenRouter、Together 等）"
         },
         "ollama": {
           "serverUrl": {
@@ -310,6 +312,17 @@
             "deepseekR1": "偏推理能力的模型（7B）"
           }
         },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "服务器地址",
+            "hint": "LM Studio 本地服务器地址（默认：http://127.0.0.1:1234/v1）"
+          },
+          "apiKey": {
+            "toggle": "可选 API 密钥",
+            "placeholder": "如不需要，请留空",
+            "hint": "仅当您在 LM Studio 中配置了身份验证时才需要。"
+          }
+        },
         "openaiCompatible": {
           "baseUrl": {
             "label": "基础 URL",
@@ -330,17 +343,6 @@
         "defaultModel": {
           "label": "默认模型",
           "auto": "自动（提供商默认）"
-        },
-        "lmStudio": {
-          "baseUrl": {
-            "label": "服务器地址",
-            "hint": "LM Studio 本地服务器地址（默认：http://127.0.0.1:1234/v1）"
-          },
-          "apiKey": {
-            "toggle": "可选 API 密钥",
-            "placeholder": "如不需要，请留空",
-            "hint": "仅当您在 LM Studio 中配置了身份验证时才需要。"
-          }
         }
       },
       "whisper": {
@@ -386,6 +388,10 @@
           "fnHintBefore": "使用",
           "fnHintAfter": "可恢复默认的按住说话快捷键。"
         },
+        "autoClose": {
+          "title": "听写后自动关闭",
+          "description": "听写完成后自动关闭 Whisper 条。"
+        },
         "smoothOutput": {
           "title": "平滑输出",
           "description": "清理填充词和自我纠正。"
@@ -423,10 +429,6 @@
             "downloading": "正在下载 SuperCmd Whisper",
             "notDownloaded": "模型尚未下载。现在下载后即可使用 SuperCmd Whisper 听写。"
           }
-        },
-        "autoClose": {
-          "title": "听写后自动关闭",
-          "description": "听写完成后自动关闭 Whisper 条。"
         }
       },
       "speak": {
@@ -705,9 +707,13 @@
         "label": "启用调试模式"
       },
       "browserSearch": {
-        "title": "浏览器搜索",
-        "description": "输入内容后按回车即可在默认浏览器中打开。内联自动补全会根据历史记录提示网站。",
-        "enableLabel": "启用浏览器搜索",
+        "title": "浏览器个人资料",
+        "description": "连接浏览器个人资料，让 SuperCmd 使用其本地历史记录并持续刷新。",
+        "enableLabel": "在 SuperCmd 中使用浏览器个人资料",
+        "alphaToggle": {
+          "label": "使用 Alpha 版 Chromium 根搜索",
+          "description": "在根搜索中显示个人资料历史记录、书签和打开的标签页。浏览器扩展仍处于 Alpha 阶段时，仅建议为 Chromium 个人资料开启。"
+        },
         "retention": {
           "label": "历史记录保留时间",
           "option": {
@@ -719,23 +725,112 @@
             "forever": "永久"
           }
         },
-        "clearButton": "清除浏览器搜索历史",
-        "importLabel": "从浏览器导入历史记录",
+        "clearButton": "清除浏览器个人资料历史",
+        "importLabel": "检测到的浏览器个人资料",
         "import": {
-          "action": "导入",
-          "running": "正在导入…",
-          "noneFound": "未检测到支持的浏览器"
+          "action": "添加个人资料",
+          "add": "添加个人资料",
+          "refresh": "刷新",
+          "remove": "移除",
+          "running": "正在刷新…",
+          "availableHeading": "可用个人资料",
+          "addedHeading": "已添加的个人资料",
+          "noneFound": "未检测到支持的浏览器个人资料",
+          "noneAdded": "尚未添加浏览器个人资料",
+          "profileRowDetail": "历史记录：{historyCount} 个 URL · 书签：{bookmarkCount} · 标签页：{tabCount} 个",
+          "profileSupportNote": "个人资料支持目前仅包含 Chromium 浏览器。Safari 和 Firefox 支持将在之后添加。",
+          "enabledProfiles": "已为 SuperCmd 浏览器历史记录启用 {count} 个个人资料。",
+          "defaultProfile": "默认"
+        },
+        "importedData": {
+          "heading": "已导入的数据",
+          "total": "{count} 个历史 URL",
+          "notImported": "尚未导入",
+          "history": {
+            "title": "历史记录",
+            "description": "来自已添加 Chromium 个人资料的已访问 HTTP(S) 页面。",
+            "count": "{count} 个 URL"
+          },
+          "tabs": {
+            "title": "打开的标签页",
+            "description": "实时标签页快照已规划，但还不是此导入的一部分。"
+          },
+          "bookmarks": {
+            "title": "书签",
+            "description": "书签导入已规划，但还不是此导入的一部分。"
+          }
         },
         "status": {
-          "cleared": "浏览器搜索历史已清除。",
-          "imported": "已导入 {count} / {total} 条。",
-          "failed": "操作失败。"
+          "cleared": "浏览器个人资料历史已清除。",
+          "imported": "已更新 {count} / {total} 条。",
+          "failed": "操作失败。",
+          "removedProfile": "已移除个人资料数据（{count} 项）。"
+        },
+        "webSearch": {
+          "label": "网页搜索",
+          "defaultProvider": "默认提供商",
+          "suggestionsEnabled": {
+            "label": "显示搜索建议",
+            "description": "在浏览器结果下方显示网页建议和 Bang/提供商选项。"
+          }
+        },
+        "alphaWarning": {
+          "title": "Alpha 版浏览器集成",
+          "description": "浏览器搜索目前需要 SuperCmd 浏览器扩展，并且仅支持基于 Chromium 的浏览器。Firefox 和 Safari 将稍后支持。",
+          "devMode": "要立即连接浏览器，请打开浏览器的扩展程序页面，启用开发者模式，然后选择“加载已解压的扩展程序”，并选择 browser-extension 文件夹。",
+          "temporary": "（这是扩展发布到商店之前的临时步骤。）"
         }
       }
     }
   },
   "launcher": {
     "searchPlaceholder": "搜索应用、命令，或向 AI 提问...",
+    "browserSearch": {
+      "openUrl": "打开 {url}",
+      "searchFor": "搜索 “{query}”",
+      "subtitle": {
+        "openUrl": "默认浏览器",
+        "search": "网络搜索",
+        "openTabMatch": "找到已打开的标签页"
+      },
+      "focusHint": "切换到标签页",
+      "showAll": "显示所有 Browser 结果",
+      "showAllSubtitle": "{count} 个 Browser 结果",
+      "showAllPlaceholder": "搜索 Browser 结果...",
+      "openTabsPlaceholder": "搜索打开的标签页...",
+      "bookmarksPlaceholder": "搜索书签...",
+      "historyPlaceholder": "搜索历史记录...",
+      "setNickname": "设置昵称",
+      "editNickname": "编辑昵称",
+      "searchProviderFor": "使用 {provider} 搜索“{query}”",
+      "bangSubtitle": "Bang !{bang}",
+      "defaultSearch": "默认搜索",
+      "webSearchPlaceholder": "搜索 Bang...",
+      "useBang": "使用 Bang",
+      "bangSections": {
+        "used": "最近使用的 Bangs",
+        "common": "常用 Bang",
+        "matching": "匹配的 Bang",
+        "all": "所有 Bang A-Z",
+        "hidden": "隐藏 Bangs"
+      },
+      "showHidden": "显示隐藏",
+      "hideHidden": "隐藏已隐藏",
+      "newBang": "新建 Bang",
+      "aliasHelp": "用逗号分隔别名，例如：!gh, !git",
+      "customBangHelp": "创建包含 {query} 的 URL 模板 Bang。",
+      "customBangFields": {
+        "key": "Bang",
+        "aliases": "别名",
+        "name": "名称",
+        "host": "主机",
+        "template": "URL 模板"
+      },
+      "profileAction": "个人资料"
+    },
+    "compact": {
+      "showMore": "显示更多"
+    },
     "status": {
       "discoveringApps": "正在发现应用...",
       "noMatchingResults": "没有匹配的结果",
@@ -759,10 +854,13 @@
       "settings": "设置",
       "files": "文件",
       "calculator": "计算器",
-      "quickLinks": "快速链接"
+      "quickLinks": "快速链接",
+      "browser": "浏览器",
+      "search": "搜索"
     },
     "actions": {
       "open": "打开",
+      "focusExistingTab": "切换到现有标签页",
       "openCommand": "打开命令",
       "openFile": "打开文件",
       "execute": "执行",
@@ -823,18 +921,10 @@
       "extension": "扩展",
       "script": "脚本",
       "settings": "设置",
-      "quickLink": "快速链接"
-    },
-    "compact": {
-      "showMore": "显示更多"
-    },
-    "browserSearch": {
-      "openUrl": "打开 {url}",
-      "searchFor": "搜索 “{query}”",
-      "subtitle": {
-        "openUrl": "默认浏览器",
-        "search": "网络搜索"
-      }
+      "quickLink": "快速链接",
+      "openTab": "已打开标签页",
+      "bookmark": "书签",
+      "history": "历史记录"
     }
   },
   "scriptCommand": {
@@ -915,6 +1005,44 @@
     "errorBoundary": {
       "title": "加载扩展商店时出错。",
       "retry": "重试"
+    }
+  },
+  "canvas": {
+    "searchPlaceholder": "搜索画布...",
+    "untitled": "未命名画布",
+    "modified": "修改时间",
+    "count": "{count} 个画布{plural}",
+    "time": {
+      "justNow": "刚刚"
+    },
+    "actions": {
+      "new": "新建画布",
+      "open": "打开画布",
+      "rename": "重命名",
+      "duplicate": "复制",
+      "copyDeeplink": "复制深层链接",
+      "exportJson": "导出为 JSON",
+      "pin": "置顶",
+      "unpin": "取消置顶",
+      "delete": "删除画布"
+    },
+    "empty": {
+      "title": "还没有画布",
+      "description": "创建你的第一个画布开始使用",
+      "noSearchResults": "没有找到画布",
+      "shortcutHint": "或按 ⌘N"
+    },
+    "preview": {
+      "empty": "暂无预览 — 保存画布以生成预览",
+      "selectPrompt": "选择一个画布以预览"
+    },
+    "rename": {
+      "title": "重命名画布",
+      "placeholder": "画布名称..."
+    },
+    "delete": {
+      "title": "删除 \"{title}\" ?",
+      "description": "此操作无法撤销。"
     }
   },
   "clipboard": {
@@ -1210,43 +1338,5 @@
     "duration": "时长",
     "reminder": "提醒",
     "save": "保存事件"
-  },
-  "canvas": {
-    "searchPlaceholder": "搜索画布...",
-    "untitled": "未命名画布",
-    "modified": "修改时间",
-    "count": "{count} 个画布{plural}",
-    "time": {
-      "justNow": "刚刚"
-    },
-    "actions": {
-      "new": "新建画布",
-      "open": "打开画布",
-      "rename": "重命名",
-      "duplicate": "复制",
-      "copyDeeplink": "复制深层链接",
-      "exportJson": "导出为 JSON",
-      "pin": "置顶",
-      "unpin": "取消置顶",
-      "delete": "删除画布"
-    },
-    "empty": {
-      "title": "还没有画布",
-      "description": "创建你的第一个画布开始使用",
-      "noSearchResults": "没有找到画布",
-      "shortcutHint": "或按 ⌘N"
-    },
-    "preview": {
-      "empty": "暂无预览 — 保存画布以生成预览",
-      "selectPrompt": "选择一个画布以预览"
-    },
-    "rename": {
-      "title": "重命名画布",
-      "placeholder": "画布名称..."
-    },
-    "delete": {
-      "title": "删除 \"{title}\" ?",
-      "description": "此操作无法撤销。"
-    }
   }
 }

@@ -24,6 +24,87 @@ initializeTheme();
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 
+class RendererErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[RendererErrorBoundary] Render error:', error);
+    console.error('[RendererErrorBoundary] Component stack:', info.componentStack);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return <RendererErrorFallback error={this.state.error} />;
+  }
+}
+
+function RendererErrorFallback({ error }: { error: Error }) {
+  return (
+    <div
+      style={{
+        height: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        gap: 10,
+        padding: 24,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+        color: 'var(--text-primary, #e5e7eb)',
+        background: 'var(--surface-base, #101113)',
+      }}
+    >
+      <div style={{ fontSize: 14, fontWeight: 600 }}>SuperCmd hit a renderer error</div>
+      <div style={{ fontSize: 12, opacity: 0.75, wordBreak: 'break-word' }}>{error.message}</div>
+      <pre
+        style={{
+          maxHeight: 180,
+          overflow: 'auto',
+          margin: 0,
+          padding: 10,
+          borderRadius: 6,
+          background: 'rgba(255,255,255,0.06)',
+          color: 'rgba(255,255,255,0.65)',
+          fontSize: 11,
+          whiteSpace: 'pre-wrap',
+        }}
+      >
+        {error.stack || ''}
+      </pre>
+      <button
+        onClick={() => window.location.reload()}
+        style={{
+          alignSelf: 'flex-start',
+          marginTop: 4,
+          padding: '6px 14px',
+          fontSize: 12,
+          borderRadius: 6,
+          border: '1px solid rgba(255,255,255,0.18)',
+          background: 'rgba(255,255,255,0.08)',
+          color: 'inherit',
+          cursor: 'pointer',
+        }}
+      >
+        Reload
+      </button>
+    </div>
+  );
+}
+
+window.addEventListener('error', (event) => {
+  console.error('[RendererGlobalError]', event.error || event.message);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[RendererUnhandledRejection]', event.reason);
+});
+
 function ChunkLoadFallback({ error }: { error: unknown }) {
   const message = error instanceof Error ? error.message : String(error ?? 'Unknown error');
   return (
@@ -74,7 +155,9 @@ loadRoot()
     root.render(
       <React.StrictMode>
         <I18nProvider>
-          <Root />
+          <RendererErrorBoundary>
+            <Root />
+          </RendererErrorBoundary>
         </I18nProvider>
       </React.StrictMode>
     );
