@@ -390,12 +390,12 @@ const App: React.FC = () => {
   const homeDir = String((window.electron as any).homeDir || '');
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
-    showClipboardManager, showSnippetManager, showNotesSearch, showCanvasSearch, showQuickLinkManager, showFileSearch, showCursorPrompt,
+    showClipboardManager, clipboardManagerOpenedViaShortcut, showSnippetManager, showNotesSearch, showCanvasSearch, showQuickLinkManager, showFileSearch, showCursorPrompt,
     showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showAppUninstall, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
     openOnboarding, openWhisper, openClipboardManager,
     openSnippetManager, openNotesSearch, openCanvasSearch, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openSchedule, openWindowManager, openAppUninstall,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
-    setShowClipboardManager, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
+    setShowClipboardManager, setClipboardManagerOpenedViaShortcut, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
     setShowWhisper, setShowSpeak, setShowCamera, setShowSchedule, setShowWindowManager, setShowAppUninstall, setShowWhisperOnboarding, setShowWhisperHint,
     setShowOnboarding, setAiMode,
   } = useAppViewManager();
@@ -887,7 +887,7 @@ const App: React.FC = () => {
         if (routedSystemCommandId === 'system-clipboard-manager') {
           setShowSnippetManager(null);
           setShowFileSearch(false);
-          openClipboardManager();
+          openClipboardManager(true);
           return;
         }
         if (routedSystemCommandId === 'system-search-snippets') {
@@ -2667,7 +2667,10 @@ const App: React.FC = () => {
     }
     if (commandId === 'system-clipboard-manager') {
       whisperSessionRef.current = false;
-      openClipboardManager();
+      // fromMainEvent ⇒ delivered by the global-shortcut dispatch
+      // (window-shown + the 180ms run-system-command fallback in main.ts).
+      // Launcher-list selection (handleCommandExecute) passes no options.
+      openClipboardManager(options?.fromMainEvent === true);
       return true;
     }
     if (commandId === 'system-search-snippets') {
@@ -4039,9 +4042,17 @@ const App: React.FC = () => {
         >
           <ClipboardManager
             onClose={() => {
+              const openedViaShortcut = clipboardManagerOpenedViaShortcut;
               setShowClipboardManager(false);
+              setClipboardManagerOpenedViaShortcut(false);
               setSearchQuery('');
               setSelectedIndex(0);
+              if (openedViaShortcut) {
+                // Opened directly via global shortcut — there is no launcher
+                // list to fall back to, so one Escape dismisses the window (#407).
+                window.electron.hideWindow();
+                return;
+              }
               setTimeout(() => inputRef.current?.focus(), 50);
             }}
           />

@@ -5,6 +5,7 @@
     "noResults": "Nessun risultato",
     "search": "Cerca...",
     "save": "Salva",
+    "saving": "Saving...",
     "cancel": "Annulla",
     "close": "Chiudi",
     "continue": "Continua",
@@ -161,11 +162,13 @@
         "notAvailable": "Stai già usando l'ultima versione.",
         "downloading": "Download dell'aggiornamento in corso...",
         "downloaded": "Aggiornamento scaricato. Riavvia per installarlo.",
+        "restarting": "Restarting to install update...",
         "error": "Impossibile completare l'operazione di aggiornamento.",
         "check": "Verifica aggiornamenti",
         "download": "Scarica aggiornamento",
         "downloadingButton": "Download aggiornamento...",
         "restart": "Riavvia per aggiornare",
+        "restartingButton": "Restarting...",
         "currentVersion": "Versione attuale: v{version}",
         "latestVersion": "Ultima: v{version}",
         "progress": "{progress}% · {transferred} / {total}",
@@ -274,8 +277,8 @@
           "anthropic": "Modelli Anthropic Claude",
           "gemini": "Modelli Google Gemini",
           "ollama": "Modelli locali",
-          "openaiCompatible": "Qualsiasi API compatibile OpenAI (OpenRouter, Together, ecc.)",
-          "lmStudio": "Modelli locali tramite LM Studio"
+          "lmStudio": "Modelli locali tramite LM Studio",
+          "openaiCompatible": "Qualsiasi API compatibile OpenAI (OpenRouter, Together, ecc.)"
         },
         "ollama": {
           "serverUrl": {
@@ -309,6 +312,17 @@
             "deepseekR1": "Modello orientato al ragionamento (7B)"
           }
         },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "URL del server",
+            "hint": "URL del server locale di LM Studio (predefinito: http://127.0.0.1:1234/v1)"
+          },
+          "apiKey": {
+            "toggle": "Chiave API opzionale",
+            "placeholder": "Lascia vuoto se non richiesto",
+            "hint": "Necessario solo se hai configurato l'autenticazione in LM Studio."
+          }
+        },
         "openaiCompatible": {
           "baseUrl": {
             "label": "URL base",
@@ -329,17 +343,6 @@
         "defaultModel": {
           "label": "Modello predefinito",
           "auto": "Automatico (predefinito del provider)"
-        },
-        "lmStudio": {
-          "baseUrl": {
-            "label": "URL del server",
-            "hint": "URL del server locale di LM Studio (predefinito: http://127.0.0.1:1234/v1)"
-          },
-          "apiKey": {
-            "toggle": "Chiave API opzionale",
-            "placeholder": "Lascia vuoto se non richiesto",
-            "hint": "Necessario solo se hai configurato l'autenticazione in LM Studio."
-          }
         }
       },
       "whisper": {
@@ -762,6 +765,14 @@
   },
   "launcher": {
     "searchPlaceholder": "Cerca app, comandi o chiedi all'AI...",
+    "browserSearch": {
+      "openUrl": "Apri {url}",
+      "searchFor": "Cerca \"{query}\"",
+      "subtitle": {
+        "openUrl": "Browser predefinito",
+        "search": "Ricerca web"
+      }
+    },
     "compact": {
       "showMore": "Mostra di più"
     },
@@ -853,14 +864,6 @@
       "script": "Script",
       "settings": "Impostazioni",
       "quickLink": "Collegamento rapido"
-    },
-    "browserSearch": {
-      "openUrl": "Apri {url}",
-      "searchFor": "Cerca \"{query}\"",
-      "subtitle": {
-        "openUrl": "Browser predefinito",
-        "search": "Ricerca web"
-      }
     }
   },
   "scriptCommand": {
@@ -1010,11 +1013,21 @@
     "create": "Crea collegamento rapido",
     "edit": "Modifica collegamento rapido",
     "delete": "Elimina collegamento rapido",
+    "confirmDelete": "Click again to confirm",
     "searchPlaceholder": "Cerca collegamenti rapidi...",
     "name": "Nome",
     "url": "URL",
+    "urlHint": "Use {placeholder} to add dynamic values like clipboard or arguments.",
+    "openWith": "Open With",
+    "defaultBrowser": "Default Browser",
     "icon": "Icona",
-    "save": "Salva collegamento rapido"
+    "save": "Salva collegamento rapido",
+    "saved": "Saved",
+    "saveFailed": "Failed to save quick link.",
+    "deleteFailed": "Failed to delete quick link.",
+    "notFound": "Quick link not found.",
+    "nameRequired": "Name is required.",
+    "urlRequired": "URL is required."
   },
   "appUninstall": {
     "title": "Disinstalla {appName}",
@@ -1025,7 +1038,14 @@
     "confirmMessage": "Spostare {count} file ({size}) nel Cestino?",
     "filterPlaceholder": "Filtra file e cartelle per nome...",
     "sortByPath": "Ordina per percorso",
-    "sortBySize": "Ordina per dimensione"
+    "sortBySize": "Ordina per dimensione",
+    "markKeep": "Mark File to Keep",
+    "markRemove": "Mark File to Remove",
+    "actions": "Actions",
+    "showInfo": "Show Info in Finder",
+    "trashErrors": "Some files could not be moved to Trash:\n{errors}",
+    "uninstallSuccess": "{appName} has been uninstalled",
+    "uninstallError": "Failed to uninstall {appName}"
   },
   "fileSearch": {
     "placeholder": "Cerca file...",
