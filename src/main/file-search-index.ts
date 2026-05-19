@@ -66,6 +66,8 @@ const DEFAULT_REFRESH_INTERVAL_MS = 8 * 60_000;
 const WATCH_EVENT_DEBOUNCE_MS = 500;
 const MAX_SPOTLIGHT_CANDIDATES = 10_000;
 const SPOTLIGHT_SEARCH_TIMEOUT_MS = 2_400;
+const INDEX_SCAN_YIELD_EVERY_DIRECTORIES = 80;
+const INDEX_SCAN_PAUSE_MS = 6;
 
 const execFileAsync = promisify(execFile);
 
@@ -94,8 +96,9 @@ export const FILE_SEARCH_INDEX_NOISY_DIRECTORY_NAMES = [
   '.npm',
 ] as const;
 
-// Skip VCS internals and dangerous/system-hidden trees. Build/dependency
-// folders are indexed and penalized at ranking time instead.
+// Skip VCS internals and high-churn generated/dependency trees. The file
+// search index starts at launch, so walking node_modules/build output can pin
+// the Electron main process on developer machines.
 export const FILE_SEARCH_INDEX_EXCLUDED_DIRECTORY_NAMES = [
   '.git',
   '.hg',
@@ -207,8 +210,9 @@ function shouldSkipDirectory(absolutePath: string, dirName: string, homeDir: str
 
   const lowerName = trimmedName.toLowerCase();
   if (EXCLUDED_DIRECTORY_NAME_SET.has(lowerName)) return true;
+  if (NOISY_DIRECTORY_NAME_SET.has(lowerName)) return true;
   if (lowerName === '.trash') return true;
-  if (trimmedName.startsWith('.') && !NOISY_DIRECTORY_NAME_SET.has(lowerName)) return true;
+  if (trimmedName.startsWith('.')) return true;
 
   const relative = path.relative(homeDir, absolutePath);
   if (!relative || relative.startsWith('..')) return true;
@@ -238,10 +242,11 @@ function shouldSkipPathForSearch(candidatePath: string, homeDir: string): boolea
   if (segments.length === 0) return true;
   if (EXCLUDED_TOP_LEVEL_SET.has(segments[0].toLowerCase())) return true;
   if (PROTECTED_TOP_LEVEL_SET.has(segments[0].toLowerCase()) && !includeProtectedHomeRoots) return true;
-  for (const segment of segments.slice(0, -1)) {
+  for (const segment of segments) {
     const lowerSegment = segment.toLowerCase();
     if (EXCLUDED_DIRECTORY_NAME_SET.has(lowerSegment)) return true;
-    if (segment.startsWith('.') && !NOISY_DIRECTORY_NAME_SET.has(lowerSegment)) return true;
+    if (NOISY_DIRECTORY_NAME_SET.has(lowerSegment)) return true;
+    if (segment.startsWith('.')) return true;
   }
   return false;
 }
@@ -439,8 +444,8 @@ async function buildIndexSnapshot(homeDir: string): Promise<IndexSnapshot> {
     }
 
     scannedDirectories += 1;
-    if (scannedDirectories % 120 === 0) {
-      await new Promise<void>((resolve) => setImmediate(resolve));
+    if (scannedDirectories % INDEX_SCAN_YIELD_EVERY_DIRECTORIES === 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, INDEX_SCAN_PAUSE_MS));
     }
   }
 
@@ -676,7 +681,8 @@ function isWatchablePath(absolutePath: string): boolean {
     if (!segment) continue;
     const lowerSegment = segment.toLowerCase();
     if (EXCLUDED_DIRECTORY_NAME_SET.has(lowerSegment)) return false;
-    if (segment.startsWith('.') && !NOISY_DIRECTORY_NAME_SET.has(lowerSegment)) return false;
+    if (NOISY_DIRECTORY_NAME_SET.has(lowerSegment)) return false;
+    if (segment.startsWith('.')) return false;
   }
   return true;
 }
