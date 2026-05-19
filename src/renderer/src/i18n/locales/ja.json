@@ -1,1279 +1,1281 @@
 {
   "common": {
-    "actions": "アクション",
-    "loading": "読み込み中...",
-    "noResults": "結果がありません",
-    "search": "検索...",
-    "save": "保存",
-    "saving": "保存中...",
-    "cancel": "キャンセル",
-    "close": "閉じる",
-    "continue": "続ける",
-    "back": "戻る",
-    "remove": "削除",
-    "add": "追加",
-    "edit": "編集",
-    "delete": "削除",
-    "enable": "有効にする",
-    "disable": "無効にする",
-    "enabled": "有効",
-    "disabled": "無効",
-    "success": "成功",
-    "error": "エラー",
-    "warning": "警告",
-    "info": "情報",
-    "copy": "コピー",
-    "paste": "ペースト",
-    "cut": "カット",
-    "selectAll": "すべて選択",
-    "undo": "元に戻す",
-    "redo": "やり直す",
-    "refresh": "更新",
-    "reload": "再読み込み",
-    "apply": "適用",
-    "reset": "リセット",
-    "clear": "クリア",
-    "done": "完了",
+    "actions": "Actions",
+    "loading": "Loading...",
+    "noResults": "No results",
+    "search": "Search...",
+    "save": "Save",
+    "saving": "Saving...",
+    "cancel": "Cancel",
+    "close": "Close",
+    "continue": "Continue",
+    "back": "Back",
+    "remove": "Remove",
+    "add": "Add",
+    "edit": "Edit",
+    "delete": "Delete",
+    "enable": "Enable",
+    "disable": "Disable",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "success": "Success",
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Info",
+    "copy": "Copy",
+    "paste": "Paste",
+    "cut": "Cut",
+    "selectAll": "Select All",
+    "undo": "Undo",
+    "redo": "Redo",
+    "refresh": "Refresh",
+    "reload": "Reload",
+    "apply": "Apply",
+    "reset": "Reset",
+    "clear": "Clear",
+    "done": "Done",
     "ok": "OK",
-    "yes": "はい",
-    "no": "いいえ",
-    "submit": "送信",
-    "browse": "参照",
-    "choose": "選択",
-    "change": "変更",
-    "update": "アップデート",
-    "install": "インストール",
-    "uninstall": "アンインストール",
-    "download": "ダウンロード",
-    "upload": "アップロード",
-    "import": "インポート",
-    "export": "エクスポート",
-    "open": "開く",
-    "create": "作成",
-    "new": "新規",
-    "unknown": "不明",
-    "none": "なし",
-    "default": "デフォルト",
-    "custom": "カスタム",
-    "other": "その他",
-    "all": "すべて",
-    "required": "必須",
-    "optional": "任意",
-    "preferences": "環境設定",
-    "settings": "設定",
-    "general": "一般",
-    "advanced": "詳細",
-    "about": "情報",
-    "version": "バージョン",
-    "language": "言語",
-    "appearance": "外観",
-    "theme": "テーマ",
-    "light": "ライト",
-    "dark": "ダーク",
-    "system": "システム",
-    "auto": "自動"
+    "yes": "Yes",
+    "no": "No",
+    "submit": "Submit",
+    "browse": "Browse",
+    "choose": "Choose",
+    "change": "Change",
+    "update": "Update",
+    "install": "Install",
+    "uninstall": "Uninstall",
+    "download": "Download",
+    "upload": "Upload",
+    "import": "Import",
+    "export": "Export",
+    "open": "Open",
+    "create": "Create",
+    "new": "New",
+    "unknown": "Unknown",
+    "none": "None",
+    "default": "Default",
+    "custom": "Custom",
+    "other": "Other",
+    "all": "All",
+    "required": "Required",
+    "optional": "Optional",
+    "preferences": "Preferences",
+    "settings": "Settings",
+    "general": "General",
+    "advanced": "Advanced",
+    "about": "About",
+    "version": "Version",
+    "language": "Language",
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "auto": "Auto"
   },
   "settings": {
-    "title": "SuperCmd 設定",
+    "title": "SuperCmd Settings",
     "tabs": {
-      "general": "一般",
+      "general": "General",
       "ai": "AI",
-      "extensions": "拡張機能",
-      "advanced": "詳細"
+      "extensions": "Extensions",
+      "advanced": "Advanced"
     },
     "general": {
-      "title": "一般",
-      "loading": "設定を読み込み中...",
+      "title": "General",
+      "loading": "Loading settings...",
       "launcherShortcut": {
-        "title": "ランチャーショートカット",
-        "description": "SuperCmd を開閉するグローバルショートカットを設定します。",
-        "updated": "ショートカットを更新しました",
-        "failed": "失敗しました。ショートカットが他のアプリで使用されている可能性があります。"
+        "title": "Launcher Shortcut",
+        "description": "Set the global shortcut to open and close SuperCmd.",
+        "updated": "Shortcut updated",
+        "failed": "Failed. Shortcut may be used by another app."
       },
       "startAtLogin": {
-        "title": "ログイン時に起動",
-        "description": "ログイン時に SuperCmd を自動的に起動します。",
-        "enabled": "有効",
-        "disabled": "無効"
+        "title": "Start at Login",
+        "description": "Automatically launch SuperCmd when you log in.",
+        "enabled": "Enabled",
+        "disabled": "Disabled"
       },
       "language": {
-        "title": "言語",
-        "description": "表示言語を選択するか、システムロケールに従います。",
-        "system": "システムに従う",
-        "en": "英語",
-        "zh-Hans": "簡体中国語",
-        "zh-Hant": "繁体中国語",
-        "ja": "日本語",
-        "ko": "韓国語",
-        "fr": "フランス語",
-        "de": "ドイツ語",
-        "es": "スペイン語",
-        "ru": "ロシア語",
-        "it": "イタリア語"
+        "title": "Language",
+        "description": "Choose the display language or follow the system locale.",
+        "system": "Follow System",
+        "en": "English",
+        "zh-Hans": "Simplified Chinese",
+        "zh-Hant": "Traditional Chinese",
+        "ja": "Japanese",
+        "ko": "Korean",
+        "fr": "French",
+        "de": "German",
+        "es": "Spanish",
+        "ru": "Russian",
+        "it": "Italian"
       },
       "fontSize": {
-        "title": "フォントサイズ",
-        "description": "アプリ全体のテキストサイズを調整します。",
-        "extra-small": "極小",
-        "small": "小",
-        "medium": "中",
-        "large": "大",
-        "extra-large": "極大"
+        "title": "Font Size",
+        "description": "Scale text size across the app.",
+        "extra-small": "Extra Small",
+        "small": "Small",
+        "medium": "Medium",
+        "large": "Large",
+        "extra-large": "Extra Large"
       },
       "appearance": {
-        "title": "外観",
-        "description": "ライト、ダーク、またはシステム設定に従うかを選択します。",
-        "light": "ライト",
-        "system": "システム",
-        "dark": "ダーク"
+        "title": "Appearance",
+        "description": "Choose Light, Dark, or follow your system preference.",
+        "light": "Light",
+        "system": "System",
+        "dark": "Dark"
       },
       "visualStyle": {
-        "title": "ビジュアルスタイル",
-        "description": "デフォルトの外観を使うか、macOS Tahoe 風のグラス調スタイルを有効にします。",
-        "default": "デフォルト",
-        "glassy": "グラス調"
+        "title": "Visual Style",
+        "description": "Use Default look or enable a glassy macOS Tahoe-inspired style.",
+        "default": "Default",
+        "glassy": "Glassy"
       },
       "launcherMode": {
-        "title": "ランチャーモード",
-        "description": "ランチャーを開いたときの表示方法を選択します。",
-        "expanded": "拡大",
-        "compact": "コンパクト"
+        "title": "Launcher Mode",
+        "description": "Choose how the launcher appears when opened.",
+        "expanded": "Expanded",
+        "compact": "Compact"
       },
       "background": {
-        "title": "ランチャーの背景画像",
-        "description": "ランチャーの背後にソフトにぼかした低不透明度の画像を表示し、壁紙ではなくヒントとして読めるようにします。",
-        "empty": "画像が選択されていません。ランチャーは現在の背景を使用し続けます。",
-        "choose": "画像を選択",
-        "change": "画像を変更",
-        "remove": "削除",
-        "appearance": "外観",
-        "summary": "ぼかし {blur}% · 不透明度 {opacity}%",
-        "blur": "ぼかし",
-        "opacity": "不透明度",
-        "useEverywhere": "拡張機能とコアランチャービューでもこの画像を使用する"
+        "title": "Launcher Background Image",
+        "description": "Show a softly blurred, low-opacity image behind the launcher so it reads like a hint, not a full wallpaper.",
+        "empty": "No image selected. The launcher will keep using its current background.",
+        "choose": "Choose Image",
+        "change": "Change Image",
+        "remove": "Remove",
+        "appearance": "Appearance",
+        "summary": "Blur {blur}% · Opacity {opacity}%",
+        "blur": "Blur",
+        "opacity": "Opacity",
+        "useEverywhere": "Use this image in extension and core launcher views too"
       },
       "updates": {
-        "title": "アプリのアップデート",
-        "description": "パッケージアプリのアップデートを確認してインストールします。",
-        "defaultMessage": "パッケージアプリのアップデートを確認してインストールします。",
-        "unsupported": "アップデートはパッケージビルドでのみ利用可能です。",
-        "checking": "アップデートを確認中...",
-        "available": "アップデート v{version} が利用可能です。",
-        "notAvailable": "すでに最新バージョンです。",
-        "downloading": "アップデートをダウンロード中...",
-        "downloaded": "アップデートをダウンロードしました。再起動してインストールしてください。",
-        "error": "アップデート処理を完了できませんでした。",
-        "check": "アップデートを確認",
-        "download": "アップデートをダウンロード",
-        "downloadingButton": "アップデートをダウンロード中...",
-        "restart": "再起動してアップデート",
-        "currentVersion": "現在のバージョン: v{version}",
-        "latestVersion": "最新: v{version}",
+        "title": "App Updates",
+        "description": "Check for and install packaged-app updates.",
+        "defaultMessage": "Check for and install packaged-app updates.",
+        "unsupported": "Updates are only available in packaged builds.",
+        "checking": "Checking for updates...",
+        "available": "Update v{version} is available.",
+        "notAvailable": "You are already on the latest version.",
+        "downloading": "Downloading update...",
+        "downloaded": "Update downloaded. Restart to install.",
+        "restarting": "Restarting to install update...",
+        "error": "Could not complete the update action.",
+        "check": "Check for Updates",
+        "download": "Download Update",
+        "downloadingButton": "Downloading Update...",
+        "restart": "Update and Restart",
+        "restartingButton": "Restarting...",
+        "currentVersion": "Current version: v{version}",
+        "latestVersion": "Latest: v{version}",
         "progress": "{progress}% · {transferred} / {total}",
-        "failed": "アップデートに失敗しました。"
+        "failed": "Update failed."
       },
       "about": {
-        "title": "情報",
-        "description": "バージョン情報。",
+        "title": "About",
+        "description": "Version information.",
         "version": "SuperCmd v{version}"
       },
       "autoQuit": {
-        "title": "自動終了",
-        "timeout": "デフォルトタイムアウト",
-        "description": "自動終了が有効なアプリは、この時間操作がないと終了します",
-        "minute": "分",
-        "minutes": "分"
+        "title": "Auto Quit",
+        "timeout": "Default Timeout",
+        "description": "Apps with Auto Quit enabled will quit after this duration of inactivity",
+        "minute": "minute",
+        "minutes": "minutes"
       }
     },
     "ai": {
-      "title": "AI 設定",
-      "loading": "AI 設定を読み込み中...",
-      "saved": "保存しました",
+      "title": "AI Settings",
+      "loading": "Loading AI settings...",
+      "saved": "Saved",
       "languages": {
-        "arabic": "アラビア語",
-        "chineseMandarin": "中国語（標準）",
-        "englishUs": "英語（米国）",
-        "englishUk": "英語（英国）",
-        "frenchCanada": "フランス語（カナダ）",
-        "frenchFrance": "フランス語（フランス）",
-        "german": "ドイツ語",
-        "hindi": "ヒンディー語",
-        "italian": "イタリア語",
-        "japanese": "日本語",
-        "korean": "韓国語",
-        "portugueseBrazil": "ポルトガル語（ブラジル）",
-        "russian": "ロシア語",
-        "spanishMexico": "スペイン語（メキシコ）",
-        "spanishSpain": "スペイン語（スペイン）"
+        "arabic": "Arabic",
+        "chineseMandarin": "Chinese (Mandarin)",
+        "englishUs": "English (US)",
+        "englishUk": "English (UK)",
+        "frenchCanada": "French (Canada)",
+        "frenchFrance": "French (France)",
+        "german": "German",
+        "hindi": "Hindi",
+        "italian": "Italian",
+        "japanese": "Japanese",
+        "korean": "Korean",
+        "portugueseBrazil": "Portuguese (Brazil)",
+        "russian": "Russian",
+        "spanishMexico": "Spanish (Mexico)",
+        "spanishSpain": "Spanish (Spain)"
       },
       "enableAI": {
-        "title": "AI を有効にする",
-        "description": "AI 機能のマスタースイッチです。"
+        "title": "Enable AI",
+        "description": "Master switch for AI features."
       },
       "tabs": {
-        "apiKeys": "API キー",
+        "apiKeys": "API Keys",
         "llm": "LLM",
         "whisper": "SuperCmd Whisper",
         "speak": "SuperCmd Read"
       },
       "apiKeys": {
         "openai": {
-          "label": "ChatGPT (OpenAI) API キー",
+          "label": "ChatGPT (OpenAI) API Key",
           "placeholder": "sk-..."
         },
         "anthropic": {
-          "label": "Claude (Anthropic) API キー",
+          "label": "Claude (Anthropic) API Key",
           "placeholder": "sk-ant-..."
         },
         "gemini": {
-          "label": "Gemini (Google) API キー",
+          "label": "Gemini (Google) API Key",
           "placeholder": "AIza..."
         },
         "elevenlabs": {
-          "label": "ElevenLabs API キー",
+          "label": "ElevenLabs API Key",
           "placeholder": "xi-..."
         },
         "supermemory": {
           "title": "Supermemory",
-          "description": "長期コンテキスト用のメモリバックエンド。",
+          "description": "Memory backend for long-term context.",
           "apiKey": {
-            "label": "Supermemory API キー",
+            "label": "Supermemory API Key",
             "placeholder": "sm-..."
           },
           "client": {
-            "label": "Supermemory クライアント",
+            "label": "Supermemory Client",
             "placeholder": "client-123",
-            "hint": "ユーザーメモリ取得のスコープに使用します。"
+            "hint": "Used to scope user memory retrieval."
           },
           "baseUrl": {
-            "label": "Supermemory ベース URL",
+            "label": "Supermemory Base URL",
             "placeholder": "https://api.supermemory.ai"
           },
-          "localMode": "ローカルモードを使用（ローカルに保存）"
+          "localMode": "Use local mode (saved locally)"
         }
       },
       "llm": {
         "enableLLM": {
-          "title": "LLM を有効にする",
-          "description": "モデルベースの AI 機能を切り替えます。"
+          "title": "Enable LLM",
+          "description": "Toggle model-based AI features."
         },
         "modelSelection": {
-          "title": "汎用モデル選択",
-          "description": "拡張機能やモデル非依存の AI アクションで使用されます。"
+          "title": "Generic Model Selection",
+          "description": "Used by extensions and model-agnostic AI actions."
         },
         "provider": {
-          "label": "プロバイダ",
+          "label": "Provider",
           "openai": "OpenAI",
           "anthropic": "Claude",
           "gemini": "Gemini",
           "ollama": "Ollama",
           "lmStudio": "LM Studio",
-          "openaiCompatible": "カスタム（OpenAI 互換）"
+          "openaiCompatible": "Custom (OpenAI-compatible)"
         },
         "providerDescriptions": {
-          "openai": "GPT 系モデル",
-          "anthropic": "Anthropic Claude モデル",
-          "gemini": "Google Gemini モデル",
-          "ollama": "ローカルモデル",
-          "openaiCompatible": "任意の OpenAI 互換 API（OpenRouter、Together など）",
-          "lmStudio": "LM Studio でローカルモデルを使用"
+          "openai": "GPT family models",
+          "anthropic": "Anthropic Claude models",
+          "gemini": "Google Gemini models",
+          "ollama": "Local models",
+          "lmStudio": "Local models via LM Studio",
+          "openaiCompatible": "Any OpenAI-compatible API (OpenRouter, Together, etc.)"
         },
         "ollama": {
           "serverUrl": {
-            "label": "Ollama サーバー URL",
+            "label": "Ollama Server URL",
             "placeholder": "http://localhost:11434"
           },
-          "models": "Ollama モデル",
-          "refresh": "更新",
-          "checking": "Ollama のステータスを確認中...",
+          "models": "Ollama Models",
+          "refresh": "Refresh",
+          "checking": "Checking Ollama status...",
           "notRunning": {
-            "title": "Ollama が実行されていません",
-            "description": "ローカルモデルを使用するには Ollama をインストールして実行してください。",
-            "download": "Ollama をダウンロード"
+            "title": "Ollama is not running",
+            "description": "Install and run Ollama to use local models.",
+            "download": "Download Ollama"
           },
-          "running": "Ollama は実行中です",
-          "installed": "インストール済み",
-          "downloadModel": "ダウンロード",
-          "removeModel": "削除",
-          "downloading": "ダウンロード中...",
-          "removing": "削除中...",
-          "startingDownload": "ダウンロードを開始しています...",
-          "deleteFailed": "モデルの削除に失敗しました。",
+          "running": "Ollama is running",
+          "installed": "Installed",
+          "downloadModel": "Download",
+          "removeModel": "Remove",
+          "downloading": "Downloading...",
+          "removing": "Removing...",
+          "startingDownload": "Starting download...",
+          "deleteFailed": "Failed to delete model.",
           "curatedDescriptions": {
-            "llama32": "Meta 汎用モデル（3B）",
-            "llama32_1b": "小型で高速",
-            "mistral": "効率的な汎用モデル",
-            "codellama": "コード生成と補完",
-            "phi3": "Microsoft 小型言語モデル",
-            "gemma2": "Google オープンモデル（9B）",
-            "qwen25": "Alibaba 多言語モデル（7B）",
-            "deepseekR1": "推論重視モデル（7B）"
+            "llama32": "Meta general-purpose (3B)",
+            "llama32_1b": "Small and fast",
+            "mistral": "Efficient general-purpose",
+            "codellama": "Code generation & completion",
+            "phi3": "Microsoft small language model",
+            "gemma2": "Google open model (9B)",
+            "qwen25": "Alibaba multilingual model (7B)",
+            "deepseekR1": "Reasoning-focused model (7B)"
+          }
+        },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "Server URL",
+            "hint": "LM Studio's local server URL (default: http://127.0.0.1:1234/v1)"
+          },
+          "apiKey": {
+            "toggle": "Optional API Key",
+            "placeholder": "Leave empty if not required",
+            "hint": "Only needed if you have configured authentication in LM Studio."
           }
         },
         "openaiCompatible": {
           "baseUrl": {
-            "label": "ベース URL",
+            "label": "Base URL",
             "placeholder": "https://api.openrouter.ai/v1",
-            "hint": "プロバイダが /v1 を使う場合は含めてください（例: https://api.openai.com/v1）",
-            "appendV1": "ベースURLに /v1 を自動追加"
+            "hint": "Include /v1 if your provider uses it (e.g., https://api.openai.com/v1)",
+            "appendV1": "Auto-append /v1 to base URL"
           },
           "apiKey": {
-            "label": "API キー",
+            "label": "API Key",
             "placeholder": "sk-..."
           },
           "modelName": {
-            "label": "モデル名",
+            "label": "Model Name",
             "placeholder": "anthropic/claude-3.5-sonnet",
-            "hint": "プロバイダが期待する正確なモデル名（例: gpt-4o、meta-llama/llama-3.1-70b-instruct）"
+            "hint": "The exact model name your provider expects (e.g., gpt-4o, meta-llama/llama-3.1-70b-instruct)"
           }
         },
         "defaultModel": {
-          "label": "デフォルトモデル",
-          "auto": "自動（プロバイダのデフォルト）"
-        },
-        "lmStudio": {
-          "baseUrl": {
-            "label": "サーバー URL",
-            "hint": "LM Studio のローカルサーバー URL（デフォルト：http://127.0.0.1:1234/v1）"
-          },
-          "apiKey": {
-            "toggle": "オプションのAPIキー",
-            "placeholder": "不要な場合は空白のままにしてください",
-            "hint": "LM Studioで認証を設定している場合のみ必要です。"
-          }
+          "label": "Default Model",
+          "auto": "Auto (provider default)"
         }
       },
       "whisper": {
         "enableWhisper": {
-          "title": "SuperCmd Whisper を有効にする",
-          "description": "音声認識機能を切り替えます。"
+          "title": "Enable SuperCmd Whisper",
+          "description": "Toggle speech-to-text features."
         },
         "title": "SuperCmd Whisper",
-        "description": "音声認識と文字起こしのクリーンアップ。",
+        "description": "Speech-to-text and transcript cleanup.",
         "model": {
-          "label": "文字起こしモデル",
-          "native": "ネイティブ（デフォルト）",
+          "label": "Transcription Model",
+          "native": "Native (Default)",
           "openaiGpt4o": "OpenAI GPT-4o Transcribe",
           "openaiWhisper": "OpenAI Whisper-1",
           "elevenlabsScribeV1": "ElevenLabs Scribe v1",
           "elevenlabsScribeV2": "ElevenLabs Scribe v2"
         },
         "modelOptions": {
-          "whispercpp": "SuperCmd Whisper（デフォルト）",
-          "parakeet": "Parakeet v3（最高かつ最速、25 以上のヨーロッパ言語対応）",
-          "qwen3": "Qwen3 ASR（中国語、日本語、韓国語、タイ語、ベトナム語、ヒンディー語を含む 30 以上の言語に対応）",
-          "native": "Apple 音声認識",
+          "whispercpp": "SuperCmd Whisper (Default)",
+          "parakeet": "Parakeet v3 (Best and fastest, 25+ European languages)",
+          "qwen3": "Qwen3 ASR (30+ languages including Chinese, Japanese, Korean, Thai, Vietnamese, Hindi)",
+          "native": "Apple Speech Recognition",
           "openaiGpt4o": "OpenAI GPT-4o Transcribe",
           "openaiWhisper": "OpenAI Whisper-1",
           "elevenlabsScribeV1": "ElevenLabs Scribe v1",
           "elevenlabsScribeV2": "ElevenLabs Scribe v2"
         },
-        "openaiWarning": "OpenAI Whisper が選択されています。API キーに OpenAI API キーを追加してください。",
-        "elevenlabsWarning": "ElevenLabs STT が選択されています。API キーに ElevenLabs API キーを{action}してください。",
-        "elevenlabsReady": "ElevenLabs STT が選択されています。クラウド文字起こしに ElevenLabs キーを使用します。",
-        "recognitionLanguage": "認識言語",
+        "openaiWarning": "OpenAI Whisper selected. Add OpenAI API key in API Keys.",
+        "elevenlabsWarning": "ElevenLabs STT selected. {action} ElevenLabs API key in API Keys.",
+        "elevenlabsReady": "ElevenLabs STT selected. Cloud transcription will use your ElevenLabs key.",
+        "recognitionLanguage": "Recognition Language",
         "providerInfo": {
-          "parakeet": "Parakeet TDT v3 によるオフラインのオンデバイス文字起こし。Apple Neural Engine 上で実行されます。初回使用時にモデルのウォームアップが必要です。ディクテーションを使用する前に下からモデルをダウンロードしてください。",
-          "qwen3": "Qwen3 ASR によるオフラインのオンデバイス文字起こし。30 以上の言語をサポート、macOS 15 以上が必要、初回使用時にウォームアップします。",
-          "whispercpp": "Whisper.cpp によるオフラインのオンデバイス文字起こし。ディクテーションを使用する前に下からデフォルトの ggml base モデルをダウンロードしてください。",
-          "native": "SuperCmd Whisper の代わりに Apple 音声認識を使用します。"
+          "parakeet": "Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Requires model warmup on first use. Download the model below before using dictation.",
+          "qwen3": "Offline on-device transcription via Qwen3 ASR. Supports 30+ languages, requires macOS 15+, and warms up on first use.",
+          "whispercpp": "Offline on-device transcription via Whisper.cpp. Download the default ggml base model below before using dictation.",
+          "native": "Uses Apple Speech Recognition instead of SuperCmd Whisper."
         },
         "hotkeys": {
-          "title": "Whisper ホットキー",
-          "startStop": "発話の開始/停止",
-          "setToFn": "Fn に設定",
-          "fnHint": "「Fn に設定」を使用してデフォルトの押しっぱなし発話キーを復元します。",
-          "fnHintBefore": "使用するには",
-          "fnHintAfter": "でデフォルトの押しっぱなし発話キーを復元できます。"
+          "title": "Whisper Hotkeys",
+          "startStop": "Start/Stop Speaking",
+          "setToFn": "Set to Fn",
+          "fnHint": "Use Set to Fn to restore the default hold-to-talk key.",
+          "fnHintBefore": "Use",
+          "fnHintAfter": "to restore the default hold-to-talk key."
         },
         "autoClose": {
-          "title": "ディクテーション後に自動で閉じる",
-          "description": "ディクテーションが終了したら Whisper バーを自動的に閉じます。"
+          "title": "Auto-Close After Dictation",
+          "description": "Automatically close the whisper bar when dictation finishes."
         },
         "smoothOutput": {
-          "title": "出力をスムーズに",
-          "description": "フィラー語や自己修正をクリーンアップします。"
+          "title": "Smooth Output",
+          "description": "Clean up filler words and self-corrections."
         },
         "smoothingModel": {
-          "label": "スムージングモデル",
-          "useDefault": "汎用デフォルトモデルを使用",
-          "hint": "現在のプロバイダのモデルを使用します。"
+          "label": "Smoothing Model",
+          "useDefault": "Use Generic Default Model",
+          "hint": "Uses your current provider models."
         },
         "downloadCards": {
-          "modelDownloadFailed": "モデルのダウンロードに失敗しました。",
+          "modelDownloadFailed": "Model download failed.",
           "actions": {
-            "downloaded": "モデルをダウンロード済み",
-            "downloading": "ダウンロード中...",
-            "download": "モデルをダウンロード"
+            "downloaded": "Model Downloaded",
+            "downloading": "Downloading...",
+            "download": "Download Model"
           },
           "parakeet": {
             "title": "Parakeet TDT v3",
-            "description": "多言語対応のオンデバイス文字起こし。Apple Neural Engine 上で実行されます。",
-            "ready": "ダウンロード済み。Parakeet v3 はオフラインで使用できます。",
-            "downloading": "Parakeet v3 モデルをダウンロード中",
-            "notDownloaded": "モデルはまだダウンロードされていません。Parakeet ディクテーションを使用するには今すぐダウンロードしてください。"
+            "description": "Multilingual on-device transcription. Runs on Apple Neural Engine.",
+            "ready": "Downloaded. Parakeet v3 is ready to use offline.",
+            "downloading": "Downloading Parakeet v3 models",
+            "notDownloaded": "Model not downloaded yet. Download it now to use Parakeet dictation."
           },
           "qwen3": {
             "title": "Qwen3 ASR",
-            "description": "30 言語対応のオンデバイス文字起こし。macOS 15 以上が必要。",
-            "ready": "ダウンロード済み。Qwen3 ASR はオフラインで使用できます。",
-            "downloading": "Qwen3 ASR モデルをダウンロード中",
-            "notDownloaded": "モデルはまだダウンロードされていません。Qwen3 ディクテーションを使用するには約 900 MB の int8 モデルをダウンロードしてください。"
+            "description": "30-language on-device transcription. Requires macOS 15+.",
+            "ready": "Downloaded. Qwen3 ASR is ready to use offline.",
+            "downloading": "Downloading Qwen3 ASR models",
+            "notDownloaded": "Model not downloaded yet. Download the ~900 MB int8 model to use Qwen3 dictation."
           },
           "whispercpp": {
             "title": "SuperCmd Whisper",
-            "description": "ローカルディクテーションを有効にするため、ggml base モデルを一度ダウンロードしてください。",
-            "ready": "ダウンロード済み。SuperCmd Whisper はオフラインで使用できます。",
-            "downloading": "SuperCmd Whisper をダウンロード中",
-            "notDownloaded": "モデルはまだダウンロードされていません。SuperCmd Whisper ディクテーションを使用するには今すぐダウンロードしてください。"
+            "description": "Download the ggml base model once to enable local dictation.",
+            "ready": "Downloaded. SuperCmd Whisper is ready to use offline.",
+            "downloading": "Downloading SuperCmd Whisper",
+            "notDownloaded": "Model not downloaded yet. Download it now to use SuperCmd Whisper dictation."
           }
         }
       },
       "speak": {
         "enableRead": {
-          "title": "SuperCmd Read を有効にする",
-          "description": "テキスト読み上げ機能を切り替えます。"
+          "title": "Enable SuperCmd Read",
+          "description": "Toggle text-to-speech features."
         },
         "title": "SuperCmd Read",
-        "description": "選択したテキストを音声で読み上げます。",
+        "description": "Read selected text aloud.",
         "provider": {
-          "label": "音声プロバイダ",
-          "edgeTTS": "Edge TTS（デフォルト）",
+          "label": "Speech Provider",
+          "edgeTTS": "Edge TTS (Default)",
           "elevenlabsMultilingual": "ElevenLabs Multilingual v2",
           "elevenlabsFlash": "ElevenLabs Flash v2.5",
           "elevenlabsTurbo": "ElevenLabs Turbo v2.5",
           "elevenlabsV3": "ElevenLabs v3 (Alpha)"
         },
         "edgeTTS": {
-          "voice": "Edge TTS の音声",
-          "fetching": "音声リストを取得中...",
+          "voice": "Edge TTS Voice",
+          "fetching": "Fetching full voice list...",
           "language": {
-            "label": "言語"
+            "label": "Language"
           },
           "gender": {
-            "label": "音声の性別",
-            "female": "女性",
-            "male": "男性"
+            "label": "Voice Gender",
+            "female": "Female",
+            "male": "Male"
           },
           "voiceLabel": {
-            "label": "音声"
+            "label": "Voice"
           },
           "playSample": {
-            "idle": "サンプル音声を再生",
-            "playing": "サンプル再生中..."
+            "idle": "Play Sample Voice",
+            "playing": "Playing sample..."
           }
         },
         "elevenlabs": {
           "model": {
-            "label": "ElevenLabs モデル"
+            "label": "ElevenLabs Model"
           },
           "voice": {
-            "label": "ElevenLabs 音声",
-            "fetching": "あなたの音声を取得中...",
-            "fetchFailed": "音声の取得に失敗しました。",
-            "builtIn": "組み込み音声",
-            "premade": "追加の既製音声",
-            "custom": "あなたのカスタム音声（クローン/生成）",
-            "professional": "プロフェッショナル音声クローン",
-            "available": "{count} 個のカスタム音声{plural}が ElevenLabs アカウントから利用可能です"
+            "label": "ElevenLabs Voice",
+            "fetching": "Fetching your voices...",
+            "fetchFailed": "Failed to fetch voices.",
+            "builtIn": "Built-in Voices",
+            "premade": "Additional Premade Voices",
+            "custom": "Your Custom Voices (Cloned/Generated)",
+            "professional": "Professional Voice Clones",
+            "available": "{count} custom voice{plural} available from your ElevenLabs account"
           },
           "playSample": {
-            "idle": "サンプル音声を再生",
-            "playing": "サンプル再生中..."
+            "idle": "Play Sample Voice",
+            "playing": "Playing sample..."
           },
-          "storageHint": "SuperCmd はこれを {value} として保存します。",
-          "apiKeyWarning": "API キーに ElevenLabs API キーを追加してください。"
+          "storageHint": "SuperCmd stores this as {value}.",
+          "apiKeyWarning": "Add ElevenLabs API key in API Keys."
         },
         "notes": {
-          "title": "メモ",
-          "whisperDefault": "Whisper のデフォルトはローカルの ggml base モデルを使用した SuperCmd Whisper です。",
-          "speakDefault": "Speak のデフォルトは言語ごとに男性/女性音声を選択できる Edge TTS です。",
-          "englishVoice": "英語の音声オプションは意図的に米国版と英国版に限定されています。",
-          "elevenlabsVoices": "ElevenLabs のカスタム音声（クローン/生成）は API キーが設定されると自動的に表示されます。"
+          "title": "Notes",
+          "whisperDefault": "Whisper default is SuperCmd Whisper with a local ggml base model.",
+          "speakDefault": "Speak default is Edge TTS with per-language male/female voice selection.",
+          "englishVoice": "English voice options are intentionally limited to US and UK variants.",
+          "elevenlabsVoices": "ElevenLabs custom voices (cloned/generated) will appear automatically when your API key is configured."
         }
       },
-      "hotkeyUpdated": "ホットキーを更新しました。",
-      "hotkeyRemoved": "ホットキーを削除しました。",
-      "hotkeyDuplicate": "このホットキーは他の SuperCmd コマンドですでに使用されています。",
-      "hotkeyUnavailable": "ホットキーを使用できません。macOS または他のアプリで使用されている可能性があります。"
+      "hotkeyUpdated": "Hotkey updated.",
+      "hotkeyRemoved": "Hotkey removed.",
+      "hotkeyDuplicate": "Hotkey already used by another SuperCmd command.",
+      "hotkeyUnavailable": "Hotkey unavailable. It may be used by macOS or another app."
     },
     "extensions": {
-      "title": "拡張機能",
-      "loading": "拡張機能設定を読み込み中...",
+      "title": "Extensions",
+      "loading": "Loading extension settings...",
       "builtIn": {
         "superCmd": {
           "title": "SuperCmd",
-          "description": "組み込みの SuperCmd コマンド"
+          "description": "Built-in SuperCmd commands"
         },
         "scriptCommands": {
-          "title": "スクリプトコマンド",
-          "description": "カスタムおよび Raycast 互換のスクリプトコマンド"
+          "title": "Script Commands",
+          "description": "Custom and Raycast-compatible script commands"
         },
         "applications": {
-          "title": "アプリケーション",
-          "description": "起動とホットキーに対応したインストール済み macOS アプリ"
+          "title": "Applications",
+          "description": "Installed macOS applications with launch and hotkey support"
         },
         "systemSettings": {
-          "title": "システム設定",
-          "description": "起動とホットキーに対応した macOS 設定ペイン",
-          "pane": "システム設定ペイン"
+          "title": "System Settings",
+          "description": "macOS settings panes with launch and hotkey support",
+          "pane": "System Settings pane"
         }
       },
       "search": {
-        "placeholder": "検索...",
-        "all": "すべて",
-        "commands": "コマンド",
-        "statusAll": "すべて",
-        "enabled": "有効",
-        "disabled": "無効"
+        "placeholder": "Search...",
+        "all": "All",
+        "commands": "Commands",
+        "statusAll": "All",
+        "enabled": "Enabled",
+        "disabled": "Disabled"
       },
       "install": {
-        "button": "拡張機能をインストール",
-        "fromStore": "ストアからインストール",
-        "addFolder": "フォルダを追加",
-        "customScript": "カスタムスクリプト"
+        "button": "Install Extension",
+        "fromStore": "Install from Store",
+        "addFolder": "Add Folder",
+        "customScript": "Custom Script"
       },
       "customFolders": {
-        "title": "カスタムフォルダ",
-        "empty": "拡張機能をインストールからフォルダを追加してください",
-        "remove": "削除"
+        "title": "Custom Folders",
+        "empty": "Add Folder from Install Extension",
+        "remove": "Remove"
       },
-      "installExtension": "拡張機能をインストール",
-      "installFromStore": "ストアからインストール",
-      "addFolder": "フォルダを追加",
-      "customScript": "カスタムスクリプト",
+      "installExtension": "Install Extension",
+      "installFromStore": "Install from Store",
+      "addFolder": "Add Folder",
+      "customScript": "Custom Script",
       "columns": {
-        "name": "名前",
-        "type": "種類",
-        "alias": "エイリアス",
-        "hotkey": "ホットキー",
-        "enabled": "有効"
+        "name": "Name",
+        "type": "Type",
+        "alias": "Alias",
+        "hotkey": "Hotkey",
+        "enabled": "Enabled"
       },
       "types": {
-        "builtIn": "組み込み",
-        "apps": "アプリ",
-        "settings": "設定",
-        "scripts": "スクリプト",
-        "extension": "拡張機能",
-        "application": "アプリケーション",
-        "command": "コマンド",
-        "menuBarCommand": "メニューバーコマンド",
-        "quickLink": "クイックリンク"
+        "builtIn": "Built-in",
+        "apps": "Apps",
+        "settings": "Settings",
+        "scripts": "Scripts",
+        "extension": "Extension",
+        "application": "Application",
+        "command": "Command",
+        "menuBarCommand": "Menu Bar Command",
+        "quickLink": "Quick Link"
       },
       "alias": {
-        "add": "エイリアスを追加",
-        "placeholder": "エイリアスを追加",
-        "edit": "エイリアスを編集"
+        "add": "Add Alias",
+        "placeholder": "Add Alias",
+        "edit": "Edit alias"
       },
       "hotkey": {
-        "record": "ホットキーを記録",
-        "duplicateWithCommand": "このホットキーは「{name}」ですでに使用されています。"
+        "record": "Record Hotkey",
+        "duplicateWithCommand": "Hotkey already used by \"{name}\"."
       },
       "preferences": {
-        "selectOption": "オプションを選択"
+        "selectOption": "Select an option"
       },
-      "noResults": "一致する拡張機能がありません",
-      "selectExtension": "拡張機能を選択",
-      "extensionPreferences": "拡張機能の環境設定",
-      "commandPreferences": "コマンドの環境設定",
-      "noPreferences": "環境設定がありません",
+      "noResults": "No matching extensions",
+      "selectExtension": "Select an extension",
+      "extensionPreferences": "Extension Preferences",
+      "commandPreferences": "Command Preferences",
+      "noPreferences": "No preferences",
       "clipboardBlacklist": {
-        "title": "無視するアプリケーション",
-        "description": "以下のアプリがフロントモストのときにコピーされた内容は、SuperCmd のクリップボード履歴に保存されません。",
-        "add": "アプリを追加",
-        "remove": "削除",
-        "empty": "ブロックされたアプリはありません。すべてのアプリからのコピーがクリップボード履歴に保存されます。",
-        "searchPlaceholder": "アプリを検索…",
-        "loading": "アプリを読み込み中…",
-        "noApps": "アプリが見つかりません"
+        "title": "Ignored Applications",
+        "description": "Clipboard content copied while one of these apps is frontmost will not be saved to SuperCmd's clipboard history.",
+        "add": "Add Application",
+        "remove": "Remove",
+        "empty": "No applications blacklisted. Copies from every app are saved to clipboard history.",
+        "searchPlaceholder": "Search applications…",
+        "loading": "Loading applications…",
+        "noApps": "No applications found"
       },
-      "enabled": "有効",
-      "logout": "ログアウト",
-      "loggedIn": "{name} にログイン中",
+      "enabled": "Enabled",
+      "logout": "Logout",
+      "loggedIn": "Logged into {name}",
       "uninstall": {
-        "title": "「{name}」をアンインストールしますか？",
-        "description": "この拡張機能とそのコマンドが SuperCmd から削除されます。",
-        "cancel": "キャンセル",
-        "confirm": "アンインストール",
-        "uninstalling": "アンインストール中...",
-        "success": "「{name}」をアンインストールしました。",
-        "failed": "「{name}」のアンインストールに失敗しました。"
+        "title": "Uninstall \"{name}\"?",
+        "description": "This extension and its commands will be removed from SuperCmd.",
+        "cancel": "Cancel",
+        "confirm": "Uninstall",
+        "uninstalling": "Uninstalling...",
+        "success": "Uninstalled \"{name}\".",
+        "failed": "Failed to uninstall \"{name}\"."
       },
       "folder": {
-        "added": "拡張機能フォルダを追加しました。",
-        "removed": "拡張機能フォルダを削除しました。",
-        "failed": "拡張機能フォルダの{action}に失敗しました。",
-        "duplicate": "フォルダはすでに追加されています。"
+        "added": "Extension folder added.",
+        "removed": "Extension folder removed.",
+        "failed": "Failed to {action} extension folder.",
+        "duplicate": "Folder already added."
       },
       "scripts": {
-        "opened": "サンプルスクリプト付きのカスタムスクリプトフォルダを開きました。",
-        "openedExisting": "カスタムスクリプトフォルダを開きました。",
-        "failed": "カスタムスクリプトフォルダを開けませんでした。"
+        "opened": "Opened custom scripts folder with sample script.",
+        "openedExisting": "Opened custom scripts folder.",
+        "failed": "Failed to open custom scripts folder."
       },
       "emojiPicker": {
-        "enabled": "絵文字ピッカーを有効にする",
-        "enabledDesc": "トリガー文字に続けて名前を入力すると絵文字候補を表示します。",
-        "triggerPrefix": "トリガー文字",
-        "triggerPrefixDesc": "絵文字検索を開始する文字（例: :fire）。",
-        "triggerPrefixPlaceholder": "例: :",
+        "enabled": "Enable Emoji Picker",
+        "enabledDesc": "Show emoji suggestions when typing a trigger prefix followed by a name.",
+        "triggerPrefix": "Trigger Prefix",
+        "triggerPrefixDesc": "Character that starts an emoji search. Type this followed by a name (e.g. :fire).",
+        "triggerPrefixPlaceholder": "e.g. :",
         "excludedApps": {
-          "title": "除外するアプリ",
-          "description": "これらのアプリがアクティブな間は絵文字ピッカーを表示しません。独自のピッカーを持つアプリ（Slack、Telegram など）に便利です。",
-          "add": "アプリを追加",
-          "remove": "削除",
-          "empty": "除外されているアプリはありません。すべてのアプリでピッカーが起動します。",
-          "searchPlaceholder": "アプリを検索…",
-          "loading": "アプリを読み込み中…",
-          "noApps": "アプリが見つかりません"
+          "title": "Excluded Applications",
+          "description": "The emoji picker will not appear when these apps are active. Useful for apps that have their own emoji picker (Slack, Telegram…).",
+          "add": "Add Application",
+          "remove": "Remove",
+          "empty": "No applications excluded. The picker triggers in every app.",
+          "searchPlaceholder": "Search applications…",
+          "loading": "Loading applications…",
+          "noApps": "No applications found"
         }
       }
     },
     "advanced": {
-      "title": "詳細",
-      "loading": "詳細設定を読み込み中...",
+      "title": "Advanced",
+      "loading": "Loading advanced settings...",
       "settingsFolder": {
-        "title": "設定フォルダ",
-        "description": "iCloud Drive、Dropbox、または任意のフォルダを使って Mac 間で設定と拡張機能を同期します。",
-        "defaultLabel": "デフォルトの場所",
-        "chooseButton": "フォルダを選択…",
-        "changeButton": "フォルダを変更…",
-        "resetButton": "デフォルトに戻す",
+        "title": "Settings Folder",
+        "description": "Sync settings and extensions across Macs via iCloud Drive, Dropbox, or any folder.",
+        "defaultLabel": "Default location",
+        "chooseButton": "Choose Folder…",
+        "changeButton": "Change Folder…",
+        "resetButton": "Reset to Default",
         "conflict": {
-          "title": "このフォルダには既に設定があります",
-          "body": "{folder} には既に settings.json があります。どちらのバージョンを使いますか？",
-          "useExisting": "既存の設定を使う",
-          "useExistingHint": "この Mac の設定を同期されたコピーで置き換えます。",
-          "replace": "現在の設定で置き換え",
-          "replaceHint": "この Mac の設定で同期されたコピーを上書きします。",
-          "cancel": "キャンセル"
+          "title": "Settings already exist in this folder",
+          "body": "There's already a settings.json in {folder}. Which version would you like to use?",
+          "useExisting": "Use Existing Settings",
+          "useExistingHint": "Replace this Mac's settings with the synced copy.",
+          "replace": "Replace With Current Settings",
+          "replaceHint": "Overwrite the synced copy with this Mac's settings.",
+          "cancel": "Cancel"
         },
         "resetConfirm": {
-          "title": "設定をデフォルトの場所に戻しますか？",
-          "body": "設定はこの Mac にのみ保存されます。選択したフォルダ内の同期コピーは削除されません。",
-          "confirm": "デフォルトに戻す",
-          "cancel": "キャンセル"
+          "title": "Move settings back to default location?",
+          "body": "Your settings will be stored on this Mac only. The synced copy in your chosen folder won't be deleted.",
+          "confirm": "Reset to Default",
+          "cancel": "Cancel"
         },
         "status": {
-          "moved": "設定フォルダを更新しました。",
-          "adopted": "同期された設定を採用しました。",
-          "reset": "設定をデフォルトの場所に戻しました。",
-          "failed": "設定フォルダを更新できませんでした。"
+          "moved": "Settings folder updated.",
+          "adopted": "Synced settings adopted.",
+          "reset": "Settings moved back to default location.",
+          "failed": "Could not update settings folder."
         }
       },
       "disableFileSearch": {
-        "title": "ファイルとフォルダ検索を無効化",
-        "description": "メインランチャー検索からファイルとフォルダの結果を非表示にします。",
-        "label": "ファイルとフォルダの検索結果を無効化"
+        "title": "Disable File & Folder Search",
+        "description": "Hide file and folder results from the main launcher search.",
+        "label": "Disable file and folder search results"
       },
       "navigationStyle": {
-        "title": "ナビゲーションスタイル",
-        "description": "ランチャー内で上下左右に移動するためのキーボードショートカットを選択します。",
+        "title": "Navigation Style",
+        "description": "Choose the keyboard shortcuts for navigating up, down, left, and right in the launcher.",
         "option": {
-          "vim": "Vim スタイル (^J, ^K, ^H, ^L)",
-          "macos": "macOS スタイル (^N, ^P, ^B, ^F)"
+          "vim": "Vim Style (^J, ^K, ^H, ^L)",
+          "macos": "macOS Style (^N, ^P, ^B, ^F)"
         }
       },
       "popToRootSearch": {
-        "title": "ルート検索に戻る",
-        "description": "SuperCmd を再度開いたとき、この遅延後にルート検索に戻ります。それ以外は、前に開いていた拡張機能やビューがそのまま表示されます。",
+        "title": "Pop to Root Search",
+        "description": "When you reopen SuperCmd, return to the root search after this delay. Otherwise, the previous extension or view stays open.",
         "option": {
-          "immediately": "すぐに",
-          "5s": "5 秒後",
-          "15s": "15 秒後",
-          "30s": "30 秒後",
-          "60s": "60 秒後",
-          "90s": "90 秒後",
-          "120s": "120 秒後"
+          "immediately": "Immediately",
+          "5s": "After 5 seconds",
+          "15s": "After 15 seconds",
+          "30s": "After 30 seconds",
+          "60s": "After 60 seconds",
+          "90s": "After 90 seconds",
+          "120s": "After 120 seconds"
         }
       },
       "clipboardRetention": {
-        "title": "クリップボード履歴の保持期間",
-        "description": "選択した期間より古いクリップボードの項目を自動的に削除します。固定された項目は常に保持されます。",
+        "title": "Clipboard History Retention",
+        "description": "Auto-delete clipboard entries older than the selected duration. Pinned entries are always kept.",
         "option": {
-          "1day": "1日",
-          "7days": "7日",
-          "1month": "1か月",
-          "3months": "3か月",
-          "6months": "6か月",
-          "1year": "1年",
-          "never": "削除しない"
+          "1day": "1 day",
+          "7days": "7 days",
+          "1month": "1 month",
+          "3months": "3 months",
+          "6months": "6 months",
+          "1year": "1 year",
+          "never": "Never"
         }
       },
       "debugMode": {
-        "title": "デバッグモード",
-        "description": "拡張機能の読み込みやビルドに失敗したときに詳細なログを表示します。",
-        "label": "デバッグモードを有効にする"
+        "title": "Debug Mode",
+        "description": "Show detailed logs when extensions fail to load or build.",
+        "label": "Enable debug mode"
       },
       "browserSearch": {
-        "title": "ブラウザプロファイル",
-        "description": "ブラウザプロファイルを接続し、SuperCmd がローカル履歴を使用して継続的に更新できるようにします。",
-        "enableLabel": "SuperCmd でブラウザプロファイルを使用",
+        "title": "Browser Profiles",
+        "description": "Connect browser profiles so SuperCmd can use their local history and keep it refreshed.",
+        "enableLabel": "Use browser profiles in SuperCmd",
         "retention": {
-          "label": "履歴の保持期間",
+          "label": "History retention",
           "option": {
-            "7d": "7 日",
-            "30d": "30 日",
-            "90d": "90 日",
-            "180d": "180 日",
-            "365d": "1 年",
-            "forever": "無期限"
+            "7d": "7 days",
+            "30d": "30 days",
+            "90d": "90 days",
+            "180d": "180 days",
+            "365d": "1 year",
+            "forever": "Forever"
           }
         },
-        "clearButton": "ブラウザプロファイル履歴を消去",
-        "importLabel": "検出されたブラウザプロファイル",
+        "clearButton": "Clear browser profile history",
+        "importLabel": "Detected browser profiles",
         "import": {
-          "action": "プロファイルを追加",
-          "add": "プロファイルを追加",
-          "refresh": "更新",
-          "remove": "削除",
-          "running": "更新中…",
-          "availableHeading": "利用可能なプロファイル",
-          "addedHeading": "追加済みプロファイル",
-          "noneFound": "対応するブラウザプロファイルが見つかりません",
-          "noneAdded": "ブラウザプロファイルはまだ追加されていません",
-          "profileRowDetail": "履歴: {historyCount} URL · ブックマーク: {bookmarkCount} · タブ: 未インポート",
-          "profileSupportNote": "プロファイル対応は現在 Chromium ブラウザのみです。Safari と Firefox は今後対応予定です。",
-          "enabledProfiles": "SuperCmd のブラウザ履歴で {count} 個のプロファイルが有効です。"
+          "action": "Add profile",
+          "add": "Add Profile",
+          "refresh": "Refresh",
+          "remove": "Remove",
+          "running": "Refreshing…",
+          "availableHeading": "Available profiles",
+          "addedHeading": "Added profiles",
+          "noneFound": "No supported browser profiles detected",
+          "noneAdded": "No browser profiles added yet",
+          "profileRowDetail": "History: {historyCount} URLs · Bookmarks: {bookmarkCount} · Tabs: not imported yet",
+          "profileSupportNote": "Profile support currently includes Chromium browsers only. Safari and Firefox support will be added later.",
+          "enabledProfiles": "{count} profile(s) enabled for SuperCmd browser history."
         },
         "importedData": {
-          "heading": "インポート済みデータ",
-          "total": "履歴 URL {count} 件",
-          "notImported": "未インポート",
+          "heading": "Imported data",
+          "total": "{count} history URLs",
+          "notImported": "Not imported yet",
           "history": {
-            "title": "履歴",
-            "description": "追加済み Chromium プロファイルの訪問済み HTTP(S) ページ。",
-            "count": "{count} URL"
+            "title": "History",
+            "description": "Visited HTTP(S) pages from added Chromium profiles.",
+            "count": "{count} URLs"
           },
           "tabs": {
-            "title": "開いているタブ",
-            "description": "ライブタブのスナップショットは予定されていますが、このインポートにはまだ含まれていません。"
+            "title": "Open tabs",
+            "description": "Live tab snapshots are planned, but not part of this import yet."
           },
           "bookmarks": {
-            "title": "ブックマーク",
-            "description": "ブックマークのインポートは予定されていますが、このインポートにはまだ含まれていません。"
+            "title": "Bookmarks",
+            "description": "Bookmark import is planned, but not part of this import yet."
           }
         },
         "status": {
-          "cleared": "ブラウザプロファイル履歴を消去しました。",
-          "imported": "{total} 件中 {count} 件を更新しました。",
-          "failed": "操作に失敗しました。"
+          "cleared": "Browser profile history cleared.",
+          "imported": "Updated {count} of {total} entries.",
+          "failed": "Action failed."
         }
       }
     }
   },
   "launcher": {
-    "searchPlaceholder": "アプリ、コマンドを検索、または AI に質問...",
+    "searchPlaceholder": "Search for apps, commands, or ask AI...",
+    "browserSearch": {
+      "openUrl": "Open {url}",
+      "searchFor": "Search \"{query}\"",
+      "subtitle": {
+        "openUrl": "Default browser",
+        "search": "Web search"
+      }
+    },
     "compact": {
-      "showMore": "もっと見る"
+      "showMore": "Show More"
     },
     "status": {
-      "discoveringApps": "アプリを検出中...",
-      "noMatchingResults": "一致する結果がありません",
-      "results": "{count} 件の結果"
+      "discoveringApps": "Discovering apps...",
+      "noMatchingResults": "No matching results",
+      "results": "{count} results"
     },
     "aiMode": {
-      "placeholder": "AI に何でも聞いてください...",
-      "ask": "質問",
-      "thinking": "考え中...",
-      "streaming": "ストリーミング中...",
-      "response": "AI の応答",
-      "enterToAsk": "質問",
-      "escToBack": "戻る"
+      "placeholder": "Ask AI anything...",
+      "ask": "Ask",
+      "thinking": "Thinking...",
+      "streaming": "Streaming...",
+      "response": "AI Response",
+      "enterToAsk": "Ask",
+      "escToBack": "Back"
     },
     "categories": {
-      "recent": "最近",
-      "applications": "アプリケーション",
-      "commands": "コマンド",
-      "extensions": "拡張機能",
-      "scripts": "スクリプト",
-      "settings": "設定",
-      "files": "ファイル",
-      "calculator": "電卓",
-      "quickLinks": "クイックリンク"
+      "recent": "Recent",
+      "applications": "Applications",
+      "commands": "Commands",
+      "extensions": "Extensions",
+      "scripts": "Scripts",
+      "settings": "Settings",
+      "files": "Files",
+      "calculator": "Calculator",
+      "quickLinks": "Quick Links"
     },
     "actions": {
-      "open": "開く",
-      "openCommand": "コマンドを開く",
-      "openFile": "ファイルを開く",
-      "execute": "実行",
-      "run": "実行",
-      "copy": "コピー",
-      "copyPath": "パスをコピー",
-      "copyDeeplink": "ディープリンクをコピー",
-      "copyToClipboard": "クリップボードにコピー",
-      "paste": "ペースト",
-      "showDetails": "詳細を表示",
-      "showInFinder": "Finder で表示",
-      "revealInFinder": "Finder で開く",
-      "getInfo": "情報を取得",
-      "quit": "アプリケーションを終了",
-      "forceQuit": "アプリケーションを強制終了",
-      "quitApp": "{appName}を終了",
-      "forceQuitApp": "{appName}を強制終了",
-      "failedQuitting": "{appName}の終了に失敗しました",
-      "forceQuitConfirm": "\"{appName}\"を強制終了しますか？保存されていない変更は失われます。",
-      "hide": "隠す",
-      "show": "表示",
-      "preferences": "環境設定",
-      "actions": "アクション",
-      "pinCommand": "コマンドをピン留め",
-      "unpinCommand": "コマンドのピンを外す",
-      "pinExtension": "拡張機能をピン留め",
-      "unpinExtension": "拡張機能のピンを外す",
-      "disableCommand": "コマンドを無効にする",
-      "moveUp": "上へ移動",
-      "moveDown": "下へ移動",
-      "uninstallApplication": "アプリケーションをアンインストール",
-      "enableAutoQuit": "自動終了を有効化",
-      "disableAutoQuit": "自動終了を無効化",
-      "disableApplication": "アプリケーションを無効にする"
+      "open": "Open",
+      "openCommand": "Open Command",
+      "openFile": "Open File",
+      "execute": "Execute",
+      "run": "Run",
+      "copy": "Copy",
+      "copyPath": "Copy Path",
+      "copyDeeplink": "Copy Deeplink",
+      "copyToClipboard": "Copy to Clipboard",
+      "paste": "Paste",
+      "showDetails": "Show Details",
+      "showInFinder": "Show in Finder",
+      "revealInFinder": "Reveal in Finder",
+      "getInfo": "Get Info",
+      "quit": "Quit Application",
+      "forceQuit": "Force Quit Application",
+      "quitApp": "Quit {appName}",
+      "forceQuitApp": "Force quit {appName}",
+      "failedQuitting": "Failed quitting {appName}",
+      "forceQuitConfirm": "Force quit \"{appName}\"? Unsaved changes will be lost.",
+      "hide": "Hide",
+      "show": "Show",
+      "preferences": "Preferences",
+      "actions": "Actions",
+      "pinCommand": "Pin Command",
+      "unpinCommand": "Unpin Command",
+      "pinExtension": "Pin Extension",
+      "unpinExtension": "Unpin Extension",
+      "disableCommand": "Disable Command",
+      "moveUp": "Move Up",
+      "moveDown": "Move Down",
+      "uninstallApplication": "Uninstall Application",
+      "enableAutoQuit": "Enable Auto Quit",
+      "disableAutoQuit": "Disable Auto Quit",
+      "disableApplication": "Disable Application"
     },
     "empty": {
-      "noResults": "結果が見つかりませんでした",
-      "startTyping": "検索するには入力してください...",
-      "allCommands": "すべてのコマンドがここに表示されます"
+      "noResults": "No results found",
+      "startTyping": "Start typing to search...",
+      "allCommands": "All your commands will appear here"
     },
     "footer": {
-      "actions": "アクション",
-      "select": "選択",
-      "back": "戻る"
+      "actions": "Actions",
+      "select": "Select",
+      "back": "Back"
     },
     "sections": {
-      "selectedText": "選択されたテキスト",
-      "pinned": "ピン留め済み",
-      "results": "結果"
+      "selectedText": "Selected Text",
+      "pinned": "Pinned",
+      "results": "Results"
     },
     "calculator": {
-      "pressEnterToCopy": "Enter でコピー",
-      "clickToCopy": "クリックしてコピー",
-      "copy": "コピー"
+      "pressEnterToCopy": "Press Enter to copy",
+      "clickToCopy": "Click to copy",
+      "copy": "Copy"
     },
     "badges": {
-      "application": "アプリケーション",
-      "extension": "拡張機能",
-      "script": "スクリプト",
-      "settings": "設定",
-      "quickLink": "クイックリンク"
-    },
-    "browserSearch": {
-      "openUrl": "{url} を開く",
-      "searchFor": "\"{query}\" を検索",
-      "subtitle": {
-        "openUrl": "デフォルトブラウザ",
-        "search": "ウェブ検索"
-      }
+      "application": "Application",
+      "extension": "Extension",
+      "script": "Script",
+      "settings": "Settings",
+      "quickLink": "Quick Link"
     }
   },
   "scriptCommand": {
     "setup": {
-      "title": "スクリプトコマンドを設定",
-      "description": "実行前に必須の引数を入力してください。",
-      "continue": "続ける"
+      "title": "Configure Script Command",
+      "description": "Provide required arguments before running.",
+      "continue": "Continue"
     },
     "output": {
-      "success": "成功",
-      "exitCode": "終了コード {code}",
-      "noOutput": "（出力なし）"
+      "success": "Success",
+      "exitCode": "Exit {code}",
+      "noOutput": "(No output)"
     }
   },
   "extension": {
     "setup": {
-      "title": "{name} を設定",
-      "description": "このコマンドを実行する前に必要な設定を追加してください。",
-      "arguments": "引数",
-      "preferences": "環境設定",
-      "continue": "続ける",
-      "selectOption": "オプションを選択"
+      "title": "Configure {name}",
+      "description": "Add required settings before running this command.",
+      "arguments": "Arguments",
+      "preferences": "Preferences",
+      "continue": "Continue",
+      "selectOption": "Select an option"
     }
   },
   "cursorPrompt": {
-    "placeholder": "選択されたテキストで AI に何をさせるか教えてください...",
-    "processing": "処理中...",
-    "ready": "適用の準備ができました",
-    "applied": "エディタに適用しました",
-    "close": "閉じる",
-    "accept": "適用",
-    "submit": "送信",
+    "placeholder": "Tell AI what to do with selected text...",
+    "processing": "Processing...",
+    "ready": "Ready to apply",
+    "applied": "Applied in editor",
+    "close": "Close",
+    "accept": "Accept",
+    "submit": "Submit",
     "enterToSubmit": "Enter"
   },
   "store": {
-    "title": "ストア",
-    "community": "コミュニティ",
-    "searchPlaceholder": "拡張機能を検索...",
-    "installedFirst": "インストール済みの拡張機能が最初に表示されます。",
-    "refresh": "更新",
-    "loading": "拡張機能カタログを読み込み中...",
-    "noResults": "検索に一致する拡張機能はありません",
-    "noExtensions": "利用可能な拡張機能がありません",
-    "tryAgain": "より短いクエリや別のキーワード、拡張機能名の一部などのあいまい検索を試してください。",
-    "refreshCatalog": "カタログを更新するか、しばらくしてから再試行してください。",
-    "clearSearch": "検索をクリア",
-    "refreshButton": "カタログを更新",
-    "installed": "インストール済み",
-    "install": "拡張機能をインストール",
-    "update": "拡張機能をアップデート",
-    "uninstall": "拡張機能をアンインストール",
-    "openReadme": "README を開く",
-    "viewSource": "ソースを表示",
-    "installing": "拡張機能をインストール中",
-    "installedSuccess": "拡張機能をインストールしました",
-    "installFailed": "インストールに失敗しました",
+    "title": "Store",
+    "community": "Community",
+    "searchPlaceholder": "Search extensions...",
+    "installedFirst": "Installed extensions appear first.",
+    "refresh": "Refresh",
+    "loading": "Loading extension catalog...",
+    "noResults": "No extensions match your search",
+    "noExtensions": "No extensions available",
+    "tryAgain": "Try a shorter query, another keyword, or a fuzzy match like part of the extension name.",
+    "refreshCatalog": "Refresh the catalog or try again in a moment.",
+    "clearSearch": "Clear Search",
+    "refreshButton": "Refresh Catalog",
+    "installed": "Installed",
+    "install": "Install Extension",
+    "update": "Update Extension",
+    "uninstall": "Uninstall Extension",
+    "openReadme": "Open README",
+    "viewSource": "View Source",
+    "installing": "Installing Extension",
+    "installedSuccess": "Extension Installed",
+    "installFailed": "Install Failed",
     "tabs": {
-      "overview": "概要",
-      "commands": "コマンド",
-      "screenshots": "スクリーンショット",
-      "team": "チーム"
+      "overview": "Overview",
+      "commands": "Commands",
+      "screenshots": "Screenshots",
+      "team": "Team"
     },
     "sections": {
-      "description": "説明",
-      "screenshots": "スクリーンショット",
-      "topCommands": "主要コマンド",
-      "categories": "カテゴリ",
-      "noDescription": "説明がありません。",
-      "noScreenshots": "スクリーンショットが宣言されていません。",
-      "noScreenshotsAvailable": "この拡張機能にはスクリーンショットがありません。",
-      "noCommands": "コマンドが宣言されていません。",
-      "moreCommands": "+{count} 件のコマンド",
-      "noContributors": "貢献者が宣言されていません。"
+      "description": "Description",
+      "screenshots": "Screenshots",
+      "topCommands": "Top Commands",
+      "categories": "Categories",
+      "noDescription": "No description provided.",
+      "noScreenshots": "No screenshots declared.",
+      "noScreenshotsAvailable": "No screenshots available for this extension.",
+      "noCommands": "No commands declared.",
+      "moreCommands": "+{count} more commands",
+      "noContributors": "No contributors declared."
     },
     "actions": {
-      "title": "アクション"
+      "title": "Actions"
     },
     "errorBoundary": {
-      "title": "拡張機能ストアの読み込み中にエラーが発生しました。",
-      "retry": "再試行"
+      "title": "Something went wrong loading the extension store.",
+      "retry": "Try Again"
     }
   },
   "canvas": {
-    "searchPlaceholder": "キャンバスを検索...",
-    "untitled": "無題のキャンバス",
-    "modified": "更新日時",
-    "count": "{count} 個のキャンバス{plural}",
+    "searchPlaceholder": "Search canvases...",
+    "untitled": "Untitled Canvas",
+    "modified": "Modified",
+    "count": "{count} canvas{plural}",
     "time": {
-      "justNow": "たった今"
+      "justNow": "Just now"
     },
     "actions": {
-      "new": "新しいキャンバス",
-      "open": "キャンバスを開く",
-      "rename": "名前を変更",
-      "duplicate": "複製",
-      "copyDeeplink": "ディープリンクをコピー",
-      "exportJson": "JSON としてエクスポート",
-      "pin": "ピン留め",
-      "unpin": "ピンを外す",
-      "delete": "キャンバスを削除"
+      "new": "New Canvas",
+      "open": "Open Canvas",
+      "rename": "Rename",
+      "duplicate": "Duplicate",
+      "copyDeeplink": "Copy Deeplink",
+      "exportJson": "Export as JSON",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "delete": "Delete Canvas"
     },
     "empty": {
-      "title": "キャンバスがまだありません",
-      "description": "最初のキャンバスを作成してはじめましょう",
-      "noSearchResults": "キャンバスが見つかりません",
-      "shortcutHint": "または ⌘N を押してください"
+      "title": "No canvases yet",
+      "description": "Create your first canvas to get started",
+      "noSearchResults": "No canvases found",
+      "shortcutHint": "or press ⌘N"
     },
     "preview": {
-      "empty": "プレビューはまだありません — キャンバスを保存して生成してください",
-      "selectPrompt": "プレビューするキャンバスを選択してください"
+      "empty": "No preview yet — save the canvas to generate one",
+      "selectPrompt": "Select a canvas to preview"
     },
     "rename": {
-      "title": "キャンバスの名前を変更",
-      "placeholder": "キャンバス名..."
+      "title": "Rename Canvas",
+      "placeholder": "Canvas name..."
     },
     "delete": {
-      "title": "「{title}」を削除しますか？",
-      "description": "この操作は元に戻せません。"
+      "title": "Delete \"{title}\"?",
+      "description": "This action cannot be undone."
     }
   },
   "clipboard": {
-    "title": "クリップボード履歴",
-    "empty": "クリップボードは空です",
-    "clear": "履歴をクリア",
-    "pin": "ピン留め",
-    "unpin": "ピンを外す",
-    "delete": "削除",
-    "copy": "コピー",
-    "paste": "ペースト",
-    "searchPlaceholder": "クリップボード履歴を検索..."
+    "title": "Clipboard History",
+    "empty": "Clipboard is empty",
+    "clear": "Clear History",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "delete": "Delete",
+    "copy": "Copy",
+    "paste": "Paste",
+    "searchPlaceholder": "Search clipboard history..."
   },
   "snippets": {
-    "title": "スニペット",
-    "empty": "スニペットがまだありません",
-    "create": "スニペットを作成",
-    "edit": "スニペットを編集",
-    "delete": "スニペットを削除",
-    "searchPlaceholder": "スニペットを検索...",
-    "name": "名前",
-    "content": "内容",
-    "keyword": "キーワード",
-    "save": "スニペットを保存"
+    "title": "Snippets",
+    "empty": "No snippets yet",
+    "create": "Create Snippet",
+    "edit": "Edit Snippet",
+    "delete": "Delete Snippet",
+    "searchPlaceholder": "Search snippets...",
+    "name": "Name",
+    "content": "Content",
+    "keyword": "Keyword",
+    "save": "Save Snippet"
   },
   "quickLinks": {
-    "title": "クイックリンク",
-    "empty": "クイックリンクがまだありません",
-    "create": "クイックリンクを作成",
-    "edit": "クイックリンクを編集",
-    "delete": "クイックリンクを削除",
-    "confirmDelete": "もう一度クリックして確認",
-    "searchPlaceholder": "クイックリンクを検索...",
-    "name": "名前",
+    "title": "Quick Links",
+    "empty": "No quick links yet",
+    "create": "Create Quick Link",
+    "edit": "Edit Quick Link",
+    "delete": "Delete Quick Link",
+    "confirmDelete": "Click again to confirm",
+    "searchPlaceholder": "Search quick links...",
+    "name": "Name",
     "url": "URL",
-    "urlHint": "{placeholder} を使ってクリップボードや引数などの動的な値を追加できます。",
-    "openWith": "開くアプリ",
-    "defaultBrowser": "デフォルトブラウザ",
-    "icon": "アイコン",
-    "save": "クイックリンクを保存",
-    "saved": "保存しました",
-    "saveFailed": "クイックリンクの保存に失敗しました。",
-    "deleteFailed": "クイックリンクの削除に失敗しました。",
-    "notFound": "クイックリンクが見つかりません。",
-    "nameRequired": "名前を入力してください。",
-    "urlRequired": "URLを入力してください。"
+    "urlHint": "Use {placeholder} to add dynamic values like clipboard or arguments.",
+    "openWith": "Open With",
+    "defaultBrowser": "Default Browser",
+    "icon": "Icon",
+    "save": "Save Quick Link",
+    "saved": "Saved",
+    "saveFailed": "Failed to save quick link.",
+    "deleteFailed": "Failed to delete quick link.",
+    "notFound": "Quick link not found.",
+    "nameRequired": "Name is required.",
+    "urlRequired": "URL is required."
   },
   "appUninstall": {
-    "title": "{appName} をアンインストール",
-    "filesCount": "{count} ファイル",
-    "uninstallButton": "アプリケーションをアンインストール",
-    "scanning": "関連ファイルを検索中...",
-    "noRemnants": "関連ファイルが見つかりません",
-    "confirmMessage": "{count} 個のファイル ({size}) をゴミ箱に移動しますか？",
-    "filterPlaceholder": "ファイルとフォルダを名前でフィルター...",
-    "sortByPath": "パスで並べ替え",
-    "sortBySize": "サイズで並べ替え",
-    "markKeep": "ファイルを保持",
-    "markRemove": "ファイルを削除対象にする",
-    "actions": "アクション",
-    "showInfo": "Finderで情報を表示",
-    "trashErrors": "一部のファイルをゴミ箱に移動できませんでした：\n{errors}",
-    "uninstallSuccess": "{appName} をアンインストールしました",
-    "uninstallError": "{appName} のアンインストールに失敗しました"
+    "title": "Uninstall {appName}",
+    "filesCount": "{count} Files",
+    "uninstallButton": "Uninstall Application",
+    "scanning": "Scanning for related files...",
+    "noRemnants": "No related files found",
+    "confirmMessage": "Move {count} files ({size}) to Trash?",
+    "filterPlaceholder": "Filter files and folders by name...",
+    "sortByPath": "Sort by Path",
+    "sortBySize": "Sort by Size",
+    "markKeep": "Mark File to Keep",
+    "markRemove": "Mark File to Remove",
+    "actions": "Actions",
+    "showInfo": "Show Info in Finder",
+    "trashErrors": "Some files could not be moved to Trash:\n{errors}",
+    "uninstallSuccess": "{appName} has been uninstalled",
+    "uninstallError": "Failed to uninstall {appName}"
   },
   "fileSearch": {
-    "placeholder": "ファイルを検索...",
-    "noResults": "ファイルが見つかりません",
-    "searching": "検索中...",
-    "filters": "フィルタ",
-    "type": "種類",
-    "date": "日付",
-    "size": "サイズ"
+    "placeholder": "Search files...",
+    "noResults": "No files found",
+    "searching": "Searching...",
+    "filters": "Filters",
+    "type": "Type",
+    "date": "Date",
+    "size": "Size"
   },
   "windowManager": {
-    "title": "ウィンドウ管理",
-    "arrange": "ウィンドウを整列",
-    "resize": "サイズ変更",
-    "move": "移動",
-    "focus": "フォーカス",
-    "close": "ウィンドウを閉じる",
-    "minimize": "最小化",
-    "maximize": "最大化",
-    "fullscreen": "フルスクリーン",
-    "center": "中央",
-    "leftHalf": "左半分",
-    "rightHalf": "右半分",
-    "topHalf": "上半分",
-    "bottomHalf": "下半分",
-    "corners": "コーナー",
-    "displays": "ディスプレイ",
-    "nextDisplay": "次のディスプレイ",
-    "previousDisplay": "前のディスプレイ"
+    "title": "Window Management",
+    "arrange": "Arrange Windows",
+    "resize": "Resize",
+    "move": "Move",
+    "focus": "Focus",
+    "close": "Close Window",
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "fullscreen": "Fullscreen",
+    "center": "Center",
+    "leftHalf": "Left Half",
+    "rightHalf": "Right Half",
+    "topHalf": "Top Half",
+    "bottomHalf": "Bottom Half",
+    "corners": "Corners",
+    "displays": "Displays",
+    "nextDisplay": "Next Display",
+    "previousDisplay": "Previous Display"
   },
   "onboarding": {
-    "welcome": "SuperCmd へようこそ",
-    "description": "macOS 向けの生産性ランチャー",
-    "getStarted": "はじめる",
-    "skip": "スキップ",
-    "next": "次へ",
-    "previous": "前へ",
-    "finish": "完了",
+    "welcome": "Welcome to SuperCmd",
+    "description": "Your productivity launcher for macOS",
+    "getStarted": "Get Started",
+    "skip": "Skip",
+    "next": "Next",
+    "previous": "Previous",
+    "finish": "Finish",
     "features": {
       "launcher": {
-        "title": "クイックランチャー",
-        "description": "一つのショートカットでアプリを起動、コマンドを実行、ファイルを検索できます。"
+        "title": "Quick Launcher",
+        "description": "Launch apps, run commands, and search files with a single shortcut."
       },
       "extensions": {
-        "title": "拡張機能",
-        "description": "Raycast 互換の拡張機能をインストールして、ワークフローを強化できます。"
+        "title": "Extensions",
+        "description": "Install and use Raycast-compatible extensions to supercharge your workflow."
       },
       "ai": {
-        "title": "AI 連携",
-        "description": "AI とチャット、音声認識を使い、文章の作成や編集を AI にサポートしてもらえます。"
+        "title": "AI Integration",
+        "description": "Chat with AI, use speech-to-text, and let AI help you write and edit."
       }
     },
     "whisper": {
       "quick": {
-        "title": "Whisper クイックオンボーディング",
-        "subtitle": "押したまま録音、離して入力",
+        "title": "Whisper Quick Onboarding",
+        "subtitle": "Hold to record, release to type",
         "instructions": {
-          "before": "押し続けてください ",
-          "after": " を押しながら話してください。離すと処理され、現在のカーソル位置に入力されます。"
+          "before": "Press and hold ",
+          "after": " while speaking. Release it to process and type at your current cursor."
         },
-        "practiceTitle": "練習用段落",
-        "practicePlaceholder": "今日はロードマップをレビューし、今週の上位 3 つのタスクに優先順位をつけました。短いサマリーを作成し、昼食前にチームに共有してください。",
-        "practiceHint": "このエディタで練習してください: ホットキーを押したまま、この 2 文を読み、離して出力を確認してください。",
-        "footerHint": "Whisper はアクティブ時に下部付近に表示されます。"
+        "practiceTitle": "Practice paragraph",
+        "practicePlaceholder": "Today I reviewed the roadmap and prioritized the top three tasks for this week. Please draft a short summary and share it with the team before lunch.",
+        "practiceHint": "Practice in this editor: hold hotkey, speak these two sentences, release, and verify the output.",
+        "footerHint": "Whisper stays near the bottom when active."
       }
     },
     "voice": {
       "steps": {
-        "welcome": "ようこそ",
-        "coreFeatures": "主要機能",
-        "hotkeySetup": "ホットキー設定",
-        "permissions": "権限",
-        "dictationMode": "ディクテーションモード",
-        "readMode": "読み上げモード",
-        "finalCheck": "最終確認"
+        "welcome": "Welcome",
+        "coreFeatures": "Core Features",
+        "hotkeySetup": "Hotkey Setup",
+        "permissions": "Permissions",
+        "dictationMode": "Dictation Mode",
+        "readMode": "Read Mode",
+        "finalCheck": "Final Check"
       },
       "featureCards": {
         "whisper": {
           "title": "Whisper",
-          "description": "押したまま話し、離すと入力されます。"
+          "description": "Hold to speak and release to type."
         },
         "read": {
           "title": "Read",
-          "description": "選択したテキストを自然な音声で読み上げます。"
+          "description": "Read selected text with natural voice."
         }
       },
       "permissions": {
-        "inputMonitoringTitle": "入力監視",
-        "inputMonitoringDescription": "Whisper モードでの Fn 押しっぱなし検出およびその他のグローバルキー監視に必要です。",
-        "speechRecognitionTitle": "音声認識",
-        "speechRecognitionDescription": "任意。Whisper を Apple 音声認識のフォールバックに切り替える場合のみ必要です。",
-        "microphoneTitle": "マイク",
-        "microphoneDescription": "SuperCmd Whisper ディクテーションに必要です。"
+        "inputMonitoringTitle": "Input Monitoring",
+        "inputMonitoringDescription": "Required for Fn hold-to-talk detection and other global key monitoring in Whisper mode.",
+        "speechRecognitionTitle": "Speech Recognition",
+        "speechRecognitionDescription": "Optional. Needed only if you switch Whisper to the Apple Speech Recognition fallback.",
+        "microphoneTitle": "Microphone",
+        "microphoneDescription": "Required for SuperCmd Whisper Dictation."
       },
       "permissionNotes": {
-        "blocked": "{target} アクセスがブロックされています。システム設定で SuperCmd を有効にしてから戻ってきてください。",
-        "promptFailed": "権限プロンプトを表示できませんでした。システム設定 -> プライバシーとセキュリティを開き、SuperCmd を有効にしてから再度リクエストを押してください。",
-        "notShown": "権限プロンプトが表示されませんでした。Whisper を一度開いて、これを再度押してください。",
-        "homeFolder": "プロンプトが表示されたらホームフォルダを選択し、必要に応じてファイルとフォルダの下で SuperCmd を有効にしてください。",
-        "inputMonitoring": "入力監視で左下の「+」をクリックし、アプリケーションフォルダから SuperCmd を追加してください。"
+        "blocked": "{target} access is blocked. Enable SuperCmd in System Settings, then return.",
+        "promptFailed": "Could not trigger the permission prompt. Open System Settings -> Privacy & Security, enable SuperCmd, then press request again.",
+        "notShown": "Permission prompt did not appear. Open Whisper once and press this again.",
+        "homeFolder": "Select your Home folder when prompted, then enable SuperCmd under Files and Folders if needed.",
+        "inputMonitoring": "In Input Monitoring, click \"+\" at the bottom left and add SuperCmd from your Applications folder."
       },
       "dictation": {
-        "title": "ディクテーションモード",
-        "howToTest": "テスト方法",
-        "howToTestHint": "キーを押したままサンプルを読み上げ、離して挿入します。",
-        "holdKeyUpdated": "押しっぱなしキーを更新しました",
-        "language": "ディクテーション言語",
-        "sampleTitle": "メッセージサンプル",
-        "sampleHint": "キーを押したまま、上のメッセージを読んでください:",
-        "placeholder": "ディクテーションされたテキストがここに表示されます...",
-        "footerHint": "SuperCmd Whisper はデフォルトでローカルの ggml base モデルを使用します。Apple 音声認識は設定からフォールバックとして利用できます。",
+        "title": "Dictation Mode",
+        "howToTest": "How to test",
+        "howToTestHint": "Hold key, read sample, release to insert.",
+        "holdKeyUpdated": "Hold key updated",
+        "language": "Dictation language",
+        "sampleTitle": "Messages sample",
+        "sampleHint": "Hold your key and read the message above:",
+        "placeholder": "Dictated text appears here...",
+        "footerHint": "SuperCmd Whisper uses a local ggml base model by default. Apple Speech Recognition remains available as a fallback in Settings.",
         "models": {
-          "downloadFailed": "モデルのダウンロードに失敗しました。今すぐ再試行するか、設定 -> AI -> SuperCmd Whisper を使用してください。",
+          "downloadFailed": "Model download failed. Retry now or use Settings -> AI -> SuperCmd Whisper.",
           "actions": {
-            "downloaded": "ダウンロード済み",
-            "downloading": "ダウンロード中...",
-            "download": "モデルをダウンロード"
+            "downloaded": "Downloaded",
+            "downloading": "Downloading...",
+            "download": "Download Model"
           },
           "parakeet": {
             "title": "Parakeet TDT v3",
-            "ready": "ダウンロードが完了しました。Parakeet v3 ディクテーションの準備が整いました。",
-            "downloadingLead": "モデルをダウンロード中、少しお待ちください。",
-            "downloading": "Parakeet v3 CoreML モデルをダウンロード中",
-            "notDownloaded": "SuperCmd はこのステップで Parakeet v3 モデルのダウンロードを開始し、初回使用前にディクテーションの準備が整います。"
+            "ready": "Download complete. Parakeet v3 dictation is ready.",
+            "downloadingLead": "Downloading models, just a moment.",
+            "downloading": "Downloading Parakeet v3 CoreML models",
+            "notDownloaded": "SuperCmd starts downloading Parakeet v3 models on this step so dictation is ready before first use."
           },
           "whispercpp": {
             "title": "SuperCmd Whisper",
-            "ready": "ダウンロードが完了しました。SuperCmd Whisper ディクテーションの準備が整いました。",
-            "downloadingLead": "モデルをダウンロード中、少しお待ちください。",
-            "downloading": "約 300 MB の ggml base モデルをダウンロード中",
-            "notDownloaded": "SuperCmd はこのステップで SuperCmd Whisper モデルのダウンロードを開始し、初回使用前にディクテーションの準備が整います。"
+            "ready": "Download complete. SuperCmd Whisper dictation is ready.",
+            "downloadingLead": "Downloading model, just a moment.",
+            "downloading": "Downloading the ~300 MB ggml base model",
+            "notDownloaded": "SuperCmd starts downloading the SuperCmd Whisper model on this step so dictation is ready before first use."
           },
           "cloud": {
-            "title": "クラウド文字起こし",
-            "description": "クラウドベースの文字起こしを使用しています。モデルのダウンロードは不要です。"
+            "title": "Cloud Transcription",
+            "description": "Using cloud-based transcription. No model download needed."
           }
         },
-        "sampleText": "それは最良の時代であり、最悪の時代であった。知恵の時代であり、愚かさの時代であった。"
+        "sampleText": "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness."
       },
       "read": {
-        "badge": "古典文学",
-        "readTime": "1 分で読める",
-        "articleTitle": "高慢と偏見",
+        "badge": "Classic Literature",
+        "readTime": "1 min read",
+        "articleTitle": "Pride and Prejudice",
         "instructions": {
-          "before": "上のテキストを選択して",
-          "after": "を押すと読み上げが聞けます。"
+          "before": "Select the text above then press",
+          "after": "to hear it read aloud."
         },
-        "sampleText": "ボイスファーストインターフェースは今まさに注目されています。長年ギミックとして見なされてきた後、追いつく文字起こし、スマートな修正、既存のワークフローに違和感なく組み込めるショートカットキーにより、話すほうが入力よりも実際に速くなる新しいツールが登場しています。"
+        "sampleText": "Voice-first interfaces are having a moment. After years of being dismissed as gimmicks, a new wave of tools is making it genuinely faster to speak than type - with transcription that keeps up, smart corrections, and shortcut keys that slot into existing workflows without disruption."
       },
       "final": {
-        "title": "最終ステップ: どこからでも SuperCmd を起動",
-        "description": "今すぐグローバルショートカットを押して、任意のアプリから SuperCmd を起動してください。",
-        "nextStep": "次のステップ: SuperCmd 設定 -> 拡張機能から AI Prompt と Memory のホットキーを設定して、どこでも AI を使い始めましょう。"
+        "title": "Final step: start SuperCmd from anywhere",
+        "description": "Press your global shortcut now to start SuperCmd from any app.",
+        "nextStep": "Next step: Setup Hotkeys for AI Prompt and Memory from SuperCmd Settings -> Extensions to start using AI anywhere."
       },
-      "setupDescription": "ランチャーのホットキー、プライバシー権限、Whisper モードを一度に設定します。",
-      "setupSummary": "Whisper ディクテーションと Read モードの練習",
+      "setupDescription": "We will configure launcher hotkeys, privacy permissions, and whisper mode in one pass.",
+      "setupSummary": "Whisper dictation and Read mode practice",
       "summary": {
-        "title": "今すぐ設定される内容:",
-        "hotkey": "1. ランチャーのホットキー",
-        "permissions": "2. アクセシビリティ、入力監視、音声認識、マイク"
+        "title": "What gets configured now:",
+        "hotkey": "1. Launcher hotkey",
+        "permissions": "2. Accessibility, Input Monitoring, Speech Recognition, Microphone"
       },
-      "setupTitle": "起動、質問、ディクテーション、読み上げのための統一されたコマンドサーフェス。"
+      "setupTitle": "One command surface for launch, ask, dictate, and read."
     }
   },
   "whisper": {
     "title": "SuperCmd Whisper",
-    "description": "シンプルに使える音声認識",
-    "start": "発話を開始",
-    "stop": "発話を停止",
-    "listening": "聞いています...",
-    "processing": "処理中...",
-    "placeholder": "話してください...",
-    "close": "Whisper を閉じる",
+    "description": "Speech-to-text made simple",
+    "start": "Start Speaking",
+    "stop": "Stop Speaking",
+    "listening": "Listening...",
+    "processing": "Processing...",
+    "placeholder": "Speak now...",
+    "close": "Close whisper",
     "coachmark": {
-      "holdToTalk": "Whisper はここにあります。{shortcut} を押したままにすると話せ、離すと入力されます。",
-      "warmingUp": "初回セットアップ - モデルをウォームアップ中..."
+      "holdToTalk": "Whisper sits here. Hold {shortcut} to talk, release to type.",
+      "warmingUp": "First-time setup - Warming up models..."
     },
     "status": {
-      "idle": "開始を押して話し始めてください。",
-      "apiError": "Whisper API エラーが発生しました。",
-      "nativeFallback": "Whisper モデルは Apple 音声認識です。開始を押して Apple フォールバックを使用してください。",
-      "transcriptionFailedLocal": "SuperCmd Whisper の文字起こしに失敗しました。",
-      "transcriptionFailed": "Whisper の文字起こしに失敗しました。",
-      "microphonePermissionRequired": "マイクの権限が必要です。",
-      "microphonePermissionCheckFailed": "マイクの権限確認に失敗しました。",
-      "microphoneAccessDenied": "マイクへのアクセスが拒否されました。",
-      "startingMicrophone": "マイクを開始中...",
-      "loadingModels": "Whisper モデルを読み込み中...",
-      "nativeRecognizerStartFailed": "音声認識の開始に失敗しました。",
-      "finishing": "文字起こしを完了中...",
-      "listeningReleaseToProcess": "聞いています。離すと処理されます。",
-      "listeningPressAgainToFinish": "聞いています。もう一度押すと終了します。",
-      "recordingFailed": "録音に失敗しました。",
-      "speechRecognitionError": "音声認識エラーが発生しました。"
+      "idle": "Press start to begin speaking.",
+      "apiError": "Whisper API error.",
+      "nativeFallback": "Whisper model is Apple Speech Recognition. Press start to use the Apple fallback.",
+      "transcriptionFailedLocal": "SuperCmd Whisper transcription failed.",
+      "transcriptionFailed": "Whisper transcription failed.",
+      "microphonePermissionRequired": "Microphone permission required.",
+      "microphonePermissionCheckFailed": "Microphone permission check failed.",
+      "microphoneAccessDenied": "Microphone access denied.",
+      "startingMicrophone": "Starting microphone...",
+      "loadingModels": "Loading Whisper models...",
+      "nativeRecognizerStartFailed": "Speech recognition failed to start.",
+      "finishing": "Finishing transcription...",
+      "listeningReleaseToProcess": "Listening. Release to process.",
+      "listeningPressAgainToFinish": "Listening. Press again to finish.",
+      "recordingFailed": "Recording failed.",
+      "speechRecognitionError": "Speech recognition error."
     },
     "errors": {
-      "typeIntoActiveApp": "アクティブなアプリに入力できませんでした。",
-      "enableMicrophonePermission": "システム設定 -> プライバシーとセキュリティ -> マイクで SuperCmd を有効にしてから再試行してください。",
-      "allowMicrophonePermission": "SuperCmd Whisper を使用するには、マイクの権限を許可してください。",
-      "microphoneUnavailable": "マイクにアクセスできませんでした。システム設定 -> プライバシーとセキュリティ -> マイクを確認してください。",
-      "nativeRecognizerStartFailed": "ネイティブ音声認識の開始に失敗しました。",
-      "liveTypingRetry": "ライブタイピングが遅れました。もう一度お試しください。",
-      "modelNotReady": "モデルはまだウォームアップ中です。しばらくしてからもう一度お試しください。",
-      "recordingFailed": "音声録音を開始できませんでした。"
+      "typeIntoActiveApp": "Could not type into the active app.",
+      "enableMicrophonePermission": "Enable SuperCmd in System Settings -> Privacy & Security -> Microphone, then retry.",
+      "allowMicrophonePermission": "Allow microphone permission to use SuperCmd Whisper.",
+      "microphoneUnavailable": "Could not access microphone. Check System Settings -> Privacy & Security -> Microphone.",
+      "nativeRecognizerStartFailed": "Failed to start native speech recognizer.",
+      "liveTypingRetry": "Live typing fell behind. Try again.",
+      "modelNotReady": "Model is still warming up. Try again in a moment.",
+      "recordingFailed": "Could not start audio recording."
     }
   },
   "read": {
     "title": "SuperCmd Read",
-    "description": "選択されたテキストのテキスト読み上げ",
-    "start": "読み上げを開始",
-    "stop": "読み上げを停止",
-    "reading": "読み上げ中...",
-    "noText": "テキストが選択されていません"
+    "description": "Text-to-speech for any selected text",
+    "start": "Start Reading",
+    "stop": "Stop Reading",
+    "reading": "Reading...",
+    "noText": "No text selected"
   },
   "camera": {
-    "title": "カメラ",
-    "capture": "撮影",
-    "flip": "カメラを反転",
-    "mirror": "ミラー",
-    "settings": "カメラ設定"
+    "title": "Camera",
+    "capture": "Capture",
+    "flip": "Flip Camera",
+    "mirror": "Mirror",
+    "settings": "Camera Settings"
   },
   "schedule": {
-    "title": "タイトル",
-    "newEvent": "新しいイベント",
-    "editEvent": "イベントを編集",
-    "deleteEvent": "イベントを削除",
-    "date": "日付",
-    "time": "時刻",
-    "duration": "期間",
-    "reminder": "リマインダー",
-    "save": "イベントを保存"
+    "title": "Title",
+    "newEvent": "New Event",
+    "editEvent": "Edit Event",
+    "deleteEvent": "Delete Event",
+    "date": "Date",
+    "time": "Time",
+    "duration": "Duration",
+    "reminder": "Reminder",
+    "save": "Save Event"
   }
 }

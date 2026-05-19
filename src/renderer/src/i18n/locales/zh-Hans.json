@@ -1,1279 +1,1281 @@
 {
   "common": {
-    "actions": "操作",
-    "loading": "加载中...",
-    "noResults": "没有结果",
-    "search": "搜索...",
-    "save": "保存",
-    "saving": "保存中...",
-    "cancel": "取消",
-    "close": "关闭",
-    "continue": "继续",
-    "back": "返回",
-    "remove": "移除",
-    "add": "添加",
-    "edit": "编辑",
-    "delete": "删除",
-    "enable": "启用",
-    "disable": "禁用",
-    "enabled": "已启用",
-    "disabled": "已禁用",
-    "success": "成功",
-    "error": "错误",
-    "warning": "警告",
-    "info": "信息",
-    "copy": "复制",
-    "paste": "粘贴",
-    "cut": "剪切",
-    "selectAll": "全选",
-    "undo": "撤销",
-    "redo": "重做",
-    "refresh": "刷新",
-    "reload": "重新加载",
-    "apply": "应用",
-    "reset": "重置",
-    "clear": "清除",
-    "done": "完成",
-    "ok": "确定",
-    "yes": "是",
-    "no": "否",
-    "submit": "提交",
-    "browse": "浏览",
-    "choose": "选择",
-    "change": "更换",
-    "update": "更新",
-    "install": "安装",
-    "uninstall": "卸载",
-    "download": "下载",
-    "upload": "上传",
-    "import": "导入",
-    "export": "导出",
-    "open": "打开",
-    "create": "创建",
-    "new": "新建",
-    "unknown": "未知",
-    "none": "无",
-    "default": "默认",
-    "custom": "自定义",
-    "other": "其他",
-    "all": "全部",
-    "required": "必填",
-    "optional": "可选",
-    "preferences": "偏好设置",
-    "settings": "设置",
-    "general": "通用",
-    "advanced": "高级",
-    "about": "关于",
-    "version": "版本",
-    "language": "语言",
-    "appearance": "外观",
-    "theme": "主题",
-    "light": "浅色",
-    "dark": "深色",
-    "system": "系统",
-    "auto": "自动"
+    "actions": "Actions",
+    "loading": "Loading...",
+    "noResults": "No results",
+    "search": "Search...",
+    "save": "Save",
+    "saving": "Saving...",
+    "cancel": "Cancel",
+    "close": "Close",
+    "continue": "Continue",
+    "back": "Back",
+    "remove": "Remove",
+    "add": "Add",
+    "edit": "Edit",
+    "delete": "Delete",
+    "enable": "Enable",
+    "disable": "Disable",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "success": "Success",
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Info",
+    "copy": "Copy",
+    "paste": "Paste",
+    "cut": "Cut",
+    "selectAll": "Select All",
+    "undo": "Undo",
+    "redo": "Redo",
+    "refresh": "Refresh",
+    "reload": "Reload",
+    "apply": "Apply",
+    "reset": "Reset",
+    "clear": "Clear",
+    "done": "Done",
+    "ok": "OK",
+    "yes": "Yes",
+    "no": "No",
+    "submit": "Submit",
+    "browse": "Browse",
+    "choose": "Choose",
+    "change": "Change",
+    "update": "Update",
+    "install": "Install",
+    "uninstall": "Uninstall",
+    "download": "Download",
+    "upload": "Upload",
+    "import": "Import",
+    "export": "Export",
+    "open": "Open",
+    "create": "Create",
+    "new": "New",
+    "unknown": "Unknown",
+    "none": "None",
+    "default": "Default",
+    "custom": "Custom",
+    "other": "Other",
+    "all": "All",
+    "required": "Required",
+    "optional": "Optional",
+    "preferences": "Preferences",
+    "settings": "Settings",
+    "general": "General",
+    "advanced": "Advanced",
+    "about": "About",
+    "version": "Version",
+    "language": "Language",
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "auto": "Auto"
   },
   "settings": {
-    "title": "SuperCmd 设置",
+    "title": "SuperCmd Settings",
     "tabs": {
-      "general": "通用",
+      "general": "General",
       "ai": "AI",
-      "extensions": "扩展",
-      "advanced": "高级"
+      "extensions": "Extensions",
+      "advanced": "Advanced"
     },
     "general": {
-      "title": "通用",
-      "loading": "正在加载设置...",
+      "title": "General",
+      "loading": "Loading settings...",
       "launcherShortcut": {
-        "title": "启动器快捷键",
-        "description": "设置打开和关闭 SuperCmd 的全局快捷键。",
-        "updated": "快捷键已更新",
-        "failed": "设置失败，快捷键可能已被其他应用占用。"
+        "title": "Launcher Shortcut",
+        "description": "Set the global shortcut to open and close SuperCmd.",
+        "updated": "Shortcut updated",
+        "failed": "Failed. Shortcut may be used by another app."
       },
       "startAtLogin": {
-        "title": "登录时启动",
-        "description": "在你登录系统时自动启动 SuperCmd。",
-        "enabled": "已开启",
-        "disabled": "已关闭"
+        "title": "Start at Login",
+        "description": "Automatically launch SuperCmd when you log in.",
+        "enabled": "Enabled",
+        "disabled": "Disabled"
       },
       "language": {
-        "title": "语言",
-        "description": "选择界面语言，或跟随系统语言。",
-        "system": "跟随系统",
-        "en": "英语",
-        "zh-Hans": "简体中文",
-        "zh-Hant": "繁體中文",
-        "ja": "日本語",
-        "ko": "한국어",
-        "fr": "Français",
-        "de": "Deutsch",
-        "es": "Español",
-        "ru": "俄语",
-        "it": "意大利语"
+        "title": "Language",
+        "description": "Choose the display language or follow the system locale.",
+        "system": "Follow System",
+        "en": "English",
+        "zh-Hans": "Simplified Chinese",
+        "zh-Hant": "Traditional Chinese",
+        "ja": "Japanese",
+        "ko": "Korean",
+        "fr": "French",
+        "de": "German",
+        "es": "Spanish",
+        "ru": "Russian",
+        "it": "Italian"
       },
       "fontSize": {
-        "title": "字体大小",
-        "description": "调整整个应用的文字大小。",
-        "extra-small": "特小",
-        "small": "小",
-        "medium": "中",
-        "large": "大",
-        "extra-large": "特大"
+        "title": "Font Size",
+        "description": "Scale text size across the app.",
+        "extra-small": "Extra Small",
+        "small": "Small",
+        "medium": "Medium",
+        "large": "Large",
+        "extra-large": "Extra Large"
       },
       "appearance": {
-        "title": "外观",
-        "description": "选择浅色、深色，或跟随系统外观。",
-        "light": "浅色",
-        "system": "系统",
-        "dark": "深色"
+        "title": "Appearance",
+        "description": "Choose Light, Dark, or follow your system preference.",
+        "light": "Light",
+        "system": "System",
+        "dark": "Dark"
       },
       "visualStyle": {
-        "title": "视觉风格",
-        "description": "使用默认风格，或启用更接近 macOS Tahoe 风格的玻璃态界面。",
-        "default": "默认",
-        "glassy": "玻璃态"
-      },
-      "background": {
-        "title": "启动器背景图",
-        "description": "在启动器后面显示一张低透明度、轻微模糊的背景图，让它更像氛围提示而不是完整壁纸。",
-        "empty": "尚未选择图片，启动器会继续使用当前背景。",
-        "choose": "选择图片",
-        "change": "更换图片",
-        "remove": "移除",
-        "appearance": "显示效果",
-        "summary": "模糊 {blur}% · 不透明度 {opacity}%",
-        "blur": "模糊",
-        "opacity": "不透明度",
-        "useEverywhere": "在扩展视图和核心启动器视图中也使用这张图片"
-      },
-      "updates": {
-        "title": "应用更新",
-        "description": "检查并安装打包版本的应用更新。",
-        "defaultMessage": "检查并安装打包版本的应用更新。",
-        "unsupported": "只有打包后的应用版本才支持更新。",
-        "checking": "正在检查更新...",
-        "available": "发现可用更新 v{version}。",
-        "notAvailable": "你已经是最新版本。",
-        "downloading": "正在下载更新...",
-        "downloaded": "更新已下载，重启后即可安装。",
-        "error": "无法完成更新操作。",
-        "check": "检查更新",
-        "download": "下载更新",
-        "downloadingButton": "正在下载更新...",
-        "restart": "重启并更新",
-        "currentVersion": "当前版本：v{version}",
-        "latestVersion": "最新版本：v{version}",
-        "progress": "{progress}% · {transferred} / {total}",
-        "failed": "更新失败。"
-      },
-      "about": {
-        "title": "关于",
-        "description": "版本信息。",
-        "version": "SuperCmd v{version}"
+        "title": "Visual Style",
+        "description": "Use Default look or enable a glassy macOS Tahoe-inspired style.",
+        "default": "Default",
+        "glassy": "Glassy"
       },
       "launcherMode": {
-        "title": "启动器模式",
-        "description": "选择打开启动器时的显示方式。",
-        "expanded": "展开",
-        "compact": "紧凑"
+        "title": "Launcher Mode",
+        "description": "Choose how the launcher appears when opened.",
+        "expanded": "Expanded",
+        "compact": "Compact"
+      },
+      "background": {
+        "title": "Launcher Background Image",
+        "description": "Show a softly blurred, low-opacity image behind the launcher so it reads like a hint, not a full wallpaper.",
+        "empty": "No image selected. The launcher will keep using its current background.",
+        "choose": "Choose Image",
+        "change": "Change Image",
+        "remove": "Remove",
+        "appearance": "Appearance",
+        "summary": "Blur {blur}% · Opacity {opacity}%",
+        "blur": "Blur",
+        "opacity": "Opacity",
+        "useEverywhere": "Use this image in extension and core launcher views too"
+      },
+      "updates": {
+        "title": "App Updates",
+        "description": "Check for and install packaged-app updates.",
+        "defaultMessage": "Check for and install packaged-app updates.",
+        "unsupported": "Updates are only available in packaged builds.",
+        "checking": "Checking for updates...",
+        "available": "Update v{version} is available.",
+        "notAvailable": "You are already on the latest version.",
+        "downloading": "Downloading update...",
+        "downloaded": "Update downloaded. Restart to install.",
+        "restarting": "Restarting to install update...",
+        "error": "Could not complete the update action.",
+        "check": "Check for Updates",
+        "download": "Download Update",
+        "downloadingButton": "Downloading Update...",
+        "restart": "Update and Restart",
+        "restartingButton": "Restarting...",
+        "currentVersion": "Current version: v{version}",
+        "latestVersion": "Latest: v{version}",
+        "progress": "{progress}% · {transferred} / {total}",
+        "failed": "Update failed."
+      },
+      "about": {
+        "title": "About",
+        "description": "Version information.",
+        "version": "SuperCmd v{version}"
       },
       "autoQuit": {
-        "title": "自动退出",
-        "timeout": "默认超时",
-        "description": "启用自动退出的应用将在此时间段不活动后退出",
-        "minute": "分钟",
-        "minutes": "分钟"
+        "title": "Auto Quit",
+        "timeout": "Default Timeout",
+        "description": "Apps with Auto Quit enabled will quit after this duration of inactivity",
+        "minute": "minute",
+        "minutes": "minutes"
       }
     },
     "ai": {
-      "title": "AI 设置",
-      "loading": "正在加载 AI 设置...",
-      "saved": "已保存",
+      "title": "AI Settings",
+      "loading": "Loading AI settings...",
+      "saved": "Saved",
       "languages": {
-        "arabic": "阿拉伯语",
-        "chineseMandarin": "中文（普通话）",
-        "englishUs": "英语（美国）",
-        "englishUk": "英语（英国）",
-        "frenchCanada": "法语（加拿大）",
-        "frenchFrance": "法语（法国）",
-        "german": "德语",
-        "hindi": "印地语",
-        "italian": "意大利语",
-        "japanese": "日语",
-        "korean": "韩语",
-        "portugueseBrazil": "葡萄牙语（巴西）",
-        "russian": "俄语",
-        "spanishMexico": "西班牙语（墨西哥）",
-        "spanishSpain": "西班牙语（西班牙）"
+        "arabic": "Arabic",
+        "chineseMandarin": "Chinese (Mandarin)",
+        "englishUs": "English (US)",
+        "englishUk": "English (UK)",
+        "frenchCanada": "French (Canada)",
+        "frenchFrance": "French (France)",
+        "german": "German",
+        "hindi": "Hindi",
+        "italian": "Italian",
+        "japanese": "Japanese",
+        "korean": "Korean",
+        "portugueseBrazil": "Portuguese (Brazil)",
+        "russian": "Russian",
+        "spanishMexico": "Spanish (Mexico)",
+        "spanishSpain": "Spanish (Spain)"
       },
       "enableAI": {
-        "title": "启用 AI",
-        "description": "AI 功能的总开关。"
+        "title": "Enable AI",
+        "description": "Master switch for AI features."
       },
       "tabs": {
-        "apiKeys": "API 密钥",
-        "llm": "大语言模型",
-        "whisper": "SuperCmd 语音输入",
-        "speak": "SuperCmd 语音朗读"
+        "apiKeys": "API Keys",
+        "llm": "LLM",
+        "whisper": "SuperCmd Whisper",
+        "speak": "SuperCmd Read"
       },
       "apiKeys": {
         "openai": {
-          "label": "ChatGPT (OpenAI) API 密钥",
+          "label": "ChatGPT (OpenAI) API Key",
           "placeholder": "sk-..."
         },
         "anthropic": {
-          "label": "Claude (Anthropic) API 密钥",
+          "label": "Claude (Anthropic) API Key",
           "placeholder": "sk-ant-..."
         },
         "gemini": {
-          "label": "Gemini (Google) API 密钥",
+          "label": "Gemini (Google) API Key",
           "placeholder": "AIza..."
         },
         "elevenlabs": {
-          "label": "ElevenLabs API 密钥",
+          "label": "ElevenLabs API Key",
           "placeholder": "xi-..."
         },
         "supermemory": {
           "title": "Supermemory",
-          "description": "用于长期上下文记忆的存储后端。",
+          "description": "Memory backend for long-term context.",
           "apiKey": {
-            "label": "Supermemory API 密钥",
+            "label": "Supermemory API Key",
             "placeholder": "sm-..."
           },
           "client": {
-            "label": "Supermemory 客户端",
+            "label": "Supermemory Client",
             "placeholder": "client-123",
-            "hint": "用于限定用户记忆检索的范围。"
+            "hint": "Used to scope user memory retrieval."
           },
           "baseUrl": {
-            "label": "Supermemory 基础 URL",
+            "label": "Supermemory Base URL",
             "placeholder": "https://api.supermemory.ai"
           },
-          "localMode": "使用本地模式（保存在本地）"
+          "localMode": "Use local mode (saved locally)"
         }
       },
       "llm": {
         "enableLLM": {
-          "title": "启用大语言模型",
-          "description": "开启基于模型的 AI 功能。"
+          "title": "Enable LLM",
+          "description": "Toggle model-based AI features."
         },
         "modelSelection": {
-          "title": "通用模型选择",
-          "description": "供扩展和不依赖特定模型的 AI 操作使用。"
+          "title": "Generic Model Selection",
+          "description": "Used by extensions and model-agnostic AI actions."
         },
         "provider": {
-          "label": "提供商",
+          "label": "Provider",
           "openai": "OpenAI",
           "anthropic": "Claude",
           "gemini": "Gemini",
           "ollama": "Ollama",
           "lmStudio": "LM Studio",
-          "openaiCompatible": "自定义 (OpenAI 兼容)"
+          "openaiCompatible": "Custom (OpenAI-compatible)"
         },
         "providerDescriptions": {
-          "openai": "GPT 系列模型",
-          "anthropic": "Anthropic Claude 模型",
-          "gemini": "Google Gemini 模型",
-          "ollama": "本地模型",
-          "openaiCompatible": "任意 OpenAI 兼容 API（OpenRouter、Together 等）",
-          "lmStudio": "通过 LM Studio 使用本地模型"
+          "openai": "GPT family models",
+          "anthropic": "Anthropic Claude models",
+          "gemini": "Google Gemini models",
+          "ollama": "Local models",
+          "lmStudio": "Local models via LM Studio",
+          "openaiCompatible": "Any OpenAI-compatible API (OpenRouter, Together, etc.)"
         },
         "ollama": {
           "serverUrl": {
-            "label": "Ollama 服务器地址",
+            "label": "Ollama Server URL",
             "placeholder": "http://localhost:11434"
           },
-          "models": "Ollama 模型",
-          "refresh": "刷新",
-          "checking": "正在检查 Ollama 状态...",
+          "models": "Ollama Models",
+          "refresh": "Refresh",
+          "checking": "Checking Ollama status...",
           "notRunning": {
-            "title": "Ollama 未运行",
-            "description": "安装并运行 Ollama 以使用本地模型。",
-            "download": "下载 Ollama"
+            "title": "Ollama is not running",
+            "description": "Install and run Ollama to use local models.",
+            "download": "Download Ollama"
           },
-          "running": "Ollama 运行中",
-          "installed": "已安装",
-          "downloadModel": "下载",
-          "removeModel": "移除",
-          "downloading": "正在下载...",
-          "removing": "正在移除...",
-          "startingDownload": "开始下载...",
-          "deleteFailed": "删除模型失败。",
+          "running": "Ollama is running",
+          "installed": "Installed",
+          "downloadModel": "Download",
+          "removeModel": "Remove",
+          "downloading": "Downloading...",
+          "removing": "Removing...",
+          "startingDownload": "Starting download...",
+          "deleteFailed": "Failed to delete model.",
           "curatedDescriptions": {
-            "llama32": "Meta 通用模型（3B）",
-            "llama32_1b": "体积小，速度快",
-            "mistral": "高效通用模型",
-            "codellama": "代码生成与补全",
-            "phi3": "微软小型语言模型",
-            "gemma2": "Google 开源模型（9B）",
-            "qwen25": "阿里巴巴多语言模型（7B）",
-            "deepseekR1": "偏推理能力的模型（7B）"
+            "llama32": "Meta general-purpose (3B)",
+            "llama32_1b": "Small and fast",
+            "mistral": "Efficient general-purpose",
+            "codellama": "Code generation & completion",
+            "phi3": "Microsoft small language model",
+            "gemma2": "Google open model (9B)",
+            "qwen25": "Alibaba multilingual model (7B)",
+            "deepseekR1": "Reasoning-focused model (7B)"
+          }
+        },
+        "lmStudio": {
+          "baseUrl": {
+            "label": "Server URL",
+            "hint": "LM Studio's local server URL (default: http://127.0.0.1:1234/v1)"
+          },
+          "apiKey": {
+            "toggle": "Optional API Key",
+            "placeholder": "Leave empty if not required",
+            "hint": "Only needed if you have configured authentication in LM Studio."
           }
         },
         "openaiCompatible": {
           "baseUrl": {
-            "label": "基础 URL",
+            "label": "Base URL",
             "placeholder": "https://api.openrouter.ai/v1",
-            "hint": "如果你的提供商使用 /v1，请包含它（例如 https://api.openai.com/v1）",
-            "appendV1": "自动在基础 URL 后追加 /v1"
+            "hint": "Include /v1 if your provider uses it (e.g., https://api.openai.com/v1)",
+            "appendV1": "Auto-append /v1 to base URL"
           },
           "apiKey": {
-            "label": "API 密钥",
+            "label": "API Key",
             "placeholder": "sk-..."
           },
           "modelName": {
-            "label": "模型名称",
+            "label": "Model Name",
             "placeholder": "anthropic/claude-3.5-sonnet",
-            "hint": "你的提供商期望的确切模型名称（例如 gpt-4o、meta-llama/llama-3.1-70b-instruct）"
+            "hint": "The exact model name your provider expects (e.g., gpt-4o, meta-llama/llama-3.1-70b-instruct)"
           }
         },
         "defaultModel": {
-          "label": "默认模型",
-          "auto": "自动（提供商默认）"
-        },
-        "lmStudio": {
-          "baseUrl": {
-            "label": "服务器地址",
-            "hint": "LM Studio 本地服务器地址（默认：http://127.0.0.1:1234/v1）"
-          },
-          "apiKey": {
-            "toggle": "可选 API 密钥",
-            "placeholder": "如不需要，请留空",
-            "hint": "仅当您在 LM Studio 中配置了身份验证时才需要。"
-          }
+          "label": "Default Model",
+          "auto": "Auto (provider default)"
         }
       },
       "whisper": {
         "enableWhisper": {
-          "title": "启用 SuperCmd 语音输入",
-          "description": "开启语音转文字功能。"
+          "title": "Enable SuperCmd Whisper",
+          "description": "Toggle speech-to-text features."
         },
-        "title": "SuperCmd 语音输入",
-        "description": "语音转文字和转录文本清理。",
+        "title": "SuperCmd Whisper",
+        "description": "Speech-to-text and transcript cleanup.",
         "model": {
-          "label": "转录模型",
-          "native": "原生（默认）",
-          "openaiGpt4o": "OpenAI GPT-4o 转录",
+          "label": "Transcription Model",
+          "native": "Native (Default)",
+          "openaiGpt4o": "OpenAI GPT-4o Transcribe",
           "openaiWhisper": "OpenAI Whisper-1",
           "elevenlabsScribeV1": "ElevenLabs Scribe v1",
           "elevenlabsScribeV2": "ElevenLabs Scribe v2"
         },
         "modelOptions": {
-          "whispercpp": "SuperCmd Whisper（默认）",
-          "parakeet": "Parakeet v3（最佳且最快，支持 25+ 欧洲语言）",
-          "qwen3": "Qwen3 ASR（支持 30+ 种语言，包括中文、日语、韩语、泰语、越南语、印地语）",
-          "native": "Apple 语音识别",
-          "openaiGpt4o": "OpenAI GPT-4o 转录",
+          "whispercpp": "SuperCmd Whisper (Default)",
+          "parakeet": "Parakeet v3 (Best and fastest, 25+ European languages)",
+          "qwen3": "Qwen3 ASR (30+ languages including Chinese, Japanese, Korean, Thai, Vietnamese, Hindi)",
+          "native": "Apple Speech Recognition",
+          "openaiGpt4o": "OpenAI GPT-4o Transcribe",
           "openaiWhisper": "OpenAI Whisper-1",
           "elevenlabsScribeV1": "ElevenLabs Scribe v1",
           "elevenlabsScribeV2": "ElevenLabs Scribe v2"
         },
-        "openaiWarning": "已选择 OpenAI Whisper。请在 API 密钥中添加 OpenAI API 密钥。",
-        "elevenlabsWarning": "已选择 ElevenLabs 语音转文字。请在 API 密钥中{action} ElevenLabs API 密钥。",
-        "elevenlabsReady": "已选择 ElevenLabs 语音转文字。云端转录将使用你的 ElevenLabs 密钥。",
-        "recognitionLanguage": "识别语言",
+        "openaiWarning": "OpenAI Whisper selected. Add OpenAI API key in API Keys.",
+        "elevenlabsWarning": "ElevenLabs STT selected. {action} ElevenLabs API key in API Keys.",
+        "elevenlabsReady": "ElevenLabs STT selected. Cloud transcription will use your ElevenLabs key.",
+        "recognitionLanguage": "Recognition Language",
         "providerInfo": {
-          "parakeet": "通过 Parakeet TDT v3 在设备离线转录，运行于 Apple Neural Engine。首次使用前需要预热模型，请先下载后再开始听写。",
-          "qwen3": "通过 Qwen3 ASR 在设备离线转录，支持 30+ 种语言，需要 macOS 15+，首次使用前会预热模型。",
-          "whispercpp": "通过 Whisper.cpp 在设备离线转录。请先下载默认 ggml base 模型后再开始听写。",
-          "native": "改用 Apple 语音识别，而不是 SuperCmd Whisper。"
+          "parakeet": "Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Requires model warmup on first use. Download the model below before using dictation.",
+          "qwen3": "Offline on-device transcription via Qwen3 ASR. Supports 30+ languages, requires macOS 15+, and warms up on first use.",
+          "whispercpp": "Offline on-device transcription via Whisper.cpp. Download the default ggml base model below before using dictation.",
+          "native": "Uses Apple Speech Recognition instead of SuperCmd Whisper."
         },
         "hotkeys": {
-          "title": "语音输入快捷键",
-          "startStop": "开始/停止说话",
-          "setToFn": "设为 Fn 键",
-          "fnHint": "使用「设为 Fn 键」恢复默认的按住说话快捷键。",
-          "fnHintBefore": "使用",
-          "fnHintAfter": "可恢复默认的按住说话快捷键。"
+          "title": "Whisper Hotkeys",
+          "startStop": "Start/Stop Speaking",
+          "setToFn": "Set to Fn",
+          "fnHint": "Use Set to Fn to restore the default hold-to-talk key.",
+          "fnHintBefore": "Use",
+          "fnHintAfter": "to restore the default hold-to-talk key."
+        },
+        "autoClose": {
+          "title": "Auto-Close After Dictation",
+          "description": "Automatically close the whisper bar when dictation finishes."
         },
         "smoothOutput": {
-          "title": "平滑输出",
-          "description": "清理填充词和自我纠正。"
+          "title": "Smooth Output",
+          "description": "Clean up filler words and self-corrections."
         },
         "smoothingModel": {
-          "label": "平滑模型",
-          "useDefault": "使用通用默认模型",
-          "hint": "使用你当前提供商的模型。"
+          "label": "Smoothing Model",
+          "useDefault": "Use Generic Default Model",
+          "hint": "Uses your current provider models."
         },
         "downloadCards": {
-          "modelDownloadFailed": "模型下载失败。",
+          "modelDownloadFailed": "Model download failed.",
           "actions": {
-            "downloaded": "模型已下载",
-            "downloading": "下载中...",
-            "download": "下载模型"
+            "downloaded": "Model Downloaded",
+            "downloading": "Downloading...",
+            "download": "Download Model"
           },
           "parakeet": {
             "title": "Parakeet TDT v3",
-            "description": "多语言设备端转录，运行于 Apple Neural Engine。",
-            "ready": "已下载完成，Parakeet v3 已可离线使用。",
-            "downloading": "正在下载 Parakeet v3 模型",
-            "notDownloaded": "模型尚未下载。现在下载后即可使用 Parakeet 听写。"
+            "description": "Multilingual on-device transcription. Runs on Apple Neural Engine.",
+            "ready": "Downloaded. Parakeet v3 is ready to use offline.",
+            "downloading": "Downloading Parakeet v3 models",
+            "notDownloaded": "Model not downloaded yet. Download it now to use Parakeet dictation."
           },
           "qwen3": {
             "title": "Qwen3 ASR",
-            "description": "支持 30 种语言的设备端转录，需要 macOS 15+。",
-            "ready": "已下载完成，Qwen3 ASR 已可离线使用。",
-            "downloading": "正在下载 Qwen3 ASR 模型",
-            "notDownloaded": "模型尚未下载。请下载约 900 MB 的 int8 模型后再使用 Qwen3 听写。"
+            "description": "30-language on-device transcription. Requires macOS 15+.",
+            "ready": "Downloaded. Qwen3 ASR is ready to use offline.",
+            "downloading": "Downloading Qwen3 ASR models",
+            "notDownloaded": "Model not downloaded yet. Download the ~900 MB int8 model to use Qwen3 dictation."
           },
           "whispercpp": {
             "title": "SuperCmd Whisper",
-            "description": "下载一次 ggml base 模型即可启用本地听写。",
-            "ready": "已下载完成，SuperCmd Whisper 已可离线使用。",
-            "downloading": "正在下载 SuperCmd Whisper",
-            "notDownloaded": "模型尚未下载。现在下载后即可使用 SuperCmd Whisper 听写。"
+            "description": "Download the ggml base model once to enable local dictation.",
+            "ready": "Downloaded. SuperCmd Whisper is ready to use offline.",
+            "downloading": "Downloading SuperCmd Whisper",
+            "notDownloaded": "Model not downloaded yet. Download it now to use SuperCmd Whisper dictation."
           }
-        },
-        "autoClose": {
-          "title": "听写后自动关闭",
-          "description": "听写完成后自动关闭 Whisper 条。"
         }
       },
       "speak": {
         "enableRead": {
-          "title": "启用 SuperCmd 语音朗读",
-          "description": "开启文字转语音功能。"
+          "title": "Enable SuperCmd Read",
+          "description": "Toggle text-to-speech features."
         },
-        "title": "SuperCmd 语音朗读",
-        "description": "朗读选中的文字。",
+        "title": "SuperCmd Read",
+        "description": "Read selected text aloud.",
         "provider": {
-          "label": "语音提供商",
-          "edgeTTS": "Edge TTS（默认）",
-          "elevenlabsMultilingual": "ElevenLabs 多语言 v2",
+          "label": "Speech Provider",
+          "edgeTTS": "Edge TTS (Default)",
+          "elevenlabsMultilingual": "ElevenLabs Multilingual v2",
           "elevenlabsFlash": "ElevenLabs Flash v2.5",
           "elevenlabsTurbo": "ElevenLabs Turbo v2.5",
-          "elevenlabsV3": "ElevenLabs v3（Alpha）"
+          "elevenlabsV3": "ElevenLabs v3 (Alpha)"
         },
         "edgeTTS": {
-          "voice": "Edge TTS 语音",
-          "fetching": "正在获取完整语音列表...",
+          "voice": "Edge TTS Voice",
+          "fetching": "Fetching full voice list...",
           "language": {
-            "label": "语言"
+            "label": "Language"
           },
           "gender": {
-            "label": "语音性别",
-            "female": "女声",
-            "male": "男声"
+            "label": "Voice Gender",
+            "female": "Female",
+            "male": "Male"
           },
           "voiceLabel": {
-            "label": "语音"
+            "label": "Voice"
           },
           "playSample": {
-            "idle": "播放示例语音",
-            "playing": "正在播放示例..."
+            "idle": "Play Sample Voice",
+            "playing": "Playing sample..."
           }
         },
         "elevenlabs": {
           "model": {
-            "label": "ElevenLabs 模型"
+            "label": "ElevenLabs Model"
           },
           "voice": {
-            "label": "ElevenLabs 语音",
-            "fetching": "正在获取你的语音...",
-            "fetchFailed": "获取语音列表失败。",
-            "builtIn": "内置语音",
-            "premade": "额外预制语音",
-            "custom": "你的自定义语音（克隆/生成）",
-            "professional": "专业语音克隆",
-            "available": "你的 ElevenLabs 账户中有 {count} 个自定义语音可用"
+            "label": "ElevenLabs Voice",
+            "fetching": "Fetching your voices...",
+            "fetchFailed": "Failed to fetch voices.",
+            "builtIn": "Built-in Voices",
+            "premade": "Additional Premade Voices",
+            "custom": "Your Custom Voices (Cloned/Generated)",
+            "professional": "Professional Voice Clones",
+            "available": "{count} custom voice{plural} available from your ElevenLabs account"
           },
           "playSample": {
-            "idle": "播放示例语音",
-            "playing": "正在播放示例..."
+            "idle": "Play Sample Voice",
+            "playing": "Playing sample..."
           },
-          "storageHint": "SuperCmd 将其存储为 {value}。",
-          "apiKeyWarning": "请在 API 密钥中添加 ElevenLabs API 密钥。"
+          "storageHint": "SuperCmd stores this as {value}.",
+          "apiKeyWarning": "Add ElevenLabs API key in API Keys."
         },
         "notes": {
-          "title": "说明",
-          "whisperDefault": "语音输入默认使用 SuperCmd Whisper 和本地 ggml base 模型。",
-          "speakDefault": "语音朗读默认使用 Edge TTS，支持按语言选择男女声。",
-          "englishVoice": "英语语音选项故意限制为美国和英国变体。",
-          "elevenlabsVoices": "配置 API 密钥后，ElevenLabs 自定义语音（克隆/生成）将自动显示。"
+          "title": "Notes",
+          "whisperDefault": "Whisper default is SuperCmd Whisper with a local ggml base model.",
+          "speakDefault": "Speak default is Edge TTS with per-language male/female voice selection.",
+          "englishVoice": "English voice options are intentionally limited to US and UK variants.",
+          "elevenlabsVoices": "ElevenLabs custom voices (cloned/generated) will appear automatically when your API key is configured."
         }
       },
-      "hotkeyUpdated": "快捷键已更新。",
-      "hotkeyRemoved": "快捷键已移除。",
-      "hotkeyDuplicate": "快捷键已被其他 SuperCmd 命令使用。",
-      "hotkeyUnavailable": "快捷键不可用。它可能已被 macOS 或其他应用占用。"
+      "hotkeyUpdated": "Hotkey updated.",
+      "hotkeyRemoved": "Hotkey removed.",
+      "hotkeyDuplicate": "Hotkey already used by another SuperCmd command.",
+      "hotkeyUnavailable": "Hotkey unavailable. It may be used by macOS or another app."
     },
     "extensions": {
-      "title": "扩展",
-      "loading": "正在加载扩展设置...",
+      "title": "Extensions",
+      "loading": "Loading extension settings...",
       "builtIn": {
         "superCmd": {
           "title": "SuperCmd",
-          "description": "SuperCmd 内置命令"
+          "description": "Built-in SuperCmd commands"
         },
         "scriptCommands": {
-          "title": "脚本命令",
-          "description": "自定义和 Raycast 兼容的脚本命令"
+          "title": "Script Commands",
+          "description": "Custom and Raycast-compatible script commands"
         },
         "applications": {
-          "title": "应用程序",
-          "description": "已安装的 macOS 应用程序，支持启动和快捷键"
+          "title": "Applications",
+          "description": "Installed macOS applications with launch and hotkey support"
         },
         "systemSettings": {
-          "title": "系统设置",
-          "description": "macOS 设置面板，支持启动和快捷键",
-          "pane": "系统设置面板"
+          "title": "System Settings",
+          "description": "macOS settings panes with launch and hotkey support",
+          "pane": "System Settings pane"
         }
       },
       "search": {
-        "placeholder": "搜索...",
-        "all": "全部",
-        "commands": "命令",
-        "statusAll": "全部",
-        "enabled": "已启用",
-        "disabled": "已禁用"
+        "placeholder": "Search...",
+        "all": "All",
+        "commands": "Commands",
+        "statusAll": "All",
+        "enabled": "Enabled",
+        "disabled": "Disabled"
       },
       "install": {
-        "button": "安装扩展",
-        "fromStore": "从商店安装",
-        "addFolder": "添加文件夹",
-        "customScript": "自定义脚本"
+        "button": "Install Extension",
+        "fromStore": "Install from Store",
+        "addFolder": "Add Folder",
+        "customScript": "Custom Script"
       },
       "customFolders": {
-        "title": "自定义文件夹",
-        "empty": "从安装扩展中添加文件夹",
-        "remove": "移除"
+        "title": "Custom Folders",
+        "empty": "Add Folder from Install Extension",
+        "remove": "Remove"
       },
-      "installExtension": "安装扩展",
-      "installFromStore": "从商店安装",
-      "addFolder": "添加文件夹",
-      "customScript": "自定义脚本",
+      "installExtension": "Install Extension",
+      "installFromStore": "Install from Store",
+      "addFolder": "Add Folder",
+      "customScript": "Custom Script",
       "columns": {
-        "name": "名称",
-        "type": "类型",
-        "alias": "别名",
-        "hotkey": "快捷键",
-        "enabled": "启用"
+        "name": "Name",
+        "type": "Type",
+        "alias": "Alias",
+        "hotkey": "Hotkey",
+        "enabled": "Enabled"
       },
       "types": {
-        "builtIn": "内置",
-        "apps": "应用",
-        "settings": "设置",
-        "scripts": "脚本",
-        "extension": "扩展",
-        "application": "应用程序",
-        "command": "命令",
-        "menuBarCommand": "菜单栏命令",
-        "quickLink": "快速链接"
+        "builtIn": "Built-in",
+        "apps": "Apps",
+        "settings": "Settings",
+        "scripts": "Scripts",
+        "extension": "Extension",
+        "application": "Application",
+        "command": "Command",
+        "menuBarCommand": "Menu Bar Command",
+        "quickLink": "Quick Link"
       },
       "alias": {
-        "add": "添加别名",
-        "placeholder": "添加别名",
-        "edit": "编辑别名"
+        "add": "Add Alias",
+        "placeholder": "Add Alias",
+        "edit": "Edit alias"
       },
       "hotkey": {
-        "record": "录制快捷键",
-        "duplicateWithCommand": "快捷键已被“{name}”占用。"
+        "record": "Record Hotkey",
+        "duplicateWithCommand": "Hotkey already used by \"{name}\"."
       },
       "preferences": {
-        "selectOption": "选择一个选项"
+        "selectOption": "Select an option"
       },
-      "noResults": "没有匹配的扩展",
-      "selectExtension": "选择一个扩展",
-      "extensionPreferences": "扩展偏好设置",
-      "commandPreferences": "命令偏好设置",
-      "noPreferences": "没有偏好设置",
+      "noResults": "No matching extensions",
+      "selectExtension": "Select an extension",
+      "extensionPreferences": "Extension Preferences",
+      "commandPreferences": "Command Preferences",
+      "noPreferences": "No preferences",
       "clipboardBlacklist": {
-        "title": "忽略的应用",
-        "description": "当以下应用在前台时，复制的内容不会保存到 SuperCmd 的剪贴板历史。",
-        "add": "添加应用",
-        "remove": "移除",
-        "empty": "未屏蔽任何应用。所有应用的复制都会保存到剪贴板历史。",
-        "searchPlaceholder": "搜索应用…",
-        "loading": "正在加载应用…",
-        "noApps": "未找到应用"
+        "title": "Ignored Applications",
+        "description": "Clipboard content copied while one of these apps is frontmost will not be saved to SuperCmd's clipboard history.",
+        "add": "Add Application",
+        "remove": "Remove",
+        "empty": "No applications blacklisted. Copies from every app are saved to clipboard history.",
+        "searchPlaceholder": "Search applications…",
+        "loading": "Loading applications…",
+        "noApps": "No applications found"
       },
-      "enabled": "已启用",
-      "logout": "退出登录",
-      "loggedIn": "已登录 {name}",
+      "enabled": "Enabled",
+      "logout": "Logout",
+      "loggedIn": "Logged into {name}",
       "uninstall": {
-        "title": "卸载 \"{name}\"？",
-        "description": "此扩展及其命令将从 SuperCmd 中移除。",
-        "cancel": "取消",
-        "confirm": "卸载",
-        "uninstalling": "正在卸载...",
-        "success": "已卸载 \"{name}\"。",
-        "failed": "卸载 \"{name}\" 失败。"
+        "title": "Uninstall \"{name}\"?",
+        "description": "This extension and its commands will be removed from SuperCmd.",
+        "cancel": "Cancel",
+        "confirm": "Uninstall",
+        "uninstalling": "Uninstalling...",
+        "success": "Uninstalled \"{name}\".",
+        "failed": "Failed to uninstall \"{name}\"."
       },
       "folder": {
-        "added": "已添加扩展文件夹。",
-        "removed": "已移除扩展文件夹。",
-        "failed": "{action}扩展文件夹失败。",
-        "duplicate": "文件夹已添加。"
+        "added": "Extension folder added.",
+        "removed": "Extension folder removed.",
+        "failed": "Failed to {action} extension folder.",
+        "duplicate": "Folder already added."
       },
       "scripts": {
-        "opened": "已打开包含示例脚本的自定义脚本文件夹。",
-        "openedExisting": "已打开自定义脚本文件夹。",
-        "failed": "打开自定义脚本文件夹失败。"
+        "opened": "Opened custom scripts folder with sample script.",
+        "openedExisting": "Opened custom scripts folder.",
+        "failed": "Failed to open custom scripts folder."
       },
       "emojiPicker": {
-        "enabled": "启用表情符号选择器",
-        "enabledDesc": "在输入触发前缀后显示表情符号建议。",
-        "triggerPrefix": "触发前缀",
-        "triggerPrefixDesc": "开始表情符号搜索的字符，例如 :fire。",
-        "triggerPrefixPlaceholder": "例如 :",
+        "enabled": "Enable Emoji Picker",
+        "enabledDesc": "Show emoji suggestions when typing a trigger prefix followed by a name.",
+        "triggerPrefix": "Trigger Prefix",
+        "triggerPrefixDesc": "Character that starts an emoji search. Type this followed by a name (e.g. :fire).",
+        "triggerPrefixPlaceholder": "e.g. :",
         "excludedApps": {
-          "title": "排除的应用",
-          "description": "在这些应用中不会弹出表情符号选择器。适用于自带选择器的应用（Slack、Telegram 等）。",
-          "add": "添加应用",
-          "remove": "移除",
-          "empty": "未排除任何应用。选择器会在所有应用中触发。",
-          "searchPlaceholder": "搜索应用…",
-          "loading": "正在加载应用…",
-          "noApps": "未找到应用"
+          "title": "Excluded Applications",
+          "description": "The emoji picker will not appear when these apps are active. Useful for apps that have their own emoji picker (Slack, Telegram…).",
+          "add": "Add Application",
+          "remove": "Remove",
+          "empty": "No applications excluded. The picker triggers in every app.",
+          "searchPlaceholder": "Search applications…",
+          "loading": "Loading applications…",
+          "noApps": "No applications found"
         }
       }
     },
     "advanced": {
-      "title": "高级",
-      "loading": "正在加载高级设置...",
+      "title": "Advanced",
+      "loading": "Loading advanced settings...",
       "settingsFolder": {
-        "title": "设置文件夹",
-        "description": "通过 iCloud Drive、Dropbox 或任何文件夹在多台 Mac 之间同步设置和扩展。",
-        "defaultLabel": "默认位置",
-        "chooseButton": "选择文件夹…",
-        "changeButton": "更改文件夹…",
-        "resetButton": "恢复默认",
+        "title": "Settings Folder",
+        "description": "Sync settings and extensions across Macs via iCloud Drive, Dropbox, or any folder.",
+        "defaultLabel": "Default location",
+        "chooseButton": "Choose Folder…",
+        "changeButton": "Change Folder…",
+        "resetButton": "Reset to Default",
         "conflict": {
-          "title": "此文件夹中已存在设置",
-          "body": "{folder} 中已经有一个 settings.json。您要使用哪个版本？",
-          "useExisting": "使用现有设置",
-          "useExistingHint": "用同步的副本替换此 Mac 上的设置。",
-          "replace": "替换为当前设置",
-          "replaceHint": "用此 Mac 上的设置覆盖同步的副本。",
-          "cancel": "取消"
+          "title": "Settings already exist in this folder",
+          "body": "There's already a settings.json in {folder}. Which version would you like to use?",
+          "useExisting": "Use Existing Settings",
+          "useExistingHint": "Replace this Mac's settings with the synced copy.",
+          "replace": "Replace With Current Settings",
+          "replaceHint": "Overwrite the synced copy with this Mac's settings.",
+          "cancel": "Cancel"
         },
         "resetConfirm": {
-          "title": "将设置移回默认位置？",
-          "body": "您的设置将仅存储在此 Mac 上。所选文件夹中同步的副本不会被删除。",
-          "confirm": "恢复默认",
-          "cancel": "取消"
+          "title": "Move settings back to default location?",
+          "body": "Your settings will be stored on this Mac only. The synced copy in your chosen folder won't be deleted.",
+          "confirm": "Reset to Default",
+          "cancel": "Cancel"
         },
         "status": {
-          "moved": "设置文件夹已更新。",
-          "adopted": "已采用同步的设置。",
-          "reset": "设置已移回默认位置。",
-          "failed": "无法更新设置文件夹。"
+          "moved": "Settings folder updated.",
+          "adopted": "Synced settings adopted.",
+          "reset": "Settings moved back to default location.",
+          "failed": "Could not update settings folder."
         }
       },
       "disableFileSearch": {
-        "title": "禁用文件和文件夹搜索",
-        "description": "从主启动器搜索中隐藏文件和文件夹结果。",
-        "label": "禁用文件和文件夹搜索结果"
+        "title": "Disable File & Folder Search",
+        "description": "Hide file and folder results from the main launcher search.",
+        "label": "Disable file and folder search results"
       },
       "navigationStyle": {
-        "title": "导航样式",
-        "description": "选择在启动器中上下左右导航的键盘快捷键。",
+        "title": "Navigation Style",
+        "description": "Choose the keyboard shortcuts for navigating up, down, left, and right in the launcher.",
         "option": {
-          "vim": "Vim 样式 (^J, ^K, ^H, ^L)",
-          "macos": "macOS 样式 (^N, ^P, ^B, ^F)"
+          "vim": "Vim Style (^J, ^K, ^H, ^L)",
+          "macos": "macOS Style (^N, ^P, ^B, ^F)"
         }
       },
       "popToRootSearch": {
-        "title": "返回根搜索",
-        "description": "重新打开 SuperCmd 时,经过此延迟后返回根搜索;否则保留之前打开的扩展或视图。",
+        "title": "Pop to Root Search",
+        "description": "When you reopen SuperCmd, return to the root search after this delay. Otherwise, the previous extension or view stays open.",
         "option": {
-          "immediately": "立即",
-          "5s": "5 秒后",
-          "15s": "15 秒后",
-          "30s": "30 秒后",
-          "60s": "60 秒后",
-          "90s": "90 秒后",
-          "120s": "120 秒后"
+          "immediately": "Immediately",
+          "5s": "After 5 seconds",
+          "15s": "After 15 seconds",
+          "30s": "After 30 seconds",
+          "60s": "After 60 seconds",
+          "90s": "After 90 seconds",
+          "120s": "After 120 seconds"
         }
       },
       "clipboardRetention": {
-        "title": "剪贴板历史保留期限",
-        "description": "自动删除超过所选时长的剪贴板条目。已固定的条目始终保留。",
+        "title": "Clipboard History Retention",
+        "description": "Auto-delete clipboard entries older than the selected duration. Pinned entries are always kept.",
         "option": {
-          "1day": "1 天",
-          "7days": "7 天",
-          "1month": "1 个月",
-          "3months": "3 个月",
-          "6months": "6 个月",
-          "1year": "1 年",
-          "never": "永不"
+          "1day": "1 day",
+          "7days": "7 days",
+          "1month": "1 month",
+          "3months": "3 months",
+          "6months": "6 months",
+          "1year": "1 year",
+          "never": "Never"
         }
       },
       "debugMode": {
-        "title": "调试模式",
-        "description": "当扩展加载或构建失败时显示详细日志。",
-        "label": "启用调试模式"
+        "title": "Debug Mode",
+        "description": "Show detailed logs when extensions fail to load or build.",
+        "label": "Enable debug mode"
       },
       "browserSearch": {
-        "title": "浏览器个人资料",
-        "description": "连接浏览器个人资料，让 SuperCmd 使用其本地历史记录并持续刷新。",
-        "enableLabel": "在 SuperCmd 中使用浏览器个人资料",
+        "title": "Browser Profiles",
+        "description": "Connect browser profiles so SuperCmd can use their local history and keep it refreshed.",
+        "enableLabel": "Use browser profiles in SuperCmd",
         "retention": {
-          "label": "历史记录保留时间",
+          "label": "History retention",
           "option": {
-            "7d": "7 天",
-            "30d": "30 天",
-            "90d": "90 天",
-            "180d": "180 天",
-            "365d": "1 年",
-            "forever": "永久"
+            "7d": "7 days",
+            "30d": "30 days",
+            "90d": "90 days",
+            "180d": "180 days",
+            "365d": "1 year",
+            "forever": "Forever"
           }
         },
-        "clearButton": "清除浏览器个人资料历史",
-        "importLabel": "检测到的浏览器个人资料",
+        "clearButton": "Clear browser profile history",
+        "importLabel": "Detected browser profiles",
         "import": {
-          "action": "添加个人资料",
-          "add": "添加个人资料",
-          "refresh": "刷新",
-          "remove": "移除",
-          "running": "正在刷新…",
-          "availableHeading": "可用个人资料",
-          "addedHeading": "已添加的个人资料",
-          "noneFound": "未检测到支持的浏览器个人资料",
-          "noneAdded": "尚未添加浏览器个人资料",
-          "profileRowDetail": "历史记录：{historyCount} 个 URL · 书签：{bookmarkCount} · 标签页：尚未导入",
-          "profileSupportNote": "个人资料支持目前仅包含 Chromium 浏览器。Safari 和 Firefox 支持将在之后添加。",
-          "enabledProfiles": "已为 SuperCmd 浏览器历史记录启用 {count} 个个人资料。"
+          "action": "Add profile",
+          "add": "Add Profile",
+          "refresh": "Refresh",
+          "remove": "Remove",
+          "running": "Refreshing…",
+          "availableHeading": "Available profiles",
+          "addedHeading": "Added profiles",
+          "noneFound": "No supported browser profiles detected",
+          "noneAdded": "No browser profiles added yet",
+          "profileRowDetail": "History: {historyCount} URLs · Bookmarks: {bookmarkCount} · Tabs: not imported yet",
+          "profileSupportNote": "Profile support currently includes Chromium browsers only. Safari and Firefox support will be added later.",
+          "enabledProfiles": "{count} profile(s) enabled for SuperCmd browser history."
         },
         "importedData": {
-          "heading": "已导入的数据",
-          "total": "{count} 个历史 URL",
-          "notImported": "尚未导入",
+          "heading": "Imported data",
+          "total": "{count} history URLs",
+          "notImported": "Not imported yet",
           "history": {
-            "title": "历史记录",
-            "description": "来自已添加 Chromium 个人资料的已访问 HTTP(S) 页面。",
-            "count": "{count} 个 URL"
+            "title": "History",
+            "description": "Visited HTTP(S) pages from added Chromium profiles.",
+            "count": "{count} URLs"
           },
           "tabs": {
-            "title": "打开的标签页",
-            "description": "实时标签页快照已规划，但还不是此导入的一部分。"
+            "title": "Open tabs",
+            "description": "Live tab snapshots are planned, but not part of this import yet."
           },
           "bookmarks": {
-            "title": "书签",
-            "description": "书签导入已规划，但还不是此导入的一部分。"
+            "title": "Bookmarks",
+            "description": "Bookmark import is planned, but not part of this import yet."
           }
         },
         "status": {
-          "cleared": "浏览器个人资料历史已清除。",
-          "imported": "已更新 {count} / {total} 条。",
-          "failed": "操作失败。"
+          "cleared": "Browser profile history cleared.",
+          "imported": "Updated {count} of {total} entries.",
+          "failed": "Action failed."
         }
       }
     }
   },
   "launcher": {
-    "searchPlaceholder": "搜索应用、命令，或向 AI 提问...",
-    "status": {
-      "discoveringApps": "正在发现应用...",
-      "noMatchingResults": "没有匹配的结果",
-      "results": "{count} 个结果"
-    },
-    "aiMode": {
-      "placeholder": "向 AI 提问...",
-      "ask": "提问",
-      "thinking": "思考中...",
-      "streaming": "接收中...",
-      "response": "AI 回复",
-      "enterToAsk": "提问",
-      "escToBack": "返回"
-    },
-    "categories": {
-      "recent": "最近使用",
-      "applications": "应用程序",
-      "commands": "命令",
-      "extensions": "扩展",
-      "scripts": "脚本",
-      "settings": "设置",
-      "files": "文件",
-      "calculator": "计算器",
-      "quickLinks": "快速链接"
-    },
-    "actions": {
-      "open": "打开",
-      "openCommand": "打开命令",
-      "openFile": "打开文件",
-      "execute": "执行",
-      "run": "运行",
-      "copy": "复制",
-      "copyPath": "复制路径",
-      "copyDeeplink": "复制深层链接",
-      "copyToClipboard": "复制到剪贴板",
-      "paste": "粘贴",
-      "showDetails": "显示详情",
-      "showInFinder": "在 Finder 中显示",
-      "revealInFinder": "在 Finder 中定位",
-      "getInfo": "显示简介",
-      "quit": "退出应用程序",
-      "forceQuit": "强制退出应用程序",
-      "quitApp": "退出{appName}",
-      "forceQuitApp": "强制退出{appName}",
-      "failedQuitting": "退出{appName}失败",
-      "forceQuitConfirm": "强制退出\"{appName}\"？未保存的更改将会丢失。",
-      "hide": "隐藏",
-      "show": "显示",
-      "preferences": "偏好设置",
-      "actions": "操作",
-      "pinCommand": "固定命令",
-      "unpinCommand": "取消固定命令",
-      "pinExtension": "固定扩展",
-      "unpinExtension": "取消固定扩展",
-      "disableCommand": "禁用命令",
-      "moveUp": "上移",
-      "moveDown": "下移",
-      "uninstallApplication": "卸载应用程序",
-      "enableAutoQuit": "启用自动退出",
-      "disableAutoQuit": "禁用自动退出",
-      "disableApplication": "禁用应用程序"
-    },
-    "empty": {
-      "noResults": "未找到结果",
-      "startTyping": "开始输入以搜索...",
-      "allCommands": "你的所有命令将显示在这里"
-    },
-    "footer": {
-      "actions": "操作",
-      "select": "选择",
-      "back": "返回"
-    },
-    "sections": {
-      "selectedText": "选中文本",
-      "pinned": "已固定",
-      "results": "结果"
-    },
-    "calculator": {
-      "pressEnterToCopy": "按回车复制",
-      "clickToCopy": "点击复制",
-      "copy": "复制"
-    },
-    "badges": {
-      "application": "应用程序",
-      "extension": "扩展",
-      "script": "脚本",
-      "settings": "设置",
-      "quickLink": "快速链接"
+    "searchPlaceholder": "Search for apps, commands, or ask AI...",
+    "browserSearch": {
+      "openUrl": "Open {url}",
+      "searchFor": "Search \"{query}\"",
+      "subtitle": {
+        "openUrl": "Default browser",
+        "search": "Web search"
+      }
     },
     "compact": {
-      "showMore": "显示更多"
+      "showMore": "Show More"
     },
-    "browserSearch": {
-      "openUrl": "打开 {url}",
-      "searchFor": "搜索 “{query}”",
-      "subtitle": {
-        "openUrl": "默认浏览器",
-        "search": "网络搜索"
-      }
+    "status": {
+      "discoveringApps": "Discovering apps...",
+      "noMatchingResults": "No matching results",
+      "results": "{count} results"
+    },
+    "aiMode": {
+      "placeholder": "Ask AI anything...",
+      "ask": "Ask",
+      "thinking": "Thinking...",
+      "streaming": "Streaming...",
+      "response": "AI Response",
+      "enterToAsk": "Ask",
+      "escToBack": "Back"
+    },
+    "categories": {
+      "recent": "Recent",
+      "applications": "Applications",
+      "commands": "Commands",
+      "extensions": "Extensions",
+      "scripts": "Scripts",
+      "settings": "Settings",
+      "files": "Files",
+      "calculator": "Calculator",
+      "quickLinks": "Quick Links"
+    },
+    "actions": {
+      "open": "Open",
+      "openCommand": "Open Command",
+      "openFile": "Open File",
+      "execute": "Execute",
+      "run": "Run",
+      "copy": "Copy",
+      "copyPath": "Copy Path",
+      "copyDeeplink": "Copy Deeplink",
+      "copyToClipboard": "Copy to Clipboard",
+      "paste": "Paste",
+      "showDetails": "Show Details",
+      "showInFinder": "Show in Finder",
+      "revealInFinder": "Reveal in Finder",
+      "getInfo": "Get Info",
+      "quit": "Quit Application",
+      "forceQuit": "Force Quit Application",
+      "quitApp": "Quit {appName}",
+      "forceQuitApp": "Force quit {appName}",
+      "failedQuitting": "Failed quitting {appName}",
+      "forceQuitConfirm": "Force quit \"{appName}\"? Unsaved changes will be lost.",
+      "hide": "Hide",
+      "show": "Show",
+      "preferences": "Preferences",
+      "actions": "Actions",
+      "pinCommand": "Pin Command",
+      "unpinCommand": "Unpin Command",
+      "pinExtension": "Pin Extension",
+      "unpinExtension": "Unpin Extension",
+      "disableCommand": "Disable Command",
+      "moveUp": "Move Up",
+      "moveDown": "Move Down",
+      "uninstallApplication": "Uninstall Application",
+      "enableAutoQuit": "Enable Auto Quit",
+      "disableAutoQuit": "Disable Auto Quit",
+      "disableApplication": "Disable Application"
+    },
+    "empty": {
+      "noResults": "No results found",
+      "startTyping": "Start typing to search...",
+      "allCommands": "All your commands will appear here"
+    },
+    "footer": {
+      "actions": "Actions",
+      "select": "Select",
+      "back": "Back"
+    },
+    "sections": {
+      "selectedText": "Selected Text",
+      "pinned": "Pinned",
+      "results": "Results"
+    },
+    "calculator": {
+      "pressEnterToCopy": "Press Enter to copy",
+      "clickToCopy": "Click to copy",
+      "copy": "Copy"
+    },
+    "badges": {
+      "application": "Application",
+      "extension": "Extension",
+      "script": "Script",
+      "settings": "Settings",
+      "quickLink": "Quick Link"
     }
   },
   "scriptCommand": {
     "setup": {
-      "title": "配置脚本命令",
-      "description": "运行前请提供必需的参数。",
-      "continue": "继续"
+      "title": "Configure Script Command",
+      "description": "Provide required arguments before running.",
+      "continue": "Continue"
     },
     "output": {
-      "success": "成功",
-      "exitCode": "退出码 {code}",
-      "noOutput": "（无输出）"
+      "success": "Success",
+      "exitCode": "Exit {code}",
+      "noOutput": "(No output)"
     }
   },
   "extension": {
     "setup": {
-      "title": "配置 {name}",
-      "description": "运行此命令前请添加必需的设置。",
-      "arguments": "参数",
-      "preferences": "偏好设置",
-      "continue": "继续",
-      "selectOption": "选择一个选项"
+      "title": "Configure {name}",
+      "description": "Add required settings before running this command.",
+      "arguments": "Arguments",
+      "preferences": "Preferences",
+      "continue": "Continue",
+      "selectOption": "Select an option"
     }
   },
   "cursorPrompt": {
-    "placeholder": "告诉 AI 如何处理选中的文字...",
-    "processing": "处理中...",
-    "ready": "准备应用",
-    "applied": "已应用到编辑器",
-    "close": "关闭",
-    "accept": "接受",
-    "submit": "提交",
-    "enterToSubmit": "回车"
+    "placeholder": "Tell AI what to do with selected text...",
+    "processing": "Processing...",
+    "ready": "Ready to apply",
+    "applied": "Applied in editor",
+    "close": "Close",
+    "accept": "Accept",
+    "submit": "Submit",
+    "enterToSubmit": "Enter"
   },
   "store": {
-    "title": "商店",
-    "community": "社区",
-    "searchPlaceholder": "搜索扩展...",
-    "installedFirst": "已安装的扩展优先显示。",
-    "refresh": "刷新",
-    "loading": "正在加载扩展目录...",
-    "noResults": "没有匹配的扩展",
-    "noExtensions": "没有可用的扩展",
-    "tryAgain": "尝试更短的查询、其他关键词，或使用扩展名称的一部分进行模糊匹配。",
-    "refreshCatalog": "刷新目录或稍后再试。",
-    "clearSearch": "清除搜索",
-    "refreshButton": "刷新目录",
-    "installed": "已安装",
-    "install": "安装扩展",
-    "update": "更新扩展",
-    "uninstall": "卸载扩展",
-    "openReadme": "打开 README",
-    "viewSource": "查看源码",
-    "installing": "正在安装扩展",
-    "installedSuccess": "扩展安装成功",
-    "installFailed": "安装失败",
+    "title": "Store",
+    "community": "Community",
+    "searchPlaceholder": "Search extensions...",
+    "installedFirst": "Installed extensions appear first.",
+    "refresh": "Refresh",
+    "loading": "Loading extension catalog...",
+    "noResults": "No extensions match your search",
+    "noExtensions": "No extensions available",
+    "tryAgain": "Try a shorter query, another keyword, or a fuzzy match like part of the extension name.",
+    "refreshCatalog": "Refresh the catalog or try again in a moment.",
+    "clearSearch": "Clear Search",
+    "refreshButton": "Refresh Catalog",
+    "installed": "Installed",
+    "install": "Install Extension",
+    "update": "Update Extension",
+    "uninstall": "Uninstall Extension",
+    "openReadme": "Open README",
+    "viewSource": "View Source",
+    "installing": "Installing Extension",
+    "installedSuccess": "Extension Installed",
+    "installFailed": "Install Failed",
     "tabs": {
-      "overview": "概览",
-      "commands": "命令",
-      "screenshots": "截图",
-      "team": "团队"
+      "overview": "Overview",
+      "commands": "Commands",
+      "screenshots": "Screenshots",
+      "team": "Team"
     },
     "sections": {
-      "description": "描述",
-      "screenshots": "截图",
-      "topCommands": "热门命令",
-      "categories": "分类",
-      "noDescription": "没有提供描述。",
-      "noScreenshots": "没有声明截图。",
-      "noScreenshotsAvailable": "此扩展没有可用的截图。",
-      "noCommands": "没有声明命令。",
-      "moreCommands": "+{count} 个更多命令",
-      "noContributors": "没有声明贡献者。"
+      "description": "Description",
+      "screenshots": "Screenshots",
+      "topCommands": "Top Commands",
+      "categories": "Categories",
+      "noDescription": "No description provided.",
+      "noScreenshots": "No screenshots declared.",
+      "noScreenshotsAvailable": "No screenshots available for this extension.",
+      "noCommands": "No commands declared.",
+      "moreCommands": "+{count} more commands",
+      "noContributors": "No contributors declared."
     },
     "actions": {
-      "title": "操作"
+      "title": "Actions"
     },
     "errorBoundary": {
-      "title": "加载扩展商店时出错。",
-      "retry": "重试"
+      "title": "Something went wrong loading the extension store.",
+      "retry": "Try Again"
+    }
+  },
+  "canvas": {
+    "searchPlaceholder": "Search canvases...",
+    "untitled": "Untitled Canvas",
+    "modified": "Modified",
+    "count": "{count} canvas{plural}",
+    "time": {
+      "justNow": "Just now"
+    },
+    "actions": {
+      "new": "New Canvas",
+      "open": "Open Canvas",
+      "rename": "Rename",
+      "duplicate": "Duplicate",
+      "copyDeeplink": "Copy Deeplink",
+      "exportJson": "Export as JSON",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "delete": "Delete Canvas"
+    },
+    "empty": {
+      "title": "No canvases yet",
+      "description": "Create your first canvas to get started",
+      "noSearchResults": "No canvases found",
+      "shortcutHint": "or press ⌘N"
+    },
+    "preview": {
+      "empty": "No preview yet — save the canvas to generate one",
+      "selectPrompt": "Select a canvas to preview"
+    },
+    "rename": {
+      "title": "Rename Canvas",
+      "placeholder": "Canvas name..."
+    },
+    "delete": {
+      "title": "Delete \"{title}\"?",
+      "description": "This action cannot be undone."
     }
   },
   "clipboard": {
-    "title": "剪贴板历史",
-    "empty": "剪贴板为空",
-    "clear": "清除历史",
-    "pin": "固定",
-    "unpin": "取消固定",
-    "delete": "删除",
-    "copy": "复制",
-    "paste": "粘贴",
-    "searchPlaceholder": "搜索剪贴板历史..."
+    "title": "Clipboard History",
+    "empty": "Clipboard is empty",
+    "clear": "Clear History",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "delete": "Delete",
+    "copy": "Copy",
+    "paste": "Paste",
+    "searchPlaceholder": "Search clipboard history..."
   },
   "snippets": {
-    "title": "代码片段",
-    "empty": "还没有代码片段",
-    "create": "创建代码片段",
-    "edit": "编辑代码片段",
-    "delete": "删除代码片段",
-    "searchPlaceholder": "搜索代码片段...",
-    "name": "名称",
-    "content": "内容",
-    "keyword": "关键词",
-    "save": "保存代码片段"
+    "title": "Snippets",
+    "empty": "No snippets yet",
+    "create": "Create Snippet",
+    "edit": "Edit Snippet",
+    "delete": "Delete Snippet",
+    "searchPlaceholder": "Search snippets...",
+    "name": "Name",
+    "content": "Content",
+    "keyword": "Keyword",
+    "save": "Save Snippet"
   },
   "quickLinks": {
-    "title": "快速链接",
-    "empty": "还没有快速链接",
-    "create": "创建快速链接",
-    "edit": "编辑快速链接",
-    "delete": "删除快速链接",
-    "confirmDelete": "再次点击以确认",
-    "searchPlaceholder": "搜索快速链接...",
-    "name": "名称",
-    "url": "网址",
-    "urlHint": "使用 {placeholder} 添加剪贴板内容或参数等动态值。",
-    "openWith": "打开方式",
-    "defaultBrowser": "默认浏览器",
-    "icon": "图标",
-    "save": "保存快速链接",
-    "saved": "已保存",
-    "saveFailed": "保存快速链接失败。",
-    "deleteFailed": "删除快速链接失败。",
-    "notFound": "未找到快速链接。",
-    "nameRequired": "请输入名称。",
-    "urlRequired": "请输入网址。"
+    "title": "Quick Links",
+    "empty": "No quick links yet",
+    "create": "Create Quick Link",
+    "edit": "Edit Quick Link",
+    "delete": "Delete Quick Link",
+    "confirmDelete": "Click again to confirm",
+    "searchPlaceholder": "Search quick links...",
+    "name": "Name",
+    "url": "URL",
+    "urlHint": "Use {placeholder} to add dynamic values like clipboard or arguments.",
+    "openWith": "Open With",
+    "defaultBrowser": "Default Browser",
+    "icon": "Icon",
+    "save": "Save Quick Link",
+    "saved": "Saved",
+    "saveFailed": "Failed to save quick link.",
+    "deleteFailed": "Failed to delete quick link.",
+    "notFound": "Quick link not found.",
+    "nameRequired": "Name is required.",
+    "urlRequired": "URL is required."
   },
   "appUninstall": {
-    "title": "卸载 {appName}",
-    "filesCount": "{count} 个文件",
-    "uninstallButton": "卸载应用程序",
-    "scanning": "正在扫描相关文件...",
-    "noRemnants": "未找到相关文件",
-    "confirmMessage": "将 {count} 个文件 ({size}) 移到废纸篓？",
-    "filterPlaceholder": "按名称过滤文件和文件夹...",
-    "sortByPath": "按路径排序",
-    "sortBySize": "按大小排序",
-    "markKeep": "标记保留文件",
-    "markRemove": "标记移除文件",
-    "actions": "操作",
-    "showInfo": "在访达中显示简介",
-    "trashErrors": "部分文件无法移至废纸篓：\n{errors}",
-    "uninstallSuccess": "{appName} 已卸载",
-    "uninstallError": "卸载 {appName} 失败"
+    "title": "Uninstall {appName}",
+    "filesCount": "{count} Files",
+    "uninstallButton": "Uninstall Application",
+    "scanning": "Scanning for related files...",
+    "noRemnants": "No related files found",
+    "confirmMessage": "Move {count} files ({size}) to Trash?",
+    "filterPlaceholder": "Filter files and folders by name...",
+    "sortByPath": "Sort by Path",
+    "sortBySize": "Sort by Size",
+    "markKeep": "Mark File to Keep",
+    "markRemove": "Mark File to Remove",
+    "actions": "Actions",
+    "showInfo": "Show Info in Finder",
+    "trashErrors": "Some files could not be moved to Trash:\n{errors}",
+    "uninstallSuccess": "{appName} has been uninstalled",
+    "uninstallError": "Failed to uninstall {appName}"
   },
   "fileSearch": {
-    "placeholder": "搜索文件...",
-    "noResults": "未找到文件",
-    "searching": "搜索中...",
-    "filters": "筛选",
-    "type": "类型",
-    "date": "日期",
-    "size": "大小"
+    "placeholder": "Search files...",
+    "noResults": "No files found",
+    "searching": "Searching...",
+    "filters": "Filters",
+    "type": "Type",
+    "date": "Date",
+    "size": "Size"
   },
   "windowManager": {
-    "title": "窗口管理",
-    "arrange": "排列窗口",
-    "resize": "调整大小",
-    "move": "移动",
-    "focus": "聚焦",
-    "close": "关闭窗口",
-    "minimize": "最小化",
-    "maximize": "最大化",
-    "fullscreen": "全屏",
-    "center": "居中",
-    "leftHalf": "左半屏",
-    "rightHalf": "右半屏",
-    "topHalf": "上半屏",
-    "bottomHalf": "下半屏",
-    "corners": "角落",
-    "displays": "显示器",
-    "nextDisplay": "下一个显示器",
-    "previousDisplay": "上一个显示器"
+    "title": "Window Management",
+    "arrange": "Arrange Windows",
+    "resize": "Resize",
+    "move": "Move",
+    "focus": "Focus",
+    "close": "Close Window",
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "fullscreen": "Fullscreen",
+    "center": "Center",
+    "leftHalf": "Left Half",
+    "rightHalf": "Right Half",
+    "topHalf": "Top Half",
+    "bottomHalf": "Bottom Half",
+    "corners": "Corners",
+    "displays": "Displays",
+    "nextDisplay": "Next Display",
+    "previousDisplay": "Previous Display"
   },
   "onboarding": {
-    "welcome": "欢迎使用 SuperCmd",
-    "description": "你的 macOS 生产力启动器",
-    "getStarted": "开始使用",
-    "skip": "跳过",
-    "next": "下一步",
-    "previous": "上一步",
-    "finish": "完成",
+    "welcome": "Welcome to SuperCmd",
+    "description": "Your productivity launcher for macOS",
+    "getStarted": "Get Started",
+    "skip": "Skip",
+    "next": "Next",
+    "previous": "Previous",
+    "finish": "Finish",
     "features": {
       "launcher": {
-        "title": "快速启动器",
-        "description": "使用单个快捷键启动应用、运行命令和搜索文件。"
+        "title": "Quick Launcher",
+        "description": "Launch apps, run commands, and search files with a single shortcut."
       },
       "extensions": {
-        "title": "扩展",
-        "description": "安装并使用兼容 Raycast 的扩展来增强你的工作流程。"
+        "title": "Extensions",
+        "description": "Install and use Raycast-compatible extensions to supercharge your workflow."
       },
       "ai": {
-        "title": "AI 集成",
-        "description": "与 AI 对话、使用语音转文字，并让 AI 帮助你写作和编辑。"
+        "title": "AI Integration",
+        "description": "Chat with AI, use speech-to-text, and let AI help you write and edit."
       }
     },
     "whisper": {
       "quick": {
-        "title": "Whisper 快速引导",
-        "subtitle": "按住录音，松开输入",
+        "title": "Whisper Quick Onboarding",
+        "subtitle": "Hold to record, release to type",
         "instructions": {
-          "before": "按住 ",
-          "after": " 后开始说话。松开后会处理内容并在当前光标处输入。"
+          "before": "Press and hold ",
+          "after": " while speaking. Release it to process and type at your current cursor."
         },
-        "practiceTitle": "练习段落",
-        "practicePlaceholder": "今天我梳理了路线图，并为本周排出了最重要的三项任务。请整理一段简短摘要，并在午饭前发给团队。",
-        "practiceHint": "就在这个编辑框里练习：按住热键，说出这两句话，松开，然后确认输出是否正确。",
-        "footerHint": "Whisper 激活时会停靠在靠近底部的位置。"
+        "practiceTitle": "Practice paragraph",
+        "practicePlaceholder": "Today I reviewed the roadmap and prioritized the top three tasks for this week. Please draft a short summary and share it with the team before lunch.",
+        "practiceHint": "Practice in this editor: hold hotkey, speak these two sentences, release, and verify the output.",
+        "footerHint": "Whisper stays near the bottom when active."
       }
     },
     "voice": {
       "steps": {
-        "welcome": "欢迎",
-        "coreFeatures": "核心功能",
-        "hotkeySetup": "快捷键设置",
-        "permissions": "权限",
-        "dictationMode": "听写模式",
-        "readMode": "朗读模式",
-        "finalCheck": "最终检查"
+        "welcome": "Welcome",
+        "coreFeatures": "Core Features",
+        "hotkeySetup": "Hotkey Setup",
+        "permissions": "Permissions",
+        "dictationMode": "Dictation Mode",
+        "readMode": "Read Mode",
+        "finalCheck": "Final Check"
       },
       "featureCards": {
         "whisper": {
           "title": "Whisper",
-          "description": "按住说话，松开输入。"
+          "description": "Hold to speak and release to type."
         },
         "read": {
-          "title": "朗读",
-          "description": "用自然语音朗读选中文本。"
+          "title": "Read",
+          "description": "Read selected text with natural voice."
         }
       },
       "permissions": {
-        "inputMonitoringTitle": "输入监控",
-        "inputMonitoringDescription": "用于检测 Fn 按住说话，以及 Whisper 模式下的其他全局按键监听。",
-        "speechRecognitionTitle": "语音识别",
-        "speechRecognitionDescription": "可选。仅当你把 Whisper 切换为 Apple 语音识别兜底方案时需要。",
-        "microphoneTitle": "麦克风",
-        "microphoneDescription": "SuperCmd Whisper 听写所必需。"
+        "inputMonitoringTitle": "Input Monitoring",
+        "inputMonitoringDescription": "Required for Fn hold-to-talk detection and other global key monitoring in Whisper mode.",
+        "speechRecognitionTitle": "Speech Recognition",
+        "speechRecognitionDescription": "Optional. Needed only if you switch Whisper to the Apple Speech Recognition fallback.",
+        "microphoneTitle": "Microphone",
+        "microphoneDescription": "Required for SuperCmd Whisper Dictation."
       },
       "permissionNotes": {
-        "blocked": "{target} 权限已被阻止。请在系统设置中启用 SuperCmd 后再回来。",
-        "promptFailed": "无法触发权限弹窗。请打开 系统设置 -> 隐私与安全性，启用 SuperCmd 后再重新请求。",
-        "notShown": "权限弹窗没有出现。先打开一次 Whisper，再回来点一次。",
-        "homeFolder": "出现提示时请选择你的 Home 文件夹；如果需要，再到“文件与文件夹”里启用 SuperCmd。",
-        "inputMonitoring": "在“输入监控”里点击左下角“+”，从 Applications 文件夹手动添加 SuperCmd。"
+        "blocked": "{target} access is blocked. Enable SuperCmd in System Settings, then return.",
+        "promptFailed": "Could not trigger the permission prompt. Open System Settings -> Privacy & Security, enable SuperCmd, then press request again.",
+        "notShown": "Permission prompt did not appear. Open Whisper once and press this again.",
+        "homeFolder": "Select your Home folder when prompted, then enable SuperCmd under Files and Folders if needed.",
+        "inputMonitoring": "In Input Monitoring, click \"+\" at the bottom left and add SuperCmd from your Applications folder."
       },
       "dictation": {
-        "title": "听写模式",
-        "howToTest": "测试方式",
-        "howToTestHint": "按住热键，读出示例，松开即可插入。",
-        "holdKeyUpdated": "按住键已更新",
-        "language": "听写语言",
-        "sampleTitle": "消息示例",
-        "sampleHint": "按住你的按键，然后读出上面的内容：",
-        "placeholder": "听写结果会显示在这里...",
-        "footerHint": "SuperCmd Whisper 默认使用本地 ggml base 模型。你也可以在设置里切换回 Apple 语音识别兜底。",
+        "title": "Dictation Mode",
+        "howToTest": "How to test",
+        "howToTestHint": "Hold key, read sample, release to insert.",
+        "holdKeyUpdated": "Hold key updated",
+        "language": "Dictation language",
+        "sampleTitle": "Messages sample",
+        "sampleHint": "Hold your key and read the message above:",
+        "placeholder": "Dictated text appears here...",
+        "footerHint": "SuperCmd Whisper uses a local ggml base model by default. Apple Speech Recognition remains available as a fallback in Settings.",
         "models": {
-          "downloadFailed": "模型下载失败。请立即重试，或前往 设置 -> AI -> SuperCmd Whisper 处理。",
+          "downloadFailed": "Model download failed. Retry now or use Settings -> AI -> SuperCmd Whisper.",
           "actions": {
-            "downloaded": "已下载",
-            "downloading": "下载中...",
-            "download": "下载模型"
+            "downloaded": "Downloaded",
+            "downloading": "Downloading...",
+            "download": "Download Model"
           },
           "parakeet": {
             "title": "Parakeet TDT v3",
-            "ready": "下载完成，Parakeet v3 听写已就绪。",
-            "downloadingLead": "模型正在下载，请稍候。",
-            "downloading": "正在下载 Parakeet v3 CoreML 模型",
-            "notDownloaded": "SuperCmd 会在这一步开始下载 Parakeet v3 模型，确保你首次使用前就已准备好听写。"
+            "ready": "Download complete. Parakeet v3 dictation is ready.",
+            "downloadingLead": "Downloading models, just a moment.",
+            "downloading": "Downloading Parakeet v3 CoreML models",
+            "notDownloaded": "SuperCmd starts downloading Parakeet v3 models on this step so dictation is ready before first use."
           },
           "whispercpp": {
             "title": "SuperCmd Whisper",
-            "ready": "下载完成，SuperCmd Whisper 听写已就绪。",
-            "downloadingLead": "模型正在下载，请稍候。",
-            "downloading": "正在下载约 300 MB 的 ggml base 模型",
-            "notDownloaded": "SuperCmd 会在这一步开始下载 SuperCmd Whisper 模型，确保你首次使用前就已准备好听写。"
+            "ready": "Download complete. SuperCmd Whisper dictation is ready.",
+            "downloadingLead": "Downloading model, just a moment.",
+            "downloading": "Downloading the ~300 MB ggml base model",
+            "notDownloaded": "SuperCmd starts downloading the SuperCmd Whisper model on this step so dictation is ready before first use."
           },
           "cloud": {
-            "title": "云端转录",
-            "description": "正在使用云端转录，无需下载本地模型。"
+            "title": "Cloud Transcription",
+            "description": "Using cloud-based transcription. No model download needed."
           }
         },
-        "sampleText": "那是最好的时代，那是最坏的时代，那是智慧的年代，那是愚昧的年代。"
+        "sampleText": "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness."
       },
       "read": {
-        "badge": "经典文学",
-        "readTime": "1 分钟阅读",
-        "articleTitle": "傲慢与偏见",
+        "badge": "Classic Literature",
+        "readTime": "1 min read",
+        "articleTitle": "Pride and Prejudice",
         "instructions": {
-          "before": "先选中文本，再按下",
-          "after": "即可听到朗读。"
+          "before": "Select the text above then press",
+          "after": "to hear it read aloud."
         },
-        "sampleText": "语音优先的界面正在迎来新的机会。过去它们常被当成噱头，但新一代工具已经让“开口说”真的比“动手打”更快，转录跟得上，修正更聪明，快捷键也能自然融入现有工作流。"
+        "sampleText": "Voice-first interfaces are having a moment. After years of being dismissed as gimmicks, a new wave of tools is making it genuinely faster to speak than type - with transcription that keeps up, smart corrections, and shortcut keys that slot into existing workflows without disruption."
       },
       "final": {
-        "title": "最后一步：从任何地方启动 SuperCmd",
-        "description": "现在按一次你的全局快捷键，从任何应用里启动 SuperCmd。",
-        "nextStep": "下一步：去 SuperCmd 设置 -> 扩展，为 AI Prompt 和 Memory 配置快捷键，开始在任何地方使用 AI。"
+        "title": "Final step: start SuperCmd from anywhere",
+        "description": "Press your global shortcut now to start SuperCmd from any app.",
+        "nextStep": "Next step: Setup Hotkeys for AI Prompt and Memory from SuperCmd Settings -> Extensions to start using AI anywhere."
       },
-      "setupDescription": "我们会一次性完成启动器快捷键、隐私权限和 Whisper 模式配置。",
-      "setupSummary": "Whisper 听写与朗读模式练习",
+      "setupDescription": "We will configure launcher hotkeys, privacy permissions, and whisper mode in one pass.",
+      "setupSummary": "Whisper dictation and Read mode practice",
       "summary": {
-        "title": "本次会配置这些内容：",
-        "hotkey": "1. 启动器快捷键",
-        "permissions": "2. 辅助功能、输入监控、语音识别、麦克风"
+        "title": "What gets configured now:",
+        "hotkey": "1. Launcher hotkey",
+        "permissions": "2. Accessibility, Input Monitoring, Speech Recognition, Microphone"
       },
-      "setupTitle": "一个界面完成启动、提问、听写和朗读。"
+      "setupTitle": "One command surface for launch, ask, dictate, and read."
     }
   },
   "whisper": {
-    "title": "SuperCmd 语音输入",
-    "description": "简单好用的语音转文字",
-    "start": "开始说话",
-    "stop": "停止说话",
-    "listening": "正在收听...",
-    "processing": "处理中...",
-    "placeholder": "请说话...",
-    "close": "关闭 Whisper",
+    "title": "SuperCmd Whisper",
+    "description": "Speech-to-text made simple",
+    "start": "Start Speaking",
+    "stop": "Stop Speaking",
+    "listening": "Listening...",
+    "processing": "Processing...",
+    "placeholder": "Speak now...",
+    "close": "Close whisper",
     "coachmark": {
-      "holdToTalk": "Whisper 会显示在这里。按住 {shortcut} 说话，松开后输入。",
-      "warmingUp": "首次设置中，正在预热模型..."
+      "holdToTalk": "Whisper sits here. Hold {shortcut} to talk, release to type.",
+      "warmingUp": "First-time setup - Warming up models..."
     },
     "status": {
-      "idle": "点击开始后即可说话。",
-      "apiError": "Whisper API 出错。",
-      "nativeFallback": "当前 Whisper 模型为 Apple 语音识别。点击开始即可使用 Apple 兜底方案。",
-      "transcriptionFailedLocal": "SuperCmd Whisper 转录失败。",
-      "transcriptionFailed": "Whisper 转录失败。",
-      "microphonePermissionRequired": "需要麦克风权限。",
-      "microphonePermissionCheckFailed": "麦克风权限检查失败。",
-      "microphoneAccessDenied": "麦克风访问被拒绝。",
-      "startingMicrophone": "正在启动麦克风...",
-      "loadingModels": "正在加载 Whisper 模型...",
-      "nativeRecognizerStartFailed": "语音识别启动失败。",
-      "finishing": "正在完成转录...",
-      "listeningReleaseToProcess": "正在收听，松开后开始处理。",
-      "listeningPressAgainToFinish": "正在收听，再按一次即可结束。",
-      "recordingFailed": "录音失败。",
-      "speechRecognitionError": "语音识别出错。"
+      "idle": "Press start to begin speaking.",
+      "apiError": "Whisper API error.",
+      "nativeFallback": "Whisper model is Apple Speech Recognition. Press start to use the Apple fallback.",
+      "transcriptionFailedLocal": "SuperCmd Whisper transcription failed.",
+      "transcriptionFailed": "Whisper transcription failed.",
+      "microphonePermissionRequired": "Microphone permission required.",
+      "microphonePermissionCheckFailed": "Microphone permission check failed.",
+      "microphoneAccessDenied": "Microphone access denied.",
+      "startingMicrophone": "Starting microphone...",
+      "loadingModels": "Loading Whisper models...",
+      "nativeRecognizerStartFailed": "Speech recognition failed to start.",
+      "finishing": "Finishing transcription...",
+      "listeningReleaseToProcess": "Listening. Release to process.",
+      "listeningPressAgainToFinish": "Listening. Press again to finish.",
+      "recordingFailed": "Recording failed.",
+      "speechRecognitionError": "Speech recognition error."
     },
     "errors": {
-      "typeIntoActiveApp": "无法把内容输入到当前应用。",
-      "enableMicrophonePermission": "请到 系统设置 -> 隐私与安全性 -> 麦克风 中启用 SuperCmd 后再试。",
-      "allowMicrophonePermission": "请允许 SuperCmd Whisper 使用麦克风权限。",
-      "microphoneUnavailable": "无法访问麦克风。请检查 系统设置 -> 隐私与安全性 -> 麦克风。",
-      "nativeRecognizerStartFailed": "无法启动原生语音识别。",
-      "liveTypingRetry": "实时输入没有跟上，请重试。",
-      "modelNotReady": "模型仍在预热中，请稍后再试。",
-      "recordingFailed": "无法启动音频录制。"
+      "typeIntoActiveApp": "Could not type into the active app.",
+      "enableMicrophonePermission": "Enable SuperCmd in System Settings -> Privacy & Security -> Microphone, then retry.",
+      "allowMicrophonePermission": "Allow microphone permission to use SuperCmd Whisper.",
+      "microphoneUnavailable": "Could not access microphone. Check System Settings -> Privacy & Security -> Microphone.",
+      "nativeRecognizerStartFailed": "Failed to start native speech recognizer.",
+      "liveTypingRetry": "Live typing fell behind. Try again.",
+      "modelNotReady": "Model is still warming up. Try again in a moment.",
+      "recordingFailed": "Could not start audio recording."
     }
   },
   "read": {
-    "title": "SuperCmd 语音朗读",
-    "description": "朗读任何选中的文字",
-    "start": "开始朗读",
-    "stop": "停止朗读",
-    "reading": "朗读中...",
-    "noText": "没有选中文字"
+    "title": "SuperCmd Read",
+    "description": "Text-to-speech for any selected text",
+    "start": "Start Reading",
+    "stop": "Stop Reading",
+    "reading": "Reading...",
+    "noText": "No text selected"
   },
   "camera": {
-    "title": "相机",
-    "capture": "拍摄",
-    "flip": "翻转相机",
-    "mirror": "镜像",
-    "settings": "相机设置"
+    "title": "Camera",
+    "capture": "Capture",
+    "flip": "Flip Camera",
+    "mirror": "Mirror",
+    "settings": "Camera Settings"
   },
   "schedule": {
-    "title": "标题",
-    "newEvent": "新建事件",
-    "editEvent": "编辑事件",
-    "deleteEvent": "删除事件",
-    "date": "日期",
-    "time": "时间",
-    "duration": "时长",
-    "reminder": "提醒",
-    "save": "保存事件"
-  },
-  "canvas": {
-    "searchPlaceholder": "搜索画布...",
-    "untitled": "未命名画布",
-    "modified": "修改时间",
-    "count": "{count} 个画布{plural}",
-    "time": {
-      "justNow": "刚刚"
-    },
-    "actions": {
-      "new": "新建画布",
-      "open": "打开画布",
-      "rename": "重命名",
-      "duplicate": "复制",
-      "copyDeeplink": "复制深层链接",
-      "exportJson": "导出为 JSON",
-      "pin": "置顶",
-      "unpin": "取消置顶",
-      "delete": "删除画布"
-    },
-    "empty": {
-      "title": "还没有画布",
-      "description": "创建你的第一个画布开始使用",
-      "noSearchResults": "没有找到画布",
-      "shortcutHint": "或按 ⌘N"
-    },
-    "preview": {
-      "empty": "暂无预览 — 保存画布以生成预览",
-      "selectPrompt": "选择一个画布以预览"
-    },
-    "rename": {
-      "title": "重命名画布",
-      "placeholder": "画布名称..."
-    },
-    "delete": {
-      "title": "删除 \"{title}\" ?",
-      "description": "此操作无法撤销。"
-    }
+    "title": "Title",
+    "newEvent": "New Event",
+    "editEvent": "Edit Event",
+    "deleteEvent": "Delete Event",
+    "date": "Date",
+    "time": "Time",
+    "duration": "Duration",
+    "reminder": "Reminder",
+    "save": "Save Event"
   }
 }
