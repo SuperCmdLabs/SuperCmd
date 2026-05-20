@@ -50,6 +50,11 @@ export type UseLauncherKeyboardControlsOptions = {
   setActionsCommand: React.Dispatch<React.SetStateAction<CommandInfo | null>>;
   setSelectedActionIndex: React.Dispatch<React.SetStateAction<number>>;
 
+  historyIndex: number;
+  navigateHistoryUp: () => string | null;
+  navigateHistoryDown: () => string | null;
+  resetHistoryIndex: () => void;
+
   startAiChat: (query: string) => void;
   restoreLauncherFocus: () => void;
 
@@ -136,6 +141,10 @@ export function useLauncherKeyboardControls(
     setContextMenu,
     setActionsCommand,
     setSelectedActionIndex,
+    historyIndex,
+    navigateHistoryUp,
+    navigateHistoryDown,
+    resetHistoryIndex,
     startAiChat,
     restoreLauncherFocus,
     handleCommandExecute,
@@ -398,11 +407,29 @@ export function useLauncherKeyboardControls(
             window.electron.resizeLauncherWindow(true);
             break;
           }
+          // When browsing history, Down navigates toward newer entries (or exits history mode)
+          if (historyIndex >= 0 && isSearchInputTarget) {
+            const entry = navigateHistoryDown();
+            if (entry !== null) {
+              setSearchQuery(entry);
+              setSelectedIndex(0);
+            }
+            break;
+          }
           moveSelection('down');
           break;
 
         case 'ArrowUp':
           e.preventDefault();
+          // When at the top of the list with an empty search query, navigate search history
+          if (selectedIndex === 0 && !searchQuery && isSearchInputTarget) {
+            const entry = navigateHistoryUp();
+            if (entry !== null) {
+              setSearchQuery(entry);
+              setSelectedIndex(0);
+            }
+            break;
+          }
           moveSelection('up');
           break;
 
@@ -447,6 +474,7 @@ export function useLauncherKeyboardControls(
           if (searchQuery.length > 0) {
             setSearchQuery('');
             setSelectedIndex(0);
+            resetHistoryIndex();
             if (launcherViewMode === 'compact') {
               setIsCompactCollapsed(true);
               window.electron.resizeLauncherWindow(false);
@@ -508,10 +536,15 @@ export function useLauncherKeyboardControls(
       submitBrowserSearch,
       handleCommandExecute,
       launcherInputValue,
+      historyIndex,
+      navigateHistoryUp,
+      navigateHistoryDown,
+      resetHistoryIndex,
     ]
   );
 
   const handleLauncherInputChange = useCallback((value: string) => {
+    resetHistoryIndex();
     setSearchQuery(value);
 
     if (launcherViewMode === 'compact') {
@@ -526,6 +559,7 @@ export function useLauncherKeyboardControls(
   }, [
     isCompactCollapsed,
     launcherViewMode,
+    resetHistoryIndex,
     setIsCompactCollapsed,
     setSearchQuery,
   ]);

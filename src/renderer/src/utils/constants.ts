@@ -16,4 +16,6 @@ export const CMD_ARGS_KEY_PREFIX = 'sc-ext-cmd-args:';
 export const SCRIPT_CMD_ARGS_KEY_PREFIX = 'sc-script-cmd-args:';
 export const HIDDEN_MENUBAR_CMDS_KEY = 'sc-hidden-menubar-cmds';
 export const MAX_RECENT_COMMANDS = 30;
+export const SEARCH_HISTORY_KEY = 'sc-search-history';
+export const MAX_SEARCH_HISTORY = 50;
 export const NO_AI_MODEL_ERROR = 'No AI model available. Configure one in Settings -> AI.';
