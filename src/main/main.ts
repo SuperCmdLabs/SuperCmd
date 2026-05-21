@@ -10336,6 +10336,13 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       preserveFocusWhenHidden: commandId !== 'system-window-management',
     });
   }
+  if (commandId === 'system-menu-item-search') {
+    return await openLauncherAndRunSystemCommand(commandId, {
+      showWindow: false,
+      mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
+      preserveFocusWhenHidden: false,
+    });
+  }
   if (commandId === 'system-import-snippets') {
     await importSnippetsFromFile(mainWindow || undefined);
     return true;
@@ -15118,6 +15125,90 @@ return appURL's |path|() as text`,
       throw new Error(e?.message || 'AppleScript execution failed');
     }
   });
+
+  // ─── Menu Item Search ───────────────────────────────────────────
+  // Enumerate and press menu items of the frontmost application using
+  // macOS Accessibility (AXUIElement) via the menu-item-search Swift helper.
+
+  type MenuItemInfo = {
+    path: string;
+    title: string;
+    fullPath: string;
+    shortcut?: string | null;
+    enabled: boolean;
+  };
+
+  ipcMain.handle(
+    'get-app-menu-items',
+    async (): Promise<{ ok: boolean; items?: MenuItemInfo[]; error?: string }> => {
+      try {
+        const helperPath = getNativeBinaryPath('menu-item-search');
+        // The Swift helper is a script, so we need to run it with /usr/bin/env swift
+        const { spawn } = require('child_process');
+        return await new Promise((resolve) => {
+          const proc = spawn('/usr/bin/env', ['swift', helperPath], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+          });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+          proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+          proc.on('close', () => {
+            try {
+              const result = JSON.parse(stdout.trim());
+              resolve(result);
+            } catch {
+              resolve({ ok: false, error: stderr || 'Failed to parse menu item search output' });
+            }
+          });
+          proc.on('error', (err: Error) => {
+            resolve({ ok: false, error: err.message });
+          });
+          // Send the list action
+          proc.stdin.write(JSON.stringify({ action: 'list' }));
+          proc.stdin.end();
+        });
+      } catch (e: any) {
+        return { ok: false, error: e?.message || 'Menu item search failed' };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'press-app-menu-item',
+    async (_event: any, data: { path: string }): Promise<{ ok: boolean; error?: string }> => {
+      const targetPath = String(data?.path || '').trim();
+      if (!targetPath) return { ok: false, error: 'Missing menu item path' };
+      try {
+        const helperPath = getNativeBinaryPath('menu-item-search');
+        const { spawn } = require('child_process');
+        return await new Promise((resolve) => {
+          const proc = spawn('/usr/bin/env', ['swift', helperPath], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+          });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+          proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+          proc.on('close', () => {
+            try {
+              const result = JSON.parse(stdout.trim());
+              resolve(result);
+            } catch {
+              resolve({ ok: false, error: stderr || 'Failed to parse press result' });
+            }
+          });
+          proc.on('error', (err: Error) => {
+            resolve({ ok: false, error: err.message });
+          });
+          proc.stdin.write(JSON.stringify({ action: 'press', path: targetPath }));
+          proc.stdin.end();
+        });
+      } catch (e: any) {
+        return { ok: false, error: e?.message || 'Press menu item failed' };
+      }
+    },
+  );
 
   ipcMain.handle(
     'calendar-ensure-access',
