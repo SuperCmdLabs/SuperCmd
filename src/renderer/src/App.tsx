@@ -14,7 +14,7 @@ import type {
   IndexedFileSearchResult,
   BrowserSearchSource,
   BrowserSearchResultGroupSetting,
-} from '../types/electron'
+} from '../types/electron';
 import ExtensionView from './ExtensionView';
 import ClipboardManager from './ClipboardManager';
 import SnippetManager from './SnippetManager';
