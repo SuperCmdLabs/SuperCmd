@@ -274,6 +274,17 @@ const AITab: React.FC = () => {
   const [qwen3ModelStatus, setQwen3ModelStatus] = useState<Qwen3ModelStatus | null>(null);
   const [qwen3ModelLoading, setQwen3ModelLoading] = useState(false);
   const [whisperCustomMode, setWhisperCustomMode] = useState(false);
+  const whisperSpeakToggleHotkey = (settings?.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] ?? '';
+
+  // Clear custom mode once the stored hotkey is saved (IPC roundtrip completes).
+  // A short timeout handles the edge case where the recorded value equals the
+  // current stored value (so the store won't change to trigger the effect).
+  useEffect(() => {
+    if (!whisperCustomMode) return;
+    const timer = setTimeout(() => setWhisperCustomMode(false), 150);
+    return () => clearTimeout(timer);
+  }, [whisperCustomMode, whisperSpeakToggleHotkey]);
+
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
   const selectingOllamaDefaultRef = useRef(false);
@@ -654,7 +665,6 @@ const AITab: React.FC = () => {
   }
 
   const ai = settings.ai;
-  const whisperSpeakToggleHotkey = (settings.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] ?? '';
 
   const WHISPER_PRESET_HOTKEYS = [
     { value: 'Fn', label: 'fn (hold-to-talk)' },
@@ -669,15 +679,6 @@ const AITab: React.FC = () => {
     ? whisperSpeakToggleHotkey
     : WHISPER_PRESET_CUSTOM_VALUE;
   const whisperSelectValue = whisperCustomMode ? WHISPER_PRESET_CUSTOM_VALUE : whisperPresetValue;
-
-  // Clear custom mode once the stored hotkey is saved (IPC roundtrip completes).
-  // A short timeout handles the edge case where the recorded value equals the
-  // current stored value (so the store won"t change to trigger the effect).
-  useEffect(() => {
-    if (!whisperCustomMode) return;
-    const timer = setTimeout(() => setWhisperCustomMode(false), 150);
-    return () => clearTimeout(timer);
-  }, [whisperCustomMode, whisperSpeakToggleHotkey]);
   const genericModels = ai.provider === 'ollama' && ollamaRunning
     ? Array.from(localModels).map((name) => ({
         id: `ollama-${name}`,
