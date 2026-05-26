@@ -421,6 +421,12 @@ function extractHost(url: string): string {
   }
 }
 
+function frecency(entry: BrowserSearchEntry): number {
+  const ageDays = Math.max(0, (Date.now() - entry.lastUsedAt) / (24 * 60 * 60 * 1000));
+  const recencyFactor = 1 / (1 + Math.log10(1 + ageDays));
+  return entry.useCount * recencyFactor;
+}
+
 function getLegacyCompletion(rawInput: string, entries: BrowserSearchEntry[]): BrowserSearchAutocomplete | null {
   const input = rawInput;
   if (!input.trim()) return null;
