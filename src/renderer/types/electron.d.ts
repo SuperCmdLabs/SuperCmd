@@ -1289,7 +1289,15 @@ export interface ElectronAPI {
   qwen3ModelStatus: () => Promise<Qwen3ModelStatus>;
   qwen3DownloadModel: () => Promise<Qwen3ModelStatus>;
   qwen3Warmup: () => Promise<{ ready: boolean; error?: string }>;
+  whisperCppWarmup: () => Promise<{ ready: boolean; error?: string }>;
   whisperDebugLog: (tag: string, message: string, data?: any) => void;
+  audioCapturerWarmup: () => Promise<{ ready: boolean; error?: string }>;
+  audioCapturerStart: () => Promise<{ recording: boolean; error?: string }>;
+  audioCapturerStop: () => Promise<{ file: string | null; duration: number; error?: string }>;
+  audioCapturerSnapshot: () => Promise<{ file: string | null; duration: number; error?: string }>;
+  audioCapturerMeter: () => Promise<{ average: number; peak: number }>;
+  audioCapturerStatus: () => Promise<{ engineReady: boolean; recording: boolean; processAlive: boolean }>;
+  whisperTranscribeFile: (audioPath: string, options?: { language?: string }) => Promise<string>;
   whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }) => Promise<string>;
   whisperEnsureMicrophoneAccess: (
     options?: { prompt?: boolean }

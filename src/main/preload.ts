@@ -1010,6 +1010,8 @@ const electronAPI = {
     ipcRenderer.invoke('parakeet-download-model'),
   parakeetWarmup: (): Promise<{ ready: boolean; error?: string }> =>
     ipcRenderer.invoke('parakeet-warmup'),
+  whisperCppWarmup: (): Promise<{ ready: boolean; error?: string }> =>
+    ipcRenderer.invoke('whispercpp-warmup'),
   qwen3ModelStatus: (): Promise<any> =>
     ipcRenderer.invoke('qwen3-model-status'),
   qwen3DownloadModel: (): Promise<any> =>
@@ -1018,6 +1020,20 @@ const electronAPI = {
     ipcRenderer.invoke('qwen3-warmup'),
   whisperDebugLog: (tag: string, message: string, data?: any): void =>
     ipcRenderer.send('whisper-debug-log', { tag, message, data }),
+  audioCapturerWarmup: (): Promise<{ ready: boolean; error?: string }> =>
+    ipcRenderer.invoke('audio-capturer-warmup'),
+  audioCapturerStart: (): Promise<{ recording: boolean; error?: string }> =>
+    ipcRenderer.invoke('audio-capturer-start'),
+  audioCapturerStop: (): Promise<{ file: string | null; duration: number; error?: string }> =>
+    ipcRenderer.invoke('audio-capturer-stop'),
+  audioCapturerSnapshot: (): Promise<{ file: string | null; duration: number; error?: string }> =>
+    ipcRenderer.invoke('audio-capturer-snapshot'),
+  audioCapturerMeter: (): Promise<{ average: number; peak: number }> =>
+    ipcRenderer.invoke('audio-capturer-meter'),
+  audioCapturerStatus: (): Promise<{ engineReady: boolean; recording: boolean; processAlive: boolean }> =>
+    ipcRenderer.invoke('audio-capturer-status'),
+  whisperTranscribeFile: (audioPath: string, options?: { language?: string }): Promise<string> =>
+    ipcRenderer.invoke('whisper-transcribe-file', audioPath, options),
   whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }): Promise<string> =>
     ipcRenderer.invoke('whisper-transcribe', audioBuffer, options),
   whisperEnsureMicrophoneAccess: (
