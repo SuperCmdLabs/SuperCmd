@@ -273,6 +273,7 @@ const AITab: React.FC = () => {
   const [parakeetModelLoading, setParakeetModelLoading] = useState(false);
   const [qwen3ModelStatus, setQwen3ModelStatus] = useState<Qwen3ModelStatus | null>(null);
   const [qwen3ModelLoading, setQwen3ModelLoading] = useState(false);
+  const [whisperCustomMode, setWhisperCustomMode] = useState(false);
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
   const selectingOllamaDefaultRef = useRef(false);
@@ -667,6 +668,7 @@ const AITab: React.FC = () => {
   const whisperPresetValue = WHISPER_PRESET_HOTKEYS.find((p) => p.value === whisperSpeakToggleHotkey)
     ? whisperSpeakToggleHotkey
     : WHISPER_PRESET_CUSTOM_VALUE;
+  const whisperSelectValue = whisperCustomMode ? WHISPER_PRESET_CUSTOM_VALUE : whisperPresetValue;
   const genericModels = ai.provider === 'ollama' && ollamaRunning
     ? Array.from(localModels).map((name) => ({
         id: `ollama-${name}`,
@@ -1470,13 +1472,15 @@ const AITab: React.FC = () => {
                   <p className="text-[0.75rem] text-[var(--text-muted)] mb-1.5">{t('settings.ai.whisper.hotkeys.startStop')}</p>
                   <div className="flex items-center gap-2 flex-wrap">
                     <select
-                      value={whisperPresetValue}
+                      value={whisperSelectValue}
                       onChange={(e) => {
                         const selected = e.target.value;
                         if (selected === WHISPER_PRESET_CUSTOM_VALUE) {
+                          setWhisperCustomMode(true);
                           (e.target as HTMLSelectElement).blur();
                           return;
                         }
+                        setWhisperCustomMode(false);
                         void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, selected);
                       }}
                       className="sc-select"
@@ -1489,10 +1493,13 @@ const AITab: React.FC = () => {
                     {whisperPresetValue === WHISPER_PRESET_CUSTOM_VALUE && (
                       <HotkeyRecorder
                         value={whisperSpeakToggleHotkey}
-                        onChange={(hotkey) => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey); }}
+                        onChange={(hotkey) => {
+                          setWhisperCustomMode(false);
+                          void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey);
+                        }}
                         compact
                         variant="whisper"
-                        autoRecord
+                        autoRecord={whisperCustomMode}
                       />
                     )}
                   </div>
