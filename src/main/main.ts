@@ -5960,7 +5960,7 @@ function normalizeAccelerator(shortcut: string): string {
       else normalizedModifiers.control = true;
       continue;
     }
-    if (token === 'cmd' || token === 'command' || token === 'meta' || token === 'super') {
+    if (token === 'cmd' || token === 'command' || token === 'meta' || token === 'super' || token === 'leftcmd' || token === 'leftcommand' || token === 'leftmeta' || token === 'rightcmd' || token === 'rightcommand' || token === 'rightmeta') {
       normalizedModifiers.command = true;
       continue;
     }
@@ -5968,7 +5968,7 @@ function normalizeAccelerator(shortcut: string): string {
       normalizedModifiers.control = true;
       continue;
     }
-    if (token === 'alt' || token === 'option') {
+    if (token === 'alt' || token === 'option' || token === 'leftalt' || token === 'leftoption' || token === 'rightalt' || token === 'rightoption') {
       normalizedModifiers.alt = true;
       continue;
     }
@@ -6069,10 +6069,14 @@ function isFnShortcut(shortcut: string): boolean {
 // Standalone modifier keys that need a native CGEventTap watcher
 // instead of Electron's globalShortcut (which ignores bare modifiers).
 const STANDALONE_MODIFIER_KEYCODES: Record<string, number> = {
-  alt: 58, option: 58,          // Left Option
-  command: 55, cmd: 55, meta: 55, // Left Command
-  control: 59, ctrl: 59,        // Left Control
-  shift: 56,                     // Left Shift
+  alt: 58, option: 58,                     // Left Option
+  leftoption: 58, leftalt: 58,             // Left Option (explicit)
+  rightoption: 61, rightalt: 61,           // Right Option
+  command: 55, cmd: 55, meta: 55,           // Left Command
+  leftcommand: 55, leftcmd: 55, leftmeta: 55, // Left Command (explicit)
+  rightcommand: 54, rightcmd: 54, rightmeta: 54, // Right Command
+  control: 59, ctrl: 59,                   // Left Control
+  shift: 56,                                // Left Shift
 };
 
 function isStandaloneModifierShortcut(shortcut: string): boolean {
@@ -6113,9 +6117,13 @@ function parseHoldShortcutConfig(shortcut: string): {
     home: 115, end: 119, pageup: 116, pagedown: 121,
     f1: 122, f2: 120, f3: 99, f4: 118, f5: 96, f6: 97, f7: 98, f8: 100,
     f9: 101, f10: 109, f11: 103, f12: 111,
-    // Standalone modifier keys (left-side key codes for CGEventTap monitoring)
+    // Standalone modifier keys for CGEventTap monitoring
     alt: 58, option: 58,
+    leftoption: 58, leftalt: 58,
+    rightoption: 61, rightalt: 61,
     command: 55, cmd: 55, meta: 55,
+    leftcommand: 55, leftcmd: 55, leftmeta: 55,
+    rightcommand: 54, rightcmd: 54, rightmeta: 54,
     control: 59, ctrl: 59,
     shift: 56,
   };
@@ -6125,8 +6133,8 @@ function parseHoldShortcutConfig(shortcut: string): {
   // When the key token itself is a standalone modifier, set the corresponding
   // flag so the Swift monitor checks that the modifier flag is active when
   // the physical key is pressed (same pattern as the Fn key).
-  const isStandaloneAlt = keyToken === 'alt' || keyToken === 'option';
-  const isStandaloneCmd = keyToken === 'command' || keyToken === 'cmd' || keyToken === 'meta';
+  const isStandaloneAlt = keyToken === 'alt' || keyToken === 'option' || keyToken === 'leftoption' || keyToken === 'leftalt' || keyToken === 'rightoption' || keyToken === 'rightalt';
+  const isStandaloneCmd = keyToken === 'command' || keyToken === 'cmd' || keyToken === 'meta' || keyToken === 'leftcommand' || keyToken === 'leftcmd' || keyToken === 'leftmeta' || keyToken === 'rightcommand' || keyToken === 'rightcmd' || keyToken === 'rightmeta';
   const isStandaloneCtrl = keyToken === 'control' || keyToken === 'ctrl';
   const isStandaloneShift = keyToken === 'shift';
   return {

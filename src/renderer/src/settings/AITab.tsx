@@ -657,14 +657,10 @@ const AITab: React.FC = () => {
 
   const WHISPER_PRESET_HOTKEYS = [
     { value: 'Fn', label: 'fn (hold-to-talk)' },
-    { value: 'Alt', label: '\u2325 Option (hold-to-talk)' },
-    { value: 'F5', label: 'F5' },
-    { value: 'F6', label: 'F6' },
-    { value: 'Alt+Space', label: '\u2325 Option + Space' },
-    { value: 'Alt+.', label: '\u2325 Option + .' },
-    { value: 'Command+.', label: '\u2318 Command + .' },
-    { value: 'Control+Space', label: '\u2303 Control + Space' },
-    { value: 'Shift+Space', label: '\u21E7 Shift + Space' },
+    { value: 'LeftOption', label: '\u2325 Left Option (hold-to-talk)' },
+    { value: 'RightOption', label: '\u2325 Right Option (hold-to-talk)' },
+    { value: 'LeftCommand', label: '\u2318 Left Command (hold-to-talk)' },
+    { value: 'RightCommand', label: '\u2318 Right Command (hold-to-talk)' },
   ] as const;
 
   const WHISPER_PRESET_CUSTOM_VALUE = '__custom__';
@@ -1477,7 +1473,10 @@ const AITab: React.FC = () => {
                       value={whisperPresetValue}
                       onChange={(e) => {
                         const selected = e.target.value;
-                        if (selected === WHISPER_PRESET_CUSTOM_VALUE) return;
+                        if (selected === WHISPER_PRESET_CUSTOM_VALUE) {
+                          (e.target as HTMLSelectElement).blur();
+                          return;
+                        }
                         void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, selected);
                       }}
                       className="sc-select"
@@ -1493,6 +1492,7 @@ const AITab: React.FC = () => {
                         onChange={(hotkey) => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey); }}
                         compact
                         variant="whisper"
+                        autoRecord
                       />
                     )}
                   </div>
