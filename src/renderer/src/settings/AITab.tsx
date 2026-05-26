@@ -276,14 +276,7 @@ const AITab: React.FC = () => {
   const [whisperCustomMode, setWhisperCustomMode] = useState(false);
   const whisperSpeakToggleHotkey = (settings?.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] ?? '';
 
-  // Clear custom mode once the stored hotkey is saved (IPC roundtrip completes).
-  // A short timeout handles the edge case where the recorded value equals the
-  // current stored value (so the store won't change to trigger the effect).
-  useEffect(() => {
-    if (!whisperCustomMode) return;
-    const timer = setTimeout(() => setWhisperCustomMode(false), 150);
-    return () => clearTimeout(timer);
-  }, [whisperCustomMode, whisperSpeakToggleHotkey]);
+
 
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
@@ -1504,7 +1497,9 @@ const AITab: React.FC = () => {
                       <HotkeyRecorder
                         value={whisperSpeakToggleHotkey}
                         onChange={(hotkey) => {
-                          void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey);
+                          void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey).then(() => {
+                            setWhisperCustomMode(false);
+                          });
                         }}
                         compact
                         variant="whisper"
