@@ -383,10 +383,8 @@
         "hotkeys": {
           "title": "Whisper-Tastenkombinationen",
           "startStop": "Sprechen starten/stoppen",
-          "setToFn": "Auf Fn setzen",
-          "fnHint": "Verwende Auf Fn setzen, um die standardmaessige Push-to-Talk-Taste wiederherzustellen.",
-          "fnHintBefore": "Use",
-          "fnHintAfter": "to restore the default hold-to-talk key."
+          "custom": "Benutzerdefiniert…",
+          "holdToTalkHint": "Waehlen Sie eine Push-to-Talk-Taste. Halten zum Aufnehmen, loslassen zum Eingeben. Benutzen Sie Benutzerdefiniert fuer jede Tastenkombination."
         },
         "autoClose": {
           "title": "Auto-Close After Dictation",
