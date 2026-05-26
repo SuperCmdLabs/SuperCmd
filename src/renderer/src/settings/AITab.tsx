@@ -1490,7 +1490,7 @@ const AITab: React.FC = () => {
                       ))}
                       <option value={WHISPER_PRESET_CUSTOM_VALUE}>{t('settings.ai.whisper.hotkeys.custom')}</option>
                     </select>
-                    {whisperPresetValue === WHISPER_PRESET_CUSTOM_VALUE && (
+                    {whisperSelectValue === WHISPER_PRESET_CUSTOM_VALUE && (
                       <HotkeyRecorder
                         value={whisperSpeakToggleHotkey}
                         onChange={(hotkey) => {
