@@ -63,6 +63,7 @@ type UseLauncherLocalSystemCommandsOptions = {
   openCamera: () => void;
   openSpeak: () => void;
   openWindowManager: () => void;
+  openMenuItemSearch: () => void;
   openSchedule: () => void;
 
   setShowWhisper: React.Dispatch<React.SetStateAction<boolean>>;
@@ -114,6 +115,7 @@ export function useLauncherLocalSystemCommands(
     openCamera,
     openSpeak,
     openWindowManager,
+    openMenuItemSearch,
     openSchedule,
     setShowWhisper,
     setShowWhisperOnboarding,
@@ -286,6 +288,18 @@ export function useLauncherLocalSystemCommands(
       }
       return true;
     }
+    if (commandId === 'system-menu-item-search') {
+      whisperSessionRef.current = false;
+      openMenuItemSearch();
+      setSearchQuery('');
+      setSelectedIndex(0);
+      if (document.hasFocus()) {
+        try {
+          await window.electron.hideWindow();
+        } catch {}
+      }
+      return true;
+    }
     if (commandId === 'system-add-to-memory') {
       if (memoryActionLoading) return true;
       setMemoryActionLoading(true);
@@ -392,6 +406,7 @@ export function useLauncherLocalSystemCommands(
     openCamera,
     openSpeak,
     openWindowManager,
+    openMenuItemSearch,
     openSchedule,
     setShowWhisper,
     setShowWhisperOnboarding,

@@ -188,12 +188,12 @@ const App: React.FC = () => {
   const {
     extensionView, extensionPreferenceSetup, scriptCommandSetup, scriptCommandOutput,
     showClipboardManager, clipboardManagerOpenedViaShortcut, showSnippetManager, showNotesSearch, showCanvasSearch, showQuickLinkManager, showFileSearch, showCursorPrompt,
-    showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showAppUninstall, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
+    showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showMenuItemSearch, showAppUninstall, showWhisperOnboarding, showWhisperHint, showOnboarding, aiMode,
     openOnboarding, openWhisper, openClipboardManager,
-    openSnippetManager, openNotesSearch, openCanvasSearch, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openSchedule, openWindowManager, openAppUninstall,
+    openSnippetManager, openNotesSearch, openCanvasSearch, openQuickLinkManager, openFileSearch, openCursorPrompt, openSpeak, openCamera, openSchedule, openWindowManager, openMenuItemSearch, openAppUninstall,
     setExtensionView, setExtensionPreferenceSetup, setScriptCommandSetup, setScriptCommandOutput,
     setShowClipboardManager, setClipboardManagerOpenedViaShortcut, setShowSnippetManager, setShowNotesSearch, setShowCanvasSearch, setShowQuickLinkManager, setShowFileSearch, setShowCursorPrompt,
-    setShowWhisper, setShowSpeak, setShowCamera, setShowSchedule, setShowWindowManager, setShowAppUninstall, setShowWhisperOnboarding, setShowWhisperHint,
+    setShowWhisper, setShowSpeak, setShowCamera, setShowSchedule, setShowWindowManager, setShowMenuItemSearch, setShowAppUninstall, setShowWhisperOnboarding, setShowWhisperHint,
     setShowOnboarding, setAiMode,
   } = useAppViewManager();
   const {
@@ -478,6 +478,17 @@ const App: React.FC = () => {
     anchor: 'bottom-right',
     onClosed: () => {
       setShowWindowManager(false);
+    },
+  });
+
+  const menuItemSearchPortalTarget = useDetachedPortalWindow(showMenuItemSearch, {
+    name: 'supercmd-menu-item-search-window',
+    title: 'SuperCmd Menu Item Search',
+    width: 580,
+    height: 500,
+    anchor: 'center',
+    onClosed: () => {
+      setShowMenuItemSearch(false);
     },
   });
 
@@ -1789,6 +1800,7 @@ const App: React.FC = () => {
     openCamera,
     openSpeak,
     openWindowManager,
+    openMenuItemSearch,
     openSchedule,
     setShowWhisper,
     setShowWhisperOnboarding,
@@ -2285,6 +2297,11 @@ const App: React.FC = () => {
       windowManagerPortalTarget={windowManagerPortalTarget}
       onWindowManagerClose={() => {
         setShowWindowManager(false);
+      }}
+      showMenuItemSearch={showMenuItemSearch}
+      menuItemSearchPortalTarget={menuItemSearchPortalTarget}
+      onMenuItemSearchClose={() => {
+        setShowMenuItemSearch(false);
       }}
       showCursorPrompt={showCursorPrompt}
       cursorPromptPortalTarget={cursorPromptPortalTarget}

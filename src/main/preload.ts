@@ -534,6 +534,12 @@ const electronAPI = {
   runAppleScript: (script: string, options?: { language?: string; humanReadableOutput?: boolean; timeout?: number }): Promise<string> =>
     ipcRenderer.invoke('run-applescript', script, options),
 
+  // Menu Item Search
+  getAppMenuItems: (): Promise<{ ok: boolean; items?: Array<{ path: string; title: string; fullPath: string; shortcut?: string | null; enabled: boolean }>; error?: string }> =>
+    ipcRenderer.invoke('get-app-menu-items'),
+  pressAppMenuItem: (path: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('press-app-menu-item', { path }),
+
   // Calendar
   ensureCalendarAccess: (options?: { prompt?: boolean }): Promise<any> =>
     ipcRenderer.invoke('calendar-ensure-access', options),
