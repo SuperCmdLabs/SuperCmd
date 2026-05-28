@@ -203,6 +203,7 @@
         "italian": "義大利語",
         "japanese": "日語",
         "korean": "韓語",
+        "polish": "波蘭語",
         "portugueseBrazil": "葡萄牙語（巴西）",
         "russian": "俄語",
         "spanishMexico": "西班牙語（墨西哥）",
@@ -383,10 +384,8 @@
         "hotkeys": {
           "title": "語音輸入快捷鍵",
           "startStop": "開始/停止說話",
-          "setToFn": "設為 Fn 鍵",
-          "fnHint": "使用「設為 Fn 鍵」恢復預設的按住說話快捷鍵。",
-          "fnHintBefore": "使用",
-          "fnHintAfter": "可恢復預設的按住說話快捷鍵。"
+          "custom": "自訂…",
+          "holdToTalkHint": "選擇按住說話的按鍵。按住錄音，放開輸入。使用自訂錄製任意組合鍵。"
         },
         "autoClose": {
           "title": "聽寫後自動關閉",

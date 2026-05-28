@@ -55,6 +55,7 @@ export interface AppViewManager {
   showCamera: boolean;
   showSchedule: boolean;
   showWindowManager: boolean;
+  showMenuItemSearch: boolean;
   showAppUninstall: string | null;
   showWhisperOnboarding: boolean;
   showWhisperHint: boolean;
@@ -81,6 +82,7 @@ export interface AppViewManager {
   openCamera: () => void;
   openSchedule: () => void;
   openWindowManager: () => void;
+  openMenuItemSearch: () => void;
   openAppUninstall: (appPath: string) => void;
   openWhisperOnboarding: () => void;
   openOnboarding: () => void;
@@ -105,6 +107,7 @@ export interface AppViewManager {
   setShowCamera: React.Dispatch<React.SetStateAction<boolean>>;
   setShowSchedule: React.Dispatch<React.SetStateAction<boolean>>;
   setShowWindowManager: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowMenuItemSearch: React.Dispatch<React.SetStateAction<boolean>>;
   setShowAppUninstall: React.Dispatch<React.SetStateAction<string | null>>;
   setShowWhisperOnboarding: React.Dispatch<React.SetStateAction<boolean>>;
   setShowWhisperHint: React.Dispatch<React.SetStateAction<boolean>>;
@@ -130,6 +133,7 @@ export function useAppViewManager(): AppViewManager {
   const [showCamera, setShowCamera] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showWindowManager, setShowWindowManager] = useState(false);
+  const [showMenuItemSearch, setShowMenuItemSearch] = useState(false);
   const [showAppUninstall, setShowAppUninstall] = useState<string | null>(null);
   const [showWhisperOnboarding, setShowWhisperOnboarding] = useState(false);
   const [showWhisperHint, setShowWhisperHint] = useState(false);
@@ -155,6 +159,7 @@ export function useAppViewManager(): AppViewManager {
     setShowCamera(false);
     setShowSchedule(false);
     setShowWindowManager(false);
+    setShowMenuItemSearch(false);
     setShowAppUninstall(null);
     setShowWhisperOnboarding(false);
     setShowWhisperHint(false);
@@ -248,6 +253,11 @@ export function useAppViewManager(): AppViewManager {
     setShowWindowManager(true);
   }, [resetAllViews]);
 
+  const openMenuItemSearch = useCallback(() => {
+    resetAllViews();
+    setShowMenuItemSearch(true);
+  }, [resetAllViews]);
+
   const openAppUninstall = useCallback((appPath: string) => {
     // Don't call resetAllViews() — it can trigger side effects in menubar
     // extensions that cause SIGTRAP crashes. Just set the uninstall view directly.
@@ -291,6 +301,7 @@ export function useAppViewManager(): AppViewManager {
     showCamera,
     showSchedule,
     showWindowManager,
+    showMenuItemSearch,
     showAppUninstall,
     showWhisperOnboarding,
     showWhisperHint,
@@ -315,6 +326,7 @@ export function useAppViewManager(): AppViewManager {
     openCamera,
     openSchedule,
     openWindowManager,
+    openMenuItemSearch,
     openAppUninstall,
     openWhisperOnboarding,
     openOnboarding,
@@ -338,6 +350,7 @@ export function useAppViewManager(): AppViewManager {
     setShowCamera,
     setShowSchedule,
     setShowWindowManager,
+    setShowMenuItemSearch,
     setShowAppUninstall,
     setShowWhisperOnboarding,
     setShowWhisperHint,

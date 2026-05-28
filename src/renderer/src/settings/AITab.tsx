@@ -103,6 +103,7 @@ const WHISPER_LANGUAGE_CODES = [
   'it-IT',
   'ja-JP',
   'ko-KR',
+  'pl-PL',
   'pt-BR',
   'ru-RU',
   'es-MX',
@@ -121,6 +122,7 @@ const AI_LANGUAGE_LABEL_KEYS: Record<string, string> = {
   'it-IT': 'settings.ai.languages.italian',
   'ja-JP': 'settings.ai.languages.japanese',
   'ko-KR': 'settings.ai.languages.korean',
+  'pl-PL': 'settings.ai.languages.polish',
   'pt-BR': 'settings.ai.languages.portugueseBrazil',
   'ru-RU': 'settings.ai.languages.russian',
   'es-MX': 'settings.ai.languages.spanishMexico',
@@ -273,6 +275,11 @@ const AITab: React.FC = () => {
   const [parakeetModelLoading, setParakeetModelLoading] = useState(false);
   const [qwen3ModelStatus, setQwen3ModelStatus] = useState<Qwen3ModelStatus | null>(null);
   const [qwen3ModelLoading, setQwen3ModelLoading] = useState(false);
+  const [whisperCustomMode, setWhisperCustomMode] = useState(false);
+  const whisperSpeakToggleHotkey = (settings?.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] ?? '';
+
+
+
   const settingsRef = useRef<AppSettings | null>(null);
   const pullingModelRef = useRef<string | null>(null);
   const selectingOllamaDefaultRef = useRef(false);
@@ -653,8 +660,20 @@ const AITab: React.FC = () => {
   }
 
   const ai = settings.ai;
-  const whisperSpeakToggleHotkey = (settings.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] ?? '';
-  const isWhisperSpeakToggleFn = String(whisperSpeakToggleHotkey).trim().toLowerCase() === 'fn';
+
+  const WHISPER_PRESET_HOTKEYS = [
+    { value: 'Fn', label: 'fn (hold-to-talk)' },
+    { value: 'LeftOption', label: '\u2325 Left Option (hold-to-talk)' },
+    { value: 'RightOption', label: '\u2325 Right Option (hold-to-talk)' },
+    { value: 'LeftCommand', label: '\u2318 Left Command (hold-to-talk)' },
+    { value: 'RightCommand', label: '\u2318 Right Command (hold-to-talk)' },
+  ] as const;
+
+  const WHISPER_PRESET_CUSTOM_VALUE = '__custom__';
+  const whisperPresetValue = WHISPER_PRESET_HOTKEYS.find((p) => p.value === whisperSpeakToggleHotkey)
+    ? whisperSpeakToggleHotkey
+    : WHISPER_PRESET_CUSTOM_VALUE;
+  const whisperSelectValue = whisperCustomMode ? WHISPER_PRESET_CUSTOM_VALUE : whisperPresetValue;
   const genericModels = ai.provider === 'ollama' && ollamaRunning
     ? Array.from(localModels).map((name) => ({
         id: `ollama-${name}`,
@@ -1457,27 +1476,42 @@ const AITab: React.FC = () => {
                 <div>
                   <p className="text-[0.75rem] text-[var(--text-muted)] mb-1.5">{t('settings.ai.whisper.hotkeys.startStop')}</p>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <HotkeyRecorder
-                      value={whisperSpeakToggleHotkey}
-                      onChange={(hotkey) => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey); }}
-                      compact
-                      variant="whisper"
-                    />
-                    {!isWhisperSpeakToggleFn ? (
-                      <button
-                        type="button"
-                        onClick={() => { void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, 'Fn'); }}
-                        className="inline-flex min-h-[34px] items-center justify-center rounded-md px-3 py-1.5 text-[0.8125rem] font-medium transition-colors bg-[var(--ui-segment-bg)] border border-[var(--ui-divider)] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] hover:border-[var(--ui-segment-border)]"
-                      >
-                        {t('settings.ai.whisper.hotkeys.setToFn')}
-                      </button>
-                    ) : null}
+                    <select
+                      value={whisperSelectValue}
+                      onChange={(e) => {
+                        const selected = e.target.value;
+                        if (selected === WHISPER_PRESET_CUSTOM_VALUE) {
+                          setWhisperCustomMode(true);
+                          (e.target as HTMLSelectElement).blur();
+                          return;
+                        }
+                        setWhisperCustomMode(false);
+                        void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, selected);
+                      }}
+                      className="sc-select"
+                    >
+                      {WHISPER_PRESET_HOTKEYS.map((preset) => (
+                        <option key={preset.value} value={preset.value}>{preset.label}</option>
+                      ))}
+                      <option value={WHISPER_PRESET_CUSTOM_VALUE}>{t('settings.ai.whisper.hotkeys.custom')}</option>
+                    </select>
+                    {whisperSelectValue === WHISPER_PRESET_CUSTOM_VALUE && (
+                      <HotkeyRecorder
+                        value={whisperSpeakToggleHotkey}
+                        onChange={(hotkey) => {
+                          void handleWhisperHotkeyChange(WHISPER_SPEAK_TOGGLE_COMMAND_ID, hotkey).then(() => {
+                            setWhisperCustomMode(false);
+                          });
+                        }}
+                        compact
+                        variant="whisper"
+                        autoRecord={whisperCustomMode}
+                      />
+                    )}
                   </div>
-                  {!isWhisperSpeakToggleFn ? (
-                    <p className="mt-1.5 text-[0.6875rem] text-[var(--text-muted)]">
-                      {t('settings.ai.whisper.hotkeys.fnHint')}
-                    </p>
-                  ) : null}
+                  <p className="mt-1.5 text-[0.6875rem] text-[var(--text-muted)]">
+                    {t('settings.ai.whisper.hotkeys.holdToTalkHint')}
+                  </p>
                 </div>
                 {hotkeyStatus.type !== 'idle' ? (
                   <p

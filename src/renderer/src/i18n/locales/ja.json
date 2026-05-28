@@ -203,6 +203,7 @@
         "italian": "イタリア語",
         "japanese": "日本語",
         "korean": "韓国語",
+        "polish": "ポーランド語",
         "portugueseBrazil": "ポルトガル語（ブラジル）",
         "russian": "ロシア語",
         "spanishMexico": "スペイン語（メキシコ）",
@@ -383,10 +384,8 @@
         "hotkeys": {
           "title": "Whisper ホットキー",
           "startStop": "発話の開始/停止",
-          "setToFn": "Fn に設定",
-          "fnHint": "「Fn に設定」を使用してデフォルトの押しっぱなし発話キーを復元します。",
-          "fnHintBefore": "使用するには",
-          "fnHintAfter": "でデフォルトの押しっぱなし発話キーを復元できます。"
+          "custom": "カスタム…",
+          "holdToTalkHint": "押しっぱなし発話キーを選択してください。押して録音、離して入力。カスタムで任意のキー組み合わせを録音できます。"
         },
         "autoClose": {
           "title": "ディクテーション後に自動で閉じる",

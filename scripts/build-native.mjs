@@ -42,6 +42,8 @@ const swift = [
     '-framework EventKit'],
   ['dist/native/settings-coordinator', 'src/native/settings-coordinator.swift',
     '-framework Foundation'],
+  ['dist/native/audio-capturer', 'src/native/audio-capturer.swift',
+    '-framework AVFoundation -framework Foundation'],
 ];
 
 for (const [out, src, frameworks] of swift) {

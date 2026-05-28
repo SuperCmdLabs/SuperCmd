@@ -203,6 +203,7 @@
         "italian": "Italian",
         "japanese": "Japanese",
         "korean": "Korean",
+        "polish": "Polonais",
         "portugueseBrazil": "Portuguese (Brazil)",
         "russian": "Russian",
         "spanishMexico": "Spanish (Mexico)",
@@ -383,10 +384,8 @@
         "hotkeys": {
           "title": "Raccourcis Whisper",
           "startStop": "Demarrer/arreter la dictee",
-          "setToFn": "Definir sur Fn",
-          "fnHint": "Utilisez Definir sur Fn pour restaurer la touche push-to-talk par defaut.",
-          "fnHintBefore": "Use",
-          "fnHintAfter": "to restore the default hold-to-talk key."
+          "custom": "Personnalise…",
+          "holdToTalkHint": "Selectionnez une touche push-to-talk. Maintenez pour enregistrer, relachez pour saisir. Utilisez Personnalise pour enregistrer toute combinaison."
         },
         "autoClose": {
           "title": "Auto-Close After Dictation",

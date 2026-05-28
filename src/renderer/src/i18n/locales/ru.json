@@ -203,6 +203,7 @@
         "italian": "Italian",
         "japanese": "Japanese",
         "korean": "Korean",
+        "polish": "Польский",
         "portugueseBrazil": "Portuguese (Brazil)",
         "russian": "Russian",
         "spanishMexico": "Spanish (Mexico)",
@@ -383,10 +384,8 @@
         "hotkeys": {
           "title": "Whisper Hotkeys",
           "startStop": "Start/Stop Speaking",
-          "setToFn": "Set to Fn",
-          "fnHint": "Use Set to Fn to restore the default hold-to-talk key.",
-          "fnHintBefore": "Use",
-          "fnHintAfter": "to restore the default hold-to-talk key."
+          "custom": "Custom…",
+          "holdToTalkHint": "Select a hold-to-talk key. Hold to record, release to type. Use Custom to record any key combo."
         },
         "autoClose": {
           "title": "Auto-Close After Dictation",

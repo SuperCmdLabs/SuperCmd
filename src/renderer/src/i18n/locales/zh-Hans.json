@@ -203,6 +203,7 @@
         "italian": "意大利语",
         "japanese": "日语",
         "korean": "韩语",
+        "polish": "波兰语",
         "portugueseBrazil": "葡萄牙语（巴西）",
         "russian": "俄语",
         "spanishMexico": "西班牙语（墨西哥）",
@@ -383,10 +384,8 @@
         "hotkeys": {
           "title": "语音输入快捷键",
           "startStop": "开始/停止说话",
-          "setToFn": "设为 Fn 键",
-          "fnHint": "使用「设为 Fn 键」恢复默认的按住说话快捷键。",
-          "fnHintBefore": "使用",
-          "fnHintAfter": "可恢复默认的按住说话快捷键。"
+          "custom": "自定义…",
+          "holdToTalkHint": "选择按住说话的按键。按住录音，松开输入。使用自定义录制任意组合键。"
         },
         "autoClose": {
           "title": "听写后自动关闭",
