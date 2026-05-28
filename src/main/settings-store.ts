@@ -257,6 +257,8 @@ export interface AppSettings {
   emojiPickerExcludedAppBundleIds: string[];
   browserSearch: BrowserSearchSettings;
   rootSearchRanking: Record<string, RootSearchRankingSetting>;
+  /** Show inline ghost-text autocomplete in the launcher search bar (commands, files, browser). */
+  rootSearchAutocompleteEnabled: boolean;
   // Number of seconds the launcher waits after closing before resetting the
   // active view (extension or internal view like Clipboard) back to root
   // search. `0` resets immediately on every reopen.
@@ -403,6 +405,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     webSearchSuggestionsEnabled: true,
   },
   rootSearchRanking: {},
+  rootSearchAutocompleteEnabled: true,
   popToRootSearchTimeoutSeconds: 90,
   installedExtensions: [],
   extensionUninstallTombstones: {},
@@ -1300,6 +1303,9 @@ export function loadSettings(): AppSettings {
       emojiPickerExcludedAppBundleIds: normalizeBundleIdList(parsed.emojiPickerExcludedAppBundleIds),
       browserSearch: normalizeBrowserSearchSettings(parsed.browserSearch),
       rootSearchRanking: normalizeRootSearchRanking(parsed.rootSearchRanking),
+      rootSearchAutocompleteEnabled: typeof parsed.rootSearchAutocompleteEnabled === 'boolean'
+        ? parsed.rootSearchAutocompleteEnabled
+        : DEFAULT_SETTINGS.rootSearchAutocompleteEnabled,
       popToRootSearchTimeoutSeconds: normalizePopToRootSearchTimeoutSeconds(parsed.popToRootSearchTimeoutSeconds),
       installedExtensions: normalizeInstalledExtensions(parsed.installedExtensions),
       extensionUninstallTombstones: normalizeExtensionUninstallTombstones(parsed.extensionUninstallTombstones),
@@ -1574,6 +1580,9 @@ function saveSettingsInternal(
     rootSearchRanking: normalizeRootSearchRanking(
       'rootSearchRanking' in patch ? patch.rootSearchRanking : current.rootSearchRanking
     ),
+    rootSearchAutocompleteEnabled: typeof patch.rootSearchAutocompleteEnabled === 'boolean'
+      ? patch.rootSearchAutocompleteEnabled
+      : current.rootSearchAutocompleteEnabled,
     popToRootSearchTimeoutSeconds: normalizePopToRootSearchTimeoutSeconds(
       'popToRootSearchTimeoutSeconds' in patch
         ? patch.popToRootSearchTimeoutSeconds

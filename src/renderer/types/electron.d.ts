@@ -667,6 +667,7 @@ export interface AppSettings {
   emojiPickerExcludedAppBundleIds: string[];
   browserSearch: BrowserSearchSettings;
   rootSearchRanking: Record<string, RootSearchRankingSetting>;
+  rootSearchAutocompleteEnabled: boolean;
   popToRootSearchTimeoutSeconds: number;
   installedExtensions: string[];
   extensionUninstallTombstones: Record<string, number>;

@@ -780,6 +780,11 @@
           "devMode": "Um jetzt einen Browser zu verbinden, öffne die Erweiterungsseite des Browsers, aktiviere den Entwicklermodus, wähle dann „Entpackte Erweiterung laden“ und wähle den Ordner browser-extension aus.",
           "temporary": "(Dies ist vorübergehend, bis die Erweiterung im Store veröffentlicht ist.)"
         }
+      },
+      "inlineAutocomplete": {
+        "title": "Inline-Autovervollständigung",
+        "description": "Zeigt während der Eingabe die graue Geistertext-Vervollständigung in der Suchleiste an. Gilt für Befehle, Dateien und Browserergebnisse.",
+        "label": "Inline-Autovervollständigung anzeigen"
       }
     }
   },

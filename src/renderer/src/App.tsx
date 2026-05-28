@@ -165,6 +165,7 @@ const App: React.FC = () => {
     DEFAULT_BROWSER_SEARCH_RESULT_GROUPS
   );
   const [webSearchSuggestionsEnabled, setWebSearchSuggestionsEnabled] = useState(true);
+  const [rootSearchAutocompleteEnabled, setRootSearchAutocompleteEnabled] = useState(true);
   const [rootSearchRanking, setRootSearchRanking] = useState<RootSearchRankingState>({});
   const rootSearchRankingRef = useRef<RootSearchRankingState>({});
   const [launcherFileResults, setLauncherFileResults] = useState<IndexedFileSearchResult[]>([]);
@@ -557,6 +558,7 @@ const App: React.FC = () => {
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       setBrowserSearchResultGroups(normalizeBrowserSearchResultGroups(settings.browserSearch?.resultGroups));
       setWebSearchSuggestionsEnabled(settings.browserSearch?.webSearchSuggestionsEnabled !== false);
+      setRootSearchAutocompleteEnabled(settings.rootSearchAutocompleteEnabled !== false);
       setRootSearchRanking(settings.rootSearchRanking || {});
       hydrateWebSearchSettings(settings);
       const speakToggleHotkey = settings.commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '';
@@ -816,6 +818,7 @@ const App: React.FC = () => {
       setLauncherShortcut(settings.globalShortcut || 'Alt+Space');
       setBrowserSearchResultGroups(normalizeBrowserSearchResultGroups(settings.browserSearch?.resultGroups));
       setWebSearchSuggestionsEnabled(settings.browserSearch?.webSearchSuggestionsEnabled !== false);
+      setRootSearchAutocompleteEnabled(settings.rootSearchAutocompleteEnabled !== false);
       setRootSearchRanking(settings.rootSearchRanking || {});
       hydrateWebSearchSettings(settings);
       setDisableFileSearchResults(Boolean(settings.disableFileSearchResults));
@@ -1559,6 +1562,7 @@ const App: React.FC = () => {
     aiMode,
     rootSearchRanking,
     webSearchSuggestionsEnabled,
+    rootSearchAutocompleteEnabled,
     rootBangState,
     enabledSearchBangs,
     effectiveSearchBangs,

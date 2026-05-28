@@ -780,6 +780,11 @@
           "devMode": "Pour connecter un navigateur maintenant, ouvrez la page des extensions du navigateur, activez le mode développeur, puis choisissez Charger l’extension non empaquetée et sélectionnez le dossier browser-extension.",
           "temporary": "(C’est temporaire jusqu’à la publication de l’extension dans la boutique.)"
         }
+      },
+      "inlineAutocomplete": {
+        "title": "Autocomplétion en ligne",
+        "description": "Affiche la complétion en texte fantôme gris dans la barre de recherche pendant la saisie. S’applique aux commandes, fichiers et résultats du navigateur.",
+        "label": "Afficher l’autocomplétion en ligne"
       }
     }
   },

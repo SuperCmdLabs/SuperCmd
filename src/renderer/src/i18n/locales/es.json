@@ -780,6 +780,11 @@
           "devMode": "Para conectar un navegador ahora, abre la página de extensiones del navegador, activa el modo de desarrollador, elige Cargar descomprimida y selecciona la carpeta browser-extension.",
           "temporary": "(Esto es temporal hasta que la extensión se publique en la tienda.)"
         }
+      },
+      "inlineAutocomplete": {
+        "title": "Autocompletado en línea",
+        "description": "Muestra el texto fantasma gris de autocompletado en la barra de búsqueda mientras escribes. Se aplica a comandos, archivos y resultados del navegador.",
+        "label": "Mostrar autocompletado en línea"
       }
     }
   },

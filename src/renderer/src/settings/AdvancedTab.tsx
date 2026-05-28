@@ -413,7 +413,7 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
                 <select
                   value={settings.webSearchDefaultBangKey || 'g'}
                   onChange={(e) => onChange({ ...settings, webSearchDefaultBangKey: e.target.value })}
-                  className="sc-select !py-1 !text-[12px]"
+                  className="sc-select"
                 >
                   {WEB_SEARCH_DEFAULT_PROVIDER_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -765,6 +765,7 @@ const AdvancedTab: React.FC = () => {
     webSearchBangCustomProviders: [],
     webSearchShowHiddenBangs: false,
     webSearchSuggestionsEnabled: true,
+    rootSearchAutocompleteEnabled: true,
   };
 
   const usingCustomSettingsLocation = Boolean(settingsLocation?.path);
@@ -962,6 +963,24 @@ const AdvancedTab: React.FC = () => {
               className="settings-checkbox"
             />
             {t('settings.advanced.disableFileSearch.label')}
+          </label>
+        </SettingsRow>
+
+        <SettingsRow
+          icon={<Sparkles className="w-4 h-4" />}
+          title={t('settings.advanced.inlineAutocomplete.title')}
+          description={t('settings.advanced.inlineAutocomplete.description')}
+        >
+          <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings?.rootSearchAutocompleteEnabled !== false}
+              onChange={(e) => {
+                void applySettingsPatch({ rootSearchAutocompleteEnabled: e.target.checked });
+              }}
+              className="settings-checkbox"
+            />
+            {t('settings.advanced.inlineAutocomplete.label')}
           </label>
         </SettingsRow>
 

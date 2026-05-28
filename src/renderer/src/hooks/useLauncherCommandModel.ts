@@ -82,6 +82,7 @@ export type UseLauncherCommandModelParams = {
   aiMode: boolean;
   rootSearchRanking: RootSearchRankingState;
   webSearchSuggestionsEnabled: boolean;
+  rootSearchAutocompleteEnabled: boolean;
 
   rootBangState: BangParseState;
   enabledSearchBangs: SearchBangDefinition[];
@@ -293,6 +294,7 @@ export function useLauncherCommandModel({
   aiMode,
   rootSearchRanking,
   webSearchSuggestionsEnabled,
+  rootSearchAutocompleteEnabled,
   rootBangState,
   enabledSearchBangs,
   effectiveSearchBangs,
@@ -690,6 +692,9 @@ export function useLauncherCommandModel({
 
   const rootSearchAutoComplete = useMemo(() => {
     if (!hasSearchQuery || aiMode || rootBangState.mode !== 'none') return null;
+    // Inline ghost-text autocomplete applies to all root results (commands,
+    // files, browser) and has its own independent toggle.
+    if (!rootSearchAutocompleteEnabled) return null;
     if (browserSearch.enabled && !browserSearch.alphaChromiumRootSearchEnabled) {
       const legacyCompletion = browserSearch.getCompletion(searchQuery, browserSearchResultGroups);
       if (legacyCompletion?.completion && legacyCompletion.completion !== searchQuery) {
@@ -707,7 +712,7 @@ export function useLauncherCommandModel({
     if (!completion.toLowerCase().startsWith(searchQuery.toLowerCase())) return null;
     const suffix = completion.slice(searchQuery.length);
     return { completion: `${searchQuery}${suffix}`, suffix };
-  }, [hasSearchQuery, aiMode, rootBangState, searchQuery, rootRankedCandidates, browserSearch, browserSearchResultGroups]);
+  }, [hasSearchQuery, aiMode, rootBangState, searchQuery, rootRankedCandidates, browserSearch, browserSearchResultGroups, rootSearchAutocompleteEnabled]);
 
   const launcherInputValue = searchQuery;
 

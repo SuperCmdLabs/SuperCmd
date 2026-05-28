@@ -74,12 +74,17 @@ const LauncherSearchHeader: React.FC<LauncherSearchHeaderProps> = ({
   onClearSearch,
 }) => {
   const extensionArgumentDefinitions = selectedInlineExtensionArgumentDefinitions || [];
+  // Inline argument inputs render in the same lane as the autocomplete ghost
+  // overlay; showing both overlaps them. Suppress autocomplete while a command
+  // with inline arguments (extension args or quicklink dynamic fields) is active.
+  const hasInlineArguments =
+    extensionArgumentDefinitions.length > 0 || selectedInlineQuickLinkDynamicFields.length > 0;
 
   return (
     <div className="drag-region flex h-[60px] items-center gap-2 px-4 border-b border-[var(--ui-divider)]">
       <div ref={inlineArgumentLaneRef} className="relative min-w-0 flex-1">
         <div className="relative flex h-full items-center">
-          {autocompleteSuffix && value ? (
+          {autocompleteSuffix && value && !hasInlineArguments ? (
             <div
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 flex items-center min-w-0 w-full text-[0.9375rem] font-medium tracking-[0.005em] whitespace-pre overflow-hidden"

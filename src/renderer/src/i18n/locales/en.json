@@ -780,6 +780,11 @@
           "devMode": "To connect a browser now, open the browser extension page, enable Developer mode, then choose Load unpacked and select the browser-extension folder.",
           "temporary": "(This is temporary until the extension is published on the store.)"
         }
+      },
+      "inlineAutocomplete": {
+        "title": "Inline autocomplete",
+        "description": "Show grey ghost-text completion in the search bar as you type. Applies to commands, files, and browser results.",
+        "label": "Show inline autocomplete"
       }
     }
   },

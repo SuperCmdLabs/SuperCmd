@@ -780,6 +780,11 @@
           "devMode": "Per collegare un browser ora, apri la pagina delle estensioni del browser, abilita la modalità sviluppatore, poi scegli Carica estensione non pacchettizzata e seleziona la cartella browser-extension.",
           "temporary": "(È temporaneo finché l’estensione non sarà pubblicata nello store.)"
         }
+      },
+      "inlineAutocomplete": {
+        "title": "Completamento automatico in linea",
+        "description": "Mostra il completamento con testo grigio nella barra di ricerca durante la digitazione. Si applica a comandi, file e risultati del browser.",
+        "label": "Mostra completamento automatico in linea"
       }
     }
   },

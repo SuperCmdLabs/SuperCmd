@@ -277,7 +277,7 @@ test('direct search appears after strong promoted results', () => {
   assert.deepEqual(ids(results.slice(0, 2)), ['app-vivaldi', 'web-search-root-direct']);
 });
 
-test('direct search is last in Results ahead of weak deep file matches', () => {
+test('file and folder matches stay in the Files section, never the top Results', () => {
   const query = 'uzh';
   const ranked = rankRootSearchCandidates([
     candidate({ query, id: 'folder-uzh', title: 'UZH', subtype: 'folder', pathLocationBoost: 120 }),
@@ -297,11 +297,12 @@ test('direct search is last in Results ahead of weak deep file matches', () => {
     fileCandidates: ranked.filter((item) => item.source === 'file'),
     webSearchRootDirectCommand: command('web-search-root-direct', 'Search "uzh"'),
   });
-  assert.deepEqual(ids(results.queryResultCommands), ['folder-uzh', 'web-search-root-direct']);
+  assert.deepEqual(ids(results.queryResultCommands), ['web-search-root-direct']);
+  assert.equal(results.queryFileSectionCommands.some((item) => item.id === 'folder-uzh'), true);
   assert.equal(results.queryFileSectionCommands.some((item) => item.id === 'deep-uzhgorod'), true);
 });
 
-test('focused project path file match promotes before direct search', () => {
+test('focused project path file match stays in Files, not the top Results', () => {
   const query = 'supercmd node';
   const nodeModules = candidate({
     query,
@@ -318,12 +319,14 @@ test('focused project path file match promotes before direct search', () => {
     depthPenalty: 50,
   });
   const ranked = rankRootSearchCandidates([nodeModules]);
-  const results = assembleRootSearchForTest({
+  const assembled = assembleRootSearchForTest({
     searchQuery: query,
     rootRankedCandidates: ranked,
+    fileCandidates: ranked.filter((item) => item.source === 'file'),
     webSearchRootDirectCommand: command('web-search-root-direct', 'Search "supercmd node"'),
-  }).queryResultCommands;
-  assert.deepEqual(ids(results), ['folder-node-modules', 'web-search-root-direct']);
+  });
+  assert.deepEqual(ids(assembled.queryResultCommands), ['web-search-root-direct']);
+  assert.equal(assembled.queryFileSectionCommands.some((item) => item.id === 'folder-node-modules'), true);
 });
 
 test('broad location path match does not promote before direct search', () => {
@@ -501,6 +504,70 @@ test('search section gating hides suggestions without removing direct search', (
   assert.equal(assembled.queryFileSectionCommands[0].id, 'file-vivaldi');
 });
 
+test('command beats a prefix-matching file when query is a later word of the command', () => {
+  const query = 'onboarding';
+  const onboardingCommand = candidate({
+    query,
+    id: 'system-onboarding',
+    title: 'SuperCmd Onboarding',
+    subtype: 'system-command',
+    fields: [{ value: 'SuperCmd Onboarding', kind: 'label' }],
+  });
+  const onboardingFile = candidate({
+    query,
+    id: 'file-onboarding',
+    title: 'onboarding.md',
+    subtype: 'file',
+    sourceQualityBoost: 8,
+    pathOrUrl: '/Users/me/Documents/onboarding.md',
+  });
+  const ranked = rankRootSearchCandidates([onboardingCommand, onboardingFile]);
+  const assembled = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    fileCandidates: ranked.filter((item) => item.source === 'file'),
+  });
+  assert.equal(assembled.queryResultCommands[0].id, 'system-onboarding');
+  assert.equal(assembled.queryResultCommands.some((item) => item.id === 'file-onboarding'), false);
+  assert.equal(assembled.queryFileSectionCommands.some((item) => item.id === 'file-onboarding'), true);
+});
+
+test('files rank above search suggestions and suppress the suggestions section', () => {
+  const query = 'onboarding';
+  const file = candidate({
+    query,
+    id: 'file-onboarding',
+    title: 'onboarding.md',
+    subtype: 'file',
+    sourceQualityBoost: 8,
+    pathOrUrl: '/Users/me/Documents/onboarding.md',
+  });
+  const assembled = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: rankRootSearchCandidates([file]),
+    fileCandidates: [file],
+    webSearchRootSuggestionCommands: [command('web-search-root-suggestion:onboarding meaning', 'onboarding meaning')],
+    webSearchSuggestionsEnabled: true,
+  });
+  assert.equal(assembled.querySearchSectionCommands.length, 0);
+  assert.equal(assembled.queryFileSectionCommands.some((item) => item.id === 'file-onboarding'), true);
+  const sectionTitles = assembled.launcherCommandSections.map((section) => section.title);
+  assert.equal(sectionTitles.includes('launcher.categories.search'), false);
+  assert.equal(sectionTitles.includes('launcher.categories.files'), true);
+});
+
+test('search suggestions still show when there are no file matches', () => {
+  const query = 'onboarding';
+  const assembled = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: [],
+    fileCandidates: [],
+    webSearchRootSuggestionCommands: [command('web-search-root-suggestion:onboarding meaning', 'onboarding meaning')],
+    webSearchSuggestionsEnabled: true,
+  });
+  assert.equal(assembled.querySearchSectionCommands.length, 1);
+});
+
 test('promoted browser result is removed from Browser section', () => {
   const query = 'atrioc';
   const browser = candidate({
@@ -521,7 +588,7 @@ test('promoted browser result is removed from Browser section', () => {
   assert.equal(assembled.queryBrowserSectionCommands.some((item) => item.id === 'history-atrioc'), false);
 });
 
-test('promoted file result is removed from Files section', () => {
+test('an exact-name folder match stays in Files and out of the top Results', () => {
   const query = 'UZH';
   const file = candidate({
     query,
@@ -537,8 +604,8 @@ test('promoted file result is removed from Files section', () => {
     fileCandidates: [file],
     webSearchRootDirectCommand: command('web-search-root-direct', 'Search "UZH"'),
   });
-  assert.equal(assembled.queryResultCommands.some((item) => item.id === 'folder-uzh'), true);
-  assert.equal(assembled.queryFileSectionCommands.some((item) => item.id === 'folder-uzh'), false);
+  assert.equal(assembled.queryResultCommands.some((item) => item.id === 'folder-uzh'), false);
+  assert.equal(assembled.queryFileSectionCommands.some((item) => item.id === 'folder-uzh'), true);
 });
 
 test('bang selecting choices are gated by search suggestions setting', () => {
