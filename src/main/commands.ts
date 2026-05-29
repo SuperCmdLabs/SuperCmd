@@ -1347,6 +1347,12 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-menu-item-search',
+      title: 'Search Menu Items',
+      keywords: ['menu', 'search', 'menu item', 'commands', 'actions', 'accessibility', 'app menu', 'toolbar'],
+      category: 'system',
+    },
+    {
       id: 'system-window-management',
       title: 'Window Management',
       keywords: ['window', 'manage', 'tile', 'snap', 'top left', 'top right', 'bottom left', 'bottom right', 'third', 'fourth', 'sixth', 'grid', 'auto organize'],

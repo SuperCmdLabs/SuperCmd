@@ -386,7 +386,28 @@ export function createListRuntime(deps: ListRuntimeDeps) {
     const extensionContext = getExtensionContext();
     const footerTitle = navigationTitle || extInfo.extensionDisplayName || extensionContext.extensionDisplayName || extensionContext.extensionName || 'Extension';
     const footerIcon = extInfo.extensionIconDataUrl || extensionContext.extensionIconDataUrl;
-    const detailElement = selectedItem?.props?.detail;
+    const rawDetail = selectedItem?.props?.detail;
+    const detailElement = useMemo(() => {
+      if (!rawDetail || !React.isValidElement(rawDetail)) return rawDetail;
+      if (rawDetail.type !== React.Fragment) return rawDetail;
+      const children = React.Children.toArray(rawDetail.props.children);
+      let mergedMarkdown: string | undefined;
+      let mergedMetadata: React.ReactElement | undefined;
+      let mergedIsLoading: boolean | undefined;
+      for (const child of children) {
+        if (!React.isValidElement(child)) continue;
+        if ((child.type as any) !== ListItemDetail) continue;
+        if (child.props.markdown !== undefined) mergedMarkdown = child.props.markdown;
+        if (child.props.metadata !== undefined) mergedMetadata = child.props.metadata;
+        if (child.props.isLoading !== undefined) mergedIsLoading = child.props.isLoading;
+      }
+      if (mergedMarkdown === undefined && mergedMetadata === undefined) return rawDetail;
+      return React.createElement(ListItemDetail, {
+        markdown: mergedMarkdown,
+        metadata: mergedMetadata,
+        isLoading: mergedIsLoading,
+      });
+    }, [rawDetail]);
 
     const listContent = (
       <div ref={listRef} className="flex-1 overflow-y-auto py-0">

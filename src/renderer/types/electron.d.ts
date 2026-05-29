@@ -1066,6 +1066,8 @@ export interface ElectronAPI {
   getDefaultApplication: (filePath: string) => Promise<{ name: string; path: string; bundleId?: string }>;
   getFrontmostApplication: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   runAppleScript: (script: string, options?: { language?: string; humanReadableOutput?: boolean; timeout?: number }) => Promise<string>;
+  getAppMenuItems: () => Promise<{ ok: boolean; items?: Array<{ path: string; title: string; fullPath: string; shortcut?: string | null; enabled: boolean }>; error?: string }>;
+  pressAppMenuItem: (path: string) => Promise<{ ok: boolean; error?: string }>;
   ensureCalendarAccess: (options?: { prompt?: boolean }) => Promise<CalendarPermissionResult>;
   getCalendarEvents: (payload: { start: string; end: string }) => Promise<CalendarEventsResult>;
   moveToTrash: (paths: string[]) => Promise<void>;
@@ -1289,7 +1291,15 @@ export interface ElectronAPI {
   qwen3ModelStatus: () => Promise<Qwen3ModelStatus>;
   qwen3DownloadModel: () => Promise<Qwen3ModelStatus>;
   qwen3Warmup: () => Promise<{ ready: boolean; error?: string }>;
+  whisperCppWarmup: () => Promise<{ ready: boolean; error?: string }>;
   whisperDebugLog: (tag: string, message: string, data?: any) => void;
+  audioCapturerWarmup: () => Promise<{ ready: boolean; error?: string }>;
+  audioCapturerStart: () => Promise<{ recording: boolean; error?: string }>;
+  audioCapturerStop: () => Promise<{ file: string | null; duration: number; error?: string }>;
+  audioCapturerSnapshot: () => Promise<{ file: string | null; duration: number; error?: string }>;
+  audioCapturerMeter: () => Promise<{ average: number; peak: number }>;
+  audioCapturerStatus: () => Promise<{ engineReady: boolean; recording: boolean; processAlive: boolean }>;
+  whisperTranscribeFile: (audioPath: string, options?: { language?: string }) => Promise<string>;
   whisperTranscribe: (audioBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }) => Promise<string>;
   whisperEnsureMicrophoneAccess: (
     options?: { prompt?: boolean }

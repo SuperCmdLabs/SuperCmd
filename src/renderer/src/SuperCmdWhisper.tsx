@@ -411,6 +411,10 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const hintTimerRef = useRef<number | null>(null);
   const sttModelRef = useRef<string>('whispercpp');
 
+  // Cache for resolved session config — avoids a redundant IPC round-trip on
+  // every startListening call when settings haven't changed.
+  const sessionConfigCacheRef = useRef<{ config: WhisperSessionConfig; ts: number } | null>(null);
+
   const showHint = useCallback((text: string, durationMs = 3000) => {
     if (hintTimerRef.current !== null) window.clearTimeout(hintTimerRef.current);
     setHintText(text);
@@ -440,6 +444,16 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
   const cueAudioCtxRef = useRef<AudioContext | null>(null);
 
   // Audio visualizer refs
+  // Pre-warmed mic stream ref — consumed by startListening to avoid a
+  // redundant getUserMedia call. Unlike an on-mount pre-warm (which would
+  // activate the microphone and show the green dot before the user
+  // explicitly starts recording), this ref is only written to when
+  // startListening itself acquires the stream and the recording session
+  // is interrupted (e.g. by a stop-then-restart cycle). This avoids
+  // keeping the mic hot at all times.
+  const prewarmedMicStreamRef = useRef<MediaStream | null>(null);
+  const nativeCaptureActiveRef = useRef(false); // true when using native audio-capturer instead of getUserMedia
+  const nativeMeterPollRef = useRef<number | null>(null); // setInterval ID for native meter polling
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -518,6 +532,13 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
     barNoiseRef.current = Array.from({ length: BAR_COUNT }, () => 0);
     setWaveBars(BASE_WAVE);
+
+    // Also stop native visualizer if running
+    if (nativeMeterPollRef.current !== null) {
+      window.clearInterval(nativeMeterPollRef.current);
+      nativeMeterPollRef.current = null;
+    }
+    nativeCaptureActiveRef.current = false;
   }, []);
 
   const startVisualizer = useCallback((stream: MediaStream, capturePcm = false) => {
@@ -591,6 +612,45 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     tick();
   }, []);
 
+  // Native capture visualizer — polls audio-capturer meter data and
+  // animates the wave bars without getUserMedia/Web Audio.
+  const startNativeVisualizer = useCallback(() => {
+    if (nativeMeterPollRef.current !== null) return;
+    nativeCaptureActiveRef.current = true;
+
+    const poll = async () => {
+      try {
+        const meter = await window.electron.audioCapturerMeter();
+        const energy = Math.min(1, (meter.average ?? 0) * 8.5);
+        setWaveBars((previous) =>
+          previous.map((prev, index) => {
+            const profile = BAR_HEIGHT_PROFILE[index];
+            const previousNoise = barNoiseRef.current[index] || 0;
+            const nextNoise = Math.max(-1, Math.min(1, previousNoise * 0.76 + ((Math.random() * 2) - 1) * 0.38));
+            barNoiseRef.current[index] = nextNoise;
+            const jitter = nextNoise * 0.18;
+            const shapedEnergy = energy * (0.32 + profile * 0.7);
+            const target = Math.max(0.04, Math.min(1, 0.08 + profile * 0.1 + shapedEnergy + jitter));
+            return prev * 0.62 + target * 0.38;
+          })
+        );
+      } catch {}
+    };
+
+    // Poll at ~60fps-like rate
+    nativeMeterPollRef.current = window.setInterval(poll, 60);
+    // Initial tick
+    void poll();
+  }, []);
+
+  const stopNativeVisualizer = useCallback(() => {
+    if (nativeMeterPollRef.current !== null) {
+      window.clearInterval(nativeMeterPollRef.current);
+      nativeMeterPollRef.current = null;
+    }
+    nativeCaptureActiveRef.current = false;
+  }, []);
+
   const buildLocalWaveSnapshot = useCallback((): ArrayBuffer | null => {
     const chunks = pcmCaptureChunksRef.current;
     if (!chunks.length) return null;
@@ -649,7 +709,15 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     } catch {}
   }, []);
 
-  const resolveSessionConfig = useCallback(async (): Promise<WhisperSessionConfig> => {
+  const resolveSessionConfig = useCallback(async (forceFresh = false): Promise<WhisperSessionConfig> => {
+    // Return cached config if it was resolved within the last 10 seconds — this
+    // avoids a redundant IPC round-trip on every startListening call.
+    if (!forceFresh && sessionConfigCacheRef.current) {
+      const ageMs = Date.now() - sessionConfigCacheRef.current.ts;
+      if (ageMs < 10_000) {
+        return sessionConfigCacheRef.current.config;
+      }
+    }
     try {
       const settings = await window.electron.getSettings();
       const language = settings.ai.speechLanguage || 'en-US';
@@ -676,7 +744,9 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
       const backend: WhisperBackend = engine === 'native' ? 'native' : 'whisper';
       backendRef.current = backend;
       transcriptionEngineRef.current = engine;
-      return { backend, engine, language };
+      const config = { backend, engine, language };
+      sessionConfigCacheRef.current = { config, ts: Date.now() };
+      return config;
     } catch {
       return {
         backend: backendRef.current,
@@ -722,6 +792,44 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     }
     onClose();
   }, [onClose, onboardingCaptureMode, onOnboardingTranscriptAppend, t, typeIntoWhisperTarget]);
+
+  // Asynchronously refine a raw transcript and replace the already-typed text
+  // if the AI-corrected version differs. Used after pasting raw transcript
+  // immediately so the user doesn't wait for the LLM round-trip.
+  const refineAndReplaceAsync = useCallback(async (rawText: string, localTarget: LocalWhisperTextTarget) => {
+    try {
+      const refined = await window.electron.whisperRefineTranscript(rawText);
+      const corrected = normalizeTranscript(refined?.correctedText || '');
+      if (!corrected || corrected === normalizeTranscript(rawText)) return;
+
+      // Bail out if the target element is no longer in the DOM
+      if (!localTarget.element.isConnected) return;
+
+      // For local input targets, we can replace the value directly
+      if (localTarget.kind === 'input') {
+        const el = localTarget.element;
+        const current = el.value || '';
+        // The raw text was appended at the end — replace it with the corrected version
+        const rawIndex = current.lastIndexOf(rawText);
+        if (rawIndex >= 0) {
+          const nextValue = current.slice(0, rawIndex) + corrected + current.slice(rawIndex + rawText.length);
+          setNativeInputValue(el, nextValue);
+          const cursor = rawIndex + corrected.length;
+          try { el.setSelectionRange(cursor, cursor); } catch {}
+          dispatchTextInput(el, corrected);
+        }
+      } else if (localTarget.kind === 'contenteditable') {
+        // For contenteditable, use the replaceLiveText IPC which handles
+        // backspace-and-paste replacement in the frontmost app.
+        const replaceResult = await window.electron.replaceLiveText(rawText, corrected);
+        if (!replaceResult) {
+          console.log('[Whisper] Async refinement: could not replace contenteditable text in place');
+        }
+      }
+    } catch {
+      // Non-critical — the raw transcript is already visible
+    }
+  }, []);
 
   // ─── Live typing helper (debounced + refined) ──────────────────────
 
@@ -1088,7 +1196,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
   const stopRecording = useCallback(() => {
     if (periodicTimerRef.current !== null) {
-      window.clearInterval(periodicTimerRef.current);
+      window.clearTimeout(periodicTimerRef.current);
       periodicTimerRef.current = null;
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -1099,7 +1207,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
   const forceStopCapture = useCallback(() => {
     if (periodicTimerRef.current !== null) {
-      window.clearInterval(periodicTimerRef.current);
+      window.clearTimeout(periodicTimerRef.current);
       periodicTimerRef.current = null;
     }
     stopNativeSilenceWatchdog();
@@ -1116,24 +1224,95 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     stopVisualizer();
   }, [stopNativeSilenceWatchdog, stopNativeProcessTimer, stopVisualizer]);
 
+  const PERIODIC_TRANSCRIPTION_INTERVAL_MS = 3500;
+  const FIRST_TRANSCRIPTION_DELAY_MS = 1000;
+
+  const runPeriodicTranscription = useCallback(async () => {
+    if (transcribeInFlightRef.current || finalizingRef.current) return;
+    if (transcriptionEngineRef.current === 'whispercpp' && pcmCaptureChunksRef.current.length === 0) return;
+    if (transcriptionEngineRef.current !== 'whispercpp' && audioChunksRef.current.length === 0) return;
+
+    transcribeInFlightRef.current = true;
+    try {
+      await sendTranscription(false);
+    } finally {
+      transcribeInFlightRef.current = false;
+    }
+  }, [sendTranscription]);
+
+  const scheduleNextPeriodicTranscription = useCallback(() => {
+    periodicTimerRef.current = window.setTimeout(async () => {
+      if (finalizingRef.current) return;
+      await runPeriodicTranscription();
+      if (!finalizingRef.current) {
+        scheduleNextPeriodicTranscription();
+      }
+    }, PERIODIC_TRANSCRIPTION_INTERVAL_MS);
+  }, [runPeriodicTranscription]);
+
   const startPeriodicTranscription = useCallback(() => {
     if (periodicTimerRef.current !== null) {
-      window.clearInterval(periodicTimerRef.current);
+      window.clearTimeout(periodicTimerRef.current);
+      periodicTimerRef.current = null;
     }
 
-    periodicTimerRef.current = window.setInterval(async () => {
-      if (transcribeInFlightRef.current || finalizingRef.current) return;
-      if (transcriptionEngineRef.current === 'whispercpp' && pcmCaptureChunksRef.current.length === 0) return;
-      if (transcriptionEngineRef.current !== 'whispercpp' && audioChunksRef.current.length === 0) return;
-
-      transcribeInFlightRef.current = true;
-      try {
-        await sendTranscription(false);
-      } finally {
-        transcribeInFlightRef.current = false;
+    // Fire the first transcription after a short delay to accumulate enough
+    // audio data, then schedule subsequent transcriptions at the full interval.
+    periodicTimerRef.current = window.setTimeout(async () => {
+      if (finalizingRef.current) return;
+      await runPeriodicTranscription();
+      if (!finalizingRef.current) {
+        scheduleNextPeriodicTranscription();
       }
-    }, 3500);
-  }, [sendTranscription]);
+    }, FIRST_TRANSCRIPTION_DELAY_MS);
+  }, [runPeriodicTranscription, scheduleNextPeriodicTranscription]);
+
+  // Periodic transcription using native audio-capturer snapshots.
+  // Same pattern as startPeriodicTranscription but uses
+  // audioCapturerSnapshot + whisperTranscribeFile instead of
+  // Web Audio PCM + whisperTranscribe.
+  const runNativePeriodicTranscription = useCallback(async () => {
+    if (finalizingRef.current || transcribeInFlightRef.current) return;
+    if (!nativeCaptureActiveRef.current) return;
+    try {
+      const snap = await window.electron.audioCapturerSnapshot();
+      if (!snap.file) return;
+      const lang = sessionConfigCacheRef.current?.config?.language;
+      const text = await window.electron.whisperTranscribeFile(snap.file, { language: lang });
+      if (!text || finalizingRef.current) return;
+      const normalized = normalizeTranscript(text);
+      if (!normalized) return;
+      combinedTranscriptRef.current = mergeTranscriptChunks(combinedTranscriptRef.current, normalized);
+      void applyLiveTranscriptText(combinedTranscriptRef.current);
+    } catch (err: any) {
+      console.warn('[Whisper][native-capture] Periodic transcription failed:', err?.message);
+    }
+  }, [applyLiveTranscriptText]);
+
+  const scheduleNextNativePeriodicTranscription = useCallback(() => {
+    if (finalizingRef.current) return;
+    periodicTimerRef.current = window.setTimeout(async () => {
+      if (finalizingRef.current) return;
+      await runNativePeriodicTranscription();
+      if (!finalizingRef.current) {
+        scheduleNextNativePeriodicTranscription();
+      }
+    }, PERIODIC_TRANSCRIPTION_INTERVAL_MS);
+  }, [runNativePeriodicTranscription]);
+
+  const startNativePeriodicTranscription = useCallback(() => {
+    if (periodicTimerRef.current !== null) {
+      window.clearTimeout(periodicTimerRef.current);
+      periodicTimerRef.current = null;
+    }
+    periodicTimerRef.current = window.setTimeout(async () => {
+      if (finalizingRef.current) return;
+      await runNativePeriodicTranscription();
+      if (!finalizingRef.current) {
+        scheduleNextNativePeriodicTranscription();
+      }
+    }, FIRST_TRANSCRIPTION_DELAY_MS);
+  }, [runNativePeriodicTranscription, scheduleNextNativePeriodicTranscription]);
 
   // ─── Finalize ──────────────────────────────────────────────────────
 
@@ -1165,6 +1344,92 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     whisperStateRef.current = 'processing';
     setState('processing');
     setStatusText(t('whisper.status.finishing'));
+
+    // ── Native audio capturer finalize path ──────────────────────────
+    // When the main process started the native audio-capturer, we stop it
+    // here, get the captured WAV file, and transcribe it directly.
+    if (nativeCaptureActiveRef.current) {
+      try {
+        // Stop periodic transcription timer
+        if (periodicTimerRef.current !== null) {
+          window.clearTimeout(periodicTimerRef.current);
+          periodicTimerRef.current = null;
+        }
+        // Stop the native visualizer
+        stopNativeVisualizer();
+
+        // Wait for any in-flight transcription
+        while (transcribeInFlightRef.current) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+
+        // Stop capturing and get the WAV file
+        const result = await window.electron.audioCapturerStop();
+        if (result.file) {
+          transcribeInFlightRef.current = true;
+          try {
+            const lang = sessionConfigCacheRef.current?.config?.language;
+            const text = await window.electron.whisperTranscribeFile(result.file, { language: lang });
+            const normalized = normalizeTranscript(text);
+            if (normalized) {
+              combinedTranscriptRef.current = mergeTranscriptChunks(combinedTranscriptRef.current, normalized);
+            }
+          } catch (err) {
+            console.error('[Whisper][native-capture] Final transcription failed:', err);
+          } finally {
+            transcribeInFlightRef.current = false;
+          }
+        }
+
+        await liveTypeQueueRef.current;
+
+        const baseTranscript = normalizeTranscript(combinedTranscriptRef.current);
+        if (!baseTranscript) {
+          if (closeAfter) { onClose(); } else {
+            combinedTranscriptRef.current = '';
+            liveTypedTextRef.current = '';
+            setStatusText(idleStatus);
+            setErrorText('');
+            whisperStateRef.current = 'idle';
+            setState('idle');
+            finalizingRef.current = false;
+          }
+          return;
+        }
+
+        // Same paste-and-refine logic as the standard path
+        const rawTranscript = baseTranscript;
+        await liveTypeQueueRef.current;
+        const liveTyped = normalizeTranscript(liveTypedTextRef.current);
+        if (!liveTyped) {
+          if (closeAfter) {
+            const pasteTarget = localTextTargetRef.current;
+            if (!onboardingCaptureMode && pasteTarget && insertIntoLocalWhisperTextTarget(pasteTarget, rawTranscript)) {
+              void refineAndReplaceAsync(rawTranscript, pasteTarget);
+              onClose();
+              return;
+            }
+            const refined = await refineAndApplyLiveTranscript(rawTranscript, true);
+            const finalTranscript = refined || rawTranscript;
+            await autoPasteAndClose(finalTranscript);
+          } else {
+            const applied = await typeIntoWhisperTarget(rawTranscript);
+            const target = localTextTargetRef.current;
+            if (applied.consumed && target) {
+              void refineAndReplaceAsync(rawTranscript, target);
+            }
+          }
+        } else {
+          if (closeAfter) { onClose(); }
+        }
+        return;
+      } catch (err) {
+        console.error('[Whisper][native-capture] Finalize failed:', err);
+        stopNativeVisualizer();
+        // Fall through to standard cleanup
+      }
+    }
+    // ── End native audio capturer finalize path ──────────────────────
     try {
       const backend = backendRef.current;
       const isNativeBackend = backend === 'native';
@@ -1173,7 +1438,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         const engine = transcriptionEngineRef.current;
         // Stop periodic timer
         if (periodicTimerRef.current !== null) {
-          window.clearInterval(periodicTimerRef.current);
+          window.clearTimeout(periodicTimerRef.current);
           periodicTimerRef.current = null;
         }
 
@@ -1303,18 +1568,34 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         return;
       }
 
-      const finalTranscript = await refineAndApplyLiveTranscript(baseTranscript, true) || baseTranscript;
+      // Paste the raw transcript immediately so the user sees text right away.
+      // Then kick off AI refinement in the background — if the refined version differs,
+      // it will replace the raw text asynchronously via replace-live-text IPC.
+      const rawTranscript = baseTranscript;
       await liveTypeQueueRef.current;
 
       const liveTyped = normalizeTranscript(liveTypedTextRef.current);
       if (!liveTyped) {
         if (closeAfter) {
+          // Paste raw text first, close overlay immediately
+          const pasteTarget = localTextTargetRef.current;
+          if (!onboardingCaptureMode && pasteTarget && insertIntoLocalWhisperTextTarget(pasteTarget, rawTranscript)) {
+            // Raw text was inserted locally — if refinement changes it, update in place
+            void refineAndReplaceAsync(rawTranscript, pasteTarget);
+            onClose();
+            return;
+          }
+          // Fallback: use autoPasteAndClose with raw, then refine via clipboard
+          // We can't async-replace after close for non-local targets, so just apply
+          // refinement before pasting as a compromise (only if fast enough).
+          const refined = await refineAndApplyLiveTranscript(rawTranscript, true);
+          const finalTranscript = refined || rawTranscript;
           await autoPasteAndClose(finalTranscript);
         } else {
           if (onboardingCaptureMode) {
-            onOnboardingTranscriptAppend?.(finalTranscript);
+            onOnboardingTranscriptAppend?.(rawTranscript);
           } else {
-            const applied = await typeIntoWhisperTarget(finalTranscript);
+            const applied = await typeIntoWhisperTarget(rawTranscript);
             if (!applied.consumed) {
               setErrorText(t('whisper.errors.typeIntoActiveApp'));
             }
@@ -1329,8 +1610,10 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         }
         return;
       }
-      applyLiveTranscriptText(finalTranscript);
+      applyLiveTranscriptText(rawTranscript);
       await liveTypeQueueRef.current;
+      // Also kick off async refinement for the live-typed path
+      void refineAndApplyLiveTranscript(rawTranscript, true);
       if (closeAfter) {
         onClose();
         return;
@@ -1355,17 +1638,146 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     if (currentState === 'listening' || currentState === 'processing') return;
     startInFlightRef.current = true;
 
-    // Request mic stream immediately — don't wait for IPC permission checks.
-    // This minimizes the delay between hotkey press and audio capture start.
-    let preflightStream: MediaStream | null = null;
+    // ── Native audio capture fast path ───────────────────────────────
+    // When the main process started the native audio-capturer on hotkey press
+    // (before the renderer even mounted), we skip getUserMedia entirely.
+    // This saves 200-500ms of browser audio negotiation + AudioContext setup.
+    try {
+      const status = await window.electron.audioCapturerStatus();
+      if (status.recording) {
+        // Native capturer is already recording — hook into it.
+        console.log('[Whisper][native-capture] Native capturer already recording, skipping getUserMedia');
+        window.electron.whisperDebugLog('start', 'native-capture-already-recording');
+
+        const sessionConfig = await resolveSessionConfig();
+        const requestSeq = ++startRequestSeqRef.current;
+
+        // Reset shared state
+        combinedTranscriptRef.current = '';
+        liveTypedTextRef.current = '';
+        liveTypeQueueRef.current = Promise.resolve();
+        finalizingRef.current = false;
+        editorFocusRestoredRef.current = false;
+        lastDebouncedRefineInputRef.current = '';
+        liveRefineSeqRef.current = 0;
+        audioChunksRef.current = [];
+        recorderMimeTypeRef.current = 'audio/webm';
+        lastTranscribedChunkCountRef.current = 0;
+        transcribeInFlightRef.current = false;
+        transcriptionEngineRef.current = sessionConfig.engine;
+        nativeLastTranscriptAtRef.current = 0;
+        nativeRawAnchorRef.current = '';
+        nativeLastQueuedSuffixRef.current = '';
+        nativeCurrentPartialRef.current = '';
+        nativeFlushQueueRef.current = [];
+        nativeFlushInFlightRef.current = false;
+        nativeProcessEndedRef.current = false;
+        stopNativeSilenceWatchdog();
+        stopNativeProcessTimer();
+        if (editorFocusRestoreTimerRef.current !== null) {
+          window.clearTimeout(editorFocusRestoreTimerRef.current);
+          editorFocusRestoreTimerRef.current = null;
+        }
+        if (liveRefineTimerRef.current !== null) {
+          window.clearTimeout(liveRefineTimerRef.current);
+          liveRefineTimerRef.current = null;
+        }
+        if (nativeChunkDisposerRef.current) {
+          nativeChunkDisposerRef.current();
+          nativeChunkDisposerRef.current = null;
+        }
+
+        whisperStateRef.current = 'listening';
+        setState('listening');
+        setErrorText('');
+
+        // Warm up transcription servers in parallel
+        if (sessionConfig.engine === 'whispercpp') {
+          const needsWarmup = sttModelRef.current === 'parakeet' || sttModelRef.current === 'qwen3' || sttModelRef.current === 'whispercpp';
+          if (needsWarmup) {
+            const warmupFn = sttModelRef.current === 'qwen3'
+              ? window.electron.qwen3Warmup
+              : sttModelRef.current === 'parakeet'
+                ? window.electron.parakeetWarmup
+                : window.electron.whisperCppWarmup;
+            console.log(`[Whisper][native-capture][${sttModelRef.current}] Warming up transcription server...`);
+            try {
+              const result = await warmupFn();
+              if (!result?.ready) {
+                console.warn(`[Whisper][native-capture][${sttModelRef.current}] Warmup not ready:`, result?.error);
+                showHint(t('whisper.errors.modelNotReady'), 4000);
+              }
+            } catch (err) {
+              console.warn(`[Whisper][native-capture][${sttModelRef.current}] Warmup failed:`, err);
+              showHint(t('whisper.errors.modelNotReady'), 4000);
+            }
+          }
+        }
+
+        // Start the native visualizer (meter polling)
+        startNativeVisualizer();
+
+        playRecordingCue('start');
+        setStatusText(
+          PUSH_TO_TALK_MODE
+            ? t('whisper.status.listeningReleaseToProcess')
+            : t('whisper.status.listeningPressAgainToFinish')
+        );
+
+        console.log('[Whisper][native-capture] Hooked into native audio capture');
+        window.electron.whisperDebugLog('start', 'native-capture-hooked');
+
+        // Start periodic transcription for non-push-to-talk mode
+        if (!PUSH_TO_TALK_MODE) {
+          startNativePeriodicTranscription();
+        }
+
+        restoreEditorFocusOnce(150);
+        startInFlightRef.current = false;
+        return;
+      }
+    } catch (err) {
+      console.warn('[Whisper][native-capture] Status check failed, falling back to getUserMedia:', err);
+    }
+    // ── End native audio capture fast path ───────────────────────────
+
+    // Parallelize mic access and config resolution — both are independent
+    // async operations that were previously serialized, adding 100–500ms of
+    // unnecessary latency.
     const micAudioOpts = {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
     };
-    try {
-      preflightStream = await navigator.mediaDevices.getUserMedia({ audio: micAudioOpts });
-    } catch {
+
+    // Try to reuse a mic stream from a previous interrupted session
+    // (e.g. stop-then-restart). This avoids a redundant getUserMedia call.
+    let preflightStream: MediaStream | null = prewarmedMicStreamRef.current;
+    prewarmedMicStreamRef.current = null; // consume it
+    if (preflightStream) {
+      // Verify the stream is still live
+      const tracks = preflightStream.getAudioTracks();
+      if (!tracks.length || tracks.every((t) => t.readyState === 'ended')) {
+        try { preflightStream.getTracks().forEach((t) => t.stop()); } catch {}
+        preflightStream = null;
+      }
+    }
+
+    const acquireMicPromise = (async (): Promise<MediaStream | null> => {
+      if (preflightStream) return preflightStream;
+      try {
+        return await navigator.mediaDevices.getUserMedia({ audio: micAudioOpts });
+      } catch {
+        return null;
+      }
+    })();
+
+    // Kick off config resolution in parallel with mic acquisition
+    const configPromise = resolveSessionConfig();
+
+    // Await mic first — if it failed, try the IPC permission path
+    preflightStream = await acquireMicPromise;
+    if (!preflightStream) {
       // getUserMedia failed — fall back to the IPC permission check path
       try {
         const micAccess = await window.electron.whisperEnsureMicrophoneAccess();
@@ -1415,7 +1827,10 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     setErrorText('');
     setStatusText(t('whisper.status.startingMicrophone'));
 
-    const sessionConfig = await resolveSessionConfig();
+    // The config resolution was kicked off in parallel with mic acquisition.
+    // Await the already-in-flight promise — if the cache was fresh, this
+    // resolves instantly.
+    const sessionConfig = await configPromise;
 
     // Reset shared state
     combinedTranscriptRef.current = '';
@@ -1466,16 +1881,18 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
         if (sessionConfig.engine === 'whispercpp') {
           if (requestSeq !== startRequestSeqRef.current || finalizingRef.current) return;
 
-          // If parakeet or qwen3, warm up the server (loads CoreML models on first use).
+          // Warm up the persistent server so the model is loaded into memory.
           // Audio is already being captured in the background while we wait.
           // The hint stays visible until warmup fully completes — even if the user
           // releases the hold key early and triggers finalize, we keep the banner
           // so the next session starts instantly.
-          const needsWarmup = sttModelRef.current === 'parakeet' || sttModelRef.current === 'qwen3';
+          const needsWarmup = sttModelRef.current === 'parakeet' || sttModelRef.current === 'qwen3' || sttModelRef.current === 'whispercpp';
           if (needsWarmup) {
             const warmupFn = sttModelRef.current === 'qwen3'
               ? window.electron.qwen3Warmup
-              : window.electron.parakeetWarmup;
+              : sttModelRef.current === 'parakeet'
+                ? window.electron.parakeetWarmup
+                : window.electron.whisperCppWarmup;
             parakeetWarmingUpRef.current = true;
             // Only show the "loading models" banner if warmup takes a while.
             // When the server is already warm the IPC roundtrip is <10ms.
@@ -1704,12 +2121,14 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
   // ─── Effects ───────────────────────────────────────────────────────
 
+  // On mount, pre-warm the session config so startListening can skip the
+  // IPC round-trip (the cache TTL is 10s, so it's still fresh when the
+  // hotkey fires).
   useEffect(() => {
     let cancelled = false;
-    void resolveSessionConfig().then(() => {
+    void resolveSessionConfig(true).then(() => {
       if (cancelled) return;
     });
-
     return () => {
       cancelled = true;
     };

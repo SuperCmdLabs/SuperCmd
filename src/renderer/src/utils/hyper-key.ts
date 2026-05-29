@@ -11,8 +11,12 @@ export function formatShortcutForDisplay(shortcut: string): string {
     if (!value) return value;
     if (/^hyper$/i.test(value) || value === '✦') return '✦';
     if (/^(command|cmd)$/i.test(value)) return '⌘';
+    if (/^leftcommand$/i.test(value) || /^leftcmd$/i.test(value)) return '⌘←';
+    if (/^rightcommand$/i.test(value) || /^rightcmd$/i.test(value)) return '⌘→';
     if (/^(control|ctrl)$/i.test(value)) return '⌃';
     if (/^(alt|option)$/i.test(value)) return '⌥';
+    if (/^leftoption$/i.test(value) || /^leftalt$/i.test(value)) return '⌥←';
+    if (/^rightoption$/i.test(value) || /^rightalt$/i.test(value)) return '⌥→';
     if (/^shift$/i.test(value)) return '⇧';
     if (/^(function|fn)$/i.test(value)) return 'fn';
     if (/^arrowup$/i.test(value)) return '↑';
@@ -22,7 +26,7 @@ export function formatShortcutForDisplay(shortcut: string): string {
     return value.length === 1 ? value.toUpperCase() : value;
   });
 
-  const modifierSymbols = new Set(['⌘', '⌃', '⌥', '⇧', '✦', 'fn']);
+  const modifierSymbols = new Set(['⌘', '⌃', '⌥', '⇧', '✦', 'fn', '⌘←', '⌘→', '⌥←', '⌥→']);
   const modifiers: string[] = [];
   const keys: string[] = [];
 

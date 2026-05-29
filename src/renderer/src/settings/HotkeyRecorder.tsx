@@ -17,6 +17,7 @@ interface HotkeyRecorderProps {
   large?: boolean;
   active?: boolean;
   variant?: 'default' | 'whisper';
+  autoRecord?: boolean;
 }
 
 type KeyboardLikeEvent = Pick<
@@ -173,8 +174,9 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
   large,
   active,
   variant = 'default',
+  autoRecord,
 }) => {
-  const [isRecording, setIsRecording] = useState(false);
+  const [isRecording, setIsRecording] = useState(Boolean(autoRecord));
   const ref = useRef<HTMLDivElement>(null);
   const pendingPrimaryModifierRef = useRef<'Fn' | null>(null);
   const isRecordingRef = useRef(false);
@@ -189,6 +191,13 @@ const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
     }
     isRecordingRef.current = isRecording;
   }, [isRecording]);
+
+  // Auto-start recording when autoRecord is set (e.g. from a dropdown "Custom" option)
+  useEffect(() => {
+    if (autoRecord && !isRecording) {
+      setIsRecording(true);
+    }
+  }, [autoRecord]);
 
   useEffect(() => {
     return () => {

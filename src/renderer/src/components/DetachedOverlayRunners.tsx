@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import SuperCmdWhisper from '../SuperCmdWhisper';
 import SuperCmdRead from '../SuperCmdRead';
 import WindowManagerPanel from '../WindowManagerPanel';
+import MenuItemSearch from '../MenuItemSearchExtension';
 import type { SpeakStatus } from '../hooks/useSpeakManager';
 import type { UseCursorPromptReturn } from '../hooks/useCursorPrompt';
 import type { ReadVoiceOption } from '../utils/command-helpers';
@@ -33,6 +34,10 @@ type DetachedOverlayRunnersProps = {
   showWindowManager: boolean;
   windowManagerPortalTarget: HTMLElement | null;
   onWindowManagerClose: () => void;
+
+  showMenuItemSearch: boolean;
+  menuItemSearchPortalTarget: HTMLElement | null;
+  onMenuItemSearchClose: () => void;
 
   showCursorPrompt: boolean;
   cursorPromptPortalTarget: HTMLElement | null;
@@ -71,6 +76,9 @@ const DetachedOverlayRunners: React.FC<DetachedOverlayRunnersProps> = ({
   showWindowManager,
   windowManagerPortalTarget,
   onWindowManagerClose,
+  showMenuItemSearch,
+  menuItemSearchPortalTarget,
+  onMenuItemSearchClose,
   showCursorPrompt,
   cursorPromptPortalTarget,
   cursorPromptText,
@@ -117,6 +125,13 @@ const DetachedOverlayRunners: React.FC<DetachedOverlayRunnersProps> = ({
           show={showWindowManager}
           portalTarget={windowManagerPortalTarget}
           onClose={onWindowManagerClose}
+        />
+      ) : null}
+      {showMenuItemSearch && menuItemSearchPortalTarget ? (
+        <MenuItemSearch
+          show={showMenuItemSearch}
+          portalTarget={menuItemSearchPortalTarget}
+          onClose={onMenuItemSearchClose}
         />
       ) : null}
       {showCursorPrompt && cursorPromptPortalTarget

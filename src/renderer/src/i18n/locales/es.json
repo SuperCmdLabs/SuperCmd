@@ -203,6 +203,7 @@
         "italian": "Italian",
         "japanese": "Japanese",
         "korean": "Korean",
+        "polish": "Polaco",
         "portugueseBrazil": "Portuguese (Brazil)",
         "russian": "Russian",
         "spanishMexico": "Spanish (Mexico)",
@@ -383,10 +384,8 @@
         "hotkeys": {
           "title": "Atajos de Whisper",
           "startStop": "Iniciar/detener dictado",
-          "setToFn": "Asignar a Fn",
-          "fnHint": "Usa Asignar a Fn para restaurar la tecla predeterminada de pulsar para hablar.",
-          "fnHintBefore": "Use",
-          "fnHintAfter": "to restore the default hold-to-talk key."
+          "custom": "Personalizado…",
+          "holdToTalkHint": "Seleccione una tecla push-to-talk. Mantenga para grabar, suelte para escribir. Use Personalizado para grabar cualquier combinacion."
         },
         "autoClose": {
           "title": "Auto-Close After Dictation",

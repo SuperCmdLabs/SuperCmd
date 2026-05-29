@@ -1117,6 +1117,138 @@ function ensureWhisperCppTranscriberBinary(): string {
   return binaryPath;
 }
 
+// Persistent serve-mode process for whisper.cpp (model stays loaded in memory)
+let whisperCppServerProcess: any = null;
+let whisperCppServerReady = false;
+let whisperCppServerStarting: Promise<void> | null = null;
+let whisperCppServerBuffer = '';
+type PendingWhisperCppRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
+let whisperCppPendingRequest: PendingWhisperCppRequest | null = null;
+
+function killWhisperCppServer(): void {
+  if (whisperCppServerProcess) {
+    try {
+      whisperCppServerProcess.stdin?.write('{"command":"exit"}\n');
+      whisperCppServerProcess.kill();
+    } catch {}
+    whisperCppServerProcess = null;
+  }
+  whisperCppServerReady = false;
+  whisperCppServerStarting = null;
+  whisperCppServerBuffer = '';
+  if (whisperCppPendingRequest) {
+    whisperCppPendingRequest.reject(new Error('Whisper.cpp server killed'));
+    whisperCppPendingRequest = null;
+  }
+}
+
+function ensureWhisperCppServer(): Promise<void> {
+  if (whisperCppServerReady && whisperCppServerProcess && !whisperCppServerProcess.killed) {
+    return Promise.resolve();
+  }
+  if (whisperCppServerStarting) return whisperCppServerStarting;
+
+  whisperCppServerStarting = (async () => {
+    killWhisperCppServer();
+    const binaryPath = ensureWhisperCppTranscriberBinary();
+    const modelStatus = getWhisperCppModelStatus();
+    if (modelStatus.state !== 'downloaded' || !modelStatus.path) {
+      throw new Error('Whisper.cpp model not available');
+    }
+
+    const { spawn } = require('child_process');
+    const child = spawn(binaryPath, ['serve', '--model', modelStatus.path], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    whisperCppServerProcess = child;
+
+    child.on('exit', (code: number | null) => {
+      console.log(`[Whisper][whisper.cpp] Server process exited with code ${code}`);
+      whisperCppServerReady = false;
+      whisperCppServerProcess = null;
+      whisperCppServerStarting = null;
+      if (whisperCppPendingRequest) {
+        whisperCppPendingRequest.reject(new Error(`Whisper.cpp server exited with code ${code}`));
+        whisperCppPendingRequest = null;
+      }
+    });
+
+    child.stdout.on('data', (chunk: Buffer | string) => {
+      whisperCppServerBuffer += chunk.toString();
+      const lines = whisperCppServerBuffer.split('\n');
+      whisperCppServerBuffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const json = JSON.parse(trimmed);
+          if (json.ready) {
+            whisperCppServerReady = true;
+            console.log('[Whisper][whisper.cpp] Server ready (model loaded)');
+            continue;
+          }
+          if (whisperCppPendingRequest) {
+            const req = whisperCppPendingRequest;
+            whisperCppPendingRequest = null;
+            if (json.error) {
+              req.reject(new Error(json.error));
+            } else {
+              req.resolve(json);
+            }
+          }
+        } catch {}
+      }
+    });
+
+    child.stderr.on('data', (chunk: Buffer | string) => {
+      const text = chunk.toString().trim();
+      if (text) console.warn('[Whisper][whisper.cpp][server stderr]', text);
+    });
+
+    // Wait for "ready" signal
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Whisper.cpp server startup timed out (60s)'));
+        killWhisperCppServer();
+      }, 60_000);
+
+      const checkReady = setInterval(() => {
+        if (whisperCppServerReady) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          resolve();
+        }
+        if (!whisperCppServerProcess || whisperCppServerProcess.killed) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          reject(new Error('Whisper.cpp server process died during startup'));
+        }
+      }, 50);
+    });
+
+    whisperCppServerStarting = null;
+  })();
+
+  return whisperCppServerStarting;
+}
+
+function sendWhisperCppRequest(request: Record<string, any>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!whisperCppServerProcess || whisperCppServerProcess.killed || !whisperCppServerReady) {
+      reject(new Error('Whisper.cpp server not running'));
+      return;
+    }
+
+    if (whisperCppPendingRequest) {
+      whisperCppPendingRequest.reject(new Error('Whisper.cpp request superseded'));
+      whisperCppPendingRequest = null;
+    }
+
+    whisperCppPendingRequest = { resolve, reject };
+    whisperCppServerProcess.stdin.write(JSON.stringify(request) + '\n');
+  });
+}
+
 async function transcribeAudioWithWhisperCpp(opts: {
   audioBuffer: Buffer;
   language?: string;
@@ -1127,7 +1259,6 @@ async function transcribeAudioWithWhisperCpp(opts: {
     throw new Error(`SuperCmd Whisper transcription expects WAV audio, received ${mimeType}.`);
   }
 
-  const binaryPath = ensureWhisperCppTranscriberBinary();
   const status = getWhisperCppModelStatus();
   if (status.state === 'downloading') {
     throw new Error('The SuperCmd Whisper model is still downloading. Finish setup from onboarding or Settings -> AI -> SuperCmd Whisper.');
@@ -1135,7 +1266,10 @@ async function transcribeAudioWithWhisperCpp(opts: {
   if (status.state !== 'downloaded') {
     throw new Error('The SuperCmd Whisper model has not been downloaded yet. Download it from onboarding or Settings -> AI -> SuperCmd Whisper.');
   }
-  const modelPath = status.path;
+
+  // Ensure the persistent server is running (model loaded in memory)
+  await ensureWhisperCppServer();
+
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'supercmd-whispercpp-'));
   const audioPath = path.join(tempDir, 'input.wav');
 
@@ -1143,43 +1277,13 @@ async function transcribeAudioWithWhisperCpp(opts: {
     fs.writeFileSync(audioPath, opts.audioBuffer);
 
     const language = normalizeWhisperLanguageCode(opts.language);
-    const { spawn } = require('child_process');
-
-    const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-      const child = spawn(binaryPath, [
-        '--model', modelPath,
-        '--file', audioPath,
-        '--language', language,
-      ], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', (chunk: Buffer | string) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on('data', (chunk: Buffer | string) => {
-        stderr += chunk.toString();
-      });
-      child.on('error', (error: Error) => reject(error));
-      child.on('exit', (code: number | null) => {
-        if (code === 0) {
-          resolve({ stdout, stderr });
-          return;
-        }
-        reject(new Error(stderr.trim() || `SuperCmd Whisper exited with code ${code}`));
-      });
+    const result = await sendWhisperCppRequest({
+      command: 'transcribe',
+      file: audioPath,
+      language,
     });
 
-    const transcriptMarker = '__TRANSCRIPT__:';
-    const markerIndex = result.stdout.lastIndexOf(transcriptMarker);
-    if (markerIndex >= 0) {
-      return result.stdout.slice(markerIndex + transcriptMarker.length).trim();
-    }
-
-    return result.stdout.trim();
+    return result.text || '';
   } finally {
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
@@ -1263,6 +1367,242 @@ let cachedElectronLiquidGlassApi: any | null | undefined = undefined;
 let hasLoggedLiquidGlassRuntimeIncompatibility = false;
 const liquidGlassAppliedWindowIds = new Set<number>();
 let windowManagerAccessRequested = false;
+
+// ─── Native Audio Capturer ────────────────────────────────────────────
+// Persistent native audio-capturer process that uses AVAudioEngine to
+// capture microphone audio without going through the renderer's
+// getUserMedia / Web Audio API path.  This eliminates 100–500 ms of
+// latency from browser audio subsystem negotiation.
+
+let audioCapturerProcess: any = null;
+let audioCapturerReady = false;
+let audioCapturerStarting: Promise<void> | null = null;
+let audioCapturerBuffer = '';
+let audioCapturerRecording = false;
+type PendingAudioCapturerRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
+let audioCapturerPendingRequest: PendingAudioCapturerRequest | null = null;
+
+type AudioCapturerMeter = { average: number; peak: number };
+let audioCapturerMeter: AudioCapturerMeter = { average: 0, peak: 0 };
+let audioCapturerMeterListeners: Array<(meter: AudioCapturerMeter) => void> = [];
+
+function getAudioCapturerBinaryPath(): string {
+  return getNativeBinaryPath('audio-capturer');
+}
+
+function killAudioCapturer(): void {
+  if (audioCapturerProcess) {
+    try {
+      audioCapturerProcess.stdin?.write('{"command":"exit"}\n');
+      audioCapturerProcess.kill();
+    } catch {}
+    audioCapturerProcess = null;
+  }
+  audioCapturerReady = false;
+  audioCapturerStarting = null;
+  audioCapturerBuffer = '';
+  audioCapturerRecording = false;
+  if (audioCapturerPendingRequest) {
+    audioCapturerPendingRequest.reject(new Error('Audio capturer killed'));
+    audioCapturerPendingRequest = null;
+  }
+}
+
+function ensureAudioCapturerBinary(): string {
+  const binaryPath = getAudioCapturerBinaryPath();
+  try {
+    if (fs.existsSync(binaryPath)) {
+      return binaryPath;
+    }
+  } catch {}
+
+  const sourcePath = findFirstExistingPath([
+    path.join(app.getAppPath(), 'src', 'native', 'audio-capturer.swift'),
+    path.join(process.cwd(), 'src', 'native', 'audio-capturer.swift'),
+    path.join(__dirname, '..', '..', 'src', 'native', 'audio-capturer.swift'),
+  ]);
+
+  if (!sourcePath) {
+    throw new Error('Audio capturer source is missing. Run npm run build:native to regenerate the binary.');
+  }
+
+  fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
+
+  try {
+    const { execFileSync } = require('child_process');
+    execFileSync('swiftc', [
+      '-O',
+      '-o', binaryPath,
+      sourcePath,
+      '-framework', 'AVFoundation',
+      '-framework', 'Foundation',
+    ]);
+    console.log('[AudioCapturer] Compiled audio-capturer binary');
+  } catch (error) {
+    console.error('[AudioCapturer] Compile failed:', error);
+    throw new Error('Failed to compile audio capturer. Ensure Xcode Command Line Tools are installed.');
+  }
+
+  return binaryPath;
+}
+
+function sendAudioCapturerRequest(request: Record<string, any>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!audioCapturerProcess || audioCapturerProcess.killed) {
+      reject(new Error('Audio capturer not running'));
+      return;
+    }
+
+    if (audioCapturerPendingRequest) {
+      audioCapturerPendingRequest.reject(new Error('Audio capturer request superseded'));
+      audioCapturerPendingRequest = null;
+    }
+
+    audioCapturerPendingRequest = { resolve, reject };
+    audioCapturerProcess.stdin.write(JSON.stringify(request) + '\n');
+  });
+}
+
+function warmAudioCapturer(): Promise<void> {
+  if (audioCapturerReady && audioCapturerProcess && !audioCapturerProcess.killed) {
+    return Promise.resolve();
+  }
+  if (audioCapturerStarting) return audioCapturerStarting;
+
+  audioCapturerStarting = (async () => {
+    killAudioCapturer();
+    const binaryPath = ensureAudioCapturerBinary();
+
+    const { spawn } = require('child_process');
+    const child = spawn(binaryPath, [], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    audioCapturerProcess = child;
+
+    child.on('exit', (code: number | null) => {
+      console.log(`[AudioCapturer] Process exited with code ${code}`);
+      audioCapturerReady = false;
+      audioCapturerProcess = null;
+      audioCapturerStarting = null;
+      audioCapturerRecording = false;
+      if (audioCapturerPendingRequest) {
+        audioCapturerPendingRequest.reject(new Error(`Audio capturer exited with code ${code}`));
+        audioCapturerPendingRequest = null;
+      }
+    });
+
+    child.stdout.on('data', (chunk: Buffer | string) => {
+      audioCapturerBuffer += chunk.toString();
+      const lines = audioCapturerBuffer.split('\n');
+      audioCapturerBuffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const json = JSON.parse(trimmed);
+
+          if (json.ready) {
+            audioCapturerReady = true;
+            console.log('[AudioCapturer] Engine ready (mic hot)');
+            continue;
+          }
+
+          if (json.recording) {
+            audioCapturerRecording = true;
+            console.log('[AudioCapturer] Recording started');
+          }
+
+          if (json.file !== undefined) {
+            audioCapturerRecording = false;
+          }
+
+          if (json.meter) {
+            audioCapturerMeter = {
+              average: Number(json.meter.average ?? 0),
+              peak: Number(json.meter.peak ?? 0),
+            };
+            for (const listener of audioCapturerMeterListeners) {
+              try { listener(audioCapturerMeter); } catch {}
+            }
+          }
+
+          if (audioCapturerPendingRequest) {
+            const req = audioCapturerPendingRequest;
+            audioCapturerPendingRequest = null;
+            if (json.error) {
+              req.reject(new Error(json.error));
+            } else {
+              req.resolve(json);
+            }
+          }
+        } catch {}
+      }
+    });
+
+    child.stderr.on('data', (chunk: Buffer | string) => {
+      const text = chunk.toString().trim();
+      if (text) console.warn('[AudioCapturer][stderr]', text);
+    });
+
+    // Send warmup command to start the audio engine
+    child.stdin.write(JSON.stringify({ command: 'warmup' }) + '\n');
+
+    // Wait for "ready" signal
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Audio capturer warmup timed out (30s)'));
+        killAudioCapturer();
+      }, 30_000);
+
+      const checkReady = setInterval(() => {
+        if (audioCapturerReady) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          resolve();
+        }
+        if (!audioCapturerProcess || audioCapturerProcess.killed) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          reject(new Error('Audio capturer process died during warmup'));
+        }
+      }, 50);
+    });
+
+    audioCapturerStarting = null;
+  })();
+
+  return audioCapturerStarting;
+}
+
+async function startNativeAudioCapture(): Promise<void> {
+  await warmAudioCapturer();
+  const result = await sendAudioCapturerRequest({ command: 'start' });
+  if (!result.recording) {
+    throw new Error('Audio capturer failed to start recording');
+  }
+}
+
+async function stopNativeAudioCapture(): Promise<{ file: string; duration: number }> {
+  if (!audioCapturerProcess || !audioCapturerRecording) {
+    throw new Error('Audio capturer is not recording');
+  }
+  const result = await sendAudioCapturerRequest({ command: 'stop' });
+  if (!result.file) {
+    throw new Error('Audio capturer did not return a file path');
+  }
+  return { file: String(result.file), duration: Number(result.duration || 0) };
+}
+
+async function takeNativeAudioSnapshot(): Promise<{ file: string; duration: number }> {
+  if (!audioCapturerProcess || !audioCapturerRecording) {
+    throw new Error('Audio capturer is not recording');
+  }
+  const result = await sendAudioCapturerRequest({ command: 'snapshot' });
+  if (!result.file) {
+    throw new Error('Audio capturer did not return a snapshot file path');
+  }
+  return { file: String(result.file), duration: Number(result.duration || 0) };
+}
 
 // Tracks whether macOS Automation permission for "System Events" has been
 // granted.  Starts `false`; flipped to `true` after the first *successful*
@@ -2703,6 +3043,7 @@ let hyperKeyMonitorRestartTimer: NodeJS.Timeout | null = null;
 let hyperKeyMonitorEnabled = false;
 let fnSpeakToggleLastPressedAt = 0;
 let fnSpeakToggleIsPressed = false;
+let fnSpeakToggleCurrentShortcut = 'Fn';
 type LocalSpeakBackend = 'edge-tts' | 'system-say';
 let edgeTtsConstructorResolved = false;
 let edgeTtsConstructor: any | null = null;
@@ -5959,7 +6300,7 @@ function normalizeAccelerator(shortcut: string): string {
       else normalizedModifiers.control = true;
       continue;
     }
-    if (token === 'cmd' || token === 'command' || token === 'meta' || token === 'super') {
+    if (token === 'cmd' || token === 'command' || token === 'meta' || token === 'super' || token === 'leftcmd' || token === 'leftcommand' || token === 'leftmeta' || token === 'rightcmd' || token === 'rightcommand' || token === 'rightmeta') {
       normalizedModifiers.command = true;
       continue;
     }
@@ -5967,7 +6308,7 @@ function normalizeAccelerator(shortcut: string): string {
       normalizedModifiers.control = true;
       continue;
     }
-    if (token === 'alt' || token === 'option') {
+    if (token === 'alt' || token === 'option' || token === 'leftalt' || token === 'leftoption' || token === 'rightalt' || token === 'rightoption') {
       normalizedModifiers.alt = true;
       continue;
     }
@@ -6065,6 +6406,29 @@ function isFnShortcut(shortcut: string): boolean {
   return Boolean(config?.fn);
 }
 
+// Standalone modifier keys that need a native CGEventTap watcher
+// instead of Electron's globalShortcut (which ignores bare modifiers).
+const STANDALONE_MODIFIER_KEYCODES: Record<string, number> = {
+  alt: 58, option: 58,                     // Left Option
+  leftoption: 58, leftalt: 58,             // Left Option (explicit)
+  rightoption: 61, rightalt: 61,           // Right Option
+  command: 55, cmd: 55, meta: 55,           // Left Command
+  leftcommand: 55, leftcmd: 55, leftmeta: 55, // Left Command (explicit)
+  rightcommand: 54, rightcmd: 54, rightmeta: 54, // Right Command
+  control: 59, ctrl: 59,                   // Left Control
+  shift: 56,                                // Left Shift
+};
+
+function isStandaloneModifierShortcut(shortcut: string): boolean {
+  const normalized = normalizeAccelerator(shortcut).trim().toLowerCase();
+  return normalized in STANDALONE_MODIFIER_KEYCODES;
+}
+
+function needsNativeHoldWatcher(shortcut: string): boolean {
+  if (!shortcut) return false;
+  return isFnOnlyShortcut(shortcut) || isFnShortcut(shortcut) || isStandaloneModifierShortcut(shortcut);
+}
+
 function parseHoldShortcutConfig(shortcut: string): {
   keyCode: number;
   cmd: boolean;
@@ -6093,16 +6457,32 @@ function parseHoldShortcutConfig(shortcut: string): {
     home: 115, end: 119, pageup: 116, pagedown: 121,
     f1: 122, f2: 120, f3: 99, f4: 118, f5: 96, f6: 97, f7: 98, f8: 100,
     f9: 101, f10: 109, f11: 103, f12: 111,
+    // Standalone modifier keys for CGEventTap monitoring
+    alt: 58, option: 58,
+    leftoption: 58, leftalt: 58,
+    rightoption: 61, rightalt: 61,
+    command: 55, cmd: 55, meta: 55,
+    leftcommand: 55, leftcmd: 55, leftmeta: 55,
+    rightcommand: 54, rightcmd: 54, rightmeta: 54,
+    control: 59, ctrl: 59,
+    shift: 56,
   };
   const keyCode = map[keyToken];
   if (!Number.isFinite(keyCode)) return null;
   const fnAsModifier = mods.has('fn') || mods.has('function');
+  // When the key token itself is a standalone modifier, set the corresponding
+  // flag so the Swift monitor checks that the modifier flag is active when
+  // the physical key is pressed (same pattern as the Fn key).
+  const isStandaloneAlt = keyToken === 'alt' || keyToken === 'option' || keyToken === 'leftoption' || keyToken === 'leftalt' || keyToken === 'rightoption' || keyToken === 'rightalt';
+  const isStandaloneCmd = keyToken === 'command' || keyToken === 'cmd' || keyToken === 'meta' || keyToken === 'leftcommand' || keyToken === 'leftcmd' || keyToken === 'leftmeta' || keyToken === 'rightcommand' || keyToken === 'rightcmd' || keyToken === 'rightmeta';
+  const isStandaloneCtrl = keyToken === 'control' || keyToken === 'ctrl';
+  const isStandaloneShift = keyToken === 'shift';
   return {
     keyCode,
-    cmd: mods.has('command') || mods.has('cmd') || mods.has('meta'),
-    ctrl: mods.has('control') || mods.has('ctrl'),
-    alt: mods.has('alt') || mods.has('option'),
-    shift: mods.has('shift'),
+    cmd: mods.has('command') || mods.has('cmd') || mods.has('meta') || isStandaloneCmd,
+    ctrl: mods.has('control') || mods.has('ctrl') || isStandaloneCtrl,
+    alt: mods.has('alt') || mods.has('option') || isStandaloneAlt,
+    shift: mods.has('shift') || isStandaloneShift,
     fn: fnAsModifier || keyToken === 'fn' || keyToken === 'function',
   };
 }
@@ -6502,7 +6882,7 @@ function startFnCommandWatcher(commandId: string, shortcut: string): void {
 
 function startFnSpeakToggleWatcher(): void {
   if (fnSpeakToggleWatcherProcess || !fnSpeakToggleWatcherEnabled) return;
-  const config = parseHoldShortcutConfig('Fn');
+  const config = parseHoldShortcutConfig(fnSpeakToggleCurrentShortcut || 'Fn');
   if (!config) return;
   const binaryPath = ensureWhisperHoldWatcherBinary();
   if (!binaryPath) return;
@@ -6541,6 +6921,16 @@ function startFnSpeakToggleWatcher(): void {
           fnSpeakToggleLastPressedAt = now;
           fnSpeakToggleIsPressed = true;
           void (async () => {
+            // Start native audio capture immediately to avoid getUserMedia latency
+            if (!audioCapturerRecording) {
+              void warmAudioCapturer().then(() => {
+                if (!fnSpeakToggleIsPressed) return;
+                void startNativeAudioCapture().then(() => {
+                  console.log('[Whisper][native-capture][fn] Recording started from Fn press');
+                }).catch(() => {});
+              }).catch(() => {});
+            }
+
             if (whisperOverlayVisible) {
               captureFrontmostAppContext();
               if (whisperChildWindow && !whisperChildWindow.isDestroyed()) {
@@ -6601,11 +6991,11 @@ function startFnSpeakToggleWatcher(): void {
 }
 
 function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
-  // Do not start the CGEventTap-based Fn watcher during onboarding.
+  // Do not start the CGEventTap-based watcher during onboarding.
   // The tap requires Input Monitoring (and sometimes Accessibility) permission,
   // which would trigger system dialogs before the user reaches the Grant Access step.
   // Exception: fnWatcherOnboardingOverride is set when the user reaches the Dictation
-  // test step (step 4) so they can actually test the Fn key during setup.
+  // test step (step 4) so they can actually test the key during setup.
   if (!loadSettings().hasSeenOnboarding && !fnWatcherOnboardingOverride) {
     stopFnSpeakToggleWatcher();
     return;
@@ -6616,12 +7006,21 @@ function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
     return;
   }
   const speakToggle = String(hotkeys?.['system-supercmd-whisper-speak-toggle'] || '').trim();
-  const shouldEnable = isFnOnlyShortcut(speakToggle);
+  const shouldEnable = needsNativeHoldWatcher(speakToggle);
   if (!shouldEnable) {
+    fnSpeakToggleCurrentShortcut = '';
     stopFnSpeakToggleWatcher();
     return;
   }
+  // If the shortcut changed, stop the existing watcher so it restarts with the new key.
+  const shortcutChanged = speakToggle !== fnSpeakToggleCurrentShortcut;
+  if (shortcutChanged && fnSpeakToggleWatcherProcess) {
+    try { fnSpeakToggleWatcherProcess.kill('SIGTERM'); } catch {}
+    fnSpeakToggleWatcherProcess = null;
+    fnSpeakToggleWatcherStdoutBuffer = '';
+  }
   fnSpeakToggleWatcherEnabled = true;
+  fnSpeakToggleCurrentShortcut = speakToggle;
   startFnSpeakToggleWatcher();
 }
 
@@ -6631,7 +7030,7 @@ function syncFnCommandWatchers(hotkeys: Record<string, string>): void {
     const shortcut = String(shortcutRaw || '').trim();
     if (!shortcut) continue;
     const normalized = normalizeAccelerator(shortcut);
-    const isFnSpeakToggle = commandId === 'system-supercmd-whisper-speak-toggle' && isFnOnlyShortcut(normalized);
+    const isFnSpeakToggle = commandId === 'system-supercmd-whisper-speak-toggle' && (isFnOnlyShortcut(normalized) || isStandaloneModifierShortcut(normalized));
     if (isFnSpeakToggle) continue;
     if (!isFnShortcut(normalized)) continue;
     desired.set(commandId, normalized);
@@ -9931,6 +10330,25 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
   if (isWhisperSpeakToggleCommand) {
     const speakToggleHotkey = String(loadSettings().commandHotkeys?.['system-supercmd-whisper-speak-toggle'] ?? '').trim();
     const holdSeq = ++whisperHoldRequestSeq;
+
+    // Start native audio capture immediately — this takes ~10-30ms
+    // vs 200-500ms for the renderer getUserMedia path.
+    // The renderer overlay is opened in parallel; it will detect
+    // that native capture is already running and hook into it.
+    if (!audioCapturerRecording) {
+      void warmAudioCapturer().then(() => {
+        if (holdSeq !== whisperHoldRequestSeq) return;
+        if (whisperHoldReleasedSeq >= holdSeq) return;
+        void startNativeAudioCapture().then(() => {
+          console.log('[Whisper][native-capture] Recording started from hotkey');
+        }).catch((err: any) => {
+          console.warn('[Whisper][native-capture] Failed to start:', err?.message);
+        });
+      }).catch((err: any) => {
+        console.warn('[Whisper][native-capture] Warmup failed:', err?.message);
+      });
+    }
+
     if (whisperOverlayVisible) {
       captureFrontmostAppContext();
       // Reposition whisper window to the current cursor's screen
@@ -10343,6 +10761,13 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       // Keep focus in SuperCmd only for the panel command: detached window manager
       // closes itself on blur. Preset commands should restore app focus normally.
       preserveFocusWhenHidden: commandId !== 'system-window-management',
+    });
+  }
+  if (commandId === 'system-menu-item-search') {
+    return await openLauncherAndRunSystemCommand(commandId, {
+      showWindow: false,
+      mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
+      preserveFocusWhenHidden: false,
     });
   }
   if (commandId === 'system-import-snippets') {
@@ -12705,6 +13130,9 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
     if (commandId === 'system-supercmd-whisper-speak-toggle' && isFnOnlyShortcut(normalizedShortcut)) {
       continue;
     }
+    if (commandId === 'system-supercmd-whisper-speak-toggle' && isStandaloneModifierShortcut(normalizedShortcut)) {
+      continue;
+    }
     if (isFnShortcut(normalizedShortcut)) {
       continue;
     }
@@ -13144,6 +13572,12 @@ app.whenReady().then(async () => {
         whisperHoldRequestSeq += 1;
         whisperSuperCmdTextTargetWindow = null;
         stopWhisperHoldWatcher();
+        // Stop native audio capturer when the whisper overlay closes
+        // to release the microphone
+        if (audioCapturerProcess && !audioCapturerProcess.killed) {
+          audioCapturerProcess.stdin?.write(JSON.stringify({ command: 'stopEngine' }) + '\n');
+        }
+        audioCapturerRecording = false;
       }
       return;
     }
@@ -14037,14 +14471,35 @@ app.whenReady().then(async () => {
 
         const isFnSpeakToggle =
           commandId === 'system-supercmd-whisper-speak-toggle' &&
-          isFnOnlyShortcut(normalizedHotkey);
+          (isFnOnlyShortcut(normalizedHotkey) || isStandaloneModifierShortcut(normalizedHotkey));
         const isFnHotkey = isFnShortcut(normalizedHotkey);
         const isHyperHotkey = isHyperShortcut(normalizedHotkey);
+
+        // Standalone modifier shortcuts (Option, Command, etc.) only work for
+        // the whisper speak-toggle (hold-to-talk) command, since they require
+        // the native CGEventTap watcher. Reject them for other commands.
+        if (isStandaloneModifierShortcut(normalizedHotkey) && !isFnSpeakToggle) {
+          // Attempt to restore old mapping if the new one failed.
+          if (oldHotkey) {
+            const normalizedOldHotkey = normalizeAccelerator(oldHotkey);
+            try {
+              const restored = globalShortcut.register(normalizedOldHotkey, async () => {
+                await runCommandById(commandId, 'hotkey');
+              });
+              if (restored) {
+                registeredHotkeys.set(normalizedOldHotkey, commandId);
+              }
+            } catch {}
+          }
+          return { success: false, error: 'unavailable' as const };
+        }
 
         // Register the new one
         try {
           let success = false;
           if (isFnSpeakToggle) {
+            // Standalone modifier or Fn-only shortcuts are handled by the
+            // native CGEventTap speak-toggle watcher, not Electron globalShortcut.
             success = true;
           } else if (isFnHotkey) {
             const fnConfig = parseHoldShortcutConfig(normalizedHotkey);
@@ -15127,6 +15582,90 @@ return appURL's |path|() as text`,
       throw new Error(e?.message || 'AppleScript execution failed');
     }
   });
+
+  // ─── Menu Item Search ───────────────────────────────────────────
+  // Enumerate and press menu items of the frontmost application using
+  // macOS Accessibility (AXUIElement) via the menu-item-search Swift helper.
+
+  type MenuItemInfo = {
+    path: string;
+    title: string;
+    fullPath: string;
+    shortcut?: string | null;
+    enabled: boolean;
+  };
+
+  ipcMain.handle(
+    'get-app-menu-items',
+    async (): Promise<{ ok: boolean; items?: MenuItemInfo[]; error?: string }> => {
+      try {
+        const helperPath = getNativeBinaryPath('menu-item-search');
+        // The Swift helper is a script, so we need to run it with /usr/bin/env swift
+        const { spawn } = require('child_process');
+        return await new Promise((resolve) => {
+          const proc = spawn('/usr/bin/env', ['swift', helperPath], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+          });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+          proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+          proc.on('close', () => {
+            try {
+              const result = JSON.parse(stdout.trim());
+              resolve(result);
+            } catch {
+              resolve({ ok: false, error: stderr || 'Failed to parse menu item search output' });
+            }
+          });
+          proc.on('error', (err: Error) => {
+            resolve({ ok: false, error: err.message });
+          });
+          // Send the list action
+          proc.stdin.write(JSON.stringify({ action: 'list' }));
+          proc.stdin.end();
+        });
+      } catch (e: any) {
+        return { ok: false, error: e?.message || 'Menu item search failed' };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'press-app-menu-item',
+    async (_event: any, data: { path: string }): Promise<{ ok: boolean; error?: string }> => {
+      const targetPath = String(data?.path || '').trim();
+      if (!targetPath) return { ok: false, error: 'Missing menu item path' };
+      try {
+        const helperPath = getNativeBinaryPath('menu-item-search');
+        const { spawn } = require('child_process');
+        return await new Promise((resolve) => {
+          const proc = spawn('/usr/bin/env', ['swift', helperPath], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+          });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+          proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+          proc.on('close', () => {
+            try {
+              const result = JSON.parse(stdout.trim());
+              resolve(result);
+            } catch {
+              resolve({ ok: false, error: stderr || 'Failed to parse press result' });
+            }
+          });
+          proc.on('error', (err: Error) => {
+            resolve({ ok: false, error: err.message });
+          });
+          proc.stdin.write(JSON.stringify({ action: 'press', path: targetPath }));
+          proc.stdin.end();
+        });
+      } catch (e: any) {
+        return { ok: false, error: e?.message || 'Press menu item failed' };
+      }
+    },
+  );
 
   ipcMain.handle(
     'calendar-ensure-access',
@@ -16919,6 +17458,174 @@ if let tiff = image?.tiffRepresentation {
     }
   });
 
+  ipcMain.handle('whispercpp-warmup', async () => {
+    const status = getWhisperCppModelStatus();
+    if (status.state !== 'downloaded') {
+      return { ready: false, error: 'Model not downloaded' };
+    }
+    if (whisperCppServerReady && whisperCppServerProcess && !whisperCppServerProcess.killed) {
+      return { ready: true };
+    }
+    try {
+      await ensureWhisperCppServer();
+      return { ready: true };
+    } catch (err: any) {
+      return { ready: false, error: err?.message || 'Warmup failed' };
+    }
+  });
+
+  // ─── IPC: Native Audio Capturer (bypasses renderer getUserMedia) ──
+
+  ipcMain.handle('audio-capturer-warmup', async () => {
+    try {
+      await warmAudioCapturer();
+      return { ready: true };
+    } catch (err: any) {
+      return { ready: false, error: err?.message || 'Warmup failed' };
+    }
+  });
+
+  ipcMain.handle('audio-capturer-start', async () => {
+    try {
+      await startNativeAudioCapture();
+      return { recording: true };
+    } catch (err: any) {
+      return { recording: false, error: err?.message || 'Start failed' };
+    }
+  });
+
+  ipcMain.handle('audio-capturer-stop', async () => {
+    try {
+      const result = await stopNativeAudioCapture();
+      return result;
+    } catch (err: any) {
+      return { file: null, duration: 0, error: err?.message || 'Stop failed' };
+    }
+  });
+
+  ipcMain.handle('audio-capturer-snapshot', async () => {
+    try {
+      const result = await takeNativeAudioSnapshot();
+      return result;
+    } catch (err: any) {
+      return { file: null, duration: 0, error: err?.message || 'Snapshot failed' };
+    }
+  });
+
+  ipcMain.handle('audio-capturer-meter', async () => {
+    return audioCapturerMeter;
+  });
+
+  ipcMain.handle('audio-capturer-status', async () => {
+    return {
+      engineReady: audioCapturerReady,
+      recording: audioCapturerRecording,
+      processAlive: !!(audioCapturerProcess && !audioCapturerProcess.killed),
+    };
+  });
+
+  // Transcribe a native-captured audio file (by path, not buffer)
+  ipcMain.handle(
+    'whisper-transcribe-file',
+    async (_event: any, audioPath: string, options?: { language?: string }) => {
+      const s = loadSettings();
+      if (isAIDisabledInSettings(s)) {
+        throw new Error('AI is disabled. Enable AI in Settings -> AI to use Whisper.');
+      }
+      if (s.ai?.whisperEnabled === false) {
+        throw new Error('SuperCmd Whisper is disabled in Settings -> AI.');
+      }
+
+      if (!fs.existsSync(audioPath)) {
+        throw new Error(`Audio file not found: ${audioPath}`);
+      }
+
+      const audioBuffer = fs.readFileSync(audioPath);
+
+      // Reuse the existing whisper-transcribe logic by reading the file into a buffer
+      const rawLang = options?.language || s.ai.speechLanguage || 'en-US';
+      const language = normalizeWhisperLanguageCode(rawLang);
+
+      let provider: 'parakeet' | 'qwen3' | 'whispercpp' | 'openai' | 'elevenlabs' | 'mistral' = 'whispercpp';
+      let model = `ggml-${WHISPERCPP_MODEL_NAME}`;
+      const sttModel = s.ai.speechToTextModel || '';
+      if (sttModel === 'parakeet') {
+        provider = 'parakeet';
+        model = 'parakeet-tdt-0.6b-v3';
+      } else if (sttModel === 'qwen3') {
+        provider = 'qwen3';
+        model = 'qwen3-asr-0.6b';
+      } else if (!sttModel || sttModel === 'default' || sttModel === 'whispercpp') {
+        provider = 'whispercpp';
+        model = `ggml-${WHISPERCPP_MODEL_NAME}`;
+      } else if (sttModel === 'native') {
+        return '';
+      } else if (sttModel.startsWith('openai-')) {
+        provider = 'openai';
+        model = sttModel.slice('openai-'.length);
+      } else if (sttModel.startsWith('elevenlabs-')) {
+        provider = 'elevenlabs';
+        model = resolveElevenLabsSttModel(sttModel);
+      } else if (sttModel.startsWith('mistral-')) {
+        provider = 'mistral';
+        model = sttModel.slice('mistral-'.length) || 'voxtral-mini-latest';
+      } else if (sttModel) {
+        model = sttModel;
+      }
+
+      if (provider === 'openai' && !s.ai.openaiApiKey) {
+        throw new Error('OpenAI API key not configured.');
+      }
+      const elevenLabsApiKey = getElevenLabsApiKey(s);
+      if (provider === 'elevenlabs' && !elevenLabsApiKey) {
+        throw new Error('ElevenLabs API key not configured.');
+      }
+      const mistralApiKey = getMistralApiKey(s);
+      if (provider === 'mistral' && !mistralApiKey) {
+        throw new Error('Mistral API key not configured.');
+      }
+
+      // For whisper.cpp, use the file-path directly via the persistent server
+      // to avoid reading the file into a Node buffer just to write it again.
+      if (provider === 'whispercpp') {
+        const status = getWhisperCppModelStatus();
+        if (status.state === 'downloading') {
+          throw new Error('Whisper model still downloading.');
+        }
+        if (status.state !== 'downloaded') {
+          throw new Error('Whisper model not downloaded.');
+        }
+        await ensureWhisperCppServer();
+        const result = await sendWhisperCppRequest({
+          command: 'transcribe',
+          file: audioPath,
+          language,
+        });
+        // Clean up the temp file after transcription
+        try { fs.unlinkSync(audioPath); } catch {}
+        try { fs.rmdirSync(path.dirname(audioPath), { recursive: true }); } catch {}
+        return result.text || '';
+      }
+
+      // For cloud providers, use buffer-based transcription
+      const mimeType = 'audio/wav';
+      const text = provider === 'parakeet'
+        ? await transcribeAudioWithParakeet({ audioBuffer, language, mimeType })
+        : provider === 'qwen3'
+          ? await transcribeAudioWithQwen3({ audioBuffer, language, mimeType })
+          : provider === 'elevenlabs'
+            ? await transcribeAudioWithElevenLabs({ audioBuffer, apiKey: elevenLabsApiKey, model, language, mimeType })
+            : provider === 'mistral'
+              ? await transcribeAudioWithMistralVoxtral({ audioBuffer, apiKey: mistralApiKey, model, language, mimeType })
+              : await transcribeAudio({ audioBuffer, apiKey: s.ai.openaiApiKey, model, language, mimeType });
+
+      // Clean up the temp file
+      try { fs.unlinkSync(audioPath); } catch {}
+      try { fs.rmdirSync(path.dirname(audioPath), { recursive: true }); } catch {}
+
+      return text;
+    }
+  );
   ipcMain.handle(
     'whisper-transcribe',
     async (_event: any, audioArrayBuffer: ArrayBuffer, options?: { language?: string; mimeType?: string }) => {
@@ -18375,6 +19082,10 @@ app.on('will-quit', () => {
   stopAllFnCommandWatchers();
   stopHyperKeyMonitor();
   stopSpeakSession({ resetStatus: false });
+  killWhisperCppServer();
+  killParakeetServer();
+  killQwen3Server();
+  killAudioCapturer();
   stopClipboardMonitor();
   stopSnippetExpander();
   stopEmojiTriggerMonitor();

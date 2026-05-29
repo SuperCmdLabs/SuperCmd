@@ -203,6 +203,7 @@
         "italian": "Italiano",
         "japanese": "Giapponese",
         "korean": "Coreano",
+        "polish": "Polacco",
         "portugueseBrazil": "Portoghese (Brasile)",
         "russian": "Russo",
         "spanishMexico": "Spagnolo (Messico)",
@@ -383,10 +384,8 @@
         "hotkeys": {
           "title": "Scorciatoie di Whisper",
           "startStop": "Avvia/Ferma la dettatura",
-          "setToFn": "Imposta su Fn",
-          "fnHint": "Usa Imposta su Fn per ripristinare il tasto predefinito di registrazione.",
-          "fnHintBefore": "Usa",
-          "fnHintAfter": "per ripristinare il tasto predefinito di registrazione."
+          "custom": "Personalizzato…",
+          "holdToTalkHint": "Seleziona un tasto push-to-talk. Tieni premuto per registrare, rilascia per digitare. Usa Personalizzato per registrare qualsiasi combinazione."
         },
         "autoClose": {
           "title": "Chiusura automatica dopo la dettatura",

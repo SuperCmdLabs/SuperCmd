@@ -35,6 +35,18 @@ struct WaveFormat {
 
 private let targetSampleRate = 16_000
 
+// MARK: - JSON helpers
+
+func emitJSON(_ dict: [String: Any]) {
+  guard let data = try? JSONSerialization.data(withJSONObject: dict),
+        let line = String(data: data, encoding: .utf8)
+  else { return }
+  FileHandle.standardOutput.write(Data((line + "\n").utf8))
+  fflush(stdout)
+}
+
+// MARK: - WAV decoding
+
 func readUInt16LE(_ data: Data, _ offset: Int) -> UInt16 {
   var value: UInt16 = 0
   _ = withUnsafeMutableBytes(of: &value) { buffer in
@@ -54,50 +66,6 @@ func readUInt32LE(_ data: Data, _ offset: Int) -> UInt32 {
 func readFloat32LE(_ data: Data, _ offset: Int) -> Float32 {
   var bits: UInt32 = readUInt32LE(data, offset)
   return withUnsafeBytes(of: &bits) { $0.load(as: Float32.self) }
-}
-
-func parseArguments() throws -> Arguments {
-  let args = Array(CommandLine.arguments.dropFirst())
-  var modelPath = ""
-  var audioPath = ""
-  var language = "en"
-
-  var index = 0
-  while index < args.count {
-    let argument = args[index]
-    switch argument {
-    case "--model", "-m":
-      index += 1
-      guard index < args.count else {
-        throw WhisperTranscriberError.invalidArguments("Missing value for \(argument)")
-      }
-      modelPath = args[index]
-    case "--file", "-f":
-      index += 1
-      guard index < args.count else {
-        throw WhisperTranscriberError.invalidArguments("Missing value for \(argument)")
-      }
-      audioPath = args[index]
-    case "--language", "-l":
-      index += 1
-      guard index < args.count else {
-        throw WhisperTranscriberError.invalidArguments("Missing value for \(argument)")
-      }
-      language = args[index]
-    default:
-      throw WhisperTranscriberError.invalidArguments("Unknown argument: \(argument)")
-    }
-    index += 1
-  }
-
-  guard !modelPath.isEmpty else {
-    throw WhisperTranscriberError.invalidArguments("Missing --model")
-  }
-  guard !audioPath.isEmpty else {
-    throw WhisperTranscriberError.invalidArguments("Missing --file")
-  }
-
-  return Arguments(modelPath: modelPath, audioPath: audioPath, language: language)
 }
 
 func decodeWaveFile(at path: String) throws -> [Float] {
@@ -206,19 +174,9 @@ func decodeWaveFile(at path: String) throws -> [Float] {
   return resampled
 }
 
-func transcribe(arguments: Arguments) throws -> String {
-  whisper_log_set({ _, _, _ in }, nil)
-  let samples = try decodeWaveFile(at: arguments.audioPath)
+// MARK: - Transcription with pre-loaded context
 
-  var contextParams = whisper_context_default_params()
-  contextParams.use_gpu = false
-  contextParams.flash_attn = false
-
-  guard let context = whisper_init_from_file_with_params(arguments.modelPath, contextParams) else {
-    throw WhisperTranscriberError.modelLoadFailed("Failed to load whisper.cpp model at \(arguments.modelPath)")
-  }
-  defer { whisper_free(context) }
-
+func transcribeWithContext(_ context: OpaquePointer, samples: [Float], language: String) throws -> String {
   var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
   params.print_realtime = false
   params.print_progress = false
@@ -229,7 +187,7 @@ func transcribe(arguments: Arguments) throws -> String {
   params.single_segment = false
   params.n_threads = Int32(max(1, min(8, ProcessInfo.processInfo.processorCount - 2)))
 
-  let normalizedLanguage = arguments.language.isEmpty ? "en" : arguments.language
+  let normalizedLanguage = language.isEmpty ? "en" : language
   return try normalizedLanguage.withCString { languageCString -> String in
     params.language = languageCString
     let result = samples.withUnsafeBufferPointer { buffer in
@@ -248,12 +206,165 @@ func transcribe(arguments: Arguments) throws -> String {
   }
 }
 
-do {
-  let arguments = try parseArguments()
-  let text = try transcribe(arguments: arguments)
-  FileHandle.standardOutput.write(Data(("__TRANSCRIPT__:" + text).utf8))
-} catch {
-  let message = String(describing: error)
-  FileHandle.standardError.write(Data((message + "\n").utf8))
-  exit(1)
+// MARK: - One-shot transcription (original CLI mode)
+
+func parseArguments() throws -> Arguments {
+  let args = Array(CommandLine.arguments.dropFirst())
+  var modelPath = ""
+  var audioPath = ""
+  var language = "en"
+
+  var index = 0
+  while index < args.count {
+    let argument = args[index]
+    switch argument {
+    case "--model", "-m":
+      index += 1
+      guard index < args.count else {
+        throw WhisperTranscriberError.invalidArguments("Missing value for \(argument)")
+      }
+      modelPath = args[index]
+    case "--file", "-f":
+      index += 1
+      guard index < args.count else {
+        throw WhisperTranscriberError.invalidArguments("Missing value for \(argument)")
+      }
+      audioPath = args[index]
+    case "--language", "-l":
+      index += 1
+      guard index < args.count else {
+        throw WhisperTranscriberError.invalidArguments("Missing value for \(argument)")
+      }
+      language = args[index]
+    default:
+      throw WhisperTranscriberError.invalidArguments("Unknown argument: \(argument)")
+    }
+    index += 1
+  }
+
+  guard !modelPath.isEmpty else {
+    throw WhisperTranscriberError.invalidArguments("Missing --model")
+  }
+  guard !audioPath.isEmpty else {
+    throw WhisperTranscriberError.invalidArguments("Missing --file")
+  }
+
+  return Arguments(modelPath: modelPath, audioPath: audioPath, language: language)
+}
+
+func transcribe(arguments: Arguments) throws -> String {
+  whisper_log_set({ _, _, _ in }, nil)
+  let samples = try decodeWaveFile(at: arguments.audioPath)
+
+  var contextParams = whisper_context_default_params()
+  contextParams.use_gpu = false
+  contextParams.flash_attn = false
+
+  guard let context = whisper_init_from_file_with_params(arguments.modelPath, contextParams) else {
+    throw WhisperTranscriberError.modelLoadFailed("Failed to load whisper.cpp model at \(arguments.modelPath)")
+  }
+  defer { whisper_free(context) }
+
+  return try transcribeWithContext(context, samples: samples, language: arguments.language)
+}
+
+// MARK: - Persistent server mode
+
+func serveCommand(modelPath: String) {
+  whisper_log_set({ _, _, _ in }, nil)
+
+  var contextParams = whisper_context_default_params()
+  contextParams.use_gpu = false
+  contextParams.flash_attn = false
+
+  guard let context = whisper_init_from_file_with_params(modelPath, contextParams) else {
+    emitJSON(["error": "Failed to load whisper.cpp model at \(modelPath)"])
+    return
+  }
+
+  emitJSON(["ready": true])
+
+  while let line = readLine(strippingNewline: true) {
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { continue }
+
+    guard let data = trimmed.data(using: .utf8),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+      emitJSON(["error": "Invalid JSON request"])
+      continue
+    }
+
+    let cmd = json["command"] as? String ?? ""
+
+    if cmd == "transcribe" {
+      guard let filePath = json["file"] as? String else {
+        emitJSON(["error": "Missing 'file' field"])
+        continue
+      }
+      let language = json["language"] as? String ?? "en"
+
+      guard FileManager.default.fileExists(atPath: filePath) else {
+        emitJSON(["error": "Audio file not found: \(filePath)"])
+        continue
+      }
+
+      do {
+        let samples = try decodeWaveFile(at: filePath)
+        // Reset context state for a fresh transcription
+        whisper_reset_timings(context)
+        let text = try transcribeWithContext(context, samples: samples, language: language)
+        emitJSON(["text": text])
+      } catch {
+        emitJSON(["error": error.localizedDescription])
+      }
+    } else if cmd == "ping" {
+      emitJSON(["pong": true])
+    } else if cmd == "exit" {
+      whisper_free(context)
+      break
+    } else {
+      emitJSON(["error": "Unknown command: \(cmd)"])
+    }
+  }
+
+  // Context is freed above on "exit"; otherwise free on loop exit
+}
+
+// MARK: - Main entry point
+
+let args = Array(CommandLine.arguments.dropFirst())
+
+// Check for "serve" subcommand
+if let firstArg = args.first, firstArg == "serve" {
+  // Second argument is the model path
+  var modelPath = ""
+  var idx = 1
+  while idx < args.count {
+    if args[idx] == "--model" || args[idx] == "-m" {
+      idx += 1
+      if idx < args.count {
+        modelPath = args[idx]
+      }
+    }
+    idx += 1
+  }
+
+  guard !modelPath.isEmpty else {
+    FileHandle.standardError.write(Data("serve mode requires --model <path>\n".utf8))
+    exit(1)
+  }
+
+  serveCommand(modelPath: modelPath)
+} else {
+  // Original one-shot mode
+  do {
+    let arguments = try parseArguments()
+    let text = try transcribe(arguments: arguments)
+    FileHandle.standardOutput.write(Data(("__TRANSCRIPT__:" + text).utf8))
+  } catch {
+    let message = String(describing: error)
+    FileHandle.standardError.write(Data((message + "\n").utf8))
+    exit(1)
+  }
 }
