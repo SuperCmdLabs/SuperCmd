@@ -7989,7 +7989,10 @@ function createWindow(): void {
           detachedPopupName !== DETACHED_MEMORY_STATUS_WINDOW_NAME,
         skipTaskbar: true,
         alwaysOnTop: true,
-        show: true,
+        // Create the whisper popup hidden then showInactive() in did-create-window
+        // so that macOS does not activate the SuperCmd app (which would briefly
+        // raise the settings window if it was previously opened).
+        show: detachedPopupName !== DETACHED_WHISPER_WINDOW_NAME,
         acceptFirstMouse: true,
         webPreferences: {
           nodeIntegration: false,
@@ -8027,6 +8030,12 @@ function createWindow(): void {
       try { childWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
       // Ignore mouse events by default so clicks pass through; widget will re-enable on hover
       try { childWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+      // Show the window without activating the app so macOS does not raise
+      // existing windows (e.g. the settings window) to the foreground.
+      // showInactive() maps to NSWindow orderFrontRegardless: on macOS,
+      // which orders the window in front without making it key or
+      // activating the application.
+      try { childWindow.showInactive(); } catch {}
       childWindow.on('closed', () => {
         if (whisperChildWindow === childWindow) whisperChildWindow = null;
       });
