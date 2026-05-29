@@ -651,6 +651,8 @@ const electronAPI = {
     ipcRenderer.invoke('clipboard-paste-item', id),
   clipboardTogglePin: (id: string): Promise<any | null> =>
     ipcRenderer.invoke('clipboard-toggle-pin', id),
+  clipboardMovePinned: (id: string, direction: 'up' | 'down'): Promise<boolean> =>
+    ipcRenderer.invoke('clipboard-move-pinned', id, direction),
   clipboardSaveAsSnippet: (id: string): Promise<any | null> =>
     ipcRenderer.invoke('clipboard-save-as-snippet', id),
   clipboardSaveAsFile: (id: string): Promise<boolean> =>

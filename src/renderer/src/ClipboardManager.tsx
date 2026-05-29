@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, Trash2, Copy, Clipboard, Image as ImageIcon, Link, FileText, ArrowLeft, Pin, Save, FileDown } from 'lucide-react';
+import { Search, X, Trash2, Copy, Clipboard, Image as ImageIcon, Link, FileText, ArrowLeft, ArrowUp, ArrowDown, Pin, Save, FileDown } from 'lucide-react';
 import type { ClipboardItem } from '../types/electron';
 import ExtensionActionFooter from './components/ExtensionActionFooter';
 
@@ -265,6 +265,28 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     }
   };
 
+  // Reordering only makes sense in the unfiltered view, where the visible
+  // order matches the real pinned order one-to-one.
+  const canReorderPinned = !searchQuery.trim() && filterType === 'all';
+
+  const handleMovePinnedItem = async (direction: 'up' | 'down', item?: ClipboardItem) => {
+    if (!canReorderPinned) return;
+    const itemToMove = item || filteredItems[selectedIndex];
+    if (!itemToMove?.pinned) return;
+    const pinnedVisible = filteredItems.filter((i) => i.pinned);
+    const pinnedIdx = pinnedVisible.findIndex((i) => i.id === itemToMove.id);
+    if (pinnedIdx === -1) return;
+    if (direction === 'up' && pinnedIdx === 0) return;
+    if (direction === 'down' && pinnedIdx >= pinnedVisible.length - 1) return;
+    try {
+      await window.electron.clipboardMovePinned(itemToMove.id, direction);
+      await loadHistory();
+      setSelectedIndex((prev) => Math.max(0, prev + (direction === 'up' ? -1 : 1)));
+    } catch (e) {
+      console.error('Failed to move pinned clipboard item:', e);
+    }
+  };
+
   const handleSaveAsSnippet = async (item?: ClipboardItem) => {
     const itemToSave = item || filteredItems[selectedIndex];
     if (!itemToSave || (itemToSave.type !== 'text' && itemToSave.type !== 'url')) return;
@@ -328,6 +350,26 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
     shortcut: ['⌃', 'P'],
     execute: handleTogglePinItem,
   });
+  if (selectedItem?.pinned && canReorderPinned) {
+    const pinnedVisible = filteredItems.filter((i) => i.pinned);
+    const selectedPinnedIndex = pinnedVisible.findIndex((i) => i.id === selectedItem.id);
+    if (selectedPinnedIndex > 0) {
+      actions.push({
+        title: 'Move Pin Up',
+        icon: <ArrowUp className="w-4 h-4" />,
+        shortcut: ['⌘', '⌥', '↑'],
+        execute: () => handleMovePinnedItem('up'),
+      });
+    }
+    if (selectedPinnedIndex >= 0 && selectedPinnedIndex < pinnedVisible.length - 1) {
+      actions.push({
+        title: 'Move Pin Down',
+        icon: <ArrowDown className="w-4 h-4" />,
+        shortcut: ['⌘', '⌥', '↓'],
+        execute: () => handleMovePinnedItem('down'),
+      });
+    }
+  }
   if (canSaveAsSnippet) {
     actions.push({
       title: 'Save as Snippet',
@@ -377,6 +419,13 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
           handlePasteItem(filteredItems[idx]);
           return;
         }
+      }
+
+      // Cmd+Alt+Up / Cmd+Alt+Down: reorder the selected pinned item.
+      if (e.metaKey && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        void handleMovePinnedItem(e.key === 'ArrowUp' ? 'up' : 'down');
+        return;
       }
 
       if (showActions) {
@@ -495,7 +544,7 @@ const ClipboardManager: React.FC<ClipboardManagerProps> = ({ onClose }) => {
           break;
       }
     },
-    [filteredItems, selectedIndex, onClose, showActions, actions, selectedActionIndex, canSaveAsSnippet, searchQuery]
+    [filteredItems, selectedIndex, onClose, showActions, actions, selectedActionIndex, canSaveAsSnippet, searchQuery, filterType]
   );
 
   const formatDate = (timestamp: number): string =>

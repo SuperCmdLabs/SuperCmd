@@ -67,6 +67,9 @@ export interface ClipboardItem {
   preview?: string; // Short preview for display
   timestamp: number;
   pinned?: boolean;
+  /** Explicit ordering for pinned items (ascending). Independent of recency so
+   * using a pinned item doesn't reorder the pinned group. */
+  pinnedOrder?: number;
   source?: string; // Application name that copied
   metadata?: {
     // For images
@@ -131,8 +134,42 @@ function sortClipboardHistory(): void {
     if (Boolean(a.pinned) !== Boolean(b.pinned)) {
       return a.pinned ? -1 : 1;
     }
+    // Pinned items keep an explicit, recency-independent order so that using a
+    // pinned item never rearranges the pinned group.
+    if (a.pinned && b.pinned) {
+      const ao = Number.isFinite(a.pinnedOrder) ? (a.pinnedOrder as number) : Number.MAX_SAFE_INTEGER;
+      const bo = Number.isFinite(b.pinnedOrder) ? (b.pinnedOrder as number) : Number.MAX_SAFE_INTEGER;
+      if (ao !== bo) return ao - bo;
+      return b.timestamp - a.timestamp;
+    }
     return b.timestamp - a.timestamp;
   });
+}
+
+/** Largest pinnedOrder currently assigned, or -1 when no pinned items have one. */
+function getMaxPinnedOrder(): number {
+  let max = -1;
+  for (const item of clipboardHistory) {
+    if (item.pinned && Number.isFinite(item.pinnedOrder)) {
+      max = Math.max(max, item.pinnedOrder as number);
+    }
+  }
+  return max;
+}
+
+/** Assign sequential pinnedOrder to any pinned items missing one, preserving
+ * their current sorted position. Keeps legacy/persisted data consistent. */
+function ensurePinnedOrder(): void {
+  sortClipboardHistory();
+  let next = 0;
+  for (const item of clipboardHistory) {
+    if (item.pinned) {
+      item.pinnedOrder = next;
+      next += 1;
+    } else if (item.pinnedOrder !== undefined) {
+      delete item.pinnedOrder;
+    }
+  }
 }
 
 // ─── Persistence ────────────────────────────────────────────────────
@@ -168,7 +205,7 @@ function loadHistory(): void {
           ...item,
           pinned: Boolean(item?.pinned),
         }));
-        sortClipboardHistory();
+        ensurePinnedOrder();
         console.log(`Loaded ${clipboardHistory.length} clipboard items from disk`);
       }
     }
@@ -942,9 +979,39 @@ export function togglePinClipboardItem(id: string): ClipboardItem | null {
   if (!item) return null;
 
   item.pinned = !Boolean(item.pinned);
+  if (item.pinned) {
+    // Newly pinned items go to the bottom of the pinned group.
+    item.pinnedOrder = getMaxPinnedOrder() + 1;
+  } else {
+    delete item.pinnedOrder;
+  }
   sortClipboardHistory();
   saveHistory();
   return { ...item };
+}
+
+/** Move a pinned item up or down within the pinned group by swapping its
+ * order with the adjacent pinned item. No-op for non-pinned items or edges. */
+export function moveClipboardPinnedItem(id: string, direction: 'up' | 'down'): boolean {
+  const item = clipboardHistory.find((i) => i.id === id);
+  if (!item || !item.pinned) return false;
+
+  ensurePinnedOrder();
+  const pinned = clipboardHistory.filter((i) => i.pinned);
+  const idx = pinned.findIndex((i) => i.id === id);
+  if (idx === -1) return false;
+  const target = direction === 'up' ? idx - 1 : idx + 1;
+  if (target < 0 || target >= pinned.length) return false;
+
+  const a = pinned[idx];
+  const b = pinned[target];
+  const tmp = a.pinnedOrder;
+  a.pinnedOrder = b.pinnedOrder;
+  b.pinnedOrder = tmp;
+
+  sortClipboardHistory();
+  saveHistory();
+  return true;
 }
 
 export function copyItemToClipboard(id: string): boolean {

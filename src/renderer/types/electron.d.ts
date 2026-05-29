@@ -699,6 +699,7 @@ export interface ClipboardItem {
   preview?: string;
   timestamp: number;
   pinned?: boolean;
+  pinnedOrder?: number;
   source?: string;
   metadata?: {
     width?: number;
@@ -1108,6 +1109,7 @@ export interface ElectronAPI {
   clipboardCopyItem: (id: string) => Promise<boolean>;
   clipboardPasteItem: (id: string) => Promise<boolean>;
   clipboardTogglePin: (id: string) => Promise<ClipboardItem | null>;
+  clipboardMovePinned: (id: string, direction: 'up' | 'down') => Promise<boolean>;
   clipboardSaveAsSnippet: (id: string) => Promise<Snippet | null>;
   clipboardSaveAsFile: (id: string) => Promise<boolean>;
   clipboardSetEnabled: (enabled: boolean) => Promise<void>;

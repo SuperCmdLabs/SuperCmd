@@ -73,6 +73,7 @@ import {
   setClipboardMonitorEnabled,
   setClipboardAppBlacklist,
   togglePinClipboardItem,
+  moveClipboardPinnedItem,
   pruneClipboardHistoryOlderThan,
 } from './clipboard-manager';
 import {
@@ -16202,6 +16203,10 @@ return appURL's |path|() as text`,
 
   ipcMain.handle('clipboard-toggle-pin', (_event: any, id: string) => {
     return togglePinClipboardItem(id);
+  });
+
+  ipcMain.handle('clipboard-move-pinned', (_event: any, id: string, direction: 'up' | 'down') => {
+    return moveClipboardPinnedItem(id, direction);
   });
 
   ipcMain.handle('clipboard-save-as-snippet', (_event: any, id: string) => {
