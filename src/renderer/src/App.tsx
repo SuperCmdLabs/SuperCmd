@@ -43,6 +43,7 @@ import { useLauncherLocalSystemCommands } from './hooks/useLauncherLocalSystemCo
 import { useLauncherCommandExecution } from './hooks/useLauncherCommandExecution';
 import { useLauncherWindowShownHandler } from './hooks/useLauncherWindowShownHandler';
 import { useLauncherKeyboardControls } from './hooks/useLauncherKeyboardControls';
+import { useCommandSearchHistory } from './hooks/useCommandSearchHistory';
 import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
@@ -158,6 +159,13 @@ const App: React.FC = () => {
   );
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  const {
+    historyIndex,
+    addToHistory,
+    resetHistoryIndex,
+    navigateHistoryUp,
+    navigateHistoryDown,
+  } = useCommandSearchHistory();
   const [autoQuitAppPaths, setAutoQuitAppPaths] = useState<Set<string>>(new Set());
   const browserSearch = useBrowserSearch(searchQuery);
   const [, setBrowserSearchSkipAutoComplete] = useState(false);
@@ -716,9 +724,10 @@ const App: React.FC = () => {
       lastWindowHiddenAtRef.current = Date.now();
       setSearchQuery('');
       setSelectedIndex(0);
+      resetHistoryIndex();
     });
     return cleanupWindowHidden;
-  }, []);
+  }, [resetHistoryIndex]);
 
   useEffect(() => {
     const cleanup = window.electron.onCommandsUpdated?.(() => {
@@ -1766,6 +1775,7 @@ const App: React.FC = () => {
     const normalizedQuery = String(query || '').trim();
     if (!stableKey || !normalizedQuery) return;
     if (command.id === BROWSER_SEARCH_SHOW_ALL_RESULTS_ID) return;
+    addToHistory(normalizedQuery);
     const nextRanking = recordRootSearchLaunchInState(rootSearchRankingRef.current, stableKey, normalizedQuery);
     rootSearchRankingRef.current = nextRanking;
     setRootSearchRanking(nextRanking);
@@ -1779,7 +1789,7 @@ const App: React.FC = () => {
     } catch (error) {
       console.warn('Failed to record root search launch:', error);
     }
-  }, []);
+  }, [addToHistory]);
 
   const { runLocalSystemCommand } = useLauncherLocalSystemCommands({
     expandLauncherForDirectLaunch,
@@ -2381,6 +2391,10 @@ const App: React.FC = () => {
     setContextMenu,
     setActionsCommand,
     setSelectedActionIndex,
+    historyIndex,
+    navigateHistoryUp,
+    navigateHistoryDown,
+    resetHistoryIndex,
     startAiChat,
     restoreLauncherFocus,
     handleCommandExecute,
