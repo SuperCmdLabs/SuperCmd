@@ -159,16 +159,19 @@ export function createGridItemsRuntime(resolveIconSrc: (src: string) => string) 
     const swatchColor = getGridColor(content);
     const renderableContent = swatchColor ? null : toRenderableContent(content);
 
+    // Use a wrapper div with padding-top:100% to achieve square aspect ratio.
+    // Avoid CSS aspect-ratio on flex containers inside CSS grid — Chromium/Electron 40
+    // has a layout cycle bug with that combination (aspect-ratio + flex-col + overflow-hidden child).
     return (
       <div
         data-idx={dataIdx}
-        className={`relative rounded-lg border cursor-pointer transition-colors overflow-hidden flex flex-col ${
+        className={`relative rounded-lg border cursor-pointer transition-colors overflow-hidden ${
           isSelected
             ? 'border-[var(--text-secondary)] bg-[var(--launcher-card-selected-bg)] ring-2 ring-[var(--launcher-card-border)]'
             : 'border-[var(--launcher-card-border)] bg-[var(--launcher-card-bg)] hover:bg-[var(--launcher-card-hover-bg)]'
         }`}
         style={{
-          height: '160px',
+          paddingTop: '100%',
           boxShadow: isSelected
             ? '0 0 0 2px rgba(var(--on-surface-rgb), 0.24), inset 0 0 0 1px rgba(var(--on-surface-rgb), 0.16)'
             : undefined,
@@ -181,25 +184,27 @@ export function createGridItemsRuntime(resolveIconSrc: (src: string) => string) 
         onMouseMove={onSelect}
         onContextMenu={onContextAction}
       >
-        <div className="flex-1 flex items-center justify-center overflow-hidden p-1.5 min-h-0">
-          {swatchColor ? (
-            <div className="w-full h-full rounded" style={{ backgroundColor: swatchColor }} />
-          ) : renderableContent ? (
-            <div className="w-full h-full flex items-center justify-center">
-              {renderIcon(renderableContent, 'w-full h-full object-contain')}
-            </div>
-          ) : (
-            <div className="w-full h-full bg-[var(--surface-tint-2)] rounded flex items-center justify-center text-[var(--text-subtle)] text-2xl">
-              {title ? title.charAt(0) : '?'}
+        <div className="absolute inset-0 flex flex-col overflow-hidden">
+          <div className="flex-1 flex items-center justify-center overflow-hidden p-1.5 min-h-0">
+            {swatchColor ? (
+              <div className="w-full h-full rounded" style={{ backgroundColor: swatchColor }} />
+            ) : renderableContent ? (
+              <div className="w-full h-full flex items-center justify-center">
+                {renderIcon(renderableContent, 'w-full h-full object-contain')}
+              </div>
+            ) : (
+              <div className="w-full h-full bg-[var(--surface-tint-2)] rounded flex items-center justify-center text-[var(--text-subtle)] text-2xl">
+                {title ? title.charAt(0) : '?'}
+              </div>
+            )}
+          </div>
+          {title && (
+            <div className="px-2 pb-2 pt-1 flex-shrink-0">
+              <p className="truncate text-[11px] text-[var(--text-secondary)] text-center">{title}</p>
+              {subtitle && <p className="truncate text-[9px] text-[var(--text-subtle)] text-center">{subtitle}</p>}
             </div>
           )}
         </div>
-        {title && (
-          <div className="px-2 pb-2 pt-1 flex-shrink-0">
-            <p className="truncate text-[11px] text-[var(--text-secondary)] text-center">{title}</p>
-            {subtitle && <p className="truncate text-[9px] text-[var(--text-subtle)] text-center">{subtitle}</p>}
-          </div>
-        )}
       </div>
     );
   }

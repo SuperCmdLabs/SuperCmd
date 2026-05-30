@@ -4,4 +4,4 @@
  */
 
 export { configureIconRuntime } from './icon-runtime-config';
-export { Icon, Color, Image, Keyboard, renderIcon, resolveIconSrc } from './icon-runtime-render';
+export { Icon, Color, Image, Keyboard, renderIcon, resolveIconSrc, preloadFileIconCache } from './icon-runtime-render';
