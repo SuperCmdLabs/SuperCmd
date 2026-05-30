@@ -60,7 +60,7 @@ import {
   getPopularExtensions,
   getExtensionDetails,
 } from './extension-api';
-import { getExtensionBundle, buildAllCommands, discoverInstalledExtensionCommands, getInstalledExtensionsSettingsSchema } from './extension-runner';
+import { getExtensionBundle, buildAllCommands, discoverInstalledExtensionCommands, getInstalledExtensionsSettingsSchema, stopBuildWorker } from './extension-runner';
 import {
   startClipboardMonitor,
   stopClipboardMonitor,
@@ -19091,6 +19091,7 @@ app.on('will-quit', () => {
   stopEmojiTriggerMonitor();
   stopFileSearchIndexing();
   try { soulverCalculator.shutdown(); } catch {}
+  stopBuildWorker();
   if (appTray) {
     try { appTray.destroy(); } catch {}
     appTray = null;

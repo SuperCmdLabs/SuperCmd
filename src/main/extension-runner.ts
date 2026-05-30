@@ -14,7 +14,7 @@
  */
 
 import { app } from 'electron';
-import { execFileSync } from 'child_process';
+import { execFileSync, fork, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -25,26 +25,126 @@ import {
 import { getExtensionPreferences } from './extension-preferences-store';
 import { loadSettings } from './settings-store';
 
-/**
- * Require esbuild, handling the asar-packed Electron case.
- * When the app is packaged, esbuild's native binary lives in app.asar.unpacked/
- * but requireEsbuild() resolves to the asar path where spawn fails with ENOTDIR.
- */
-function requireEsbuild(): any {
-  try {
-    // Try the unpacked path first (works in packaged app)
-    const mainPath = require.resolve('esbuild');
-    if (mainPath.includes('app.asar')) {
-      const unpackedPath = mainPath.replace('app.asar', 'app.asar.unpacked');
-      if (fs.existsSync(unpackedPath)) {
-        return require(unpackedPath);
-      }
-    }
-    return require('esbuild');
-  } catch {
-    // Fallback for environments where require.resolve behaves differently.
-    return require('esbuild');
+// ── Build Worker ────────────────────────────────────────────────────
+// esbuild runs in a forked child process so that its V8 compilation
+// and libuv I/O cannot re-enter the main process's Cocoa event loop.
+// Follows the same pattern as window-manager-worker.
+
+const BUILD_WORKER_REQUEST_TIMEOUT_MS = 60_000;
+type BuildWorkerRequest = { id: number; type: 'build'; options: any; label: string };
+type BuildWorkerResponse =
+  | { id: number; ok: true }
+  | { id: number; ok: false; error: string; missingBareImports?: string[] };
+
+let buildWorker: ChildProcess | null = null;
+let buildWorkerReqSeq = 0;
+const buildWorkerPending = new Map<
+  number,
+  {
+    resolve: (value: BuildWorkerResponse) => void;
+    reject: (reason?: any) => void;
+    timer: ReturnType<typeof setTimeout>;
   }
+>();
+
+function isBuildWorkerAlive(proc: ChildProcess | null): proc is ChildProcess {
+  return Boolean(proc && proc.exitCode === null && !proc.killed && proc.connected);
+}
+
+function getBuildWorkerPath(): string {
+  const workerPath = path.join(__dirname, 'build-worker.js');
+  if (!app.isPackaged) return workerPath;
+  if (!workerPath.includes('app.asar')) return workerPath;
+  const unpackedPath = workerPath.replace('app.asar', 'app.asar.unpacked');
+  try {
+    if (fs.existsSync(unpackedPath)) return unpackedPath;
+  } catch {}
+  return workerPath;
+}
+
+function ensureBuildWorker(): ChildProcess | null {
+  if (isBuildWorkerAlive(buildWorker)) return buildWorker;
+  try {
+    const workerPath = getBuildWorkerPath();
+    const proc = fork(workerPath, [], {
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+      execArgv: [],
+    });
+    proc.on('message', (response: BuildWorkerResponse) => {
+      const pending = buildWorkerPending.get(response.id);
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      buildWorkerPending.delete(response.id);
+      pending.resolve(response);
+    });
+    proc.on('exit', () => {
+      for (const [id, pending] of buildWorkerPending.entries()) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error('Build worker exited'));
+        buildWorkerPending.delete(id);
+      }
+    });
+    buildWorker = proc;
+    return proc;
+  } catch (error) {
+    console.error('[BuildWorker] Failed to spawn:', error);
+    return null;
+  }
+}
+
+export function stopBuildWorker(): void {
+  if (buildWorker) {
+    try { buildWorker.kill(); } catch {}
+    buildWorker = null;
+  }
+}
+
+async function callBuildWorker(
+  options: any,
+  label: string,
+  timeoutMs: number = BUILD_WORKER_REQUEST_TIMEOUT_MS
+): Promise<BuildWorkerResponse> {
+  const sendAttempt = async (): Promise<BuildWorkerResponse> => {
+    const proc = ensureBuildWorker();
+    if (!proc || !isBuildWorkerAlive(proc)) {
+      return { id: 0, ok: false, error: 'Build worker unavailable' };
+    }
+    const id = ++buildWorkerReqSeq;
+    return await new Promise<BuildWorkerResponse>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        buildWorkerPending.delete(id);
+        reject(new Error(`[BuildWorker] Request timed out (${label}).`));
+      }, Math.max(250, timeoutMs));
+      buildWorkerPending.set(id, { resolve, reject, timer });
+      const request: BuildWorkerRequest = { id, type: 'build', options, label };
+      try {
+        proc.send(request, (error?: Error | null) => {
+          if (!error) return;
+          const pending = buildWorkerPending.get(id);
+          if (!pending) return;
+          clearTimeout(pending.timer);
+          buildWorkerPending.delete(id);
+          pending.reject(error);
+        });
+      } catch (error) {
+        clearTimeout(timer);
+        buildWorkerPending.delete(id);
+        reject(error);
+      }
+    });
+  };
+
+  try {
+    return await sendAttempt();
+  } catch (error) {
+    const message = String((error as any)?.message || error || '');
+    if (!message.includes('worker unavailable') && !message.includes('worker exited')) {
+      throw error;
+    }
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  return await sendAttempt();
 }
 
 export interface ExtensionPreferenceSchema {
@@ -680,7 +780,6 @@ export async function buildAllCommands(extName: string, extPathOverride?: string
 
   if (commands.length === 0) return 0;
 
-  const esbuild = requireEsbuild();
   const extNodeModules = path.join(extPath, 'node_modules');
   if (requiresNodeModules && !fs.existsSync(extNodeModules)) {
     try {
@@ -720,7 +819,7 @@ export async function buildAllCommands(extName: string, extPathOverride?: string
       console.log(`  Building ${extName}/${cmd.name}…`);
 
       await runEsbuildBuild(
-        esbuild,
+        null,
         {
           entryPoints: [entryFile],
           absWorkingDir: extPath,
@@ -1009,10 +1108,9 @@ export async function buildSingleCommand(extName: string, cmdName: string): Prom
   }
 
   try {
-    const esbuild = requireEsbuild();
     console.log(`  On-demand building ${extName}/${cmdName}…`);
     await runEsbuildBuild(
-      esbuild,
+      null,
       {
         entryPoints: [entryFile],
         absWorkingDir: extPath,
@@ -1063,60 +1161,46 @@ export async function buildSingleCommand(extName: string, cmdName: string): Prom
   }
 }
 
+/**
+ * Race a promise against a timeout. If the timeout fires first the
+ * returned promise rejects with a descriptive error. The timer is
+ * cleaned up on settlement so no stray timers keep the process alive.
+ */
+async function raceWithTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string
+): Promise<T> {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const id = setTimeout(() => {
+      reject(new Error(`Bundle load timed out after ${ms}ms for "${label}"`));
+    }, ms);
+    _bundleGuardTimer.set(label, id);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearBundleGuardTimer(label);
+  }
+}
+
 // Records the most recent build error per extension/command so that
 // getExtensionBundle can surface the real cause to the user instead of
 // the generic "On-demand build failed" message.
 const lastBuildError = new Map<string, string>();
 
-/**
- * Parse an esbuild BuildFailure and return the list of bare-import package
- * names it could not resolve. Some Raycast extensions import packages (e.g.
- * `fast-glob`) without declaring them in their manifest — Raycast's `ray build`
- * provides them implicitly, but esbuild bails out. When this returns a
- * non-empty list the caller can install them and retry.
- */
-function extractMissingBareImports(error: any): string[] {
-  const errors = Array.isArray(error?.errors) ? error.errors : [];
-  const found = new Set<string>();
-  for (const err of errors) {
-    const text = String(err?.text || '');
-    const match = text.match(/Could not resolve\s+"([^"]+)"/);
-    if (!match) continue;
-    const specifier = match[1];
-    // Only bare imports — ignore relative/absolute paths and scheme URLs
-    if (
-      !specifier ||
-      specifier.startsWith('.') ||
-      specifier.startsWith('/') ||
-      specifier.includes(':')
-    ) {
-      continue;
-    }
-    // Bare-package name: optional @scope/ then name. Drop any subpath.
-    const parts = specifier.split('/');
-    const pkgName = specifier.startsWith('@')
-      ? parts.slice(0, 2).join('/')
-      : parts[0];
-    if (!pkgName) continue;
-    // Skip things that are already external (shouldn't appear, but defensive)
-    if (nodeBuiltins.includes(pkgName)) continue;
-    if (pkgName.startsWith('@raycast/')) continue;
-    found.add(pkgName);
-  }
-  return [...found];
-}
-
 async function runEsbuildBuild(
-  esbuild: any,
+  _esbuild: any,
   options: any,
   extPath: string,
   label: string
 ): Promise<void> {
-  try {
-    await esbuild.build(options);
-  } catch (error: any) {
-    const missing = extractMissingBareImports(error);
-    if (missing.length === 0) throw error;
+  const response = await callBuildWorker(options, label);
+  if (response.ok) return;
+
+  // Worker reported missing bare imports — install them and retry.
+  const missing = response.missingBareImports;
+  if (missing && missing.length > 0) {
     console.log(
       `  Missing packages for ${label} (${missing.join(', ')}); installing and retrying…`
     );
@@ -1127,17 +1211,99 @@ async function runEsbuildBuild(
       console.error(
         `  Failed to install missing packages for ${label}: ${installError?.message || installError}`
       );
-      throw error;
+      throw new Error(response.error);
     }
-    await esbuild.build(options);
+    const retry = await callBuildWorker(options, label);
+    if (retry.ok) return;
+    throw new Error(retry.error);
+  }
+
+  throw new Error(response.error);
+}
+
+// ── Re-entrancy Guard ───────────────────────────────────────────────
+// Defense-in-depth: prevents nested calls from creating a re-entrant
+// event loop, even if a future code path runs sync work on the main
+// thread. The primary fix is the build worker (build-worker.ts) which
+// runs esbuild in its own child process. This guard adds a yield point
+// on conflict and a 30s timeout as a safety net.
+
+const _bundleGuardDepth = new Map<string, number>();
+const _bundleGuardTimer = new Map<string, ReturnType<typeof setTimeout>>();
+const BUNDLE_LOAD_GRACE_MS = 30_000;
+
+function enterBundleGuard(label: string): boolean {
+  const current = _bundleGuardDepth.get(label) ?? 0;
+  if (current >= 1) {
+    console.warn(`[BundleGuard] Re-entrant call blocked for "${label}"`);
+    return false;
+  }
+  _bundleGuardDepth.set(label, current + 1);
+  return true;
+}
+
+function exitBundleGuard(label: string): void {
+  const current = _bundleGuardDepth.get(label) ?? 0;
+  if (current > 0) {
+    _bundleGuardDepth.set(label, current - 1);
   }
 }
 
+function clearBundleGuardTimer(label: string): void {
+  const timer = _bundleGuardTimer.get(label);
+  if (timer) {
+    clearTimeout(timer);
+    _bundleGuardTimer.delete(label);
+  }
+}
+
+async function yieldToEventLoop(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (typeof setImmediate !== 'undefined') {
+      setImmediate(resolve);
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}
+
 /**
- * Get a pre-built extension command bundle.
- * Falls back to on-demand building if the bundle is missing.
+ * Get a pre-built extension command bundle with re-entrancy protection
+ * and a timeout guard.
+ *
+ * Defense-in-depth: the build worker (build-worker.ts) isolates esbuild
+ * in a child process, so re-entrant event loop hangs should not occur.
+ * This guard prevents nested getExtensionBundle calls and adds a 30s
+ * timeout as a safety net.
  */
 export async function getExtensionBundle(
+  extName: string,
+  cmdName: string
+): Promise<ExtensionBundleResult | null> {
+  const label = `${normalizeExtensionName(extName)}/${cmdName}`;
+
+  if (!enterBundleGuard(label)) {
+    console.warn(`[BundleGuard] Re-entrant load for "${label}", yielding before retry…`);
+    await yieldToEventLoop();
+    if (!enterBundleGuard(label)) {
+      throw new Error(`[BundleGuard] Concurrent bundle load failed for "${label}"`);
+    }
+  }
+
+  try {
+    const result = await raceWithTimeout(
+      getExtensionBundleImpl(extName, cmdName),
+      BUNDLE_LOAD_GRACE_MS,
+      label
+    );
+    return result;
+  } finally {
+    exitBundleGuard(label);
+    clearBundleGuardTimer(label);
+  }
+}
+
+async function getExtensionBundleImpl(
   extName: string,
   cmdName: string
 ): Promise<ExtensionBundleResult | null> {
