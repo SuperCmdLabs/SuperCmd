@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Bug, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, GripVertical, Keyboard, Languages, RotateCcw, Sparkles, Timer, Undo2 } from 'lucide-react';
+import { AlertTriangle, Bug, ChevronRight, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, GripVertical, Info, Keyboard, Languages, RotateCcw, Sparkles, Timer, Undo2 } from 'lucide-react';
 import type {
   AppNavigationStyle,
   AppSettings,
@@ -144,6 +144,7 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
   const [tabs, setTabs] = useState<BrowserTabEntry[]>([]);
   const [busyProfileId, setBusyProfileId] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<string>('');
+  const [availableExpanded, setAvailableExpanded] = useState(false);
 
   const refreshBrowserData = useCallback(async () => {
     try {
@@ -345,32 +346,39 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
             className="settings-checkbox mt-0.5"
           />
           <span>
-            <span className="block">{t('settings.advanced.browserSearch.alphaToggle.label')}</span>
+            <span className="flex items-center gap-1.5">
+              <span>{t('settings.advanced.browserSearch.alphaToggle.label')}</span>
+              <span
+                className="relative inline-flex group"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              >
+                <Info className="h-3.5 w-3.5 text-white/40 hover:text-white/70 cursor-help" tabIndex={0} />
+                <span className="pointer-events-none absolute left-1/2 top-5 z-50 hidden w-[360px] -translate-x-3 rounded-md border border-yellow-500/35 bg-[var(--bg-overlay)] px-3 py-2.5 text-yellow-100 shadow-xl group-hover:block group-focus-within:block">
+                  <span className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-300" />
+                    <span className="min-w-0">
+                      <span className="block text-[12px] font-semibold text-yellow-100">
+                        {t('settings.advanced.browserSearch.alphaWarning.title')}
+                      </span>
+                      <span className="mt-1 block text-[11px] leading-snug text-yellow-100/80">
+                        {t('settings.advanced.browserSearch.alphaWarning.description')}
+                      </span>
+                      <span className="mt-1 block text-[11px] leading-snug text-yellow-100/75">
+                        {t('settings.advanced.browserSearch.alphaWarning.devMode')}
+                      </span>
+                      <span className="mt-1 block text-[11px] leading-snug text-yellow-100/65">
+                        {t('settings.advanced.browserSearch.alphaWarning.temporary')}
+                      </span>
+                    </span>
+                  </span>
+                </span>
+              </span>
+            </span>
             <span className="mt-0.5 block text-[11px] leading-snug text-[var(--text-muted)]">
               {t('settings.advanced.browserSearch.alphaToggle.description')}
             </span>
           </span>
         </label>
-
-        <div className="rounded-md border border-yellow-500/35 bg-yellow-500/10 px-3 py-2.5 text-yellow-100">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-300" />
-            <div className="min-w-0">
-              <div className="text-[12px] font-semibold text-yellow-100">
-                {t('settings.advanced.browserSearch.alphaWarning.title')}
-              </div>
-              <p className="mt-1 text-[11px] leading-snug text-yellow-100/80">
-                {t('settings.advanced.browserSearch.alphaWarning.description')}
-              </p>
-              <p className="mt-1 text-[11px] leading-snug text-yellow-100/75">
-                {t('settings.advanced.browserSearch.alphaWarning.devMode')}
-              </p>
-              <p className="mt-1 text-[11px] leading-snug text-yellow-100/65">
-                {t('settings.advanced.browserSearch.alphaWarning.temporary')}
-              </p>
-            </div>
-          </div>
-        </div>
 
         {enabled ? (
           <>
@@ -545,23 +553,32 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
             </div>
 
             <div>
-              <div className="mb-1 flex items-center justify-between gap-3">
-                <label className="text-[0.75rem] text-[var(--text-muted)] block">
+              <button
+                type="button"
+                onClick={() => setAvailableExpanded((v) => !v)}
+                className="mb-1 flex w-full items-center justify-between gap-3 text-left"
+              >
+                <span className="flex items-center gap-1.5 text-[0.75rem] text-[var(--text-muted)]">
+                  <ChevronRight
+                    className={`h-3.5 w-3.5 transition-transform ${availableExpanded ? 'rotate-90' : ''}`}
+                  />
                   {t('settings.advanced.browserSearch.import.availableHeading')}
-                </label>
+                </span>
                 <span className="text-[11px] text-[var(--text-muted)] tabular-nums">{detectedProfiles.length}</span>
-              </div>
-              <p className="mb-2 text-[11px] text-[var(--text-muted)] leading-snug">
-                {t('settings.advanced.browserSearch.import.profileSupportNote')}
-              </p>
-              <div className="overflow-hidden rounded-md border border-[var(--ui-divider)] bg-white/[0.03]">
-                {detectedProfiles.length === 0 ? (
-                  <div className="px-3 py-2.5 text-[12px] text-[var(--text-muted)]">
-                    {t('settings.advanced.browserSearch.import.noneFound')}
-                  </div>
-                ) : (
-                  <div className="divide-y divide-[var(--ui-divider)]">
-                    {detectedProfiles.map((profile) => (
+              </button>
+              {availableExpanded ? (
+                <>
+                  <p className="mb-2 text-[11px] text-[var(--text-muted)] leading-snug">
+                    {t('settings.advanced.browserSearch.import.profileSupportNote')}
+                  </p>
+                  <div className="overflow-hidden rounded-md border border-[var(--ui-divider)] bg-white/[0.03]">
+                    {detectedProfiles.length === 0 ? (
+                      <div className="px-3 py-2.5 text-[12px] text-[var(--text-muted)]">
+                        {t('settings.advanced.browserSearch.import.noneFound')}
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-[var(--ui-divider)]">
+                        {detectedProfiles.map((profile) => (
                       <div key={profile.id} className="grid gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                         <div className="min-w-0">
                           <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
@@ -583,7 +600,9 @@ const BrowserSearchSection: React.FC<BrowserSearchSectionProps> = ({ settings, o
                     ))}
                   </div>
                 )}
-              </div>
+                  </div>
+                </>
+              ) : null}
             </div>
 
             {statusMessage ? (

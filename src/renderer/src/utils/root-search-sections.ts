@@ -92,9 +92,24 @@ function isSearchEngineHistoryCandidate(candidate: RootSearchCandidate): boolean
 
 export function isRootResultPromotionCandidate(candidate: RootSearchCandidate, query = ''): boolean {
   const focusedFilePathCandidate = isFocusedFilePathCandidate(candidate, query);
-  if (candidate.finalScore < (focusedFilePathCandidate ? 600 : ROOT_SEARCH_PROMOTION_SCORE)) return false;
+  const isCommandSubtype =
+    candidate.subtype === 'system-command' ||
+    candidate.subtype === 'extension-command' ||
+    candidate.subtype === 'script-command';
+  // Commands are a small curated set, so a fuzzy/subsequence command match is
+  // almost always intentional and should clear a lower bar than files/history
+  // (e.g. "snipt" -> "Search Snippets"). Without this, fuzzy command matches
+  // fell below the 700 floor and lost to the always-present web-search row.
+  const minPromotionScore = focusedFilePathCandidate ? 600 : isCommandSubtype ? 500 : ROOT_SEARCH_PROMOTION_SCORE;
+  if (candidate.finalScore < minPromotionScore) return false;
 
   if (candidate.subtype === 'nickname') return true;
+
+  if (isCommandSubtype) {
+    // Promote any real name/keyword match; only exclude hits that matched
+    // nothing but the description/subtitle.
+    return candidate.matchKind !== 'description';
+  }
 
   if (candidate.subtype === 'app' || candidate.subtype === 'quicklink') {
     return candidate.matchKind !== 'contains' && candidate.matchKind !== 'subsequence' && candidate.matchKind !== 'description';

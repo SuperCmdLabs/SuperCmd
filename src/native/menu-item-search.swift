@@ -18,6 +18,8 @@ struct OutputPayload: Encodable {
     let ok: Bool
     let items: [MenuItemInfo]?
     let error: String?
+    var appName: String? = nil
+    var appPath: String? = nil
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -30,13 +32,40 @@ func emit(_ payload: OutputPayload) {
     FileHandle.standardOutput.write(bytes)
 }
 
+// kAXMenuItemCmdModifiers uses its own small bitmask (NOT NSEvent flags):
+//   bit0 = Shift, bit1 = Option, bit2 = Control, bit3 = NO Command.
+// Command is implied unless bit3 is set.
 func modifierString(_ mods: Int) -> String {
     var s = ""
-    if mods & (1 << 17) != 0 { s += "⇧" }  // Shift
-    if mods & (1 << 18) != 0 { s += "⌥" }  // Option/Alt
-    if mods & (1 << 19) != 0 { s += "⌃" }  // Control
-    if mods & (1 << 20) != 0 { s += "⌘" }  // Command
+    if mods & 4 != 0 { s += "⌃" }       // Control
+    if mods & 2 != 0 { s += "⌥" }       // Option
+    if mods & 1 != 0 { s += "⇧" }       // Shift
+    if mods & 8 == 0 { s += "⌘" }       // Command (present unless "no command" bit set)
     return s
+}
+
+/// Map a menu command character (AXMenuItemCmdChar) to a readable glyph.
+/// Special keys come through as control / function-key scalars.
+func shortcutCharString(_ char: String) -> String {
+    guard let scalar = char.unicodeScalars.first else { return char }
+    switch scalar.value {
+    case 0x08: return "⌫"
+    case 0x09: return "⇥"
+    case 0x0D, 0x03: return "↩"
+    case 0x1B: return "⎋"
+    case 0x7F: return "⌦"
+    case 0x20: return "␣"
+    case 0xF700: return "↑"
+    case 0xF701: return "↓"
+    case 0xF702: return "←"
+    case 0xF703: return "→"
+    case 0xF729: return "↖"
+    case 0xF72B: return "↘"
+    case 0xF72C: return "⇞"
+    case 0xF72D: return "⇟"
+    default:
+        return char.count == 1 ? char.uppercased() : char
+    }
 }
 
 /// Map keyCode to a readable character (best-effort for common keys)
@@ -66,7 +95,7 @@ func collectMenuItems(
 ) {
     var childrenRef: CFTypeRef?
     let err = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef)
-    guard err == 0, let children = childrenRef as? [AXUIElement] else { return }
+    guard err == .success, let children = childrenRef as? [AXUIElement] else { return }
 
     for child in children {
         // Get title
@@ -74,15 +103,29 @@ func collectMenuItems(
         AXUIElementCopyAttributeValue(child, kAXTitleAttribute as CFString, &titleRef)
         let title = (titleRef as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-        // Skip empty or separator items
-        if title.isEmpty || title == "Apple" { continue }
+        // Skip the Apple menu entirely (it is app-agnostic system stuff).
+        if title == "Apple" { continue }
 
-        let currentPath = parentPath.isEmpty ? title : "\(parentPath) > \(title)"
+        // Does this element contain a submenu? Each AXMenuBarItem / AXMenuItem
+        // that opens a submenu wraps its contents in an AXMenu child, and that
+        // AXMenu has an EMPTY title — so we must traverse containers regardless
+        // of whether they have a title, otherwise we never reach the leaves.
+        var childMenuRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(child, kAXChildrenAttribute as CFString, &childMenuRef)
+        let hasChildren = (childMenuRef as? [AXUIElement])?.isEmpty == false
 
-        // Check if it's a menu (has submenu)
-        var roleRef: CFTypeRef?
-        AXUIElementCopyAttributeValue(child, kAXRoleAttribute as CFString, &roleRef)
-        let role = roleRef as? String ?? ""
+        // Empty-title containers (the AXMenu wrapper) must not add a path crumb.
+        let currentPath = title.isEmpty
+            ? parentPath
+            : (parentPath.isEmpty ? title : "\(parentPath) > \(title)")
+
+        if hasChildren {
+            collectMenuItems(element: child, parentPath: currentPath, into: &result)
+            continue
+        }
+
+        // Leaf item — skip separators / blank rows.
+        if title.isEmpty { continue }
 
         // Check if enabled
         var enabledRef: CFTypeRef?
@@ -96,38 +139,84 @@ func collectMenuItems(
         AXUIElementCopyAttributeValue(child, kAXMenuItemCmdCharAttribute as CFString, &cmdCharRef)
 
         var shortcut: String? = nil
-        if let mods = shortcutRef as? Int, let char = cmdCharRef as? String, !char.isEmpty {
-            let modStr = modifierString(mods)
-            shortcut = modStr + char
+        if let char = cmdCharRef as? String, !char.isEmpty {
+            let mods = (shortcutRef as? Int) ?? 0
+            shortcut = modifierString(mods) + shortcutCharString(char)
         }
 
-        // If it has children (submenu), recurse
+        result.append(MenuItemInfo(
+            path: parentPath,
+            title: title,
+            fullPath: currentPath,
+            shortcut: shortcut,
+            enabled: enabled
+        ))
+    }
+}
+
+/// Find the AXUIElement whose full path matches `targetPath`, using the same
+/// traversal (and empty-title-container skipping) as collectMenuItems so the
+/// press path lines up exactly with what list returned.
+func findMenuItem(element: AXUIElement, parentPath: String, targetPath: String) -> AXUIElement? {
+    var childrenRef: CFTypeRef?
+    let err = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef)
+    guard err == .success, let children = childrenRef as? [AXUIElement] else { return nil }
+
+    for child in children {
+        var titleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(child, kAXTitleAttribute as CFString, &titleRef)
+        let title = (titleRef as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if title == "Apple" { continue }
+
         var childMenuRef: CFTypeRef?
         AXUIElementCopyAttributeValue(child, kAXChildrenAttribute as CFString, &childMenuRef)
         let hasChildren = (childMenuRef as? [AXUIElement])?.isEmpty == false
 
+        let currentPath = title.isEmpty
+            ? parentPath
+            : (parentPath.isEmpty ? title : "\(parentPath) > \(title)")
+
         if hasChildren {
-            // It's a submenu, recurse
-            collectMenuItems(element: child, parentPath: currentPath, into: &result)
-        } else if role == "AXMenuItem" || role == "AXMenuBarItem" {
-            // Leaf menu item
-            result.append(MenuItemInfo(
-                path: parentPath,
-                title: title,
-                fullPath: currentPath,
-                shortcut: shortcut,
-                enabled: enabled
-            ))
+            if let found = findMenuItem(element: child, parentPath: currentPath, targetPath: targetPath) {
+                return found
+            }
+            continue
+        }
+
+        if !title.isEmpty && currentPath == targetPath {
+            return child
         }
     }
+    return nil
 }
 
 // ── Main ───────────────────────────────────────────────────────────
 
-// Read command from stdin (JSON: {"action": "list"} or {"action": "press", "path": "File > New Window"})
+// Read command from stdin (JSON: {"action": "list"} or {"action": "press", "path": "File > New Window"}).
+// Optional "bundleId" targets a specific app — needed because the launcher
+// window is frontmost while menu search is open, so we cannot rely on
+// NSWorkspace.frontmostApplication.
 let inputData = FileHandle.standardInput.readDataToEndOfFile()
 let input = try? JSONSerialization.jsonObject(with: inputData) as? [String: Any]
 let action = input?["action"] as? String ?? "list"
+
+func resolveTargetApp() -> NSRunningApplication? {
+    if let bundleId = input?["bundleId"] as? String, !bundleId.isEmpty {
+        let matches = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+        if let app = matches.first { return app }
+    }
+    // Fall back to matching a running app by its bundle path (lastFrontmostApp
+    // does not always carry a bundleId).
+    if let appPath = input?["appPath"] as? String, !appPath.isEmpty {
+        let normalized = (appPath as NSString).standardizingPath
+        for app in NSWorkspace.shared.runningApplications {
+            if let url = app.bundleURL?.path, (url as NSString).standardizingPath == normalized {
+                return app
+            }
+        }
+    }
+    return NSWorkspace.shared.frontmostApplication
+}
 
 if action == "press" {
     // Press a menu item by its path
@@ -136,73 +225,45 @@ if action == "press" {
         exit(0)
     }
 
-    let app = NSWorkspace.shared.frontmostApplication
-    guard let pid = app?.processIdentifier else {
-        emit(OutputPayload(ok: false, items: nil, error: "No frontmost application"))
+    let app = resolveTargetApp()
+    guard let runningApp = app, let pid = app?.processIdentifier else {
+        emit(OutputPayload(ok: false, items: nil, error: "No target application"))
         exit(0)
     }
+
+    // Bring the target app to the front so the menu action actually applies to
+    // it. The launcher window is frontmost while the view is open, and AXPress
+    // on a background app's menu otherwise has no visible effect.
+    runningApp.activate(options: [])
+    usleep(120_000) // ~120ms for activation to settle
 
     let appElement = AXUIElementCreateApplication(pid)
 
     var menuBarRef: CFTypeRef?
     let err = AXUIElementCopyAttributeValue(appElement, kAXMenuBarAttribute as CFString, &menuBarRef)
-    guard err == 0, let menuBar = menuBarRef else {
+    guard err == .success, let menuBar = menuBarRef else {
         emit(OutputPayload(ok: false, items: nil, error: "Cannot access menu bar (Accessibility permission required)"))
         exit(0)
     }
 
-    // Navigate the path and press the final item
-    let pathComponents = targetPath.split(separator: ">").map { $0.trimmingCharacters(in: .whitespaces) }
-    var currentElement = menuBar as! AXUIElement
-    var found = true
-
-    for (i, component) in pathComponents.enumerated() {
-        var childrenRef: CFTypeRef?
-        let childErr = AXUIElementCopyAttributeValue(currentElement, kAXChildrenAttribute as CFString, &childrenRef)
-        guard childErr == 0, let children = childrenRef as? [AXUIElement] else {
-            found = false
-            break
-        }
-
-        var matched = false
-        for child in children {
-            var titleRef: CFTypeRef?
-            AXUIElementCopyAttributeValue(child, kAXTitleAttribute as CFString, &titleRef)
-            let title = (titleRef as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-            if title == component {
-                if i == pathComponents.count - 1 {
-                    // Press the final item
-                    let pressErr = AXUIElementPerformAction(child, kAXPressAction as CFString)
-                    if pressErr == 0 {
-                        emit(OutputPayload(ok: true, items: nil, error: nil))
-                    } else {
-                        emit(OutputPayload(ok: false, items: nil, error: "Failed to press menu item (error: \(pressErr))"))
-                    }
-                    exit(0)
-                } else {
-                    currentElement = child
-                    matched = true
-                    break
-                }
-            }
-        }
-
-        if !matched {
-            found = false
-            break
-        }
+    // Locate the item by its full path using the shared traversal, then press it.
+    guard let target = findMenuItem(element: menuBar as! AXUIElement, parentPath: "", targetPath: targetPath) else {
+        emit(OutputPayload(ok: false, items: nil, error: "Menu item not found: \(targetPath)"))
+        exit(0)
     }
 
-    if !found {
-        emit(OutputPayload(ok: false, items: nil, error: "Menu item not found: \(targetPath)"))
+    let pressErr = AXUIElementPerformAction(target, kAXPressAction as CFString)
+    if pressErr == .success {
+        emit(OutputPayload(ok: true, items: nil, error: nil))
+    } else {
+        emit(OutputPayload(ok: false, items: nil, error: "Failed to press menu item (error: \(pressErr.rawValue))"))
     }
 
 } else {
     // List menu items
-    let app = NSWorkspace.shared.frontmostApplication
+    let app = resolveTargetApp()
     guard let appName = app?.localizedName, let pid = app?.processIdentifier else {
-        emit(OutputPayload(ok: false, items: nil, error: "No frontmost application"))
+        emit(OutputPayload(ok: false, items: nil, error: "No target application"))
         exit(0)
     }
 
@@ -210,7 +271,7 @@ if action == "press" {
 
     var menuBarRef: CFTypeRef?
     let err = AXUIElementCopyAttributeValue(appElement, kAXMenuBarAttribute as CFString, &menuBarRef)
-    guard err == 0, let menuBar = menuBarRef else {
+    guard err == .success, let menuBar = menuBarRef else {
         emit(OutputPayload(ok: false, items: nil, error: "Cannot access menu bar for \(appName). Accessibility permission required."))
         exit(0)
     }
@@ -218,5 +279,5 @@ if action == "press" {
     var items: [MenuItemInfo] = []
     collectMenuItems(element: menuBar as! AXUIElement, parentPath: "", into: &items)
 
-    emit(OutputPayload(ok: true, items: items, error: nil))
+    emit(OutputPayload(ok: true, items: items, error: nil, appName: appName, appPath: app?.bundleURL?.path))
 }

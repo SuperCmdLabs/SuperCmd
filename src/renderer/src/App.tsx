@@ -25,6 +25,7 @@ import CameraExtension from './CameraExtension';
 import ScheduleExtension from './ScheduleExtension';
 import OnboardingExtension from './OnboardingExtension';
 import FileSearchExtension from './FileSearchExtension';
+import MenuItemSearch from './MenuItemSearchExtension';
 import { useDetachedPortalWindow } from './useDetachedPortalWindow';
 import { useAppViewManager } from './hooks/useAppViewManager';
 import { useAiChat } from './hooks/useAiChat';
@@ -482,16 +483,6 @@ const App: React.FC = () => {
     },
   });
 
-  const menuItemSearchPortalTarget = useDetachedPortalWindow(showMenuItemSearch, {
-    name: 'supercmd-menu-item-search-window',
-    title: 'SuperCmd Menu Item Search',
-    width: 580,
-    height: 500,
-    anchor: 'center',
-    onClosed: () => {
-      setShowMenuItemSearch(false);
-    },
-  });
 
   const showLauncherFooterStatus = useCallback((type: 'success' | 'error', text: string, durationMs = 3000) => {
     if (launcherFooterStatusTimerRef.current !== null) {
@@ -1240,10 +1231,10 @@ const App: React.FC = () => {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !bookmarkNicknamePrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showNotesSearch && !showQuickLinkManager && !showFileSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showSchedule && !showWindowManager && !showAppUninstall && !showOnboarding && browserResultsViewQuery === null && webSearchQuery === null) {
+    if (!showActions && !contextMenu && !quickLinkDynamicPrompt && !bookmarkNicknamePrompt && !aiMode && !extensionView && !showClipboardManager && !showSnippetManager && !showNotesSearch && !showQuickLinkManager && !showFileSearch && !showMenuItemSearch && !showCursorPrompt && !showWhisper && !showSpeak && !showCamera && !showSchedule && !showWindowManager && !showAppUninstall && !showOnboarding && browserResultsViewQuery === null && webSearchQuery === null) {
       restoreLauncherFocus();
     }
-  }, [showActions, contextMenu, quickLinkDynamicPrompt, bookmarkNicknamePrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showNotesSearch, showQuickLinkManager, showFileSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showAppUninstall, showOnboarding, showWhisperOnboarding, browserResultsViewQuery, webSearchQuery, restoreLauncherFocus]);
+  }, [showActions, contextMenu, quickLinkDynamicPrompt, bookmarkNicknamePrompt, aiMode, extensionView, showClipboardManager, showSnippetManager, showNotesSearch, showQuickLinkManager, showFileSearch, showMenuItemSearch, showCursorPrompt, showWhisper, showSpeak, showCamera, showSchedule, showWindowManager, showAppUninstall, showOnboarding, showWhisperOnboarding, browserResultsViewQuery, webSearchQuery, restoreLauncherFocus]);
 
   const isLauncherModeActive =
     !showActions &&
@@ -1266,6 +1257,7 @@ const App: React.FC = () => {
     !showCamera &&
     !showSchedule &&
     !showWindowManager &&
+    !showMenuItemSearch &&
     !showOnboarding &&
     !showWhisperOnboarding;
   isLauncherModeActiveRef.current = isLauncherModeActive;
@@ -2306,11 +2298,6 @@ const App: React.FC = () => {
       onWindowManagerClose={() => {
         setShowWindowManager(false);
       }}
-      showMenuItemSearch={showMenuItemSearch}
-      menuItemSearchPortalTarget={menuItemSearchPortalTarget}
-      onMenuItemSearchClose={() => {
-        setShowMenuItemSearch(false);
-      }}
       showCursorPrompt={showCursorPrompt}
       cursorPromptPortalTarget={cursorPromptPortalTarget}
       cursorPromptText={cursorPromptText}
@@ -2822,6 +2809,28 @@ const App: React.FC = () => {
           onClose={() => {
             setShowFileSearch(false);
             setFileSearchInitialDetailPath(null);
+            setSearchQuery('');
+            setSelectedIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+        />
+      </LauncherViewShell>
+    );
+  }
+
+  // ─── Menu Item Search mode ─────────────────────────────────────────
+  if (showMenuItemSearch) {
+    return (
+      <LauncherViewShell
+        alwaysMountedRunners={alwaysMountedRunners}
+        backgroundImageUrl={launcherBackgroundImageUrl}
+        showBackground={shouldUseBackgroundEverywhere}
+        backgroundBlurPercent={launcherBackgroundImageBlurPercent}
+        backgroundOpacityPercent={launcherBackgroundImageOpacityPercent}
+      >
+        <MenuItemSearch
+          onClose={() => {
+            setShowMenuItemSearch(false);
             setSearchQuery('');
             setSelectedIndex(0);
             setTimeout(() => inputRef.current?.focus(), 50);

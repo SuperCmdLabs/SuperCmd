@@ -290,14 +290,10 @@ export function useLauncherLocalSystemCommands(
     }
     if (commandId === 'system-menu-item-search') {
       whisperSessionRef.current = false;
+      // In-window view — keep the launcher open (do NOT hideWindow).
       openMenuItemSearch();
       setSearchQuery('');
       setSelectedIndex(0);
-      if (document.hasFocus()) {
-        try {
-          await window.electron.hideWindow();
-        } catch {}
-      }
       return true;
     }
     if (commandId === 'system-add-to-memory') {

@@ -3000,6 +3000,39 @@ function scheduleNextAppUpdaterAutoCheck(lastCheckedAtMs: number): void {
 }
 type FrontmostAppContext = { name: string; path: string; bundleId?: string };
 let lastFrontmostApp: FrontmostAppContext | null = null;
+
+/** Resolve a macOS .app bundle path to a PNG data URL of its icon, or null. */
+function resolveAppIconDataUrl(appPath: string, size = 32): string | null {
+  try {
+    if (!appPath) return null;
+    const plistPath = path.join(appPath, 'Contents', 'Info.plist');
+    if (!fs.existsSync(plistPath)) return null;
+    let iconFileName = '';
+    try {
+      iconFileName = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIconFile', plistPath], {
+        encoding: 'utf-8',
+        timeout: 3000,
+      }).trim();
+    } catch { return null; }
+    if (!iconFileName) return null;
+    if (!iconFileName.endsWith('.icns')) iconFileName += '.icns';
+    const icnsPath = path.join(appPath, 'Contents', 'Resources', iconFileName);
+    if (!fs.existsSync(icnsPath)) return null;
+    const os = require('os');
+    const tmpPng = path.join(os.tmpdir(), `sc-icon-${Date.now()}.png`);
+    try {
+      execFileSync('/usr/bin/sips', ['-s', 'format', 'png', '-z', String(size * 2), String(size * 2), icnsPath, '--out', tmpPng], {
+        timeout: 5000,
+      });
+      const pngBuf = fs.readFileSync(tmpPng);
+      return `data:image/png;base64,${pngBuf.toString('base64')}`;
+    } finally {
+      try { fs.unlinkSync(tmpPng); } catch {}
+    }
+  } catch {
+    return null;
+  }
+}
 let launcherEntryFrontmostApp: FrontmostAppContext | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
@@ -3007,6 +3040,12 @@ const pendingOAuthCallbackUrls: string[] = [];
 let snippetExpanderProcess: any = null;
 let snippetExpanderStdoutBuffer = '';
 const snippetExpanderIntentionalKills = new WeakSet<object>();
+// Guards against a duplicate expansion for the same keyword arriving within a
+// few ms — e.g. when a lingering (killed-but-not-yet-dead) expander process and
+// its replacement both emit the same keystroke. Expansion is destructive
+// (backspaces + paste), so a double-fire corrupts the typed text.
+let lastSnippetExpansion: { keyword: string; delimiter: string; at: number } | null = null;
+const SNIPPET_EXPANSION_DEDUPE_MS = 250;
 
 // Serial queue for clipboard-based paste operations.
 // Both snippet expansion and pasteTextToActiveApp write to the clipboard temporarily.
@@ -9330,6 +9369,22 @@ async function hideAndPaste(): Promise<boolean> {
 }
 
 async function expandSnippetKeywordInPlace(keyword: string, delimiter: string): Promise<void> {
+  // Drop a duplicate emit for the same keyword arriving within the dedupe window
+  // (a lingering expander process and its replacement both firing one keystroke).
+  // Expansion is destructive, so a double-fire would backspace into and corrupt
+  // the already-pasted text.
+  const now = Date.now();
+  if (
+    lastSnippetExpansion &&
+    lastSnippetExpansion.keyword === keyword &&
+    lastSnippetExpansion.delimiter === delimiter &&
+    now - lastSnippetExpansion.at < SNIPPET_EXPANSION_DEDUPE_MS
+  ) {
+    console.log(`[SnippetExpander] ignoring duplicate trigger keyword="${keyword}"`);
+    return;
+  }
+  lastSnippetExpansion = { keyword, delimiter, at: now };
+
   // Enqueue so this never races with pasteTextToActiveApp or another concurrent expansion.
   clipboardOpQueue = clipboardOpQueue.then(async () => {
     try {
@@ -9346,6 +9401,14 @@ async function expandSnippetKeywordInPlace(keyword: string, delimiter: string): 
 
       const originalClipboard = electron.clipboard.readText();
       electron.clipboard.writeText(fullText);
+
+      // Wait until the system pasteboard actually reflects the snippet text
+      // before pasting. Without this, Cmd+V can fire while the pasteboard still
+      // holds the user's previous clipboard content, pasting the wrong thing.
+      for (let i = 0; i < 20; i += 1) {
+        if (electron.clipboard.readText() === fullText) break;
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      }
 
       const { execFile } = require('child_process');
       const { promisify } = require('util');
@@ -9375,9 +9438,25 @@ async function expandSnippetKeywordInPlace(keyword: string, delimiter: string): 
 
 function stopSnippetExpander(): void {
   if (!snippetExpanderProcess) return;
-  snippetExpanderIntentionalKills.add(snippetExpanderProcess);
+  const proc = snippetExpanderProcess;
+  snippetExpanderIntentionalKills.add(proc);
+  // Detach the stdout/stderr listeners BEFORE killing. A CGEvent-tap process
+  // does not always die immediately on SIGTERM; if it lingers it keeps tapping
+  // keystrokes and would otherwise still emit into our handler, double-firing
+  // alongside the replacement process. Removing the listeners guarantees a
+  // zombie can never reach expandSnippetKeywordInPlace.
   try {
-    snippetExpanderProcess.kill();
+    proc.stdout?.removeAllListeners();
+    proc.stderr?.removeAllListeners();
+  } catch {}
+  try {
+    proc.kill();
+    // Hard-kill shortly after if SIGTERM didn't take, so no stray tap survives.
+    setTimeout(() => {
+      try {
+        if (!proc.killed) proc.kill('SIGKILL');
+      } catch {}
+    }, 1000);
   } catch {}
   snippetExpanderProcess = null;
   snippetExpanderStdoutBuffer = '';
@@ -9392,6 +9471,18 @@ function refreshSnippetExpander(): void {
     .filter((s) => Boolean(s));
 
   if (keywords.length === 0) return;
+
+  // Sweep any orphaned expander processes before spawning. A force-quit or
+  // crashed prior session can leave a snippet-expander process alive (it runs
+  // a CGEvent tap and survives an unclean parent exit). Orphans keep tapping
+  // keystrokes and emit duplicate triggers alongside the live process. We have
+  // not spawned ours yet, so killing by name only targets strays.
+  try {
+    const { execFileSync } = require('child_process');
+    execFileSync('pkill', ['-f', 'native/snippet-expander'], { stdio: 'ignore' });
+  } catch {
+    // pkill exits non-zero when nothing matched — expected, ignore.
+  }
 
   const expanderPath = getNativeBinaryPath('snippet-expander');
   const fs = require('fs');
@@ -10617,6 +10708,7 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     commandId === 'system-search-bookmarks' ||
     commandId === 'system-search-history' ||
     commandId === 'system-my-schedule' ||
+    commandId === 'system-menu-item-search' ||
     commandId === 'system-camera'
   ) {
     return await openLauncherAndRunSystemCommand(commandId, {
@@ -10762,13 +10854,6 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
       // Keep focus in SuperCmd only for the panel command: detached window manager
       // closes itself on blur. Preset commands should restore app focus normally.
       preserveFocusWhenHidden: commandId !== 'system-window-management',
-    });
-  }
-  if (commandId === 'system-menu-item-search') {
-    return await openLauncherAndRunSystemCommand(commandId, {
-      showWindow: false,
-      mode: launcherMode === 'onboarding' ? 'onboarding' : 'default',
-      preserveFocusWhenHidden: false,
     });
   }
   if (commandId === 'system-import-snippets') {
@@ -15598,15 +15683,16 @@ return appURL's |path|() as text`,
 
   ipcMain.handle(
     'get-app-menu-items',
-    async (): Promise<{ ok: boolean; items?: MenuItemInfo[]; error?: string }> => {
+    async (): Promise<{ ok: boolean; items?: MenuItemInfo[]; error?: string; appName?: string; appIconDataUrl?: string | null }> => {
       try {
         const helperPath = getNativeBinaryPath('menu-item-search');
-        // The Swift helper is a script, so we need to run it with /usr/bin/env swift
+        // Target the app that was frontmost before the launcher opened — the
+        // launcher window itself is frontmost while menu search is showing.
+        const targetBundleId = String(lastFrontmostApp?.bundleId || '').trim();
+        const targetAppPath = String(lastFrontmostApp?.path || '').trim();
         const { spawn } = require('child_process');
         return await new Promise((resolve) => {
-          const proc = spawn('/usr/bin/env', ['swift', helperPath], {
-            stdio: ['pipe', 'pipe', 'pipe'],
-          });
+          const proc = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'pipe'] });
           let stdout = '';
           let stderr = '';
           proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
@@ -15614,7 +15700,12 @@ return appURL's |path|() as text`,
           proc.on('close', () => {
             try {
               const result = JSON.parse(stdout.trim());
-              resolve(result);
+              // Attach the app icon, resolved from the app the swift helper
+              // actually targeted (bundlePath), so it does not depend on
+              // lastFrontmostApp.path being populated.
+              const iconPath = String(result?.appPath || targetAppPath || '').trim();
+              const appIconDataUrl = iconPath ? resolveAppIconDataUrl(iconPath, 32) : null;
+              resolve({ ...result, appIconDataUrl });
             } catch {
               resolve({ ok: false, error: stderr || 'Failed to parse menu item search output' });
             }
@@ -15622,8 +15713,7 @@ return appURL's |path|() as text`,
           proc.on('error', (err: Error) => {
             resolve({ ok: false, error: err.message });
           });
-          // Send the list action
-          proc.stdin.write(JSON.stringify({ action: 'list' }));
+          proc.stdin.write(JSON.stringify({ action: 'list', bundleId: targetBundleId, appPath: targetAppPath }));
           proc.stdin.end();
         });
       } catch (e: any) {
@@ -15639,11 +15729,11 @@ return appURL's |path|() as text`,
       if (!targetPath) return { ok: false, error: 'Missing menu item path' };
       try {
         const helperPath = getNativeBinaryPath('menu-item-search');
+        const targetBundleId = String(lastFrontmostApp?.bundleId || '').trim();
+        const targetAppPath = String(lastFrontmostApp?.path || '').trim();
         const { spawn } = require('child_process');
         return await new Promise((resolve) => {
-          const proc = spawn('/usr/bin/env', ['swift', helperPath], {
-            stdio: ['pipe', 'pipe', 'pipe'],
-          });
+          const proc = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'pipe'] });
           let stdout = '';
           let stderr = '';
           proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
@@ -15659,7 +15749,7 @@ return appURL's |path|() as text`,
           proc.on('error', (err: Error) => {
             resolve({ ok: false, error: err.message });
           });
-          proc.stdin.write(JSON.stringify({ action: 'press', path: targetPath }));
+          proc.stdin.write(JSON.stringify({ action: 'press', path: targetPath, bundleId: targetBundleId, appPath: targetAppPath }));
           proc.stdin.end();
         });
       } catch (e: any) {
@@ -15970,39 +16060,7 @@ return appURL's |path|() as text`,
 
   // Get .app bundle icon by reading its .icns file directly (avoids template-image transparency issues)
   ipcMain.handle('get-app-icon-data-url', async (_event: any, appPath: string, size = 32) => {
-    try {
-      const plistPath = path.join(appPath, 'Contents', 'Info.plist');
-      if (!fs.existsSync(plistPath)) return null;
-
-      let iconFileName = '';
-      try {
-        iconFileName = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIconFile', plistPath], {
-          encoding: 'utf-8',
-          timeout: 3000,
-        }).trim();
-      } catch { return null; }
-
-      if (!iconFileName) return null;
-      if (!iconFileName.endsWith('.icns')) iconFileName += '.icns';
-
-      const icnsPath = path.join(appPath, 'Contents', 'Resources', iconFileName);
-      if (!fs.existsSync(icnsPath)) return null;
-
-      // Convert .icns to PNG via sips, return as base64 data URL (avoid nativeImage crash)
-      const os = require('os');
-      const tmpPng = path.join(os.tmpdir(), `sc-icon-${Date.now()}.png`);
-      try {
-        execFileSync('/usr/bin/sips', ['-s', 'format', 'png', '-z', String(size * 2), String(size * 2), icnsPath, '--out', tmpPng], {
-          timeout: 5000,
-        });
-        const pngBuf = fs.readFileSync(tmpPng);
-        return `data:image/png;base64,${pngBuf.toString('base64')}`;
-      } finally {
-        try { fs.unlinkSync(tmpPng); } catch {}
-      }
-    } catch {
-      return null;
-    }
+    return resolveAppIconDataUrl(appPath, size);
   });
 
   ipcMain.handle('file-search-query', async (_event: any, query: string, options?: { limit?: number }) => {

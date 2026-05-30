@@ -1068,7 +1068,7 @@ export interface ElectronAPI {
   getDefaultApplication: (filePath: string) => Promise<{ name: string; path: string; bundleId?: string }>;
   getFrontmostApplication: () => Promise<{ name: string; path: string; bundleId?: string } | null>;
   runAppleScript: (script: string, options?: { language?: string; humanReadableOutput?: boolean; timeout?: number }) => Promise<string>;
-  getAppMenuItems: () => Promise<{ ok: boolean; items?: Array<{ path: string; title: string; fullPath: string; shortcut?: string | null; enabled: boolean }>; error?: string }>;
+  getAppMenuItems: () => Promise<{ ok: boolean; items?: Array<{ path: string; title: string; fullPath: string; shortcut?: string | null; enabled: boolean }>; error?: string; appName?: string; appIconDataUrl?: string | null }>;
   pressAppMenuItem: (path: string) => Promise<{ ok: boolean; error?: string }>;
   ensureCalendarAccess: (options?: { prompt?: boolean }) => Promise<CalendarPermissionResult>;
   getCalendarEvents: (payload: { start: string; end: string }) => Promise<CalendarEventsResult>;

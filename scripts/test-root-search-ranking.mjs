@@ -504,6 +504,50 @@ test('search section gating hides suggestions without removing direct search', (
   assert.equal(assembled.queryFileSectionCommands[0].id, 'file-vivaldi');
 });
 
+test('fuzzy command match is promoted into Results above web search', () => {
+  const query = 'snipt';
+  const snippets = candidate({
+    query,
+    id: 'system-snippets',
+    title: 'Search Snippets',
+    subtype: 'system-command',
+    source: 'command',
+    fields: [{ value: 'Search Snippets', kind: 'label' }],
+  });
+  const ranked = rankRootSearchCandidates([snippets]);
+  const results = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "snipt"'),
+  }).queryResultCommands;
+  // The fuzzy "snipt" -> "Search Snippets" match (subsequence) must surface,
+  // and rank above the always-present web-search row.
+  assert.equal(results[0].id, 'system-snippets');
+  assert.equal(results.some((item) => item.id === 'web-search-root-direct'), true);
+});
+
+test('command matching only the description is not promoted', () => {
+  const query = 'history';
+  const snippets = candidate({
+    query,
+    id: 'system-snippets',
+    title: 'Search Snippets',
+    subtype: 'system-command',
+    source: 'command',
+    fields: [
+      { value: 'Search Snippets', kind: 'label' },
+      { value: 'view your clipboard history', kind: 'description', weight: 0.74 },
+    ],
+  });
+  const ranked = rankRootSearchCandidates([snippets]);
+  const results = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "history"'),
+  }).queryResultCommands;
+  assert.equal(results.some((item) => item.id === 'system-snippets'), false);
+});
+
 test('command beats a prefix-matching file when query is a later word of the command', () => {
   const query = 'onboarding';
   const onboardingCommand = candidate({
