@@ -1,0 +1,128 @@
+name: Update Homebrew Cask
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to publish (e.g. 1.0.22)"
+        required: true
+      tap_branch:
+        description: "Branch in the tap repo to update (default: main)"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  bump-cask:
+    name: Bump SuperCmd cask
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Resolve version
+        id: ver
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            version="${{ github.event.release.tag_name }}"
+          else
+            version="${{ inputs.version }}"
+          fi
+          version="${version#v}"
+          if [[ -z "$version" ]]; then
+            echo "::error::Could not determine version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $version"
+
+      - name: Download release DMGs
+        env:
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          base="https://github.com/SuperCmdLabs/SuperCmd/releases/download/${V}"
+          curl --fail --location --retry 5 --retry-delay 10 \
+               --output intel.dmg "${base}/SuperCmd-${V}.dmg"
+          curl --fail --location --retry 5 --retry-delay 10 \
+               --output arm.dmg   "${base}/SuperCmd-${V}-arm64.dmg"
+          ls -lh intel.dmg arm.dmg
+
+      - name: Compute sha256
+        id: sha
+        run: |
+          set -euo pipefail
+          intel="$(shasum -a 256 intel.dmg | awk '{print $1}')"
+          arm="$(shasum -a 256 arm.dmg | awk '{print $1}')"
+          echo "intel=$intel" >> "$GITHUB_OUTPUT"
+          echo "arm=$arm" >> "$GITHUB_OUTPUT"
+          echo "intel sha256: $intel"
+          echo "arm sha256:   $arm"
+
+      - name: Checkout tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: SuperCmdLabs/homebrew-supercmd
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tap_branch || 'main' }}
+
+      - name: Update cask
+        env:
+          V: ${{ steps.ver.outputs.version }}
+          ARM_SHA: ${{ steps.sha.outputs.arm }}
+          INTEL_SHA: ${{ steps.sha.outputs.intel }}
+        run: |
+          set -euo pipefail
+          f=tap/Casks/supercmd.rb
+          if [[ ! -f "$f" ]]; then
+            echo "::error::$f not found in tap repo" >&2
+            exit 1
+          fi
+          /usr/bin/sed -i '' -E "s/^(  version )\".*\"/\1\"${V}\"/"                       "$f"
+          /usr/bin/sed -i '' -E "s/^(  sha256 arm:   )\"[a-f0-9]+\"/\1\"${ARM_SHA}\"/"    "$f"
+          /usr/bin/sed -i '' -E "s/^(         intel: )\"[a-f0-9]+\"/\1\"${INTEL_SHA}\"/"  "$f"
+          echo "--- Updated cask ---"
+          cat "$f"
+
+      - name: Validate cask
+        run: |
+          set -euo pipefail
+          brew style tap/Casks/supercmd.rb
+          brew audit --cask --online --new tap/Casks/supercmd.rb || true
+
+      - name: Skip if no changes
+        id: diff
+        working-directory: tap
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes to cask — skipping commit."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and open PR
+        if: steps.diff.outputs.changed == 'true'
+        working-directory: tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name  "supercmd-bot"
+          git config user.email "bot@supercmd.sh"
+          branch="bump-supercmd-${V}"
+          git checkout -b "$branch"
+          git add Casks/supercmd.rb
+          git commit -m "supercmd ${V}"
+          git push -u origin "$branch" --force-with-lease
+          gh pr create \
+            --title "supercmd ${V}" \
+            --body  "Automated bump from SuperCmd release [${V}](https://github.com/SuperCmdLabs/SuperCmd/releases/tag/${V})." \
+            --base main \
+            --head "$branch" || echo "PR may already exist for ${branch}; continuing."
