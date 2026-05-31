@@ -546,6 +546,8 @@ type WindowManagementGlyphId =
   | 'center'
   | 'center-80'
   | 'fill'
+  | 'maximize-width'
+  | 'maximize-height'
   | 'top-left'
   | 'top-right'
   | 'bottom-left'
@@ -595,6 +597,8 @@ const WINDOW_MANAGEMENT_GLYPH_SUFFIXES = new Set<WindowManagementGlyphId>([
   'center',
   'center-80',
   'fill',
+  'maximize-width',
+  'maximize-height',
   'top-left',
   'top-right',
   'bottom-left',
@@ -775,6 +779,12 @@ function renderWindowManagementGlyph(glyphId: WindowManagementGlyphId): JSX.Elem
       break;
     case 'fill':
       cells.push({ x: 1, y: 1, w: 18, h: 12 });
+      break;
+    case 'maximize-width':
+      cells.push({ x: 1, y: 4, w: 18, h: 6 });
+      break;
+    case 'maximize-height':
+      cells.push({ x: 7, y: 1, w: 6, h: 12 });
       break;
     case 'center':
       cells.push({ x: 4, y: 3, w: 12, h: 8 });
