@@ -10,6 +10,8 @@ private enum AdjustAction: String {
   case center = "center"
   case center80 = "center-80"
   case fill = "fill"
+  case maximizeWidth = "maximize-width"
+  case maximizeHeight = "maximize-height"
   case topLeft = "top-left"
   case topRight = "top-right"
   case bottomLeft = "bottom-left"
@@ -564,6 +566,26 @@ private func adjustedFrame(_ base: WindowFrame, action: AdjustAction, forcedArea
         x: area.origin.x,
         y: area.origin.y,
         width: max(minWidth, round(area.width)),
+        height: max(minHeight, round(area.height))
+      )
+    }
+  case .maximizeWidth:
+    if let area {
+      // Span the full work-area width, keep the current vertical position/height.
+      next = WindowFrame(
+        x: area.origin.x,
+        y: base.y,
+        width: max(minWidth, round(area.width)),
+        height: base.height
+      )
+    }
+  case .maximizeHeight:
+    if let area {
+      // Span the full work-area height, keep the current horizontal position/width.
+      next = WindowFrame(
+        x: base.x,
+        y: area.origin.y,
+        width: base.width,
         height: max(minHeight, round(area.height))
       )
     }

@@ -1401,6 +1401,18 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-window-management-maximize-width',
+      title: 'Window: Maximize Width',
+      keywords: ['window', 'management', 'maximize', 'width', 'horizontal', 'fill', 'stretch'],
+      category: 'system',
+    },
+    {
+      id: 'system-window-management-maximize-height',
+      title: 'Window: Maximize Height',
+      keywords: ['window', 'management', 'maximize', 'height', 'vertical', 'fill', 'stretch'],
+      category: 'system',
+    },
+    {
       id: 'system-window-management-top-left',
       title: 'Window: Top Left',
       keywords: ['window', 'management', 'top', 'left', 'quadrant'],

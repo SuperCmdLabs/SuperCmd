@@ -3228,6 +3228,8 @@ const WINDOW_MANAGEMENT_PRESET_COMMAND_IDS = new Set<string>([
   'system-window-management-center',
   'system-window-management-center-80',
   'system-window-management-fill',
+  'system-window-management-maximize-width',
+  'system-window-management-maximize-height',
   'system-window-management-top-left',
   'system-window-management-top-right',
   'system-window-management-bottom-left',
@@ -3291,6 +3293,8 @@ const WINDOW_MANAGEMENT_LAYOUT_COMMAND_IDS = new Set<string>([
   'system-window-management-center',
   'system-window-management-center-80',
   'system-window-management-fill',
+  'system-window-management-maximize-width',
+  'system-window-management-maximize-height',
   'system-window-management-top-left',
   'system-window-management-top-right',
   'system-window-management-bottom-left',
@@ -3799,7 +3803,8 @@ function sortNodeWindowsForLayout(windows: NodeWindowInfo[]): NodeWindowInfo[] {
 
 function computeWindowManagementLayoutBounds(
   commandId: string,
-  area: { x: number; y: number; width: number; height: number }
+  area: { x: number; y: number; width: number; height: number },
+  windowBounds?: NodeWindowBounds | null
 ): NodeWindowBounds | null {
   const normalized = String(commandId || '').trim();
   const halfWidthLeft = Math.max(1, Math.floor(area.width / 2));
@@ -3855,6 +3860,36 @@ function computeWindowManagementLayoutBounds(
         width: area.width,
         height: area.height,
       };
+    case 'system-window-management-maximize-width': {
+      // Span the full work-area width, keep the current vertical position/height.
+      if (!windowBounds) return null;
+      const height = clampWindowManagementFineTuneValue(
+        Math.round(windowBounds.height),
+        WINDOW_MANAGEMENT_FINE_TUNE_MIN_HEIGHT,
+        area.height
+      );
+      const y = clampWindowManagementFineTuneValue(
+        Math.round(windowBounds.y),
+        area.y,
+        areaBottom - height
+      );
+      return { x: area.x, y, width: area.width, height };
+    }
+    case 'system-window-management-maximize-height': {
+      // Span the full work-area height, keep the current horizontal position/width.
+      if (!windowBounds) return null;
+      const width = clampWindowManagementFineTuneValue(
+        Math.round(windowBounds.width),
+        WINDOW_MANAGEMENT_FINE_TUNE_MIN_WIDTH,
+        area.width
+      );
+      const x = clampWindowManagementFineTuneValue(
+        Math.round(windowBounds.x),
+        area.x,
+        areaRight - width
+      );
+      return { x, y: area.y, width, height: area.height };
+    }
     case 'system-window-management-center': {
       const width = clampWindowManagementFineTuneValue(
         Math.round(area.width * 0.6),
@@ -4279,7 +4314,7 @@ async function executeWindowManagementLayoutCommand(
       return await queueWindowMutations(entries);
     }
 
-    const next = computeWindowManagementLayoutBounds(normalized, area);
+    const next = computeWindowManagementLayoutBounds(normalized, area, target.bounds);
     if (!next) return false;
     return await queueWindowMutations([
       {

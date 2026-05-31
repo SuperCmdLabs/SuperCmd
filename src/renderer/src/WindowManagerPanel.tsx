@@ -49,6 +49,8 @@ type PresetId =
   | 'center'
   | 'center-80'
   | 'fill'
+  | 'maximize-width'
+  | 'maximize-height'
   | 'auto-organize'
   | 'increase-size-10'
   | 'decrease-size-10'
@@ -89,6 +91,8 @@ export const WINDOW_MANAGEMENT_PRESET_COMMANDS: WindowManagementPresetCommand[] 
   { commandId: 'system-window-management-center', presetId: 'center' },
   { commandId: 'system-window-management-center-80', presetId: 'center-80' },
   { commandId: 'system-window-management-fill', presetId: 'fill' },
+  { commandId: 'system-window-management-maximize-width', presetId: 'maximize-width' },
+  { commandId: 'system-window-management-maximize-height', presetId: 'maximize-height' },
   { commandId: 'system-window-management-top-left', presetId: 'top-left' },
   { commandId: 'system-window-management-top-right', presetId: 'top-right' },
   { commandId: 'system-window-management-bottom-left', presetId: 'bottom-left' },
@@ -143,6 +147,8 @@ const PRESETS: Array<{ id: PresetId; label: string; subtitle: string }> = [
   { id: 'center', label: 'Center', subtitle: 'Current window' },
   { id: 'center-80', label: 'Almost Maximize', subtitle: 'Current window' },
   { id: 'fill', label: 'Maximize', subtitle: 'Current window' },
+  { id: 'maximize-width', label: 'Maximize Width', subtitle: 'Current window' },
+  { id: 'maximize-height', label: 'Maximize Height', subtitle: 'Current window' },
   { id: 'top-left', label: 'Top Left', subtitle: 'Current window' },
   { id: 'top-right', label: 'Top Right', subtitle: 'Current window' },
   { id: 'bottom-right', label: 'Bottom Right', subtitle: 'Current window' },
@@ -183,6 +189,7 @@ const PRESETS: Array<{ id: PresetId; label: string; subtitle: string }> = [
 ];
 
 const MULTI_WINDOW_PRESETS = new Set<PresetId>(['auto-organize']);
+const DIMENSION_MAXIMIZE_PRESETS = new Set<PresetId>(['maximize-width', 'maximize-height']);
 const SHIFT_ENTER_ONLY_PRESETS = new Set<PresetId>([
   'increase-size-10',
   'decrease-size-10',
@@ -302,6 +309,12 @@ function renderPresetIcon(id: PresetId): JSX.Element {
     case 'fill':
       cells.push({ x: 1, y: 1, w: 18, h: 12 });
       break;
+    case 'maximize-width':
+      cells.push({ x: 1, y: 4, w: 18, h: 6 });
+      break;
+    case 'maximize-height':
+      cells.push({ x: 7, y: 1, w: 6, h: 12 });
+      break;
     case 'center':
       cells.push({ x: 4, y: 3, w: 12, h: 8 });
       break;
@@ -379,6 +392,29 @@ function getWindowRect(win: ManagedWindow | null | undefined): Rect | null {
     width: Math.max(1, Math.round(width)),
     height: Math.max(1, Math.round(height)),
   };
+}
+
+function applyMaximizeDimensionPreset(presetId: PresetId, target: ManagedWindow, area: ScreenArea): Rect | null {
+  if (!DIMENSION_MAXIMIZE_PRESETS.has(presetId)) return null;
+  const base = getWindowRect(target);
+  if (!base) return null;
+
+  const areaRight = area.left + area.width;
+  const areaBottom = area.top + area.height;
+  let next: Rect;
+  if (presetId === 'maximize-width') {
+    // Span the full work-area width, keep the current vertical position/height.
+    next = { x: area.left, y: base.y, width: area.width, height: base.height };
+  } else {
+    // Span the full work-area height, keep the current horizontal position/width.
+    next = { x: base.x, y: area.top, width: base.width, height: area.height };
+  }
+
+  next.width = clamp(Math.round(next.width), MIN_WINDOW_WIDTH, area.width);
+  next.height = clamp(Math.round(next.height), MIN_WINDOW_HEIGHT, area.height);
+  next.x = clamp(Math.round(next.x), area.left, areaRight - next.width);
+  next.y = clamp(Math.round(next.y), area.top, areaBottom - next.height);
+  return next;
 }
 
 function applyFineTunePreset(presetId: PresetId, target: ManagedWindow, area: ScreenArea): Rect | null {
@@ -1311,6 +1347,11 @@ export async function executeWindowManagementPreset(presetId: PresetId): Promise
           moves = buildAutoOrganizeLayout(layoutTargets, layoutArea);
         } else {
           moves = buildAutoLayout(layoutTargets, layoutArea);
+        }
+      } else if (DIMENSION_MAXIMIZE_PRESETS.has(presetId) && target) {
+        const adjusted = applyMaximizeDimensionPreset(presetId, target, layoutArea);
+        if (adjusted) {
+          moves = [{ id: target.id, bounds: rectToBounds(adjusted) }];
         }
       } else {
         const region = getPresetRegion(presetId, layoutArea);
