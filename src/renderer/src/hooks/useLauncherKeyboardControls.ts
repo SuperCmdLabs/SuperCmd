@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import type React from 'react';
 import type { CommandInfo, QuickLinkDynamicField } from '../../types/electron';
 import type { BrowserSearchResult } from './useBrowserSearch';
@@ -211,6 +211,12 @@ export function useLauncherKeyboardControls(
     [selectedCommand, movePinnedCommand]
   );
 
+  // Tracks whether the user has already hit the top boundary at index 0
+  // with an empty input — the next Up press fires history recall. We require
+  // a "boundary touch" first so coming back to the top via arrow keys doesn't
+  // immediately replace the input with the most recent command.
+  const recallPrimedRef = useRef(false);
+
   const moveSelection = useCallback(
     (direction: 'up' | 'down', options: { wrap?: boolean } = {}) => {
       const { wrap = false } = options;
@@ -422,6 +428,7 @@ export function useLauncherKeyboardControls(
 
         case 'ArrowDown':
           e.preventDefault();
+          recallPrimedRef.current = false;
           if (launcherViewMode === 'compact' && isCompactCollapsed) {
             setIsCompactCollapsed(false);
             window.electron.resizeLauncherWindow(true);
@@ -449,25 +456,34 @@ export function useLauncherKeyboardControls(
 
         case 'ArrowUp':
           e.preventDefault();
-          // Shell-history style recall: when the search input is focused and
-          // selection sits at the top, Up cycles backward through recently
-          // launched commands. Empty input → most recent. Already showing a
-          // history entry → older one. Anywhere else in the list, Up still
-          // moves selection.
+          // Shell-history style recall: at the top of the list, Up cycles
+          // backward through recently launched commands. To avoid hijacking
+          // a stray Up arrow the user pressed while just navigating back to
+          // the top, we require a "boundary touch" first — one Up at index 0
+          // primes recall, the second Up actually fires it. Active history
+          // navigation (input already shows a history entry) keeps cycling
+          // without re-priming.
           if (isSearchInputTarget && selectedIndex === 0) {
             const history = readLauncherQueryHistory();
             if (history.length > 0) {
-              const currentIndex = searchQuery.length === 0 ? -1 : history.indexOf(searchQuery);
-              if (currentIndex === -1 && searchQuery.length === 0) {
+              if (searchQuery.length > 0) {
+                const currentIndex = history.indexOf(searchQuery);
+                if (currentIndex >= 0 && currentIndex + 1 < history.length) {
+                  applyLauncherHistoryEntry(history[currentIndex + 1], setSearchQuery, setSelectedIndex, inputRef);
+                  return;
+                }
+              } else if (recallPrimedRef.current) {
                 applyLauncherHistoryEntry(history[0], setSearchQuery, setSelectedIndex, inputRef);
+                recallPrimedRef.current = false;
                 return;
-              }
-              if (currentIndex >= 0 && currentIndex + 1 < history.length) {
-                applyLauncherHistoryEntry(history[currentIndex + 1], setSearchQuery, setSelectedIndex, inputRef);
+              } else {
+                // Boundary touch — next Up will fire recall.
+                recallPrimedRef.current = true;
                 return;
               }
             }
           }
+          recallPrimedRef.current = false;
           moveSelection('up');
           break;
 
@@ -578,6 +594,8 @@ export function useLauncherKeyboardControls(
 
   const handleLauncherInputChange = useCallback((value: string) => {
     setSearchQuery(value);
+    // Typing invalidates the "press Up twice from index 0" priming.
+    recallPrimedRef.current = false;
 
     if (launcherViewMode === 'compact') {
       if (isCompactCollapsed && value.length > 0) {
