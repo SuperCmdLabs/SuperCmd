@@ -1984,11 +1984,13 @@ const App: React.FC = () => {
     const launchQuery = searchQuery;
     try {
       executingCommandRef.current = true;
-      // Remember the last launched query so the user can recall it with the
-      // Up arrow on the empty launcher (shell-history style).
-      const trimmedLaunchQuery = launchQuery.trim();
-      if (trimmedLaunchQuery) {
-        try { localStorage.setItem(LAST_LAUNCHER_QUERY_KEY, launchQuery); } catch {}
+      // Remember the last launched command's display title so the user can
+      // recall it with the Up arrow on the empty launcher (Raycast-style).
+      // We deliberately store the command name, not what the user typed —
+      // pressing Up should bring back "Slack", not "sl".
+      const recallTitle = String(getCommandDisplayTitle(command, t) || command.title || '').trim();
+      if (recallTitle) {
+        try { localStorage.setItem(LAST_LAUNCHER_QUERY_KEY, recallTitle); } catch {}
       }
       // Browser-search synthetic action: open the resolved URL/search query
       // in the default browser. Bypasses recent-commands tracking — the
