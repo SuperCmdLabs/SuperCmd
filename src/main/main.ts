@@ -87,10 +87,12 @@ import {
   duplicateSnippet,
   togglePinSnippet,
   getSnippetByKeyword,
+  getSnippetById,
   copySnippetToClipboard,
   copySnippetToClipboardResolved,
   getSnippetDynamicFieldsById,
   renderSnippetById,
+  resolveSnippetPlaceholdersWithCursor,
   importSnippetsFromFile,
   exportSnippetsToFile,
 } from './snippet-store';
@@ -9154,9 +9156,17 @@ async function typeTextDirectly(text: string): Promise<boolean> {
   }
 }
 
-async function pasteTextToActiveApp(text: string): Promise<boolean> {
+interface PasteTextOptions {
+  // After pasting, send this many left-arrow key presses so the caret lands
+  // at a snippet's {cursor-position} marker. Ignored when 0/undefined.
+  cursorOffsetFromEnd?: number;
+}
+
+async function pasteTextToActiveApp(text: string, options?: PasteTextOptions): Promise<boolean> {
   const value = String(text || '');
   if (!value) return false;
+
+  const cursorMoveLeft = Math.max(0, Math.floor(options?.cursorOffsetFromEnd ?? 0));
 
   // Signal caller as soon as the paste keystroke fires, but hold the queue
   // slot until the clipboard is restored so concurrent ops don't read our
@@ -9168,6 +9178,26 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
     const { execFile } = require('child_process');
     const { promisify } = require('util');
     const execFileAsync = promisify(execFile);
+
+    const sendLeftArrows = async () => {
+      if (cursorMoveLeft <= 0) return;
+      // Small delay so the target app has a moment to process the paste before
+      // arrow keys arrive — otherwise the arrows can race and land in the
+      // wrong position (or be dropped when the app is mid-paste-handling).
+      const script = `
+        tell application "System Events"
+          delay 0.05
+          repeat ${cursorMoveLeft} times
+            key code 123
+          end repeat
+        end tell
+      `;
+      try {
+        await execFileAsync('osascript', ['-e', script]);
+      } catch (e: any) {
+        console.warn('[pasteTextToActiveApp] cursor positioning failed:', e?.message);
+      }
+    };
 
     try {
       const previousClipboardText = systemClipboard.readText();
@@ -9182,6 +9212,7 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
           const ok = nativeHelpersAddon?.activateAndPaste?.(target);
           if (ok) {
             signalCaller(true);
+            await sendLeftArrows();
             await new Promise<void>((resolve) => setTimeout(resolve, 250));
             try { systemClipboard.writeText(previousClipboardText); } catch {}
             return;
@@ -9197,6 +9228,7 @@ async function pasteTextToActiveApp(text: string): Promise<boolean> {
         'tell application "System Events" to keystroke "v" using command down',
       ]);
       signalCaller(true);
+      await sendLeftArrows();
       await new Promise<void>((resolve) => setTimeout(resolve, 250));
       try { systemClipboard.writeText(previousClipboardText); } catch {}
     } catch (error) {
@@ -9392,12 +9424,21 @@ async function expandSnippetKeywordInPlace(keyword: string, delimiter: string): 
       const snippet = getSnippetByKeyword(keyword);
       if (!snippet) return;
 
-      const resolved = renderSnippetById(snippet.id, {});
-      if (!resolved) return;
+      const resolved = resolveSnippetPlaceholdersWithCursor(snippet.content, {});
+      if (!resolved.text && resolved.cursorOffsetFromEnd === null) return;
 
-      const fullText = `${resolved}${delimiter || ''}`;
+      const fullText = `${resolved.text}${delimiter || ''}`;
       const backspaceCount = keyword.length + (delimiter ? 1 : 0);
       if (backspaceCount <= 0) return;
+
+      // If the snippet had a {cursor-position} token, move the cursor back
+      // by that many characters after the paste so it lands on the marker.
+      // Account for the trailing delimiter (it's appended after the text and
+      // sits between the cursor target and the end of fullText).
+      const cursorMoveLeft =
+        resolved.cursorOffsetFromEnd !== null && resolved.cursorOffsetFromEnd > 0
+          ? resolved.cursorOffsetFromEnd + (delimiter ? delimiter.length : 0)
+          : 0;
 
       const originalClipboard = electron.clipboard.readText();
       electron.clipboard.writeText(fullText);
@@ -9414,12 +9455,21 @@ async function expandSnippetKeywordInPlace(keyword: string, delimiter: string): 
       const { promisify } = require('util');
       const execFileAsync = promisify(execFile);
 
+      // key code 51 = delete (backspace), 123 = left arrow.
+      const cursorMoveBlock = cursorMoveLeft > 0
+        ? `
+          delay 0.05
+          repeat ${cursorMoveLeft} times
+            key code 123
+          end repeat`
+        : '';
+
       const script = `
         tell application "System Events"
           repeat ${backspaceCount} times
             key code 51
           end repeat
-          keystroke "v" using command down
+          keystroke "v" using command down${cursorMoveBlock}
         end tell
       `;
 
@@ -16874,19 +16924,21 @@ if let tiff = image?.tiffRepresentation {
   });
 
   ipcMain.handle('snippet-paste', async (_event: any, id: string) => {
+    const snippet = getSnippetById(id);
+    if (!snippet) return false;
+    const resolved = resolveSnippetPlaceholdersWithCursor(snippet.content, {});
+
     // If the AI prompt window is open, redirect text into its textarea instead.
+    // The prompt textarea handles its own caret, so the cursor offset is unused
+    // here — the {cursor-position} marker was already stripped out.
     if (promptWindow && !promptWindow.isDestroyed() && promptWindow.isVisible()) {
-      const text = renderSnippetById(id);
-      if (text) {
+      if (resolved.text) {
         if (isVisible) hideWindow();
-        promptWindow.webContents.send('prompt-insert-text', text);
+        promptWindow.webContents.send('prompt-insert-text', resolved.text);
         promptWindow.focus();
         return true;
       }
     }
-
-    const text = renderSnippetById(id);
-    if (text == null) return false;
 
     // Hide the launcher so the paste lands in the previously focused app.
     if (isVisible) hideWindow();
@@ -16894,27 +16946,30 @@ if let tiff = image?.tiffRepresentation {
     // pasteTextToActiveApp saves the user's clipboard, writes the snippet,
     // pastes it via the active app, then restores the original clipboard —
     // so the snippet text doesn't linger on the pasteboard.
-    return await pasteTextToActiveApp(text);
+    return await pasteTextToActiveApp(resolved.text, {
+      cursorOffsetFromEnd: resolved.cursorOffsetFromEnd ?? 0,
+    });
   });
 
   ipcMain.handle('snippet-paste-resolved', async (_event: any, id: string, dynamicValues?: Record<string, string>) => {
-    // If the AI prompt window is open, redirect text into its textarea instead.
+    const snippet = getSnippetById(id);
+    if (!snippet) return false;
+    const resolved = resolveSnippetPlaceholdersWithCursor(snippet.content, dynamicValues);
+
     if (promptWindow && !promptWindow.isDestroyed() && promptWindow.isVisible()) {
-      const text = renderSnippetById(id, dynamicValues);
-      if (text) {
+      if (resolved.text) {
         if (isVisible) hideWindow();
-        promptWindow.webContents.send('prompt-insert-text', text);
+        promptWindow.webContents.send('prompt-insert-text', resolved.text);
         promptWindow.focus();
         return true;
       }
     }
 
-    const text = renderSnippetById(id, dynamicValues);
-    if (text == null) return false;
-
     if (isVisible) hideWindow();
 
-    return await pasteTextToActiveApp(text);
+    return await pasteTextToActiveApp(resolved.text, {
+      cursorOffsetFromEnd: resolved.cursorOffsetFromEnd ?? 0,
+    });
   });
 
   ipcMain.handle('snippet-import', async (event: any) => {
