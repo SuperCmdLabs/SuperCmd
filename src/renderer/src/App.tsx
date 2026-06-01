@@ -44,7 +44,7 @@ import { useLauncherLocalSystemCommands } from './hooks/useLauncherLocalSystemCo
 import { useLauncherCommandExecution } from './hooks/useLauncherCommandExecution';
 import { useLauncherWindowShownHandler } from './hooks/useLauncherWindowShownHandler';
 import { useLauncherKeyboardControls } from './hooks/useLauncherKeyboardControls';
-import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
+import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, LAST_LAUNCHER_QUERY_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
 import {
@@ -1984,6 +1984,12 @@ const App: React.FC = () => {
     const launchQuery = searchQuery;
     try {
       executingCommandRef.current = true;
+      // Remember the last launched query so the user can recall it with the
+      // Up arrow on the empty launcher (shell-history style).
+      const trimmedLaunchQuery = launchQuery.trim();
+      if (trimmedLaunchQuery) {
+        try { localStorage.setItem(LAST_LAUNCHER_QUERY_KEY, launchQuery); } catch {}
+      }
       // Browser-search synthetic action: open the resolved URL/search query
       // in the default browser. Bypasses recent-commands tracking — the
       // browser-search history module records the entry itself.

@@ -8,6 +8,7 @@ import type { QuickLinkDynamicPromptState } from '../components/QuickLinkDynamic
 import { isBrowserSearchCommand } from '../utils/browser-search-commands';
 import { WEB_SEARCH_ROOT_BANG_PREFIX } from '../utils/web-search-bangs';
 import { isEditableElement } from '../utils/launcher-misc';
+import { LAST_LAUNCHER_QUERY_KEY } from '../utils/constants';
 
 export type UseLauncherKeyboardControlsOptions = {
   inputRef: React.RefObject<HTMLInputElement>;
@@ -403,6 +404,25 @@ export function useLauncherKeyboardControls(
 
         case 'ArrowUp':
           e.preventDefault();
+          // Shell-history recall: when the search input is empty, focused, and
+          // selection is already at the top, Up arrow restores the last
+          // launched query instead of being a no-op. Anywhere else in the
+          // list it still moves selection up.
+          if (isSearchInputTarget && searchQuery.length === 0 && selectedIndex === 0) {
+            let lastQuery = '';
+            try { lastQuery = localStorage.getItem(LAST_LAUNCHER_QUERY_KEY) || ''; } catch {}
+            if (lastQuery) {
+              setSearchQuery(lastQuery);
+              setSelectedIndex(0);
+              requestAnimationFrame(() => {
+                const el = inputRef.current;
+                if (!el) return;
+                const end = lastQuery.length;
+                try { el.setSelectionRange(end, end); } catch {}
+              });
+              return;
+            }
+          }
           moveSelection('up');
           break;
 
