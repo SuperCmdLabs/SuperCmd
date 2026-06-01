@@ -10,6 +10,34 @@ import { WEB_SEARCH_ROOT_BANG_PREFIX } from '../utils/web-search-bangs';
 import { isEditableElement } from '../utils/launcher-misc';
 import { LAST_LAUNCHER_QUERY_KEY } from '../utils/constants';
 
+function readLauncherQueryHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(LAST_LAUNCHER_QUERY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function applyLauncherHistoryEntry(
+  entry: string,
+  setSearchQuery: React.Dispatch<React.SetStateAction<string>>,
+  setSelectedIndex: React.Dispatch<React.SetStateAction<number>>,
+  inputRef: React.RefObject<HTMLInputElement>,
+): void {
+  setSearchQuery(entry);
+  setSelectedIndex(0);
+  requestAnimationFrame(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const end = entry.length;
+    try { el.setSelectionRange(end, end); } catch {}
+  });
+}
+
 export type UseLauncherKeyboardControlsOptions = {
   inputRef: React.RefObject<HTMLInputElement>;
   isLauncherModeActiveRef: React.MutableRefObject<boolean>;
@@ -399,28 +427,45 @@ export function useLauncherKeyboardControls(
             window.electron.resizeLauncherWindow(true);
             break;
           }
+          // History forward-cycle: if input matches a history entry and
+          // selection is at the top, Down goes to the more recent entry (or
+          // empties the input when already at the most recent). Otherwise
+          // fall through to normal selection movement.
+          if (isSearchInputTarget && selectedIndex === 0 && searchQuery.length > 0) {
+            const history = readLauncherQueryHistory();
+            const currentIndex = history.indexOf(searchQuery);
+            if (currentIndex === 0) {
+              setSearchQuery('');
+              setSelectedIndex(0);
+              return;
+            }
+            if (currentIndex > 0) {
+              applyLauncherHistoryEntry(history[currentIndex - 1], setSearchQuery, setSelectedIndex, inputRef);
+              return;
+            }
+          }
           moveSelection('down');
           break;
 
         case 'ArrowUp':
           e.preventDefault();
-          // Shell-history recall: when the search input is empty, focused, and
-          // selection is already at the top, Up arrow restores the last
-          // launched query instead of being a no-op. Anywhere else in the
-          // list it still moves selection up.
-          if (isSearchInputTarget && searchQuery.length === 0 && selectedIndex === 0) {
-            let lastQuery = '';
-            try { lastQuery = localStorage.getItem(LAST_LAUNCHER_QUERY_KEY) || ''; } catch {}
-            if (lastQuery) {
-              setSearchQuery(lastQuery);
-              setSelectedIndex(0);
-              requestAnimationFrame(() => {
-                const el = inputRef.current;
-                if (!el) return;
-                const end = lastQuery.length;
-                try { el.setSelectionRange(end, end); } catch {}
-              });
-              return;
+          // Shell-history style recall: when the search input is focused and
+          // selection sits at the top, Up cycles backward through recently
+          // launched commands. Empty input → most recent. Already showing a
+          // history entry → older one. Anywhere else in the list, Up still
+          // moves selection.
+          if (isSearchInputTarget && selectedIndex === 0) {
+            const history = readLauncherQueryHistory();
+            if (history.length > 0) {
+              const currentIndex = searchQuery.length === 0 ? -1 : history.indexOf(searchQuery);
+              if (currentIndex === -1 && searchQuery.length === 0) {
+                applyLauncherHistoryEntry(history[0], setSearchQuery, setSelectedIndex, inputRef);
+                return;
+              }
+              if (currentIndex >= 0 && currentIndex + 1 < history.length) {
+                applyLauncherHistoryEntry(history[currentIndex + 1], setSearchQuery, setSelectedIndex, inputRef);
+                return;
+              }
             }
           }
           moveSelection('up');

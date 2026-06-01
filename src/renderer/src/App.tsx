@@ -44,7 +44,7 @@ import { useLauncherLocalSystemCommands } from './hooks/useLauncherLocalSystemCo
 import { useLauncherCommandExecution } from './hooks/useLauncherCommandExecution';
 import { useLauncherWindowShownHandler } from './hooks/useLauncherWindowShownHandler';
 import { useLauncherKeyboardControls } from './hooks/useLauncherKeyboardControls';
-import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, LAST_LAUNCHER_QUERY_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
+import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, LAST_LAUNCHER_QUERY_KEY, MAX_LAUNCHER_QUERY_HISTORY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
 import {
@@ -1984,13 +1984,27 @@ const App: React.FC = () => {
     const launchQuery = searchQuery;
     try {
       executingCommandRef.current = true;
-      // Remember the last launched command's display title so the user can
-      // recall it with the Up arrow on the empty launcher (Raycast-style).
-      // We deliberately store the command name, not what the user typed —
-      // pressing Up should bring back "Slack", not "sl".
+      // Maintain a launcher-command history (newest first, deduped, capped)
+      // so the user can cycle back through recent commands with the Up arrow
+      // on the empty launcher. We deliberately store command titles, not the
+      // raw search text — pressing Up should bring back "Slack", not "sl".
       const recallTitle = String(getCommandDisplayTitle(command, t) || command.title || '').trim();
       if (recallTitle) {
-        try { localStorage.setItem(LAST_LAUNCHER_QUERY_KEY, recallTitle); } catch {}
+        try {
+          const raw = localStorage.getItem(LAST_LAUNCHER_QUERY_KEY);
+          const parsed = raw ? JSON.parse(raw) : [];
+          const previous = Array.isArray(parsed)
+            ? parsed.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.length > 0 && entry !== recallTitle)
+            : [];
+          const next = [recallTitle, ...previous].slice(0, MAX_LAUNCHER_QUERY_HISTORY);
+          localStorage.setItem(LAST_LAUNCHER_QUERY_KEY, JSON.stringify(next));
+        } catch {
+          // localStorage may hold a stale string value from earlier versions;
+          // overwrite it with a fresh single-entry array.
+          try {
+            localStorage.setItem(LAST_LAUNCHER_QUERY_KEY, JSON.stringify([recallTitle]));
+          } catch {}
+        }
       }
       // Browser-search synthetic action: open the resolved URL/search query
       // in the default browser. Bypasses recent-commands tracking — the
