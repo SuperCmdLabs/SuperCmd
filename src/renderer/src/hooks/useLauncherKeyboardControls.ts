@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import type React from 'react';
 import type { CommandInfo, QuickLinkDynamicField } from '../../types/electron';
 import type { BrowserSearchResult } from './useBrowserSearch';
@@ -8,6 +8,35 @@ import type { QuickLinkDynamicPromptState } from '../components/QuickLinkDynamic
 import { isBrowserSearchCommand } from '../utils/browser-search-commands';
 import { WEB_SEARCH_ROOT_BANG_PREFIX } from '../utils/web-search-bangs';
 import { isEditableElement } from '../utils/launcher-misc';
+import { LAST_LAUNCHER_QUERY_KEY } from '../utils/constants';
+
+function readLauncherQueryHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(LAST_LAUNCHER_QUERY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function applyLauncherHistoryEntry(
+  entry: string,
+  setSearchQuery: React.Dispatch<React.SetStateAction<string>>,
+  setSelectedIndex: React.Dispatch<React.SetStateAction<number>>,
+  inputRef: React.RefObject<HTMLInputElement>,
+): void {
+  setSearchQuery(entry);
+  setSelectedIndex(0);
+  requestAnimationFrame(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const end = entry.length;
+    try { el.setSelectionRange(end, end); } catch {}
+  });
+}
 
 export type UseLauncherKeyboardControlsOptions = {
   inputRef: React.RefObject<HTMLInputElement>;
@@ -181,6 +210,12 @@ export function useLauncherKeyboardControls(
     },
     [selectedCommand, movePinnedCommand]
   );
+
+  // Tracks whether the user has already hit the top boundary at index 0
+  // with an empty input — the next Up press fires history recall. We require
+  // a "boundary touch" first so coming back to the top via arrow keys doesn't
+  // immediately replace the input with the most recent command.
+  const recallPrimedRef = useRef(false);
 
   const moveSelection = useCallback(
     (direction: 'up' | 'down', options: { wrap?: boolean } = {}) => {
@@ -393,16 +428,62 @@ export function useLauncherKeyboardControls(
 
         case 'ArrowDown':
           e.preventDefault();
+          recallPrimedRef.current = false;
           if (launcherViewMode === 'compact' && isCompactCollapsed) {
             setIsCompactCollapsed(false);
             window.electron.resizeLauncherWindow(true);
             break;
+          }
+          // History forward-cycle: if input matches a history entry and
+          // selection is at the top, Down goes to the more recent entry (or
+          // empties the input when already at the most recent). Otherwise
+          // fall through to normal selection movement.
+          if (isSearchInputTarget && selectedIndex === 0 && searchQuery.length > 0) {
+            const history = readLauncherQueryHistory();
+            const currentIndex = history.indexOf(searchQuery);
+            if (currentIndex === 0) {
+              setSearchQuery('');
+              setSelectedIndex(0);
+              return;
+            }
+            if (currentIndex > 0) {
+              applyLauncherHistoryEntry(history[currentIndex - 1], setSearchQuery, setSelectedIndex, inputRef);
+              return;
+            }
           }
           moveSelection('down');
           break;
 
         case 'ArrowUp':
           e.preventDefault();
+          // Shell-history style recall: at the top of the list, Up cycles
+          // backward through recently launched commands. To avoid hijacking
+          // a stray Up arrow the user pressed while just navigating back to
+          // the top, we require a "boundary touch" first — one Up at index 0
+          // primes recall, the second Up actually fires it. Active history
+          // navigation (input already shows a history entry) keeps cycling
+          // without re-priming.
+          if (isSearchInputTarget && selectedIndex === 0) {
+            const history = readLauncherQueryHistory();
+            if (history.length > 0) {
+              if (searchQuery.length > 0) {
+                const currentIndex = history.indexOf(searchQuery);
+                if (currentIndex >= 0 && currentIndex + 1 < history.length) {
+                  applyLauncherHistoryEntry(history[currentIndex + 1], setSearchQuery, setSelectedIndex, inputRef);
+                  return;
+                }
+              } else if (recallPrimedRef.current) {
+                applyLauncherHistoryEntry(history[0], setSearchQuery, setSelectedIndex, inputRef);
+                recallPrimedRef.current = false;
+                return;
+              } else {
+                // Boundary touch — next Up will fire recall.
+                recallPrimedRef.current = true;
+                return;
+              }
+            }
+          }
+          recallPrimedRef.current = false;
           moveSelection('up');
           break;
 
@@ -513,6 +594,8 @@ export function useLauncherKeyboardControls(
 
   const handleLauncherInputChange = useCallback((value: string) => {
     setSearchQuery(value);
+    // Typing invalidates the "press Up twice from index 0" priming.
+    recallPrimedRef.current = false;
 
     if (launcherViewMode === 'compact') {
       if (isCompactCollapsed && value.length > 0) {

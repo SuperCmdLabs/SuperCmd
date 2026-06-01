@@ -323,7 +323,15 @@ const ScheduleExtension: React.FC<ScheduleExtensionProps> = ({ onClose }) => {
   }, [maybeLoadMore]);
 
   useEffect(() => {
-    if (isLoading || isLoadingMore || permissionError || dayGroups.length === 0 || loadedUntil >= horizonEnd) return;
+    if (isLoading || isLoadingMore || permissionError || loadedUntil >= horizonEnd) return;
+    // If nothing has been found yet in the loaded window, keep paginating
+    // forward until we hit an event or reach the horizon — otherwise users
+    // with no events in the first 14 days see a permanent empty state even
+    // though events exist further out.
+    if (dayGroups.length === 0) {
+      void loadMore();
+      return;
+    }
     const container = listRef.current;
     if (container && container.scrollHeight <= container.clientHeight + 48) {
       void loadMore();
@@ -478,7 +486,13 @@ const ScheduleExtension: React.FC<ScheduleExtensionProps> = ({ onClose }) => {
           ) : flatRows.length === 0 ? (
             <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
               <p className="text-sm px-6 text-center">
-                {searchQuery.trim() ? 'No events match that title.' : 'There is nothing up on your calendar right now.'}
+                {isLoadingMore
+                  ? 'Searching for upcoming events...'
+                  : searchQuery.trim()
+                    ? 'No events match that title.'
+                    : loadedUntil < horizonEnd
+                      ? 'Searching for upcoming events...'
+                      : 'There is nothing up on your calendar right now.'}
               </p>
             </div>
           ) : (

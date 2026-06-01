@@ -258,11 +258,28 @@ export function extractSnippetDynamicFields(content: string): SnippetDynamicFiel
   return Array.from(fields.values());
 }
 
-export function resolveSnippetPlaceholders(content: string, dynamicValues?: Record<string, string>): string {
+// Internal marker stashed in place of {cursor-position} during resolution, then
+// stripped out at the end so we can report the cursor offset alongside the
+// final text. Uses NUL bytes which cannot occur inside a snippet template.
+const SNIPPET_CURSOR_MARKER = ' CURSOR ';
+
+export interface ResolvedSnippet {
+  text: string;
+  // Number of characters between the cursor marker and the end of the
+  // resolved text, or null if the snippet has no {cursor-position} token.
+  // After pasting the text, the cursor needs to move this many positions
+  // to the left to land on the marker.
+  cursorOffsetFromEnd: number | null;
+}
+
+export function resolveSnippetPlaceholdersWithCursor(
+  content: string,
+  dynamicValues?: Record<string, string>,
+): ResolvedSnippet {
   const now = new Date();
   const values = dynamicValues || {};
 
-  return content.replace(/\{([^}]+)\}/g, (match, token: string) => {
+  const intermediate = content.replace(/\{([^}]+)\}/g, (match, token: string) => {
     const trimmed = token.trim();
     const arg = parseArgumentToken(trimmed);
     if (arg) {
@@ -275,7 +292,7 @@ export function resolveSnippetPlaceholders(content: string, dynamicValues?: Reco
     }
 
     if (trimmed === 'cursor-position') {
-      return '';
+      return SNIPPET_CURSOR_MARKER;
     }
 
     if (trimmed === 'date') {
@@ -303,6 +320,19 @@ export function resolveSnippetPlaceholders(content: string, dynamicValues?: Reco
     // Unknown placeholder — leave as-is
     return match;
   });
+
+  const firstMarker = intermediate.indexOf(SNIPPET_CURSOR_MARKER);
+  if (firstMarker < 0) {
+    return { text: intermediate, cursorOffsetFromEnd: null };
+  }
+  // Strip every marker from the final text. Characters before the FIRST marker
+  // survive at the same positions because no other markers can precede it.
+  const text = intermediate.split(SNIPPET_CURSOR_MARKER).join('');
+  return { text, cursorOffsetFromEnd: text.length - firstMarker };
+}
+
+export function resolveSnippetPlaceholders(content: string, dynamicValues?: Record<string, string>): string {
+  return resolveSnippetPlaceholdersWithCursor(content, dynamicValues).text;
 }
 
 function formatDate(date: Date, format: string): string {

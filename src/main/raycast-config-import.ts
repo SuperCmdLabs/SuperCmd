@@ -361,13 +361,19 @@ function findGzipOffset(buffer: Buffer): number {
 function decryptRaycastBuffer(raw: Buffer, password: string): Buffer {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'supercmd-rayconfig-'));
   const inputPath = path.join(tempDir, 'backup.rayconfig');
+  const outputPath = path.join(tempDir, 'backup.decrypted');
   try {
     fs.writeFileSync(inputPath, raw);
-    const decrypted = execFileSync(
+    // Route openssl output to a file instead of stdout. spawnSync's default
+    // 1 MB stdout buffer overflows with ENOBUFS for large Raycast backups
+    // (many snippets / quicklinks / preferences); writing through -out skips
+    // that limit entirely.
+    execFileSync(
       'openssl',
-      ['enc', '-d', '-aes-256-cbc', '-nosalt', '-in', inputPath, '-k', password],
-      { encoding: null, stdio: ['ignore', 'pipe', 'pipe'] }
-    ) as Buffer;
+      ['enc', '-d', '-aes-256-cbc', '-nosalt', '-in', inputPath, '-out', outputPath, '-k', password],
+      { stdio: ['ignore', 'ignore', 'pipe'] }
+    );
+    const decrypted = fs.readFileSync(outputPath);
     const gzipOffset = findGzipOffset(decrypted);
     if (gzipOffset < 0) {
       throw new Error('Failed to read import data; password is not valid.');
