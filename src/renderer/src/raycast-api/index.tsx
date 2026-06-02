@@ -873,11 +873,22 @@ export class Toast {
     return Promise.resolve();
   }
 
-  /** Dismiss any active toast — called when leaving an extension view. */
+  /**
+   * Dismiss any active toast — called when leaving an extension view.
+   *
+   * Only Animated (loading) toasts are dismissed: they have no auto-hide
+   * timer of their own, so if the extension view unmounts mid-load they
+   * would otherwise linger forever. Success/Failure toasts (the kind
+   * showHUD raises after a no-view command finishes) already auto-hide
+   * after 3 s — dismissing them on view unmount would cut their visible
+   * lifetime down to the ~600 ms NoViewRunner close delay, making
+   * "Your Mac is now caffeinated" flash and disappear.
+   */
   static dismissActive() {
-    if (Toast._activeToast) {
-      void Toast._activeToast.hide();
-    }
+    const active = Toast._activeToast;
+    if (!active) return;
+    if (active._style !== ToastStyle.Animated) return;
+    void active.hide();
   }
 }
 

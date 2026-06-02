@@ -2450,6 +2450,7 @@ let promptRendererReady = false;
 let pendingPromptWindowShown: { mode: string; selectedTextSnapshot: string } | null = null;
 let memoryStatusWindow: InstanceType<typeof BrowserWindow> | null = null;
 let memoryStatusHideTimer: NodeJS.Timeout | null = null;
+let memoryStatusFadeFinalizeTimer: NodeJS.Timeout | null = null;
 let memoryStatusRenderSeq = 0;
 let memoryStatusHideTimerSeq = 0;
 let confettiWindow: InstanceType<typeof BrowserWindow> | null = null;
@@ -2651,7 +2652,16 @@ function hideMemoryStatusBar(): void {
       win.webContents.executeJavaScript('window.__scFadeOut && window.__scFadeOut()').catch(() => {});
     }
   } catch {}
-  setTimeout(() => {
+  // Track the fade-out finalization timeout so a fresh showMemoryStatusBar
+  // arriving during the 200 ms fade can cancel it. Without this, the
+  // win.hide() below fires unconditionally and yanks the freshly-shown
+  // badge off-screen ~200 ms after the new show — making rapid
+  // processing → success transitions appear to flash for only a moment.
+  if (memoryStatusFadeFinalizeTimer) clearTimeout(memoryStatusFadeFinalizeTimer);
+  const finalizeSeq = memoryStatusRenderSeq;
+  memoryStatusFadeFinalizeTimer = setTimeout(() => {
+    memoryStatusFadeFinalizeTimer = null;
+    if (finalizeSeq !== memoryStatusRenderSeq) return;
     if (!win.isDestroyed()) {
       try { win.hide(); } catch {}
     }
