@@ -8885,7 +8885,28 @@ async function showWindow(options?: { systemCommandId?: string }): Promise<void>
     } catch {}
   }
 
-  const shouldActivateLauncherWindow = process.platform !== 'darwin' || launcherMode === 'onboarding';
+  // When a sibling window from our own app (Settings, Extension Store, Notes,
+  // Canvas, etc.) is currently the key window, the launcher panel's
+  // mainWindow.focus() alone is not enough to take key status away from a
+  // regular activated window in the same app — so the search input never
+  // actually receives keystrokes. Detect that case and fully activate the
+  // launcher window via app.focus({ steal: true }). This only steals focus
+  // from our own sibling window, not from another app, so the selection
+  // snapshot behavior (which only matters when another app is frontmost)
+  // is unaffected.
+  const ownAppSiblingWindowFocused =
+    process.platform === 'darwin' &&
+    BrowserWindow.getAllWindows().some(
+      (win: InstanceType<typeof BrowserWindow>) =>
+        win !== mainWindow &&
+        !win.isDestroyed() &&
+        win.isVisible() &&
+        win.isFocused()
+    );
+  const shouldActivateLauncherWindow =
+    process.platform !== 'darwin' ||
+    launcherMode === 'onboarding' ||
+    ownAppSiblingWindowFocused;
   let selectionSnapshotPromise: Promise<string> | null = null;
 
   // Capture the frontmost app BEFORE showing our window.

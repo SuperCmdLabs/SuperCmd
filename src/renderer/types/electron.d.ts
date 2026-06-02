@@ -801,6 +801,7 @@ export interface SoulverResponse {
   value: string | null;
   raw: number | null;
   type: string;
+  iso: string | null;
   error: string | null;
 }
 

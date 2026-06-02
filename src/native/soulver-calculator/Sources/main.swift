@@ -6,6 +6,7 @@ import SoulverCore
 // Request:  {"id": <number>, "expr": "<string>"}
 // Response: {"id": <number>, "value": "<string>", "raw": <number|null>,
 //            "type": "<math|unit|currency|percentage|date|duration|string|unknown>",
+//            "iso": "<ISO8601 string|null>",
 //            "error": "<string|null>"}
 //
 // One long-lived process per launcher. Requests arrive one per line.
@@ -54,7 +55,29 @@ struct Response: Encodable {
     let value: String?
     let raw: Double?
     let type: String
+    let iso: String?
     let error: String?
+}
+
+// ISO8601 formatter (UTC) used for the optional date payload sent to JS.
+let iso8601Formatter: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()
+
+// Extract the underlying Foundation.Date from date-typed EvaluationResults so
+// the renderer can format with a weekday/year even though SoulverCore's
+// stringValue may omit them (e.g. "May 24" for "24 may 2026").
+func isoDate(from eval: EvaluationResult) -> String? {
+    switch eval {
+    case .date(let stamp):
+        return iso8601Formatter.string(from: stamp.date)
+    case .datespan(let span):
+        return iso8601Formatter.string(from: span.startDate)
+    default:
+        return nil
+    }
 }
 
 let encoder = JSONEncoder()
@@ -123,6 +146,7 @@ func evaluate(_ expr: String, id: Int) -> Response {
 
     if result.isEmptyResult || result.isFailedResult {
         return Response(id: id, value: nil, raw: nil, type: "unknown",
+                        iso: nil,
                         error: result.isFailedResult ? "failed" : "empty")
     }
 
@@ -131,6 +155,7 @@ func evaluate(_ expr: String, id: Int) -> Response {
         value: result.stringValue,
         raw: rawDouble(from: result.evaluationResult),
         type: classify(result),
+        iso: isoDate(from: result.evaluationResult),
         error: nil
     )
 }

@@ -80,11 +80,27 @@ export async function tryCalculateAsync(query: string): Promise<CalcResult | nul
     if (!kind) return null;
 
     const labels = KIND_LABELS[kind];
+    // For date results, SoulverCore's stringValue omits the year and weekday
+    // (e.g. "24 may 2026" → "May 24"). Use the iso payload added to the
+    // bridge response to format the resolved date with weekday + year so the
+    // user can see what day of the week the input falls on.
+    let resultValue = response.value;
+    if (kind === 'date' && typeof response.iso === 'string' && response.iso) {
+      const parsed = new Date(response.iso);
+      if (!Number.isNaN(parsed.getTime())) {
+        resultValue = parsed.toLocaleDateString(undefined, {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        });
+      }
+    }
     return {
       kind,
       input: trimmed,
       inputLabel: labels.input,
-      result: response.value,
+      result: resultValue,
       resultLabel: labels.result,
     };
   } catch {

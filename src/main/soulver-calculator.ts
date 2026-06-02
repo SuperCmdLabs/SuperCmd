@@ -19,6 +19,7 @@ export interface SoulverResponse {
   value: string | null;
   raw: number | null;
   type: string;
+  iso: string | null;
   error: string | null;
 }
 
@@ -108,7 +109,7 @@ function ensureChild(): ChildProcessWithoutNullStreams {
 export function evaluate(expr: string): Promise<SoulverResponse> {
   const trimmed = expr.trim();
   if (!trimmed) {
-    return Promise.resolve({ id: 0, value: null, raw: null, type: 'unknown', error: 'empty' });
+    return Promise.resolve({ id: 0, value: null, raw: null, type: 'unknown', iso: null, error: 'empty' });
   }
 
   return new Promise<SoulverResponse>((resolve, reject) => {

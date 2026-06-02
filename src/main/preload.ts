@@ -43,6 +43,7 @@ const electronAPI = {
     value: string | null;
     raw: number | null;
     type: string;
+    iso: string | null;
     error: string | null;
   }> => ipcRenderer.invoke('calculator-evaluate', expression),
 
