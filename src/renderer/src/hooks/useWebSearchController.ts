@@ -50,6 +50,7 @@ type UseWebSearchControllerOptions = {
   rootSearchQuery: string;
   aiMode: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
+  browserSearchEnabled: boolean;
 };
 
 export function useWebSearchController({
@@ -61,6 +62,7 @@ export function useWebSearchController({
   rootSearchQuery,
   aiMode,
   t,
+  browserSearchEnabled,
 }: UseWebSearchControllerOptions) {
   const [webSearchQuery, setWebSearchQuery] = useState<string | null>(null);
   const [webSearchSelectedIndex, setWebSearchSelectedIndex] = useState(0);
@@ -109,14 +111,12 @@ export function useWebSearchController({
 
   const effectiveSearchBangs = useMemo(() => {
     const byKey = new Map<string, SearchBangDefinition>();
-    const disabled = new Set(webSearchDisabledBangKeys);
     for (const entry of webSearchBangCatalog) {
-      const normalized = normalizeBangDefinition(entry);
-      byKey.set(normalized.key, { ...normalized, disabled: disabled.has(normalized.key) });
+      byKey.set(entry.key, entry);
     }
     for (const entry of SEARCH_BANGS) {
       const normalized = normalizeBangDefinition(entry);
-      byKey.set(normalized.key, { ...normalized, disabled: disabled.has(normalized.key) });
+      byKey.set(normalized.key, normalized);
     }
     for (const entry of webSearchBangCustomProviders) {
       const normalized = normalizeBangDefinition({
@@ -128,23 +128,27 @@ export function useWebSearchController({
         category: 'Custom',
         source: 'custom',
       });
-      byKey.set(normalized.key, { ...normalized, disabled: disabled.has(normalized.key) });
+      byKey.set(normalized.key, normalized);
     }
-    const overrides = new Map(webSearchBangOverrides.map((override) => [override.key, override]));
-    for (const [key, override] of overrides) {
-      const current = byKey.get(key);
+    for (const override of webSearchBangOverrides) {
+      const current = byKey.get(override.key);
       if (!current) continue;
-      byKey.set(key, {
+      byKey.set(override.key, {
         ...current,
-        aliases: override.aliases.filter((alias) => alias !== key),
+        aliases: override.aliases.filter((alias) => alias !== override.key),
       });
     }
     return Array.from(byKey.values());
-  }, [webSearchBangCatalog, webSearchBangOverrides, webSearchBangCustomProviders, webSearchDisabledBangKeys]);
+  }, [webSearchBangCatalog, webSearchBangOverrides, webSearchBangCustomProviders]);
+
+  const disabledBangKeySet = useMemo(
+    () => new Set(webSearchDisabledBangKeys.map((key) => key.toLowerCase())),
+    [webSearchDisabledBangKeys]
+  );
 
   const enabledSearchBangs = useMemo(
-    () => effectiveSearchBangs.filter((bang) => !bang.disabled),
-    [effectiveSearchBangs]
+    () => effectiveSearchBangs.filter((bang) => !disabledBangKeySet.has(bang.key)),
+    [effectiveSearchBangs, disabledBangKeySet]
   );
 
   const rootBangState = useMemo<BangParseState>(() => {
@@ -244,7 +248,7 @@ export function useWebSearchController({
       : raw.replace(/^!+/, '');
     const sectionFilter = parsed.bang && !parsed.query ? '' : bangFilter;
     const candidateSource = webSearchShowHiddenBangs
-      ? effectiveSearchBangs.filter((bang) => bang.disabled)
+      ? effectiveSearchBangs.filter((bang) => disabledBangKeySet.has(bang.key))
       : enabledSearchBangs;
     const sorted = parsed.bang && !parsed.query
       ? [parsed.bang, ...getSortedSearchBangs(candidateSource, null, webSearchBangUsage).filter((bang) => bang.key !== parsed.bang?.key)]
@@ -281,13 +285,13 @@ export function useWebSearchController({
         defaultAliases,
         customAliases: webSearchBangOverrides.find((override) => override.key === bang.key)?.aliases,
         isCustom: webSearchBangOverrides.some((override) => override.key === bang.key),
-        isDisabled: Boolean(bang.disabled),
+        isDisabled: disabledBangKeySet.has(bang.key),
         bang,
         faviconUrl: getFaviconUrlForHost(bang.host),
       });
     }
     return results;
-  }, [effectiveSearchBangs, enabledSearchBangs, t, webSearchBangOverrides, webSearchBangState, webSearchBangUsage, webSearchDefaultBangKey, webSearchQuery, webSearchShowHiddenBangs, webSearchSuggestions]);
+  }, [effectiveSearchBangs, enabledSearchBangs, disabledBangKeySet, t, webSearchBangOverrides, webSearchBangState, webSearchBangUsage, webSearchDefaultBangKey, webSearchQuery, webSearchShowHiddenBangs, webSearchSuggestions]);
 
   const visibleWebSearchResults = useMemo(
     () => webSearchResults.slice(0, Math.min(webSearchVisibleResultCount, webSearchResults.length)),
@@ -495,25 +499,29 @@ export function useWebSearchController({
   }, []);
 
   useEffect(() => {
+    if (!browserSearchEnabled) {
+      setWebSearchBangCatalog([]);
+      return;
+    }
     let cancelled = false;
     window.electron.webSearchListBangs?.()
       .then((entries: WebSearchBangEntry[]) => {
         if (cancelled || !Array.isArray(entries)) return;
         const next = entries
           .map((entry): SearchBangDefinition | null => {
-            const key = String(entry?.key || '').trim().toLowerCase().replace(/^!+/, '');
-            if (!key) return null;
-            return {
-              key,
+            const rawKey = String(entry?.key || '').trim().toLowerCase().replace(/^!+/, '');
+            if (!rawKey) return null;
+            return normalizeBangDefinition({
+              key: rawKey,
               aliases: Array.isArray(entry.aliases) ? entry.aliases : [],
-              name: String(entry.name || key),
+              name: String(entry.name || rawKey),
               host: String(entry.host || 'duckduckgo.com'),
               category: entry.category,
               subcategory: entry.subcategory,
               template: String(entry.urlTemplate || 'https://duckduckgo.com/?q=!{bang}%20{query}'),
               source: entry.source || 'duckduckgo',
               rankHint: entry.rankHint,
-            };
+            });
           })
           .filter((entry): entry is SearchBangDefinition => Boolean(entry));
         setWebSearchBangCatalog(next);
@@ -522,7 +530,7 @@ export function useWebSearchController({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [browserSearchEnabled]);
 
   useEffect(() => {
     if (rootBangState.mode !== 'active') {
