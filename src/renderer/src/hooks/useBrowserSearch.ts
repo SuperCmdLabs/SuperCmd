@@ -680,6 +680,7 @@ const EMPTY_BROWSER_ENTRY_INDEX: BrowserEntryIndex = {
 
 const BROWSER_ENTRY_INDEX_MAX_TOKEN_LENGTH = 128;
 const BROWSER_ENTRY_INDEX_MAX_URL_CHARS = 4096;
+const BROWSER_ENTRY_SEARCH_INDEX_CACHE_MAX = 2_000;
 const browserEntrySearchIndexCache = new Map<string, { fingerprint: string; index: BrowserEntrySearchIndex }>();
 
 function buildBrowserEntryIndex(entries: BrowserSearchEntry[]): BrowserEntryIndex {
@@ -1347,6 +1348,10 @@ function getBrowserEntrySearchIndex(entry: BrowserSearchEntry): BrowserEntrySear
     searchFields,
   };
   browserEntrySearchIndexCache.set(cacheKey, { fingerprint, index });
+  if (browserEntrySearchIndexCache.size > BROWSER_ENTRY_SEARCH_INDEX_CACHE_MAX) {
+    const oldestKey = browserEntrySearchIndexCache.keys().next().value;
+    if (oldestKey !== undefined) browserEntrySearchIndexCache.delete(oldestKey);
+  }
   return index;
 }
 
