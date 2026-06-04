@@ -439,6 +439,7 @@ const App: React.FC = () => {
     rootSearchQuery: deferredSearchQuery,
     aiMode,
     t,
+    browserSearchEnabled: browserSearch.enabled,
   });
 
   // Configurable timeout (ms) before the launcher resets to root search after

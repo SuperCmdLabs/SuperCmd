@@ -50,6 +50,7 @@ type UseWebSearchControllerOptions = {
   rootSearchQuery: string;
   aiMode: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
+  browserSearchEnabled: boolean;
 };
 
 export function useWebSearchController({
@@ -61,6 +62,7 @@ export function useWebSearchController({
   rootSearchQuery,
   aiMode,
   t,
+  browserSearchEnabled,
 }: UseWebSearchControllerOptions) {
   const [webSearchQuery, setWebSearchQuery] = useState<string | null>(null);
   const [webSearchSelectedIndex, setWebSearchSelectedIndex] = useState(0);
@@ -495,6 +497,10 @@ export function useWebSearchController({
   }, []);
 
   useEffect(() => {
+    if (!browserSearchEnabled) {
+      setWebSearchBangCatalog([]);
+      return;
+    }
     let cancelled = false;
     window.electron.webSearchListBangs?.()
       .then((entries: WebSearchBangEntry[]) => {
@@ -522,7 +528,7 @@ export function useWebSearchController({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [browserSearchEnabled]);
 
   useEffect(() => {
     if (rootBangState.mode !== 'active') {
