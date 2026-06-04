@@ -101,6 +101,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   const [nicknames, setNicknames] = useState<BrowserSearchNicknameSetting[]>([]);
   const [profiles, setProfiles] = useState<BrowserProfileSetting[]>([]);
   const [profileFilters, setProfileFilters] = useState<BrowserProfileFilters>({});
+  const [settingsLoaded, setSettingsLoaded] = useState<boolean>(false);
   const entriesRef = useRef<BrowserSearchEntry[]>([]);
   const tabsRef = useRef<BrowserTabEntry[]>([]);
   const nicknamesRef = useRef<BrowserSearchNicknameSetting[]>([]);
@@ -113,7 +114,10 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   nicknamesRef.current = nicknames;
   profilesRef.current = profiles;
   profileFiltersRef.current = profileFilters;
-  entryIndexRef.current = useMemo(() => buildBrowserEntryIndex(entries), [entries]);
+  entryIndexRef.current = useMemo(
+    () => (enabled ? buildBrowserEntryIndex(entries) : EMPTY_BROWSER_ENTRY_INDEX),
+    [enabled, entries]
+  );
 
   const applyBrowserEntryPayload = useCallback((payload: BrowserSearchEntry[] | { revision?: number; entries?: BrowserSearchEntry[] }) => {
     const nextRevision = Array.isArray(payload) ? null : Number(payload?.revision);
@@ -176,8 +180,11 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
         setNicknames(Array.isArray(s?.browserSearch?.nicknames) ? s.browserSearch.nicknames : []);
         setProfiles(normalizeBrowserProfiles(s?.browserSearch?.profiles));
         setProfileFilters(s?.browserSearch?.profileFilters || {});
+        setSettingsLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => {
+        setSettingsLoaded(true);
+      });
     return () => {
       disposed = true;
     };
@@ -195,6 +202,11 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   }, []);
 
   useEffect(() => {
+    if (!settingsLoaded) return;
+    if (!enabled || !alphaChromiumRootSearchEnabled) {
+      setTabs([]);
+      return;
+    }
     refreshTabs();
     const unsubscribeTabs = window.electron.onBrowserTabsChanged?.(() => refreshTabs());
     return () => {
@@ -202,9 +214,16 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
         unsubscribeTabs?.();
       } catch {}
     };
-  }, [refreshTabs]);
+  }, [settingsLoaded, enabled, alphaChromiumRootSearchEnabled, refreshTabs]);
 
   useEffect(() => {
+    if (!settingsLoaded) return;
+    if (!enabled) {
+      setEntries([]);
+      entriesRevisionRef.current = null;
+      browserEntrySearchIndexCache.clear();
+      return;
+    }
     refreshEntries();
     const unsubscribe = window.electron.onBrowserSearchHistoryChanged?.(() => refreshEntriesIfStale());
     return () => {
@@ -212,7 +231,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
         unsubscribe?.();
       } catch {}
     };
-  }, [refreshEntries, refreshEntriesIfStale]);
+  }, [settingsLoaded, enabled, refreshEntries, refreshEntriesIfStale]);
 
   const getTopResult = useCallback((rawInput: string, rawGroups: BrowserSearchResultGroupSetting[]): BrowserSearchResult | null => {
     if (!enabled || !alphaChromiumRootSearchEnabled) return null;
@@ -658,6 +677,16 @@ type BrowserEntryIndex = {
     history: Map<string, number>;
     bookmark: Map<string, number>;
   };
+};
+
+const EMPTY_BROWSER_ENTRY_INDEX: BrowserEntryIndex = {
+  historyPrefixToEntryIds: new Map(),
+  bookmarkPrefixToEntryIds: new Map(),
+  historyContainsToEntryIds: new Map(),
+  bookmarkContainsToEntryIds: new Map(),
+  historyByTimeEntryIds: [],
+  bookmarksByBrowserOrderEntryIds: [],
+  profileCountsByKind: { history: new Map(), bookmark: new Map() },
 };
 
 const BROWSER_ENTRY_INDEX_MAX_PREFIX_LENGTH = 24;
