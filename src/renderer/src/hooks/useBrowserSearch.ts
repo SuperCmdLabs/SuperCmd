@@ -357,7 +357,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
       preserveBookmarkOrder: !rawInput.trim(),
       limit,
       nicknames: nicknamesRef.current,
-      candidateEntryIds: rawInput.trim() ? undefined : index?.bookmarksByBrowserOrderEntryIds,
+      preferredEntryIds: rawInput.trim() ? undefined : index?.bookmarksByBrowserOrderEntryIds,
     }), profilesRef.current), profileFiltersRef.current, profilesRef.current);
   }, []);
 
@@ -374,7 +374,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
       showHistoryProfileContext: showProfileContext,
       profileIds,
       limit,
-      candidateEntryIds: rawInput.trim() ? undefined : index?.historyByTimeEntryIds,
+      preferredEntryIds: rawInput.trim() ? undefined : index?.historyByTimeEntryIds,
     }), profilesRef.current), profileFiltersRef.current, profilesRef.current);
   }, []);
 
@@ -667,10 +667,6 @@ type BrowserEntrySearchIndex = {
 };
 
 type BrowserEntryIndex = {
-  historyPrefixToEntryIds: Map<string, number[]>;
-  bookmarkPrefixToEntryIds: Map<string, number[]>;
-  historyContainsToEntryIds: Map<string, number[]>;
-  bookmarkContainsToEntryIds: Map<string, number[]>;
   historyByTimeEntryIds: number[];
   bookmarksByBrowserOrderEntryIds: number[];
   profileCountsByKind: {
@@ -680,25 +676,16 @@ type BrowserEntryIndex = {
 };
 
 const EMPTY_BROWSER_ENTRY_INDEX: BrowserEntryIndex = {
-  historyPrefixToEntryIds: new Map(),
-  bookmarkPrefixToEntryIds: new Map(),
-  historyContainsToEntryIds: new Map(),
-  bookmarkContainsToEntryIds: new Map(),
   historyByTimeEntryIds: [],
   bookmarksByBrowserOrderEntryIds: [],
   profileCountsByKind: { history: new Map(), bookmark: new Map() },
 };
 
-const BROWSER_ENTRY_INDEX_MAX_PREFIX_LENGTH = 24;
 const BROWSER_ENTRY_INDEX_MAX_TOKEN_LENGTH = 128;
 const BROWSER_ENTRY_INDEX_MAX_URL_CHARS = 4096;
 const browserEntrySearchIndexCache = new Map<string, { fingerprint: string; index: BrowserEntrySearchIndex }>();
 
 function buildBrowserEntryIndex(entries: BrowserSearchEntry[]): BrowserEntryIndex {
-  const historyPrefixToEntryIds = new Map<string, number[]>();
-  const bookmarkPrefixToEntryIds = new Map<string, number[]>();
-  const historyContainsToEntryIds = new Map<string, number[]>();
-  const bookmarkContainsToEntryIds = new Map<string, number[]>();
   const historyByTimeEntryIds: number[] = [];
   const bookmarksByBrowserOrderEntryIds: number[] = [];
   const historyProfileCounts = new Map<string, number>();
@@ -718,37 +705,10 @@ function buildBrowserEntryIndex(entries: BrowserSearchEntry[]): BrowserEntryInde
         bookmarkProfileCounts.set(key, (bookmarkProfileCounts.get(key) || 0) + 1);
       }
     }
-    const prefixTarget = entry.type === 'bookmark' ? bookmarkPrefixToEntryIds : historyPrefixToEntryIds;
-    const containsTarget = entry.type === 'bookmark' ? bookmarkContainsToEntryIds : historyContainsToEntryIds;
-    const searchIndex = getBrowserEntrySearchIndex(entry);
-    const seenPrefixes = new Set<string>();
-    const seenContains = new Set<string>();
-    for (const token of searchIndex.searchBlob.split(/\s+/)) {
-      if (token.length < 2) continue;
-      const maxLength = Math.min(BROWSER_ENTRY_INDEX_MAX_PREFIX_LENGTH, token.length);
-      for (let length = 2; length <= maxLength; length += 1) {
-        seenPrefixes.add(token.slice(0, length));
-      }
-      if (token.length >= 3) {
-        for (let index = 0; index <= token.length - 3; index += 1) {
-          seenContains.add(token.slice(index, index + 3));
-        }
-      }
-    }
-    for (const key of seenPrefixes) {
-      addBrowserEntryIndexValue(prefixTarget, key, entryId);
-    }
-    for (const key of seenContains) {
-      addBrowserEntryIndexValue(containsTarget, key, entryId);
-    }
   });
   historyByTimeEntryIds.sort((a, b) => compareHistoryEntriesByTime(entries[a], entries[b]));
   bookmarksByBrowserOrderEntryIds.sort((a, b) => compareBookmarkEntriesByBrowserOrder(entries[a], entries[b]));
   return {
-    historyPrefixToEntryIds,
-    bookmarkPrefixToEntryIds,
-    historyContainsToEntryIds,
-    bookmarkContainsToEntryIds,
     historyByTimeEntryIds,
     bookmarksByBrowserOrderEntryIds,
     profileCountsByKind: {
@@ -770,70 +730,6 @@ function compareBookmarkEntriesByBrowserOrder(a: BrowserSearchEntry, b: BrowserS
   const bOrder = Number.isFinite(Number(b?.bookmarkOrder)) ? Number(b.bookmarkOrder) : Number.MAX_SAFE_INTEGER;
   if (aOrder !== bOrder) return aOrder - bOrder;
   return String(a?.query || '').localeCompare(String(b?.query || ''));
-}
-
-function addBrowserEntryIndexValue(target: Map<string, number[]>, key: string, entryId: number): void {
-  const bucket = target.get(key);
-  if (bucket) {
-    bucket.push(entryId);
-  } else {
-    target.set(key, [entryId]);
-  }
-}
-
-function resolveBrowserEntryCandidateIds(
-  index: BrowserEntryIndex | null,
-  kind: 'bookmark' | 'history',
-  input: string
-): number[] | null {
-  if (!index) return null;
-  const tokens = getSearchTokens(input);
-  if (tokens.length === 0) return null;
-  const prefixSource = kind === 'bookmark' ? index.bookmarkPrefixToEntryIds : index.historyPrefixToEntryIds;
-  const containsSource = kind === 'bookmark' ? index.bookmarkContainsToEntryIds : index.historyContainsToEntryIds;
-  const lists: number[][] = [];
-  for (const token of tokens) {
-    const key = token.slice(0, Math.min(BROWSER_ENTRY_INDEX_MAX_PREFIX_LENGTH, token.length));
-    const prefixMatches = prefixSource.get(key) || [];
-    const containsMatches = token.length >= 3 ? containsSource.get(token.slice(0, 3)) || [] : [];
-    const matches = unionSortedBrowserEntryIds(prefixMatches, containsMatches);
-    if (!matches || matches.length === 0) return [];
-    lists.push(matches);
-  }
-  return intersectBrowserEntryIdLists(lists);
-}
-
-function unionSortedBrowserEntryIds(a: number[], b: number[]): number[] {
-  if (a.length === 0) return b;
-  if (b.length === 0) return a;
-  const seen = new Set<number>();
-  const result: number[] = [];
-  for (const value of a) {
-    if (seen.has(value)) continue;
-    seen.add(value);
-    result.push(value);
-  }
-  for (const value of b) {
-    if (seen.has(value)) continue;
-    seen.add(value);
-    result.push(value);
-  }
-  return result;
-}
-
-function intersectBrowserEntryIdLists(lists: number[][]): number[] {
-  if (lists.length === 0) return [];
-  if (lists.length === 1) return lists[0];
-  const [first, ...rest] = [...lists].sort((a, b) => a.length - b.length);
-  const candidates = new Set(first);
-  for (const list of rest) {
-    if (candidates.size === 0) break;
-    const allowed = new Set(list);
-    for (const entryId of candidates) {
-      if (!allowed.has(entryId)) candidates.delete(entryId);
-    }
-  }
-  return [...candidates];
 }
 
 const DEFAULT_RESULT_GROUPS: BrowserSearchResultGroupSetting[] = [
@@ -970,16 +866,14 @@ function buildBrowserCandidates(
   options: { limitPerKind?: number } = {}
 ): Record<BrowserSearchResultKind, BrowserSearchResult[]> {
   const openTabs = getOpenTabCandidates(input, tabs);
-
+  void entryIndex;
   return {
     'open-tab': openTabs,
     bookmark: getBrowserEntryCandidates('bookmark', input, entries, {
-      candidateEntryIds: resolveBrowserEntryCandidateIds(entryIndex, 'bookmark', input),
       nicknames,
       limit: options.limitPerKind,
     }),
     history: getBrowserEntryCandidates('history', input, entries, {
-      candidateEntryIds: resolveBrowserEntryCandidateIds(entryIndex, 'history', input),
       limit: options.limitPerKind,
     }),
   };
@@ -997,7 +891,7 @@ function getBrowserEntryCandidates(
     profileIds?: string[] | null;
     limit?: number;
     nicknames?: BrowserSearchNicknameSetting[];
-    candidateEntryIds?: number[] | null;
+    preferredEntryIds?: number[] | null;
   } = {}
 ): BrowserSearchResult[] {
   const trimmed = input.trim();
@@ -1010,8 +904,8 @@ function getBrowserEntryCandidates(
   const shouldBoundResults = Boolean(options.limit && options.limit > 0 && !options.preserveBookmarkOrder && !options.preserveHistoryChronology);
   const workingLimit = shouldBoundResults ? Math.max(Number(options.limit) * 3, Number(options.limit) + 80) : 0;
   const results: BrowserSearchResult[] = [];
-  if (!hasQuery && options.limit && options.limit > 0 && options.candidateEntryIds) {
-    for (const entryId of options.candidateEntryIds) {
+  if (!hasQuery && options.limit && options.limit > 0 && options.preferredEntryIds) {
+    for (const entryId of options.preferredEntryIds) {
       const entry = entries[entryId];
       if (!entry) continue;
       if (entry.type !== entryType) continue;
@@ -1052,9 +946,7 @@ function getBrowserEntryCandidates(
     }
     return results;
   }
-  const candidateEntries = options.candidateEntryIds
-    ? options.candidateEntryIds.map((entryId) => entries[entryId]).filter((entry): entry is BrowserSearchEntry => Boolean(entry))
-    : entries;
+  const candidateEntries = entries;
   for (const entry of candidateEntries) {
     if (entry.type !== entryType) continue;
     if (kind === 'history' && profileFilter && !profileFilter.has(getEntryProfileKey(entry))) continue;
