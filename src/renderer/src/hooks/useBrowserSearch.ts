@@ -660,10 +660,7 @@ type BrowserCandidateOptions = {
 type BrowserEntrySearchIndex = {
   normalizedQuery: string;
   normalizedUrl: string;
-  searchBlob: string;
   searchFields: TokenSearchField[];
-  faviconUrl: string;
-  browserLabel: string;
 };
 
 type BrowserEntryIndex = {
@@ -925,10 +922,10 @@ function getBrowserEntryCandidates(
         url: entry.url,
         actionInput: entry.url,
         focusAvailable: false,
-        faviconUrl: index.faviconUrl,
+        faviconUrl: getFaviconUrlForUrl(entry.url),
         source: entry.source,
         sourceProfileId: entry.sourceProfileId ? getEntryProfileKey(entry) : undefined,
-        browserName: index.browserLabel,
+        browserName: getBrowserSourceLabel(entry.source),
         profileName: entry.sourceProfileName || entry.sourceProfileId,
         bookmarkFolder: entry.bookmarkFolder,
         bookmarkOrder: entry.bookmarkOrder,
@@ -963,9 +960,10 @@ function getBrowserEntryCandidates(
     const activeStrippedInput = nicknameMatch ? activeLowerInput.replace(/^https?:\/\//, '') : strippedInput;
     const activeQueryTokens = nicknameMatch ? getSearchTokens(searchInput) : queryTokens;
     if (!nicknameMatch && hasSearchInput && activeQueryTokens.length > 0) {
+      const searchBlob = index.searchFields.map((f) => f.value).filter(Boolean).join(' ');
       let tokenMatched = true;
       for (const token of activeQueryTokens) {
-        if (!index.searchBlob.includes(token)) {
+        if (!searchBlob.includes(token)) {
           tokenMatched = false;
           break;
         }
@@ -1004,10 +1002,10 @@ function getBrowserEntryCandidates(
       url: entry.url,
       actionInput: entry.url,
       focusAvailable: false,
-      faviconUrl: index.faviconUrl,
+      faviconUrl: getFaviconUrlForUrl(entry.url),
       source: entry.source,
       sourceProfileId: entry.sourceProfileId ? getEntryProfileKey(entry) : undefined,
-      browserName: index.browserLabel,
+      browserName: getBrowserSourceLabel(entry.source),
       profileName: entry.sourceProfileName || entry.sourceProfileId,
       bookmarkFolder: entry.bookmarkFolder,
       bookmarkOrder: entry.bookmarkOrder,
@@ -1330,24 +1328,23 @@ function getBrowserEntrySearchIndex(entry: BrowserSearchEntry): BrowserEntrySear
   const cacheKey = String(entry.id || `${entry.source}:${entry.sourceProfileId || ''}:${entry.type}:${entry.url}`);
   const fingerprint = getBrowserEntrySearchFingerprint(entry);
   const cached = browserEntrySearchIndexCache.get(cacheKey);
-  if (cached?.fingerprint === fingerprint) return cached.index;
-  const browserLabel = getBrowserSourceLabel(entry.source);
+  if (cached?.fingerprint === fingerprint) {
+    browserEntrySearchIndexCache.delete(cacheKey);
+    browserEntrySearchIndexCache.set(cacheKey, cached);
+    return cached.index;
+  }
   const searchFields: TokenSearchField[] = [
     { value: normalizeForTokenSearch(entry.query), weight: 1.15 },
     { value: normalizeForTokenSearch(entry.url, BROWSER_ENTRY_INDEX_MAX_URL_CHARS), weight: 1 },
     { value: normalizeForTokenSearch(entry.host), weight: 1 },
     { value: normalizeForTokenSearch(entry.bookmarkFolder || ''), weight: 0.65 },
     { value: normalizeForTokenSearch(entry.sourceProfileName || entry.sourceProfileId || ''), weight: 0.35 },
-    { value: normalizeForTokenSearch(browserLabel), weight: 0.3 },
+    { value: normalizeForTokenSearch(getBrowserSourceLabel(entry.source)), weight: 0.3 },
   ];
-  const searchBlob = Array.from(new Set(searchFields.map((field) => field.value).filter(Boolean))).join(' ');
   const index: BrowserEntrySearchIndex = {
     normalizedQuery: String(entry.query || '').trim().toLowerCase(),
     normalizedUrl: normalizeUrlForCompletion(entry.url || entry.host, BROWSER_ENTRY_INDEX_MAX_URL_CHARS),
-    searchBlob,
     searchFields,
-    faviconUrl: getFaviconUrlForUrl(entry.url),
-    browserLabel,
   };
   browserEntrySearchIndexCache.set(cacheKey, { fingerprint, index });
   return index;
