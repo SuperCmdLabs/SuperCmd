@@ -183,7 +183,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
         setSettingsLoaded(true);
       })
       .catch(() => {
-        setSettingsLoaded(true);
+        if (!disposed) setSettingsLoaded(true);
       });
     return () => {
       disposed = true;
