@@ -321,7 +321,18 @@ export async function exportCanvas(
   if (result.canceled || !result.filePath) return false;
 
   const scene = getScene(id);
-  fs.writeFileSync(result.filePath, JSON.stringify(scene, null, 2), 'utf-8');
+  // Wrap the raw scene in the official Excalidraw file format so the export
+  // can be opened on excalidraw.com (which requires the `type`/`version`/`source`
+  // header — without it the file is rejected as invalid).
+  const exportData = {
+    type: 'excalidraw',
+    version: 2,
+    source: 'https://supercmd.sh',
+    elements: scene.elements,
+    appState: scene.appState,
+    files: scene.files,
+  };
+  fs.writeFileSync(result.filePath, JSON.stringify(exportData, null, 2), 'utf-8');
   return true;
 }
 
