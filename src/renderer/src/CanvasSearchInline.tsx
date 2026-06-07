@@ -313,9 +313,21 @@ const CanvasSearchInline: React.FC<CanvasSearchInlineProps> = ({ onClose }) => {
         return;
       }
 
-      if (e.key === 'd' && e.metaKey && selectedCanvas) {
+      if (e.key === 'd' && e.metaKey && e.shiftKey && selectedCanvas) {
+        e.preventDefault();
+        navigator.clipboard.writeText(`supercmd://canvas/${selectedCanvas.id}`);
+        return;
+      }
+
+      if (e.key === 'd' && e.metaKey && !e.shiftKey && selectedCanvas) {
         e.preventDefault();
         window.electron.canvasDuplicate(selectedCanvas.id).then(() => loadCanvases());
+        return;
+      }
+
+      if (e.key === 'e' && e.metaKey && e.shiftKey && selectedCanvas) {
+        e.preventDefault();
+        window.electron.canvasExport(selectedCanvas.id, 'json');
         return;
       }
 
