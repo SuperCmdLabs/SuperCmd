@@ -666,6 +666,11 @@
         "description": "Datei- und Ordnerergebnisse in der Hauptsuche des Launchers ausblenden.",
         "label": "Suchergebnisse für Dateien und Ordner deaktivieren"
       },
+      "menuBarIcon": {
+        "title": "Menüleistensymbol",
+        "description": "Das SuperCmd-Symbol in der macOS-Menüleiste anzeigen.",
+        "label": "Menüleistensymbol anzeigen"
+      },
       "navigationStyle": {
         "title": "Navigationsstil",
         "description": "Wählen Sie die Tastenkürzel für die Navigation nach oben, unten, links und rechts im Launcher.",

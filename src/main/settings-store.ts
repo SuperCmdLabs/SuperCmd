@@ -227,6 +227,7 @@ export interface AppSettings {
   hasSeenWhisperOnboarding: boolean;
   fileSearchProtectedRootsEnabled: boolean;
   disableFileSearchResults: boolean;
+  showMenuBarIcon: boolean;
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
@@ -363,6 +364,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   hasSeenWhisperOnboarding: false,
   fileSearchProtectedRootsEnabled: false,
   disableFileSearchResults: false,
+  showMenuBarIcon: true,
   ai: { ...DEFAULT_AI_SETTINGS },
   debugMode: false,
   appLanguage: 'system',
@@ -1261,6 +1263,10 @@ export function loadSettings(): AppSettings {
       disableFileSearchResults: normalizeBoolean(
         parsed.disableFileSearchResults,
         DEFAULT_SETTINGS.disableFileSearchResults
+      ),
+      showMenuBarIcon: normalizeBoolean(
+        parsed.showMenuBarIcon,
+        DEFAULT_SETTINGS.showMenuBarIcon
       ),
       ai: hydrateAISettings(parsed.ai),
       hyperKey: { ...DEFAULT_HYPER_KEY_SETTINGS, ...parsed.hyperKey },

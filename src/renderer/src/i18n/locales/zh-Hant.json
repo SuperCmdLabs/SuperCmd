@@ -666,6 +666,11 @@
         "description": "在主啟動器搜尋中隱藏檔案與資料夾結果。",
         "label": "停用檔案與資料夾搜尋結果"
       },
+      "menuBarIcon": {
+        "title": "選單列圖示",
+        "description": "在 macOS 選單列中顯示 SuperCmd 圖示。",
+        "label": "顯示選單列圖示"
+      },
       "navigationStyle": {
         "title": "導覽樣式",
         "description": "選擇在啟動器中向上、向下、向左與向右導覽的鍵盤快捷鍵。",

@@ -666,6 +666,11 @@
         "description": "Ocultar los resultados de archivos y carpetas de la búsqueda principal del lanzador.",
         "label": "Desactivar resultados de búsqueda de archivos y carpetas"
       },
+      "menuBarIcon": {
+        "title": "Icono de la barra de menús",
+        "description": "Mostrar el icono de SuperCmd en la barra de menús de macOS.",
+        "label": "Mostrar icono de la barra de menús"
+      },
       "navigationStyle": {
         "title": "Estilo de navegación",
         "description": "Elige los atajos de teclado para navegar arriba, abajo, izquierda y derecha en el lanzador.",

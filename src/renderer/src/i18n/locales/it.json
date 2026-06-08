@@ -666,6 +666,11 @@
         "description": "Nascondi i risultati di file e cartelle dalla ricerca principale del launcher.",
         "label": "Disattiva risultati di ricerca di file e cartelle"
       },
+      "menuBarIcon": {
+        "title": "Icona nella barra dei menu",
+        "description": "Mostra l’icona di SuperCmd nella barra dei menu di macOS.",
+        "label": "Mostra icona nella barra dei menu"
+      },
       "navigationStyle": {
         "title": "Stile di navigazione",
         "description": "Scegli le scorciatoie da tastiera per navigare in alto, in basso, a sinistra e a destra nel launcher.",

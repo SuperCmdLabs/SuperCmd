@@ -7435,6 +7435,11 @@ function loadAppTrayIcon(): any {
 
 function ensureAppTray(): void {
   if (appTray) return;
+  // Menu bar icon is macOS-only and can be disabled in Settings → Advanced.
+  if (process.platform !== 'darwin') return;
+  try {
+    if ((loadSettings() as any).showMenuBarIcon === false) return;
+  } catch {}
 
   try {
     const icon = loadAppTrayIcon();
@@ -7464,6 +7469,21 @@ function ensureAppTray(): void {
 
   } catch (error) {
     console.warn('[Tray] Failed to create app tray:', error);
+    appTray = null;
+  }
+}
+
+// Create or destroy the menu bar icon to match the current setting. Called when
+// the user toggles "Show menu bar icon" in Settings → Advanced.
+function syncAppTrayVisibility(): void {
+  let shouldShow = true;
+  try {
+    shouldShow = (loadSettings() as any).showMenuBarIcon !== false;
+  } catch {}
+  if (shouldShow) {
+    ensureAppTray();
+  } else if (appTray) {
+    try { appTray.destroy(); } catch {}
     appTray = null;
   }
 }
@@ -14320,6 +14340,9 @@ app.whenReady().then(async () => {
     async (_event: any, patch: Partial<AppSettings>) => {
       const result = saveSettings(patch);
       broadcastSettingsToAllWindows(result);
+      if (patch.showMenuBarIcon !== undefined) {
+        syncAppTrayVisibility();
+      }
       if (patch.uiStyle !== undefined) {
         const nextStyle = String(result.uiStyle || 'default').trim().toLowerCase();
         const shouldEnableGlassy = nextStyle === 'glassy';

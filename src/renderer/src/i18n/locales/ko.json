@@ -666,6 +666,11 @@
         "description": "기본 런처 검색에서 파일 및 폴더 결과를 숨깁니다.",
         "label": "파일 및 폴더 검색 결과 비활성화"
       },
+      "menuBarIcon": {
+        "title": "메뉴 막대 아이콘",
+        "description": "macOS 메뉴 막대에 SuperCmd 아이콘을 표시합니다.",
+        "label": "메뉴 막대 아이콘 표시"
+      },
       "navigationStyle": {
         "title": "탐색 스타일",
         "description": "런처에서 위, 아래, 왼쪽, 오른쪽으로 이동하는 키보드 단축키를 선택합니다.",

@@ -643,6 +643,7 @@ export interface AppSettings {
   hasSeenWhisperOnboarding: boolean;
   fileSearchProtectedRootsEnabled: boolean;
   disableFileSearchResults: boolean;
+  showMenuBarIcon: boolean;
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;

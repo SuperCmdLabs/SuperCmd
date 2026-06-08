@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Bug, ChevronRight, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, GripVertical, Info, Keyboard, Languages, RotateCcw, Sparkles, Timer, Undo2 } from 'lucide-react';
+import { AlertTriangle, Bug, ChevronRight, Cloud, FolderOpen, FolderSearch, FolderSync, Globe, GripVertical, Info, Keyboard, Languages, PanelTop, RotateCcw, Sparkles, Timer, Undo2 } from 'lucide-react';
 import type {
   AppNavigationStyle,
   AppSettings,
@@ -16,6 +16,9 @@ import type {
 } from '../../types/electron';
 import { APP_LANGUAGE_OPTIONS, DEFAULT_APP_LANGUAGE, type AppLanguageSetting, useI18n } from '../i18n';
 import RaycastImportSection from './RaycastImportSection';
+
+// The menu bar (tray) icon is a macOS-only feature.
+const IS_MAC = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent || '');
 
 type SettingsRowProps = {
   icon: React.ReactNode;
@@ -984,6 +987,26 @@ const AdvancedTab: React.FC = () => {
             {t('settings.advanced.disableFileSearch.label')}
           </label>
         </SettingsRow>
+
+        {IS_MAC && (
+          <SettingsRow
+            icon={<PanelTop className="w-4 h-4" />}
+            title={t('settings.advanced.menuBarIcon.title')}
+            description={t('settings.advanced.menuBarIcon.description')}
+          >
+            <label className="inline-flex items-center gap-2.5 text-[13px] text-white/85 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings?.showMenuBarIcon !== false}
+                onChange={(e) => {
+                  void applySettingsPatch({ showMenuBarIcon: e.target.checked });
+                }}
+                className="settings-checkbox"
+              />
+              {t('settings.advanced.menuBarIcon.label')}
+            </label>
+          </SettingsRow>
+        )}
 
         <SettingsRow
           icon={<Sparkles className="w-4 h-4" />}

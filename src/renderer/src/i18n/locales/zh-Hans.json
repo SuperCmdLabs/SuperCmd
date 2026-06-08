@@ -666,6 +666,11 @@
         "description": "从主启动器搜索中隐藏文件和文件夹结果。",
         "label": "禁用文件和文件夹搜索结果"
       },
+      "menuBarIcon": {
+        "title": "菜单栏图标",
+        "description": "在 macOS 菜单栏中显示 SuperCmd 图标。",
+        "label": "显示菜单栏图标"
+      },
       "navigationStyle": {
         "title": "导航样式",
         "description": "选择在启动器中上下左右导航的键盘快捷键。",

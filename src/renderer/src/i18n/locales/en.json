@@ -666,6 +666,11 @@
         "description": "Hide file and folder results from the main launcher search.",
         "label": "Disable file and folder search results"
       },
+      "menuBarIcon": {
+        "title": "Menu Bar Icon",
+        "description": "Show the SuperCmd icon in the macOS menu bar.",
+        "label": "Show menu bar icon"
+      },
       "navigationStyle": {
         "title": "Navigation Style",
         "description": "Choose the keyboard shortcuts for navigating up, down, left, and right in the launcher.",

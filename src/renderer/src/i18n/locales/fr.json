@@ -666,6 +666,11 @@
         "description": "Masquer les résultats de fichiers et dossiers dans la recherche principale du lanceur.",
         "label": "Désactiver les résultats de recherche de fichiers et dossiers"
       },
+      "menuBarIcon": {
+        "title": "Icône de la barre de menus",
+        "description": "Afficher l’icône SuperCmd dans la barre de menus de macOS.",
+        "label": "Afficher l’icône de la barre de menus"
+      },
       "navigationStyle": {
         "title": "Style de navigation",
         "description": "Choisissez les raccourcis clavier pour naviguer vers le haut, le bas, la gauche et la droite dans le lanceur.",
