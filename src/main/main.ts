@@ -7435,11 +7435,13 @@ function loadAppTrayIcon(): any {
 
 function ensureAppTray(): void {
   if (appTray) return;
-  // Menu bar icon is macOS-only and can be disabled in Settings → Advanced.
-  if (process.platform !== 'darwin') return;
-  try {
-    if ((loadSettings() as any).showMenuBarIcon === false) return;
-  } catch {}
+  // On macOS the menu bar icon can be disabled in Settings → Advanced. The
+  // toggle is macOS-only, so other platforms always keep their tray icon.
+  if (process.platform === 'darwin') {
+    try {
+      if ((loadSettings() as any).showMenuBarIcon === false) return;
+    } catch {}
+  }
 
   try {
     const icon = loadAppTrayIcon();
