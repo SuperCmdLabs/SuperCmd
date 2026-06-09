@@ -20,7 +20,27 @@ import * as os from 'os';
 import { fork, execFileSync, type ChildProcess } from 'child_process';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
 import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery, refreshCommandsNow } from './commands';
-import { loadSettings, saveSettings, setOAuthToken, getOAuthToken, removeOAuthToken, loadWindowState, saveWindowState, clearWindowState, loadNotesWindowState, saveNotesWindowState, loadSettingsLocation, getDefaultSettingsPath, relocateSettingsFile, resetSettingsLocation, startSettingsWatcher, setSettingsBroadcaster, setExternalSettingsChangeHandler, settingsFileExistsOrICloudPlaceholder } from './settings-store';
+import {
+  loadSettings,
+  saveSettings,
+  setOAuthToken,
+  getOAuthToken,
+  removeOAuthToken,
+  loadWindowState,
+  saveWindowState,
+  clearWindowState,
+  loadNotesWindowState,
+  saveNotesWindowState,
+  loadSettingsLocation,
+  getDefaultSettingsPath,
+  relocateSettingsFile,
+  resetSettingsLocation,
+  startSettingsWatcher,
+  setSettingsBroadcaster,
+  setExternalSettingsChangeHandler,
+  settingsFileExistsOrICloudPlaceholder,
+  getSearchApplicationsScope
+} from './settings-store';
 import type { AppSettings, BrowserProfileSetting, BrowserProfileFilters, BrowserProfileFilterKind, RelocateMode } from './settings-store';
 import { recordRootSearchLaunchInState, type RootSearchRankingState } from '../shared/root-search-ranking-state';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
@@ -12681,15 +12701,7 @@ function scheduleInstalledAppsRefresh(reason: string): void {
 }
 
 function startInstalledAppsWatchers(): void {
-  const appDirs = [
-    '/Applications',
-    '/Applications/Utilities',
-    '/System/Applications',
-    '/System/Applications/Utilities',
-    path.join(process.env.HOME || '', 'Applications'),
-  ]
-    .filter((dir) => Boolean(dir))
-    .filter((dir, idx, all) => all.indexOf(dir) === idx);
+  const appDirs = getSearchApplicationsScope();
 
   for (const dir of appDirs) {
     if (!dir) continue;

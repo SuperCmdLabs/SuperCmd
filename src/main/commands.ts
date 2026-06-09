@@ -19,7 +19,7 @@ import * as crypto from 'crypto';
 import { discoverInstalledExtensionCommands } from './extension-runner';
 import { discoverScriptCommands } from './script-command-runner';
 import { getAllQuickLinks, getQuickLinkCommandId, type QuickLink, type QuickLinkIcon } from './quicklink-store';
-import { loadSettings } from './settings-store';
+import { loadSettings,getSearchApplicationsScope} from './settings-store';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -983,14 +983,7 @@ function buildSettingsKeywords(
 async function discoverApplications(): Promise<CommandInfo[]> {
   const results: CommandInfo[] = [];
   const usedIds = new Set<string>();
-
-  const appDirs = [
-    '/Applications',
-    '/System/Applications',
-    '/System/Applications/Utilities',
-    '/System/Library/CoreServices/Applications',
-    path.join(process.env.HOME || '', 'Applications'),
-  ];
+  const appDirs = getSearchApplicationsScope();
 
   const appPathsSet = new Set<string>();
   const spotlightPaths = await discoverAppBundlesViaSpotlight(appDirs);
@@ -1031,7 +1024,7 @@ async function discoverApplications(): Promise<CommandInfo[]> {
           'CFBundleDisplayName',
           'CFBundleName'
         );
-        const name = canonicalAppTitle(localizedDisplayName || fallbackDisplayName || rawName);
+        const name = canonicalAppTitle(rawName || localizedDisplayName || fallbackDisplayName);
         const bundleId =
           typeof info?.CFBundleIdentifier === 'string'
             ? info.CFBundleIdentifier
