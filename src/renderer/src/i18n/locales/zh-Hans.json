@@ -375,6 +375,12 @@
         "elevenlabsWarning": "已选择 ElevenLabs 语音转文字。请在 API 密钥中{action} ElevenLabs API 密钥。",
         "elevenlabsReady": "已选择 ElevenLabs 语音转文字。云端转录将使用你的 ElevenLabs 密钥。",
         "recognitionLanguage": "识别语言",
+        "vocabulary": {
+          "label": "自定义词汇",
+          "placeholder": "Kotlin、Electron、Raycast、SuperCmd…",
+          "hint": "可选。列出不常见的词语、名称或技术术语（用逗号或换行分隔），以引导识别采用正确的拼写。",
+          "tokenWarning": "约 {count} 个 token。Whisper 大约只使用前 224 个，超出部分将被忽略。"
+        },
         "providerInfo": {
           "parakeet": "通过 Parakeet TDT v3 在设备离线转录，运行于 Apple Neural Engine。首次使用前需要预热模型，请先下载后再开始听写。",
           "qwen3": "通过 Qwen3 ASR 在设备离线转录，支持 30+ 种语言，需要 macOS 15+，首次使用前会预热模型。",

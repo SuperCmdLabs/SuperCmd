@@ -218,6 +218,7 @@ export interface AISettings {
   speechCorrectionModel: string;
   speechToTextModel: string;
   speechLanguage: string;
+  speechVocabulary: string;
   textToSpeechModel: string;
   edgeTtsVoice: string;
   speechCorrectionEnabled: boolean;

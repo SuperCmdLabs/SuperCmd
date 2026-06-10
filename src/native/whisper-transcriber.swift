@@ -176,7 +176,7 @@ func decodeWaveFile(at path: String) throws -> [Float] {
 
 // MARK: - Transcription with pre-loaded context
 
-func transcribeWithContext(_ context: OpaquePointer, samples: [Float], language: String) throws -> String {
+func transcribeWithContext(_ context: OpaquePointer, samples: [Float], language: String, initialPrompt: String = "") throws -> String {
   var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
   params.print_realtime = false
   params.print_progress = false
@@ -188,8 +188,11 @@ func transcribeWithContext(_ context: OpaquePointer, samples: [Float], language:
   params.n_threads = Int32(max(1, min(8, ProcessInfo.processInfo.processorCount - 2)))
 
   let normalizedLanguage = language.isEmpty ? "en" : language
-  return try normalizedLanguage.withCString { languageCString -> String in
-    params.language = languageCString
+
+  // Run whisper_full while holding valid C string pointers for both the
+  // language and (optional) initial prompt. The prompt biases recognition
+  // toward user-provided vocabulary (whisper.cpp truncates it to fit).
+  func runTranscription() throws -> String {
     let result = samples.withUnsafeBufferPointer { buffer in
       whisper_full(context, params, buffer.baseAddress, Int32(buffer.count))
     }
@@ -203,6 +206,18 @@ func transcribeWithContext(_ context: OpaquePointer, samples: [Float], language:
       text += String(cString: whisper_full_get_segment_text(context, index))
     }
     return text.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  return try normalizedLanguage.withCString { languageCString -> String in
+    params.language = languageCString
+    let trimmedPrompt = initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedPrompt.isEmpty else {
+      return try runTranscription()
+    }
+    return try trimmedPrompt.withCString { promptCString -> String in
+      params.initial_prompt = promptCString
+      return try runTranscription()
+    }
   }
 }
 
@@ -303,6 +318,7 @@ func serveCommand(modelPath: String) {
         continue
       }
       let language = json["language"] as? String ?? "en"
+      let initialPrompt = json["initial_prompt"] as? String ?? ""
 
       guard FileManager.default.fileExists(atPath: filePath) else {
         emitJSON(["error": "Audio file not found: \(filePath)"])
@@ -313,7 +329,7 @@ func serveCommand(modelPath: String) {
         let samples = try decodeWaveFile(at: filePath)
         // Reset context state for a fresh transcription
         whisper_reset_timings(context)
-        let text = try transcribeWithContext(context, samples: samples, language: language)
+        let text = try transcribeWithContext(context, samples: samples, language: language, initialPrompt: initialPrompt)
         emitJSON(["text": text])
       } catch {
         emitJSON(["error": error.localizedDescription])

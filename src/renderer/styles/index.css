@@ -108,6 +108,7 @@
   --accent-soft: rgba(47, 107, 255, 0.18);
   --status-success: #2f9a64;
   --status-success-soft: rgba(47, 154, 100, 0.24);
+  --status-warning: #b3771a;
   --status-danger: #d94b4b;
   --status-danger-faded: #d27c7c;
   --status-danger-soft: rgba(217, 75, 75, 0.22);
@@ -227,6 +228,7 @@
   --accent-soft: rgba(78, 162, 255, 0.22);
   --status-success: #48c78e;
   --status-success-soft: rgba(72, 199, 142, 0.3);
+  --status-warning: #e0a83d;
   --status-danger: #ff6363;
   --status-danger-faded: #ffd9d9;
   --status-danger-soft: rgba(255, 99, 99, 0.3);

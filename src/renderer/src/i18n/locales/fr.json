@@ -375,6 +375,12 @@
         "elevenlabsWarning": "STT ElevenLabs selectionne. {action} la cle API ElevenLabs dans API Keys.",
         "elevenlabsReady": "STT ElevenLabs selectionne. La transcription cloud utilisera votre cle ElevenLabs.",
         "recognitionLanguage": "Recognition Language",
+        "vocabulary": {
+          "label": "Vocabulaire personnalisé",
+          "placeholder": "Kotlin, Electron, Raycast, SuperCmd…",
+          "hint": "Facultatif. Indiquez des mots rares, des noms ou des termes techniques (séparés par des virgules ou des retours à la ligne) pour orienter la reconnaissance vers la bonne orthographe.",
+          "tokenWarning": "Environ {count} jetons. Whisper n'utilise qu'environ les 224 premiers — les mots au-delà sont ignorés."
+        },
         "providerInfo": {
           "parakeet": "Offline on-device transcription via Parakeet TDT v3. Runs on Apple Neural Engine. Requires model warmup on first use. Download the model below before using dictation.",
           "qwen3": "Offline on-device transcription via Qwen3 ASR. Supports 30+ languages, requires macOS 15+, and warms up on first use.",

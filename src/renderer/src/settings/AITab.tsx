@@ -1463,6 +1463,32 @@ const AITab: React.FC = () => {
                 </div>
               )}
 
+              {whisperModelValue === 'whispercpp' && (
+                <div>
+                  <label className="text-[0.75rem] text-[var(--text-muted)] mb-1 block">{t('settings.ai.whisper.vocabulary.label')}</label>
+                  <textarea
+                    value={ai.speechVocabulary || ''}
+                    onChange={(e) => updateAI({ speechVocabulary: e.target.value })}
+                    placeholder={t('settings.ai.whisper.vocabulary.placeholder')}
+                    rows={4}
+                    className="sc-input resize-none w-full"
+                  />
+                  <p className="text-[0.6875rem] text-[var(--text-muted)] mt-1">{t('settings.ai.whisper.vocabulary.hint')}</p>
+                  {(() => {
+                    const vocab = (ai.speechVocabulary || '').trim();
+                    if (!vocab) return null;
+                    // whisper.cpp caps the initial prompt at ~224 tokens; estimate ~4 chars/token.
+                    const tokenEstimate = Math.ceil(vocab.length / 4);
+                    if (tokenEstimate <= 200) return null;
+                    return (
+                      <p className="text-[0.6875rem] text-[color:var(--status-warning)] mt-1">
+                        {t('settings.ai.whisper.vocabulary.tokenWarning', { count: tokenEstimate })}
+                      </p>
+                    );
+                  })()}
+                </div>
+              )}
+
               {whisperModelValue === 'native' && (
                 <div className="bg-sky-500/10 border border-sky-500/20 rounded-md px-2.5 py-2">
                   <p className="text-[0.6875rem] text-sky-300">

@@ -375,6 +375,12 @@
         "elevenlabsWarning": "ElevenLabs STT が選択されています。API キーに ElevenLabs API キーを{action}してください。",
         "elevenlabsReady": "ElevenLabs STT が選択されています。クラウド文字起こしに ElevenLabs キーを使用します。",
         "recognitionLanguage": "認識言語",
+        "vocabulary": {
+          "label": "カスタム語彙",
+          "placeholder": "Kotlin、Electron、Raycast、SuperCmd…",
+          "hint": "任意。認識を正しい表記に近づけるため、珍しい単語・名前・専門用語をカンマまたは改行で区切って入力します。",
+          "tokenWarning": "約 {count} トークン。Whisper は先頭の約 224 トークンしか使用しないため、それを超える単語は無視されます。"
+        },
         "providerInfo": {
           "parakeet": "Parakeet TDT v3 によるオフラインのオンデバイス文字起こし。Apple Neural Engine 上で実行されます。初回使用時にモデルのウォームアップが必要です。ディクテーションを使用する前に下からモデルをダウンロードしてください。",
           "qwen3": "Qwen3 ASR によるオフラインのオンデバイス文字起こし。30 以上の言語をサポート、macOS 15 以上が必要、初回使用時にウォームアップします。",

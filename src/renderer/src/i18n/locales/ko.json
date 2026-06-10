@@ -375,6 +375,12 @@
         "elevenlabsWarning": "ElevenLabs STT가 선택되었습니다. API 키에서 ElevenLabs API 키를 {action}하세요.",
         "elevenlabsReady": "ElevenLabs STT가 선택되었습니다. 클라우드 전사에 ElevenLabs 키가 사용됩니다.",
         "recognitionLanguage": "인식 언어",
+        "vocabulary": {
+          "label": "사용자 지정 어휘",
+          "placeholder": "Kotlin, Electron, Raycast, SuperCmd…",
+          "hint": "선택 사항. 인식을 올바른 철자로 유도하려면 잘 쓰이지 않는 단어, 이름, 전문 용어를 쉼표나 줄바꿈으로 구분하여 입력하세요.",
+          "tokenWarning": "약 {count}개 토큰. Whisper는 대략 처음 224개만 사용하므로 그 이후의 단어는 무시됩니다."
+        },
         "providerInfo": {
           "parakeet": "Parakeet TDT v3를 통한 오프라인 기기 내 전사. Apple Neural Engine에서 실행됩니다. 처음 사용할 때 모델 준비가 필요합니다. 받아쓰기를 사용하기 전에 아래 모델을 다운로드하세요.",
           "qwen3": "Qwen3 ASR을 통한 오프라인 온디바이스 전사. 30개 이상의 언어를 지원하고 macOS 15 이상이 필요하며 처음 사용할 때 예열됩니다.",
