@@ -611,6 +611,18 @@
         "openedExisting": "Opened custom scripts folder.",
         "failed": "Failed to open custom scripts folder."
       },
+      "appSearchScope": {
+        "title": "Ámbito de búsqueda de aplicaciones",
+        "description": "Directorios donde SuperCmd busca aplicaciones instaladas para mostrar en el lanzador.",
+        "add": "Añadir directorio",
+        "remove": "Eliminar",
+        "empty": "No se añadieron directorios. Se usarán los directorios del sistema por defecto.",
+        "added": "Directorio añadido al ámbito de búsqueda.",
+        "removed": "Directorio eliminado del ámbito de búsqueda.",
+        "duplicate": "El directorio ya está en la lista.",
+        "failed": "Error al actualizar el ámbito de búsqueda.",
+        "restartHint": "Reinicie SuperCmd para que los cambios de directorio surtan efecto."
+      },
       "emojiPicker": {
         "enabled": "Activar selector de emoji",
         "enabledDesc": "Muestra sugerencias de emoji al escribir un prefijo desencadenador.",

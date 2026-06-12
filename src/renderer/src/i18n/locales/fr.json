@@ -611,6 +611,18 @@
         "openedExisting": "Opened custom scripts folder.",
         "failed": "Failed to open custom scripts folder."
       },
+      "appSearchScope": {
+        "title": "Périmètre de recherche d'applications",
+        "description": "Répertoires où SuperCmd cherche les applications installées à afficher dans le lanceur.",
+        "add": "Ajouter un répertoire",
+        "remove": "Supprimer",
+        "empty": "Aucun répertoire ajouté. Les répertoires système par défaut seront utilisés.",
+        "added": "Répertoire ajouté au périmètre de recherche.",
+        "removed": "Répertoire retiré du périmètre de recherche.",
+        "duplicate": "Ce répertoire est déjà dans la liste.",
+        "failed": "Échec de la mise à jour du périmètre de recherche.",
+        "restartHint": "Redémarrez SuperCmd pour que les changements de répertoire prennent effet."
+      },
       "emojiPicker": {
         "enabled": "Activer le sélecteur d'emoji",
         "enabledDesc": "Affiche des suggestions d'emoji lors de la saisie d'un préfixe déclencheur.",

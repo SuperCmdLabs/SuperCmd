@@ -611,6 +611,18 @@
         "openedExisting": "已開啟自訂指令碼資料夾。",
         "failed": "開啟自訂指令碼資料夾失敗。"
       },
+      "appSearchScope": {
+        "title": "應用程式搜尋範圍",
+        "description": "SuperCmd 在這些目錄中掃描已安裝的應用程式以顯示在啟動器中。",
+        "add": "新增目錄",
+        "remove": "移除",
+        "empty": "未新增自訂目錄。將使用系統預設的應用程式目錄。",
+        "added": "目錄已新增到搜尋範圍。",
+        "removed": "目錄已從搜尋範圍移除。",
+        "duplicate": "目錄已在清單中。",
+        "failed": "更新搜尋範圍失敗。",
+        "restartHint": "重新啟動 SuperCmd 後目錄變更才會生效。"
+      },
       "emojiPicker": {
         "enabled": "啟用表情符號選擇器",
         "enabledDesc": "輸入觸發前綴後顯示表情符號建議。",

@@ -611,6 +611,18 @@
         "openedExisting": "Opened custom scripts folder.",
         "failed": "Failed to open custom scripts folder."
       },
+      "appSearchScope": {
+        "title": "App-Suchbereich",
+        "description": "Verzeichnisse, in denen SuperCmd nach installierten Apps sucht, um sie im Launcher anzuzeigen.",
+        "add": "Verzeichnis hinzufügen",
+        "remove": "Entfernen",
+        "empty": "Keine Verzeichnisse hinzugefügt. Standard-Systemverzeichnisse werden verwendet.",
+        "added": "Verzeichnis zum Suchbereich hinzugefügt.",
+        "removed": "Verzeichnis aus dem Suchbereich entfernt.",
+        "duplicate": "Verzeichnis bereits in der Liste.",
+        "failed": "Suchbereich konnte nicht aktualisiert werden.",
+        "restartHint": "Starten Sie SuperCmd neu, damit Verzeichnisänderungen wirksam werden."
+      },
       "emojiPicker": {
         "enabled": "Emoji-Auswahl aktivieren",
         "enabledDesc": "Zeigt Emoji-Vorschläge an, wenn ein Auslösezeichen eingegeben wird.",
