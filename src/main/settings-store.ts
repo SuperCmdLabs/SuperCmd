@@ -336,6 +336,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     '/System/Applications',
     '/System/Applications/Utilities',
     '/System/Library/CoreServices/Applications',
+    path.join(process.env.HOME || '', 'Applications')
   ],
   customExtensionFolders: [],
   scriptCommandFolders: [],
@@ -1233,7 +1234,9 @@ export function loadSettings(): AppSettings {
       openAtLogin: parsed.openAtLogin ?? DEFAULT_SETTINGS.openAtLogin,
       disabledCommands: parsed.disabledCommands ?? DEFAULT_SETTINGS.disabledCommands,
       enabledCommands: parsed.enabledCommands ?? DEFAULT_SETTINGS.enabledCommands,
-      searchApplicationsScope: parsed.searchApplicationsScope ?? DEFAULT_SETTINGS.searchApplicationsScope,
+      searchApplicationsScope: Array.isArray(parsed.searchApplicationsScope) && parsed.searchApplicationsScope.length > 0
+        ? parsed.searchApplicationsScope
+        : DEFAULT_SETTINGS.searchApplicationsScope,
       customExtensionFolders: Array.isArray(parsed.customExtensionFolders)
         ? parsed.customExtensionFolders
             .map((value: any) => String(value || '').trim())
@@ -2243,18 +2246,10 @@ export function loadNotesWindowState(): NotesWindowState | null {
 
 export function getSearchApplicationsScope(): string[] {
   const settings = loadSettings();
-  let appDirs: string[] = settings.searchApplicationsScope || [];
-
-  const homeApps = path.join(process.env.HOME || '', 'Applications');
-  if (!appDirs.includes(homeApps)) {
-    appDirs.push(homeApps);
-  }
-
-  appDirs = appDirs
+  const appDirs: string[] = settings.searchApplicationsScope || [];
+  return appDirs
     .filter((dir) => Boolean(dir))
     .filter((dir, idx, all) => all.indexOf(dir) === idx);
-
-  return appDirs;
 }
 
 export function saveNotesWindowState(state: NotesWindowState): void {

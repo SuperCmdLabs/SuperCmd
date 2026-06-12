@@ -141,6 +141,11 @@ const ExtensionsTab: React.FC<{
   } | null>(null);
   const [busyUninstallExtName, setBusyUninstallExtName] = useState<string | null>(null);
   const [folderBusy, setFolderBusy] = useState(false);
+  const [appScopeBusy, setAppScopeBusy] = useState(false);
+  const [appScopeStatus, setAppScopeStatus] = useState<{
+    type: 'idle' | 'success' | 'error';
+    text: string;
+  }>({ type: 'idle', text: '' });
   const [showTopActionsMenu, setShowTopActionsMenu] = useState(false);
   const [oauthTokens, setOauthTokens] = useState<Record<string, { accessToken: string; provider: string } | null>>({});
   const [compactToolbar, setCompactToolbar] = useState(false);
@@ -905,6 +910,54 @@ const ExtensionsTab: React.FC<{
     [settings, updateCustomExtensionFolders]
   );
 
+  const handleAddAppSearchScope = useCallback(async () => {
+    const picked = await window.electron.pickFiles({
+      allowMultipleSelection: false,
+      canChooseDirectories: true,
+      canChooseFiles: false,
+    });
+    const pickedPath = String(picked?.[0] || '').trim();
+    if (!pickedPath) return;
+    const existing = Array.isArray(settings?.searchApplicationsScope)
+      ? settings.searchApplicationsScope
+      : [];
+    if (existing.includes(pickedPath)) {
+      setAppScopeStatus({ type: 'error', text: t('settings.extensions.appSearchScope.duplicate') });
+      return;
+    }
+    setAppScopeBusy(true);
+    try {
+      const next = [...existing, pickedPath];
+      await window.electron.saveSettings({ searchApplicationsScope: next });
+      setSettings((prev) => (prev ? { ...prev, searchApplicationsScope: next } : prev));
+      setAppScopeStatus({ type: 'success', text: t('settings.extensions.appSearchScope.added') });
+    } catch {
+      setAppScopeStatus({ type: 'error', text: t('settings.extensions.appSearchScope.failed') });
+    } finally {
+      setAppScopeBusy(false);
+    }
+  }, [settings]);
+
+  const handleRemoveAppSearchScope = useCallback(
+    async (dir: string) => {
+      const existing = Array.isArray(settings?.searchApplicationsScope)
+        ? settings.searchApplicationsScope
+        : [];
+      const next = existing.filter((d) => d !== dir);
+      setAppScopeBusy(true);
+      try {
+        await window.electron.saveSettings({ searchApplicationsScope: next });
+        setSettings((prev) => (prev ? { ...prev, searchApplicationsScope: next } : prev));
+        setAppScopeStatus({ type: 'success', text: t('settings.extensions.appSearchScope.removed') });
+      } catch {
+        setAppScopeStatus({ type: 'error', text: t('settings.extensions.appSearchScope.failed') });
+      } finally {
+        setAppScopeBusy(false);
+      }
+    },
+    [settings]
+  );
+
   useEffect(() => {
     if (!showTopActionsMenu) return;
     setExtensionContextMenu(null);
@@ -1446,6 +1499,17 @@ const ExtensionsTab: React.FC<{
                       {t('settings.extensions.logout')}
                     </button>
                   </div>
+                ) : null}
+
+                {selectedSchema.extName === INSTALLED_APPLICATIONS_NAME && !selectedCommandSchema ? (
+                  <SearchApplicationsScopeSection
+                    directories={settings?.searchApplicationsScope ?? []}
+                    onAdd={handleAddAppSearchScope}
+                    onRemove={handleRemoveAppSearchScope}
+                    busy={appScopeBusy}
+                    status={appScopeStatus}
+                    onStatusClear={() => setAppScopeStatus({ type: 'idle', text: '' })}
+                  />
                 ) : null}
 
                 {selectedCommandInfo?.id === 'system-emoji-picker' ? (
@@ -2388,6 +2452,92 @@ const EmojiPickerSettingsSection: React.FC<{
           noAppsKey="settings.extensions.emojiPicker.excludedApps.noApps"
         />
       )}
+    </div>
+  );
+};
+
+const SearchApplicationsScopeSection: React.FC<{
+  directories: string[];
+  onAdd: () => void;
+  onRemove: (dir: string) => void;
+  busy: boolean;
+  status: { type: 'idle' | 'success' | 'error'; text: string };
+  onStatusClear: () => void;
+}> = ({ directories, onAdd, onRemove, busy, status, onStatusClear }) => {
+  const { t } = useI18n();
+
+  useEffect(() => {
+    if (status.type === 'idle') return;
+    const timer = setTimeout(onStatusClear, 2800);
+    return () => clearTimeout(timer);
+  }, [status, onStatusClear]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">
+          {t('settings.extensions.appSearchScope.title')}
+        </div>
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={busy}
+          className="inline-flex items-center gap-1 rounded-md border border-[var(--ui-segment-border)] bg-[var(--ui-segment-bg)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <Plus className="w-3 h-3" />
+          {t('settings.extensions.appSearchScope.add')}
+        </button>
+      </div>
+
+      <p className="text-[11px] text-[var(--text-subtle)] leading-snug">
+        {t('settings.extensions.appSearchScope.description')}
+      </p>
+      <p className="text-[11px] text-amber-400/80 leading-snug flex items-center gap-1">
+        <span>ⓘ</span>
+        <span>{t('settings.extensions.appSearchScope.restartHint')}</span>
+      </p>
+
+      {directories.length === 0 ? (
+        <div className="rounded-md border border-dashed border-[var(--ui-divider)] px-3 py-3 text-[11px] text-[var(--text-subtle)]">
+          {t('settings.extensions.appSearchScope.empty')}
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {directories.map((dir) => (
+            <div
+              key={dir}
+              className="flex items-center justify-between gap-2 rounded-md border border-[var(--ui-divider)] bg-[var(--ui-segment-bg)] px-3 py-2"
+            >
+              <div className="flex items-center gap-2 min-w-0" title={dir}>
+                <Folder className="w-4 h-4 text-[var(--text-subtle)] flex-shrink-0" />
+                <span className="text-[12px] text-[var(--text-secondary)] font-mono truncate">
+                  {dir}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemove(dir)}
+                disabled={busy}
+                className="flex-shrink-0 p-0.5 rounded-sm text-[var(--text-subtle)] hover:text-red-300/90 hover:bg-[var(--ui-segment-hover-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label={t('settings.extensions.appSearchScope.remove')}
+                title={t('settings.extensions.appSearchScope.remove')}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {status.type !== 'idle' ? (
+        <p
+          className={`text-[11px] ${
+            status.type === 'error' ? 'text-red-300/90' : 'text-emerald-300/90'
+          }`}
+        >
+          {status.text}
+        </p>
+      ) : null}
     </div>
   );
 };

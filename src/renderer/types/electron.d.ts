@@ -631,6 +631,7 @@ export interface AppSettings {
   openAtLogin: boolean;
   disabledCommands: string[];
   enabledCommands: string[];
+  searchApplicationsScope: string[];
   customExtensionFolders: string[];
   scriptCommandFolders: string[];
   commandHotkeys: Record<string, string>;

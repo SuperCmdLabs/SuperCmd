@@ -611,6 +611,18 @@
         "openedExisting": "Opened custom scripts folder.",
         "failed": "Failed to open custom scripts folder."
       },
+      "appSearchScope": {
+        "title": "Application Search Scope",
+        "description": "Directories where SuperCmd searches for installed applications to show in the launcher.",
+        "add": "Add Directory",
+        "remove": "Remove",
+        "empty": "No directories added. Default system application directories will be used.",
+        "added": "Directory added to search scope.",
+        "removed": "Directory removed from search scope.",
+        "duplicate": "Directory already in list.",
+        "failed": "Failed to update search scope.",
+        "restartHint": "Restart SuperCmd for directory changes to take effect."
+      },
       "emojiPicker": {
         "enabled": "Enable Emoji Picker",
         "enabledDesc": "Show emoji suggestions when typing a trigger prefix followed by a name.",

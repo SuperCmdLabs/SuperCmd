@@ -611,6 +611,18 @@
         "openedExisting": "已打开自定义脚本文件夹。",
         "failed": "打开自定义脚本文件夹失败。"
       },
+      "appSearchScope": {
+        "title": "应用搜索范围",
+        "description": "SuperCmd 在这些目录中扫描已安装的应用以显示在启动器中。",
+        "add": "添加目录",
+        "remove": "移除",
+        "empty": "未添加自定义目录。将使用系统默认的应用目录。",
+        "added": "目录已添加到搜索范围。",
+        "removed": "目录已从搜索范围移除。",
+        "duplicate": "目录已在列表中。",
+        "failed": "更新搜索范围失败。",
+        "restartHint": "重启 SuperCmd 后目录更改才会生效。"
+      },
       "emojiPicker": {
         "enabled": "启用表情符号选择器",
         "enabledDesc": "在输入触发前缀后显示表情符号建议。",
