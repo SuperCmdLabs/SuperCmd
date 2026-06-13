@@ -16,7 +16,8 @@
     "build:renderer": "vite build",
     "check:i18n": "node scripts/check-i18n.mjs",
     "build:native": "node scripts/build-native.mjs",
-    "postinstall": "electron-builder install-app-deps",
+    "ensure:cross-arch-esbuild": "node scripts/ensure-cross-arch-esbuild.mjs",
+    "postinstall": "node scripts/ensure-cross-arch-esbuild.mjs && electron-builder install-app-deps",
     "start": "electron .",
     "package": "cross-env NODE_ENV=production npm run build && electron-builder",
     "package:unsigned": "cross-env NODE_ENV=production CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder --mac dmg -c.mac.identity=null -c.mac.notarize=false"
@@ -40,6 +41,8 @@
   },
   "dependencies": {
     "@aptabase/electron": "^0.3.1",
+    "@esbuild/darwin-arm64": "0.19.12",
+    "@esbuild/darwin-x64": "0.19.12",
     "@phosphor-icons/react": "^2.1.10",
     "@raycast/api": "^1.104.5",
     "electron-builder-notarize": "^1.5.2",
