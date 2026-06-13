@@ -1304,7 +1304,23 @@ export async function getExtensionBundle(
   } catch {}
 
   // Compute paths
-  const assetsPath = path.join(extPath, 'assets');
+  const rawAssetsPath = path.join(extPath, 'assets');
+  // Some extensions run `chmod +x ${assetsPath}/...` via execSync without quoting the path.
+  // If assetsPath contains spaces (e.g. "Application Support"), the shell splits on them and
+  // the command fails. Work around this by exposing a symlink at a space-free /tmp path.
+  let assetsPath = rawAssetsPath;
+  if (rawAssetsPath.includes(' ') && fs.existsSync(rawAssetsPath)) {
+    const symlinkDir = path.join(os.tmpdir(), 'supercmd-assets');
+    const symlinkPath = path.join(symlinkDir, normalizedExtName);
+    try {
+      fs.mkdirSync(symlinkDir, { recursive: true });
+      if (fs.existsSync(symlinkPath)) fs.unlinkSync(symlinkPath);
+      fs.symlinkSync(rawAssetsPath, symlinkPath);
+      assetsPath = symlinkPath;
+    } catch {
+      // Symlink failed (permissions, etc.) — fall back to the original path
+    }
+  }
   const supportPath = path.join(app.getPath('userData'), 'extension-support', normalizedExtName);
 
   // Ensure support directory exists
