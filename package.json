@@ -80,6 +80,16 @@
       "!dist/native/**/*.dSYM/**",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "supercmd.svg",
+        "to": "supercmd.svg"
+      },
+      {
+        "from": "supercmd.png",
+        "to": "supercmd.png"
+      }
+    ],
     "directories": {
       "output": "out"
     },

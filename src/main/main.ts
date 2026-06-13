@@ -7385,7 +7385,12 @@ function isInvisibleTrayIcon(icon: any): boolean {
 
 function loadAppTrayIcon(): any {
   const fs = require('fs');
+  // SVG via createFromPath is handled by macOS NSImage natively → resolution-independent.
+  // PNG is the fallback for environments where SVG loading fails.
   const candidates = [
+    path.join(process.cwd(), 'supercmd.svg'),
+    path.join(app.getAppPath(), 'supercmd.svg'),
+    path.join(process.resourcesPath || '', 'supercmd.svg'),
     path.join(process.cwd(), 'supercmd.png'),
     path.join(app.getAppPath(), 'supercmd.png'),
     path.join(process.resourcesPath || '', 'supercmd.png'),
@@ -7399,7 +7404,7 @@ function loadAppTrayIcon(): any {
       if (!icon || icon.isEmpty()) return null;
       const resized = icon.resize({ width: 18, height: 18 });
       if (!resized || resized.isEmpty()) return null;
-      // Use template rendering on macOS so the icon adapts to light/dark menu bar.
+      // Template image adapts automatically to light/dark menu bar on macOS.
       if (process.platform === 'darwin') {
         try { resized.setTemplateImage(true); } catch {}
       }
@@ -7409,17 +7414,17 @@ function loadAppTrayIcon(): any {
     }
   };
 
-  const defaultTemplateIcon = buildDefaultMacTrayTemplateIcon();
-  if (defaultTemplateIcon) {
-    return defaultTemplateIcon;
-  }
-
   for (const candidate of candidates) {
     try {
       if (!candidate || !fs.existsSync(candidate)) continue;
       const trayImage = tryBuildTrayImage(nativeImage.createFromPath(candidate));
       if (trayImage) return trayImage;
     } catch {}
+  }
+
+  const defaultTemplateIcon = buildDefaultMacTrayTemplateIcon();
+  if (defaultTemplateIcon) {
+    return defaultTemplateIcon;
   }
 
   if (process.platform === 'darwin') {
