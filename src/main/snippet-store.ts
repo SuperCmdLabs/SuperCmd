@@ -317,6 +317,14 @@ export function resolveSnippetPlaceholdersWithCursor(
       return crypto.randomUUID();
     }
 
+    if (trimmed.toLowerCase().startsWith('link')) {
+      const textMatch = trimmed.match(/text\s*=\s*"([^"]*)"/i);
+      const urlMatch  = trimmed.match(/url\s*=\s*"([^"]*)"/i);
+      if (textMatch && urlMatch) {
+        return `__SUPERCMD_LINK__${textMatch[1]}__SUPERCMD_HREF__${urlMatch[1]}__SUPERCMD_ENDLINK__`;
+      }
+    }
+
     // Unknown placeholder — leave as-is
     return match;
   });
@@ -334,6 +342,63 @@ export function resolveSnippetPlaceholdersWithCursor(
 export function resolveSnippetPlaceholders(content: string, dynamicValues?: Record<string, string>): string {
   return resolveSnippetPlaceholdersWithCursor(content, dynamicValues).text;
 }
+// ─── Rich Text (HTML) rendering ─────────────────────────────────────────────
+
+const LINK_TOKEN_RE = /__SUPERCMD_LINK__(.*?)__SUPERCMD_HREF__(.*?)__SUPERCMD_ENDLINK__/g;
+
+/**
+ * Returns true when the resolved snippet content contains at least one
+ * hyperlink token — meaning we should write HTML to the clipboard instead
+ * of plain text so rich-text apps (Outlook, etc.) receive a clickable link.
+ */
+export function snippetHasRichContent(resolvedText: string): boolean {
+  LINK_TOKEN_RE.lastIndex = 0;
+  return LINK_TOKEN_RE.test(resolvedText);
+}
+
+/**
+ * Converts internal link tokens into an HTML string for clipboard.writeHTML().
+ * Plain text portions are HTML-escaped.
+ * Also returns a plain-text fallback (tokens become "Display Text (url)").
+ */
+export function snippetToHTML(resolvedText: string): { html: string; plainText: string } {
+  LINK_TOKEN_RE.lastIndex = 0;
+  let html = '';
+  let plainText = '';
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = LINK_TOKEN_RE.exec(resolvedText)) !== null) {
+    const before = resolvedText.slice(lastIndex, match.index);
+    const display = match[1];
+    const href = match[2];
+    html += escapeHtml(before);
+    plainText += before;
+    html += `<a href="${escapeAttr(href)}">${escapeHtml(display)}</a>`;
+    plainText += `${display} (${href})`;
+    lastIndex = LINK_TOKEN_RE.lastIndex;
+  }
+
+  const tail = resolvedText.slice(lastIndex);
+  html += escapeHtml(tail);
+  plainText += tail;
+
+  return { html: `<html><body>${html}</body></html>`, plainText };
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function escapeAttr(str: string): string {
+  return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+
 
 function formatDate(date: Date, format: string): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -353,7 +418,12 @@ export function copySnippetToClipboard(id: string): boolean {
   if (!snippet) return false;
 
   const resolved = resolveSnippetPlaceholders(snippet.content);
-  clipboard.writeText(resolved);
+  if (snippetHasRichContent(resolved)) {
+    const { html, plainText } = snippetToHTML(resolved);
+    clipboard.write({ html, text: plainText });
+  } else {
+    clipboard.writeText(resolved);
+  }
   return true;
 }
 
@@ -361,7 +431,12 @@ export function copySnippetToClipboardResolved(id: string, dynamicValues?: Recor
   const snippet = getSnippetById(id);
   if (!snippet) return false;
   const resolved = resolveSnippetPlaceholders(snippet.content, dynamicValues);
-  clipboard.writeText(resolved);
+  if (snippetHasRichContent(resolved)) {
+    const { html, plainText } = snippetToHTML(resolved);
+    clipboard.write({ html, text: plainText });
+  } else {
+    clipboard.writeText(resolved);
+  }
   return true;
 }
 
