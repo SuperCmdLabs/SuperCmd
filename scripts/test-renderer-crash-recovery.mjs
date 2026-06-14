@@ -25,7 +25,7 @@ test('Renderer crash recovery', async (t) => {
 
   await t.test('rate-limiting prevents crash loops', () => {
     assertIncludes(mainTs, 'rendererReloadCount');
-    assertIncludes(mainTs, 'if (now - lastRendererReloadAt > 30000) rendererReloadCount = 0;');
+    assertIncludes(mainTs, 'if (now - lastRendererReloadAt > THIRTY_SECONDS) rendererReloadCount = 0;');
     assertIncludes(mainTs, 'if (rendererReloadCount > 3)');
   });
 

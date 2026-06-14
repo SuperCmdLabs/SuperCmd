@@ -8216,6 +8216,51 @@ function createWindow(): void {
     }
   });
 
+  // Recover from renderer-process death. The launcher window is created once
+  // and kept alive (hidden) for the whole session; the same renderer also runs
+  // every extension with full Node integration. If that renderer is killed
+  // (extension crash, OOM, or macOS reaping the backgrounded process), the
+  // window has nothing to paint and shows blank on the next show(). Reload it
+  // so the next open is functional instead of an empty panel.
+  let rendererReloadCount = 0;
+  let lastRendererReloadAt = 0;
+  mainWindow.webContents.on('render-process-gone', (_event: any, details: any) => {
+    if (isAppQuitting) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const reason = String(details?.reason || 'unknown');
+    // 'clean-exit' is an intentional, normal teardown — nothing to recover.
+    if (reason === 'clean-exit') return;
+    console.warn(`[WindowManager] Launcher renderer gone (${reason}); reloading.`);
+
+    // Rate-limit recovery so a renderer that crashes immediately on load
+    // doesn't spin in a tight reload loop.
+    const now = Date.now();
+    const THIRTY_SECONDS = 30 * 1000; // 30s
+    if (now - lastRendererReloadAt > THIRTY_SECONDS) rendererReloadCount = 0;
+    lastRendererReloadAt = now;
+    rendererReloadCount += 1;
+    if (rendererReloadCount > 3) {
+      console.error('[WindowManager] Launcher renderer crashed repeatedly; not reloading again.');
+      return;
+    }
+
+    try {
+      loadWindowUrl(mainWindow, '/');
+    } catch (err) {
+      console.error('[WindowManager] Failed to reload launcher after renderer crash:', err);
+    }
+  });
+
+  // A wedged (but not dead) renderer also paints nothing. Reload it only while
+  // hidden to avoid interrupting a foreground operation the user is watching.
+  mainWindow.webContents.on('unresponsive', () => {
+    if (isAppQuitting) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (isVisible) return;
+    console.warn('[WindowManager] Hidden launcher renderer unresponsive; reloading.');
+    try { mainWindow.webContents.reloadIgnoringCache(); } catch { }
+  });
+
   mainWindow.on('blur', () => {
     // Grace period after show: AeroSpace / tiling WMs and macOS Space
     // transitions can fire blur immediately after the window is shown,
