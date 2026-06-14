@@ -1,6 +1,6 @@
 {
   "name": "supercmd",
-  "version": "1.0.25",
+  "version": "1.0.25-PMH",
   "description": "SuperCmd — Productivity supercharged",
   "author": "Shobhit Bhosure - (https://x.com/nullbytes00)",
   "homepage": "https://supercmd.sh",
@@ -15,6 +15,7 @@
     "build:main": "tsc -p tsconfig.main.json && cp src/main/emoji-data.json dist/main/emoji-data.json",
     "build:renderer": "vite build",
     "check:i18n": "node scripts/check-i18n.mjs",
+    "test": "node --test 'scripts/test-*.mjs'",
     "build:native": "node scripts/build-native.mjs",
     "postinstall": "electron-builder install-app-deps",
     "start": "electron .",

@@ -1,10 +1,12 @@
+#!/usr/bin/env node
+
 import fs from 'fs';
 import path from 'path';
 import vm from 'vm';
 import { createRequire } from 'module';
 import assert from 'assert/strict';
 
-const require = createRequire(import.meta.url);
+  const require = createRequire(import.meta.url);
 const ts = require('typescript');
 
 const moduleCache = new Map();
@@ -142,9 +144,9 @@ function ids(items) {
 function test(name, fn) {
   try {
     fn();
-    console.log(`ok - ${name}`);
+    console.log(`✓ ${name}`);
   } catch (error) {
-    console.error(`not ok - ${name}`);
+    console.error(`✗ ${name}`);
     throw error;
   }
 }
@@ -856,4 +858,4 @@ test('weak browser history does not autocomplete', () => {
   assert.equal(getSharedRootCompletion(query, [history]), null);
 });
 
-console.log('root-search-ranking tests passed');
+console.log('✓ All root-search-ranking tests passed');
