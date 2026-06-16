@@ -32,7 +32,7 @@ const root = ReactDOM.createRoot(document.getElementById('root')!);
 const RELOAD_TRACKER_KEY = 'sc-renderer-reload-tracker';
 const RELOAD_WINDOW_MS = 30_000;
 const MAX_AUTO_RELOADS = 3;
-const STABLE_SESSION_MS = 15_000;
+const STABLE_SESSION_MS = 30 * 1000; // 30s
 
 function consumeAutoReloadBudget(): boolean {
   try {

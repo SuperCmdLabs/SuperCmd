@@ -8235,11 +8235,12 @@ function createWindow(): void {
     // Rate-limit recovery so a renderer that crashes immediately on load
     // doesn't spin in a tight reload loop.
     const now = Date.now();
-    const THIRTY_SECONDS = 30 * 1000; // 30s
-    if (now - lastRendererReloadAt > THIRTY_SECONDS) rendererReloadCount = 0;
+    const STABLE_SESSION_MS = 30 * 1000; // 30s
+    const MAX_AUTO_RELOADS = 3;
+    if (now - lastRendererReloadAt > STABLE_SESSION_MS) rendererReloadCount = 0;
     lastRendererReloadAt = now;
     rendererReloadCount += 1;
-    if (rendererReloadCount > 3) {
+    if (rendererReloadCount > MAX_AUTO_RELOADS) {
       console.error('[WindowManager] Launcher renderer crashed repeatedly; not reloading again.');
       return;
     }
