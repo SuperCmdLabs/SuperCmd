@@ -6,7 +6,7 @@ import vm from 'vm';
 import { createRequire } from 'module';
 import assert from 'assert/strict';
 
-  const require = createRequire(import.meta.url);
+const require = createRequire(import.meta.url);
 const ts = require('typescript');
 
 const moduleCache = new Map();

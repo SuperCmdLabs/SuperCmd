@@ -24,11 +24,58 @@ initializeTheme();
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 
+// Auto-recovery budget for renderer render-crashes. A render error that leaves
+// the launcher blank should silently reload rather than stranding the user on a
+// manual "Reload" card — but a crash that recurs on every mount must not spin in
+// a reload loop. Budget is tracked in sessionStorage so it survives the reload
+// (same renderer session) and resets when a session stays healthy for a while.
+const RELOAD_TRACKER_KEY = 'sc-renderer-reload-tracker';
+const RELOAD_WINDOW_MS = 30_000;
+const MAX_AUTO_RELOADS = 3;
+const STABLE_SESSION_MS = 15_000;
+
+function consumeAutoReloadBudget(): boolean {
+  try {
+    const now = Date.now();
+    const raw = sessionStorage.getItem(RELOAD_TRACKER_KEY);
+    let tracker = raw ? (JSON.parse(raw) as { count: number; firstAt: number }) : null;
+    if (!tracker || now - tracker.firstAt > RELOAD_WINDOW_MS) {
+      tracker = { count: 0, firstAt: now };
+    }
+    if (tracker.count >= MAX_AUTO_RELOADS) return false;
+    tracker.count += 1;
+    sessionStorage.setItem(RELOAD_TRACKER_KEY, JSON.stringify(tracker));
+    return true;
+  } catch {
+    // No sessionStorage (or it's wedged) — don't risk an unbounded reload loop.
+    return false;
+  }
+}
+
+function clearAutoReloadBudget() {
+  try {
+    sessionStorage.removeItem(RELOAD_TRACKER_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 class RendererErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { error: Error | null }
+  { error: Error | null; reloading: boolean }
 > {
-  state = { error: null as Error | null };
+  state = { error: null as Error | null, reloading: false };
+  private stableTimer: ReturnType<typeof setTimeout> | null = null;
+
+  componentDidMount() {
+    // If the renderer stays healthy for a stretch, treat the session as
+    // recovered and reset the budget so a later one-off crash gets a fresh one.
+    this.stableTimer = setTimeout(clearAutoReloadBudget, STABLE_SESSION_MS);
+  }
+
+  componentWillUnmount() {
+    if (this.stableTimer) clearTimeout(this.stableTimer);
+  }
 
   static getDerivedStateFromError(error: Error) {
     return { error };
@@ -37,12 +84,43 @@ class RendererErrorBoundary extends React.Component<
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('[RendererErrorBoundary] Render error:', error);
     console.error('[RendererErrorBoundary] Component stack:', info.componentStack);
+
+    if (consumeAutoReloadBudget()) {
+      console.warn('[RendererErrorBoundary] Auto-reloading to recover from render crash.');
+      this.setState({ reloading: true });
+      // Reload from cache is fine here — the crash is in app state, not the bundle.
+      window.location.reload();
+    } else {
+      console.error('[RendererErrorBoundary] Auto-reload budget exhausted; showing fallback.');
+    }
   }
 
   render() {
     if (!this.state.error) return this.props.children;
+    // While the reload is in flight, render a quiet placeholder instead of the
+    // full error card so the user doesn't see a crash flash before recovery.
+    if (this.state.reloading) return <RendererRecovering />;
     return <RendererErrorFallback error={this.state.error} />;
   }
+}
+
+function RendererRecovering() {
+  return (
+    <div
+      style={{
+        height: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+        fontSize: 12,
+        color: 'var(--text-secondary, rgba(255,255,255,0.5))',
+        background: 'var(--surface-base, #101113)',
+      }}
+    >
+      Recovering…
+    </div>
+  );
 }
 
 function RendererErrorFallback({ error }: { error: Error }) {

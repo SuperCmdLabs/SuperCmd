@@ -33,6 +33,14 @@ test('Renderer crash recovery', async (t) => {
     assertIncludes(mainTs, 'loadWindowUrl(mainWindow, \'/\');');
   });
 
+  await t.test('reload is DEFERRED out of the crash callback (avoids Mach SIGTRAP)', () => {
+    // Reloading synchronously inside render-process-gone respawns the renderer
+    // mid-teardown and aborts the whole app on macOS. The reload must be in a
+    // setTimeout, with a re-guard against isAppQuitting/destroyed at fire time.
+    assertIncludes(mainTs, 'const RENDERER_RECOVERY_DELAY_MS =');
+    assertIncludes(mainTs, '}, RENDERER_RECOVERY_DELAY_MS);');
+  });
+
   await t.test('unresponsive handler exists', () => {
     assertIncludes(mainTs, "mainWindow.webContents.on('unresponsive'");
   });

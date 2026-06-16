@@ -8230,7 +8230,7 @@ function createWindow(): void {
     const reason = String(details?.reason || 'unknown');
     // 'clean-exit' is an intentional, normal teardown — nothing to recover.
     if (reason === 'clean-exit') return;
-    console.warn(`[WindowManager] Launcher renderer gone (${reason}); reloading.`);
+    console.warn(`[WindowManager] Launcher renderer gone (${reason}); scheduling reload.`);
 
     // Rate-limit recovery so a renderer that crashes immediately on load
     // doesn't spin in a tight reload loop.
@@ -8244,11 +8244,21 @@ function createWindow(): void {
       return;
     }
 
-    try {
-      loadWindowUrl(mainWindow, '/');
-    } catch (err) {
-      console.error('[WindowManager] Failed to reload launcher after renderer crash:', err);
-    }
+    // Defer the reload OUT of the crash-event callback. Reloading synchronously
+    // here spawns the replacement renderer while Chromium is still tearing down
+    // the dead one; on macOS that can fail the Mach IPC rendezvous and abort the
+    // whole app (SIGTRAP) — strictly worse than the blank window we're fixing.
+    // A short delay lets the dead renderer finish tearing down first.
+    const RENDERER_RECOVERY_DELAY_MS = 300;
+    setTimeout(() => {
+      if (isAppQuitting) return;
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      try {
+        loadWindowUrl(mainWindow, '/');
+      } catch (err) {
+        console.error('[WindowManager] Failed to reload launcher after renderer crash:', err);
+      }
+    }, RENDERER_RECOVERY_DELAY_MS);
   });
 
   // A wedged (but not dead) renderer also paints nothing. Reload it only while
