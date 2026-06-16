@@ -82,6 +82,11 @@ import {
 } from './extension-api';
 import { getExtensionBundle, buildAllCommands, discoverInstalledExtensionCommands, getInstalledExtensionsSettingsSchema } from './extension-runner';
 import {
+  getRendererCrashState,
+  evaluateRendererCrash,
+  RENDERER_RECOVERY_DELAY_MS,
+} from './renderer-recovery';
+import {
   startClipboardMonitor,
   stopClipboardMonitor,
   getClipboardHistory,
@@ -8222,35 +8227,32 @@ function createWindow(): void {
   // (extension crash, OOM, or macOS reaping the backgrounded process), the
   // window has nothing to paint and shows blank on the next show(). Reload it
   // so the next open is functional instead of an empty panel.
-  let rendererReloadCount = 0;
-  let lastRendererReloadAt = 0;
+  let rendererCrashState = getRendererCrashState();
   mainWindow.webContents.on('render-process-gone', (_event: any, details: any) => {
     if (isAppQuitting) return;
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const reason = String(details?.reason || 'unknown');
-    // 'clean-exit' is an intentional, normal teardown — nothing to recover.
-    if (reason === 'clean-exit') return;
-    console.warn(`[WindowManager] Launcher renderer gone (${reason}); scheduling reload.`);
 
-    // Rate-limit recovery so a renderer that crashes immediately on load
-    // doesn't spin in a tight reload loop.
-    const now = Date.now();
-    const STABLE_SESSION_MS = 30 * 1000; // 30s
-    const MAX_AUTO_RELOADS = 3;
-    if (now - lastRendererReloadAt > STABLE_SESSION_MS) rendererReloadCount = 0;
-    lastRendererReloadAt = now;
-    rendererReloadCount += 1;
-    if (rendererReloadCount > MAX_AUTO_RELOADS) {
-      console.error('[WindowManager] Launcher renderer crashed repeatedly; not reloading again.');
+    // Rate-limit recovery so a renderer that crashes immediately on load doesn't
+    // spin in a tight reload loop. 'clean-exit' is a normal teardown and is
+    // ignored. The decision (and its constants) live in renderer-recovery.ts so
+    // they can be exercised by running a real crash sequence in a test rather
+    // than grepping this source.
+    const decision = evaluateRendererCrash(rendererCrashState, reason, Date.now());
+    rendererCrashState = decision.nextState;
+    if (!decision.reload) {
+      if (decision.giveUp) {
+        console.error('[WindowManager] Launcher renderer crashed repeatedly; not reloading again.');
+      }
       return;
     }
+    console.warn(`[WindowManager] Launcher renderer gone (${reason}); scheduling reload.`);
 
     // Defer the reload OUT of the crash-event callback. Reloading synchronously
     // here spawns the replacement renderer while Chromium is still tearing down
     // the dead one; on macOS that can fail the Mach IPC rendezvous and abort the
     // whole app (SIGTRAP) — strictly worse than the blank window we're fixing.
     // A short delay lets the dead renderer finish tearing down first.
-    const RENDERER_RECOVERY_DELAY_MS = 300;
     setTimeout(() => {
       if (isAppQuitting) return;
       if (!mainWindow || mainWindow.isDestroyed()) return;

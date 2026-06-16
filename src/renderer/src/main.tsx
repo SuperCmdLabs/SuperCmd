@@ -3,6 +3,11 @@ import ReactDOM from 'react-dom/client';
 import { I18nProvider } from './i18n';
 import '../styles/index.css';
 import { initializeTheme } from './utils/theme';
+import {
+  consumeAutoReloadBudget,
+  clearAutoReloadBudget,
+  STABLE_SESSION_MS,
+} from './utils/reload-budget';
 
 // Each BrowserWindow only needs one root app. Static imports of every app
 // here forced a single ~8MB bundle into every window (e.g. settings loaded
@@ -24,41 +29,9 @@ initializeTheme();
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 
-// Auto-recovery budget for renderer render-crashes. A render error that leaves
-// the launcher blank should silently reload rather than stranding the user on a
-// manual "Reload" card — but a crash that recurs on every mount must not spin in
-// a reload loop. Budget is tracked in sessionStorage so it survives the reload
-// (same renderer session) and resets when a session stays healthy for a while.
-const RELOAD_TRACKER_KEY = 'sc-renderer-reload-tracker';
-const RELOAD_WINDOW_MS = 30_000;
-const MAX_AUTO_RELOADS = 3;
-const STABLE_SESSION_MS = 30 * 1000; // 30s
-
-function consumeAutoReloadBudget(): boolean {
-  try {
-    const now = Date.now();
-    const raw = sessionStorage.getItem(RELOAD_TRACKER_KEY);
-    let tracker = raw ? (JSON.parse(raw) as { count: number; firstAt: number }) : null;
-    if (!tracker || now - tracker.firstAt > RELOAD_WINDOW_MS) {
-      tracker = { count: 0, firstAt: now };
-    }
-    if (tracker.count >= MAX_AUTO_RELOADS) return false;
-    tracker.count += 1;
-    sessionStorage.setItem(RELOAD_TRACKER_KEY, JSON.stringify(tracker));
-    return true;
-  } catch {
-    // No sessionStorage (or it's wedged) — don't risk an unbounded reload loop.
-    return false;
-  }
-}
-
-function clearAutoReloadBudget() {
-  try {
-    sessionStorage.removeItem(RELOAD_TRACKER_KEY);
-  } catch {
-    // ignore
-  }
-}
+// Auto-recovery budget for renderer render-crashes lives in
+// ./utils/reload-budget so it can be exercised by running it through a crash
+// sequence in a test. See scripts/test-renderer-error-boundary.mjs.
 
 class RendererErrorBoundary extends React.Component<
   { children: React.ReactNode },
