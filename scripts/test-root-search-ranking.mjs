@@ -141,6 +141,8 @@ function ids(items) {
   return Array.from(items, (item) => item.id);
 }
 
+// Simple test runner to avoid adding a dependency on node:test
+// Using ✓ and ✗ here for consistency with the node:test output style.
 function test(name, fn) {
   try {
     fn();
@@ -858,4 +860,6 @@ test('weak browser history does not autocomplete', () => {
   assert.equal(getSharedRootCompletion(query, [history]), null);
 });
 
+// All tests passed if we reach this point without throwing an error.
+// Using a ✓ here for consistency with the node:test output style.
 console.log('✓ All root-search-ranking tests passed');

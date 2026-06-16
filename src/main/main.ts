@@ -8329,7 +8329,15 @@ function createWindow(): void {
       return;
     }
     console.warn('[WindowManager] Hidden launcher renderer unresponsive; reloading.');
-    try { mainWindow.webContents.reloadIgnoringCache(); } catch { }
+
+    try {
+      mainWindow.webContents.reloadIgnoringCache();
+    } catch (err) {
+      // A throw here still consumes a reload unit above, so repeated failures will
+      // eventually trip the give-up dialog on their own — we just need to surface
+      // the cause.
+      console.error('[WindowManager] Failed to reload unresponsive launcher renderer:', err);
+    }
   });
 
   mainWindow.on('blur', () => {

@@ -1,8 +1,8 @@
 // Auto-recovery budget for renderer render-crashes. A render error that leaves
-// the launcher blank should silently reload rather than stranding the user on a
-// manual "Reload" card — but a crash that recurs on every mount must not spin in
-// a reload loop. The budget is tracked in sessionStorage so it survives the
-// reload (same renderer session) and resets when a session stays healthy.
+// the launcher blank should silently reload rather than stranding the user — but 
+// a crash that recurs on every mount must not spin in a reload loop. The budget is 
+// tracked in sessionStorage so it survives the reload (same renderer session) and 
+// resets when a session stays healthy.
 //
 // Storage is injected (defaulting to the real sessionStorage) so the budget can
 // be exercised by running it against an in-memory store in a test instead of
