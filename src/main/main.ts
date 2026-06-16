@@ -7916,6 +7916,52 @@ async function buildLaunchBundle(options: {
 
 // ─── Launcher Window ────────────────────────────────────────────────
 
+// Set once the renderer has crashed past its reload budget, so the give-up
+// dialog is shown only once even if both the crash and unresponsive paths
+// exhaust the budget in the same burst.
+let rendererRecoveryGaveUp = false;
+
+// Last resort when the launcher renderer can't be recovered by reloading: the
+// renderer is dead/wedged so it can't render its own error UI, leaving a blank
+// window. Surface a native dialog and let the user relaunch instead of being
+// stranded with a window that paints nothing.
+async function handleRendererRecoveryGiveUp(logMessage: string): Promise<void> {
+  console.error(`[WindowManager] ${logMessage}`);
+  if (rendererRecoveryGaveUp || isAppQuitting) return;
+  rendererRecoveryGaveUp = true;
+  try {
+    const { response } = await dialog.showMessageBox({
+      type: 'error',
+      buttons: ['Relaunch', 'Quit'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+      title: 'SuperCmd needs to restart',
+      message: 'SuperCmd ran into a problem',
+      detail:
+        'The launcher stopped responding and could not recover on its own. ' +
+        'Relaunch to continue.',
+    });
+    if (response === 0) app.relaunch();
+  } catch (err) {
+    console.error('[WindowManager] Failed to show renderer recovery dialog:', err);
+  }
+  // Quit (not exit) so the before-quit/will-quit teardown runs and the spawned
+  // child processes (emoji-trigger monitor, whisper/parakeet servers, clipboard
+  // monitor, window-manager worker, …) are killed instead of orphaned. If the
+  // user chose Relaunch, app.relaunch() above schedules a fresh instance to
+  // start once this one has quit.
+  app.quit();
+
+  // Watchdog: if the graceful quit stalls (e.g. a window's close handler hangs
+  // waiting on its renderer), force-exit so we don't leave a half-dead app with
+  // a blank window. .unref() so this timer can't itself keep the app alive.
+  setTimeout(() => {
+    console.error('[WindowManager] Graceful quit stalled after give-up; forcing exit.');
+    app.exit(0);
+  }, 5000).unref();
+}
+
 function createWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } =
@@ -8242,7 +8288,7 @@ function createWindow(): void {
     rendererCrashState = decision.nextState;
     if (!decision.reload) {
       if (decision.giveUp) {
-        console.error('[WindowManager] Launcher renderer crashed repeatedly; not reloading again.');
+        void handleRendererRecoveryGiveUp('Launcher renderer crashed repeatedly; not reloading again.');
       }
       return;
     }
@@ -8270,6 +8316,18 @@ function createWindow(): void {
     if (isAppQuitting) return;
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (isVisible) return;
+
+    // Share the same reload budget as render-process-gone. A renderer that
+    // wedges again on every reload (e.g. an extension that hangs the main
+    // thread on mount) would otherwise spin in an unbounded reload loop.
+    const decision = evaluateRendererCrash(rendererCrashState, 'unresponsive', Date.now());
+    rendererCrashState = decision.nextState;
+    if (!decision.reload) {
+      if (decision.giveUp) {
+        void handleRendererRecoveryGiveUp('Hidden launcher renderer repeatedly unresponsive; not reloading again.');
+      }
+      return;
+    }
     console.warn('[WindowManager] Hidden launcher renderer unresponsive; reloading.');
     try { mainWindow.webContents.reloadIgnoringCache(); } catch { }
   });

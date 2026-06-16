@@ -92,10 +92,6 @@ test('Renderer error boundary auto-reload budget', async (t) => {
     assert.ok(mainTsx.includes('consumeAutoReloadBudget'), 'boundary consumes the budget');
     assert.ok(mainTsx.includes('window.location.reload()'), 'boundary reloads on crash');
     assert.ok(
-      mainTsx.includes('if (this.state.reloading) return <RendererRecovering />;'),
-      'a quiet placeholder is shown while reloading',
-    );
-    assert.ok(
       mainTsx.includes('return <RendererErrorFallback error={this.state.error} />;'),
       'falls back to the manual error card when the budget is exhausted',
     );

@@ -35,9 +35,9 @@ const root = ReactDOM.createRoot(document.getElementById('root')!);
 
 class RendererErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { error: Error | null; reloading: boolean }
+  { error: Error | null }
 > {
-  state = { error: null as Error | null, reloading: false };
+  state = { error: null as Error | null };
   private stableTimer: ReturnType<typeof setTimeout> | null = null;
 
   componentDidMount() {
@@ -60,7 +60,6 @@ class RendererErrorBoundary extends React.Component<
 
     if (consumeAutoReloadBudget()) {
       console.warn('[RendererErrorBoundary] Auto-reloading to recover from render crash.');
-      this.setState({ reloading: true });
       // Reload from cache is fine here — the crash is in app state, not the bundle.
       window.location.reload();
     } else {
@@ -70,30 +69,8 @@ class RendererErrorBoundary extends React.Component<
 
   render() {
     if (!this.state.error) return this.props.children;
-    // While the reload is in flight, render a quiet placeholder instead of the
-    // full error card so the user doesn't see a crash flash before recovery.
-    if (this.state.reloading) return <RendererRecovering />;
     return <RendererErrorFallback error={this.state.error} />;
   }
-}
-
-function RendererRecovering() {
-  return (
-    <div
-      style={{
-        height: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
-        fontSize: 12,
-        color: 'var(--text-secondary, rgba(255,255,255,0.5))',
-        background: 'var(--surface-base, #101113)',
-      }}
-    >
-      Recovering…
-    </div>
-  );
 }
 
 function RendererErrorFallback({ error }: { error: Error }) {
