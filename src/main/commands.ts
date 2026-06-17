@@ -1012,7 +1012,7 @@ async function discoverApplications(): Promise<CommandInfo[]> {
           const packageType = String(info.CFBundlePackageType || '').trim();
           const isFinder = appPath === finderPath;
           const isAllowedType =
-            !packageType || packageType === 'APPL' || packageType === 'XPC!';
+            !packageType || packageType === 'APPL' || packageType === 'XPC!' || packageType === 'AAPL';
           if (!isAllowedType && !isFinder) return null;
           if (info.LSBackgroundOnly === true) return null;
         }
