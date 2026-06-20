@@ -167,6 +167,92 @@ test('exact app wins over browser history containing the same term', () => {
   assert.equal(rankRootSearchCandidates([history, app])[0].command.id, 'app-vivaldi');
 });
 
+test('internal "Search Notes" extension outranks browser history containing the query', () => {
+  // Regression (real report): searching "notes" surfaced only the macOS Notes
+  // app, then a flood of browser History rows ("Astryk - test - Notes",
+  // "SuperCmd 1.0.23 release notes ...") that pushed the internal "Search Notes"
+  // extension command out of the top Results entirely. Internal commands must
+  // take precedence over organic browser results, which have their own Browser
+  // section below.
+  const query = 'notes';
+  const searchNotes = candidate({
+    query,
+    id: 'ext-search-notes',
+    title: 'Search Notes',
+    subtype: 'extension-command',
+    source: 'command',
+    fields: [{ value: 'Search Notes', kind: 'label' }],
+  });
+  assert.equal(searchNotes.matchKind, 'token-prefix');
+  const histories = [
+    { id: 'hist-astryk-test', title: 'Astryk - test - Notes', url: 'https://app.astryk.com/test' },
+    { id: 'hist-release-notes', title: 'SuperCmd 1.0.23 release notes grammar check', url: 'https://claude.ai/chat/abc' },
+    { id: 'hist-pr-notes', title: 'Dictation crash fixes + launcher / notes UX polish', url: 'https://github.com/x/pull/472' },
+  ].map((h) =>
+    candidate({
+      query,
+      id: h.id,
+      title: h.title,
+      subtype: 'history',
+      pathOrUrl: h.url,
+      sourceQualityBoost: 200,
+    })
+  );
+
+  // 1) Direct ranking: the internal command sorts ahead of every history row.
+  const ranked = rankRootSearchCandidates([...histories, searchNotes]);
+  assert.equal(ranked[0].command.id, 'ext-search-notes');
+
+  // 2) Section assembly: the internal command is the first row of the top
+  // Results and outranks every history row that the assembler promotes.
+  const assembled = assembleRootSearchForTest({
+    searchQuery: query,
+    rootRankedCandidates: ranked,
+    browserCandidates: histories,
+    webSearchRootDirectCommand: command('web-search-root-direct', 'Search "notes"'),
+  });
+  assert.equal(assembled.queryResultCommands[0].id, 'ext-search-notes');
+  const commandIndex = assembled.queryResultCommands.findIndex((item) => item.id === 'ext-search-notes');
+  histories.forEach((h) => {
+    const historyIndex = assembled.queryResultCommands.findIndex((item) => item.id === h.command.id);
+    if (historyIndex !== -1) {
+      assert.ok(commandIndex < historyIndex, `${h.command.id} must rank below the internal command`);
+    }
+  });
+});
+
+test('a weak keyword-only internal command still outranks browser history', () => {
+  // Internal results ALWAYS beat organic browser results, even when the command
+  // matched only via a keyword/subtitle (a weak "description" match) rather than
+  // its title. This mirrors the real report: "Create Note" / extension commands
+  // that match the query loosely must not be pushed below browser history.
+  const query = 'notes';
+  const weakCommand = candidate({
+    query,
+    id: 'ext-create-note',
+    title: 'Create Note',
+    subtype: 'extension-command',
+    source: 'command',
+    fields: [
+      { value: 'Create Note', kind: 'label' },
+      { value: 'Quickly capture notes and ideas', kind: 'description', weight: 0.7 },
+    ],
+  });
+  // A loose keyword/subtitle match — not a strong title prefix/exact match.
+  assert.ok(['description', 'subsequence', 'contains', 'path'].includes(weakCommand.matchKind),
+    `expected a weak match kind, got ${weakCommand.matchKind}`);
+  const strongHistory = candidate({
+    query,
+    id: 'history-notes',
+    title: 'notes.app reference',
+    subtype: 'history',
+    fields: [{ value: 'notes.app reference', kind: 'label' }],
+    pathOrUrl: 'https://example.com/notes',
+    sourceQualityBoost: 220,
+  });
+  assert.equal(rankRootSearchCandidates([strongHistory, weakCommand])[0].command.id, 'ext-create-note');
+});
+
 test('exact folder wins over browser bookmark/history for local intent', () => {
   const query = 'UZH';
   const folder = candidate({
@@ -737,7 +823,13 @@ test('deep noisy file loses to shallow desktop file by default', () => {
   assert.equal(rankRootSearchCandidates([deep, shallow])[0].command.id, 'file-shallow');
 });
 
-test('strong browser match beats deeply buried exact local folder', () => {
+test('even a deeply buried internal folder outranks a browser result', () => {
+  // Internal results ALWAYS beat organic browser results. (Previously a strong
+  // browser candidate was allowed to beat a deep/untrusted file — that exception
+  // contradicted the internal>browser rule and made the comparator non-transitive,
+  // corrupting Array.sort once file results loaded. See the transitivity test
+  // below.) Deep files are still demoted via their score penalty WITHIN the
+  // internal group, and are filtered out of the top Results section separately.
   const query = 'Cast';
   const deepFolder = candidate({
     query,
@@ -756,7 +848,56 @@ test('strong browser match beats deeply buried exact local folder', () => {
     sourceQualityBoost: 80,
     pathOrUrl: 'https://www.twitch.tv/videos/123',
   });
-  assert.equal(rankRootSearchCandidates([deepFolder, browser])[0].command.id, 'tab-casting');
+  assert.equal(rankRootSearchCandidates([deepFolder, browser])[0].command.id, 'folder-cast');
+});
+
+test('comparator is transitive: command + strong browser + deep file sort consistently', () => {
+  // Regression for the real bug: a command, a strong browser destination, and a
+  // deeply-buried file form the cycle that broke Array.sort once async file
+  // results were mixed in (browser rows leaked above commands). ALL internal
+  // results must sort before ALL browser results regardless of input order.
+  const query = 'cast';
+  const command = candidate({
+    query,
+    id: 'system-cast-screen',
+    title: 'Cast Screen',
+    subtype: 'system-command',
+    source: 'command',
+    fields: [{ value: 'Cast Screen', kind: 'label' }],
+  });
+  const deepFile = candidate({
+    query,
+    id: 'file-cast',
+    title: 'cast.py',
+    subtype: 'file',
+    pathLocationBoost: 20,
+    depthPenalty: 190,
+    noisePenalty: 70,
+    pathOrUrl: '/Users/me/project/.venv/lib/python3.12/site-packages/pandas/cast.py',
+  });
+  const strongBrowser = candidate({
+    query,
+    id: 'tab-cast',
+    title: 'cast',
+    subtype: 'open-tab',
+    fields: [{ value: 'cast.com', kind: 'url' }],
+    pathOrUrl: 'https://cast.com/',
+    sourceQualityBoost: 200,
+  });
+  // Try several input orderings — a non-transitive comparator produces different
+  // (and wrong) results depending on order. All must put the browser last.
+  for (const inputs of [
+    [command, deepFile, strongBrowser],
+    [strongBrowser, deepFile, command],
+    [deepFile, strongBrowser, command],
+  ]) {
+    const ranked = rankRootSearchCandidates(inputs);
+    const browserIdx = ranked.findIndex((c) => c.isOrganicBrowserResult);
+    const internalCount = ranked.filter((c) => !c.isOrganicBrowserResult).length;
+    assert.equal(browserIdx, internalCount,
+      `browser must sort after all internal (got browserIdx=${browserIdx}, internalCount=${internalCount})`);
+    assert.equal(ranked[ranked.length - 1].command.id, 'tab-cast');
+  }
 });
 
 test('shallow exact folder still beats browser match', () => {

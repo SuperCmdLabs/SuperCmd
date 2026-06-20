@@ -94,6 +94,11 @@ const SEARCH_SEPARATOR_REGEX = /[^\p{L}\p{N}]+/gu;
 const COMBINING_MARK_REGEX = /\p{M}/gu;
 const DAY = 24 * 60 * 60 * 1000;
 
+// Build liveness stamp — confirms the running renderer has the internal>browser
+// precedence fix. Grep the bundle (dist/renderer/assets/*.js) for this string,
+// or look for it in the DevTools console at startup. Remove once verified.
+try { console.info('[SC-RANK build 2026-06-19c internal>browser precedence ACTIVE]'); } catch {}
+
 export const ROOT_SEARCH_RESULTS_LIMIT = 8;
 export const ROOT_SEARCH_PROMOTION_SCORE = 700;
 
@@ -354,16 +359,20 @@ export function scoreRootSearchCandidate(
 }
 
 export function compareRootSearchCandidates(a: RootSearchCandidate, b: RootSearchCandidate): number {
-  const aDeepFile = isDeepUntrustedFileCandidate(a);
-  const bDeepFile = isDeepUntrustedFileCandidate(b);
-  const aStrongBrowser = isStrongBrowserCandidate(a);
-  const bStrongBrowser = isStrongBrowserCandidate(b);
-  if (aDeepFile !== bDeepFile && aStrongBrowser !== bStrongBrowser) {
-    const aLearnedBoost = a.adaptiveInputBoost + a.frecencyBoost;
-    const bLearnedBoost = b.adaptiveInputBoost + b.frecencyBoost;
-    if (Math.abs(aLearnedBoost - bLearnedBoost) < 90) {
-      return aStrongBrowser ? -1 : 1;
-    }
+  // Internal results (commands, apps, files, nicknames, quicklinks) ALWAYS rank
+  // above organic browser results (history / open tabs / bookmarks), which have
+  // their own dedicated "Browser" section. This MUST be the FIRST comparison so
+  // the comparator stays a consistent total order (transitive). A previous
+  // "strong browser beats a deeply-buried untrusted file" special case
+  // contradicted this rule, making compareRootSearchCandidates non-transitive:
+  // command < browser, browser < deepFile, deepFile < command formed a cycle, and
+  // Array.sort corrupts the order on a non-transitive comparator — which leaked
+  // browser rows above commands once async file results entered the candidate set.
+  // Deep/untrusted files already rank low via their depth/noise score penalty
+  // WITHIN the internal group, so no cross-group browser exception is needed. URL
+  // navigation is handled by the separate synthetic "Open <url>" row.
+  if (a.isOrganicBrowserResult !== b.isOrganicBrowserResult) {
+    return a.isOrganicBrowserResult ? 1 : -1;
   }
 
   const browserOrder = compareOrganicBrowserCandidates(a, b);

@@ -857,6 +857,41 @@ export function useLauncherCommandModel({
     queryFileSectionCommands,
   } = rootSearchSectionAssembly;
 
+  // TEMP DIAGNOSTIC (SC-RANK2): pinpoint whether the internal>browser comparator
+  // is actually running, and whether Search Notes / Create Note are candidates.
+  // Remove once the override bug is confirmed fixed.
+  useEffect(() => {
+    if (!hasSearchQuery) return;
+    try {
+      const idOf = (c: any) => String(c?.command?.id || c?.stableKey || '');
+      const sn = commandCandidates.find((c) => idOf(c).includes('search-notes'));
+      const cn = commandCandidates.find((c) => idOf(c).includes('create-note'));
+      const internalCount = rootRankedCandidates.filter((c) => !c.isOrganicBrowserResult).length;
+      const browserCount = rootRankedCandidates.filter((c) => c.isOrganicBrowserResult).length;
+      const firstBrowserIdx = rootRankedCandidates.findIndex((c) => c.isOrganicBrowserResult);
+      const snIdx = rootRankedCandidates.findIndex((c) => idOf(c).includes('search-notes'));
+      const cnIdx = rootRankedCandidates.findIndex((c) => idOf(c).includes('create-note'));
+      const describe = (c: any, idx: number) => c
+        ? { score: Math.round(c.finalScore), matchKind: c.matchKind, organic: c.isOrganicBrowserResult, rankIdx: idx }
+        : 'NOT_A_CANDIDATE';
+      (window as any).electron?.whisperDebugLog?.('SC-RANK2', `q="${searchQuery}"`, {
+        cmdCands: commandCandidates.length,
+        browserCands: browserCandidates.length,
+        rootTotal: rootRankedCandidates.length,
+        internalCount,
+        browserCount,
+        // If the comparator works, firstBrowserIdx === internalCount (all internal first).
+        firstBrowserIdx,
+        comparatorWorking: firstBrowserIdx === -1 || firstBrowserIdx >= internalCount,
+        searchNotes: describe(sn, snIdx),
+        createNote: describe(cn, cnIdx),
+        RESULTS: queryResultCommands.map((c) => c.title),
+      });
+    } catch (e) {
+      (window as any).electron?.whisperDebugLog?.('SC-RANK2', 'ERR', String(e));
+    }
+  }, [hasSearchQuery, searchQuery, rootRankedCandidates, queryResultCommands, commandCandidates, browserCandidates]);
+
   const displayCommands = useMemo(() => {
     if (rootBangState.mode === 'selecting') return rootSearchSectionAssembly.displayCommands;
     if (rootBangState.mode === 'active') return rootSearchSectionAssembly.displayCommands;

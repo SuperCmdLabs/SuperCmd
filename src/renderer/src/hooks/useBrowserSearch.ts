@@ -418,7 +418,11 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
 
   return useMemo(
     () => ({ enabled, alphaChromiumRootSearchEnabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshOpenTabs: refreshTabs, refreshBrowserEntries: refreshEntries, refreshBrowserEntriesIfStale: refreshEntriesIfStale, getMatchKind, hasOpenTabMatch, executeBrowserSearch, resolve: resolveLocal }),
-    [enabled, alphaChromiumRootSearchEnabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshTabs, refreshEntries, refreshEntriesIfStale, getMatchKind, hasOpenTabMatch, executeBrowserSearch]
+    // `entries` and `tabs` MUST be deps: the result getters read entriesRef/tabsRef
+    // (stable callbacks), so without these the returned object keeps the same
+    // reference when browser data loads asynchronously — and downstream
+    // browserCandidates memos never recompute, making results pop in late.
+    [enabled, alphaChromiumRootSearchEnabled, getCompletion, getTopResult, getResults, getAllResults, getOpenTabResults, getBookmarkResults, getHistoryResults, getHistoryProfiles, getProfileFilterOptions, profiles, profileFilters, refreshTabs, refreshEntries, refreshEntriesIfStale, getMatchKind, hasOpenTabMatch, executeBrowserSearch, entries, tabs]
   );
 }
 
