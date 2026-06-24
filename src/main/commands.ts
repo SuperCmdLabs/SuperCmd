@@ -929,26 +929,18 @@ async function discoverSettingsSearchTermCommands(
   };
 
   for (const [sectionRaw, sectionValue] of Object.entries(data)) {
-    const sectionTitle = cleanPaneName(sectionRaw);
-    const sectionKey = sectionRaw.toLowerCase();
-    const sectionKeywords: string[] = [sectionKey];
-
-    if (sectionTitle && sectionTitle.toLowerCase() !== paneTitleLower) {
-      addCommand(sectionTitle, sectionKeywords, `section:${sectionRaw}`);
-    }
-
+    // Each top-level key in a .searchTerms file is an internal identifier
+    // (e.g. "AX_DISPLAY_FILTER_ENABLED"), NOT a user-facing label. The human
+    // titles live in localizableStrings[].title — only surface those, otherwise
+    // the launcher fills up with junk commands named after raw identifiers.
     const rows = Array.isArray((sectionValue as any)?.localizableStrings)
       ? (sectionValue as any).localizableStrings
       : [];
 
     for (const row of rows) {
       const rowTitle = String(row?.title || '').trim();
-      if (!rowTitle) continue;
-      const keywords = [
-        sectionKey,
-        sectionTitle.toLowerCase(),
-        ...splitSearchKeywords(String(row?.index || '')),
-      ].filter(Boolean);
+      if (!rowTitle || rowTitle.toLowerCase() === paneTitleLower) continue;
+      const keywords = splitSearchKeywords(String(row?.index || ''));
       addCommand(rowTitle, keywords, `${sectionRaw}:${rowTitle}`);
     }
   }
