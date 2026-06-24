@@ -99,6 +99,13 @@ export interface CommandInfo {
   }>;
   /** SuperCmd deeplink (e.g. `supercmd://extensions/<owner>/<ext>/<cmd>`). Set for extension and script commands. */
   deeplink?: string;
+  /**
+   * True for an individual setting parsed from a pane's .searchTerms file
+   * (e.g. "Color Filters" inside Accessibility), as opposed to the top-level
+   * pane itself. Used by search ranking to treat these as a low-priority
+   * fallback so they don't crowd out apps, commands, and panes.
+   */
+  settingsSubItem?: boolean;
   /** Bundle path on disk (used for icon extraction) */
   _bundlePath?: string;
 }
@@ -924,6 +931,7 @@ async function discoverSettingsSearchTermCommands(
       iconDataUrl: pane.iconDataUrl,
       category: 'settings',
       path: pane.path,
+      settingsSubItem: true,
       _bundlePath: pane._bundlePath,
     });
   };
