@@ -70,7 +70,7 @@ const {
   scoreRootSearchCandidate,
   scoreRootSearchFields,
 } = ranking;
-const { assembleRootSearchSections } = sections;
+const { assembleRootSearchSections, isRootResultPromotionCandidate } = sections;
 
 const now = Date.UTC(2026, 4, 17);
 
@@ -999,6 +999,64 @@ test('weak browser history does not autocomplete', () => {
     fields: [{ value: 'How to use Vivaldi', kind: 'label' }],
   });
   assert.equal(getSharedRootCompletion(query, [history]), null);
+});
+
+test('a settings sub-item ranks below a real command even on an exact match', () => {
+  const query = 'twf';
+  // Real extension command that only fuzzily matches the query.
+  const realCommand = candidate({
+    query,
+    id: 'toggle-window-float',
+    title: 'Toggle Window Float',
+    subtype: 'extension-command',
+    source: 'command',
+    fields: [{ value: 'Toggle Window Float', kind: 'label' }],
+  });
+  // Settings sub-item whose title matches the query EXACTLY, with the fallback
+  // noise penalty applied (as the launcher does for settingsSubItem commands).
+  const subItem = candidate({
+    query,
+    id: 'twf-setting',
+    title: 'TWF',
+    subtype: 'system-command',
+    source: 'command',
+    noisePenalty: 200,
+    commandExtra: { settingsSubItem: true },
+    fields: [{ value: 'TWF', kind: 'label' }],
+  });
+  // Even though the sub-item is an exact match (which normally wins the
+  // exact-match tiebreaker), it must rank below the fuzzily-matched real command.
+  const ranked = rankRootSearchCandidates([subItem, realCommand]);
+  assert.deepEqual(ranked.map((c) => c.command.id), ['toggle-window-float', 'twf-setting']);
+});
+
+test('a weak settings sub-item match is dropped below the promotion floor', () => {
+  // Strong (exact) sub-item match survives the penalty and is promoted.
+  const strong = candidate({
+    query: 'color filters',
+    id: 'color-filters',
+    title: 'Color filters',
+    subtype: 'system-command',
+    source: 'command',
+    noisePenalty: 200,
+    commandExtra: { settingsSubItem: true },
+    fields: [{ value: 'Color filters', kind: 'label' }],
+  });
+  assert.equal(isRootResultPromotionCandidate(strong, 'color filters'), true);
+
+  // Weak (subsequence) sub-item match falls under the 500 floor and is dropped,
+  // so partial/fuzzy queries don't flood results with settings toggles.
+  const weak = candidate({
+    query: 'clf',
+    id: 'color-filters',
+    title: 'Color filters',
+    subtype: 'system-command',
+    source: 'command',
+    noisePenalty: 200,
+    commandExtra: { settingsSubItem: true },
+    fields: [{ value: 'Color filters', kind: 'label' }],
+  });
+  assert.equal(isRootResultPromotionCandidate(weak, 'clf'), false);
 });
 
 // All tests passed if we reach this point without throwing an error.
