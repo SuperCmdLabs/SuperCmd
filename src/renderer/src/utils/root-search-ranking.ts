@@ -378,6 +378,17 @@ export function compareRootSearchCandidates(a: RootSearchCandidate, b: RootSearc
   const browserOrder = compareOrganicBrowserCandidates(a, b);
   if (browserOrder !== 0) return browserOrder;
 
+  // Settings sub-items (e.g. "Color Filters" inside Accessibility) are a strict
+  // fallback tier: they always rank below any other internal result — even on an
+  // exact match — so they never displace the app/command/pane the user is after.
+  // Placed after the organic-browser partition so the "internal beats browser"
+  // rule still holds, and before the exact-match/intent tiers (which would
+  // otherwise let an exactly-named sub-item leapfrog a fuzzily-matched command).
+  // This is a clean binary partition, so the comparator stays transitive.
+  const aSettingsSubItem = Boolean(a.command.settingsSubItem);
+  const bSettingsSubItem = Boolean(b.command.settingsSubItem);
+  if (aSettingsSubItem !== bSettingsSubItem) return aSettingsSubItem ? 1 : -1;
+
   if (a.isProtectedIntentMatch !== b.isProtectedIntentMatch) {
     return a.isProtectedIntentMatch ? -1 : 1;
   }

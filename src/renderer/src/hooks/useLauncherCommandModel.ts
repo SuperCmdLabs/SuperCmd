@@ -130,6 +130,13 @@ export type UseLauncherCommandModelResult = {
   selectedFileResultPath: string | null;
 };
 
+// Individual settings parsed from a pane's .searchTerms file (e.g. "Color
+// Filters") are a low-priority search fallback. They're only considered once
+// the query is at least this many chars, and carry a ranking penalty so they
+// sit below real apps/commands/panes.
+const SETTINGS_SUBITEM_MIN_QUERY_LEN = 3;
+const SETTINGS_SUBITEM_NOISE_PENALTY = 200;
+
 function inferCommandSubtype(command: CommandInfo): RootSearchSubtype {
   if (command.category === 'app') return 'app';
   if (getQuickLinkIdFromCommandId(command.id)) return 'quicklink';
@@ -522,9 +529,14 @@ export function useLauncherCommandModel({
 
   const commandCandidates = useMemo<RootSearchCandidate[]>(() => {
     if (!hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
+    // Individual settings (e.g. "Color Filters") are a fallback tier: skip them
+    // for very short queries where they'd flood the list, and let them through
+    // only once the user has typed enough to have a specific setting in mind.
+    const allowSettingsSubItems = searchQuery.trim().length >= SETTINGS_SUBITEM_MIN_QUERY_LEN;
     const searchableCommands = contextualCommands.filter((cmd) =>
       cmd.id !== WEB_SEARCH_COMMAND_ID &&
-      (!hiddenListOnlyCommandIds.has(cmd.id) || hasSearchQuery)
+      (!hiddenListOnlyCommandIds.has(cmd.id) || hasSearchQuery) &&
+      (allowSettingsSubItems || !cmd.settingsSubItem)
     );
     return rankCommands(searchableCommands, searchQuery, commandAliases)
       .map(({ command }) => {
@@ -556,7 +568,11 @@ export function useLauncherCommandModel({
           sourceQualityBoost: command.alwaysOnTop ? 80 : 0,
           freshnessBoost: 0,
           pathLocationBoost: 0,
-          noisePenalty: 0,
+          // Demote individual settings below real apps/commands/panes so they
+          // only surface as a fallback when nothing better matches. Weak
+          // (contains/subsequence) sub-item matches fall under the promotion
+          // floor entirely; strong (exact/prefix) ones still appear, lower down.
+          noisePenalty: command.settingsSubItem ? SETTINGS_SUBITEM_NOISE_PENALTY : 0,
           depthPenalty: 0,
         }, searchQuery, rootSearchRanking);
       })

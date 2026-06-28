@@ -99,6 +99,13 @@ export interface CommandInfo {
   }>;
   /** SuperCmd deeplink (e.g. `supercmd://extensions/<owner>/<ext>/<cmd>`). Set for extension and script commands. */
   deeplink?: string;
+  /**
+   * True for an individual setting parsed from a pane's .searchTerms file
+   * (e.g. "Color Filters" inside Accessibility), as opposed to the top-level
+   * pane itself. Used by search ranking to treat these as a low-priority
+   * fallback so they don't crowd out apps, commands, and panes.
+   */
+  settingsSubItem?: boolean;
   /** Bundle path on disk (used for icon extraction) */
   _bundlePath?: string;
 }
@@ -119,7 +126,9 @@ const STALE_REFRESH_COOLDOWN_MS = 15_000;
 // and are re-attached on load.  Bump the version when CommandInfo shape changes
 // in a breaking way.
 
-const COMMANDS_DISK_CACHE_VERSION = 1;
+// v2: settings panes now also expose their individual settings (search terms),
+// e.g. "Color Filters" inside Accessibility — refresh cached commands to include them.
+const COMMANDS_DISK_CACHE_VERSION = 2;
 let commandsDiskCachePath: string | null = null;
 
 function getCommandsDiskCachePath(): string {
@@ -922,31 +931,24 @@ async function discoverSettingsSearchTermCommands(
       iconDataUrl: pane.iconDataUrl,
       category: 'settings',
       path: pane.path,
+      settingsSubItem: true,
       _bundlePath: pane._bundlePath,
     });
   };
 
   for (const [sectionRaw, sectionValue] of Object.entries(data)) {
-    const sectionTitle = cleanPaneName(sectionRaw);
-    const sectionKey = sectionRaw.toLowerCase();
-    const sectionKeywords: string[] = [sectionKey];
-
-    if (sectionTitle && sectionTitle.toLowerCase() !== paneTitleLower) {
-      addCommand(sectionTitle, sectionKeywords, `section:${sectionRaw}`);
-    }
-
+    // Each top-level key in a .searchTerms file is an internal identifier
+    // (e.g. "AX_DISPLAY_FILTER_ENABLED"), NOT a user-facing label. The human
+    // titles live in localizableStrings[].title — only surface those, otherwise
+    // the launcher fills up with junk commands named after raw identifiers.
     const rows = Array.isArray((sectionValue as any)?.localizableStrings)
       ? (sectionValue as any).localizableStrings
       : [];
 
     for (const row of rows) {
       const rowTitle = String(row?.title || '').trim();
-      if (!rowTitle) continue;
-      const keywords = [
-        sectionKey,
-        sectionTitle.toLowerCase(),
-        ...splitSearchKeywords(String(row?.index || '')),
-      ].filter(Boolean);
+      if (!rowTitle || rowTitle.toLowerCase() === paneTitleLower) continue;
+      const keywords = splitSearchKeywords(String(row?.index || ''));
       addCommand(rowTitle, keywords, `${sectionRaw}:${rowTitle}`);
     }
   }
@@ -1151,12 +1153,23 @@ async function discoverSystemSettings(): Promise<CommandInfo[]> {
             _bundlePath: extPath,
           };
 
-          return paneCommand;
+          // Also surface the pane's individual settings (e.g. "Color Filters"
+          // inside Accessibility) by parsing the bundle's .searchTerms file, so
+          // they can be found by name just like in Spotlight.
+          const subItems = await discoverSettingsSearchTermCommands(
+            extPath,
+            paneCommand,
+            bundleId,
+            legacyBundleId,
+            searchTermsFileName
+          );
+
+          return [paneCommand, ...subItems];
         })
       );
 
       for (const item of items) {
-        if (item) results.push(item);
+        if (item) results.push(...item);
       }
     }
   }
