@@ -25,6 +25,8 @@ SuperCmd gives you Raycast-style extension workflows, hold-to-speak dictation, n
 
 <p align="center">
   <a href="https://buymeacoffee.com/shobhit99"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="48"></a>
+  &nbsp;&nbsp;
+  <a href="https://cal.com/shobhit10"><img src="./assets/hire-me-button.svg" alt="Hire Me" height="45"></a>
 </p>
 
 ## What It Is
