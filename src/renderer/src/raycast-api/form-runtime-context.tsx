@@ -28,17 +28,52 @@ export const FormContext = createContext<FormContextType>({
 let currentFormValues: Record<string, any> = {};
 let currentFormErrors: Record<string, string> = {};
 let currentFormPlaceholders: Record<string, string> = {};
+let currentFormSnapshotOwner: symbol | null = null;
 
-export function setCurrentFormValues(values: Record<string, any>) {
+export function setCurrentFormValues(values: Record<string, any>, owner?: symbol) {
+  if (owner) currentFormSnapshotOwner = owner;
   currentFormValues = values;
 }
 
-export function setCurrentFormErrors(errors: Record<string, string>) {
+export function setCurrentFormErrors(errors: Record<string, string>, owner?: symbol) {
+  if (owner) currentFormSnapshotOwner = owner;
   currentFormErrors = errors;
 }
 
-export function setCurrentFormPlaceholders(placeholders: Record<string, string>) {
+export function setCurrentFormPlaceholders(placeholders: Record<string, string>, owner?: symbol) {
+  if (owner) currentFormSnapshotOwner = owner;
   currentFormPlaceholders = placeholders;
+}
+
+export function clearCurrentFormSnapshot(owner?: symbol) {
+  if (owner && currentFormSnapshotOwner && currentFormSnapshotOwner !== owner) {
+    return false;
+  }
+
+  currentFormSnapshotOwner = null;
+  currentFormValues = {};
+  currentFormErrors = {};
+  currentFormPlaceholders = {};
+  return true;
+}
+
+export function getFormSnapshotRetentionMetrics() {
+  const serialized = JSON.stringify({
+    values: currentFormValues,
+    errors: currentFormErrors,
+    placeholders: currentFormPlaceholders,
+  });
+
+  return {
+    valueKeys: Object.keys(currentFormValues).length,
+    errorKeys: Object.keys(currentFormErrors).length,
+    placeholderKeys: Object.keys(currentFormPlaceholders).length,
+    totalKeys:
+      Object.keys(currentFormValues).length +
+      Object.keys(currentFormErrors).length +
+      Object.keys(currentFormPlaceholders).length,
+    serializedBytes: new TextEncoder().encode(serialized).byteLength,
+  };
 }
 
 export function getFormValues(): Record<string, any> {

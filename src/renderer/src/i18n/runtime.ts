@@ -1,35 +1,36 @@
 import enMessages from './locales/en.json';
-import zhHansMessages from './locales/zh-Hans.json';
-import zhHantMessages from './locales/zh-Hant.json';
-import jaMessages from './locales/ja.json';
-import koMessages from './locales/ko.json';
-import frMessages from './locales/fr.json';
-import deMessages from './locales/de.json';
-import esMessages from './locales/es.json';
-import ruMessages from './locales/ru.json';
-import itMessages from './locales/it.json';
 
 export type SupportedAppLocale = 'en' | 'zh-Hans' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'ru' | 'it';
 export type AppLanguageSetting = 'system' | SupportedAppLocale;
 export type TranslationValues = Record<string, string | number | boolean | null | undefined>;
-type MessageTree = Record<string, string | MessageTree>;
+interface MessageTree {
+  [key: string]: string | MessageTree;
+}
 
 export const DEFAULT_APP_LANGUAGE: AppLanguageSetting = 'system';
 export const FALLBACK_APP_LOCALE: SupportedAppLocale = 'en';
 export const APP_LANGUAGE_OPTIONS: AppLanguageSetting[] = ['system', 'en', 'zh-Hans', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'ru', 'it'];
 
-const MESSAGE_CATALOG: Record<SupportedAppLocale, MessageTree> = {
+type LocaleModule = { default: MessageTree } | MessageTree;
+
+const MESSAGE_CATALOG: Partial<Record<SupportedAppLocale, MessageTree>> = {
   en: enMessages as MessageTree,
-  'zh-Hans': zhHansMessages as MessageTree,
-  'zh-Hant': zhHantMessages as MessageTree,
-  'ja': jaMessages as MessageTree,
-  'ko': koMessages as MessageTree,
-  'fr': frMessages as MessageTree,
-  'de': deMessages as MessageTree,
-  'es': esMessages as MessageTree,
-  'ru': ruMessages as MessageTree,
-  'it': itMessages as MessageTree,
 };
+
+const LOCALE_LOADERS: Record<SupportedAppLocale, () => Promise<LocaleModule>> = {
+  en: () => Promise.resolve(enMessages as MessageTree),
+  'zh-Hans': () => import('./locales/zh-Hans.json'),
+  'zh-Hant': () => import('./locales/zh-Hant.json'),
+  ja: () => import('./locales/ja.json'),
+  ko: () => import('./locales/ko.json'),
+  fr: () => import('./locales/fr.json'),
+  de: () => import('./locales/de.json'),
+  es: () => import('./locales/es.json'),
+  ru: () => import('./locales/ru.json'),
+  it: () => import('./locales/it.json'),
+};
+
+const PENDING_LOCALE_LOADS: Partial<Record<SupportedAppLocale, Promise<MessageTree>>> = {};
 
 function resolveMessage(tree: MessageTree, key: string): string | null {
   const segments = String(key || '')
@@ -50,6 +51,36 @@ function interpolateMessage(template: string, values?: TranslationValues): strin
     const value = values[token];
     return value === undefined || value === null ? '' : String(value);
   });
+}
+
+function readLocaleModule(module: LocaleModule): MessageTree {
+  return ('default' in module ? module.default : module) as MessageTree;
+}
+
+export function isAppLocaleLoaded(locale: SupportedAppLocale): boolean {
+  return Boolean(MESSAGE_CATALOG[locale]);
+}
+
+export function loadAppLocale(locale: SupportedAppLocale): Promise<MessageTree> {
+  const loadedCatalog = MESSAGE_CATALOG[locale];
+  if (loadedCatalog) return Promise.resolve(loadedCatalog);
+
+  const pendingLoad = PENDING_LOCALE_LOADS[locale];
+  if (pendingLoad) return pendingLoad;
+
+  const loader = LOCALE_LOADERS[locale];
+  const load = loader()
+    .then((module) => {
+      const catalog = readLocaleModule(module);
+      MESSAGE_CATALOG[locale] = catalog;
+      return catalog;
+    })
+    .finally(() => {
+      delete PENDING_LOCALE_LOADS[locale];
+    });
+
+  PENDING_LOCALE_LOADS[locale] = load;
+  return load;
 }
 
 export function normalizeAppLanguage(value: unknown): AppLanguageSetting {
@@ -123,9 +154,11 @@ export function translateMessage(
   key: string,
   values?: TranslationValues
 ): string {
+  const localeCatalog = MESSAGE_CATALOG[locale];
+  const fallbackCatalog = MESSAGE_CATALOG[FALLBACK_APP_LOCALE];
   const localeMessage =
-    resolveMessage(MESSAGE_CATALOG[locale], key) ??
-    resolveMessage(MESSAGE_CATALOG[FALLBACK_APP_LOCALE], key);
+    (localeCatalog ? resolveMessage(localeCatalog, key) : null) ??
+    (fallbackCatalog ? resolveMessage(fallbackCatalog, key) : null);
   if (localeMessage == null) {
     if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
       console.warn(`[i18n] Missing translation key: "${key}"`);

@@ -44,6 +44,13 @@ export function getScopedLocalStorageKeys(key: string): { scopedKey: string; leg
   };
 }
 
+export function getScopedFrecencyStorageKeys(namespace: string): { scopedKey: string; legacyKeys: string[] } {
+  return {
+    scopedKey: `sc-frecency:${getExtensionStorageScope()}:${namespace}`,
+    legacyKeys: [`sc-frecency-${namespace}`],
+  };
+}
+
 export function readScopedJsonState<T>(
   scopedKey: string,
   legacyKeys: string[],

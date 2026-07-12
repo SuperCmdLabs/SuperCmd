@@ -245,17 +245,33 @@ export function getScene(id: string): CanvasScene {
     const scenePath = getScenePath(id);
     if (fs.existsSync(scenePath)) {
       const data = fs.readFileSync(scenePath, 'utf-8');
-      const parsed = JSON.parse(data);
-      return {
-        elements: Array.isArray(parsed.elements) ? parsed.elements : [],
-        appState: parsed.appState || {},
-        files: parsed.files || {},
-      };
+      return parseSceneData(data);
     }
   } catch (e) {
     console.error(`Failed to load scene for canvas ${id}:`, e);
   }
   return { elements: [], appState: {}, files: {} };
+}
+
+export async function getSceneAsync(id: string): Promise<CanvasScene> {
+  try {
+    const data = await fsp.readFile(getScenePath(id), 'utf-8');
+    return parseSceneData(data);
+  } catch (e: any) {
+    if (e?.code !== 'ENOENT') {
+      console.error(`Failed to load scene for canvas ${id}:`, e);
+    }
+  }
+  return { elements: [], appState: {}, files: {} };
+}
+
+function parseSceneData(data: string): CanvasScene {
+  const parsed = JSON.parse(data);
+  return {
+    elements: Array.isArray(parsed.elements) ? parsed.elements : [],
+    appState: parsed.appState || {},
+    files: parsed.files || {},
+  };
 }
 
 export async function saveScene(id: string, scene: CanvasScene): Promise<void> {
@@ -292,6 +308,17 @@ export function getThumbnail(id: string): string | null {
     }
   } catch (e) {
     console.error(`Failed to load thumbnail for canvas ${id}:`, e);
+  }
+  return null;
+}
+
+export async function getThumbnailAsync(id: string): Promise<string | null> {
+  try {
+    return await fsp.readFile(getThumbnailPath(id), 'utf-8');
+  } catch (e: any) {
+    if (e?.code !== 'ENOENT') {
+      console.error(`Failed to load thumbnail for canvas ${id}:`, e);
+    }
   }
   return null;
 }

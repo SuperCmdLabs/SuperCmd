@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   DEFAULT_APP_LANGUAGE,
+  loadAppLocale,
   normalizeAppLanguage,
   resolveAppLocale,
   translateMessage,
@@ -19,6 +20,7 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 
 export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguage] = useState<AppLanguageSetting>(DEFAULT_APP_LANGUAGE);
+  const [catalogVersion, setCatalogVersion] = useState(0);
 
   useEffect(() => {
     let disposed = false;
@@ -45,9 +47,28 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [language]
   );
 
+  useEffect(() => {
+    let disposed = false;
+    loadAppLocale(locale)
+      .then(() => {
+        if (!disposed) {
+          setCatalogVersion((version) => version + 1);
+        }
+      })
+      .catch((error) => {
+        if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
+          console.warn(`[i18n] Failed to load locale "${locale}"`, error);
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [locale]);
+
   const t = useCallback(
     (key: string, values?: TranslationValues) => translateMessage(locale, key, values),
-    [locale]
+    [locale, catalogVersion]
   );
 
   const value = useMemo(() => ({ language, locale, t }), [language, locale, t]);

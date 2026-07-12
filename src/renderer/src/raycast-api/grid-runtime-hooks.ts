@@ -4,19 +4,33 @@
  * Extracted registry/grouping logic for the grid runtime container.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GridItemRegistration, GridRegistryAPI } from './grid-runtime-items';
 
 export function useGridRegistry() {
   const registryRef = useRef(new Map<string, GridItemRegistration>());
   const [registryVersion, setRegistryVersion] = useState(0);
+  const mountedRef = useRef(true);
   const pendingRef = useRef(false);
   const lastSnapshotRef = useRef('');
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      pendingRef.current = false;
+    };
+  }, []);
 
   const scheduleRegistryUpdate = useCallback(() => {
     if (pendingRef.current) return;
     pendingRef.current = true;
     queueMicrotask(() => {
+      if (!mountedRef.current) {
+        pendingRef.current = false;
+        return;
+      }
       pendingRef.current = false;
       const snapshot = Array.from(registryRef.current.values())
         .map((entry) => {

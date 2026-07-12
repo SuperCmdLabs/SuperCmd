@@ -204,14 +204,15 @@ import {
   deleteCanvas,
   duplicateCanvas,
   togglePinCanvas,
-  getScene,
+  getSceneAsync,
   saveScene,
   saveThumbnail,
-  getThumbnail,
+  getThumbnailAsync,
   exportCanvas,
   isCanvasLibInstalled,
   getCanvasLibDir,
 } from './canvas-store';
+import { serveCanvasLibAssetFromFile } from './sc-asset-protocol';
 import {
   type RaycastImportProgress,
   executeRaycastConfigImport,
@@ -13657,30 +13658,9 @@ app.whenReady().then(async () => {
       const url = new URL(request.url);
       // canvas-lib: serve files from the canvas-lib directory
       if (url.hostname === 'canvas-lib') {
-        let relPath = decodeURIComponent(url.pathname || '').replace(/^\//, '');
-        if (!relPath) return new Response('Bad Request', { status: 400 });
-        const canvasLibPath = path.join(app.getPath('userData'), 'canvas-lib');
-        const fullPath = path.join(canvasLibPath, relPath);
-        console.log('[sc-asset:canvas-lib] Serving:', fullPath);
-        try {
-          const data = fs.readFileSync(fullPath);
-          const ext = path.extname(fullPath).toLowerCase();
-          const mimeTypes: Record<string, string> = {
-            '.js': 'application/javascript',
-            '.css': 'text/css',
-            '.svg': 'image/svg+xml',
-            '.woff2': 'font/woff2',
-            '.woff': 'font/woff',
-            '.ttf': 'font/ttf',
-            '.png': 'image/png',
-          };
-          return new Response(data, {
-            headers: { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' },
-          });
-        } catch (e) {
-          console.error('[sc-asset:canvas-lib] File not found:', fullPath);
-          return new Response('Not Found', { status: 404 });
-        }
+        return serveCanvasLibAssetFromFile(request.url, getCanvasLibDir(), (fileUrl) =>
+          net.fetch(fileUrl)
+        );
       }
 
       if (url.hostname !== 'ext-asset') {
@@ -17264,8 +17244,8 @@ if let tiff = image?.tiffRepresentation {
     return togglePinCanvas(id);
   });
 
-  ipcMain.handle('canvas-get-scene', (_event: any, id: string) => {
-    return getScene(id);
+  ipcMain.handle('canvas-get-scene', async (_event: any, id: string) => {
+    return getSceneAsync(id);
   });
 
   ipcMain.handle('canvas-save-scene', async (_event: any, id: string, scene: any) => {
@@ -17287,8 +17267,8 @@ if let tiff = image?.tiffRepresentation {
     mainWindow?.webContents.send('canvas-thumbnail-updated', id);
   });
 
-  ipcMain.handle('canvas-get-thumbnail', (_event: any, id: string) => {
-    return getThumbnail(id);
+  ipcMain.handle('canvas-get-thumbnail', async (_event: any, id: string) => {
+    return getThumbnailAsync(id);
   });
 
   ipcMain.handle('open-canvas-window', (_event: any, mode?: string, canvasJson?: string) => {
