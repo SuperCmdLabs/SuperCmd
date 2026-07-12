@@ -27,7 +27,7 @@ import IconPen from '../icons/Pen';
 import IconMagicWand from '../icons/MagicWand';
 import { formatShortcutForDisplay } from './hyper-key';
 import { renderQuickLinkIconGlyph } from './quicklink-icons';
-import { scoreRootSearchFields } from './root-search-ranking';
+import { scoreRootSearchFields, type MatchKind, type RootSearchScoringField } from './root-search-ranking';
 import { getTranslitVariant } from './transliterate';
 
 export interface LauncherAction {
@@ -192,7 +192,47 @@ type SearchCandidate = {
 export type RankedCommand = {
   command: CommandInfo;
   score: number;
+  matchKind?: MatchKind;
+  matchScore?: number;
 };
+
+export type IndexedRankedCommand = RankedCommand;
+
+export type RootCommandScoreIndexEntry = {
+  command: CommandInfo;
+  rankingFields: RootSearchScoringField[];
+  normalizedAlias: string;
+};
+
+export type RootCommandScoreIndex = {
+  entries: RootCommandScoreIndexEntry[];
+};
+
+function getRootSearchCommandRankingFields(command: CommandInfo, alias: string): RootSearchScoringField[] {
+  return [
+    { value: command.title, kind: 'label', weight: 1 },
+    { value: alias, kind: 'alias', weight: 1.06 },
+    { value: command.subtitle, kind: 'description', weight: 0.74 },
+    ...(command.keywords || []).map((keyword) => ({ value: keyword, kind: 'description' as const, weight: 0.7 })),
+  ];
+}
+
+export function createRootCommandScoreIndex(
+  commands: CommandInfo[],
+  aliasLookup: Record<string, string> = {}
+): RootCommandScoreIndex {
+  return {
+    entries: commands.map((command) => {
+      const alias = aliasLookup[command.id] || '';
+      const rankingFields = getRootSearchCommandRankingFields(command, alias);
+      return {
+        command,
+        rankingFields,
+        normalizedAlias: normalizeSearchText(alias),
+      };
+    }),
+  };
+}
 
 function bestTermScore(term: string, candidates: SearchCandidate[]): number {
   let best = 0;
@@ -344,32 +384,47 @@ export function rankCommands(
   query: string,
   aliasLookup: Record<string, string> = {}
 ): RankedCommand[] {
+  return rankCommandsWithIndex(createRootCommandScoreIndex(commands, aliasLookup), query);
+}
+
+type RankedCommandSortEntry = IndexedRankedCommand & {
+  hasExactAliasMatch: boolean;
+};
+
+export function rankCommandsWithIndex(index: RootCommandScoreIndex, query: string): IndexedRankedCommand[] {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) {
-    return commands.map((command) => ({ command, score: command.alwaysOnTop ? Number.MAX_SAFE_INTEGER : 0 }));
+    return index.entries.map(({ command }) => ({
+      command,
+      score: command.alwaysOnTop ? Number.MAX_SAFE_INTEGER : 0,
+      matchKind: 'exact',
+      matchScore: 0,
+    }));
   }
 
-  return commands
-    .map((command): RankedCommand | null => {
-      const alias = aliasLookup[command.id] || '';
-      const scored = scoreRootSearchFields(query, [
-        { value: command.title, kind: 'label', weight: 1 },
-        { value: alias, kind: 'alias', weight: 1.06 },
-        { value: command.subtitle, kind: 'description', weight: 0.74 },
-        ...(command.keywords || []).map((keyword) => ({ value: keyword, kind: 'description' as const, weight: 0.7 })),
-      ]);
-      if (!scored.matched) return null;
-      return { command, score: scored.matchScore };
+  return index.entries
+    .map((entry): RankedCommandSortEntry | null => {
+      const ranked = scoreRootSearchFields(query, entry.rankingFields);
+      if (!ranked.matched) return null;
+      return {
+        command: entry.command,
+        score: ranked.matchScore,
+        hasExactAliasMatch: entry.normalizedAlias === normalizedQuery,
+      };
     })
-    .filter((entry): entry is RankedCommand => entry !== null)
+    .filter((entry): entry is RankedCommandSortEntry => entry !== null)
     .sort((a, b) => {
-      const aAlias = normalizeSearchText(aliasLookup[a.command.id] || '') === normalizedQuery;
-      const bAlias = normalizeSearchText(aliasLookup[b.command.id] || '') === normalizedQuery;
-      if (aAlias !== bAlias) return Number(bAlias) - Number(aAlias);
+      if (a.hasExactAliasMatch !== b.hasExactAliasMatch) {
+        return Number(b.hasExactAliasMatch) - Number(a.hasExactAliasMatch);
+      }
       if (a.command.alwaysOnTop !== b.command.alwaysOnTop) return a.command.alwaysOnTop ? -1 : 1;
       if (b.score !== a.score) return b.score - a.score;
       return a.command.title.localeCompare(b.command.title);
-    });
+    })
+    .map(({ command, score }) => ({
+      command,
+      score,
+    }));
 }
 
 /**

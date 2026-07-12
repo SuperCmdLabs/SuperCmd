@@ -68,6 +68,8 @@ const MAX_SPOTLIGHT_CANDIDATES = 10_000;
 const SPOTLIGHT_SEARCH_TIMEOUT_MS = 2_400;
 const INDEX_SCAN_YIELD_EVERY_DIRECTORIES = 80;
 const INDEX_SCAN_PAUSE_MS = 6;
+const MIN_PREFIX_BUCKET_COMPACT_DELETED_IDS = 16;
+const MIN_PREFIX_BUCKET_COMPACT_DELETED_RATIO = 0.08;
 
 const execFileAsync = promisify(execFile);
 
@@ -261,22 +263,112 @@ function addPrefixIndexValue(prefixToEntryIds: Map<string, number[]>, key: strin
   bucket.push(entryId);
 }
 
+function ensurePrefixIndexValue(prefixToEntryIds: Map<string, number[]>, key: string, entryId: number): void {
+  if (!key) return;
+  const bucket = prefixToEntryIds.get(key);
+  if (!bucket) {
+    prefixToEntryIds.set(key, [entryId]);
+    return;
+  }
+  if (!bucket.includes(entryId)) {
+    bucket.push(entryId);
+  }
+}
+
+function getEntryPrefixIndexKeys(entry: Pick<IndexedEntry, 'tokens' | 'pathTokens' | 'compactName'>): Set<string> {
+  const indexKeys = new Set<string>();
+  for (const token of entry.tokens) {
+    if (!token) continue;
+    const maxLen = Math.min(MAX_PREFIX_LENGTH, token.length);
+    for (let length = 1; length <= maxLen; length += 1) {
+      indexKeys.add(token.slice(0, length));
+    }
+  }
+  for (const token of entry.pathTokens) {
+    if (!token) continue;
+    const maxLen = Math.min(MAX_PREFIX_LENGTH, token.length);
+    for (let length = 2; length <= maxLen; length += 1) {
+      indexKeys.add(token.slice(0, length));
+    }
+  }
+  const compactPrefix = entry.compactName.slice(0, Math.min(MAX_PREFIX_LENGTH, entry.compactName.length));
+  if (compactPrefix) indexKeys.add(compactPrefix);
+  return indexKeys;
+}
+
+function getEntryPrimaryPrefixIndexKeys(entry: Pick<IndexedEntry, 'tokens' | 'compactName'>): Set<string> {
+  const indexKeys = new Set<string>();
+  const primaryToken = entry.tokens[0] || '';
+  if (primaryToken) {
+    indexKeys.add(primaryToken.slice(0, Math.min(MAX_PREFIX_LENGTH, primaryToken.length)));
+  }
+  const compactPrefix = entry.compactName.slice(0, Math.min(MAX_PREFIX_LENGTH, entry.compactName.length));
+  if (compactPrefix) indexKeys.add(compactPrefix);
+  return indexKeys;
+}
+
+function compactPrefixBucketsForEntries(snapshot: IndexSnapshot, entries: IndexedEntry[]): void {
+  if (entries.length === 0) return;
+
+  const deletedIdsByKey = new Map<string, number>();
+  for (const entry of entries) {
+    for (const key of getEntryPrimaryPrefixIndexKeys(entry)) {
+      deletedIdsByKey.set(key, (deletedIdsByKey.get(key) || 0) + 1);
+    }
+  }
+
+  for (const [key, deletedIds] of deletedIdsByKey) {
+    const bucket = snapshot.prefixToEntryIds.get(key);
+    if (!bucket || bucket.length === 0) continue;
+    if (
+      deletedIds < MIN_PREFIX_BUCKET_COMPACT_DELETED_IDS ||
+      deletedIds / bucket.length < MIN_PREFIX_BUCKET_COMPACT_DELETED_RATIO
+    ) {
+      continue;
+    }
+
+    let writeIndex = 0;
+    for (let readIndex = 0; readIndex < bucket.length; readIndex += 1) {
+      const entryId = bucket[readIndex];
+      const entry = snapshot.entries[entryId];
+      if (!entry || entry.deleted) continue;
+      bucket[writeIndex] = entryId;
+      writeIndex += 1;
+    }
+
+    if (writeIndex === 0) {
+      snapshot.prefixToEntryIds.delete(key);
+    } else {
+      bucket.length = writeIndex;
+    }
+  }
+}
+
 function indexEntry(
   snapshot: IndexSnapshot,
   entry: Omit<IndexedEntry, 'normalizedName' | 'normalizedPath' | 'compactName' | 'tokens' | 'pathTokens' | 'deleted'>
 ): void {
+  const entryPath = normalizeIndexedPath(entry.path);
+  if (!entryPath) return;
+  const parentPath = normalizeIndexedPath(entry.parentPath) || path.dirname(entryPath);
   const normalizedName = normalizeSearchText(entry.name);
   if (!normalizedName) return;
-  const normalizedPath = normalizePathSearchText(entry.path);
+  const normalizedPath = normalizePathSearchText(entryPath);
   if (!normalizedPath) return;
 
-  const existingId = snapshot.pathToEntryId.get(entry.path);
+  const existingId = snapshot.pathToEntryId.get(entryPath);
   if (existingId !== undefined) {
     const existing = snapshot.entries[existingId];
     if (existing) {
+      const wasDeleted = Boolean(existing.deleted);
       existing.deleted = false;
       existing.isDirectory = entry.isDirectory;
-      existing.parentPath = entry.parentPath;
+      existing.parentPath = parentPath;
+      if (wasDeleted) {
+        for (const key of getEntryPrefixIndexKeys(existing)) {
+          ensurePrefixIndexValue(snapshot.prefixToEntryIds, key, existingId);
+        }
+      }
       return;
     }
   }
@@ -284,12 +376,14 @@ function indexEntry(
   if (snapshot.entries.length >= MAX_INDEX_ENTRIES) return;
 
   const tokens = tokenizeSearchText(entry.name);
-  const pathTokens = tokenizeSearchText(entry.path);
+  const pathTokens = tokenizeSearchText(entryPath);
   const compactName = normalizedName.replace(/\s+/g, '');
   const entryId = snapshot.entries.length;
 
   const nextEntry: IndexedEntry = {
     ...entry,
+    path: entryPath,
+    parentPath,
     normalizedName,
     normalizedPath,
     compactName,
@@ -297,26 +391,9 @@ function indexEntry(
     pathTokens,
   };
   snapshot.entries.push(nextEntry);
-  snapshot.pathToEntryId.set(entry.path, entryId);
+  snapshot.pathToEntryId.set(entryPath, entryId);
 
-  const seenIndexKeys = new Set<string>();
-  for (const token of tokens) {
-    if (!token) continue;
-    const maxLen = Math.min(MAX_PREFIX_LENGTH, token.length);
-    for (let length = 1; length <= maxLen; length += 1) {
-      seenIndexKeys.add(token.slice(0, length));
-    }
-  }
-  for (const token of pathTokens) {
-    if (!token) continue;
-    const maxLen = Math.min(MAX_PREFIX_LENGTH, token.length);
-    for (let length = 2; length <= maxLen; length += 1) {
-      seenIndexKeys.add(token.slice(0, length));
-    }
-  }
-  seenIndexKeys.add(compactName.slice(0, Math.min(MAX_PREFIX_LENGTH, compactName.length)));
-
-  for (const key of seenIndexKeys) {
+  for (const key of getEntryPrefixIndexKeys(nextEntry)) {
     addPrefixIndexValue(snapshot.prefixToEntryIds, key, entryId);
   }
 }
@@ -796,28 +873,136 @@ async function applyWatchEventBatch(paths: string[]): Promise<void> {
   }
 }
 
-function tombstoneDeletedPaths(snapshot: IndexSnapshot, deletePaths: string[]): void {
-  const directIds = new Set<number>();
-  for (const deletedPath of deletePaths) {
-    const id = snapshot.pathToEntryId.get(deletedPath);
-    if (id !== undefined) directIds.add(id);
+function hasDeletedPathAncestor(candidatePath: string, deletedPathSet: Set<string>): boolean {
+  let currentPath = path.dirname(candidatePath);
+  while (currentPath && currentPath !== candidatePath) {
+    if (deletedPathSet.has(currentPath)) return true;
+    const parentPath = path.dirname(currentPath);
+    if (parentPath === currentPath) break;
+    currentPath = parentPath;
   }
-  const prefixes = deletePaths.map((p) => p + path.sep);
+  return false;
+}
 
-  for (let i = 0; i < snapshot.entries.length; i += 1) {
-    const entry = snapshot.entries[i];
-    if (entry.deleted) continue;
-    if (directIds.has(i)) {
-      entry.deleted = true;
+function normalizeIndexedPath(candidatePath: string): string | null {
+  const rawPath = String(candidatePath || '');
+  if (!rawPath) return null;
+  return path.resolve(rawPath);
+}
+
+function normalizeDeletedPath(candidatePath: string): string | null {
+  return normalizeIndexedPath(candidatePath);
+}
+
+function collapseNestedDeletedPaths(deletePaths: string[]): string[] {
+  const uniquePaths = new Set<string>();
+  for (const deletePath of deletePaths) {
+    const normalizedPath = normalizeDeletedPath(deletePath);
+    if (normalizedPath) uniquePaths.add(normalizedPath);
+  }
+
+  const sortedPaths = [...uniquePaths].sort((a, b) => {
+    if (a.length !== b.length) return a.length - b.length;
+    return a.localeCompare(b);
+  });
+  const collapsedPaths: string[] = [];
+  const collapsedPathSet = new Set<string>();
+
+  for (const deletePath of sortedPaths) {
+    if (hasDeletedPathAncestor(deletePath, collapsedPathSet)) {
       continue;
     }
-    for (const prefix of prefixes) {
-      if (entry.path.startsWith(prefix)) {
-        entry.deleted = true;
-        break;
+    collapsedPaths.push(deletePath);
+    collapsedPathSet.add(deletePath);
+  }
+
+  return collapsedPaths;
+}
+
+function getDescendantPathPrefix(rootPath: string): string {
+  return rootPath.endsWith(path.sep) ? rootPath : `${rootPath}${path.sep}`;
+}
+
+function markEntryDeleted(snapshot: IndexSnapshot, entry: IndexedEntry, deletedEntries: IndexedEntry[]): void {
+  if (entry.deleted) return;
+  entry.deleted = true;
+  deletedEntries.push(entry);
+}
+
+function markDescendantEntriesDeleted(
+  snapshot: IndexSnapshot,
+  deletedRootPaths: string[],
+  deletedEntries: IndexedEntry[]
+): void {
+  if (deletedRootPaths.length === 0) return;
+
+  if (deletedRootPaths.length === 1) {
+    const descendantPrefix = getDescendantPathPrefix(deletedRootPaths[0]);
+    for (const entry of snapshot.entries) {
+      if (entry.deleted) continue;
+      if (entry.path.startsWith(descendantPrefix)) {
+        markEntryDeleted(snapshot, entry, deletedEntries);
       }
     }
+    return;
   }
+
+  const deletedPathSet = new Set(deletedRootPaths);
+  for (const entry of snapshot.entries) {
+    if (entry.deleted) continue;
+    if (hasDeletedPathAncestor(entry.path, deletedPathSet)) {
+      markEntryDeleted(snapshot, entry, deletedEntries);
+    }
+  }
+}
+
+function tombstoneDeletedPaths(snapshot: IndexSnapshot, deletePaths: string[]): void {
+  const collapsedDeletePaths = collapseNestedDeletedPaths(deletePaths);
+  if (collapsedDeletePaths.length === 0) return;
+
+  const deletedRootPaths: string[] = [];
+  const deletedEntries: IndexedEntry[] = [];
+  for (const deletedPath of collapsedDeletePaths) {
+    const id = snapshot.pathToEntryId.get(deletedPath);
+    if (id === undefined) {
+      deletedRootPaths.push(deletedPath);
+      continue;
+    }
+
+    const entry = snapshot.entries[id];
+    if (entry) {
+      markEntryDeleted(snapshot, entry, deletedEntries);
+    }
+    if (entry?.isDirectory) {
+      deletedRootPaths.push(deletedPath);
+    }
+  }
+
+  markDescendantEntriesDeleted(snapshot, deletedRootPaths, deletedEntries);
+  compactPrefixBucketsForEntries(snapshot, deletedEntries);
+}
+
+function isDeletedIndexedPathOrDescendant(snapshot: IndexSnapshot | null, candidatePath: string): boolean {
+  if (!snapshot) return false;
+  const normalizedPath = normalizeIndexedPath(candidatePath);
+  if (!normalizedPath) return false;
+
+  let currentPath = normalizedPath;
+  while (currentPath) {
+    const entryId = snapshot.pathToEntryId.get(currentPath);
+    if (entryId !== undefined) {
+      const entry = snapshot.entries[entryId];
+      if (entry?.deleted && (currentPath === normalizedPath || entry.isDirectory)) {
+        return true;
+      }
+    }
+
+    const parentPath = path.dirname(currentPath);
+    if (parentPath === currentPath) break;
+    currentPath = parentPath;
+  }
+
+  return false;
 }
 
 async function walkAddedDirectory(snapshot: IndexSnapshot, dirPath: string): Promise<void> {
@@ -950,7 +1135,8 @@ export async function searchIndexedFiles(
         const scored: Array<{ entry: IndexedEntry; score: number }> = [];
         for (const entryId of candidateIds) {
           const entry = snapshot.entries[entryId];
-          if (!entry || entry.deleted) continue;
+          if (!entry) continue;
+          if (entry.deleted) continue;
           const score = scoreEntryMatch(entry, normalizedQuery, terms);
           if (score <= 0) continue;
           scored.push({ entry, score });
@@ -1030,6 +1216,7 @@ export async function searchIndexedFiles(
 
     const candidatePath = path.resolve(candidateRawPath);
     if (existingPaths.has(candidatePath)) continue;
+    if (isDeletedIndexedPathOrDescendant(snapshot, candidatePath)) continue;
     if (shouldSkipPathForSearch(candidatePath, configuredHomeDir)) continue;
 
     const candidateName = path.basename(candidatePath);

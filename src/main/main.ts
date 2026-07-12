@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { fork, execFileSync, type ChildProcess } from 'child_process';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
-import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery, refreshCommandsNow } from './commands';
+import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery, refreshCommandsNow, refreshCommandsForQuickLinkChange } from './commands';
 import {
   loadSettings,
   saveSettings,
@@ -17337,36 +17337,43 @@ if let tiff = image?.tiffRepresentation {
     return getQuickLinkDynamicFieldsById(id);
   });
 
-  ipcMain.handle('quicklink-create', (_event: any, data: any) => {
-    const created = createQuickLink(data || {});
-    invalidateCache();
+  const refreshQuickLinkCommandsBeforeBroadcast = async (reason: string) => {
+    try {
+      await refreshCommandsForQuickLinkChange();
+    } catch (error) {
+      console.warn(`[Commands] Quick link targeted refresh failed (${reason}); falling back to full refresh:`, error);
+      invalidateCache();
+      await refreshCommandsNow();
+    }
     broadcastCommandsUpdated();
+  };
+
+  ipcMain.handle('quicklink-create', async (_event: any, data: any) => {
+    const created = createQuickLink(data || {});
+    await refreshQuickLinkCommandsBeforeBroadcast('create');
     return created;
   });
 
-  ipcMain.handle('quicklink-update', (_event: any, id: string, data: any) => {
+  ipcMain.handle('quicklink-update', async (_event: any, id: string, data: any) => {
     const updated = updateQuickLink(id, data || {});
     if (updated) {
-      invalidateCache();
-      broadcastCommandsUpdated();
+      await refreshQuickLinkCommandsBeforeBroadcast('update');
     }
     return updated;
   });
 
-  ipcMain.handle('quicklink-delete', (_event: any, id: string) => {
+  ipcMain.handle('quicklink-delete', async (_event: any, id: string) => {
     const removed = deleteQuickLink(id);
     if (removed) {
-      invalidateCache();
-      broadcastCommandsUpdated();
+      await refreshQuickLinkCommandsBeforeBroadcast('delete');
     }
     return removed;
   });
 
-  ipcMain.handle('quicklink-duplicate', (_event: any, id: string) => {
+  ipcMain.handle('quicklink-duplicate', async (_event: any, id: string) => {
     const duplicated = duplicateQuickLink(id);
     if (duplicated) {
-      invalidateCache();
-      broadcastCommandsUpdated();
+      await refreshQuickLinkCommandsBeforeBroadcast('duplicate');
     }
     return duplicated;
   });
