@@ -94,11 +94,6 @@ const SEARCH_SEPARATOR_REGEX = /[^\p{L}\p{N}]+/gu;
 const COMBINING_MARK_REGEX = /\p{M}/gu;
 const DAY = 24 * 60 * 60 * 1000;
 
-// Build liveness stamp — confirms the running renderer has the internal>browser
-// precedence fix. Grep the bundle (dist/renderer/assets/*.js) for this string,
-// or look for it in the DevTools console at startup. Remove once verified.
-try { console.info('[SC-RANK build 2026-06-19c internal>browser precedence ACTIVE]'); } catch {}
-
 export const ROOT_SEARCH_RESULTS_LIMIT = 8;
 export const ROOT_SEARCH_PROMOTION_SCORE = 700;
 

@@ -27,7 +27,11 @@ import IconPen from '../icons/Pen';
 import IconMagicWand from '../icons/MagicWand';
 import { formatShortcutForDisplay } from './hyper-key';
 import { renderQuickLinkIconGlyph } from './quicklink-icons';
-import { scoreRootSearchFields } from './root-search-ranking';
+import {
+  scoreRootSearchFields,
+  type MatchKind,
+  type RootSearchScoringField,
+} from './root-search-ranking';
 import { getTranslitVariant } from './transliterate';
 
 export interface LauncherAction {
@@ -192,7 +196,18 @@ type SearchCandidate = {
 export type RankedCommand = {
   command: CommandInfo;
   score: number;
+  matchKind: MatchKind;
+  matchScore: number;
 };
+
+function getRootSearchCommandScoringFields(command: CommandInfo, alias: string): RootSearchScoringField[] {
+  return [
+    { value: command.title, kind: 'label', weight: 1 },
+    { value: alias, kind: 'alias', weight: 1.08 },
+    { value: command.subtitle, kind: 'description', weight: 0.74 },
+    ...(command.keywords || []).map((keyword) => ({ value: keyword, kind: 'description' as const, weight: 0.68 })),
+  ];
+}
 
 function bestTermScore(term: string, candidates: SearchCandidate[]): number {
   let best = 0;
@@ -346,20 +361,25 @@ export function rankCommands(
 ): RankedCommand[] {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) {
-    return commands.map((command) => ({ command, score: command.alwaysOnTop ? Number.MAX_SAFE_INTEGER : 0 }));
+    return commands.map((command) => ({
+      command,
+      score: command.alwaysOnTop ? Number.MAX_SAFE_INTEGER : 0,
+      matchKind: 'exact',
+      matchScore: 0,
+    }));
   }
 
   return commands
     .map((command): RankedCommand | null => {
       const alias = aliasLookup[command.id] || '';
-      const scored = scoreRootSearchFields(query, [
-        { value: command.title, kind: 'label', weight: 1 },
-        { value: alias, kind: 'alias', weight: 1.06 },
-        { value: command.subtitle, kind: 'description', weight: 0.74 },
-        ...(command.keywords || []).map((keyword) => ({ value: keyword, kind: 'description' as const, weight: 0.7 })),
-      ]);
+      const scored = scoreRootSearchFields(query, getRootSearchCommandScoringFields(command, alias));
       if (!scored.matched) return null;
-      return { command, score: scored.matchScore };
+      return {
+        command,
+        score: scored.matchScore,
+        matchKind: scored.matchKind,
+        matchScore: scored.matchScore,
+      };
     })
     .filter((entry): entry is RankedCommand => entry !== null)
     .sort((a, b) => {

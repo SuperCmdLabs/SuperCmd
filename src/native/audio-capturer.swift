@@ -279,6 +279,16 @@ class AudioCapturer {
   // MARK: Buffer processing
 
   private func processBuffer(_ buffer: AVAudioPCMBuffer) {
+    let now = Date()
+    let shouldUpdateMeter = now.timeIntervalSince(lastMeterAt) >= meterInterval
+
+    guard isRecording || shouldUpdateMeter else { return }
+
+    if !isRecording {
+      updateMeter(fromInputBuffer: buffer, now: now)
+      return
+    }
+
     guard let converted = convertBuffer(buffer),
           converted.frameLength > 0,
           let samples = converted.floatChannelData?[0]
@@ -290,25 +300,100 @@ class AudioCapturer {
       ringBuffer.append(UnsafeBufferPointer(start: samples, count: sampleCount))
     }
 
-    // Compute meter
-    let now = Date()
-    if now.timeIntervalSince(lastMeterAt) >= meterInterval {
-      var sumSquares: Float = 0
-      var peak: Float = 0
-      for i in 0..<sampleCount {
-        let s = samples[i]
-        sumSquares += s * s
-        peak = max(peak, abs(s))
-      }
-      let rms = sqrt(sumSquares / Float(max(1, sampleCount)))
-      meterAverage = Double(min(1, rms * 5))
-      meterPeak = Double(min(1, peak * 5))
-      lastMeterAt = now
+    if shouldUpdateMeter {
+      updateMeter(samples: samples, sampleCount: sampleCount, stride: 1, now: now)
     }
   }
 
   func getMeter() -> [String: Double] {
     return ["average": meterAverage, "peak": meterPeak]
+  }
+
+  private func updateMeter(fromInputBuffer buffer: AVAudioPCMBuffer, now: Date) {
+    let sampleCount = Int(buffer.frameLength)
+    guard sampleCount > 0 else { return }
+
+    let channelStride = buffer.format.isInterleaved ? Int(max(1, buffer.format.channelCount)) : 1
+
+    switch buffer.format.commonFormat {
+    case .pcmFormatFloat32:
+      guard let samples = buffer.floatChannelData?[0] else { return }
+      updateMeter(samples: samples, sampleCount: sampleCount, stride: channelStride, now: now)
+    case .pcmFormatFloat64:
+      guard let rawSamples = buffer.audioBufferList.pointee.mBuffers.mData else { return }
+      updateMeter(
+        samples: rawSamples.assumingMemoryBound(to: Double.self),
+        sampleCount: sampleCount,
+        stride: channelStride,
+        now: now
+      )
+    case .pcmFormatInt16:
+      guard let samples = buffer.int16ChannelData?[0] else { return }
+      updateMeter(samples: samples, sampleCount: sampleCount, stride: channelStride, divisor: Float(Int16.max), now: now)
+    case .pcmFormatInt32:
+      guard let samples = buffer.int32ChannelData?[0] else { return }
+      updateMeter(samples: samples, sampleCount: sampleCount, stride: channelStride, divisor: Float(Int32.max), now: now)
+    case .otherFormat:
+      return
+    @unknown default:
+      return
+    }
+  }
+
+  private func updateMeter(
+    samples: UnsafePointer<Float>,
+    sampleCount: Int,
+    stride: Int,
+    now: Date
+  ) {
+    var sumSquares: Float = 0
+    var peak: Float = 0
+    for i in 0..<sampleCount {
+      let s = samples[i * stride]
+      sumSquares += s * s
+      peak = max(peak, abs(s))
+    }
+    updateMeter(sumSquares: sumSquares, peak: peak, sampleCount: sampleCount, now: now)
+  }
+
+  private func updateMeter(
+    samples: UnsafePointer<Double>,
+    sampleCount: Int,
+    stride: Int,
+    now: Date
+  ) {
+    var sumSquares: Float = 0
+    var peak: Float = 0
+    for i in 0..<sampleCount {
+      let s = Float(samples[i * stride])
+      sumSquares += s * s
+      peak = max(peak, abs(s))
+    }
+    updateMeter(sumSquares: sumSquares, peak: peak, sampleCount: sampleCount, now: now)
+  }
+
+  private func updateMeter<T: BinaryInteger>(
+    samples: UnsafePointer<T>,
+    sampleCount: Int,
+    stride: Int,
+    divisor: Float,
+    now: Date
+  ) {
+    var sumSquares: Float = 0
+    var peak: Float = 0
+    for i in 0..<sampleCount {
+      let s = max(-1, min(1, Float(Int64(samples[i * stride])) / divisor))
+      sumSquares += s * s
+      peak = max(peak, abs(s))
+    }
+    updateMeter(sumSquares: sumSquares, peak: peak, sampleCount: sampleCount, now: now)
+  }
+
+  private func updateMeter(sumSquares: Float, peak: Float, sampleCount: Int, now: Date) {
+    let rms = sqrt(sumSquares / Float(max(1, sampleCount)))
+    meterAverage = Double(min(1, rms * 5))
+    meterPeak = Double(min(1, peak * 5))
+    lastMeterAt = now
   }
 
   // MARK: Audio conversion

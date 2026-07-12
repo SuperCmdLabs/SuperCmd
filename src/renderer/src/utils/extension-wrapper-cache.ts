@@ -18,6 +18,8 @@ export const EXTENSION_WRAPPER_ARGUMENTS = [
   'clearTimeout',
   'requestAnimationFrame',
   'cancelAnimationFrame',
+  'window',
+  'document',
   'navigator',
   '__scDynamicImport',
 ] as const;

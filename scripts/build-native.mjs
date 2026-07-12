@@ -28,7 +28,7 @@ const swift = [
   ['dist/native/menu-item-search', 'src/native/menu-item-search.swift',
     '-framework AppKit -framework ApplicationServices'],
   ['dist/native/emoji-trigger-monitor',
-    'src/native/emoji-trigger-monitor.swift src/native/ax-caret-query.swift',
+    'src/native/emoji-trigger-monitor.swift src/native/ax-caret-query.swift src/native/emoji-caret-session-cache.swift',
     '-framework AppKit -framework ApplicationServices'],
   ['dist/native/hotkey-hold-monitor', 'src/native/hotkey-hold-monitor.swift',
     '-framework CoreGraphics -framework AppKit -framework Carbon'],

@@ -25,6 +25,10 @@ export class OAuthServiceCore {
     return (override && override.trim()) || this.options.clientId;
   }
 
+  getPersonalAccessToken(): string | undefined {
+    return this.options.personalAccessToken;
+  }
+
   setClientIdOverride(value: string): void {
     const key = oauthClientIdOverrideKey(this.getProviderKey());
     const trimmed = (value || '').trim();

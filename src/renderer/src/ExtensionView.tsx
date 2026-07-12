@@ -21,6 +21,18 @@ import { getCompiledExtensionWrapper } from './utils/extension-wrapper-cache';
 // Also import @raycast/utils stubs from our shim
 import * as RaycastUtils from './raycast-api';
 
+const EXTENSION_RUNTIME_DEBUG_GLOBAL = '__SUPERCMD_EXTENSION_RUNTIME_DEBUG';
+
+function isExtensionRuntimeDebugLoggingEnabled(): boolean {
+  return (globalThis as any)[EXTENSION_RUNTIME_DEBUG_GLOBAL] === true;
+}
+
+function logExtensionRuntimeDebug(...args: unknown[]): void {
+  if (isExtensionRuntimeDebugLoggingEnabled()) {
+    console.debug(...args);
+  }
+}
+
 // ─── React Module for Extensions ────────────────────────────────────
 // Extensions MUST use the exact same React instance as the host app.
 //
@@ -31,9 +43,9 @@ import * as RaycastUtils from './raycast-api';
 // Create React module for extensions
 // We simply return the actual React import - no copying, no wrapping
 // This ensures extensions get the exact same React that the host uses
-console.log('[React] Setting up React for extensions');
-console.log('[React] React.version:', React.version);
-console.log('[React] React.useState:', typeof React.useState);
+logExtensionRuntimeDebug('[React] Setting up React for extensions');
+logExtensionRuntimeDebug('[React] React.version:', React.version);
+logExtensionRuntimeDebug('[React] React.useState:', typeof React.useState);
 
 // ─── JSX Runtime for Extensions ─────────────────────────────────────
 // We use the actual jsx-runtime import to ensure full compatibility.
@@ -3713,29 +3725,341 @@ function ensureGlobals() {
   }
 }
 
+type ExtensionTimerHandle = any;
+
+interface TrackedEventListener {
+  target: EventTarget;
+  type: string;
+  listener: EventListenerOrEventListenerObject;
+  options?: boolean | AddEventListenerOptions;
+  capture: boolean;
+}
+
 /**
- * Per-ExtensionView registry of timer handles created by the extension's
- * sandboxed setInterval/setTimeout/requestAnimationFrame. Cleared on unmount
- * so a buggy extension (e.g. raycast/timers) cannot leak timers + retained
- * fibers into the host renderer.
+ * Per-ExtensionView registry of lifecycle handles created by the extension's
+ * sandboxed timers and scoped event targets. Cleared on unmount so a buggy
+ * extension (e.g. raycast/timers) cannot leak DOM handles + retained fibers
+ * into the host renderer.
  */
 export interface TimerRegistry {
-  intervals: Set<number>;
-  timeouts: Set<number>;
-  rafs: Set<number>;
+  intervals: Set<ExtensionTimerHandle>;
+  timeouts: Set<ExtensionTimerHandle>;
+  rafs: Set<ExtensionTimerHandle>;
+  intervalClearers: Map<ExtensionTimerHandle, (id: ExtensionTimerHandle) => void>;
+  timeoutClearers: Map<ExtensionTimerHandle, (id: ExtensionTimerHandle) => void>;
+  rafClearers: Map<ExtensionTimerHandle, (id: ExtensionTimerHandle) => void>;
+  eventListeners: Set<TrackedEventListener>;
 }
 
 export function createTimerRegistry(): TimerRegistry {
-  return { intervals: new Set(), timeouts: new Set(), rafs: new Set() };
+  return {
+    intervals: new Set(),
+    timeouts: new Set(),
+    rafs: new Set(),
+    intervalClearers: new Map(),
+    timeoutClearers: new Map(),
+    rafClearers: new Map(),
+    eventListeners: new Set(),
+  };
 }
 
 export function clearTimerRegistry(registry: TimerRegistry): void {
-  registry.intervals.forEach((id) => window.clearInterval(id));
-  registry.timeouts.forEach((id) => window.clearTimeout(id));
-  registry.rafs.forEach((id) => window.cancelAnimationFrame(id));
+  Array.from(registry.eventListeners).forEach((entry) => {
+    try {
+      entry.target.removeEventListener(entry.type, entry.listener, entry.options);
+    } catch {}
+  });
+  Array.from(registry.intervals).forEach((id) => {
+    const clear = registry.intervalClearers.get(id) || window.clearInterval.bind(window);
+    clear(id);
+  });
+  Array.from(registry.timeouts).forEach((id) => {
+    const clear = registry.timeoutClearers.get(id) || window.clearTimeout.bind(window);
+    clear(id);
+  });
+  Array.from(registry.rafs).forEach((id) => {
+    const clear = registry.rafClearers.get(id) || window.cancelAnimationFrame.bind(window);
+    clear(id);
+  });
+  registry.eventListeners.clear();
   registry.intervals.clear();
   registry.timeouts.clear();
   registry.rafs.clear();
+  registry.intervalClearers.clear();
+  registry.timeoutClearers.clear();
+  registry.rafClearers.clear();
+}
+
+function getEventListenerCapture(options?: boolean | AddEventListenerOptions): boolean {
+  if (typeof options === 'boolean') return options;
+  return Boolean(options?.capture);
+}
+
+function findTrackedEventListener(
+  registry: TimerRegistry | undefined,
+  target: EventTarget,
+  type: string,
+  listener: EventListenerOrEventListenerObject | null,
+  options?: boolean | AddEventListenerOptions
+): TrackedEventListener | null {
+  if (!registry || !listener) return null;
+  const capture = getEventListenerCapture(options);
+  for (const entry of registry.eventListeners) {
+    if (
+      entry.target === target &&
+      entry.type === type &&
+      entry.listener === listener &&
+      entry.capture === capture
+    ) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+function trackEventListener(
+  registry: TimerRegistry | undefined,
+  target: EventTarget,
+  type: string,
+  listener: EventListenerOrEventListenerObject | null,
+  options?: boolean | AddEventListenerOptions
+): void {
+  if (!registry || !listener) return;
+  if (findTrackedEventListener(registry, target, type, listener, options)) return;
+  registry.eventListeners.add({
+    target,
+    type,
+    listener,
+    options,
+    capture: getEventListenerCapture(options),
+  });
+}
+
+function untrackEventListener(
+  registry: TimerRegistry | undefined,
+  target: EventTarget,
+  type: string,
+  listener: EventListenerOrEventListenerObject | null,
+  options?: boolean | EventListenerOptions
+): void {
+  if (!registry || !listener) return;
+  const capture = getEventListenerCapture(options);
+  Array.from(registry.eventListeners).forEach((entry) => {
+    if (
+      entry.target === target &&
+      entry.type === type &&
+      entry.listener === listener &&
+      entry.capture === capture
+    ) {
+      registry.eventListeners.delete(entry);
+    }
+  });
+}
+
+function shouldBindHostFunction(prop: string | symbol, value: Function): boolean {
+  if (typeof prop === 'string' && /^[A-Z]/.test(prop)) return false;
+  try {
+    if (/^class\s/.test(Function.prototype.toString.call(value))) return false;
+  } catch {}
+  return true;
+}
+
+function getWindowPeer(hostWindow: any, scopedWindow: any, prop: 'top' | 'parent' | 'opener'): any {
+  try {
+    const value = hostWindow?.[prop];
+    return value === hostWindow ? scopedWindow : value;
+  } catch {
+    return scopedWindow;
+  }
+}
+
+function createScopedHostProxy(
+  host: any,
+  registry: TimerRegistry | undefined,
+  kind: 'window' | 'document',
+  getScopedWindow: () => any,
+  getScopedDocument: () => any,
+  timerApi?: {
+    setInterval: (handler: TimerHandler, timeout?: number, ...args: any[]) => ExtensionTimerHandle;
+    clearInterval: (id?: ExtensionTimerHandle) => void;
+    setTimeout: (handler: TimerHandler, timeout?: number, ...args: any[]) => ExtensionTimerHandle;
+    clearTimeout: (id?: ExtensionTimerHandle) => void;
+    requestAnimationFrame: (callback: FrameRequestCallback) => ExtensionTimerHandle;
+    cancelAnimationFrame: (id?: ExtensionTimerHandle) => void;
+  }
+): any {
+  const boundFunctions = new WeakMap<Function, Function>();
+  const target = {};
+
+  return new Proxy(target, {
+    get(_target, prop) {
+      if (kind === 'window') {
+        if (prop === 'window' || prop === 'self' || prop === 'globalThis' || prop === 'global') return getScopedWindow();
+        if (prop === 'top' || prop === 'parent' || prop === 'opener') return getWindowPeer(host, getScopedWindow(), prop);
+        if (prop === 'document') return getScopedDocument();
+        if (prop === 'setInterval') return timerApi?.setInterval;
+        if (prop === 'clearInterval') return timerApi?.clearInterval;
+        if (prop === 'setTimeout') return timerApi?.setTimeout;
+        if (prop === 'clearTimeout') return timerApi?.clearTimeout;
+        if (prop === 'requestAnimationFrame') return timerApi?.requestAnimationFrame;
+        if (prop === 'cancelAnimationFrame') return timerApi?.cancelAnimationFrame;
+      } else if (prop === 'defaultView') {
+        return getScopedWindow();
+      }
+
+      if (prop === 'addEventListener') {
+        return (type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) => {
+          host.addEventListener(type, listener as any, options);
+          trackEventListener(registry, host, type, listener, options);
+        };
+      }
+
+      if (prop === 'removeEventListener') {
+        return (type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | EventListenerOptions) => {
+          host.removeEventListener(type, listener as any, options);
+          untrackEventListener(registry, host, type, listener, options);
+        };
+      }
+
+      const value = Reflect.get(host, prop, host);
+      if (typeof value !== 'function' || !shouldBindHostFunction(prop, value)) return value;
+      const cached = boundFunctions.get(value);
+      if (cached) return cached;
+      const bound = value.bind(host) as Function;
+      boundFunctions.set(value, bound);
+      return bound;
+    },
+    set(_target, prop, value) {
+      return Reflect.set(host, prop, value, host);
+    },
+    has(_target, prop) {
+      return prop in host;
+    },
+    deleteProperty(_target, prop) {
+      return Reflect.deleteProperty(host, prop);
+    },
+    defineProperty(_target, prop, descriptor) {
+      return Reflect.defineProperty(host, prop, descriptor);
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(host, prop);
+      if (!descriptor) return undefined;
+      return { ...descriptor, configurable: true };
+    },
+    ownKeys() {
+      return Reflect.ownKeys(host);
+    },
+    getPrototypeOf() {
+      return Reflect.getPrototypeOf(host);
+    },
+  });
+}
+
+export function createExtensionLifecycleScope(
+  registry: TimerRegistry | undefined,
+  hostWindow: any = window,
+  hostDocument: any = hostWindow?.document ?? document
+): {
+  scopedWindow: any;
+  scopedDocument: any;
+  setInterval: (handler: TimerHandler, timeout?: number, ...args: any[]) => ExtensionTimerHandle;
+  clearInterval: (id?: ExtensionTimerHandle) => void;
+  setTimeout: (handler: TimerHandler, timeout?: number, ...args: any[]) => ExtensionTimerHandle;
+  clearTimeout: (id?: ExtensionTimerHandle) => void;
+  requestAnimationFrame: (callback: FrameRequestCallback) => ExtensionTimerHandle;
+  cancelAnimationFrame: (id?: ExtensionTimerHandle) => void;
+  setImmediate: (callback: Function, ...args: any[]) => ExtensionTimerHandle;
+  clearImmediate: (id?: ExtensionTimerHandle) => void;
+} {
+  const nativeSetInterval = hostWindow.setInterval.bind(hostWindow);
+  const nativeClearInterval = hostWindow.clearInterval.bind(hostWindow);
+  const nativeSetTimeout = hostWindow.setTimeout.bind(hostWindow);
+  const nativeClearTimeout = hostWindow.clearTimeout.bind(hostWindow);
+  const nativeRequestAnimationFrame = hostWindow.requestAnimationFrame.bind(hostWindow);
+  const nativeCancelAnimationFrame = hostWindow.cancelAnimationFrame.bind(hostWindow);
+
+  const trackInterval = (handler: TimerHandler, timeout?: number, ...args: any[]) => {
+    const id = nativeSetInterval(handler as any, timeout as any, ...args);
+    registry?.intervals.add(id);
+    registry?.intervalClearers.set(id, nativeClearInterval);
+    return id;
+  };
+  const trackClearInterval = (id?: ExtensionTimerHandle) => {
+    if (id != null) {
+      registry?.intervals.delete(id);
+      registry?.intervalClearers.delete(id);
+    }
+    nativeClearInterval(id);
+  };
+  const trackTimeout = (handler: TimerHandler, timeout?: number, ...args: any[]) => {
+    const id = nativeSetTimeout(handler as any, timeout as any, ...args);
+    registry?.timeouts.add(id);
+    registry?.timeoutClearers.set(id, nativeClearTimeout);
+    return id;
+  };
+  const trackClearTimeout = (id?: ExtensionTimerHandle) => {
+    if (id != null) {
+      registry?.timeouts.delete(id);
+      registry?.timeoutClearers.delete(id);
+    }
+    nativeClearTimeout(id);
+  };
+  const trackRaf = (callback: FrameRequestCallback) => {
+    const id = nativeRequestAnimationFrame(callback);
+    registry?.rafs.add(id);
+    registry?.rafClearers.set(id, nativeCancelAnimationFrame);
+    return id;
+  };
+  const trackCancelRaf = (id?: ExtensionTimerHandle) => {
+    if (id != null) {
+      registry?.rafs.delete(id);
+      registry?.rafClearers.delete(id);
+    }
+    nativeCancelAnimationFrame(id);
+  };
+  const trackSetImmediate = (callback: Function, ...args: any[]) =>
+    trackTimeout(() => callback(...args), 0);
+  const trackClearImmediate = (id?: ExtensionTimerHandle) => trackClearTimeout(id);
+
+  const timerApi = {
+    setInterval: trackInterval,
+    clearInterval: trackClearInterval,
+    setTimeout: trackTimeout,
+    clearTimeout: trackClearTimeout,
+    requestAnimationFrame: trackRaf,
+    cancelAnimationFrame: trackCancelRaf,
+  };
+
+  let scopedWindow: any;
+  let scopedDocument: any;
+  scopedDocument = createScopedHostProxy(
+    hostDocument,
+    registry,
+    'document',
+    () => scopedWindow,
+    () => scopedDocument
+  );
+  scopedWindow = createScopedHostProxy(
+    hostWindow,
+    registry,
+    'window',
+    () => scopedWindow,
+    () => scopedDocument,
+    timerApi
+  );
+
+  return {
+    scopedWindow,
+    scopedDocument,
+    setInterval: trackInterval,
+    clearInterval: trackClearInterval,
+    setTimeout: trackTimeout,
+    clearTimeout: trackClearTimeout,
+    requestAnimationFrame: trackRaf,
+    cancelAnimationFrame: trackCancelRaf,
+    setImmediate: trackSetImmediate,
+    clearImmediate: trackClearImmediate,
+  };
 }
 
 /**
@@ -3959,14 +4283,11 @@ function loadExtensionExport(
     // This is the critical bridge between extension code and the
     // SuperCmd renderer environment. Every module an extension
     // might `require()` must be handled here.
-    //
-    // IMPORTANT: We track React requires to verify the same instance is always returned.
     let reactRequireCount = 0;
     const fakeRequire: any = (name: string): any => {
-      // Track all requires for debugging
       if (name === 'react' || name.startsWith('react/') || name === 'react-dom') {
         reactRequireCount++;
-        console.log(`[fakeRequire] #${reactRequireCount} require("${name}")`);
+        logExtensionRuntimeDebug(`[fakeRequire] #${reactRequireCount} require("${name}")`);
       }
       // ── React & friends ─────────────────────────────────────
       // CRITICAL: Extensions MUST use the same React instance as the host.
@@ -3978,14 +4299,14 @@ function loadExtensionExport(
       switch (name) {
         case 'react': {
           // Return React directly - the exact same module the host uses
-          console.log('[fakeRequire] Providing React directly');
+          logExtensionRuntimeDebug('[fakeRequire] Providing React directly');
           (globalThis as any).__SUPERCMD_REACT = React;
           return React;
         }
         case 'react-dom':
         case 'react-dom/client':
-          console.log('[fakeRequire] Providing ReactDOM');
-          console.log('[fakeRequire] ReactDOM.createRoot:', (ReactDOM as any).createRoot);
+          logExtensionRuntimeDebug('[fakeRequire] Providing ReactDOM');
+          logExtensionRuntimeDebug('[fakeRequire] ReactDOM.createRoot:', (ReactDOM as any).createRoot);
           return ReactDOM;
         case 'react-dom/server':
           return reactDomServerStub;
@@ -3993,9 +4314,9 @@ function loadExtensionExport(
         case 'react/jsx-dev-runtime': {
           // Return the actual jsx-runtime to ensure JSX creates elements
           // using the same React.createElement
-          console.log('[fakeRequire] Providing jsx-runtime');
-          console.log('[fakeRequire] JsxRuntime.Fragment === React.Fragment:', JsxRuntime.Fragment === React.Fragment);
-          console.log('[fakeRequire] JsxRuntime.Fragment === React.Fragment:', JsxRuntime.Fragment === React.Fragment);
+          logExtensionRuntimeDebug('[fakeRequire] Providing jsx-runtime');
+          logExtensionRuntimeDebug('[fakeRequire] JsxRuntime.Fragment === React.Fragment:', JsxRuntime.Fragment === React.Fragment);
+          logExtensionRuntimeDebug('[fakeRequire] JsxRuntime.Fragment === React.Fragment:', JsxRuntime.Fragment === React.Fragment);
           return JsxRuntime;
         }
 
@@ -4265,44 +4586,10 @@ function loadExtensionExport(
       throw new Error(`Unsupported dynamic import in extension runtime: ${id}`);
     };
 
-    // Sandboxed timer APIs — passed as named parameters so the extension's
-    // bundle resolves bare `setInterval`/`setTimeout`/`requestAnimationFrame`
-    // references against this scope instead of the host `window`. Handles are
-    // tracked in `timerRegistry` so the consumer (ExtensionView) can clear
-    // anything still pending on unmount, defending against extensions that
-    // forget their own cleanup (e.g. raycast/timers).
-    const trackInterval = (cb: any, ms?: any, ...rest: any[]) => {
-      const id = window.setInterval(cb as any, ms as any, ...rest);
-      timerRegistry?.intervals.add(id);
-      return id;
-    };
-    const trackClearInterval = (id: any) => {
-      if (typeof id === 'number') timerRegistry?.intervals.delete(id);
-      window.clearInterval(id);
-    };
-    const trackTimeout = (cb: any, ms?: any, ...rest: any[]) => {
-      const id = window.setTimeout(cb as any, ms as any, ...rest);
-      timerRegistry?.timeouts.add(id);
-      return id;
-    };
-    const trackClearTimeout = (id: any) => {
-      if (typeof id === 'number') timerRegistry?.timeouts.delete(id);
-      window.clearTimeout(id);
-    };
-    const trackRaf = (cb: FrameRequestCallback) => {
-      const id = window.requestAnimationFrame(cb);
-      timerRegistry?.rafs.add(id);
-      return id;
-    };
-    const trackCancelRaf = (id: any) => {
-      if (typeof id === 'number') timerRegistry?.rafs.delete(id);
-      window.cancelAnimationFrame(id);
-    };
-    // setImmediate / clearImmediate are Node-isms not on `window` — polyfill
-    // via setTimeout(0) and route through the same registry.
-    const trackSetImmediate = (cb: Function, ...args: any[]) =>
-      trackTimeout(() => cb(...args), 0);
-    const trackClearImmediate = (id: any) => trackClearTimeout(id);
+    // Sandboxed lifecycle APIs — passed as named parameters so the extension's
+    // bundle resolves bare timers and `window.*`/`document.*` event listeners
+    // against this ExtensionView instance instead of the host renderer globals.
+    const lifecycleScope = createExtensionLifecycleScope(timerRegistry);
 
     // Execute the CJS bundle in a function scope.
     // We pass all the standard CJS arguments plus `process`, `Buffer`,
@@ -4323,9 +4610,7 @@ function loadExtensionExport(
       code,
       executableCode,
     });
-    if ((globalThis as any).__SUPERCMD_DEBUG_EXTENSION_WRAPPER_CACHE) {
-      console.debug(`[loadExtensionExport] Wrapper cache ${cacheHit ? 'hit' : 'miss'} for ${extensionIdentity}`);
-    }
+    logExtensionRuntimeDebug(`[loadExtensionExport] Wrapper cache ${cacheHit ? 'hit' : 'miss'} for ${extensionIdentity}`);
 
     fn(
       moduleExports,
@@ -4335,16 +4620,18 @@ function loadExtensionExport(
       '/extension',
       bundleProcess,
       bundleBuffer,
-      globalThis,
-      globalThis,
-      trackSetImmediate,
-      trackClearImmediate,
-      trackInterval,
-      trackClearInterval,
-      trackTimeout,
-      trackClearTimeout,
-      trackRaf,
-      trackCancelRaf,
+      lifecycleScope.scopedWindow,
+      lifecycleScope.scopedWindow,
+      lifecycleScope.setImmediate,
+      lifecycleScope.clearImmediate,
+      lifecycleScope.setInterval,
+      lifecycleScope.clearInterval,
+      lifecycleScope.setTimeout,
+      lifecycleScope.clearTimeout,
+      lifecycleScope.requestAnimationFrame,
+      lifecycleScope.cancelAnimationFrame,
+      lifecycleScope.scopedWindow,
+      lifecycleScope.scopedDocument,
       undefined, // navigator — see comment above
       scDynamicImport,
     );
@@ -4353,10 +4640,12 @@ function loadExtensionExport(
     const exported =
       fakeModule.exports.default || fakeModule.exports;
 
-    console.log('[loadExtensionExport] Extension loaded successfully');
-    console.log('[loadExtensionExport] Exported type:', typeof exported);
-    console.log('[loadExtensionExport] Exported name:', exported?.name);
-    console.log('[loadExtensionExport] Exported function:', exported?.toString?.().slice(0, 200));
+    if (isExtensionRuntimeDebugLoggingEnabled()) {
+      console.debug('[loadExtensionExport] Extension loaded successfully');
+      console.debug('[loadExtensionExport] Exported type:', typeof exported);
+      console.debug('[loadExtensionExport] Exported name:', exported?.name);
+      console.debug('[loadExtensionExport] Exported function:', exported?.toString?.().slice(0, 200));
+    }
 
     if (typeof exported === 'function') {
       return exported;
@@ -4507,9 +4796,8 @@ const ViewRenderer: React.FC<{
   fallbackText,
   launchType = 'userInitiated',
 }) => {
-  // Simple test that hooks work here
   const [test] = useState('ok');
-  console.log('[ViewRenderer] Hooks work here, rendering extension...');
+  logExtensionRuntimeDebug('[ViewRenderer] Hooks work here, rendering extension...');
   // Pass standard Raycast props: arguments (command arguments) and launchType
   return React.createElement(Component, {
     arguments: launchArguments,

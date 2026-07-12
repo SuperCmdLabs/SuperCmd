@@ -41,6 +41,7 @@ type IndexedEntry = {
   parentPath: string;
   normalizedName: string;
   normalizedPath: string;
+  normalizedTildePath: string;
   compactName: string;
   tokens: string[];
   pathTokens: string[];
@@ -63,6 +64,7 @@ const MAX_QUERY_RESULTS = 5_000;
 const MAX_FILE_METADATA_STAT_RESULTS = 240;
 const MIN_REBUILD_GAP_MS = 45_000;
 const DEFAULT_REFRESH_INTERVAL_MS = 8 * 60_000;
+const SAFETY_REBUILD_INTERVAL_MS = 6 * 60 * 60_000;
 const WATCH_EVENT_DEBOUNCE_MS = 500;
 const MAX_SPOTLIGHT_CANDIDATES = 10_000;
 const SPOTLIGHT_SEARCH_TIMEOUT_MS = 2_400;
@@ -132,6 +134,7 @@ const PROTECTED_TOP_LEVEL_SET = new Set(
   FILE_SEARCH_INDEX_PROTECTED_HOME_TOP_LEVEL_DIRECTORIES.map((name) => name.toLowerCase())
 );
 const EXCLUDED_FILE_EXTENSIONS = new Set(['.tmp', '.temp', '.log', '.cache', '.crdownload', '.download']);
+const PATH_CANDIDATE_TERM_REGEX = /[a-z0-9]/;
 
 let activeIndex: IndexSnapshot | null = null;
 let rebuildPromise: Promise<void> | null = null;
@@ -143,10 +146,12 @@ let includeProtectedHomeRoots = false;
 let indexing = false;
 let lastIndexError: string | null = null;
 let lastBuildStartedAt = 0;
+let lastSuccessfulFullRebuildAt = 0;
 let activeWatcher: fs.FSWatcher | null = null;
 let pendingWatchEvents: Set<string> = new Set();
 let watchDebounceTimer: NodeJS.Timeout | null = null;
 let watchedHomeDir = '';
+let lastWatcherError: string | null = null;
 
 type DirectoryQueueEntry = {
   scanPath: string;
@@ -263,12 +268,13 @@ function addPrefixIndexValue(prefixToEntryIds: Map<string, number[]>, key: strin
 
 function indexEntry(
   snapshot: IndexSnapshot,
-  entry: Omit<IndexedEntry, 'normalizedName' | 'normalizedPath' | 'compactName' | 'tokens' | 'pathTokens' | 'deleted'>
+  entry: Omit<IndexedEntry, 'normalizedName' | 'normalizedPath' | 'normalizedTildePath' | 'compactName' | 'tokens' | 'pathTokens' | 'deleted'>
 ): void {
   const normalizedName = normalizeSearchText(entry.name);
   if (!normalizedName) return;
   const normalizedPath = normalizePathSearchText(entry.path);
   if (!normalizedPath) return;
+  const normalizedTildePath = normalizePathSearchText(asTildePath(entry.path, configuredHomeDir));
 
   const existingId = snapshot.pathToEntryId.get(entry.path);
   if (existingId !== undefined) {
@@ -292,6 +298,7 @@ function indexEntry(
     ...entry,
     normalizedName,
     normalizedPath,
+    normalizedTildePath,
     compactName,
     tokens,
     pathTokens,
@@ -589,6 +596,62 @@ function resolveCandidateIds(snapshot: IndexSnapshot, terms: string[]): number[]
   return intersectCandidates(indexedLists);
 }
 
+function getPathLikeBoundaryTerms(needle: string): string[] {
+  const normalizedNeedle = normalizePathSearchText(needle);
+  if (!normalizedNeedle) return [];
+
+  const terms: string[] = [];
+  let termStart = -1;
+
+  const addTerm = (endIndex: number) => {
+    if (termStart <= 0) return;
+    const previousChar = normalizedNeedle[termStart - 1] || '';
+    if (PATH_CANDIDATE_TERM_REGEX.test(previousChar)) return;
+    const term = normalizedNeedle.slice(termStart, endIndex);
+    if (term.length >= 2) terms.push(term);
+  };
+
+  for (let index = 0; index <= normalizedNeedle.length; index += 1) {
+    const char = normalizedNeedle[index] || '';
+    if (PATH_CANDIDATE_TERM_REGEX.test(char)) {
+      if (termStart < 0) termStart = index;
+      continue;
+    }
+
+    if (termStart >= 0) {
+      addTerm(index);
+      termStart = -1;
+    }
+  }
+
+  return [...new Set(terms)];
+}
+
+function resolvePathLikeCandidateIds(
+  snapshot: IndexSnapshot,
+  rawNeedle: string,
+  expandedNeedle: string,
+  trimmedQuery: string
+): number[] | null {
+  const isHomeTildeQuery = trimmedQuery === '~' || trimmedQuery.startsWith('~/') || trimmedQuery.startsWith('~\\');
+  const terms = getPathLikeBoundaryTerms(rawNeedle);
+  if (terms.length === 0 && isHomeTildeQuery) {
+    terms.push(...getPathLikeBoundaryTerms(expandedNeedle));
+  }
+  if (terms.length === 0) return null;
+
+  let smallestBucket: number[] | null = null;
+  for (const term of terms) {
+    const key = term.slice(0, Math.min(MAX_PREFIX_LENGTH, term.length));
+    const matches = snapshot.prefixToEntryIds.get(key);
+    if (!matches || matches.length === 0) return [];
+    if (!smallestBucket || matches.length < smallestBucket.length) {
+      smallestBucket = matches;
+    }
+  }
+  return smallestBucket ? [...smallestBucket] : null;
+}
+
 function resolveHomeDir(inputHomeDir?: string): string {
   const candidate = String(inputHomeDir || '').trim();
   if (candidate) return path.resolve(candidate);
@@ -632,7 +695,8 @@ export async function rebuildFileSearchIndex(reason = 'manual'): Promise<void> {
   if (rebuildPromise) return rebuildPromise;
 
   const now = Date.now();
-  if (now - lastBuildStartedAt < MIN_REBUILD_GAP_MS) return;
+  const bypassRebuildThrottle = reason === 'startup' || reason === 'watcher-error';
+  if (!bypassRebuildThrottle && now - lastBuildStartedAt < MIN_REBUILD_GAP_MS) return;
   lastBuildStartedAt = now;
 
   rebuildPromise = (async () => {
@@ -640,6 +704,7 @@ export async function rebuildFileSearchIndex(reason = 'manual'): Promise<void> {
     try {
       const snapshot = await buildIndexSnapshot(configuredHomeDir);
       activeIndex = snapshot;
+      lastSuccessfulFullRebuildAt = snapshot.builtAt;
       lastIndexError = null;
       if (reason) {
         console.log(
@@ -660,7 +725,30 @@ export async function rebuildFileSearchIndex(reason = 'manual'): Promise<void> {
 
 export function requestFileSearchIndexRefresh(reason = 'manual'): void {
   if (rebuildPromise) return;
+  if (reason === 'interval' && canUseIncrementalIntervalRefresh()) {
+    flushPendingWatchEventsNow();
+    return;
+  }
   void rebuildFileSearchIndex(reason);
+}
+
+function canUseIncrementalIntervalRefresh(): boolean {
+  if (!activeIndex) return false;
+  if (!isFileSearchWatcherHealthy()) return false;
+  if (!lastSuccessfulFullRebuildAt) return false;
+  return Date.now() - lastSuccessfulFullRebuildAt < SAFETY_REBUILD_INTERVAL_MS;
+}
+
+function isFileSearchWatcherHealthy(): boolean {
+  return Boolean(activeWatcher && watchedHomeDir === configuredHomeDir && !lastWatcherError);
+}
+
+function flushPendingWatchEventsNow(): void {
+  if (watchDebounceTimer) {
+    clearTimeout(watchDebounceTimer);
+    watchDebounceTimer = null;
+  }
+  flushWatchEvents();
 }
 
 function isWatchablePath(absolutePath: string): boolean {
@@ -692,7 +780,7 @@ function startFileSearchWatcher(): void {
   if (!configuredHomeDir) return;
 
   try {
-    activeWatcher = fs.watch(
+    const watcher = fs.watch(
       configuredHomeDir,
       { recursive: true, persistent: false },
       (_eventType, filename) => {
@@ -705,13 +793,27 @@ function startFileSearchWatcher(): void {
         }
       }
     );
+    activeWatcher = watcher;
     watchedHomeDir = configuredHomeDir;
-    activeWatcher.on('error', (error) => {
+    lastWatcherError = null;
+    watcher.on('error', (error) => {
       console.warn('[FileIndex] watcher error:', error);
+      lastWatcherError = error instanceof Error ? error.message : String(error || 'Unknown watcher error');
+      try {
+        watcher.close();
+      } catch {
+        // ignore
+      }
+      if (activeWatcher === watcher) {
+        activeWatcher = null;
+        watchedHomeDir = '';
+      }
+      requestFileSearchIndexRefresh('watcher-error');
     });
     console.log(`[FileIndex] watcher started on ${configuredHomeDir}`);
   } catch (error) {
     console.warn('[FileIndex] failed to start watcher:', error);
+    lastWatcherError = error instanceof Error ? error.message : String(error || 'Unknown watcher error');
     activeWatcher = null;
     watchedHomeDir = '';
   }
@@ -796,13 +898,75 @@ async function applyWatchEventBatch(paths: string[]): Promise<void> {
   }
 }
 
+function hasDeletedPathAncestor(candidatePath: string, deletedPathSet: Set<string>): boolean {
+  let currentPath = path.dirname(candidatePath);
+  while (currentPath && currentPath !== candidatePath) {
+    if (deletedPathSet.has(currentPath)) return true;
+    const parentPath = path.dirname(currentPath);
+    if (parentPath === currentPath) break;
+    currentPath = parentPath;
+  }
+  return false;
+}
+
+function normalizeDeletedPath(candidatePath: string): string | null {
+  const rawPath = String(candidatePath || '');
+  if (!rawPath) return null;
+  return path.resolve(rawPath);
+}
+
+function collapseNestedDeletedPaths(deletePaths: string[]): string[] {
+  const uniquePaths = new Set<string>();
+  for (const deletePath of deletePaths) {
+    const normalizedPath = normalizeDeletedPath(deletePath);
+    if (normalizedPath) uniquePaths.add(normalizedPath);
+  }
+
+  const sortedPaths = [...uniquePaths].sort((a, b) => {
+    if (a.length !== b.length) return a.length - b.length;
+    return a.localeCompare(b);
+  });
+  const collapsedPaths: string[] = [];
+  const collapsedPathSet = new Set<string>();
+
+  for (const deletePath of sortedPaths) {
+    if (hasDeletedPathAncestor(deletePath, collapsedPathSet)) {
+      continue;
+    }
+    collapsedPaths.push(deletePath);
+    collapsedPathSet.add(deletePath);
+  }
+
+  return collapsedPaths;
+}
+
+function getDescendantPathPrefix(rootPath: string): string {
+  return rootPath.endsWith(path.sep) ? rootPath : `${rootPath}${path.sep}`;
+}
+
 function tombstoneDeletedPaths(snapshot: IndexSnapshot, deletePaths: string[]): void {
+  const collapsedDeletePaths = collapseNestedDeletedPaths(deletePaths);
+  if (collapsedDeletePaths.length === 0) return;
+
   const directIds = new Set<number>();
-  for (const deletedPath of deletePaths) {
+  for (const deletedPath of collapsedDeletePaths) {
     const id = snapshot.pathToEntryId.get(deletedPath);
     if (id !== undefined) directIds.add(id);
   }
-  const prefixes = deletePaths.map((p) => p + path.sep);
+
+  if (collapsedDeletePaths.length === 1) {
+    const descendantPrefix = getDescendantPathPrefix(collapsedDeletePaths[0]);
+    for (let i = 0; i < snapshot.entries.length; i += 1) {
+      const entry = snapshot.entries[i];
+      if (entry.deleted) continue;
+      if (directIds.has(i) || entry.path.startsWith(descendantPrefix)) {
+        entry.deleted = true;
+      }
+    }
+    return;
+  }
+
+  const deletedPathSet = new Set(collapsedDeletePaths);
 
   for (let i = 0; i < snapshot.entries.length; i += 1) {
     const entry = snapshot.entries[i];
@@ -811,11 +975,8 @@ function tombstoneDeletedPaths(snapshot: IndexSnapshot, deletePaths: string[]): 
       entry.deleted = true;
       continue;
     }
-    for (const prefix of prefixes) {
-      if (entry.path.startsWith(prefix)) {
-        entry.deleted = true;
-        break;
-      }
+    if (hasDeletedPathAncestor(entry.path, deletedPathSet)) {
+      entry.deleted = true;
     }
   }
 }
@@ -882,6 +1043,60 @@ export function stopFileSearchIndexing(): void {
   stopFileSearchWatcher();
 }
 
+function resetFileSearchIndexForPerfHarness(options?: {
+  homeDir?: string;
+  includeProtectedHomeRoots?: boolean;
+}): void {
+  stopFileSearchIndexing();
+  activeIndex = null;
+  rebuildPromise = null;
+  configuredHomeDir = '';
+  includeRoots = [];
+  refreshIntervalMs = DEFAULT_REFRESH_INTERVAL_MS;
+  includeProtectedHomeRoots = Boolean(options?.includeProtectedHomeRoots);
+  indexing = false;
+  lastIndexError = null;
+  lastBuildStartedAt = 0;
+  pendingWatchEvents.clear();
+  if (options?.homeDir) {
+    ensureConfigured(options.homeDir);
+  }
+}
+
+async function rebuildFileSearchIndexForPerfHarness(options: {
+  homeDir: string;
+  includeProtectedHomeRoots?: boolean;
+}): Promise<void> {
+  resetFileSearchIndexForPerfHarness(options);
+  if (includeRoots.length === 0) return;
+
+  indexing = true;
+  try {
+    activeIndex = await buildIndexSnapshot(configuredHomeDir);
+    lastIndexError = null;
+  } catch (error) {
+    lastIndexError = error instanceof Error ? error.message : String(error || 'Unknown indexing error');
+    throw error;
+  } finally {
+    indexing = false;
+    rebuildPromise = null;
+    lastBuildStartedAt = 0;
+  }
+}
+
+async function applyFileSearchWatchEventBatchForPerfHarness(paths: string[]): Promise<void> {
+  if (!activeIndex) {
+    throw new Error('File search perf harness requires an active index before applying watch events.');
+  }
+  await applyWatchEventBatch(paths.map((candidatePath) => path.resolve(candidatePath)));
+}
+
+export const __fileSearchIndexPerfHarness = {
+  reset: resetFileSearchIndexForPerfHarness,
+  rebuild: rebuildFileSearchIndexForPerfHarness,
+  applyWatchEventBatch: applyFileSearchWatchEventBatchForPerfHarness,
+};
+
 export async function searchIndexedFiles(
   rawQuery: string,
   options?: { limit?: number }
@@ -907,13 +1122,16 @@ export async function searchIndexedFiles(
         const expandedNeedle = trimmedQuery.startsWith('~') && configuredHomeDir
           ? normalizePathSearchText(`${configuredHomeDir}${trimmedQuery.slice(1)}`)
           : rawNeedle;
+        const candidateIds = resolvePathLikeCandidateIds(snapshot, rawNeedle, expandedNeedle, trimmedQuery);
+        const candidateEntries = candidateIds === null
+          ? snapshot.entries
+          : candidateIds.map((entryId) => snapshot.entries[entryId]).filter(Boolean);
 
         const scored: Array<{ entry: IndexedEntry; score: number }> = [];
-        for (const entry of snapshot.entries) {
+        for (const entry of candidateEntries) {
           if (entry.deleted) continue;
           const pathIndex = entry.normalizedPath.indexOf(expandedNeedle);
-          const tildePath = normalizePathSearchText(asTildePath(entry.path, configuredHomeDir));
-          const tildeIndex = tildePath.indexOf(rawNeedle);
+          const tildeIndex = entry.normalizedTildePath.indexOf(rawNeedle);
           const matchIndex = pathIndex >= 0 ? pathIndex : tildeIndex;
           if (matchIndex < 0) continue;
 
@@ -1059,6 +1277,7 @@ export async function searchIndexedFiles(
         parentPath: path.dirname(candidatePath),
         normalizedName,
         normalizedPath: normalizePathSearchText(candidatePath),
+        normalizedTildePath: normalizePathSearchText(asTildePath(candidatePath, configuredHomeDir)),
         compactName: normalizedName.replace(/\s+/g, ''),
         tokens: tokenizeSearchText(candidateName),
         pathTokens: tokenizeSearchText(candidatePath),

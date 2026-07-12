@@ -33,6 +33,8 @@ export interface ScriptCommandInfo {
   refreshTime?: string;
   interval?: string;
   currentDirectoryPath?: string;
+  interpreter?: string;
+  interpreterArgs?: string[];
   needsConfirmation: boolean;
   arguments: ScriptArgumentDefinition[];
   keywords: string[];
@@ -55,6 +57,9 @@ export interface ScriptExecutionResult {
 const CACHE_TTL_MS = 12_000;
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024; // 2MB
 const DEFAULT_TIMEOUT_MS = 60_000;
+const SCRIPT_COMMAND_HEADER_MAX_LINES = 120;
+const SCRIPT_COMMAND_HEADER_MAX_BYTES = 256 * 1024;
+const SCRIPT_COMMAND_HEADER_READ_CHUNK_BYTES = 8 * 1024;
 
 let cache: { fetchedAt: number; commands: ScriptCommandInfo[] } | null = null;
 
@@ -302,24 +307,66 @@ function discoverScriptFiles(rootDir: string): string[] {
   return out;
 }
 
+function countLineBreaks(buffer: Buffer, length: number): number {
+  let count = 0;
+  for (let i = 0; i < length; i += 1) {
+    if (buffer[i] === 10) count += 1;
+  }
+  return count;
+}
+
+function readScriptCommandHeader(filePath: string): string | null {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let lineBreaks = 0;
+
+    while (
+      totalBytes < SCRIPT_COMMAND_HEADER_MAX_BYTES &&
+      lineBreaks < SCRIPT_COMMAND_HEADER_MAX_LINES
+    ) {
+      const bytesToRead = Math.min(
+        SCRIPT_COMMAND_HEADER_READ_CHUNK_BYTES,
+        SCRIPT_COMMAND_HEADER_MAX_BYTES - totalBytes
+      );
+      if (bytesToRead <= 0) break;
+
+      const chunk = Buffer.allocUnsafe(bytesToRead);
+      const bytesRead = fs.readSync(fd, chunk, 0, bytesToRead, totalBytes);
+      if (bytesRead <= 0) break;
+
+      chunks.push(bytesRead === chunk.length ? chunk : chunk.subarray(0, bytesRead));
+      totalBytes += bytesRead;
+      lineBreaks += countLineBreaks(chunk, bytesRead);
+    }
+
+    return Buffer.concat(chunks, totalBytes).toString('utf8');
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch {}
+    }
+  }
+}
+
 function parseScriptCommandFile(filePath: string): ScriptCommandInfo | null {
   const scriptPath = path.resolve(filePath);
   const scriptDir = path.dirname(scriptPath);
 
-  let raw = '';
-  try {
-    raw = fs.readFileSync(scriptPath, 'utf-8');
-  } catch {
-    return null;
-  }
+  const raw = readScriptCommandHeader(scriptPath);
+  if (raw === null) return null;
 
   if (!raw.trim()) return null;
 
   const lines = raw.split(/\r?\n/);
+  const shebang = shebangArgs(lines[0] || '');
   const metadata: Record<string, string> = {};
   const argumentDefs = new Map<number, ScriptArgumentDefinition>();
 
-  for (const line of lines.slice(0, 120)) {
+  for (const line of lines.slice(0, SCRIPT_COMMAND_HEADER_MAX_LINES)) {
     const match = line.match(/^\s*(#|\/\/|--)\s*@raycast\.([A-Za-z0-9]+)\s*(.*)$/);
     if (!match) continue;
     const key = String(match[2] || '').trim();
@@ -393,6 +440,8 @@ function parseScriptCommandFile(filePath: string): ScriptCommandInfo | null {
     refreshTime,
     interval: mode === 'inline' ? refreshTime : undefined,
     currentDirectoryPath,
+    interpreter: shebang[0],
+    interpreterArgs: shebang.slice(1),
     needsConfirmation,
     arguments: argumentsList,
     keywords: Array.from(new Set(keywords)),
@@ -497,9 +546,7 @@ export async function executeScriptCommand(
     return { missingArguments: missing, command: cmd };
   }
 
-  const source = fs.readFileSync(cmd.scriptPath, 'utf-8');
-  const firstLine = source.split(/\r?\n/)[0] || '';
-  const shebang = shebangArgs(firstLine);
+  fs.accessSync(cmd.scriptPath, fs.constants.R_OK);
 
   const env = {
     ...process.env,
@@ -514,10 +561,10 @@ export async function executeScriptCommand(
   const cwd = cmd.currentDirectoryPath || cmd.scriptDir;
 
   const spawnCommand =
-    shebang.length > 0 ? shebang[0] : '/bin/bash';
+    cmd.interpreter ? cmd.interpreter : '/bin/bash';
   const spawnArgs =
-    shebang.length > 0
-      ? [...shebang.slice(1), cmd.scriptPath, ...args]
+    cmd.interpreter
+      ? [...(cmd.interpreterArgs || []), cmd.scriptPath, ...args]
       : [cmd.scriptPath, ...args];
 
   const run = await new Promise<{

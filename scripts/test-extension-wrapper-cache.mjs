@@ -48,6 +48,8 @@ function createRunEnv() {
       trackClearTimeout,
       () => 0,
       () => {},
+      globalThis,
+      globalThis.document || {},
       undefined,
       async () => ({}),
     ],

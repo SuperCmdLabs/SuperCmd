@@ -16,10 +16,11 @@ export function withAccessToken(options: any) {
   const shouldInvokeOnAuthorize = !(options instanceof OAuthService);
   const authorizeForNoView = async (): Promise<void> => {
     if (options instanceof OAuthService) {
-      if (options?.personalAccessToken) {
-        accessTokenValue = options.personalAccessToken;
+      const personalAccessToken = options.getPersonalAccessToken();
+      if (personalAccessToken) {
+        accessTokenValue = personalAccessToken;
         accessTokenType = 'personal';
-        await Promise.resolve(options.onAuthorize?.({ token: accessTokenValue, type: 'personal' }));
+        await Promise.resolve(options.onAuthorize?.({ token: personalAccessToken, type: 'personal' }));
         return;
       }
 

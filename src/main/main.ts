@@ -18,6 +18,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { fork, execFileSync, type ChildProcess } from 'child_process';
+import { createAerospaceWorkspaceMover } from './aerospace-workspace';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
 import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery, refreshCommandsNow } from './commands';
 import {
@@ -87,6 +88,11 @@ import {
   RENDERER_RECOVERY_DELAY_MS,
 } from './renderer-recovery';
 import {
+  createAppIconDataUrlCache,
+  createFileIconDataUrlCache,
+  readIconPathCacheToken,
+} from './icon-ipc-cache';
+import {
   startClipboardMonitor,
   stopClipboardMonitor,
   getClipboardHistory,
@@ -100,6 +106,8 @@ import {
   togglePinClipboardItem,
   moveClipboardPinnedItem,
   pruneClipboardHistoryOlderThan,
+  flushClipboardHistoryWrites,
+  hasPendingClipboardHistoryWrites,
 } from './clipboard-manager';
 import {
   initSnippetStore,
@@ -193,6 +201,8 @@ import {
   exportNoteToFile,
   exportNotesToFile,
   importNotesFromFile,
+  flushNotesToDisk,
+  hasPendingNotesSave,
 } from './notes-store';
 import {
   initCanvasStore,
@@ -219,6 +229,10 @@ import {
   previewRaycastConfigImport,
 } from './raycast-config-import';
 import { runExecCommand, type ExecCommandOptions } from './exec-command';
+import {
+  createCachedMenuBarNativeImage,
+  createMenuBarNativeImageCache,
+} from './menubar-native-image-cache';
 
 import { initialize as initAptabase, trackEvent } from "@aptabase/electron/main";
 
@@ -265,14 +279,15 @@ let parakeetServerBuffer = '';
 type PendingParakeetRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
 let parakeetPendingRequest: PendingParakeetRequest | null = null;
 
-function killParakeetServer(): void {
-  if (parakeetServerProcess) {
+function killParakeetServer(processToKill: any = parakeetServerProcess): void {
+  if (processToKill) {
     try {
-      parakeetServerProcess.stdin?.write('{"command":"exit"}\n');
-      parakeetServerProcess.kill();
+      processToKill.stdin?.write('{"command":"exit"}\n');
+      processToKill.kill();
     } catch {}
-    parakeetServerProcess = null;
   }
+  if (processToKill && parakeetServerProcess !== processToKill) return;
+  parakeetServerProcess = null;
   parakeetServerReady = false;
   parakeetServerStarting = null;
   parakeetServerBuffer = '';
@@ -288,7 +303,7 @@ function ensureParakeetServer(): Promise<void> {
   }
   if (parakeetServerStarting) return parakeetServerStarting;
 
-  parakeetServerStarting = (async () => {
+  const startingPromise = (async () => {
     killParakeetServer();
     const binaryPath = getParakeetTranscriberBinaryPath();
     if (!fs.existsSync(binaryPath)) {
@@ -306,6 +321,7 @@ function ensureParakeetServer(): Promise<void> {
     });
 
     child.on('exit', (code: number | null) => {
+      if (parakeetServerProcess !== child) return;
       console.log(`[Parakeet] Server process exited with code ${code}`);
       parakeetServerReady = false;
       parakeetServerProcess = null;
@@ -317,6 +333,7 @@ function ensureParakeetServer(): Promise<void> {
     });
 
     child.stdout.on('data', (chunk: Buffer) => {
+      if (parakeetServerProcess !== child) return;
       parakeetServerBuffer += chunk.toString();
       const lines = parakeetServerBuffer.split('\n');
       parakeetServerBuffer = lines.pop() || '';
@@ -346,28 +363,39 @@ function ensureParakeetServer(): Promise<void> {
     // Wait for "ready" signal
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        if (parakeetServerProcess !== child) return;
         reject(new Error('Parakeet server startup timed out (120s)'));
-        killParakeetServer();
+        killParakeetServer(child);
       }, 120_000);
 
       const checkReady = setInterval(() => {
+        if (parakeetServerProcess !== child) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          reject(new Error('Parakeet server startup superseded'));
+          return;
+        }
         if (parakeetServerReady) {
           clearInterval(checkReady);
           clearTimeout(timeout);
           resolve();
+          return;
         }
-        if (!parakeetServerProcess || parakeetServerProcess.killed) {
+        if (child.killed) {
           clearInterval(checkReady);
           clearTimeout(timeout);
           reject(new Error('Parakeet server process died during startup'));
         }
       }, 50);
     });
-
-    parakeetServerStarting = null;
   })();
 
-  return parakeetServerStarting;
+  parakeetServerStarting = startingPromise;
+  startingPromise.then(
+    () => { if (parakeetServerStarting === startingPromise) parakeetServerStarting = null; },
+    () => { if (parakeetServerStarting === startingPromise) parakeetServerStarting = null; }
+  );
+  return startingPromise;
 }
 
 function sendParakeetRequest(request: Record<string, any>): Promise<any> {
@@ -620,14 +648,15 @@ let qwen3ServerBuffer = '';
 type PendingQwen3Request = { resolve: (json: any) => void; reject: (err: Error) => void };
 let qwen3PendingRequest: PendingQwen3Request | null = null;
 
-function killQwen3Server(): void {
-  if (qwen3ServerProcess) {
+function killQwen3Server(processToKill: any = qwen3ServerProcess): void {
+  if (processToKill) {
     try {
-      qwen3ServerProcess.stdin?.write('{"command":"exit"}\n');
-      qwen3ServerProcess.kill();
+      processToKill.stdin?.write('{"command":"exit"}\n');
+      processToKill.kill();
     } catch {}
-    qwen3ServerProcess = null;
   }
+  if (processToKill && qwen3ServerProcess !== processToKill) return;
+  qwen3ServerProcess = null;
   qwen3ServerReady = false;
   qwen3ServerStarting = null;
   qwen3ServerBuffer = '';
@@ -643,7 +672,7 @@ function ensureQwen3Server(): Promise<void> {
   }
   if (qwen3ServerStarting) return qwen3ServerStarting;
 
-  qwen3ServerStarting = (async () => {
+  const startingPromise = (async () => {
     killQwen3Server();
     const binaryPath = getParakeetTranscriberBinaryPath();
     if (!fs.existsSync(binaryPath)) {
@@ -661,6 +690,7 @@ function ensureQwen3Server(): Promise<void> {
     });
 
     child.on('exit', (code: number | null) => {
+      if (qwen3ServerProcess !== child) return;
       console.log(`[Qwen3] Server process exited with code ${code}`);
       qwen3ServerReady = false;
       qwen3ServerProcess = null;
@@ -672,6 +702,7 @@ function ensureQwen3Server(): Promise<void> {
     });
 
     child.stdout.on('data', (chunk: Buffer) => {
+      if (qwen3ServerProcess !== child) return;
       qwen3ServerBuffer += chunk.toString();
       const lines = qwen3ServerBuffer.split('\n');
       qwen3ServerBuffer = lines.pop() || '';
@@ -700,28 +731,39 @@ function ensureQwen3Server(): Promise<void> {
 
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        if (qwen3ServerProcess !== child) return;
         reject(new Error('Qwen3 server startup timed out (120s)'));
-        killQwen3Server();
+        killQwen3Server(child);
       }, 120_000);
 
       const checkReady = setInterval(() => {
+        if (qwen3ServerProcess !== child) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          reject(new Error('Qwen3 server startup superseded'));
+          return;
+        }
         if (qwen3ServerReady) {
           clearInterval(checkReady);
           clearTimeout(timeout);
           resolve();
+          return;
         }
-        if (!qwen3ServerProcess || qwen3ServerProcess.killed) {
+        if (child.killed) {
           clearInterval(checkReady);
           clearTimeout(timeout);
           reject(new Error('Qwen3 server process died during startup'));
         }
       }, 50);
     });
-
-    qwen3ServerStarting = null;
   })();
 
-  return qwen3ServerStarting;
+  qwen3ServerStarting = startingPromise;
+  startingPromise.then(
+    () => { if (qwen3ServerStarting === startingPromise) qwen3ServerStarting = null; },
+    () => { if (qwen3ServerStarting === startingPromise) qwen3ServerStarting = null; }
+  );
+  return startingPromise;
 }
 
 function sendQwen3Request(request: Record<string, any>): Promise<any> {
@@ -1154,14 +1196,15 @@ let whisperCppServerBuffer = '';
 type PendingWhisperCppRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
 let whisperCppPendingRequest: PendingWhisperCppRequest | null = null;
 
-function killWhisperCppServer(): void {
-  if (whisperCppServerProcess) {
+function killWhisperCppServer(processToKill: any = whisperCppServerProcess): void {
+  if (processToKill) {
     try {
-      whisperCppServerProcess.stdin?.write('{"command":"exit"}\n');
-      whisperCppServerProcess.kill();
+      processToKill.stdin?.write('{"command":"exit"}\n');
+      processToKill.kill();
     } catch {}
-    whisperCppServerProcess = null;
   }
+  if (processToKill && whisperCppServerProcess !== processToKill) return;
+  whisperCppServerProcess = null;
   whisperCppServerReady = false;
   whisperCppServerStarting = null;
   whisperCppServerBuffer = '';
@@ -1177,7 +1220,7 @@ function ensureWhisperCppServer(): Promise<void> {
   }
   if (whisperCppServerStarting) return whisperCppServerStarting;
 
-  whisperCppServerStarting = (async () => {
+  const startingPromise = (async () => {
     killWhisperCppServer();
     const binaryPath = ensureWhisperCppTranscriberBinary();
     const modelStatus = getWhisperCppModelStatus();
@@ -1192,6 +1235,7 @@ function ensureWhisperCppServer(): Promise<void> {
     whisperCppServerProcess = child;
 
     child.on('exit', (code: number | null) => {
+      if (whisperCppServerProcess !== child) return;
       console.log(`[Whisper][whisper.cpp] Server process exited with code ${code}`);
       whisperCppServerReady = false;
       whisperCppServerProcess = null;
@@ -1203,6 +1247,7 @@ function ensureWhisperCppServer(): Promise<void> {
     });
 
     child.stdout.on('data', (chunk: Buffer | string) => {
+      if (whisperCppServerProcess !== child) return;
       whisperCppServerBuffer += chunk.toString();
       const lines = whisperCppServerBuffer.split('\n');
       whisperCppServerBuffer = lines.pop() || '';
@@ -1237,28 +1282,39 @@ function ensureWhisperCppServer(): Promise<void> {
     // Wait for "ready" signal
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        if (whisperCppServerProcess !== child) return;
         reject(new Error('Whisper.cpp server startup timed out (60s)'));
-        killWhisperCppServer();
+        killWhisperCppServer(child);
       }, 60_000);
 
       const checkReady = setInterval(() => {
+        if (whisperCppServerProcess !== child) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          reject(new Error('Whisper.cpp server startup superseded'));
+          return;
+        }
         if (whisperCppServerReady) {
           clearInterval(checkReady);
           clearTimeout(timeout);
           resolve();
+          return;
         }
-        if (!whisperCppServerProcess || whisperCppServerProcess.killed) {
+        if (child.killed) {
           clearInterval(checkReady);
           clearTimeout(timeout);
           reject(new Error('Whisper.cpp server process died during startup'));
         }
       }, 50);
     });
-
-    whisperCppServerStarting = null;
   })();
 
-  return whisperCppServerStarting;
+  whisperCppServerStarting = startingPromise;
+  startingPromise.then(
+    () => { if (whisperCppServerStarting === startingPromise) whisperCppServerStarting = null; },
+    () => { if (whisperCppServerStarting === startingPromise) whisperCppServerStarting = null; }
+  );
+  return startingPromise;
 }
 
 function sendWhisperCppRequest(request: Record<string, any>): Promise<any> {
@@ -1421,14 +1477,15 @@ function getAudioCapturerBinaryPath(): string {
   return getNativeBinaryPath('audio-capturer');
 }
 
-function killAudioCapturer(): void {
-  if (audioCapturerProcess) {
+function killAudioCapturer(processToKill: any = audioCapturerProcess): void {
+  if (processToKill) {
     try {
-      audioCapturerProcess.stdin?.write('{"command":"exit"}\n');
-      audioCapturerProcess.kill();
+      processToKill.stdin?.write('{"command":"exit"}\n');
+      processToKill.kill();
     } catch {}
-    audioCapturerProcess = null;
   }
+  if (processToKill && audioCapturerProcess !== processToKill) return;
+  audioCapturerProcess = null;
   audioCapturerReady = false;
   audioCapturerStarting = null;
   audioCapturerBuffer = '';
@@ -1500,7 +1557,7 @@ function warmAudioCapturer(): Promise<void> {
   }
   if (audioCapturerStarting) return audioCapturerStarting;
 
-  audioCapturerStarting = (async () => {
+  const startingPromise = (async () => {
     killAudioCapturer();
     const binaryPath = ensureAudioCapturerBinary();
 
@@ -1511,6 +1568,7 @@ function warmAudioCapturer(): Promise<void> {
     audioCapturerProcess = child;
 
     child.on('exit', (code: number | null) => {
+      if (audioCapturerProcess !== child) return;
       console.log(`[AudioCapturer] Process exited with code ${code}`);
       audioCapturerReady = false;
       audioCapturerProcess = null;
@@ -1523,6 +1581,7 @@ function warmAudioCapturer(): Promise<void> {
     });
 
     child.stdout.on('data', (chunk: Buffer | string) => {
+      if (audioCapturerProcess !== child) return;
       audioCapturerBuffer += chunk.toString();
       const lines = audioCapturerBuffer.split('\n');
       audioCapturerBuffer = lines.pop() || '';
@@ -1581,28 +1640,39 @@ function warmAudioCapturer(): Promise<void> {
     // Wait for "ready" signal
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        if (audioCapturerProcess !== child) return;
         reject(new Error('Audio capturer warmup timed out (30s)'));
-        killAudioCapturer();
+        killAudioCapturer(child);
       }, 30_000);
 
       const checkReady = setInterval(() => {
+        if (audioCapturerProcess !== child) {
+          clearInterval(checkReady);
+          clearTimeout(timeout);
+          reject(new Error('Audio capturer warmup superseded'));
+          return;
+        }
         if (audioCapturerReady) {
           clearInterval(checkReady);
           clearTimeout(timeout);
           resolve();
+          return;
         }
-        if (!audioCapturerProcess || audioCapturerProcess.killed) {
+        if (child.killed) {
           clearInterval(checkReady);
           clearTimeout(timeout);
           reject(new Error('Audio capturer process died during warmup'));
         }
       }, 50);
     });
-
-    audioCapturerStarting = null;
   })();
 
-  return audioCapturerStarting;
+  audioCapturerStarting = startingPromise;
+  startingPromise.then(
+    () => { if (audioCapturerStarting === startingPromise) audioCapturerStarting = null; },
+    () => { if (audioCapturerStarting === startingPromise) audioCapturerStarting = null; }
+  );
+  return startingPromise;
 }
 
 async function startNativeAudioCapture(): Promise<void> {
@@ -3041,23 +3111,42 @@ function scheduleNextAppUpdaterAutoCheck(lastCheckedAtMs: number): void {
 type FrontmostAppContext = { name: string; path: string; bundleId?: string };
 let lastFrontmostApp: FrontmostAppContext | null = null;
 
+/** Resolve the icon file selected by a macOS .app bundle's Info.plist, or null. */
+function resolveAppIconSourcePath(appPath: string): string | null {
+  if (!appPath) return null;
+  const plistPath = path.join(appPath, 'Contents', 'Info.plist');
+  if (!fs.existsSync(plistPath)) return null;
+  let iconFileName = '';
+  try {
+    iconFileName = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIconFile', plistPath], {
+      encoding: 'utf-8',
+      timeout: 3000,
+    }).trim();
+  } catch { return null; }
+  if (!iconFileName) return null;
+  if (!iconFileName.endsWith('.icns')) iconFileName += '.icns';
+  return path.join(appPath, 'Contents', 'Resources', iconFileName);
+}
+
+function readAppIconCacheToken(appPath: string): string {
+  if (!appPath) return 'empty';
+  const plistPath = path.join(appPath || '', 'Contents', 'Info.plist');
+  const iconSourcePath = resolveAppIconSourcePath(appPath);
+  if (!iconSourcePath) return ['plist', readIconPathCacheToken(plistPath), 'icon', 'missing'].join('\0');
+  return [
+    'plist',
+    readIconPathCacheToken(plistPath),
+    'icon',
+    path.resolve(iconSourcePath),
+    readIconPathCacheToken(iconSourcePath),
+  ].join('\0');
+}
+
 /** Resolve a macOS .app bundle path to a PNG data URL of its icon, or null. */
 function resolveAppIconDataUrl(appPath: string, size = 32): string | null {
   try {
-    if (!appPath) return null;
-    const plistPath = path.join(appPath, 'Contents', 'Info.plist');
-    if (!fs.existsSync(plistPath)) return null;
-    let iconFileName = '';
-    try {
-      iconFileName = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIconFile', plistPath], {
-        encoding: 'utf-8',
-        timeout: 3000,
-      }).trim();
-    } catch { return null; }
-    if (!iconFileName) return null;
-    if (!iconFileName.endsWith('.icns')) iconFileName += '.icns';
-    const icnsPath = path.join(appPath, 'Contents', 'Resources', iconFileName);
-    if (!fs.existsSync(icnsPath)) return null;
+    const icnsPath = resolveAppIconSourcePath(appPath);
+    if (!icnsPath || !fs.existsSync(icnsPath)) return null;
     const os = require('os');
     const tmpPng = path.join(os.tmpdir(), `sc-icon-${Date.now()}.png`);
     try {
@@ -3073,6 +3162,13 @@ function resolveAppIconDataUrl(appPath: string, size = 32): string | null {
     return null;
   }
 }
+const appIconDataUrlCache = createAppIconDataUrlCache({
+  resolveAppIconDataUrl,
+  getAppIconCacheToken: readAppIconCacheToken,
+});
+const fileIconDataUrlCache = createFileIconDataUrlCache({
+  getFileIcon: (filePath, options) => app.getFileIcon(filePath, options),
+});
 let launcherEntryFrontmostApp: FrontmostAppContext | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
 const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
@@ -3198,48 +3294,12 @@ function setLauncherOverlayTopmost(enabled: boolean): void {
  * This is fire-and-forget — failures are silently ignored so we never
  * block or delay the launcher for users who don't use AeroSpace.
  */
-let aerospaceAvailable: boolean | null = null; // null = not yet checked
+const aerospaceWorkspaceMover = createAerospaceWorkspaceMover({
+  shouldRun: () => !!mainWindow && !mainWindow.isDestroyed(),
+});
+
 function moveWindowToCurrentAerospaceWorkspace(): void {
-  if (aerospaceAvailable === false || process.platform !== 'darwin' || !mainWindow || mainWindow.isDestroyed()) return;
-  try {
-    const { execFileSync } = require('child_process');
-    // Quick check: is AeroSpace running?  list-workspaces --focused
-    // exits 0 only when the server is up.
-    const focusedWs = String(
-      execFileSync('aerospace', ['list-workspaces', '--focused'], {
-        timeout: 500,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }) || ''
-    ).trim();
-    if (!focusedWs) return;
-    aerospaceAvailable = true;
-
-    // Find our window(s) by bundle-id
-    const windowsRaw = String(
-      execFileSync('aerospace', ['list-windows', '--all', '--app-bundle-id', 'com.supercmd.app', '--format', '%{window-id} %{workspace}'], {
-        timeout: 500,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }) || ''
-    ).trim();
-    if (!windowsRaw) return;
-
-    for (const line of windowsRaw.split('\n')) {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length < 2) continue;
-      const [windowId, currentWs] = parts;
-      if (currentWs === focusedWs) continue; // already on the right workspace
-      execFileSync('aerospace', ['move-node-to-workspace', focusedWs, '--window-id', windowId], {
-        timeout: 500,
-        stdio: 'ignore',
-      });
-    }
-  } catch (err: any) {
-    // ENOENT = `aerospace` binary not found — will never appear, so skip future calls.
-    if (err?.code === 'ENOENT') {
-      aerospaceAvailable = false;
-    }
-    // Other errors (server not running, command failed) are transient — retry next time.
-  }
+  aerospaceWorkspaceMover.requestMove();
 }
 
 function clearOAuthBlurHideSuppression(): void {
@@ -7370,6 +7430,7 @@ app.on('open-url', (event: any, url: string) => {
 // ─── Menu Bar (Tray) Management ─────────────────────────────────────
 
 const menuBarTrays = new Map<string, InstanceType<typeof Tray>>();
+const menuBarNativeImageCache = createMenuBarNativeImageCache();
 let appTray: InstanceType<typeof Tray> | null = null;
 
 function buildDefaultMacTrayTemplateIcon(): any | null {
@@ -10245,6 +10306,7 @@ function startEmojiTriggerMonitor(triggerPrefix = ':'): void {
         '-O', '-o', binaryPath,
         path.join(nativeDir, 'emoji-trigger-monitor.swift'),
         path.join(nativeDir, 'ax-caret-query.swift'),
+        path.join(nativeDir, 'emoji-caret-session-cache.swift'),
         '-framework', 'AppKit',
         '-framework', 'ApplicationServices',
       ]);
@@ -13316,19 +13378,23 @@ async function restartAndInstallAppUpdate(): Promise<boolean> {
       });
 
       triggerTimer = setTimeout(() => {
-        try {
-          if (process.platform === 'darwin') {
-            try {
-              appUpdater.autoInstallOnAppQuit = true;
-              appUpdater.autoRunAppAfterInstall = true;
-            } catch {}
-            appUpdater.quitAndInstall();
-          } else {
-            appUpdater.quitAndInstall(false, true);
+        void (async () => {
+          try {
+            await flushNotesToDisk();
+            await flushClipboardHistoryWrites();
+            if (process.platform === 'darwin') {
+              try {
+                appUpdater.autoInstallOnAppQuit = true;
+                appUpdater.autoRunAppAfterInstall = true;
+              } catch {}
+              appUpdater.quitAndInstall();
+            } else {
+              appUpdater.quitAndInstall(false, true);
+            }
+          } catch (error: any) {
+            finish(false, error);
           }
-        } catch (error: any) {
-          finish(false, error);
-        }
+        })();
       }, 40);
 
       timeoutTimer = setTimeout(() => {
@@ -15907,7 +15973,7 @@ return appURL's |path|() as text`,
               // actually targeted (bundlePath), so it does not depend on
               // lastFrontmostApp.path being populated.
               const iconPath = String(result?.appPath || targetAppPath || '').trim();
-              const appIconDataUrl = iconPath ? resolveAppIconDataUrl(iconPath, 32) : null;
+              const appIconDataUrl = iconPath ? appIconDataUrlCache.resolveSync(iconPath, 32) : null;
               resolve({ ...result, appIconDataUrl });
             } catch {
               resolve({ ok: false, error: stderr || 'Failed to parse menu item search output' });
@@ -16250,20 +16316,12 @@ return appURL's |path|() as text`,
   });
 
   ipcMain.handle('get-file-icon-data-url', async (_event: any, filePath: string, size = 20) => {
-    try {
-      const icon = await app.getFileIcon(filePath, { size: size <= 16 ? 'small' : size >= 64 ? 'large' : 'normal' });
-      if (icon && !icon.isEmpty()) {
-        return icon.resize({ width: size, height: size }).toDataURL();
-      }
-      return null;
-    } catch {
-      return null;
-    }
+    return fileIconDataUrlCache.resolve(filePath, size);
   });
 
   // Get .app bundle icon by reading its .icns file directly (avoids template-image transparency issues)
   ipcMain.handle('get-app-icon-data-url', async (_event: any, appPath: string, size = 32) => {
-    return resolveAppIconDataUrl(appPath, size);
+    return appIconDataUrlCache.resolve(appPath, size);
   });
 
   ipcMain.handle('file-search-query', async (_event: any, query: string, options?: { limit?: number }) => {
@@ -16450,12 +16508,12 @@ return appURL's |path|() as text`,
     return searchClipboardHistory(query);
   });
 
-  ipcMain.handle('clipboard-clear-history', () => {
-    clearClipboardHistory();
+  ipcMain.handle('clipboard-clear-history', async () => {
+    await clearClipboardHistory();
   });
 
-  ipcMain.handle('clipboard-delete-item', (_event: any, id: string) => {
-    return deleteClipboardItem(id);
+  ipcMain.handle('clipboard-delete-item', async (_event: any, id: string) => {
+    return await deleteClipboardItem(id);
   });
 
   ipcMain.handle('clipboard-copy-item', (_event: any, id: string) => {
@@ -19009,93 +19067,44 @@ if let tiff = image?.tiffRepresentation {
 
     let tray = menuBarTrays.get(extId);
 
-    const createNativeImageFromMenuIcon = (
-      payload: { pathValue?: string; dataUrlValue?: string; bitmapScale?: number },
-      size: number,
-    ) => {
-      try {
-        const fs = require('fs');
-        let image: any;
-        const dataUrlValue = String(payload?.dataUrlValue || '').trim();
-        const pathValue = String(payload?.pathValue || '').trim();
-        const requestedScale = Number(payload?.bitmapScale);
-        const bitmapScale = Number.isFinite(requestedScale) && requestedScale >= 1 ? requestedScale : 1;
-
-        if (dataUrlValue.startsWith('data:')) {
-          // For raster PNG data URLs that the renderer pre-rasterized at higher
-          // DPR (bitmapScale > 1), reconstruct via createFromBuffer with the
-          // matching scaleFactor so the Tray treats it as a retina rep instead
-          // of stretching a low-res bitmap.
-          const isRasterPng = dataUrlValue.startsWith('data:image/png');
-          if (isRasterPng && bitmapScale > 1) {
-            const commaIdx = dataUrlValue.indexOf(',');
-            const base64Body = commaIdx >= 0 ? dataUrlValue.slice(commaIdx + 1) : '';
-            const buf = base64Body ? Buffer.from(base64Body, 'base64') : null;
-            if (buf && buf.length > 0) {
-              image = nativeImage.createFromBuffer(buf, { scaleFactor: bitmapScale });
-            }
-          }
-          if (!image || image.isEmpty?.()) {
-            image = nativeImage.createFromDataURL(dataUrlValue);
-          }
-        } else {
-          if (!pathValue || !fs.existsSync(pathValue)) return null;
-          image = nativeImage.createFromPath(pathValue);
-          if ((!image || image.isEmpty()) && /\.svg$/i.test(pathValue)) {
-            const svg = fs.readFileSync(pathValue, 'utf8');
-            const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
-            image = nativeImage.createFromDataURL(svgDataUrl);
-          }
-        }
-        if (!image || image.isEmpty()) return null;
-
-        // When the source already carries a retina backing (scaleFactor > 1),
-        // resizing to logical px would discard the @2x rep — keep it intact.
-        const currentSize = image.getSize?.() || { width: 0, height: 0 };
-        if (bitmapScale > 1 && currentSize.width === size && currentSize.height === size) {
-          return image;
-        }
-        return image.resize({ width: size, height: size, quality: 'best' });
-      } catch {
-        return null;
-      }
-    };
-
     let lastResolvedTrayIconOk = false;
     const hasEmojiIcon = typeof iconEmoji === 'string' && iconEmoji.trim().length > 0;
+    const isPrimaryGeneratedDataUrl = typeof iconDataUrl === 'string' && iconDataUrl.startsWith('data:');
+    const isPrimarySvgPath = /\.svg$/i.test(iconPath || '');
+    const primaryTemplate =
+      typeof iconTemplate === 'boolean'
+        ? iconTemplate
+        : (isPrimaryGeneratedDataUrl ? true : !isPrimarySvgPath);
     const resolveTrayIcon = () => {
-      const primaryImg = createNativeImageFromMenuIcon(
-        { pathValue: iconPath, dataUrlValue: iconDataUrl, bitmapScale: iconBitmapScale },
-        18,
-      );
-      const usingPrimary = Boolean(primaryImg);
+      const primaryImg = createCachedMenuBarNativeImage({
+        cache: menuBarNativeImageCache,
+        nativeImage,
+        fs,
+        pathValue: iconPath,
+        dataUrlValue: iconDataUrl,
+        bitmapScale: iconBitmapScale,
+        size: 18,
+        template: primaryTemplate,
+        resizeQuality: 'best',
+      });
       // When the extension supplies an emoji as its tray icon (e.g. "🎉"), we render that
       // emoji as the tray title and leave the tray image empty. Falling back to the
       // extension's package icon here would produce two visuals side-by-side in one slot.
       const img =
         primaryImg ||
-        (hasEmojiIcon ? null : createNativeImageFromMenuIcon({ dataUrlValue: fallbackIconDataUrl }, 18));
+        (hasEmojiIcon
+          ? null
+          : createCachedMenuBarNativeImage({
+              cache: menuBarNativeImageCache,
+              nativeImage,
+              fs,
+              dataUrlValue: fallbackIconDataUrl,
+              size: 18,
+              template: false,
+              resizeQuality: 'best',
+            }));
       lastResolvedTrayIconOk = Boolean(img);
-      if (img) {
-        // Raycast icon tokens are serialized as data URLs and should be template images
-        // so macOS can adapt them to menu bar foreground contrast.
-        const isGeneratedDataUrl = typeof iconDataUrl === 'string' && iconDataUrl.startsWith('data:');
-        // Keep template rendering for bitmap assets (classic menubar style).
-        // For SVG asset paths, preserve source appearance (e.g., explicit light/dark icon variants).
-        const isSvg = /\.svg$/i.test(iconPath || '');
-        const shouldTemplate =
-          !usingPrimary
-            ? false
-            : (
-                typeof iconTemplate === 'boolean'
-                  ? iconTemplate
-                  : (isGeneratedDataUrl ? true : !isSvg)
-              );
-        try {
-          img.setTemplateImage(shouldTemplate);
-        } catch {}
-        return img;
-      }
+      if (img) return img;
       return nativeImage.createEmpty();
     };
 
@@ -19103,10 +19112,10 @@ if let tiff = image?.tiffRepresentation {
       const icon = resolveTrayIcon();
       tray = new Tray(icon);
       menuBarTrays.set(extId, tray);
+    } else {
+      // Refresh icon on accepted updates after creation (first payload can be incomplete).
+      tray.setImage(resolveTrayIcon());
     }
-
-    // Always refresh icon on update (first payload can be incomplete).
-    tray.setImage(resolveTrayIcon());
 
     // Update title: if there's a text title, show it; if only emoji icon, show that
     if (title) {
@@ -19144,31 +19153,19 @@ if let tiff = image?.tiffRepresentation {
       const iconDataUrl = typeof item?.iconDataUrl === 'string' ? item.iconDataUrl.trim() : '';
       const iconPath = typeof item?.iconPath === 'string' ? item.iconPath : '';
       const explicitTemplate = typeof item?.iconTemplate === 'boolean' ? item.iconTemplate : undefined;
-      try {
-        let img: any;
-        if (iconDataUrl.startsWith('data:')) {
-          img = nativeImage.createFromDataURL(iconDataUrl);
-        } else {
-          if (!iconPath) return undefined;
-          const fs = require('fs');
-          if (!fs.existsSync(iconPath)) return undefined;
-          img = nativeImage.createFromPath(iconPath);
-          if ((!img || img.isEmpty()) && /\.svg$/i.test(iconPath)) {
-            const svg = fs.readFileSync(iconPath, 'utf8');
-            const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
-            img = nativeImage.createFromDataURL(svgDataUrl);
-          }
-        }
-        if (!img || img.isEmpty()) return undefined;
-        const shouldTemplate =
-          explicitTemplate ?? (iconDataUrl.startsWith('data:image/svg+xml') ? true : false);
-        const resized = img.resize({ width: 16, height: 16 });
-        try {
-          resized.setTemplateImage(shouldTemplate);
-        } catch {}
-        return resized;
-      } catch {}
-      return undefined;
+      const shouldTemplate =
+        explicitTemplate ?? (iconDataUrl.startsWith('data:image/svg+xml') ? true : false);
+      const image = createCachedMenuBarNativeImage({
+        cache: menuBarNativeImageCache,
+        nativeImage,
+        fs,
+        pathValue: iconPath,
+        dataUrlValue: iconDataUrl,
+        bitmapScale: item?.iconBitmapScale,
+        size: 16,
+        template: shouldTemplate,
+      });
+      return image || undefined;
     };
 
     const labelWithEmoji = (item: any) => {
@@ -19343,8 +19340,42 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+let pendingAsyncStorageQuitFlushComplete = false;
+let pendingAsyncStorageQuitFlushInProgress = false;
+
+app.on('before-quit', (event: any) => {
   prepareWindowsForAppQuit();
+
+  const updateRestartInProgress = Boolean(appUpdaterRestartPromise) || appUpdaterStatusSnapshot.state === 'restarting';
+  const shouldFlushNotes = hasPendingNotesSave();
+  const shouldFlushClipboard = !updateRestartInProgress && hasPendingClipboardHistoryWrites();
+
+  if (
+    pendingAsyncStorageQuitFlushComplete ||
+    pendingAsyncStorageQuitFlushInProgress ||
+    (!shouldFlushNotes && !shouldFlushClipboard)
+  ) {
+    return;
+  }
+
+  pendingAsyncStorageQuitFlushInProgress = true;
+  event.preventDefault();
+  Promise.all([
+    shouldFlushNotes
+      ? flushNotesToDisk().catch((error) => {
+          console.error('[Notes] Failed to flush pending saves before quit:', error);
+        })
+      : Promise.resolve(),
+    shouldFlushClipboard
+      ? flushClipboardHistoryWrites().catch((error) => {
+          console.error('Failed to flush clipboard history before quit:', error);
+        })
+      : Promise.resolve(),
+  ]).finally(() => {
+    pendingAsyncStorageQuitFlushComplete = true;
+    pendingAsyncStorageQuitFlushInProgress = false;
+    app.quit();
+  });
 });
 
 app.on('will-quit', () => {
@@ -19370,7 +19401,7 @@ app.on('will-quit', () => {
   killParakeetServer();
   killQwen3Server();
   killAudioCapturer();
-  stopClipboardMonitor();
+  void stopClipboardMonitor();
   stopSnippetExpander();
   stopEmojiTriggerMonitor();
   stopFileSearchIndexing();
@@ -19384,4 +19415,5 @@ app.on('will-quit', () => {
     tray.destroy();
   }
   menuBarTrays.clear();
+  menuBarNativeImageCache.clear();
 });
