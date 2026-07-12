@@ -3,7 +3,11 @@ import path from 'path';
 
 const localesDir = path.resolve('src/renderer/src/i18n/locales');
 const baseLocale = 'en';
-const strictLocales = new Set((process.env.SUPERCMD_STRICT_LOCALES || 'ko').split(',').map((item) => item.trim()).filter(Boolean));
+const localeFiles = fs.readdirSync(localesDir).filter((file) => file.endsWith('.json') && file !== `${baseLocale}.json`).sort();
+const defaultStrictLocales = localeFiles.map((file) => file.replace(/\.json$/, ''));
+const strictLocales = new Set(
+  (process.env.SUPERCMD_STRICT_LOCALES || defaultStrictLocales.join(',')).split(',').map((item) => item.trim()).filter(Boolean),
+);
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -41,7 +45,6 @@ function walk(baseNode, localeNode, currentPath, result) {
 }
 
 const baseMessages = JSON.parse(fs.readFileSync(path.join(localesDir, `${baseLocale}.json`), 'utf8'));
-const localeFiles = fs.readdirSync(localesDir).filter((file) => file.endsWith('.json') && file !== `${baseLocale}.json`);
 
 let hasStrictFailure = false;
 

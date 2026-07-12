@@ -298,7 +298,7 @@ const CameraExtension: React.FC<CameraExtensionProps> = ({ onClose }) => {
     }, 5000);
     capturePreviewClearTimerRef.current = window.setTimeout(() => {
       setCapturePreviewDataUrl(null);
-      setCapturePreviewClearTimerRef.current = null;
+      capturePreviewClearTimerRef.current = null;
     }, 5300);
     setFlashVisible(true);
     if (flashTimerRef.current != null) {

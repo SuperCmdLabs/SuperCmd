@@ -1224,7 +1224,7 @@ const AITab: React.FC = () => {
                     <h3 className="text-[0.8125rem] font-semibold text-[var(--text-primary)]">{t('settings.ai.llm.ollama.models')}</h3>
                     {ollamaRunning && (
                       <button
-                        onClick={refreshOllamaStatus}
+                        onClick={() => refreshOllamaStatus()}
                         className="flex items-center gap-1 px-2 py-1 text-[0.75rem] text-[var(--text-muted)] hover:text-[var(--text-secondary)] rounded-md transition-colors"
                       >
                         <RefreshCw className="w-3 h-3" />
@@ -2004,7 +2004,10 @@ const AITab: React.FC = () => {
                       try {
                         setPreviewingVoice(true);
                         const selectedVoice = ELEVENLABS_VOICES.find((v) => v.id === selectedElevenLabsVoiceId) || elevenLabsVoices.find((v) => v.id === selectedElevenLabsVoiceId);
-                        const intro = `Hi, this is ${selectedVoice?.label || selectedVoice?.name || 'my voice'} from ElevenLabs in SuperCmd.`;
+                        const selectedVoiceName = selectedVoice
+                          ? ('label' in selectedVoice ? selectedVoice.label : selectedVoice.name)
+                          : 'my voice';
+                        const intro = `Hi, this is ${selectedVoiceName} from ElevenLabs in SuperCmd.`;
                         await window.electron.speakPreviewVoice({
                           provider: 'elevenlabs',
                           model: speakModelValue,

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { createHash } from 'crypto';
 import path from 'path';
 import { tmpdir } from 'os';
@@ -23,6 +23,18 @@ const runtimeDir = path.join(distNativeDir, 'whisper-runtime');
 const frameworkDir = path.join(runtimeDir, 'whisper.framework');
 const transcriberSource = path.join(repoRoot, 'src', 'native', 'whisper-transcriber.swift');
 const transcriberBinary = path.join(distNativeDir, 'whisper-transcriber');
+const transcriberStamp = path.join(distNativeDir, 'whisper-transcriber.stamp.json');
+const stampVersion = 1;
+const transcriberBuildArgs = [
+  '-O',
+  '-module-cache-path', '<tmpdir>/supercmd-swift-module-cache',
+  '-F', runtimeDir,
+  '-framework', 'whisper',
+  '-Xlinker', '-rpath',
+  '-Xlinker', '@executable_path/whisper-runtime',
+  '-o', transcriberBinary,
+  transcriberSource,
+];
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -85,15 +97,64 @@ function buildTranscriber() {
 
   console.log('[whisper.cpp] Building whisper-transcriber');
   run('swiftc', [
-    '-O',
-    '-module-cache-path', moduleCacheDir,
-    '-F', runtimeDir,
-    '-framework', 'whisper',
-    '-Xlinker', '-rpath',
-    '-Xlinker', '@executable_path/whisper-runtime',
-    '-o', transcriberBinary,
-    transcriberSource,
+    ...transcriberBuildArgs.map((arg) => arg === '<tmpdir>/supercmd-swift-module-cache' ? moduleCacheDir : arg),
   ]);
+}
+
+function newestMtimeMs(filePath) {
+  const stats = lstatSync(filePath);
+  if (stats.isSymbolicLink()) return stats.mtimeMs;
+  if (!stats.isDirectory()) return stats.mtimeMs;
+
+  return readdirSync(filePath).reduce((newest, entry) => {
+    return Math.max(newest, newestMtimeMs(path.join(filePath, entry)));
+  }, stats.mtimeMs);
+}
+
+function transcriberStampPayload() {
+  return {
+    version: stampVersion,
+    whisperVersion,
+    frameworkUrl,
+    frameworkSha256,
+    command: ['swiftc', ...transcriberBuildArgs],
+    source: {
+      path: transcriberSource,
+      mtimeMs: statSync(transcriberSource).mtimeMs,
+      size: statSync(transcriberSource).size,
+    },
+    script: {
+      path: __filename,
+      mtimeMs: statSync(__filename).mtimeMs,
+      size: statSync(__filename).size,
+    },
+    framework: {
+      path: frameworkDir,
+      mtimeMs: newestMtimeMs(frameworkDir),
+    },
+  };
+}
+
+function readStamp() {
+  try {
+    return JSON.parse(readFileSync(transcriberStamp, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function transcriberIsUpToDate() {
+  if (!existsSync(transcriberBinary) || !existsSync(transcriberSource) || !existsSync(frameworkDir)) return false;
+
+  const payload = transcriberStampPayload();
+  if (JSON.stringify(readStamp()) !== JSON.stringify(payload)) return false;
+
+  const binaryMtime = statSync(transcriberBinary).mtimeMs;
+  return payload.source.mtimeMs <= binaryMtime && payload.framework.mtimeMs <= binaryMtime;
+}
+
+function writeTranscriberStamp() {
+  writeFileSync(transcriberStamp, JSON.stringify(transcriberStampPayload(), null, 2));
 }
 
 try {
@@ -104,7 +165,12 @@ try {
   } else {
     console.log('[whisper.cpp] Using existing macOS framework');
   }
-  buildTranscriber();
+  if (transcriberIsUpToDate()) {
+    console.log('[whisper.cpp] whisper-transcriber is up to date, skipping rebuild');
+  } else {
+    buildTranscriber();
+    writeTranscriberStamp();
+  }
   console.log('[whisper.cpp] Ready');
 } catch (error) {
   console.error('[whisper.cpp] Build failed:', error instanceof Error ? error.message : error);

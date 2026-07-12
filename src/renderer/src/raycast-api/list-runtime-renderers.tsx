@@ -19,7 +19,7 @@ interface ListRendererDeps {
   renderIcon: (icon: any, className?: string, assetsPath?: string) => React.ReactNode;
   resolveTintColor: (tintColor?: string) => string | undefined;
   resolveReadableTintColor: (tintColor?: string, options?: { minContrast?: number }) => string | undefined;
-  addHexAlpha: (hex: string, alphaHex?: string) => string | null;
+  addHexAlpha: (hex: string, alphaHex: string) => string | undefined;
 }
 
 export function createListRenderers(deps: ListRendererDeps) {
@@ -102,7 +102,7 @@ export function createListRenderers(deps: ListRendererDeps) {
           {icon && <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-[var(--text-muted)] text-xs">{renderIcon(icon, iconClassName, assetsPath)}</div>}
           <div className="flex-1 min-w-0"><span className="text-[13px] leading-[18px] truncate block" style={{ color: 'rgba(var(--on-surface-rgb), 0.9)' }}>{primaryText}</span></div>
           {secondaryText && <span className="text-[11px] leading-[16px] flex-shrink-0 truncate max-w-[220px]" style={{ color: 'var(--text-muted)' }}>{secondaryText}</span>}
-          {accessories?.map((accessory, index) => {
+          {accessories?.map((accessory: NonNullable<ListItemProps['accessories']>[number], index: number) => {
             const accessoryText = typeof accessory?.text === 'string' ? accessory.text : typeof accessory?.text === 'object' ? accessory.text?.value || '' : '';
             const accessoryTextColorRaw = typeof accessory?.text === 'object' ? accessory.text?.color : undefined;
             const tagText = typeof accessory?.tag === 'string' ? accessory.tag : typeof accessory?.tag === 'object' ? accessory.tag?.value || '' : '';

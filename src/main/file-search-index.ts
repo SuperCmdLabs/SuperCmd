@@ -1096,3 +1096,25 @@ export async function searchIndexedFiles(
 
   return merged;
 }
+
+export const __fileSearchIndexPerfHarness = {
+  async rebuild(options?: { homeDir?: string; includeProtectedHomeRoots?: boolean }): Promise<void> {
+    configuredHomeDir = resolveHomeDir(options?.homeDir);
+    includeProtectedHomeRoots = Boolean(options?.includeProtectedHomeRoots);
+    includeRoots = resolveIncludeRoots(configuredHomeDir);
+    lastBuildStartedAt = 0;
+    await rebuildFileSearchIndex('perf-harness');
+  },
+  applyWatchEventBatch,
+  reset(): void {
+    stopFileSearchIndexing();
+    activeIndex = null;
+    rebuildPromise = null;
+    indexing = false;
+    configuredHomeDir = '';
+    includeRoots = [];
+    lastIndexError = null;
+    lastBuildStartedAt = 0;
+    includeProtectedHomeRoots = false;
+  },
+};

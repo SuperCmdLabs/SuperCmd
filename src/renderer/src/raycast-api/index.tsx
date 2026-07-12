@@ -434,8 +434,10 @@ export enum ToastStyle {
   Failure = 'failure',
 }
 
+type ToastStyleInput = ToastStyle | 'animated' | 'success' | 'failure';
+
 export class Toast {
-  static Style = ToastStyle;
+  static Style: typeof ToastStyle = ToastStyle;
   private static _activeToast: Toast | null = null;
 
   private _title = '';
@@ -483,7 +485,7 @@ export class Toast {
     return this._style;
   }
 
-  public set style(value: ToastStyle | Toast.Style | string) {
+  public set style(value: ToastStyleInput | Toast.Style | string) {
     this._style = this.normalizeStyle(value);
     this.refresh();
   }
@@ -506,7 +508,7 @@ export class Toast {
     this.refresh();
   }
 
-  private normalizeStyle(value: ToastStyle | Toast.Style | string | undefined): ToastStyle {
+  private normalizeStyle(value: ToastStyleInput | Toast.Style | string | undefined): ToastStyle {
     if (value === ToastStyle.Animated || value === Toast.Style.Animated || value === 'animated') {
       return ToastStyle.Animated;
     }
@@ -894,16 +896,12 @@ export class Toast {
 
 // Toast namespace for types (merged with class)
 export namespace Toast {
-  export enum Style {
-    Animated = 'animated',
-    Success = 'success',
-    Failure = 'failure',
-  }
+  export type Style = ToastStyle;
 
   export interface Options {
     title: string;
     message?: string;
-    style?: ToastStyle | Toast.Style;
+    style?: ToastStyleInput | Toast.Style;
     primaryAction?: Alert.ActionOptions;
     secondaryAction?: Alert.ActionOptions;
   }
@@ -924,9 +922,9 @@ function shouldSuppressBenignGitMissingPathToast(options: Toast.Options): boolea
 }
 
 export async function showToast(options: Toast.Options): Promise<Toast>;
-export async function showToast(style: ToastStyle | Toast.Style, title: string, message?: string): Promise<Toast>;
+export async function showToast(style: ToastStyleInput | Toast.Style, title: string, message?: string): Promise<Toast>;
 export async function showToast(
-  optionsOrStyle: Toast.Options | ToastStyle | Toast.Style,
+  optionsOrStyle: Toast.Options | ToastStyleInput | Toast.Style,
   title?: string,
   message?: string
 ): Promise<Toast> {

@@ -1572,3 +1572,10 @@ function tabToBrowserSearchEntry(tab: BrowserTabEntry): BrowserSearchEntry {
     sourceProfileName: tab.profileName,
   };
 }
+
+export const __browserSearchTestAccess = {
+  buildBrowserEntryIndex,
+  filterBrowserResults,
+  getOrderedBrowserResults,
+  getRankedBrowserResults,
+};

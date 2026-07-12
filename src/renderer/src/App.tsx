@@ -1078,7 +1078,7 @@ const App: React.FC = () => {
 
   const pinToggleForCommand = useCallback(
     async (command: CommandInfo) => {
-      console.log('[PIN-TOGGLE] called for command:', command?.id, command?.name);
+      console.log('[PIN-TOGGLE] called for command:', command?.id, command?.title);
       const currentPinned = pinnedCommandsRef.current;
       const exists = currentPinned.includes(command.id);
       console.log('[PIN-TOGGLE] currentPinned:', currentPinned, 'exists:', exists);

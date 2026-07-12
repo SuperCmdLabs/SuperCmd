@@ -14,8 +14,10 @@ const distNativeDir = path.join(repoRoot, 'dist', 'native');
 const binaryDest = path.join(distNativeDir, 'parakeet-transcriber');
 
 const sourceFiles = [
+  __filename,
   path.join(packageDir, 'Sources', 'main.swift'),
   path.join(packageDir, 'Package.swift'),
+  path.join(packageDir, 'Package.resolved'),
 ];
 
 function needsRebuild() {

@@ -15,8 +15,10 @@ const binaryDest = path.join(outDir, 'soulver-calculator');
 const frameworkDest = path.join(outDir, 'SoulverCore.framework');
 
 const sourceFiles = [
+  __filename,
   path.join(packageDir, 'Sources', 'main.swift'),
   path.join(packageDir, 'Package.swift'),
+  path.join(packageDir, 'Package.resolved'),
 ];
 
 function needsRebuild() {
