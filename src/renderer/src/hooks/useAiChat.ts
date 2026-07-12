@@ -20,6 +20,7 @@ import type {
   AiChatMessage as AiMessage,
   AiChatSnapshot,
 } from '../../types/electron';
+import { createAiChatStreamBuffer } from '../utils/ai-chat-stream-buffer';
 
 export type { AiConversation, AiMessage };
 
@@ -80,8 +81,64 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
   const streamingMessageIdRef = useRef<string | null>(null);
   const activeConversationIdRef = useRef<string | null>(null);
   const messagesRef = useRef<AiMessage[]>([]);
+  const streamBufferRef = useRef<ReturnType<typeof createAiChatStreamBuffer> | null>(null);
   const aiInputRef = useRef<HTMLInputElement>(null);
   const aiResponseRef = useRef<HTMLDivElement>(null);
+
+  const setMessagesSnapshot = useCallback((nextMessages: AiMessage[]) => {
+    messagesRef.current = nextMessages;
+    setMessages(nextMessages);
+  }, []);
+
+  const updateMessagesSnapshot = useCallback((updater: (current: AiMessage[]) => AiMessage[]) => {
+    const current = messagesRef.current;
+    const next = updater(current);
+    if (next === current) return current;
+    messagesRef.current = next;
+    setMessages(next);
+    return next;
+  }, []);
+
+  const applyStreamingContent = useCallback(
+    (messageId: string, content: string) => {
+      updateMessagesSnapshot((current) => {
+        let changed = false;
+        const next = current.map((message) => {
+          if (message.id !== messageId) return message;
+          if (message.content === content) return message;
+          changed = true;
+          return { ...message, content };
+        });
+        return changed ? next : current;
+      });
+    },
+    [updateMessagesSnapshot]
+  );
+
+  if (streamBufferRef.current === null) {
+    streamBufferRef.current = createAiChatStreamBuffer({
+      onFlush: (content) => {
+        const messageId = streamingMessageIdRef.current;
+        if (messageId) {
+          applyStreamingContent(messageId, content);
+        }
+      },
+    });
+  }
+
+  const flushStreamingBuffer = useCallback(() => {
+    streamBufferRef.current?.flushNow();
+  }, []);
+
+  const resetStreamingBuffer = useCallback((content = '') => {
+    streamBufferRef.current?.reset(content);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      streamBufferRef.current?.cancel();
+    };
+  }, []);
 
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId;
@@ -104,7 +161,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
 
     const nextActive = nextConversations.find((conversation) => conversation.id === activeId);
     if (nextActive) {
-      setMessages(nextActive.messages);
+      setMessagesSnapshot(nextActive.messages);
       return;
     }
 
@@ -112,7 +169,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
       activeConversationIdRef.current = null;
       setActiveConversationId(null);
     }
-  }, []);
+  }, [setMessagesSnapshot]);
 
   const refreshSnapshot = useCallback(() => {
     void window.electron.getAiChatSnapshot()
@@ -146,37 +203,29 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     const appendToStreamingMessage = (chunk: string) => {
       const msgId = streamingMessageIdRef.current;
       if (!msgId) return;
-      setMessages((prev) =>
-        prev.map((message) => (
-          message.id === msgId
-            ? { ...message, content: message.content + chunk }
-            : message
-        ))
-      );
+      streamBufferRef.current?.append(chunk);
     };
 
     const finalizeConversation = () => {
       const conversationId = activeConversationIdRef.current;
       if (!conversationId) return;
 
-      setMessages((current) => {
-        const existing = conversations.find((conversation) => conversation.id === conversationId);
-        const updatedConversation: AiConversation = {
-          id: conversationId,
-          title:
-            existing?.title && existing.title !== 'New Chat'
-              ? existing.title
-              : makeTitle(current.find((message) => message.role === 'user')?.content || 'New Chat'),
-          messages: current,
-          createdAt: existing?.createdAt ?? Date.now(),
-          updatedAt: Date.now(),
-          source: existing?.source || 'local',
-          ...(existing?.sourceConversationId ? { sourceConversationId: existing.sourceConversationId } : {}),
-          ...(existing?.metadata ? { metadata: existing.metadata } : {}),
-        };
-        persistConversation(updatedConversation);
-        return current;
-      });
+      const current = messagesRef.current;
+      const existing = conversations.find((conversation) => conversation.id === conversationId);
+      const updatedConversation: AiConversation = {
+        id: conversationId,
+        title:
+          existing?.title && existing.title !== 'New Chat'
+            ? existing.title
+            : makeTitle(current.find((message) => message.role === 'user')?.content || 'New Chat'),
+        messages: current,
+        createdAt: existing?.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+        source: existing?.source || 'local',
+        ...(existing?.sourceConversationId ? { sourceConversationId: existing.sourceConversationId } : {}),
+        ...(existing?.metadata ? { metadata: existing.metadata } : {}),
+      };
+      persistConversation(updatedConversation);
     };
 
     const handleChunk = (data: { requestId: string; chunk: string }) => {
@@ -187,10 +236,12 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
 
     const handleDone = (data: { requestId: string }) => {
       if (data.requestId === aiRequestIdRef.current) {
+        flushStreamingBuffer();
         aiStreamingRef.current = false;
         setAiStreaming(false);
-        streamingMessageIdRef.current = null;
         finalizeConversation();
+        streamingMessageIdRef.current = null;
+        resetStreamingBuffer();
       }
     };
 
@@ -199,20 +250,14 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
         aiStreamingRef.current = false;
         const msgId = streamingMessageIdRef.current;
         if (msgId) {
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === msgId
-                ? {
-                    ...message,
-                    content: message.content + (message.content ? '\n\n' : '') + `Error: ${data.error}`,
-                  }
-                : message
-            )
-          );
+          const currentContent = streamBufferRef.current?.getContent() ?? '';
+          streamBufferRef.current?.append(`${currentContent ? '\n\n' : ''}Error: ${data.error}`);
+          flushStreamingBuffer();
         }
         setAiStreaming(false);
-        streamingMessageIdRef.current = null;
         finalizeConversation();
+        streamingMessageIdRef.current = null;
+        resetStreamingBuffer();
       }
     };
 
@@ -227,7 +272,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
       removeDone?.();
       removeError?.();
     };
-  }, [hasBeenActivated, conversations, persistConversation]);
+  }, [hasBeenActivated, conversations, flushStreamingBuffer, persistConversation, resetStreamingBuffer]);
 
   useEffect(() => {
     if (aiResponseRef.current) {
@@ -283,16 +328,16 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
         content: '',
         createdAt: Date.now(),
       };
+      resetStreamingBuffer();
       streamingMessageIdRef.current = assistantMessage.id;
 
-      setMessages((prev) => {
-        const next = [...prev, userMessage, assistantMessage];
-        sendChatTurn([...prev, userMessage]);
-        return next;
-      });
+      const currentMessages = messagesRef.current;
+      const nextMessages = [...currentMessages, userMessage, assistantMessage];
+      setMessagesSnapshot(nextMessages);
+      sendChatTurn([...currentMessages, userMessage]);
       setAiQuery('');
     },
-    [aiAvailable, persistConversation, sendChatTurn]
+    [aiAvailable, persistConversation, resetStreamingBuffer, sendChatTurn, setMessagesSnapshot]
   );
 
   const startAiChat = useCallback(
@@ -301,7 +346,8 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
       setHasBeenActivated(true);
       activeConversationIdRef.current = null;
       setActiveConversationId(null);
-      setMessages([]);
+      resetStreamingBuffer();
+      setMessagesSnapshot([]);
       setAiMode(true);
       const trimmed = searchQuery.trim();
       if (trimmed) {
@@ -310,10 +356,11 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
         setAiQuery('');
       }
     },
-    [aiAvailable, setAiMode, sendMessage]
+    [aiAvailable, resetStreamingBuffer, setAiMode, sendMessage, setMessagesSnapshot]
   );
 
   const stopStreaming = useCallback(() => {
+    flushStreamingBuffer();
     if (aiRequestIdRef.current && aiStreamingRef.current) {
       window.electron.aiCancel(aiRequestIdRef.current);
     }
@@ -321,13 +368,21 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     setAiStreaming(false);
     const messageId = streamingMessageIdRef.current;
     if (messageId) {
-      setMessages((prev) =>
-        prev.map((message) => (message.id === messageId ? { ...message, cancelled: true } : message))
-      );
+      updateMessagesSnapshot((current) => {
+        let changed = false;
+        const next = current.map((message) => {
+          if (message.id !== messageId) return message;
+          if (message.cancelled) return message;
+          changed = true;
+          return { ...message, cancelled: true };
+        });
+        return changed ? next : current;
+      });
     }
     streamingMessageIdRef.current = null;
     aiRequestIdRef.current = null;
-  }, []);
+    resetStreamingBuffer();
+  }, [flushStreamingBuffer, resetStreamingBuffer, updateMessagesSnapshot]);
 
   const newChat = useCallback(() => {
     if (aiRequestIdRef.current && aiStreamingRef.current) {
@@ -338,11 +393,12 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     streamingMessageIdRef.current = null;
     activeConversationIdRef.current = null;
     setActiveConversationId(null);
-    setMessages([]);
+    resetStreamingBuffer();
+    setMessagesSnapshot([]);
     setAiStreaming(false);
     setAiQuery('');
     setTimeout(() => aiInputRef.current?.focus(), 0);
-  }, []);
+  }, [resetStreamingBuffer, setMessagesSnapshot]);
 
   const selectConversation = useCallback((id: string) => {
     if (aiRequestIdRef.current && aiStreamingRef.current) {
@@ -351,6 +407,7 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     aiRequestIdRef.current = null;
     aiStreamingRef.current = false;
     streamingMessageIdRef.current = null;
+    resetStreamingBuffer();
     setAiStreaming(false);
 
     setConversations((current) => {
@@ -358,13 +415,13 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
       if (conversation) {
         activeConversationIdRef.current = id;
         setActiveConversationId(id);
-        setMessages(conversation.messages);
+        setMessagesSnapshot(conversation.messages);
       }
       return current;
     });
     setAiQuery('');
     setTimeout(() => aiInputRef.current?.focus(), 0);
-  }, []);
+  }, [resetStreamingBuffer, setMessagesSnapshot]);
 
   const deleteConversation = useCallback((id: string) => {
     setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
@@ -372,7 +429,8 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     if (activeConversationIdRef.current === id) {
       activeConversationIdRef.current = null;
       setActiveConversationId(null);
-      setMessages([]);
+      resetStreamingBuffer();
+      setMessagesSnapshot([]);
       if (aiRequestIdRef.current && aiStreamingRef.current) {
         window.electron.aiCancel(aiRequestIdRef.current);
       }
@@ -381,9 +439,10 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
       streamingMessageIdRef.current = null;
       setAiStreaming(false);
     }
-  }, []);
+  }, [resetStreamingBuffer, setMessagesSnapshot]);
 
   const exitAiMode = useCallback(() => {
+    flushStreamingBuffer();
     if (aiRequestIdRef.current && aiStreamingRef.current) {
       window.electron.aiCancel(aiRequestIdRef.current);
     }
@@ -393,8 +452,9 @@ export function useAiChat({ onExitAiMode, setAiMode }: UseAiChatOptions): UseAiC
     setAiMode(false);
     setAiStreaming(false);
     setAiQuery('');
+    resetStreamingBuffer();
     onExitAiMode?.();
-  }, [setAiMode, onExitAiMode]);
+  }, [flushStreamingBuffer, resetStreamingBuffer, setAiMode, onExitAiMode]);
 
   useEffect(() => {
     if (messages.length === 0 && !aiQuery && !aiStreaming) return;

@@ -28,9 +28,6 @@ import type {
   AISettings,
   EdgeTtsVoice,
   ElevenLabsVoice,
-  WhisperCppModelStatus,
-  ParakeetModelStatus,
-  Qwen3ModelStatus,
 } from '../../types/electron';
 import { useI18n } from '../i18n';
 import {
@@ -38,6 +35,14 @@ import {
   getCachedElevenLabsVoices,
   setCachedElevenLabsVoices,
 } from '../utils/voice-cache';
+import {
+  AI_MODEL_STATUS_POLL_INTERVAL_MS,
+  applyAiModelStatusPatch,
+  createEmptyAiModelStatusSnapshot,
+  fetchAiModelStatusPollPatch,
+  type AiModelStatusPatch,
+  type AiModelStatusSnapshot,
+} from './aiModelStatusPolling';
 
 const getProviderOptions = (t: (key: string) => string) => [
   { id: 'openai' as const, label: t('settings.ai.llm.provider.openai'), description: t('settings.ai.llm.providerDescriptions.openai') },
@@ -269,11 +274,15 @@ const AITab: React.FC = () => {
   const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
   const [elevenLabsVoicesLoading, setElevenLabsVoicesLoading] = useState(false);
   const [elevenLabsVoicesError, setElevenLabsVoicesError] = useState<string | null>(null);
-  const [whisperCppModelStatus, setWhisperCppModelStatus] = useState<WhisperCppModelStatus | null>(null);
+  const [aiModelStatuses, setAiModelStatuses] = useState<AiModelStatusSnapshot>(() => createEmptyAiModelStatusSnapshot());
+  const aiModelStatusesRef = useRef<AiModelStatusSnapshot>(aiModelStatuses);
+  const {
+    whisperCpp: whisperCppModelStatus,
+    parakeet: parakeetModelStatus,
+    qwen3: qwen3ModelStatus,
+  } = aiModelStatuses;
   const [whisperCppModelLoading, setWhisperCppModelLoading] = useState(false);
-  const [parakeetModelStatus, setParakeetModelStatus] = useState<ParakeetModelStatus | null>(null);
   const [parakeetModelLoading, setParakeetModelLoading] = useState(false);
-  const [qwen3ModelStatus, setQwen3ModelStatus] = useState<Qwen3ModelStatus | null>(null);
   const [qwen3ModelLoading, setQwen3ModelLoading] = useState(false);
   const [whisperCustomMode, setWhisperCustomMode] = useState(false);
   const whisperSpeakToggleHotkey = (settings?.commandHotkeys || {})[WHISPER_SPEAK_TOGGLE_COMMAND_ID] ?? '';
@@ -291,6 +300,10 @@ const AITab: React.FC = () => {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  useEffect(() => {
+    aiModelStatusesRef.current = aiModelStatuses;
+  }, [aiModelStatuses]);
 
   const fetchLmStudioModels = useCallback((baseUrl: string) => {
     if (lmStudioFetchTimerRef.current) clearTimeout(lmStudioFetchTimerRef.current);
@@ -405,15 +418,31 @@ const AITab: React.FC = () => {
     setTimeout(() => setSaveStatus('idle'), 1600);
   };
 
+  const applyAiModelStatuses = useCallback((patch: AiModelStatusPatch): boolean => {
+    const current = aiModelStatusesRef.current;
+    const next = applyAiModelStatusPatch(current, patch);
+    if (next === current) return false;
+
+    aiModelStatusesRef.current = next;
+    setAiModelStatuses(next);
+    return true;
+  }, []);
+
+  const fetchAiModelStatusPatch = useCallback(() => fetchAiModelStatusPollPatch({
+    whisperCpp: () => window.electron.whisperCppModelStatus(),
+    parakeet: () => window.electron.parakeetModelStatus(),
+    qwen3: () => window.electron.qwen3ModelStatus(),
+  }), []);
+
   const refreshWhisperCppModelStatus = useCallback(async () => {
     try {
       const status = await window.electron.whisperCppModelStatus();
-      setWhisperCppModelStatus(status);
+      applyAiModelStatuses({ whisperCpp: status });
       return status;
     } catch {
       return null;
     }
-  }, []);
+  }, [applyAiModelStatuses]);
 
   useEffect(() => {
     if (activeTab !== 'whisper') return;
@@ -421,9 +450,10 @@ const AITab: React.FC = () => {
     let timer: number | null = null;
 
     const tick = async () => {
-      await refreshWhisperCppModelStatus();
+      const patch = await fetchAiModelStatusPatch();
       if (cancelled) return;
-      timer = window.setTimeout(() => { void tick(); }, 1000);
+      applyAiModelStatuses(patch);
+      timer = window.setTimeout(() => { void tick(); }, AI_MODEL_STATUS_POLL_INTERVAL_MS);
     };
 
     void tick();
@@ -431,99 +461,63 @@ const AITab: React.FC = () => {
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [activeTab, refreshWhisperCppModelStatus]);
+  }, [activeTab, applyAiModelStatuses, fetchAiModelStatusPatch]);
 
   const handleWhisperCppDownload = useCallback(async () => {
     setWhisperCppModelLoading(true);
     try {
       const status = await window.electron.whisperCppDownloadModel();
-      setWhisperCppModelStatus(status);
+      applyAiModelStatuses({ whisperCpp: status });
     } catch {
       void refreshWhisperCppModelStatus();
     } finally {
       setWhisperCppModelLoading(false);
     }
-  }, [refreshWhisperCppModelStatus]);
+  }, [applyAiModelStatuses, refreshWhisperCppModelStatus]);
 
   const refreshParakeetModelStatus = useCallback(async () => {
     try {
       const status = await window.electron.parakeetModelStatus();
-      setParakeetModelStatus(status);
+      applyAiModelStatuses({ parakeet: status });
       return status;
     } catch {
       return null;
     }
-  }, []);
-
-  useEffect(() => {
-    if (activeTab !== 'whisper') return;
-    let cancelled = false;
-    let timer: number | null = null;
-
-    const tick = async () => {
-      await refreshParakeetModelStatus();
-      if (cancelled) return;
-      timer = window.setTimeout(() => { void tick(); }, 1000);
-    };
-
-    void tick();
-    return () => {
-      cancelled = true;
-      if (timer !== null) window.clearTimeout(timer);
-    };
-  }, [activeTab, refreshParakeetModelStatus]);
+  }, [applyAiModelStatuses]);
 
   const handleParakeetDownload = useCallback(async () => {
     setParakeetModelLoading(true);
     try {
       const status = await window.electron.parakeetDownloadModel();
-      setParakeetModelStatus(status);
+      applyAiModelStatuses({ parakeet: status });
     } catch {
       void refreshParakeetModelStatus();
     } finally {
       setParakeetModelLoading(false);
     }
-  }, [refreshParakeetModelStatus]);
+  }, [applyAiModelStatuses, refreshParakeetModelStatus]);
 
   const refreshQwen3ModelStatus = useCallback(async () => {
     try {
       const status = await window.electron.qwen3ModelStatus();
-      setQwen3ModelStatus(status);
+      applyAiModelStatuses({ qwen3: status });
       return status;
     } catch {
       return null;
     }
-  }, []);
-
-  useEffect(() => {
-    if (activeTab !== 'whisper') return;
-    let cancelled = false;
-    let timer: number | null = null;
-
-    const tick = async () => {
-      await refreshQwen3ModelStatus();
-      if (cancelled) return;
-      timer = window.setTimeout(() => { void tick(); }, 1000);
-    };
-
-    void tick();
-    return () => {
-      cancelled = true;
-      if (timer !== null) window.clearTimeout(timer);
-    };
-  }, [activeTab, refreshQwen3ModelStatus]);
+  }, [applyAiModelStatuses]);
 
   const handleQwen3Download = useCallback(async () => {
     setQwen3ModelLoading(true);
     try {
       const status = await window.electron.qwen3DownloadModel();
-      setQwen3ModelStatus(status);
+      applyAiModelStatuses({ qwen3: status });
     } catch {
       void refreshQwen3ModelStatus();
     } finally {
       setQwen3ModelLoading(false);
     }
-  }, [refreshQwen3ModelStatus]);
+  }, [applyAiModelStatuses, refreshQwen3ModelStatus]);
 
   const maybeSelectOllamaDefaultModel = useCallback((availableNames: string[], preferredName?: string) => {
     const currentSettings = settingsRef.current;
